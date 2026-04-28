@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * Reflective module API provided to functions at runtime.
  */
-class CurrentModule extends Client\AbstractObject implements Client\IdAble
+class CurrentModule extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The dependencies of the module.
@@ -46,10 +46,10 @@ class CurrentModule extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this CurrentModule.
      */
-    public function id(): CurrentModuleId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\CurrentModuleId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -75,8 +75,8 @@ class CurrentModule extends Client\AbstractObject implements Client\IdAble
      */
     public function workdir(
         string $path,
-        ?array $exclude = null,
-        ?array $include = null,
+        ?array $exclude = [],
+        ?array $include = [],
         ?bool $gitignore = false,
     ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('workdir');

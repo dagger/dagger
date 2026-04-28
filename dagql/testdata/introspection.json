@@ -61,6 +61,12 @@
       },
       {
         "kind": "SCALAR",
+        "name": "ID",
+        "description": "A unique identifier for an object.",
+        "directives": []
+      },
+      {
+        "kind": "SCALAR",
         "name": "Int",
         "description": "The `Int` scalar type represents non-fractional signed whole numeric values. Int can represent values between -(2^31) and 2^31 - 1.",
         "directives": []
@@ -116,7 +122,7 @@
               "kind": "NON_NULL",
               "ofType": {
                 "kind": "SCALAR",
-                "name": "IntrospectTestID"
+                "name": "ID"
               }
             },
             "args": [],
@@ -125,12 +131,13 @@
             "directives": []
           }
         ],
-        "directives": []
-      },
-      {
-        "kind": "SCALAR",
-        "name": "IntrospectTestID",
-        "description": "The `IntrospectTestID` scalar type represents an identifier for an object of type IntrospectTest.",
+        "interfaces": [
+          {
+            "kind": "INTERFACE",
+            "name": "Node",
+            "directives": null
+          }
+        ],
         "directives": []
       },
       {
@@ -175,7 +182,7 @@
               "kind": "NON_NULL",
               "ofType": {
                 "kind": "SCALAR",
-                "name": "LineID"
+                "name": "ID"
               }
             },
             "args": [],
@@ -214,12 +221,58 @@
             "directives": []
           }
         ],
+        "interfaces": [
+          {
+            "kind": "INTERFACE",
+            "name": "Node",
+            "directives": null
+          }
+        ],
         "directives": []
       },
       {
-        "kind": "SCALAR",
-        "name": "LineID",
-        "description": "The `LineID` scalar type represents an identifier for an object of type Line.",
+        "kind": "INTERFACE",
+        "name": "Node",
+        "description": "An object with a globally unique ID.",
+        "fields": [
+          {
+            "name": "id",
+            "description": "",
+            "type": {
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "ID"
+              }
+            },
+            "args": [],
+            "isDeprecated": false,
+            "deprecationReason": "",
+            "directives": []
+          }
+        ],
+        "possibleTypes": [
+          {
+            "kind": "OBJECT",
+            "name": "IntrospectTest",
+            "directives": null
+          },
+          {
+            "kind": "OBJECT",
+            "name": "Line",
+            "directives": null
+          },
+          {
+            "kind": "OBJECT",
+            "name": "Point",
+            "directives": null
+          },
+          {
+            "kind": "OBJECT",
+            "name": "Query",
+            "directives": null
+          }
+        ],
         "directives": []
       },
       {
@@ -234,7 +287,7 @@
               "kind": "NON_NULL",
               "ofType": {
                 "kind": "SCALAR",
-                "name": "PointID"
+                "name": "ID"
               }
             },
             "args": [],
@@ -261,12 +314,22 @@
                   "kind": "NON_NULL",
                   "ofType": {
                     "kind": "SCALAR",
-                    "name": "PointID"
+                    "name": "ID"
                   }
                 },
                 "isDeprecated": false,
                 "deprecationReason": "",
-                "directives": []
+                "directives": [
+                  {
+                    "name": "expectedType",
+                    "args": [
+                      {
+                        "name": "name",
+                        "value": "\"Point\""
+                      }
+                    ]
+                  }
+                ]
               }
             ],
             "isDeprecated": false,
@@ -411,12 +474,13 @@
             "directives": []
           }
         ],
-        "directives": []
-      },
-      {
-        "kind": "SCALAR",
-        "name": "PointID",
-        "description": "The `PointID` scalar type represents an identifier for an object of type Point.",
+        "interfaces": [
+          {
+            "kind": "INTERFACE",
+            "name": "Node",
+            "directives": null
+          }
+        ],
         "directives": []
       },
       {
@@ -630,7 +694,7 @@
               "kind": "NON_NULL",
               "ofType": {
                 "kind": "SCALAR",
-                "name": "QueryID"
+                "name": "ID"
               }
             },
             "args": [],
@@ -654,14 +718,11 @@
             "directives": []
           },
           {
-            "name": "loadIntrospectTestFromID",
-            "description": "Load a IntrospectTest from its ID.",
+            "name": "node",
+            "description": "Load any object by its ID.",
             "type": {
-              "kind": "NON_NULL",
-              "ofType": {
-                "kind": "OBJECT",
-                "name": "IntrospectTest"
-              }
+              "kind": "INTERFACE",
+              "name": "Node"
             },
             "args": [
               {
@@ -672,100 +733,7 @@
                   "kind": "NON_NULL",
                   "ofType": {
                     "kind": "SCALAR",
-                    "name": "IntrospectTestID"
-                  }
-                },
-                "isDeprecated": false,
-                "deprecationReason": "",
-                "directives": []
-              }
-            ],
-            "isDeprecated": false,
-            "deprecationReason": "",
-            "directives": []
-          },
-          {
-            "name": "loadLineFromID",
-            "description": "Load a Line from its ID.",
-            "type": {
-              "kind": "NON_NULL",
-              "ofType": {
-                "kind": "OBJECT",
-                "name": "Line"
-              }
-            },
-            "args": [
-              {
-                "name": "id",
-                "description": "",
-                "defaultValue": null,
-                "type": {
-                  "kind": "NON_NULL",
-                  "ofType": {
-                    "kind": "SCALAR",
-                    "name": "LineID"
-                  }
-                },
-                "isDeprecated": false,
-                "deprecationReason": "",
-                "directives": []
-              }
-            ],
-            "isDeprecated": false,
-            "deprecationReason": "",
-            "directives": []
-          },
-          {
-            "name": "loadPointFromID",
-            "description": "Load a Point from its ID.",
-            "type": {
-              "kind": "NON_NULL",
-              "ofType": {
-                "kind": "OBJECT",
-                "name": "Point"
-              }
-            },
-            "args": [
-              {
-                "name": "id",
-                "description": "",
-                "defaultValue": null,
-                "type": {
-                  "kind": "NON_NULL",
-                  "ofType": {
-                    "kind": "SCALAR",
-                    "name": "PointID"
-                  }
-                },
-                "isDeprecated": false,
-                "deprecationReason": "",
-                "directives": []
-              }
-            ],
-            "isDeprecated": false,
-            "deprecationReason": "",
-            "directives": []
-          },
-          {
-            "name": "loadQueryFromID",
-            "description": "Load a Query from its ID.",
-            "type": {
-              "kind": "NON_NULL",
-              "ofType": {
-                "kind": "OBJECT",
-                "name": "Query"
-              }
-            },
-            "args": [
-              {
-                "name": "id",
-                "description": "",
-                "defaultValue": null,
-                "type": {
-                  "kind": "NON_NULL",
-                  "ofType": {
-                    "kind": "SCALAR",
-                    "name": "QueryID"
+                    "name": "ID"
                   }
                 },
                 "isDeprecated": false,
@@ -818,12 +786,13 @@
             "directives": []
           }
         ],
-        "directives": []
-      },
-      {
-        "kind": "SCALAR",
-        "name": "QueryID",
-        "description": "The `QueryID` scalar type represents an identifier for an object of type Query.",
+        "interfaces": [
+          {
+            "kind": "INTERFACE",
+            "name": "Node",
+            "directives": null
+          }
+        ],
         "directives": []
       },
       {
@@ -1889,6 +1858,66 @@
     ],
     "directives": [
       {
+        "args": [],
+        "description": "Indicates that this function is a check.",
+        "locations": [
+          "FIELD_DEFINITION"
+        ],
+        "name": "check"
+      },
+      {
+        "args": [
+          {
+            "defaultValue": null,
+            "deprecationReason": null,
+            "description": "",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "address",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          }
+        ],
+        "description": "Indicates that the argument defaults to a container address.",
+        "locations": [
+          "ARGUMENT_DEFINITION"
+        ],
+        "name": "defaultAddress"
+      },
+      {
+        "args": [
+          {
+            "defaultValue": null,
+            "deprecationReason": null,
+            "description": "",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "path",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          }
+        ],
+        "description": "Indicates that the argument defaults to a contextual path.",
+        "locations": [
+          "ARGUMENT_DEFINITION"
+        ],
+        "name": "defaultPath"
+      },
+      {
         "args": [
           {
             "defaultValue": "\"No longer supported\"",
@@ -1920,6 +1949,59 @@
       {
         "args": [
           {
+            "defaultValue": null,
+            "deprecationReason": null,
+            "description": "",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "value",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          }
+        ],
+        "description": "Indicates the underlying value of an enum member.",
+        "locations": [
+          "ENUM_VALUE"
+        ],
+        "name": "enumValue"
+      },
+      {
+        "args": [
+          {
+            "defaultValue": null,
+            "deprecationReason": null,
+            "description": "The name of the expected type.",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "name",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          }
+        ],
+        "description": "Indicates the expected object or interface type for an ID value. On arguments, indicates what type of ID is expected. On fields, indicates the type of the returned ID.",
+        "locations": [
+          "ARGUMENT_DEFINITION",
+          "FIELD_DEFINITION"
+        ],
+        "name": "expectedType"
+      },
+      {
+        "args": [
+          {
             "defaultValue": "\"Not stabilized\"",
             "deprecationReason": null,
             "description": "Explains why this element was marked experimental.",
@@ -1945,6 +2027,149 @@
           "ENUM_VALUE"
         ],
         "name": "experimental"
+      },
+      {
+        "args": [],
+        "description": "Indicates that this function is a generate function.",
+        "locations": [
+          "FIELD_DEFINITION"
+        ],
+        "name": "generate"
+      },
+      {
+        "args": [
+          {
+            "defaultValue": null,
+            "deprecationReason": null,
+            "description": "",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "patterns",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "LIST",
+                "name": null,
+                "ofType": {
+                  "kind": "NON_NULL",
+                  "name": null,
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "String",
+                    "ofType": null
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "description": "Filter directory contents using .gitignore-style glob patterns.",
+        "locations": [
+          "ARGUMENT_DEFINITION"
+        ],
+        "name": "ignorePatterns"
+      },
+      {
+        "args": [
+          {
+            "defaultValue": null,
+            "deprecationReason": null,
+            "description": "",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "module",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "defaultValue": null,
+            "deprecationReason": null,
+            "description": "",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "filename",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "defaultValue": null,
+            "deprecationReason": null,
+            "description": "",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "line",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "defaultValue": null,
+            "deprecationReason": null,
+            "description": "",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "column",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "defaultValue": null,
+            "deprecationReason": null,
+            "description": "",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "url",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          }
+        ],
+        "description": "Indicates the source information for where a given field is defined.",
+        "locations": [
+          "SCALAR",
+          "OBJECT",
+          "FIELD_DEFINITION",
+          "ARGUMENT_DEFINITION",
+          "UNION",
+          "ENUM",
+          "ENUM_VALUE",
+          "INPUT_OBJECT"
+        ],
+        "name": "sourceMap"
       }
     ]
   },

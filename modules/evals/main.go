@@ -4,7 +4,7 @@ import (
 	"context"
 	"dagger/evals/internal/dagger"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
 
 // Models smart enough to follow instructions like 'do X three times.'

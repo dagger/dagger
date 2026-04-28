@@ -14,5 +14,7 @@ public interface ICodeRenderer
 
     string RenderInputObject(Type type);
 
+    string RenderInterface(Type type);
+
     string Format(string source);
 }

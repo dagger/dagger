@@ -10,6 +10,7 @@ require (
 
 require (
 	github.com/dagger/otel-go v1.41.0
+	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
 	github.com/vektah/gqlparser/v2 v2.5.32
 	go.opentelemetry.io/otel/sdk v1.41.0
 )
@@ -32,7 +33,6 @@ require (
 )
 
 require (
-	dagger.io/dagger v0.20.6
 	github.com/BurntSushi/toml v1.5.0
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

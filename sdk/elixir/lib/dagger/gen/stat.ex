@@ -32,7 +32,7 @@ defmodule Dagger.Stat do
   @doc """
   A unique identifier for this Stat.
   """
-  @spec id(t()) :: {:ok, Dagger.StatID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = stat) do
     query_builder =
       stat.query_builder |> QB.select("id")
@@ -83,6 +83,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.Stat do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_stat_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.Stat{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("Stat"),
+       client: dag.client
+     }}
   end
 end

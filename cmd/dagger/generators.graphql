@@ -1,8 +1,10 @@
-query GeneratorGroupListDetails($id: GeneratorGroupID!) {
-  group: loadGeneratorGroupFromID(id: $id) {
-    list {
-      name
-      description
+query GeneratorGroupListDetails($id: ID!) {
+  group: node(id: $id) {
+    ... on GeneratorGroup {
+      list {
+        name
+        description
+      }
     }
   }
 }

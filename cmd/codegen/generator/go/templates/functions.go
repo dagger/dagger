@@ -77,6 +77,19 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"ObjectName":                funcs.ObjectName,
 		"CheckVersionCompatibility": funcs.CheckVersionCompatibility,
 
+		// arg formatting with directive support
+		"FormatArgType": funcs.formatArgType,
+
+		// interface support
+		"IsInterfaceType":          funcs.isInterfaceType,
+		"IsInterfaceRef":           funcs.isInterfaceRef,
+		"IsListOfInterface":        funcs.isListOfInterface,
+		"InterfaceClientName":      funcs.interfaceClientName,
+		"PossibleTypes":            funcs.possibleTypes,
+		"ImplementedInterfaces":    funcs.implementedInterfaces,
+		"InterfaceMethodSignature": funcs.interfaceMethodSignature,
+		"InterfaceClientMethod":    funcs.interfaceClientMethod,
+
 		// go specific
 		"Comment":                 funcs.comment,
 		"FormatDeprecation":       funcs.formatDeprecation,
@@ -179,7 +192,7 @@ func (funcs goTemplateFuncs) isPointer(t introspection.InputValue) (bool, error)
 	}
 
 	// Convert to a string representation to avoid code repetition.
-	representation, err := funcs.FormatInputType(t.TypeRef)
+	representation, err := funcs.formatArgType(t)
 	return strings.Index(representation, "*") == 0, err
 }
 
@@ -322,8 +335,7 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 			continue
 		}
 
-		// FIXME: For top-level queries (e.g. File, Directory) if the field is named `id` then keep it as a
-		// scalar (DirectoryID) rather than an object (*Directory).
+		// For node(id:) on Query, keep the arg as the raw ID type.
 		if f.ParentObject.Name == generator.QueryStructName && arg.Name == "id" {
 			outType, err := funcs.FormatOutputType(arg.TypeRef, scopes...)
 			if err != nil {
@@ -331,7 +343,7 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 			}
 			args = append(args, fmt.Sprintf("%s %s", arg.Name, outType))
 		} else {
-			inType, err := funcs.FormatInputType(arg.TypeRef, scopes...)
+			inType, err := funcs.formatArgType(arg, scopes...)
 			if err != nil {
 				return "", err
 			}
@@ -352,17 +364,219 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 	if err != nil {
 		return "", err
 	}
+	convertID := funcs.ConvertID(f)
 	switch {
 	case supportsVoid && f.TypeRef.IsVoid():
 		retType = "error"
+	case convertID:
+		// ConvertID fields return the parent object type as a pointer.
+		retType = fmt.Sprintf("(*%s, error)", retType)
 	case f.TypeRef.IsScalar() || f.TypeRef.IsList():
 		retType = fmt.Sprintf("(%s, error)", retType)
+	case funcs.isInterfaceRef(f.TypeRef):
+		// Interface returns are Go interfaces, not pointers to structs
+		// retType stays as-is (no * prefix)
 	default:
 		retType = "*" + retType
 	}
 	signature += " " + retType
 
 	return signature, nil
+}
+
+// isInterfaceType returns true if the given introspection type is an INTERFACE.
+func (funcs goTemplateFuncs) isInterfaceType(t introspection.Type) bool {
+	return t.Kind == introspection.TypeKindInterface
+}
+
+// isInterfaceRef returns true if the given type ref points to a single INTERFACE kind
+// type (not a list of interfaces). Only unwraps NonNull wrappers.
+func (funcs goTemplateFuncs) isInterfaceRef(t *introspection.TypeRef) bool {
+	ref := t
+	for ref != nil {
+		switch ref.Kind {
+		case introspection.TypeKindNonNull:
+			ref = ref.OfType
+		case introspection.TypeKindInterface:
+			return true
+		default:
+			return false
+		}
+	}
+	return false
+}
+
+// isListOfInterface returns true if the type ref is a list whose element is an interface.
+func (funcs goTemplateFuncs) isListOfInterface(t *introspection.TypeRef) bool {
+	// Unwrap NonNull -> List -> NonNull? -> Interface
+	ref := t
+	if ref.Kind == introspection.TypeKindNonNull {
+		ref = ref.OfType
+	}
+	if ref.Kind != introspection.TypeKindList {
+		return false
+	}
+	ref = ref.OfType
+	if ref.Kind == introspection.TypeKindNonNull {
+		ref = ref.OfType
+	}
+	return ref.Kind == introspection.TypeKindInterface
+}
+
+// interfaceClientName returns the query-builder struct name for an interface.
+// e.g. "Duck" -> "DuckClient"
+func (funcs goTemplateFuncs) interfaceClientName(name string) string {
+	return formatName(name) + "Client"
+}
+
+// possibleTypes returns the possible concrete types for an interface type,
+// filtering out interface entries so that only object types are returned.
+// Interfaces may appear in PossibleTypes due to interface-extends-interface
+// registrations, but codegen (e.g. Concrete() switch) only needs objects.
+func (funcs goTemplateFuncs) possibleTypes(t introspection.Type) []*introspection.Type {
+	var result []*introspection.Type
+	for _, pt := range t.PossibleTypes {
+		if pt.Kind == introspection.TypeKindInterface {
+			continue
+		}
+		result = append(result, pt)
+	}
+	return result
+}
+
+// implementedInterfaces returns the interfaces that an object type implements,
+// filtered to only include non-built-in interfaces (i.e. not "Object").
+func (funcs goTemplateFuncs) implementedInterfaces(t introspection.Type) []*introspection.Type {
+	var result []*introspection.Type
+	for _, iface := range t.Interfaces {
+		if iface.Name == "Object" {
+			continue
+		}
+		result = append(result, iface)
+	}
+	return result
+}
+
+// interfaceMethodSignature generates a Go interface method signature for a field.
+// e.g. "Quack(ctx context.Context) (string, error)"
+func (funcs goTemplateFuncs) interfaceMethodSignature(f introspection.Field) (string, error) {
+	sig := formatName(f.Name)
+
+	args := []string{}
+	if f.TypeRef.IsScalar() || f.TypeRef.IsList() {
+		args = append(args, "ctx context.Context")
+	}
+	for _, arg := range f.Args {
+		if funcs.isArgOptional(arg) {
+			continue
+		}
+		inType, err := funcs.formatArgType(arg)
+		if err != nil {
+			return "", err
+		}
+		args = append(args, fmt.Sprintf("%s %s", arg.Name, inType))
+	}
+	if funcs.hasOptionals(f.Args) {
+		args = append(args, fmt.Sprintf("opts ...%s", funcs.fieldOptionsStructName(f)))
+	}
+	sig += "(" + strings.Join(args, ", ") + ")"
+
+	retType, err := funcs.FormatReturnType(f)
+	if err != nil {
+		return "", err
+	}
+	supportsVoid := funcs.CheckVersionCompatibility("v0.12.0")
+	switch {
+	case supportsVoid && f.TypeRef.IsVoid():
+		sig += " error"
+	case f.TypeRef.IsScalar() || f.TypeRef.IsList():
+		sig += fmt.Sprintf(" (%s, error)", retType)
+	case funcs.isInterfaceRef(f.TypeRef):
+		sig += " " + retType
+	default:
+		sig += " *" + retType
+	}
+	return sig, nil
+}
+
+// interfaceClientMethod generates a method signature for the interface's
+// query-builder struct. e.g.:
+//
+//	func (r *duckClient) Quack(ctx context.Context) (string, error)
+func (funcs goTemplateFuncs) interfaceClientMethod(ifaceName string, f introspection.Field) (string, error) {
+	clientName := funcs.interfaceClientName(ifaceName)
+	sig := "func (r *" + clientName + ") " + formatName(f.Name)
+
+	args := []string{}
+	if f.TypeRef.IsScalar() || f.TypeRef.IsList() {
+		args = append(args, "ctx context.Context")
+	}
+	for _, arg := range f.Args {
+		if funcs.isArgOptional(arg) {
+			continue
+		}
+		inType, err := funcs.formatArgType(arg)
+		if err != nil {
+			return "", err
+		}
+		args = append(args, fmt.Sprintf("%s %s", arg.Name, inType))
+	}
+	if funcs.hasOptionals(f.Args) {
+		args = append(args, fmt.Sprintf("opts ...%s", funcs.fieldOptionsStructName(f)))
+	}
+	sig += "(" + strings.Join(args, ", ") + ")"
+
+	retType, err := funcs.FormatReturnType(f)
+	if err != nil {
+		return "", err
+	}
+	supportsVoid := funcs.CheckVersionCompatibility("v0.12.0")
+	switch {
+	case supportsVoid && f.TypeRef.IsVoid():
+		sig += " error"
+	case f.TypeRef.IsScalar() || f.TypeRef.IsList():
+		sig += fmt.Sprintf(" (%s, error)", retType)
+	case funcs.isInterfaceRef(f.TypeRef):
+		sig += " " + retType
+	default:
+		sig += " *" + retType
+	}
+	return sig, nil
+}
+
+// formatArgType formats an argument's type, using the @expectedType directive
+// when the arg is an ID scalar. This replaces the old FooID -> *Foo conversion.
+func (funcs goTemplateFuncs) formatArgType(arg introspection.InputValue, scopes ...string) (string, error) {
+	expectedType := arg.Directives.ExpectedType()
+	if expectedType != "" {
+		// This is an ID arg with an @expectedType directive.
+		// Format it as the expected type (pointer for objects, value for interfaces).
+		scope := strings.Join(scopes, "")
+		if scope != "" {
+			scope += "."
+		}
+		var baseType string
+		schema := generator.GetSchema()
+		if schema != nil {
+			schemaType := schema.Types.Get(expectedType)
+			if schemaType != nil && schemaType.Kind == introspection.TypeKindInterface {
+				baseType = scope + formatName(expectedType)
+			}
+		}
+		if baseType == "" {
+			baseType = "*" + scope + formatName(expectedType)
+		}
+		// Wrap in [] for list types.
+		ref := arg.TypeRef
+		if ref != nil && ref.Kind == introspection.TypeKindNonNull {
+			ref = ref.OfType
+		}
+		if ref != nil && ref.Kind == introspection.TypeKindList {
+			return "[]" + baseType, nil
+		}
+		return baseType, nil
+	}
+	return funcs.FormatInputType(arg.TypeRef, scopes...)
 }
 
 // isPartial determines if we are in a first-pass or not

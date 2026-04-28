@@ -8,15 +8,15 @@ declare(strict_types=1);
 
 namespace Dagger;
 
-class UpGroup extends Client\AbstractObject implements Client\IdAble
+class UpGroup extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A unique identifier for this UpGroup.
      */
-    public function id(): UpGroupId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\UpGroupId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

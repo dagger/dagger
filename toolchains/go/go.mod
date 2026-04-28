@@ -1,6 +1,6 @@
 module github.com/dagger/dagger/modules/go
 
-go 1.25.6
+go 1.26.1
 
 require github.com/dagger/dagger v0.0.0-00010101000000-000000000000
 
@@ -11,6 +11,7 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/containerd/platforms v1.0.0-rc.2
 	github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887
+	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
 	github.com/vektah/gqlparser/v2 v2.5.32
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/sdk v1.42.0
@@ -38,7 +39,6 @@ require (
 )
 
 require (
-	dagger.io/dagger v0.20.6
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect

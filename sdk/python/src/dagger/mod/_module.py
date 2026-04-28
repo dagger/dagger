@@ -106,7 +106,7 @@ class Module:
 
         await dag.current_function_call().return_value(dagger.JSON(output))
 
-    async def _typedefs(self) -> dagger.ModuleID:
+    async def _typedefs(self) -> str:
         """Delegate to AST-based registration, translating RuntimeError."""
         from dagger.mod._discovery import ast_register
 
@@ -118,7 +118,7 @@ class Module:
         except RuntimeError as e:
             raise RegistrationError(str(e)) from e
 
-    async def invoke(self) -> dagger.ModuleID:
+    async def invoke(self) -> str:
         """Invoke a function and return its result.
 
         This includes getting the call context from the API and deserializing data.

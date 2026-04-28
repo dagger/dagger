@@ -51,15 +51,27 @@ pub struct Selection {
     alias: Option<String>,
     args: Option<HashMap<String, LazyResolve>>,
 
+    /// When set, this step emits `... on TypeName` instead of a field name.
+    /// It does not add a nesting level in the response — unpack skips it.
+    inline_fragment: Option<String>,
+
     prev: Option<Arc<Selection>>,
 }
 
 impl Selection {
+    /// Return a new root Selection, discarding the current query path.
+    /// Used by ConvertID (e.g. sync) to build `node(id) { ... on Foo {} }`
+    /// starting from a fresh root.
+    pub fn root(&self) -> Selection {
+        Selection::default()
+    }
+
     pub fn select_with_alias(&self, alias: &str, name: &str) -> Selection {
         Self {
             name: Some(name.to_string()),
             alias: Some(alias.to_string()),
             args: None,
+            inline_fragment: None,
             prev: Some(Arc::new(self.clone())),
         }
     }
@@ -69,6 +81,21 @@ impl Selection {
             name: Some(name.to_string()),
             alias: None,
             args: None,
+            inline_fragment: None,
+            prev: Some(Arc::new(self.clone())),
+        }
+    }
+
+    /// Add an inline fragment type condition (`... on TypeName`).
+    /// Subsequent selections will be nested inside the fragment.
+    /// The response data is flat — the fragment doesn't add a nesting
+    /// level during unpack.
+    pub fn inline_fragment(&self, type_name: &str) -> Selection {
+        Self {
+            name: None,
+            alias: None,
+            args: None,
+            inline_fragment: Some(type_name.to_string()),
             prev: Some(Arc::new(self.clone())),
         }
     }
@@ -120,7 +147,9 @@ impl Selection {
         let mut fields = vec!["query".to_string()];
 
         for sel in self.path() {
-            if let Some(mut query) = sel.name {
+            if let Some(type_name) = sel.inline_fragment {
+                fields.push(format!("... on {}", type_name));
+            } else if let Some(mut query) = sel.name {
                 if let Some(args) = sel.args {
                     let mut actualargs = Vec::new();
                     for (name, arg) in args.iter() {
@@ -189,22 +218,27 @@ impl Selection {
         }
     }
 
-    #[allow(clippy::only_used_in_recursion)]
     fn unpack_resp_value<D>(&self, r: serde_json::Value) -> Result<D, DaggerError>
     where
         D: for<'de> Deserialize<'de>,
     {
-        if let Some(o) = r.as_object() {
-            let keys = o.keys();
-            if keys.len() != 1 {
-                return Err(DaggerError::Unpack(DaggerUnpackError::TooManyNestedObjects));
+        let mut data = r;
+
+        for sel in self.path() {
+            // Inline fragments don't add a nesting level in the response.
+            if sel.inline_fragment.is_some() {
+                continue;
             }
 
-            let first = keys.into_iter().next().unwrap();
-            return self.unpack_resp_value(o.get(first).unwrap().clone());
+            if let Some(o) = data.as_object() {
+                let key = sel.alias.as_ref().or(sel.name.as_ref());
+                if let Some(key) = key {
+                    data = o.get(key).cloned().unwrap_or(serde_json::Value::Null);
+                }
+            }
         }
 
-        serde_json::from_value::<D>(r)
+        serde_json::from_value::<D>(data)
             .map_err(DaggerUnpackError::Deserialize)
             .map_err(DaggerError::Unpack)
     }
@@ -328,5 +362,101 @@ mod tests {
             query,
             r#"query{a(arg:{name:"some-name",s:{name:"some-other-name",s:null}})}"#.to_string()
         )
+    }
+
+    #[tokio::test]
+    async fn test_inline_fragment_build() {
+        // node(id: "abc") { ... on Container { imageRef } }
+        let root = query()
+            .select("node")
+            .arg("id", "abc")
+            .inline_fragment("Container")
+            .select("imageRef");
+
+        let query = root.build().await.unwrap();
+
+        assert_eq!(
+            query,
+            r#"query{node(id:"abc"){... on Container{imageRef}}}"#.to_string()
+        )
+    }
+
+    #[tokio::test]
+    async fn test_inline_fragment_nested_fields() {
+        // node(id: "abc") { ... on Container { withExec(args: ["echo"]) { stdout } } }
+        let root = query()
+            .select("node")
+            .arg("id", "abc")
+            .inline_fragment("Container")
+            .select("withExec")
+            .arg("args", vec!["echo"])
+            .select("stdout");
+
+        let query = root.build().await.unwrap();
+
+        assert_eq!(
+            query,
+            r#"query{node(id:"abc"){... on Container{withExec(args:["echo"]){stdout}}}}"#
+                .to_string()
+        )
+    }
+
+    #[tokio::test]
+    async fn test_inline_fragment_unpack() {
+        // Inline fragments don't add a nesting level in the response.
+        // The response for: node(id:"..."){... on Container{imageRef}}
+        // is: {"node": {"imageRef": "alpine"}}
+        // NOT: {"node": {"Container": {"imageRef": "alpine"}}}
+        let root = query()
+            .select("node")
+            .arg("id", "abc")
+            .inline_fragment("Container")
+            .select("imageRef");
+
+        let resp: Option<serde_json::Value> =
+            serde_json::from_str(r#"{"node": {"imageRef": "alpine:3.18"}}"#).unwrap();
+
+        let result: Option<String> = root.unpack_resp(resp).unwrap();
+        assert_eq!(result, Some("alpine:3.18".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_inline_fragment_unpack_nested() {
+        // Deeper chain: node(id:"..."){... on Container{file(path:"/x"){contents}}}
+        // Response: {"node": {"file": {"contents": "hello"}}}
+        let root = query()
+            .select("node")
+            .arg("id", "abc")
+            .inline_fragment("Container")
+            .select("file")
+            .arg("path", "/x")
+            .select("contents");
+
+        let resp: Option<serde_json::Value> =
+            serde_json::from_str(r#"{"node": {"file": {"contents": "hello"}}}"#).unwrap();
+
+        let result: Option<String> = root.unpack_resp(resp).unwrap();
+        assert_eq!(result, Some("hello".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_inline_fragment_immutability() {
+        // Branching after inline_fragment should not leak between branches
+        let base = query()
+            .select("node")
+            .arg("id", "abc")
+            .inline_fragment("Container");
+
+        let a = base.select("imageRef").build().await.unwrap();
+        assert_eq!(
+            a,
+            r#"query{node(id:"abc"){... on Container{imageRef}}}"#.to_string()
+        );
+
+        let b = base.select("stdout").build().await.unwrap();
+        assert_eq!(
+            b,
+            r#"query{node(id:"abc"){... on Container{stdout}}}"#.to_string()
+        );
     }
 }

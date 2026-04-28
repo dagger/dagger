@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * The result of running an SDK's codegen.
  */
-class GeneratedCode extends Client\AbstractObject implements Client\IdAble
+class GeneratedCode extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The directory containing the generated code.
@@ -25,10 +25,10 @@ class GeneratedCode extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this GeneratedCode.
      */
-    public function id(): GeneratedCodeId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\GeneratedCodeId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

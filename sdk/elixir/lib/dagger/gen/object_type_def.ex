@@ -65,8 +65,9 @@ defmodule Dagger.ObjectTypeDef do
          %Dagger.FieldTypeDef{
            query_builder:
              QB.query()
-             |> QB.select("loadFieldTypeDefFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("FieldTypeDef"),
            client: object_type_def.client
          }
        end}
@@ -87,8 +88,9 @@ defmodule Dagger.ObjectTypeDef do
          %Dagger.Function{
            query_builder:
              QB.query()
-             |> QB.select("loadFunctionFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Function"),
            client: object_type_def.client
          }
        end}
@@ -98,7 +100,7 @@ defmodule Dagger.ObjectTypeDef do
   @doc """
   A unique identifier for this ObjectTypeDef.
   """
-  @spec id(t()) :: {:ok, Dagger.ObjectTypeDefID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = object_type_def) do
     query_builder =
       object_type_def.query_builder |> QB.select("id")
@@ -152,6 +154,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.ObjectTypeDef do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_object_type_def_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.ObjectTypeDef{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("ObjectTypeDef"),
+       client: dag.client
+     }}
   end
 end

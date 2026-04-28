@@ -54,7 +54,7 @@ defmodule Dagger.Check do
   @doc """
   A unique identifier for this Check.
   """
-  @spec id(t()) :: {:ok, Dagger.CheckID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = check) do
     query_builder =
       check.query_builder |> QB.select("id")
@@ -144,6 +144,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.Check do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_check_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.Check{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("Check"),
+       client: dag.client
+     }}
   end
 end

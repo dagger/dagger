@@ -5,6 +5,7 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
 
   alias Dagger.Codegen.ElixirGenerator.Formatter
   alias Dagger.Codegen.ElixirGenerator.Renderer
+  alias Dagger.Codegen.Introspection.Types.Directive
   alias Dagger.Codegen.Introspection.Types.Field
   alias Dagger.Codegen.Introspection.Types.InputValue
   alias Dagger.Codegen.Introspection.Types.Type
@@ -23,10 +24,11 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
 
   def render_module_body(type) do
     module_var = Formatter.format_var_name(type.name)
+    kind = if type.kind == "INTERFACE", do: :interface, else: :object
 
     [
       """
-      use Dagger.Core.Base, kind: :object, name: "#{type.name}"
+      use Dagger.Core.Base, kind: :#{kind}, name: "#{type.name}"
 
       alias Dagger.Core.Client
       alias Dagger.Core.QueryBuilder, as: QB
@@ -56,7 +58,7 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
       [
         render_json_encoder(module_name, module_var),
         ?\n,
-        render_nestru_decoder(module_name, module_var)
+        render_nestru_decoder(module_name, module_var, type.name)
       ]
     else
       []
@@ -74,11 +76,20 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
     """
   end
 
-  defp render_nestru_decoder(module_name, module_var) do
+  defp render_nestru_decoder(module_name, _module_var, type_name) do
     """
     defimpl Nestru.Decoder, for: #{module_name} do
       def decode_fields_hint(_struct, _context, id) do
-        {:ok, Dagger.Client.load_#{module_var}_from_id(Dagger.Global.dag(), id)}
+        alias Dagger.Core.QueryBuilder, as: QB
+        dag = Dagger.Global.dag()
+        {:ok, %#{module_name}{
+          query_builder:
+            dag.query_builder
+            |> QB.select("node")
+            |> QB.put_arg("id", id)
+            |> QB.inline_fragment("#{type_name}"),
+          client: dag.client
+        }}
       end
     end
     """
@@ -122,9 +133,9 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
 
   def render_return_value(type, field, module_var) do
     cond do
-      TypeRef.is_list_of?(field.type, "OBJECT") ->
+      TypeRef.is_list_of?(field.type, "OBJECT") or TypeRef.is_list_of?(field.type, "INTERFACE") ->
         output_type = Formatter.format_output_type(field.type.of_type)
-        load_type_name = field.type.of_type.of_type.of_type.name
+        item_type_name = field.type.of_type.of_type.of_type.name
 
         [
           "with {:ok, items} <- Client.execute(#{module_var}.client, query_builder) do",
@@ -135,8 +146,9 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
                 %#{output_type}{
                   query_builder:
                     QB.query()
-                    |> QB.select("load#{load_type_name}FromID")
-                    |> QB.put_arg("id", id),
+                    |> QB.select("node")
+                    |> QB.put_arg("id", id)
+                    |> QB.inline_fragment("#{item_type_name}"),
                   client: #{module_var}.client
                 }
           """,
@@ -159,21 +171,10 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
         ]
 
       TypeRef.is_scalar?(field.type) ->
-        type_name =
-          case field.type.of_type do
-            nil -> ""
-            type -> type.name
-          end
+        expected = Directive.expected_type(field.directives)
 
-        id_of_type = String.trim_trailing(type_name, "ID")
-
-        if String.ends_with?(type_name, "ID") and id_of_type == type.name and field.name != "id" do
-          type = %{
-            field.type
-            | of_type: %{field.type.of_type | kind: "OBJECT", name: id_of_type}
-          }
-
-          output_type = Formatter.format_output_type(type)
+        if expected != nil and expected == type.name and field.name != "id" do
+          output_type = Formatter.format_module(expected)
 
           [
             "with {:ok, id} <- Client.execute(#{module_var}.client, query_builder) do",
@@ -182,8 +183,9 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
               {:ok, %#{output_type}{
                 query_builder:
                   QB.query()
-                  |> QB.select("load#{id_of_type}FromID")
-                  |> QB.put_arg("id", id),
+                  |> QB.select("node")
+                  |> QB.put_arg("id", id)
+                  |> QB.inline_fragment("#{expected}"),
                 client: #{module_var}.client
               }}
             """,
@@ -253,9 +255,10 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
   """
   def render_spec(type, %Field{name: name} = field, required_args, optional_args) do
     map_arg = fn arg ->
-      if convert_id?(arg) do
-        arg.type.of_type.name
-        |> String.trim_trailing("ID")
+      expected = Directive.expected_type(arg.directives)
+
+      if convert_id?(arg) and expected do
+        expected
         |> Formatter.format_module()
         |> Kernel.<>(".t()")
       else
@@ -285,11 +288,25 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
           args =
             optional_args
             |> Enum.map_intersperse(~c",", fn arg ->
+              expected = Directive.expected_type(arg.directives)
+
+              type_str =
+                cond do
+                  expected != nil and TypeRef.is_list_of?(arg.type, "SCALAR") ->
+                    "[#{Formatter.format_module(expected)}.t()]"
+
+                  expected != nil and TypeRef.id_type?(arg.type) ->
+                    "#{Formatter.format_module(expected)}.t() | nil"
+
+                  true ->
+                    Formatter.format_type(arg.type)
+                end
+
               [
                 ?{,
                 arg.name |> Formatter.format_var_name() |> Renderer.render_atom(),
                 ~c",",
-                Formatter.format_type(arg.type),
+                type_str,
                 ?}
               ]
             end)
@@ -311,23 +328,13 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
           ":ok | {:error, term()}"
 
         TypeRef.is_scalar?(field.type) ->
-          type_name =
-            case field.type.of_type do
-              nil -> ""
-              type -> type.name
-            end
+          expected = Directive.expected_type(field.directives)
 
-          id_of_type = String.trim_trailing(type_name, "ID")
-
-          type =
-            if String.ends_with?(type_name, "ID") and id_of_type == type.name and
-                 field.name != "id" do
-              %{field.type | of_type: %{field.type.of_type | name: id_of_type}}
-            else
-              field.type
-            end
-
-          Formatter.format_typespec_output_type(type)
+          if expected != nil and expected == type.name and field.name != "id" do
+            "{:ok, #{Formatter.format_module(expected)}.t()} | {:error, term()}"
+          else
+            Formatter.format_typespec_output_type(field.type)
+          end
 
         true ->
           Formatter.format_typespec_output_type(field.type)
@@ -364,7 +371,7 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
   def render_put_arg(arg) do
     var_name = Formatter.format_var_name(arg.name)
 
-    if arg.name != "id" and TypeRef.id_type?(arg.type) do
+    if convert_id?(arg) do
       ["Dagger.ID.id!(", var_name, ")"]
     else
       var_name
@@ -373,24 +380,37 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
 
   def render_maybe_put_arg(arg) do
     key = arg.name |> Formatter.format_var_name() |> Renderer.render_atom()
+    expected = Directive.expected_type(arg.directives)
 
-    if TypeRef.is_list_of?(arg.type, "SCALAR") and
-         TypeRef.unwrap_list(arg.type) |> TypeRef.id_type?() do
-      [
-        "if(optional_args[",
-        key,
-        "], do: Enum.map(optional_args[",
-        key,
-        "], &Dagger.ID.id!/1), else: nil)"
-      ]
-    else
-      ["optional_args[", key, ~c"]"]
+    cond do
+      expected != nil and TypeRef.is_list_of?(arg.type, "SCALAR") ->
+        [
+          "if(optional_args[",
+          key,
+          "], do: Enum.map(optional_args[",
+          key,
+          "], &Dagger.ID.id!/1), else: nil)"
+        ]
+
+      expected != nil and TypeRef.id_type?(arg.type) ->
+        [
+          "if(optional_args[",
+          key,
+          "], do: Dagger.ID.id!(optional_args[",
+          key,
+          "]), else: nil)"
+        ]
+
+      true ->
+        ["optional_args[", key, ~c"]"]
     end
   end
 
   def convert_id?(%InputValue{name: "id"}), do: false
-  def convert_id?(%InputValue{type: type_ref}), do: TypeRef.id_type?(type_ref)
-  def convert_id?(%InputValue{}), do: false
+
+  def convert_id?(%InputValue{type: type_ref, directives: directives}) do
+    TypeRef.id_type?(type_ref) and Directive.expected_type(directives) != nil
+  end
 
   defp has_sync_field?(%Type{fields: fields}) do
     Enum.any?(fields, &(&1.name == "sync"))
@@ -410,7 +430,8 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
       for arg <- optional_args do
         ["|> QB.maybe_put_arg(", ?", arg.name, ?", ~c",", render_maybe_put_arg(arg), ")"]
       end,
-      if TypeRef.is_list_of?(field.type, "OBJECT") do
+      if TypeRef.is_list_of?(field.type, "OBJECT") or
+           TypeRef.is_list_of?(field.type, "INTERFACE") do
         ["|> QB.select(\"id\")"]
       else
         []

@@ -13,7 +13,7 @@ import (
 	"sync"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 	"github.com/dagger/dagger/engine/slog"
 	"golang.org/x/sync/errgroup"
 	"mvdan.cc/sh/v3/expand"
@@ -296,10 +296,11 @@ func (st ShellState) IsEmpty() bool {
 // but we also keep track of its object's name and return type to make it easy
 // to get the right definition from the introspection data.
 type FunctionCall struct {
-	Object       string         `json:"object"`
-	Name         string         `json:"name"`
-	Arguments    map[string]any `json:"arguments"`
-	ReturnObject string         `json:"returnObject"`
+	Object         string         `json:"object"`
+	Name           string         `json:"name"`
+	Arguments      map[string]any `json:"arguments"`
+	ReturnObject   string         `json:"returnObject"`
+	InlineFragment string         `json:"inlineFragment,omitempty"`
 }
 
 // Save the shell state in the state store so it can be retrieved by the
@@ -355,6 +356,9 @@ func (st ShellState) QueryBuilder(dag *dagger.Client) *querybuilder.Selection {
 		q = q.Select(call.Name)
 		for n, v := range call.Arguments {
 			q = q.Arg(n, v)
+		}
+		if call.InlineFragment != "" {
+			q = q.InlineFragment(call.InlineFragment)
 		}
 	}
 	return q

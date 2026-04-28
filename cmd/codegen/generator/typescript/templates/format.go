@@ -48,13 +48,22 @@ func (f *FormatTypeFunc) FormatKindScalarBoolean(representation string) string {
 }
 
 func (f *FormatTypeFunc) FormatKindScalarDefault(representation string, refName string, input bool) string {
-	if obj, rest, ok := strings.Cut(refName, "ID"); input && ok && rest == "" {
+	if obj, rest, ok := strings.Cut(refName, "ID"); input && ok && rest == "" && obj != "" {
 		// map e.g. FooID to Foo
 		representation += f.scope + f.formatNameFunc(obj)
 	} else {
 		representation += f.scope + refName
 	}
 
+	return representation
+}
+
+func (f *FormatTypeFunc) FormatKindScalarID(representation string, expectedType string) string {
+	if expectedType == "" {
+		representation += "string"
+		return representation
+	}
+	representation += f.scope + f.formatNameFunc(expectedType)
 	return representation
 }
 

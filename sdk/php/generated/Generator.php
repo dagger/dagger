@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace Dagger;
 
-class Generator extends Client\AbstractObject implements Client\IdAble
+class Generator extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The generated changeset from the last run
@@ -40,10 +40,10 @@ class Generator extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Generator.
      */
-    public function id(): GeneratorId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\GeneratorId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

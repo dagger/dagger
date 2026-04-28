@@ -19,7 +19,15 @@ import graphql
 import httpx
 from beartype.door import TypeHint
 from cattrs.preconf.json import make_converter as make_json_converter
-from gql.dsl import DSLField, DSLQuery, DSLSchema, DSLSelectable, DSLType, dsl_gql
+from gql.dsl import (
+    DSLField,
+    DSLInlineFragment,
+    DSLQuery,
+    DSLSchema,
+    DSLSelectable,
+    DSLType,
+    dsl_gql,
+)
 from gql.transport.exceptions import (
     TransportClosed,
     TransportConnectionFailed,
@@ -62,14 +70,23 @@ class Field:
     name: str
     args: dict[str, Any]
     children: dict[str, "Field"] = dataclasses.field(default_factory=dict)
+    # When set, children are wrapped in an inline fragment on this type:
+    # field(args) { ... on inline_type { children } }
+    inline_type: str | None = None
 
     def to_dsl(self, schema: DSLSchema) -> DSLField:
         type_: DSLType = getattr(schema, self.type_name)
         field_ = getattr(type_, self.name)(**self.args)
         if self.children:
-            field_ = field_.select(
-                **{name: child.to_dsl(schema) for name, child in self.children.items()}
-            )
+            child_fields = {
+                name: child.to_dsl(schema) for name, child in self.children.items()
+            }
+            if self.inline_type is not None:
+                frag_type: DSLType = getattr(schema, self.inline_type)
+                inline = DSLInlineFragment().on(frag_type).select(**child_fields)
+                field_ = field_.select(inline)
+            else:
+                field_ = field_.select(**child_fields)
         return field_
 
     def add_child(self, child: "Field") -> "Field":
@@ -130,10 +147,17 @@ class Context:
         return ctx.select("Query", field_name, args)
 
     def select_id(self, type_name: str, id_value: str) -> "Context":
-        return self.root_select(
-            f"load{type_name}FromID",
-            [Arg("id", id_value)],
+        """Load an object by its ID via node(id:) with an inline fragment."""
+        ctx = dataclasses.replace(self, selections=collections.deque())
+        node_field = Field(
+            type_name="Query",
+            name="node",
+            args={"id": id_value},
+            inline_type=type_name,
         )
+        selections = ctx.selections.copy()
+        selections.append(node_field)
+        return dataclasses.replace(ctx, selections=selections)
 
     async def build(self) -> DSLSelectable:
         if not self.selections:
@@ -221,7 +245,8 @@ class Context:
         ctx = element_type(self)._select("id", [])  # noqa: SLF001
         ids = await ctx.execute(list[Response])
 
-        return [element_type(ctx.select_id(element_type.__name__, v.id)) for v in ids]
+        gql_name = element_type._graphql_name()  # noqa: SLF001
+        return [element_type(ctx.select_id(gql_name, v.id)) for v in ids]
 
     async def execute_sync(
         self,
@@ -232,7 +257,7 @@ class Context:
         ctx = obj._select(field_name, args)  # noqa: SLF001
         id_ = await ctx.execute(Scalar)
         cls = obj.__class__
-        ctx = self.select_id(cls.__name__, id_)
+        ctx = self.select_id(cls._graphql_name(), id_)
         return cls(ctx)
 
     @overload

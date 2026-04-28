@@ -58,7 +58,11 @@
     )
 
 	{{- if .TypeRef }}
+		{{- if .TypeRef.IsInterface }}
+    return new _{{ .TypeRef | FormatOutputType }}Client(ctx)
+		{{- else }}
     return new {{ .TypeRef | FormatOutputType }}(ctx)
+		{{- end }}
 	{{- end }}
   }
 {{- end }}

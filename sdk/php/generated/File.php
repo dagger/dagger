@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A file.
  */
-class File extends Client\AbstractObject implements Client\IdAble
+class File extends Client\AbstractObject implements Client\IdAble, Exportable, Node, Syncer
 {
     /**
      * Parse as an env file
@@ -87,10 +87,10 @@ class File extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this File.
      */
-    public function id(): FileId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\FileId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -117,8 +117,8 @@ class File extends Client\AbstractObject implements Client\IdAble
         ?bool $skipHidden = false,
         ?bool $filesOnly = false,
         ?int $limit = null,
-        ?array $paths = null,
-        ?array $globs = null,
+        ?array $paths = [],
+        ?array $globs = [],
     ): array {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('search');
         $leafQueryBuilder->setArgument('pattern', $pattern);
@@ -176,10 +176,11 @@ class File extends Client\AbstractObject implements Client\IdAble
     /**
      * Force evaluation in the engine.
      */
-    public function sync(): FileId
+    public function sync(): File
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        return new \Dagger\FileId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+        $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this;
     }
 
     /**

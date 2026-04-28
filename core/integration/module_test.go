@@ -3322,14 +3322,14 @@ func (*Test) MakeSecretID(ctx context.Context) (string, error) {
 		secretID := res1.Test.MakeSecretID
 		require.NotEmpty(t, secretID)
 
-		sameSession, err := c1.LoadSecretFromID(dagger.SecretID(secretID)).Plaintext(ctx)
+		sameSession, err := dagger.Ref[*dagger.Secret](c1, dagger.ID(secretID)).Plaintext(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "asdfasdf", sameSession)
 
 		c2 := connect(ctx, t)
 		require.NoError(t, c2.ModuleSource(tmpdir).AsModule().Serve(ctx))
 
-		_, err = c2.LoadSecretFromID(dagger.SecretID(secretID)).Plaintext(ctx)
+		_, err = dagger.Ref[*dagger.Secret](c2, dagger.ID(secretID)).Plaintext(ctx)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "no bound resource for session")
 
@@ -3338,7 +3338,7 @@ func (*Test) MakeSecretID(ctx context.Context) (string, error) {
 		c3 := connect(ctx, t)
 		require.NoError(t, c3.ModuleSource(tmpdir).AsModule().Serve(ctx))
 
-		_, err = c3.LoadSecretFromID(dagger.SecretID(secretID)).Plaintext(ctx)
+		_, err = dagger.Ref[*dagger.Secret](c3, dagger.ID(secretID)).Plaintext(ctx)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "no bound resource for session")
 	})
@@ -4876,7 +4876,7 @@ func (m *Test) GetDepSource(ctx context.Context, src *dagger.Directory) (*dagger
 	}
 
 
-	return dag.LoadDirectoryFromID(dagger.DirectoryID(directoryIDRes.Dep.GetSource.ID)), nil
+	return dagger.Ref[*dagger.Directory](dag, dagger.ID(directoryIDRes.Dep.GetSource.ID)), nil
 }
 
 func (m *Test) GetRelDepSource(ctx context.Context, src *dagger.Directory) (*dagger.Directory, error) {
@@ -4905,7 +4905,7 @@ func (m *Test) GetRelDepSource(ctx context.Context, src *dagger.Directory) (*dag
 	}
 
 
-	return dag.LoadDirectoryFromID(dagger.DirectoryID(directoryIDRes.Dep.GetRelSource.ID)), nil
+	return dagger.Ref[*dagger.Directory](dag, dagger.ID(directoryIDRes.Dep.GetRelSource.ID)), nil
 }
 			`,
 			)
@@ -6260,9 +6260,9 @@ func (m *Dep) Collect(MyEnum, MyInterface) error {
 					`\n\s*DepMyEnumA DepMyEnum = "MyEnumA" // dep \(../../dep/main.go:18:5\)\n`,
 
 					// interface
-					`\ntype DepMyInterface struct { // dep \(../../dep/main.go:22:6\)\n`,
-					// interface func
-					`\nfunc \(.* \*DepMyInterface\) Do\(.* // dep \(../../dep/main.go:24:4\)\n`,
+					`\ntype DepMyInterface interface { // dep \(../../dep/main.go:22:6\)`,
+					// interface func (on the client type)
+					`\nfunc \(.* \*DepMyInterfaceClient\) Do\(.* // dep \(../../dep/main.go:24:4\)\n`,
 				},
 				typescript: []string{
 					// struct

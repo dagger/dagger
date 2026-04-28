@@ -91,10 +91,14 @@
     {{ if not .TypeRef.IsVoid }}const response: Awaited<{{ if $convertID }}{{ .TypeRef | FormatOutputType }}{{ else }}{{ $promiseRetType }}{{ end }}> = {{ end }}await ctx.execute()
 
     {{ if $convertID -}}
-    return new Client(ctx.copy()).load{{ $promiseRetType | FormatProtected }}FromID(response)
+      {{- if IsInterface .ParentObject }}
+    return new _{{ $promiseRetType | FormatProtected | FormatName }}Client(ctx.copy().selectNode(response, "{{ $promiseRetType | FormatProtected }}"))
+      {{- else }}
+    return new {{ $promiseRetType | FormatProtected | FormatName }}(ctx.copy().selectNode(response, "{{ $promiseRetType | FormatProtected }}"))
+      {{- end }}
     {{- else if not .TypeRef.IsVoid -}}
         {{- if and .TypeRef.IsList (IsListOfObject .TypeRef) }}
-    return response.map((r) => new Client(ctx.copy()).load{{ . | FormatReturnType | ToSingleType | FormatProtected }}FromID(r.id))
+    return response.map((r) => new {{ . | FormatReturnType | ToSingleType | FormatProtected | FormatName }}(ctx.copy().selectNode(r.id, "{{ . | FormatReturnType | ToSingleType | FormatProtected }}")))
         {{- else if and .TypeRef.IsList (IsListOfEnum .TypeRef) -}}
     return response.map((r) => {{ . | FormatReturnType | ToSingleType }}NameToValue(r))
         {{- else if .TypeRef.IsEnum }}

@@ -1,11 +1,13 @@
 {
-  "description": "The root of the DAG.",
+  "description": "An OCI-compatible container, also known as a Docker container.",
+  "directives": [],
   "enumValues": [],
   "fields": [
     {
       "args": [],
       "deprecationReason": null,
       "description": "Retrieves the list of environment variables passed to commands.",
+      "directives": [],
       "isDeprecated": false,
       "name": "envVariables",
       "type": {
@@ -28,7 +30,13 @@
     }
   ],
   "inputFields": [],
-  "interfaces": [],
+  "interfaces": [
+    {
+      "kind": "INTERFACE",
+      "name": "Node",
+      "ofType": null
+    }
+  ],
   "kind": "OBJECT",
   "name": "Container",
   "possibleTypes": []

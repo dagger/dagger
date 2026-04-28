@@ -98,10 +98,13 @@ public class ClientTest
             .WithEnvVariable("C", "D")
             .EnvVariablesAsync();
 
-        ICollection envNames = envs.Select(env => env.NameAsync())
-            .Select(task => task.Result)
-            .ToList();
+        var envNames = new List<string>();
+        foreach (var env in envs)
+        {
+            var name = await env.NameAsync();
+            envNames.Add(name);
+        }
         ICollection expected = new[] { "A", "C" };
-        CollectionAssert.AreEqual(expected, envNames);
+        CollectionAssert.AreEqual(expected, (System.Collections.ICollection)envNames);
     }
 }

@@ -77,6 +77,12 @@ public class DaggerCodegenMojo extends AbstractMojo {
             }
 
             @Override
+            public void visitInterface(Type type) {
+              getLog().info(String.format("Generating interface %s", type.getName()));
+              codegen.visitInterface(type);
+            }
+
+            @Override
             public void visitInput(Type type) {
               getLog().info(String.format("Generating input %s", type.getName()));
               codegen.visitInput(type);

@@ -34,7 +34,7 @@ defmodule Dagger.LLMTokenUsage do
   @doc """
   A unique identifier for this LLMTokenUsage.
   """
-  @spec id(t()) :: {:ok, Dagger.LLMTokenUsageID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = llm_token_usage) do
     query_builder =
       llm_token_usage.query_builder |> QB.select("id")
@@ -76,6 +76,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.LLMTokenUsage do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_llm_token_usage_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.LLMTokenUsage{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("LLMTokenUsage"),
+       client: dag.client
+     }}
   end
 end

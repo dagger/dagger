@@ -6,9 +6,6 @@ import (
 
 // These are exported so that they can be used by codegen.
 
-//go:embed querybuilder/marshal.go querybuilder/querybuilder.go
-var QueryBuilder embed.FS
-
 //go:embed engineconn/*.go
 var EngineConn embed.FS
 
@@ -18,7 +15,7 @@ var GoMod []byte
 //go:embed go.sum
 var GoSum []byte
 
-//go:embed engineconn/*.go querybuilder/marshal.go querybuilder/querybuilder.go go.mod go.sum client.go dagger.gen.go
+//go:embed engineconn/*.go go.mod go.sum client.go dagger.gen.go
 var GoSDK embed.FS
 
 //go:embed dagger.gen.go

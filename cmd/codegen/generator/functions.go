@@ -25,6 +25,7 @@ type FormatTypeFuncs interface {
 	FormatKindScalarFloat(representation string) string
 	FormatKindScalarBoolean(representation string) string
 	FormatKindScalarDefault(representation string, refName string, input bool) string
+	FormatKindScalarID(representation string, expectedType string) string
 	FormatKindObject(representation string, refName string, input bool) string
 	FormatKindInputObject(representation string, refName string, input bool) string
 	FormatKindEnum(representation string, refName string) string
@@ -77,7 +78,7 @@ func (c *CommonFunctions) ObjectName(t *introspection.TypeRef) (string, error) {
 	switch t.Kind {
 	case introspection.TypeKindNonNull:
 		return c.ObjectName(t.OfType)
-	case introspection.TypeKindObject:
+	case introspection.TypeKindObject, introspection.TypeKindInterface:
 		return t.Name, nil
 	default:
 		return "", fmt.Errorf("unexpected type kind %s", t.Kind)
@@ -101,6 +102,9 @@ func (c *CommonFunctions) IsIDableObject(t *introspection.TypeRef) (bool, error)
 			}
 		}
 		return false, nil
+	case introspection.TypeKindInterface:
+		// Interfaces are always IDable (they represent objects that implement them).
+		return true, nil
 	default:
 		return false, nil
 	}
@@ -110,7 +114,13 @@ func (c *CommonFunctions) IsIDableObject(t *introspection.TypeRef) (bool, error)
 // unless it's an ID that will be converted which needs to be formatted
 // as an input (for chaining).
 func (c *CommonFunctions) FormatReturnType(f introspection.Field, scopes ...string) (string, error) {
-	return c.formatType(f.TypeRef, strings.Join(scopes, ""), c.ConvertID(f))
+	if c.ConvertID(f) {
+		// When converting an ID return to an object (e.g. sync),
+		// use the parent object's name as the return type.
+		scope := strings.Join(scopes, "")
+		return c.formatTypeFuncs.WithScope(scope).FormatKindObject("", f.ParentObject.Name, false), nil
+	}
+	return c.formatType(f.TypeRef, strings.Join(scopes, ""), false)
 }
 
 func (c *CommonFunctions) ToLowerCase(s string) string {
@@ -182,9 +192,15 @@ func (c *CommonFunctions) ConvertID(f introspection.Field) bool {
 	if ref.Kind != introspection.TypeKindScalar {
 		return false
 	}
-	// NB: we only concern ourselves with the ID of the parent class, since this
-	// is really only meant for ID and Sync, the only cases where we
-	// intentionally return an ID (leaf node) instead of an object.
+	// Check for @expectedType directive on the field.
+	// This replaces the old FooID suffix check.
+	expectedType := f.Directives.ExpectedType()
+	if expectedType != "" {
+		// Only convert if the expected type matches the parent object.
+		// This is for sync-like methods that return the object's own ID.
+		return expectedType == f.ParentObject.Name
+	}
+	// Legacy fallback: check FooID suffix pattern.
 	return ref.Name == f.ParentObject.Name+"ID"
 }
 
@@ -228,7 +244,7 @@ func (c *CommonFunctions) formatType(r *introspection.TypeRef, scope string, inp
 			default:
 				return ff.FormatKindScalarDefault(representation, ref.Name, input), nil
 			}
-		case introspection.TypeKindObject:
+		case introspection.TypeKindObject, introspection.TypeKindInterface:
 			return ff.FormatKindObject(representation, ref.Name, input), nil
 		case introspection.TypeKindInputObject:
 			return ff.FormatKindInputObject(representation, ref.Name, input), nil

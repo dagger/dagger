@@ -9,10 +9,11 @@ import (
 	"fmt"
 	"reflect"
 
-	"dagger.io/dagger/querybuilder"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/dagger/querybuilder"
 )
 
 func Tracer() trace.Tracer {
@@ -130,213 +131,21 @@ func (e *ExecError) Unwrap() error {
 	return e.original
 }
 
-// The `AddressID` scalar type represents an identifier for an object of type Address.
-type AddressID string
-
-// The `BindingID` scalar type represents an identifier for an object of type Binding.
-type BindingID string
-
-// The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
-type CacheVolumeID string
-
-// The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
-type ChangesetID string
-
-// The `CheckGroupID` scalar type represents an identifier for an object of type CheckGroup.
-type CheckGroupID string
-
-// The `CheckID` scalar type represents an identifier for an object of type Check.
-type CheckID string
-
-// The `ClientFilesyncMirrorID` scalar type represents an identifier for an object of type ClientFilesyncMirror.
-type ClientFilesyncMirrorID string
-
-// The `CloudID` scalar type represents an identifier for an object of type Cloud.
-type CloudID string
-
-// The `ContainerID` scalar type represents an identifier for an object of type Container.
-type ContainerID string
-
-// The `CurrentModuleID` scalar type represents an identifier for an object of type CurrentModule.
-type CurrentModuleID string
-
-// The `DiffStatID` scalar type represents an identifier for an object of type DiffStat.
-type DiffStatID string
-
-// The `DirectoryID` scalar type represents an identifier for an object of type Directory.
-type DirectoryID string
-
-// The `EngineCacheEntryID` scalar type represents an identifier for an object of type EngineCacheEntry.
-type EngineCacheEntryID string
-
-// The `EngineCacheEntrySetID` scalar type represents an identifier for an object of type EngineCacheEntrySet.
-type EngineCacheEntrySetID string
-
-// The `EngineCacheID` scalar type represents an identifier for an object of type EngineCache.
-type EngineCacheID string
-
-// The `EngineID` scalar type represents an identifier for an object of type Engine.
-type EngineID string
-
-// The `EnumTypeDefID` scalar type represents an identifier for an object of type EnumTypeDef.
-type EnumTypeDefID string
-
-// The `EnumValueTypeDefID` scalar type represents an identifier for an object of type EnumValueTypeDef.
-type EnumValueTypeDefID string
-
-// The `EnvFileID` scalar type represents an identifier for an object of type EnvFile.
-type EnvFileID string
-
-// The `EnvID` scalar type represents an identifier for an object of type Env.
-type EnvID string
-
-// The `EnvVariableID` scalar type represents an identifier for an object of type EnvVariable.
-type EnvVariableID string
-
-// The `ErrorID` scalar type represents an identifier for an object of type Error.
-type ErrorID string
-
-// The `ErrorValueID` scalar type represents an identifier for an object of type ErrorValue.
-type ErrorValueID string
-
-// The `FieldTypeDefID` scalar type represents an identifier for an object of type FieldTypeDef.
-type FieldTypeDefID string
-
-// The `FileID` scalar type represents an identifier for an object of type File.
-type FileID string
-
-// The `FunctionArgID` scalar type represents an identifier for an object of type FunctionArg.
-type FunctionArgID string
-
-// The `FunctionCallArgValueID` scalar type represents an identifier for an object of type FunctionCallArgValue.
-type FunctionCallArgValueID string
-
-// The `FunctionCallID` scalar type represents an identifier for an object of type FunctionCall.
-type FunctionCallID string
-
-// The `FunctionID` scalar type represents an identifier for an object of type Function.
-type FunctionID string
-
-// The `GeneratedCodeID` scalar type represents an identifier for an object of type GeneratedCode.
-type GeneratedCodeID string
-
-// The `GeneratorGroupID` scalar type represents an identifier for an object of type GeneratorGroup.
-type GeneratorGroupID string
-
-// The `GeneratorID` scalar type represents an identifier for an object of type Generator.
-type GeneratorID string
-
-// The `GitRefID` scalar type represents an identifier for an object of type GitRef.
-type GitRefID string
-
-// The `GitRepositoryID` scalar type represents an identifier for an object of type GitRepository.
-type GitRepositoryID string
-
-// The `HTTPStateID` scalar type represents an identifier for an object of type HTTPState.
-type HTTPStateID string
-
-// The `HealthcheckConfigID` scalar type represents an identifier for an object of type HealthcheckConfig.
-type HealthcheckConfigID string
-
-// The `HostID` scalar type represents an identifier for an object of type Host.
-type HostID string
-
-// The `InputTypeDefID` scalar type represents an identifier for an object of type InputTypeDef.
-type InputTypeDefID string
-
-// The `InterfaceTypeDefID` scalar type represents an identifier for an object of type InterfaceTypeDef.
-type InterfaceTypeDefID string
+// A unique identifier for an object.
+type ID string
 
 // An arbitrary JSON-encoded value.
 type JSON string
-
-// The `JSONValueID` scalar type represents an identifier for an object of type JSONValue.
-type JSONValueID string
-
-// The `LLMID` scalar type represents an identifier for an object of type LLM.
-type LLMID string
-
-// The `LLMTokenUsageID` scalar type represents an identifier for an object of type LLMTokenUsage.
-type LLMTokenUsageID string
-
-// The `LabelID` scalar type represents an identifier for an object of type Label.
-type LabelID string
-
-// The `ListTypeDefID` scalar type represents an identifier for an object of type ListTypeDef.
-type ListTypeDefID string
-
-// The `ModuleConfigClientID` scalar type represents an identifier for an object of type ModuleConfigClient.
-type ModuleConfigClientID string
-
-// The `ModuleID` scalar type represents an identifier for an object of type Module.
-type ModuleID string
-
-// The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
-type ModuleSourceID string
-
-// The `ObjectTypeDefID` scalar type represents an identifier for an object of type ObjectTypeDef.
-type ObjectTypeDefID string
 
 // The platform config OS and architecture in a Container.
 //
 // The format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7", "windows/amd64", "linux/arm64").
 type Platform string
 
-// The `PortID` scalar type represents an identifier for an object of type Port.
-type PortID string
-
-// The `QueryID` scalar type represents an identifier for an object of type Query.
-type QueryID string
-
-// The `RemoteGitMirrorID` scalar type represents an identifier for an object of type RemoteGitMirror.
-type RemoteGitMirrorID string
-
-// The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
-type SDKConfigID string
-
-// The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
-type ScalarTypeDefID string
-
-// The `SearchResultID` scalar type represents an identifier for an object of type SearchResult.
-type SearchResultID string
-
-// The `SearchSubmatchID` scalar type represents an identifier for an object of type SearchSubmatch.
-type SearchSubmatchID string
-
-// The `SecretID` scalar type represents an identifier for an object of type Secret.
-type SecretID string
-
-// The `ServiceID` scalar type represents an identifier for an object of type Service.
-type ServiceID string
-
-// The `SocketID` scalar type represents an identifier for an object of type Socket.
-type SocketID string
-
-// The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
-type SourceMapID string
-
-// The `StatID` scalar type represents an identifier for an object of type Stat.
-type StatID string
-
-// The `TerminalID` scalar type represents an identifier for an object of type Terminal.
-type TerminalID string
-
-// The `TypeDefID` scalar type represents an identifier for an object of type TypeDef.
-type TypeDefID string
-
-// The `UpGroupID` scalar type represents an identifier for an object of type UpGroup.
-type UpGroupID string
-
-// The `UpID` scalar type represents an identifier for an object of type Up.
-type UpID string
-
 // The absence of a value.
 //
 // A Null Void is used as a placeholder for resolvers that do not return anything.
 type Void string
-
-// The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
-type WorkspaceID string
 
 // Key value object that represents a build argument.
 type BuildArg struct {
@@ -372,7 +181,7 @@ type PortForward struct {
 type Address struct {
 	query *querybuilder.Selection
 
-	id    *AddressID
+	id    *ID
 	value *string
 }
 
@@ -486,13 +295,13 @@ func (r *Address) GitRepository() *GitRepository {
 }
 
 // A unique identifier for this Address.
-func (r *Address) ID(ctx context.Context) (AddressID, error) {
+func (r *Address) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response AddressID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -505,7 +314,7 @@ func (r *Address) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Address) XXX_GraphQLIDType() string {
-	return "AddressID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -565,12 +374,20 @@ func (r *Address) Value(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this Address as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Address) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type Binding struct {
 	query *querybuilder.Selection
 
 	asString *string
 	digest   *string
-	id       *BindingID
+	id       *ID
 	isNull   *bool
 	name     *string
 	typeName *string
@@ -879,13 +696,13 @@ func (r *Binding) Digest(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this Binding.
-func (r *Binding) ID(ctx context.Context) (BindingID, error) {
+func (r *Binding) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response BindingID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -898,7 +715,7 @@ func (r *Binding) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Binding) XXX_GraphQLIDType() string {
-	return "BindingID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -957,11 +774,19 @@ func (r *Binding) TypeName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this Binding as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Binding) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A directory whose contents persist across runs.
 type CacheVolume struct {
 	query *querybuilder.Selection
 
-	id *CacheVolumeID
+	id *ID
 }
 
 func (r *CacheVolume) WithGraphQLQuery(q *querybuilder.Selection) *CacheVolume {
@@ -971,13 +796,13 @@ func (r *CacheVolume) WithGraphQLQuery(q *querybuilder.Selection) *CacheVolume {
 }
 
 // A unique identifier for this CacheVolume.
-func (r *CacheVolume) ID(ctx context.Context) (CacheVolumeID, error) {
+func (r *CacheVolume) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response CacheVolumeID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -990,7 +815,7 @@ func (r *CacheVolume) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *CacheVolume) XXX_GraphQLIDType() string {
-	return "CacheVolumeID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1010,14 +835,22 @@ func (r *CacheVolume) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// AsNode returns this CacheVolume as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *CacheVolume) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A comparison between two directories representing changes that can be applied.
 type Changeset struct {
 	query *querybuilder.Selection
 
 	export  *string
-	id      *ChangesetID
+	id      *ID
 	isEmpty *bool
-	sync    *ChangesetID
+	sync    *ID
 }
 type WithChangesetFunc func(r *Changeset) *Changeset
 
@@ -1078,7 +911,7 @@ func (r *Changeset) DiffStats(ctx context.Context) ([]DiffStat, error) {
 	q = q.Select("id")
 
 	type diffStats struct {
-		Id DiffStatID
+		Id ID
 	}
 
 	convert := func(fields []diffStats) []DiffStat {
@@ -1086,7 +919,7 @@ func (r *Changeset) DiffStats(ctx context.Context) ([]DiffStat, error) {
 
 		for i := range fields {
 			val := DiffStat{id: &fields[i].Id}
-			val.query = q.Root().Select("loadDiffStatFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "DiffStat")
 			out = append(out, val)
 		}
 
@@ -1119,13 +952,13 @@ func (r *Changeset) Export(ctx context.Context, path string) (string, error) {
 }
 
 // A unique identifier for this Changeset.
-func (r *Changeset) ID(ctx context.Context) (ChangesetID, error) {
+func (r *Changeset) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ChangesetID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1138,7 +971,7 @@ func (r *Changeset) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Changeset) XXX_GraphQLIDType() string {
-	return "ChangesetID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1204,12 +1037,12 @@ func (r *Changeset) RemovedPaths(ctx context.Context) ([]string, error) {
 func (r *Changeset) Sync(ctx context.Context) (*Changeset, error) {
 	q := r.query.Select("sync")
 
-	var id ChangesetID
+	var id ID
 	if err := q.Bind(&id).Execute(ctx); err != nil {
 		return nil, err
 	}
 	return &Changeset{
-		query: q.Root().Select("loadChangesetFromID").Arg("id", id),
+		query: selectNode(q.Root(), id, "Changeset"),
 	}, nil
 }
 
@@ -1268,12 +1101,36 @@ func (r *Changeset) WithChangesets(changes []*Changeset, opts ...ChangesetWithCh
 	}
 }
 
+// AsExportable returns this Changeset as a Exportable.
+// This is a local type conversion — no GraphQL call.
+func (r *Changeset) AsExportable() Exportable {
+	return &ExportableClient{
+		query: r.query,
+	}
+}
+
+// AsNode returns this Changeset as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Changeset) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// AsSyncer returns this Changeset as a Syncer.
+// This is a local type conversion — no GraphQL call.
+func (r *Changeset) AsSyncer() Syncer {
+	return &SyncerClient{
+		query: r.query,
+	}
+}
+
 type Check struct {
 	query *querybuilder.Selection
 
 	completed   *bool
 	description *string
-	id          *CheckID
+	id          *ID
 	name        *string
 	passed      *bool
 	resultEmoji *string
@@ -1329,13 +1186,13 @@ func (r *Check) Error() *Error {
 }
 
 // A unique identifier for this Check.
-func (r *Check) ID(ctx context.Context) (CheckID, error) {
+func (r *Check) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response CheckID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1348,7 +1205,7 @@ func (r *Check) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Check) XXX_GraphQLIDType() string {
-	return "CheckID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1435,10 +1292,18 @@ func (r *Check) Run() *Check {
 	}
 }
 
+// AsNode returns this Check as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Check) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type CheckGroup struct {
 	query *querybuilder.Selection
 
-	id *CheckGroupID
+	id *ID
 }
 type WithCheckGroupFunc func(r *CheckGroup) *CheckGroup
 
@@ -1456,13 +1321,13 @@ func (r *CheckGroup) WithGraphQLQuery(q *querybuilder.Selection) *CheckGroup {
 }
 
 // A unique identifier for this CheckGroup.
-func (r *CheckGroup) ID(ctx context.Context) (CheckGroupID, error) {
+func (r *CheckGroup) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response CheckGroupID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1475,7 +1340,7 @@ func (r *CheckGroup) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *CheckGroup) XXX_GraphQLIDType() string {
-	return "CheckGroupID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1502,7 +1367,7 @@ func (r *CheckGroup) List(ctx context.Context) ([]Check, error) {
 	q = q.Select("id")
 
 	type list struct {
-		Id CheckID
+		Id ID
 	}
 
 	convert := func(fields []list) []Check {
@@ -1510,7 +1375,7 @@ func (r *CheckGroup) List(ctx context.Context) ([]Check, error) {
 
 		for i := range fields {
 			val := Check{id: &fields[i].Id}
-			val.query = q.Root().Select("loadCheckFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "Check")
 			out = append(out, val)
 		}
 
@@ -1558,11 +1423,19 @@ func (r *CheckGroup) Run(opts ...CheckGroupRunOpts) *CheckGroup {
 	}
 }
 
+// AsNode returns this CheckGroup as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *CheckGroup) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // An internal persistent filesync mirror.
 type ClientFilesyncMirror struct {
 	query *querybuilder.Selection
 
-	id *ClientFilesyncMirrorID
+	id *ID
 }
 
 func (r *ClientFilesyncMirror) WithGraphQLQuery(q *querybuilder.Selection) *ClientFilesyncMirror {
@@ -1572,13 +1445,13 @@ func (r *ClientFilesyncMirror) WithGraphQLQuery(q *querybuilder.Selection) *Clie
 }
 
 // A unique identifier for this ClientFilesyncMirror.
-func (r *ClientFilesyncMirror) ID(ctx context.Context) (ClientFilesyncMirrorID, error) {
+func (r *ClientFilesyncMirror) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ClientFilesyncMirrorID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1591,7 +1464,7 @@ func (r *ClientFilesyncMirror) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *ClientFilesyncMirror) XXX_GraphQLIDType() string {
-	return "ClientFilesyncMirrorID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1611,11 +1484,19 @@ func (r *ClientFilesyncMirror) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// AsNode returns this ClientFilesyncMirror as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ClientFilesyncMirror) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // Dagger Cloud configuration and state
 type Cloud struct {
 	query *querybuilder.Selection
 
-	id       *CloudID
+	id       *ID
 	traceURL *string
 }
 
@@ -1626,13 +1507,13 @@ func (r *Cloud) WithGraphQLQuery(q *querybuilder.Selection) *Cloud {
 }
 
 // A unique identifier for this Cloud.
-func (r *Cloud) ID(ctx context.Context) (CloudID, error) {
+func (r *Cloud) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response CloudID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1645,7 +1526,7 @@ func (r *Cloud) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Cloud) XXX_GraphQLIDType() string {
-	return "CloudID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1678,6 +1559,14 @@ func (r *Cloud) TraceURL(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this Cloud as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Cloud) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // An OCI-compatible container, also known as a Docker container.
 type Container struct {
 	query *querybuilder.Selection
@@ -1688,14 +1577,14 @@ type Container struct {
 	exitCode       *int
 	export         *string
 	exportImage    *Void
-	id             *ContainerID
+	id             *ID
 	imageRef       *string
 	label          *string
 	platform       *Platform
 	publish        *string
 	stderr         *string
 	stdout         *string
-	sync           *ContainerID
+	sync           *ID
 	up             *Void
 	user           *string
 	workdir        *string
@@ -1902,7 +1791,7 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 	q = q.Select("id")
 
 	type envVariables struct {
-		Id EnvVariableID
+		Id ID
 	}
 
 	convert := func(fields []envVariables) []EnvVariable {
@@ -1910,7 +1799,7 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 
 		for i := range fields {
 			val := EnvVariable{id: &fields[i].Id}
-			val.query = q.Root().Select("loadEnvVariableFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "EnvVariable")
 			out = append(out, val)
 		}
 
@@ -2108,7 +1997,7 @@ func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 	q = q.Select("id")
 
 	type exposedPorts struct {
-		Id PortID
+		Id ID
 	}
 
 	convert := func(fields []exposedPorts) []Port {
@@ -2116,7 +2005,7 @@ func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 
 		for i := range fields {
 			val := Port{id: &fields[i].Id}
-			val.query = q.Root().Select("loadPortFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "Port")
 			out = append(out, val)
 		}
 
@@ -2169,13 +2058,13 @@ func (r *Container) From(address string) *Container {
 }
 
 // A unique identifier for this Container.
-func (r *Container) ID(ctx context.Context) (ContainerID, error) {
+func (r *Container) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ContainerID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -2188,7 +2077,7 @@ func (r *Container) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Container) XXX_GraphQLIDType() string {
-	return "ContainerID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -2265,7 +2154,7 @@ func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 	q = q.Select("id")
 
 	type labels struct {
-		Id LabelID
+		Id ID
 	}
 
 	convert := func(fields []labels) []Label {
@@ -2273,7 +2162,7 @@ func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 
 		for i := range fields {
 			val := Label{id: &fields[i].Id}
-			val.query = q.Root().Select("loadLabelFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "Label")
 			out = append(out, val)
 		}
 
@@ -2429,12 +2318,12 @@ func (r *Container) Stdout(ctx context.Context) (string, error) {
 func (r *Container) Sync(ctx context.Context) (*Container, error) {
 	q := r.query.Select("sync")
 
-	var id ContainerID
+	var id ID
 	if err := q.Bind(&id).Execute(ctx); err != nil {
 		return nil, err
 	}
 	return &Container{
-		query: q.Root().Select("loadContainerFromID").Arg("id", id),
+		query: selectNode(q.Root(), id, "Container"),
 	}, nil
 }
 
@@ -3633,11 +3522,35 @@ func (r *Container) Workdir(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsExportable returns this Container as a Exportable.
+// This is a local type conversion — no GraphQL call.
+func (r *Container) AsExportable() Exportable {
+	return &ExportableClient{
+		query: r.query,
+	}
+}
+
+// AsNode returns this Container as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Container) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// AsSyncer returns this Container as a Syncer.
+// This is a local type conversion — no GraphQL call.
+func (r *Container) AsSyncer() Syncer {
+	return &SyncerClient{
+		query: r.query,
+	}
+}
+
 // Reflective module API provided to functions at runtime.
 type CurrentModule struct {
 	query *querybuilder.Selection
 
-	id   *CurrentModuleID
+	id   *ID
 	name *string
 }
 
@@ -3654,7 +3567,7 @@ func (r *CurrentModule) Dependencies(ctx context.Context) ([]Module, error) {
 	q = q.Select("id")
 
 	type dependencies struct {
-		Id ModuleID
+		Id ID
 	}
 
 	convert := func(fields []dependencies) []Module {
@@ -3662,7 +3575,7 @@ func (r *CurrentModule) Dependencies(ctx context.Context) ([]Module, error) {
 
 		for i := range fields {
 			val := Module{id: &fields[i].Id}
-			val.query = q.Root().Select("loadModuleFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "Module")
 			out = append(out, val)
 		}
 
@@ -3713,13 +3626,13 @@ func (r *CurrentModule) Generators(opts ...CurrentModuleGeneratorsOpts) *Generat
 }
 
 // A unique identifier for this CurrentModule.
-func (r *CurrentModule) ID(ctx context.Context) (CurrentModuleID, error) {
+func (r *CurrentModule) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response CurrentModuleID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -3732,7 +3645,7 @@ func (r *CurrentModule) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *CurrentModule) XXX_GraphQLIDType() string {
-	return "CurrentModuleID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -3818,11 +3731,19 @@ func (r *CurrentModule) WorkdirFile(path string) *File {
 	}
 }
 
+// AsNode returns this CurrentModule as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *CurrentModule) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type DiffStat struct {
 	query *querybuilder.Selection
 
 	addedLines   *int
-	id           *DiffStatID
+	id           *ID
 	kind         *DiffStatKind
 	oldPath      *string
 	path         *string
@@ -3849,13 +3770,13 @@ func (r *DiffStat) AddedLines(ctx context.Context) (int, error) {
 }
 
 // A unique identifier for this DiffStat.
-func (r *DiffStat) ID(ctx context.Context) (DiffStatID, error) {
+func (r *DiffStat) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response DiffStatID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -3868,7 +3789,7 @@ func (r *DiffStat) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *DiffStat) XXX_GraphQLIDType() string {
-	return "DiffStatID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -3940,6 +3861,14 @@ func (r *DiffStat) RemovedLines(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this DiffStat as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *DiffStat) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A directory.
 type Directory struct {
 	query *querybuilder.Selection
@@ -3948,9 +3877,9 @@ type Directory struct {
 	exists *bool
 	export *string
 	findUp *string
-	id     *DirectoryID
+	id     *ID
 	name   *string
-	sync   *DirectoryID
+	sync   *ID
 }
 type WithDirectoryFunc func(r *Directory) *Directory
 
@@ -4301,13 +4230,13 @@ func (r *Directory) Glob(ctx context.Context, pattern string) ([]string, error) 
 }
 
 // A unique identifier for this Directory.
-func (r *Directory) ID(ctx context.Context) (DirectoryID, error) {
+func (r *Directory) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response DirectoryID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -4320,7 +4249,7 @@ func (r *Directory) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Directory) XXX_GraphQLIDType() string {
-	return "DirectoryID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -4429,7 +4358,7 @@ func (r *Directory) Search(ctx context.Context, pattern string, opts ...Director
 	q = q.Select("id")
 
 	type search struct {
-		Id SearchResultID
+		Id ID
 	}
 
 	convert := func(fields []search) []SearchResult {
@@ -4437,7 +4366,7 @@ func (r *Directory) Search(ctx context.Context, pattern string, opts ...Director
 
 		for i := range fields {
 			val := SearchResult{id: &fields[i].Id}
-			val.query = q.Root().Select("loadSearchResultFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "SearchResult")
 			out = append(out, val)
 		}
 
@@ -4481,12 +4410,12 @@ func (r *Directory) Stat(path string, opts ...DirectoryStatOpts) *Stat {
 func (r *Directory) Sync(ctx context.Context) (*Directory, error) {
 	q := r.query.Select("sync")
 
-	var id DirectoryID
+	var id ID
 	if err := q.Bind(&id).Execute(ctx); err != nil {
 		return nil, err
 	}
 	return &Directory{
-		query: q.Root().Select("loadDirectoryFromID").Arg("id", id),
+		query: selectNode(q.Root(), id, "Directory"),
 	}, nil
 }
 
@@ -4784,11 +4713,35 @@ func (r *Directory) WithoutFiles(paths []string) *Directory {
 	}
 }
 
+// AsExportable returns this Directory as a Exportable.
+// This is a local type conversion — no GraphQL call.
+func (r *Directory) AsExportable() Exportable {
+	return &ExportableClient{
+		query: r.query,
+	}
+}
+
+// AsNode returns this Directory as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Directory) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// AsSyncer returns this Directory as a Syncer.
+// This is a local type conversion — no GraphQL call.
+func (r *Directory) AsSyncer() Syncer {
+	return &SyncerClient{
+		query: r.query,
+	}
+}
+
 // The Dagger engine configuration and state
 type Engine struct {
 	query *querybuilder.Selection
 
-	id   *EngineID
+	id   *ID
 	name *string
 }
 
@@ -4809,13 +4762,13 @@ func (r *Engine) Clients(ctx context.Context) ([]string, error) {
 }
 
 // A unique identifier for this Engine.
-func (r *Engine) ID(ctx context.Context) (EngineID, error) {
+func (r *Engine) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EngineID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -4828,7 +4781,7 @@ func (r *Engine) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Engine) XXX_GraphQLIDType() string {
-	return "EngineID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -4870,11 +4823,19 @@ func (r *Engine) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this Engine as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Engine) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A cache storage for the Dagger engine
 type EngineCache struct {
 	query *querybuilder.Selection
 
-	id            *EngineCacheID
+	id            *ID
 	maxUsedSpace  *int
 	minFreeSpace  *int
 	prune         *Void
@@ -4909,13 +4870,13 @@ func (r *EngineCache) EntrySet(opts ...EngineCacheEntrySetOpts) *EngineCacheEntr
 }
 
 // A unique identifier for this EngineCache.
-func (r *EngineCache) ID(ctx context.Context) (EngineCacheID, error) {
+func (r *EngineCache) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EngineCacheID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -4928,7 +4889,7 @@ func (r *EngineCache) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EngineCache) XXX_GraphQLIDType() string {
-	return "EngineCacheID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -5046,6 +5007,14 @@ func (r *EngineCache) TargetSpace(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this EngineCache as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EngineCache) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // An individual cache entry in a cache entry set
 type EngineCacheEntry struct {
 	query *querybuilder.Selection
@@ -5054,7 +5023,7 @@ type EngineCacheEntry struct {
 	createdTimeUnixNano       *int
 	description               *string
 	diskSpaceBytes            *int
-	id                        *EngineCacheEntryID
+	id                        *ID
 	mostRecentUseTimeUnixNano *int
 	recordType                *string
 }
@@ -5118,13 +5087,13 @@ func (r *EngineCacheEntry) DiskSpaceBytes(ctx context.Context) (int, error) {
 }
 
 // A unique identifier for this EngineCacheEntry.
-func (r *EngineCacheEntry) ID(ctx context.Context) (EngineCacheEntryID, error) {
+func (r *EngineCacheEntry) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EngineCacheEntryID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -5137,7 +5106,7 @@ func (r *EngineCacheEntry) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EngineCacheEntry) XXX_GraphQLIDType() string {
-	return "EngineCacheEntryID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -5183,13 +5152,21 @@ func (r *EngineCacheEntry) RecordType(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this EngineCacheEntry as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EngineCacheEntry) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A set of cache entries returned by a query to a cache
 type EngineCacheEntrySet struct {
 	query *querybuilder.Selection
 
 	diskSpaceBytes *int
 	entryCount     *int
-	id             *EngineCacheEntrySetID
+	id             *ID
 }
 
 func (r *EngineCacheEntrySet) WithGraphQLQuery(q *querybuilder.Selection) *EngineCacheEntrySet {
@@ -5218,7 +5195,7 @@ func (r *EngineCacheEntrySet) Entries(ctx context.Context) ([]EngineCacheEntry, 
 	q = q.Select("id")
 
 	type entries struct {
-		Id EngineCacheEntryID
+		Id ID
 	}
 
 	convert := func(fields []entries) []EngineCacheEntry {
@@ -5226,7 +5203,7 @@ func (r *EngineCacheEntrySet) Entries(ctx context.Context) ([]EngineCacheEntry, 
 
 		for i := range fields {
 			val := EngineCacheEntry{id: &fields[i].Id}
-			val.query = q.Root().Select("loadEngineCacheEntryFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "EngineCacheEntry")
 			out = append(out, val)
 		}
 
@@ -5258,13 +5235,13 @@ func (r *EngineCacheEntrySet) EntryCount(ctx context.Context) (int, error) {
 }
 
 // A unique identifier for this EngineCacheEntrySet.
-func (r *EngineCacheEntrySet) ID(ctx context.Context) (EngineCacheEntrySetID, error) {
+func (r *EngineCacheEntrySet) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EngineCacheEntrySetID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -5277,7 +5254,7 @@ func (r *EngineCacheEntrySet) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EngineCacheEntrySet) XXX_GraphQLIDType() string {
-	return "EngineCacheEntrySetID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -5297,12 +5274,20 @@ func (r *EngineCacheEntrySet) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// AsNode returns this EngineCacheEntrySet as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EngineCacheEntrySet) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A definition of a custom enum defined in a Module.
 type EnumTypeDef struct {
 	query *querybuilder.Selection
 
 	description      *string
-	id               *EnumTypeDefID
+	id               *ID
 	name             *string
 	sourceModuleName *string
 }
@@ -5327,13 +5312,13 @@ func (r *EnumTypeDef) Description(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this EnumTypeDef.
-func (r *EnumTypeDef) ID(ctx context.Context) (EnumTypeDefID, error) {
+func (r *EnumTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EnumTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -5346,7 +5331,7 @@ func (r *EnumTypeDef) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EnumTypeDef) XXX_GraphQLIDType() string {
-	return "EnumTypeDefID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -5373,7 +5358,7 @@ func (r *EnumTypeDef) Members(ctx context.Context) ([]EnumValueTypeDef, error) {
 	q = q.Select("id")
 
 	type members struct {
-		Id EnumValueTypeDefID
+		Id ID
 	}
 
 	convert := func(fields []members) []EnumValueTypeDef {
@@ -5381,7 +5366,7 @@ func (r *EnumTypeDef) Members(ctx context.Context) ([]EnumValueTypeDef, error) {
 
 		for i := range fields {
 			val := EnumValueTypeDef{id: &fields[i].Id}
-			val.query = q.Root().Select("loadEnumValueTypeDefFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "EnumValueTypeDef")
 			out = append(out, val)
 		}
 
@@ -5443,7 +5428,7 @@ func (r *EnumTypeDef) Values(ctx context.Context) ([]EnumValueTypeDef, error) {
 	q = q.Select("id")
 
 	type values struct {
-		Id EnumValueTypeDefID
+		Id ID
 	}
 
 	convert := func(fields []values) []EnumValueTypeDef {
@@ -5451,7 +5436,7 @@ func (r *EnumTypeDef) Values(ctx context.Context) ([]EnumValueTypeDef, error) {
 
 		for i := range fields {
 			val := EnumValueTypeDef{id: &fields[i].Id}
-			val.query = q.Root().Select("loadEnumValueTypeDefFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "EnumValueTypeDef")
 			out = append(out, val)
 		}
 
@@ -5469,13 +5454,21 @@ func (r *EnumTypeDef) Values(ctx context.Context) ([]EnumValueTypeDef, error) {
 	return convert(response), nil
 }
 
+// AsNode returns this EnumTypeDef as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EnumTypeDef) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A definition of a value in a custom enum defined in a Module.
 type EnumValueTypeDef struct {
 	query *querybuilder.Selection
 
 	deprecated  *string
 	description *string
-	id          *EnumValueTypeDefID
+	id          *ID
 	name        *string
 	value       *string
 }
@@ -5513,13 +5506,13 @@ func (r *EnumValueTypeDef) Description(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this EnumValueTypeDef.
-func (r *EnumValueTypeDef) ID(ctx context.Context) (EnumValueTypeDefID, error) {
+func (r *EnumValueTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EnumValueTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -5532,7 +5525,7 @@ func (r *EnumValueTypeDef) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EnumValueTypeDef) XXX_GraphQLIDType() string {
-	return "EnumValueTypeDefID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -5587,10 +5580,18 @@ func (r *EnumValueTypeDef) Value(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this EnumValueTypeDef as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EnumValueTypeDef) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type Env struct {
 	query *querybuilder.Selection
 
-	id *EnvID
+	id *ID
 }
 type WithEnvFunc func(r *Env) *Env
 
@@ -5643,13 +5644,13 @@ func (r *Env) Checks(opts ...EnvChecksOpts) *CheckGroup {
 }
 
 // A unique identifier for this Env.
-func (r *Env) ID(ctx context.Context) (EnvID, error) {
+func (r *Env) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EnvID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -5662,7 +5663,7 @@ func (r *Env) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Env) XXX_GraphQLIDType() string {
-	return "EnvID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -5699,7 +5700,7 @@ func (r *Env) Inputs(ctx context.Context) ([]Binding, error) {
 	q = q.Select("id")
 
 	type inputs struct {
-		Id BindingID
+		Id ID
 	}
 
 	convert := func(fields []inputs) []Binding {
@@ -5707,7 +5708,7 @@ func (r *Env) Inputs(ctx context.Context) ([]Binding, error) {
 
 		for i := range fields {
 			val := Binding{id: &fields[i].Id}
-			val.query = q.Root().Select("loadBindingFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "Binding")
 			out = append(out, val)
 		}
 
@@ -5742,7 +5743,7 @@ func (r *Env) Outputs(ctx context.Context) ([]Binding, error) {
 	q = q.Select("id")
 
 	type outputs struct {
-		Id BindingID
+		Id ID
 	}
 
 	convert := func(fields []outputs) []Binding {
@@ -5750,7 +5751,7 @@ func (r *Env) Outputs(ctx context.Context) ([]Binding, error) {
 
 		for i := range fields {
 			val := Binding{id: &fields[i].Id}
-			val.query = q.Root().Select("loadBindingFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "Binding")
 			out = append(out, val)
 		}
 
@@ -6601,13 +6602,21 @@ func (r *Env) Workspace() *Directory {
 	}
 }
 
+// AsNode returns this Env as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Env) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A collection of environment variables.
 type EnvFile struct {
 	query *querybuilder.Selection
 
 	exists *bool
 	get    *string
-	id     *EnvFileID
+	id     *ID
 }
 type WithEnvFileFunc func(r *EnvFile) *EnvFile
 
@@ -6674,13 +6683,13 @@ func (r *EnvFile) Get(ctx context.Context, name string, opts ...EnvFileGetOpts) 
 }
 
 // A unique identifier for this EnvFile.
-func (r *EnvFile) ID(ctx context.Context) (EnvFileID, error) {
+func (r *EnvFile) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EnvFileID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -6693,7 +6702,7 @@ func (r *EnvFile) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EnvFile) XXX_GraphQLIDType() string {
-	return "EnvFileID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -6742,7 +6751,7 @@ func (r *EnvFile) Variables(ctx context.Context, opts ...EnvFileVariablesOpts) (
 	q = q.Select("id")
 
 	type variables struct {
-		Id EnvVariableID
+		Id ID
 	}
 
 	convert := func(fields []variables) []EnvVariable {
@@ -6750,7 +6759,7 @@ func (r *EnvFile) Variables(ctx context.Context, opts ...EnvFileVariablesOpts) (
 
 		for i := range fields {
 			val := EnvVariable{id: &fields[i].Id}
-			val.query = q.Root().Select("loadEnvVariableFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "EnvVariable")
 			out = append(out, val)
 		}
 
@@ -6789,11 +6798,19 @@ func (r *EnvFile) WithoutVariable(name string) *EnvFile {
 	}
 }
 
+// AsNode returns this EnvFile as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EnvFile) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // An environment variable name and value.
 type EnvVariable struct {
 	query *querybuilder.Selection
 
-	id    *EnvVariableID
+	id    *ID
 	name  *string
 	value *string
 }
@@ -6805,13 +6822,13 @@ func (r *EnvVariable) WithGraphQLQuery(q *querybuilder.Selection) *EnvVariable {
 }
 
 // A unique identifier for this EnvVariable.
-func (r *EnvVariable) ID(ctx context.Context) (EnvVariableID, error) {
+func (r *EnvVariable) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EnvVariableID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -6824,7 +6841,7 @@ func (r *EnvVariable) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EnvVariable) XXX_GraphQLIDType() string {
-	return "EnvVariableID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -6870,10 +6887,18 @@ func (r *EnvVariable) Value(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this EnvVariable as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EnvVariable) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type Error struct {
 	query *querybuilder.Selection
 
-	id      *ErrorID
+	id      *ID
 	message *string
 }
 type WithErrorFunc func(r *Error) *Error
@@ -6892,13 +6917,13 @@ func (r *Error) WithGraphQLQuery(q *querybuilder.Selection) *Error {
 }
 
 // A unique identifier for this Error.
-func (r *Error) ID(ctx context.Context) (ErrorID, error) {
+func (r *Error) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ErrorID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -6911,7 +6936,7 @@ func (r *Error) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Error) XXX_GraphQLIDType() string {
-	return "ErrorID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -6951,7 +6976,7 @@ func (r *Error) Values(ctx context.Context) ([]ErrorValue, error) {
 	q = q.Select("id")
 
 	type values struct {
-		Id ErrorValueID
+		Id ID
 	}
 
 	convert := func(fields []values) []ErrorValue {
@@ -6959,7 +6984,7 @@ func (r *Error) Values(ctx context.Context) ([]ErrorValue, error) {
 
 		for i := range fields {
 			val := ErrorValue{id: &fields[i].Id}
-			val.query = q.Root().Select("loadErrorValueFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "ErrorValue")
 			out = append(out, val)
 		}
 
@@ -6988,10 +7013,18 @@ func (r *Error) WithValue(name string, value JSON) *Error {
 	}
 }
 
+// AsNode returns this Error as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Error) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type ErrorValue struct {
 	query *querybuilder.Selection
 
-	id    *ErrorValueID
+	id    *ID
 	name  *string
 	value *JSON
 }
@@ -7003,13 +7036,13 @@ func (r *ErrorValue) WithGraphQLQuery(q *querybuilder.Selection) *ErrorValue {
 }
 
 // A unique identifier for this ErrorValue.
-func (r *ErrorValue) ID(ctx context.Context) (ErrorValueID, error) {
+func (r *ErrorValue) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ErrorValueID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -7022,7 +7055,7 @@ func (r *ErrorValue) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *ErrorValue) XXX_GraphQLIDType() string {
-	return "ErrorValueID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -7068,6 +7101,14 @@ func (r *ErrorValue) Value(ctx context.Context) (JSON, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this ErrorValue as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ErrorValue) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A definition of a field on a custom object defined in a Module.
 //
 // A field on an object has a static value, as opposed to a function on an object whose value is computed by invoking code (and can accept arguments).
@@ -7076,7 +7117,7 @@ type FieldTypeDef struct {
 
 	deprecated  *string
 	description *string
-	id          *FieldTypeDefID
+	id          *ID
 	name        *string
 }
 
@@ -7113,13 +7154,13 @@ func (r *FieldTypeDef) Description(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this FieldTypeDef.
-func (r *FieldTypeDef) ID(ctx context.Context) (FieldTypeDefID, error) {
+func (r *FieldTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response FieldTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -7132,7 +7173,7 @@ func (r *FieldTypeDef) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *FieldTypeDef) XXX_GraphQLIDType() string {
-	return "FieldTypeDefID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -7183,6 +7224,14 @@ func (r *FieldTypeDef) TypeDef() *TypeDef {
 	}
 }
 
+// AsNode returns this FieldTypeDef as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *FieldTypeDef) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A file.
 type File struct {
 	query *querybuilder.Selection
@@ -7190,10 +7239,10 @@ type File struct {
 	contents *string
 	digest   *string
 	export   *string
-	id       *FileID
+	id       *ID
 	name     *string
 	size     *int
-	sync     *FileID
+	sync     *ID
 }
 type WithFileFunc func(r *File) *File
 
@@ -7334,13 +7383,13 @@ func (r *File) Export(ctx context.Context, path string, opts ...FileExportOpts) 
 }
 
 // A unique identifier for this File.
-func (r *File) ID(ctx context.Context) (FileID, error) {
+func (r *File) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response FileID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -7353,7 +7402,7 @@ func (r *File) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *File) XXX_GraphQLIDType() string {
-	return "FileID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -7462,7 +7511,7 @@ func (r *File) Search(ctx context.Context, pattern string, opts ...FileSearchOpt
 	q = q.Select("id")
 
 	type search struct {
-		Id SearchResultID
+		Id ID
 	}
 
 	convert := func(fields []search) []SearchResult {
@@ -7470,7 +7519,7 @@ func (r *File) Search(ctx context.Context, pattern string, opts ...FileSearchOpt
 
 		for i := range fields {
 			val := SearchResult{id: &fields[i].Id}
-			val.query = q.Root().Select("loadSearchResultFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "SearchResult")
 			out = append(out, val)
 		}
 
@@ -7514,12 +7563,12 @@ func (r *File) Stat() *Stat {
 func (r *File) Sync(ctx context.Context) (*File, error) {
 	q := r.query.Select("sync")
 
-	var id FileID
+	var id ID
 	if err := q.Bind(&id).Execute(ctx); err != nil {
 		return nil, err
 	}
 	return &File{
-		query: q.Root().Select("loadFileFromID").Arg("id", id),
+		query: selectNode(q.Root(), id, "File"),
 	}, nil
 }
 
@@ -7580,6 +7629,30 @@ func (r *File) WithTimestamps(timestamp int) *File {
 	}
 }
 
+// AsExportable returns this File as a Exportable.
+// This is a local type conversion — no GraphQL call.
+func (r *File) AsExportable() Exportable {
+	return &ExportableClient{
+		query: r.query,
+	}
+}
+
+// AsNode returns this File as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *File) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// AsSyncer returns this File as a Syncer.
+// This is a local type conversion — no GraphQL call.
+func (r *File) AsSyncer() Syncer {
+	return &SyncerClient{
+		query: r.query,
+	}
+}
+
 // Function represents a resolver provided by a Module.
 //
 // A function always evaluates against a parent object and is given a set of named arguments.
@@ -7588,7 +7661,7 @@ type Function struct {
 
 	deprecated       *string
 	description      *string
-	id               *FunctionID
+	id               *ID
 	name             *string
 	sourceModuleName *string
 }
@@ -7614,7 +7687,7 @@ func (r *Function) Args(ctx context.Context) ([]FunctionArg, error) {
 	q = q.Select("id")
 
 	type args struct {
-		Id FunctionArgID
+		Id ID
 	}
 
 	convert := func(fields []args) []FunctionArg {
@@ -7622,7 +7695,7 @@ func (r *Function) Args(ctx context.Context) ([]FunctionArg, error) {
 
 		for i := range fields {
 			val := FunctionArg{id: &fields[i].Id}
-			val.query = q.Root().Select("loadFunctionArgFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "FunctionArg")
 			out = append(out, val)
 		}
 
@@ -7667,13 +7740,13 @@ func (r *Function) Description(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this Function.
-func (r *Function) ID(ctx context.Context) (FunctionID, error) {
+func (r *Function) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response FunctionID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -7686,7 +7759,7 @@ func (r *Function) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Function) XXX_GraphQLIDType() string {
-	return "FunctionID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -7901,6 +7974,14 @@ func (r *Function) WithUp() *Function {
 	}
 }
 
+// AsNode returns this Function as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Function) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // An argument accepted by a function.
 //
 // This is a specification for an argument at function definition time, not an argument passed at function call time.
@@ -7912,7 +7993,7 @@ type FunctionArg struct {
 	defaultValue   *JSON
 	deprecated     *string
 	description    *string
-	id             *FunctionArgID
+	id             *ID
 	name           *string
 }
 
@@ -7988,13 +8069,13 @@ func (r *FunctionArg) Description(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this FunctionArg.
-func (r *FunctionArg) ID(ctx context.Context) (FunctionArgID, error) {
+func (r *FunctionArg) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response FunctionArgID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -8007,7 +8088,7 @@ func (r *FunctionArg) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *FunctionArg) XXX_GraphQLIDType() string {
-	return "FunctionArgID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -8068,11 +8149,19 @@ func (r *FunctionArg) TypeDef() *TypeDef {
 	}
 }
 
+// AsNode returns this FunctionArg as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *FunctionArg) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // An active function call.
 type FunctionCall struct {
 	query *querybuilder.Selection
 
-	id          *FunctionCallID
+	id          *ID
 	name        *string
 	parent      *JSON
 	parentName  *string
@@ -8087,13 +8176,13 @@ func (r *FunctionCall) WithGraphQLQuery(q *querybuilder.Selection) *FunctionCall
 }
 
 // A unique identifier for this FunctionCall.
-func (r *FunctionCall) ID(ctx context.Context) (FunctionCallID, error) {
+func (r *FunctionCall) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response FunctionCallID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -8106,7 +8195,7 @@ func (r *FunctionCall) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *FunctionCall) XXX_GraphQLIDType() string {
-	return "FunctionCallID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -8133,7 +8222,7 @@ func (r *FunctionCall) InputArgs(ctx context.Context) ([]FunctionCallArgValue, e
 	q = q.Select("id")
 
 	type inputArgs struct {
-		Id FunctionCallArgValueID
+		Id ID
 	}
 
 	convert := func(fields []inputArgs) []FunctionCallArgValue {
@@ -8141,7 +8230,7 @@ func (r *FunctionCall) InputArgs(ctx context.Context) ([]FunctionCallArgValue, e
 
 		for i := range fields {
 			val := FunctionCallArgValue{id: &fields[i].Id}
-			val.query = q.Root().Select("loadFunctionCallArgValueFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "FunctionCallArgValue")
 			out = append(out, val)
 		}
 
@@ -8221,11 +8310,19 @@ func (r *FunctionCall) ReturnValue(ctx context.Context, value JSON) error {
 	return q.Execute(ctx)
 }
 
+// AsNode returns this FunctionCall as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *FunctionCall) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A value passed as a named argument to a function call.
 type FunctionCallArgValue struct {
 	query *querybuilder.Selection
 
-	id    *FunctionCallArgValueID
+	id    *ID
 	name  *string
 	value *JSON
 }
@@ -8237,13 +8334,13 @@ func (r *FunctionCallArgValue) WithGraphQLQuery(q *querybuilder.Selection) *Func
 }
 
 // A unique identifier for this FunctionCallArgValue.
-func (r *FunctionCallArgValue) ID(ctx context.Context) (FunctionCallArgValueID, error) {
+func (r *FunctionCallArgValue) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response FunctionCallArgValueID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -8256,7 +8353,7 @@ func (r *FunctionCallArgValue) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *FunctionCallArgValue) XXX_GraphQLIDType() string {
-	return "FunctionCallArgValueID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -8302,11 +8399,19 @@ func (r *FunctionCallArgValue) Value(ctx context.Context) (JSON, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this FunctionCallArgValue as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *FunctionCallArgValue) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // The result of running an SDK's codegen.
 type GeneratedCode struct {
 	query *querybuilder.Selection
 
-	id *GeneratedCodeID
+	id *ID
 }
 type WithGeneratedCodeFunc func(r *GeneratedCode) *GeneratedCode
 
@@ -8333,13 +8438,13 @@ func (r *GeneratedCode) Code() *Directory {
 }
 
 // A unique identifier for this GeneratedCode.
-func (r *GeneratedCode) ID(ctx context.Context) (GeneratedCodeID, error) {
+func (r *GeneratedCode) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GeneratedCodeID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -8352,7 +8457,7 @@ func (r *GeneratedCode) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *GeneratedCode) XXX_GraphQLIDType() string {
-	return "GeneratedCodeID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -8412,12 +8517,20 @@ func (r *GeneratedCode) WithVCSIgnoredPaths(paths []string) *GeneratedCode {
 	}
 }
 
+// AsNode returns this GeneratedCode as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GeneratedCode) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type Generator struct {
 	query *querybuilder.Selection
 
 	completed   *bool
 	description *string
-	id          *GeneratorID
+	id          *ID
 	isEmpty     *bool
 	name        *string
 }
@@ -8472,13 +8585,13 @@ func (r *Generator) Description(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this Generator.
-func (r *Generator) ID(ctx context.Context) (GeneratorID, error) {
+func (r *Generator) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GeneratorID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -8491,7 +8604,7 @@ func (r *Generator) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Generator) XXX_GraphQLIDType() string {
-	return "GeneratorID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -8565,10 +8678,18 @@ func (r *Generator) Run() *Generator {
 	}
 }
 
+// AsNode returns this Generator as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Generator) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type GeneratorGroup struct {
 	query *querybuilder.Selection
 
-	id      *GeneratorGroupID
+	id      *ID
 	isEmpty *bool
 }
 type WithGeneratorGroupFunc func(r *GeneratorGroup) *GeneratorGroup
@@ -8614,13 +8735,13 @@ func (r *GeneratorGroup) Changes(opts ...GeneratorGroupChangesOpts) *Changeset {
 }
 
 // A unique identifier for this GeneratorGroup.
-func (r *GeneratorGroup) ID(ctx context.Context) (GeneratorGroupID, error) {
+func (r *GeneratorGroup) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GeneratorGroupID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -8633,7 +8754,7 @@ func (r *GeneratorGroup) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *GeneratorGroup) XXX_GraphQLIDType() string {
-	return "GeneratorGroupID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -8673,7 +8794,7 @@ func (r *GeneratorGroup) List(ctx context.Context) ([]Generator, error) {
 	q = q.Select("id")
 
 	type list struct {
-		Id GeneratorID
+		Id ID
 	}
 
 	convert := func(fields []list) []Generator {
@@ -8681,7 +8802,7 @@ func (r *GeneratorGroup) List(ctx context.Context) ([]Generator, error) {
 
 		for i := range fields {
 			val := Generator{id: &fields[i].Id}
-			val.query = q.Root().Select("loadGeneratorFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "Generator")
 			out = append(out, val)
 		}
 
@@ -8708,12 +8829,20 @@ func (r *GeneratorGroup) Run() *GeneratorGroup {
 	}
 }
 
+// AsNode returns this GeneratorGroup as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GeneratorGroup) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A git ref (tag, branch, or commit).
 type GitRef struct {
 	query *querybuilder.Selection
 
 	commit *string
-	id     *GitRefID
+	id     *ID
 	ref    *string
 }
 type WithGitRefFunc func(r *GitRef) *GitRef
@@ -8756,13 +8885,13 @@ func (r *GitRef) CommonAncestor(other *GitRef) *GitRef {
 }
 
 // A unique identifier for this GitRef.
-func (r *GitRef) ID(ctx context.Context) (GitRefID, error) {
+func (r *GitRef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GitRefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -8775,7 +8904,7 @@ func (r *GitRef) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *GitRef) XXX_GraphQLIDType() string {
-	return "GitRefID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -8843,11 +8972,19 @@ func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 	}
 }
 
+// AsNode returns this GitRef as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GitRef) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A git repository.
 type GitRepository struct {
 	query *querybuilder.Selection
 
-	id  *GitRepositoryID
+	id  *ID
 	url *string
 }
 
@@ -8909,13 +9046,13 @@ func (r *GitRepository) Head() *GitRef {
 }
 
 // A unique identifier for this GitRepository.
-func (r *GitRepository) ID(ctx context.Context) (GitRepositoryID, error) {
+func (r *GitRepository) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GitRepositoryID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -8928,7 +9065,7 @@ func (r *GitRepository) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *GitRepository) XXX_GraphQLIDType() string {
-	return "GitRepositoryID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -9021,11 +9158,19 @@ func (r *GitRepository) URL(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this GitRepository as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GitRepository) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // An internal persistent HTTP state.
 type HTTPState struct {
 	query *querybuilder.Selection
 
-	id *HTTPStateID
+	id *ID
 }
 
 func (r *HTTPState) WithGraphQLQuery(q *querybuilder.Selection) *HTTPState {
@@ -9035,13 +9180,13 @@ func (r *HTTPState) WithGraphQLQuery(q *querybuilder.Selection) *HTTPState {
 }
 
 // A unique identifier for this HTTPState.
-func (r *HTTPState) ID(ctx context.Context) (HTTPStateID, error) {
+func (r *HTTPState) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response HTTPStateID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -9054,7 +9199,7 @@ func (r *HTTPState) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *HTTPState) XXX_GraphQLIDType() string {
-	return "HTTPStateID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -9074,11 +9219,19 @@ func (r *HTTPState) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// AsNode returns this HTTPState as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *HTTPState) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // Image healthcheck configuration.
 type HealthcheckConfig struct {
 	query *querybuilder.Selection
 
-	id            *HealthcheckConfigID
+	id            *ID
 	interval      *string
 	retries       *int
 	shell         *bool
@@ -9104,13 +9257,13 @@ func (r *HealthcheckConfig) Args(ctx context.Context) ([]string, error) {
 }
 
 // A unique identifier for this HealthcheckConfig.
-func (r *HealthcheckConfig) ID(ctx context.Context) (HealthcheckConfigID, error) {
+func (r *HealthcheckConfig) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response HealthcheckConfigID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -9123,7 +9276,7 @@ func (r *HealthcheckConfig) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *HealthcheckConfig) XXX_GraphQLIDType() string {
-	return "HealthcheckConfigID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -9221,12 +9374,20 @@ func (r *HealthcheckConfig) Timeout(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this HealthcheckConfig as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *HealthcheckConfig) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // Information about the host environment.
 type Host struct {
 	query *querybuilder.Selection
 
 	findUp *string
-	id     *HostID
+	id     *ID
 }
 
 func (r *Host) WithGraphQLQuery(q *querybuilder.Selection) *Host {
@@ -9333,13 +9494,13 @@ func (r *Host) FindUp(ctx context.Context, name string, opts ...HostFindUpOpts) 
 }
 
 // A unique identifier for this Host.
-func (r *Host) ID(ctx context.Context) (HostID, error) {
+func (r *Host) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response HostID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -9352,7 +9513,7 @@ func (r *Host) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Host) XXX_GraphQLIDType() string {
-	return "HostID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -9443,6 +9604,14 @@ func (r *Host) UnixSocket(path string) *Socket {
 	}
 }
 
+// AsNode returns this Host as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Host) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A graphql input type, which is essentially just a group of named args.
 // This is currently only used to represent pre-existing usage of graphql input types
 // in the core API. It is not used by user modules and shouldn't ever be as user
@@ -9450,7 +9619,7 @@ func (r *Host) UnixSocket(path string) *Socket {
 type InputTypeDef struct {
 	query *querybuilder.Selection
 
-	id   *InputTypeDefID
+	id   *ID
 	name *string
 }
 
@@ -9467,7 +9636,7 @@ func (r *InputTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 	q = q.Select("id")
 
 	type fields struct {
-		Id FieldTypeDefID
+		Id ID
 	}
 
 	convert := func(fields []fields) []FieldTypeDef {
@@ -9475,7 +9644,7 @@ func (r *InputTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 
 		for i := range fields {
 			val := FieldTypeDef{id: &fields[i].Id}
-			val.query = q.Root().Select("loadFieldTypeDefFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "FieldTypeDef")
 			out = append(out, val)
 		}
 
@@ -9494,13 +9663,13 @@ func (r *InputTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 }
 
 // A unique identifier for this InputTypeDef.
-func (r *InputTypeDef) ID(ctx context.Context) (InputTypeDefID, error) {
+func (r *InputTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response InputTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -9513,7 +9682,7 @@ func (r *InputTypeDef) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *InputTypeDef) XXX_GraphQLIDType() string {
-	return "InputTypeDefID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -9546,12 +9715,20 @@ func (r *InputTypeDef) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this InputTypeDef as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *InputTypeDef) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A definition of a custom interface defined in a Module.
 type InterfaceTypeDef struct {
 	query *querybuilder.Selection
 
 	description      *string
-	id               *InterfaceTypeDefID
+	id               *ID
 	name             *string
 	sourceModuleName *string
 }
@@ -9582,7 +9759,7 @@ func (r *InterfaceTypeDef) Functions(ctx context.Context) ([]Function, error) {
 	q = q.Select("id")
 
 	type functions struct {
-		Id FunctionID
+		Id ID
 	}
 
 	convert := func(fields []functions) []Function {
@@ -9590,7 +9767,7 @@ func (r *InterfaceTypeDef) Functions(ctx context.Context) ([]Function, error) {
 
 		for i := range fields {
 			val := Function{id: &fields[i].Id}
-			val.query = q.Root().Select("loadFunctionFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "Function")
 			out = append(out, val)
 		}
 
@@ -9609,13 +9786,13 @@ func (r *InterfaceTypeDef) Functions(ctx context.Context) ([]Function, error) {
 }
 
 // A unique identifier for this InterfaceTypeDef.
-func (r *InterfaceTypeDef) ID(ctx context.Context) (InterfaceTypeDefID, error) {
+func (r *InterfaceTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response InterfaceTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -9628,7 +9805,7 @@ func (r *InterfaceTypeDef) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *InterfaceTypeDef) XXX_GraphQLIDType() string {
-	return "InterfaceTypeDefID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -9683,6 +9860,14 @@ func (r *InterfaceTypeDef) SourceModuleName(ctx context.Context) (string, error)
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this InterfaceTypeDef as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *InterfaceTypeDef) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type JSONValue struct {
 	query *querybuilder.Selection
 
@@ -9690,7 +9875,7 @@ type JSONValue struct {
 	asInteger *int
 	asString  *string
 	contents  *JSON
-	id        *JSONValueID
+	id        *ID
 }
 type WithJSONValueFunc func(r *JSONValue) *JSONValue
 
@@ -9714,7 +9899,7 @@ func (r *JSONValue) AsArray(ctx context.Context) ([]JSONValue, error) {
 	q = q.Select("id")
 
 	type asArray struct {
-		Id JSONValueID
+		Id ID
 	}
 
 	convert := func(fields []asArray) []JSONValue {
@@ -9722,7 +9907,7 @@ func (r *JSONValue) AsArray(ctx context.Context) ([]JSONValue, error) {
 
 		for i := range fields {
 			val := JSONValue{id: &fields[i].Id}
-			val.query = q.Root().Select("loadJSONValueFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "JSONValue")
 			out = append(out, val)
 		}
 
@@ -9833,13 +10018,13 @@ func (r *JSONValue) Fields(ctx context.Context) ([]string, error) {
 }
 
 // A unique identifier for this JSONValue.
-func (r *JSONValue) ID(ctx context.Context) (JSONValueID, error) {
+func (r *JSONValue) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response JSONValueID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -9852,7 +10037,7 @@ func (r *JSONValue) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *JSONValue) XXX_GraphQLIDType() string {
-	return "JSONValueID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -9924,17 +10109,25 @@ func (r *JSONValue) WithField(path []string, value *JSONValue) *JSONValue {
 	}
 }
 
+// AsNode returns this JSONValue as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *JSONValue) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type LLM struct {
 	query *querybuilder.Selection
 
 	hasPrompt   *bool
 	historyJSON *JSON
-	id          *LLMID
+	id          *ID
 	lastReply   *string
 	model       *string
 	provider    *string
-	step        *LLMID
-	sync        *LLMID
+	step        *ID
+	sync        *ID
 	tools       *string
 }
 type WithLLMFunc func(r *LLM) *LLM
@@ -10018,13 +10211,13 @@ func (r *LLM) HistoryJSON(ctx context.Context) (JSON, error) {
 }
 
 // A unique identifier for this LLM.
-func (r *LLM) ID(ctx context.Context) (LLMID, error) {
+func (r *LLM) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response LLMID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -10037,7 +10230,7 @@ func (r *LLM) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *LLM) XXX_GraphQLIDType() string {
-	return "LLMID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -10109,12 +10302,12 @@ func (r *LLM) Provider(ctx context.Context) (string, error) {
 func (r *LLM) Step(ctx context.Context) (*LLM, error) {
 	q := r.query.Select("step")
 
-	var id LLMID
+	var id ID
 	if err := q.Bind(&id).Execute(ctx); err != nil {
 		return nil, err
 	}
 	return &LLM{
-		query: q.Root().Select("loadLLMFromID").Arg("id", id),
+		query: selectNode(q.Root(), id, "LLM"),
 	}, nil
 }
 
@@ -10122,12 +10315,12 @@ func (r *LLM) Step(ctx context.Context) (*LLM, error) {
 func (r *LLM) Sync(ctx context.Context) (*LLM, error) {
 	q := r.query.Select("sync")
 
-	var id LLMID
+	var id ID
 	if err := q.Bind(&id).Execute(ctx); err != nil {
 		return nil, err
 	}
 	return &LLM{
-		query: q.Root().Select("loadLLMFromID").Arg("id", id),
+		query: selectNode(q.Root(), id, "LLM"),
 	}, nil
 }
 
@@ -10264,12 +10457,28 @@ func (r *LLM) WithoutSystemPrompts() *LLM {
 	}
 }
 
+// AsNode returns this LLM as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *LLM) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// AsSyncer returns this LLM as a Syncer.
+// This is a local type conversion — no GraphQL call.
+func (r *LLM) AsSyncer() Syncer {
+	return &SyncerClient{
+		query: r.query,
+	}
+}
+
 type LLMTokenUsage struct {
 	query *querybuilder.Selection
 
 	cachedTokenReads  *int
 	cachedTokenWrites *int
-	id                *LLMTokenUsageID
+	id                *ID
 	inputTokens       *int
 	outputTokens      *int
 	totalTokens       *int
@@ -10306,13 +10515,13 @@ func (r *LLMTokenUsage) CachedTokenWrites(ctx context.Context) (int, error) {
 }
 
 // A unique identifier for this LLMTokenUsage.
-func (r *LLMTokenUsage) ID(ctx context.Context) (LLMTokenUsageID, error) {
+func (r *LLMTokenUsage) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response LLMTokenUsageID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -10325,7 +10534,7 @@ func (r *LLMTokenUsage) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *LLMTokenUsage) XXX_GraphQLIDType() string {
-	return "LLMTokenUsageID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -10381,11 +10590,19 @@ func (r *LLMTokenUsage) TotalTokens(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this LLMTokenUsage as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *LLMTokenUsage) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A simple key value object that represents a label.
 type Label struct {
 	query *querybuilder.Selection
 
-	id    *LabelID
+	id    *ID
 	name  *string
 	value *string
 }
@@ -10397,13 +10614,13 @@ func (r *Label) WithGraphQLQuery(q *querybuilder.Selection) *Label {
 }
 
 // A unique identifier for this Label.
-func (r *Label) ID(ctx context.Context) (LabelID, error) {
+func (r *Label) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response LabelID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -10416,7 +10633,7 @@ func (r *Label) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Label) XXX_GraphQLIDType() string {
-	return "LabelID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -10462,11 +10679,19 @@ func (r *Label) Value(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this Label as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Label) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A definition of a list type in a Module.
 type ListTypeDef struct {
 	query *querybuilder.Selection
 
-	id *ListTypeDefID
+	id *ID
 }
 
 func (r *ListTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *ListTypeDef {
@@ -10485,13 +10710,13 @@ func (r *ListTypeDef) ElementTypeDef() *TypeDef {
 }
 
 // A unique identifier for this ListTypeDef.
-func (r *ListTypeDef) ID(ctx context.Context) (ListTypeDefID, error) {
+func (r *ListTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ListTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -10504,7 +10729,7 @@ func (r *ListTypeDef) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *ListTypeDef) XXX_GraphQLIDType() string {
-	return "ListTypeDefID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -10524,15 +10749,23 @@ func (r *ListTypeDef) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// AsNode returns this ListTypeDef as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ListTypeDef) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A Dagger module.
 type Module struct {
 	query *querybuilder.Selection
 
 	description *string
-	id          *ModuleID
+	id          *ID
 	name        *string
 	serve       *Void
-	sync        *ModuleID
+	sync        *ID
 }
 type WithModuleFunc func(r *Module) *Module
 
@@ -10591,7 +10824,7 @@ func (r *Module) Dependencies(ctx context.Context) ([]Module, error) {
 	q = q.Select("id")
 
 	type dependencies struct {
-		Id ModuleID
+		Id ID
 	}
 
 	convert := func(fields []dependencies) []Module {
@@ -10599,7 +10832,7 @@ func (r *Module) Dependencies(ctx context.Context) ([]Module, error) {
 
 		for i := range fields {
 			val := Module{id: &fields[i].Id}
-			val.query = q.Root().Select("loadModuleFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "Module")
 			out = append(out, val)
 		}
 
@@ -10637,7 +10870,7 @@ func (r *Module) Enums(ctx context.Context) ([]TypeDef, error) {
 	q = q.Select("id")
 
 	type enums struct {
-		Id TypeDefID
+		Id ID
 	}
 
 	convert := func(fields []enums) []TypeDef {
@@ -10645,7 +10878,7 @@ func (r *Module) Enums(ctx context.Context) ([]TypeDef, error) {
 
 		for i := range fields {
 			val := TypeDef{id: &fields[i].Id}
-			val.query = q.Root().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "TypeDef")
 			out = append(out, val)
 		}
 
@@ -10708,13 +10941,13 @@ func (r *Module) Generators(opts ...ModuleGeneratorsOpts) *GeneratorGroup {
 }
 
 // A unique identifier for this Module.
-func (r *Module) ID(ctx context.Context) (ModuleID, error) {
+func (r *Module) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ModuleID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -10727,7 +10960,7 @@ func (r *Module) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Module) XXX_GraphQLIDType() string {
-	return "ModuleID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -10754,7 +10987,7 @@ func (r *Module) Interfaces(ctx context.Context) ([]TypeDef, error) {
 	q = q.Select("id")
 
 	type interfaces struct {
-		Id TypeDefID
+		Id ID
 	}
 
 	convert := func(fields []interfaces) []TypeDef {
@@ -10762,7 +10995,7 @@ func (r *Module) Interfaces(ctx context.Context) ([]TypeDef, error) {
 
 		for i := range fields {
 			val := TypeDef{id: &fields[i].Id}
-			val.query = q.Root().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "TypeDef")
 			out = append(out, val)
 		}
 
@@ -10813,7 +11046,7 @@ func (r *Module) Objects(ctx context.Context) ([]TypeDef, error) {
 	q = q.Select("id")
 
 	type objects struct {
-		Id TypeDefID
+		Id ID
 	}
 
 	convert := func(fields []objects) []TypeDef {
@@ -10821,7 +11054,7 @@ func (r *Module) Objects(ctx context.Context) ([]TypeDef, error) {
 
 		for i := range fields {
 			val := TypeDef{id: &fields[i].Id}
-			val.query = q.Root().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "TypeDef")
 			out = append(out, val)
 		}
 
@@ -10923,12 +11156,12 @@ func (r *Module) Source() *ModuleSource {
 func (r *Module) Sync(ctx context.Context) (*Module, error) {
 	q := r.query.Select("sync")
 
-	var id ModuleID
+	var id ID
 	if err := q.Bind(&id).Execute(ctx); err != nil {
 		return nil, err
 	}
 	return &Module{
-		query: q.Root().Select("loadModuleFromID").Arg("id", id),
+		query: selectNode(q.Root(), id, "Module"),
 	}, nil
 }
 
@@ -10984,13 +11217,29 @@ func (r *Module) WithObject(object *TypeDef) *Module {
 	}
 }
 
+// AsNode returns this Module as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Module) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// AsSyncer returns this Module as a Syncer.
+// This is a local type conversion — no GraphQL call.
+func (r *Module) AsSyncer() Syncer {
+	return &SyncerClient{
+		query: r.query,
+	}
+}
+
 // The client generated for the module.
 type ModuleConfigClient struct {
 	query *querybuilder.Selection
 
 	directory *string
 	generator *string
-	id        *ModuleConfigClientID
+	id        *ID
 }
 
 func (r *ModuleConfigClient) WithGraphQLQuery(q *querybuilder.Selection) *ModuleConfigClient {
@@ -11026,13 +11275,13 @@ func (r *ModuleConfigClient) Generator(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this ModuleConfigClient.
-func (r *ModuleConfigClient) ID(ctx context.Context) (ModuleConfigClientID, error) {
+func (r *ModuleConfigClient) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ModuleConfigClientID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -11045,7 +11294,7 @@ func (r *ModuleConfigClient) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *ModuleConfigClient) XXX_GraphQLIDType() string {
-	return "ModuleConfigClientID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -11065,6 +11314,14 @@ func (r *ModuleConfigClient) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// AsNode returns this ModuleConfigClient as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ModuleConfigClient) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
 type ModuleSource struct {
 	query *querybuilder.Selection
@@ -11077,7 +11334,7 @@ type ModuleSource struct {
 	engineVersion             *string
 	htmlRepoURL               *string
 	htmlURL                   *string
-	id                        *ModuleSourceID
+	id                        *ID
 	kind                      *ModuleSourceKind
 	localContextDirectoryPath *string
 	moduleName                *string
@@ -11087,7 +11344,7 @@ type ModuleSource struct {
 	repoRootPath              *string
 	sourceRootSubpath         *string
 	sourceSubpath             *string
-	sync                      *ModuleSourceID
+	sync                      *ID
 	version                   *string
 }
 type WithModuleSourceFunc func(r *ModuleSource) *ModuleSource
@@ -11169,7 +11426,7 @@ func (r *ModuleSource) ConfigClients(ctx context.Context) ([]ModuleConfigClient,
 	q = q.Select("id")
 
 	type configClients struct {
-		Id ModuleConfigClientID
+		Id ID
 	}
 
 	convert := func(fields []configClients) []ModuleConfigClient {
@@ -11177,7 +11434,7 @@ func (r *ModuleSource) ConfigClients(ctx context.Context) ([]ModuleConfigClient,
 
 		for i := range fields {
 			val := ModuleConfigClient{id: &fields[i].Id}
-			val.query = q.Root().Select("loadModuleConfigClientFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "ModuleConfigClient")
 			out = append(out, val)
 		}
 
@@ -11224,7 +11481,7 @@ func (r *ModuleSource) Dependencies(ctx context.Context) ([]ModuleSource, error)
 	q = q.Select("id")
 
 	type dependencies struct {
-		Id ModuleSourceID
+		Id ID
 	}
 
 	convert := func(fields []dependencies) []ModuleSource {
@@ -11232,7 +11489,7 @@ func (r *ModuleSource) Dependencies(ctx context.Context) ([]ModuleSource, error)
 
 		for i := range fields {
 			val := ModuleSource{id: &fields[i].Id}
-			val.query = q.Root().Select("loadModuleSourceFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "ModuleSource")
 			out = append(out, val)
 		}
 
@@ -11331,13 +11588,13 @@ func (r *ModuleSource) HTMLURL(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this ModuleSource.
-func (r *ModuleSource) ID(ctx context.Context) (ModuleSourceID, error) {
+func (r *ModuleSource) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ModuleSourceID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -11350,7 +11607,7 @@ func (r *ModuleSource) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *ModuleSource) XXX_GraphQLIDType() string {
-	return "ModuleSourceID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -11513,12 +11770,12 @@ func (r *ModuleSource) SourceSubpath(ctx context.Context) (string, error) {
 func (r *ModuleSource) Sync(ctx context.Context) (*ModuleSource, error) {
 	q := r.query.Select("sync")
 
-	var id ModuleSourceID
+	var id ID
 	if err := q.Bind(&id).Execute(ctx); err != nil {
 		return nil, err
 	}
 	return &ModuleSource{
-		query: q.Root().Select("loadModuleSourceFromID").Arg("id", id),
+		query: selectNode(q.Root(), id, "ModuleSource"),
 	}, nil
 }
 
@@ -11529,7 +11786,7 @@ func (r *ModuleSource) Toolchains(ctx context.Context) ([]ModuleSource, error) {
 	q = q.Select("id")
 
 	type toolchains struct {
-		Id ModuleSourceID
+		Id ID
 	}
 
 	convert := func(fields []toolchains) []ModuleSource {
@@ -11537,7 +11794,7 @@ func (r *ModuleSource) Toolchains(ctx context.Context) ([]ModuleSource, error) {
 
 		for i := range fields {
 			val := ModuleSource{id: &fields[i].Id}
-			val.query = q.Root().Select("loadModuleSourceFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "ModuleSource")
 			out = append(out, val)
 		}
 
@@ -11767,13 +12024,29 @@ func (r *ModuleSource) WithoutToolchains(toolchains []string) *ModuleSource {
 	}
 }
 
+// AsNode returns this ModuleSource as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ModuleSource) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// AsSyncer returns this ModuleSource as a Syncer.
+// This is a local type conversion — no GraphQL call.
+func (r *ModuleSource) AsSyncer() Syncer {
+	return &SyncerClient{
+		query: r.query,
+	}
+}
+
 // A definition of a custom object defined in a Module.
 type ObjectTypeDef struct {
 	query *querybuilder.Selection
 
 	deprecated       *string
 	description      *string
-	id               *ObjectTypeDefID
+	id               *ID
 	name             *string
 	sourceModuleName *string
 }
@@ -11826,7 +12099,7 @@ func (r *ObjectTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 	q = q.Select("id")
 
 	type fields struct {
-		Id FieldTypeDefID
+		Id ID
 	}
 
 	convert := func(fields []fields) []FieldTypeDef {
@@ -11834,7 +12107,7 @@ func (r *ObjectTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 
 		for i := range fields {
 			val := FieldTypeDef{id: &fields[i].Id}
-			val.query = q.Root().Select("loadFieldTypeDefFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "FieldTypeDef")
 			out = append(out, val)
 		}
 
@@ -11859,7 +12132,7 @@ func (r *ObjectTypeDef) Functions(ctx context.Context) ([]Function, error) {
 	q = q.Select("id")
 
 	type functions struct {
-		Id FunctionID
+		Id ID
 	}
 
 	convert := func(fields []functions) []Function {
@@ -11867,7 +12140,7 @@ func (r *ObjectTypeDef) Functions(ctx context.Context) ([]Function, error) {
 
 		for i := range fields {
 			val := Function{id: &fields[i].Id}
-			val.query = q.Root().Select("loadFunctionFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "Function")
 			out = append(out, val)
 		}
 
@@ -11886,13 +12159,13 @@ func (r *ObjectTypeDef) Functions(ctx context.Context) ([]Function, error) {
 }
 
 // A unique identifier for this ObjectTypeDef.
-func (r *ObjectTypeDef) ID(ctx context.Context) (ObjectTypeDefID, error) {
+func (r *ObjectTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ObjectTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -11905,7 +12178,7 @@ func (r *ObjectTypeDef) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *ObjectTypeDef) XXX_GraphQLIDType() string {
-	return "ObjectTypeDefID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -11960,13 +12233,21 @@ func (r *ObjectTypeDef) SourceModuleName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this ObjectTypeDef as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ObjectTypeDef) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A port exposed by a container.
 type Port struct {
 	query *querybuilder.Selection
 
 	description                 *string
 	experimentalSkipHealthcheck *bool
-	id                          *PortID
+	id                          *ID
 	port                        *int
 	protocol                    *NetworkProtocol
 }
@@ -12004,13 +12285,13 @@ func (r *Port) ExperimentalSkipHealthcheck(ctx context.Context) (bool, error) {
 }
 
 // A unique identifier for this Port.
-func (r *Port) ID(ctx context.Context) (PortID, error) {
+func (r *Port) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response PortID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -12023,7 +12304,7 @@ func (r *Port) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Port) XXX_GraphQLIDType() string {
-	return "PortID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -12069,21 +12350,21 @@ func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this Port as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Port) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // The root of the DAG.
 type Query struct {
 	query *querybuilder.Selection
 
 	defaultPlatform *Platform
-	id              *QueryID
+	id              *ID
 	version         *string
-}
-type WithQueryFunc func(r *Query) *Query
-
-// With calls the provided function with current Query.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *Query) With(f WithQueryFunc) *Query {
-	return f(r)
 }
 
 func (r *Query) WithGraphQLQuery(q *querybuilder.Selection) *Query {
@@ -12245,7 +12526,7 @@ func (r *Query) CurrentTypeDefs(ctx context.Context, opts ...CurrentTypeDefsOpts
 	q = q.Select("id")
 
 	type currentTypeDefs struct {
-		Id TypeDefID
+		Id ID
 	}
 
 	convert := func(fields []currentTypeDefs) []TypeDef {
@@ -12253,7 +12534,7 @@ func (r *Query) CurrentTypeDefs(ctx context.Context, opts ...CurrentTypeDefsOpts
 
 		for i := range fields {
 			val := TypeDef{id: &fields[i].Id}
-			val.query = q.Root().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "TypeDef")
 			out = append(out, val)
 		}
 
@@ -12536,10 +12817,10 @@ func (r *Query) HTTP(url string, opts ...HTTPOpts) *File {
 }
 
 // A unique identifier for this Query.
-func (r *Query) ID(ctx context.Context) (QueryID, error) {
+func (r *Query) ID(ctx context.Context) (ID, error) {
 	q := r.query.Select("id")
 
-	var response QueryID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -12552,7 +12833,7 @@ func (r *Query) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Query) XXX_GraphQLIDType() string {
-	return "QueryID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -12610,656 +12891,6 @@ func (r *Query) LLM(opts ...LLMOpts) *LLM {
 	}
 }
 
-// Load a Address from its ID.
-func (r *Query) LoadAddressFromID(id AddressID) *Address {
-	q := r.query.Select("loadAddressFromID")
-	q = q.Arg("id", id)
-
-	return &Address{
-		query: q,
-	}
-}
-
-// Load a Binding from its ID.
-func (r *Query) LoadBindingFromID(id BindingID) *Binding {
-	q := r.query.Select("loadBindingFromID")
-	q = q.Arg("id", id)
-
-	return &Binding{
-		query: q,
-	}
-}
-
-// Load a CacheVolume from its ID.
-func (r *Query) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
-	q := r.query.Select("loadCacheVolumeFromID")
-	q = q.Arg("id", id)
-
-	return &CacheVolume{
-		query: q,
-	}
-}
-
-// Load a Changeset from its ID.
-func (r *Query) LoadChangesetFromID(id ChangesetID) *Changeset {
-	q := r.query.Select("loadChangesetFromID")
-	q = q.Arg("id", id)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-// Load a Check from its ID.
-func (r *Query) LoadCheckFromID(id CheckID) *Check {
-	q := r.query.Select("loadCheckFromID")
-	q = q.Arg("id", id)
-
-	return &Check{
-		query: q,
-	}
-}
-
-// Load a CheckGroup from its ID.
-func (r *Query) LoadCheckGroupFromID(id CheckGroupID) *CheckGroup {
-	q := r.query.Select("loadCheckGroupFromID")
-	q = q.Arg("id", id)
-
-	return &CheckGroup{
-		query: q,
-	}
-}
-
-// Load a ClientFilesyncMirror from its ID.
-func (r *Query) LoadClientFilesyncMirrorFromID(id ClientFilesyncMirrorID) *ClientFilesyncMirror {
-	q := r.query.Select("loadClientFilesyncMirrorFromID")
-	q = q.Arg("id", id)
-
-	return &ClientFilesyncMirror{
-		query: q,
-	}
-}
-
-// Load a Cloud from its ID.
-func (r *Query) LoadCloudFromID(id CloudID) *Cloud {
-	q := r.query.Select("loadCloudFromID")
-	q = q.Arg("id", id)
-
-	return &Cloud{
-		query: q,
-	}
-}
-
-// Load a Container from its ID.
-func (r *Query) LoadContainerFromID(id ContainerID) *Container {
-	q := r.query.Select("loadContainerFromID")
-	q = q.Arg("id", id)
-
-	return &Container{
-		query: q,
-	}
-}
-
-// Load a CurrentModule from its ID.
-func (r *Query) LoadCurrentModuleFromID(id CurrentModuleID) *CurrentModule {
-	q := r.query.Select("loadCurrentModuleFromID")
-	q = q.Arg("id", id)
-
-	return &CurrentModule{
-		query: q,
-	}
-}
-
-// Load a DiffStat from its ID.
-func (r *Query) LoadDiffStatFromID(id DiffStatID) *DiffStat {
-	q := r.query.Select("loadDiffStatFromID")
-	q = q.Arg("id", id)
-
-	return &DiffStat{
-		query: q,
-	}
-}
-
-// Load a Directory from its ID.
-func (r *Query) LoadDirectoryFromID(id DirectoryID) *Directory {
-	q := r.query.Select("loadDirectoryFromID")
-	q = q.Arg("id", id)
-
-	return &Directory{
-		query: q,
-	}
-}
-
-// Load a EngineCacheEntry from its ID.
-func (r *Query) LoadEngineCacheEntryFromID(id EngineCacheEntryID) *EngineCacheEntry {
-	q := r.query.Select("loadEngineCacheEntryFromID")
-	q = q.Arg("id", id)
-
-	return &EngineCacheEntry{
-		query: q,
-	}
-}
-
-// Load a EngineCacheEntrySet from its ID.
-func (r *Query) LoadEngineCacheEntrySetFromID(id EngineCacheEntrySetID) *EngineCacheEntrySet {
-	q := r.query.Select("loadEngineCacheEntrySetFromID")
-	q = q.Arg("id", id)
-
-	return &EngineCacheEntrySet{
-		query: q,
-	}
-}
-
-// Load a EngineCache from its ID.
-func (r *Query) LoadEngineCacheFromID(id EngineCacheID) *EngineCache {
-	q := r.query.Select("loadEngineCacheFromID")
-	q = q.Arg("id", id)
-
-	return &EngineCache{
-		query: q,
-	}
-}
-
-// Load a Engine from its ID.
-func (r *Query) LoadEngineFromID(id EngineID) *Engine {
-	q := r.query.Select("loadEngineFromID")
-	q = q.Arg("id", id)
-
-	return &Engine{
-		query: q,
-	}
-}
-
-// Load a EnumTypeDef from its ID.
-func (r *Query) LoadEnumTypeDefFromID(id EnumTypeDefID) *EnumTypeDef {
-	q := r.query.Select("loadEnumTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &EnumTypeDef{
-		query: q,
-	}
-}
-
-// Load a EnumValueTypeDef from its ID.
-func (r *Query) LoadEnumValueTypeDefFromID(id EnumValueTypeDefID) *EnumValueTypeDef {
-	q := r.query.Select("loadEnumValueTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &EnumValueTypeDef{
-		query: q,
-	}
-}
-
-// Load a EnvFile from its ID.
-func (r *Query) LoadEnvFileFromID(id EnvFileID) *EnvFile {
-	q := r.query.Select("loadEnvFileFromID")
-	q = q.Arg("id", id)
-
-	return &EnvFile{
-		query: q,
-	}
-}
-
-// Load a Env from its ID.
-func (r *Query) LoadEnvFromID(id EnvID) *Env {
-	q := r.query.Select("loadEnvFromID")
-	q = q.Arg("id", id)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Load a EnvVariable from its ID.
-func (r *Query) LoadEnvVariableFromID(id EnvVariableID) *EnvVariable {
-	q := r.query.Select("loadEnvVariableFromID")
-	q = q.Arg("id", id)
-
-	return &EnvVariable{
-		query: q,
-	}
-}
-
-// Load a Error from its ID.
-func (r *Query) LoadErrorFromID(id ErrorID) *Error {
-	q := r.query.Select("loadErrorFromID")
-	q = q.Arg("id", id)
-
-	return &Error{
-		query: q,
-	}
-}
-
-// Load a ErrorValue from its ID.
-func (r *Query) LoadErrorValueFromID(id ErrorValueID) *ErrorValue {
-	q := r.query.Select("loadErrorValueFromID")
-	q = q.Arg("id", id)
-
-	return &ErrorValue{
-		query: q,
-	}
-}
-
-// Load a FieldTypeDef from its ID.
-func (r *Query) LoadFieldTypeDefFromID(id FieldTypeDefID) *FieldTypeDef {
-	q := r.query.Select("loadFieldTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &FieldTypeDef{
-		query: q,
-	}
-}
-
-// Load a File from its ID.
-func (r *Query) LoadFileFromID(id FileID) *File {
-	q := r.query.Select("loadFileFromID")
-	q = q.Arg("id", id)
-
-	return &File{
-		query: q,
-	}
-}
-
-// Load a FunctionArg from its ID.
-func (r *Query) LoadFunctionArgFromID(id FunctionArgID) *FunctionArg {
-	q := r.query.Select("loadFunctionArgFromID")
-	q = q.Arg("id", id)
-
-	return &FunctionArg{
-		query: q,
-	}
-}
-
-// Load a FunctionCallArgValue from its ID.
-func (r *Query) LoadFunctionCallArgValueFromID(id FunctionCallArgValueID) *FunctionCallArgValue {
-	q := r.query.Select("loadFunctionCallArgValueFromID")
-	q = q.Arg("id", id)
-
-	return &FunctionCallArgValue{
-		query: q,
-	}
-}
-
-// Load a FunctionCall from its ID.
-func (r *Query) LoadFunctionCallFromID(id FunctionCallID) *FunctionCall {
-	q := r.query.Select("loadFunctionCallFromID")
-	q = q.Arg("id", id)
-
-	return &FunctionCall{
-		query: q,
-	}
-}
-
-// Load a Function from its ID.
-func (r *Query) LoadFunctionFromID(id FunctionID) *Function {
-	q := r.query.Select("loadFunctionFromID")
-	q = q.Arg("id", id)
-
-	return &Function{
-		query: q,
-	}
-}
-
-// Load a GeneratedCode from its ID.
-func (r *Query) LoadGeneratedCodeFromID(id GeneratedCodeID) *GeneratedCode {
-	q := r.query.Select("loadGeneratedCodeFromID")
-	q = q.Arg("id", id)
-
-	return &GeneratedCode{
-		query: q,
-	}
-}
-
-// Load a Generator from its ID.
-func (r *Query) LoadGeneratorFromID(id GeneratorID) *Generator {
-	q := r.query.Select("loadGeneratorFromID")
-	q = q.Arg("id", id)
-
-	return &Generator{
-		query: q,
-	}
-}
-
-// Load a GeneratorGroup from its ID.
-func (r *Query) LoadGeneratorGroupFromID(id GeneratorGroupID) *GeneratorGroup {
-	q := r.query.Select("loadGeneratorGroupFromID")
-	q = q.Arg("id", id)
-
-	return &GeneratorGroup{
-		query: q,
-	}
-}
-
-// Load a GitRef from its ID.
-func (r *Query) LoadGitRefFromID(id GitRefID) *GitRef {
-	q := r.query.Select("loadGitRefFromID")
-	q = q.Arg("id", id)
-
-	return &GitRef{
-		query: q,
-	}
-}
-
-// Load a GitRepository from its ID.
-func (r *Query) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
-	q := r.query.Select("loadGitRepositoryFromID")
-	q = q.Arg("id", id)
-
-	return &GitRepository{
-		query: q,
-	}
-}
-
-// Load a HTTPState from its ID.
-func (r *Query) LoadHTTPStateFromID(id HTTPStateID) *HTTPState {
-	q := r.query.Select("loadHTTPStateFromID")
-	q = q.Arg("id", id)
-
-	return &HTTPState{
-		query: q,
-	}
-}
-
-// Load a HealthcheckConfig from its ID.
-func (r *Query) LoadHealthcheckConfigFromID(id HealthcheckConfigID) *HealthcheckConfig {
-	q := r.query.Select("loadHealthcheckConfigFromID")
-	q = q.Arg("id", id)
-
-	return &HealthcheckConfig{
-		query: q,
-	}
-}
-
-// Load a Host from its ID.
-func (r *Query) LoadHostFromID(id HostID) *Host {
-	q := r.query.Select("loadHostFromID")
-	q = q.Arg("id", id)
-
-	return &Host{
-		query: q,
-	}
-}
-
-// Load a InputTypeDef from its ID.
-func (r *Query) LoadInputTypeDefFromID(id InputTypeDefID) *InputTypeDef {
-	q := r.query.Select("loadInputTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &InputTypeDef{
-		query: q,
-	}
-}
-
-// Load a InterfaceTypeDef from its ID.
-func (r *Query) LoadInterfaceTypeDefFromID(id InterfaceTypeDefID) *InterfaceTypeDef {
-	q := r.query.Select("loadInterfaceTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &InterfaceTypeDef{
-		query: q,
-	}
-}
-
-// Load a JSONValue from its ID.
-func (r *Query) LoadJSONValueFromID(id JSONValueID) *JSONValue {
-	q := r.query.Select("loadJSONValueFromID")
-	q = q.Arg("id", id)
-
-	return &JSONValue{
-		query: q,
-	}
-}
-
-// Load a LLM from its ID.
-func (r *Query) LoadLLMFromID(id LLMID) *LLM {
-	q := r.query.Select("loadLLMFromID")
-	q = q.Arg("id", id)
-
-	return &LLM{
-		query: q,
-	}
-}
-
-// Load a LLMTokenUsage from its ID.
-func (r *Query) LoadLLMTokenUsageFromID(id LLMTokenUsageID) *LLMTokenUsage {
-	q := r.query.Select("loadLLMTokenUsageFromID")
-	q = q.Arg("id", id)
-
-	return &LLMTokenUsage{
-		query: q,
-	}
-}
-
-// Load a Label from its ID.
-func (r *Query) LoadLabelFromID(id LabelID) *Label {
-	q := r.query.Select("loadLabelFromID")
-	q = q.Arg("id", id)
-
-	return &Label{
-		query: q,
-	}
-}
-
-// Load a ListTypeDef from its ID.
-func (r *Query) LoadListTypeDefFromID(id ListTypeDefID) *ListTypeDef {
-	q := r.query.Select("loadListTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &ListTypeDef{
-		query: q,
-	}
-}
-
-// Load a ModuleConfigClient from its ID.
-func (r *Query) LoadModuleConfigClientFromID(id ModuleConfigClientID) *ModuleConfigClient {
-	q := r.query.Select("loadModuleConfigClientFromID")
-	q = q.Arg("id", id)
-
-	return &ModuleConfigClient{
-		query: q,
-	}
-}
-
-// Load a Module from its ID.
-func (r *Query) LoadModuleFromID(id ModuleID) *Module {
-	q := r.query.Select("loadModuleFromID")
-	q = q.Arg("id", id)
-
-	return &Module{
-		query: q,
-	}
-}
-
-// Load a ModuleSource from its ID.
-func (r *Query) LoadModuleSourceFromID(id ModuleSourceID) *ModuleSource {
-	q := r.query.Select("loadModuleSourceFromID")
-	q = q.Arg("id", id)
-
-	return &ModuleSource{
-		query: q,
-	}
-}
-
-// Load a ObjectTypeDef from its ID.
-func (r *Query) LoadObjectTypeDefFromID(id ObjectTypeDefID) *ObjectTypeDef {
-	q := r.query.Select("loadObjectTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &ObjectTypeDef{
-		query: q,
-	}
-}
-
-// Load a Port from its ID.
-func (r *Query) LoadPortFromID(id PortID) *Port {
-	q := r.query.Select("loadPortFromID")
-	q = q.Arg("id", id)
-
-	return &Port{
-		query: q,
-	}
-}
-
-// Load a Query from its ID.
-func (r *Query) LoadQueryFromID(id QueryID) *Query {
-	q := r.query.Select("loadQueryFromID")
-	q = q.Arg("id", id)
-
-	return &Query{
-		query: q,
-	}
-}
-
-// Load a RemoteGitMirror from its ID.
-func (r *Query) LoadRemoteGitMirrorFromID(id RemoteGitMirrorID) *RemoteGitMirror {
-	q := r.query.Select("loadRemoteGitMirrorFromID")
-	q = q.Arg("id", id)
-
-	return &RemoteGitMirror{
-		query: q,
-	}
-}
-
-// Load a SDKConfig from its ID.
-func (r *Query) LoadSDKConfigFromID(id SDKConfigID) *SDKConfig {
-	q := r.query.Select("loadSDKConfigFromID")
-	q = q.Arg("id", id)
-
-	return &SDKConfig{
-		query: q,
-	}
-}
-
-// Load a ScalarTypeDef from its ID.
-func (r *Query) LoadScalarTypeDefFromID(id ScalarTypeDefID) *ScalarTypeDef {
-	q := r.query.Select("loadScalarTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &ScalarTypeDef{
-		query: q,
-	}
-}
-
-// Load a SearchResult from its ID.
-func (r *Query) LoadSearchResultFromID(id SearchResultID) *SearchResult {
-	q := r.query.Select("loadSearchResultFromID")
-	q = q.Arg("id", id)
-
-	return &SearchResult{
-		query: q,
-	}
-}
-
-// Load a SearchSubmatch from its ID.
-func (r *Query) LoadSearchSubmatchFromID(id SearchSubmatchID) *SearchSubmatch {
-	q := r.query.Select("loadSearchSubmatchFromID")
-	q = q.Arg("id", id)
-
-	return &SearchSubmatch{
-		query: q,
-	}
-}
-
-// Load a Secret from its ID.
-func (r *Query) LoadSecretFromID(id SecretID) *Secret {
-	q := r.query.Select("loadSecretFromID")
-	q = q.Arg("id", id)
-
-	return &Secret{
-		query: q,
-	}
-}
-
-// Load a Service from its ID.
-func (r *Query) LoadServiceFromID(id ServiceID) *Service {
-	q := r.query.Select("loadServiceFromID")
-	q = q.Arg("id", id)
-
-	return &Service{
-		query: q,
-	}
-}
-
-// Load a Socket from its ID.
-func (r *Query) LoadSocketFromID(id SocketID) *Socket {
-	q := r.query.Select("loadSocketFromID")
-	q = q.Arg("id", id)
-
-	return &Socket{
-		query: q,
-	}
-}
-
-// Load a SourceMap from its ID.
-func (r *Query) LoadSourceMapFromID(id SourceMapID) *SourceMap {
-	q := r.query.Select("loadSourceMapFromID")
-	q = q.Arg("id", id)
-
-	return &SourceMap{
-		query: q,
-	}
-}
-
-// Load a Stat from its ID.
-func (r *Query) LoadStatFromID(id StatID) *Stat {
-	q := r.query.Select("loadStatFromID")
-	q = q.Arg("id", id)
-
-	return &Stat{
-		query: q,
-	}
-}
-
-// Load a Terminal from its ID.
-func (r *Query) LoadTerminalFromID(id TerminalID) *Terminal {
-	q := r.query.Select("loadTerminalFromID")
-	q = q.Arg("id", id)
-
-	return &Terminal{
-		query: q,
-	}
-}
-
-// Load a TypeDef from its ID.
-func (r *Query) LoadTypeDefFromID(id TypeDefID) *TypeDef {
-	q := r.query.Select("loadTypeDefFromID")
-	q = q.Arg("id", id)
-
-	return &TypeDef{
-		query: q,
-	}
-}
-
-// Load a Up from its ID.
-func (r *Query) LoadUpFromID(id UpID) *Up {
-	q := r.query.Select("loadUpFromID")
-	q = q.Arg("id", id)
-
-	return &Up{
-		query: q,
-	}
-}
-
-// Load a UpGroup from its ID.
-func (r *Query) LoadUpGroupFromID(id UpGroupID) *UpGroup {
-	q := r.query.Select("loadUpGroupFromID")
-	q = q.Arg("id", id)
-
-	return &UpGroup{
-		query: q,
-	}
-}
-
-// Load a Workspace from its ID.
-func (r *Query) LoadWorkspaceFromID(id WorkspaceID) *Workspace {
-	q := r.query.Select("loadWorkspaceFromID")
-	q = q.Arg("id", id)
-
-	return &Workspace{
-		query: q,
-	}
-}
-
 // Create a new module.
 func (r *Query) Module() *Module {
 	q := r.query.Select("module")
@@ -13305,6 +12936,15 @@ func (r *Query) ModuleSource(refString string, opts ...ModuleSourceOpts) *Module
 	q = q.Arg("refString", refString)
 
 	return &ModuleSource{
+		query: q,
+	}
+}
+
+// Load any object by its ID.
+func (r *Query) Node(id ID) Node {
+	q := r.query.Select("node")
+	q = q.Arg("id", id)
+	return &NodeClient{
 		query: q,
 	}
 }
@@ -13379,11 +13019,19 @@ func (r *Query) Version(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this Query as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Query) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // An internal persistent bare git mirror.
 type RemoteGitMirror struct {
 	query *querybuilder.Selection
 
-	id *RemoteGitMirrorID
+	id *ID
 }
 
 func (r *RemoteGitMirror) WithGraphQLQuery(q *querybuilder.Selection) *RemoteGitMirror {
@@ -13393,13 +13041,13 @@ func (r *RemoteGitMirror) WithGraphQLQuery(q *querybuilder.Selection) *RemoteGit
 }
 
 // A unique identifier for this RemoteGitMirror.
-func (r *RemoteGitMirror) ID(ctx context.Context) (RemoteGitMirrorID, error) {
+func (r *RemoteGitMirror) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response RemoteGitMirrorID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -13412,7 +13060,7 @@ func (r *RemoteGitMirror) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *RemoteGitMirror) XXX_GraphQLIDType() string {
-	return "RemoteGitMirrorID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -13432,12 +13080,20 @@ func (r *RemoteGitMirror) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// AsNode returns this RemoteGitMirror as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *RemoteGitMirror) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // The SDK config of the module.
 type SDKConfig struct {
 	query *querybuilder.Selection
 
 	debug  *bool
-	id     *SDKConfigID
+	id     *ID
 	source *string
 }
 
@@ -13461,13 +13117,13 @@ func (r *SDKConfig) Debug(ctx context.Context) (bool, error) {
 }
 
 // A unique identifier for this SDKConfig.
-func (r *SDKConfig) ID(ctx context.Context) (SDKConfigID, error) {
+func (r *SDKConfig) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response SDKConfigID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -13480,7 +13136,7 @@ func (r *SDKConfig) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *SDKConfig) XXX_GraphQLIDType() string {
-	return "SDKConfigID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -13513,12 +13169,20 @@ func (r *SDKConfig) Source(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this SDKConfig as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *SDKConfig) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A definition of a custom scalar defined in a Module.
 type ScalarTypeDef struct {
 	query *querybuilder.Selection
 
 	description      *string
-	id               *ScalarTypeDefID
+	id               *ID
 	name             *string
 	sourceModuleName *string
 }
@@ -13543,13 +13207,13 @@ func (r *ScalarTypeDef) Description(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this ScalarTypeDef.
-func (r *ScalarTypeDef) ID(ctx context.Context) (ScalarTypeDefID, error) {
+func (r *ScalarTypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ScalarTypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -13562,7 +13226,7 @@ func (r *ScalarTypeDef) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *ScalarTypeDef) XXX_GraphQLIDType() string {
-	return "ScalarTypeDefID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -13608,12 +13272,20 @@ func (r *ScalarTypeDef) SourceModuleName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this ScalarTypeDef as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ScalarTypeDef) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type SearchResult struct {
 	query *querybuilder.Selection
 
 	absoluteOffset *int
 	filePath       *string
-	id             *SearchResultID
+	id             *ID
 	lineNumber     *int
 	matchedLines   *string
 }
@@ -13651,13 +13323,13 @@ func (r *SearchResult) FilePath(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this SearchResult.
-func (r *SearchResult) ID(ctx context.Context) (SearchResultID, error) {
+func (r *SearchResult) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response SearchResultID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -13670,7 +13342,7 @@ func (r *SearchResult) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *SearchResult) XXX_GraphQLIDType() string {
-	return "SearchResultID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -13723,7 +13395,7 @@ func (r *SearchResult) Submatches(ctx context.Context) ([]SearchSubmatch, error)
 	q = q.Select("id")
 
 	type submatches struct {
-		Id SearchSubmatchID
+		Id ID
 	}
 
 	convert := func(fields []submatches) []SearchSubmatch {
@@ -13731,7 +13403,7 @@ func (r *SearchResult) Submatches(ctx context.Context) ([]SearchSubmatch, error)
 
 		for i := range fields {
 			val := SearchSubmatch{id: &fields[i].Id}
-			val.query = q.Root().Select("loadSearchSubmatchFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "SearchSubmatch")
 			out = append(out, val)
 		}
 
@@ -13749,11 +13421,19 @@ func (r *SearchResult) Submatches(ctx context.Context) ([]SearchSubmatch, error)
 	return convert(response), nil
 }
 
+// AsNode returns this SearchResult as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *SearchResult) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type SearchSubmatch struct {
 	query *querybuilder.Selection
 
 	end   *int
-	id    *SearchSubmatchID
+	id    *ID
 	start *int
 	text  *string
 }
@@ -13778,13 +13458,13 @@ func (r *SearchSubmatch) End(ctx context.Context) (int, error) {
 }
 
 // A unique identifier for this SearchSubmatch.
-func (r *SearchSubmatch) ID(ctx context.Context) (SearchSubmatchID, error) {
+func (r *SearchSubmatch) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response SearchSubmatchID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -13797,7 +13477,7 @@ func (r *SearchSubmatch) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *SearchSubmatch) XXX_GraphQLIDType() string {
-	return "SearchSubmatchID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -13843,11 +13523,19 @@ func (r *SearchSubmatch) Text(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this SearchSubmatch as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *SearchSubmatch) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A reference to a secret value, which can be handled more safely than the value itself.
 type Secret struct {
 	query *querybuilder.Selection
 
-	id        *SecretID
+	id        *ID
 	name      *string
 	plaintext *string
 	uri       *string
@@ -13860,13 +13548,13 @@ func (r *Secret) WithGraphQLQuery(q *querybuilder.Selection) *Secret {
 }
 
 // A unique identifier for this Secret.
-func (r *Secret) ID(ctx context.Context) (SecretID, error) {
+func (r *Secret) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response SecretID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -13879,7 +13567,7 @@ func (r *Secret) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Secret) XXX_GraphQLIDType() string {
-	return "SecretID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -13938,16 +13626,24 @@ func (r *Secret) URI(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this Secret as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Secret) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A content-addressed service providing TCP connectivity.
 type Service struct {
 	query *querybuilder.Selection
 
 	endpoint *string
 	hostname *string
-	id       *ServiceID
-	start    *ServiceID
-	stop     *ServiceID
-	sync     *ServiceID
+	id       *ID
+	start    *ID
+	stop     *ID
+	sync     *ID
 	up       *Void
 }
 type WithServiceFunc func(r *Service) *Service
@@ -14014,13 +13710,13 @@ func (r *Service) Hostname(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this Service.
-func (r *Service) ID(ctx context.Context) (ServiceID, error) {
+func (r *Service) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ServiceID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -14033,7 +13729,7 @@ func (r *Service) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Service) XXX_GraphQLIDType() string {
-	return "ServiceID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -14060,7 +13756,7 @@ func (r *Service) Ports(ctx context.Context) ([]Port, error) {
 	q = q.Select("id")
 
 	type ports struct {
-		Id PortID
+		Id ID
 	}
 
 	convert := func(fields []ports) []Port {
@@ -14068,7 +13764,7 @@ func (r *Service) Ports(ctx context.Context) ([]Port, error) {
 
 		for i := range fields {
 			val := Port{id: &fields[i].Id}
-			val.query = q.Root().Select("loadPortFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "Port")
 			out = append(out, val)
 		}
 
@@ -14092,12 +13788,12 @@ func (r *Service) Ports(ctx context.Context) ([]Port, error) {
 func (r *Service) Start(ctx context.Context) (*Service, error) {
 	q := r.query.Select("start")
 
-	var id ServiceID
+	var id ID
 	if err := q.Bind(&id).Execute(ctx); err != nil {
 		return nil, err
 	}
 	return &Service{
-		query: q.Root().Select("loadServiceFromID").Arg("id", id),
+		query: selectNode(q.Root(), id, "Service"),
 	}, nil
 }
 
@@ -14117,12 +13813,12 @@ func (r *Service) Stop(ctx context.Context, opts ...ServiceStopOpts) (*Service, 
 		}
 	}
 
-	var id ServiceID
+	var id ID
 	if err := q.Bind(&id).Execute(ctx); err != nil {
 		return nil, err
 	}
 	return &Service{
-		query: q.Root().Select("loadServiceFromID").Arg("id", id),
+		query: selectNode(q.Root(), id, "Service"),
 	}, nil
 }
 
@@ -14130,12 +13826,12 @@ func (r *Service) Stop(ctx context.Context, opts ...ServiceStopOpts) (*Service, 
 func (r *Service) Sync(ctx context.Context) (*Service, error) {
 	q := r.query.Select("sync")
 
-	var id ServiceID
+	var id ID
 	if err := q.Bind(&id).Execute(ctx); err != nil {
 		return nil, err
 	}
 	return &Service{
-		query: q.Root().Select("loadServiceFromID").Arg("id", id),
+		query: selectNode(q.Root(), id, "Service"),
 	}, nil
 }
 
@@ -14198,11 +13894,27 @@ func (r *Service) WithHostname(hostname string) *Service {
 	}
 }
 
+// AsNode returns this Service as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Service) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// AsSyncer returns this Service as a Syncer.
+// This is a local type conversion — no GraphQL call.
+func (r *Service) AsSyncer() Syncer {
+	return &SyncerClient{
+		query: r.query,
+	}
+}
+
 // A Unix or TCP/IP socket that can be mounted into a container.
 type Socket struct {
 	query *querybuilder.Selection
 
-	id *SocketID
+	id *ID
 }
 
 func (r *Socket) WithGraphQLQuery(q *querybuilder.Selection) *Socket {
@@ -14212,13 +13924,13 @@ func (r *Socket) WithGraphQLQuery(q *querybuilder.Selection) *Socket {
 }
 
 // A unique identifier for this Socket.
-func (r *Socket) ID(ctx context.Context) (SocketID, error) {
+func (r *Socket) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response SocketID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -14231,7 +13943,7 @@ func (r *Socket) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Socket) XXX_GraphQLIDType() string {
-	return "SocketID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -14251,13 +13963,21 @@ func (r *Socket) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// AsNode returns this Socket as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Socket) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // Source location information.
 type SourceMap struct {
 	query *querybuilder.Selection
 
 	column   *int
 	filename *string
-	id       *SourceMapID
+	id       *ID
 	line     *int
 	module   *string
 	url      *string
@@ -14296,13 +14016,13 @@ func (r *SourceMap) Filename(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this SourceMap.
-func (r *SourceMap) ID(ctx context.Context) (SourceMapID, error) {
+func (r *SourceMap) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response SourceMapID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -14315,7 +14035,7 @@ func (r *SourceMap) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *SourceMap) XXX_GraphQLIDType() string {
-	return "SourceMapID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -14374,12 +14094,20 @@ func (r *SourceMap) URL(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this SourceMap as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *SourceMap) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A file or directory status object.
 type Stat struct {
 	query *querybuilder.Selection
 
 	fileType    *FileType
-	id          *StatID
+	id          *ID
 	name        *string
 	permissions *int
 	size        *int
@@ -14405,13 +14133,13 @@ func (r *Stat) FileType(ctx context.Context) (FileType, error) {
 }
 
 // A unique identifier for this Stat.
-func (r *Stat) ID(ctx context.Context) (StatID, error) {
+func (r *Stat) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response StatID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -14424,7 +14152,7 @@ func (r *Stat) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Stat) XXX_GraphQLIDType() string {
-	return "StatID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -14483,12 +14211,20 @@ func (r *Stat) Size(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this Stat as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Stat) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // An interactive terminal that clients can connect to.
 type Terminal struct {
 	query *querybuilder.Selection
 
-	id   *TerminalID
-	sync *TerminalID
+	id   *ID
+	sync *ID
 }
 
 func (r *Terminal) WithGraphQLQuery(q *querybuilder.Selection) *Terminal {
@@ -14498,13 +14234,13 @@ func (r *Terminal) WithGraphQLQuery(q *querybuilder.Selection) *Terminal {
 }
 
 // A unique identifier for this Terminal.
-func (r *Terminal) ID(ctx context.Context) (TerminalID, error) {
+func (r *Terminal) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response TerminalID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -14517,7 +14253,7 @@ func (r *Terminal) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Terminal) XXX_GraphQLIDType() string {
-	return "TerminalID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -14543,20 +14279,36 @@ func (r *Terminal) MarshalJSON() ([]byte, error) {
 func (r *Terminal) Sync(ctx context.Context) (*Terminal, error) {
 	q := r.query.Select("sync")
 
-	var id TerminalID
+	var id ID
 	if err := q.Bind(&id).Execute(ctx); err != nil {
 		return nil, err
 	}
 	return &Terminal{
-		query: q.Root().Select("loadTerminalFromID").Arg("id", id),
+		query: selectNode(q.Root(), id, "Terminal"),
 	}, nil
+}
+
+// AsNode returns this Terminal as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Terminal) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// AsSyncer returns this Terminal as a Syncer.
+// This is a local type conversion — no GraphQL call.
+func (r *Terminal) AsSyncer() Syncer {
+	return &SyncerClient{
+		query: r.query,
+	}
 }
 
 // A definition of a parameter or return type in a Module.
 type TypeDef struct {
 	query *querybuilder.Selection
 
-	id       *TypeDefID
+	id       *ID
 	kind     *TypeDefKind
 	name     *string
 	optional *bool
@@ -14631,13 +14383,13 @@ func (r *TypeDef) AsScalar() *ScalarTypeDef {
 }
 
 // A unique identifier for this TypeDef.
-func (r *TypeDef) ID(ctx context.Context) (TypeDefID, error) {
+func (r *TypeDef) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response TypeDefID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -14650,7 +14402,7 @@ func (r *TypeDef) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *TypeDef) XXX_GraphQLIDType() string {
-	return "TypeDefID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -14987,11 +14739,19 @@ func (r *TypeDef) WithScalar(name string, opts ...TypeDefWithScalarOpts) *TypeDe
 	}
 }
 
+// AsNode returns this TypeDef as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *TypeDef) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type Up struct {
 	query *querybuilder.Selection
 
 	description *string
-	id          *UpID
+	id          *ID
 	name        *string
 }
 type WithUpFunc func(r *Up) *Up
@@ -15023,13 +14783,13 @@ func (r *Up) Description(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this Up.
-func (r *Up) ID(ctx context.Context) (UpID, error) {
+func (r *Up) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response UpID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -15042,7 +14802,7 @@ func (r *Up) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Up) XXX_GraphQLIDType() string {
-	return "UpID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -15103,10 +14863,18 @@ func (r *Up) Run() *Up {
 	}
 }
 
+// AsNode returns this Up as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Up) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type UpGroup struct {
 	query *querybuilder.Selection
 
-	id *UpGroupID
+	id *ID
 }
 type WithUpGroupFunc func(r *UpGroup) *UpGroup
 
@@ -15124,13 +14892,13 @@ func (r *UpGroup) WithGraphQLQuery(q *querybuilder.Selection) *UpGroup {
 }
 
 // A unique identifier for this UpGroup.
-func (r *UpGroup) ID(ctx context.Context) (UpGroupID, error) {
+func (r *UpGroup) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response UpGroupID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -15143,7 +14911,7 @@ func (r *UpGroup) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *UpGroup) XXX_GraphQLIDType() string {
-	return "UpGroupID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -15170,7 +14938,7 @@ func (r *UpGroup) List(ctx context.Context) ([]Up, error) {
 	q = q.Select("id")
 
 	type list struct {
-		Id UpID
+		Id ID
 	}
 
 	convert := func(fields []list) []Up {
@@ -15178,7 +14946,7 @@ func (r *UpGroup) List(ctx context.Context) ([]Up, error) {
 
 		for i := range fields {
 			val := Up{id: &fields[i].Id}
-			val.query = q.Root().Select("loadUpFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "Up")
 			out = append(out, val)
 		}
 
@@ -15205,6 +14973,14 @@ func (r *UpGroup) Run() *UpGroup {
 	}
 }
 
+// AsNode returns this UpGroup as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *UpGroup) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A Dagger workspace detected from the current working directory.
 type Workspace struct {
 	query *querybuilder.Selection
@@ -15214,7 +14990,7 @@ type Workspace struct {
 	configPath  *string
 	findUp      *string
 	hasConfig   *bool
-	id          *WorkspaceID
+	id          *ID
 	initialized *bool
 	path        *string
 }
@@ -15402,13 +15178,13 @@ func (r *Workspace) HasConfig(ctx context.Context) (bool, error) {
 }
 
 // A unique identifier for this Workspace.
-func (r *Workspace) ID(ctx context.Context) (WorkspaceID, error) {
+func (r *Workspace) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response WorkspaceID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -15421,7 +15197,7 @@ func (r *Workspace) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Workspace) XXX_GraphQLIDType() string {
-	return "WorkspaceID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -15485,6 +15261,298 @@ func (r *Workspace) Services(opts ...WorkspaceServicesOpts) *UpGroup {
 
 	return &UpGroup{
 		query: q,
+	}
+}
+
+// AsNode returns this Workspace as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Workspace) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+// An object that can be exported to the host.
+//
+// Calling export writes the object to a path on the host filesystem and returns the path that was written.
+type Exportable interface {
+	DaggerObject
+
+	Export(ctx context.Context, path string) (string, error)
+
+	ID(ctx context.Context) (ID, error)
+
+	// Concrete loads and returns the underlying concrete type of this
+	// interface, which can then be used with a type switch.
+	Concrete(ctx context.Context) (Node, error)
+}
+
+// ExportableClient is the query-builder for the Exportable interface.
+type ExportableClient struct {
+	query *querybuilder.Selection
+
+	export *string
+	id     *ID
+}
+
+func (r *ExportableClient) WithGraphQLQuery(q *querybuilder.Selection) *ExportableClient {
+	return &ExportableClient{
+		query: q,
+	}
+}
+
+func (r *ExportableClient) Export(ctx context.Context, path string) (string, error) {
+	if r.export != nil {
+		return *r.export, nil
+	}
+	q := r.query.Select("export")
+	q = q.Arg("path", path)
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *ExportableClient) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *ExportableClient) XXX_GraphQLType() string {
+	return "Exportable"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ExportableClient) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *ExportableClient) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *ExportableClient) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Concrete loads and returns the underlying concrete type of this
+// interface, which can then be used with a type switch.
+func (r *ExportableClient) Concrete(ctx context.Context) (Node, error) {
+	// Query __typename to determine the concrete type.
+	var typeName string
+	q := r.query.Select("__typename")
+	q = q.Bind(&typeName)
+	if err := q.Execute(ctx); err != nil {
+		return nil, err
+	}
+	// Get the ID to load the concrete object.
+	id, err := r.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	switch typeName {
+	case "Changeset":
+		return &Changeset{query: selectNode(r.query.Root(), id, "Changeset")}, nil
+	case "Container":
+		return &Container{query: selectNode(r.query.Root(), id, "Container")}, nil
+	case "Directory":
+		return &Directory{query: selectNode(r.query.Root(), id, "Directory")}, nil
+	case "File":
+		return &File{query: selectNode(r.query.Root(), id, "File")}, nil
+	default:
+		return nil, fmt.Errorf("unknown Exportable implementation: %s", typeName)
+	}
+}
+
+// An object with a globally unique ID.
+type Node interface {
+	DaggerObject
+
+	ID(ctx context.Context) (ID, error)
+}
+
+// NodeClient is the query-builder for the Node interface.
+type NodeClient struct {
+	query *querybuilder.Selection
+
+	id *ID
+}
+
+func (r *NodeClient) WithGraphQLQuery(q *querybuilder.Selection) *NodeClient {
+	return &NodeClient{
+		query: q,
+	}
+}
+
+func (r *NodeClient) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *NodeClient) XXX_GraphQLType() string {
+	return "Node"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *NodeClient) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *NodeClient) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *NodeClient) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// An object that can be force-evaluated.
+//
+// Calling sync ensures that the object's entire dependency DAG has been evaluated, returning the object's ID once complete.
+type Syncer interface {
+	DaggerObject
+
+	ID(ctx context.Context) (ID, error)
+
+	Sync(ctx context.Context) (Syncer, error)
+
+	// Concrete loads and returns the underlying concrete type of this
+	// interface, which can then be used with a type switch.
+	Concrete(ctx context.Context) (Node, error)
+}
+
+// SyncerClient is the query-builder for the Syncer interface.
+type SyncerClient struct {
+	query *querybuilder.Selection
+
+	id   *ID
+	sync *ID
+}
+
+func (r *SyncerClient) WithGraphQLQuery(q *querybuilder.Selection) *SyncerClient {
+	return &SyncerClient{
+		query: q,
+	}
+}
+
+func (r *SyncerClient) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *SyncerClient) XXX_GraphQLType() string {
+	return "Syncer"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *SyncerClient) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *SyncerClient) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *SyncerClient) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+func (r *SyncerClient) Sync(ctx context.Context) (Syncer, error) {
+	q := r.query.Select("sync")
+
+	var id ID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &SyncerClient{
+		query: selectNode(q.Root(), id, "Syncer"),
+	}, nil
+}
+
+// Concrete loads and returns the underlying concrete type of this
+// interface, which can then be used with a type switch.
+func (r *SyncerClient) Concrete(ctx context.Context) (Node, error) {
+	// Query __typename to determine the concrete type.
+	var typeName string
+	q := r.query.Select("__typename")
+	q = q.Bind(&typeName)
+	if err := q.Execute(ctx); err != nil {
+		return nil, err
+	}
+	// Get the ID to load the concrete object.
+	id, err := r.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	switch typeName {
+	case "Changeset":
+		return &Changeset{query: selectNode(r.query.Root(), id, "Changeset")}, nil
+	case "Container":
+		return &Container{query: selectNode(r.query.Root(), id, "Container")}, nil
+	case "Directory":
+		return &Directory{query: selectNode(r.query.Root(), id, "Directory")}, nil
+	case "File":
+		return &File{query: selectNode(r.query.Root(), id, "File")}, nil
+	case "LLM":
+		return &LLM{query: selectNode(r.query.Root(), id, "LLM")}, nil
+	case "Module":
+		return &Module{query: selectNode(r.query.Root(), id, "Module")}, nil
+	case "ModuleSource":
+		return &ModuleSource{query: selectNode(r.query.Root(), id, "ModuleSource")}, nil
+	case "Service":
+		return &Service{query: selectNode(r.query.Root(), id, "Service")}, nil
+	case "Terminal":
+		return &Terminal{query: selectNode(r.query.Root(), id, "Terminal")}, nil
+	default:
+		return nil, fmt.Errorf("unknown Syncer implementation: %s", typeName)
 	}
 }
 
@@ -16519,3 +16587,50 @@ const (
 	// Always paired with an EnumTypeDef.
 	TypeDefKindEnum TypeDefKind = TypeDefKindEnumKind
 )
+
+// selectNode returns a query selection for node(id:) scoped to the
+// given type via an inline fragment.
+func selectNode(q *querybuilder.Selection, id any, typeName string) *querybuilder.Selection {
+	return q.Select("node").Arg("id", id).InlineFragment(typeName)
+}
+
+// Loadable is the constraint for types that can be loaded from an ID.
+// Every generated object and interface client type satisfies this.
+type Loadable[T any] interface {
+	Node
+	WithGraphQLQuery(*querybuilder.Selection) T
+}
+
+// Ref returns a lazy reference to a node by its ID without making a
+// network call. The returned value can be used to chain further queries.
+func Ref[T Loadable[T]](c *Client, id ID) T {
+	var zero T
+	return zero.WithGraphQLQuery(selectNode(c.query, id, zero.XXX_GraphQLType()))
+}
+
+// Load loads a node by its ID with type safety. It verifies that the
+// node exists and matches the expected type before returning.
+//
+// The type parameter can be a concrete type or an interface. The
+// __typename check is done through the inline fragment so that
+// interface loads succeed when the concrete type (e.g. "Impl")
+// implements the expected interface (e.g. "CustomIface").
+func Load[T Loadable[T]](ctx context.Context, c *Client, id ID) (T, error) {
+	var zero T
+	expectedType := zero.XXX_GraphQLType()
+
+	// Query __typename through the inline fragment. For concrete types
+	// this is equivalent to a direct check. For interfaces, the fragment
+	// only matches if the concrete type implements the interface — an
+	// empty result means the ID doesn't satisfy the expected type.
+	q := selectNode(c.query, id, expectedType)
+	var typeName string
+	if err := q.Select("__typename").Bind(&typeName).Execute(ctx); err != nil {
+		return zero, fmt.Errorf("load %s: %w", expectedType, err)
+	}
+	if typeName == "" {
+		return zero, fmt.Errorf("load %s: node not found or does not implement %s", expectedType, expectedType)
+	}
+
+	return zero.WithGraphQLQuery(selectNode(c.query, id, expectedType)), nil
+}

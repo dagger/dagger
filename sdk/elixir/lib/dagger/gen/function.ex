@@ -31,8 +31,9 @@ defmodule Dagger.Function do
          %Dagger.FunctionArg{
            query_builder:
              QB.query()
-             |> QB.select("loadFunctionArgFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("FunctionArg"),
            client: function.client
          }
        end}
@@ -64,7 +65,7 @@ defmodule Dagger.Function do
   @doc """
   A unique identifier for this Function.
   """
-  @spec id(t()) :: {:ok, Dagger.FunctionID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = function) do
     query_builder =
       function.query_builder |> QB.select("id")
@@ -130,7 +131,7 @@ defmodule Dagger.Function do
           {:default_value, Dagger.JSON.t() | nil},
           {:default_path, String.t() | nil},
           {:ignore, [String.t()]},
-          {:source_map, Dagger.SourceMapID.t() | nil},
+          {:source_map, Dagger.SourceMap.t() | nil},
           {:deprecated, String.t() | nil},
           {:default_address, String.t() | nil}
         ]) :: Dagger.Function.t()
@@ -144,7 +145,10 @@ defmodule Dagger.Function do
       |> QB.maybe_put_arg("defaultValue", optional_args[:default_value])
       |> QB.maybe_put_arg("defaultPath", optional_args[:default_path])
       |> QB.maybe_put_arg("ignore", optional_args[:ignore])
-      |> QB.maybe_put_arg("sourceMap", optional_args[:source_map])
+      |> QB.maybe_put_arg(
+        "sourceMap",
+        if(optional_args[:source_map], do: Dagger.ID.id!(optional_args[:source_map]), else: nil)
+      )
       |> QB.maybe_put_arg("deprecated", optional_args[:deprecated])
       |> QB.maybe_put_arg("defaultAddress", optional_args[:default_address])
 
@@ -272,6 +276,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.Function do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_function_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.Function{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("Function"),
+       client: dag.client
+     }}
   end
 end

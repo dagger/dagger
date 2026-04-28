@@ -6,7 +6,10 @@ replace github.com/dagger/dagger => ../..
 
 replace github.com/dagger/dagger/engine/distconsts => ../../engine/distconsts
 
-require github.com/dagger/otel-go v1.41.0
+require (
+	github.com/dagger/otel-go v1.41.0
+	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
+)
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -14,7 +17,6 @@ require (
 )
 
 require (
-	dagger.io/dagger v0.20.6
 	github.com/99designs/gqlgen v0.17.89 // indirect
 	github.com/Khan/genqlient v0.8.1
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect

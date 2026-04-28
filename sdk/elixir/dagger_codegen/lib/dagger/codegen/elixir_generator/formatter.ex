@@ -115,6 +115,7 @@ defmodule Dagger.Codegen.ElixirGenerator.Formatter do
         "Float" -> "float()"
         "Boolean" -> "boolean()"
         "DateTime" -> "DateTime.t()"
+        "ID" -> "String.t()"
         otherwise -> "#{format_module(otherwise)}.t()"
       end
 
@@ -195,7 +196,7 @@ defmodule Dagger.Codegen.ElixirGenerator.Formatter do
     format_output_type(type)
   end
 
-  def format_output_type(%TypeRef{kind: kind, name: name}) when kind in ["OBJECT", "ENUM"] do
+  def format_output_type(%TypeRef{kind: kind, name: name}) when kind in ["OBJECT", "INTERFACE", "ENUM"] do
     format_module(name)
   end
 

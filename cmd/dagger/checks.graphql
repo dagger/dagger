@@ -1,27 +1,33 @@
-query CheckGroupListDetails($id: CheckGroupID!) {
-  group: loadCheckGroupFromID(id: $id) {
-    list {
-      name
-      description
-    }
-  }
-}
-
-query CheckGroupRunStatuses($checkGroup: CheckGroupID!) {
-  checkGroup: loadCheckGroupFromID(id: $checkGroup) {
-    run {
+query CheckGroupListDetails($id: ID!) {
+  group: node(id: $id) {
+    ... on CheckGroup {
       list {
-        passed
+        name
+        description
       }
     }
   }
 }
 
-query CheckGroupRunStatusesFailFast($checkGroup: CheckGroupID!) {
-  checkGroup: loadCheckGroupFromID(id: $checkGroup) {
-    run(failFast: true) {
-      list {
-        passed
+query CheckGroupRunStatuses($checkGroup: ID!) {
+  checkGroup: node(id: $checkGroup) {
+    ... on CheckGroup {
+      run {
+        list {
+          passed
+        }
+      }
+    }
+  }
+}
+
+query CheckGroupRunStatusesFailFast($checkGroup: ID!) {
+  checkGroup: node(id: $checkGroup) {
+    ... on CheckGroup {
+      run(failFast: true) {
+        list {
+          passed
+        }
       }
     }
   }

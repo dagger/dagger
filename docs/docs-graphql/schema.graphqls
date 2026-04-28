@@ -22,6 +22,16 @@ directive @defaultPath(path: String!) on ARGUMENT_DEFINITION
 directive @enumValue(value: String!) on ENUM_VALUE
 
 """
+Indicates the expected object or interface type for an ID value. On arguments,
+indicates what type of ID is expected. On fields, indicates the type of the
+returned ID.
+"""
+directive @expectedType(
+  """The name of the expected type."""
+  name: String!
+) on ARGUMENT_DEFINITION | FIELD_DEFINITION
+
+"""
 Explains why this element is marked experimental. Formatted in [Markdown](https://daringfireball.net/projects/markdown/).
 """
 directive @experimental(
@@ -63,7 +73,7 @@ type Address {
   gitRepository: GitRepository!
 
   """A unique identifier for this Address."""
-  id: AddressID!
+  id: ID!
 
   """Load a secret from the address."""
   secret: Secret!
@@ -77,11 +87,6 @@ type Address {
   """The address value"""
   value: String!
 }
-
-"""
-The `AddressID` scalar type represents an identifier for an object of type Address.
-"""
-scalar AddressID
 
 type Binding {
   """Retrieve the binding value, as type Address"""
@@ -181,7 +186,7 @@ type Binding {
   digest: String!
 
   """A unique identifier for this Binding."""
-  id: BindingID!
+  id: ID!
 
   """Returns true if the binding is null"""
   isNull: Boolean!
@@ -192,11 +197,6 @@ type Binding {
   """Returns the binding type"""
   typeName: String!
 }
-
-"""
-The `BindingID` scalar type represents an identifier for an object of type Binding.
-"""
-scalar BindingID
 
 """Key value object that represents a build argument."""
 input BuildArg {
@@ -224,13 +224,8 @@ enum CacheSharingMode {
 """A directory whose contents persist across runs."""
 type CacheVolume {
   """A unique identifier for this CacheVolume."""
-  id: CacheVolumeID!
+  id: ID!
 }
-
-"""
-The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
-"""
-scalar CacheVolumeID
 
 """
 A comparison between two directories representing changes that can be applied.
@@ -260,7 +255,7 @@ type Changeset {
   ): String!
 
   """A unique identifier for this Changeset."""
-  id: ChangesetID!
+  id: ID!
 
   """Returns true if the changeset is empty (i.e. there are no changes)."""
   isEmpty: Boolean!
@@ -280,7 +275,7 @@ type Changeset {
   removedPaths: [String!]!
 
   """Force evaluation in the engine."""
-  sync: ChangesetID!
+  sync: ID! @expectedType(name: "Changeset")
 
   """
   Add changes to an existing changeset
@@ -291,7 +286,7 @@ type Changeset {
   """
   withChangeset(
     """Changes to merge into the actual changeset"""
-    changes: ChangesetID!
+    changes: ID!
 
     """What to do on a merge conflict"""
     onConflict: ChangesetMergeConflict = FAIL
@@ -306,17 +301,12 @@ type Changeset {
   """
   withChangesets(
     """List of changesets to merge into the actual changeset"""
-    changes: [ChangesetID!]!
+    changes: [ID!]!
 
     """What to do on a merge conflict"""
     onConflict: ChangesetsMergeConflict = FAIL
   ): Changeset!
 }
-
-"""
-The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
-"""
-scalar ChangesetID
 
 """Strategy to use when merging changesets with conflicting changes."""
 enum ChangesetMergeConflict {
@@ -367,7 +357,7 @@ type Check {
   error: Error
 
   """A unique identifier for this Check."""
-  id: CheckID!
+  id: ID!
 
   """Return the fully qualified name of the check"""
   name: String!
@@ -390,7 +380,7 @@ type Check {
 
 type CheckGroup {
   """A unique identifier for this CheckGroup."""
-  id: CheckGroupID!
+  id: ID!
 
   """Return a list of individual checks and their details"""
   list: [Check!]!
@@ -405,40 +395,20 @@ type CheckGroup {
   ): CheckGroup!
 }
 
-"""
-The `CheckGroupID` scalar type represents an identifier for an object of type CheckGroup.
-"""
-scalar CheckGroupID
-
-"""
-The `CheckID` scalar type represents an identifier for an object of type Check.
-"""
-scalar CheckID
-
 """An internal persistent filesync mirror."""
 type ClientFilesyncMirror {
   """A unique identifier for this ClientFilesyncMirror."""
-  id: ClientFilesyncMirrorID!
+  id: ID!
 }
-
-"""
-The `ClientFilesyncMirrorID` scalar type represents an identifier for an object of type ClientFilesyncMirror.
-"""
-scalar ClientFilesyncMirrorID
 
 """Dagger Cloud configuration and state"""
 type Cloud {
   """A unique identifier for this Cloud."""
-  id: CloudID!
+  id: ID!
 
   """The trace URL for the current session"""
   traceURL: String!
 }
-
-"""
-The `CloudID` scalar type represents an identifier for an object of type Cloud.
-"""
-scalar CloudID
 
 """An OCI-compatible container, also known as a Docker container."""
 type Container {
@@ -495,7 +465,7 @@ type Container {
 
     Used for multi-platform images.
     """
-    platformVariants: [ContainerID!] = []
+    platformVariants: [ID!] = []
 
     """
     Force each layer of the image to use the specified compression algorithm.
@@ -618,7 +588,7 @@ type Container {
 
     Used for multi-platform image.
     """
-    platformVariants: [ContainerID!] = []
+    platformVariants: [ID!] = []
 
     """
     Force each layer of the exported image to use the specified compression algorithm.
@@ -656,7 +626,7 @@ type Container {
 
     Used for multi-platform image.
     """
-    platformVariants: [ContainerID!] = []
+    platformVariants: [ID!] = []
 
     """
     Force each layer of the exported image to use the specified compression algorithm.
@@ -712,7 +682,7 @@ type Container {
   ): Container!
 
   """A unique identifier for this Container."""
-  id: ContainerID!
+  id: ID!
 
   """
   The unique image reference which can only be retrieved immediately after the 'Container.From' call.
@@ -722,7 +692,7 @@ type Container {
   """Reads the container from an OCI tarball."""
   import(
     """File to read the container from."""
-    source: FileID!
+    source: ID!
 
     """
     Identifies the tag to import from the archive, if the archive bundles multiple tags.
@@ -763,7 +733,7 @@ type Container {
 
     Used for multi-platform image.
     """
-    platformVariants: [ContainerID!] = []
+    platformVariants: [ID!] = []
 
     """
     Force each layer of the published image to use the specified compression algorithm.
@@ -820,7 +790,7 @@ type Container {
 
   It doesn't run the default command if no exec has been set.
   """
-  sync: ContainerID!
+  sync: ID! @expectedType(name: "Container")
 
   """
   Opens an interactive terminal for this container using its configured default
@@ -947,7 +917,7 @@ type Container {
     path: String!
 
     """Identifier of the directory to write"""
-    source: DirectoryID!
+    source: ID!
 
     """
     Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
@@ -1037,7 +1007,7 @@ type Container {
   """Export environment variables from an env-file to the container."""
   withEnvFileVariables(
     """Identifier of the envfile"""
-    source: EnvFileID!
+    source: ID!
   ): Container!
 
   """Set a new environment variable in the container."""
@@ -1166,7 +1136,7 @@ type Container {
     path: String!
 
     """File to add"""
-    source: FileID!
+    source: ID!
 
     """Permissions of the new file. Example: 0600"""
     permissions: Int
@@ -1195,7 +1165,7 @@ type Container {
     path: String!
 
     """Identifiers of the files to copy."""
-    sources: [FileID!]!
+    sources: [ID!]!
 
     """Permission given to the copied files (e.g., 0600)."""
     permissions: Int
@@ -1233,10 +1203,10 @@ type Container {
     path: String!
 
     """Identifier of the cache volume to mount."""
-    cache: CacheVolumeID!
+    cache: ID!
 
     """Identifier of the directory to use as the cache volume's root."""
-    source: DirectoryID
+    source: ID
 
     """Sharing mode of the cache volume."""
     sharing: CacheSharingMode = SHARED
@@ -1267,7 +1237,7 @@ type Container {
     path: String!
 
     """Identifier of the mounted directory."""
-    source: DirectoryID!
+    source: ID!
 
     """
     A user:group to set for the mounted directory and its contents.
@@ -1294,7 +1264,7 @@ type Container {
     path: String!
 
     """Identifier of the mounted file."""
-    source: FileID!
+    source: ID!
 
     """
     A user or user:group to set for the mounted file.
@@ -1320,7 +1290,7 @@ type Container {
     path: String!
 
     """Identifier of the secret to mount."""
-    source: SecretID!
+    source: ID!
 
     """
     A user:group to set for the mounted secret.
@@ -1412,7 +1382,7 @@ type Container {
     username: String!
 
     """The API key, password or token to authenticate to this registry"""
-    secret: SecretID!
+    secret: ID!
   ): Container!
 
   """
@@ -1420,7 +1390,7 @@ type Container {
   """
   withRootfs(
     """The new root filesystem."""
-    directory: DirectoryID!
+    directory: ID!
   ): Container!
 
   """Set a new environment variable, using a secret value"""
@@ -1429,7 +1399,7 @@ type Container {
     name: String!
 
     """Identifier of the secret value."""
-    secret: SecretID!
+    secret: ID!
   ): Container!
 
   """
@@ -1449,7 +1419,7 @@ type Container {
     alias: String!
 
     """The target service"""
-    service: ServiceID!
+    service: ID!
   ): Container!
 
   """Return a snapshot with a symlink"""
@@ -1477,7 +1447,7 @@ type Container {
     path: String!
 
     """Identifier of the socket to forward."""
-    source: SocketID!
+    source: ID!
 
     """
     A user:group to set for the mounted socket.
@@ -1660,11 +1630,6 @@ type Container {
   workdir: String!
 }
 
-"""
-The `ContainerID` scalar type represents an identifier for an object of type Container.
-"""
-scalar ContainerID
-
 """Reflective module API provided to functions at runtime."""
 type CurrentModule {
   """The dependencies of the module."""
@@ -1682,7 +1647,7 @@ type CurrentModule {
   ): GeneratorGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
   """A unique identifier for this CurrentModule."""
-  id: CurrentModuleID!
+  id: ID!
 
   """The name of the module being executed in"""
   name: String!
@@ -1727,17 +1692,12 @@ type CurrentModule {
   ): File!
 }
 
-"""
-The `CurrentModuleID` scalar type represents an identifier for an object of type CurrentModule.
-"""
-scalar CurrentModuleID
-
 type DiffStat {
   """Number of added lines for this path."""
   addedLines: Int!
 
   """A unique identifier for this DiffStat."""
-  id: DiffStatID!
+  id: ID!
 
   """Type of change."""
   kind: DiffStatKind!
@@ -1751,11 +1711,6 @@ type DiffStat {
   """Number of removed lines for this path."""
   removedLines: Int!
 }
-
-"""
-The `DiffStatID` scalar type represents an identifier for an object of type DiffStat.
-"""
-scalar DiffStatID
 
 """The type of change for a diff stat entry."""
 enum DiffStatKind {
@@ -1804,7 +1759,7 @@ type Directory {
   """
   changes(
     """The base directory snapshot to compare against"""
-    from: DirectoryID!
+    from: ID!
   ): Changeset!
 
   """Change the owner of the directory contents recursively."""
@@ -1827,7 +1782,7 @@ type Directory {
   """
   diff(
     """The directory to compare against"""
-    other: DirectoryID!
+    other: ID!
   ): Directory!
 
   """
@@ -1869,7 +1824,7 @@ type Directory {
 
     They will be mounted at /run/secrets/[secret-name].
     """
-    secrets: [SecretID!] = []
+    secrets: [ID!] = []
 
     """
     If set, skip the automatic init process injected into containers created by RUN statements.
@@ -1887,7 +1842,7 @@ type Directory {
 
     Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK.
     """
-    ssh: SocketID
+    ssh: ID
   ): Container!
 
   """Returns a list of files and directories at the given path."""
@@ -1968,7 +1923,7 @@ type Directory {
   ): [String!]!
 
   """A unique identifier for this Directory."""
-  id: DirectoryID!
+  id: ID!
 
   """Returns the name of the directory."""
   name: String!
@@ -2025,14 +1980,14 @@ type Directory {
   ): Stat
 
   """Force evaluation in the engine."""
-  sync: DirectoryID!
+  sync: ID! @expectedType(name: "Directory")
 
   """
   Opens an interactive terminal in new container with this directory mounted inside.
   """
   terminal(
     """If set, override the default container used for the terminal."""
-    container: ContainerID
+    container: ID
 
     """
     If set, override the container's default terminal command and invoke these command arguments instead.
@@ -2055,7 +2010,7 @@ type Directory {
   """Return a directory with changes from another directory applied to it."""
   withChanges(
     """Changes to apply to the directory"""
-    changes: ChangesetID!
+    changes: ID!
   ): Directory!
 
   """Return a snapshot with a directory added"""
@@ -2064,7 +2019,7 @@ type Directory {
     path: String!
 
     """Identifier of the directory to copy."""
-    source: DirectoryID!
+    source: ID!
 
     """
     Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
@@ -2106,7 +2061,7 @@ type Directory {
     path: String!
 
     """Identifier of the file to copy."""
-    source: FileID!
+    source: ID!
 
     """Permission given to the copied file (e.g., 0600)."""
     permissions: Int
@@ -2129,7 +2084,7 @@ type Directory {
     path: String!
 
     """Identifiers of the files to copy."""
-    sources: [FileID!]!
+    sources: [ID!]!
 
     """Permission given to the copied files (e.g., 0600)."""
     permissions: Int
@@ -2177,7 +2132,7 @@ type Directory {
   """
   withPatchFile(
     """File containing the patch to apply"""
-    patch: FileID!
+    patch: ID!
   ): Directory! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
   """Return a snapshot with a symlink"""
@@ -2224,18 +2179,13 @@ type Directory {
   ): Directory!
 }
 
-"""
-The `DirectoryID` scalar type represents an identifier for an object of type Directory.
-"""
-scalar DirectoryID
-
 """The Dagger engine configuration and state"""
 type Engine {
   """The list of connected client IDs"""
   clients: [String!]!
 
   """A unique identifier for this Engine."""
-  id: EngineID!
+  id: ID!
 
   """The local engine cache state tracked by dagql"""
   localCache: EngineCache!
@@ -2250,7 +2200,7 @@ type EngineCache {
   entrySet(key: String = ""): EngineCacheEntrySet!
 
   """A unique identifier for this EngineCache."""
-  id: EngineCacheID!
+  id: ID!
 
   """The maximum bytes to keep in the cache without pruning."""
   maxUsedSpace: Int!
@@ -2310,7 +2260,7 @@ type EngineCacheEntry {
   diskSpaceBytes: Int!
 
   """A unique identifier for this EngineCacheEntry."""
-  id: EngineCacheEntryID!
+  id: ID!
 
   """The most recent time the cache entry was used, in Unix nanoseconds."""
   mostRecentUseTimeUnixNano: Int!
@@ -2320,11 +2270,6 @@ type EngineCacheEntry {
   """
   recordType: String!
 }
-
-"""
-The `EngineCacheEntryID` scalar type represents an identifier for an object of type EngineCacheEntry.
-"""
-scalar EngineCacheEntryID
 
 """A set of cache entries returned by a query to a cache"""
 type EngineCacheEntrySet {
@@ -2338,23 +2283,8 @@ type EngineCacheEntrySet {
   entryCount: Int!
 
   """A unique identifier for this EngineCacheEntrySet."""
-  id: EngineCacheEntrySetID!
+  id: ID!
 }
-
-"""
-The `EngineCacheEntrySetID` scalar type represents an identifier for an object of type EngineCacheEntrySet.
-"""
-scalar EngineCacheEntrySetID
-
-"""
-The `EngineCacheID` scalar type represents an identifier for an object of type EngineCache.
-"""
-scalar EngineCacheID
-
-"""
-The `EngineID` scalar type represents an identifier for an object of type Engine.
-"""
-scalar EngineID
 
 """A definition of a custom enum defined in a Module."""
 type EnumTypeDef {
@@ -2362,7 +2292,7 @@ type EnumTypeDef {
   description: String!
 
   """A unique identifier for this EnumTypeDef."""
-  id: EnumTypeDefID!
+  id: ID!
 
   """The members of the enum."""
   members: [EnumValueTypeDef!]!
@@ -2382,11 +2312,6 @@ type EnumTypeDef {
   values: [EnumValueTypeDef!]! @deprecated(reason: "use members instead")
 }
 
-"""
-The `EnumTypeDefID` scalar type represents an identifier for an object of type EnumTypeDef.
-"""
-scalar EnumTypeDefID
-
 """A definition of a value in a custom enum defined in a Module."""
 type EnumValueTypeDef {
   """The reason this enum member is deprecated, if any."""
@@ -2396,7 +2321,7 @@ type EnumValueTypeDef {
   description: String!
 
   """A unique identifier for this EnumValueTypeDef."""
-  id: EnumValueTypeDefID!
+  id: ID!
 
   """The name of the enum member."""
   name: String!
@@ -2407,11 +2332,6 @@ type EnumValueTypeDef {
   """The value of the enum member"""
   value: String!
 }
-
-"""
-The `EnumValueTypeDefID` scalar type represents an identifier for an object of type EnumValueTypeDef.
-"""
-scalar EnumValueTypeDefID
 
 type Env {
   """
@@ -2429,7 +2349,7 @@ type Env {
   ): CheckGroup! @experimental(reason: "Checks API is highly experimental and may be removed or replaced entirely.")
 
   """A unique identifier for this Env."""
-  id: EnvID!
+  id: ID!
 
   """Retrieves an input binding by name"""
   input(name: String!): Binding!
@@ -2455,7 +2375,7 @@ type Env {
     name: String!
 
     """The Address value to assign to the binding"""
-    value: AddressID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2476,7 +2396,7 @@ type Env {
     name: String!
 
     """The CacheVolume value to assign to the binding"""
-    value: CacheVolumeID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2497,7 +2417,7 @@ type Env {
     name: String!
 
     """The Changeset value to assign to the binding"""
-    value: ChangesetID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2518,7 +2438,7 @@ type Env {
     name: String!
 
     """The CheckGroup value to assign to the binding"""
-    value: CheckGroupID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2539,7 +2459,7 @@ type Env {
     name: String!
 
     """The Check value to assign to the binding"""
-    value: CheckID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2560,7 +2480,7 @@ type Env {
     name: String!
 
     """The Cloud value to assign to the binding"""
-    value: CloudID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2581,7 +2501,7 @@ type Env {
     name: String!
 
     """The Container value to assign to the binding"""
-    value: ContainerID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2609,7 +2529,7 @@ type Env {
     name: String!
 
     """The DiffStat value to assign to the binding"""
-    value: DiffStatID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2630,7 +2550,7 @@ type Env {
     name: String!
 
     """The Directory value to assign to the binding"""
-    value: DirectoryID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2651,7 +2571,7 @@ type Env {
     name: String!
 
     """The EnvFile value to assign to the binding"""
-    value: EnvFileID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2672,7 +2592,7 @@ type Env {
     name: String!
 
     """The Env value to assign to the binding"""
-    value: EnvID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2693,7 +2613,7 @@ type Env {
     name: String!
 
     """The File value to assign to the binding"""
-    value: FileID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2714,7 +2634,7 @@ type Env {
     name: String!
 
     """The GeneratorGroup value to assign to the binding"""
-    value: GeneratorGroupID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2737,7 +2657,7 @@ type Env {
     name: String!
 
     """The Generator value to assign to the binding"""
-    value: GeneratorID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2758,7 +2678,7 @@ type Env {
     name: String!
 
     """The GitRef value to assign to the binding"""
-    value: GitRefID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2779,7 +2699,7 @@ type Env {
     name: String!
 
     """The GitRepository value to assign to the binding"""
-    value: GitRepositoryID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2802,7 +2722,7 @@ type Env {
     name: String!
 
     """The HTTPState value to assign to the binding"""
-    value: HTTPStateID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2823,7 +2743,7 @@ type Env {
     name: String!
 
     """The JSONValue value to assign to the binding"""
-    value: JSONValueID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2843,14 +2763,14 @@ type Env {
 
   Contextual path arguments will be populated using the environment's workspace.
   """
-  withMainModule(module: ModuleID!): Env!
+  withMainModule(module: ID!): Env!
 
   """
   Installs a module into the environment, exposing its functions to the model
 
   Contextual path arguments will be populated using the environment's workspace.
   """
-  withModule(module: ModuleID!): Env! @deprecated(reason: "Use withMainModule instead")
+  withModule(module: ID!): Env! @deprecated(reason: "Use withMainModule instead")
 
   """
   Create or update a binding of type ModuleConfigClient in the environment
@@ -2860,7 +2780,7 @@ type Env {
     name: String!
 
     """The ModuleConfigClient value to assign to the binding"""
-    value: ModuleConfigClientID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2883,7 +2803,7 @@ type Env {
     name: String!
 
     """The Module value to assign to the binding"""
-    value: ModuleID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2904,7 +2824,7 @@ type Env {
     name: String!
 
     """The ModuleSource value to assign to the binding"""
-    value: ModuleSourceID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2927,7 +2847,7 @@ type Env {
     name: String!
 
     """The SearchResult value to assign to the binding"""
-    value: SearchResultID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2950,7 +2870,7 @@ type Env {
     name: String!
 
     """The SearchSubmatch value to assign to the binding"""
-    value: SearchSubmatchID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2973,7 +2893,7 @@ type Env {
     name: String!
 
     """The Secret value to assign to the binding"""
-    value: SecretID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -2994,7 +2914,7 @@ type Env {
     name: String!
 
     """The Service value to assign to the binding"""
-    value: ServiceID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -3015,7 +2935,7 @@ type Env {
     name: String!
 
     """The Socket value to assign to the binding"""
-    value: SocketID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -3036,7 +2956,7 @@ type Env {
     name: String!
 
     """The Stat value to assign to the binding"""
-    value: StatID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -3078,7 +2998,7 @@ type Env {
     name: String!
 
     """The UpGroup value to assign to the binding"""
-    value: UpGroupID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -3099,7 +3019,7 @@ type Env {
     name: String!
 
     """The Up value to assign to the binding"""
-    value: UpID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -3117,7 +3037,7 @@ type Env {
   """Returns a new environment with the provided workspace"""
   withWorkspace(
     """The directory to set as the host filesystem"""
-    workspace: DirectoryID!
+    workspace: ID!
   ): Env!
 
   """Create or update a binding of type Workspace in the environment"""
@@ -3126,7 +3046,7 @@ type Env {
     name: String!
 
     """The Workspace value to assign to the binding"""
-    value: WorkspaceID!
+    value: ID!
 
     """The purpose of the input"""
     description: String!
@@ -3172,7 +3092,7 @@ type EnvFile {
   ): String!
 
   """A unique identifier for this EnvFile."""
-  id: EnvFileID!
+  id: ID!
 
   """
   Filters variables by prefix and removes the pref from keys. Variables without
@@ -3209,20 +3129,10 @@ type EnvFile {
   ): EnvFile!
 }
 
-"""
-The `EnvFileID` scalar type represents an identifier for an object of type EnvFile.
-"""
-scalar EnvFileID
-
-"""
-The `EnvID` scalar type represents an identifier for an object of type Env.
-"""
-scalar EnvID
-
 """An environment variable name and value."""
 type EnvVariable {
   """A unique identifier for this EnvVariable."""
-  id: EnvVariableID!
+  id: ID!
 
   """The environment variable name."""
   name: String!
@@ -3231,14 +3141,9 @@ type EnvVariable {
   value: String!
 }
 
-"""
-The `EnvVariableID` scalar type represents an identifier for an object of type EnvVariable.
-"""
-scalar EnvVariableID
-
 type Error {
   """A unique identifier for this Error."""
-  id: ErrorID!
+  id: ID!
 
   """A description of the error."""
   message: String!
@@ -3256,14 +3161,9 @@ type Error {
   ): Error!
 }
 
-"""
-The `ErrorID` scalar type represents an identifier for an object of type Error.
-"""
-scalar ErrorID
-
 type ErrorValue {
   """A unique identifier for this ErrorValue."""
-  id: ErrorValueID!
+  id: ID!
 
   """The name of the value."""
   name: String!
@@ -3271,11 +3171,6 @@ type ErrorValue {
   """The value."""
   value: JSON!
 }
-
-"""
-The `ErrorValueID` scalar type represents an identifier for an object of type ErrorValue.
-"""
-scalar ErrorValueID
 
 """File type."""
 enum ExistsType {
@@ -3287,6 +3182,16 @@ enum ExistsType {
 
   """Tests path is a symlink"""
   SYMLINK_TYPE
+}
+
+"""
+An object that can be exported to the host.
+
+Calling export writes the object to a path on the host filesystem and returns the path that was written.
+"""
+interface Exportable {
+  export(path: String!): String!
+  id: ID!
 }
 
 """
@@ -3303,7 +3208,7 @@ type FieldTypeDef {
   description: String!
 
   """A unique identifier for this FieldTypeDef."""
-  id: FieldTypeDefID!
+  id: ID!
 
   """The name of the field in lowerCamelCase format."""
   name: String!
@@ -3314,11 +3219,6 @@ type FieldTypeDef {
   """The type of the field."""
   typeDef: TypeDef!
 }
-
-"""
-The `FieldTypeDefID` scalar type represents an identifier for an object of type FieldTypeDef.
-"""
-scalar FieldTypeDefID
 
 """A file."""
 type File {
@@ -3375,7 +3275,7 @@ type File {
   ): String!
 
   """A unique identifier for this File."""
-  id: FileID!
+  id: ID!
 
   """Retrieves the name of the file."""
   name: String!
@@ -3427,7 +3327,7 @@ type File {
   stat: Stat
 
   """Force evaluation in the engine."""
-  sync: FileID!
+  sync: ID! @expectedType(name: "File")
 
   """Retrieves this file with its name set to the given name."""
   withName(
@@ -3473,11 +3373,6 @@ type File {
   ): File!
 }
 
-"""
-The `FileID` scalar type represents an identifier for an object of type File.
-"""
-scalar FileID
-
 """File type."""
 enum FileType {
   """unknown file type"""
@@ -3518,7 +3413,7 @@ type Function {
   description: String!
 
   """A unique identifier for this Function."""
-  id: FunctionID!
+  id: ID!
 
   """The name of the function."""
   name: String!
@@ -3540,7 +3435,7 @@ type Function {
     name: String!
 
     """The type of the argument"""
-    typeDef: TypeDefID!
+    typeDef: ID!
 
     """A doc string for the argument, if any"""
     description: String = ""
@@ -3559,7 +3454,7 @@ type Function {
     ignore: [String!] = []
 
     """The source map for the argument definition."""
-    sourceMap: SourceMapID
+    sourceMap: ID
 
     """If deprecated, the reason or migration path."""
     deprecated: String
@@ -3599,7 +3494,7 @@ type Function {
   """Returns the function with the given source map."""
   withSourceMap(
     """The source map for the function definition."""
-    sourceMap: SourceMapID!
+    sourceMap: ID!
   ): Function!
 
   """
@@ -3638,7 +3533,7 @@ type FunctionArg {
   description: String!
 
   """A unique identifier for this FunctionArg."""
-  id: FunctionArgID!
+  id: ID!
 
   """
   Only applies to arguments of type Directory. The ignore patterns are applied
@@ -3657,11 +3552,6 @@ type FunctionArg {
   typeDef: TypeDef!
 }
 
-"""
-The `FunctionArgID` scalar type represents an identifier for an object of type FunctionArg.
-"""
-scalar FunctionArgID
-
 """The behavior configured for function result caching."""
 enum FunctionCachePolicy {
   Default
@@ -3672,7 +3562,7 @@ enum FunctionCachePolicy {
 """An active function call."""
 type FunctionCall {
   """A unique identifier for this FunctionCall."""
-  id: FunctionCallID!
+  id: ID!
 
   """The argument values the function is being invoked with."""
   inputArgs: [FunctionCallArgValue!]!
@@ -3695,7 +3585,7 @@ type FunctionCall {
   """Return an error from the function."""
   returnError(
     """The error to return."""
-    error: ErrorID!
+    error: ID!
   ): Void
 
   """Set the return value of the function call to the provided value."""
@@ -3708,7 +3598,7 @@ type FunctionCall {
 """A value passed as a named argument to a function call."""
 type FunctionCallArgValue {
   """A unique identifier for this FunctionCallArgValue."""
-  id: FunctionCallArgValueID!
+  id: ID!
 
   """The name of the argument."""
   name: String!
@@ -3717,28 +3607,13 @@ type FunctionCallArgValue {
   value: JSON!
 }
 
-"""
-The `FunctionCallArgValueID` scalar type represents an identifier for an object of type FunctionCallArgValue.
-"""
-scalar FunctionCallArgValueID
-
-"""
-The `FunctionCallID` scalar type represents an identifier for an object of type FunctionCall.
-"""
-scalar FunctionCallID
-
-"""
-The `FunctionID` scalar type represents an identifier for an object of type Function.
-"""
-scalar FunctionID
-
 """The result of running an SDK's codegen."""
 type GeneratedCode {
   """The directory containing the generated code."""
   code: Directory!
 
   """A unique identifier for this GeneratedCode."""
-  id: GeneratedCodeID!
+  id: ID!
 
   """
   List of paths to mark generated in version control (i.e. .gitattributes).
@@ -3755,11 +3630,6 @@ type GeneratedCode {
   withVCSIgnoredPaths(paths: [String!]!): GeneratedCode!
 }
 
-"""
-The `GeneratedCodeID` scalar type represents an identifier for an object of type GeneratedCode.
-"""
-scalar GeneratedCodeID
-
 type Generator {
   """The generated changeset from the last run"""
   changes: Changeset!
@@ -3771,7 +3641,7 @@ type Generator {
   description: String!
 
   """A unique identifier for this Generator."""
-  id: GeneratorID!
+  id: ID!
 
   """Whether changeset from the last generator run is empty or not"""
   isEmpty: Boolean!
@@ -3805,7 +3675,7 @@ type GeneratorGroup {
   ): Changeset!
 
   """A unique identifier for this GeneratorGroup."""
-  id: GeneratorGroupID!
+  id: ID!
 
   """Whether the generated changeset from the last run is empty or not"""
   isEmpty: Boolean!
@@ -3817,16 +3687,6 @@ type GeneratorGroup {
   run: GeneratorGroup!
 }
 
-"""
-The `GeneratorGroupID` scalar type represents an identifier for an object of type GeneratorGroup.
-"""
-scalar GeneratorGroupID
-
-"""
-The `GeneratorID` scalar type represents an identifier for an object of type Generator.
-"""
-scalar GeneratorID
-
 """A git ref (tag, branch, or commit)."""
 type GitRef {
   """The resolved commit id at this ref."""
@@ -3835,11 +3695,11 @@ type GitRef {
   """Find the best common ancestor between this ref and another ref."""
   commonAncestor(
     """The other ref to compare against."""
-    other: GitRefID!
+    other: ID!
   ): GitRef!
 
   """A unique identifier for this GitRef."""
-  id: GitRefID!
+  id: ID!
 
   """The resolved ref name at this ref."""
   ref: String!
@@ -3856,11 +3716,6 @@ type GitRef {
     includeTags: Boolean = false
   ): Directory!
 }
-
-"""
-The `GitRefID` scalar type represents an identifier for an object of type GitRef.
-"""
-scalar GitRefID
 
 """A git repository."""
 type GitRepository {
@@ -3888,7 +3743,7 @@ type GitRepository {
   head: GitRef!
 
   """A unique identifier for this GitRepository."""
-  id: GitRepositoryID!
+  id: ID!
 
   """Returns details for the latest semver tag."""
   latestVersion: GitRef!
@@ -3920,21 +3775,11 @@ type GitRepository {
   url: String
 }
 
-"""
-The `GitRepositoryID` scalar type represents an identifier for an object of type GitRepository.
-"""
-scalar GitRepositoryID
-
 """An internal persistent HTTP state."""
 type HTTPState {
   """A unique identifier for this HTTPState."""
-  id: HTTPStateID!
+  id: ID!
 }
-
-"""
-The `HTTPStateID` scalar type represents an identifier for an object of type HTTPState.
-"""
-scalar HTTPStateID
 
 """Image healthcheck configuration."""
 type HealthcheckConfig {
@@ -3942,7 +3787,7 @@ type HealthcheckConfig {
   args: [String!]!
 
   """A unique identifier for this HealthcheckConfig."""
-  id: HealthcheckConfigID!
+  id: ID!
 
   """Interval between running healthcheck. Example:30s"""
   interval: String!
@@ -3969,11 +3814,6 @@ type HealthcheckConfig {
   """Healthcheck timeout. Example:3s"""
   timeout: String!
 }
-
-"""
-The `HealthcheckConfigID` scalar type represents an identifier for an object of type HealthcheckConfig.
-"""
-scalar HealthcheckConfigID
 
 """Information about the host environment."""
 type Host {
@@ -4026,7 +3866,7 @@ type Host {
   ): String
 
   """A unique identifier for this Host."""
-  id: HostID!
+  id: ID!
 
   """
   Creates a service that forwards traffic to a specified address via the host.
@@ -4048,7 +3888,7 @@ type Host {
   """Creates a tunnel that forwards traffic from the host to a service."""
   tunnel(
     """Service to send traffic from the tunnel."""
-    service: ServiceID!
+    service: ID!
 
     """
     Map each service port to the same port on the host, as if the service were running natively.
@@ -4077,11 +3917,6 @@ type Host {
     path: String!
   ): Socket!
 }
-
-"""
-The `HostID` scalar type represents an identifier for an object of type Host.
-"""
-scalar HostID
 
 """Compression algorithm to use for image layers."""
 enum ImageLayerCompression {
@@ -4114,16 +3949,11 @@ type InputTypeDef {
   fields: [FieldTypeDef!]!
 
   """A unique identifier for this InputTypeDef."""
-  id: InputTypeDefID!
+  id: ID!
 
   """The name of the input object."""
   name: String!
 }
-
-"""
-The `InputTypeDefID` scalar type represents an identifier for an object of type InputTypeDef.
-"""
-scalar InputTypeDefID
 
 """A definition of a custom interface defined in a Module."""
 type InterfaceTypeDef {
@@ -4134,7 +3964,7 @@ type InterfaceTypeDef {
   functions: [Function!]!
 
   """A unique identifier for this InterfaceTypeDef."""
-  id: InterfaceTypeDefID!
+  id: ID!
 
   """The name of the interface."""
   name: String!
@@ -4147,11 +3977,6 @@ type InterfaceTypeDef {
   """
   sourceModuleName: String!
 }
-
-"""
-The `InterfaceTypeDefID` scalar type represents an identifier for an object of type InterfaceTypeDef.
-"""
-scalar InterfaceTypeDefID
 
 """An arbitrary JSON-encoded value."""
 scalar JSON
@@ -4188,7 +4013,7 @@ type JSONValue {
   fields: [String!]!
 
   """A unique identifier for this JSONValue."""
-  id: JSONValueID!
+  id: ID!
 
   """Encode a boolean to json"""
   newBoolean(
@@ -4220,14 +4045,9 @@ type JSONValue {
     path: [String!]!
 
     """The new value of the field"""
-    value: JSONValueID!
+    value: ID!
   ): JSONValue!
 }
-
-"""
-The `JSONValueID` scalar type represents an identifier for an object of type JSONValue.
-"""
-scalar JSONValueID
 
 type LLM {
   """create a branch in the LLM's history"""
@@ -4251,7 +4071,7 @@ type LLM {
   historyJSON: JSON!
 
   """A unique identifier for this LLM."""
-  id: LLMID!
+  id: ID!
 
   """return the last llm reply from the history"""
   lastReply: String!
@@ -4270,10 +4090,10 @@ type LLM {
   """
   Submit the queued prompt or tool call results, evaluate any tool calls, and queue their results
   """
-  step: LLMID!
+  step: ID! @expectedType(name: "LLM")
 
   """synchronize LLM state"""
-  sync: LLMID!
+  sync: ID! @expectedType(name: "LLM")
 
   """returns the token usage of the current state"""
   tokenUsage: LLMTokenUsage!
@@ -4297,7 +4117,7 @@ type LLM {
   ): LLM!
 
   """allow the LLM to interact with an environment via MCP"""
-  withEnv(env: EnvID!): LLM!
+  withEnv(env: ID!): LLM!
 
   """Add an external MCP server to the LLM"""
   withMCPServer(
@@ -4305,7 +4125,7 @@ type LLM {
     name: String!
 
     """The MCP service to run and communicate with over stdio"""
-    service: ServiceID!
+    service: ID!
   ): LLM!
 
   """swap out the llm model"""
@@ -4323,7 +4143,7 @@ type LLM {
   """append the contents of a file to the llm context"""
   withPromptFile(
     """The file to read the prompt from"""
-    file: FileID!
+    file: ID!
   ): LLM!
 
   """
@@ -4347,18 +4167,13 @@ type LLM {
   withoutSystemPrompts: LLM!
 }
 
-"""
-The `LLMID` scalar type represents an identifier for an object of type LLM.
-"""
-scalar LLMID
-
 type LLMTokenUsage {
   cachedTokenReads: Int!
 
   cachedTokenWrites: Int!
 
   """A unique identifier for this LLMTokenUsage."""
-  id: LLMTokenUsageID!
+  id: ID!
 
   inputTokens: Int!
 
@@ -4367,15 +4182,10 @@ type LLMTokenUsage {
   totalTokens: Int!
 }
 
-"""
-The `LLMTokenUsageID` scalar type represents an identifier for an object of type LLMTokenUsage.
-"""
-scalar LLMTokenUsageID
-
 """A simple key value object that represents a label."""
 type Label {
   """A unique identifier for this Label."""
-  id: LabelID!
+  id: ID!
 
   """The label name."""
   name: String!
@@ -4384,24 +4194,14 @@ type Label {
   value: String!
 }
 
-"""
-The `LabelID` scalar type represents an identifier for an object of type Label.
-"""
-scalar LabelID
-
 """A definition of a list type in a Module."""
 type ListTypeDef {
   """The type of the elements in the list."""
   elementTypeDef: TypeDef!
 
   """A unique identifier for this ListTypeDef."""
-  id: ListTypeDefID!
+  id: ID!
 }
-
-"""
-The `ListTypeDefID` scalar type represents an identifier for an object of type ListTypeDef.
-"""
-scalar ListTypeDefID
 
 """A Dagger module."""
 type Module {
@@ -4448,7 +4248,7 @@ type Module {
   ): GeneratorGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
   """A unique identifier for this Module."""
-  id: ModuleID!
+  id: ID!
 
   """Interfaces served by this module."""
   interfaces: [TypeDef!]!
@@ -4505,7 +4305,7 @@ type Module {
   """
   Forces evaluation of the module, including any loading into the engine and associated validation.
   """
-  sync: ModuleID!
+  sync: ID! @expectedType(name: "Module")
 
   """User-defined default values, loaded from local .env files."""
   userDefaults: EnvFile!
@@ -4517,13 +4317,13 @@ type Module {
   ): Module!
 
   """This module plus the given Enum type and associated values"""
-  withEnum(enum: TypeDefID!): Module!
+  withEnum(enum: ID!): Module!
 
   """This module plus the given Interface type and associated functions"""
-  withInterface(iface: TypeDefID!): Module!
+  withInterface(iface: ID!): Module!
 
   """This module plus the given Object type and associated functions."""
-  withObject(object: TypeDefID!): Module!
+  withObject(object: ID!): Module!
 }
 
 """The client generated for the module."""
@@ -4535,18 +4335,8 @@ type ModuleConfigClient {
   generator: String!
 
   """A unique identifier for this ModuleConfigClient."""
-  id: ModuleConfigClientID!
+  id: ID!
 }
-
-"""
-The `ModuleConfigClientID` scalar type represents an identifier for an object of type ModuleConfigClient.
-"""
-scalar ModuleConfigClientID
-
-"""
-The `ModuleID` scalar type represents an identifier for an object of type Module.
-"""
-scalar ModuleID
 
 """
 The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
@@ -4624,7 +4414,7 @@ type ModuleSource {
   htmlURL: String!
 
   """A unique identifier for this ModuleSource."""
-  id: ModuleSourceID!
+  id: ID!
 
   """
   The introspection schema JSON file for this module source.
@@ -4683,7 +4473,7 @@ type ModuleSource {
   """
   Forces evaluation of the module source, including any loading into the engine and associated validation.
   """
-  sync: ModuleSourceID!
+  sync: ID! @expectedType(name: "ModuleSource")
 
   """The toolchains referenced by the module source."""
   toolchains: [ModuleSource!]!
@@ -4697,7 +4487,7 @@ type ModuleSource {
   """Set a blueprint for the module source."""
   withBlueprint(
     """The blueprint module to set."""
-    blueprint: ModuleSourceID!
+    blueprint: ID!
   ): ModuleSource!
 
   """Update the module source with a new client to generate."""
@@ -4714,7 +4504,7 @@ type ModuleSource {
   """
   withDependencies(
     """The dependencies to append."""
-    dependencies: [ModuleSourceID!]!
+    dependencies: [ID!]!
   ): ModuleSource!
 
   """Upgrade the engine version of the module to the given value."""
@@ -4761,7 +4551,7 @@ type ModuleSource {
   """Add toolchains to the module source."""
   withToolchains(
     """The toolchain modules to add."""
-    toolchains: [ModuleSourceID!]!
+    toolchains: [ID!]!
   ): ModuleSource!
 
   """Update the blueprint module to the latest version."""
@@ -4821,11 +4611,6 @@ enum ModuleSourceExperimentalFeature {
   SELF_CALLS
 }
 
-"""
-The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
-"""
-scalar ModuleSourceID
-
 """The kind of module source."""
 enum ModuleSourceKind {
   LOCAL_SOURCE
@@ -4840,6 +4625,11 @@ enum ModuleSourceKind {
 enum NetworkProtocol {
   TCP
   UDP
+}
+
+"""An object with a globally unique ID."""
+interface Node {
+  id: ID!
 }
 
 """A definition of a custom object defined in a Module."""
@@ -4860,7 +4650,7 @@ type ObjectTypeDef {
   functions: [Function!]!
 
   """A unique identifier for this ObjectTypeDef."""
-  id: ObjectTypeDefID!
+  id: ID!
 
   """The name of the object."""
   name: String!
@@ -4873,11 +4663,6 @@ type ObjectTypeDef {
   """
   sourceModuleName: String!
 }
-
-"""
-The `ObjectTypeDefID` scalar type represents an identifier for an object of type ObjectTypeDef.
-"""
-scalar ObjectTypeDefID
 
 """Key value object that represents a pipeline label."""
 input PipelineLabel {
@@ -4904,7 +4689,7 @@ type Port {
   experimentalSkipHealthcheck: Boolean!
 
   """A unique identifier for this Port."""
-  id: PortID!
+  id: ID!
 
   """The port number."""
   port: Int!
@@ -4925,11 +4710,6 @@ input PortForward {
   protocol: NetworkProtocol
 }
 
-"""
-The `PortID` scalar type represents an identifier for an object of type Port.
-"""
-scalar PortID
-
 """The root of the DAG."""
 type Query {
   """
@@ -4945,7 +4725,7 @@ type Query {
     key: String!
 
     """Identifier of the directory to use as the cache volume's root."""
-    source: DirectoryID
+    source: ID
 
     """Sharing mode of the cache volume."""
     sharing: CacheSharingMode = SHARED
@@ -5080,13 +4860,13 @@ type Query {
     name: String!
 
     """Return type of the function."""
-    returnType: TypeDefID!
+    returnType: ID!
   ): Function!
 
   """
   Create a code generation result, given a directory containing the generated code.
   """
-  generatedCode(code: DirectoryID!): GeneratedCode!
+  generatedCode(code: ID!): GeneratedCode!
 
   """Queries a Git repository."""
   git(
@@ -5106,19 +4886,19 @@ type Query {
     sshKnownHosts: String = ""
 
     """Set SSH auth socket"""
-    sshAuthSocket: SocketID
+    sshAuthSocket: ID
 
     """Username used to populate the password during basic HTTP Authorization"""
     httpAuthUsername: String = ""
 
     """Secret used to populate the password during basic HTTP Authorization"""
-    httpAuthToken: SecretID
+    httpAuthToken: ID
 
     """Secret used to populate the Authorization HTTP header"""
-    httpAuthHeader: SecretID
+    httpAuthHeader: ID
 
     """A service which must be started before the repo is fetched."""
-    experimentalServiceHost: ServiceID
+    experimentalServiceHost: ID
   ): GitRepository!
 
   """Queries the host environment."""
@@ -5139,14 +4919,14 @@ type Query {
     checksum: String
 
     """Secret used to populate the Authorization HTTP header"""
-    authHeader: SecretID
+    authHeader: ID
 
     """A service which must be started before the URL is fetched."""
-    experimentalServiceHost: ServiceID
+    experimentalServiceHost: ID
   ): File!
 
   """A unique identifier for this Query."""
-  id: QueryID!
+  id: ID!
 
   """Initialize a JSON value"""
   json: JSONValue!
@@ -5159,201 +4939,6 @@ type Query {
     """Cap the number of API calls for this LLM"""
     maxAPICalls: Int
   ): LLM! @experimental(reason: "LLM support is not yet stabilized")
-
-  """Load a Address from its ID."""
-  loadAddressFromID(id: AddressID!): Address!
-
-  """Load a Binding from its ID."""
-  loadBindingFromID(id: BindingID!): Binding!
-
-  """Load a CacheVolume from its ID."""
-  loadCacheVolumeFromID(id: CacheVolumeID!): CacheVolume!
-
-  """Load a Changeset from its ID."""
-  loadChangesetFromID(id: ChangesetID!): Changeset!
-
-  """Load a Check from its ID."""
-  loadCheckFromID(id: CheckID!): Check!
-
-  """Load a CheckGroup from its ID."""
-  loadCheckGroupFromID(id: CheckGroupID!): CheckGroup!
-
-  """Load a ClientFilesyncMirror from its ID."""
-  loadClientFilesyncMirrorFromID(id: ClientFilesyncMirrorID!): ClientFilesyncMirror!
-
-  """Load a Cloud from its ID."""
-  loadCloudFromID(id: CloudID!): Cloud!
-
-  """Load a Container from its ID."""
-  loadContainerFromID(id: ContainerID!): Container!
-
-  """Load a CurrentModule from its ID."""
-  loadCurrentModuleFromID(id: CurrentModuleID!): CurrentModule!
-
-  """Load a DiffStat from its ID."""
-  loadDiffStatFromID(id: DiffStatID!): DiffStat!
-
-  """Load a Directory from its ID."""
-  loadDirectoryFromID(id: DirectoryID!): Directory!
-
-  """Load a EngineCacheEntry from its ID."""
-  loadEngineCacheEntryFromID(id: EngineCacheEntryID!): EngineCacheEntry!
-
-  """Load a EngineCacheEntrySet from its ID."""
-  loadEngineCacheEntrySetFromID(id: EngineCacheEntrySetID!): EngineCacheEntrySet!
-
-  """Load a EngineCache from its ID."""
-  loadEngineCacheFromID(id: EngineCacheID!): EngineCache!
-
-  """Load a Engine from its ID."""
-  loadEngineFromID(id: EngineID!): Engine!
-
-  """Load a EnumTypeDef from its ID."""
-  loadEnumTypeDefFromID(id: EnumTypeDefID!): EnumTypeDef!
-
-  """Load a EnumValueTypeDef from its ID."""
-  loadEnumValueTypeDefFromID(id: EnumValueTypeDefID!): EnumValueTypeDef!
-
-  """Load a EnvFile from its ID."""
-  loadEnvFileFromID(id: EnvFileID!): EnvFile!
-
-  """Load a Env from its ID."""
-  loadEnvFromID(id: EnvID!): Env!
-
-  """Load a EnvVariable from its ID."""
-  loadEnvVariableFromID(id: EnvVariableID!): EnvVariable!
-
-  """Load a Error from its ID."""
-  loadErrorFromID(id: ErrorID!): Error!
-
-  """Load a ErrorValue from its ID."""
-  loadErrorValueFromID(id: ErrorValueID!): ErrorValue!
-
-  """Load a FieldTypeDef from its ID."""
-  loadFieldTypeDefFromID(id: FieldTypeDefID!): FieldTypeDef!
-
-  """Load a File from its ID."""
-  loadFileFromID(id: FileID!): File!
-
-  """Load a FunctionArg from its ID."""
-  loadFunctionArgFromID(id: FunctionArgID!): FunctionArg!
-
-  """Load a FunctionCallArgValue from its ID."""
-  loadFunctionCallArgValueFromID(id: FunctionCallArgValueID!): FunctionCallArgValue!
-
-  """Load a FunctionCall from its ID."""
-  loadFunctionCallFromID(id: FunctionCallID!): FunctionCall!
-
-  """Load a Function from its ID."""
-  loadFunctionFromID(id: FunctionID!): Function!
-
-  """Load a GeneratedCode from its ID."""
-  loadGeneratedCodeFromID(id: GeneratedCodeID!): GeneratedCode!
-
-  """Load a Generator from its ID."""
-  loadGeneratorFromID(id: GeneratorID!): Generator!
-
-  """Load a GeneratorGroup from its ID."""
-  loadGeneratorGroupFromID(id: GeneratorGroupID!): GeneratorGroup!
-
-  """Load a GitRef from its ID."""
-  loadGitRefFromID(id: GitRefID!): GitRef!
-
-  """Load a GitRepository from its ID."""
-  loadGitRepositoryFromID(id: GitRepositoryID!): GitRepository!
-
-  """Load a HTTPState from its ID."""
-  loadHTTPStateFromID(id: HTTPStateID!): HTTPState!
-
-  """Load a HealthcheckConfig from its ID."""
-  loadHealthcheckConfigFromID(id: HealthcheckConfigID!): HealthcheckConfig!
-
-  """Load a Host from its ID."""
-  loadHostFromID(id: HostID!): Host!
-
-  """Load a InputTypeDef from its ID."""
-  loadInputTypeDefFromID(id: InputTypeDefID!): InputTypeDef!
-
-  """Load a InterfaceTypeDef from its ID."""
-  loadInterfaceTypeDefFromID(id: InterfaceTypeDefID!): InterfaceTypeDef!
-
-  """Load a JSONValue from its ID."""
-  loadJSONValueFromID(id: JSONValueID!): JSONValue!
-
-  """Load a LLM from its ID."""
-  loadLLMFromID(id: LLMID!): LLM!
-
-  """Load a LLMTokenUsage from its ID."""
-  loadLLMTokenUsageFromID(id: LLMTokenUsageID!): LLMTokenUsage!
-
-  """Load a Label from its ID."""
-  loadLabelFromID(id: LabelID!): Label!
-
-  """Load a ListTypeDef from its ID."""
-  loadListTypeDefFromID(id: ListTypeDefID!): ListTypeDef!
-
-  """Load a ModuleConfigClient from its ID."""
-  loadModuleConfigClientFromID(id: ModuleConfigClientID!): ModuleConfigClient!
-
-  """Load a Module from its ID."""
-  loadModuleFromID(id: ModuleID!): Module!
-
-  """Load a ModuleSource from its ID."""
-  loadModuleSourceFromID(id: ModuleSourceID!): ModuleSource!
-
-  """Load a ObjectTypeDef from its ID."""
-  loadObjectTypeDefFromID(id: ObjectTypeDefID!): ObjectTypeDef!
-
-  """Load a Port from its ID."""
-  loadPortFromID(id: PortID!): Port!
-
-  """Load a Query from its ID."""
-  loadQueryFromID(id: QueryID!): Query!
-
-  """Load a RemoteGitMirror from its ID."""
-  loadRemoteGitMirrorFromID(id: RemoteGitMirrorID!): RemoteGitMirror!
-
-  """Load a SDKConfig from its ID."""
-  loadSDKConfigFromID(id: SDKConfigID!): SDKConfig
-
-  """Load a ScalarTypeDef from its ID."""
-  loadScalarTypeDefFromID(id: ScalarTypeDefID!): ScalarTypeDef!
-
-  """Load a SearchResult from its ID."""
-  loadSearchResultFromID(id: SearchResultID!): SearchResult!
-
-  """Load a SearchSubmatch from its ID."""
-  loadSearchSubmatchFromID(id: SearchSubmatchID!): SearchSubmatch!
-
-  """Load a Secret from its ID."""
-  loadSecretFromID(id: SecretID!): Secret!
-
-  """Load a Service from its ID."""
-  loadServiceFromID(id: ServiceID!): Service!
-
-  """Load a Socket from its ID."""
-  loadSocketFromID(id: SocketID!): Socket!
-
-  """Load a SourceMap from its ID."""
-  loadSourceMapFromID(id: SourceMapID!): SourceMap!
-
-  """Load a Stat from its ID."""
-  loadStatFromID(id: StatID!): Stat
-
-  """Load a Terminal from its ID."""
-  loadTerminalFromID(id: TerminalID!): Terminal!
-
-  """Load a TypeDef from its ID."""
-  loadTypeDefFromID(id: TypeDefID!): TypeDef!
-
-  """Load a Up from its ID."""
-  loadUpFromID(id: UpID!): Up!
-
-  """Load a UpGroup from its ID."""
-  loadUpGroupFromID(id: UpGroupID!): UpGroup!
-
-  """Load a Workspace from its ID."""
-  loadWorkspaceFromID(id: WorkspaceID!): Workspace!
 
   """Create a new module."""
   module: Module!
@@ -5384,6 +4969,9 @@ type Query {
     """
     requireKind: ModuleSourceKind
   ): ModuleSource!
+
+  """Load any object by its ID."""
+  node(id: ID!): Node
 
   """Creates a new secret."""
   secret(
@@ -5438,21 +5026,11 @@ type Query {
   version: String!
 }
 
-"""
-The `QueryID` scalar type represents an identifier for an object of type Query.
-"""
-scalar QueryID
-
 """An internal persistent bare git mirror."""
 type RemoteGitMirror {
   """A unique identifier for this RemoteGitMirror."""
-  id: RemoteGitMirrorID!
+  id: ID!
 }
-
-"""
-The `RemoteGitMirrorID` scalar type represents an identifier for an object of type RemoteGitMirror.
-"""
-scalar RemoteGitMirrorID
 
 """Expected return type of an execution"""
 enum ReturnType {
@@ -5474,7 +5052,7 @@ type SDKConfig {
   debug: Boolean!
 
   """A unique identifier for this SDKConfig."""
-  id: SDKConfigID!
+  id: ID!
 
   """
   Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
@@ -5482,18 +5060,13 @@ type SDKConfig {
   source: String!
 }
 
-"""
-The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
-"""
-scalar SDKConfigID
-
 """A definition of a custom scalar defined in a Module."""
 type ScalarTypeDef {
   """A doc string for the scalar, if any."""
   description: String!
 
   """A unique identifier for this ScalarTypeDef."""
-  id: ScalarTypeDefID!
+  id: ID!
 
   """The name of the scalar."""
   name: String!
@@ -5504,11 +5077,6 @@ type ScalarTypeDef {
   sourceModuleName: String!
 }
 
-"""
-The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
-"""
-scalar ScalarTypeDefID
-
 type SearchResult {
   """The byte offset of this line within the file."""
   absoluteOffset: Int!
@@ -5517,7 +5085,7 @@ type SearchResult {
   filePath: String!
 
   """A unique identifier for this SearchResult."""
-  id: SearchResultID!
+  id: ID!
 
   """The first line that matched."""
   lineNumber: Int!
@@ -5529,17 +5097,12 @@ type SearchResult {
   submatches: [SearchSubmatch!]!
 }
 
-"""
-The `SearchResultID` scalar type represents an identifier for an object of type SearchResult.
-"""
-scalar SearchResultID
-
 type SearchSubmatch {
   """The match's end offset within the matched lines."""
   end: Int!
 
   """A unique identifier for this SearchSubmatch."""
-  id: SearchSubmatchID!
+  id: ID!
 
   """The match's start offset within the matched lines."""
   start: Int!
@@ -5549,16 +5112,11 @@ type SearchSubmatch {
 }
 
 """
-The `SearchSubmatchID` scalar type represents an identifier for an object of type SearchSubmatch.
-"""
-scalar SearchSubmatchID
-
-"""
 A reference to a secret value, which can be handled more safely than the value itself.
 """
 type Secret {
   """A unique identifier for this Secret."""
-  id: SecretID!
+  id: ID!
 
   """The name of this secret."""
   name: String!
@@ -5569,11 +5127,6 @@ type Secret {
   """The URI of this secret."""
   uri: String!
 }
-
-"""
-The `SecretID` scalar type represents an identifier for an object of type Secret.
-"""
-scalar SecretID
 
 """A content-addressed service providing TCP connectivity."""
 type Service {
@@ -5598,7 +5151,7 @@ type Service {
   hostname: String!
 
   """A unique identifier for this Service."""
-  id: ServiceID!
+  id: ID!
 
   """Retrieves the list of ports provided by the service."""
   ports: [Port!]!
@@ -5608,16 +5161,16 @@ type Service {
 
   Services bound to a Container do not need to be manually started.
   """
-  start: ServiceID!
+  start: ID! @expectedType(name: "Service")
 
   """Stop the service."""
   stop(
     """Immediately kill the service without waiting for a graceful exit"""
     kill: Boolean = false
-  ): ServiceID!
+  ): ID! @expectedType(name: "Service")
 
   """Forces evaluation of the pipeline in the engine."""
-  sync: ServiceID!
+  sync: ID! @expectedType(name: "Service")
 
   terminal(cmd: [String!] = []): Service!
 
@@ -5645,21 +5198,11 @@ type Service {
   ): Service!
 }
 
-"""
-The `ServiceID` scalar type represents an identifier for an object of type Service.
-"""
-scalar ServiceID
-
 """A Unix or TCP/IP socket that can be mounted into a container."""
 type Socket {
   """A unique identifier for this Socket."""
-  id: SocketID!
+  id: ID!
 }
-
-"""
-The `SocketID` scalar type represents an identifier for an object of type Socket.
-"""
-scalar SocketID
 
 """Source location information."""
 type SourceMap {
@@ -5670,7 +5213,7 @@ type SourceMap {
   filename: String!
 
   """A unique identifier for this SourceMap."""
-  id: SourceMapID!
+  id: ID!
 
   """The line number within the filename."""
   line: Int!
@@ -5684,18 +5227,13 @@ type SourceMap {
   url: String!
 }
 
-"""
-The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
-"""
-scalar SourceMapID
-
 """A file or directory status object."""
 type Stat {
   """file type"""
   fileType: FileType
 
   """A unique identifier for this Stat."""
-  id: StatID!
+  id: ID!
 
   """file name"""
   name: String!
@@ -5708,27 +5246,27 @@ type Stat {
 }
 
 """
-The `StatID` scalar type represents an identifier for an object of type Stat.
+An object that can be force-evaluated.
+
+Calling sync ensures that the object's entire dependency DAG has been evaluated, returning the object's ID once complete.
 """
-scalar StatID
+interface Syncer {
+  id: ID!
+  sync: ID! @expectedType(name: "Syncer")
+}
 
 """An interactive terminal that clients can connect to."""
 type Terminal {
   """A unique identifier for this Terminal."""
-  id: TerminalID!
+  id: ID!
 
   """
   Forces evaluation of the pipeline in the engine.
 
   It doesn't run the default command if no exec has been set.
   """
-  sync: TerminalID!
+  sync: ID! @expectedType(name: "Terminal")
 }
-
-"""
-The `TerminalID` scalar type represents an identifier for an object of type Terminal.
-"""
-scalar TerminalID
 
 """A definition of a parameter or return type in a Module."""
 type TypeDef {
@@ -5763,7 +5301,7 @@ type TypeDef {
   asScalar: ScalarTypeDef
 
   """A unique identifier for this TypeDef."""
-  id: TypeDefID!
+  id: ID!
 
   """The kind of type this is (e.g. primitive, list, object)."""
   kind: TypeDefKind!
@@ -5777,7 +5315,7 @@ type TypeDef {
   """
   Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
   """
-  withConstructor(function: FunctionID!): TypeDef!
+  withConstructor(function: ID!): TypeDef!
 
   """
   Returns a TypeDef of kind Enum with the provided name.
@@ -5794,7 +5332,7 @@ type TypeDef {
     description: String = ""
 
     """The source map for the enum definition."""
-    sourceMap: SourceMapID
+    sourceMap: ID
   ): TypeDef!
 
   """
@@ -5811,7 +5349,7 @@ type TypeDef {
     description: String = ""
 
     """The source map for the enum member definition."""
-    sourceMap: SourceMapID
+    sourceMap: ID
 
     """If deprecated, the reason or migration path."""
     deprecated: String
@@ -5828,7 +5366,7 @@ type TypeDef {
     description: String = ""
 
     """The source map for the enum value definition."""
-    sourceMap: SourceMapID
+    sourceMap: ID
 
     """If deprecated, the reason or migration path."""
     deprecated: String
@@ -5842,13 +5380,13 @@ type TypeDef {
     name: String!
 
     """The type of the field"""
-    typeDef: TypeDefID!
+    typeDef: ID!
 
     """A doc string for the field, if any"""
     description: String = ""
 
     """The source map for the field definition."""
-    sourceMap: SourceMapID
+    sourceMap: ID
 
     """If deprecated, the reason or migration path."""
     deprecated: String
@@ -5857,10 +5395,10 @@ type TypeDef {
   """
   Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
   """
-  withFunction(function: FunctionID!): TypeDef!
+  withFunction(function: ID!): TypeDef!
 
   """Returns a TypeDef of kind Interface with the provided name."""
-  withInterface(name: String!, description: String = "", sourceMap: SourceMapID): TypeDef!
+  withInterface(name: String!, description: String = "", sourceMap: ID): TypeDef!
 
   """Sets the kind of the type."""
   withKind(kind: TypeDefKind!): TypeDef!
@@ -5868,7 +5406,7 @@ type TypeDef {
   """
   Returns a TypeDef of kind List with the provided type for its elements.
   """
-  withListOf(elementType: TypeDefID!): TypeDef!
+  withListOf(elementType: ID!): TypeDef!
 
   """
   Returns a TypeDef of kind Object with the provided name.
@@ -5877,7 +5415,7 @@ type TypeDef {
   only to refer to an object. This is how functions are able to return their own
   object, or any other circular reference.
   """
-  withObject(name: String!, description: String = "", sourceMap: SourceMapID, deprecated: String): TypeDef!
+  withObject(name: String!, description: String = "", sourceMap: ID, deprecated: String): TypeDef!
 
   """Sets whether this type can be set to null."""
   withOptional(optional: Boolean!): TypeDef!
@@ -5885,11 +5423,6 @@ type TypeDef {
   """Returns a TypeDef of kind Scalar with the provided name."""
   withScalar(name: String!, description: String = ""): TypeDef!
 }
-
-"""
-The `TypeDefID` scalar type represents an identifier for an object of type TypeDef.
-"""
-scalar TypeDefID
 
 """Distinguishes the different kinds of TypeDefs."""
 enum TypeDefKind {
@@ -6013,7 +5546,7 @@ type Up {
   description: String!
 
   """A unique identifier for this Up."""
-  id: UpID!
+  id: ID!
 
   """Return the fully qualified name of the service"""
   name: String!
@@ -6030,7 +5563,7 @@ type Up {
 
 type UpGroup {
   """A unique identifier for this UpGroup."""
-  id: UpGroupID!
+  id: ID!
 
   """Return a list of individual services and their details"""
   list: [Up!]!
@@ -6038,16 +5571,6 @@ type UpGroup {
   """Execute all selected service functions"""
   run: UpGroup!
 }
-
-"""
-The `UpGroupID` scalar type represents an identifier for an object of type UpGroup.
-"""
-scalar UpGroupID
-
-"""
-The `UpID` scalar type represents an identifier for an object of type Up.
-"""
-scalar UpID
 
 """
 The absence of a value.
@@ -6146,7 +5669,7 @@ type Workspace {
   hasConfig: Boolean!
 
   """A unique identifier for this Workspace."""
-  id: WorkspaceID!
+  id: ID!
 
   """Whether .dagger/config.toml exists."""
   initialized: Boolean!
@@ -6160,10 +5683,5 @@ type Workspace {
     include: [String!]
   ): UpGroup!
 }
-
-"""
-The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
-"""
-scalar WorkspaceID
 
 

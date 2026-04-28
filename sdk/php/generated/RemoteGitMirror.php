@@ -11,14 +11,14 @@ namespace Dagger;
 /**
  * An internal persistent bare git mirror.
  */
-class RemoteGitMirror extends Client\AbstractObject implements Client\IdAble
+class RemoteGitMirror extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A unique identifier for this RemoteGitMirror.
      */
-    public function id(): RemoteGitMirrorId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\RemoteGitMirrorId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 }

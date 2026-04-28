@@ -86,7 +86,7 @@
 
     
     <p>        class
-    <strong>Module</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
+    <strong>Module</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>, <a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a>
 </p>
 
         
@@ -223,7 +223,7 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
+                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
                 </div>
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
@@ -323,7 +323,7 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/ModuleId.html"><abbr title="Dagger\ModuleId">ModuleId</abbr></a>
+                    <a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a>
                 </div>
                 <div class="col-md-8">
                     <a href="#method_sync">sync</a>()
@@ -356,7 +356,7 @@
                     <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withEnum">withEnum</a>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $enum)
+                    <a href="#method_withEnum">withEnum</a>(<a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a> $enum)
         
                                             <p><p>This module plus the given Enum type and associated values</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -366,7 +366,7 @@
                     <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withInterface">withInterface</a>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $iface)
+                    <a href="#method_withInterface">withInterface</a>(<a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a> $iface)
         
                                             <p><p>This module plus the given Interface type and associated functions</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -376,7 +376,7 @@
                     <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withObject">withObject</a>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $object)
+                    <a href="#method_withObject">withObject</a>(<a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a> $object)
         
                                             <p><p>This module plus the given Object type and associated functions.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -775,7 +775,7 @@
                     <div class="method-item">
                     <h3 id="method_id">
         <div class="location">at line 99</div>
-        <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
+        <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
     </h3>
@@ -792,7 +792,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a></td>
+            <td><a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -1121,7 +1121,7 @@
                     <div class="method-item">
                     <h3 id="method_sync">
         <div class="location">at line 204</div>
-        <code>                    <a href="../Dagger/ModuleId.html"><abbr title="Dagger\ModuleId">ModuleId</abbr></a>
+        <code>                    <a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a>
     <strong>sync</strong>()
         </code>
     </h3>
@@ -1138,7 +1138,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/ModuleId.html"><abbr title="Dagger\ModuleId">ModuleId</abbr></a></td>
+            <td><a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -1152,7 +1152,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_userDefaults">
-        <div class="location">at line 213</div>
+        <div class="location">at line 214</div>
         <code>                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
     <strong>userDefaults</strong>()
         </code>
@@ -1184,7 +1184,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withDescription">
-        <div class="location">at line 222</div>
+        <div class="location">at line 223</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>withDescription</strong>(string $description)
         </code>
@@ -1226,9 +1226,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withEnum">
-        <div class="location">at line 232</div>
+        <div class="location">at line 233</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
-    <strong>withEnum</strong>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $enum)
+    <strong>withEnum</strong>(<a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a> $enum)
         </code>
     </h3>
     <div class="details">    
@@ -1243,7 +1243,7 @@
 
                     <table class="table table-condensed">
                     <tr>
-                <td><abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr></td>
+                <td><a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></td>
                 <td>$enum</td>
                 <td></td>
             </tr>
@@ -1268,9 +1268,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withInterface">
-        <div class="location">at line 242</div>
+        <div class="location">at line 243</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
-    <strong>withInterface</strong>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $iface)
+    <strong>withInterface</strong>(<a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a> $iface)
         </code>
     </h3>
     <div class="details">    
@@ -1285,7 +1285,7 @@
 
                     <table class="table table-condensed">
                     <tr>
-                <td><abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr></td>
+                <td><a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></td>
                 <td>$iface</td>
                 <td></td>
             </tr>
@@ -1310,9 +1310,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withObject">
-        <div class="location">at line 252</div>
+        <div class="location">at line 253</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
-    <strong>withObject</strong>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $object)
+    <strong>withObject</strong>(<a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a> $object)
         </code>
     </h3>
     <div class="details">    
@@ -1327,7 +1327,7 @@
 
                     <table class="table table-condensed">
                     <tr>
-                <td><abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr></td>
+                <td><a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></td>
                 <td>$object</td>
                 <td></td>
             </tr>

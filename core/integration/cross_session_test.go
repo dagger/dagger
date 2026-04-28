@@ -835,14 +835,16 @@ func (*Test) Fn(ctx context.Context, secret *dagger.Secret) (*dagger.Container, 
 		res1, err := testutil.QueryWithClient[struct {
 			Test struct {
 				Fn struct {
-					ID dagger.ContainerID
+					ID dagger.ID
 				}
 			}
 		}](c1, t, `{test{fn(secret:"`+string(secretID1)+`"){id}}}`, nil)
 		require.NoError(t, err)
 		ctrID1 := res1.Test.Fn.ID
 		require.NotEmpty(t, ctrID1)
-		_, err = c1.LoadContainerFromID(ctrID1).
+		ctr1, err := dagger.Load[*dagger.Container](ctx, c1, ctrID1)
+		require.NoError(t, err)
+		_, err = ctr1.
 			WithEnvVariable("CACHEBUSTER", identity.NewID()).
 			WithExec([]string{"true"}).
 			Stdout(ctx)
@@ -858,7 +860,7 @@ func (*Test) Fn(ctx context.Context, secret *dagger.Secret) (*dagger.Container, 
 		res2, err := testutil.QueryWithClient[struct {
 			Test struct {
 				Fn struct {
-					ID dagger.ContainerID
+					ID dagger.ID
 				}
 			}
 		}](c2, t, `{test{fn(secret:"`+string(secretID2)+`"){id}}}`, nil)
@@ -868,7 +870,9 @@ func (*Test) Fn(ctx context.Context, secret *dagger.Secret) (*dagger.Container, 
 
 		require.NoError(t, c1.Close())
 
-		_, err = c2.LoadContainerFromID(ctrID2).
+		ctr2, err := dagger.Load[*dagger.Container](ctx, c2, ctrID2)
+		require.NoError(t, err)
+		_, err = ctr2.
 			WithEnvVariable("CACHEBUSTER", identity.NewID()).
 			WithExec([]string{"true"}).
 			Stdout(ctx)
@@ -2024,6 +2028,8 @@ func (ModuleSuite) TestCrossSessionGitSockets(ctx context.Context, t *testctx.T)
 	cleanup1()
 	require.NoError(t, c1.Close())
 
-	_, err = c2.LoadGitRefFromID(ref2ID).Tree().Sync(ctx)
+	gitRef, err := dagger.Load[*dagger.GitRef](ctx, c2, dagger.ID(ref2ID))
+	require.NoError(t, err)
+	_, err = gitRef.Tree().Sync(ctx)
 	require.NoError(t, err)
 }

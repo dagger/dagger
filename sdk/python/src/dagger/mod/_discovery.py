@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 async def ast_register(
     main_object_name: str,
     module_name: str,
-) -> dagger.ModuleID:
+) -> str:
     """Analyze source files and register module types with the Dagger engine.
 
     This is the shared pipeline used by both the CLI registration path

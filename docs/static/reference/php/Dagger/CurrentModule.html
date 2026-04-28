@@ -86,7 +86,7 @@
 
     
     <p>        class
-    <strong>CurrentModule</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
+    <strong>CurrentModule</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
 </p>
 
         
@@ -173,7 +173,7 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
+                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
                 </div>
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
@@ -206,7 +206,7 @@
                     <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_workdir">workdir</a>(string $path, array|null $exclude = null, array|null $include = null, bool|null $gitignore = false)
+                    <a href="#method_workdir">workdir</a>(string $path, array|null $exclude = [], array|null $include = [], bool|null $gitignore = false)
         
                                             <p><p>Load a directory from the module's scratch working directory, including any changes that may have been made to it during module function execution.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -425,7 +425,7 @@
                     <div class="method-item">
                     <h3 id="method_id">
         <div class="location">at line 49</div>
-        <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
+        <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
     </h3>
@@ -442,7 +442,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a></td>
+            <td><a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -522,7 +522,7 @@
                     <h3 id="method_workdir">
         <div class="location">at line 76</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
-    <strong>workdir</strong>(string $path, array|null $exclude = null, array|null $include = null, bool|null $gitignore = false)
+    <strong>workdir</strong>(string $path, array|null $exclude = [], array|null $include = [], bool|null $gitignore = false)
         </code>
     </h3>
     <div class="details">    

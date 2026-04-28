@@ -21,6 +21,7 @@ type querySchema struct {
 var _ SchemaResolvers = &querySchema{}
 
 func (s *querySchema) Install(srv *dagql.Server) {
+	installCoreInterfaces(srv)
 	introspection.Install[*core.Query](srv)
 	dagql.Fields[*core.Query]{
 		// Augment introspection with an API that returns the current schema serialized to

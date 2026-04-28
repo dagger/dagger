@@ -263,8 +263,9 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 			RemovedLines int    `json:"removedLines"`
 		}
 		err := c.QueryBuilder().
-			Select("loadChangesetFromID").
+			Select("node").
 			Arg("id", newDir.Changes(oldDir)).
+			InlineFragment("Changeset").
 			Select("diffStats").
 			Bind(&diffStats).Execute(ctx)
 		require.NoError(t, err)
@@ -302,8 +303,9 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 			RemovedLines int    `json:"removedLines"`
 		}
 		err := c.QueryBuilder().
-			Select("loadChangesetFromID").
+			Select("node").
 			Arg("id", newDir.Changes(oldDir)).
+			InlineFragment("Changeset").
 			Select("diffStats").
 			Bind(&diffStats).Execute(ctx)
 		require.NoError(t, err)
@@ -337,8 +339,9 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 			RemovedLines int    `json:"removedLines"`
 		}
 		err := c.QueryBuilder().
-			Select("loadChangesetFromID").
+			Select("node").
 			Arg("id", newDir.Changes(oldDir)).
+			InlineFragment("Changeset").
 			Select("diffStats").
 			Bind(&diffStats).Execute(ctx)
 		require.NoError(t, err)

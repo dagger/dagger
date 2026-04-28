@@ -51,18 +51,6 @@ DAGGER_OBJECT_TYPES = {
 DAGGER_SCALAR_TYPES = {
     "Platform",
     "JSON",
-    "ContainerID",
-    "DirectoryID",
-    "FileID",
-    "SecretID",
-    "ServiceID",
-    "CacheVolumeID",
-    "SocketID",
-    "ModuleSourceID",
-    "ModuleID",
-    "GitRepositoryID",
-    "GitRefID",
-    "TerminalID",
 }
 
 # Dagger enum types from the API

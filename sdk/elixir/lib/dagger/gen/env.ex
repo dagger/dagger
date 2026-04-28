@@ -56,7 +56,7 @@ defmodule Dagger.Env do
   @doc """
   A unique identifier for this Env.
   """
-  @spec id(t()) :: {:ok, Dagger.EnvID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = env) do
     query_builder =
       env.query_builder |> QB.select("id")
@@ -92,8 +92,9 @@ defmodule Dagger.Env do
          %Dagger.Binding{
            query_builder:
              QB.query()
-             |> QB.select("loadBindingFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Binding"),
            client: env.client
          }
        end}
@@ -128,8 +129,9 @@ defmodule Dagger.Env do
          %Dagger.Binding{
            query_builder:
              QB.query()
-             |> QB.select("loadBindingFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Binding"),
            client: env.client
          }
        end}
@@ -1357,6 +1359,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.Env do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_env_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.Env{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("Env"),
+       client: dag.client
+     }}
   end
 end

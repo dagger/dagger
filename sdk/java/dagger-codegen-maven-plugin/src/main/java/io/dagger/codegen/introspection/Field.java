@@ -19,6 +19,8 @@ public class Field {
 
   private String DeprecationReason;
 
+  private List<Directive> directives;
+
   @JsonbTransient private List<InputObject> optionalArgs;
 
   private Type parentObject;
@@ -77,6 +79,19 @@ public class Field {
 
   public void setParentObject(Type parentObject) {
     this.parentObject = parentObject;
+  }
+
+  public List<Directive> getDirectives() {
+    return directives;
+  }
+
+  public void setDirectives(List<Directive> directives) {
+    this.directives = directives;
+  }
+
+  /** Returns the @expectedType name for this field, if present. */
+  public String getExpectedType() {
+    return Directive.getExpectedType(directives);
   }
 
   boolean hasArgs() {
