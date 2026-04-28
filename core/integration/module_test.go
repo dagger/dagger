@@ -3322,14 +3322,14 @@ func (*Test) MakeSecretID(ctx context.Context) (string, error) {
 		secretID := res1.Test.MakeSecretID
 		require.NotEmpty(t, secretID)
 
-		sameSession, err := c1.LoadSecretFromID(dagger.SecretID(secretID)).Plaintext(ctx)
+		sameSession, err := dagger.Ref[*dagger.Secret](c1, dagger.ID(secretID)).Plaintext(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "asdfasdf", sameSession)
 
 		c2 := connect(ctx, t)
 		require.NoError(t, c2.ModuleSource(tmpdir).AsModule().Serve(ctx))
 
-		_, err = c2.LoadSecretFromID(dagger.SecretID(secretID)).Plaintext(ctx)
+		_, err = dagger.Ref[*dagger.Secret](c2, dagger.ID(secretID)).Plaintext(ctx)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "no bound resource for session")
 
@@ -3338,7 +3338,7 @@ func (*Test) MakeSecretID(ctx context.Context) (string, error) {
 		c3 := connect(ctx, t)
 		require.NoError(t, c3.ModuleSource(tmpdir).AsModule().Serve(ctx))
 
-		_, err = c3.LoadSecretFromID(dagger.SecretID(secretID)).Plaintext(ctx)
+		_, err = dagger.Ref[*dagger.Secret](c3, dagger.ID(secretID)).Plaintext(ctx)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "no bound resource for session")
 	})

@@ -1659,7 +1659,7 @@ func (DirectorySuite) TestPatchFileLargerThanMaxFileContentsSize(ctx context.Con
 	patchID, err := patchFile.ID(ctx)
 	require.NoError(t, err)
 
-	loadedPatch := c.LoadFileFromID(patchID)
+	loadedPatch := dagger.Ref[*dagger.File](c, patchID)
 	loadedPatchID, err := loadedPatch.ID(ctx)
 	require.NoError(t, err)
 	require.Equal(t, patchID, loadedPatchID)

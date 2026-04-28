@@ -1264,7 +1264,7 @@ func (ContainerSuite) TestWithMountedDirectoryReadOnly(ctx context.Context, t *t
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt", source: $id, readOnly: true) {
