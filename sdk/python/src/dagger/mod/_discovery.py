@@ -14,8 +14,6 @@ import os
 import typing
 from pathlib import Path
 
-import dagger
-
 IMPORT_PKG: typing.Final[str] = os.getenv("DAGGER_DEFAULT_PYTHON_PACKAGE", "main")
 
 logger = logging.getLogger(__name__)
