@@ -202,69 +202,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return nil, (*HelmDev).Lint(&parent, ctx)
-		case "Publish":
-			var parent HelmDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var target string
-			if inputArgs["target"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["target"]), &target)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg target", err))
-				}
-			}
-			var githubToken *dagger.Secret
-			if inputArgs["githubToken"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["githubToken"]), &githubToken)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg githubToken", err))
-				}
-			}
-			var dryRun bool
-			if inputArgs["dryRun"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["dryRun"]), &dryRun)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg dryRun", err))
-				}
-			}
-			return nil, (*HelmDev).Publish(&parent, ctx, target, githubToken, dryRun)
-		case "ReleaseDryRun":
-			var parent HelmDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*HelmDev).ReleaseDryRun(&parent, ctx)
-		case "SetVersion":
-			var parent HelmDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var version string
-			if inputArgs["version"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
-				}
-			}
-			return (*HelmDev).SetVersion(&parent, ctx, version)
-		case "Test":
-			var parent HelmDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*HelmDev).Test(&parent, ctx)
-		case "TestCustomProbes":
-			var parent HelmDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			return nil, (*HelmDev).TestCustomProbes(&parent, ctx)
 		case "":
 			var parent HelmDev
 			err = json.Unmarshal(parentJSON, &parent)
