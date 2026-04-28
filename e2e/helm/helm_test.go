@@ -1,5 +1,6 @@
 // Package helm contains e2e contract tests for Dagger's Helm chart.
 //
+// workspace:include k3s-entrypoint.sh
 // workspace:include ../../helm/dagger
 // workspace:include ../../.changes/.next
 // workspace:include ../../analytics
@@ -11,8 +12,13 @@
 // workspace:include ../../go.mod
 // workspace:include ../../go.sum
 // workspace:include ../../internal
+// workspace:include ../../modules/alpine
+// workspace:include ../../modules/wolfi
 // workspace:include ../../sdk/go
+// workspace:include ../../toolchains/cli-dev
+// workspace:include ../../toolchains/go
 // workspace:include ../../util
+// workspace:include ../../version
 package helm
 
 import (
@@ -22,35 +28,18 @@ import (
 	"testing"
 	"time"
 
-	"dagger.io/dagger"
+	dagger "github.com/dagger/dagger/e2e/helm/dagger"
 )
 
 const (
-	chartPath         = "helm/dagger"
-	helmImage         = "cgr.dev/chainguard/wolfi-base"
-	goImage           = "golang:1.25.6-alpine"
-	testEngineImage   = "registry.dagger.io/engine:main"
-	testEngineVersion = "v0.20.6"
+	chartPath       = "helm/dagger"
+	helmImage       = "cgr.dev/chainguard/wolfi-base"
+	testEngineImage = "registry.dagger.io/engine:main"
 )
-
-var daggerCLISourceIncludes = []string{
-	".changes/.next",
-	"analytics/**",
-	"cmd/dagger/**",
-	"core/modules/**",
-	"core/openrouter/**",
-	"dagql/**",
-	"engine/**",
-	"go.mod",
-	"go.sum",
-	"internal/**",
-	"sdk/go/**",
-	"util/**",
-}
 
 func TestCustomProbes(t *testing.T) {
 	ctx := t.Context()
-	client := connect(t)
+	dag := connect(t)
 
 	customValues := `
 engine:
@@ -72,7 +61,7 @@ engine:
     periodSeconds: 30
 `
 
-	out, err := helmContainer(client).
+	out, err := helmContainer(dag).
 		WithNewFile("/tmp/custom-probes.yaml", customValues).
 		WithExec([]string{"helm", "template", ".", "-f", "/tmp/custom-probes.yaml"}).
 		Stdout(ctx)
@@ -92,9 +81,9 @@ engine:
 
 func TestPackageDryRun(t *testing.T) {
 	ctx := t.Context()
-	client := connect(t)
+	dag := connect(t)
 
-	_, err := helmContainer(client).
+	_, err := helmContainer(dag).
 		WithExec([]string{"helm", "package", "."}).
 		Sync(ctx)
 	if err != nil {
@@ -104,10 +93,10 @@ func TestPackageDryRun(t *testing.T) {
 
 func TestInstallK3S(t *testing.T) {
 	ctx := t.Context()
-	client := connect(t)
+	dag := connect(t)
 
-	k3s := newK3S(client, "helm-test")
-	k3sSvc, err := k3s.server().Start(ctx)
+	k3s := newK3S(dag, "helm-test")
+	k3sSvc, err := k3s.service.Start(ctx)
 	if err != nil {
 		t.Fatalf("start k3s: %v", err)
 	}
@@ -117,10 +106,10 @@ func TestInstallK3S(t *testing.T) {
 		}
 	})
 
-	kubectl, err := helmContainer(client).
-		WithMountedFile("/usr/bin/dagger", daggerCLIBinary(client)).
+	kubectl, err := helmContainer(dag).
+		WithMountedFile("/usr/bin/dagger", dag.DaggerCli().Binary()).
 		WithServiceBinding("helm-test", k3sSvc).
-		WithFile("/.kube/config", k3s.config(client, false)).
+		WithFile("/.kube/config", k3s.config).
 		WithEnvVariable("KUBECONFIG", "/.kube/config").
 		WithEnvVariable("CACHEBUSTER", time.Now().String()).
 		WithExec([]string{"kubectl", "get", "nodes", "--output=wide"}).
@@ -192,109 +181,28 @@ func TestInstallK3S(t *testing.T) {
 func connect(t *testing.T) *dagger.Client {
 	t.Helper()
 
-	client, err := dagger.Connect(t.Context())
+	dag, err := dagger.Connect(t.Context())
 	if err != nil {
 		t.Fatalf("connect to dagger: %v", err)
 	}
 	t.Cleanup(func() {
-		if err := client.Close(); err != nil {
+		if err := dag.Close(); err != nil {
 			t.Errorf("close dagger client: %v", err)
 		}
 	})
-	return client
+	return dag
 }
 
-func helmContainer(client *dagger.Client) *dagger.Container {
-	chart := client.CurrentWorkspace().
+func helmContainer(dag *dagger.Client) *dagger.Container {
+	chart := dag.CurrentWorkspace().
 		Directory("/", dagger.WorkspaceDirectoryOpts{Include: []string{chartPath}}).
 		Directory(chartPath)
 
-	return client.Container().
+	return dag.Container().
 		From(helmImage).
 		WithExec([]string{"apk", "add", "--no-cache", "helm~3.18.4", "kubectl"}).
 		WithDirectory("/dagger-helm", chart).
 		WithWorkdir("/dagger-helm")
-}
-
-func daggerCLIBinary(client *dagger.Client) *dagger.File {
-	source := client.CurrentWorkspace().
-		Directory("/", dagger.WorkspaceDirectoryOpts{Include: daggerCLISourceIncludes})
-
-	return client.Container().
-		From(goImage).
-		WithExec([]string{"apk", "add", "--no-cache", "git"}).
-		WithEnvVariable("CGO_ENABLED", "0").
-		WithMountedCache("/go/pkg/mod", client.CacheVolume("e2e-helm-go-mod")).
-		WithMountedCache("/root/.cache/go-build", client.CacheVolume("e2e-helm-go-build")).
-		WithDirectory("/src", source).
-		WithWorkdir("/src").
-		WithExec([]string{
-			"go", "build",
-			"-ldflags", "-s -w -X github.com/dagger/dagger/engine.Version=" + testEngineVersion + " -X github.com/dagger/dagger/engine.Tag=main",
-			"-o", "/out/dagger",
-			"./cmd/dagger",
-		}).
-		File("/out/dagger")
-}
-
-type k3sCluster struct {
-	name          string
-	configCache   *dagger.CacheVolume
-	enableTraefik bool
-	container     *dagger.Container
-}
-
-func newK3S(client *dagger.Client, name string) *k3sCluster {
-	configCache := client.CacheVolume("k3s_config_" + name)
-	ctr := client.Container().
-		From("rancher/k3s:latest").
-		WithNewFile("/usr/bin/entrypoint.sh", k3sEntrypoint, dagger.ContainerWithNewFileOpts{
-			Permissions: 0o755,
-		}).
-		WithEntrypoint([]string{"entrypoint.sh"}).
-		WithMountedCache("/etc/rancher/k3s", configCache).
-		WithMountedTemp("/etc/lib/cni").
-		WithMountedTemp("/var/lib/kubelet").
-		WithMountedCache("/var/lib/rancher", client.CacheVolume("k3s_cache_"+name)).
-		WithEnvVariable("CACHEBUST", time.Now().String()).
-		WithExec([]string{"rm", "-rf", "/var/lib/rancher/k3s/server/tls", "/etc/rancher/k3s/k3s.yaml"}).
-		WithExec([]string{"rm", "-rf", "/var/lib/rancher/k3s/"}).
-		WithMountedTemp("/var/log").
-		WithExposedPort(6443)
-
-	return &k3sCluster{
-		name:        name,
-		configCache: configCache,
-		container:   ctr,
-	}
-}
-
-func (k *k3sCluster) server() *dagger.Service {
-	traefikFlags := ""
-	if !k.enableTraefik {
-		traefikFlags = "--disable traefik "
-	}
-	return k.container.AsService(dagger.ContainerAsServiceOpts{
-		Args: []string{
-			"sh", "-c",
-			"k3s server --debug --bind-address $(ip route | grep src | awk '{print $NF}') " + traefikFlags + "--disable metrics-server --egress-selector-mode=disabled",
-		},
-		InsecureRootCapabilities: true,
-		UseEntrypoint:            true,
-	})
-}
-
-func (k *k3sCluster) config(client *dagger.Client, local bool) *dagger.File {
-	ctr := client.Container().
-		From("alpine").
-		WithEnvVariable("CACHE", time.Now().String()).
-		WithMountedCache("/cache/k3s", k.configCache).
-		WithExec([]string{"sh", "-c", `while [ ! -f "/cache/k3s/k3s.yaml" ]; do echo "k3s.yaml not ready, is server started?. waiting.. " && sleep 0.5; done`}).
-		WithExec([]string{"cp", "/cache/k3s/k3s.yaml", "k3s.yaml"})
-	if local {
-		ctr = ctr.WithExec([]string{"sed", "-i", `s/https:.*:6443/https:\/\/localhost:6443/g`, "k3s.yaml"})
-	}
-	return ctr.File("k3s.yaml")
 }
 
 func runInstallAssertions(ctx context.Context, engineName string, engineKind string, port int, kubectl *dagger.Container) error {
@@ -358,28 +266,3 @@ func testDaggerQuery(ctx context.Context, command string, kubectl *dagger.Contai
 	}
 	return nil
 }
-
-const k3sEntrypoint = `#!/bin/sh
-
-set -o errexit
-set -o nounset
-
-#########################################################################################################################################
-# DISCLAIMER																																																														#
-# Copied from https://github.com/moby/moby/blob/ed89041433a031cafc0a0f19cfe573c31688d377/hack/dind#L28-L37															#
-# Permission granted by Akihiro Suda <akihiro.suda.cz@hco.ntt.co.jp> (https://github.com/k3d-io/k3d/issues/493#issuecomment-827405962)	#
-# Moby License Apache 2.0: https://github.com/moby/moby/blob/ed89041433a031cafc0a0f19cfe573c31688d377/LICENSE														#
-#########################################################################################################################################
-if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
-  echo "[$(date -Iseconds)] [CgroupV2 Fix] Evacuating Root Cgroup ..."
-  # move the processes from the root group to the /init group,
-  # otherwise writing subtree_control fails with EBUSY.
-  mkdir -p /sys/fs/cgroup/init
-  xargs -rn1 < /sys/fs/cgroup/cgroup.procs > /sys/fs/cgroup/init/cgroup.procs || :
-  # enable controllers
-  sed -e 's/ / +/g' -e 's/^/+/' <"/sys/fs/cgroup/cgroup.controllers" >"/sys/fs/cgroup/cgroup.subtree_control"
-  echo "[$(date -Iseconds)] [CgroupV2 Fix] Done"
-fi
-
-exec "$@"
-`
