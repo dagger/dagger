@@ -36,6 +36,8 @@ func (s checksSchema) Install(srv *dagql.Server) {
 			Doc("The path of the check within its module"),
 		dagql.Func("originalModule", s.originalModule).
 			Doc("The original module in which the check has been defined"),
+		dagql.Func("checkType", s.checkType).
+			Doc("The type of check: 'check' for annotated checks, 'generate' for generate-as-checks"),
 
 		dagql.Func("resultEmoji", s.resultEmoji).
 			Doc("An emoji representing the result of the check"),
@@ -58,6 +60,10 @@ func (s checksSchema) path(_ context.Context, parent *core.Check, args struct{})
 
 func (s checksSchema) originalModule(_ context.Context, parent *core.Check, args struct{}) (*core.Module, error) {
 	return parent.OriginalModule(), nil
+}
+
+func (s checksSchema) checkType(_ context.Context, parent *core.Check, args struct{}) (string, error) {
+	return parent.CheckType(), nil
 }
 
 func (s checksSchema) resultEmoji(_ context.Context, parent *core.Check, args struct{}) (string, error) {
