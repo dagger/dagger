@@ -108,6 +108,7 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 		return genSt, nil
 	}
 
+	fmt.Printf("ACB here2\n")
 	pkg, fset, err := loadPackage(ctx, filepath.Join(g.Config.OutputDir, outDir), false)
 	if err != nil {
 		return nil, fmt.Errorf("load package %q: %w", outDir, err)
@@ -122,6 +123,7 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 		return nil, fmt.Errorf("generate code: %w", err)
 	}
 
+	fmt.Printf("ACB generateCode done\n")
 	return genSt, nil
 }
 

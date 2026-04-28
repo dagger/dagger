@@ -250,17 +250,26 @@ func (r *ContainerRuntime) Call(
 	execCtr.Config.Volumes = maps.Clone(execCtr.Config.Volumes)
 	execCtr.Config.Labels = maps.Clone(execCtr.Config.Labels)
 
+	fmt.Printf("ACB running entrypoint %v\n", execCtr.Config.Entrypoint)
+
 	err = execCtr.WithExec(hideCtx, ctr, ContainerExecOpts{
 		Args:                          []string{},
 		UseEntrypoint:                 true,
 		ExperimentalPrivilegedNesting: true,
 	}, execMD, true)
+
+	//err = execCtr.WithExec(hideCtx, ctr, ContainerExecOpts{
+	//	Args:                          []string{"sh", "-c", "echo ACB HERE I AM && exit 1"},
+	//	UseEntrypoint:                 false,
+	//	ExperimentalPrivilegedNesting: true,
+	//}, execMD, true)
 	if err != nil {
 		return nil, "", fmt.Errorf("exec function: %w", err)
 	}
 
 	err = execCtr.Sync(ctx)
 	if err != nil {
+
 		var modExecErr *ModuleExecError
 		if errors.As(err, &modExecErr) {
 			srv, srvErr := CurrentDagqlServer(ctx)
@@ -313,7 +322,7 @@ func (r *ContainerRuntime) Call(
 			return nil, "", dagErr
 		}
 		if fnCall.Name == "" {
-			return nil, "", fmt.Errorf("call constructor: %w", err)
+			return nil, "", fmt.Errorf("call cccccconstructor: %w", err)
 		}
 		return nil, "", fmt.Errorf("call function %q: %w", fnCall.Name, err)
 	}
