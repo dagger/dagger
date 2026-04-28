@@ -69,6 +69,7 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 	if err != nil {
 		return nil, fmt.Errorf("glob go files: %w", err)
 	}
+	fmt.Printf("ACB GenerateModule called with outDir=%s, initial go files=%v\n", outDir, initialGoFiles)
 
 	genFile := filepath.Join(g.Config.OutputDir, outDir, ClientGenFile)
 	if _, err := os.Stat(genFile); err != nil {

@@ -6,6 +6,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"runtime/debug"
 
 	"github.com/dagger/dagger/cmd/codegen/trace"
 	telemetry "github.com/dagger/otel-go"
@@ -20,6 +21,7 @@ type PackageInfo struct {
 }
 
 func loadPackage(ctx context.Context, dir string, allowEmpty bool) (_ *packages.Package, _ *token.FileSet, rerr error) {
+	fmt.Printf("ACB loadPackage called with dir=%s\n from %s", dir, debug.Stack())
 	ctx, span := trace.Tracer().Start(ctx, "loadPackage")
 	defer telemetry.EndWithCause(span, &rerr)
 

@@ -7996,6 +7996,17 @@ func (m *Test) Fn(
 		require.NoError(t, os.MkdirAll(filepath.Join(modDir, "config"), 0755))
 		require.NoError(t, os.WriteFile(filepath.Join(modDir, "config", "config.local.js"), []byte("1"), 0644))
 
+		gitCmd = exec.Command("git", "add", ".")
+		gitCmd.Dir = modDir
+		gitOutput, err = gitCmd.CombinedOutput()
+		require.NoError(t, err, string(gitOutput))
+
+		// shellCmd := hostDaggerCommand(ctx, t, modDir, "shell")
+		// shellOutput, err := shellCmd.CombinedOutput()
+		// require.NoError(t, err, string(shellOutput))
+		// t.Logf("got %s\n", shellOutput)
+		// require.Equal(t, "werasff", string(shellOutput))
+
 		// Run first dagger call
 		callCmd := hostDaggerCommand(ctx, t, modDir, "call", "fn")
 		callOutput, err := callCmd.CombinedOutput()
