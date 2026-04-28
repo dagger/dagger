@@ -7933,20 +7933,19 @@ func (m *Depdep) TestFile(
 		gitOutput, err = gitCmd.CombinedOutput()
 		require.NoError(t, err, string(gitOutput))
 
-		debugCmd = exec.Command("sh", "-c", "find .")
-		debugCmd.Dir = modDir
-		debugOutput, err = gitCmd.CombinedOutput()
-		t.Logf("local files are %s", debugOutput)
-
 		// Initialize dagger module
 		initCmd := hostDaggerCommand(ctx, t, modDir, "init", "--name=test", "--sdk=go", "--source=.")
 		initOutput, err := initCmd.CombinedOutput()
 		require.NoError(t, err, string(initOutput))
 
+		shellExec(t, modDir, "echo before && ls ./internal/dagger/dep.gen.go; echo before done")
+
 		installCmd := hostDaggerCommand(ctx, t, modDir, "install",
 			"github.com/dagger/dagger-test-modules/contextual-git-bug@"+vcsTestCaseCommit)
 		installOutput, err := installCmd.CombinedOutput()
 		require.NoError(t, err, string(installOutput))
+
+		shellExec(t, modDir, "echo before && ls ./internal/dagger/dep.gen.go; echo after done")
 
 		// Write module source
 		err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
@@ -7981,7 +7980,7 @@ func (m *Test) Fn(
     configFile *dagger.File,
 ) (*dagger.Directory, error) {
     // magic123
-    return m.Deppp.WithRef(m.Ref).Fn().WithFile("config.js", configFile).Sync(ctx)
+    return m.Depppfai.WithRef(m.Ref).Fn().WithFile("config.js", configFile).Sync(ctx)
 }
 `), 0644)
 		require.NoError(t, err)
@@ -8534,4 +8533,13 @@ func logGen(ctx context.Context, t *testctx.T, modSrc *dagger.Directory) {
 			t.Logf("wrote generated code to %s", fileName)
 		}
 	})
+}
+
+func shellExec(t *testctx.T, cwd, cmd string) {
+	t.Helper()
+	c := exec.Command("sh", "-c", cmd)
+	c.Dir = cwd
+	out, err := c.CombinedOutput()
+	require.NoError(t, err, string(out))
+	t.Logf("%s", out)
 }
