@@ -7975,6 +7975,7 @@ func (m *Test) Fn(
     //+defaultPath="config/config.local.js"
     configFile *dagger.File,
 ) (*dagger.Directory, error) {
+    // magic123
     return m.Deppp.WithRef(m.Ref).Fn().WithFile("config.js", configFile).Sync(ctx)
 }
 `), 0644)

