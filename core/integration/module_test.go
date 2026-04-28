@@ -7933,6 +7933,11 @@ func (m *Depdep) TestFile(
 		gitOutput, err = gitCmd.CombinedOutput()
 		require.NoError(t, err, string(gitOutput))
 
+		debugCmd = exec.Command("sh", "-c", "find .")
+		debugCmd.Dir = modDir
+		debugOutput, err = gitCmd.CombinedOutput()
+		t.Logf("local files are %s", debugOutput)
+
 		// Initialize dagger module
 		initCmd := hostDaggerCommand(ctx, t, modDir, "init", "--name=test", "--sdk=go", "--source=.")
 		initOutput, err := initCmd.CombinedOutput()
