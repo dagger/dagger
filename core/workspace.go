@@ -25,6 +25,10 @@ type Workspace struct {
 	ConfigPath  string `field:"true" doc:"Path to config.toml relative to the workspace boundary (empty if not initialized)."`
 	HasConfig   bool   `field:"true" doc:"Whether a config.toml file exists in the workspace."`
 
+	// Cwd is the current working directory within the workspace. Empty means
+	// the workspace directory itself.
+	Cwd string
+
 	// ClientID is the ID of the client that created this workspace.
 	// Used to route host filesystem operations through the correct session
 	// when the workspace is passed to a module function.
@@ -82,5 +86,57 @@ func (*Workspace) TypeDescription() string {
 
 func (ws *Workspace) Clone() *Workspace {
 	cp := *ws
+	return &cp
+}
+
+// WorkspaceCwd represents the client's current working directory within a
+// detected workspace.
+type WorkspaceCwd struct {
+	// rootfs is the pre-fetched root filesystem for remote workspaces.
+	rootfs dagql.ObjectResult[*Directory]
+
+	// Path is relative to the workspace path. Empty means the workspace path.
+	Path string `field:"true" doc:"Location of the current working directory within the workspace, relative to the workspace."`
+
+	WorkspacePath string
+	ClientID      string
+
+	// hostPath is the host filesystem path for the workspace boundary.
+	hostPath string
+}
+
+// Rootfs returns the pre-fetched root filesystem directory for remote workspaces.
+func (cwd *WorkspaceCwd) Rootfs() dagql.ObjectResult[*Directory] {
+	return cwd.rootfs
+}
+
+// SetRootfs sets the pre-fetched root filesystem.
+func (cwd *WorkspaceCwd) SetRootfs(r dagql.ObjectResult[*Directory]) {
+	cwd.rootfs = r
+}
+
+// HostPath returns the internal host filesystem path for the workspace boundary.
+func (cwd *WorkspaceCwd) HostPath() string {
+	return cwd.hostPath
+}
+
+// SetHostPath sets the internal host filesystem path.
+func (cwd *WorkspaceCwd) SetHostPath(p string) {
+	cwd.hostPath = p
+}
+
+func (*WorkspaceCwd) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "WorkspaceCwd",
+		NonNull:   true,
+	}
+}
+
+func (*WorkspaceCwd) TypeDescription() string {
+	return "The current working directory within the workspace. This is set to the directory where workspace detection started, and cannot be changed."
+}
+
+func (cwd *WorkspaceCwd) Clone() *WorkspaceCwd {
+	cp := *cwd
 	return &cp
 }
