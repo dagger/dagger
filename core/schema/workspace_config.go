@@ -109,6 +109,10 @@ func ensureWorkspaceInitialized(ctx context.Context, bk *engineutil.Client, ws *
 		return err
 	}
 
+	if ws.Cwd != "" {
+		ws.Path = filepath.Join(ws.Path, ws.Cwd)
+		ws.Cwd = ""
+	}
 	ws.ConfigPath = filepath.Join(ws.Path, workspace.LockDirName, workspace.ConfigFileName)
 	ws.Initialized = true
 	ws.HasConfig = true
@@ -116,6 +120,9 @@ func ensureWorkspaceInitialized(ctx context.Context, bk *engineutil.Client, ws *
 }
 
 func configHostPath(ws *core.Workspace) (string, error) {
+	if !ws.HasConfig && ws.Cwd != "" {
+		return workspaceHostPath(ws, ws.Cwd, workspace.LockDirName, workspace.ConfigFileName)
+	}
 	return workspaceHostPath(ws, workspace.LockDirName, workspace.ConfigFileName)
 }
 
