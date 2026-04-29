@@ -8322,10 +8322,6 @@ func sdkSourceAt(dir, sdk, contents string) dagger.WithContainerFunc {
 }
 
 func sdkSourceFile(sdk string) string {
-	if strings.HasPrefix(sdk, "github.com/vito/dang/dagger-sdk") {
-		return "main.dang"
-	}
-
 	switch sdk {
 	case "go":
 		return "main.go"
