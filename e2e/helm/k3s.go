@@ -19,6 +19,11 @@ func newK3S(dag *dagger.Client, name string) k3sCluster {
 
 	k3s.service = dag.Container().
 		From("rancher/k3s:latest").
+		// Keep this asset tied to the workspace, not CurrentModule, so the
+		// client-only dagger.json does not become part of the file-loading contract.
+		// This should be "e2e/helm/k3s-entrypoint.sh"; until
+		// https://github.com/dagger/dagger/pull/13053 lands here, the path must be
+		// current-workspace relative.
 		WithFile("/usr/bin/entrypoint.sh", dag.CurrentWorkspace().File("k3s-entrypoint.sh"), dagger.ContainerWithFileOpts{
 			Permissions: 0o755,
 		}).
