@@ -54,3 +54,35 @@ func (i *Introspector) AsEntrypoint(
 		WithEnvVariable("TYPEDEF_OUTPUT_FILE", outputFilePath).
 		WithEntrypoint([]string{introspectorBinPath, moduleName, "src", "sdk/client.gen.ts"})
 }
+
+// EmitEntrypoint runs the introspector binary in entrypoint-emit mode and
+// returns the generated `__dagger.entrypoint.ts` file. The file is the
+// statically generated dispatch (switch/case) replacement for the runtime
+// AST/reflection path — it imports user classes directly from `./src/...`
+// and registers types via unrolled `dag.typeDef()...` calls.
+func (i *Introspector) EmitEntrypoint(
+	moduleName string,
+
+	sourceCode *dagger.Directory,
+
+	clientBindings *dagger.File,
+) *dagger.File {
+	const emitPath = "/work/__dagger.entrypoint.ts"
+
+	sdkPkg := dag.Directory().
+		WithFile("client.gen.ts", clientBindings).
+		WithNewFile("index.ts", tsutils.StaticBundleModuleIndexTS).
+		WithNewFile("core.d.ts", tsutils.StaticBundleCoreDTS).
+		WithNewFile("telemetry.ts", tsutils.StaticBundleTelemetryTS)
+
+	return i.Ctr.
+		WithWorkdir("/work").
+		WithMountedDirectory("/work/src", sourceCode).
+		WithMountedDirectory("/work/node_modules/@dagger.io/dagger", sdkPkg).
+		WithMountedDirectory("/work/sdk", sdkPkg).
+		WithEnvVariable("EMIT_ENTRYPOINT_FILE", emitPath).
+		WithEnvVariable("EMIT_ENTRYPOINT_MODULE_ROOT", "/work").
+		WithEnvVariable("EMIT_ENTRYPOINT_SDK_IMPORT", "@dagger.io/dagger").
+		WithExec([]string{introspectorBinPath, moduleName, "src", "sdk/client.gen.ts"}).
+		File(emitPath)
+}
