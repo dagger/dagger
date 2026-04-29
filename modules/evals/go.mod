@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/Khan/genqlient v0.8.1
 	github.com/dagger/otel-go v1.41.0
+	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
 	github.com/stretchr/testify v1.11.1
 	github.com/vektah/gqlparser/v2 v2.5.33
 	github.com/vito/runt v0.0.0-20250616031206-26a1ab40732a
