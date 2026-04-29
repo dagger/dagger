@@ -668,6 +668,17 @@ func (s *moduleSourceSchema) gitModuleSource(
 		panic(err)
 	}
 	fmt.Printf("ACB gitModuleSource %s (%+v) entries are %v\n", source, gitSrc.Git, entries)
+	if source == "github.com/dagger/dagger-test-modules/contextual-git-bug@d730fb3af8757e1ca293e01aa4fcfd510a6e40e5" {
+		found := false
+		for _, x := range entries {
+			if x == "contextual-git-bug/" {
+				found = true
+			}
+		}
+		if !found {
+			panic("bug bug bug")
+		}
+	}
 
 	gitSrc.SourceRootSubpath = strings.TrimPrefix(parsed.RepoRootSubdir, "/")
 	gitSrc.OriginalSubpath = gitSrc.SourceRootSubpath

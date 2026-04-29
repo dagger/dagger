@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -575,8 +574,9 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		fmt.Sprintf("discard git: %b", discardGitDir),
 		fmt.Sprintf("depth: %d", depth),
 		fmt.Sprintf("tags: %b", includeTags),
-		fmt.Sprintf("do the buster %v", rand.Text()), // HACK
+		// nope, this didn't help fmt.Sprintf("do the buster %v", rand.Text()), // HACK
 	}
+	fmt.Printf("ACB RemoteGitRef.Tree cachekey using %v\n", inputs)
 	cacheKey := hashutil.HashStrings(inputs...).String()
 	cache := query.SnapshotManager()
 	locker := query.Locker()
@@ -628,6 +628,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			}
 			checkoutGit := git.New(gitutil.WithWorkTree(checkoutDir), gitutil.WithGitDir(checkoutDirGit))
 
+			fmt.Printf("ACB RemoteGitRef.Tree %v ref was mounted; doGitCheckout called on %s, %s, %v\n", inputs, ref.repo.URL.Remote(), gitURL, ref.Ref)
 			return doGitCheckout(ctx, checkoutGit, ref.repo.URL.Remote(), gitURL, ref.Ref, depth, discardGitDir)
 		})
 		if err != nil {

@@ -7985,7 +7985,7 @@ func (m *Test) Fn(
     configFile *dagger.File,
 ) (*dagger.Directory, error) {
     // magic123
-    return m.Depppfai.WithRef(m.Ref).Fn().WithFile("config.js", configFile).Sync(ctx)
+    return m.DepppIfYouMakeItHereAndGetASyntaxErrorThatsAGoodThing.WithRef(m.Ref).Fn().WithFile("config.js", configFile).Sync(ctx)
 }
 `), 0644)
 		require.NoError(t, err)
