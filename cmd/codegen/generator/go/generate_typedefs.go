@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/generator/go/templates"
@@ -73,6 +74,7 @@ func (g *GoGenerator) GenerateTypeDefs(ctx context.Context, schema *introspectio
 	}
 
 	if len(initialGoFiles) == 0 {
+		fmt.Printf("ACB gentypedef initialGoFiles is empty, called from %s\n", debug.Stack())
 		// write an initial main.go if no main pkg exists yet
 		if err := mfs.WriteFile(StarterTemplateFile, []byte(baseModuleSource(pkgInfo, moduleConfig.ModuleName)), 0600); err != nil {
 			return nil, err
