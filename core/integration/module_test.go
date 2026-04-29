@@ -7938,14 +7938,14 @@ func (m *Depdep) TestFile(
 		initOutput, err := initCmd.CombinedOutput()
 		require.NoError(t, err, string(initOutput))
 
-		shellExec(t, modDir, "echo before && ls ./internal/dagger/dep.gen.go; echo before done")
+		shellExec(t, modDir, "echo -n before: ; ls ./internal/dagger/dep.gen.go || echo ./internal/dagger/dep.gen.go does not exist here1")
 
 		installCmd := hostDaggerCommand(ctx, t, modDir, "install",
 			"github.com/dagger/dagger-test-modules/contextual-git-bug@"+vcsTestCaseCommit)
 		installOutput, err := installCmd.CombinedOutput()
 		require.NoError(t, err, string(installOutput))
 
-		shellExec(t, modDir, "echo before && ls ./internal/dagger/dep.gen.go; echo after done")
+		shellExec(t, modDir, "echo -n after: ; ls ./internal/dagger/dep.gen.go || echo ./internal/dagger/dep.gen.go does not exist here2")
 
 		// Write module source
 		err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
