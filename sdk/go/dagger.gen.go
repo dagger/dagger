@@ -335,6 +335,9 @@ type UpID string
 // A Null Void is used as a placeholder for resolvers that do not return anything.
 type Void string
 
+// The `WorkspaceCwdID` scalar type represents an identifier for an object of type WorkspaceCwd.
+type WorkspaceCwdID string
+
 // The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
 type WorkspaceID string
 
@@ -870,6 +873,15 @@ func (r *Binding) AsWorkspace() *Workspace {
 	q := r.query.Select("asWorkspace")
 
 	return &Workspace{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type WorkspaceCwd
+func (r *Binding) AsWorkspaceCwd() *WorkspaceCwd {
+	q := r.query.Select("asWorkspaceCwd")
+
+	return &WorkspaceCwd{
 		query: q,
 	}
 }
@@ -6616,6 +6628,30 @@ func (r *Env) WithWorkspace(workspace *Directory) *Env {
 	}
 }
 
+// Create or update a binding of type WorkspaceCwd in the environment
+func (r *Env) WithWorkspaceCwdInput(name string, value *WorkspaceCwd, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withWorkspaceCwdInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired WorkspaceCwd output to be assigned in the environment
+func (r *Env) WithWorkspaceCwdOutput(name string, description string) *Env {
+	q := r.query.Select("withWorkspaceCwdOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create or update a binding of type Workspace in the environment
 func (r *Env) WithWorkspaceInput(name string, value *Workspace, description string) *Env {
 	assertNotNil("value", value)
@@ -11716,6 +11752,8 @@ func (r *ModuleSource) Version(ctx context.Context) (string, error) {
 }
 
 // Set a blueprint for the module source.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
 func (r *ModuleSource) WithBlueprint(blueprint *ModuleSource) *ModuleSource {
 	assertNotNil("blueprint", blueprint)
 	q := r.query.Select("withBlueprint")
@@ -11808,6 +11846,8 @@ func (r *ModuleSource) WithSourceSubpath(path string) *ModuleSource {
 }
 
 // Add toolchains to the module source.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
 func (r *ModuleSource) WithToolchains(toolchains []*ModuleSource) *ModuleSource {
 	q := r.query.Select("withToolchains")
 	q = q.Arg("toolchains", toolchains)
@@ -11818,6 +11858,8 @@ func (r *ModuleSource) WithToolchains(toolchains []*ModuleSource) *ModuleSource 
 }
 
 // Update the blueprint module to the latest version.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
 func (r *ModuleSource) WithUpdateBlueprint() *ModuleSource {
 	q := r.query.Select("withUpdateBlueprint")
 
@@ -11837,6 +11879,8 @@ func (r *ModuleSource) WithUpdateDependencies(dependencies []string) *ModuleSour
 }
 
 // Update one or more toolchains.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
 func (r *ModuleSource) WithUpdateToolchains(toolchains []string) *ModuleSource {
 	q := r.query.Select("withUpdateToolchains")
 	q = q.Arg("toolchains", toolchains)
@@ -11857,6 +11901,8 @@ func (r *ModuleSource) WithUpdatedClients(clients []string) *ModuleSource {
 }
 
 // Remove the current blueprint from the module source.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
 func (r *ModuleSource) WithoutBlueprint() *ModuleSource {
 	q := r.query.Select("withoutBlueprint")
 
@@ -11896,6 +11942,8 @@ func (r *ModuleSource) WithoutExperimentalFeatures(features []ModuleSourceExperi
 }
 
 // Remove the provided toolchains from the module source.
+//
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
 func (r *ModuleSource) WithoutToolchains(toolchains []string) *ModuleSource {
 	q := r.query.Select("withoutToolchains")
 	q = q.Arg("toolchains", toolchains)
@@ -13384,6 +13432,16 @@ func (r *Query) LoadUpGroupFromID(id UpGroupID) *UpGroup {
 	q = q.Arg("id", id)
 
 	return &UpGroup{
+		query: q,
+	}
+}
+
+// Load a WorkspaceCwd from its ID.
+func (r *Query) LoadWorkspaceCwdFromID(id WorkspaceCwdID) *WorkspaceCwd {
+	q := r.query.Select("loadWorkspaceCwdFromID")
+	q = q.Arg("id", id)
+
+	return &WorkspaceCwd{
 		query: q,
 	}
 }
@@ -15512,6 +15570,15 @@ func (r *Workspace) ConfigWrite(ctx context.Context, key string, value string) (
 	return response, q.Execute(ctx)
 }
 
+// The current working directory within the workspace.
+func (r *Workspace) Cwd() *WorkspaceCwd {
+	q := r.query.Select("cwd")
+
+	return &WorkspaceCwd{
+		query: q,
+	}
+}
+
 // WorkspaceDirectoryOpts contains options for Workspace.Directory
 type WorkspaceDirectoryOpts struct {
 	// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
@@ -15933,6 +16000,121 @@ func (r *Workspace) Update() *Changeset {
 	return &Changeset{
 		query: q,
 	}
+}
+
+// The current working directory within the workspace. This is set to the directory where workspace detection started, and cannot be changed.
+type WorkspaceCwd struct {
+	query *querybuilder.Selection
+
+	id   *WorkspaceCwdID
+	path *string
+}
+
+func (r *WorkspaceCwd) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceCwd {
+	return &WorkspaceCwd{
+		query: q,
+	}
+}
+
+// WorkspaceCwdDirectoryOpts contains options for WorkspaceCwd.Directory
+type WorkspaceCwdDirectoryOpts struct {
+	// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+	Exclude []string
+	// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+	Include []string
+	// Apply .gitignore filter rules inside the directory.
+	Gitignore bool
+}
+
+// Returns a Directory from the current working directory within the workspace.
+//
+// Relative paths resolve from the current working directory. Absolute paths resolve from the workspace boundary.
+func (r *WorkspaceCwd) Directory(path string, opts ...WorkspaceCwdDirectoryOpts) *Directory {
+	q := r.query.Select("directory")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+		}
+		// `include` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+		}
+		// `gitignore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Gitignore) {
+			q = q.Arg("gitignore", opts[i].Gitignore)
+		}
+	}
+	q = q.Arg("path", path)
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Returns a File from the current working directory within the workspace.
+//
+// Relative paths resolve from the current working directory. Absolute paths resolve from the workspace boundary.
+func (r *WorkspaceCwd) File(path string) *File {
+	q := r.query.Select("file")
+	q = q.Arg("path", path)
+
+	return &File{
+		query: q,
+	}
+}
+
+// A unique identifier for this WorkspaceCwd.
+func (r *WorkspaceCwd) ID(ctx context.Context) (WorkspaceCwdID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response WorkspaceCwdID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceCwd) XXX_GraphQLType() string {
+	return "WorkspaceCwd"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceCwd) XXX_GraphQLIDType() string {
+	return "WorkspaceCwdID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceCwd) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceCwd) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Location of the current working directory within the workspace, relative to the workspace.
+func (r *WorkspaceCwd) Path(ctx context.Context) (string, error) {
+	if r.path != nil {
+		return *r.path, nil
+	}
+	q := r.query.Select("path")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A planned workspace migration.
