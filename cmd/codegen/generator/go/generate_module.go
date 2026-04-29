@@ -95,6 +95,7 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 	}
 
 	if len(initialGoFiles) == 0 {
+		panic("ACB initialGoFiles empty")
 		fmt.Printf("ACB genmod initialGoFiles is empty, called from %s\n", debug.Stack())
 		// write an initial main.go if no main pkg exists yet
 		if err := mfs.WriteFile(StarterTemplateFile, []byte(baseModuleSource(pkgInfo, moduleConfig.ModuleName)), 0600); err != nil {
