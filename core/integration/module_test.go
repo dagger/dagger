@@ -7941,7 +7941,7 @@ func (m *Depdep) TestFile(
 
 		//shellExec(t, modDir, "echo -n before: ; ls -la ./internal/dagger/dep.gen.go || echo ./internal/dagger/dep.gen.go does not exist here1")
 
-		installCmd := hostDaggerCommand(ctx, t, modDir, "install",
+		installCmd := hostDaggerCommandPanic(ctx, t, modDir, "install",
 			"github.com/dagger/dagger-test-modules/contextual-git-bug@"+vcsTestCaseCommit)
 		installOutput, err := installCmd.CombinedOutput()
 		require.NoError(t, err, string(installOutput))
@@ -7950,7 +7950,7 @@ func (m *Depdep) TestFile(
 		//shellExec(t, modDir, "echo -n after: ; ls -la ./internal/dagger/dep.gen.go || echo ./internal/dagger/dep.gen.go does not exist here2")
 
 		// if this fails, then GenerateTypeDefs most likely was called with an empty dir which caused StarterTemplateFile to get written out
-		shellExec(t, modDir, "if grep ContainerEcho ./internal/dagger/dep.gen.go; then echo ContainerEcho should not be in dep.gen.go && exit 1; fi; exit 2")
+		shellExec(t, modDir, "if grep ContainerEcho ./internal/dagger/dep.gen.go; then echo ContainerEcho should not be in dep.gen.go && exit 1; fi;")
 
 		// Write module source
 		err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
@@ -8270,6 +8270,16 @@ func hostDaggerCommand(ctx context.Context, t testing.TB, workdir string, args .
 	cmd := exec.Command(daggerCliPath(t), args...)
 	cleanupExec(t, cmd)
 	cmd.Env = append(os.Environ(), telemetry.PropagationEnv(ctx)...)
+	cmd.Dir = workdir
+	return cmd
+}
+
+func hostDaggerCommandPanic(ctx context.Context, t testing.TB, workdir string, args ...string) *exec.Cmd {
+	t.Helper()
+	cmd := exec.Command(daggerCliPath(t), args...)
+	cleanupExec(t, cmd)
+	cmd.Env = append(os.Environ(), telemetry.PropagationEnv(ctx)...)
+	cmd.Env = append(cmd.Env, "PANIC=yes")
 	cmd.Dir = workdir
 	return cmd
 }
