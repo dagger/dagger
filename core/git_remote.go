@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -566,7 +567,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	// cacheKeyDigest, err := curCall.RecipeDigest(ctx)
 	// if err != nil {
 	// 	return nil, fmt.Errorf("tree cache key: %w", err)
-	//} 
+	//}
 	inputs := []string{
 		ref.Name,
 		ref.SHA,
@@ -574,6 +575,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		fmt.Sprintf("discard git: %b", discardGitDir),
 		fmt.Sprintf("depth: %d", depth),
 		fmt.Sprintf("tags: %b", includeTags),
+		fmt.Sprintf("do the buster %v", rand.Text()), // HACK
 	}
 	cacheKey := hashutil.HashStrings(inputs...).String()
 	cache := query.SnapshotManager()
