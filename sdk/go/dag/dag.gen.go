@@ -596,6 +596,12 @@ func LoadUpGroupFromID(id dagger.UpGroupID) *dagger.UpGroup {
 	return client.LoadUpGroupFromID(id)
 }
 
+// Load a WorkspaceCwd from its ID.
+func LoadWorkspaceCwdFromID(id dagger.WorkspaceCwdID) *dagger.WorkspaceCwd {
+	client := initClient()
+	return client.LoadWorkspaceCwdFromID(id)
+}
+
 // Load a Workspace from its ID.
 func LoadWorkspaceFromID(id dagger.WorkspaceID) *dagger.Workspace {
 	client := initClient()
