@@ -267,6 +267,25 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 		}
 	}
 
+	// Host and volume mounts bypass buildkit and are applied by the engine
+	// worker's setupHostMounts step.
+	for _, mnt := range container.Mounts {
+		switch {
+		case mnt.HostSource != nil:
+			execMD.HostMounts = append(execMD.HostMounts, engineutil.HostMount{
+				Source: mnt.HostSource.Source,
+				Target: mnt.Target,
+				RW:     !mnt.Readonly,
+			})
+		case mnt.VolumeSource != nil:
+			execMD.HostMounts = append(execMD.HostMounts, engineutil.HostMount{
+				Source: mnt.VolumeSource.Volume.Self().MountPath,
+				Target: mnt.Target,
+				RW:     !mnt.Readonly,
+			})
+		}
+	}
+
 	return &execMD, nil
 }
 
@@ -372,6 +391,12 @@ type execMountState struct {
 	ActiveRef       bkcache.MutableRef
 	OutputMutable   bkcache.MutableRef
 	OutputImmutable bkcache.ImmutableRef
+
+	// Placeholder marks mounts that bypass buildkit entirely (host and
+	// volume mounts, applied via ExecutionMetadata.HostMounts). We still
+	// keep an entry in mountStates so index alignment with container.Mounts
+	// is preserved for downstream consumers.
+	Placeholder bool
 }
 
 type materializedExecPlan struct {
@@ -633,6 +658,12 @@ func prepareMounts(
 	}
 
 	for i, ctrMount := range container.Mounts {
+		// Host and volume bind mounts are applied by the engine worker via
+		// ExecutionMetadata.HostMounts; they have no buildkit mount.
+		if ctrMount.HostSource != nil || ctrMount.VolumeSource != nil {
+			continue
+		}
+
 		mountState := &execMountState{
 			Dest:      ctrMount.Target,
 			MountType: pb.MountType_BIND,
@@ -1256,6 +1287,10 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			return cache.New(ctx, ref, bkcache.WithDescription(desc))
 		}
 		materializeState := func(state *execMountState) error {
+			if state.Placeholder {
+				mountStates = append(mountStates, state)
+				return nil
+			}
 			var mountable bkcache.Mountable
 			if state.SourceRef != nil {
 				mountable = state.SourceRef
@@ -1417,6 +1452,16 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		}
 
 		for i, ctrMount := range inputMounts {
+			// Host and volume bind mounts are applied by the engine worker via
+			// ExecutionMetadata.HostMounts; record a placeholder so mountStates
+			// stays index-aligned with container.Mounts.
+			if ctrMount.HostSource != nil || ctrMount.VolumeSource != nil {
+				if err := materializeState(&execMountState{Dest: ctrMount.Target, Placeholder: true}); err != nil {
+					return failPrepare(err)
+				}
+				continue
+			}
+
 			mountState := &execMountState{
 				Dest:      ctrMount.Target,
 				MountType: pb.MountType_BIND,

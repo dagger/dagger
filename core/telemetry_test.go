@@ -141,6 +141,9 @@ func (ms *mockServer) TelemetrySeenKeyStore(context.Context) (dagql.TelemetrySee
 }
 func (ms *mockServer) Server(context.Context) (*dagql.Server, error)           { return nil, nil }
 func (ms *mockServer) MuxEndpoint(context.Context, string, http.Handler) error { return nil }
+func (ms *mockServer) RegisterSSHFSVolume(context.Context, string, *Secret, *Secret) (*Volume, error) {
+	return nil, nil
+}
 
 func (ms *mockServer) Auth(context.Context) (*auth.RegistryAuthProvider, error) { return nil, nil }
 

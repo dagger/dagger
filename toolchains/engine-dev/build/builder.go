@@ -120,6 +120,8 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		"ripgrep",
 		// for dbs
 		"sqlite",
+		// for SSHFS volume mounts
+		"sshfs", "fuse3",
 	}
 	if build.gpuSupport {
 		pkgs = append(pkgs, "nvidia-driver", "nvidia-tools")

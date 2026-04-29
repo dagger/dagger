@@ -5450,6 +5450,33 @@ func (ContainerSuite) TestWithFileOnMountedFile(ctx context.Context, t *testctx.
 	require.Equal(t, "4", f2Contents)
 }
 
+// TestWithMountedHostDirectory validates the engine-host bind mount end-to-end:
+// Container → schema (withMountedHostDirectory) → ContainerMount.HostSource →
+// execMeta (ExecutionMetadata.HostMounts) → worker (setupHostMounts) → OCI bind.
+// Two successive containers mount the same host path rw; the second sees a
+// file the first wrote. If any link in the chain is broken, the second
+// container reads a fresh/empty directory.
+func (ContainerSuite) TestWithMountedHostDirectory(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	writer := c.Container().
+		From(alpineImage).
+		WithMountedHostDirectory("/hostdir", ".").
+		WithExec([]string{"touch", "/hostdir/newfile"})
+
+	_, err := writer.Stdout(ctx)
+	require.NoError(t, err)
+
+	reader := c.Container().
+		From(alpineImage).
+		WithMountedHostDirectory("/hostdir", ".").
+		WithExec([]string{"ls", "-la", "/hostdir"})
+
+	output, err := reader.Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, output, "newfile")
+}
+
 func (ContainerSuite) TestFileCaching(ctx context.Context, t *testctx.T) {
 	theTest := func(ctx context.Context, t *testctx.T, fileSelector func(*dagger.Client, string) *dagger.File) {
 		t.Helper()
