@@ -23,10 +23,6 @@
       "source": "../docs-dev"
     },
     {
-      "name": "dotnet-sdk-dev",
-      "source": "../dotnet-sdk-dev"
-    },
-    {
       "name": "engine-dev",
       "source": "../engine-dev"
     },
@@ -57,10 +53,6 @@
     {
       "name": "rust-sdk-dev",
       "source": "../rust-sdk-dev"
-    },
-    {
-      "name": "sdks",
-      "source": "../all-sdks"
     },
     {
       "name": "typescript-sdk-dev",
