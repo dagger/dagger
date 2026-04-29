@@ -6,7 +6,7 @@ require (
 	dagger.io/dagger v0.20.6
 	github.com/Khan/genqlient v0.8.1
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
-	github.com/dagger/otel-go v1.43.1-0.20260427142032-2ff3f61a35cd
+	github.com/dagger/otel-go v1.43.1-0.20260429155737-5d5b49c17409
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/sdk v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
