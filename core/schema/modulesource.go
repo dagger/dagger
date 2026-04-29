@@ -328,6 +328,7 @@ func (s *moduleSourceSchema) moduleSource(
 		fmt.Printf("ACB moduleSourceSchema.moduleSource git %v, %v, %v, %v\n", args.RefString, parsedRef.Git, args.RefPin, args.DisableFindUp)
 		inst, err = s.gitModuleSource(ctx, query, args.RefString, parsedRef.Git, args.RefPin, !args.DisableFindUp)
 		if err != nil {
+			fmt.Printf("ACB moduleSourceSchema.moduleSource git %v, %v, %v, %v GOT AN ERROR %v\n", args.RefString, parsedRef.Git, args.RefPin, args.DisableFindUp, err)
 			return inst, err
 		}
 	default:
@@ -593,7 +594,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 		lookupLock     *workspaceLookupLock
 	)
 	if refPin == "" {
-		fmt.Printf("ACB gitModuleSource empty ref pin %p %s %+v\n", s, source, parsed)
+		fmt.Printf("ACB gitModuleSource %s empty ref pin %+v\n", source, parsed)
 		lockMode, err := currentLookupLockMode(ctx)
 		if err != nil {
 			return inst, fmt.Errorf("%s lock mode: %w", lockModulesResolveOperation, err)
@@ -617,10 +618,10 @@ func (s *moduleSourceSchema) gitModuleSource(
 				return inst, fmt.Errorf("%s lock resolution: %w", lockModulesResolveOperation, err)
 			}
 			refPin = lockResolution.Pin
-			fmt.Printf("ACB gitModuleSource %p resolved ref pin %s\n", s, refPin)
+			fmt.Printf("ACB gitModuleSource %s resolved ref pin %s\n", source, refPin)
 		}
 	} else {
-		fmt.Printf("ACB gitModuleSource %p ref pin %s, %v, %+v\n", s, refPin, source, parsed)
+		fmt.Printf("ACB gitModuleSource %s ref pin %s, %+v\n", source, refPin, parsed)
 	}
 
 	gitRef, err := parsed.GitRef(ctx, dag, refPin)
@@ -655,6 +656,18 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return inst, fmt.Errorf("failed to load git dir: %w", err)
 	}
 	gitSrc.Git.UnfilteredContextDir = gitSrc.ContextDirectory
+
+	var entries dagql.Array[dagql.String]
+	err = dag.Select(ctx, gitSrc.ContextDirectory, &entries,
+		dagql.Selector{
+			Field: "entries",
+		},
+	)
+	if err != nil {
+		fmt.Printf("ACB entries failed with %v\n", err)
+		panic(err)
+	}
+	fmt.Printf("ACB gitModuleSource %s (%+v) entries are %v\n", source, gitSrc.Git, entries)
 
 	gitSrc.SourceRootSubpath = strings.TrimPrefix(parsed.RepoRootSubdir, "/")
 	gitSrc.OriginalSubpath = gitSrc.SourceRootSubpath
