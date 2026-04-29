@@ -917,7 +917,7 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 		hostname := "my-git-repo" + identity.NewID()
 
 		gitConfigPath := path.Join(t.TempDir(), "git-config")
-		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0600)
+		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0o600)
 		require.NoError(t, err)
 
 		c := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
@@ -944,7 +944,7 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 		hostname := "my-git-repo" + identity.NewID()
 
 		gitConfigPath := path.Join(t.TempDir(), "git-config")
-		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0600)
+		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0o600)
 		require.NoError(t, err)
 
 		c := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
@@ -971,7 +971,7 @@ func (GitSuite) TestAuthClient(ctx context.Context, t *testctx.T) {
 		hostname := "my-git-repo" + identity.NewID()
 
 		gitConfigPath := path.Join(t.TempDir(), "git-config")
-		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0600)
+		err := os.WriteFile(gitConfigPath, []byte(makeGitCredentials("http://"+hostname, username, password)), 0o600)
 		require.NoError(t, err)
 
 		c := connect(ctx, t, dagger.WithEnvironmentVariable("GIT_CONFIG_GLOBAL", gitConfigPath))
@@ -1595,7 +1595,7 @@ exit 1
 				Host:     "github.com",
 			},
 			expectedError:  gitsession.CREDENTIAL_RETRIEVAL_FAILED,
-			expectedReason: "Failed to retrieve credentials: exit status 128",
+			expectedReason: "Failed to retrieve credentials: warning: invalid credential line: this is not a key value pair\nfatal: could not read Username for 'https://github.com': terminal prompts disabled\n, exit status 128",
 		},
 		{
 			// Test case 5: No credentials found
@@ -1624,7 +1624,7 @@ exit 128
 				Host:     "github.com",
 			},
 			expectedError:  gitsession.CREDENTIAL_RETRIEVAL_FAILED,
-			expectedReason: "Failed to retrieve credentials: exit status 128",
+			expectedReason: "Failed to retrieve credentials: fatal: could not read Username for 'https://github.com': terminal prompts disabled\n, exit status 128",
 		},
 		{
 			// Test case 6: Timeout handling
