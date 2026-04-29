@@ -7937,6 +7937,7 @@ func (m *Depdep) TestFile(
 		initCmd := hostDaggerCommand(ctx, t, modDir, "init", "--name=test", "--sdk=go", "--source=.")
 		initOutput, err := initCmd.CombinedOutput()
 		require.NoError(t, err, string(initOutput))
+		t.Logf("initOutput: %s", initOutput)
 
 		//shellExec(t, modDir, "echo -n before: ; ls -la ./internal/dagger/dep.gen.go || echo ./internal/dagger/dep.gen.go does not exist here1")
 
@@ -7944,11 +7945,12 @@ func (m *Depdep) TestFile(
 			"github.com/dagger/dagger-test-modules/contextual-git-bug@"+vcsTestCaseCommit)
 		installOutput, err := installCmd.CombinedOutput()
 		require.NoError(t, err, string(installOutput))
+		t.Logf("installOutput: %s", installOutput)
 
 		//shellExec(t, modDir, "echo -n after: ; ls -la ./internal/dagger/dep.gen.go || echo ./internal/dagger/dep.gen.go does not exist here2")
 
 		// if this fails, then GenerateTypeDefs most likely was called with an empty dir which caused StarterTemplateFile to get written out
-		shellExec(t, modDir, "if grep ContainerEcho ./internal/dagger/dep.gen.go; then echo ContainerEcho should not be in dep.gen.go && exit 1; fi")
+		shellExec(t, modDir, "if grep ContainerEcho ./internal/dagger/dep.gen.go; then echo ContainerEcho should not be in dep.gen.go && exit 1; fi; exit 2")
 
 		// Write module source
 		err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
