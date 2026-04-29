@@ -16,7 +16,7 @@ The intended workflow for reusable modules is to install them through the Dagger
 
 To initialise the module, call the following:
 
-```
+```bash
 dagger init --sdk="php" <path-to-module>
 ```
 
@@ -28,7 +28,7 @@ The `path-to-module` argument can be omitted and the module will be initialised 
 
 To set up the development environment, call the following:
 
-```
+```bash
 dagger develop -m <path-to-module>
 ```
 
@@ -40,11 +40,12 @@ The `-m` flag must be a git url or relative file path. The argument may be omitt
 
 You can find out what methods are available by calling the following:
 
-```
+```bash
 dagger functions -m <path-to-module>
 ```
 
 You should find two functions:
+
 - echo
 - grep-dir
 
@@ -202,7 +203,7 @@ final class MyModule
 
 We could then call tests like so:
 
-```
+```bash
 dagger call test --dir="path/to/dir"
 ```
 
@@ -229,7 +230,7 @@ final class MyModule
 
 We could then call tests like so:
 
-```
+```bash
 dagger call --dir="path/to/dir" test
 ```
 
@@ -381,11 +382,11 @@ class Example
 
 [Directories and Files can also specify additional meta data.](https://docs.dagger.io/manuals/developer/functions/#directories-and-files)
 
-
 ##### Default Paths
 
 Default paths allow your module access files outside the *source directory* specified in your `dagger.json` file.
 Note that default paths are only applicable for paths within your project:
+
 - If it is a Git Repository, it is restricted to files in the same Git Repository.
 - If it is a non-repository, then it is restricted to files and sub-directories of the directory containing your `dagger.json` file.
 
@@ -395,6 +396,7 @@ So the standard way to specify defaults in PHP would be hard to apply.
 Instead, specify a `DefaultPath` attribute with a `string` path.
 
 If an absolute path is specified:
+
 - in a Git repository (defined by the presence of a .git sub-directory), the default context is the root of the Git repository.
 - in a non-repository location (defined by the absence of a .git sub-directory), the default context is the directory containing a `dagger.json` file.
 
@@ -411,12 +413,13 @@ public function myDaggerFunction(
     // ...
 }
 ```
+
 A default path of `.` returns the directory containing your `dagger.json` file.
 
 If your `dagger.json` file is located in `~/my-project/src/`:
 
 - `.` resolves to `~/my-project/src/`
-- `..` resolves to `~/my-project/` **if it is a Git Repository** otherwise this is not allowed. 
+- `..` resolves to `~/my-project/` **if it is a Git Repository** otherwise this is not allowed.
 - `/`, if `~/my-project/` is a Git repository, resolves to `~/my-project/` because that is the root of your Git repository.
 - `/`, if `~/my-project/` is not a Git repository, resolves to `~/my-project/src/` because that is the directory containing your `dagger.json` file.
 

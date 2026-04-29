@@ -8,7 +8,6 @@ This SDK contains:
 * The [`dagger` CLI][cli]
 * [Documentation][docs]
 
-
 ## Contributing
 
 The Dagger Go SDK is open-source, and we welcome contributions. Its source code lives in the [Dagger Engine repository][source].

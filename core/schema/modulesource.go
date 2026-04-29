@@ -2315,7 +2315,7 @@ func (s *moduleSourceSchema) runCodegen(
 	}
 
 	// load the deps as actual Modules
-	deps, err := s.loadDependencyModules(ctx, srcInst)
+	deps, err := s.loadDependencyModules(ctx, srcInst, srcInst)
 	if err != nil {
 		return res, fmt.Errorf("failed to load dependencies as modules: %w", err)
 	}
@@ -2515,7 +2515,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 		return genDirInst, fmt.Errorf("failed to add module source required files: %w", err)
 	}
 
-	deps, err := s.loadDependencyModules(ctx, srcInst)
+	deps, err := s.loadDependencyModules(ctx, srcInst, srcInst)
 	if err != nil {
 		return genDirInst, fmt.Errorf("failed to load dependencies of this modules: %w", err)
 	}
@@ -2875,7 +2875,7 @@ func (s *moduleSourceSchema) moduleSourceIntrospectionSchemaJSON(
 	src dagql.ObjectResult[*core.ModuleSource],
 	args struct{},
 ) (inst dagql.Result[*core.File], rerr error) {
-	deps, err := s.loadDependencyModules(ctx, src)
+	deps, err := s.loadDependencyModules(ctx, src, src)
 	if err != nil {
 		return inst, err
 	}
@@ -2954,6 +2954,13 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		// LegacyDefaultsFromDotEnv, when true and workspace config is set,
 		// also load .env defaults for args not found in WorkspaceConfig.
 		LegacyDefaultsFromDotEnv bool `internal:"true" default:"false"`
+
+		// DefaultPathContextSourceRef, when set, loads implementation code from
+		// the receiver but resolves +defaultPath inputs from this source ref.
+		DefaultPathContextSourceRef string `internal:"true" default:""`
+
+		// DefaultPathContextSourcePin pins DefaultPathContextSourceRef when set.
+		DefaultPathContextSourcePin string `internal:"true" default:""`
 	},
 ) (inst dagql.ObjectResult[*core.Module], err error) {
 	dag, err := core.CurrentDagqlServer(ctx)
@@ -2976,10 +2983,26 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 	originalSrc := src
 	execSrc := src
-	contextSrc := src
+	defaultPathContextSrc := src
+	if args.DefaultPathContextSourceRef != "" {
+		contextSourceArgs := []dagql.NamedInput{
+			{Name: "refString", Value: dagql.String(args.DefaultPathContextSourceRef)},
+		}
+		if args.DefaultPathContextSourcePin != "" {
+			contextSourceArgs = append(contextSourceArgs, dagql.NamedInput{
+				Name: "refPin", Value: dagql.String(args.DefaultPathContextSourcePin),
+			})
+		}
+		err = dag.Select(ctx, dag.Root(), &defaultPathContextSrc, dagql.Selector{
+			Field: "moduleSource",
+			Args:  contextSourceArgs,
+		})
+		if err != nil {
+			return inst, fmt.Errorf("failed to load defaultPath context source: %w", err)
+		}
+	}
 	if src.Self().Blueprint.Self() != nil {
 		execSrc = src.Self().Blueprint
-		contextSrc = src
 		if len(originalSrc.Self().Toolchains) > 0 {
 			var sourceIDs []core.ModuleSourceID
 			for _, toolchainSrc := range originalSrc.Self().Toolchains {
@@ -3005,7 +3028,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 
 	mod := &core.Module{
 		Source:                        dagql.NonNull(execSrc),
-		ContextSource:                 dagql.NonNull(contextSrc),
+		ContextSource:                 dagql.NonNull(defaultPathContextSrc),
 		NameField:                     originalSrc.Self().ModuleName,
 		OriginalName:                  execSrc.Self().ModuleOriginalName,
 		SDKConfig:                     execSrc.Self().SDK,
@@ -3015,7 +3038,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		mod.SDKConfig = &core.SDKConfig{}
 	}
 
-	mod.Deps, err = s.loadDependencyModules(ctx, execSrc)
+	mod.Deps, err = s.loadDependencyModules(ctx, execSrc, defaultPathContextSrc)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load dependencies as modules: %w", err)
 	}
@@ -3024,10 +3047,18 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 	if args.ForceDefaultFunctionCaching {
 		mod.DisableDefaultFunctionCaching = false
 	}
+	defaultPathContextSourceVariant := ""
+	if args.DefaultPathContextSourceRef != "" {
+		defaultPathContextSourceVariant = hashutil.HashStrings(
+			args.DefaultPathContextSourceRef,
+			args.DefaultPathContextSourcePin,
+		).String()
+	}
 	// Keep the per-session content cache distinct for module variants produced
 	// from the same source with different internal asModule options.
 	mod.AsModuleVariantDigest = hashutil.HashStrings(
 		"asModuleVariant",
+		defaultPathContextSourceVariant,
 		fmt.Sprintf("%t", args.ForceDefaultFunctionCaching),
 		args.LegacyNameOverride,
 		fmt.Sprintf("%t", args.LegacyDefaultPath),
@@ -3091,7 +3122,11 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 }
 
 // load the given module source's dependencies as modules
-func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagql.ObjectResult[*core.ModuleSource]) (_ *core.SchemaBuilder, rerr error) {
+func (s *moduleSourceSchema) loadDependencyModules(
+	ctx context.Context,
+	src dagql.ObjectResult[*core.ModuleSource],
+	defaultPathContextSrc dagql.ObjectResult[*core.ModuleSource],
+) (_ *core.SchemaBuilder, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "load dep modules", telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
 
@@ -3116,8 +3151,23 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	tcMods := make([]dagql.ObjectResult[*core.Module], len(src.Self().Toolchains))
 	for i, tcSrc := range src.Self().Toolchains {
 		eg.Go(func() error {
+			var toolchainAsModuleArgs []dagql.NamedInput
+			if defaultPathContextSrc.Self() != nil {
+				toolchainAsModuleArgs = []dagql.NamedInput{
+					{
+						Name:  "defaultPathContextSourceRef",
+						Value: dagql.String(defaultPathContextSrc.Self().AsString()),
+					},
+				}
+				if defaultPathContextSrc.Self().Pin() != "" {
+					toolchainAsModuleArgs = append(toolchainAsModuleArgs, dagql.NamedInput{
+						Name:  "defaultPathContextSourcePin",
+						Value: dagql.String(defaultPathContextSrc.Self().Pin()),
+					})
+				}
+			}
 			return dag.Select(ctx, tcSrc, &tcMods[i],
-				dagql.Selector{Field: "asModule"},
+				dagql.Selector{Field: "asModule", Args: toolchainAsModuleArgs},
 			)
 		})
 	}

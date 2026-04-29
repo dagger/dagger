@@ -39,6 +39,7 @@ Go SDK is **not** a module. It's hardcoded in the engine.
 **Implementation:** `core/sdk/go_sdk.go`
 
 **How it works:**
+
 1. `cmd/codegen` binary is built
 2. Packaged into container, tarball'd
 3. Embedded in engine image

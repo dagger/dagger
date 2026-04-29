@@ -43,6 +43,7 @@ A tool called Save may be present. If available, you MUST call it after completi
 ## Conceptual Framework
 
 Think of this system as a chain of transformations where each operation:
+
 1. Takes one or more immutable objects as input
 2. Performs a transformation according to specified parameters
 3. Returns a new immutable object as output

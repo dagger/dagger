@@ -2,10 +2,7 @@ module dagger/engine-dev
 
 go 1.25.6
 
-require (
-	github.com/dagger/dagger/engine/distconsts v0.20.6
-	github.com/dagger/dagger/sdk/typescript/runtime v0.15.3
-)
+require github.com/dagger/dagger/engine/distconsts v0.20.6
 
 replace (
 	github.com/dagger/dagger => ../..
@@ -16,6 +13,7 @@ replace (
 require (
 	github.com/containerd/platforms v1.0.0-rc.2
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
+	github.com/dagger/dagger/sdk/typescript/runtime v0.0.0-00010101000000-000000000000
 	github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887
 	github.com/opencontainers/image-spec v1.1.1
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546
@@ -31,7 +29,7 @@ require (
 
 require (
 	dagger.io/dagger v0.20.6
-	github.com/99designs/gqlgen v0.17.89 // indirect
+	github.com/99designs/gqlgen v0.17.90 // indirect
 	github.com/Khan/genqlient v0.8.1
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/containerd/log v0.1.0 // indirect
@@ -42,7 +40,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/sosodev/duration v1.4.0 // indirect
-	github.com/vektah/gqlparser/v2 v2.5.32
+	github.com/vektah/gqlparser/v2 v2.5.33
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.17.0 // indirect

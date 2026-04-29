@@ -2,9 +2,9 @@
 
 Dagger is a platform for automating software delivery. It can build, test and ship any codebase, reliably and at scale.
 
-Dagger runs locally, in your CI server, or directly in the cloud. 
+Dagger runs locally, in your CI server, or directly in the cloud.
 
-```
+```bash
 brew install dagger/tap/dagger
 ```
 
@@ -33,7 +33,6 @@ Dagger makes your software delivery *programmable*, *local-first*, *repeatable* 
 **Runs anywhere**. The only requirement is a Linux container runtime. Runs natively on Linux, or via Docker Desktop and similar products on macOS and Windows. Local and CI behavior are identical.
 
 **Built-in tracing**. Every operation emits OpenTelemetry spans. The CLI includes a live TUI; traces can also be exported to Jaeger, Honeycomb, or any OTel-compatible backend.
-
 
 ## Getting started
 

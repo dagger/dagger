@@ -8,6 +8,7 @@ This guide focuses on practical debugging for current dagql + filesync cache beh
 2. Log actual values at each boundary.
 3. Find first divergence.
 4. Decide whether the bug is:
+
 - wrong identity construction
 - wrong cache index lookup
 - wrong lifecycle/release behavior
@@ -25,6 +26,7 @@ dagger --progress=plain call engine-dev test --pkg ./core/integration --run='<Te
 
 This command rebuilds the dev engine, runs it as an ephemeral service, and then runs tests against it.
 Output includes:
+
 - dev engine build output
 - test runner output
 - engine logs/printlns
@@ -104,6 +106,7 @@ docker volume rm dagger-engine.dev
 ```
 
 Notes:
+
 - The container is named `dagger-engine.dev`.
 - This engine persists across commands/runs, so it is better for iterative perf investigation.
 - A clean reset is often desirable for consistent baselines, but is not always required (depends on whether cache/warm state is part of what you're measuring).
@@ -123,12 +126,14 @@ You can also run Dagger commands through the same wrapper:
 ```
 
 Important CLI gotcha:
+
 - If you do `./hack/with-dev bash -c 'dagger ...'`, you may accidentally pick up a non-dev `dagger` binary from `PATH`.
 - In shell-wrapped commands, explicitly use `./bin/dagger` to avoid ambiguity.
 
 ### Docker-Level Debugging
 
 Because the engine is a normal Docker container, you can use standard Docker tools:
+
 - `docker logs dagger-engine.dev`
 - `docker exec -it dagger-engine.dev sh`
 - `docker kill -s <SIGNAL> dagger-engine.dev`
@@ -136,6 +141,7 @@ Because the engine is a normal Docker container, you can use standard Docker too
 ### pprof and Debug Endpoints
 
 The dev engine exposes debug endpoints on `localhost:6060`.
+
 - Current routes are defined in `cmd/engine/debug.go` (see route setup near line 29).
 - Use whichever endpoint/tooling fits the question (point-in-time snapshots vs time-window captures).
 
@@ -152,6 +158,7 @@ go tool pprof /tmp/heap.pprof
 ```
 
 General profiling guidance:
+
 - Choose profile type and capture window based on the symptom.
 - For long-running or phase-specific regressions, align profile capture timing with the relevant test phase.
 - Keep artifacts organized by run so diffs/comparisons are straightforward.
@@ -168,6 +175,7 @@ _EXPERIMENTAL_DAGGER_METRICS_CACHE_UPDATE_INTERVAL=1s
 ```
 
 Key metrics:
+
 - `dagger_connected_clients`
 - `dagger_dagql_cache_entries`
 - `dagger_dagql_cache_ongoing_calls_entries`
@@ -177,19 +185,24 @@ Key metrics:
 - `dagger_dagql_cache_completed_arbitrary_entries`
 
 Interpretation:
+
 1. If `connected_clients` is `0` but `dagql_cache_entries` stays non-zero, refs are retained.
-2. Use bucket metrics to localize leak class:
+1. Use bucket metrics to localize leak class:
+
 - `completed_calls` growth: call-result refs not released.
 - `ongoing_calls` growth: waiter/cancel path likely stuck.
 - `*_arbitrary_*` growth: opaque/arbitrary cache path leak.
-3. `dagger_dagql_cache_entries` is index-entry count, not unique-result count.
+
+1. `dagger_dagql_cache_entries` is index-entry count, not unique-result count.
    The same shared result may appear in multiple indexes.
 
 Practical scrape tip for nested-engine integration tests:
+
 - Prefer scraping via a container bound to the engine service (`curl http://dev-engine:9090/metrics`).
 - Scraping from the test process via endpoint hostname may fail DNS resolution in some test networks.
 
 Useful correlation log (session teardown):
+
 - `engine/server/session.go` logs:
   - `released dagql cache refs for session` with `beforeEntries` and `afterEntries`
 - If `afterEntries` trends upward across completed sessions, session close is not releasing all refs.
@@ -230,6 +243,7 @@ Useful correlation log (session teardown):
 ### Unexpected miss
 
 Check in order:
+
 1. Did `GetCacheConfig` rewrite ID unexpectedly?
 2. Did args decoded from final ID differ from intended runtime args?
 3. Did recipe digest change because of view/module/nth/sensitive-arg behavior?
@@ -239,6 +253,7 @@ Check in order:
 ### Unexpected hit
 
 Check:
+
 1. Which index hit (`storageKey` vs `contentDigestKey`)?
 2. Was this an intended content-digest hit?
 3. If content hit, was returned ID properly overridden to requested recipe?
@@ -246,6 +261,7 @@ Check:
 ### Session-specific oddities
 
 Check:
+
 1. Did prior error set `noCacheNext` for this key?
 2. Was call forced to `DoNotCache` and then reinserted?
 3. Did session close during execution and release result unexpectedly?
@@ -253,6 +269,7 @@ Check:
 ### TTL confusion
 
 Check:
+
 1. Was TTL set for this field?
 2. Was result marked safe to persist cache metadata?
 3. Was DB metadata updated (or intentionally skipped)?
@@ -269,6 +286,7 @@ Check:
 ## Minimal Logging Principle
 
 Prefer small, high-signal log lines with:
+
 - call ID digest
 - content digest
 - storage key

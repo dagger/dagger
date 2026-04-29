@@ -1,6 +1,7 @@
 ## Calling Methods
 
 To complete your task:
+
 1. Discover available methods using ListMethods
 2. Select methods using SelectMethods before you can call them
 3. Call methods with CallMethod, passing arguments within the args object

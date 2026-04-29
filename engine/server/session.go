@@ -505,13 +505,16 @@ func (srv *Server) initializeDaggerClient(
 	)
 	slog.Info("initializing new client")
 	var callerG singleflight.Group[string, bksession.Caller]
-	client.getClientCaller = func(id string) (bksession.Caller, error) {
+	getClientCaller := func(id string, noWait bool) (bksession.Caller, error) {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		caller, _, err := callerG.Do(ctx, id, func(ctx context.Context) (bksession.Caller, error) {
-			return srv.bkSessionManager.Get(ctx, id, false)
+			return srv.bkSessionManager.Get(ctx, id, noWait)
 		})
 		return caller, err
+	}
+	client.getClientCaller = func(id string) (bksession.Caller, error) {
+		return client.resolveClientCaller(id, getClientCaller)
 	}
 
 	var err error
@@ -675,6 +678,27 @@ func (srv *Server) initializeDaggerClient(
 
 	client.state = clientStateInitialized
 	return nil
+}
+
+func (client *daggerClient) resolveClientCaller(
+	id string,
+	getClientCaller func(string, bool) (bksession.Caller, error),
+) (bksession.Caller, error) {
+	if id == client.clientID && len(client.parents) > 0 {
+		// Synthetic nested clients (e.g. builtin dang evaluation) do not
+		// establish their own session attachables. When host-backed services
+		// such as git config are requested through the current client ID, fall
+		// back to the immediate parent client chain.
+		caller, err := getClientCaller(id, true)
+		if err != nil || caller != nil {
+			return caller, err
+		}
+
+		parent := client.parents[len(client.parents)-1]
+		return parent.getClientCaller(parent.clientID)
+	}
+
+	return getClientCaller(id, false)
 }
 
 func (srv *Server) clientFromContext(ctx context.Context) (*daggerClient, error) {
@@ -1343,16 +1367,22 @@ func (srv *Server) ServeModule(ctx context.Context, mod dagql.ObjectResult[*core
 
 		// Also serve toolchains so their functions are available in the
 		// client schema (e.g. when `dagger shell` `.cd`s into a module).
-		if src := mod.Self().GetSource(); src != nil {
-			for i, tcSrc := range src.Toolchains {
+		if mod.Self().Source.Valid && mod.Self().Source.Value.Self() != nil {
+			src := mod.Self().Source.Value
+			defaultPathContextSrc := src
+			if mod.Self().ContextSource.Valid && mod.Self().ContextSource.Value.Self() != nil {
+				defaultPathContextSrc = mod.Self().ContextSource.Value
+			}
+			for i, tcSrc := range src.Self().Toolchains {
 				if tcSrc.Self() == nil {
 					continue
 				}
 				var cfg *modules.ModuleConfigDependency
-				if i < len(src.ConfigToolchains) {
-					cfg = src.ConfigToolchains[i]
+				if i < len(src.Self().ConfigToolchains) {
+					cfg = src.Self().ConfigToolchains[i]
 				}
-				tcMod, err := srv.resolveModuleSourceAsModule(ctx, client.dag, tcSrc, pendingRelatedModule(src, tcSrc.Self(), cfg, false))
+				pending := pendingRelatedModule(defaultPathContextSrc, tcSrc.Self(), cfg, false)
+				tcMod, err := srv.resolveModuleSourceAsModule(ctx, client.dag, tcSrc, pending)
 				if err != nil {
 					return fmt.Errorf("error resolving toolchain module: %w", err)
 				}

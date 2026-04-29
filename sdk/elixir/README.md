@@ -47,7 +47,7 @@ Dagger.close(client)
 Then running with:
 
 ```shell
-$ elixir ci.exs
+elixir ci.exs
 ```
 
 Where `ci.exs` contains Elixir script above.
@@ -57,7 +57,7 @@ Where `ci.exs` contains Elixir script above.
 The SDK support the Dagger Function by initiate it with:
 
 ```shell
-$ dagger init --sdk=elixir <name>
+dagger init --sdk=elixir <name>
 ```
 
 **CAUTIONS**: Please note that `dagger` version 0.11.6 and earlier are not

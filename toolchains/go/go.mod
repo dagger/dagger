@@ -2,23 +2,22 @@ module github.com/dagger/dagger/modules/go
 
 go 1.25.6
 
-require github.com/dagger/dagger v0.0.0-00010101000000-000000000000
-
 replace github.com/dagger/dagger => ../..
 
 require (
 	github.com/Khan/genqlient v0.8.1
 	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/containerd/platforms v1.0.0-rc.2
+	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
 	github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887
-	github.com/vektah/gqlparser/v2 v2.5.32
+	github.com/vektah/gqlparser/v2 v2.5.33
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/sdk v1.42.0
 	go.opentelemetry.io/otel/trace v1.43.0
 )
 
 require (
-	github.com/99designs/gqlgen v0.17.89 // indirect
+	github.com/99designs/gqlgen v0.17.90 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.17.0 // indirect
