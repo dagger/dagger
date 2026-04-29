@@ -22,6 +22,10 @@ type Workspace struct {
 	// Path is the workspace location relative to Root (e.g., "apps/frontend" or ".").
 	Path string
 
+	// Cwd is the workspace detection start location relative to Path. Empty means
+	// detection started at the workspace path.
+	Cwd string
+
 	// Initialized is true if .dagger/config.toml was found.
 	Initialized bool
 }
@@ -34,7 +38,7 @@ type PathExistsFunc func(ctx context.Context, path string) (parentDir string, ex
 //
 // Uses a 3-step fallback chain:
 //  1. FindUp .dagger/config.toml → workspace root = parent of .dagger/
-//  2. FindUp .git → workspace root = current directory, sandbox root = directory containing .git
+//  2. FindUp .git → workspace root = directory containing .git
 //  3. No .git → cwd is workspace root
 func Detect(
 	ctx context.Context,
@@ -65,6 +69,13 @@ func Detect(
 		}
 		return rel
 	}
+	relCwd := func(workspaceDir string) string {
+		rel, err := filepath.Rel(workspaceDir, cwd)
+		if err != nil || rel == "." {
+			return ""
+		}
+		return rel
+	}
 
 	// Step 1: config.toml found → workspace = parent of .dagger, sandbox = git root if present
 	if hasConfig {
@@ -73,15 +84,17 @@ func Detect(
 		return &Workspace{
 			Root:        sandbox,
 			Path:        relPath(sandbox, workspaceDir),
+			Cwd:         relCwd(workspaceDir),
 			Initialized: true,
 		}, nil
 	}
 
-	// Step 2: .git found → workspace = CWD, sandbox = git root
+	// Step 2: .git found → workspace = git root, cwd = detection start
 	if hasGit {
 		return &Workspace{
 			Root: gitDir,
-			Path: relPath(gitDir, cwd),
+			Path: ".",
+			Cwd:  relCwd(gitDir),
 		}, nil
 	}
 
@@ -89,6 +102,7 @@ func Detect(
 	return &Workspace{
 		Root: cwd,
 		Path: ".",
+		Cwd:  "",
 	}, nil
 }
 
