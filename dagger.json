@@ -105,7 +105,13 @@
     },
     {
       "name": "release",
-      "source": "toolchains/release"
+      "source": "toolchains/release",
+      "customizations": [
+        {
+          "argument": "targetVersion",
+          "default": "v0.21.0"
+        }
+      ]
     },
     {
       "name": "rust-sdk",

@@ -8,6 +8,7 @@ import (
 	"toolchains/release/internal/dagger"
 
 	"github.com/dagger/dagger/util/parallel"
+	"golang.org/x/mod/semver"
 )
 
 const (
@@ -29,29 +30,35 @@ const (
 	javaRuntimeMavenImage = "sdk/java/runtime/images/maven"
 )
 
-// Change the required dagger engine version across all components
+// Regenerate files that reference the target dagger engine version.
+// +generate
 func (r *Release) Bump(
 	ctx context.Context,
-	// The new required engine version
-	engineVersion string,
 ) (*dagger.Changeset, error) {
+	if r.TargetVersion == "" {
+		return nil, fmt.Errorf("targetVersion is required")
+	}
+	if !semver.IsValid(r.TargetVersion) {
+		return nil, fmt.Errorf("targetVersion must be a canonical semver like v0.21.0: %q", r.TargetVersion)
+	}
+
 	var (
 		bumpDocs, bumpHelm, bumpSDKs *dagger.Changeset
 	)
 	err := parallel.New().
 		WithJob("bump docs version", func(ctx context.Context) error {
 			var err error
-			bumpDocs, err = r.bumpDocsVersion(engineVersion).Sync(ctx)
+			bumpDocs, err = r.bumpDocsVersion(r.TargetVersion).Sync(ctx)
 			return err
 		}).
 		WithJob("bump helm chart version", func(ctx context.Context) error {
 			var err error
-			bumpHelm, err = r.bumpHelmVersion(ctx, engineVersion)
+			bumpHelm, err = r.bumpHelmVersion(ctx, r.TargetVersion)
 			return err
 		}).
 		WithJob("bump SDK versions", func(ctx context.Context) error {
 			var err error
-			bumpSDKs, err = r.bumpSDKVersions(ctx, engineVersion)
+			bumpSDKs, err = r.bumpSDKVersions(ctx, r.TargetVersion)
 			return err
 		}).
 		Run(ctx)
