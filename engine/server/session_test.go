@@ -10,6 +10,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/stretchr/testify/require"
@@ -219,6 +220,35 @@ func TestDetectAndLoadWorkspaceDoesNotLoadModulesByDefault(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, client.workspace)
 	require.Empty(t, client.pendingModules)
+}
+
+func TestBuildCoreWorkspaceFilesystemPath(t *testing.T) {
+	t.Parallel()
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		ClientID: "test-client",
+	})
+
+	srv := &Server{}
+	localWS, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
+		Root:           "/repo",
+		Path:           "app",
+		FilesystemPath: ".",
+	}, true, dagql.ObjectResult[*core.Directory]{}, "")
+	require.NoError(t, err)
+	require.Equal(t, "app", localWS.Path)
+	require.Equal(t, ".", localWS.FilesystemPath())
+	require.Equal(t, "file:///repo/app", localWS.Address)
+
+	remoteWS, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
+		Root:           "services/api",
+		Path:           ".",
+		FilesystemPath: ".",
+	}, false, dagql.ObjectResult[*core.Directory]{}, "github.com/acme/repo@main")
+	require.NoError(t, err)
+	require.Equal(t, ".", remoteWS.Path)
+	require.Equal(t, "services/api", remoteWS.FilesystemPath())
+	require.Equal(t, "github.com/acme/repo@main", remoteWS.Address)
 }
 
 func TestIsSameModuleReference(t *testing.T) {

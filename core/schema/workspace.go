@@ -200,7 +200,7 @@ func (s *workspaceSchema) directory(
 	args workspaceDirectoryArgs,
 ) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	ws := parent.Self()
-	resolvedPath := resolveWorkspacePath(args.Path, ws.Path)
+	resolvedPath := resolveWorkspacePath(args.Path, ws.FilesystemPath())
 	return s.resolveRootfs(ctx, ws, resolvedPath, args.CopyFilter, args.Gitignore)
 }
 
@@ -215,7 +215,7 @@ func (s *workspaceSchema) file(
 ) (inst dagql.Result[*core.File], _ error) {
 	ws := parent.Self()
 
-	resolvedPath := resolveWorkspacePath(args.Path, ws.Path)
+	resolvedPath := resolveWorkspacePath(args.Path, ws.FilesystemPath())
 	parentDir := filepath.Dir(resolvedPath)
 	basename := filepath.Base(resolvedPath)
 

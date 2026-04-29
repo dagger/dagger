@@ -593,6 +593,16 @@ func (srv *Server) buildCoreWorkspace(
 		Path:     detected.Path,
 		ClientID: clientMetadata.ClientID,
 	}
+	fsPath := detected.FilesystemPath
+	if fsPath == "" {
+		fsPath = detected.Path
+	}
+	if !isLocal {
+		// Remote rootfs is anchored at the cloned repository root, while
+		// workspace detection may use a subdirectory as its Root.
+		fsPath = filepath.Join(detected.Root, fsPath)
+	}
+	coreWS.SetFilesystemPath(fsPath)
 	if coreWS.Address == "" {
 		coreWS.Address = localWorkspaceAddress(detected.Root, detected.Path)
 	}

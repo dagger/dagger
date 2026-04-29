@@ -19,6 +19,12 @@ type Workspace struct {
 	ConfigPath  string `field:"true" doc:"Path to config.toml relative to the workspace boundary (empty if not initialized)."`
 	HasConfig   bool   `field:"true" doc:"Whether a config.toml file exists in the workspace."`
 
+	// fsPath is the workspace directory used by Workspace.file and
+	// Workspace.directory, relative to the workspace boundary.
+	// Empty preserves the current public Path behavior for callers that
+	// construct Workspaces directly.
+	fsPath string
+
 	// ClientID is the ID of the client that created this workspace.
 	// Used to route host filesystem operations through the correct session
 	// when the workspace is passed to a module function.
@@ -50,6 +56,21 @@ func (ws *Workspace) HostPath() string {
 // SetHostPath sets the internal host filesystem path.
 func (ws *Workspace) SetHostPath(p string) {
 	ws.hostPath = p
+}
+
+// FilesystemPath returns the workspace directory used by Workspace.file and
+// Workspace.directory, relative to the workspace boundary.
+func (ws *Workspace) FilesystemPath() string {
+	if ws.fsPath != "" {
+		return ws.fsPath
+	}
+	return ws.Path
+}
+
+// SetFilesystemPath sets the workspace directory used by Workspace.file and
+// Workspace.directory.
+func (ws *Workspace) SetFilesystemPath(p string) {
+	ws.fsPath = p
 }
 
 func (*Workspace) Type() *ast.Type {

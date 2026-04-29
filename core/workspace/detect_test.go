@@ -28,6 +28,7 @@ func TestDetectIgnoresWorkspaceConfigAndDoesNotReadFile(t *testing.T) {
 	require.Zero(t, readCalls, "readFile should not be called in the no-config split")
 	require.Equal(t, "/repo", ws.Root)
 	require.Equal(t, "app", ws.Path)
+	require.Equal(t, ".", ws.FilesystemPath)
 }
 
 func TestDetectFallsBackToCwdWithoutGit(t *testing.T) {
@@ -45,6 +46,7 @@ func TestDetectFallsBackToCwdWithoutGit(t *testing.T) {
 	require.Zero(t, readCalls, "readFile should not be called in the no-config split")
 	require.Equal(t, "/repo/app", ws.Root)
 	require.Equal(t, ".", ws.Path)
+	require.Equal(t, ".", ws.FilesystemPath)
 }
 
 func fakePathExists(existing map[string]struct{}) PathExistsFunc {

@@ -160,28 +160,33 @@ type Finder {
 	})
 }
 
-// TestNestedWorkspacePaths verifies that relative paths use the workspace
-// directory while absolute paths and upward search use the workspace boundary.
+// TestNestedWorkspacePaths verifies that Workspace.file and Workspace.directory
+// resolve relative paths from the workspace directory, even when detection
+// starts from a nested current directory.
 func (WorkspaceSuite) TestNestedWorkspacePaths(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	ctr := workspaceBase(t, c).
 		WithExec([]string{"mkdir", "-p", "app"}).
-		WithNewFile("repo.txt", "hello from boundary").
-		WithNewFile("app/app.txt", "hello from workspace").
+		WithNewFile("workspace.txt", "hello from workspace").
+		WithNewFile("app/cwd.txt", "hello from cwd").
 		WithWorkdir("/work/app").
 		With(initStandaloneDangModule("paths", `
 type Paths {
   pub workspaceValue: String!
+  pub directoryValue: String!
+  pub nestedValue: String!
   pub boundaryValue: String!
   pub foundValue: String!
   pub workspacePath: String!
   pub workspaceAddress: String!
 
   new(ws: Workspace!) {
-    self.workspaceValue = ws.file("app.txt").contents
-    self.boundaryValue = ws.file("/repo.txt").contents
-    self.foundValue = ws.findUp(name: "repo.txt", from: ".") ?? ""
+    self.workspaceValue = ws.file("workspace.txt").contents
+    self.directoryValue = ws.directory(".").file("workspace.txt").contents
+    self.nestedValue = ws.file("app/cwd.txt").contents
+    self.boundaryValue = ws.file("/app/cwd.txt").contents
+    self.foundValue = ws.findUp(name: "workspace.txt", from: ".") ?? ""
     self.workspacePath = ws.path
     self.workspaceAddress = ws.address
     self
@@ -193,13 +198,21 @@ type Paths {
 	require.NoError(t, err)
 	require.Equal(t, "hello from workspace", strings.TrimSpace(out))
 
+	out, err = ctr.With(daggerCall("directory-value")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello from workspace", strings.TrimSpace(out))
+
+	out, err = ctr.With(daggerCall("nested-value")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello from cwd", strings.TrimSpace(out))
+
 	out, err = ctr.With(daggerCall("boundary-value")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "hello from boundary", strings.TrimSpace(out))
+	require.Equal(t, "hello from cwd", strings.TrimSpace(out))
 
 	out, err = ctr.With(daggerCall("found-value")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "/repo.txt", strings.TrimSpace(out))
+	require.Equal(t, "/workspace.txt", strings.TrimSpace(out))
 
 	out, err = ctr.With(daggerCall("workspace-path")).Stdout(ctx)
 	require.NoError(t, err)
