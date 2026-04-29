@@ -35,7 +35,7 @@ func (ContextualWorkspaceSuite) TestContextualWorkspaceSelection(ctx context.Con
 			WithNewFile("repo.txt", "hello from boundary").
 			WithNewFile("app/app.txt", "hello from workspace").
 			WithWorkdir("/work/app").
-			With(initStandaloneDangModule("paths", `
+			With(initDangBlueprint("paths", `
 type Paths {
   pub workspaceValue: String!
   pub boundaryValue: String!
@@ -107,7 +107,7 @@ func (ContextualWorkspaceSuite) TestContextualWorkspaceShape(ctx context.Context
 		ctr := workspaceBase(t, c).
 			WithExec([]string{"mkdir", "-p", "app"}).
 			WithWorkdir("/work/app").
-			With(initStandaloneDangModule("paths", `
+			With(initDangBlueprint("paths", `
 type Paths {
   pub workspacePath: String!
   pub workspaceAddress: String!
