@@ -1815,6 +1815,7 @@ func ResolveDepToSource(
 				filepath.Join(parentSrc.SourceRootSubpath, depSrcRef),
 				parentSrc.Git.Version,
 			)
+			fmt.Printf("ACB got a git dep %s; refPin %s\n", refString, parentSrc.Git.Commit)
 			selectors := []dagql.Selector{{
 				Field: "moduleSource",
 				Args: []dagql.NamedInput{

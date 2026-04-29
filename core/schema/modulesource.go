@@ -3266,6 +3266,8 @@ func (s *moduleSourceSchema) moduleSourceWithClient(
 ) (*core.ModuleSource, error) {
 	src = src.Clone()
 
+	fmt.Printf("ACB moduleSourceWithClient called with %+v\n", args)
+
 	if src.ConfigClients == nil {
 		src.ConfigClients = []*modules.ModuleConfigClient{}
 	}
@@ -3284,6 +3286,7 @@ func (s *moduleSourceSchema) moduleSourceWithClient(
 	// Verify that the generator can be loaded as a module and clean
 	// the generator path if it's a local path.
 	if !sdk.IsModuleSDKBuiltin(moduleConfigClient.Generator) {
+		fmt.Printf("ACB moduleSourceWithClient here1\n")
 		dag, err := core.CurrentDagqlServer(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get dag server: %w", err)
@@ -3307,6 +3310,8 @@ func (s *moduleSourceSchema) moduleSourceWithClient(
 		if clientModule.Self().Kind == core.ModuleSourceKindLocal {
 			moduleConfigClient.Generator = filepath.Clean(moduleConfigClient.Generator)
 		}
+	} else {
+		fmt.Printf("ACB moduleSourceWithClient here2\n")
 	}
 
 	src.ConfigClients = append(src.ConfigClients, moduleConfigClient)

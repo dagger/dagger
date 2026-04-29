@@ -80,6 +80,8 @@ var clientInstallCmd = &cobra.Command{
 				return fmt.Errorf("failed to get local context directory path: %w", err)
 			}
 
+			fmt.Printf("ACB install %s -> %s\n", generator, outputPath)
+
 			_, err = mod.Source.
 				WithClient(generator, outputPath).
 				GeneratedContextDirectory().
