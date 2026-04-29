@@ -49,14 +49,6 @@ func (n *NodeRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 	var runtimeWithDep *NodeRuntime
 	var generatedEntrypoint *dagger.File
 
-	// Build the SDK library lazy ref once so both the lib-sync and entrypoint
-	// goroutines below can reference its `client.gen.ts` without re-invoking
-	// the codegen container. The actual exec runs once under the engine's
-	// content-addressed cache.
-	sdkLibraryDir := NewLibGenerator(n.sdkSourceDir, n.cfg.libGeneratorOpts()).
-		GenerateBundleLibrary(n.introspectionJSON, ModSourceDirPath)
-	clientBindings := sdkLibraryDir.File("client.gen.ts")
-
 	eg, gctx := errgroup.WithContext(ctx)
 
 	eg.Go(func() (err error) {
@@ -106,6 +98,23 @@ func (n *NodeRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 			withInstalledDependencies().
 			sync(ctx)
 
+		return err
+	})
+
+	eg.Go(func() (err error) {
+		ctx, span := Tracer().Start(gctx, "generate dispatch entrypoint")
+		defer span.End()
+
+		clientBindings := NewLibGenerator(n.sdkSourceDir, n.cfg.libGeneratorOpts()).
+			GenerateBindings(n.introspectionJSON, Bundle, ModSourceDirPath)
+
+		generatedEntrypoint, err = NewIntrospector(n.sdkSourceDir).
+			EmitEntrypoint(
+				n.cfg.name,
+				n.cfg.source.Directory(SrcDir),
+				clientBindings,
+			).
+			Sync(ctx)
 		return err
 	})
 

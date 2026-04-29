@@ -55,22 +55,19 @@ func (i *Introspector) AsEntrypoint(
 		WithEntrypoint([]string{introspectorBinPath, moduleName, "src", "sdk/client.gen.ts"})
 }
 
-// EmitEntrypoint runs the introspector binary in typedef-JSON mode and then
-// invokes the Go-side `cmd/codegen generate-entrypoint` subcommand to render
-// the static dispatch `__dagger.entrypoint.ts` file. Returns that file.
-//
-// The split lets the emitter logic live in Go (alongside the rest of
-// cmd/codegen) while keeping the TypeScript-specific introspection in TS.
+// EmitEntrypoint runs the introspector binary in entrypoint-emit mode and
+// returns the generated `__dagger.entrypoint.ts` file. The file is the
+// statically generated dispatch (switch/case) replacement for the runtime
+// AST/reflection path — it imports user classes directly from `./src/...`
+// and registers types via unrolled `dag.typeDef()...` calls.
 func (i *Introspector) EmitEntrypoint(
 	moduleName string,
 
 	sourceCode *dagger.Directory,
 
 	clientBindings *dagger.File,
-
-	sdkSourceDir *dagger.Directory,
 ) *dagger.File {
-	const typedefPath = "/work/typedef.json"
+	const emitPath = "/work/__dagger.entrypoint.ts"
 
 	sdkPkg := dag.Directory().
 		WithFile("client.gen.ts", clientBindings).
@@ -78,34 +75,14 @@ func (i *Introspector) EmitEntrypoint(
 		WithNewFile("core.d.ts", tsutils.StaticBundleCoreDTS).
 		WithNewFile("telemetry.ts", tsutils.StaticBundleTelemetryTS)
 
-	// Step 1: run the introspector to write the typedef JSON.
-	withTypedef := i.Ctr.
+	return i.Ctr.
 		WithWorkdir("/work").
 		WithMountedDirectory("/work/src", sourceCode).
 		WithMountedDirectory("/work/node_modules/@dagger.io/dagger", sdkPkg).
 		WithMountedDirectory("/work/sdk", sdkPkg).
-		WithEnvVariable("EMIT_TYPEDEF_JSON_FILE", typedefPath).
-		WithExec([]string{introspectorBinPath, moduleName, "src", "sdk/client.gen.ts"})
-
-	// Step 2: hand the typedef JSON to `cmd/codegen generate-entrypoint`.
-	const entrypointFile = "__dagger.entrypoint.ts"
-	return dag.Container().
-		From(tsdistconsts.DefaultBunImageRef).
-		WithMountedFile(codegenBinPath, sdkSourceDir.File("/codegen")).
-		WithMountedFile(typedefPath, withTypedef.File(typedefPath)).
-		WithWorkdir("/work").
-		WithExec([]string{
-			codegenBinPath,
-			"--lang", "typescript",
-			"--output", "/work",
-			"generate-entrypoint",
-			"--typedef-json-path", typedefPath,
-			"--output-file", entrypointFile,
-			"--module-root", "/work",
-			"--sdk-import", "@dagger.io/dagger",
-			"--source-dir", "src",
-		}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		}).
-		File("/work/" + entrypointFile)
+		WithEnvVariable("EMIT_ENTRYPOINT_FILE", emitPath).
+		WithEnvVariable("EMIT_ENTRYPOINT_MODULE_ROOT", "/work").
+		WithEnvVariable("EMIT_ENTRYPOINT_SDK_IMPORT", "@dagger.io/dagger").
+		WithExec([]string{introspectorBinPath, moduleName, "src", "sdk/client.gen.ts"}).
+		File(emitPath)
 }

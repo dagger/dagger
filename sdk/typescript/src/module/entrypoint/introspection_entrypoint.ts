@@ -2,6 +2,7 @@ import * as fs from "fs"
 import * as path from "path"
 
 import { connection } from "../../connect.js"
+import { emitEntrypoint } from "../introspector/entrypoint_emitter.js"
 import { scan } from "../introspector/index.js"
 import { serializeModule } from "../introspector/typedef_json.js"
 import { Register } from "./register.js"
@@ -59,15 +60,22 @@ async function main() {
     process.exit(0)
   }
 
-  // When EMIT_TYPEDEF_JSON_FILE is set, write the parsed DaggerModule as a
-  // stable JSON typedef. The Go-side `cmd/codegen generate-entrypoint`
-  // subcommand consumes that JSON to render the static dispatch
-  // __dagger.entrypoint.ts file.
-  const typedefJsonPath = process.env.EMIT_TYPEDEF_JSON_FILE
-  if (typedefJsonPath) {
-    const json = serializeModule(result)
-    await fs.promises.writeFile(typedefJsonPath, JSON.stringify(json))
+  // When EMIT_ENTRYPOINT_FILE is set, render a static __dagger.entrypoint.ts
+  // from the parsed module and write it. This is the codegen path used by
+  // ModuleRuntime to replace the runtime AST/reflection dispatch with a
+  // generated switch/case dispatch (mirrors the Go SDK approach).
+  const emitPath = process.env.EMIT_ENTRYPOINT_FILE
+  if (emitPath) {
+    const moduleRoot = process.env.EMIT_ENTRYPOINT_MODULE_ROOT ?? path.resolve(userSourceCodeDir, "..")
+    const sdkImportPath = process.env.EMIT_ENTRYPOINT_SDK_IMPORT ?? "@dagger.io/dagger"
+    const source = emitEntrypoint(result, {
+      moduleRoot,
+      sdkImportPath,
+      sourceDir: path.basename(userSourceCodeDir),
+    })
+    await fs.promises.writeFile(emitPath, source)
     if (!process.env.TYPEDEF_OUTPUT_FILE) {
+      // Standalone codegen invocation — skip registration.
       return
     }
   }
