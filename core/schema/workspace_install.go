@@ -107,10 +107,11 @@ func (s *workspaceSchema) resolveWorkspaceInstall(
 		return "", "", fmt.Errorf("resolve local module source %q: missing local metadata", ref)
 	}
 
-	workspaceConfigDir, err := workspaceHostPath(ws, workspace.LockDirName)
+	workspaceConfigPath, err := configHostPath(ws)
 	if err != nil {
 		return "", "", err
 	}
+	workspaceConfigDir := filepath.Dir(workspaceConfigPath)
 
 	depAbsPath := filepath.Join(source.Local.ContextDirectoryPath, source.SourceRootSubpath)
 	sourcePath, err = filepath.Rel(workspaceConfigDir, depAbsPath)

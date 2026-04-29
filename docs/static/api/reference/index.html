@@ -117,6 +117,7 @@
               <li><a href="#query-loadTypeDefFromID">loadTypeDefFromID</a></li>
               <li><a href="#query-loadUpFromID">loadUpFromID</a></li>
               <li><a href="#query-loadUpGroupFromID">loadUpGroupFromID</a></li>
+              <li><a href="#query-loadWorkspaceCwdFromID">loadWorkspaceCwdFromID</a></li>
               <li><a href="#query-loadWorkspaceFromID">loadWorkspaceFromID</a></li>
               <li><a href="#query-loadWorkspaceMigrationFromID">loadWorkspaceMigrationFromID</a></li>
               <li><a href="#query-loadWorkspaceMigrationStepFromID">loadWorkspaceMigrationStepFromID</a></li>
@@ -284,6 +285,8 @@
               <li><a href="#definition-UpID">UpID</a></li>
               <li><a href="#definition-Void">Void</a></li>
               <li><a href="#definition-Workspace">Workspace</a></li>
+              <li><a href="#definition-WorkspaceCwd">WorkspaceCwd</a></li>
+              <li><a href="#definition-WorkspaceCwdID">WorkspaceCwdID</a></li>
               <li><a href="#definition-WorkspaceID">WorkspaceID</a></li>
               <li><a href="#definition-WorkspaceMigration">WorkspaceMigration</a></li>
               <li><a href="#definition-WorkspaceMigrationID">WorkspaceMigrationID</a></li>
@@ -4997,6 +5000,59 @@
               </div>
             </div>
           </section>
+          <section id="query-loadWorkspaceCwdFromID" class="operation operation-query" data-traverse-target="query-loadWorkspaceCwdFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadWorkspaceCwdFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a WorkspaceCwd from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-WorkspaceCwd"><code>WorkspaceCwd!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-WorkspaceCwdID"><code>WorkspaceCwdID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-loadWorkspaceFromID" class="operation operation-query" data-traverse-target="query-loadWorkspaceFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -5836,6 +5892,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asWorkspace" href="#Binding-asWorkspace"><code>asWorkspace</code></a> - <span class="property-type"><a href="#definition-Workspace"><code>Workspace!</code></a></span> </td>
                         <td> Retrieve the binding value, as type Workspace </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asWorkspaceCwd" href="#Binding-asWorkspaceCwd"><code>asWorkspaceCwd</code></a> - <span class="property-type"><a href="#definition-WorkspaceCwd"><code>WorkspaceCwd!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type WorkspaceCwd </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asWorkspaceMigration" href="#Binding-asWorkspaceMigration"><code>asWorkspaceMigration</code></a> - <span class="property-type"><a href="#definition-WorkspaceMigration"><code>WorkspaceMigration!</code></a></span> </td>
@@ -11187,6 +11247,52 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withWorkspaceCwdInput" href="#Env-withWorkspaceCwdInput"><code>withWorkspaceCwdInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type WorkspaceCwd in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-WorkspaceCwdID"><code>WorkspaceCwdID!</code></a></span></h6>
+                                <p>The WorkspaceCwd value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withWorkspaceCwdOutput" href="#Env-withWorkspaceCwdOutput"><code>withWorkspaceCwdOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired WorkspaceCwd output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withWorkspaceInput" href="#Env-withWorkspaceInput"><code>withWorkspaceInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Create or update a binding of type Workspace in the environment </td>
                       </tr>
@@ -14935,8 +15041,9 @@
                         <td> The specified version of the git repo this source points to. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-withBlueprint" href="#ModuleSource-withBlueprint"><code>withBlueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Set a blueprint for the module source. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="ModuleSource-withBlueprint" href="#ModuleSource-withBlueprint"><code>withBlueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Set a blueprint for the module source. <span class="deprecation-reason">Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in <code>.dagger/config.toml</code> instead.</span>
+                        </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -15092,8 +15199,9 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-withToolchains" href="#ModuleSource-withToolchains"><code>withToolchains</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Add toolchains to the module source. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="ModuleSource-withToolchains" href="#ModuleSource-withToolchains"><code>withToolchains</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Add toolchains to the module source. <span class="deprecation-reason">Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in <code>.dagger/config.toml</code> instead.</span>
+                        </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -15109,8 +15217,9 @@
                         </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-withUpdateBlueprint" href="#ModuleSource-withUpdateBlueprint"><code>withUpdateBlueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Update the blueprint module to the latest version. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="ModuleSource-withUpdateBlueprint" href="#ModuleSource-withUpdateBlueprint"><code>withUpdateBlueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Update the blueprint module to the latest version. <span class="deprecation-reason">Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in <code>.dagger/config.toml</code> instead.</span>
+                        </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="ModuleSource-withUpdateDependencies" href="#ModuleSource-withUpdateDependencies"><code>withUpdateDependencies</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
@@ -15130,8 +15239,9 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-withUpdateToolchains" href="#ModuleSource-withUpdateToolchains"><code>withUpdateToolchains</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Update one or more toolchains. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="ModuleSource-withUpdateToolchains" href="#ModuleSource-withUpdateToolchains"><code>withUpdateToolchains</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Update one or more toolchains. <span class="deprecation-reason">Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in <code>.dagger/config.toml</code> instead.</span>
+                        </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -15164,8 +15274,9 @@
                         </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-withoutBlueprint" href="#ModuleSource-withoutBlueprint"><code>withoutBlueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Remove the current blueprint from the module source. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="ModuleSource-withoutBlueprint" href="#ModuleSource-withoutBlueprint"><code>withoutBlueprint</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Remove the current blueprint from the module source. <span class="deprecation-reason">Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in <code>.dagger/config.toml</code> instead.</span>
+                        </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="ModuleSource-withoutClient" href="#ModuleSource-withoutClient"><code>withoutClient</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
@@ -15219,8 +15330,9 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="ModuleSource-withoutToolchains" href="#ModuleSource-withoutToolchains"><code>withoutToolchains</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
-                        <td> Remove the provided toolchains from the module source. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="ModuleSource-withoutToolchains" href="#ModuleSource-withoutToolchains"><code>withoutToolchains</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Remove the provided toolchains from the module source. <span class="deprecation-reason">Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in <code>.dagger/config.toml</code> instead.</span>
+                        </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -17232,6 +17344,10 @@
                           </div>
                         </td>
                       </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Workspace-cwd" href="#Workspace-cwd"><code>cwd</code></a> - <span class="property-type"><a href="#definition-WorkspaceCwd"><code>WorkspaceCwd!</code></a></span> </td>
+                        <td> The current working directory within the workspace. </td>
+                      </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Workspace-directory" href="#Workspace-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td>
@@ -17512,6 +17628,107 @@
                       </tr>
                     </tbody>
                   </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-WorkspaceCwd" class="definition definition-object" data-traverse-target="definition-WorkspaceCwd">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">WorkspaceCwd</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The current working directory within the workspace. This is set to the directory where workspace detection started, and cannot be changed.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="WorkspaceCwd-directory" href="#WorkspaceCwd-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td>
+                          <p>Returns a Directory from the current working directory within the workspace.</p>
+                          <p>Relative paths resolve from the current working directory. Absolute paths resolve from the workspace boundary.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Location of the directory to retrieve. Relative paths (e.g., &quot;src&quot;) resolve from the current working directory; absolute paths (e.g., &quot;/src&quot;) resolve from the workspace boundary.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>exclude</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                                <p>Exclude artifacts that match the given pattern (e.g., [&quot;node_modules/&quot;, &quot;.git*&quot;]).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                                <p>Include only artifacts that match the given pattern (e.g., [&quot;app/&quot;, &quot;package.*&quot;]).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>gitignore</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Apply .gitignore filter rules inside the directory.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="WorkspaceCwd-file" href="#WorkspaceCwd-file"><code>file</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
+                        <td>
+                          <p>Returns a File from the current working directory within the workspace.</p>
+                          <p>Relative paths resolve from the current working directory. Absolute paths resolve from the workspace boundary.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Location of the file to retrieve. Relative paths (e.g., &quot;go.mod&quot;) resolve from the current working directory; absolute paths (e.g., &quot;/go.mod&quot;) resolve from the workspace boundary.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="WorkspaceCwd-id" href="#WorkspaceCwd-id"><code>id</code></a> - <span class="property-type"><a href="#definition-WorkspaceCwdID"><code>WorkspaceCwdID!</code></a></span> </td>
+                        <td> A unique identifier for this WorkspaceCwd. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="WorkspaceCwd-path" href="#WorkspaceCwd-path"><code>path</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Location of the current working directory within the workspace, relative to the workspace. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-WorkspaceCwdID" class="definition definition-scalar" data-traverse-target="definition-WorkspaceCwdID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">WorkspaceCwdID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>WorkspaceCwdID</code> scalar type represents an identifier for an object of type WorkspaceCwd.</p>
                 </div>
               </div>
             </div>

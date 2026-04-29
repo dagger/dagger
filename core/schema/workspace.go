@@ -55,6 +55,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the file or directory to search for.`),
 				dagql.Arg("from").Doc(`Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.`),
 			),
+		dagql.Func("cwd", s.cwd).
+			WithInput(dagql.PerClientInput).
+			Doc("The current working directory within the workspace."),
 		dagql.Func("init", s.workspaceInit).
 			DoNotCache("Mutates workspace on host").
 			Doc("Initialize a new workspace, creating .dagger/config.toml."),
@@ -142,6 +145,25 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				"The returned plan has an empty changeset and no steps when no migration is needed."),
 	}.Install(srv)
 
+	dagql.Fields[*core.WorkspaceCwd]{
+		dagql.NodeFunc("directory", s.cwdDirectory).
+			WithInput(dagql.PerClientInput).
+			Doc(`Returns a Directory from the current working directory within the workspace.`,
+				`Relative paths resolve from the current working directory. Absolute paths resolve from the workspace boundary.`).
+			Args(
+				dagql.Arg("path").Doc(`Location of the directory to retrieve. Relative paths (e.g., "src") resolve from the current working directory; absolute paths (e.g., "/src") resolve from the workspace boundary.`),
+				dagql.Arg("exclude").Doc(`Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).`),
+				dagql.Arg("include").Doc(`Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
+				dagql.Arg("gitignore").Doc(`Apply .gitignore filter rules inside the directory.`),
+			),
+		dagql.NodeFunc("file", s.cwdFile).
+			WithInput(dagql.PerClientInput).
+			Doc(`Returns a File from the current working directory within the workspace.`,
+				`Relative paths resolve from the current working directory. Absolute paths resolve from the workspace boundary.`).
+			Args(
+				dagql.Arg("path").Doc(`Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from the current working directory; absolute paths (e.g., "/go.mod") resolve from the workspace boundary.`),
+			),
+	}.Install(srv)
 	dagql.Fields[*core.WorkspaceModule]{}.Install(srv)
 	dagql.Fields[*core.WorkspaceMigration]{}.Install(srv)
 	dagql.Fields[*core.WorkspaceMigrationStep]{}.Install(srv)
@@ -153,6 +175,21 @@ func (s *workspaceSchema) currentWorkspace(
 	_ struct{},
 ) (*core.Workspace, error) {
 	return parent.Server.CurrentWorkspace(ctx)
+}
+
+func (s *workspaceSchema) cwd(
+	ctx context.Context,
+	ws *core.Workspace,
+	_ struct{},
+) (*core.WorkspaceCwd, error) {
+	cwd := &core.WorkspaceCwd{
+		Path:          ws.Cwd,
+		WorkspacePath: ws.Path,
+		ClientID:      ws.ClientID,
+	}
+	cwd.SetRootfs(ws.Rootfs())
+	cwd.SetHostPath(ws.HostPath())
+	return cwd, nil
 }
 
 type workspaceDirectoryArgs struct {
@@ -280,7 +317,25 @@ func (s *workspaceSchema) directory(
 	args workspaceDirectoryArgs,
 ) (inst dagql.ObjectResult[*core.Directory], _ error) {
 	ws := parent.Self()
-	resolvedPath := resolveWorkspacePath(args.Path, ws.Path)
+	return s.directoryAt(ctx, ws, ws.Path, args)
+}
+
+func (s *workspaceSchema) cwdDirectory(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.WorkspaceCwd],
+	args workspaceDirectoryArgs,
+) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	ws, basePath := workspaceCwdResolution(parent.Self())
+	return s.directoryAt(ctx, ws, basePath, args)
+}
+
+func (s *workspaceSchema) directoryAt(
+	ctx context.Context,
+	ws *core.Workspace,
+	basePath string,
+	args workspaceDirectoryArgs,
+) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	resolvedPath := resolveWorkspacePath(args.Path, basePath)
 	return s.resolveRootfs(ctx, ws, resolvedPath, args.CopyFilter, args.Gitignore)
 }
 
@@ -297,8 +352,25 @@ func (s *workspaceSchema) file(
 	args workspaceFileArgs,
 ) (inst dagql.Result[*core.File], _ error) {
 	ws := parent.Self()
+	return s.fileAt(ctx, ws, ws.Path, args)
+}
 
-	resolvedPath := resolveWorkspacePath(args.Path, ws.Path)
+func (s *workspaceSchema) cwdFile(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.WorkspaceCwd],
+	args workspaceFileArgs,
+) (inst dagql.Result[*core.File], _ error) {
+	ws, basePath := workspaceCwdResolution(parent.Self())
+	return s.fileAt(ctx, ws, basePath, args)
+}
+
+func (s *workspaceSchema) fileAt(
+	ctx context.Context,
+	ws *core.Workspace,
+	basePath string,
+	args workspaceFileArgs,
+) (inst dagql.Result[*core.File], _ error) {
+	resolvedPath := resolveWorkspacePath(args.Path, basePath)
 	parentDir := filepath.Dir(resolvedPath)
 	basename := filepath.Base(resolvedPath)
 
@@ -321,6 +393,17 @@ func (s *workspaceSchema) file(
 	}
 
 	return inst, nil
+}
+
+func workspaceCwdResolution(cwd *core.WorkspaceCwd) (*core.Workspace, string) {
+	ws := &core.Workspace{
+		Path:     cwd.WorkspacePath,
+		Cwd:      cwd.Path,
+		ClientID: cwd.ClientID,
+	}
+	ws.SetRootfs(cwd.Rootfs())
+	ws.SetHostPath(cwd.HostPath())
+	return ws, filepath.Join(cwd.WorkspacePath, cwd.Path)
 }
 
 func (s *workspaceSchema) update(
@@ -363,18 +446,17 @@ func (s *workspaceSchema) update(
 }
 
 // resolveWorkspacePath resolves a workspace API path into a boundary-relative path:
-//   - Relative paths resolve from the workspace directory (workspacePath/).
+//   - Relative paths resolve from the given boundary-relative base path.
 //   - Absolute paths resolve from the workspace boundary (/).
 //
 // Returns a path relative to the workspace boundary.
-func resolveWorkspacePath(pathArg, workspacePath string) string {
+func resolveWorkspacePath(pathArg, basePath string) string {
 	clean := filepath.Clean(pathArg)
 	if filepath.IsAbs(clean) {
 		// Absolute path: relative to workspace boundary (strip leading /).
 		return clean[1:]
 	}
-	// Relative path: relative to workspace directory within boundary.
-	return filepath.Join(workspacePath, clean)
+	return filepath.Join(basePath, clean)
 }
 
 func workspaceAPIPath(resolvedPath string) string {
