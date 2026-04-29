@@ -2,11 +2,13 @@ package schema
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
+	"fmt"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/util/hashutil"
 )
 
 type cacheSchema struct{}
@@ -41,6 +43,7 @@ type cacheArgs struct {
 	Source    dagql.Optional[core.DirectoryID]
 	Sharing   core.CacheSharingMode `default:"SHARED"`
 	Owner     string                `default:""`
+	PrivateID string                `internal:"true" default:""`
 }
 
 func (s *cacheSchema) cacheVolumeCacheKey(
@@ -65,9 +68,32 @@ func (s *cacheSchema) cacheVolumeCacheKey(
 	}
 
 	if args.Sharing == core.CacheSharingModePrivate {
-		// For now, PRIVATE means "always unique cache volume" to avoid
-		// surprising cross-call sharing behavior.
-		if err := req.SetArgInput(ctx, "privateNonce", dagql.NewString(rand.Text()), false); err != nil {
+		// PRIVATE is a hidden identity split, not a random value. Re-evaluating the
+		// same cacheVolume call must produce the same private cache object.
+		if args.PrivateID == "" {
+			sourceID := ""
+			if args.Source.Valid {
+				encoded, err := args.Source.Value.Encode()
+				if err != nil {
+					return fmt.Errorf("encode private cache source ID: %w", err)
+				}
+				sourceID = encoded
+			}
+			privateID, err := privateCacheID(
+				ctx,
+				"cacheVolume",
+				args.Key,
+				args.Namespace,
+				sourceID,
+				string(args.Sharing),
+				args.Owner,
+			)
+			if err != nil {
+				return err
+			}
+			args.PrivateID = privateID
+		}
+		if err := req.SetArgInput(ctx, "privateID", dagql.NewString(args.PrivateID), false); err != nil {
 			return err
 		}
 	}
@@ -82,11 +108,26 @@ func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.ObjectResult
 		args.Source,
 		args.Sharing,
 		args.Owner,
+		args.PrivateID,
 	)
 	if err := cache.InitializeSnapshot(ctx); err != nil {
 		return dagql.Result[*core.CacheVolume]{}, err
 	}
 	return dagql.NewResultForCurrentCall(ctx, cache)
+}
+
+func privateCacheID(ctx context.Context, scope string, inputs ...string) (string, error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	if clientMetadata.SessionID == "" {
+		return "", errors.New("private cache identity requires a session ID")
+	}
+
+	hashInputs := []string{"private-cache", clientMetadata.SessionID, scope}
+	hashInputs = append(hashInputs, inputs...)
+	return hashutil.HashStrings(hashInputs...).String(), nil
 }
 
 func namespaceFromModule(ctx context.Context, m *core.Module) (string, error) {

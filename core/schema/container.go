@@ -2414,6 +2414,42 @@ func (s *containerSchema) withMountedCacheDynamicInputs(
 	if hasSourceArg {
 		source = args.Source
 	}
+	privateID := ""
+	if sharing == core.CacheSharingModePrivate {
+		// CacheVolume(sharing: PRIVATE) already has a private identity. A shared
+		// cache mounted privately gets one for this mount site instead.
+		privateID = cacheSelf.PrivateID
+		if privateID == "" {
+			parentDig, err := parent.ContentPreferredDigest(ctx)
+			if err != nil {
+				return fmt.Errorf("derive private cache parent digest: %w", err)
+			}
+			sourceID := ""
+			if source.Valid {
+				sourceID, err = source.Value.Encode()
+				if err != nil {
+					return fmt.Errorf("encode private cache source ID: %w", err)
+				}
+			}
+			privateID, err = privateCacheID(
+				ctx,
+				"withMountedCache",
+				parentDig.String(),
+				args.Path,
+				strconv.FormatBool(args.Expand),
+				cacheSelf.Key,
+				cacheSelf.Namespace,
+				sourceID,
+				string(sharing),
+				owner,
+			)
+			if err != nil {
+				return err
+			}
+			needsRewrite = true
+		}
+	}
+
 	if !needsRewrite {
 		return nil
 	}
@@ -2423,6 +2459,9 @@ func (s *containerSchema) withMountedCacheDynamicInputs(
 		{Name: "namespace", Value: dagql.NewString(cacheSelf.Namespace)},
 		{Name: "sharing", Value: sharing},
 		{Name: "owner", Value: dagql.NewString(owner)},
+	}
+	if privateID != "" {
+		cacheSelectArgs = append(cacheSelectArgs, dagql.NamedInput{Name: "privateID", Value: dagql.NewString(privateID)})
 	}
 	if source.Valid {
 		sourceID, err := source.Value.ID()

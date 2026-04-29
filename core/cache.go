@@ -22,6 +22,7 @@ type CacheVolume struct {
 	Source    dagql.Optional[DirectoryID]
 	Sharing   CacheSharingMode
 	Owner     string
+	PrivateID string
 
 	mu       sync.Mutex
 	snapshot bkcache.MutableRef
@@ -45,6 +46,7 @@ func NewCache(
 	source dagql.Optional[DirectoryID],
 	sharing CacheSharingMode,
 	owner string,
+	privateID string,
 ) *CacheVolume {
 	return &CacheVolume{
 		Key:       key,
@@ -52,6 +54,7 @@ func NewCache(
 		Source:    source,
 		Sharing:   sharing,
 		Owner:     owner,
+		PrivateID: privateID,
 	}
 }
 
@@ -128,6 +131,7 @@ type persistedCacheVolumePayload struct {
 	SourceID  string           `json:"sourceID,omitempty"`
 	Sharing   CacheSharingMode `json:"sharing,omitempty"`
 	Owner     string           `json:"owner,omitempty"`
+	PrivateID string           `json:"privateID,omitempty"`
 	Selector  string           `json:"selector,omitempty"`
 }
 
@@ -151,6 +155,7 @@ func (cache *CacheVolume) EncodePersistedObject(ctx context.Context, persistedCa
 		SourceID:  sourceID,
 		Sharing:   cache.Sharing,
 		Owner:     cache.Owner,
+		PrivateID: cache.PrivateID,
 		Selector:  cache.getSnapshotSelector(),
 	})
 	if err != nil {
@@ -183,6 +188,7 @@ func (*CacheVolume) DecodePersistedObject(ctx context.Context, dag *dagql.Server
 		source,
 		persisted.Sharing,
 		persisted.Owner,
+		persisted.PrivateID,
 	)
 	if resultID == 0 {
 		return cache, nil

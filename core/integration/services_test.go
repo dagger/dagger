@@ -170,6 +170,34 @@ func (ServiceSuite) TestHostnameEndpoint(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (ServiceSuite) TestEndpointMatchesBindingForPrivateCacheService(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	content := "private-cache-service-" + identity.NewID()
+	srv := c.Container().
+		From(busyboxImage).
+		WithMountedCache("/cache", c.CacheVolume("private-cache-service-"+identity.NewID()), dagger.ContainerWithMountedCacheOpts{
+			Sharing: dagger.CacheSharingModePrivate,
+		}).
+		WithNewFile("/srv/index.html", content).
+		WithWorkdir("/srv").
+		WithExposedPort(8080).
+		WithDefaultArgs([]string{"httpd", "-f", "-p", "8080"}).
+		AsService()
+
+	endpoint, err := srv.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "http"})
+	require.NoError(t, err)
+
+	out, err := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "curl"}).
+		WithServiceBinding("www", srv).
+		WithExec([]string{"curl", "--fail", "--show-error", "--connect-timeout", "2", "--max-time", "5", endpoint}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, content, out)
+}
+
 func (ServiceSuite) TestWithHostname(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

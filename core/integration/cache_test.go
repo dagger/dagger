@@ -39,6 +39,26 @@ func (CacheSuite) TestVolume(ctx context.Context, t *testctx.T) {
 
 	require.Equal(t, volID1, volID2)
 	require.NotEqual(t, volID1, volID3)
+
+	privateKey := "private-" + identity.NewID()
+	privateVolID1, err := c.CacheVolume(privateKey, dagger.CacheVolumeOpts{
+		Sharing: dagger.CacheSharingModePrivate,
+	}).ID(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, privateVolID1)
+
+	privateVolID2, err := c.CacheVolume(privateKey, dagger.CacheVolumeOpts{
+		Sharing: dagger.CacheSharingModePrivate,
+	}).ID(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, privateVolID2)
+
+	sharedVolID, err := c.CacheVolume(privateKey).ID(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, sharedVolID)
+
+	require.Equal(t, privateVolID1, privateVolID2)
+	require.NotEqual(t, sharedVolID, privateVolID1)
 }
 
 func (CacheSuite) TestVolumeWithSubmount(ctx context.Context, t *testctx.T) {

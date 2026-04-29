@@ -264,7 +264,7 @@ func TestCacheVolumeUsageIdentityUsesLiveSnapshotID(t *testing.T) {
 			snapshotID: "snapshot-123",
 		},
 	}
-	cache := NewCache("cache-key", "ns", dagql.Optional[DirectoryID]{}, CacheSharingModeShared, "")
+	cache := NewCache("cache-key", "ns", dagql.Optional[DirectoryID]{}, CacheSharingModeShared, "", "")
 	cache.snapshot = ref
 
 	require.Equal(t, []string{"snapshot-123"}, cache.CacheUsageIdentities())
@@ -278,7 +278,7 @@ func TestCacheVolumeUsageSizeUsesLiveSnapshotID(t *testing.T) {
 		snapshotID: "snapshot-123",
 		size:       42,
 	}
-	cache := NewCache("cache-key", "ns", dagql.Optional[DirectoryID]{}, CacheSharingModeShared, "")
+	cache := NewCache("cache-key", "ns", dagql.Optional[DirectoryID]{}, CacheSharingModeShared, "", "")
 	cache.snapshot = &cacheVolumeTestMutableRef{cacheVolumeTestImmutableRef: *ref}
 
 	size, ok, err := cache.CacheUsageSize(context.Background(), "snapshot-123")
@@ -302,6 +302,7 @@ func TestCacheVolumeEncodeDecodePersistsSourceID(t *testing.T) {
 		},
 		CacheSharingModeLocked,
 		"1000:1000",
+		"private-123",
 	)
 
 	payload, err := cache.EncodePersistedObject(context.Background(), nil)
@@ -310,11 +311,13 @@ func TestCacheVolumeEncodeDecodePersistsSourceID(t *testing.T) {
 	var raw persistedCacheVolumePayload
 	require.NoError(t, json.Unmarshal(payload, &raw))
 	require.NotEmpty(t, raw.SourceID)
+	require.Equal(t, "private-123", raw.PrivateID)
 
 	decodedAny, err := (&CacheVolume{}).DecodePersistedObject(context.Background(), nil, 0, nil, payload)
 	require.NoError(t, err)
 	decoded := decodedAny.(*CacheVolume)
 	require.True(t, decoded.Source.Valid)
+	require.Equal(t, "private-123", decoded.PrivateID)
 
 	encodedSource, err := decoded.Source.Value.Encode()
 	require.NoError(t, err)
@@ -341,7 +344,7 @@ func TestCacheVolumeInitializeSnapshotCreatesMutableSnapshot(t *testing.T) {
 	}
 	ctx := ContextWithQuery(context.Background(), query)
 
-	cache := NewCache("cache-key", "ns", dagql.Optional[DirectoryID]{}, CacheSharingModeShared, "")
+	cache := NewCache("cache-key", "ns", dagql.Optional[DirectoryID]{}, CacheSharingModeShared, "", "")
 
 	require.NoError(t, cache.InitializeSnapshot(ctx))
 	require.Len(t, manager.newCalls, 1)
