@@ -58,6 +58,19 @@ func (l *Loader) SDKForModule(
 		return nil, builtinErr
 	}
 
+	// FIXME: remove once stable engine ships - ideally we would just point these
+	// modules to 'dang' but they don't work in the outer stable engine yet
+	// because of the client attachables timeout thing
+	//
+	// The published github.com/vito/dang/dagger-sdk module was only a
+	// packaging layer for the Dang runtime. The engine now owns Dang as a
+	// native SDK, so canonicalize those module refs before resolving external
+	// SDK modules. Version suffixes intentionally do not select old runtime
+	// semantics.
+	if isDangSDKModuleRef(sdk.Source) {
+		return &dangSDK{root: query, rawConfig: sdk.Config}, nil
+	}
+
 	extSDK, extErr := l.externalSDKForModule(ctx, query, sdk, parentSrc)
 	if extErr == nil {
 		return extSDK, nil
@@ -119,6 +132,11 @@ func (l *Loader) externalSDKForModule(
 	}
 
 	return newModuleSDK(ctx, query, sdkMod, dagql.ObjectResult[*core.Directory]{}, sdk.Config)
+}
+
+func isDangSDKModuleRef(source string) bool {
+	ref, _, _ := strings.Cut(source, "@")
+	return ref == "github.com/vito/dang/dagger-sdk" || ref == "https://github.com/vito/dang/dagger-sdk"
 }
 
 func (l *Loader) namedSDK(
