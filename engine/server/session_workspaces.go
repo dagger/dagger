@@ -596,6 +596,12 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	if err != nil {
 		return err
 	}
+	if !isLocal {
+		// Remote workspaces always retain the cloned git tree as their rootfs.
+		// Fold the detector's root into Path before converting to core.Workspace.
+		ws.Path = filepath.Join(ws.Root, ws.Path)
+		ws.Root = "."
+	}
 
 	var wsConfig *workspace.Config
 	if ws.Initialized {
@@ -662,13 +668,23 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	var pending []pendingModule
 
 	pending = workspaceConfigPendingModules(ws, wsConfig, resolveLocalRef)
+	resolveCompatRef := resolveLocalRef
+	if compatWorkspace != nil {
+		configWS := *ws
+		configWS.Root = moduleDir
+		configWS.Path = "."
+		configWS.Cwd = ""
+		resolveCompatRef = func(_ *workspace.Workspace, relPath string) string {
+			return resolveLocalRef(&configWS, relPath)
+		}
+	}
 
 	// (1) Ambient compat-workspace modules projected from legacy dagger.json.
 	if compatWorkspace != nil {
 		for _, legacyMod := range compatWorkspace.Modules {
 			mod := pendingLegacyModule(
 				ws,
-				resolveLocalRef,
+				resolveCompatRef,
 				legacyMod.Name,
 				legacyMod.Source,
 				legacyMod.Pin,
@@ -751,6 +767,7 @@ func (srv *Server) buildCoreWorkspace(
 	coreWS := &core.Workspace{
 		Address:     address,
 		Path:        detected.Path,
+		Cwd:         detected.Cwd,
 		Initialized: detected.Initialized,
 		HasConfig:   detected.Initialized,
 		ClientID:    clientMetadata.ClientID,

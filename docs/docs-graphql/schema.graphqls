@@ -177,6 +177,9 @@ type Binding {
   """Retrieve the binding value, as type Workspace"""
   asWorkspace: Workspace!
 
+  """Retrieve the binding value, as type WorkspaceCwd"""
+  asWorkspaceCwd: WorkspaceCwd!
+
   """Retrieve the binding value, as type WorkspaceMigration"""
   asWorkspaceMigration: WorkspaceMigration!
 
@@ -3139,6 +3142,29 @@ type Env {
     workspace: DirectoryID!
   ): Env!
 
+  """Create or update a binding of type WorkspaceCwd in the environment"""
+  withWorkspaceCwdInput(
+    """The name of the binding"""
+    name: String!
+
+    """The WorkspaceCwd value to assign to the binding"""
+    value: WorkspaceCwdID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired WorkspaceCwd output to be assigned in the environment
+  """
+  withWorkspaceCwdOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type Workspace in the environment"""
   withWorkspaceInput(
     """The name of the binding"""
@@ -4795,7 +4821,7 @@ type ModuleSource {
   withBlueprint(
     """The blueprint module to set."""
     blueprint: ModuleSourceID!
-  ): ModuleSource!
+  ): ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.")
 
   """Update the module source with a new client to generate."""
   withClient(
@@ -4859,10 +4885,10 @@ type ModuleSource {
   withToolchains(
     """The toolchain modules to add."""
     toolchains: [ModuleSourceID!]!
-  ): ModuleSource!
+  ): ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.")
 
   """Update the blueprint module to the latest version."""
-  withUpdateBlueprint: ModuleSource!
+  withUpdateBlueprint: ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.")
 
   """Update one or more module dependencies."""
   withUpdateDependencies(
@@ -4874,7 +4900,7 @@ type ModuleSource {
   withUpdateToolchains(
     """The toolchains to update."""
     toolchains: [String!]!
-  ): ModuleSource!
+  ): ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.")
 
   """Update one or more clients."""
   withUpdatedClients(
@@ -4883,7 +4909,7 @@ type ModuleSource {
   ): ModuleSource!
 
   """Remove the current blueprint from the module source."""
-  withoutBlueprint: ModuleSource!
+  withoutBlueprint: ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.")
 
   """Remove a client from the module source."""
   withoutClient(
@@ -4909,7 +4935,7 @@ type ModuleSource {
   withoutToolchains(
     """The toolchains to remove."""
     toolchains: [String!]!
-  ): ModuleSource!
+  ): ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.")
 }
 
 """Experimental features of a module"""
@@ -5448,6 +5474,9 @@ type Query {
 
   """Load a UpGroup from its ID."""
   loadUpGroupFromID(id: UpGroupID!): UpGroup!
+
+  """Load a WorkspaceCwd from its ID."""
+  loadWorkspaceCwdFromID(id: WorkspaceCwdID!): WorkspaceCwd!
 
   """Load a Workspace from its ID."""
   loadWorkspaceFromID(id: WorkspaceID!): Workspace!
@@ -6211,6 +6240,9 @@ type Workspace {
     value: String!
   ): String!
 
+  """The current working directory within the workspace."""
+  cwd: WorkspaceCwd!
+
   """
   Returns a Directory from the workspace.
 
@@ -6373,6 +6405,66 @@ type Workspace {
   """
   update: Changeset! @experimental(reason: "Experimental workspace update API currently refreshes existing lockfile entries only.")
 }
+
+"""
+The current working directory within the workspace. This is set to the directory
+where workspace detection started, and cannot be changed.
+"""
+type WorkspaceCwd {
+  """
+  Returns a Directory from the current working directory within the workspace.
+
+  Relative paths resolve from the current working directory. Absolute paths resolve from the workspace boundary.
+  """
+  directory(
+    """
+    Location of the directory to retrieve. Relative paths (e.g., "src") resolve
+    from the current working directory; absolute paths (e.g., "/src") resolve
+    from the workspace boundary.
+    """
+    path: String!
+
+    """
+    Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+    """
+    exclude: [String!] = []
+
+    """
+    Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+    """
+    include: [String!] = []
+
+    """Apply .gitignore filter rules inside the directory."""
+    gitignore: Boolean = false
+  ): Directory!
+
+  """
+  Returns a File from the current working directory within the workspace.
+
+  Relative paths resolve from the current working directory. Absolute paths resolve from the workspace boundary.
+  """
+  file(
+    """
+    Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve
+    from the current working directory; absolute paths (e.g., "/go.mod") resolve
+    from the workspace boundary.
+    """
+    path: String!
+  ): File!
+
+  """A unique identifier for this WorkspaceCwd."""
+  id: WorkspaceCwdID!
+
+  """
+  Location of the current working directory within the workspace, relative to the workspace.
+  """
+  path: String!
+}
+
+"""
+The `WorkspaceCwdID` scalar type represents an identifier for an object of type WorkspaceCwd.
+"""
+scalar WorkspaceCwdID
 
 """
 The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.

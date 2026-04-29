@@ -204,12 +204,71 @@ func TestModuleResolutionFromSubdirectory(t *testing.T) {
 		true, // isLocal
 	)
 	require.NoError(t, err)
+	require.Equal(t, ".", client.workspace.Path)
+	require.Equal(t, "sdk/go", client.workspace.Cwd)
 
 	// Module source must resolve relative to dagger.json (/repo),
 	// not relative to CWD (/repo/sdk/go).
-	require.Len(t, client.pendingModules, 2) // declared module + implicit module
+	require.Len(t, client.pendingModules, 1)
 	require.Equal(t, "/repo/modules/changelog", client.pendingModules[0].Ref)
 	require.Equal(t, "changelog", client.pendingModules[0].Name)
+}
+
+func TestRemoteWorkspaceCwdUsesDetectionStart(t *testing.T) {
+	t.Parallel()
+
+	existingFiles := map[string]bool{
+		".dagger/config.toml": true,
+	}
+
+	statFS := core.StatFSFunc(func(_ context.Context, path string) (string, *core.Stat, error) {
+		path = filepath.Clean(path)
+		if existingFiles[path] {
+			return filepath.Dir(path), &core.Stat{
+				Name: filepath.Base(path),
+			}, nil
+		}
+		return "", nil, os.ErrNotExist
+	})
+
+	readFile := func(_ context.Context, path string) ([]byte, error) {
+		if filepath.Clean(path) == ".dagger/config.toml" {
+			return []byte("# workspace\n"), nil
+		}
+		return nil, os.ErrNotExist
+	}
+
+	resolveLocalRef := func(ws *workspace.Workspace, relPath string) string {
+		subPath := filepath.Join(ws.Root, ws.Path, relPath)
+		return core.GitRefString("github.com/acme/repo", subPath, "main")
+	}
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		ClientID: "test-client",
+	})
+
+	client := &daggerClient{
+		pendingWorkspaceLoad: true,
+		clientMetadata:       &engine.ClientMetadata{},
+	}
+
+	srv := &Server{}
+	err := srv.detectAndLoadWorkspaceWithRootfs(ctx, client,
+		statFS,
+		readFile,
+		"subdir",
+		resolveLocalRef,
+		func(ws *workspace.Workspace) string {
+			return remoteWorkspaceAddress("github.com/acme/repo", ws.Path, "main")
+		},
+		false,
+		dagql.ObjectResult[*core.Directory]{},
+	)
+	require.NoError(t, err)
+	require.Equal(t, ".", client.workspace.Path)
+	require.Equal(t, "subdir", client.workspace.Cwd)
+	require.Equal(t, "github.com/acme/repo@main", client.workspace.Address)
+	require.True(t, client.workspace.Initialized)
 }
 
 func TestDetectAndLoadWorkspaceDoesNotLoadModulesByDefault(t *testing.T) {
@@ -478,11 +537,13 @@ func TestBuildCoreWorkspaceIncludesConfigState(t *testing.T) {
 		ws, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
 			Root:        "/repo",
 			Path:        "services/payment",
+			Cwd:         "src",
 			Initialized: true,
 		}, true, dagql.ObjectResult[*core.Directory]{}, "")
 		require.NoError(t, err)
 		require.Equal(t, "file:///repo/services/payment", ws.Address)
 		require.Equal(t, "services/payment", ws.Path)
+		require.Equal(t, "src", ws.Cwd)
 		require.True(t, ws.Initialized)
 		require.True(t, ws.HasConfig)
 		require.Equal(t, filepath.Join("services/payment", workspace.LockDirName, workspace.ConfigFileName), ws.ConfigPath)
