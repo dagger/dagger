@@ -10,10 +10,10 @@ import (
 )
 
 // The `DaggerCliID` scalar type represents an identifier for an object of type DaggerCli.
-type DaggerCliID string // dagger-cli (../../../../toolchains/cli-dev/main.go:83:6)
+type DaggerCliID string // dagger-cli (../../toolchains/cli-dev/main.go:83:6)
 
 // Retrieve the binding value, as type DaggerCli
-func (r *Binding) AsDaggerCli() *DaggerCli { // dagger-cli (../../../../toolchains/cli-dev/main.go:83:6)
+func (r *Binding) AsDaggerCli() *DaggerCli { // dagger-cli (../../toolchains/cli-dev/main.go:83:6)
 	q := r.query.Select("asDaggerCli")
 
 	return &DaggerCli{
@@ -21,7 +21,7 @@ func (r *Binding) AsDaggerCli() *DaggerCli { // dagger-cli (../../../../toolchai
 	}
 }
 
-type DaggerCli struct { // dagger-cli (../../../../toolchains/cli-dev/main.go:83:6)
+type DaggerCli struct { // dagger-cli (../../toolchains/cli-dev/main.go:83:6)
 	query *querybuilder.Selection
 
 	id              *DaggerCliID
@@ -39,11 +39,11 @@ func (r *DaggerCli) WithGraphQLQuery(q *querybuilder.Selection) *DaggerCli {
 
 // DaggerCliBinaryOpts contains options for DaggerCli.Binary
 type DaggerCliBinaryOpts struct {
-	Platform Platform // dagger-cli (../../../../toolchains/cli-dev/main.go:93:2)
+	Platform Platform // dagger-cli (../../toolchains/cli-dev/main.go:93:2)
 }
 
 // Build the dagger CLI binary for a single platform
-func (r *DaggerCli) Binary(opts ...DaggerCliBinaryOpts) *File { // dagger-cli (../../../../toolchains/cli-dev/main.go:91:1)
+func (r *DaggerCli) Binary(opts ...DaggerCliBinaryOpts) *File { // dagger-cli (../../toolchains/cli-dev/main.go:91:1)
 	q := r.query.Select("binary")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -59,12 +59,12 @@ func (r *DaggerCli) Binary(opts ...DaggerCliBinaryOpts) *File { // dagger-cli (.
 
 // DaggerCliDevBinariesOpts contains options for DaggerCli.DevBinaries
 type DaggerCliDevBinariesOpts struct {
-	Platform Platform // dagger-cli (../../../../toolchains/cli-dev/main.go:127:2)
+	Platform Platform // dagger-cli (../../toolchains/cli-dev/main.go:127:2)
 }
 
 // Build dev CLI binaries
 // TODO: remove this
-func (r *DaggerCli) DevBinaries(opts ...DaggerCliDevBinariesOpts) *Directory { // dagger-cli (../../../../toolchains/cli-dev/main.go:125:1)
+func (r *DaggerCli) DevBinaries(opts ...DaggerCliDevBinariesOpts) *Directory { // dagger-cli (../../toolchains/cli-dev/main.go:125:1)
 	q := r.query.Select("devBinaries")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -117,37 +117,28 @@ func (r *DaggerCli) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(id)
 }
-func (r *DaggerCli) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = *dag.LoadDaggerCliFromID(DaggerCliID(id))
-	return nil
-}
 
 // DaggerCliPublishOpts contains options for DaggerCli.Publish
 type DaggerCliPublishOpts struct {
-	GithubToken *Secret // dagger-cli (../../../../toolchains/cli-dev/publish.go:31:2)
+	GithubToken *Secret // dagger-cli (../../toolchains/cli-dev/publish.go:31:2)
 
-	Git *GitRepository // dagger-cli (../../../../toolchains/cli-dev/publish.go:33:2)
+	Git *GitRepository // dagger-cli (../../toolchains/cli-dev/publish.go:33:2)
 
-	AwsAccessKeyID *Secret // dagger-cli (../../../../toolchains/cli-dev/publish.go:35:2)
+	AwsAccessKeyID *Secret // dagger-cli (../../toolchains/cli-dev/publish.go:35:2)
 
-	AwsSecretAccessKey *Secret // dagger-cli (../../../../toolchains/cli-dev/publish.go:36:2)
+	AwsSecretAccessKey *Secret // dagger-cli (../../toolchains/cli-dev/publish.go:36:2)
 
-	AwsRegion string // dagger-cli (../../../../toolchains/cli-dev/publish.go:37:2)
+	AwsRegion string // dagger-cli (../../toolchains/cli-dev/publish.go:37:2)
 
-	AwsBucket string // dagger-cli (../../../../toolchains/cli-dev/publish.go:38:2)
+	AwsBucket string // dagger-cli (../../toolchains/cli-dev/publish.go:38:2)
 
-	ArtefactsFqdn string // dagger-cli (../../../../toolchains/cli-dev/publish.go:39:2)
+	ArtefactsFqdn string // dagger-cli (../../toolchains/cli-dev/publish.go:39:2)
 
-	DryRun bool // dagger-cli (../../../../toolchains/cli-dev/publish.go:41:2)
+	DryRun bool // dagger-cli (../../toolchains/cli-dev/publish.go:41:2)
 }
 
 // Publish the CLI using GoReleaser
-func (r *DaggerCli) Publish(tag string, goreleaserKey *Secret, githubOrgName string, opts ...DaggerCliPublishOpts) *Directory { // dagger-cli (../../../../toolchains/cli-dev/publish.go:24:1)
+func (r *DaggerCli) Publish(tag string, goreleaserKey *Secret, githubOrgName string, opts ...DaggerCliPublishOpts) *Directory { // dagger-cli (../../toolchains/cli-dev/publish.go:24:1)
 	assertNotNil("goreleaserKey", goreleaserKey)
 	q := r.query.Select("publish")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -193,7 +184,7 @@ func (r *DaggerCli) Publish(tag string, goreleaserKey *Secret, githubOrgName str
 	}
 }
 
-func (r *DaggerCli) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, awsSecretAccessKey *Secret, awsRegion string, awsBucket string, awsCloudfrontDistribution string) error { // dagger-cli (../../../../toolchains/cli-dev/publish.go:139:1)
+func (r *DaggerCli) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, awsSecretAccessKey *Secret, awsRegion string, awsBucket string, awsCloudfrontDistribution string) error { // dagger-cli (../../toolchains/cli-dev/publish.go:139:1)
 	assertNotNil("awsAccessKeyId", awsAccessKeyId)
 	assertNotNil("awsSecretAccessKey", awsSecretAccessKey)
 	if r.publishMetadata != nil {
@@ -211,15 +202,15 @@ func (r *DaggerCli) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret,
 
 // DaggerCliReferenceOpts contains options for DaggerCli.Reference
 type DaggerCliReferenceOpts struct {
-	Frontmatter string // dagger-cli (../../../../toolchains/cli-dev/main.go:105:2)
+	Frontmatter string // dagger-cli (../../toolchains/cli-dev/main.go:105:2)
 	//
 	// Include experimental commands
 	//
-	IncludeExperimental bool // dagger-cli (../../../../toolchains/cli-dev/main.go:108:2)
+	IncludeExperimental bool // dagger-cli (../../toolchains/cli-dev/main.go:108:2)
 }
 
 // Generate a markdown CLI reference doc
-func (r *DaggerCli) Reference(opts ...DaggerCliReferenceOpts) *File { // dagger-cli (../../../../toolchains/cli-dev/main.go:103:1)
+func (r *DaggerCli) Reference(opts ...DaggerCliReferenceOpts) *File { // dagger-cli (../../toolchains/cli-dev/main.go:103:1)
 	q := r.query.Select("reference")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `frontmatter` optional argument
@@ -238,7 +229,7 @@ func (r *DaggerCli) Reference(opts ...DaggerCliReferenceOpts) *File { // dagger-
 }
 
 // Verify that the CLI builds without actually publishing anything
-func (r *DaggerCli) ReleaseDryRun(ctx context.Context) error { // dagger-cli (../../../../toolchains/cli-dev/publish.go:200:1)
+func (r *DaggerCli) ReleaseDryRun(ctx context.Context) error { // dagger-cli (../../toolchains/cli-dev/publish.go:200:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -247,7 +238,7 @@ func (r *DaggerCli) ReleaseDryRun(ctx context.Context) error { // dagger-cli (..
 	return q.Execute(ctx)
 }
 
-func (r *DaggerCli) Tag(ctx context.Context) (string, error) { // dagger-cli (../../../../toolchains/cli-dev/main.go:85:2)
+func (r *DaggerCli) Tag(ctx context.Context) (string, error) { // dagger-cli (../../toolchains/cli-dev/main.go:85:2)
 	if r.tag != nil {
 		return *r.tag, nil
 	}
@@ -259,7 +250,7 @@ func (r *DaggerCli) Tag(ctx context.Context) (string, error) { // dagger-cli (..
 	return response, q.Execute(ctx)
 }
 
-func (r *DaggerCli) Version(ctx context.Context) (string, error) { // dagger-cli (../../../../toolchains/cli-dev/main.go:84:2)
+func (r *DaggerCli) Version(ctx context.Context) (string, error) { // dagger-cli (../../toolchains/cli-dev/main.go:84:2)
 	if r.version != nil {
 		return *r.version, nil
 	}
@@ -272,7 +263,7 @@ func (r *DaggerCli) Version(ctx context.Context) (string, error) { // dagger-cli
 }
 
 // Create or update a binding of type DaggerCli in the environment
-func (r *Env) WithDaggerCliInput(name string, value *DaggerCli, description string) *Env { // dagger-cli (../../../../toolchains/cli-dev/main.go:83:6)
+func (r *Env) WithDaggerCliInput(name string, value *DaggerCli, description string) *Env { // dagger-cli (../../toolchains/cli-dev/main.go:83:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withDaggerCliInput")
 	q = q.Arg("name", name)
@@ -285,7 +276,7 @@ func (r *Env) WithDaggerCliInput(name string, value *DaggerCli, description stri
 }
 
 // Declare a desired DaggerCli output to be assigned in the environment
-func (r *Env) WithDaggerCliOutput(name string, description string) *Env { // dagger-cli (../../../../toolchains/cli-dev/main.go:83:6)
+func (r *Env) WithDaggerCliOutput(name string, description string) *Env { // dagger-cli (../../toolchains/cli-dev/main.go:83:6)
 	q := r.query.Select("withDaggerCliOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -297,21 +288,21 @@ func (r *Env) WithDaggerCliOutput(name string, description string) *Env { // dag
 
 // DaggerCliOpts contains options for Query.DaggerCli
 type DaggerCliOpts struct {
-	RunnerHost string // dagger-cli (../../../../toolchains/cli-dev/main.go:16:2)
+	RunnerHost string // dagger-cli (../../toolchains/cli-dev/main.go:16:2)
 
-	Source *Directory // dagger-cli (../../../../toolchains/cli-dev/main.go:37:2)
+	Source *Directory // dagger-cli (../../toolchains/cli-dev/main.go:37:2)
 	//
 	// Base image for go build environment
 	//
-	Base *Container // dagger-cli (../../../../toolchains/cli-dev/main.go:41:2)
+	Base *Container // dagger-cli (../../toolchains/cli-dev/main.go:41:2)
 	//
 	// Explicit version to set on the Dagger CLI.
 	//
-	Version string // dagger-cli (../../../../toolchains/cli-dev/main.go:45:2)
+	Version string // dagger-cli (../../toolchains/cli-dev/main.go:45:2)
 }
 
 // Develop the Dagger CLI
-func (r *Query) DaggerCli(opts ...DaggerCliOpts) *DaggerCli { // dagger-cli (../../../../toolchains/cli-dev/main.go:12:1)
+func (r *Query) DaggerCli(opts ...DaggerCliOpts) *DaggerCli { // dagger-cli (../../toolchains/cli-dev/main.go:12:1)
 	q := r.query.Select("daggerCli")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `runnerHost` optional argument
@@ -338,7 +329,7 @@ func (r *Query) DaggerCli(opts ...DaggerCliOpts) *DaggerCli { // dagger-cli (../
 }
 
 // Load a DaggerCli from its ID.
-func (r *Query) LoadDaggerCliFromID(id DaggerCliID) *DaggerCli { // dagger-cli (../../../../toolchains/cli-dev/main.go:83:6)
+func (r *Query) LoadDaggerCliFromID(id DaggerCliID) *DaggerCli { // dagger-cli (../../toolchains/cli-dev/main.go:83:6)
 	q := r.query.Select("loadDaggerCliFromID")
 	q = q.Arg("id", id)
 
