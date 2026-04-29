@@ -303,6 +303,7 @@ func (s *moduleSourceSchema) moduleSource(
 	query dagql.ObjectResult[*core.Query],
 	args moduleSourceArgs,
 ) (inst dagql.Result[*core.ModuleSource], err error) {
+	fmt.Printf("ACB moduleSourceSchema.moduleSource called with %+v\n", args)
 	bk, err := query.Self().Engine(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get engine client: %w", err)
@@ -318,11 +319,13 @@ func (s *moduleSourceSchema) moduleSource(
 
 	switch parsedRef.Kind {
 	case core.ModuleSourceKindLocal:
+		fmt.Printf("ACB moduleSourceSchema.moduleSource local %v\n", parsedRef.Local.ModPath)
 		inst, err = s.localModuleSource(ctx, query, bk, parsedRef.Local.ModPath, !args.DisableFindUp, args.AllowNotExists)
 		if err != nil {
 			return inst, err
 		}
 	case core.ModuleSourceKindGit:
+		fmt.Printf("ACB moduleSourceSchema.moduleSource git %v, %v, %v, %v\n", args.RefString, parsedRef.Git, args.RefPin, args.DisableFindUp)
 		inst, err = s.gitModuleSource(ctx, query, args.RefString, parsedRef.Git, args.RefPin, !args.DisableFindUp)
 		if err != nil {
 			return inst, err
@@ -590,6 +593,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 		lookupLock     *workspaceLookupLock
 	)
 	if refPin == "" {
+		fmt.Printf("ACB gitModuleSource empty ref pin %p %s %+v\n", s, source, parsed)
 		lockMode, err := currentLookupLockMode(ctx)
 		if err != nil {
 			return inst, fmt.Errorf("%s lock mode: %w", lockModulesResolveOperation, err)
@@ -613,7 +617,10 @@ func (s *moduleSourceSchema) gitModuleSource(
 				return inst, fmt.Errorf("%s lock resolution: %w", lockModulesResolveOperation, err)
 			}
 			refPin = lockResolution.Pin
+			fmt.Printf("ACB gitModuleSource %p resolved ref pin %s\n", s, refPin)
 		}
+	} else {
+		fmt.Printf("ACB gitModuleSource %p ref pin %s, %v, %+v\n", s, refPin, source, parsed)
 	}
 
 	gitRef, err := parsed.GitRef(ctx, dag, refPin)

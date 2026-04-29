@@ -43,6 +43,7 @@ var clientInstallCmd = &cobra.Command{
 	Short:   "Generate a new Dagger client from the Dagger module",
 	Example: "dagger client install go ./dagger",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		fmt.Printf("ACB clientInstallCmd %v\n", args)
 		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
 			// default the output to the current working directory if it doesn't exist yet
 			cwd, err := pathutil.Getwd()

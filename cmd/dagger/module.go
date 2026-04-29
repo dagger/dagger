@@ -408,6 +408,7 @@ var moduleDepInstallCmd = &cobra.Command{
 	GroupID: moduleGroup.ID,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+		fmt.Printf("ACB moduleDepInstallCmd %v\n", extraArgs)
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{
 			SkipWorkspaceModules: true,
@@ -441,6 +442,20 @@ var moduleDepInstallCmd = &cobra.Command{
 			depSrc := dag.ModuleSource(depRefStr, dagger.ModuleSourceOpts{
 				DisableFindUp: true,
 			})
+
+			depSrcEntries, err := depSrc.ContextDirectory().Entries(ctx)
+			if err != nil {
+				panic(err)
+			}
+			fmt.Printf("ACB moduleDepInstallCmd %v got entries %v\n", extraArgs, depSrcEntries)
+
+			if len(depSrcEntries) == 1 && depSrcEntries[0] == "contextual-git-bug/" {
+				depSrcEntries, err = depSrc.ContextDirectory().Directory("contextual-git-bug/").Entries(ctx)
+				if err != nil {
+					panic(err)
+				}
+				fmt.Printf("ACB moduleDepInstallCmd %v got sub entries %v\n", extraArgs, depSrcEntries)
+			}
 
 			origDepName, err := depSrc.ModuleName(ctx)
 			if err != nil {
@@ -506,6 +521,7 @@ var moduleDepInstallCmd = &cobra.Command{
 				if err != nil {
 					return fmt.Errorf("failed to get git commit: %w", err)
 				}
+				fmt.Printf("ACB moduleDepInstallCmd here1 with %s, %s, %s\n", gitURL, gitVersion, gitCommit)
 
 				analyticsType := "module_install"
 				analytics.Ctx(ctx).Capture(ctx, analyticsType, map[string]string{
