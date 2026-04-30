@@ -169,6 +169,10 @@ type frontendPretty struct {
 	searchMatchSpans     map[dagui.SpanID]bool // fast lookup: does this span have any match?
 	prevSearchMatchSpans map[dagui.SpanID]bool // previous frame's matchSpans for diff-based dirtying
 	searchIdx            int                   // current match index (-1 = none)
+
+	// test view state (simple left-sidebar/right-detail spike)
+	testsMode   bool
+	focusedTest dagui.TestNodeID
 }
 
 // Verify interface compliance at compile time.
@@ -1203,6 +1207,31 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		noExitHelp = out.String(noExitHelp).Foreground(color).String()
 	}
 	var focused *dagui.Span
+	if fe.testsMode {
+		if node := fe.focusedTestNode(fe.db.TestView()); node != nil {
+			focused = testTUISpan(node)
+		}
+		return []key.Binding{
+			key.NewBinding(key.WithKeys("T"),
+				key.WithHelp("T", "trace")),
+			key.NewBinding(key.WithKeys("↑↓", "up", "down", "j", "k"),
+				key.WithHelp("↑↓", "select")),
+			key.NewBinding(key.WithKeys("home"),
+				key.WithHelp("home", "first")),
+			key.NewBinding(key.WithKeys("end", "space"),
+				key.WithHelp("end", "last")),
+			key.NewBinding(key.WithKeys("enter", "right", "l"),
+				key.WithHelp("enter", "trace"),
+				KeyEnabled(focused != nil)),
+			key.NewBinding(key.WithKeys("t"),
+				key.WithHelp("t", "start terminal"),
+				KeyEnabled(focused != nil && fe.terminalCallback(focused) != nil)),
+			key.NewBinding(key.WithKeys("esc"),
+				key.WithHelp("esc", "trace")),
+			key.NewBinding(key.WithKeys("q", "ctrl+c"),
+				key.WithHelp("q", quitMsg)),
+		}
+	}
 	if fe.FocusedSpan.IsValid() {
 		focused = fe.db.Spans.Map[fe.FocusedSpan]
 	}
@@ -1213,6 +1242,9 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		key.NewBinding(key.WithKeys("w"),
 			key.WithHelp("w", out.Hyperlink(fe.cloudURL, "web")),
 			KeyEnabled(fe.cloudURL != "")),
+		key.NewBinding(key.WithKeys("T"),
+			key.WithHelp("T", "tests"),
+			KeyEnabled(fe.db != nil && fe.db.HasTests())),
 		key.NewBinding(key.WithKeys("←↑↓→", "up", "down", "left", "right", "h", "j", "k", "l"),
 			key.WithHelp("←↑↓→", "move")),
 		key.NewBinding(key.WithKeys("home"),
@@ -1303,6 +1335,11 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		// Final render: just emit progress rows, no chrome or truncation.
 		progressLines := fe.renderProgressLines(r, ctx, 0)
 		ctx.Lines(progressLines...)
+		return
+	}
+
+	if fe.testsMode {
+		fe.renderTestsView(ctx)
 		return
 	}
 
@@ -1960,6 +1997,39 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 	lastKey := fe.pressedKey
 	fe.recordKeyPress(keyStr)
 
+	if fe.testsMode {
+		switch keyStr {
+		case "q", "ctrl+c":
+			if fe.shell != nil {
+				if fe.shellInterrupt != nil {
+					fe.shellInterrupt(errors.New("interrupted"))
+				}
+			} else {
+				fe.quitAction(ErrInterrupted)
+			}
+		case "T", "esc", "left", "h":
+			fe.testsMode = false
+			fe.recalculateViewLocked()
+			if fe.keymapBar != nil {
+				fe.keymapBar.Update()
+			}
+			fe.Update()
+		case "down", "j":
+			fe.goTestDown()
+		case "up", "k":
+			fe.goTestUp()
+		case "home":
+			fe.goTestStart()
+		case "end", "G", "space":
+			fe.goTestEnd()
+		case "enter", "right", "l":
+			fe.openFocusedTestTrace()
+		case "t":
+			fe.terminal()
+		}
+		return
+	}
+
 	switch keyStr {
 	case "q", "ctrl+c":
 		if fe.shell != nil {
@@ -2022,6 +2092,9 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 		}
 		fe.renderVersion++
 		fe.recalculateViewLocked()
+		return
+	case "T":
+		fe.toggleTestsMode()
 		return
 	case "w":
 		if fe.cloudURL == "" {
