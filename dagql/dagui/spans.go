@@ -12,7 +12,6 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
-	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/slog"
@@ -340,7 +339,7 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case telemetry.CanceledAttr:
 		snapshot.Canceled = val.(bool)
 
-	case dagql.PendingAttr:
+	case telemetry.PendingAttr:
 		snapshot.Pending = val.(bool)
 
 	case telemetry.UIEncapsulateAttr:
