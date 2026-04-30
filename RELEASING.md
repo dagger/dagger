@@ -131,14 +131,16 @@ to dagger.
 - [ ] Set the target release version:
 
   ```console
-  export ENGINE_VERSION="v0.21.0"
+  export ENGINE_VERSION="vX.Y.Z"
 
   # this is required to interpolate $ENGINE_VERSION to the SDK release notes
   export CHANGIE_ENGINE_VERSION="$ENGINE_VERSION"
   ```
 
 - [ ] Ensure that the `release` toolchain's `targetVersion` customization in
-      `dagger.json` is set to `$ENGINE_VERSION`.
+      `dagger.json` is set to `$ENGINE_VERSION`. The release module's
+      `@generate` functions use this value to regenerate all repo files that
+      reference the target Engine version.
 
 - [ ] Create the target release notes branch for a PR.
 
@@ -146,7 +148,7 @@ to dagger.
   git checkout -b prep-$ENGINE_VERSION
   ```
 
-- [ ] Bump internal versions (sdks + docs + helm chart) to the target version
+- [ ] Regenerate target-version files (SDKs + docs + Helm chart)
 
   ```console
   dagger -y generate
@@ -173,7 +175,7 @@ to dagger.
 - [ ] Commit
 
   ```console
-  git add docs sdk helm lib/dagger/core core/sdk
+  git add dagger.json docs sdk helm core/sdk
   git commit -s -m "chore: bump dependencies to $ENGINE_VERSION"
   ```
 
@@ -185,7 +187,7 @@ to dagger.
   export RELEASE_PREP_PR=$(cat /tmp/prep-pr.txt | sed -r 's/^[^0-9]*([0-9]+).*/\1/')
   ```
 
-- [ ] Generate bump changes for each SDK + the helm charts
+- [ ] Generate changelog fragments for each SDK + the Helm chart
 
   ```console
   export GITHUB_USERNAME=$(gh api /user --jq .login)
@@ -205,7 +207,8 @@ to dagger.
 
 > [!NOTE]
 >
-> We need to rethink SDK-specific changelogs, they're not really used anymore other than bumping engine versions.
+> We need to rethink SDK-specific changelogs. They're not used to generate
+> target-version files anymore, and mostly duplicate the top-level release notes.
 >
 
   ```console
