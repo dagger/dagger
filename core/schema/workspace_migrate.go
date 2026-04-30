@@ -2,7 +2,9 @@ package schema
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -68,7 +70,9 @@ func (s *workspaceSchema) migrate(
 	}
 	var updatedDir dagql.ObjectResult[*core.Directory]
 	if workspaceConfigUsesMigratedModuleSources(cfg) {
-		if _, preparedDir, err := s.workspaceMigrationPreparedDirectories(ctx, ws, plan); err == nil {
+		if _, preparedDir, err := s.workspaceMigrationPreparedDirectories(ctx, ws, plan); err != nil {
+			return nil, fmt.Errorf("prepare migrated module config: %w", err)
+		} else {
 			updatedDir = preparedDir
 		}
 	}
@@ -178,6 +182,10 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 		return nil, err
 	}
 
+	if err := validateWorkspaceMigrationTargetPaths(ctx, baseDir, workspaceMigrationTargetPaths(plan, lockBytes)); err != nil {
+		return nil, err
+	}
+
 	updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, filepath.Join(workspace.LockDirName, workspace.ConfigFileName), plan.WorkspaceConfigData, "write workspace config")
 	if err != nil {
 		return nil, err
@@ -238,6 +246,10 @@ func (s *workspaceSchema) workspaceMigrationPreparedDirectories(
 	updatedDir := baseDir
 
 	if len(plan.MigratedModuleConfigData) > 0 {
+		if err := validateWorkspaceMigrationTargetPaths(ctx, baseDir, []string{plan.MigratedModuleConfigPath}); err != nil {
+			return dagql.ObjectResult[*core.Directory]{}, dagql.ObjectResult[*core.Directory]{}, err
+		}
+
 		updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, plan.MigratedModuleConfigPath, plan.MigratedModuleConfigData, "write migrated module config")
 		if err != nil {
 			return dagql.ObjectResult[*core.Directory]{}, dagql.ObjectResult[*core.Directory]{}, err
@@ -245,6 +257,45 @@ func (s *workspaceSchema) workspaceMigrationPreparedDirectories(
 	}
 
 	return baseDir, updatedDir, nil
+}
+
+func workspaceMigrationTargetPaths(plan *workspace.MigrationPlan, lockBytes []byte) []string {
+	paths := make([]string, 0, 4)
+	if len(plan.MigratedModuleConfigData) > 0 {
+		paths = append(paths, plan.MigratedModuleConfigPath)
+	}
+	paths = append(paths, filepath.Join(workspace.LockDirName, workspace.ConfigFileName))
+	if len(plan.MigrationReportData) > 0 {
+		paths = append(paths, plan.MigrationReportPath)
+	}
+	if len(lockBytes) > 0 {
+		paths = append(paths, filepath.Join(workspace.LockDirName, workspace.LockFileName))
+	}
+	return paths
+}
+
+func validateWorkspaceMigrationTargetPaths(
+	ctx context.Context,
+	baseDir dagql.ObjectResult[*core.Directory],
+	targetPaths []string,
+) error {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, targetPath := range targetPaths {
+		cleanPath := path.Clean(filepath.ToSlash(targetPath))
+		_, err := baseDir.Self().Stat(ctx, baseDir, srv, cleanPath, false)
+		if err == nil {
+			return fmt.Errorf("migration target %q already exists; refusing to overwrite existing workspace data", cleanPath)
+		}
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		return fmt.Errorf("check migration target %q: %w", cleanPath, err)
+	}
+	return nil
 }
 
 func (s *workspaceSchema) workspaceMigrationBaseDirectory(
