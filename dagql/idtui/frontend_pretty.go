@@ -624,7 +624,7 @@ func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg strin
 			if logged {
 				fe.msgPreFinalRender.WriteString(traceMessage(fe.profile, url, msg))
 			} else if !skipLoggedOutTraceMsg() {
-				fe.msgPreFinalRender.WriteString(fmt.Sprintf(loggedOutTraceMsg, url))
+				fmt.Fprintf(&fe.msgPreFinalRender, loggedOutTraceMsg, url)
 			}
 		}
 		fe.Update()
@@ -1667,10 +1667,7 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 	// Crop the bottom so the focused span stays within the visible
 	// screen area. Content above scrolls into terminal scrollback
 	// naturally — we never crop the top.
-	viewportHeight := ctx.ScreenHeight() - chromeHeight
-	if viewportHeight < 1 {
-		viewportHeight = 1
-	}
+	viewportHeight := max(ctx.ScreenHeight()-chromeHeight, 1)
 
 	end := len(allLines)
 	if focusLine >= 0 && len(allLines) > viewportHeight {
@@ -1694,16 +1691,10 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 //
 // Content above the visible window scrolls into terminal scrollback naturally.
 func cropEnd(totalLines, viewportHeight, focusLine, focusHeight int) int {
-	focusEnd := focusLine + focusHeight
-	if focusEnd > totalLines {
-		focusEnd = totalLines
-	}
+	focusEnd := min(focusLine+focusHeight, totalLines)
 
 	// Split remaining viewport space evenly above and below the focus root.
-	remaining := viewportHeight - focusHeight
-	if remaining < 0 {
-		remaining = 0
-	}
+	remaining := max(viewportHeight-focusHeight, 0)
 	below := remaining / 2
 
 	end := focusEnd + below
@@ -1788,7 +1779,7 @@ func (fe *frontendPretty) findFocusLine(topGapCounts []int) int {
 				len(parent.childLineCounts) != len(parent.children) {
 				return -1
 			}
-			for s := 0; s < idx; s++ {
+			for s := range idx {
 				offset += parent.childGapCounts[s] + parent.childLineCounts[s]
 			}
 			// Add the gap before this node itself.
