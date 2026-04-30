@@ -229,7 +229,7 @@ func (WorkspaceAPISuite) TestWorkspacePathSafety(ctx context.Context, t *testctx
 			WithNewFile("legit.txt", "legit")
 
 		t.Run("directory traversal", func(ctx context.Context, t *testctx.T) {
-			ctr := base.With(initStandaloneDangModule("escape-dir", `
+			ctr := base.With(initDangModule("escape-dir", `
 type EscapeDir {
   pub source: Directory!
 
@@ -243,13 +243,13 @@ type EscapeDir {
   }
 }
 `))
-			_, err := ctr.With(daggerCall("ls")).Stdout(ctx)
+			_, err := ctr.With(daggerCall("escape-dir", "ls")).Stdout(ctx)
 			require.Error(t, err)
 			requireErrOut(t, err, "resolves outside root")
 		})
 
 		t.Run("file traversal", func(ctx context.Context, t *testctx.T) {
-			ctr := base.With(initStandaloneDangModule("escape-file", `
+			ctr := base.With(initDangModule("escape-file", `
 type EscapeFile {
   pub content: String!
 
@@ -263,7 +263,7 @@ type EscapeFile {
   }
 }
 `))
-			_, err := ctr.With(daggerCall("read")).Stdout(ctx)
+			_, err := ctr.With(daggerCall("escape-file", "read")).Stdout(ctx)
 			require.Error(t, err)
 			requireErrOut(t, err, "resolves outside root")
 		})
@@ -276,7 +276,7 @@ type EscapeFile {
 
 		ctr := base.
 			WithNewFile("sub/inner.txt", "inner").
-			With(initStandaloneDangModule("abs-rel", `
+			With(initDangModule("abs-rel", `
 type AbsRel {
   pub source: Directory!
 
@@ -290,7 +290,7 @@ type AbsRel {
   }
 }
 `))
-		out, err := ctr.With(daggerCall("ls")).Stdout(ctx)
+		out, err := ctr.With(daggerCall("abs-rel", "ls")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "inner.txt")
 	})
@@ -308,7 +308,7 @@ func (WorkspaceAPISuite) TestWorkspaceFindUp(ctx context.Context, t *testctx.T) 
 		WithNewFile("a/b/c/leaf.txt", "leaf").
 		WithExec([]string{"mkdir", "-p", "a/somedir"}).
 		WithNewFile("a/somedir/hi.txt", "hi").
-		With(initStandaloneDangModule("finder", `
+		With(initDangModule("finder", `
 type Finder {
   pub result: String!
 
@@ -320,37 +320,37 @@ type Finder {
 `))
 
 	t.Run("find file in start directory", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("--name=other.txt", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=other.txt", "--from=a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "/a/b/other.txt", strings.TrimSpace(out))
 	})
 
 	t.Run("find file in parent directory", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("--name=target.txt", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=target.txt", "--from=a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "/a/target.txt", strings.TrimSpace(out))
 	})
 
 	t.Run("find file at workspace root", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("--name=root.txt", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=root.txt", "--from=a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "/root.txt", strings.TrimSpace(out))
 	})
 
 	t.Run("find directory in parent", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("--name=somedir", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=somedir", "--from=a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "/a/somedir", strings.TrimSpace(out))
 	})
 
 	t.Run("does not find child directory content", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("--name=leaf.txt", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=leaf.txt", "--from=a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "", strings.TrimSpace(out))
 	})
 
 	t.Run("does not find missing file", func(ctx context.Context, t *testctx.T) {
-		out, err := base.With(daggerCall("--name=nonexistent.txt", "--from=a/b", "result")).Stdout(ctx)
+		out, err := base.With(daggerCall("finder", "--name=nonexistent.txt", "--from=a/b", "result")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "", strings.TrimSpace(out))
 	})
