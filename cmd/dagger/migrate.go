@@ -37,11 +37,6 @@ var migrateCmd = &cobra.Command{
 			migration := dag.CurrentWorkspace().Migrate(dagger.WorkspaceMigrateOpts{
 				Force: migrateForce,
 			})
-			migrationID, err := migration.ID(ctx)
-			if err != nil {
-				return fmt.Errorf("migration failed: %w", err)
-			}
-			migration = dag.LoadWorkspaceMigrationFromID(migrationID)
 
 			changes := migration.Changes()
 			changesID, err := changes.ID(ctx)
