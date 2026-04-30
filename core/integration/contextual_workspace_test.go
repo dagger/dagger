@@ -24,6 +24,25 @@ func TestContextualWorkspace(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(ContextualWorkspaceSuite{})
 }
 
+func daggerReportCall(args ...string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), dagger.ContainerWithExecOpts{
+			UseEntrypoint:                 true,
+			ExperimentalPrivilegedNesting: true,
+		})
+	}
+}
+
+func daggerReportCallFailure(args ...string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), dagger.ContainerWithExecOpts{
+			UseEntrypoint:                 true,
+			ExperimentalPrivilegedNesting: true,
+			Expect:                        dagger.ReturnTypeFailure,
+		})
+	}
+}
+
 // TestContextualWorkspaceSelection should cover which workspace gets injected
 // from context before any module code runs.
 func (ContextualWorkspaceSuite) TestContextualWorkspaceSelection(ctx context.Context, t *testctx.T) {
@@ -54,47 +73,150 @@ type Paths {
 }
 `))
 
-		out, err := ctr.With(daggerCall("workspace-value")).Stdout(ctx)
+		out, err := ctr.With(daggerReportCall("workspace-value")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hello from workspace", strings.TrimSpace(out))
 
-		out, err = ctr.With(daggerCall("boundary-value")).Stdout(ctx)
+		out, err = ctr.With(daggerReportCall("boundary-value")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hello from boundary", strings.TrimSpace(out))
 
-		out, err = ctr.With(daggerCall("found-value")).Stdout(ctx)
+		out, err = ctr.With(daggerReportCall("found-value")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "/repo.txt", strings.TrimSpace(out))
 	})
 
 	t.Run("legacy compat workspace is inferred when no config exists", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement compat workspace inference coverage.
+		c := connect(ctx, t)
 
-Invoke Dagger from a compat-eligible legacy project with no .dagger/config.toml
-and verify the injected Workspace is the inferred compat workspace.`)
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "sdk": {"source": "dang"},
+  "source": "ci"
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithNewFile("repo.txt", "hello from compat workspace").
+				WithNewFile("ci/main.dang", `
+type Myapp {
+  pub workspacePath: String!
+  pub workspaceAddress: String!
+  pub boundaryValue: String!
+
+  new(ws: Workspace!) {
+    self.workspacePath = ws.path
+    self.workspaceAddress = ws.address
+    self.boundaryValue = ws.file("/repo.txt").contents
+    self
+  }
+}
+`)
+		})
+
+		out, err := ctr.With(daggerReportCall("workspace-path")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, ".", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerReportCall("workspace-address")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file:///work", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerReportCall("boundary-value")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from compat workspace", strings.TrimSpace(out))
 	})
 
 	t.Run("nearest initialized workspace beats an outer initialized workspace", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement nested initialized-workspace selection coverage.
+		c := connect(ctx, t)
 
-Create nested native workspace boundaries and invoke Dagger from inside the
-inner one. Verify the injected Workspace reflects the nearest initialized
-boundary rather than the outer repo workspace.`)
+		ctr := workspaceBase(t, c).
+			WithNewFile(".dagger/config.toml", "[modules]\n").
+			WithNewFile("app/.dagger/config.toml", "[modules]\n").
+			WithWorkdir("/work/app").
+			With(initDangBlueprint("paths", `
+type Paths {
+  pub workspacePath: String!
+  pub workspaceAddress: String!
+
+  new(ws: Workspace!) {
+    self.workspacePath = ws.path
+    self.workspaceAddress = ws.address
+    self
+  }
+}
+`))
+
+		out, err := ctr.With(daggerReportCall("workspace-path")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "app", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerReportCall("workspace-address")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file:///work/app", strings.TrimSpace(out))
 	})
 
 	t.Run("non-eligible legacy module does not inject a workspace", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement negative workspace inference coverage.
+		c := connect(ctx, t)
 
-Use a standalone module that is not an initialized workspace and not
-compat-eligible. Verify no ambient Workspace is inferred for injection.`)
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "standalone",
+  "sdk": {"source": "dang"}
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.WithNewFile("main.dang", `
+type Standalone {
+  pub workspacePath: String!
+
+  new(ws: Workspace!) {
+    self.workspacePath = ws.path
+    self
+  }
+}
+`)
+		})
+
+		out, err := ctr.With(daggerReportCallFailure("workspace-path")).CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "no current workspace")
 	})
 
 	t.Run("initialized workspace beats outer compat inference", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement native-over-compat contextual selection coverage.
+		c := connect(ctx, t)
 
-Create an outer compat-eligible legacy project and a nested initialized native
-workspace. Invoke Dagger from inside the native workspace and verify the
-injected Workspace comes from the native boundary, not compat inference.`)
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "outer",
+  "sdk": {"source": "dang"},
+  "source": "ci"
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithNewFile("ci/main.dang", `
+type Outer {
+  pub marker: String! {
+    "outer compat module"
+  }
+}
+`).
+				WithNewFile("app/.dagger/config.toml", "[modules]\n").
+				WithWorkdir("/work/app").
+				With(initDangBlueprint("paths", `
+type Paths {
+  pub workspacePath: String!
+  pub workspaceAddress: String!
+
+  new(ws: Workspace!) {
+    self.workspacePath = ws.path
+    self.workspaceAddress = ws.address
+    self
+  }
+}
+`))
+		})
+
+		out, err := ctr.With(daggerReportCall("workspace-path")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "app", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerReportCall("workspace-address")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "file:///work/app", strings.TrimSpace(out))
 	})
 }
 
@@ -120,18 +242,42 @@ type Paths {
 }
 `))
 
-		out, err := ctr.With(daggerCall("workspace-path")).Stdout(ctx)
+		out, err := ctr.With(daggerReportCall("workspace-path")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "app", strings.TrimSpace(out))
 
-		out, err = ctr.With(daggerCall("workspace-address")).Stdout(ctx)
+		out, err = ctr.With(daggerReportCall("workspace-address")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "file:///work/app", strings.TrimSpace(out))
 	})
 
 	t.Run("workspace findUp is rooted at the injected boundary", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: add a negative findUp boundary case here if the existing
-nested-workspace selection coverage is not considered sufficient.`)
+		c := connect(ctx, t)
+
+		ctr := workspaceBase(t, c).
+			WithExec([]string{"mkdir", "-p", "app/nested"}).
+			WithNewFile("app/nested/target.txt", "nested target").
+			WithWorkdir("/work/app").
+			With(initDangBlueprint("paths", `
+type Paths {
+  pub foundFromNested: String!
+  pub missingFromBoundary: String!
+
+  new(ws: Workspace!) {
+    self.foundFromNested = ws.findUp(name: "target.txt", from: "nested") ?? ""
+    self.missingFromBoundary = ws.findUp(name: "target.txt", from: "/") ?? ""
+    self
+  }
+}
+`))
+
+		out, err := ctr.With(daggerReportCall("found-from-nested")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "/app/nested/target.txt", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerReportCall("missing-from-boundary")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "", strings.TrimSpace(out))
 	})
 }
 
@@ -274,13 +420,13 @@ type Greeter {
 `))
 
 	t.Run("workspace arg is auto-injected", func(ctx context.Context, t *testctx.T) {
-		out, err := ctr.With(daggerCall("greeter", "read")).Stdout(ctx)
+		out, err := ctr.With(daggerReportCall("greeter", "read")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hello from workspace", strings.TrimSpace(out))
 	})
 
 	t.Run("workspace arg is not exposed as a CLI flag", func(ctx context.Context, t *testctx.T) {
-		help, err := ctr.With(daggerCall("greeter", "--help")).Stdout(ctx)
+		help, err := ctr.With(daggerReportCall("greeter", "--help")).Stdout(ctx)
 		require.NoError(t, err)
 		require.NotContains(t, help, "--source")
 	})
