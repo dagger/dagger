@@ -2789,9 +2789,9 @@ func TestPendingResultCallRefRecipeID(t *testing.T) {
 		},
 	}
 
-	parentRecipeID, err := parentCall.recipeID(nil)
+	parentRecipeID, err := parentCall.recipeID(t.Context(), nil)
 	assert.NilError(t, err)
-	childRecipeID, err := childCall.recipeID(nil)
+	childRecipeID, err := childCall.recipeID(t.Context(), nil)
 	assert.NilError(t, err)
 	assert.Assert(t, childRecipeID.Receiver() != nil)
 	assert.Equal(t, parentRecipeID.Digest(), childRecipeID.Receiver().Digest())
