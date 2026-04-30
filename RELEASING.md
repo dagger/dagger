@@ -128,20 +128,13 @@ to dagger.
   git pull $DAGGER_REPO_REMOTE "$RELEASE_BRANCH"
   ```
 
-- [ ] Determine the next release version (use `patch`/`minor`/`major` to set the release type):
+- [ ] Set the target release version:
 
   ```console
-  export ENGINE_VERSION="$(dagger call -m version next-release-version)"
+  export ENGINE_VERSION="v0.21.0"
 
   # this is required to interpolate $ENGINE_VERSION to the SDK release notes
   export CHANGIE_ENGINE_VERSION="$ENGINE_VERSION"
-  ```
-
-- [ ] Ensure that `.changes/.next` contains `$ENGINE_VERSION` - if it doesn't,
-      update it now!
-
-  ```console
-  grep -Fx "$ENGINE_VERSION" .changes/.next || { echo "ENGINE_VERSION env var does not match what's in .changes/.next"; false }
   ```
 
 - [ ] Ensure that the `release` toolchain's `targetVersion` customization in
@@ -156,7 +149,7 @@ to dagger.
 - [ ] Bump internal versions (sdks + docs + helm chart) to the target version
 
   ```console
-  dagger -y generate release:bump
+  dagger -y generate
   ```
 
 - [ ] Bump [Go SDK package commit](https://github.com/dagger/dagger/blob/becc3f0a6626cf6829ef96ded00d379d3126ecd4/core/sdk/go_sdk.go#L27) to the latest commit from the [dagger-go-sdk](https://github.com/dagger/dagger-go-sdk) repository.
@@ -221,14 +214,6 @@ to dagger.
   find . -name .changes -type d -exec git add {} \;
   find . -name CHANGELOG.md -type f -exec git add {} \;
   git commit -s -m "chore: add release notes for $ENGINE_VERSION"
-  ```
-
-- [ ] Update `.changes/.next` with the next release number if known and commit it -
-      otherwise, make the file empty (but don't remove it).
-
-  ```console
-  git add .changes/.next
-  git commit -s -m 'bump .next to next release version'
   ```
 
 - [ ] Push changes, and bring the prep PR out of draft:
