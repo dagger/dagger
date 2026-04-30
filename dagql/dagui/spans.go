@@ -121,7 +121,10 @@ type Span struct {
 
 // Snapshot returns a snapshot of the span's current state.
 func (span *Span) Snapshot() SpanSnapshot {
-	span.ChildCount = countChildren(span.ChildSpans, FrontendOpts{})
+	// Never decrease this value; it may have been calculated from a SQL query,
+	// indicating that the span has children but we didn't fetch them
+	// (incremental loading).
+	span.ChildCount = max(span.ChildCount, countChildren(span.ChildSpans, FrontendOpts{}))
 	span.Failed_, span.FailedReason_ = span.FailedReason()
 	span.Cached_, span.CachedReason_ = span.CachedReason()
 	span.Pending_, span.PendingReason_ = span.PendingReason()
