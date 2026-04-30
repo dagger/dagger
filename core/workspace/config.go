@@ -325,6 +325,9 @@ func ReadConfigValue(data []byte, key string) (string, error) {
 
 	value := tree.GetPath(strings.Split(key, "."))
 	if value == nil {
+		if defaultValue, ok := readMissingConfigDefault(tree, key); ok {
+			return defaultValue, nil
+		}
 		return "", fmt.Errorf("key %q is not set", key)
 	}
 
@@ -334,6 +337,19 @@ func ReadConfigValue(data []byte, key string) (string, error) {
 	default:
 		return formatScalarOutput(v), nil
 	}
+}
+
+func readMissingConfigDefault(tree *toml.Tree, key string) (string, bool) {
+	parts := strings.Split(key, ".")
+	if key == "defaults_from_dotenv" {
+		return "false", true
+	}
+	if len(parts) == 3 && parts[0] == "modules" && (parts[2] == "entrypoint" || parts[2] == "legacy-default-path") {
+		if tree.GetPath(parts[:2]) != nil {
+			return "false", true
+		}
+	}
+	return "", false
 }
 
 // WriteConfigValue writes a typed value to config TOML at the given dotted key.
