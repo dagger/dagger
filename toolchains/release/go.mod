@@ -6,14 +6,17 @@ replace github.com/dagger/dagger => ../..
 
 require (
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
-	github.com/dagger/otel-go v1.43.1-0.20260429155737-5d5b49c17409
+	github.com/dagger/otel-go v1.43.1-0.20260429234604-565634f4374b
 	github.com/go-task/slim-sprig/v3 v3.0.0
 	go.opentelemetry.io/otel/sdk v1.43.0
 	golang.org/x/mod v0.34.0
 	golang.org/x/sync v0.20.0
+	helm.sh/helm/v3 v3.18.4
+	sigs.k8s.io/yaml v1.4.0
 )
 
 require (
+	github.com/Masterminds/semver/v3 v3.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect

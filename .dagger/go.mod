@@ -9,7 +9,7 @@ replace (
 )
 
 require (
-	dagger.io/dagger v0.20.6-0.20260415192040-7058e9313c72
+	dagger.io/dagger v0.20.6
 	github.com/dagger/otel-go v1.43.1-0.20260427142032-2ff3f61a35cd
 	go.opentelemetry.io/otel/sdk v1.43.0
 )

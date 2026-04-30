@@ -11,6 +11,15 @@ namespace Dagger;
 class Check extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
+     * The type of check: 'check' for annotated checks, 'generate' for generate-as-checks
+     */
+    public function checkType(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('checkType');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'checkType');
+    }
+
+    /**
      * Whether the check completed
      */
     public function completed(): bool

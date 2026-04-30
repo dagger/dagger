@@ -1230,6 +1230,28 @@ class Changeset(Type):
 
 @typecheck
 class Check(Type):
+    async def check_type(self) -> str:
+        """The type of check: 'check' for annotated checks, 'generate' for
+        generate-as-checks
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("checkType", _args)
+        return await _ctx.execute(str)
+
     async def completed(self) -> bool:
         """Whether the check completed
 
@@ -5643,6 +5665,7 @@ class Env(Type):
         self,
         *,
         include: list[str] | None = None,
+        no_generate: bool | None = None,
     ) -> CheckGroup:
         """Return all checks defined by the installed modules
 
@@ -5654,9 +5677,13 @@ class Env(Type):
         ----------
         include:
             Only include checks matching the specified patterns
+        no_generate:
+            When true, only return annotated check functions; exclude
+            generate-as-checks
         """
         _args = [
             Arg("include", include, None),
+            Arg("noGenerate", no_generate, None),
         ]
         _ctx = self._select("checks", _args)
         return CheckGroup(_ctx)
@@ -10896,6 +10923,7 @@ class Module(Type):
         self,
         *,
         include: list[str] | None = None,
+        no_generate: bool | None = None,
     ) -> CheckGroup:
         """Return all checks defined by the module
 
@@ -10907,9 +10935,13 @@ class Module(Type):
         ----------
         include:
             Only include checks matching the specified patterns
+        no_generate:
+            When true, only return annotated check functions; exclude
+            generate-as-checks
         """
         _args = [
             Arg("include", include, None),
+            Arg("noGenerate", no_generate, None),
         ]
         _ctx = self._select("checks", _args)
         return CheckGroup(_ctx)
@@ -14616,6 +14648,7 @@ class Workspace(Type):
         self,
         *,
         include: list[str] | None = None,
+        no_generate: bool | None = None,
     ) -> CheckGroup:
         """Return all checks from modules loaded in the workspace.
 
@@ -14623,9 +14656,13 @@ class Workspace(Type):
         ----------
         include:
             Only include checks matching the specified patterns
+        no_generate:
+            When true, only return annotated check functions; exclude
+            generate-as-checks
         """
         _args = [
             Arg("include", include, None),
+            Arg("noGenerate", no_generate, None),
         ]
         _ctx = self._select("checks", _args)
         return CheckGroup(_ctx)

@@ -199,11 +199,11 @@ func (env *Env) WithoutInput(key string) *Env {
 }
 
 // Checks returns a CheckGroup from the main module
-func (env *Env) Checks(ctx context.Context, include []string) (*CheckGroup, error) {
+func (env *Env) Checks(ctx context.Context, include []string, noGenerate bool) (*CheckGroup, error) {
 	if env.MainModule.Self() == nil {
 		return nil, fmt.Errorf("no main module set on environment")
 	}
-	return NewCheckGroup(ctx, env.MainModule, include)
+	return NewCheckGroup(ctx, env.MainModule, include, noGenerate)
 }
 
 // Services returns an UpGroup from the main module
@@ -216,7 +216,7 @@ func (env *Env) Services(ctx context.Context, include []string) (*UpGroup, error
 
 // Check returns a single check by name from the main module
 func (env *Env) Check(ctx context.Context, name string) (*Check, error) {
-	checkGroup, err := env.Checks(ctx, []string{name})
+	checkGroup, err := env.Checks(ctx, []string{name}, false)
 	if err != nil {
 		return nil, err
 	}

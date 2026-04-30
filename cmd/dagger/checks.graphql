@@ -4,6 +4,7 @@ query CheckGroupListDetails($id: ID!) {
       list {
         name
         description
+        checkType
       }
     }
   }

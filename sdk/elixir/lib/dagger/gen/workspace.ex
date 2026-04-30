@@ -29,12 +29,14 @@ defmodule Dagger.Workspace do
   @doc """
   Return all checks from modules loaded in the workspace.
   """
-  @spec checks(t(), [{:include, [String.t()]}]) :: Dagger.CheckGroup.t()
+  @spec checks(t(), [{:include, [String.t()]}, {:no_generate, boolean() | nil}]) ::
+          Dagger.CheckGroup.t()
   def checks(%__MODULE__{} = workspace, optional_args \\ []) do
     query_builder =
       workspace.query_builder
       |> QB.select("checks")
       |> QB.maybe_put_arg("include", optional_args[:include])
+      |> QB.maybe_put_arg("noGenerate", optional_args[:no_generate])
 
     %Dagger.CheckGroup{
       query_builder: query_builder,

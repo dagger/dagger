@@ -73,13 +73,14 @@
       "customizations": [
         {
           "argument": "selectModule",
-          "default": "e2e/installers"
+          "default": "e2e/*"
         }
       ]
     },
     {
       "name": "helm",
-      "source": "toolchains/helm-dev"
+      "source": "github.com/dagger/helm@main",
+      "pin": "d0a7e172e8212b31c6061bb699495b1e8ba0958f"
     },
     {
       "name": "java-sdk",

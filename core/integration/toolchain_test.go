@@ -108,6 +108,83 @@ func (ToolchainSuite) TestToolchainSemanticIsolation(ctx context.Context, t *tes
 		require.NoError(t, err)
 		require.Contains(t, out, "this is the app configuration")
 	})
+
+	t.Run("constructor customization default changes invalidate omitted arg cache", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		selected := func(out string) string {
+			lines := strings.Split(strings.TrimSpace(out), "\n")
+			if len(lines) == 0 {
+				return ""
+			}
+			return strings.TrimSpace(lines[len(lines)-1])
+		}
+		daggerJSON := func(defaultValue string) string {
+			return fmt.Sprintf(`
+{
+  "name": "default-cache-repro",
+  "engineVersion": "v0.20.6",
+  "toolchains": [
+    {
+      "name": "probe",
+      "source": "tool",
+      "customizations": [
+        {
+          "argument": "value",
+          "default": %q
+        }
+      ]
+    }
+  ]
+}
+			`, defaultValue)
+		}
+
+		base := goGitBase(t, c).
+			WithWorkdir("/work/tool").
+			With(daggerExec("init", "--sdk=go", "--name=probe")).
+			WithNewFile("main.go", `package main
+
+type Probe struct {
+	Value string
+}
+
+func New(
+	// +optional
+	value string,
+) *Probe {
+	return &Probe{Value: value}
+}
+
+func (m *Probe) Selected() string {
+	return m.Value
+}
+`)
+
+		alpha := base.
+			WithWorkdir("/work").
+			WithNewFile("dagger.json", daggerJSON("alpha"))
+
+		out, err := alpha.
+			With(daggerExec("-s", "-m", ".", "call", "probe", "selected")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "alpha", selected(out))
+
+		beta := alpha.WithNewFile("dagger.json", daggerJSON("beta"))
+
+		out, err = beta.
+			With(daggerExec("-s", "-m", ".", "call", "probe", "selected")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "beta", selected(out))
+
+		out, err = beta.
+			With(daggerExec("-s", "-m", ".", "call", "probe", "--value", "beta", "selected")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "beta", selected(out))
+	})
 }
 
 func (ToolchainSuite) TestMultipleToolchains(ctx context.Context, t *testctx.T) {
@@ -171,6 +248,34 @@ func (ToolchainSuite) TestToolchainsWithSDK(ctx context.Context, t *testctx.T) {
 		// verify we can call a function from our blueprint
 		out, err = modGen.
 			With(daggerExec("call", "hello", "message")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello from blueprint")
+	})
+
+	// Regression test: a module must be able to call its toolchain through
+	// the generated SDK bindings, i.e. the toolchain's types must be present
+	// in the module's codegen schema. This worked in v0.20.3, broke in
+	// v0.20.4 when toolchains stopped being loaded as codegen deps.
+	t.Run("module code can call toolchain through generated bindings", func(ctx context.Context, t *testctx.T) {
+		setup := toolchainTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init", "--sdk=go", "--name=app", "--source=.")).
+			With(daggerExec("toolchain", "install", "../hello")).
+			WithNewFile("main.go", `package main
+
+import "context"
+
+type App struct{}
+
+// GreetFromToolchain invokes the toolchain's Message() through the Go
+// bindings, which requires the toolchain's types to be in the codegen schema.
+func (m *App) GreetFromToolchain(ctx context.Context) (string, error) {
+	return dag.Hello().Message(ctx)
+}
+`)
+		out, err := setup.
+			With(daggerExec("call", "greet-from-toolchain")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "hello from blueprint")
@@ -554,6 +659,104 @@ func (ToolchainSuite) TestToolchainIgnoreChecks(ctx context.Context, t *testctx.
 		require.NoError(t, err)
 		require.Regexp(t, `passing-check.*OK`, out)
 		require.Regexp(t, `passing-container.*OK`, out)
+	})
+}
+
+func (ToolchainSuite) TestToolchainIgnoreChecksGenerators(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	t.Run("ignore generate-as-checks via ignoreChecks config", func(ctx context.Context, t *testctx.T) {
+		// Set up test environment with hello-with-generate-checks as a toolchain
+		modGen := c.Container().
+			From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithExec([]string{"git", "init"}).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithDirectory(".", c.Host().Directory("./testdata/checks")).
+			WithDirectory("app", c.Directory()).
+			WithWorkdir("app").
+			With(daggerExec("init"))
+
+		// Install hello-with-generate-checks as a toolchain
+		modGen = modGen.With(daggerExec("toolchain", "install", "../hello-with-generate-checks"))
+
+		// Verify all items are visible by default (regular check + both generators)
+		out, err := modGen.
+			With(daggerExec("check", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello-with-generate-checks:passing-check")
+		require.Contains(t, out, "hello-with-generate-checks:empty-generate")
+		require.Contains(t, out, "hello-with-generate-checks:non-empty-generate")
+
+		// Now add ignoreChecks to filter out the failing generator
+		modGen = modGen.WithNewFile("dagger.json", `{
+  "name": "app",
+  "engineVersion": "v0.16.0",
+  "toolchains": [
+    {
+      "name": "hello-with-generate-checks",
+      "source": "../hello-with-generate-checks",
+      "ignoreChecks": [
+        "non-empty-generate"
+      ]
+    }
+  ]
+}`)
+
+		// List checks - the non-empty-generate should be filtered out
+		out, err = modGen.
+			With(daggerExec("check", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello-with-generate-checks:passing-check")
+		require.Contains(t, out, "hello-with-generate-checks:empty-generate")
+		require.NotContains(t, out, "non-empty-generate")
+
+		// Run all checks - should succeed since the failing generator is ignored
+		out, err = modGen.
+			With(daggerExec("--progress=report", "check")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, `passing-check.*OK`, out)
+		require.Regexp(t, `empty-generate.*OK`, out)
+		require.NotContains(t, out, "non-empty-generate")
+	})
+
+	t.Run("ignore generate-as-checks with glob pattern", func(ctx context.Context, t *testctx.T) {
+		modGen := c.Container().
+			From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithExec([]string{"git", "init"}).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithDirectory(".", c.Host().Directory("./testdata/checks")).
+			WithDirectory("app", c.Directory()).
+			WithWorkdir("app").
+			With(daggerExec("init"))
+
+		modGen = modGen.With(daggerExec("toolchain", "install", "../hello-with-generate-checks"))
+
+		// Exclude all generators with a glob pattern
+		modGen = modGen.WithNewFile("dagger.json", `{
+  "name": "app",
+  "engineVersion": "v0.16.0",
+  "toolchains": [
+    {
+      "name": "hello-with-generate-checks",
+      "source": "../hello-with-generate-checks",
+      "ignoreChecks": [
+        "*-generate"
+      ]
+    }
+  ]
+}`)
+
+		out, err := modGen.
+			With(daggerExec("check", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello-with-generate-checks:passing-check")
+		require.NotContains(t, out, "empty-generate")
+		require.NotContains(t, out, "non-empty-generate")
 	})
 }
 
