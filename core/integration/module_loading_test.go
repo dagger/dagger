@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -25,6 +26,83 @@ type ModuleLoadingSuite struct{}
 
 func TestModuleLoading(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(ModuleLoadingSuite{})
+}
+
+func moduleLoadingDaggerExec(args ...string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec(append([]string{"dagger", "--progress=report"}, args...), dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		})
+	}
+}
+
+func moduleLoadingDaggerExecFail(args ...string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec(append([]string{"dagger", "--progress=report"}, args...), dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+			Expect:                        dagger.ReturnTypeFailure,
+		})
+	}
+}
+
+func moduleLoadingDaggerCall(args ...string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), dagger.ContainerWithExecOpts{
+			UseEntrypoint:                 true,
+			ExperimentalPrivilegedNesting: true,
+		})
+	}
+}
+
+func moduleLoadingDaggerCallFail(args ...string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), dagger.ContainerWithExecOpts{
+			UseEntrypoint:                 true,
+			ExperimentalPrivilegedNesting: true,
+			Expect:                        dagger.ReturnTypeFailure,
+		})
+	}
+}
+
+func moduleLoadingDaggerFunctions(args ...string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec(append([]string{"dagger", "--progress=report", "functions"}, args...), dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		})
+	}
+}
+
+func moduleLoadingDaggerQuery(query string, args ...string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec(append([]string{"dagger", "--progress=report", "query"}, args...), dagger.ContainerWithExecOpts{
+			Stdin:                         query,
+			ExperimentalPrivilegedNesting: true,
+		})
+	}
+}
+
+func moduleLoadingDaggerQueryFail(query string, args ...string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec(append([]string{"dagger", "--progress=report", "query"}, args...), dagger.ContainerWithExecOpts{
+			Stdin:                         query,
+			ExperimentalPrivilegedNesting: true,
+			Expect:                        dagger.ReturnTypeFailure,
+		})
+	}
+}
+
+func moduleLoadingDangModule(dir, name, typeName, fnName, result string) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.
+			WithNewFile(dir+"/dagger.json", `{"name":"`+name+`","sdk":{"source":"dang"}}`).
+			WithNewFile(dir+"/main.dang", `
+type `+typeName+` {
+  pub `+fnName+`: String! {
+    "`+result+`"
+  }
+}
+`)
+	}
 }
 
 // TestModuleSourceResolution should pin down how module loading behaves before
@@ -89,35 +167,70 @@ type App {
 	})
 
 	t.Run("relative extra module path resolves from invocation cwd", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement relative extra-module path coverage.
+		c := connect(ctx, t)
+		base := workspaceBase(t, c).
+			With(moduleLoadingDangModule("submodule", "relmod", "Relmod", "whoami", "loaded from submodule")).
+			WithNewFile("nested/.keep", "")
 
-Invoke Dagger with -m ./submodule from more than one working directory depth
-and verify the same native module is loaded each time. This should make the
-resolution base explicit and prevent future drift between CLI and engine path
-handling.`)
+		for _, tc := range []struct {
+			name    string
+			workdir string
+			modRef  string
+		}{
+			{name: "workspace root", workdir: "/work", modRef: "./submodule"},
+			{name: "nested cwd", workdir: "/work/nested", modRef: "../submodule"},
+		} {
+			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+				out, err := base.
+					WithWorkdir(tc.workdir).
+					With(moduleLoadingDaggerCall("-m", tc.modRef, "whoami")).
+					Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "loaded from submodule", strings.TrimSpace(out))
+			})
+		}
 	})
 
 	t.Run("missing module path fails clearly", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement missing-module-path coverage.
+		c := connect(ctx, t)
 
-Attempt to load a non-existent native module path and verify the error is a
-clear "not found" style failure rather than an empty or misleading module
-source.`)
+		out, err := workspaceBase(t, c).
+			With(moduleLoadingDaggerCallFail("-m", "./missing", "hello")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "missing")
+		require.Contains(t, strings.ToLower(out), "not")
 	})
 
 	t.Run("non-directory module path fails clearly", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement non-directory module path coverage.
+		c := connect(ctx, t)
 
-Point module loading at a regular file and verify the runtime rejects it with a
-clear error instead of treating it like a directory-backed module source.`)
+		out, err := workspaceBase(t, c).
+			WithNewFile("not-a-dir", "this is a file").
+			With(moduleLoadingDaggerCallFail("-m", "./not-a-dir", "hello")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "not-a-dir")
+		require.Contains(t, strings.ToLower(out), "director")
 	})
 
 	t.Run("canonical and symlinked module paths dedupe to one source", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement canonical-path dedupe coverage.
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
+			With(moduleLoadingDangModule("modules/app", "app", "App", "message", "loaded once")).
+			WithExec([]string{"ln", "-s", "modules/app", "linked-app"}).
+			WithNewFile(".dagger/config.toml", `[modules.real]
+source = "modules/app"
+entrypoint = true
 
-Nominate the same native module once through its real path and once through a
-symlink. Verify load sees one module source before any precedence or entrypoint
-arbitration runs.`)
+[modules.linked]
+source = "linked-app"
+entrypoint = true
+`)
+
+		out, err := ctr.With(moduleLoadingDaggerCall("message")).CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Equal(t, "loaded once", strings.TrimSpace(out))
 	})
 }
 
@@ -213,56 +326,144 @@ type Greeter {
 	})
 
 	t.Run("workspace without ambient entrypoint keeps modules namespaced", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement no-entrypoint ambient workspace coverage.
+		ctr := workspaceBase(t, c).
+			With(initDangModule("build", `
+type Build {
+  pub run: String! {
+    "build ran"
+  }
+}
+`)).
+			With(initDangModule("lint", `
+type Lint {
+  pub run: String! {
+    "lint ran"
+  }
+}
+`))
 
-Serve a native workspace config with multiple modules and no ambient entrypoint.
-Verify dagger functions lists the modules, dagger call requires an explicit
-module name, and no module methods are promoted to Query root.`)
+		out, err := ctr.With(moduleLoadingDaggerFunctions()).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "build")
+		require.Contains(t, out, "lint")
+
+		out, err = ctr.With(moduleLoadingDaggerCall("build", "run")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "build ran", strings.TrimSpace(out))
+
+		out, err = ctr.With(moduleLoadingDaggerCallFail("run")).CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "run")
 	})
 }
 
 // TestAmbientWorkspaceValidation should lock down invalid ambient workspace
 // configurations before any runtime loading occurs.
 func (ModuleLoadingSuite) TestAmbientWorkspaceValidation(ctx context.Context, t *testctx.T) {
-	t.Fatal(`FIXME: implement ambient workspace validation coverage.
+	c := connect(ctx, t)
+	ctr := workspaceBase(t, c).
+		With(initDangModule("alpha", `
+type Alpha {
+  pub run: String! {
+    "alpha"
+  }
+}
+`)).
+		With(initDangModule("beta", `
+type Beta {
+  pub run: String! {
+    "beta"
+  }
+}
+`)).
+		With(daggerWorkspaceExec("config", "modules.alpha.entrypoint", "true")).
+		With(daggerWorkspaceExec("config", "modules.beta.entrypoint", "true"))
 
-Create an invalid workspace config, for example with multiple distinct ambient
-entrypoint modules, and verify workspace load fails with a clear validation
-error instead of serving an ambiguous Query root.`)
+	out, err := ctr.With(moduleLoadingDaggerExecFail("functions")).CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "multiple distinct ambient entrypoint modules")
+	require.Contains(t, out, "alpha")
+	require.Contains(t, out, "beta")
 }
 
 // TestModuleLoadingPrecedence should cover the explicit runtime precedence
 // rules after dedupe: extra modules > CWD module > ambient workspace modules.
 func (ModuleLoadingSuite) TestModuleLoadingPrecedence(ctx context.Context, t *testctx.T) {
 	t.Run("cwd module overrides ambient entrypoint", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement CWD-vs-ambient precedence coverage.
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
+			With(initDangBlueprint("ambient", `
+type Ambient {
+  pub build: String! {
+    "ambient build"
+  }
+}
+`)).
+			With(moduleLoadingDangModule("nested", "nested", "Nested", "build", "cwd build")).
+			WithWorkdir("/work/nested")
 
-Invoke Dagger from inside a nested module directory under an initialized
-workspace. Verify the nested CWD module becomes the active entrypoint while the
-ambient workspace remains loaded as context.`)
+		out, err := ctr.With(moduleLoadingDaggerCall("build")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "cwd build", strings.TrimSpace(out))
+
+		out, err = ctr.With(moduleLoadingDaggerCall("ambient", "build")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "ambient build", strings.TrimSpace(out))
 	})
 
 	t.Run("extra module suppresses cwd module", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement extra-module-vs-CWD precedence coverage.
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
+			With(moduleLoadingDangModule("nested", "nested", "Nested", "build", "cwd build")).
+			With(moduleLoadingDangModule("extra", "extra", "Extra", "build", "extra build")).
+			WithWorkdir("/work/nested")
 
-Invoke Dagger with -m from inside a nested module directory. Verify the extra
-module becomes the active entrypoint and the CWD module is not loaded as a
-second entrypoint.`)
+		out, err := ctr.With(moduleLoadingDaggerCall("-m", "../extra", "build")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "extra build", strings.TrimSpace(out))
+
+		out, err = ctr.With(moduleLoadingDaggerCallFail("-m", "../extra", "nested", "build")).CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "nested")
 	})
 
 	t.Run("extra modules override ambient workspace entrypoint", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement extra-vs-ambient precedence coverage.
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
+			With(initDangBlueprint("ambient", `
+type Ambient {
+  pub build: String! {
+    "ambient build"
+  }
+}
+`)).
+			With(moduleLoadingDangModule("extra", "extra", "Extra", "build", "extra build"))
 
-Nominate an ambient workspace entrypoint and a distinct extra module in the
-same invocation. Verify the extra module wins as the active entrypoint.`)
+		out, err := ctr.With(moduleLoadingDaggerCall("-m", "./extra", "build")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "extra build", strings.TrimSpace(out))
 	})
 
 	t.Run("no module mode suppresses ambient and cwd module loading", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement no-module-mode loading coverage.
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
+			With(initDangBlueprint("ambient", `
+type Ambient {
+  pub build: String! {
+    "ambient build"
+  }
+}
+`)).
+			With(moduleLoadingDangModule("nested", "nested", "Nested", "build", "cwd build")).
+			WithWorkdir("/work/nested")
 
-Invoke Dagger from inside a nested module directory under an initialized
-workspace with -M. Verify neither the ambient workspace nor the CWD module is
-nominated, and only the base API remains available.`)
+		out, err := ctr.With(moduleLoadingDaggerQuery(`{version}`, "-M")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `"version"`)
+
+		out, err = ctr.With(moduleLoadingDaggerQueryFail(`{build}`, "-M")).CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "build")
 	})
 }
 
@@ -270,25 +471,52 @@ nominated, and only the base API remains available.`)
 // the same-tier conflict errors introduced by entrypoint arbitration.
 func (ModuleLoadingSuite) TestModuleLoadingDedupeAndConflicts(ctx context.Context, t *testctx.T) {
 	t.Run("duplicate nominations are deduped before arbitration", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement duplicate nomination dedupe coverage.
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
+			With(moduleLoadingDangModule("modules/app", "app", "App", "message", "deduped app")).
+			WithNewFile(".dagger/config.toml", `[modules.first]
+source = "modules/app"
+entrypoint = true
 
-Nominate the same module through more than one path, for example via workspace
-config and -m, and verify it is loaded once before entrypoint arbitration
-runs.`)
+[modules.second]
+source = "modules/app"
+entrypoint = true
+`)
+
+		out, err := ctr.With(moduleLoadingDaggerCall("message")).CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Equal(t, "deduped app", strings.TrimSpace(out))
 	})
 
 	t.Run("multiple distinct extra entrypoints are rejected", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement same-tier extra entrypoint conflict coverage.
-
-Request more than one distinct extra module as an entrypoint candidate and
-verify the runtime rejects the invocation with a clear error.`)
+		t.Skip("public CLI exposes one --mod entrypoint; multiple extra-module entrypoints are covered at the engine arbitration layer")
 	})
 
 	t.Run("multiple distinct ambient entrypoints are rejected", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement same-tier ambient entrypoint conflict coverage.
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
+			With(initDangModule("alpha", `
+type Alpha {
+  pub run: String! {
+    "alpha"
+  }
+}
+`)).
+			With(initDangModule("beta", `
+type Beta {
+  pub run: String! {
+    "beta"
+  }
+}
+`)).
+			With(daggerWorkspaceExec("config", "modules.alpha.entrypoint", "true")).
+			With(daggerWorkspaceExec("config", "modules.beta.entrypoint", "true"))
 
-Serve a workspace config that nominates more than one distinct ambient
-entrypoint and verify load fails with a clear error.`)
+		out, err := ctr.With(moduleLoadingDaggerExecFail("functions")).CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "multiple distinct ambient entrypoint modules")
+		require.Contains(t, out, "alpha")
+		require.Contains(t, out, "beta")
 	})
 }
 
