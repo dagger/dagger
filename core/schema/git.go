@@ -1251,7 +1251,10 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		}
 	}
 
-	inst, err = inst.WithContentDigest(ctx, calcGitContentDigest(parent.Self()))
+	dgst := calcGitContentDigest(parent.Self())
+	repo := parent.Self().Repo.Self()
+	fmt.Printf("ACB gitSchema.tree %+v url=%s returning digest %s\n", parent.Self().Ref, repo.URL.Value.String(), dgst)
+	inst, err = inst.WithContentDigest(ctx, dgst)
 	if err != nil {
 		return inst, err
 	}
