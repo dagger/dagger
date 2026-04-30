@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/otel-go/oteltestctx"
 	"github.com/dagger/testctx"
-	"github.com/dagger/testctx/oteltest"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
@@ -18,8 +18,7 @@ type SequentialSuite struct{}
 func TestSequential(t *testing.T) {
 	testctx.New(t,
 		// omitting testctx.WithParallel middleware to get the desired sequential behavior
-		oteltest.WithTracing[*testing.T](),
-		oteltest.WithLogging[*testing.T](),
+		oteltestctx.WithTracing[*testing.T](),
 	).RunTests(SequentialSuite{})
 }
 

@@ -61,9 +61,8 @@ require (
 	github.com/containernetworking/plugins v1.9.0
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/creack/pty v1.1.24
-	github.com/dagger/otel-go v1.41.1-0.20260303185236-072f65948887
+	github.com/dagger/otel-go v1.43.1-0.20260429234604-565634f4374b
 	github.com/dagger/testctx v0.1.2
-	github.com/dagger/testctx/oteltest v0.1.2
 	github.com/dave/jennifer v1.7.1
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/distribution/reference v0.6.0
@@ -165,7 +164,7 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.57.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0
-	go.opentelemetry.io/otel v1.42.0
+	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.17.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.41.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.41.0
@@ -173,11 +172,11 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.41.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.41.0
 	go.opentelemetry.io/otel/log v0.17.0
-	go.opentelemetry.io/otel/metric v1.42.0
-	go.opentelemetry.io/otel/sdk v1.42.0
+	go.opentelemetry.io/otel/metric v1.43.0
+	go.opentelemetry.io/otel/sdk v1.43.0
 	go.opentelemetry.io/otel/sdk/log v0.17.0
-	go.opentelemetry.io/otel/sdk/metric v1.42.0
-	go.opentelemetry.io/otel/trace v1.42.0
+	go.opentelemetry.io/otel/sdk/metric v1.43.0
+	go.opentelemetry.io/otel/trace v1.43.0
 	go.opentelemetry.io/proto/otlp v1.9.0
 	golang.org/x/crypto v0.49.0
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546
