@@ -3339,6 +3339,22 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 		})
 	}
 
+	// Also load toolchains as schema contributors so a module's generated
+	// SDK bindings expose their types. This matches v0.20.3 behavior, which
+	// regressed when the workspace refactor moved toolchain serving to the
+	// session layer but stopped including toolchain schemas in codegen.
+	tcMods := make([]dagql.Result[*core.Module], len(src.Self().Toolchains))
+	for i, tcSrc := range src.Self().Toolchains {
+		if tcSrc.Self() == nil {
+			continue
+		}
+		eg.Go(func() error {
+			return dag.Select(ctx, tcSrc, &tcMods[i],
+				dagql.Selector{Field: "asModule"},
+			)
+		})
+	}
+
 	if err := eg.Wait(); err != nil {
 		return nil, fmt.Errorf("failed to load module dependencies: %w", err)
 	}
@@ -3349,7 +3365,7 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	}
 	// Start from the default deps (core), applying the correct schema
 	// version view for this module's engine version.
-	mods := make([]core.Mod, 0, len(defaultDeps.Mods())+len(depMods))
+	mods := make([]core.Mod, 0, len(defaultDeps.Mods())+len(depMods)+len(tcMods))
 	for _, m := range defaultDeps.Mods() {
 		if coreMod, ok := m.(*CoreMod); ok {
 			// this is needed so that a module's dependency on the core
@@ -3363,6 +3379,12 @@ func (s *moduleSourceSchema) loadDependencyModules(ctx context.Context, src dagq
 	}
 	for _, depMod := range depMods {
 		mods = append(mods, depMod.Self())
+	}
+	for _, tcMod := range tcMods {
+		if tcMod.Self() == nil {
+			continue
+		}
+		mods = append(mods, tcMod.Self())
 	}
 	return core.NewSchemaBuilder(query, mods), nil
 }
