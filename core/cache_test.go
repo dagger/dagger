@@ -265,7 +265,7 @@ func TestCacheVolumeUsageIdentityUsesLiveSnapshotID(t *testing.T) {
 		},
 	}
 	cache := NewCache("cache-key", "ns", dagql.Optional[DirectoryID]{}, CacheSharingModeShared, "")
-	cache.snapshot = ref
+	cache.snapshots = []bkcache.MutableRef{ref}
 
 	require.Equal(t, []string{"snapshot-123"}, cache.CacheUsageIdentities())
 }
@@ -279,7 +279,7 @@ func TestCacheVolumeUsageSizeUsesLiveSnapshotID(t *testing.T) {
 		size:       42,
 	}
 	cache := NewCache("cache-key", "ns", dagql.Optional[DirectoryID]{}, CacheSharingModeShared, "")
-	cache.snapshot = &cacheVolumeTestMutableRef{cacheVolumeTestImmutableRef: *ref}
+	cache.snapshots = []bkcache.MutableRef{&cacheVolumeTestMutableRef{cacheVolumeTestImmutableRef: *ref}}
 
 	size, ok, err := cache.CacheUsageSize(context.Background(), "snapshot-123")
 	require.NoError(t, err)

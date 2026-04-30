@@ -3,7 +3,10 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -23,10 +26,18 @@ type CacheVolume struct {
 	Sharing   CacheSharingMode
 	Owner     string
 
-	mu       sync.Mutex
-	snapshot bkcache.MutableRef
+	mu sync.Mutex
+	// Shared and locked caches use the first snapshot. Private caches keep
+	// extra backing snapshots so concurrent writers do not mount the same ref.
+	snapshots []bkcache.MutableRef
+
+	// selector is the subpath inside each backing snapshot to mount. Most
+	// cache volumes mount the snapshot root; source-backed cache volumes can
+	// point at a subdirectory of the source snapshot.
 	selector string
 }
+
+const cacheVolumeRootSelector = "/"
 
 type cacheVolumeMount struct {
 	ref      bkcache.MutableRef
@@ -70,65 +81,77 @@ func (cache *CacheVolume) OnRelease(ctx context.Context) error {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
-	if cache.snapshot == nil {
-		return nil
+	var rerr error
+	for _, ref := range cache.snapshots {
+		if ref == nil {
+			continue
+		}
+		rerr = errors.Join(rerr, ref.Release(ctx))
 	}
-	err := cache.snapshot.Release(ctx)
-	cache.snapshot = nil
-	return err
+	cache.snapshots = nil
+	return rerr
 }
 
 func (cache *CacheVolume) getSnapshot() bkcache.MutableRef {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
-	return cache.snapshot
+	if len(cache.snapshots) == 0 {
+		return nil
+	}
+	return cache.snapshots[0]
 }
 
 func (cache *CacheVolume) getSnapshotSelector() string {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
-	if cache.selector == "" {
-		return "/"
-	}
-	return cache.selector
+	return cache.snapshotSelectorLocked()
 }
 
 func (cache *CacheVolume) CacheUsageSize(ctx context.Context, identity string) (int64, bool, error) {
 	cache.mu.Lock()
-	snapshot := cache.snapshot
+	snapshots := append([]bkcache.MutableRef(nil), cache.snapshots...)
 	cache.mu.Unlock()
-	if snapshot == nil || snapshot.SnapshotID() != identity {
-		return 0, false, nil
+	for _, ref := range snapshots {
+		if ref == nil || ref.SnapshotID() != identity {
+			continue
+		}
+		size, err := ref.Size(ctx)
+		if err != nil {
+			return 0, false, err
+		}
+		return size, true, nil
 	}
-	size, err := snapshot.Size(ctx)
-	if err != nil {
-		return 0, false, err
-	}
-	return size, true, nil
+	return 0, false, nil
 }
 
 func (cache *CacheVolume) CacheUsageIdentities() []string {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
-	if cache.snapshot == nil {
-		return nil
+	identities := make([]string, 0, len(cache.snapshots))
+	for _, ref := range cache.snapshots {
+		if ref == nil {
+			continue
+		}
+		identities = append(identities, ref.SnapshotID())
 	}
-	return []string{cache.snapshot.SnapshotID()}
+	return identities
 }
 
 func (cache *CacheVolume) PersistedSnapshotRefLinks() []dagql.PersistedSnapshotRefLink {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
-	if cache.snapshot == nil {
-		return nil
+	links := make([]dagql.PersistedSnapshotRefLink, 0, len(cache.snapshots))
+	for i, ref := range cache.snapshots {
+		if ref == nil {
+			continue
+		}
+		links = append(links, dagql.PersistedSnapshotRefLink{
+			RefKey: ref.SnapshotID(),
+			Role:   "snapshot:" + strconv.Itoa(i),
+		})
 	}
-	return []dagql.PersistedSnapshotRefLink{
-		{
-			RefKey: cache.snapshot.SnapshotID(),
-			Role:   "snapshot",
-		},
-	}
+	return links
 }
 
 type persistedCacheVolumePayload struct {
@@ -193,6 +216,7 @@ func (*CacheVolume) DecodePersistedObject(ctx context.Context, dag *dagql.Server
 		persisted.Sharing,
 		persisted.Owner,
 	)
+	cache.selector = persisted.Selector
 	if resultID == 0 {
 		return cache, nil
 	}
@@ -200,24 +224,38 @@ func (*CacheVolume) DecodePersistedObject(ctx context.Context, dag *dagql.Server
 	if err != nil {
 		return nil, err
 	}
+	type snapshotLink struct {
+		index int
+		link  dagql.PersistedSnapshotRefLink
+	}
+	snapshotLinks := make([]snapshotLink, 0, len(links))
 	for _, link := range links {
-		if link.Role != "snapshot" {
+		index, ok := strings.CutPrefix(link.Role, "snapshot:")
+		if !ok {
 			continue
 		}
+		i, err := strconv.Atoi(index)
+		if err != nil || i < 0 {
+			return nil, fmt.Errorf("decode persisted cache volume snapshot role %q", link.Role)
+		}
+		snapshotLinks = append(snapshotLinks, snapshotLink{
+			index: i,
+			link:  link,
+		})
+	}
+	sort.Slice(snapshotLinks, func(i, j int) bool {
+		return snapshotLinks[i].index < snapshotLinks[j].index
+	})
+	for _, snapshotLink := range snapshotLinks {
 		query, err := persistedDecodeQuery(dag)
 		if err != nil {
 			return nil, err
 		}
-		ref, err := query.SnapshotManager().GetMutableBySnapshotID(ctx, link.RefKey, bkcache.NoUpdateLastUsed)
+		ref, err := query.SnapshotManager().GetMutableBySnapshotID(ctx, snapshotLink.link.RefKey, bkcache.NoUpdateLastUsed)
 		if err != nil {
-			return nil, fmt.Errorf("reopen persisted cache volume snapshot %q: %w", link.RefKey, err)
+			return nil, fmt.Errorf("reopen persisted cache volume snapshot %q: %w", snapshotLink.link.RefKey, err)
 		}
-		cache.snapshot = ref
-		cache.selector = persisted.Selector
-		if cache.selector == "" {
-			cache.selector = "/"
-		}
-		break
+		cache.snapshots = append(cache.snapshots, ref)
 	}
 	return cache, nil
 }
@@ -227,11 +265,17 @@ func (cache *CacheVolume) CacheUsageMayChange() bool {
 }
 
 func (cache *CacheVolume) invalidateSnapshotSize(ctx context.Context) error {
-	snapshot := cache.getSnapshot()
-	if snapshot == nil {
-		return nil
+	cache.mu.Lock()
+	snapshots := append([]bkcache.MutableRef(nil), cache.snapshots...)
+	cache.mu.Unlock()
+	var rerr error
+	for _, ref := range snapshots {
+		if ref == nil {
+			continue
+		}
+		rerr = errors.Join(rerr, ref.InvalidateSize(ctx))
 	}
-	return snapshot.InvalidateSize(ctx)
+	return rerr
 }
 
 func (cache *CacheVolume) Sync(ctx context.Context) error {
@@ -239,18 +283,27 @@ func (cache *CacheVolume) Sync(ctx context.Context) error {
 }
 
 func (cache *CacheVolume) acquireMount(ctx context.Context) (*cacheVolumeMount, error) {
-	if cache.getSnapshot() == nil {
-		if err := cache.InitializeSnapshot(ctx); err != nil {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
+	if len(cache.snapshots) == 0 {
+		ref, err := cache.appendSnapshotLocked(ctx)
+		if err != nil {
 			return nil, err
 		}
+		return &cacheVolumeMount{
+			ref:      ref,
+			selector: cache.snapshotSelectorLocked(),
+		}, nil
 	}
-	snapshot := cache.getSnapshot()
-	if snapshot == nil {
+
+	ref := cache.snapshots[0]
+	if ref == nil {
 		return nil, fmt.Errorf("cache volume %q has nil snapshot", cache.Key)
 	}
 	return &cacheVolumeMount{
-		ref:      snapshot,
-		selector: cache.getSnapshotSelector(),
+		ref:      ref,
+		selector: cache.snapshotSelectorLocked(),
 	}, nil
 }
 
@@ -258,24 +311,28 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
-	if cache.snapshot != nil {
+	if len(cache.snapshots) > 0 {
 		return nil
 	}
+	_, err := cache.appendSnapshotLocked(ctx)
+	return err
+}
 
+func (cache *CacheVolume) appendSnapshotLocked(ctx context.Context) (bkcache.MutableRef, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var source dagql.ObjectResult[*Directory]
 	if cache.Source.Valid {
 		srv, err := CurrentDagqlServer(ctx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		source, err = cache.Source.Value.Load(ctx, srv)
 		if err != nil {
-			return fmt.Errorf("failed to load cache volume source: %w", err)
+			return nil, fmt.Errorf("failed to load cache volume source: %w", err)
 		}
 	}
 
@@ -283,16 +340,16 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 		if source.Self() == nil {
 			srv, err := CurrentDagqlServer(ctx)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			if err := srv.Select(ctx, srv.Root(), &source, dagql.Selector{Field: "directory"}); err != nil {
-				return fmt.Errorf("failed to create scratch source directory for cache owner: %w", err)
+				return nil, fmt.Errorf("failed to create scratch source directory for cache owner: %w", err)
 			}
 		}
 
 		srv, err := CurrentDagqlServer(ctx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		chowned := dagql.ObjectResult[*Directory]{}
 		if err := srv.Select(ctx, source, &chowned, dagql.Selector{
@@ -302,31 +359,31 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 				{Name: "owner", Value: dagql.String(cache.Owner)},
 			},
 		}); err != nil {
-			return fmt.Errorf("failed to chown cache source directory: %w", err)
+			return nil, fmt.Errorf("failed to chown cache source directory: %w", err)
 		}
 		source = chowned
 	}
 
-	sourceSelector := "/"
+	sourceSelector := cacheVolumeRootSelector
 	var sourceRef bkcache.ImmutableRef
 	if source.Self() != nil {
 		dagCache, err := dagql.EngineCache(ctx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if err := dagCache.Evaluate(ctx, source); err != nil {
-			return fmt.Errorf("evaluate cache source directory: %w", err)
+			return nil, fmt.Errorf("evaluate cache source directory: %w", err)
 		}
 		sourceSelector, err = source.Self().Dir.GetOrEval(ctx, source.Result)
 		if err != nil {
-			return fmt.Errorf("failed to get cache source selector: %w", err)
+			return nil, fmt.Errorf("failed to get cache source selector: %w", err)
 		}
 		if sourceSelector == "" {
-			sourceSelector = "/"
+			sourceSelector = cacheVolumeRootSelector
 		}
 		sourceRef, err = source.Self().Snapshot.GetOrEval(ctx, source.Result)
 		if err != nil {
-			return fmt.Errorf("failed to get cache source snapshot: %w", err)
+			return nil, fmt.Errorf("failed to get cache source snapshot: %w", err)
 		}
 	}
 
@@ -338,15 +395,19 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 		bkcache.WithDescription(fmt.Sprintf("cache volume %q", cache.Key)),
 	)
 	if err != nil {
-		return fmt.Errorf("failed to initialize cache volume snapshot: %w", err)
+		return nil, fmt.Errorf("failed to initialize cache volume snapshot: %w", err)
 	}
 
-	cache.snapshot = newRef
-	if sourceSelector == "" {
-		sourceSelector = "/"
-	}
 	cache.selector = sourceSelector
-	return nil
+	cache.snapshots = append(cache.snapshots, newRef)
+	return newRef, nil
+}
+
+func (cache *CacheVolume) snapshotSelectorLocked() string {
+	if cache.selector == "" {
+		return cacheVolumeRootSelector
+	}
+	return cache.selector
 }
 
 type CacheSharingMode string
