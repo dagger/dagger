@@ -270,8 +270,9 @@ type SpanSnapshot struct {
 	Ignore       bool `json:",omitempty"`
 
 	// Test attributes
-	TestCaseName  string `json:",omitempty"`
-	TestSuiteName string `json:",omitempty"`
+	TestCaseName  string     `json:",omitempty"`
+	TestSuiteName string     `json:",omitempty"`
+	TestStatus    TestStatus `json:",omitempty"`
 
 	Boundary    bool `json:",omitempty"`
 	Reveal      bool `json:",omitempty"`
@@ -423,6 +424,9 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case string(semconv.TestSuiteNameKey):
 		snapshot.TestSuiteName = val.(string)
 
+	case string(semconv.TestSuiteRunStatusKey), string(semconv.TestCaseResultStatusKey):
+		snapshot.TestStatus = mergeTestStatus(snapshot.TestStatus, normalizeTestStatus(val.(string)))
+
 	case "rpc.service":
 		// encapsulate these by default; we only maybe want to see these if their
 		// parent failed, since some happy paths might involve _expected_ failures
@@ -528,6 +532,10 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 
 	// Update RollUp state for ancestors incrementally
 	span.updateRollUpAncestors()
+
+	if span.db != nil {
+		span.db.noteTestSpanUpdated(span)
+	}
 }
 
 // currentStateCategory determines the span's current state category for rollup counting
