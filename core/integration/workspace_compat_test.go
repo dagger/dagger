@@ -8,6 +8,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -28,6 +29,102 @@ type WorkspaceCompatSuite struct{}
 
 func TestWorkspaceCompat(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(WorkspaceCompatSuite{})
+}
+
+func compatDaggerExec(args ...string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec(append([]string{"dagger", "--progress=report"}, args...), dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		})
+	}
+}
+
+func compatDaggerExecFail(args ...string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec(append([]string{"dagger", "--progress=report"}, args...), dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+			Expect:                        dagger.ReturnTypeFailure,
+		})
+	}
+}
+
+func compatDaggerCall(args ...string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec(append([]string{"dagger", "--progress=report", "call"}, args...), dagger.ContainerWithExecOpts{
+			UseEntrypoint:                 true,
+			ExperimentalPrivilegedNesting: true,
+		})
+	}
+}
+
+func legacyDangModule(dir, name, typeName, message string) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.
+			WithNewFile(dir+"/dagger.json", `{"name":"`+name+`","sdk":{"source":"dang"}}`).
+			WithNewFile(dir+"/main.dang", `
+type `+typeName+` {
+  pub message: String! {
+    "`+message+`"
+  }
+}
+`)
+	}
+}
+
+func legacyCompatDangSource(t testing.TB, c *dagger.Client, message string) *dagger.Container {
+	t.Helper()
+
+	return legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "sdk": {"source": "dang"},
+  "source": "ci"
+}`, func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithNewFile("ci/main.dang", `
+type Myapp {
+  pub greet: String! {
+    "`+message+`"
+  }
+}
+`)
+	})
+}
+
+func legacySDKOnlyDangSource(t testing.TB, c *dagger.Client, message string) *dagger.Container {
+	t.Helper()
+
+	return legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "sdk": {"source": "dang"}
+}`, func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithNewFile("main.dang", `
+type Myapp {
+  pub greet: String! {
+    "`+message+`"
+  }
+}
+`)
+	})
+}
+
+func legacyCompatRemoteRef(ctx context.Context, t *testctx.T, c *dagger.Client, content *dagger.Directory) string {
+	t.Helper()
+
+	gitSrv, _ := gitSmartHTTPServiceDirAuth(ctx, t, c, "", makeGitDir(c, content, "main"), "", nil)
+	gitSrv, err := gitSrv.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = gitSrv.Stop(ctx) })
+
+	shortHost, err := gitSrv.Hostname(ctx)
+	require.NoError(t, err)
+
+	getentOut, err := c.Container().From(alpineImage).
+		WithExec([]string{"getent", "hosts", shortHost}).
+		Stdout(ctx)
+	require.NoError(t, err, "could not resolve git service hostname %q", shortHost)
+
+	fields := strings.Fields(getentOut)
+	require.NotEmpty(t, fields, "unexpected getent output: %q", getentOut)
+	return "http://" + fields[0] + "/repo.git@main"
 }
 
 func legacyBlueprintTestEnv(t *testctx.T, c *dagger.Client) *dagger.Container {
@@ -130,27 +227,87 @@ func (WorkspaceCompatSuite) TestLegacyBlueprintInit(ctx context.Context, t *test
 // compat workspace and which do not.
 func (WorkspaceCompatSuite) TestCompatDetection(ctx context.Context, t *testctx.T) {
 	t.Run("blueprint config creates a compat workspace", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement compat detection coverage for legacy blueprint configs.`)
+		c := connect(ctx, t)
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "app",
+  "blueprint": {
+    "name": "blueprint",
+    "source": "./blueprint"
+  }
+}`, legacyDangModule("blueprint", "blueprint", "Blueprint", "hello from blueprint"))
+
+		out, err := ctr.With(compatDaggerCall("message")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from blueprint", strings.TrimSpace(out))
 	})
 
 	t.Run("toolchains config creates a compat workspace", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement compat detection coverage for legacy toolchain configs.`)
+		c := connect(ctx, t)
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "app",
+  "toolchains": [
+    {
+      "name": "toolchain",
+      "source": "./toolchain"
+    }
+  ]
+}`, legacyDangModule("toolchain", "toolchain", "Toolchain", "hello from toolchain"))
+
+		out, err := ctr.With(compatDaggerCall("toolchain", "message")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from toolchain", strings.TrimSpace(out))
 	})
 
 	t.Run("non-dot source creates a compat workspace", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement compat detection coverage for legacy non-dot source configs.`)
+		c := connect(ctx, t)
+		ctr := legacyCompatDangSource(t, c, "hello from compat source")
+
+		out, err := ctr.With(compatDaggerCall("greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from compat source", strings.TrimSpace(out))
 	})
 
 	t.Run("sdk-only root source does not create a compat workspace", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement the negative compat detection case for sdk-only root-source modules.`)
+		c := connect(ctx, t)
+		ctr := legacySDKOnlyDangSource(t, c, "hello from root source")
+
+		out, err := ctr.With(compatDaggerCall("greet")).CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "hello from root source")
+		require.NotContains(t, out, "inferring from dagger.json")
 	})
 
 	t.Run("native workspace config suppresses compat inference", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement native-config-wins coverage.
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
+			WithNewFile("dagger.json", `{
+  "name": "legacy",
+  "sdk": {"source": "dang"},
+  "source": "legacy-src"
+}`).
+			WithNewFile("legacy-src/main.dang", `
+type Legacy {
+  pub greet: String! {
+    "hello from legacy module"
+  }
+}
+`).
+			WithNewFile(".dagger/config.toml", `[modules.native]
+source = "modules/native"
+`).
+			WithNewFile(".dagger/modules/native/dagger.json", `{"name":"native","sdk":{"source":"dang"}}`).
+			WithNewFile(".dagger/modules/native/main.dang", `
+type Native {
+  pub greet: String! {
+    "hello from native workspace"
+  }
+}
+`)
 
-Create a repo with both a compat-eligible dagger.json and an initialized native
-workspace config. Verify runtime selection uses the native workspace and does
-not infer a CompatWorkspace from dagger.json.`)
+		out, err := ctr.With(compatDaggerCall("native", "greet")).CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "hello from native workspace")
+		require.NotContains(t, out, "inferring from dagger.json")
 	})
 }
 
@@ -184,7 +341,7 @@ func (m *Hello) Greet(ctx context.Context) string {
 
 	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "greet")
 	require.NoError(t, err, string(out))
-	require.Contains(t, string(out), "No workspace config found, inferring from dagger.json. Run 'dagger migrate' soon.")
+	require.Contains(t, string(out), "No workspace config found, inferring from dagger.json.\nRun 'dagger migrate' when ready.")
 	require.Contains(t, string(out), "hello from blueprint")
 }
 
@@ -212,25 +369,70 @@ func (WorkspaceCompatSuite) TestLegacyWorkspaceDirectLoadErrors(ctx context.Cont
 	})
 
 	t.Run("local workspace module source tells the user to migrate that project", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement nested local legacy workspace source error coverage.
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
+			WithNewFile(".dagger/config.toml", `[modules.legacy]
+source = "../legacy"
+`).
+			WithNewFile("legacy/dagger.json", `{
+  "name": "legacy",
+  "blueprint": {
+    "name": "blueprint",
+    "source": "./blueprint"
+  }
+}`).
+			With(legacyDangModule("legacy/blueprint", "blueprint", "Blueprint", "hello from nested blueprint"))
 
-Point a workspace module source at another local legacy workspace and verify
-the error tells the user to run dagger migrate there and retarget one of its
-migrated modules.`)
+		out, err := ctr.With(compatDaggerExecFail("call", "legacy", "message")).CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "points at a legacy workspace, not a plain module")
+		require.Contains(t, out, `uses legacy workspace fields "blueprint"`)
+		require.Contains(t, out, "run `dagger migrate` in")
+		require.Contains(t, out, ".dagger/modules")
 	})
 
 	t.Run("remote workspace module source requires a migrated upstream", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement nested remote legacy workspace source error coverage.
+		c := connect(ctx, t)
+		remoteRef := legacyCompatRemoteRef(ctx, t, c, c.Directory().
+			WithNewFile("dagger.json", `{
+  "name": "legacy",
+  "blueprint": {
+    "name": "blueprint",
+    "source": "./blueprint"
+  }
+}`).
+			WithNewFile("blueprint/dagger.json", `{"name":"blueprint","sdk":{"source":"dang"}}`).
+			WithNewFile("blueprint/main.dang", `
+type Blueprint {
+  pub message: String! {
+    "hello from remote blueprint"
+  }
+}
+`))
 
-Point a workspace module source at a remote legacy workspace and verify the
-error clearly says a migrated upstream ref is required.`)
+		ctr := workspaceBase(t, c).
+			WithNewFile(".dagger/config.toml", `[modules.legacy]
+source = "`+remoteRef+`"
+`)
+
+		out, err := ctr.With(compatDaggerExecFail("call", "legacy", "message")).CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "points at a legacy workspace, not a plain module")
+		require.Contains(t, out, `uses legacy workspace fields "blueprint"`)
+		require.Contains(t, out, "use a migrated ref that points at one of its real modules")
+		require.Contains(t, out, "migrate it first")
 	})
 
 	t.Run("explicit -W loads a compat workspace successfully", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement explicit compat opt-in coverage.
+		c := connect(ctx, t)
+		ctr := legacyCompatDangSource(t, c, "hello from explicit workspace")
 
-Use dagger -W against a compat-eligible legacy project and verify it loads the
-CompatWorkspace successfully instead of hitting the direct-load error path.`)
+		out, err := ctr.WithExec([]string{"dagger", "--progress=report", "-W", ".", "call", "greet"}, dagger.ContainerWithExecOpts{
+			UseEntrypoint:                 true,
+			ExperimentalPrivilegedNesting: true,
+		}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from explicit workspace", strings.TrimSpace(out))
 	})
 }
 
@@ -238,21 +440,79 @@ CompatWorkspace successfully instead of hitting the direct-load error path.`)
 // workspace migration.
 func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.T) {
 	t.Run("migrate converts a compat workspace into workspace config plus modules", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement compat migration coverage.
+		c := connect(ctx, t)
+		ctr := legacyCompatDangSource(t, c, "hello from migrated compat").
+			With(compatDaggerExec("migrate", "-y"))
 
-Run dagger migrate -y on a compat-eligible project and verify the legacy
-dagger.json is replaced by .dagger/config.toml plus migrated module files.`)
+		_, err := ctr.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
+		require.Error(t, err, "root dagger.json should be removed after migration")
+
+		configOut, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, configOut, `[modules.myapp]`)
+		require.Contains(t, configOut, `source = "modules/myapp"`)
+		require.Contains(t, configOut, `entrypoint = true`)
+
+		moduleOut, err := ctr.WithExec([]string{"cat", ".dagger/modules/myapp/dagger.json"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, moduleOut, `"name": "myapp"`)
+		require.Contains(t, moduleOut, `"source": "../../../ci"`)
+
+		out, err := ctr.With(compatDaggerCall("greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from migrated compat", strings.TrimSpace(out))
 	})
 
 	t.Run("migrate is a no-op for sdk-only root-source modules", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement compat migration no-op coverage for sdk-only root-source modules.`)
+		c := connect(ctx, t)
+		ctr := legacySDKOnlyDangSource(t, c, "hello from sdk-only root")
+
+		out, err := ctr.With(compatDaggerExec("migrate")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "No migration needed.")
+
+		_, err = ctr.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
+		require.NoError(t, err, "sdk-only dagger.json should remain in place")
+
+		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/config.toml"}).Sync(ctx)
+		require.Error(t, err, "sdk-only modules should not create workspace config")
 	})
 
 	t.Run("migrate writes a migration report for unsupported gaps", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement compat migration gap-report coverage.
+		c := connect(ctx, t)
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "toolchains": [
+    {
+      "name": "toolchain",
+      "source": "./toolchain",
+      "customizations": [
+        {
+          "argument": "src",
+          "defaultPath": "./custom-config.txt",
+          "ignore": ["node_modules"]
+        },
+        {
+          "function": ["build"],
+          "argument": "tag",
+          "default": "dev"
+        }
+      ]
+    }
+  ]
+}`, legacyDangModule("toolchain", "toolchain", "Toolchain", "hello from toolchain")).
+			With(compatDaggerExec("migrate", "-y"))
 
-Verify gap warnings are surfaced to the user and .dagger/migration-report.md is
-written when manual follow-up is required.`)
+		output, err := ctr.CombinedOutput(ctx)
+		require.NoError(t, err, output)
+		require.Contains(t, output, "Warning: 2 migration gap(s) need manual review; see .dagger/migration-report.md")
+
+		report, err := ctr.WithExec([]string{"cat", ".dagger/migration-report.md"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, report, "# Migration Report")
+		require.Contains(t, report, "Module `toolchain`")
+		require.Contains(t, report, `constructor arg "src" has 'ignore' and 'defaultPath' customization`)
+		require.Contains(t, report, `function customization for "build" could not be migrated automatically`)
 	})
 }
 
@@ -260,9 +520,47 @@ written when manual follow-up is required.`)
 // new design: compat mode and migrated workspace mode expose the same runtime
 // behavior for the same legacy project.
 func (WorkspaceCompatSuite) TestCompatAndMigratedWorkspaceMatch(ctx context.Context, t *testctx.T) {
-	t.Fatal(`FIXME: implement compat-vs-migrated equivalence coverage.
+	c := connect(ctx, t)
+	base := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "sdk": {"source": "dang"},
+  "source": "ci",
+  "toolchains": [
+    {
+      "name": "helper",
+      "source": "./helper"
+    }
+  ]
+}`, func(ctr *dagger.Container) *dagger.Container {
+		return ctr.
+			WithNewFile("ci/main.dang", `
+type Myapp {
+  pub greet: String! {
+    "hello from entrypoint"
+  }
+}
+`).
+			WithNewFile("helper/dagger.json", `{"name":"helper","sdk":{"source":"dang"}}`).
+			WithNewFile("helper/main.dang", `
+type Helper {
+  pub message: String! {
+    "hello from helper"
+  }
+}
+`)
+	})
 
-For the same legacy project, compare a compat-backed invocation with the same
-project after dagger migrate -y. Verify they expose the same entrypoint and
-module behavior.`)
+	compatEntrypoint, err := base.With(compatDaggerCall("greet")).Stdout(ctx)
+	require.NoError(t, err)
+	compatHelper, err := base.With(compatDaggerCall("helper", "message")).Stdout(ctx)
+	require.NoError(t, err)
+
+	migrated := base.With(compatDaggerExec("migrate", "-y"))
+	migratedEntrypoint, err := migrated.With(compatDaggerCall("greet")).Stdout(ctx)
+	require.NoError(t, err)
+	migratedHelper, err := migrated.With(compatDaggerCall("helper", "message")).Stdout(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, strings.TrimSpace(compatEntrypoint), strings.TrimSpace(migratedEntrypoint))
+	require.Equal(t, strings.TrimSpace(compatHelper), strings.TrimSpace(migratedHelper))
 }
