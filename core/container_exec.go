@@ -430,7 +430,7 @@ func (plan *materializedExecPlan) releaseActives(ctx context.Context) error {
 	for i := len(plan.States) - 1; i >= 0; i-- {
 		cacheMount := plan.States[i].CacheMount
 		if cacheMount != nil {
-			rerr = errors.Join(rerr, cacheMount.release(ctx))
+			cacheMount.release()
 			plan.States[i].CacheMount = nil
 		}
 		active := plan.States[i].ActiveRef
@@ -707,7 +707,7 @@ func prepareMounts(
 		}
 		if err := materializeState(mountState); err != nil {
 			if mountState.CacheMount != nil {
-				err = errors.Join(err, mountState.CacheMount.release(context.WithoutCancel(ctx)))
+				mountState.CacheMount.release()
 				mountState.CacheMount = nil
 			}
 			return materialized, err
@@ -1212,7 +1212,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			for i := len(mountStates) - 1; i >= 0; i-- {
 				cacheMount := mountStates[i].CacheMount
 				if cacheMount != nil {
-					releaseErr = errors.Join(releaseErr, cacheMount.release(context.WithoutCancel(ctx)))
+					cacheMount.release()
 					mountStates[i].CacheMount = nil
 				}
 				active := mountStates[i].ActiveRef
@@ -1497,7 +1497,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			}
 			if err := materializeState(mountState); err != nil {
 				if mountState.CacheMount != nil {
-					err = errors.Join(err, mountState.CacheMount.release(context.WithoutCancel(ctx)))
+					mountState.CacheMount.release()
 					mountState.CacheMount = nil
 				}
 				return failPrepare(err)

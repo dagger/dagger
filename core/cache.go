@@ -91,16 +91,15 @@ type cacheVolumeMount struct {
 	released bool
 }
 
-func (mount *cacheVolumeMount) release(context.Context) error {
+func (mount *cacheVolumeMount) release() {
 	if mount == nil {
-		return nil
+		return
 	}
 	if mount.released {
-		return nil
+		return
 	}
 	mount.released = true
 	mount.active.release(mount.leaseKey)
-	return nil
 }
 
 func (*CacheVolume) Type() *ast.Type {

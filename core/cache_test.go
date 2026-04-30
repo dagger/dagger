@@ -381,12 +381,12 @@ func TestPrivateCacheVolumeAcquireMountReusesIdleSnapshot(t *testing.T) {
 	mount1, err := cache.acquireMount(ctx)
 	require.NoError(t, err)
 	require.Equal(t, ref, mount1.ref)
-	require.NoError(t, mount1.release(ctx))
+	mount1.release()
 
 	mount2, err := cache.acquireMount(ctx)
 	require.NoError(t, err)
 	require.Equal(t, ref, mount2.ref)
-	require.NoError(t, mount2.release(ctx))
+	mount2.release()
 	require.Len(t, manager.newCalls, 1)
 }
 
@@ -427,13 +427,13 @@ func TestPrivateCacheVolumeAcquireMountCreatesSnapshotWhenActive(t *testing.T) {
 	require.Equal(t, ref2, mount2.ref)
 	require.Len(t, manager.newCalls, 2)
 
-	require.NoError(t, mount1.release(ctx))
-	require.NoError(t, mount2.release(ctx))
+	mount1.release()
+	mount2.release()
 
 	mount3, err := cache.acquireMount(ctx)
 	require.NoError(t, err)
 	require.Equal(t, ref1, mount3.ref)
-	require.NoError(t, mount3.release(ctx))
+	mount3.release()
 	require.Len(t, manager.newCalls, 2)
 }
 
