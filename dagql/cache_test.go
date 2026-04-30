@@ -2859,50 +2859,6 @@ func TestObjectResultResultCallAndReceiver(t *testing.T) {
 
 	parentID, err := attachedParent.ID()
 	assert.NilError(t, err)
-	parentDig, err := attachedParent.ContentPreferredDigest(ctx)
-	assert.NilError(t, err)
-	parentRecipeID, err := attachedParent.RecipeID(ctx)
-	assert.NilError(t, err)
-	assert.Equal(t, parentRecipeID.ContentPreferredDigest().String(), parentDig.String())
-
-	argOnlyFrame := &ResultCall{
-		Kind:  ResultCallKindField,
-		Field: "argOnly",
-		Type:  NewResultCallType(objType),
-		Args: []*ResultCallArg{
-			{
-				Name:  "msg",
-				Value: &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: "hello"},
-			},
-		},
-	}
-	argOnlyRes := cacheTestObjectResult(t, srv, argOnlyFrame, 12, nil)
-	attachedArgOnlyAny, err := cacheIface.AttachResult(ctx, "test-session", srv, argOnlyRes)
-	assert.NilError(t, err)
-	attachedArgOnly := attachedArgOnlyAny.(ObjectResult[*cacheTestObject])
-	argOnlyDig, err := attachedArgOnly.ContentPreferredDigest(ctx)
-	assert.NilError(t, err)
-	argOnlyRecipeID, err := attachedArgOnly.RecipeID(ctx)
-	assert.NilError(t, err)
-	assert.Equal(t, argOnlyRecipeID.ContentPreferredDigest().String(), argOnlyDig.String())
-
-	receiverOnlyFrame := &ResultCall{
-		Kind:  ResultCallKindField,
-		Field: "receiverOnly",
-		Type:  NewResultCallType(objType),
-		Receiver: &ResultCallRef{
-			ResultID: parentID.EngineResultID(),
-		},
-	}
-	receiverOnlyRes := cacheTestObjectResult(t, srv, receiverOnlyFrame, 13, nil)
-	attachedReceiverOnlyAny, err := cacheIface.AttachResult(ctx, "test-session", srv, receiverOnlyRes)
-	assert.NilError(t, err)
-	attachedReceiverOnly := attachedReceiverOnlyAny.(ObjectResult[*cacheTestObject])
-	receiverOnlyDig, err := attachedReceiverOnly.ContentPreferredDigest(ctx)
-	assert.NilError(t, err)
-	receiverOnlyRecipeID, err := attachedReceiverOnly.RecipeID(ctx)
-	assert.NilError(t, err)
-	assert.Equal(t, receiverOnlyRecipeID.ContentPreferredDigest().String(), receiverOnlyDig.String())
 
 	childFrame := &ResultCall{
 		Kind:  ResultCallKindField,
@@ -2989,55 +2945,6 @@ func TestInputSpecsInputsFromResultCallArgs(t *testing.T) {
 	assert.Equal(t, 7, count.Int())
 }
 
-func TestResultContentPreferredDigestMatchesRecipeID(t *testing.T) {
-	t.Parallel()
-	ctx := cacheTestContext(t.Context())
-	cacheIface, err := NewCache(ctx, "", nil, nil)
-	assert.NilError(t, err)
-	ctx = ContextWithCache(ctx, cacheIface)
-	srv := cacheTestServer(t)
-
-	objType := (&cacheTestObject{}).Type()
-
-	parentFrame := &ResultCall{
-		Kind:  ResultCallKindField,
-		Field: "parent",
-		Type:  NewResultCallType(objType),
-	}
-	parentRes := cacheTestObjectResult(t, srv, parentFrame, 11, nil)
-	attachedParentAny, err := cacheIface.AttachResult(ctx, "test-session", srv, parentRes)
-	assert.NilError(t, err)
-	attachedParent := attachedParentAny.(ObjectResult[*cacheTestObject])
-
-	parentID, err := attachedParent.ID()
-	assert.NilError(t, err)
-
-	childFrame := &ResultCall{
-		Kind:  ResultCallKindField,
-		Field: "child",
-		Type:  NewResultCallType(objType),
-		Receiver: &ResultCallRef{
-			ResultID: parentID.EngineResultID(),
-		},
-		Args: []*ResultCallArg{
-			{
-				Name:  "msg",
-				Value: &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: "hello"},
-			},
-		},
-	}
-	childRes := cacheTestObjectResult(t, srv, childFrame, 22, nil)
-	attachedChildAny, err := cacheIface.AttachResult(ctx, "test-session", srv, childRes)
-	assert.NilError(t, err)
-	attachedChild := attachedChildAny.(ObjectResult[*cacheTestObject])
-
-	got, err := attachedChild.ContentPreferredDigest(ctx)
-	assert.NilError(t, err)
-	recipeID, err := attachedChild.RecipeID(ctx)
-	assert.NilError(t, err)
-	assert.Equal(t, recipeID.ContentPreferredDigest().String(), got.String())
-}
-
 func TestResultContentPreferredDigestUsesContentDigest(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
@@ -3065,7 +2972,7 @@ func TestResultContentPreferredDigestUsesContentDigest(t *testing.T) {
 
 	recipeID, err := attached.RecipeID(ctx)
 	assert.NilError(t, err)
-	assert.Equal(t, contentDig.String(), recipeID.ContentPreferredDigest().String())
+	assert.Equal(t, contentDig.String(), recipeID.ContentDigest().String())
 }
 
 func TestLookupCacheForIDExtraDigestFallback(t *testing.T) {
@@ -3647,22 +3554,21 @@ func TestCacheSecondaryIndexesCleanedOnRelease(t *testing.T) {
 
 	storageID := call.New().Append(Int(0).Type(), "storage-key")
 	storageCall := cacheTestIntCall("storage-key")
-	resultID := storageID.
-		With(call.WithExtraDigest(call.ExtraDigest{Digest: digest.FromString("result-digest")})).
-		With(call.WithContentDigest(digest.FromString("result-content")))
+	resultDigest := digest.FromString("result-digest")
+	resultContent := digest.FromString("result-content")
 
 	_, err = c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: storageCall}, func(context.Context) (AnyResult, error) {
 		return cacheTestIntResult(&ResultCall{
 			Kind:         ResultCallKindField,
 			Type:         NewResultCallType(Int(0).Type()),
 			Field:        "storage-key",
-			ExtraDigests: []call.ExtraDigest{{Digest: digest.FromString("result-digest")}},
-		}, 44).(Result[Int]).WithContentDigest(ctx, digest.FromString("result-content"))
+			ExtraDigests: []call.ExtraDigest{{Digest: resultDigest}},
+		}, 44).(Result[Int]).WithContentDigest(ctx, resultContent)
 	})
 	assert.NilError(t, err)
 
 	storageKey := storageID.Digest().String()
-	resultOutputEq := resultID.ContentPreferredDigest().String()
+	resultOutputEq := resultContent.String()
 	assert.Assert(t, storageKey != resultOutputEq)
 	assert.Equal(t, 1, len(c.resultOutputEqClasses))
 	assert.Assert(t, len(c.egraphTerms) > 0)

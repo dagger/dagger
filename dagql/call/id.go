@@ -60,10 +60,6 @@ type ID struct {
 	module         *Module
 	typ            *Type
 	engineResultID uint64
-
-	// Memoized on-demand in ContentPreferredDigest.
-	contentPreferredDigest     digest.Digest
-	contentPreferredDigestOnce sync.Once
 }
 
 type idMode uint8
@@ -706,10 +702,6 @@ func (id *ID) apply(opts ...IDOpt) *ID {
 		panic(err)
 	}
 
-	// Any mutation invalidates memoized derived digests.
-	id.contentPreferredDigest = ""
-	id.contentPreferredDigestOnce = sync.Once{}
-
 	return id
 }
 
@@ -782,8 +774,6 @@ func (id *ID) decode(
 	}
 	id.mode = idModeRecipe
 	id.pb = pb
-	id.contentPreferredDigest = ""
-	id.contentPreferredDigestOnce = sync.Once{}
 
 	if id.pb.ReceiverDigest != "" {
 		id.receiver = new(ID)
@@ -924,7 +914,7 @@ func AppendArgumentBytes(arg *Argument, h *hashutil.Hasher) (*hashutil.Hasher, e
 
 // appendLiteralBytes appends a binary representation of the given literal to the given byte slice.
 //
-//nolint:dupl // symmetric with appendLiteralContentPreferredBytes; sharing would mean sprinkling branches that change the ID-digest semantics we audit
+//nolint:dupl // symmetric with ResultCall literal hashing; sharing would mean sprinkling branches that change the ID-digest semantics we audit
 func appendLiteralBytes(lit Literal, h *hashutil.Hasher) (*hashutil.Hasher, error) {
 	var err error
 	// we use a unique prefix byte for each type to avoid collisions

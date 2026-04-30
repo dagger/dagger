@@ -59,30 +59,25 @@ func (content *CollectedContent) CollectID(ctx context.Context, idp *call.ID, un
 		}
 		return fmt.Errorf("invalid ID")
 	}
-	// TODO: deeper integration with dagql/cache would be preferable but ContentPreferredDigest works
-	// for current workspace requirements.
-	// Deeper integration would allow full equivalence set cache hits on any IDs, whereas this approach
-	// is specific to just "content hash" extra digests.
-	var dgst digest.Digest
-	if idp.IsHandle() {
-		dag := dagql.CurrentDagqlServer(ctx)
-		if dag == nil {
-			return fmt.Errorf("current dagql server is nil")
-		}
-		res, err := dag.LoadType(ctx, idp)
-		if err != nil {
-			return fmt.Errorf("load handle type: %w", err)
-		}
-		call, err := res.ResultCall()
-		if err != nil {
-			return fmt.Errorf("result call: %w", err)
-		}
-		dgst, err = call.ContentPreferredDigest(ctx)
-		if err != nil {
-			return fmt.Errorf("content preferred digest: %w", err)
-		}
-	} else {
-		dgst = idp.ContentPreferredDigest()
+	if !idp.IsHandle() {
+		return fmt.Errorf("collect ID requires handle-form ID")
+	}
+
+	dag := dagql.CurrentDagqlServer(ctx)
+	if dag == nil {
+		return fmt.Errorf("current dagql server is nil")
+	}
+	res, err := dag.LoadType(ctx, idp)
+	if err != nil {
+		return fmt.Errorf("load handle type: %w", err)
+	}
+	call, err := res.ResultCall()
+	if err != nil {
+		return fmt.Errorf("result call: %w", err)
+	}
+	dgst, err := call.ContentPreferredDigest(ctx)
+	if err != nil {
+		return fmt.Errorf("content preferred digest: %w", err)
 	}
 	content.hasher.WithString(string(dgst))
 	return nil
