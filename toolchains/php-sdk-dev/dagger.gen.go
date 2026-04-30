@@ -221,20 +221,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*PhpSdkDev).BaseContainer(&parent), nil
-		case "Bump":
-			var parent PhpSdkDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var version string
-			if inputArgs["version"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
-				}
-			}
-			return (*PhpSdkDev).Bump(&parent, ctx, version)
 		case "Changes":
 			var parent PhpSdkDev
 			err = json.Unmarshal(parentJSON, &parent)

@@ -109,17 +109,13 @@
       "customizations": [
         {
           "argument": "targetVersion",
-          "default": "v0.21.0"
+          "default": "v0.20.6"
         }
       ]
     },
     {
       "name": "rust-sdk",
       "source": "toolchains/rust-sdk-dev"
-    },
-    {
-      "name": "sdks",
-      "source": "toolchains/all-sdks"
     },
     {
       "name": "security",

@@ -61,16 +61,6 @@ func (r *GoSDKDev) WithGraphQLQuery(q *querybuilder.Selection) *GoSDKDev {
 	}
 }
 
-// Bump the Go SDK's Engine dependency
-func (r *GoSDKDev) Bump(version string) *Changeset { // go-sdk-dev (../../../../:0:0)
-	q := r.query.Select("bump")
-	q = q.Arg("version", version)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
 // Build a container to run the go toolchain
 func (r *GoSDKDev) DevContainer() *Container { // go-sdk-dev (../../../../:0:0)
 	q := r.query.Select("devContainer")

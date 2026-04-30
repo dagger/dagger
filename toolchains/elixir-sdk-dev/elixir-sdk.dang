@@ -133,20 +133,6 @@ type ElixirSdkDev {
   }
 
   """
-  Bump the Elixir SDK's Engine dependency
-  """
-  pub bump(version: String!): Changeset! {
-    let versionFilePath = "lib/dagger/core/version.ex"
-    container
-      .from(baseImage)
-      .withWorkdir("/app")
-      .withDirectory(".", source)
-      .withExec(["sed", "-E", "-i", "-e", "s/@dagger_cli_version \"([^\"]+)\"/@dagger_cli_version \"" + version + "\"/g", versionFilePath])
-      .directory(".")
-      .changes(source)
-  }
-
-  """
   Sync Elixir image to keep both dev and runtime modules consistent
   """
   pub syncImage: File! {
