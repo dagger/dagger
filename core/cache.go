@@ -28,6 +28,15 @@ type CacheVolume struct {
 	selector string
 }
 
+type cacheVolumeMount struct {
+	ref      bkcache.MutableRef
+	selector string
+}
+
+func (mount *cacheVolumeMount) release(context.Context) error {
+	return nil
+}
+
 func (*CacheVolume) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "CacheVolume",
@@ -227,6 +236,22 @@ func (cache *CacheVolume) invalidateSnapshotSize(ctx context.Context) error {
 
 func (cache *CacheVolume) Sync(ctx context.Context) error {
 	return cache.InitializeSnapshot(ctx)
+}
+
+func (cache *CacheVolume) acquireMount(ctx context.Context) (*cacheVolumeMount, error) {
+	if cache.getSnapshot() == nil {
+		if err := cache.InitializeSnapshot(ctx); err != nil {
+			return nil, err
+		}
+	}
+	snapshot := cache.getSnapshot()
+	if snapshot == nil {
+		return nil, fmt.Errorf("cache volume %q has nil snapshot", cache.Key)
+	}
+	return &cacheVolumeMount{
+		ref:      snapshot,
+		selector: cache.getSnapshotSelector(),
+	}, nil
 }
 
 func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {

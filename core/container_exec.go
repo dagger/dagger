@@ -372,6 +372,7 @@ type execMountState struct {
 	ActiveRef       bkcache.MutableRef
 	OutputMutable   bkcache.MutableRef
 	OutputImmutable bkcache.ImmutableRef
+	CacheMount      *cacheVolumeMount
 }
 
 type materializedExecPlan struct {
@@ -427,6 +428,11 @@ func lockMountedCaches(ctx context.Context, mounts []ContainerMount) (func(), er
 func (plan *materializedExecPlan) releaseActives(ctx context.Context) error {
 	var rerr error
 	for i := len(plan.States) - 1; i >= 0; i-- {
+		cacheMount := plan.States[i].CacheMount
+		if cacheMount != nil {
+			rerr = errors.Join(rerr, cacheMount.release(ctx))
+			plan.States[i].CacheMount = nil
+		}
 		active := plan.States[i].ActiveRef
 		if active == nil {
 			continue
@@ -673,17 +679,16 @@ func prepareMounts(
 			if cacheSrc.Volume.Self() == nil {
 				return materialized, fmt.Errorf("mount %d has nil cache volume source", i)
 			}
-			if cacheSrc.Volume.Self().getSnapshot() == nil {
-				if err := cacheSrc.Volume.Self().InitializeSnapshot(ctx); err != nil {
-					return materialized, fmt.Errorf("initialize cache volume snapshot for mount %d: %w", i, err)
-				}
+			cacheMount, err := cacheSrc.Volume.Self().acquireMount(ctx)
+			if err != nil {
+				return materialized, fmt.Errorf("acquire cache volume snapshot for mount %d: %w", i, err)
 			}
-			cacheSnapshot := cacheSrc.Volume.Self().getSnapshot()
-			if cacheSnapshot == nil {
+			if cacheMount.ref == nil {
 				return materialized, fmt.Errorf("mount %d has nil cache volume snapshot", i)
 			}
-			mountState.SourceRef = cacheSnapshot
-			mountState.Selector = cacheSrc.Volume.Self().getSnapshotSelector()
+			mountState.SourceRef = cacheMount.ref
+			mountState.Selector = cacheMount.selector
+			mountState.CacheMount = cacheMount
 
 		case ctrMount.TmpfsSource != nil:
 			mountState.MountType = pb.MountType_TMPFS
@@ -1201,6 +1206,11 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		releaseActives := func() error {
 			var releaseErr error
 			for i := len(mountStates) - 1; i >= 0; i-- {
+				cacheMount := mountStates[i].CacheMount
+				if cacheMount != nil {
+					releaseErr = errors.Join(releaseErr, cacheMount.release(context.WithoutCancel(ctx)))
+					mountStates[i].CacheMount = nil
+				}
 				active := mountStates[i].ActiveRef
 				if active == nil {
 					continue
@@ -1457,17 +1467,16 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 				if cacheSrc.Volume.Self() == nil {
 					return failPrepare(fmt.Errorf("mount %d has nil cache volume source", i))
 				}
-				if cacheSrc.Volume.Self().getSnapshot() == nil {
-					if err := cacheSrc.Volume.Self().InitializeSnapshot(ctx); err != nil {
-						return failPrepare(fmt.Errorf("initialize cache volume snapshot for mount %d: %w", i, err))
-					}
+				cacheMount, err := cacheSrc.Volume.Self().acquireMount(ctx)
+				if err != nil {
+					return failPrepare(fmt.Errorf("acquire cache volume snapshot for mount %d: %w", i, err))
 				}
-				cacheSnapshot := cacheSrc.Volume.Self().getSnapshot()
-				if cacheSnapshot == nil {
+				if cacheMount.ref == nil {
 					return failPrepare(fmt.Errorf("mount %d has nil cache volume snapshot", i))
 				}
-				mountState.SourceRef = cacheSnapshot
-				mountState.Selector = cacheSrc.Volume.Self().getSnapshotSelector()
+				mountState.SourceRef = cacheMount.ref
+				mountState.Selector = cacheMount.selector
+				mountState.CacheMount = cacheMount
 
 			case ctrMount.TmpfsSource != nil:
 				mountState.MountType = pb.MountType_TMPFS
