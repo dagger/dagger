@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,14 +15,20 @@ import (
 	"golang.org/x/mod/semver"
 )
 
+const daggerRepoURL = "https://github.com/dagger/dagger.git"
+
 func New(
 	ctx context.Context,
 
-	// A git repository containing the source code of the artifact to be versioned.
+	// A directory containing the git metadata for the artifact to be versioned.
 	// +optional
 	// +defaultPath="/"
 	// +ignore=["*", "!.git"]
 	gitParent *dagger.Directory,
+
+	// A git repository containing the source code of the artifact to be versioned.
+	// +optional
+	git *dagger.GitRepository,
 
 	// A directory containing all the inputs of the artifact to be versioned.
 	// An input is any file that changes the artifact if it changes.
@@ -32,20 +39,16 @@ func New(
 	// +defaultPath="/"
 	// +ignore=["**_test.go", "**/.git*", "**/.venv", "**/.dagger", ".*", "bin", "**/node_modules", "**/testdata/**", "**/.changes", ".changes", "docs", "helm", "release", "version", "modules", "*.md", "LICENSE", "NOTICE", "hack", "!**/.gitignore"]
 	inputs *dagger.Directory,
-
-	// File containing the next release version (e.g. .changes/.next)
-	// +optional
-	// +defaultPath="/.changes/.next"
-	nextVersionFile *dagger.File,
 ) *Version {
 	v := &Version{
-		Inputs:          inputs.Filter(dagger.DirectoryFilterOpts{Gitignore: true}),
-		NextVersionFile: nextVersionFile,
+		Git:    git,
+		Inputs: inputs.Filter(dagger.DirectoryFilterOpts{Gitignore: true}),
 	}
 
-	if git, err := gitParent.Directory(".git").Sync(ctx); err == nil {
-		v.Git = git.AsGit()
-		v.GitDir = git
+	if v.Git == nil && gitParent != nil {
+		if gitDir, err := gitParent.Directory(".git").Sync(ctx); err == nil {
+			v.Git = gitDir.AsGit()
+		}
 	}
 
 	return v
@@ -53,14 +56,10 @@ func New(
 
 type Version struct {
 	// +private
-	Git    *dagger.GitRepository
-	GitDir *dagger.Directory
+	Git *dagger.GitRepository
 
 	// +private
 	Inputs *dagger.Directory
-
-	// +private
-	NextVersionFile *dagger.File
 }
 
 // Generate a version string from the current context
@@ -77,7 +76,7 @@ func (v Version) Version(ctx context.Context) (string, error) {
 	if dirty {
 		// this is a dirty version - git state is dirty
 		// (v<major>.<minor>.<patch>-<timestamp>-dev-<inputdigest>)
-		next, err := v.NextReleaseVersion(ctx)
+		next, err := v.NextPatchVersion(ctx)
 		if err != nil {
 			return "", err
 		}
@@ -102,7 +101,7 @@ func (v Version) Version(ctx context.Context) (string, error) {
 
 	// this is a clean, untagged version - git state is clean, but no tag
 	// (v<major>.<minor>.<patch>-<timestamp>-dev-<commit>)
-	next, err := v.NextReleaseVersion(ctx)
+	next, err := v.NextPatchVersion(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -119,18 +118,9 @@ func (v Version) Version(ctx context.Context) (string, error) {
 }
 
 func (v Version) fallbackVersion(ctx context.Context) (string, error) {
-	// Try to get next release version from .changes/.next
-	next := "v0.0.0"
-	if v.NextVersionFile != nil {
-		if content, err := v.NextVersionFile.Contents(ctx); err == nil {
-			for _, line := range strings.Split(content, "\n") {
-				line = strings.TrimSpace(line)
-				if strings.HasPrefix(line, "v") && semver.IsValid(line) {
-					next = line
-					break
-				}
-			}
-		}
+	next, err := v.NextPatchVersion(ctx)
+	if err != nil {
+		return "", err
 	}
 
 	// Generate a version based on inputs digest
@@ -215,25 +205,98 @@ func (v Version) CurrentTag(ctx context.Context) (string, error) {
 	return "", nil
 }
 
+// NextPatchVersion returns the next patch version after the latest stable semver git tag.
+func (v Version) NextPatchVersion(ctx context.Context) (string, error) {
+	tag, err := v.latestReleaseTag(ctx)
+	if err != nil {
+		return "", err
+	}
+	return bumpPatchVersion(tag)
+}
+
 func (v Version) tagsAtCommit(ctx context.Context, commit string) ([]string, error) {
-	// NOTE: this uses the git dir directly rather than the git repo
-	// since there's no dagger API to do this operation
-	out, err := dag.Container().
-		From("alpine/git:latest").
-		WithWorkdir("/src").
-		WithMountedDirectory(".git", v.GitDir).
-		WithExec([]string{"git", "config", "url.https://github.com/.insteadOf", "git@github.com:"}).
-		WithExec([]string{"git", "fetch", "--tags"}).
-		WithExec([]string{"git", "tag", "-l", "--points-at=" + commit}).
-		Stdout(ctx)
+	tags, err := v.gitTags(ctx, v.Git)
 	if err != nil {
 		return nil, err
 	}
-	out = strings.TrimSpace(out)
-	if out == "" {
-		return nil, nil
+
+	var matched []string
+	for _, tag := range tags {
+		tagCommit, err := v.Git.Tag(tag).Commit(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if tagCommit == commit {
+			matched = append(matched, tag)
+		}
 	}
-	return strings.Split(out, "\n"), nil
+	return matched, nil
+}
+
+func (v Version) latestReleaseTag(ctx context.Context) (string, error) {
+	tags, err := v.gitTags(ctx, v.releaseTagsGit())
+	if err != nil {
+		return "", err
+	}
+
+	latest := ""
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if !semver.IsValid(tag) || semver.Prerelease(tag) != "" {
+			continue
+		}
+		if latest == "" || semver.Compare(tag, latest) > 0 {
+			latest = tag
+		}
+	}
+	if latest == "" {
+		return "", fmt.Errorf("no stable semver git tag found")
+	}
+	return latest, nil
+}
+
+func (v Version) releaseTagsGit() *dagger.GitRepository {
+	if v.Git != nil {
+		return v.Git
+	}
+	return dag.Git(daggerRepoURL)
+}
+
+func (v Version) gitTags(ctx context.Context, git *dagger.GitRepository) ([]string, error) {
+	if git == nil {
+		return nil, fmt.Errorf("git repository not provided")
+	}
+
+	tags, err := git.Tags(ctx, dagger.GitRepositoryTagsOpts{
+		Patterns: []string{"refs/tags/v*"},
+	})
+	if err != nil {
+		return nil, err
+	}
+	for i, tag := range tags {
+		tags[i] = strings.TrimPrefix(tag, "refs/tags/")
+	}
+	return tags, nil
+}
+
+func bumpPatchVersion(version string) (string, error) {
+	original := version
+	version = semver.Canonical(version)
+	if version == "" {
+		return "", fmt.Errorf("invalid semver: %q", original)
+	}
+
+	parts := strings.Split(strings.TrimPrefix(version, "v"), ".")
+	if len(parts) != 3 {
+		return "", fmt.Errorf("invalid canonical semver: %q", version)
+	}
+
+	patch, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return "", fmt.Errorf("invalid patch version %q: %w", version, err)
+	}
+
+	return fmt.Sprintf("v%s.%s.%d", parts[0], parts[1], patch+1), nil
 }
 
 func refTimestamp(ctx context.Context, head *dagger.GitRef) (time.Time, error) {
@@ -259,22 +322,4 @@ func pseudoversionTimestamp(t time.Time) string {
 	// go time formatting is bizarre - this translates to "yyyymmddhhmmss"
 	// inspired from: https://cs.opensource.google/go/x/mod/+/refs/tags/v0.22.0:module/pseudo.go
 	return t.UTC().Format("20060102150405")
-}
-
-// NextReleaseVersion returns the next release version from .changes/.next
-func (v Version) NextReleaseVersion(ctx context.Context) (string, error) {
-	if v.NextVersionFile == nil {
-		return "", fmt.Errorf("next version file not provided")
-	}
-	content, err := v.NextVersionFile.Contents(ctx)
-	if err != nil {
-		return "", err
-	}
-	for _, line := range strings.Split(content, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "v") && semver.IsValid(line) {
-			return line, nil
-		}
-	}
-	return "", fmt.Errorf("no valid version found in next version file")
 }

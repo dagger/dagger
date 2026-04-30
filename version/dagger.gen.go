@@ -58,33 +58,25 @@ func convertSlice[I any, O any](in []I, f func(I) O) []O {
 
 func (r Version) MarshalJSON() ([]byte, error) {
 	var concrete struct {
-		Git             *dagger.GitRepository
-		GitDir          *dagger.Directory
-		Inputs          *dagger.Directory
-		NextVersionFile *dagger.File
+		Git    *dagger.GitRepository
+		Inputs *dagger.Directory
 	}
 	concrete.Git = r.Git
-	concrete.GitDir = r.GitDir
 	concrete.Inputs = r.Inputs
-	concrete.NextVersionFile = r.NextVersionFile
 	return json.Marshal(&concrete)
 }
 
 func (r *Version) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
-		Git             *dagger.GitRepository
-		GitDir          *dagger.Directory
-		Inputs          *dagger.Directory
-		NextVersionFile *dagger.File
+		Git    *dagger.GitRepository
+		Inputs *dagger.Directory
 	}
 	err := json.Unmarshal(bs, &concrete)
 	if err != nil {
 		return err
 	}
 	r.Git = concrete.Git
-	r.GitDir = concrete.GitDir
 	r.Inputs = concrete.Inputs
-	r.NextVersionFile = concrete.NextVersionFile
 	return nil
 }
 
@@ -228,13 +220,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Version).ImageTag(&parent, ctx)
-		case "NextReleaseVersion":
+		case "NextPatchVersion":
 			var parent Version
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*Version).NextReleaseVersion(&parent, ctx)
+			return (*Version).NextPatchVersion(&parent, ctx)
 		case "Version":
 			var parent Version
 			err = json.Unmarshal(parentJSON, &parent)
@@ -255,6 +247,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg gitParent", err))
 				}
 			}
+			var git *dagger.GitRepository
+			if inputArgs["git"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["git"]), &git)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg git", err))
+				}
+			}
 			var inputs *dagger.Directory
 			if inputArgs["inputs"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["inputs"]), &inputs)
@@ -262,14 +261,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg inputs", err))
 				}
 			}
-			var nextVersionFile *dagger.File
-			if inputArgs["nextVersionFile"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["nextVersionFile"]), &nextVersionFile)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg nextVersionFile", err))
-				}
-			}
-			return New(ctx, gitParent, inputs, nextVersionFile), nil
+			return New(ctx, gitParent, git, inputs), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
