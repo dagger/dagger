@@ -316,12 +316,71 @@ func (WorkspaceCompatSuite) TestRequiredString(ctx context.Context, t *testctx.T
 }
 
 func (WorkspaceCompatSuite) TestArgName(ctx context.Context, t *testctx.T) {
-	t.Fatal(`FIXME: implement compat env arg-name mapping coverage.
+	c := connect(ctx, t)
+	base := daggerCliBase(t, c).
+		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"git", "init"}).
+		With(daggerInitPython()).
+		WithNewFile("src/test/main.py", `from dagger import function, object_type
 
-Verify how .env keys map onto constructor or function argument names in compat
-mode, including camelCase, snake_case, and acronym-heavy names. This should
-pin down one explicit conversion policy rather than relying on incidental name
-matching.`)
+@object_type
+class Test:
+    simple_value: str
+    http_url: str
+
+    @function
+    def constructor_values(self) -> str:
+        return f"{self.simple_value}|{self.http_url}"
+
+    @function
+    def echo(self, snake_case: str, http_url: str) -> str:
+        return f"{snake_case}|{http_url}"
+`)
+
+	t.Run("constructor and function args use GraphQL names", func(ctx context.Context, t *testctx.T) {
+		ctr := base.WithNewFile(".env", `simpleValue=constructor-simple
+httpUrl=constructor-url
+ECHO_snakeCase=function-snake
+ECHO_httpUrl=function-url
+`)
+
+		out, err := ctr.With(daggerCall("constructor-values")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "constructor-simple|constructor-url", out)
+
+		out, err = ctr.With(daggerCall("echo")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "function-snake|function-url", out)
+	})
+
+	t.Run("source snake case names are not aliases", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			WithNewFile(".env", `simple_value=constructor-simple
+http_url=constructor-url
+`).
+			WithExec([]string{"dagger", "call", "constructor-values"}, dagger.ContainerWithExecOpts{
+				Expect:                        dagger.ReturnTypeFailure,
+				ExperimentalPrivilegedNesting: true,
+			}).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "simpleValue")
+
+		out, err = base.
+			WithNewFile(".env", `simpleValue=constructor-simple
+httpUrl=constructor-url
+ECHO_snake_case=function-snake
+ECHO_http_url=function-url
+`).
+			WithExec([]string{"dagger", "call", "echo"}, dagger.ContainerWithExecOpts{
+				Expect:                        dagger.ReturnTypeFailure,
+				ExperimentalPrivilegedNesting: true,
+			}).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "snake")
+		require.Contains(t, out, "http")
+	})
 }
 
 func (WorkspaceCompatSuite) TestDependencies(ctx context.Context, t *testctx.T) {
@@ -511,7 +570,6 @@ func (WorkspaceCompatSuite) TestConstructorRequired(ctx context.Context, t *test
 		WithNewFile("/foo/hello.txt", "hello there!").
 		WithEnvVariable("PASSWORD", "topsecret").
 		WithServiceBinding("www", c.Container().From("nginx").AsService())
-	// FIXME: call lookupPrefix()
 	outerEnv := c.EnvFile().
 		WithVariable("SUPERCONSTRUCTOR_DIR", "/foo").
 		WithVariable("SUPERCONSTRUCTOR_FILE", "/foo/hello.txt").
@@ -587,11 +645,91 @@ func (WorkspaceCompatSuite) TestConstructorRequired(ctx context.Context, t *test
 }
 
 func (WorkspaceCompatSuite) TestCompatEnvPrefixLookupPolicy(ctx context.Context, t *testctx.T) {
-	t.Fatal(`FIXME: implement compat env prefix-lookup coverage.
+	c := connect(ctx, t)
+	for _, tc := range []struct {
+		name        string
+		module      string
+		envPath     string
+		envContents string
+		workdir     string
+		command     []string
+		stdout      string
+	}{
+		{
+			name:    "inner env uses unprefixed keys",
+			module:  "defaults",
+			envPath: "defaults/.env",
+			envContents: `GREETING=inner
+MESSAGE_NAME=inner-name
+`,
+			workdir: "defaults",
+			command: []string{"dagger", "call", "message"},
+			stdout:  "inner, inner-name!",
+		},
+		{
+			name:    "outer env uses module prefix",
+			module:  "defaults",
+			envPath: ".env",
+			envContents: `DEFAULTS_GREETING=outer
+DEFAULTS_MESSAGE_NAME=outer-name
+`,
+			command: []string{"dagger", "-m", "./defaults", "call", "message"},
+			stdout:  "outer, outer-name!",
+		},
+		{
+			name:    "inner env may use module prefix",
+			module:  "defaults",
+			envPath: "defaults/.env",
+			envContents: `DEFAULTS_GREETING=inner-prefixed
+DEFAULTS_MESSAGE_NAME=inner-prefixed-name
+`,
+			workdir: "defaults",
+			command: []string{"dagger", "call", "message"},
+			stdout:  "inner-prefixed, inner-prefixed-name!",
+		},
+		{
+			name:    "dashed module accepts compact normalized prefix",
+			module:  "defaults/super-dash-dash",
+			envPath: ".env",
+			envContents: `SUPERDASHDASH_GREETING=compact
+SUPERDASHDASH_MESSAGE_NAME=compact-name
+`,
+			command: []string{"dagger", "-m", "./defaults/super-dash-dash", "call", "message"},
+			stdout:  "compact, compact-name!",
+		},
+		{
+			name:    "dashed module accepts original-name snake prefix",
+			module:  "defaults/super-dash-dash",
+			envPath: ".env",
+			envContents: `SUPER_DASH_DASH_GREETING=snake
+SUPER_DASH_DASH_MESSAGE_NAME=snake-name
+`,
+			command: []string{"dagger", "-m", "./defaults/super-dash-dash", "call", "message"},
+			stdout:  "snake, snake-name!",
+		},
+		{
+			name:    "dashed module accepts original-name lower camel prefix",
+			module:  "defaults/super-dash-dash",
+			envPath: ".env",
+			envContents: `superDashDash_GREETING=camel
+superDashDash_MESSAGE_NAME=camel-name
+`,
+			command: []string{"dagger", "-m", "./defaults/super-dash-dash", "call", "message"},
+			stdout:  "camel, camel-name!",
+		},
+	} {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			ctr := nestedDaggerContainer(t, c, "go", tc.module).
+				WithNewFile(tc.envPath, tc.envContents)
+			if tc.workdir != "" {
+				ctr = ctr.WithWorkdir(tc.workdir)
+			}
 
-Exercise the same compat-backed module through inner .env, outer .env, dashed
-module names, and prefixed outer env keys. Verify one explicit rule for how the
-compat runtime derives the accepted env prefix for a module.`)
+			stdout, err := ctr.WithExec(tc.command, nestedExec).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.stdout, stdout)
+		})
+	}
 }
 
 func (WorkspaceCompatSuite) TestCaching(ctx context.Context, t *testctx.T) {
