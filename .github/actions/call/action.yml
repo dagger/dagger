@@ -59,45 +59,6 @@ runs:
           echo "::endgroup::"
         fi
 
-    - name: Start dev dagger
-      shell: bash
-      if: inputs.dev-engine == 'true'
-      run: |
-        echo "::group::Starting dev engine"
-
-        if ! [[ -x "$(command -v docker)" ]]; then
-          echo "docker is not installed"
-          exit 1
-        fi
-        if ! [[ -x "$(command -v dagger)" ]]; then
-          echo "dagger is not installed"
-          exit 1
-        fi
-
-        # put env variables in ${{ runner.temp }}/actions/call/local-envs instead of
-        # $GITHUB_ENV to avoid leaking into parent workflow
-        echo "export PATH=$PWD/bin:$PATH" >> ${{ runner.temp }}/actions/call/local-envs
-
-        echo "::endgroup::"
-      env:
-        # create separate container for each workflow (to prevent collisions
-        # with shared docker containers). With `arc` the runner name
-        # is the name of the pod, and each pod runs a single dedicated job.
-        _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ runner.name }}
-
-    - name: Wait for dagger to be ready
-      shell: bash
-      run: |
-        source ${{ runner.temp }}/actions/call/local-envs
-
-        echo "::group::Dagger client version"
-        dagger --silent version
-        echo "::endgroup::"
-
-        echo "::group::Dagger server version"
-        dagger --silent core version
-        echo "::endgroup::"
-
     - name: ${{ inputs.function }}
       shell: bash
       run: |
@@ -118,9 +79,9 @@ runs:
           # Apply GHA-specific .env
           [ -e .env.gha ] && mv .env.gha .env
         fi
-        redirect_logs dagger -m "${{ inputs.module }}" call ${{ inputs.function }}
+        redirect_logs dagger --cloud -m "${{ inputs.module }}" call ${{ inputs.function }}
       env:
-        DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
+        DAGGER_CLOUD_TOKEN: oidc
 
     - name: Archive call logs
       if: always() && inputs.upload-logs == 'true'
@@ -128,18 +89,4 @@ runs:
       with:
         name: call-logs-${{ runner.name }}-${{ github.job }}
         path: ${{ runner.temp }}/actions/call/call.log
-        overwrite: true
-
-    - name: Capture dev engine logs
-      if: always() && inputs.dev-engine == 'true'
-      shell: bash
-      run: |
-        docker logs dagger-engine.dev-${{ runner.name }} &> ${{ runner.temp }}/actions/call/engine.log
-
-    - name: Archive engine logs
-      if: always() && inputs.dev-engine == 'true'
-      uses: actions/upload-artifact@v4
-      with:
-        name: engine-logs-${{ runner.name }}
-        path: ${{ runner.temp }}/actions/call/engine.log
         overwrite: true
