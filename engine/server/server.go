@@ -26,6 +26,7 @@ import (
 	"github.com/containerd/containerd/v2/plugins/diff/walking"
 	"github.com/containerd/go-runc"
 	"github.com/containerd/platforms"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/config"
@@ -155,7 +156,8 @@ type Server struct {
 	daggerSessionsMu sync.RWMutex
 	clientDBs        *clientdb.DBs
 
-	locker *locker.Locker
+	locker                  *locker.Locker
+	cacheVolumeActiveMounts *core.CacheVolumeActiveMounts
 
 	secretSalt []byte
 }
@@ -190,7 +192,8 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 		daggerSessions: make(map[string]*daggerSession),
 
-		locker: locker.New(),
+		locker:                  locker.New(),
+		cacheVolumeActiveMounts: core.NewCacheVolumeActiveMounts(),
 	}
 	srv.shutdownCtx, srv.shutdownCancel = context.WithCancelCause(context.Background())
 
@@ -832,6 +835,10 @@ func (srv *Server) CorruptDBReset() bool {
 
 func (srv *Server) Locker() *locker.Locker {
 	return srv.locker
+}
+
+func (srv *Server) CacheVolumeActiveMounts() *core.CacheVolumeActiveMounts {
+	return srv.cacheVolumeActiveMounts
 }
 
 func (srv *Server) gcClientDBs() {

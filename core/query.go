@@ -140,6 +140,10 @@ type Server interface {
 	// shared resources between multiple potentially concurrent calls.
 	Locker() *locker.Locker
 
+	// Tracks cache-volume snapshots mounted by running execs across all
+	// materialized instances of the same logical cache volume.
+	CacheVolumeActiveMounts() *CacheVolumeActiveMounts
+
 	// A shared engine-wide salt used when creating cache keys for secrets based on their plaintext
 	SecretSalt() []byte
 

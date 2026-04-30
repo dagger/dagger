@@ -43,9 +43,10 @@ func testResultCall(field string, typ dagql.Typed, receiver *dagql.ResultCall) *
 }
 
 type mockServer struct {
-	moduleSource   *ModuleSource
-	functionCall   *FunctionCall
-	clientMetadata *engine.ClientMetadata
+	moduleSource            *ModuleSource
+	functionCall            *FunctionCall
+	clientMetadata          *engine.ClientMetadata
+	cacheVolumeActiveMounts *CacheVolumeActiveMounts
 }
 
 func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engineutil.ExecutionMetadata) {
@@ -167,8 +168,14 @@ func (ms *mockServer) PruneEngineLocalCacheEntries(context.Context, EngineCacheP
 func (ms *mockServer) EngineLocalCachePolicy() *dagql.CachePrunePolicy { return nil }
 func (ms *mockServer) SnapshotManager() bkcache.SnapshotManager        { return nil }
 func (ms *mockServer) Locker() *locker.Locker                          { return nil }
-func (ms *mockServer) SecretSalt() []byte                              { return nil }
-func (ms *mockServer) FlushSessionTelemetry(context.Context) error     { return nil }
+func (ms *mockServer) CacheVolumeActiveMounts() *CacheVolumeActiveMounts {
+	if ms.cacheVolumeActiveMounts == nil {
+		ms.cacheVolumeActiveMounts = NewCacheVolumeActiveMounts()
+	}
+	return ms.cacheVolumeActiveMounts
+}
+func (ms *mockServer) SecretSalt() []byte                          { return nil }
+func (ms *mockServer) FlushSessionTelemetry(context.Context) error { return nil }
 func (ms *mockServer) ClientTelemetry(ctc context.Context, sessID, clientID string) (*clientdb.DB, error) {
 	return nil, nil
 }

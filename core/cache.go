@@ -39,12 +39,67 @@ type CacheVolume struct {
 
 const cacheVolumeRootSelector = "/"
 
+// CacheVolumeActiveMounts tracks which cache-volume snapshots are mounted by
+// running execs. SnapshotManager still owns the refs; this only answers whether
+// a private cache mount should reuse an idle ref or create another one.
+type CacheVolumeActiveMounts struct {
+	mu     sync.Mutex
+	active map[string]struct{}
+}
+
+func NewCacheVolumeActiveMounts() *CacheVolumeActiveMounts {
+	return &CacheVolumeActiveMounts{
+		active: map[string]struct{}{},
+	}
+}
+
+func (active *CacheVolumeActiveMounts) acquire(ref bkcache.MutableRef) (string, bool) {
+	if active == nil || ref == nil {
+		return "", false
+	}
+	key := ref.SnapshotID()
+	if key == "" {
+		key = ref.ID()
+	}
+	if key == "" {
+		return "", false
+	}
+
+	active.mu.Lock()
+	defer active.mu.Unlock()
+	if _, ok := active.active[key]; ok {
+		return "", false
+	}
+	active.active[key] = struct{}{}
+	return key, true
+}
+
+func (active *CacheVolumeActiveMounts) release(key string) {
+	if active == nil || key == "" {
+		return
+	}
+	active.mu.Lock()
+	defer active.mu.Unlock()
+	delete(active.active, key)
+}
+
 type cacheVolumeMount struct {
+	active   *CacheVolumeActiveMounts
+	leaseKey string
 	ref      bkcache.MutableRef
 	selector string
+	released bool
 }
 
 func (mount *cacheVolumeMount) release(context.Context) error {
+	if mount == nil {
+		return nil
+	}
+	if mount.released {
+		return nil
+	}
+	mount.released = true
+	mount.active.release(mount.leaseKey)
 	return nil
 }
 
@@ -283,15 +338,49 @@ func (cache *CacheVolume) Sync(ctx context.Context) error {
 }
 
 func (cache *CacheVolume) acquireMount(ctx context.Context) (*cacheVolumeMount, error) {
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	activeMounts := query.CacheVolumeActiveMounts()
+
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
-	if len(cache.snapshots) == 0 {
+	if cache.Sharing == CacheSharingModePrivate {
+		for _, ref := range cache.snapshots {
+			if ref == nil {
+				continue
+			}
+			leaseKey, ok := activeMounts.acquire(ref)
+			if !ok {
+				continue
+			}
+			return &cacheVolumeMount{
+				active:   activeMounts,
+				leaseKey: leaseKey,
+				ref:      ref,
+				selector: cache.snapshotSelectorLocked(),
+			}, nil
+		}
+	}
+
+	if len(cache.snapshots) == 0 || cache.Sharing == CacheSharingModePrivate {
 		ref, err := cache.appendSnapshotLocked(ctx)
 		if err != nil {
 			return nil, err
 		}
+		var leaseKey string
+		if cache.Sharing == CacheSharingModePrivate {
+			var ok bool
+			leaseKey, ok = activeMounts.acquire(ref)
+			if !ok {
+				return nil, fmt.Errorf("acquire new private cache volume snapshot %q", ref.SnapshotID())
+			}
+		}
 		return &cacheVolumeMount{
+			active:   activeMounts,
+			leaseKey: leaseKey,
 			ref:      ref,
 			selector: cache.snapshotSelectorLocked(),
 		}, nil
@@ -302,6 +391,7 @@ func (cache *CacheVolume) acquireMount(ctx context.Context) (*cacheVolumeMount, 
 		return nil, fmt.Errorf("cache volume %q has nil snapshot", cache.Key)
 	}
 	return &cacheVolumeMount{
+		active:   activeMounts,
 		ref:      ref,
 		selector: cache.snapshotSelectorLocked(),
 	}, nil

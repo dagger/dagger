@@ -125,6 +125,10 @@ func (s *currentTypeDefsTestServer) SnapshotManager() bkcache.SnapshotManager { 
 
 func (s *currentTypeDefsTestServer) Locker() *locker.Locker { return nil }
 
+func (s *currentTypeDefsTestServer) CacheVolumeActiveMounts() *core.CacheVolumeActiveMounts {
+	return core.NewCacheVolumeActiveMounts()
+}
+
 func (s *currentTypeDefsTestServer) SecretSalt() []byte { return nil }
 
 func (s *currentTypeDefsTestServer) FlushSessionTelemetry(context.Context) error {

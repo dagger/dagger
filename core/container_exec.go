@@ -706,6 +706,10 @@ func prepareMounts(
 			}
 		}
 		if err := materializeState(mountState); err != nil {
+			if mountState.CacheMount != nil {
+				err = errors.Join(err, mountState.CacheMount.release(context.WithoutCancel(ctx)))
+				mountState.CacheMount = nil
+			}
 			return materialized, err
 		}
 	}
@@ -1492,6 +1496,10 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 				mountState.ApplyOutput = output
 			}
 			if err := materializeState(mountState); err != nil {
+				if mountState.CacheMount != nil {
+					err = errors.Join(err, mountState.CacheMount.release(context.WithoutCancel(ctx)))
+					mountState.CacheMount = nil
+				}
 				return failPrepare(err)
 			}
 		}

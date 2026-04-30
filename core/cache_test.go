@@ -31,6 +31,7 @@ type cacheVolumeTestSnapshotManager struct {
 	immutableBySnapshotID map[string]bkcache.ImmutableRef
 	mutableBySnapshotID   map[string]bkcache.MutableRef
 	newResult             bkcache.MutableRef
+	newResults            []bkcache.MutableRef
 
 	getBySnapshotIDCalls        []string
 	getMutableBySnapshotIDCalls []string
@@ -61,6 +62,11 @@ func (m *cacheVolumeTestSnapshotManager) GetBySnapshotID(ctx context.Context, sn
 
 func (m *cacheVolumeTestSnapshotManager) New(_ context.Context, parent bkcache.ImmutableRef, _ ...bkcache.RefOption) (bkcache.MutableRef, error) {
 	m.newCalls = append(m.newCalls, parent)
+	if len(m.newResults) > 0 {
+		ref := m.newResults[0]
+		m.newResults = m.newResults[1:]
+		return ref, nil
+	}
 	if m.newResult == nil {
 		return nil, context.Canceled
 	}
@@ -348,6 +354,87 @@ func TestCacheVolumeInitializeSnapshotCreatesMutableSnapshot(t *testing.T) {
 	require.Nil(t, manager.newCalls[0])
 	require.Equal(t, ref, cache.getSnapshot())
 	require.Equal(t, "/", cache.getSnapshotSelector())
+}
+
+func TestPrivateCacheVolumeAcquireMountReusesIdleSnapshot(t *testing.T) {
+	t.Parallel()
+
+	ref := &cacheVolumeTestMutableRef{
+		cacheVolumeTestImmutableRef: cacheVolumeTestImmutableRef{
+			id:         "mutable-1",
+			snapshotID: "snapshot-1",
+		},
+	}
+	manager := &cacheVolumeTestSnapshotManager{
+		newResult: ref,
+	}
+	query := &Query{
+		Server: &cacheVolumeTestQueryServer{
+			mockServer:   &mockServer{},
+			cacheManager: manager,
+		},
+	}
+	ctx := ContextWithQuery(context.Background(), query)
+
+	cache := NewCache("cache-key", "ns", dagql.Optional[DirectoryID]{}, CacheSharingModePrivate, "")
+
+	mount1, err := cache.acquireMount(ctx)
+	require.NoError(t, err)
+	require.Equal(t, ref, mount1.ref)
+	require.NoError(t, mount1.release(ctx))
+
+	mount2, err := cache.acquireMount(ctx)
+	require.NoError(t, err)
+	require.Equal(t, ref, mount2.ref)
+	require.NoError(t, mount2.release(ctx))
+	require.Len(t, manager.newCalls, 1)
+}
+
+func TestPrivateCacheVolumeAcquireMountCreatesSnapshotWhenActive(t *testing.T) {
+	t.Parallel()
+
+	ref1 := &cacheVolumeTestMutableRef{
+		cacheVolumeTestImmutableRef: cacheVolumeTestImmutableRef{
+			id:         "mutable-1",
+			snapshotID: "snapshot-1",
+		},
+	}
+	ref2 := &cacheVolumeTestMutableRef{
+		cacheVolumeTestImmutableRef: cacheVolumeTestImmutableRef{
+			id:         "mutable-2",
+			snapshotID: "snapshot-2",
+		},
+	}
+	manager := &cacheVolumeTestSnapshotManager{
+		newResults: []bkcache.MutableRef{ref1, ref2},
+	}
+	query := &Query{
+		Server: &cacheVolumeTestQueryServer{
+			mockServer:   &mockServer{},
+			cacheManager: manager,
+		},
+	}
+	ctx := ContextWithQuery(context.Background(), query)
+
+	cache := NewCache("cache-key", "ns", dagql.Optional[DirectoryID]{}, CacheSharingModePrivate, "")
+
+	mount1, err := cache.acquireMount(ctx)
+	require.NoError(t, err)
+	require.Equal(t, ref1, mount1.ref)
+
+	mount2, err := cache.acquireMount(ctx)
+	require.NoError(t, err)
+	require.Equal(t, ref2, mount2.ref)
+	require.Len(t, manager.newCalls, 2)
+
+	require.NoError(t, mount1.release(ctx))
+	require.NoError(t, mount2.release(ctx))
+
+	mount3, err := cache.acquireMount(ctx)
+	require.NoError(t, err)
+	require.Equal(t, ref1, mount3.ref)
+	require.NoError(t, mount3.release(ctx))
+	require.Len(t, manager.newCalls, 2)
 }
 
 var _ bkcache.ImmutableRef = (*cacheVolumeTestImmutableRef)(nil)
