@@ -28,10 +28,51 @@ func TestWorkspaceMigration(t *testing.T) {
 // that migrate is preview-by-default and apply-with-yes.
 func (WorkspaceMigrationSuite) TestWorkspaceMigratePreviewAndApply(ctx context.Context, t *testctx.T) {
 	t.Run("preview reports changes without applying them", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement migration preview coverage.
+		c := connect(ctx, t)
 
-Run dagger migrate without -y and verify it previews the changeset without
-modifying files on disk.`)
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "sdk": {"source": "dang"},
+  "source": "ci"
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.WithNewFile("ci/main.dang", `
+type Myapp {
+  pub greet: String! {
+    "hello from preview"
+  }
+}
+`)
+		})
+
+		preview := ctr.WithExec([]string{"dagger", "--progress=report", "query"}, dagger.ContainerWithExecOpts{
+			Stdin: `{
+  currentWorkspace {
+    migrate {
+      changes {
+        isEmpty
+        diffStats {
+          path
+        }
+      }
+    }
+  }
+}`,
+			ExperimentalPrivilegedNesting: true,
+		})
+		out, err := preview.Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `"isEmpty": false`)
+		require.Contains(t, out, `"path": ".dagger/config.toml"`)
+		require.Contains(t, out, `"path": ".dagger/modules/myapp/dagger.json"`)
+
+		_, err = preview.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
+		require.NoError(t, err, "preview should leave the legacy config on disk")
+
+		_, err = preview.WithExec([]string{"test", "-f", ".dagger/config.toml"}).Sync(ctx)
+		require.Error(t, err, "preview should not write workspace config")
+
+		_, err = preview.WithExec([]string{"test", "-f", ".dagger/modules/myapp/dagger.json"}).Sync(ctx)
+		require.Error(t, err, "preview should not write migrated module config")
 	})
 
 	t.Run("apply writes workspace config and migrated modules", func(ctx context.Context, t *testctx.T) {
@@ -53,15 +94,11 @@ type Myapp {
 		}).With(migrateApply)
 
 		_, err := ctr.WithExec([]string{"test", "-d", "ci"}).Sync(ctx)
-		require.NoError(t, err, "source directory should remain in place")
-
-		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/modules/myapp/main.dang"}).Sync(ctx)
-		require.Error(t, err, "source file should not be copied to the migrated module config directory")
+		require.NoError(t, err, "source directory should remain available after migration")
 
 		djson, err := ctr.WithExec([]string{"cat", ".dagger/modules/myapp/dagger.json"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, djson, `"name": "myapp"`)
-		require.Contains(t, djson, `"source": "../../../ci"`)
 
 		configOut, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
 		require.NoError(t, err)
@@ -80,10 +117,35 @@ type Myapp {
 // migration.
 func (WorkspaceMigrationSuite) TestWorkspaceMigrateOutcomes(ctx context.Context, t *testctx.T) {
 	t.Run("non-local source stays in place behind moved config", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement non-local source migration coverage.
+		c := connect(ctx, t)
 
-Move the current coverage for migrating source = "ci" into this file and
-verify the migrated dagger.json source points back to the original directory.`)
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "sdk": {"source": "dang"},
+  "source": "ci"
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.WithNewFile("ci/main.dang", `
+type Myapp {
+  pub greet: String! {
+    "hello from original source"
+  }
+}
+`)
+		}).With(daggerExec("migrate", "-y"))
+
+		_, err := ctr.WithExec([]string{"test", "-f", "ci/main.dang"}).Sync(ctx)
+		require.NoError(t, err, "source file should remain in its original directory")
+
+		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/modules/myapp/main.dang"}).Sync(ctx)
+		require.Error(t, err, "source file should not be copied to the migrated module config directory")
+
+		djson, err := ctr.WithExec([]string{"cat", ".dagger/modules/myapp/dagger.json"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, djson, `"source": "../../../ci"`)
+
+		out, err := ctr.With(daggerCall("greet")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from original source", strings.TrimSpace(out))
 	})
 
 	t.Run("sdk-only root-source modules are a no-op", func(ctx context.Context, t *testctx.T) {
@@ -434,28 +496,118 @@ type Myapp {
 // TestWorkspaceMigrateScope should lock down what the migration actually uses
 // as input.
 func (WorkspaceMigrationSuite) TestWorkspaceMigrateScope(ctx context.Context, t *testctx.T) {
-	t.Fatal(`FIXME: implement migration scope coverage.
+	c := connect(ctx, t)
 
-Verify Workspace.migrate operates on the compat workspace already attached to
-the loaded Workspace rather than rediscovering a target from disk.`)
+	ctr := workspaceBase(t, c).
+		WithNewFile("dagger.json", `{
+  "name": "outer",
+  "sdk": {"source": "dang"},
+  "source": "outer-src"
+}`).
+		WithNewFile("nested/dagger.json", `{
+  "name": "inner",
+  "sdk": {"source": "dang"},
+  "source": "src"
+}`).
+		WithNewFile("nested/src/main.dang", `
+type Inner {
+  pub greet: String! {
+    "hello from nested source"
+  }
+}
+`).
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "initial"}).
+		WithWorkdir("/work/nested").
+		With(daggerExec("migrate", "-y"))
+
+	_, err := ctr.WithExec([]string{"test", "-f", ".dagger/config.toml"}).Sync(ctx)
+	require.NoError(t, err, "nested compat workspace should be migrated")
+
+	_, err = ctr.WithExec([]string{"test", "-f", "../dagger.json"}).Sync(ctx)
+	require.NoError(t, err, "outer legacy config should not be migrated from the nested run")
+
+	_, err = ctr.WithExec([]string{"test", "-f", "../.dagger/config.toml"}).Sync(ctx)
+	require.Error(t, err, "migration should not write root workspace config")
+
+	_, err = ctr.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
+	require.Error(t, err, "nested legacy config should be removed")
+
+	configOut, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, configOut, `[modules.inner]`)
+	require.NotContains(t, configOut, `[modules.outer]`)
+
+	djson, err := ctr.WithExec([]string{"cat", ".dagger/modules/inner/dagger.json"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, djson, `"source": "../../../src"`)
 }
 
 // TestWorkspaceMigrateSafety is the planning scaffold for migration properties
 // that protect users from repeated or destructive application.
 func (WorkspaceMigrationSuite) TestWorkspaceMigrateSafety(ctx context.Context, t *testctx.T) {
 	t.Run("rerunning migrate after apply is a no-op", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement migration idempotency coverage.
+		c := connect(ctx, t)
 
-Apply dagger migrate -y to a compat-eligible project, then run it again.
-Verify the second run does not rewrite files, recreate modules, or emit a fresh
-migration summary.`)
+		migrated := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "sdk": {"source": "dang"},
+  "source": "ci"
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.WithNewFile("ci/main.dang", `
+type Myapp {
+  pub greet: String! {
+    "hello from first migration"
+  }
+}
+`)
+		}).With(daggerExec("migrate", "-y"))
+
+		hashFiles := []string{"sh", "-c", "find . -path './.git' -prune -o -type f -print | sort | xargs sha256sum"}
+		before, err := migrated.WithExec(hashFiles).Stdout(ctx)
+		require.NoError(t, err)
+
+		rerun := migrated.With(daggerExec("migrate", "-y"))
+		out, err := rerun.CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "No migration needed.")
+		require.NotContains(t, out, "prepare workspace migration")
+		require.NotContains(t, out, "Migrated to workspace format")
+
+		after, err := rerun.WithExec(hashFiles).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, before, after, "second migration should not rewrite files")
 	})
 
 	t.Run("apply refuses to overwrite conflicting target paths", func(ctx context.Context, t *testctx.T) {
-		t.Fatal(`FIXME: implement migration target-collision coverage.
+		c := connect(ctx, t)
 
-Pre-create files or directories at the locations migration wants to write, such
-as .dagger/config.toml or .dagger/modules/<name>. Verify migrate fails clearly
-instead of overwriting unrelated user data.`)
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "sdk": {"source": "dang"},
+  "source": "ci"
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithNewFile("ci/main.dang", `
+type Myapp {
+  pub greet: String! {
+    "hello from conflicted migration"
+  }
+}
+`).
+				WithNewFile(".dagger/modules/myapp/dagger.json", `{"name":"some-other-module"}`)
+		})
+
+		out, err := ctr.With(daggerExecFail("migrate", "-y")).CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `migration target ".dagger/modules/myapp/dagger.json" already exists`)
+		require.Contains(t, out, "refusing to overwrite")
+
+		conflictOut, err := ctr.WithExec([]string{"cat", ".dagger/modules/myapp/dagger.json"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"name":"some-other-module"}`, conflictOut)
+
+		_, err = ctr.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
+		require.NoError(t, err, "failed migration should leave legacy config in place")
 	})
 }
