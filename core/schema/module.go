@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -15,6 +16,26 @@ import (
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/vektah/gqlparser/v2/ast"
 )
+
+// introspectionDefaultToJSON converts a GraphQL default-value literal (as
+// returned by GraphQL introspection) into a JSON-encoded value suitable for
+// FunctionArg.DefaultValue. Most GraphQL literals (strings, numbers, booleans)
+// are already valid JSON, but enum literals are bare identifiers (e.g. RED)
+// and lists/objects can contain enums, so a typed dagql.Input — when
+// available — is the only reliable way to re-encode them.
+func introspectionDefaultToJSON(literal *string, argSpec dagql.InputSpec) (core.JSON, error) {
+	if literal == nil {
+		return nil, nil
+	}
+	if argSpec.Default != nil {
+		encoded, err := json.Marshal(argSpec.Default)
+		if err != nil {
+			return nil, fmt.Errorf("marshal default %q: %w", *literal, err)
+		}
+		return core.JSON(encoded), nil
+	}
+	return core.JSON(*literal), nil
+}
 
 type moduleSchema struct{}
 
@@ -2467,9 +2488,11 @@ func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectRe
 				defaultPath    string
 				defaultAddress string
 				ignore         []string
+				resolvedSpec   dagql.InputSpec
 			)
 			if fieldSpec, ok := queryObjType.FieldSpec(introspectionField.Name, dag.View); ok {
 				if argSpec, ok := fieldSpec.Args.Input(introspectionArg.Name, dag.View); ok {
+					resolvedSpec = argSpec
 					for _, directive := range argSpec.Directives {
 						switch directive.Name {
 						case "defaultPath":
@@ -2492,9 +2515,9 @@ func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectRe
 					}
 				}
 			}
-			var defaultValue core.JSON
-			if introspectionArg.DefaultValue != nil {
-				defaultValue = core.JSON(*introspectionArg.DefaultValue)
+			defaultValue, err := introspectionDefaultToJSON(introspectionArg.DefaultValue, resolvedSpec)
+			if err != nil {
+				return dagql.ObjectResult[*core.TypeDef]{}, fmt.Errorf("convert default value for arg %q: %w", introspectionArg.Name, err)
 			}
 			var fnArg dagql.ObjectResult[*core.FunctionArg]
 			if err := dag.Select(ctx, dag.Root(), &fnArg, dagql.Selector{

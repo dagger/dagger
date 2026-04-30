@@ -1950,3 +1950,57 @@ class Test:
 	require.NoError(t, err)
 	require.Contains(t, out2, "3.18")
 }
+
+// TestEnumDefaultValue verifies that an enum used as a default for a
+// function argument is honored both at call time and in the --help text.
+//
+// Regression test: the --help output used to drop the default for enum-typed
+// args because the engine reconstructed the Query type's typedef from GraphQL
+// introspection, which prints enum defaults as bare identifiers (e.g. RED)
+// rather than JSON strings (e.g. "RED"). The CLI couldn't parse the bare
+// identifier as JSON, so it silently fell back to "no default".
+func (PythonSuite) TestEnumDefaultValue(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := pythonModInit(t, c, `
+import enum
+import dagger
+
+@dagger.enum_type
+class Color(enum.Enum):
+    RED = "RED"
+    BLUE = "BLUE"
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    def pick(self, color: Color = Color.RED) -> str:
+        return color.value
+`)
+
+	t.Run("default value applied at call time", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall("pick")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "RED", out)
+	})
+
+	t.Run("explicit value overrides default", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall("pick", "--color", "BLUE")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "BLUE", out)
+	})
+
+	t.Run("default shown in --help output", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall("pick", "--help")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "default RED",
+			"--help should display the enum default value")
+	})
+
+	t.Run("default registered in module schema", func(ctx context.Context, t *testctx.T) {
+		schema := inspectModule(ctx, t, modGen)
+		got := schema.Get(`objects.#.asObject|#(name=Test).functions.#(name=pick).args.#(name=color).defaultValue`).String()
+		require.Equal(t, `"RED"`, got,
+			"defaultValue must be a JSON-encoded string, not a bare identifier")
+	})
+}
