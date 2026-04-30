@@ -617,6 +617,14 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	// uninitialized workspaces.
 	var compatWorkspace *workspace.CompatWorkspace
 	moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
+	if hasModuleConfig && wsConfig != nil {
+		wsDir := filepath.Clean(filepath.Join(ws.Root, ws.Path))
+		rel, err := filepath.Rel(wsDir, filepath.Clean(moduleDir))
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			moduleDir = ""
+			hasModuleConfig = false
+		}
+	}
 	legacyCallerDir := legacyCallerModuleDir(isLocal, moduleDir)
 	if wsConfig == nil && hasModuleConfig {
 		cfgPath := filepath.Join(moduleDir, workspace.ModuleConfigFileName)
