@@ -176,6 +176,34 @@ func (ToolchainSuite) TestToolchainsWithSDK(ctx context.Context, t *testctx.T) {
 		require.Contains(t, out, "hello from blueprint")
 	})
 
+	// Regression test: a module must be able to call its toolchain through
+	// the generated SDK bindings, i.e. the toolchain's types must be present
+	// in the module's codegen schema. This worked in v0.20.3, broke in
+	// v0.20.4 when toolchains stopped being loaded as codegen deps.
+	t.Run("module code can call toolchain through generated bindings", func(ctx context.Context, t *testctx.T) {
+		setup := toolchainTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init", "--sdk=go", "--name=app", "--source=.")).
+			With(daggerExec("toolchain", "install", "../hello")).
+			WithNewFile("main.go", `package main
+
+import "context"
+
+type App struct{}
+
+// GreetFromToolchain invokes the toolchain's Message() through the Go
+// bindings, which requires the toolchain's types to be in the codegen schema.
+func (m *App) GreetFromToolchain(ctx context.Context) (string, error) {
+	return dag.Hello().Message(ctx)
+}
+`)
+		out, err := setup.
+			With(daggerExec("call", "greet-from-toolchain")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "hello from blueprint")
+	})
+
 	// Verify that the parent fields of the top level module is not invading
 	// toolchains state.
 	t.Run("use checks with sdk that have a constructor", func(ctx context.Context, t *testctx.T) {
