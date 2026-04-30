@@ -25,11 +25,14 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     /**
      * Return all checks from modules loaded in the workspace.
      */
-    public function checks(?array $include = null): CheckGroup
+    public function checks(?array $include = null, ?bool $noGenerate = null): CheckGroup
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('checks');
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
+        }
+        if (null !== $noGenerate) {
+        $innerQueryBuilder->setArgument('noGenerate', $noGenerate);
         }
         return new \Dagger\CheckGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
