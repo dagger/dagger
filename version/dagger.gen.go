@@ -58,25 +58,21 @@ func convertSlice[I any, O any](in []I, f func(I) O) []O {
 
 func (r Version) MarshalJSON() ([]byte, error) {
 	var concrete struct {
-		Git    *dagger.GitRepository
-		Inputs *dagger.Directory
+		Git *dagger.GitRepository
 	}
 	concrete.Git = r.Git
-	concrete.Inputs = r.Inputs
 	return json.Marshal(&concrete)
 }
 
 func (r *Version) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
-		Git    *dagger.GitRepository
-		Inputs *dagger.Directory
+		Git *dagger.GitRepository
 	}
 	err := json.Unmarshal(bs, &concrete)
 	if err != nil {
 		return err
 	}
 	r.Git = concrete.Git
-	r.Inputs = concrete.Inputs
 	return nil
 }
 
@@ -247,14 +243,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg gitParent", err))
 				}
 			}
-			var inputs *dagger.Directory
-			if inputArgs["inputs"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["inputs"]), &inputs)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg inputs", err))
-				}
-			}
-			return New(ctx, gitParent, inputs), nil
+			return New(ctx, gitParent), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
