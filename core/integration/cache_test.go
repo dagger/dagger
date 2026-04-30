@@ -137,6 +137,116 @@ rmdir /cache/in-use`,
 	require.Len(t, strings.Fields(strings.TrimSpace(out)), writers)
 }
 
+func (CacheSuite) TestPrivateCacheVolumeReusesSequentialWriter(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	cacheKey := "private-cache-" + identity.NewID()
+	content := "first-writer-" + identity.NewID()
+
+	_, err := c.Container().
+		From(alpineImage).
+		WithMountedCache("/cache", c.CacheVolume(cacheKey, dagger.CacheVolumeOpts{
+			Sharing: dagger.CacheSharingModePrivate,
+		})).
+		WithExec([]string{"sh", "-c", fmt.Sprintf("echo %q > /cache/value", content)}).
+		Sync(ctx)
+	require.NoError(t, err)
+
+	out, err := c.Container().
+		From(alpineImage).
+		WithMountedCache("/cache", c.CacheVolume(cacheKey, dagger.CacheVolumeOpts{
+			Sharing: dagger.CacheSharingModePrivate,
+		})).
+		WithExec([]string{"cat", "/cache/value"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, content, strings.TrimSpace(out))
+}
+
+func (CacheSuite) TestPrivateCacheVolumeSplitsConcurrentWriters(ctx context.Context, t *testctx.T) {
+	const writers = 3
+
+	cacheKey := "private-cache-" + identity.NewID()
+	clients := make([]*dagger.Client, writers)
+	for i := range clients {
+		clients[i] = connect(ctx, t)
+	}
+
+	start := make(chan struct{})
+	var eg errgroup.Group
+	for i := range writers {
+		i := i
+		eg.Go(func() error {
+			<-start
+			_, err := clients[i].
+				Container().
+				From(alpineImage).
+				WithEnvVariable("RUN_ID", fmt.Sprint(i)).
+				WithEnvVariable("CACHEBUSTER", identity.NewID()).
+				WithMountedCache("/cache", clients[i].CacheVolume(cacheKey, dagger.CacheVolumeOpts{
+					Sharing: dagger.CacheSharingModePrivate,
+				})).
+				WithExec([]string{
+					"sh",
+					"-euxc",
+					`mkdir /cache/in-use
+echo "$RUN_ID" > /cache/in-use/writer
+sleep 1
+test "$(cat /cache/in-use/writer)" = "$RUN_ID"
+rm /cache/in-use/writer
+rmdir /cache/in-use`,
+				}).
+				Sync(ctx)
+			return err
+		})
+	}
+
+	close(start)
+	require.NoError(t, eg.Wait())
+}
+
+func (CacheSuite) TestMountedCachePrivateSharingSplitsConcurrentWriters(ctx context.Context, t *testctx.T) {
+	const writers = 3
+
+	cacheKey := "private-mounted-cache-" + identity.NewID()
+	clients := make([]*dagger.Client, writers)
+	for i := range clients {
+		clients[i] = connect(ctx, t)
+	}
+
+	start := make(chan struct{})
+	var eg errgroup.Group
+	for i := range writers {
+		i := i
+		eg.Go(func() error {
+			<-start
+			_, err := clients[i].
+				Container().
+				From(alpineImage).
+				WithEnvVariable("RUN_ID", fmt.Sprint(i)).
+				WithEnvVariable("CACHEBUSTER", identity.NewID()).
+				WithMountedCache("/cache", clients[i].CacheVolume(cacheKey), dagger.ContainerWithMountedCacheOpts{
+					Sharing: dagger.CacheSharingModePrivate,
+				}).
+				WithExec([]string{
+					"sh",
+					"-euxc",
+					`mkdir /cache/in-use
+echo "$RUN_ID" > /cache/in-use/writer
+sleep 1
+test "$(cat /cache/in-use/writer)" = "$RUN_ID"
+rm /cache/in-use/writer
+rmdir /cache/in-use`,
+				}).
+				Sync(ctx)
+			return err
+		})
+	}
+
+	close(start)
+	require.NoError(t, eg.Wait())
+}
+
 func (CacheSuite) TestLocalImportCacheReuse(ctx context.Context, t *testctx.T) {
 	hostDirPath := t.TempDir()
 	err := os.WriteFile(filepath.Join(hostDirPath, "foo"), []byte("bar"), 0o644)
