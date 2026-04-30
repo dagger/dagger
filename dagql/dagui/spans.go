@@ -11,6 +11,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
@@ -268,6 +269,10 @@ type SpanSnapshot struct {
 	Passthrough  bool `json:",omitempty"`
 	Ignore       bool `json:",omitempty"`
 
+	// Test attributes
+	TestCaseName  string `json:",omitempty"`
+	TestSuiteName string `json:",omitempty"`
+
 	Boundary    bool `json:",omitempty"`
 	Reveal      bool `json:",omitempty"`
 	RollUpLogs  bool `json:",omitempty"`
@@ -411,6 +416,12 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 
 	case telemetry.ContentTypeAttr:
 		snapshot.ContentType = val.(string)
+
+	case string(semconv.TestCaseNameKey):
+		snapshot.TestCaseName = val.(string)
+
+	case string(semconv.TestSuiteNameKey):
+		snapshot.TestSuiteName = val.(string)
 
 	case "rpc.service":
 		// encapsulate these by default; we only maybe want to see these if their
