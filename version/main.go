@@ -26,10 +26,6 @@ func New(
 	// +ignore=["*", "!.git"]
 	gitParent *dagger.Directory,
 
-	// A git repository containing the source code of the artifact to be versioned.
-	// +optional
-	git *dagger.GitRepository,
-
 	// A directory containing all the inputs of the artifact to be versioned.
 	// An input is any file that changes the artifact if it changes.
 	// This directory is used to compute a digest. If any input changes, the digest changes.
@@ -41,11 +37,10 @@ func New(
 	inputs *dagger.Directory,
 ) *Version {
 	v := &Version{
-		Git:    git,
 		Inputs: inputs.Filter(dagger.DirectoryFilterOpts{Gitignore: true}),
 	}
 
-	if v.Git == nil && gitParent != nil {
+	if gitParent != nil {
 		if gitDir, err := gitParent.Directory(".git").Sync(ctx); err == nil {
 			v.Git = gitDir.AsGit()
 		}

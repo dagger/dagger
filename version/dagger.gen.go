@@ -247,13 +247,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg gitParent", err))
 				}
 			}
-			var git *dagger.GitRepository
-			if inputArgs["git"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["git"]), &git)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg git", err))
-				}
-			}
 			var inputs *dagger.Directory
 			if inputArgs["inputs"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["inputs"]), &inputs)
@@ -261,7 +254,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg inputs", err))
 				}
 			}
-			return New(ctx, gitParent, git, inputs), nil
+			return New(ctx, gitParent, inputs), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
