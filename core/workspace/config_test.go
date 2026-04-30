@@ -173,6 +173,22 @@ enabled = false
 			strings.Split(value, "\n"),
 		)
 	})
+
+	t.Run("missing boolean fields read as false defaults", func(t *testing.T) {
+		t.Parallel()
+
+		value, err := ReadConfigValue(data, "modules.greeter.entrypoint")
+		require.NoError(t, err)
+		require.Equal(t, "false", value)
+
+		value, err = ReadConfigValue(data, "modules.greeter.legacy-default-path")
+		require.NoError(t, err)
+		require.Equal(t, "false", value)
+
+		value, err = ReadConfigValue(data, "defaults_from_dotenv")
+		require.NoError(t, err)
+		require.Equal(t, "false", value)
+	})
 }
 
 func TestWriteConfigValue(t *testing.T) {
