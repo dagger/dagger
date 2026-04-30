@@ -8235,7 +8235,7 @@ func hostDaggerCommand(ctx context.Context, t testing.TB, workdir string, args .
 }
 
 // runs a dagger cli command directly on the host, rather than in an exec
-func hostDaggerExec(ctx context.Context, t testing.TB, workdir string, args ...string) ([]byte, error) { //nolint: unparam
+func hostDaggerExec(ctx context.Context, t testing.TB, workdir string, args ...string) ([]byte, error) {
 	t.Helper()
 	cmd := hostDaggerCommand(ctx, t, workdir, args...)
 	output, err := cmd.CombinedOutput()
