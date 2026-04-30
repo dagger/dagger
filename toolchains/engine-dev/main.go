@@ -247,10 +247,9 @@ func (dev *EngineDev) Service(
 	devEngine = devEngine.
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume(cacheVolumeName), dagger.ContainerWithMountedCacheOpts{
-			// only one engine can run off it's local state dir at a time; Private means that we will attempt to re-use
-			// these cache volumes if they are not already locked to another running engine but otherwise will create a new
-			// one, which gets us best-effort cache re-use for these nested engine services
-			Sharing: dagger.CacheSharingModePrivate,
+			// Only one engine can safely use a state dir at a time. LOCKED keeps the
+			// cache identity stable while serializing concurrent users.
+			Sharing: dagger.CacheSharingModeLocked,
 		})
 
 	if metrics {
