@@ -3096,9 +3096,10 @@ func TestLookupCacheForIDExtraDigestFallback(t *testing.T) {
 		assert.NilError(t, err)
 		assert.Assert(t, !sourceRes.HitCache())
 
-		requestKey := sourceKey.
-			WithArgument(call.NewArgument("variant", call.NewLiteralInt(1), false)).
-			With(call.WithExtraDigest(shared))
+		requestKey := sourceKey.With(
+			call.WithArgs(call.NewArgument("variant", call.NewLiteralInt(1), false)),
+			call.WithExtraDigest(shared),
+		)
 		requestCall := &ResultCall{
 			Kind:         ResultCallKindField,
 			Type:         NewResultCallType(Int(0).Type()),
@@ -3186,7 +3187,6 @@ func TestHitTeachesReturnedRequestIDToCache(t *testing.T) {
 		Label:  "eq-shared",
 	}
 
-	parentBKey := call.New().Append(Int(0).Type(), "teach-hit-parent-b")
 	parentACall := cacheTestIntCall("teach-hit-parent-a")
 	parentBCall := cacheTestIntCall("teach-hit-parent-b")
 	parentAOutCall := cacheTestIntCall("teach-hit-parent-a", shared)
@@ -3204,8 +3204,6 @@ func TestHitTeachesReturnedRequestIDToCache(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, !parentBRes.HitCache())
 
-	childBKey := parentBKey.Append(Int(0).Type(), "teach-hit-child")
-
 	childARes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
 		Kind:     ResultCallKindField,
 		Type:     NewResultCallType(Int(0).Type()),
@@ -3217,13 +3215,14 @@ func TestHitTeachesReturnedRequestIDToCache(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, !childARes.HitCache())
 
-	childBInitCalls := 0
-	childBRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: &ResultCall{
+	childBReq := &CallRequest{ResultCall: &ResultCall{
 		Kind:     ResultCallKindField,
 		Type:     NewResultCallType(Int(0).Type()),
 		Field:    "teach-hit-child",
 		Receiver: &ResultCallRef{ResultID: uint64(parentBRes.cacheSharedResult().id)},
-	}}, func(context.Context) (AnyResult, error) {
+	}}
+	childBInitCalls := 0
+	childBRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, childBReq, func(context.Context) (AnyResult, error) {
 		childBInitCalls++
 		return cacheTestPlainResult(NewInt(1002)), nil
 	})
@@ -3232,12 +3231,12 @@ func TestHitTeachesReturnedRequestIDToCache(t *testing.T) {
 	assert.Assert(t, childBRes.HitCache())
 	assert.Equal(t, cacheTestMustEncodeID(t, childARes), cacheTestMustEncodeID(t, childBRes))
 
-	c.egraphMu.RLock()
-	resolvedChildB, resolveErr := c.resolveSharedResultForInputIDLocked(childBKey)
-	c.egraphMu.RUnlock()
-	assert.NilError(t, resolveErr)
-	assert.Assert(t, resolvedChildB != nil)
-	assert.Equal(t, childBRes.cacheSharedResult().id, resolvedChildB.id)
+	childBDigest, err := childBReq.deriveRecipeDigest(c)
+	assert.NilError(t, err)
+	resolvedChildB, hit, err := c.lookupCacheForDigests(ctx, "test-session", noopTypeResolver{}, childBDigest, childBReq.ExtraDigests)
+	assert.NilError(t, err)
+	assert.Assert(t, hit)
+	assert.Equal(t, childBRes.cacheSharedResult().id, resolvedChildB.cacheSharedResult().id)
 
 	cacheTestReleaseSession(t, c, ctx)
 	assert.Equal(t, 0, c.Size())

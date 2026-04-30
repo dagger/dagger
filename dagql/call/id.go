@@ -10,7 +10,6 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/util/hashutil"
@@ -44,7 +43,7 @@ context of dagql + the engine.
 IDs are immutable from the consumer's perspective.
 
 Recipe-form IDs support the historical recipe-manipulation operations such as
-Append, WithArgument, SelectNth, etc.
+Append and With.
 
 Handle-form IDs are opaque top-level references only. Recipe-manipulation
 operations on handle-form IDs panic rather than faking recipe structure.
@@ -98,10 +97,6 @@ func NewEngineResultID(resultID uint64, typ *Type) *ID {
 		typ:            typ,
 		engineResultID: resultID,
 	}
-}
-
-func (id *ID) IsRecipe() bool {
-	return id == nil || id.mode != idModeHandle
 }
 
 func (id *ID) IsHandle() bool {
@@ -234,16 +229,6 @@ func (id *ID) ContentDigest() digest.Digest {
 	return last
 }
 
-func (id *ID) TryContentDigest() (digest.Digest, error) {
-	if id == nil {
-		return "", nil
-	}
-	if id.mode == idModeHandle {
-		return "", fmt.Errorf("call.ID.ContentDigest is not valid for handle-form IDs")
-	}
-	return id.ContentDigest(), nil
-}
-
 func (id *ID) ExtraDigests() []ExtraDigest {
 	id.mustBeRecipe("ExtraDigests")
 	if id == nil || len(id.pb.ExtraDigests) == 0 {
@@ -262,23 +247,6 @@ func (id *ID) ExtraDigests() []ExtraDigest {
 	return out
 }
 
-func (id *ID) ExtraDigestByLabel(label string) *ExtraDigest {
-	id.mustBeRecipe("ExtraDigestByLabel")
-	if id == nil || len(id.pb.ExtraDigests) == 0 {
-		return nil
-	}
-	for _, extra := range id.pb.ExtraDigests {
-		if extra == nil || extra.Digest == "" || extra.Label != label {
-			continue
-		}
-		return &ExtraDigest{
-			Digest: digest.Digest(extra.Digest),
-			Label:  extra.Label,
-		}
-	}
-	return nil
-}
-
 // EffectIDs returns the effect IDs directly attached to this call.
 func (id *ID) EffectIDs() []string {
 	id.mustBeRecipe("EffectIDs")
@@ -286,14 +254,6 @@ func (id *ID) EffectIDs() []string {
 		return nil
 	}
 	return slices.Clone(id.pb.EffectIds)
-}
-
-// AllEffectIDs returns the effect IDs attached to this call and any of its inputs.
-func (id *ID) AllEffectIDs() []string {
-	id.mustBeRecipe("AllEffectIDs")
-	// FIXME: effect IDs are currently broken and only feed telemetry. Re-implement
-	// them properly before restoring recursive effect traversal over recipe IDs.
-	return []string{}
 }
 
 // Inputs returns the ID digests referenced by this ID, starting with the
@@ -477,16 +437,6 @@ func (id *ID) Name() string {
 	return name
 }
 
-// Return a new ID that's the selection of the nth element of the return value of the existing ID.
-func (id *ID) SelectNth(nth int) *ID {
-	id.mustBeRecipe("SelectNth")
-	return id.With(
-		WithReceiver(id),
-		WithNth(nth),
-		WithType(id.pb.Type.Elem.ToAST()),
-	)
-}
-
 type IDOpt func(*ID)
 
 func WithModule(mod *Module) IDOpt {
@@ -499,16 +449,6 @@ func WithModule(mod *Module) IDOpt {
 			id.module = nil
 			id.pb.Module = nil
 		}
-	}
-}
-
-func WithType(typ *ast.Type) IDOpt {
-	return func(id *ID) {
-		id.typ = NewType(typ)
-		if id.mode == idModeHandle {
-			return
-		}
-		id.pb.Type = id.typ.pb
 	}
 }
 
@@ -537,17 +477,6 @@ func WithContentDigest(dig digest.Digest) IDOpt {
 	}
 }
 
-func WithReplacedContentDigest(dig digest.Digest) IDOpt {
-	return func(id *ID) {
-		id.mustBeRecipe("WithReplacedContentDigest")
-		id.pb.ExtraDigests = removeExtraDigestsByLabel(id.pb.ExtraDigests, ExtraDigestLabelContent)
-		if dig == "" {
-			return
-		}
-		id.pb.ExtraDigests = appendExtraDigest(id.pb.ExtraDigests, dig.String(), ExtraDigestLabelContent)
-	}
-}
-
 func WithExtraDigest(extra ExtraDigest) IDOpt {
 	return func(id *ID) {
 		id.mustBeRecipe("WithExtraDigest")
@@ -562,72 +491,11 @@ func WithExtraDigest(extra ExtraDigest) IDOpt {
 	}
 }
 
-func WithReplacedExtraDigest(extra ExtraDigest) IDOpt {
-	return func(id *ID) {
-		id.mustBeRecipe("WithReplacedExtraDigest")
-		id.pb.ExtraDigests = removeExtraDigestsByLabel(id.pb.ExtraDigests, extra.Label)
-		if extra.Digest == "" {
-			return
-		}
-		id.pb.ExtraDigests = appendExtraDigest(
-			id.pb.ExtraDigests,
-			extra.Digest.String(),
-			extra.Label,
-		)
-	}
-}
-
-// Make the ID associated with the given digest and *not* associated with its previous digests.
-// This is subtly-but-importantly different than just attaching the digest. If you simply attach
-// a extra digest, then all IDs sharing that digest will be merged into the same equivalence set,
-// including by their recipe ID. Typically, that's what you want. But in some cases you want to
-// be able to merge IDs by a given digest *without* causing all associated IDs with the same recipe
-// to be merged as well.
-//
-// For example, this is used with module loading to enable some APIs to *selectively* address a
-// module by a source-only content digest without also causing all of the modules to be permanently
-// merged as equivalents.
-func WithScopeToDigest(label string, scope digest.Digest) IDOpt {
-	return func(id *ID) {
-		id.mustBeRecipe("WithScopeToDigest")
-		origExtraDigests := id.ExtraDigests()
-
-		// ensure recipe digest is scoped to this operation
-		WithAppendedImplicitInputs(NewArgument(
-			label,
-			NewLiteralString(scope.String()),
-			false,
-		))(id)
-
-		// ensure any extra digests are also scoped to this operation
-		for _, extraDigest := range origExtraDigests {
-			extraDigest.Digest = hashutil.HashStrings(extraDigest.Digest.String(), scope.String())
-			WithReplacedExtraDigest(extraDigest)(id)
-		}
-
-		// finally, add an extra digest for the scope itself
-		WithExtraDigest(ExtraDigest{
-			Label:  label,
-			Digest: scope,
-		})(id)
-	}
-}
-
 func WithEffectIDs(effectIDs []string) IDOpt {
 	return func(id *ID) {
 		id.mustBeRecipe("WithEffectIDs")
 		id.pb.EffectIds = slices.Clone(effectIDs)
 	}
-}
-
-// AppendEffectIDs returns a new ID with the given effect IDs appended.
-func (id *ID) AppendEffectIDs(effectIDs ...string) *ID {
-	id.mustBeRecipe("AppendEffectIDs")
-	if id == nil || len(effectIDs) == 0 {
-		return id
-	}
-	merged := mergeEffectIDs(id.pb.EffectIds, effectIDs)
-	return id.With(WithEffectIDs(merged))
 }
 
 func WithArgs(args ...*Argument) IDOpt {
@@ -656,19 +524,6 @@ func WithImplicitInputs(inputs ...*Argument) IDOpt {
 	}
 }
 
-func WithAppendedImplicitInputs(inputs ...*Argument) IDOpt {
-	return func(id *ID) {
-		id.mustBeRecipe("WithAppendedImplicitInputs")
-		id.implicitInputs = append(id.implicitInputs, inputs...)
-		id.pb.ImplicitInputs = make([]*callpbv1.Argument, 0, len(id.implicitInputs))
-		for _, input := range id.implicitInputs {
-			if redactedInput := redactedArgForID(input); redactedInput != nil {
-				id.pb.ImplicitInputs = append(id.pb.ImplicitInputs, redactedInput.pb)
-			}
-		}
-	}
-}
-
 func redactedArgForID(arg *Argument) *Argument {
 	if arg == nil {
 		return nil
@@ -681,18 +536,6 @@ func redactedArgForID(arg *Argument) *Argument {
 		NewLiteralString("***"),
 		false,
 	)
-}
-
-func WithReceiver(recv *ID) IDOpt {
-	return func(id *ID) {
-		id.mustBeRecipe("WithReceiver")
-		id.receiver = recv
-		if recv != nil {
-			id.pb.ReceiverDigest = recv.pb.Digest
-		} else {
-			id.pb.ReceiverDigest = ""
-		}
-	}
 }
 
 func (id *ID) With(opts ...IDOpt) *ID {
@@ -716,39 +559,6 @@ func (id *ID) Append(ret *ast.Type, field string, opts ...IDOpt) *ID {
 		typ:      typ,
 	}
 	return newID.apply(opts...)
-}
-
-// WithExtraDigest returns a copy of the ID with the given extra digest
-// metadata appended.
-func (id *ID) WithExtraDigest(extra ExtraDigest) *ID {
-	id.mustBeRecipe("WithExtraDigest")
-	return id.With(WithExtraDigest(extra))
-}
-
-// WithArgument returns a new ID that's the same as before except with the
-// given argument added to the ID's arguments. If an argument with the same
-// name already exists, it will be replaced with the new one.
-func (id *ID) WithArgument(arg *Argument) *ID {
-	id.mustBeRecipe("WithArgument")
-	if id == nil {
-		return nil
-	}
-
-	newArgs := slices.Clone(id.args)
-	var replaced bool
-	for i, existingArg := range newArgs {
-		if existingArg.pb.Name == arg.pb.Name {
-			// replace existing argument with the new one
-			newArgs[i] = arg
-			replaced = true
-			break
-		}
-	}
-	if !replaced {
-		newArgs = append(newArgs, arg)
-	}
-
-	return id.With(WithArgs(newArgs...))
 }
 
 func (id *ID) Encode() (string, error) {
@@ -926,14 +736,6 @@ func (id *ID) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
 	}
 }
 
-func (id *ID) FromAnyPB(data *anypb.Any) error {
-	var dagPB callpbv1.DAG
-	if err := data.UnmarshalTo(&dagPB); err != nil {
-		return err
-	}
-	return id.FromProto(&dagPB)
-}
-
 func (id *ID) Decode(str string) error {
 	bytes, err := base64.StdEncoding.DecodeString(str)
 	if err != nil {
@@ -1020,152 +822,6 @@ func (id *ID) decode(
 	}
 
 	return nil
-}
-
-// SelfDigestAndInputs returns a digest of the call's "self" (excluding any ID
-// input digest values) and a list of input ID digests (receiver + ID literals).
-//
-// ID literals contribute only their type marker to the self digest; their digest
-// values are returned via the inputs slice.
-func (id *ID) SelfDigestAndInputs() (digest.Digest, []digest.Digest, error) {
-	id.mustBeRecipe("SelfDigestAndInputs")
-	selfDigest, inputRefs, err := id.SelfDigestAndInputRefs()
-	if err != nil {
-		return "", nil, err
-	}
-	inputs := make([]digest.Digest, 0, len(inputRefs))
-	for _, ref := range inputRefs {
-		dig, err := ref.InputDigest()
-		if err != nil {
-			return "", nil, err
-		}
-		inputs = append(inputs, dig)
-	}
-	return selfDigest, inputs, nil
-}
-
-// StructuralInputRef is one ordered structural input to a call identity. It is
-// intentionally richer than a raw digest so callers can preserve whether the
-// input came from a real call ID or from a digest-only literal witness.
-type StructuralInputRef struct {
-	ID     *ID
-	Digest digest.Digest
-}
-
-func (ref StructuralInputRef) Validate() error {
-	switch {
-	case ref.ID != nil && ref.Digest != "":
-		return fmt.Errorf("structural input ref cannot have both ID and digest")
-	case ref.ID == nil && ref.Digest == "":
-		return fmt.Errorf("structural input ref must have either ID or digest")
-	default:
-		return nil
-	}
-}
-
-func (ref StructuralInputRef) InputDigest() (digest.Digest, error) {
-	switch {
-	case ref.ID != nil && ref.Digest != "":
-		return "", fmt.Errorf("structural input ref cannot have both ID and digest")
-	case ref.ID != nil:
-		return ref.ID.Digest(), nil
-	case ref.Digest != "":
-		return ref.Digest, nil
-	default:
-		return "", fmt.Errorf("structural input ref must have either ID or digest")
-	}
-}
-
-// SelfDigestAndInputRefs returns the same self digest as SelfDigestAndInputs,
-// but preserves the kind of each ordered structural input instead of flattening
-// them all to bare digests.
-func (id *ID) SelfDigestAndInputRefs() (digest.Digest, []StructuralInputRef, error) {
-	id.mustBeRecipe("SelfDigestAndInputRefs")
-	if id == nil {
-		return "", nil, nil
-	}
-
-	var inputRefs []StructuralInputRef
-
-	h := hashutil.NewHasher()
-
-	// Receiver contributes to inputs, not the self digest.
-	if id.receiver != nil {
-		inputRefs = append(inputRefs, StructuralInputRef{ID: id.receiver})
-	}
-	h = h.WithDelim()
-
-	// Type
-	var curType *callpbv1.Type
-	for curType = id.pb.Type; curType != nil; curType = curType.Elem {
-		h = h.WithString(curType.NamedType)
-		if curType.NonNull {
-			h = h.WithByte(2)
-		} else {
-			h = h.WithByte(1)
-		}
-		h = h.WithDelim()
-	}
-	h = h.WithDelim()
-
-	// Field
-	h = h.WithString(id.pb.Field).
-		WithDelim()
-
-	// Args
-	for _, arg := range id.args {
-		arg = redactedArgForID(arg)
-		if arg == nil {
-			continue
-		}
-		var err error
-		h, inputRefs, err = appendArgumentSelfRefs(arg, h, inputRefs)
-		if err != nil {
-			h.Close()
-			return "", nil, err
-		}
-		h = h.WithDelim()
-	}
-	h = h.WithDelim()
-
-	// Implicit inputs
-	for _, input := range id.implicitInputs {
-		input = redactedArgForID(input)
-		if input == nil {
-			continue
-		}
-		var err error
-		h, inputRefs, err = appendArgumentSelfRefs(input, h, inputRefs)
-		if err != nil {
-			h.Close()
-			return "", nil, err
-		}
-		h = h.WithDelim()
-	}
-
-	// module is an input, not part of self; this way multiple digests on the module ID
-	// can contribute to cache checks
-	if id.module != nil {
-		inputRefs = append(inputRefs, StructuralInputRef{ID: id.module.ID()})
-	}
-	// End implicit input section.
-	h = h.WithDelim()
-
-	// Nth
-	h = h.WithInt64(id.pb.Nth).
-		WithDelim()
-
-	// View
-	h = h.WithString(id.pb.View).
-		WithDelim()
-
-	for _, ref := range inputRefs {
-		if err := ref.Validate(); err != nil {
-			return "", nil, err
-		}
-	}
-
-	return digest.Digest(h.DigestAndClose()), inputRefs, nil
 }
 
 // calcDigest calculates the recipe digest for the ID.
@@ -1266,17 +922,6 @@ func AppendArgumentBytes(arg *Argument, h *hashutil.Hasher) (*hashutil.Hasher, e
 	return h, nil
 }
 
-func appendArgumentSelfRefs(arg *Argument, h *hashutil.Hasher, inputs []StructuralInputRef) (*hashutil.Hasher, []StructuralInputRef, error) {
-	h = h.WithString(arg.pb.Name)
-
-	h, inputs, err := appendLiteralSelfRefs(arg.value, h, inputs)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to write argument %q to hash: %w", arg.pb.Name, err)
-	}
-
-	return h, inputs, nil
-}
-
 // appendLiteralBytes appends a binary representation of the given literal to the given byte slice.
 //
 //nolint:dupl // symmetric with appendLiteralContentPreferredBytes; sharing would mean sprinkling branches that change the ID-digest semantics we audit
@@ -1350,80 +995,6 @@ func appendLiteralBytes(lit Literal, h *hashutil.Hasher) (*hashutil.Hasher, erro
 	}
 	h = h.WithDelim()
 	return h, nil
-}
-
-// appendLiteralSelfRefs appends literal bytes while collecting structural input
-// refs instead of flattening everything to bare digests.
-func appendLiteralSelfRefs(lit Literal, h *hashutil.Hasher, inputs []StructuralInputRef) (*hashutil.Hasher, []StructuralInputRef, error) {
-	var err error
-	// we use a unique prefix byte for each type to avoid collisions
-	switch v := lit.(type) {
-	case *LiteralID:
-		const prefix = '0'
-		h = h.WithByte(prefix)
-		inputs = append(inputs, StructuralInputRef{ID: v.id})
-	case *LiteralNull:
-		const prefix = '1'
-		h = h.WithByte(prefix)
-		if v.pbVal.Null {
-			h = h.WithByte(1)
-		} else {
-			h = h.WithByte(2)
-		}
-	case *LiteralBool:
-		const prefix = '2'
-		h = h.WithByte(prefix)
-		if v.pbVal.Bool {
-			h = h.WithByte(1)
-		} else {
-			h = h.WithByte(2)
-		}
-	case *LiteralEnum:
-		const prefix = '3'
-		h = h.WithByte(prefix).
-			WithString(v.pbVal.Enum)
-	case *LiteralInt:
-		const prefix = '4'
-		h = h.WithByte(prefix).
-			WithInt64(v.pbVal.Int)
-	case *LiteralFloat:
-		const prefix = '5'
-		h = h.WithByte(prefix).
-			WithFloat64(v.pbVal.Float)
-	case *LiteralString:
-		const prefix = '6'
-		h = h.WithByte(prefix).
-			WithString(v.pbVal.String_)
-	case *LiteralList:
-		const prefix = '7'
-		h = h.WithByte(prefix)
-		for _, elem := range v.values {
-			h, inputs, err = appendLiteralSelfRefs(elem, h, inputs)
-			if err != nil {
-				return nil, nil, err
-			}
-		}
-	case *LiteralObject:
-		const prefix = '8'
-		h = h.WithByte(prefix)
-		for _, arg := range v.values {
-			h, inputs, err = appendArgumentSelfRefs(arg, h, inputs)
-			if err != nil {
-				return nil, nil, err
-			}
-			h = h.WithDelim()
-		}
-	case *LiteralDigestedString:
-		const prefix = '9'
-		h = h.WithByte(prefix)
-		if v.digest != "" {
-			inputs = append(inputs, StructuralInputRef{Digest: v.digest})
-		}
-	default:
-		return nil, nil, fmt.Errorf("unknown literal type %T", v)
-	}
-	h = h.WithDelim()
-	return h, inputs, nil
 }
 
 func mergeEffectIDs(existing []string, extra []string) []string {
