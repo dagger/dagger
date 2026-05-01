@@ -164,12 +164,9 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Function: "fail-multi", Fail: true},
 		{Name: "fail-multi-noexpand", Function: "fail-multi", Fail: true, NoExpand: true},
 
-		// FIXME: these constantly fail in CI/Dagger, but not against a local
-		// engine. spent a day investigating, don't have a good explanation. it
-		// fails because despite the warmup running to completion, the test gets a
-		// cache miss.
-		{Function: "cached-execs", Flaky: "nested Dagger causes cache misses"},
-		{Function: "use-cached-exec-service", Flaky: "nested Dagger causes cache misses"},
+		// Used to be marked as flaky
+		{Function: "cached-execs"},
+		{Function: "use-cached-exec-service"},
 
 		// Python SDK tests
 		{Module: "./viztest/python", Function: "pending", Fail: true, RevealNoisySpans: true},
