@@ -335,6 +335,9 @@ type UpID string
 // A Null Void is used as a placeholder for resolvers that do not return anything.
 type Void string
 
+// The `WorkspaceGitID` scalar type represents an identifier for an object of type WorkspaceGit.
+type WorkspaceGitID string
+
 // The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
 type WorkspaceID string
 
@@ -861,6 +864,15 @@ func (r *Binding) AsWorkspace() *Workspace {
 	q := r.query.Select("asWorkspace")
 
 	return &Workspace{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type WorkspaceGit
+func (r *Binding) AsWorkspaceGit() *WorkspaceGit {
+	q := r.query.Select("asWorkspaceGit")
+
+	return &WorkspaceGit{
 		query: q,
 	}
 }
@@ -6574,6 +6586,30 @@ func (r *Env) WithWorkspace(workspace *Directory) *Env {
 	assertNotNil("workspace", workspace)
 	q := r.query.Select("withWorkspace")
 	q = q.Arg("workspace", workspace)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type WorkspaceGit in the environment
+func (r *Env) WithWorkspaceGitInput(name string, value *WorkspaceGit, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withWorkspaceGitInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired WorkspaceGit output to be assigned in the environment
+func (r *Env) WithWorkspaceGitOutput(name string, description string) *Env {
+	q := r.query.Select("withWorkspaceGitOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
 
 	return &Env{
 		query: q,
@@ -13286,6 +13322,16 @@ func (r *Query) LoadWorkspaceFromID(id WorkspaceID) *Workspace {
 	}
 }
 
+// Load a WorkspaceGit from its ID.
+func (r *Query) LoadWorkspaceGitFromID(id WorkspaceGitID) *WorkspaceGit {
+	q := r.query.Select("loadWorkspaceGitFromID")
+	q = q.Arg("id", id)
+
+	return &WorkspaceGit{
+		query: q,
+	}
+}
+
 // Create a new module.
 func (r *Query) Module() *Module {
 	q := r.query.Select("module")
@@ -15420,6 +15466,15 @@ func (r *Workspace) Generators(opts ...WorkspaceGeneratorsOpts) *GeneratorGroup 
 	}
 }
 
+// Git state for this workspace. Errors if the workspace is not in a git repository.
+func (r *Workspace) Git() *WorkspaceGit {
+	q := r.query.Select("git")
+
+	return &WorkspaceGit{
+		query: q,
+	}
+}
+
 // Whether a config.toml file exists in the workspace.
 func (r *Workspace) HasConfig(ctx context.Context) (bool, error) {
 	if r.hasConfig != nil {
@@ -15527,6 +15582,125 @@ func (r *Workspace) Services(opts ...WorkspaceServicesOpts) *UpGroup {
 // Experimental: Experimental workspace update API currently refreshes existing lockfile entries only.
 func (r *Workspace) Update() *Changeset {
 	q := r.query.Select("update")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// Local git state for a workspace.
+type WorkspaceGit struct {
+	query *querybuilder.Selection
+
+	id *WorkspaceGitID
+}
+
+func (r *WorkspaceGit) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceGit {
+	return &WorkspaceGit{
+		query: q,
+	}
+}
+
+// WorkspaceGitCurrentSemverTagOpts contains options for WorkspaceGit.CurrentSemverTag
+type WorkspaceGitCurrentSemverTagOpts struct {
+	// Include pre-release tags.
+	//
+	// Default: true
+	IncludePrerelease bool
+}
+
+// Highest semver tag pointing at HEAD.
+//
+// Pre-release tags are ignored unless includePrerelease is true.
+func (r *WorkspaceGit) CurrentSemverTag(opts ...WorkspaceGitCurrentSemverTagOpts) *GitRef {
+	q := r.query.Select("currentSemverTag")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `includePrerelease` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IncludePrerelease) {
+			q = q.Arg("includePrerelease", opts[i].IncludePrerelease)
+		}
+	}
+
+	return &GitRef{
+		query: q,
+	}
+}
+
+// The checked-out HEAD of this workspace.
+func (r *WorkspaceGit) Head() *GitRef {
+	q := r.query.Select("head")
+
+	return &GitRef{
+		query: q,
+	}
+}
+
+// A unique identifier for this WorkspaceGit.
+func (r *WorkspaceGit) ID(ctx context.Context) (WorkspaceGitID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response WorkspaceGitID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceGit) XXX_GraphQLType() string {
+	return "WorkspaceGit"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceGit) XXX_GraphQLIDType() string {
+	return "WorkspaceGitID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceGit) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceGit) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// WorkspaceGitLatestSemverTagOpts contains options for WorkspaceGit.LatestSemverTag
+type WorkspaceGitLatestSemverTagOpts struct {
+	// Include pre-release tags.
+	IncludePrerelease bool
+}
+
+// Highest semver tag in the workspace repository.
+//
+// Pre-release tags are ignored unless includePrerelease is true.
+func (r *WorkspaceGit) LatestSemverTag(opts ...WorkspaceGitLatestSemverTagOpts) *GitRef {
+	q := r.query.Select("latestSemverTag")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `includePrerelease` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IncludePrerelease) {
+			q = q.Arg("includePrerelease", opts[i].IncludePrerelease)
+		}
+	}
+
+	return &GitRef{
+		query: q,
+	}
+}
+
+// Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
+func (r *WorkspaceGit) Uncommitted() *Changeset {
+	q := r.query.Select("uncommitted")
 
 	return &Changeset{
 		query: q,

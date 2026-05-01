@@ -118,6 +118,7 @@
               <li><a href="#query-loadUpFromID">loadUpFromID</a></li>
               <li><a href="#query-loadUpGroupFromID">loadUpGroupFromID</a></li>
               <li><a href="#query-loadWorkspaceFromID">loadWorkspaceFromID</a></li>
+              <li><a href="#query-loadWorkspaceGitFromID">loadWorkspaceGitFromID</a></li>
               <li><a href="#query-module">module</a></li>
               <li><a href="#query-moduleSource">moduleSource</a></li>
               <li><a href="#query-secret">secret</a></li>
@@ -281,6 +282,8 @@
               <li><a href="#definition-UpID">UpID</a></li>
               <li><a href="#definition-Void">Void</a></li>
               <li><a href="#definition-Workspace">Workspace</a></li>
+              <li><a href="#definition-WorkspaceGit">WorkspaceGit</a></li>
+              <li><a href="#definition-WorkspaceGitID">WorkspaceGitID</a></li>
               <li><a href="#definition-WorkspaceID">WorkspaceID</a></li>
             </ul>
           </div>
@@ -5041,6 +5044,59 @@
               </div>
             </div>
           </section>
+          <section id="query-loadWorkspaceGitFromID" class="operation operation-query" data-traverse-target="query-loadWorkspaceGitFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadWorkspaceGitFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a WorkspaceGit from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-WorkspaceGit"><code>WorkspaceGit!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-WorkspaceGitID"><code>WorkspaceGitID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-module" class="operation operation-query" data-traverse-target="query-module">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -5668,6 +5724,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asWorkspace" href="#Binding-asWorkspace"><code>asWorkspace</code></a> - <span class="property-type"><a href="#definition-Workspace"><code>Workspace!</code></a></span> </td>
                         <td> Retrieve the binding value, as type Workspace </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asWorkspaceGit" href="#Binding-asWorkspaceGit"><code>asWorkspaceGit</code></a> - <span class="property-type"><a href="#definition-WorkspaceGit"><code>WorkspaceGit!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type WorkspaceGit </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-digest" href="#Binding-digest"><code>digest</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -11009,6 +11069,52 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>workspace</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span></h6>
                                 <p>The directory to set as the host filesystem</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withWorkspaceGitInput" href="#Env-withWorkspaceGitInput"><code>withWorkspaceGitInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type WorkspaceGit in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-WorkspaceGitID"><code>WorkspaceGitID!</code></a></span></h6>
+                                <p>The WorkspaceGit value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withWorkspaceGitOutput" href="#Env-withWorkspaceGitOutput"><code>withWorkspaceGitOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired WorkspaceGit output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
                               </div>
                             </div>
                           </div>
@@ -16981,6 +17087,10 @@
                         </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Workspace-git" href="#Workspace-git"><code>git</code></a> - <span class="property-type"><a href="#definition-WorkspaceGit"><code>WorkspaceGit!</code></a></span> </td>
+                        <td> Git state for this workspace. Errors if the workspace is not in a git repository. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Workspace-hasConfig" href="#Workspace-hasConfig"><code>hasConfig</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
                         <td> Whether a config.toml file exists in the workspace. </td>
                       </tr>
@@ -17022,6 +17132,99 @@
                       </tr>
                     </tbody>
                   </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-WorkspaceGit" class="definition definition-object" data-traverse-target="definition-WorkspaceGit">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">WorkspaceGit</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Local git state for a workspace.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="WorkspaceGit-currentSemverTag" href="#WorkspaceGit-currentSemverTag"><code>currentSemverTag</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef</code></a></span> </td>
+                        <td>
+                          <p>Highest semver tag pointing at HEAD.</p>
+                          <p>Pre-release tags are ignored unless includePrerelease is true.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>includePrerelease</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Include pre-release tags.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="WorkspaceGit-head" href="#WorkspaceGit-head"><code>head</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>
+                        <td> The checked-out HEAD of this workspace. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="WorkspaceGit-id" href="#WorkspaceGit-id"><code>id</code></a> - <span class="property-type"><a href="#definition-WorkspaceGitID"><code>WorkspaceGitID!</code></a></span> </td>
+                        <td> A unique identifier for this WorkspaceGit. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="WorkspaceGit-latestSemverTag" href="#WorkspaceGit-latestSemverTag"><code>latestSemverTag</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef</code></a></span> </td>
+                        <td>
+                          <p>Highest semver tag in the workspace repository.</p>
+                          <p>Pre-release tags are ignored unless includePrerelease is true.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>includePrerelease</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Include pre-release tags.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="WorkspaceGit-uncommitted" href="#WorkspaceGit-uncommitted"><code>uncommitted</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
+                        <td> Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-WorkspaceGitID" class="definition definition-scalar" data-traverse-target="definition-WorkspaceGitID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">WorkspaceGitID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>WorkspaceGitID</code> scalar type represents an identifier for an object of type WorkspaceGit.</p>
                 </div>
               </div>
             </div>

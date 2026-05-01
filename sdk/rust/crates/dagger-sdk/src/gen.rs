@@ -2249,6 +2249,41 @@ impl Void {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct WorkspaceGitId(pub String);
+impl From<&str> for WorkspaceGitId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for WorkspaceGitId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<WorkspaceGitId> for WorkspaceGit {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<WorkspaceGitId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<WorkspaceGitId> for WorkspaceGitId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<WorkspaceGitId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<WorkspaceGitId, DaggerError>(self) })
+    }
+}
+impl WorkspaceGitId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct WorkspaceId(pub String);
 impl From<&str> for WorkspaceId {
     fn from(value: &str) -> Self {
@@ -2746,6 +2781,15 @@ impl Binding {
     pub fn as_workspace(&self) -> Workspace {
         let query = self.selection.select("asWorkspace");
         Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type WorkspaceGit
+    pub fn as_workspace_git(&self) -> WorkspaceGit {
+        let query = self.selection.select("asWorkspaceGit");
+        WorkspaceGit {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -9092,6 +9136,55 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create or update a binding of type WorkspaceGit in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The WorkspaceGit value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_workspace_git_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<WorkspaceGitId>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withWorkspaceGitInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired WorkspaceGit output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_workspace_git_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withWorkspaceGitOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create or update a binding of type Workspace in the environment
     ///
     /// # Arguments
@@ -14389,6 +14482,22 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Load a WorkspaceGit from its ID.
+    pub fn load_workspace_git_from_id(&self, id: impl IntoID<WorkspaceGitId>) -> WorkspaceGit {
+        let mut query = self.selection.select("loadWorkspaceGitFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        WorkspaceGit {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create a new module.
     pub fn module(&self) -> Module {
         let query = self.selection.select("module");
@@ -15797,6 +15906,15 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Git state for this workspace. Errors if the workspace is not in a git repository.
+    pub fn git(&self) -> WorkspaceGit {
+        let query = self.selection.select("git");
+        WorkspaceGit {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Whether a config.toml file exists in the workspace.
     pub async fn has_config(&self) -> Result<bool, DaggerError> {
         let query = self.selection.select("hasConfig");
@@ -15850,6 +15968,111 @@ impl Workspace {
     /// Currently this refreshes existing lockfile entries only.
     pub fn update(&self) -> Changeset {
         let query = self.selection.select("update");
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+#[derive(Clone)]
+pub struct WorkspaceGit {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceGitCurrentSemverTagOpts {
+    /// Include pre-release tags.
+    #[builder(setter(into, strip_option), default)]
+    pub include_prerelease: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceGitLatestSemverTagOpts {
+    /// Include pre-release tags.
+    #[builder(setter(into, strip_option), default)]
+    pub include_prerelease: Option<bool>,
+}
+impl WorkspaceGit {
+    /// Highest semver tag pointing at HEAD.
+    /// Pre-release tags are ignored unless includePrerelease is true.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn current_semver_tag(&self) -> GitRef {
+        let query = self.selection.select("currentSemverTag");
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Highest semver tag pointing at HEAD.
+    /// Pre-release tags are ignored unless includePrerelease is true.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn current_semver_tag_opts(&self, opts: WorkspaceGitCurrentSemverTagOpts) -> GitRef {
+        let mut query = self.selection.select("currentSemverTag");
+        if let Some(include_prerelease) = opts.include_prerelease {
+            query = query.arg("includePrerelease", include_prerelease);
+        }
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The checked-out HEAD of this workspace.
+    pub fn head(&self) -> GitRef {
+        let query = self.selection.select("head");
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// A unique identifier for this WorkspaceGit.
+    pub async fn id(&self) -> Result<WorkspaceGitId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Highest semver tag in the workspace repository.
+    /// Pre-release tags are ignored unless includePrerelease is true.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn latest_semver_tag(&self) -> GitRef {
+        let query = self.selection.select("latestSemverTag");
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Highest semver tag in the workspace repository.
+    /// Pre-release tags are ignored unless includePrerelease is true.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn latest_semver_tag_opts(&self, opts: WorkspaceGitLatestSemverTagOpts) -> GitRef {
+        let mut query = self.selection.select("latestSemverTag");
+        if let Some(include_prerelease) = opts.include_prerelease {
+            query = query.arg("includePrerelease", include_prerelease);
+        }
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
+    pub fn uncommitted(&self) -> Changeset {
+        let query = self.selection.select("uncommitted");
         Changeset {
             proc: self.proc.clone(),
             selection: query,

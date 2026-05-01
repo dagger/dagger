@@ -593,6 +593,7 @@ func (srv *Server) buildCoreWorkspace(
 		Path:     detected.Path,
 		ClientID: clientMetadata.ClientID,
 	}
+	coreWS.SetHasGit(detected.HasGit)
 	if coreWS.Address == "" {
 		coreWS.Address = localWorkspaceAddress(detected.Root, detected.Path)
 	}

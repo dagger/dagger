@@ -18,6 +18,9 @@ type Workspace struct {
 
 	// Path is the workspace location relative to Root (e.g., "apps/frontend" or ".").
 	Path string
+
+	// HasGit is true when workspace detection found a .git entry at Root.
+	HasGit bool
 }
 
 // PathExistsFunc checks whether a filesystem path exists.
@@ -53,15 +56,17 @@ func Detect(
 	// Step 1: .git found → workspace = CWD, sandbox = git root
 	if hasGit {
 		return &Workspace{
-			Root: gitDir,
-			Path: relPath(gitDir, cwd),
+			Root:   gitDir,
+			Path:   relPath(gitDir, cwd),
+			HasGit: true,
 		}, nil
 	}
 
 	// Step 2: nothing found → cwd is both workspace and sandbox root
 	return &Workspace{
-		Root: cwd,
-		Path: ".",
+		Root:   cwd,
+		Path:   ".",
+		HasGit: false,
 	}, nil
 }
 

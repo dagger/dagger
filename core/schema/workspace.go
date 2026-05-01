@@ -2,7 +2,9 @@ package schema
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -13,6 +15,8 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
+	"github.com/dagger/dagger/util/gitutil"
+	"golang.org/x/mod/semver"
 )
 
 type workspaceSchema struct{}
@@ -55,6 +59,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the file or directory to search for.`),
 				dagql.Arg("from").Doc(`Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.`),
 			),
+		dagql.NodeFunc("git", s.git).
+			WithInput(dagql.PerClientInput).
+			Doc("Git state for this workspace. Errors if the workspace is not in a git repository."),
 		dagql.Func("checks", s.checks).
 			Doc("Return all checks from modules loaded in the workspace.").
 			Args(
@@ -75,6 +82,27 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Refresh workspace-managed state and return the resulting changeset.",
 				"Currently this refreshes existing lockfile entries only.").
 			Experimental("Experimental workspace update API currently refreshes existing lockfile entries only."),
+	}.Install(srv)
+
+	dagql.Fields[*core.WorkspaceGit]{
+		dagql.NodeFunc("__repository", s.workspaceGitRepository).
+			Doc("(Internal-only) The git repository backing this workspace git state."),
+		dagql.NodeFunc("head", s.workspaceGitHead).
+			Doc("The checked-out HEAD of this workspace."),
+		dagql.NodeFunc("uncommitted", s.workspaceGitUncommitted).
+			Doc("Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted."),
+		dagql.NodeFunc("latestSemverTag", s.workspaceGitLatestSemverTag).
+			Doc("Highest semver tag in the workspace repository.",
+				"Pre-release tags are ignored unless includePrerelease is true.").
+			Args(
+				dagql.Arg("includePrerelease").Doc("Include pre-release tags."),
+			),
+		dagql.NodeFunc("currentSemverTag", s.workspaceGitCurrentSemverTag).
+			Doc("Highest semver tag pointing at HEAD.",
+				"Pre-release tags are ignored unless includePrerelease is true.").
+			Args(
+				dagql.Arg("includePrerelease").Doc("Include pre-release tags."),
+			),
 	}.Install(srv)
 }
 
@@ -332,6 +360,272 @@ func (s *workspaceSchema) update(
 	}
 
 	return changes.Self(), nil
+}
+
+func (s *workspaceSchema) git(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	_ struct{},
+) (dagql.ObjectResult[*core.WorkspaceGit], error) {
+	var inst dagql.ObjectResult[*core.WorkspaceGit]
+	if err := s.ensureWorkspaceGitDirectory(ctx, parent.Self()); err != nil {
+		return inst, err
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, &core.WorkspaceGit{
+		Workspace: parent,
+	})
+}
+
+func (s *workspaceSchema) ensureWorkspaceGitDirectory(ctx context.Context, ws *core.Workspace) error {
+	if !ws.HasGit() {
+		return fmt.Errorf("workspace is not in a git repository")
+	}
+
+	var (
+		statFS   core.StatFS
+		statPath = ".git"
+	)
+	if ws.HostPath() != "" {
+		var err error
+		ctx, err = s.withWorkspaceClientContext(ctx, ws)
+		if err != nil {
+			return err
+		}
+
+		query, err := core.CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
+		bk, err := query.Engine(ctx)
+		if err != nil {
+			return fmt.Errorf("buildkit: %w", err)
+		}
+
+		statFS = core.NewCallerStatFS(bk)
+		statPath, err = pathutil.SandboxedRelativePath(".git", ws.HostPath())
+		if err != nil {
+			return err
+		}
+	} else {
+		statFS = &core.DirectoryStatFS{Dir: ws.Rootfs()}
+	}
+
+	_, st, err := statFS.Stat(ctx, statPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("workspace is not in a git repository")
+	}
+	if err != nil {
+		return fmt.Errorf("workspace git metadata: %w", err)
+	}
+	if st.FileType == core.FileTypeRegular {
+		return fmt.Errorf("git worktrees are not supported by Workspace.git yet: .git is a file")
+	}
+	if !st.IsDir() {
+		return fmt.Errorf("workspace git metadata .git has type %s, expected directory", st.FileType)
+	}
+	return nil
+}
+
+func (s *workspaceSchema) workspaceGitRepository(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.WorkspaceGit],
+	_ struct{},
+) (dagql.ObjectResult[*core.GitRepository], error) {
+	var inst dagql.ObjectResult[*core.GitRepository]
+
+	ws := parent.Self().Workspace.Self()
+	if err := s.ensureWorkspaceGitDirectory(ctx, ws); err != nil {
+		return inst, err
+	}
+
+	dir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
+	if err != nil {
+		return inst, fmt.Errorf("workspace git directory: %w", err)
+	}
+
+	backend := &core.LocalGitRepository{
+		Directory: dir,
+	}
+	repo, err := core.NewGitRepository(ctx, backend)
+	if err != nil {
+		return inst, err
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo)
+}
+
+func (s *workspaceSchema) workspaceGitHead(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.WorkspaceGit],
+	_ struct{},
+) (dagql.Result[*core.GitRef], error) {
+	var inst dagql.Result[*core.GitRef]
+	repo, err := s.selectWorkspaceGitRepository(ctx, parent)
+	if err != nil {
+		return inst, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	if err := srv.Select(ctx, repo, &inst, dagql.Selector{Field: "head"}); err != nil {
+		return inst, err
+	}
+	return inst, nil
+}
+
+func (s *workspaceSchema) workspaceGitUncommitted(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.WorkspaceGit],
+	_ struct{},
+) (dagql.ObjectResult[*core.Changeset], error) {
+	var inst dagql.ObjectResult[*core.Changeset]
+	repo, err := s.selectWorkspaceGitRepository(ctx, parent)
+	if err != nil {
+		return inst, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	if err := srv.Select(ctx, repo, &inst, dagql.Selector{Field: "uncommitted"}); err != nil {
+		return inst, err
+	}
+	return inst, nil
+}
+
+type workspaceGitLatestSemverTagArgs struct {
+	IncludePrerelease bool `default:"false"`
+}
+
+func (s *workspaceSchema) workspaceGitLatestSemverTag(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.WorkspaceGit],
+	args workspaceGitLatestSemverTagArgs,
+) (dagql.Nullable[dagql.Result[*core.GitRef]], error) {
+	repo, err := s.selectWorkspaceGitRepository(ctx, parent)
+	if err != nil {
+		return dagql.Null[dagql.Result[*core.GitRef]](), err
+	}
+
+	tag, err := highestWorkspaceGitSemverTag(repo.Self().Remote, args.IncludePrerelease, func(*gitutil.Ref) (bool, error) {
+		return true, nil
+	})
+	if err != nil {
+		return dagql.Null[dagql.Result[*core.GitRef]](), err
+	}
+	return workspaceGitNullableRef(ctx, repo, tag)
+}
+
+type workspaceGitCurrentSemverTagArgs struct {
+	IncludePrerelease bool `default:"true"`
+}
+
+func (s *workspaceSchema) workspaceGitCurrentSemverTag(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.WorkspaceGit],
+	args workspaceGitCurrentSemverTagArgs,
+) (dagql.Nullable[dagql.Result[*core.GitRef]], error) {
+	repo, err := s.selectWorkspaceGitRepository(ctx, parent)
+	if err != nil {
+		return dagql.Null[dagql.Result[*core.GitRef]](), err
+	}
+
+	head, err := repo.Self().Remote.Lookup("HEAD")
+	if err != nil {
+		return dagql.Null[dagql.Result[*core.GitRef]](), err
+	}
+
+	tag, err := highestWorkspaceGitSemverTag(repo.Self().Remote, args.IncludePrerelease, func(ref *gitutil.Ref) (bool, error) {
+		resolved, err := repo.Self().Remote.Lookup(ref.Name)
+		if err != nil {
+			return false, err
+		}
+		return resolved.SHA == head.SHA, nil
+	})
+	if err != nil {
+		return dagql.Null[dagql.Result[*core.GitRef]](), err
+	}
+	return workspaceGitNullableRef(ctx, repo, tag)
+}
+
+func (s *workspaceSchema) selectWorkspaceGitRepository(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.WorkspaceGit],
+) (dagql.ObjectResult[*core.GitRepository], error) {
+	var repo dagql.ObjectResult[*core.GitRepository]
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return repo, err
+	}
+	if err := srv.Select(ctx, parent, &repo, dagql.Selector{Field: "__repository"}); err != nil {
+		return repo, err
+	}
+	return repo, nil
+}
+
+func highestWorkspaceGitSemverTag(
+	remote *gitutil.Remote,
+	includePrerelease bool,
+	matches func(*gitutil.Ref) (bool, error),
+) (*gitutil.Ref, error) {
+	var (
+		best        *gitutil.Ref
+		bestVersion string
+	)
+	for _, ref := range remote.Tags().Refs {
+		ok, err := matches(ref)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			continue
+		}
+
+		version := ref.ShortName()
+		if !semver.IsValid(version) {
+			continue
+		}
+		if !includePrerelease && semver.Prerelease(version) != "" {
+			continue
+		}
+		if best == nil || semver.Compare(version, bestVersion) > 0 {
+			best = ref
+			bestVersion = version
+		}
+	}
+	return best, nil
+}
+
+func workspaceGitNullableRef(
+	ctx context.Context,
+	repo dagql.ObjectResult[*core.GitRepository],
+	ref *gitutil.Ref,
+) (dagql.Nullable[dagql.Result[*core.GitRef]], error) {
+	if ref == nil {
+		return dagql.Null[dagql.Result[*core.GitRef]](), nil
+	}
+	var gitRef dagql.Result[*core.GitRef]
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.Null[dagql.Result[*core.GitRef]](), err
+	}
+	if err := srv.Select(ctx, repo, &gitRef, dagql.Selector{
+		Field: "ref",
+		Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(ref.Name)}},
+	}); err != nil {
+		return dagql.Null[dagql.Result[*core.GitRef]](), err
+	}
+	return dagql.NonNull(gitRef), nil
 }
 
 // resolveWorkspacePath resolves a workspace API path into a boundary-relative path:

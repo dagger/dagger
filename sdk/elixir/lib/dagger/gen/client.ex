@@ -1379,6 +1379,20 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Load a WorkspaceGit from its ID.
+  """
+  @spec load_workspace_git_from_id(t(), Dagger.WorkspaceGitID.t()) :: Dagger.WorkspaceGit.t()
+  def load_workspace_git_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadWorkspaceGitFromID") |> QB.put_arg("id", id)
+
+    %Dagger.WorkspaceGit{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Create a new module.
   """
   @spec module(t()) :: Dagger.Module.t()

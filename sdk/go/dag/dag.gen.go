@@ -602,6 +602,12 @@ func LoadWorkspaceFromID(id dagger.WorkspaceID) *dagger.Workspace {
 	return client.LoadWorkspaceFromID(id)
 }
 
+// Load a WorkspaceGit from its ID.
+func LoadWorkspaceGitFromID(id dagger.WorkspaceGitID) *dagger.WorkspaceGit {
+	client := initClient()
+	return client.LoadWorkspaceGitFromID(id)
+}
+
 // Create a new module.
 func Module() *dagger.Module {
 	client := initClient()

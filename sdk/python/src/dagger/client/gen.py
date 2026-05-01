@@ -346,6 +346,11 @@ class Void(Scalar):
     resolvers that do not return anything."""
 
 
+class WorkspaceGitID(Scalar):
+    """The `WorkspaceGitID` scalar type represents an identifier for an
+    object of type WorkspaceGit."""
+
+
 class WorkspaceID(Scalar):
     """The `WorkspaceID` scalar type represents an identifier for an
     object of type Workspace."""
@@ -977,6 +982,12 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asWorkspace", _args)
         return Workspace(_ctx)
+
+    def as_workspace_git(self) -> "WorkspaceGit":
+        """Retrieve the binding value, as type WorkspaceGit"""
+        _args: list[Arg] = []
+        _ctx = self._select("asWorkspaceGit", _args)
+        return WorkspaceGit(_ctx)
 
     async def digest(self) -> str:
         """Returns the digest of the binding value
@@ -7169,6 +7180,49 @@ class Env(Type):
         _ctx = self._select("withWorkspace", _args)
         return Env(_ctx)
 
+    def with_workspace_git_input(
+        self,
+        name: str,
+        value: "WorkspaceGit",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type WorkspaceGit in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The WorkspaceGit value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceGitInput", _args)
+        return Env(_ctx)
+
+    def with_workspace_git_output(self, name: str, description: str) -> Self:
+        """Declare a desired WorkspaceGit output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceGitOutput", _args)
+        return Env(_ctx)
+
     def with_workspace_input(
         self,
         name: str,
@@ -13331,6 +13385,14 @@ class Query(Root):
         _ctx = self._select("loadWorkspaceFromID", _args)
         return Workspace(_ctx)
 
+    def load_workspace_git_from_id(self, id: WorkspaceGitID) -> "WorkspaceGit":
+        """Load a WorkspaceGit from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadWorkspaceGitFromID", _args)
+        return WorkspaceGit(_ctx)
+
     def module(self) -> Module:
         """Create a new module."""
         _args: list[Arg] = []
@@ -15264,6 +15326,14 @@ class Workspace(Type):
         _ctx = self._select("generators", _args)
         return GeneratorGroup(_ctx)
 
+    def git(self) -> "WorkspaceGit":
+        """Git state for this workspace. Errors if the workspace is not in a git
+        repository.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("git", _args)
+        return WorkspaceGit(_ctx)
+
     async def has_config(self) -> bool:
         """Whether a config.toml file exists in the workspace.
 
@@ -15376,6 +15446,89 @@ class Workspace(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("update", _args)
+        return Changeset(_ctx)
+
+
+@typecheck
+class WorkspaceGit(Type):
+    """Local git state for a workspace."""
+
+    def current_semver_tag(
+        self,
+        *,
+        include_prerelease: bool | None = True,
+    ) -> GitRef:
+        """Highest semver tag pointing at HEAD.
+
+        Pre-release tags are ignored unless includePrerelease is true.
+
+        Parameters
+        ----------
+        include_prerelease:
+            Include pre-release tags.
+        """
+        _args = [
+            Arg("includePrerelease", include_prerelease, True),
+        ]
+        _ctx = self._select("currentSemverTag", _args)
+        return GitRef(_ctx)
+
+    def head(self) -> GitRef:
+        """The checked-out HEAD of this workspace."""
+        _args: list[Arg] = []
+        _ctx = self._select("head", _args)
+        return GitRef(_ctx)
+
+    async def id(self) -> WorkspaceGitID:
+        """A unique identifier for this WorkspaceGit.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        WorkspaceGitID
+            The `WorkspaceGitID` scalar type represents an identifier for an
+            object of type WorkspaceGit.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(WorkspaceGitID)
+
+    def latest_semver_tag(
+        self,
+        *,
+        include_prerelease: bool | None = False,
+    ) -> GitRef:
+        """Highest semver tag in the workspace repository.
+
+        Pre-release tags are ignored unless includePrerelease is true.
+
+        Parameters
+        ----------
+        include_prerelease:
+            Include pre-release tags.
+        """
+        _args = [
+            Arg("includePrerelease", include_prerelease, False),
+        ]
+        _ctx = self._select("latestSemverTag", _args)
+        return GitRef(_ctx)
+
+    def uncommitted(self) -> Changeset:
+        """Uncommitted changes in this workspace, using the same rules as
+        GitRepository.uncommitted.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("uncommitted", _args)
         return Changeset(_ctx)
 
 
@@ -15540,6 +15693,8 @@ __all__ = [
     "UpID",
     "Void",
     "Workspace",
+    "WorkspaceGit",
+    "WorkspaceGitID",
     "WorkspaceID",
     "dag",
 ]
