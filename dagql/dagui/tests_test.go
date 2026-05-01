@@ -58,6 +58,12 @@ func TestProcessAttributeTestStatusNormalizationAndPrecedence(t *testing.T) {
 		t.Fatalf("expected fail to normalize to failure, got %q", fail.TestStatus)
 	}
 
+	for _, unknown := range []string{"passed", "successful", "ok", "failed", "error", "skip", "abort", "timeout", "timed-out", "timedout", "running"} {
+		if got := normalizeTestStatus(unknown); got != TestStatusUnset {
+			t.Fatalf("expected %q to be ignored, got %q", unknown, got)
+		}
+	}
+
 	for _, strong := range []string{"failure", "timed_out", "aborted", "skipped"} {
 		var snapshot SpanSnapshot
 		snapshot.ProcessAttribute(string(semconv.TestSuiteRunStatusKey), strong)
