@@ -914,7 +914,7 @@ func AppendArgumentBytes(arg *Argument, h *hashutil.Hasher) (*hashutil.Hasher, e
 
 // appendLiteralBytes appends a binary representation of the given literal to the given byte slice.
 //
-//nolint:dupl // symmetric with ResultCall literal hashing; sharing would mean sprinkling branches that change the ID-digest semantics we audit
+// This is symmetric with ResultCall literal hashing; sharing would mean sprinkling branches that change the ID-digest semantics we audit.
 func appendLiteralBytes(lit Literal, h *hashutil.Hasher) (*hashutil.Hasher, error) {
 	var err error
 	// we use a unique prefix byte for each type to avoid collisions
