@@ -341,6 +341,13 @@ func (db *DB) TestView() *TestView {
 	return db.testIndex.View()
 }
 
+func (db *DB) TestViewForSpan(root *Span) *TestView {
+	if db.testIndex == nil {
+		db.testIndex = &TestIndex{db: db}
+	}
+	return db.testIndex.ViewForSpan(root)
+}
+
 func (db *DB) HasTests() bool {
 	return db.TestView().HasTests()
 }
@@ -362,6 +369,55 @@ func (idx *TestIndex) View() *TestView {
 		idx.applyAggregateUpdates()
 	}
 	return idx.cachedView
+}
+
+func (idx *TestIndex) ViewForSpan(root *Span) *TestView {
+	if root == nil {
+		return idx.View()
+	}
+	idx.View()
+
+	nodesBySpan := make(map[SpanID]*TestNode)
+	for id, span := range idx.knownTestSpans {
+		if span == nil {
+			continue
+		}
+		insideRoot := span.ID == root.ID
+		for parent := span.ParentSpan; !insideRoot && parent != nil; parent = parent.ParentSpan {
+			insideRoot = parent.ID == root.ID
+		}
+		if !insideRoot {
+			continue
+		}
+		kind, name, fullName, suiteName, ok := testNodeMetadata(span)
+		if !ok {
+			continue
+		}
+		nodesBySpan[id] = &TestNode{
+			ID:        TestNodeID("span:" + span.ID.String()),
+			Kind:      kind,
+			Name:      name,
+			FullName:  fullName,
+			Span:      span,
+			suiteName: suiteName,
+		}
+	}
+
+	var roots []*TestNode
+	for _, node := range nodesBySpan {
+		if parent := nearestTestAncestor(node.Span, nodesBySpan); parent != nil {
+			node.Parent = parent
+			parent.Children = append(parent.Children, node)
+		} else {
+			roots = append(roots, node)
+		}
+	}
+
+	sortTestNodes(roots)
+	roots = groupVirtualSuites(roots, nodesBySpan)
+	sortTestNodes(roots)
+
+	return buildTestView(roots, nodesBySpan)
 }
 
 func (idx *TestIndex) buildInitial() {
@@ -479,18 +535,18 @@ func (idx *TestIndex) rebuildStructure() {
 	sortTestNodes(roots)
 
 	idx.nodesBySpan = nodesBySpan
-	idx.cachedView = idx.buildView(roots)
+	idx.cachedView = buildTestView(roots, idx.nodesBySpan)
 	idx.structureDirty = false
 	idx.aggregateDirty = false
 	clear(idx.dirtySpans)
 	idx.builtVersion = idx.version
 }
 
-func (idx *TestIndex) buildView(roots []*TestNode) *TestView {
+func buildTestView(roots []*TestNode, nodesBySpan map[SpanID]*TestNode) *TestView {
 	view := &TestView{
 		Roots:        roots,
 		ByID:         make(map[TestNodeID]*TestNode),
-		BySpan:       make(map[SpanID]*TestNode, len(idx.nodesBySpan)),
+		BySpan:       make(map[SpanID]*TestNode, len(nodesBySpan)),
 		CasesByName:  make(map[string][]*TestNode),
 		SuitesByName: make(map[string][]*TestNode),
 	}
