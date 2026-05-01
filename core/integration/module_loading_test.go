@@ -1,6 +1,5 @@
 package core
 
-// Workspace alignment: aligned structurally, but coverage is still incomplete.
 // Scope: Module source resolution, nomination, precedence, and entrypoint arbitration for native workspace and module sources.
 // Intent: Keep loading behavior separate from compat detection and make source-resolution and arbitration ownership explicit.
 
