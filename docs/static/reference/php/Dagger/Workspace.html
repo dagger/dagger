@@ -283,6 +283,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    <a href="../Dagger/WorkspaceGit.html"><abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_git">git</a>()
+        
+                                            <p><p>Git state for this workspace. Errors if the workspace is not in a git repository.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -1069,8 +1079,40 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_id">
+                    <h3 id="method_git">
         <div class="location">at line 208</div>
+        <code>                    <a href="../Dagger/WorkspaceGit.html"><abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr></a>
+    <strong>git</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Git state for this workspace. Errors if the workspace is not in a git repository.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/WorkspaceGit.html"><abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_id">
+        <div class="location">at line 217</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
@@ -1102,7 +1144,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_init">
-        <div class="location">at line 217</div>
+        <div class="location">at line 226</div>
         <code>                    string
     <strong>init</strong>(bool|null $here = false)
         </code>
@@ -1144,7 +1186,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_install">
-        <div class="location">at line 229</div>
+        <div class="location">at line 238</div>
         <code>                    string
     <strong>install</strong>(string $ref, string|null $name = &#039;&#039;, bool|null $here = false)
         </code>
@@ -1196,7 +1238,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_migrate">
-        <div class="location">at line 247</div>
+        <div class="location">at line 256</div>
         <code>                    <a href="../Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a>
     <strong>migrate</strong>(bool|null $force = false)
         </code>
@@ -1238,7 +1280,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_moduleInit">
-        <div class="location">at line 259</div>
+        <div class="location">at line 268</div>
         <code>                    string
     <strong>moduleInit</strong>(string $name, string|null $sdk = &#039;&#039;, string|null $source = &#039;&#039;, array|null $include = [], bool|null $selfCalls = false, bool|null $here = false)
         </code>
@@ -1305,7 +1347,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_moduleList">
-        <div class="location">at line 290</div>
+        <div class="location">at line 299</div>
         <code>                    array
     <strong>moduleList</strong>(string|null $module = &#039;&#039;)
         </code>
@@ -1347,7 +1389,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_refreshModules">
-        <div class="location">at line 304</div>
+        <div class="location">at line 313</div>
         <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
     <strong>refreshModules</strong>(array|null $moduleNames = [])
         </code>
@@ -1389,7 +1431,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_services">
-        <div class="location">at line 316</div>
+        <div class="location">at line 325</div>
         <code>                    <a href="../Dagger/UpGroup.html"><abbr title="Dagger\UpGroup">UpGroup</abbr></a>
     <strong>services</strong>(array|null $include = null)
         </code>
@@ -1431,7 +1473,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_uninstall">
-        <div class="location">at line 328</div>
+        <div class="location">at line 337</div>
         <code>                    string
     <strong>uninstall</strong>(string $name, bool|null $here = false)
         </code>
@@ -1478,7 +1520,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_update">
-        <div class="location">at line 343</div>
+        <div class="location">at line 352</div>
         <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
     <strong>update</strong>()
         </code>

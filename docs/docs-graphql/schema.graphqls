@@ -182,6 +182,9 @@ type Binding implements Node {
   """Retrieve the binding value, as type Workspace"""
   asWorkspace: Workspace!
 
+  """Retrieve the binding value, as type WorkspaceGit"""
+  asWorkspaceGit: WorkspaceGit!
+
   """Retrieve the binding value, as type WorkspaceMigration"""
   asWorkspaceMigration: WorkspaceMigration!
 
@@ -3068,6 +3071,29 @@ type Env implements Node {
     workspace: ID! @expectedType(name: "Directory")
   ): Env!
 
+  """Create or update a binding of type WorkspaceGit in the environment"""
+  withWorkspaceGitInput(
+    """The name of the binding"""
+    name: String!
+
+    """The WorkspaceGit value to assign to the binding"""
+    value: ID! @expectedType(name: "WorkspaceGit")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired WorkspaceGit output to be assigned in the environment
+  """
+  withWorkspaceGitOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type Workspace in the environment"""
   withWorkspaceInput(
     """The name of the binding"""
@@ -5860,6 +5886,11 @@ type Workspace implements Node {
     include: [String!]
   ): GeneratorGroup!
 
+  """
+  Git state for this workspace. Errors if the workspace is not in a git repository.
+  """
+  git: WorkspaceGit!
+
   """A unique identifier for this Workspace."""
   id: ID!
 
@@ -5952,6 +5983,20 @@ type Workspace implements Node {
   Currently this refreshes existing lockfile entries only.
   """
   update: Changeset! @experimental(reason: "Experimental workspace update API currently refreshes existing lockfile entries only.")
+}
+
+"""Local git state for a workspace."""
+type WorkspaceGit implements Node {
+  """The checked-out HEAD of this workspace."""
+  head: GitRef!
+
+  """A unique identifier for this WorkspaceGit."""
+  id: ID!
+
+  """
+  Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
+  """
+  uncommitted: Changeset!
 }
 
 """A planned workspace migration."""

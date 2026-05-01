@@ -173,7 +173,9 @@
 <abbr title="Dagger\Binding">Binding</abbr>::asUpGroup</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>Retrieve the binding value, as type UpGroup</p></dd><dt><a href="Dagger/Binding.html#method_asWorkspace">
 <abbr title="Dagger\Binding">Binding</abbr>::asWorkspace</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
-                    <dd><p>Retrieve the binding value, as type Workspace</p></dd><dt><a href="Dagger/Binding.html#method_asWorkspaceMigration">
+                    <dd><p>Retrieve the binding value, as type Workspace</p></dd><dt><a href="Dagger/Binding.html#method_asWorkspaceGit">
+<abbr title="Dagger\Binding">Binding</abbr>::asWorkspaceGit</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
+                    <dd><p>Retrieve the binding value, as type WorkspaceGit</p></dd><dt><a href="Dagger/Binding.html#method_asWorkspaceMigration">
 <abbr title="Dagger\Binding">Binding</abbr>::asWorkspaceMigration</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>Retrieve the binding value, as type WorkspaceMigration</p></dd><dt><a href="Dagger/Binding.html#method_asWorkspaceMigrationStep">
 <abbr title="Dagger\Binding">Binding</abbr>::asWorkspaceMigrationStep</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
@@ -720,7 +722,9 @@
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::generatedContextDirectory</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The generated files and directories made on top of the module source's context directory.</p></dd><dt><a href="Dagger/Workspace.html#method_generators">
 <abbr title="Dagger\Workspace">Workspace</abbr>::generators</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Return all generators from modules loaded in the workspace.</p></dd>        </dl><h2 id="letterH">H</h2>
+                    <dd><p>Return all generators from modules loaded in the workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_git">
+<abbr title="Dagger\Workspace">Workspace</abbr>::git</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
+                    <dd><p>Git state for this workspace. Errors if the workspace is not in a git repository.</p></dd>        </dl><h2 id="letterH">H</h2>
         <dl id="indexH"><dt><a href="Dagger/Client.html#method_host">
 <abbr title="Dagger\Client">Client</abbr>::host</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Queries the host environment.</p></dd><dt><a href="Dagger/Client.html#method_http">
@@ -745,7 +749,9 @@
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::htmlURL</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The URL to the source's git repo in a web browser. Only valid for git sources.</p></dd><dt><a href="Dagger/Service.html#method_hostname">
 <abbr title="Dagger\Service">Service</abbr>::hostname</a>() &mdash; <em>Method in class <a href="Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a></em></dt>
-                    <dd><p>Retrieves a hostname which can be used by clients to reach this container.</p></dd>        </dl><h2 id="letterI">I</h2>
+                    <dd><p>Retrieves a hostname which can be used by clients to reach this container.</p></dd><dt><a href="Dagger/WorkspaceGit.html#method_head">
+<abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr>::head</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceGit.html"><abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr></a></em></dt>
+                    <dd><p>The checked-out HEAD of this workspace.</p></dd>        </dl><h2 id="letterI">I</h2>
         <dl id="indexI"><dt><a href="Dagger/Address.html#method_id">
 <abbr title="Dagger\Address">Address</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Address.html"><abbr title="Dagger\Address">Address</abbr></a></em></dt>
                     <dd><p>A unique identifier for this Address.</p></dd><dt><a href="Dagger/Attribute/Ignore.html"><abbr title="Dagger\Attribute\Ignore">Ignore</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Attribute.html">Dagger\Attribute</a></em></dt>
@@ -937,7 +943,9 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::init</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Initialize workspace config, creating .dagger/config.toml.</p></dd><dt><a href="Dagger/Workspace.html#method_install">
 <abbr title="Dagger\Workspace">Workspace</abbr>::install</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Install a module into the workspace, writing config.toml to the host.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_id">
+                    <dd><p>Install a module into the workspace, writing config.toml to the host.</p></dd><dt><a href="Dagger/WorkspaceGit.html#method_id">
+<abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceGit.html"><abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this WorkspaceGit.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_id">
 <abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a></em></dt>
                     <dd><p>A unique identifier for this WorkspaceMigration.</p></dd><dt><a href="Dagger/WorkspaceMigrationStep.html#method_id">
 <abbr title="Dagger\WorkspaceMigrationStep">WorkspaceMigrationStep</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigrationStep.html"><abbr title="Dagger\WorkspaceMigrationStep">WorkspaceMigrationStep</abbr></a></em></dt>
@@ -1104,7 +1112,9 @@
 <abbr title="Dagger\Client">Client</abbr>::loadUpGroupFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a UpGroup from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadWorkspaceFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadWorkspaceFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Load a Workspace from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadWorkspaceMigrationFromID">
+                    <dd><p>Load a Workspace from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadWorkspaceGitFromID">
+<abbr title="Dagger\Client">Client</abbr>::loadWorkspaceGitFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>Load a WorkspaceGit from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadWorkspaceMigrationFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadWorkspaceMigrationFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a WorkspaceMigration from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadWorkspaceMigrationStepFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadWorkspaceMigrationStepFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -1612,7 +1622,9 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::uninstall</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Uninstall a module from the workspace, writing config.toml to the host.</p></dd><dt><a href="Dagger/Workspace.html#method_update">
 <abbr title="Dagger\Workspace">Workspace</abbr>::update</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Refresh workspace-managed state and return the resulting changeset.</p></dd>        </dl><h2 id="letterV">V</h2>
+                    <dd><p>Refresh workspace-managed state and return the resulting changeset.</p></dd><dt><a href="Dagger/WorkspaceGit.html#method_uncommitted">
+<abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr>::uncommitted</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceGit.html"><abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr></a></em></dt>
+                    <dd><p>Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.</p></dd>        </dl><h2 id="letterV">V</h2>
         <dl id="indexV"><dt><a href="Dagger/Address.html#method_value">
 <abbr title="Dagger\Address">Address</abbr>::value</a>() &mdash; <em>Method in class <a href="Dagger/Address.html"><abbr title="Dagger\Address">Address</abbr></a></em></dt>
                     <dd><p>The address value</p></dd><dt><a href="Dagger/Client.html#method_version">
@@ -1902,7 +1914,11 @@
 <abbr title="Dagger\Env">Env</abbr>::withUpOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Declare a desired Up output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withWorkspace">
 <abbr title="Dagger\Env">Env</abbr>::withWorkspace</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
-                    <dd><p>Returns a new environment with the provided workspace</p></dd><dt><a href="Dagger/Env.html#method_withWorkspaceInput">
+                    <dd><p>Returns a new environment with the provided workspace</p></dd><dt><a href="Dagger/Env.html#method_withWorkspaceGitInput">
+<abbr title="Dagger\Env">Env</abbr>::withWorkspaceGitInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Create or update a binding of type WorkspaceGit in the environment</p></dd><dt><a href="Dagger/Env.html#method_withWorkspaceGitOutput">
+<abbr title="Dagger\Env">Env</abbr>::withWorkspaceGitOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Declare a desired WorkspaceGit output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withWorkspaceInput">
 <abbr title="Dagger\Env">Env</abbr>::withWorkspaceInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Create or update a binding of type Workspace in the environment</p></dd><dt><a href="Dagger/Env.html#method_withWorkspaceMigrationInput">
 <abbr title="Dagger\Env">Env</abbr>::withWorkspaceMigrationInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
@@ -2057,7 +2073,9 @@
                     <dd><p>Sets whether this type can be set to null.</p></dd><dt><a href="Dagger/TypeDef.html#method_withScalar">
 <abbr title="Dagger\TypeDef">TypeDef</abbr>::withScalar</a>() &mdash; <em>Method in class <a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></em></dt>
                     <dd><p>Returns a TypeDef of kind Scalar with the provided name.</p></dd><dt><a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>A Dagger workspace detected from the current working directory.</p></dd><dt><a href="Dagger/WorkspaceId.html"><abbr title="Dagger\WorkspaceId">WorkspaceId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A Dagger workspace detected from the current working directory.</p></dd><dt><a href="Dagger/WorkspaceGit.html"><abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>Local git state for a workspace.</p></dd><dt><a href="Dagger/WorkspaceGitId.html"><abbr title="Dagger\WorkspaceGitId">WorkspaceGitId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/WorkspaceId.html"><abbr title="Dagger\WorkspaceId">WorkspaceId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A planned workspace migration.</p></dd><dt><a href="Dagger/WorkspaceMigrationId.html"><abbr title="Dagger\WorkspaceMigrationId">WorkspaceMigrationId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/WorkspaceMigrationStep.html"><abbr title="Dagger\WorkspaceMigrationStep">WorkspaceMigrationStep</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>

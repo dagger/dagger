@@ -287,6 +287,10 @@ class Void(Scalar):
     resolvers that do not return anything."""
 
 
+class WorkspaceGitID(Scalar):
+    """A unique identifier for an object."""
+
+
 class WorkspaceID(Scalar):
     """A unique identifier for an object."""
 
@@ -1100,6 +1104,12 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asWorkspace", _args)
         return Workspace(_ctx)
+
+    def as_workspace_git(self) -> "WorkspaceGit":
+        """Retrieve the binding value, as type WorkspaceGit"""
+        _args: list[Arg] = []
+        _ctx = self._select("asWorkspaceGit", _args)
+        return WorkspaceGit(_ctx)
 
     def as_workspace_migration(self) -> "WorkspaceMigration":
         """Retrieve the binding value, as type WorkspaceMigration"""
@@ -7428,6 +7438,49 @@ class Env(Type):
             Arg("workspace", workspace),
         ]
         _ctx = self._select("withWorkspace", _args)
+        return Env(_ctx)
+
+    def with_workspace_git_input(
+        self,
+        name: str,
+        value: "WorkspaceGit",
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type WorkspaceGit in the environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The WorkspaceGit value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceGitInput", _args)
+        return Env(_ctx)
+
+    def with_workspace_git_output(self, name: str, description: str) -> Self:
+        """Declare a desired WorkspaceGit output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withWorkspaceGitOutput", _args)
         return Env(_ctx)
 
     def with_workspace_input(
@@ -13975,6 +14028,14 @@ class Query(Root):
         _ctx = self._select("loadWorkspaceFromID", _args)
         return Workspace(_ctx)
 
+    def load_workspace_git_from_id(self, id: WorkspaceGitID) -> "WorkspaceGit":
+        """Load a WorkspaceGit from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadWorkspaceGitFromID", _args)
+        return WorkspaceGit(_ctx)
+
     def load_workspace_migration_from_id(
         self, id: WorkspaceMigrationID
     ) -> "WorkspaceMigration":
@@ -16197,6 +16258,14 @@ class Workspace(Type):
         _ctx = self._select("generators", _args)
         return GeneratorGroup(_ctx)
 
+    def git(self) -> "WorkspaceGit":
+        """Git state for this workspace. Errors if the workspace is not in a git
+        repository.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("git", _args)
+        return WorkspaceGit(_ctx)
+
     async def id(self) -> str:
         """A unique identifier for this Workspace.
 
@@ -16462,6 +16531,53 @@ class Workspace(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("update", _args)
+        return Changeset(_ctx)
+
+
+@typecheck
+class WorkspaceGit(Type):
+    """Local git state for a workspace."""
+
+    def head(self) -> GitRef:
+        """The checked-out HEAD of this workspace."""
+        _args: list[Arg] = []
+        _ctx = self._select("head", _args)
+        return GitRef(_ctx)
+
+    async def id(self) -> str:
+        """A unique identifier for this WorkspaceGit.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    def uncommitted(self) -> Changeset:
+        """Uncommitted changes in this workspace, using the same rules as
+        GitRepository.uncommitted.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("uncommitted", _args)
         return Changeset(_ctx)
 
 
@@ -16975,6 +17091,8 @@ __all__ = [
     "UpID",
     "Void",
     "Workspace",
+    "WorkspaceGit",
+    "WorkspaceGitID",
     "WorkspaceID",
     "WorkspaceMigration",
     "WorkspaceMigrationID",

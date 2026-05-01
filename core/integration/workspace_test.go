@@ -6,6 +6,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -92,6 +93,89 @@ func (WorkspaceSuite) TestSingleQueryWorkspaceModuleLoadingSkipsUnreferencedBrok
 		require.NoError(t, err)
 		require.Contains(t, errOut, "bad")
 	})
+}
+
+// TestWorkspaceGit exercises the happy path for the Workspace.git API from a
+// real Dagger query. It checks that the reported HEAD commit matches the local
+// repository, that a clean repository reports an empty uncommitted changeset,
+// and that dirty state is detected for the whole repository even when the
+// current workspace is a nested directory.
+func (WorkspaceSuite) TestWorkspaceGit(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		WithNewFile("tracked.txt", "v1").
+		WithNewFile("toolchains/gitinfo/.keep", "").
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "initial"}).
+		WithNewFile("tracked.txt", "v2").
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "head"})
+
+	headCommit, err := base.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	headCommit = strings.TrimSpace(headCommit)
+
+	out, err := base.With(daggerQuery(`{
+  currentWorkspace {
+    git {
+      head { commit }
+      uncommitted { isEmpty }
+    }
+  }
+}`)).Stdout(ctx)
+	require.NoError(t, err)
+
+	var got struct {
+		CurrentWorkspace struct {
+			Git struct {
+				Head struct {
+					Commit string `json:"commit"`
+				} `json:"head"`
+				Uncommitted struct {
+					IsEmpty bool `json:"isEmpty"`
+				} `json:"uncommitted"`
+			} `json:"git"`
+		} `json:"currentWorkspace"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &got))
+	require.Equal(t, headCommit, got.CurrentWorkspace.Git.Head.Commit)
+	require.True(t, got.CurrentWorkspace.Git.Uncommitted.IsEmpty)
+
+	out, err = base.
+		WithNewFile("dirty.txt", "dirty").
+		With(daggerQuery(`{currentWorkspace{git{uncommitted{isEmpty}}}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"currentWorkspace":{"git":{"uncommitted":{"isEmpty":false}}}}`, out)
+
+	out, err = base.
+		WithWorkdir("/work/toolchains/gitinfo").
+		WithNewFile("/work/root-dirty.txt", "dirty").
+		With(daggerQuery(`{currentWorkspace{cwd git{uncommitted{isEmpty}}}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"currentWorkspace":{"cwd":"toolchains/gitinfo","git":{"uncommitted":{"isEmpty":false}}}}`, out)
+}
+
+// TestWorkspaceGitWorktreeUnsupported documents the first-pass worktree
+// boundary for Workspace.git. A git worktree has a .git file pointing at
+// metadata outside the workspace boundary; until that metadata can be copied
+// deliberately, Workspace.git should fail explicitly instead of following the
+// pointer or expanding filesystem access outside the workspace.
+func (WorkspaceSuite) TestWorkspaceGitWorktreeUnsupported(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := workspaceBase(t, c).
+		WithNewFile("tracked.txt", "v1").
+		WithExec([]string{"git", "add", "."}).
+		WithExec([]string{"git", "commit", "-m", "initial"}).
+		WithExec([]string{"git", "worktree", "add", "/linked", "HEAD"}).
+		WithWorkdir("/linked")
+
+	_, err := ctr.With(daggerQuery(`{currentWorkspace{git{head{commit}}}}`)).Stdout(ctx)
+	require.Error(t, err)
+	requireErrOut(t, err, "git worktrees are not supported by Workspace.git yet")
 }
 
 // TestEntrypointWithFieldHidden verifies that the synthetic `with` field
