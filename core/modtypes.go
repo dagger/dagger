@@ -63,9 +63,9 @@ func (content *CollectedContent) CollectID(ctx context.Context, idp *call.ID, un
 		return fmt.Errorf("collect ID requires handle-form ID")
 	}
 
-	dag := dagql.CurrentDagqlServer(ctx)
-	if dag == nil {
-		return fmt.Errorf("current dagql server is nil")
+	dag, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return fmt.Errorf("current dagql server: %w", err)
 	}
 	res, err := dag.LoadType(ctx, idp)
 	if err != nil {
