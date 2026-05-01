@@ -138,6 +138,28 @@ func TestTestClassification(t *testing.T) {
 	assertCategory("explicit success", TestCategoryPassing)
 }
 
+func TestTestNodeNames(t *testing.T) {
+	db := NewDB()
+	snapshot := testSnapshot(1, "baz", SpanID{}, TestStatusSuccess)
+	snapshot.TestCaseName = "TestFoo/TestBar/baz"
+	db.ImportSnapshots([]SpanSnapshot{snapshot})
+
+	view := db.TestView()
+	node := view.FindCaseByName("TestFoo/TestBar/baz")
+	if node == nil {
+		t.Fatal("expected lookup by fully-qualified test name")
+	}
+	if node.Name != "baz" {
+		t.Fatalf("expected local test name from span name, got %q", node.Name)
+	}
+	if node.FullName != "TestFoo/TestBar/baz" {
+		t.Fatalf("expected fully-qualified test name, got %q", node.FullName)
+	}
+	if view.FindCaseByName("baz") != node {
+		t.Fatal("expected lookup by local name alias to find the same node")
+	}
+}
+
 func TestTestHierarchyCountsAndSuites(t *testing.T) {
 	db := NewDB()
 	parent := testSnapshot(1, "parent", SpanID{}, TestStatusSuccess)

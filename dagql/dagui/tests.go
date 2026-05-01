@@ -174,9 +174,16 @@ const (
 type TestNodeID string
 
 type TestNode struct {
-	ID       TestNodeID
-	Kind     TestNodeKind
-	Name     string
+	ID   TestNodeID
+	Kind TestNodeKind
+
+	// Name is the local display name for this node, usually the span name. For
+	// test cases this avoids repeating a fully-qualified semantic test name at
+	// every level of a rendered tree.
+	Name string
+
+	// FullName is the fully-qualified semantic name reported by test.case.name
+	// or test.suite.name. Use this for stable lookups and URL compatibility.
 	FullName string
 
 	// Span is nil for virtual suites.
@@ -391,8 +398,8 @@ func (idx *TestIndex) spanUpdated(span *Span) {
 		return
 	}
 
-	kind, name, suiteName, ok := testNodeMetadata(span)
-	if !ok || node.Kind != kind || node.Name != name || node.suiteName != suiteName {
+	kind, name, fullName, suiteName, ok := testNodeMetadata(span)
+	if !ok || node.Kind != kind || node.Name != name || node.FullName != fullName || node.suiteName != suiteName {
 		idx.markStructureDirty()
 		return
 	}
@@ -430,7 +437,7 @@ func (idx *TestIndex) rebuildStructure() {
 
 	nodesBySpan := make(map[SpanID]*TestNode, len(idx.knownTestSpans))
 	for id, span := range idx.knownTestSpans {
-		kind, name, suiteName, ok := testNodeMetadata(span)
+		kind, name, fullName, suiteName, ok := testNodeMetadata(span)
 		if !ok {
 			delete(idx.knownTestSpans, id)
 			continue
@@ -439,7 +446,7 @@ func (idx *TestIndex) rebuildStructure() {
 			ID:        TestNodeID("span:" + span.ID.String()),
 			Kind:      kind,
 			Name:      name,
-			FullName:  name,
+			FullName:  fullName,
 			Span:      span,
 			suiteName: suiteName,
 		}
@@ -493,13 +500,22 @@ func (idx *TestIndex) buildView(roots []*TestNode) *TestView {
 		}
 		switch node.Kind {
 		case TestNodeCase:
-			view.CasesByName[node.Name] = append(view.CasesByName[node.Name], node)
+			addTestNameIndex(view.CasesByName, node)
 		case TestNodeSuite, TestNodeVirtualSuite:
-			view.SuitesByName[node.Name] = append(view.SuitesByName[node.Name], node)
+			addTestNameIndex(view.SuitesByName, node)
 		}
 	})
 
 	return view
+}
+
+func addTestNameIndex(index map[string][]*TestNode, node *TestNode) {
+	if node.FullName != "" {
+		index[node.FullName] = append(index[node.FullName], node)
+	}
+	if node.Name != "" && node.Name != node.FullName {
+		index[node.Name] = append(index[node.Name], node)
+	}
 }
 
 func (idx *TestIndex) applyAggregateUpdates() {
@@ -584,21 +600,28 @@ func (idx *TestIndex) rootDone() time.Time {
 }
 
 func testSpanHasNode(span *Span) bool {
-	_, _, _, ok := testNodeMetadata(span)
+	_, _, _, _, ok := testNodeMetadata(span)
 	return ok
 }
 
-func testNodeMetadata(span *Span) (TestNodeKind, string, string, bool) {
+func testNodeMetadata(span *Span) (TestNodeKind, string, string, string, bool) {
 	if span == nil {
-		return TestNodeCase, "", "", false
+		return TestNodeCase, "", "", "", false
 	}
 	if span.TestCaseName != "" {
-		return TestNodeCase, span.TestCaseName, span.TestSuiteName, true
+		return TestNodeCase, testNodeDisplayName(span, span.TestCaseName), span.TestCaseName, span.TestSuiteName, true
 	}
 	if span.TestSuiteName != "" {
-		return TestNodeSuite, span.TestSuiteName, span.TestSuiteName, true
+		return TestNodeSuite, testNodeDisplayName(span, span.TestSuiteName), span.TestSuiteName, span.TestSuiteName, true
 	}
-	return TestNodeCase, "", "", false
+	return TestNodeCase, "", "", "", false
+}
+
+func testNodeDisplayName(span *Span, fallback string) string {
+	if span != nil && span.Name != "" {
+		return span.Name
+	}
+	return fallback
 }
 
 func nearestTestAncestor(span *Span, nodesBySpan map[SpanID]*TestNode) *TestNode {
@@ -617,7 +640,7 @@ func groupVirtualSuites(roots []*TestNode, nodesBySpan map[SpanID]*TestNode) []*
 	realSuites := make(map[string]struct{})
 	for _, node := range nodesBySpan {
 		if node.Kind == TestNodeSuite {
-			realSuites[node.Name] = struct{}{}
+			realSuites[node.suiteName] = struct{}{}
 		}
 	}
 
