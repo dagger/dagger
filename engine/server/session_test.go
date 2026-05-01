@@ -11,8 +11,8 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine"
-	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/engine/engineutil"
+	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 )

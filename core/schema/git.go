@@ -745,7 +745,7 @@ func calcGitContentDigest(gitRef *core.GitRef, args treeArgs) (digest.Digest, er
 		return "", fmt.Errorf("cannot content-address non-remote git tree")
 	}
 
-	keepsGitDir := !(repo.DiscardGitDir || args.DiscardGitDir)
+	keepsGitDir := !repo.DiscardGitDir && !args.DiscardGitDir
 
 	dgstInputs := []string{
 		// A commit SHA only identifies an object inside a Git object database.
