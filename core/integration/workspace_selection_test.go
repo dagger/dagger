@@ -1,6 +1,5 @@
 package core
 
-// Workspace alignment: aligned structurally, but coverage is still incomplete.
 // Scope: Explicit workspace selection and binding via --workspace/-W, including declared local or remote refs, --workdir interaction, command policy, metadata-only commands, and explicit env overlays.
 // Intent: Own the declared-workspace contract end to end so contextual inference, compat opt-in, and native loading arbitration can evolve independently.
 

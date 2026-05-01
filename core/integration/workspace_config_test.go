@@ -1,8 +1,7 @@
 package core
 
-// Workspace alignment: aligned structurally, but coverage is still incomplete.
 // Scope: Workspace config read or write behavior, config aliasing, boundary handling, and runtime effects on loaded modules.
-// Intent: Keep current workspace configuration behavior explicit, including [modules.<name>.settings], and finish the missing API and boundary cases.
+// Intent: Keep current workspace configuration behavior explicit, including [modules.<name>.settings].
 
 import (
 	"context"
@@ -359,9 +358,6 @@ unknown = "ignored"
 	})
 }
 
-// TestWorkspaceModuleSettingsSemantics is the planning scaffold for the
-// unresolved behavior in [modules.<name>.settings] beyond the happy-path runtime
-// coverage above.
 func (WorkspaceSuite) TestWorkspaceModuleSettingsSemantics(ctx context.Context, t *testctx.T) {
 	t.Run("settings key normalization and casing are explicit", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
@@ -568,10 +564,6 @@ service = %s
 	})
 }
 
-// TestWorkspaceConfigurationLifecycle is the planning scaffold for the full
-// scope this file should eventually own: initializing, editing, detecting, and
-// applying .dagger/config.toml. Module management, compat, and migration
-// belong in their own files.
 func (WorkspaceSuite) TestWorkspaceConfigurationLifecycle(ctx context.Context, t *testctx.T) {
 	t.Run("CurrentWorkspace.Init creates config for the repo", func(ctx context.Context, t *testctx.T) {
 		workdir := t.TempDir()
