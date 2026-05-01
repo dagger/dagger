@@ -11,9 +11,44 @@ import (
 	"github.com/vito/tuist"
 )
 
+type testSidebarRowKind uint8
+
+const (
+	testSidebarNode testSidebarRowKind = iota
+	testSidebarPassedGroup
+)
+
 type testSidebarRow struct {
+	kind  testSidebarRowKind
 	node  *dagui.TestNode
 	depth int
+
+	key      string
+	counts   dagui.TestCounts
+	expanded bool
+}
+
+func (row testSidebarRow) id() string {
+	if row.kind == testSidebarPassedGroup {
+		return "passed:" + row.key
+	}
+	if row.node == nil {
+		return ""
+	}
+	return "node:" + string(row.node.ID)
+}
+
+func (row testSidebarRow) testCount() int {
+	if row.kind == testSidebarPassedGroup {
+		if row.expanded {
+			return 0
+		}
+		return row.counts.Total()
+	}
+	if row.node != nil && row.node.Kind == dagui.TestNodeCase {
+		return 1
+	}
+	return 0
 }
 
 type TestView struct {
@@ -30,7 +65,8 @@ type TestView struct {
 
 	OnFocusSpan func(*dagui.Span)
 
-	focusedTest dagui.TestNodeID
+	focusedRow           string
+	expandedPassedGroups map[string]bool
 }
 
 var _ tuist.Component = (*TestView)(nil)
@@ -91,7 +127,7 @@ func (tv *TestView) Render(ctx tuist.Context) {
 		return
 	}
 
-	selected := rows[selectedIdx].node
+	selected := rows[selectedIdx]
 	left := tv.renderSidebarLines(out, view, rows, selectedIdx, leftWidth, viewportHeight)
 	right := tv.renderDetailLines(out, selected, rightWidth, viewportHeight)
 	border := out.String(VertBar).Foreground(termenv.ANSIBrightBlack).Faint().String()
@@ -109,17 +145,29 @@ func (tv *TestView) Render(ctx tuist.Context) {
 }
 
 func (tv *TestView) FocusedNode() *dagui.TestNode {
-	return tv.focusedTestNode(tv.currentView())
+	rows, idx := tv.ensureFocusedTest(tv.currentView())
+	if idx < 0 || idx >= len(rows) || rows[idx].kind != testSidebarNode {
+		return nil
+	}
+	return rows[idx].node
 }
 
 func (tv *TestView) FocusedSpan() *dagui.Span {
 	return testTUISpan(tv.FocusedNode())
 }
 
+func (tv *TestView) FocusedPassedGroupExpanded() (bool, bool) {
+	rows, idx := tv.ensureFocusedTest(tv.currentView())
+	if idx < 0 || idx >= len(rows) || rows[idx].kind != testSidebarPassedGroup {
+		return false, false
+	}
+	return rows[idx].expanded, true
+}
+
 func (tv *TestView) GoStart() {
 	rows, _ := tv.ensureFocusedTest(tv.currentView())
 	if len(rows) > 0 {
-		tv.focusTestNode(rows[0].node)
+		tv.focusSidebarRow(rows[0])
 		tv.Update()
 	}
 }
@@ -127,7 +175,7 @@ func (tv *TestView) GoStart() {
 func (tv *TestView) GoEnd() {
 	rows, _ := tv.ensureFocusedTest(tv.currentView())
 	if len(rows) > 0 {
-		tv.focusTestNode(rows[len(rows)-1].node)
+		tv.focusSidebarRow(rows[len(rows)-1])
 		tv.Update()
 	}
 }
@@ -135,7 +183,7 @@ func (tv *TestView) GoEnd() {
 func (tv *TestView) GoUp() {
 	rows, idx := tv.ensureFocusedTest(tv.currentView())
 	if idx > 0 {
-		tv.focusTestNode(rows[idx-1].node)
+		tv.focusSidebarRow(rows[idx-1])
 		tv.Update()
 	}
 }
@@ -143,42 +191,45 @@ func (tv *TestView) GoUp() {
 func (tv *TestView) GoDown() {
 	rows, idx := tv.ensureFocusedTest(tv.currentView())
 	if idx >= 0 && idx+1 < len(rows) {
-		tv.focusTestNode(rows[idx+1].node)
+		tv.focusSidebarRow(rows[idx+1])
 		tv.Update()
 	}
 }
 
-func (tv *TestView) focusedTestNode(view *dagui.TestView) *dagui.TestNode {
-	if view == nil || tv.focusedTest == "" {
-		return nil
+func (tv *TestView) ToggleFocusedGroup() bool {
+	rows, idx := tv.ensureFocusedTest(tv.currentView())
+	if idx < 0 || idx >= len(rows) || rows[idx].kind != testSidebarPassedGroup {
+		return false
 	}
-	return view.ByID[tv.focusedTest]
+	if tv.expandedPassedGroups == nil {
+		tv.expandedPassedGroups = make(map[string]bool)
+	}
+	tv.expandedPassedGroups[rows[idx].key] = !tv.expandedPassedGroups[rows[idx].key]
+	tv.focusedRow = rows[idx].id()
+	tv.Update()
+	return true
 }
 
 func (tv *TestView) ensureFocusedTest(view *dagui.TestView) ([]testSidebarRow, int) {
-	rows := flattenTestRows(view)
+	rows := tv.flattenTestRows(view)
 	if len(rows) == 0 {
-		tv.focusedTest = ""
+		tv.focusedRow = ""
 		return rows, -1
 	}
 	for i, row := range rows {
-		if row.node.ID == tv.focusedTest {
-			tv.focusTestNode(row.node)
+		if row.id() == tv.focusedRow {
+			tv.focusSidebarRow(row)
 			return rows, i
 		}
 	}
-	tv.focusTestNode(rows[0].node)
+	tv.focusSidebarRow(rows[0])
 	return rows, 0
 }
 
-func (tv *TestView) focusTestNode(node *dagui.TestNode) {
-	if node == nil {
-		tv.focusedTest = ""
-		return
-	}
-	tv.focusedTest = node.ID
-	if tv.OnFocusSpan != nil {
-		tv.OnFocusSpan(testTUISpan(node))
+func (tv *TestView) focusSidebarRow(row testSidebarRow) {
+	tv.focusedRow = row.id()
+	if row.kind == testSidebarNode && tv.OnFocusSpan != nil {
+		tv.OnFocusSpan(testTUISpan(row.node))
 	}
 }
 
@@ -194,28 +245,75 @@ func (tv *TestView) renderSidebarLines(out *termenv.Output, view *dagui.TestView
 	lines = append(lines, out.String(clipPlain(title, width)).Bold().String())
 	lines = append(lines, out.String(strings.Repeat(HorizBar, max(width, 0))).Foreground(termenv.ANSIBrightBlack).Faint().String())
 
-	rowsHeight := max(height-len(lines), 0)
-	start := 0
-	if selectedIdx >= rowsHeight && rowsHeight > 0 {
-		start = selectedIdx - rowsHeight/2
-		if start+rowsHeight > len(rows) {
-			start = max(len(rows)-rowsHeight, 0)
-		}
+	listHeight := max(height-len(lines), 0)
+	if listHeight == 0 || len(rows) == 0 {
+		return cropLines(lines, height)
 	}
-	end := min(start+rowsHeight, len(rows))
-	if start > 0 {
+
+	start := 0
+	if selectedIdx >= listHeight {
+		start = selectedIdx - listHeight/2
+	}
+	if start+listHeight > len(rows) {
+		start = max(len(rows)-listHeight, 0)
+	}
+
+	var end int
+	var topMarker, bottomMarker bool
+	for {
+		topMarker = start > 0
+		slots := listHeight
+		if topMarker {
+			slots--
+		}
+		bottomMarker = start+max(slots, 0) < len(rows)
+		if bottomMarker {
+			slots--
+		}
+		if slots < 1 {
+			if topMarker {
+				topMarker = false
+				slots++
+			}
+			if slots < 1 && bottomMarker {
+				bottomMarker = false
+				slots++
+			}
+		}
+		slots = max(slots, 1)
+		end = min(start+slots, len(rows))
+		if selectedIdx < start && start > 0 {
+			start--
+			continue
+		}
+		if selectedIdx >= end && end < len(rows) {
+			start++
+			continue
+		}
+		break
+	}
+
+	if topMarker && len(lines) < height {
 		lines = append(lines, out.String(fmt.Sprintf("… %d above", start)).Foreground(termenv.ANSIBrightBlack).Faint().String())
 	}
 	for i := start; i < end && len(lines) < height; i++ {
 		lines = append(lines, tv.renderSidebarRow(out, rows[i], i == selectedIdx, width))
 	}
-	if end < len(rows) && len(lines) < height {
-		lines = append(lines, out.String(fmt.Sprintf("… %d below", len(rows)-end)).Foreground(termenv.ANSIBrightBlack).Faint().String())
+	if bottomMarker && len(lines) < height {
+		hiddenTests := countSidebarTests(rows[end:])
+		label := fmt.Sprintf("... %d more tests ...", hiddenTests)
+		if hiddenTests == 0 {
+			label = fmt.Sprintf("... %d more items ...", len(rows)-end)
+		}
+		lines = append(lines, out.String(clipPlain(label, width)).Foreground(termenv.ANSIBrightBlack).Faint().String())
 	}
-	return lines
+	return cropLines(lines, height)
 }
 
 func (tv *TestView) renderSidebarRow(out *termenv.Output, row testSidebarRow, selected bool, width int) string {
+	if row.kind == testSidebarPassedGroup {
+		return tv.renderPassedGroupSidebarRow(out, row, selected, width)
+	}
 	node := row.node
 	color := testCategoryColor(node.Category)
 	selector := " "
@@ -236,7 +334,41 @@ func (tv *TestView) renderSidebarRow(out *termenv.Output, row testSidebarRow, se
 	return selector + " " + iconStyle.String() + " " + indent + nameStyle.String() + count
 }
 
-func (tv *TestView) renderDetailLines(out *termenv.Output, node *dagui.TestNode, width, height int) []string {
+func (tv *TestView) renderPassedGroupSidebarRow(out *termenv.Output, row testSidebarRow, selected bool, width int) string {
+	selector := " "
+	if selected {
+		selector = out.String(CaretRightFilled).Foreground(termenv.ANSIWhite).Bold().String()
+	}
+	caret := CaretRightFilled
+	if row.expanded {
+		caret = CaretDownFilled
+	}
+	caretStyle := out.String(caret).Foreground(termenv.ANSIBrightBlack)
+	iconStyle := out.String(IconSuccess).Foreground(termenv.ANSIGreen)
+	label := fmt.Sprintf("%d passed", row.counts.Total())
+	labelStyle := out.String(clipPlain(label, max(width-9-row.depth*2, 1))).Foreground(termenv.ANSIGreen)
+	if selected {
+		caretStyle = hl(caretStyle)
+		iconStyle = hl(iconStyle)
+		labelStyle = hl(labelStyle).Bold()
+	}
+	indent := strings.Repeat("  ", row.depth)
+	return selector + " " + caretStyle.String() + " " + iconStyle.String() + " " + indent + labelStyle.String()
+}
+
+func countSidebarTests(rows []testSidebarRow) int {
+	var count int
+	for _, row := range rows {
+		count += row.testCount()
+	}
+	return count
+}
+
+func (tv *TestView) renderDetailLines(out *termenv.Output, row testSidebarRow, width, height int) []string {
+	if row.kind == testSidebarPassedGroup {
+		return tv.renderPassedGroupDetailLines(out, row, width, height)
+	}
+	node := row.node
 	if node == nil {
 		return []string{out.String("No test selected").Foreground(termenv.ANSIBrightBlack).String()}
 	}
@@ -245,12 +377,13 @@ func (tv *TestView) renderDetailLines(out *termenv.Output, node *dagui.TestNode,
 	color := testCategoryColor(node.Category)
 	var lines []string
 
-	titlePrefix := "Test"
-	if node.Kind == dagui.TestNodeSuite || node.Kind == dagui.TestNodeVirtualSuite {
-		titlePrefix = "Suite"
+	duration := ""
+	if representative != nil {
+		duration = " " + out.String(dagui.FormatDuration(testSpanDuration(representative))).Foreground(termenv.ANSIBrightBlack).Faint().String()
 	}
-	title := fmt.Sprintf("%s %s", titlePrefix, testNodeDisplayName(node))
-	lines = append(lines, out.String(clipPlain(title, width)).Foreground(color).Bold().String())
+	icon := out.String(testCategoryIcon(node.Category)).Foreground(color).String()
+	name := out.String(clipPlain(testNodeDisplayName(node), max(width-lipgloss.Width(icon)-lipgloss.Width(duration)-1, 1))).Foreground(termenv.ANSIWhite).Bold().String()
+	lines = append(lines, clipANSI(icon+" "+name+duration, width))
 	lines = append(lines, out.String(strings.Repeat(HorizBar, max(width, 0))).Foreground(termenv.ANSIBrightBlack).Faint().String())
 
 	lines = append(lines, tv.renderSummaryLine(out, node, width))
@@ -258,16 +391,8 @@ func (tv *TestView) renderDetailLines(out *termenv.Output, node *dagui.TestNode,
 		lines = append(lines, out.String(clipPlain(node.FullName, width)).Foreground(termenv.ANSIBrightBlack).Faint().String())
 	}
 	if node.Kind == dagui.TestNodeVirtualSuite {
-		meta := "virtual suite · no backing span"
-		if representative != nil {
-			meta += fmt.Sprintf(" · representative %s", representative.ID)
-		}
-		lines = append(lines, out.String(clipPlain(meta, width)).Foreground(termenv.ANSIBrightBlack).Faint().String())
-	} else if span != nil {
-		dur := dagui.FormatDuration(testSpanDuration(span))
-		meta := fmt.Sprintf("span %s · %s", span.ID, dur)
-		lines = append(lines, out.String(clipPlain(meta, width)).Foreground(termenv.ANSIBrightBlack).Faint().String())
-	} else {
+		lines = append(lines, out.String(clipPlain("virtual suite · no backing span", width)).Foreground(termenv.ANSIBrightBlack).Faint().String())
+	} else if span == nil {
 		lines = append(lines, out.String("no backing span").Foreground(termenv.ANSIBrightBlack).Faint().String())
 	}
 
@@ -275,11 +400,7 @@ func (tv *TestView) renderDetailLines(out *termenv.Output, node *dagui.TestNode,
 		lines = append(lines, "")
 		lines = append(lines, out.String("Children").Foreground(termenv.ANSIBrightBlack).Bold().String())
 		childRows := flattenChildTestRows(node.Children)
-		for i, child := range childRows {
-			if i >= 8 {
-				lines = append(lines, out.String(fmt.Sprintf("… %d more", len(childRows)-i)).Foreground(termenv.ANSIBrightBlack).Faint().String())
-				break
-			}
+		for _, child := range childRows {
 			lines = append(lines, renderTestChildLine(out, child, width))
 		}
 	}
@@ -303,6 +424,22 @@ func (tv *TestView) renderDetailLines(out *termenv.Output, node *dagui.TestNode,
 		return cropLines(lines, height)
 	}
 	lines = append(lines, strings.Split(view, "\n")...)
+	return cropLines(lines, height)
+}
+
+func (tv *TestView) renderPassedGroupDetailLines(out *termenv.Output, row testSidebarRow, width, height int) []string {
+	state := "collapsed"
+	if row.expanded {
+		state = "expanded"
+	}
+	icon := out.String(IconSuccess).Foreground(termenv.ANSIGreen).String()
+	name := out.String(fmt.Sprintf("%d passed", row.counts.Total())).Foreground(termenv.ANSIWhite).Bold().String()
+	lines := []string{
+		clipANSI(icon+" "+name, width),
+		out.String(strings.Repeat(HorizBar, max(width, 0))).Foreground(termenv.ANSIBrightBlack).Faint().String(),
+		out.String(clipPlain(fmt.Sprintf("%d passing tests · %s", row.counts.Total(), state), width)).Foreground(termenv.ANSIGreen).String(),
+		out.String(clipPlain("Press enter to expand or collapse this group.", width)).Foreground(termenv.ANSIBrightBlack).Faint().String(),
+	}
 	return cropLines(lines, height)
 }
 
@@ -471,6 +608,10 @@ func (fe *frontendPretty) openFocusedTestTrace() {
 	if fe.fullscreenTests == nil {
 		return
 	}
+	if fe.fullscreenTests.ToggleFocusedGroup() {
+		fe.Update()
+		return
+	}
 	span := fe.fullscreenTests.FocusedSpan()
 	if span == nil {
 		return
@@ -534,16 +675,62 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 	return lines
 }
 
-func flattenTestRows(view *dagui.TestView) []testSidebarRow {
+func (tv *TestView) flattenTestRows(view *dagui.TestView) []testSidebarRow {
 	if view == nil {
 		return nil
 	}
 	var rows []testSidebarRow
-	appendTestRows(&rows, view.Roots, 0)
+	tv.appendTestRows(&rows, view.Roots, 0, "root")
 	return rows
 }
 
-func appendTestRows(rows *[]testSidebarRow, nodes []*dagui.TestNode, depth int) {
+func (tv *TestView) appendTestRows(rows *[]testSidebarRow, nodes []*dagui.TestNode, depth int, parentKey string) {
+	partition := dagui.PartitionTests(nodes)
+	groups := [][]*dagui.TestNode{
+		partition.Failing,
+		partition.Running,
+		partition.Suites,
+		partition.Mixed,
+	}
+	for _, group := range groups {
+		for _, node := range group {
+			*rows = append(*rows, testSidebarRow{kind: testSidebarNode, node: node, depth: depth})
+			tv.appendTestRows(rows, node.Children, depth+1, string(node.ID))
+		}
+	}
+
+	if len(partition.Passing) > 0 {
+		var counts dagui.TestCounts
+		for _, node := range partition.Passing {
+			counts.Failing += node.Counts.Failing
+			counts.Running += node.Counts.Running
+			counts.Passing += node.Counts.Passing
+			counts.Skipped += node.Counts.Skipped
+		}
+		key := parentKey + ":passed"
+		expanded := tv.expandedPassedGroups[key]
+		*rows = append(*rows, testSidebarRow{kind: testSidebarPassedGroup, depth: depth, key: key, counts: counts, expanded: expanded})
+		if expanded {
+			for _, node := range partition.Passing {
+				*rows = append(*rows, testSidebarRow{kind: testSidebarNode, node: node, depth: depth + 1})
+				tv.appendTestRows(rows, node.Children, depth+2, string(node.ID))
+			}
+		}
+	}
+
+	for _, node := range partition.Skipped {
+		*rows = append(*rows, testSidebarRow{kind: testSidebarNode, node: node, depth: depth})
+		tv.appendTestRows(rows, node.Children, depth+1, string(node.ID))
+	}
+}
+
+func flattenChildTestRows(nodes []*dagui.TestNode) []testSidebarRow {
+	var rows []testSidebarRow
+	appendAllTestRows(&rows, nodes, 0)
+	return rows
+}
+
+func appendAllTestRows(rows *[]testSidebarRow, nodes []*dagui.TestNode, depth int) {
 	partition := dagui.PartitionTests(nodes)
 	groups := [][]*dagui.TestNode{
 		partition.Failing,
@@ -555,16 +742,10 @@ func appendTestRows(rows *[]testSidebarRow, nodes []*dagui.TestNode, depth int) 
 	}
 	for _, group := range groups {
 		for _, node := range group {
-			*rows = append(*rows, testSidebarRow{node: node, depth: depth})
-			appendTestRows(rows, node.Children, depth+1)
+			*rows = append(*rows, testSidebarRow{kind: testSidebarNode, node: node, depth: depth})
+			appendAllTestRows(rows, node.Children, depth+1)
 		}
 	}
-}
-
-func flattenChildTestRows(nodes []*dagui.TestNode) []testSidebarRow {
-	var rows []testSidebarRow
-	appendTestRows(&rows, nodes, 0)
-	return rows
 }
 
 func renderTestChildLine(out *termenv.Output, row testSidebarRow, width int) string {
