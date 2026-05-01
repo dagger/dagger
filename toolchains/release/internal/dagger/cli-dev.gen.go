@@ -205,34 +205,6 @@ func (r *CliDev) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, aw
 	return q.Execute(ctx)
 }
 
-// CliDevReferenceOpts contains options for CliDev.Reference
-type CliDevReferenceOpts struct {
-	Frontmatter string // cli-dev (../../../../toolchains/cli-dev/main.go:111:2)
-	//
-	// Include experimental commands
-	//
-	IncludeExperimental bool // cli-dev (../../../../toolchains/cli-dev/main.go:114:2)
-}
-
-// Generate a markdown CLI reference doc
-func (r *CliDev) Reference(opts ...CliDevReferenceOpts) *File { // cli-dev (../../../../toolchains/cli-dev/main.go:109:1)
-	q := r.query.Select("reference")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `frontmatter` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Frontmatter) {
-			q = q.Arg("frontmatter", opts[i].Frontmatter)
-		}
-		// `includeExperimental` optional argument
-		if !querybuilder.IsZeroValue(opts[i].IncludeExperimental) {
-			q = q.Arg("includeExperimental", opts[i].IncludeExperimental)
-		}
-	}
-
-	return &File{
-		query: q,
-	}
-}
-
 // Verify that the CLI builds without actually publishing anything
 func (r *CliDev) ReleaseDryRun() *Directory { // cli-dev (../../../../toolchains/cli-dev/publish.go:200:1)
 	q := r.query.Select("releaseDryRun")

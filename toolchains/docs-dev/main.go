@@ -38,14 +38,6 @@ type DocsDev struct {
 	NginxConfig *dagger.File // +private
 }
 
-const cliZenFrontmatter = `---
-title: "CLI Reference"
-description: "Learn how to use the Dagger CLI to run composable workflows in containers."
-slug: "/reference/cli"
----
-
-`
-
 // Build the docs website
 func (d DocsDev) Site() *dagger.Directory {
 	opts := dagger.DocusaurusOpts{
@@ -95,14 +87,7 @@ func (d DocsDev) References(
 		WithoutDirectory("docs/node_modules").
 		WithFile("docs/yarn.lock", src.File("docs/yarn.lock")).
 		WithFile("docs/package.json", src.File("docs/package.json"))
-	// 3. Generate CLI reference
-	withCliReference := src.WithFile("docs/current_docs/reference/cli/index.mdx", dag.DaggerCli().Reference(
-		dagger.DaggerCliReferenceOpts{
-			Frontmatter:         cliZenFrontmatter,
-			IncludeExperimental: true,
-		},
-	))
-	// 4. Generate config file schemas?
+	// 3. Generate config file schemas?
 	withConfigSchemas := src.
 		WithFile("docs/static/reference/dagger.schema.json", dag.EngineDev().ConfigSchema("dagger.json")).
 		WithFile("docs/static/reference/dagger.schema.json", dag.EngineDev().ConfigSchema("dagger.json"))
@@ -110,7 +95,6 @@ func (d DocsDev) References(
 	changes := src.
 		WithChanges(withGqlSchema.Changes(src)).
 		WithChanges(withAPIReference.Changes(src)).
-		WithChanges(withCliReference.Changes(src)).
 		WithChanges(withConfigSchemas.Changes(src)).
 		Changes(src)
 	return changes, nil

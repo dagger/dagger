@@ -196,34 +196,6 @@ func (r *DaggerCli) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret,
 	return q.Execute(ctx)
 }
 
-// DaggerCliReferenceOpts contains options for DaggerCli.Reference
-type DaggerCliReferenceOpts struct {
-	Frontmatter string // dagger-cli (../../toolchains/cli-dev/main.go:111:2)
-	//
-	// Include experimental commands
-	//
-	IncludeExperimental bool // dagger-cli (../../toolchains/cli-dev/main.go:114:2)
-}
-
-// Generate a markdown CLI reference doc
-func (r *DaggerCli) Reference(opts ...DaggerCliReferenceOpts) *File { // dagger-cli (../../toolchains/cli-dev/main.go:109:1)
-	q := r.query.Select("reference")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `frontmatter` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Frontmatter) {
-			q = q.Arg("frontmatter", opts[i].Frontmatter)
-		}
-		// `includeExperimental` optional argument
-		if !querybuilder.IsZeroValue(opts[i].IncludeExperimental) {
-			q = q.Arg("includeExperimental", opts[i].IncludeExperimental)
-		}
-	}
-
-	return &File{
-		query: q,
-	}
-}
-
 // Verify that the CLI builds without actually publishing anything
 func (r *DaggerCli) ReleaseDryRun() *Directory { // dagger-cli (../../toolchains/cli-dev/publish.go:200:1)
 	q := r.query.Select("releaseDryRun")
