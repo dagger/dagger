@@ -235,6 +235,60 @@ func TestTestHierarchyCountsAndSuites(t *testing.T) {
 	}
 }
 
+func TestTestViewForSpanScopesVirtualSuites(t *testing.T) {
+	db := NewDB()
+	checkA := SpanSnapshot{
+		ID:        testID(1),
+		TraceID:   TraceID{TraceID: trace.TraceID{1}},
+		Name:      "check-a",
+		StartTime: time.Unix(1, 0),
+		EndTime:   time.Unix(2, 0),
+		CheckName: "check-a",
+	}
+	checkB := SpanSnapshot{
+		ID:        testID(2),
+		TraceID:   TraceID{TraceID: trace.TraceID{1}},
+		Name:      "check-b",
+		StartTime: time.Unix(2, 0),
+		EndTime:   time.Unix(3, 0),
+		CheckName: "check-b",
+	}
+	caseA := testSnapshot(3, "case-a", checkA.ID, TestStatusSuccess)
+	caseA.TestSuiteName = "shared-suite"
+	caseB := testSnapshot(4, "case-b", checkB.ID, TestStatusFailure)
+	caseB.TestSuiteName = "shared-suite"
+	db.ImportSnapshots([]SpanSnapshot{checkA, checkB, caseA, caseB})
+
+	globalSuite := db.TestView().FindSuiteByName("shared-suite")
+	if globalSuite == nil || globalSuite.Counts.Total() != 2 {
+		t.Fatalf("expected global view to contain both cases, got %#v", globalSuite)
+	}
+
+	viewA := db.TestViewForSpan(db.Spans.Map[checkA.ID])
+	if got := viewA.Counts.Total(); got != 1 {
+		t.Fatalf("expected check-a scoped view to contain one case, got %d", got)
+	}
+	if viewA.FindCaseByName("case-a") == nil || viewA.FindCaseByName("case-b") != nil {
+		t.Fatalf("expected check-a scoped cases only, got case-a=%#v case-b=%#v", viewA.FindCaseByName("case-a"), viewA.FindCaseByName("case-b"))
+	}
+	suiteA := viewA.FindSuiteByName("shared-suite")
+	if suiteA == nil || suiteA.Counts.Total() != 1 || suiteA.Counts.Passing != 1 {
+		t.Fatalf("expected check-a scoped suite to contain one passing case, got %#v", suiteA)
+	}
+
+	viewB := db.TestViewForSpan(db.Spans.Map[checkB.ID])
+	if got := viewB.Counts.Total(); got != 1 {
+		t.Fatalf("expected check-b scoped view to contain one case, got %d", got)
+	}
+	if viewB.FindCaseByName("case-b") == nil || viewB.FindCaseByName("case-a") != nil {
+		t.Fatalf("expected check-b scoped cases only, got case-a=%#v case-b=%#v", viewB.FindCaseByName("case-a"), viewB.FindCaseByName("case-b"))
+	}
+	suiteB := viewB.FindSuiteByName("shared-suite")
+	if suiteB == nil || suiteB.Counts.Total() != 1 || suiteB.Counts.Failing != 1 {
+		t.Fatalf("expected check-b scoped suite to contain one failing case, got %#v", suiteB)
+	}
+}
+
 func TestPartitionTests(t *testing.T) {
 	db := NewDB()
 	failing := testSnapshot(1, "failing", SpanID{}, TestStatusFailure)

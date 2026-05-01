@@ -16,136 +16,42 @@ type testSidebarRow struct {
 	depth int
 }
 
-func (fe *frontendPretty) toggleTestsMode() {
-	if !fe.testsMode && !fe.db.HasTests() {
-		return
-	}
-	fe.testsMode = !fe.testsMode
-	if fe.testsMode {
-		fe.ensureFocusedTest(fe.db.TestView())
-	} else {
-		fe.recalculateViewLocked()
-	}
-	if fe.keymapBar != nil {
-		fe.keymapBar.Update()
-	}
-	fe.Update()
+type TestView struct {
+	tuist.Compo
+
+	Profile termenv.Profile
+	View    func() *dagui.TestView
+	Logs    map[dagui.SpanID]*Vterm
+
+	// MaxHeight caps the rendered height. A zero value means fullscreen mode:
+	// use the terminal height, leaving room for the keymap sibling.
+	MaxHeight int
+	ScopeName string
+
+	OnFocusSpan func(*dagui.Span)
+
+	focusedTest dagui.TestNodeID
 }
 
-func (fe *frontendPretty) focusedTestNode(view *dagui.TestView) *dagui.TestNode {
-	if view == nil || fe.focusedTest == "" {
+var _ tuist.Component = (*TestView)(nil)
+
+func (tv *TestView) Name() string {
+	if tv.ScopeName != "" {
+		return "TestView(" + tv.ScopeName + ")"
+	}
+	return "TestView"
+}
+
+func (tv *TestView) currentView() *dagui.TestView {
+	if tv == nil || tv.View == nil {
 		return nil
 	}
-	return view.ByID[fe.focusedTest]
+	return tv.View()
 }
 
-func (fe *frontendPretty) ensureFocusedTest(view *dagui.TestView) ([]testSidebarRow, int) {
-	rows := flattenTestRows(view)
-	if len(rows) == 0 {
-		fe.focusedTest = ""
-		return rows, -1
-	}
-	for i, row := range rows {
-		if row.node.ID == fe.focusedTest {
-			fe.focusTestNode(row.node)
-			return rows, i
-		}
-	}
-	fe.focusTestNode(rows[0].node)
-	return rows, 0
-}
-
-func (fe *frontendPretty) focusTestNode(node *dagui.TestNode) {
-	if node == nil {
-		fe.focusedTest = ""
-		return
-	}
-	fe.focusedTest = node.ID
-	if span := testTUISpan(node); span != nil {
-		fe.FocusedSpan = span.ID
-	}
-}
-
-func (fe *frontendPretty) goTestStart() {
-	rows, _ := fe.ensureFocusedTest(fe.db.TestView())
-	if len(rows) > 0 {
-		fe.focusTestNode(rows[0].node)
-		fe.Update()
-	}
-}
-
-func (fe *frontendPretty) goTestEnd() {
-	rows, _ := fe.ensureFocusedTest(fe.db.TestView())
-	if len(rows) > 0 {
-		fe.focusTestNode(rows[len(rows)-1].node)
-		fe.Update()
-	}
-}
-
-func (fe *frontendPretty) goTestUp() {
-	rows, idx := fe.ensureFocusedTest(fe.db.TestView())
-	if idx > 0 {
-		fe.focusTestNode(rows[idx-1].node)
-		fe.Update()
-	}
-}
-
-func (fe *frontendPretty) goTestDown() {
-	rows, idx := fe.ensureFocusedTest(fe.db.TestView())
-	if idx >= 0 && idx+1 < len(rows) {
-		fe.focusTestNode(rows[idx+1].node)
-		fe.Update()
-	}
-}
-
-func (fe *frontendPretty) openFocusedTestTrace() {
-	view := fe.db.TestView()
-	node := fe.focusedTestNode(view)
-	span := testTUISpan(node)
-	if span == nil {
-		return
-	}
-	fe.testsMode = false
-	fe.ZoomedSpan = span.ID
-	fe.FocusedSpan = span.ID
-	fe.renderVersion++
-	fe.recalculateViewLocked()
-	if fe.keymapBar != nil {
-		fe.keymapBar.Update()
-	}
-	fe.Update()
-}
-
-func flattenTestRows(view *dagui.TestView) []testSidebarRow {
-	if view == nil {
-		return nil
-	}
-	var rows []testSidebarRow
-	appendTestRows(&rows, view.Roots, 0)
-	return rows
-}
-
-func appendTestRows(rows *[]testSidebarRow, nodes []*dagui.TestNode, depth int) {
-	partition := dagui.PartitionTests(nodes)
-	groups := [][]*dagui.TestNode{
-		partition.Failing,
-		partition.Running,
-		partition.Suites,
-		partition.Mixed,
-		partition.Passing,
-		partition.Skipped,
-	}
-	for _, group := range groups {
-		for _, node := range group {
-			*rows = append(*rows, testSidebarRow{node: node, depth: depth})
-			appendTestRows(rows, node.Children, depth+1)
-		}
-	}
-}
-
-func (fe *frontendPretty) renderTestsView(ctx tuist.Context) {
-	view := fe.db.TestView()
-	rows, selectedIdx := fe.ensureFocusedTest(view)
+func (tv *TestView) Render(ctx tuist.Context) {
+	view := tv.currentView()
+	rows, selectedIdx := tv.ensureFocusedTest(view)
 
 	width := max(ctx.Width, 1)
 	leftWidth := width / 3
@@ -164,11 +70,21 @@ func (fe *frontendPretty) renderTestsView(ctx tuist.Context) {
 		rightWidth = 1
 	}
 
-	// Leave room for the keymap sibling and a small visual gap.
-	viewportHeight := max(ctx.ScreenHeight()-2, 1)
+	viewportHeight := ctx.Height
+	if viewportHeight <= 0 {
+		if tv.MaxHeight > 0 {
+			viewportHeight = tv.MaxHeight
+		} else {
+			// Leave room for the keymap sibling and a small visual gap.
+			viewportHeight = max(ctx.ScreenHeight()-2, 1)
+		}
+	} else if tv.MaxHeight > 0 {
+		viewportHeight = min(viewportHeight, tv.MaxHeight)
+	}
+	viewportHeight = max(viewportHeight, 1)
 
 	outBuf := new(strings.Builder)
-	out := NewOutput(outBuf, termenv.WithProfile(fe.profile))
+	out := NewOutput(outBuf, termenv.WithProfile(tv.Profile))
 
 	if len(rows) == 0 {
 		ctx.Line(out.String("No tests discovered yet").Foreground(termenv.ANSIBrightBlack).String())
@@ -176,8 +92,8 @@ func (fe *frontendPretty) renderTestsView(ctx tuist.Context) {
 	}
 
 	selected := rows[selectedIdx].node
-	left := fe.renderTestSidebarLines(out, view, rows, selectedIdx, leftWidth, viewportHeight)
-	right := fe.renderTestDetailLines(out, selected, rightWidth, viewportHeight)
+	left := tv.renderSidebarLines(out, view, rows, selectedIdx, leftWidth, viewportHeight)
+	right := tv.renderDetailLines(out, selected, rightWidth, viewportHeight)
 	border := out.String(VertBar).Foreground(termenv.ANSIBrightBlack).Faint().String()
 
 	for i := range viewportHeight {
@@ -192,9 +108,89 @@ func (fe *frontendPretty) renderTestsView(ctx tuist.Context) {
 	}
 }
 
-func (fe *frontendPretty) renderTestSidebarLines(out *termenv.Output, view *dagui.TestView, rows []testSidebarRow, selectedIdx, width, height int) []string {
+func (tv *TestView) FocusedNode() *dagui.TestNode {
+	return tv.focusedTestNode(tv.currentView())
+}
+
+func (tv *TestView) FocusedSpan() *dagui.Span {
+	return testTUISpan(tv.FocusedNode())
+}
+
+func (tv *TestView) GoStart() {
+	rows, _ := tv.ensureFocusedTest(tv.currentView())
+	if len(rows) > 0 {
+		tv.focusTestNode(rows[0].node)
+		tv.Update()
+	}
+}
+
+func (tv *TestView) GoEnd() {
+	rows, _ := tv.ensureFocusedTest(tv.currentView())
+	if len(rows) > 0 {
+		tv.focusTestNode(rows[len(rows)-1].node)
+		tv.Update()
+	}
+}
+
+func (tv *TestView) GoUp() {
+	rows, idx := tv.ensureFocusedTest(tv.currentView())
+	if idx > 0 {
+		tv.focusTestNode(rows[idx-1].node)
+		tv.Update()
+	}
+}
+
+func (tv *TestView) GoDown() {
+	rows, idx := tv.ensureFocusedTest(tv.currentView())
+	if idx >= 0 && idx+1 < len(rows) {
+		tv.focusTestNode(rows[idx+1].node)
+		tv.Update()
+	}
+}
+
+func (tv *TestView) focusedTestNode(view *dagui.TestView) *dagui.TestNode {
+	if view == nil || tv.focusedTest == "" {
+		return nil
+	}
+	return view.ByID[tv.focusedTest]
+}
+
+func (tv *TestView) ensureFocusedTest(view *dagui.TestView) ([]testSidebarRow, int) {
+	rows := flattenTestRows(view)
+	if len(rows) == 0 {
+		tv.focusedTest = ""
+		return rows, -1
+	}
+	for i, row := range rows {
+		if row.node.ID == tv.focusedTest {
+			tv.focusTestNode(row.node)
+			return rows, i
+		}
+	}
+	tv.focusTestNode(rows[0].node)
+	return rows, 0
+}
+
+func (tv *TestView) focusTestNode(node *dagui.TestNode) {
+	if node == nil {
+		tv.focusedTest = ""
+		return
+	}
+	tv.focusedTest = node.ID
+	if tv.OnFocusSpan != nil {
+		tv.OnFocusSpan(testTUISpan(node))
+	}
+}
+
+func (tv *TestView) renderSidebarLines(out *termenv.Output, view *dagui.TestView, rows []testSidebarRow, selectedIdx, width, height int) []string {
 	var lines []string
-	title := fmt.Sprintf("Tests %d", view.Counts.Total())
+	title := "Tests"
+	if tv.ScopeName != "" {
+		title += " · " + tv.ScopeName
+	}
+	if view != nil {
+		title = fmt.Sprintf("%s %d", title, view.Counts.Total())
+	}
 	lines = append(lines, out.String(clipPlain(title, width)).Bold().String())
 	lines = append(lines, out.String(strings.Repeat(HorizBar, max(width, 0))).Foreground(termenv.ANSIBrightBlack).Faint().String())
 
@@ -211,7 +207,7 @@ func (fe *frontendPretty) renderTestSidebarLines(out *termenv.Output, view *dagu
 		lines = append(lines, out.String(fmt.Sprintf("… %d above", start)).Foreground(termenv.ANSIBrightBlack).Faint().String())
 	}
 	for i := start; i < end && len(lines) < height; i++ {
-		lines = append(lines, fe.renderTestSidebarRow(out, rows[i], i == selectedIdx, width))
+		lines = append(lines, tv.renderSidebarRow(out, rows[i], i == selectedIdx, width))
 	}
 	if end < len(rows) && len(lines) < height {
 		lines = append(lines, out.String(fmt.Sprintf("… %d below", len(rows)-end)).Foreground(termenv.ANSIBrightBlack).Faint().String())
@@ -219,7 +215,7 @@ func (fe *frontendPretty) renderTestSidebarLines(out *termenv.Output, view *dagu
 	return lines
 }
 
-func (fe *frontendPretty) renderTestSidebarRow(out *termenv.Output, row testSidebarRow, selected bool, width int) string {
+func (tv *TestView) renderSidebarRow(out *termenv.Output, row testSidebarRow, selected bool, width int) string {
 	node := row.node
 	color := testCategoryColor(node.Category)
 	selector := " "
@@ -240,7 +236,7 @@ func (fe *frontendPretty) renderTestSidebarRow(out *termenv.Output, row testSide
 	return selector + " " + iconStyle.String() + " " + indent + nameStyle.String() + count
 }
 
-func (fe *frontendPretty) renderTestDetailLines(out *termenv.Output, node *dagui.TestNode, width, height int) []string {
+func (tv *TestView) renderDetailLines(out *termenv.Output, node *dagui.TestNode, width, height int) []string {
 	if node == nil {
 		return []string{out.String("No test selected").Foreground(termenv.ANSIBrightBlack).String()}
 	}
@@ -257,7 +253,7 @@ func (fe *frontendPretty) renderTestDetailLines(out *termenv.Output, node *dagui
 	lines = append(lines, out.String(clipPlain(title, width)).Foreground(color).Bold().String())
 	lines = append(lines, out.String(strings.Repeat(HorizBar, max(width, 0))).Foreground(termenv.ANSIBrightBlack).Faint().String())
 
-	lines = append(lines, fe.renderTestSummaryLine(out, node, width))
+	lines = append(lines, tv.renderSummaryLine(out, node, width))
 	if node.FullName != "" && node.FullName != node.Name {
 		lines = append(lines, out.String(clipPlain(node.FullName, width)).Foreground(termenv.ANSIBrightBlack).Faint().String())
 	}
@@ -294,7 +290,7 @@ func (fe *frontendPretty) renderTestDetailLines(out *termenv.Output, node *dagui
 		lines = append(lines, out.String("No direct logs for a virtual suite.").Foreground(termenv.ANSIBrightBlack).Faint().String())
 		return cropLines(lines, height)
 	}
-	logs := fe.logs.Logs[span.ID]
+	logs := tv.Logs[span.ID]
 	if logs == nil || logs.UsedHeight() == 0 {
 		lines = append(lines, out.String("No logs for selected test span.").Foreground(termenv.ANSIBrightBlack).Faint().String())
 		return cropLines(lines, height)
@@ -310,7 +306,7 @@ func (fe *frontendPretty) renderTestDetailLines(out *termenv.Output, node *dagui
 	return cropLines(lines, height)
 }
 
-func (fe *frontendPretty) renderTestSummaryLine(out *termenv.Output, node *dagui.TestNode, width int) string {
+func (tv *TestView) renderSummaryLine(out *termenv.Output, node *dagui.TestNode, width int) string {
 	counts := node.Counts
 	parts := []string{
 		out.String(testCategoryIcon(node.Category)).Foreground(testCategoryColor(node.Category)).String(),
@@ -330,6 +326,239 @@ func (fe *frontendPretty) renderTestSummaryLine(out *termenv.Output, node *dagui
 		parts = append(parts, out.String(fmt.Sprintf("%d skipped", counts.Skipped)).Foreground(termenv.ANSIBrightBlack).String())
 	}
 	return clipANSI(strings.Join(parts, " · "), width)
+}
+
+func (fe *frontendPretty) toggleTestsMode() {
+	if fe.testsMode {
+		fe.closeTestsMode()
+		return
+	}
+
+	tv := fe.fullscreenTestViewForFocus()
+	if tv == nil || !tv.currentView().HasTests() {
+		return
+	}
+	fe.fullscreenTests = tv
+	fe.testsReturnSpan = fe.FocusedSpan
+	fe.testsMode = true
+	tv.ensureFocusedTest(tv.currentView())
+	if fe.keymapBar != nil {
+		fe.keymapBar.Update()
+	}
+	fe.Update()
+}
+
+func (fe *frontendPretty) fullscreenTestViewForFocus() *TestView {
+	if span := fe.focusedCheckWithTests(); span != nil {
+		return fe.newFullscreenTestView(span.ID, span.CheckName)
+	}
+	if fe.db == nil || !fe.db.HasTests() {
+		return nil
+	}
+	return fe.newFullscreenTestView(dagui.SpanID{}, "")
+}
+
+func (fe *frontendPretty) focusedCheckWithTests() *dagui.Span {
+	if fe.db == nil || !fe.FocusedSpan.IsValid() {
+		return nil
+	}
+	for span := fe.db.Spans.Map[fe.FocusedSpan]; span != nil; span = span.ParentSpan {
+		if span.CheckName != "" && fe.db.TestViewForSpan(span).HasTests() {
+			return span
+		}
+	}
+	return nil
+}
+
+func (fe *frontendPretty) newFullscreenTestView(root dagui.SpanID, scopeName string) *TestView {
+	tv := fe.newTestView(root, scopeName)
+	tv.OnFocusSpan = func(span *dagui.Span) {
+		if span != nil {
+			fe.FocusedSpan = span.ID
+		}
+	}
+	return tv
+}
+
+func (fe *frontendPretty) inlineTestView(root dagui.SpanID) *TestView {
+	if fe.testViews == nil {
+		fe.testViews = make(map[dagui.SpanID]*TestView)
+	}
+	tv := fe.testViews[root]
+	if tv == nil {
+		tv = fe.newTestView(root, "")
+		fe.testViews[root] = tv
+	}
+	return tv
+}
+
+func (fe *frontendPretty) newTestView(root dagui.SpanID, scopeName string) *TestView {
+	tv := &TestView{
+		Profile:   fe.profile,
+		Logs:      fe.logs.Logs,
+		ScopeName: scopeName,
+	}
+	if root.IsValid() {
+		tv.View = func() *dagui.TestView {
+			return fe.db.TestViewForSpan(fe.db.Spans.Map[root])
+		}
+	} else {
+		tv.View = func() *dagui.TestView {
+			return fe.db.TestView()
+		}
+	}
+	return tv
+}
+
+func (fe *frontendPretty) updateTestViews() {
+	if fe.fullscreenTests != nil {
+		fe.fullscreenTests.Update()
+	}
+	for _, tv := range fe.testViews {
+		tv.Update()
+	}
+	for id, st := range fe.spanTrees {
+		span := fe.db.Spans.Map[id]
+		if span != nil && span.CheckName != "" {
+			st.Update()
+		}
+	}
+}
+
+func (fe *frontendPretty) closeTestsMode() {
+	fe.testsMode = false
+	fe.fullscreenTests = nil
+	if fe.testsReturnSpan.IsValid() {
+		fe.FocusedSpan = fe.testsReturnSpan
+	}
+	fe.testsReturnSpan = dagui.SpanID{}
+	fe.recalculateViewLocked()
+	if fe.keymapBar != nil {
+		fe.keymapBar.Update()
+	}
+	fe.Update()
+}
+
+func (fe *frontendPretty) goTestStart() {
+	if fe.fullscreenTests != nil {
+		fe.fullscreenTests.GoStart()
+		fe.Update()
+	}
+}
+
+func (fe *frontendPretty) goTestEnd() {
+	if fe.fullscreenTests != nil {
+		fe.fullscreenTests.GoEnd()
+		fe.Update()
+	}
+}
+
+func (fe *frontendPretty) goTestUp() {
+	if fe.fullscreenTests != nil {
+		fe.fullscreenTests.GoUp()
+		fe.Update()
+	}
+}
+
+func (fe *frontendPretty) goTestDown() {
+	if fe.fullscreenTests != nil {
+		fe.fullscreenTests.GoDown()
+		fe.Update()
+	}
+}
+
+func (fe *frontendPretty) openFocusedTestTrace() {
+	if fe.fullscreenTests == nil {
+		return
+	}
+	span := fe.fullscreenTests.FocusedSpan()
+	if span == nil {
+		return
+	}
+	fe.testsMode = false
+	fe.fullscreenTests = nil
+	fe.testsReturnSpan = dagui.SpanID{}
+	fe.ZoomedSpan = span.ID
+	fe.FocusedSpan = span.ID
+	fe.renderVersion++
+	fe.recalculateViewLocked()
+	if fe.keymapBar != nil {
+		fe.keymapBar.Update()
+	}
+	fe.Update()
+}
+
+func (fe *frontendPretty) renderTestsView(ctx tuist.Context) {
+	if fe.fullscreenTests == nil {
+		return
+	}
+	fe.RenderChild(ctx, fe.fullscreenTests)
+}
+
+func (fe *frontendPretty) shouldRenderInlineTests(row *dagui.TraceRow) bool {
+	if fe.finalRender || row == nil || row.Span == nil || row.Expanded || row.Span.CheckName == "" {
+		return false
+	}
+	return fe.db.TestViewForSpan(row.Span).HasTests()
+}
+
+func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *dagui.TraceRow) []string {
+	if !s.fe.shouldRenderInlineTests(row) {
+		return nil
+	}
+	tv := s.fe.inlineTestView(row.Span.ID)
+	limit := max(s.fe.window.Height/3, 6)
+	if tv.MaxHeight != limit {
+		tv.MaxHeight = limit
+		tv.Update()
+	}
+
+	prefixBuf := new(strings.Builder)
+	prefixOut := NewOutput(prefixBuf, termenv.WithProfile(s.fe.profile))
+	r.indentFunc = s.indentFunc(prefixOut)
+	r.fancyIndent(prefixOut, row, false, false)
+	pipe := prefixOut.String(VertBoldBar).Foreground(restrainedStatusColor(row.Span))
+	if row.Span.ID == s.fe.FocusedSpan && !s.fe.editlineFocused {
+		pipe = hl(pipe)
+	}
+	fmt.Fprint(prefixOut, pipe.String())
+	fmt.Fprint(prefixOut, " ")
+	prefix := prefixBuf.String()
+
+	width := max(ctx.Width-lipgloss.Width(prefix), 1)
+	result := s.RenderChildResult(ctx.Resize(width, limit), tv)
+	lines := make([]string, len(result.Lines))
+	for i, line := range result.Lines {
+		lines[i] = prefix + line
+	}
+	return lines
+}
+
+func flattenTestRows(view *dagui.TestView) []testSidebarRow {
+	if view == nil {
+		return nil
+	}
+	var rows []testSidebarRow
+	appendTestRows(&rows, view.Roots, 0)
+	return rows
+}
+
+func appendTestRows(rows *[]testSidebarRow, nodes []*dagui.TestNode, depth int) {
+	partition := dagui.PartitionTests(nodes)
+	groups := [][]*dagui.TestNode{
+		partition.Failing,
+		partition.Running,
+		partition.Suites,
+		partition.Mixed,
+		partition.Passing,
+		partition.Skipped,
+	}
+	for _, group := range groups {
+		for _, node := range group {
+			*rows = append(*rows, testSidebarRow{node: node, depth: depth})
+			appendTestRows(rows, node.Children, depth+1)
+		}
+	}
 }
 
 func flattenChildTestRows(nodes []*dagui.TestNode) []testSidebarRow {

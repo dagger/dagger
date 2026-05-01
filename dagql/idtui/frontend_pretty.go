@@ -170,9 +170,11 @@ type frontendPretty struct {
 	prevSearchMatchSpans map[dagui.SpanID]bool // previous frame's matchSpans for diff-based dirtying
 	searchIdx            int                   // current match index (-1 = none)
 
-	// test view state (simple left-sidebar/right-detail spike)
-	testsMode   bool
-	focusedTest dagui.TestNodeID
+	// test view state
+	testsMode       bool
+	testsReturnSpan dagui.SpanID
+	fullscreenTests *TestView
+	testViews       map[dagui.SpanID]*TestView
 }
 
 // Verify interface compliance at compile time.
@@ -307,6 +309,11 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 		}
 		s.selfLineCount += len(titleLines)
 		ctx.Lines(titleLines...)
+	}
+
+	if inlineTests := s.renderInlineTests(ctx, r, row); len(inlineTests) > 0 {
+		s.selfLineCount += len(inlineTests)
+		ctx.Lines(inlineTests...)
 	}
 
 	// Render the rest (logs, errors, debug) into a separate buffer.
@@ -1034,6 +1041,7 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 				sr.Update()
 			}
 		}
+		fe.updateTestViews()
 		// Don't recalculate here — set dirty flag so Render coalesces
 		// multiple ExportSpans batches into one recalculate per frame.
 		fe.viewDirty = true
@@ -1095,6 +1103,7 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 		}
 		fe.db.LogExporter().Export(context.Background(), logsCopy)
 		fe.logs.Export(context.Background(), logsCopy)
+		fe.updateTestViews()
 		fe.Update()
 	})
 	return nil
@@ -1208,8 +1217,8 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 	}
 	var focused *dagui.Span
 	if fe.testsMode {
-		if node := fe.focusedTestNode(fe.db.TestView()); node != nil {
-			focused = testTUISpan(node)
+		if fe.fullscreenTests != nil {
+			focused = fe.fullscreenTests.FocusedSpan()
 		}
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("T"),
@@ -1321,8 +1330,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 
 	if !fe.finalRender {
 		// Update window dimensions from tuist.
-		fe.window = windowSize{Width: ctx.Width, Height: ctx.ScreenHeight()}
-		fe.setWindowSizeLocked(fe.window)
+		fe.setWindowSizeLocked(windowSize{Width: ctx.Width, Height: ctx.ScreenHeight()})
 	} else if fe.contentWidth <= 0 {
 		// Final render without a live TUI (report mode). Set to 0
 		// so the renderer doesn't truncate (maxLiteralLen = 0).
@@ -2008,12 +2016,7 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 				fe.quitAction(ErrInterrupted)
 			}
 		case "T", "esc", "left", "h":
-			fe.testsMode = false
-			fe.recalculateViewLocked()
-			if fe.keymapBar != nil {
-				fe.keymapBar.Update()
-			}
-			fe.Update()
+			fe.closeTestsMode()
 		case "down", "j":
 			fe.goTestDown()
 		case "up", "k":
@@ -2025,7 +2028,12 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 		case "enter", "right", "l":
 			fe.openFocusedTestTrace()
 		case "t":
-			fe.terminal()
+			if fe.fullscreenTests != nil {
+				if span := fe.fullscreenTests.FocusedSpan(); span != nil {
+					fe.FocusedSpan = span.ID
+					fe.terminal()
+				}
+			}
 		}
 		return
 	}
@@ -2653,9 +2661,13 @@ func (fe *frontendPretty) goErrorOrigin() {
 }
 
 func (fe *frontendPretty) setWindowSizeLocked(msg windowSize) {
+	old := fe.window
 	fe.window = msg
 	fe.contentWidth = msg.Width
 	fe.logs.SetWidth(fe.contentWidth)
+	if old != msg {
+		fe.updateTestViews()
+	}
 	if fe.textInput != nil {
 		fe.textInput.Update()
 	}
@@ -2697,7 +2709,7 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 	if span.Message == "" && // messages are displayed in renderStep
 		(row.Expanded || row.Span.LLMTool != "") {
 		fe.renderStepLogs(out, r, row, prefix, isFocused)
-	} else if (row.Span.RollUpLogs || fe.shell != nil) && row.Depth == 0 && !row.Expanded {
+	} else if (row.Span.RollUpLogs || fe.shell != nil) && row.Depth == 0 && !row.Expanded && !fe.shouldRenderInlineTests(row) {
 		// in shell mode, we print top-level command logs unindented, like shells
 		// usually does
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
