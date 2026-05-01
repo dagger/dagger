@@ -1,8 +1,7 @@
 package core
 
-// Workspace alignment: aligned structurally, but coverage is still incomplete.
 // Scope: Workspace migration planning and apply behavior for legacy projects.
-// Intent: Keep migration behavior isolated from compat detection and finish the missing migration-scope cases.
+// Intent: Keep migration behavior isolated from compat detection.
 
 import (
 	"context"
@@ -543,8 +542,6 @@ type Inner {
 	require.Contains(t, djson, `"source": "../../../src"`)
 }
 
-// TestWorkspaceMigrateSafety is the planning scaffold for migration properties
-// that protect users from repeated or destructive application.
 func (WorkspaceMigrationSuite) TestWorkspaceMigrateSafety(ctx context.Context, t *testctx.T) {
 	t.Run("rerunning migrate after apply is a no-op", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
