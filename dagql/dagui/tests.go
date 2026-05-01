@@ -4,11 +4,15 @@ import (
 	"cmp"
 	"net/url"
 	"slices"
-	"strings"
 	"time"
 )
 
-// TestStatus is the normalized semantic status for a test span.
+// TestStatus is the normalized OpenTelemetry semantic status for a test span.
+//
+// OpenTelemetry has separate well-known values for test.case.result.status
+// (pass/fail) and test.suite.run.status (success, failure, skipped, aborted,
+// timed_out, in_progress). The UI only needs render categories, so case-level
+// pass/fail values are normalized to success/failure.
 type TestStatus string
 
 const (
@@ -22,18 +26,18 @@ const (
 )
 
 func normalizeTestStatus(raw string) TestStatus {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "success", "successful", "pass", "passed", "ok":
+	switch raw {
+	case "pass", "success":
 		return TestStatusSuccess
-	case "failure", "failed", "fail", "error":
+	case "fail", "failure":
 		return TestStatusFailure
-	case "skipped", "skip":
+	case "skipped":
 		return TestStatusSkipped
-	case "aborted", "abort":
+	case "aborted":
 		return TestStatusAborted
-	case "timed_out", "timed-out", "timeout", "timedout":
+	case "timed_out":
 		return TestStatusTimedOut
-	case "in_progress", "in-progress", "running":
+	case "in_progress":
 		return TestStatusInProgress
 	default:
 		return TestStatusUnset
@@ -171,15 +175,16 @@ const (
 	TestNodeVirtualSuite
 )
 
+// TestNodeID is stable across view rebuilds. Real test case and suite nodes
+// use "span:<span-id>"; virtual suites use "suite:<url-escaped-suite-name>".
 type TestNodeID string
 
 type TestNode struct {
 	ID   TestNodeID
 	Kind TestNodeKind
 
-	// Name is the local display name for this node, usually the span name. For
-	// test cases this avoids repeating a fully-qualified semantic test name at
-	// every level of a rendered tree.
+	// Name is the local display name for this node. Real test nodes use the
+	// backing span name; virtual suites use their synthetic suite name.
 	Name string
 
 	// FullName is the fully-qualified semantic name reported by test.case.name
@@ -192,16 +197,20 @@ type TestNode struct {
 	Parent   *TestNode
 	Children []*TestNode
 
-	// RepresentativeSpan is non-nil for virtual suites when children exist.
+	// RepresentativeSpan is the first real descendant span for a virtual suite.
+	// It is not a pseudo-span: virtual suites keep Span nil because they are
+	// synthetic, and this span is only used to focus/open a related trace and
+	// sort the synthetic node.
 	RepresentativeSpan *Span
 
+	// SelfCategory is the backing span's own category before child aggregation.
+	// Category is the aggregate category for the rendered node and includes the
+	// counted test cases under it.
 	SelfCategory TestCategory
 	Category     TestCategory
 	Counts       TestCounts
-	MaxDuration  time.Duration
 
-	suiteName    string
-	selfDuration time.Duration
+	suiteName string
 }
 
 type TestView struct {
@@ -212,8 +221,7 @@ type TestView struct {
 	CasesByName  map[string][]*TestNode
 	SuitesByName map[string][]*TestNode
 
-	Counts      TestCounts
-	MaxDuration time.Duration
+	Counts TestCounts
 }
 
 func (v *TestView) HasTests() bool {
@@ -246,6 +254,9 @@ type TestPartition struct {
 	Failing []*TestNode
 	Running []*TestNode
 	Suites  []*TestNode
+	// Mixed keeps aggregate test-case nodes with heterogeneous child results in
+	// an explicit bucket so the sidebar can render them after suites but before
+	// fully passing or skipped tests.
 	Mixed   []*TestNode
 	Passing []*TestNode
 	Skipped []*TestNode
@@ -277,7 +288,7 @@ func PartitionTests(nodes []*TestNode) TestPartition {
 	return partition
 }
 
-func TestSpanCategory(span *Span) TestCategory {
+func (span *Span) TestCategory() TestCategory {
 	if span == nil {
 		return TestCategoryPassing
 	}
@@ -484,13 +495,9 @@ func (idx *TestIndex) buildView(roots []*TestNode) *TestView {
 		SuitesByName: make(map[string][]*TestNode),
 	}
 
-	rootDone := idx.rootDone()
 	for _, root := range roots {
-		computeTestAggregates(root, rootDone)
+		computeTestAggregates(root)
 		view.Counts = view.Counts.add(root.Counts)
-		if root.MaxDuration > view.MaxDuration {
-			view.MaxDuration = root.MaxDuration
-		}
 	}
 
 	walkTestNodes(roots, func(node *TestNode) {
@@ -523,35 +530,30 @@ func (idx *TestIndex) applyAggregateUpdates() {
 		idx.rebuildStructure()
 		return
 	}
-	rootDone := idx.rootDone()
 	for spanID := range idx.dirtySpans {
 		node := idx.nodesBySpan[spanID]
 		if node == nil {
 			continue
 		}
-		idx.updateNodeAggregate(node, rootDone)
+		idx.updateNodeAggregate(node)
 	}
 	clear(idx.dirtySpans)
 	idx.aggregateDirty = false
 	idx.builtVersion = idx.version
 
 	idx.cachedView.Counts = TestCounts{}
-	idx.cachedView.MaxDuration = 0
 	for _, root := range idx.cachedView.Roots {
 		idx.cachedView.Counts = idx.cachedView.Counts.add(root.Counts)
-		if root.MaxDuration > idx.cachedView.MaxDuration {
-			idx.cachedView.MaxDuration = root.MaxDuration
-		}
 	}
 }
 
-func (idx *TestIndex) updateNodeAggregate(node *TestNode, rootDone time.Time) {
+func (idx *TestIndex) updateNodeAggregate(node *TestNode) {
 	oldSelfCount := TestCounts{}
 	if node.Kind == TestNodeCase {
 		oldSelfCount = countForCategory(node.SelfCategory)
 	}
 
-	newSelfCategory := TestSpanCategory(node.Span)
+	newSelfCategory := node.Span.TestCategory()
 	newSelfCount := TestCounts{}
 	if node.Kind == TestNodeCase {
 		newSelfCount = countForCategory(newSelfCategory)
@@ -563,40 +565,14 @@ func (idx *TestIndex) updateNodeAggregate(node *TestNode, rootDone time.Time) {
 		node.Counts = node.Counts.add(countDelta)
 	}
 
-	oldMax := node.MaxDuration
-	node.selfDuration = testSpanDuration(node.Span, rootDone)
-	if node.selfDuration > node.MaxDuration {
-		node.MaxDuration = node.selfDuration
-	} else if oldMax > 0 && oldMax == node.MaxDuration && node.selfDuration < oldMax {
-		node.MaxDuration = node.selfDuration
-		for _, child := range node.Children {
-			if child.MaxDuration > node.MaxDuration {
-				node.MaxDuration = child.MaxDuration
-			}
-		}
-	}
 	node.Category = aggregateTestCategory(node.Kind, node.SelfCategory, node.Counts)
 
-	changedMax := node.MaxDuration
 	for parent := node.Parent; parent != nil; parent = parent.Parent {
 		if !countDelta.isZero() {
 			parent.Counts = parent.Counts.add(countDelta)
 		}
-		if changedMax > parent.MaxDuration {
-			parent.MaxDuration = changedMax
-		}
 		parent.Category = aggregateTestCategory(parent.Kind, parent.SelfCategory, parent.Counts)
 	}
-}
-
-func (idx *TestIndex) rootDone() time.Time {
-	if idx.db.RootSpan != nil && idx.db.RootSpan.EndTime.After(idx.db.RootSpan.StartTime) {
-		return idx.db.RootSpan.EndTime
-	}
-	if !idx.db.End.IsZero() {
-		return idx.db.End
-	}
-	return time.Now()
 }
 
 func testSpanHasNode(span *Span) bool {
@@ -609,19 +585,12 @@ func testNodeMetadata(span *Span) (TestNodeKind, string, string, string, bool) {
 		return TestNodeCase, "", "", "", false
 	}
 	if span.TestCaseName != "" {
-		return TestNodeCase, testNodeDisplayName(span, span.TestCaseName), span.TestCaseName, span.TestSuiteName, true
+		return TestNodeCase, span.Name, span.TestCaseName, span.TestSuiteName, true
 	}
 	if span.TestSuiteName != "" {
-		return TestNodeSuite, testNodeDisplayName(span, span.TestSuiteName), span.TestSuiteName, span.TestSuiteName, true
+		return TestNodeSuite, span.Name, span.TestSuiteName, span.TestSuiteName, true
 	}
 	return TestNodeCase, "", "", "", false
-}
-
-func testNodeDisplayName(span *Span, fallback string) string {
-	if span != nil && span.Name != "" {
-		return span.Name
-	}
-	return fallback
 }
 
 func nearestTestAncestor(span *Span, nodesBySpan map[SpanID]*TestNode) *TestNode {
@@ -720,28 +689,20 @@ func representativeSpan(node *TestNode) *Span {
 	return nil
 }
 
-func computeTestAggregates(node *TestNode, rootDone time.Time) {
+func computeTestAggregates(node *TestNode) {
 	if node == nil {
 		return
 	}
 
 	node.Counts = TestCounts{}
-	node.MaxDuration = 0
-	node.SelfCategory = TestSpanCategory(node.Span)
-	node.selfDuration = testSpanDuration(node.Span, rootDone)
-	if node.selfDuration > node.MaxDuration {
-		node.MaxDuration = node.selfDuration
-	}
+	node.SelfCategory = node.Span.TestCategory()
 	if node.Kind == TestNodeCase {
 		node.Counts = node.Counts.add(countForCategory(node.SelfCategory))
 	}
 
 	for _, child := range node.Children {
-		computeTestAggregates(child, rootDone)
+		computeTestAggregates(child)
 		node.Counts = node.Counts.add(child.Counts)
-		if child.MaxDuration > node.MaxDuration {
-			node.MaxDuration = child.MaxDuration
-		}
 	}
 	if node.Kind == TestNodeVirtualSuite && node.RepresentativeSpan == nil {
 		node.RepresentativeSpan = representativeSpan(node)
@@ -775,23 +736,6 @@ func aggregateTestCategory(kind TestNodeKind, self TestCategory, counts TestCoun
 		}
 	}
 	return TestCategoryMixed
-}
-
-func testSpanDuration(span *Span, rootDone time.Time) time.Duration {
-	if span == nil {
-		return 0
-	}
-	if dur := span.Activity.Duration(rootDone); dur > 0 {
-		return dur
-	}
-	end := span.EndTime
-	if end.Before(span.StartTime) {
-		end = rootDone
-	}
-	if end.After(span.StartTime) {
-		return end.Sub(span.StartTime)
-	}
-	return 0
 }
 
 func walkTestNodes(nodes []*TestNode, f func(*TestNode)) {
