@@ -258,6 +258,9 @@ func (fe *frontendPretty) renderTestDetailLines(out *termenv.Output, node *dagui
 	lines = append(lines, out.String(strings.Repeat(HorizBar, max(width, 0))).Foreground(termenv.ANSIBrightBlack).Faint().String())
 
 	lines = append(lines, fe.renderTestSummaryLine(out, node, width))
+	if node.FullName != "" && node.FullName != node.Name {
+		lines = append(lines, out.String(clipPlain(node.FullName, width)).Foreground(termenv.ANSIBrightBlack).Faint().String())
+	}
 	if node.Kind == dagui.TestNodeVirtualSuite {
 		meta := "virtual suite · no backing span"
 		if representative != nil {
@@ -357,10 +360,10 @@ func testNodeDisplayName(node *dagui.TestNode) string {
 	if node == nil {
 		return ""
 	}
-	if node.FullName != "" {
-		return node.FullName
+	if node.Name != "" {
+		return node.Name
 	}
-	return node.Name
+	return node.FullName
 }
 
 func testCategoryIcon(category dagui.TestCategory) string {
