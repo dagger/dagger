@@ -731,32 +731,50 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 	return inst, nil
 }
 
-func calcGitContentDigest(gitRef *core.GitRef) digest.Digest {
+func calcGitContentDigest(gitRef *core.GitRef, args treeArgs) (digest.Digest, error) {
+	if gitRef.Ref == nil {
+		return "", fmt.Errorf("cannot content-address remote git tree: missing ref")
+	}
+	if gitRef.Ref.SHA == "" {
+		return "", fmt.Errorf("cannot content-address remote git tree: ref %q has no resolved SHA", gitRef.Ref.Name)
+	}
+
 	repo := gitRef.Repo.Self()
+	remoteRepo, ok := repo.Backend.(*core.RemoteGitRepository)
+	if !ok {
+		return "", fmt.Errorf("cannot content-address non-remote git tree")
+	}
+
+	keepsGitDir := !(repo.DiscardGitDir || args.DiscardGitDir)
+
 	dgstInputs := []string{
-		// all details of the remote repo
-		repo.URL.Value.String(),
-		string(repo.Remote.Digest()),
-		// legacy args
-		strconv.FormatBool(repo.DiscardGitDir),
-		// also include what auth methods are used, currently we can't
-		// handle a cache hit where the result has a different auth
-		// method than the caller used (i.e. a git repo is pulled w/
-		// a token but hits cache for a dir where a ssh sock was used)
-		// -> see below
+		// A commit SHA only identifies an object inside a Git object database.
+		// The remote URL is part of the checkout source.
+		remoteRepo.URL.Remote(),
+
+		// The resolved commit selects the files to check out.
+		gitRef.Ref.SHA,
+
+		// The returned Directory may include or exclude .git based on both the
+		// repository keepGitDir option and tree(discardGitDir: ...).
+		strconv.FormatBool(keepsGitDir),
 	}
-	if remoteRepo, ok := repo.Backend.(*core.RemoteGitRepository); ok {
-		if sshSock := remoteRepo.SSHAuthSocket.Self(); sshSock != nil {
-			dgstInputs = append(dgstInputs, "sshAuthSock", string(sshSock.Handle))
-		}
-		if remoteRepo.AuthToken.Self() != nil {
-			dgstInputs = append(dgstInputs, "authToken", "true")
-		}
-		if remoteRepo.AuthHeader.Self() != nil {
-			dgstInputs = append(dgstInputs, "authHeader", "true")
-		}
+
+	if keepsGitDir {
+		dgstInputs = append(dgstInputs,
+			// Depth changes retained git history. For example, `git log` sees one
+			// commit at the default shallow depth but more with tree(depth: 5).
+			strconv.Itoa(args.Depth),
+
+			// includeTags changes which tag refs are populated under .git.
+			strconv.FormatBool(args.IncludeTags),
+
+			// ref.Name affects named-ref vs detached-SHA checkout metadata.
+			gitRef.Ref.Name,
+		)
 	}
-	return hashutil.HashStrings(dgstInputs...)
+
+	return hashutil.HashStrings(dgstInputs...), nil
 }
 
 func IsRemotePublic(ctx context.Context, remote *gitutil.GitURL) (bool, error) {
@@ -1217,42 +1235,15 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 		return inst, err
 	}
 
-	remoteRepo, isRemoteRepo := parent.Self().Repo.Self().Backend.(*core.RemoteGitRepository)
-	if isRemoteRepo {
-		usedAuth := remoteRepo.AuthToken.Self() != nil ||
-			remoteRepo.AuthHeader.Self() != nil ||
-			remoteRepo.SSHAuthSocket.Self() != nil
-		if usedAuth {
-			// do a full hash of the actual files/dirs in the private git repo so
-			// that the cache key of the returned value can't be known unless the
-			// full contents are already known
-			if lazy := inst.Self().LazyEvalFunc(); lazy != nil {
-				if err := lazy(ctx); err != nil {
-					return inst, fmt.Errorf("failed to evaluate tree before hashing: %w", err)
-				}
-			}
-			snapshot, ok := inst.Self().Snapshot.Peek()
-			if !ok {
-				return inst, fmt.Errorf("failed to get tree snapshot: unset")
-			}
-			dirPath, ok := inst.Self().Dir.Peek()
-			if !ok {
-				return inst, fmt.Errorf("failed to get tree path: unset")
-			}
-			dgst, err := core.GetContentHashFromDirectory(ctx, snapshot, dirPath)
-			if err != nil {
-				return inst, fmt.Errorf("failed to get content hash: %w", err)
-			}
-			inst, err = inst.WithContentDigest(ctx, dgst)
-			if err != nil {
-				return inst, err
-			}
+	if _, ok := parent.Self().Repo.Self().Backend.(*core.RemoteGitRepository); ok {
+		dgst, err := calcGitContentDigest(parent.Self(), args)
+		if err != nil {
+			return inst, err
 		}
-	}
-
-	inst, err = inst.WithContentDigest(ctx, calcGitContentDigest(parent.Self()))
-	if err != nil {
-		return inst, err
+		inst, err = inst.WithContentDigest(ctx, dgst)
+		if err != nil {
+			return inst, err
+		}
 	}
 
 	return inst, nil
