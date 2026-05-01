@@ -853,6 +853,29 @@ class Env extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Create or update a binding of type WorkspaceGit in the environment
+     */
+    public function withWorkspaceGitInput(string $name, WorkspaceGit $value, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withWorkspaceGitInput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Declare a desired WorkspaceGit output to be assigned in the environment
+     */
+    public function withWorkspaceGitOutput(string $name, string $description): Env
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withWorkspaceGitOutput');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Env($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Create or update a binding of type Workspace in the environment
      */
     public function withWorkspaceInput(string $name, Workspace $value, string $description): Env

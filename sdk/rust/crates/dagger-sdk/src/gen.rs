@@ -150,6 +150,7 @@ impl Void {
         format!("\"{}\"", self.0.clone())
     }
 }
+pub type WorkspaceGitId = Id;
 pub type WorkspaceId = Id;
 pub type WorkspaceMigrationId = Id;
 pub type WorkspaceMigrationStepId = Id;
@@ -839,6 +840,15 @@ impl Binding {
     pub fn as_workspace(&self) -> Workspace {
         let query = self.selection.select("asWorkspace");
         Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type WorkspaceGit
+    pub fn as_workspace_git(&self) -> WorkspaceGit {
+        let query = self.selection.select("asWorkspaceGit");
+        WorkspaceGit {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -7939,6 +7949,55 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create or update a binding of type WorkspaceGit in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The WorkspaceGit value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_workspace_git_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<Id>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withWorkspaceGitInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired WorkspaceGit output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_workspace_git_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withWorkspaceGitOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create or update a binding of type Workspace in the environment
     ///
     /// # Arguments
@@ -14664,6 +14723,22 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Load a WorkspaceGit from its ID.
+    pub fn load_workspace_git_from_id(&self, id: impl IntoID<WorkspaceGitId>) -> WorkspaceGit {
+        let mut query = self.selection.select("loadWorkspaceGitFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        WorkspaceGit {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Load a WorkspaceMigration from its ID.
     pub fn load_workspace_migration_from_id(
         &self,
@@ -16929,6 +17004,15 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Git state for this workspace. Errors if the workspace is not in a git repository.
+    pub fn git(&self) -> WorkspaceGit {
+        let query = self.selection.select("git");
+        WorkspaceGit {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// A unique identifier for this Workspace.
     pub async fn id(&self) -> Result<Id, DaggerError> {
         let query = self.selection.select("id");
@@ -17208,6 +17292,67 @@ impl Workspace {
     }
 }
 impl Node for Workspace {
+    fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
+        let query = self.selection.select("id");
+        let graphql_client = self.graphql_client.clone();
+        async move { query.execute(graphql_client).await }
+    }
+}
+#[derive(Clone)]
+pub struct WorkspaceGit {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl IntoID<Id> for WorkspaceGit {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<Id, DaggerError>> + Send>> {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl Loadable for WorkspaceGit {
+    fn graphql_type() -> &'static str {
+        "WorkspaceGit"
+    }
+    fn from_query(
+        proc: Option<Arc<DaggerSessionProc>>,
+        selection: Selection,
+        graphql_client: DynGraphQLClient,
+    ) -> Self {
+        Self {
+            proc,
+            selection,
+            graphql_client,
+        }
+    }
+}
+impl WorkspaceGit {
+    /// The checked-out HEAD of this workspace.
+    pub fn head(&self) -> GitRef {
+        let query = self.selection.select("head");
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// A unique identifier for this WorkspaceGit.
+    pub async fn id(&self) -> Result<Id, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
+    pub fn uncommitted(&self) -> Changeset {
+        let query = self.selection.select("uncommitted");
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+impl Node for WorkspaceGit {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {
         let query = self.selection.select("id");
         let graphql_client = self.graphql_client.clone();

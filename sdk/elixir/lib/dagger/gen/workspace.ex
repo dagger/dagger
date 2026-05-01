@@ -236,6 +236,20 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Git state for this workspace. Errors if the workspace is not in a git repository.
+  """
+  @spec git(t()) :: Dagger.WorkspaceGit.t()
+  def git(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("git")
+
+    %Dagger.WorkspaceGit{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   A unique identifier for this Workspace.
   """
   @spec id(t()) :: {:ok, String.t()} | {:error, term()}
