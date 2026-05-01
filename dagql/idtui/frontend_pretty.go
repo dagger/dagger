@@ -1217,8 +1217,18 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 	}
 	var focused *dagui.Span
 	if fe.testsMode {
+		enterHelp := "trace"
+		enterEnabled := false
 		if fe.fullscreenTests != nil {
 			focused = fe.fullscreenTests.FocusedSpan()
+			enterEnabled = focused != nil
+			if expanded, isGroup := fe.fullscreenTests.FocusedPassedGroupExpanded(); isGroup {
+				enterEnabled = true
+				enterHelp = "expand"
+				if expanded {
+					enterHelp = "collapse"
+				}
+			}
 		}
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("T"),
@@ -1230,8 +1240,8 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 			key.NewBinding(key.WithKeys("end", "space"),
 				key.WithHelp("end", "last")),
 			key.NewBinding(key.WithKeys("enter", "right", "l"),
-				key.WithHelp("enter", "trace"),
-				KeyEnabled(focused != nil)),
+				key.WithHelp("enter", enterHelp),
+				KeyEnabled(enterEnabled)),
 			key.NewBinding(key.WithKeys("t"),
 				key.WithHelp("t", "start terminal"),
 				KeyEnabled(focused != nil && fe.terminalCallback(focused) != nil)),
