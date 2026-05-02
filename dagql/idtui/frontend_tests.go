@@ -54,9 +54,10 @@ func (row testSidebarRow) testCount() int {
 type TestView struct {
 	tuist.Compo
 
-	Profile termenv.Profile
-	View    func() *dagui.TestView
-	Logs    map[dagui.SpanID]*Vterm
+	Profile      termenv.Profile
+	View         func() *dagui.TestView
+	Logs         map[dagui.SpanID]*Vterm
+	SpanChildren func(*dagui.Span) tuist.Component
 
 	// MaxHeight caps the rendered height. A zero value means fullscreen mode:
 	// use the terminal height, leaving room for the keymap sibling.
@@ -129,7 +130,7 @@ func (tv *TestView) Render(ctx tuist.Context) {
 
 	selected := rows[selectedIdx]
 	left := tv.renderSidebarLines(out, view, rows, selectedIdx, leftWidth, viewportHeight)
-	right := tv.renderDetailLines(out, selected, rightWidth, viewportHeight)
+	right := tv.renderDetailLines(ctx, out, selected, rightWidth, viewportHeight)
 	border := out.String(VertBar).Foreground(termenv.ANSIBrightBlack).Faint().String()
 
 	for i := range viewportHeight {
@@ -364,7 +365,7 @@ func countSidebarTests(rows []testSidebarRow) int {
 	return count
 }
 
-func (tv *TestView) renderDetailLines(out *termenv.Output, row testSidebarRow, width, height int) []string {
+func (tv *TestView) renderDetailLines(ctx tuist.Context, out *termenv.Output, row testSidebarRow, width, height int) []string {
 	if row.kind == testSidebarPassedGroup {
 		return tv.renderPassedGroupDetailLines(out, row, width, height)
 	}
@@ -396,12 +397,17 @@ func (tv *TestView) renderDetailLines(out *termenv.Output, row testSidebarRow, w
 		lines = append(lines, out.String("no backing span").Foreground(termenv.ANSIBrightBlack).Faint().String())
 	}
 
-	if len(node.Children) > 0 {
-		lines = append(lines, "")
-		lines = append(lines, out.String("Children").Foreground(termenv.ANSIBrightBlack).Bold().String())
-		childRows := flattenChildTestRows(node.Children)
-		for _, child := range childRows {
-			lines = append(lines, renderTestChildLine(out, child, width))
+	if span != nil && tv.SpanChildren != nil {
+		if childSpans := tv.SpanChildren(span); childSpans != nil {
+			lines = append(lines, "")
+			lines = append(lines, out.String("Children").Foreground(termenv.ANSIBrightBlack).Bold().String())
+			childHeight := max(height-len(lines), 1)
+			result := tv.RenderChildResult(ctx.Resize(width, childHeight), childSpans)
+			if len(result.Lines) == 0 {
+				lines = append(lines, out.String("No child spans.").Foreground(termenv.ANSIBrightBlack).Faint().String())
+			} else {
+				lines = append(lines, result.Lines...)
+			}
 		}
 	}
 
@@ -531,9 +537,10 @@ func (fe *frontendPretty) inlineTestView(root dagui.SpanID) *TestView {
 
 func (fe *frontendPretty) newTestView(root dagui.SpanID, scopeName string) *TestView {
 	tv := &TestView{
-		Profile:   fe.profile,
-		Logs:      fe.logs.Logs,
-		ScopeName: scopeName,
+		Profile:      fe.profile,
+		Logs:         fe.logs.Logs,
+		ScopeName:    scopeName,
+		SpanChildren: fe.testSpanChildrenView,
 	}
 	if root.IsValid() {
 		tv.View = func() *dagui.TestView {
@@ -553,6 +560,9 @@ func (fe *frontendPretty) updateTestViews() {
 	}
 	for _, tv := range fe.testViews {
 		tv.Update()
+	}
+	for _, view := range fe.testSpanChildren {
+		view.UpdateAll()
 	}
 	for id, st := range fe.spanTrees {
 		span := fe.db.Spans.Map[id]
@@ -675,6 +685,90 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 	return lines
 }
 
+type TestSpanChildrenView struct {
+	tuist.Compo
+
+	fe     *frontendPretty
+	rootID dagui.SpanID
+
+	scope     spanTreeScope
+	container *tuist.Container
+}
+
+var _ tuist.Component = (*TestSpanChildrenView)(nil)
+
+func (v *TestSpanChildrenView) UpdateAll() {
+	v.Update()
+	if v.container != nil {
+		v.container.Update()
+	}
+}
+
+func (fe *frontendPretty) testSpanChildrenView(span *dagui.Span) tuist.Component {
+	if span == nil || !span.ID.IsValid() {
+		return nil
+	}
+	if fe.testSpanChildren == nil {
+		fe.testSpanChildren = make(map[dagui.SpanID]*TestSpanChildrenView)
+	}
+	view := fe.testSpanChildren[span.ID]
+	if view == nil {
+		view = &TestSpanChildrenView{
+			fe:        fe,
+			rootID:    span.ID,
+			container: &tuist.Container{},
+		}
+		fe.testSpanChildren[span.ID] = view
+	}
+	return view
+}
+
+func (v *TestSpanChildrenView) Render(ctx tuist.Context) {
+	root := v.fe.db.Spans.Map[v.rootID]
+	if root == nil {
+		return
+	}
+
+	opts := v.fe.FrontendOpts
+	opts.ZoomedSpan = root.ID
+	rowsView := v.fe.db.RowsView(opts)
+	if len(rowsView.Body) == 0 {
+		return
+	}
+
+	v.scope.rowsView = rowsView
+	v.scope.rows = rowsView.Rows(opts)
+	v.scope.opts = opts
+	v.scope.spanTrees = v.fe.spanTrees
+
+	children := make([]tuist.Component, 0, len(rowsView.Body))
+	for i, tree := range rowsView.Body {
+		st := v.fe.getOrCreateSpanTree(tree.Span.ID)
+		st.parent = nil
+		st.indexInParent = i
+		v.fe.syncTreeNodeInScope(st, treePrefix{}, &v.scope)
+		children = append(children, st)
+	}
+
+	if !sameComponents(v.container.Children, children) {
+		v.container.Children = children
+		v.container.Update()
+	}
+	v.RenderChild(ctx, v.container)
+}
+
+func sameComponents(a, b []tuist.Component) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func (tv *TestView) flattenTestRows(view *dagui.TestView) []testSidebarRow {
 	if view == nil {
 		return nil
@@ -722,38 +816,6 @@ func (tv *TestView) appendTestRows(rows *[]testSidebarRow, nodes []*dagui.TestNo
 		*rows = append(*rows, testSidebarRow{kind: testSidebarNode, node: node, depth: depth})
 		tv.appendTestRows(rows, node.Children, depth+1, string(node.ID))
 	}
-}
-
-func flattenChildTestRows(nodes []*dagui.TestNode) []testSidebarRow {
-	var rows []testSidebarRow
-	appendAllTestRows(&rows, nodes, 0)
-	return rows
-}
-
-func appendAllTestRows(rows *[]testSidebarRow, nodes []*dagui.TestNode, depth int) {
-	partition := dagui.PartitionTests(nodes)
-	groups := [][]*dagui.TestNode{
-		partition.Failing,
-		partition.Running,
-		partition.Suites,
-		partition.Mixed,
-		partition.Passing,
-		partition.Skipped,
-	}
-	for _, group := range groups {
-		for _, node := range group {
-			*rows = append(*rows, testSidebarRow{kind: testSidebarNode, node: node, depth: depth})
-			appendAllTestRows(rows, node.Children, depth+1)
-		}
-	}
-}
-
-func renderTestChildLine(out *termenv.Output, row testSidebarRow, width int) string {
-	node := row.node
-	indent := strings.Repeat("  ", row.depth)
-	icon := out.String(testCategoryIcon(node.Category)).Foreground(testCategoryColor(node.Category)).String()
-	name := out.String(clipPlain(testNodeDisplayName(node), max(width-6-row.depth*2, 1))).Foreground(testNodeNameColor(node)).String()
-	return clipANSI("  "+icon+" "+indent+name, width)
 }
 
 func testTUISpan(node *dagui.TestNode) *dagui.Span {
