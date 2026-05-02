@@ -6,6 +6,7 @@ import (
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/muesli/termenv"
+	"github.com/vito/tuist"
 )
 
 func testSidebarCase(id, name string, category dagui.TestCategory) *dagui.TestNode {
@@ -70,28 +71,20 @@ func TestTestViewCollapsesPassedSidebarRows(t *testing.T) {
 	}
 }
 
-func TestTestViewChildrenAreNotCapped(t *testing.T) {
+func TestTestViewDetailDoesNotRenderSubtestsAsChildren(t *testing.T) {
 	parent := testSidebarCase("parent", "parent", dagui.TestCategoryFailing)
-	parent.Counts = dagui.TestCounts{Failing: 1, Passing: 10}
-	for i := range 10 {
-		child := testSidebarCase("child-"+string(rune('a'+i)), "child-"+string(rune('a'+i)), dagui.TestCategoryPassing)
-		child.Parent = parent
-		parent.Children = append(parent.Children, child)
-	}
+	parent.Counts = dagui.TestCounts{Failing: 1, Passing: 1}
+	child := testSidebarCase("child", "child", dagui.TestCategoryPassing)
+	child.Parent = parent
+	parent.Children = append(parent.Children, child)
 
 	var buf strings.Builder
 	out := NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
 	tv := &TestView{}
-	lines := tv.renderDetailLines(out, testSidebarRow{kind: testSidebarNode, node: parent}, 80, 80)
+	lines := tv.renderDetailLines(tuist.Context{}, out, testSidebarRow{kind: testSidebarNode, node: parent}, 80, 80)
 	joined := strings.Join(lines, "\n")
-	for i := range 10 {
-		name := "child-" + string(rune('a'+i))
-		if !strings.Contains(joined, name) {
-			t.Fatalf("expected detail pane to include %q; got:\n%s", name, joined)
-		}
-	}
-	if strings.Contains(joined, "more") {
-		t.Fatalf("expected no artificial child cap, got:\n%s", joined)
+	if strings.Contains(joined, "Children") || strings.Contains(joined, "child") {
+		t.Fatalf("expected detail pane not to render test subtests as child spans, got:\n%s", joined)
 	}
 }
 
