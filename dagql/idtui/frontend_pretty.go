@@ -171,10 +171,11 @@ type frontendPretty struct {
 	searchIdx            int                   // current match index (-1 = none)
 
 	// test view state
-	testsMode       bool
-	testsReturnSpan dagui.SpanID
-	fullscreenTests *TestView
-	testViews       map[dagui.SpanID]*TestView
+	testsMode        bool
+	testsReturnSpan  dagui.SpanID
+	fullscreenTests  *TestView
+	testViews        map[dagui.SpanID]*TestView
+	testSpanChildren map[dagui.SpanID]*TestSpanChildrenView
 }
 
 // Verify interface compliance at compile time.
@@ -212,10 +213,18 @@ type treePrefix struct {
 //
 // Children that haven't changed return cached results from RenderChild.
 // The parent just concatenates cached child lines, which is O(pointers).
+type spanTreeScope struct {
+	rowsView  *dagui.RowsView
+	rows      *dagui.Rows
+	opts      dagui.FrontendOpts
+	spanTrees map[dagui.SpanID]*SpanTreeView
+}
+
 type SpanTreeView struct {
 	tuist.Compo
 	fe     *frontendPretty
 	spanID dagui.SpanID
+	scope  *spanTreeScope
 
 	// parent points to the parent SpanTreeView (nil for top-level nodes).
 	parent *SpanTreeView
@@ -271,15 +280,23 @@ func (s *SpanTreeView) SetFocused(_ tuist.Context, focused bool) {
 }
 
 // Render produces the lines for this span tree node and its children.
-// This method is stateless — all component state (prefix, children,
-// focus, spinner) is synced by syncSpanTreeState() before Render runs.
+// Prefix, child, focus, and spinner state is synced by the owning tree
+// renderer before RenderChild reaches this component.
 func (s *SpanTreeView) Render(ctx tuist.Context) {
-	row := s.fe.rows.BySpan[s.spanID]
+	rows := s.rows()
+	if rows == nil {
+		return
+	}
+	row := rows.BySpan[s.spanID]
 	if row == nil {
 		return
 	}
 
-	r := newRenderer(s.fe.db, s.fe.contentWidth/2, s.fe.FrontendOpts, s.fe.finalRender)
+	maxLiteralWidth := s.fe.contentWidth / 2
+	if s.scope != nil && ctx.Width > 0 {
+		maxLiteralWidth = ctx.Width / 2
+	}
+	r := newRenderer(s.fe.db, maxLiteralWidth, s.frontendOpts(), s.fe.finalRender)
 
 	s.selfLineCount = 0
 
@@ -338,7 +355,7 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 		// shows the parent bar), not the child's prefix.cont (which omits
 		// the parent bar for the last child).
 		var gapCount int
-		childRow := s.fe.rows.BySpan[child.spanID]
+		childRow := rows.BySpan[child.spanID]
 		if childRow != nil {
 			gaps := s.fe.renderTreeGap(r, childRow, s.childrenGapPrefix)
 			gapCount = len(gaps)
@@ -353,6 +370,27 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 		s.childGapCounts = append(s.childGapCounts, gapCount)
 		s.childLineCounts = append(s.childLineCounts, len(result.Lines))
 	}
+}
+
+func (s *SpanTreeView) rows() *dagui.Rows {
+	if s.scope != nil {
+		return s.scope.rows
+	}
+	return s.fe.rows
+}
+
+func (s *SpanTreeView) rowsView() *dagui.RowsView {
+	if s.scope != nil {
+		return s.scope.rowsView
+	}
+	return s.fe.rowsView
+}
+
+func (s *SpanTreeView) frontendOpts() dagui.FrontendOpts {
+	if s.scope != nil {
+		return s.scope.opts
+	}
+	return s.fe.FrontendOpts
 }
 
 // indentFunc returns a fancyIndent override that uses the pre-computed prefix.
@@ -1521,9 +1559,10 @@ func (fe *frontendPretty) applyTuistFocus() {
 	fe.tui.SetFocus(fe)
 }
 
-// syncSpanTreeState synchronizes the SpanTreeView component tree with
-// the current rowsView and rows. Called from recalculateViewLocked()
+// syncSpanTreeState synchronizes the main trace SpanTreeView component tree
+// with the current rowsView and rows. Called from recalculateViewLocked()
 // (i.e., from event handlers and Dispatch callbacks, never from Render).
+// Scoped span tree renderers use syncTreeNodeInScope with their own rows.
 //
 // It walks the TraceTree top-down, creating/reusing SpanTreeViews,
 // computing prefixes, and calling Update() on components whose
@@ -1575,7 +1614,17 @@ func (fe *frontendPretty) syncSpanTreeState() {
 // the current trace data. Updates prefix, focus, spinner, and children.
 // Calls Update() on any SpanTreeView whose visible state changed.
 func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
+	fe.syncTreeNodeInScope(st, newPrefix, nil)
+}
+
+func (fe *frontendPretty) syncTreeNodeInScope(st *SpanTreeView, newPrefix treePrefix, scope *spanTreeScope) {
 	changed := false
+
+	// Sync scope
+	if st.scope != scope {
+		st.scope = scope
+		changed = true
+	}
 
 	// Sync prefix
 	if st.prefix != newPrefix {
@@ -1590,9 +1639,18 @@ func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 		st.Update()
 	}
 
+	rowsView := fe.rowsView
+	opts := fe.FrontendOpts
+	spanTrees := fe.spanTrees
+	if scope != nil {
+		rowsView = scope.rowsView
+		opts = scope.opts
+		spanTrees = scope.spanTrees
+	}
+
 	// Sync children for expanded nodes
-	tree := fe.rowsView.BySpan[st.spanID]
-	if tree == nil || !tree.IsExpanded(fe.FrontendOpts) {
+	tree := rowsView.BySpan[st.spanID]
+	if tree == nil || !tree.IsExpanded(opts) {
 		// Collapsed: clear children so they get dismounted on next render
 		if len(st.children) > 0 {
 			st.children = nil
@@ -1603,9 +1661,9 @@ func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 
 	// Determine visible children
 	var childTrees []*dagui.TraceTree
-	if tree.ShouldShowRevealedSpans(fe.FrontendOpts) {
+	if tree.ShouldShowRevealedSpans(opts) {
 		for _, revealedSpan := range tree.Span.RevealedSpans.Order {
-			if revealedTree, ok := fe.rowsView.BySpan[revealedSpan.ID]; ok {
+			if revealedTree, ok := rowsView.BySpan[revealedSpan.ID]; ok {
 				childTrees = append(childTrees, revealedTree)
 			}
 		}
@@ -1639,9 +1697,10 @@ func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 			child = &SpanTreeView{
 				fe:     fe,
 				spanID: id,
+				scope:  scope,
 			}
 			st.childMap[id] = child
-			fe.spanTrees[id] = child
+			spanTrees[id] = child
 		}
 		child.parent = st
 		child.indexInParent = i
@@ -1651,7 +1710,7 @@ func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 		childPrefix := st.computeChildPrefix(out, hasNext)
 
 		// Recurse
-		fe.syncTreeNode(child, childPrefix)
+		fe.syncTreeNodeInScope(child, childPrefix, scope)
 		newChildren = append(newChildren, child)
 	}
 	for id := range st.childMap {
