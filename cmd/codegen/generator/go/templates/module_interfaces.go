@@ -713,7 +713,7 @@ func (spec *parsedIfaceType) concreteMethodImplTypeCode(returnTypeSpec ParsedTyp
 		s.Id(typeName(returnTypeSpec))
 
 	case *parsedIfaceTypeReference:
-		s.Id(formatIfaceImplName(typeName(returnTypeSpec)))
+		s.Id(concreteIfaceImplName(returnTypeSpec))
 
 	default:
 		return nil, fmt.Errorf("unsupported method concrete return type %T", returnTypeSpec)
@@ -726,4 +726,11 @@ func (spec *parsedIfaceType) concreteMethodImplTypeCode(returnTypeSpec ParsedTyp
 // If the interface is "Foo", this is "fooImpl".
 func formatIfaceImplName(s string) string {
 	return strcase.ToLowerCamel(s) + "Impl"
+}
+
+func concreteIfaceImplName(spec *parsedIfaceTypeReference) string {
+	if spec.moduleName == "" {
+		return typeName(spec) + "Client"
+	}
+	return formatIfaceImplName(spec.name)
 }

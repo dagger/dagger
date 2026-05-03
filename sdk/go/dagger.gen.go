@@ -35,7 +35,10 @@ func assertNotNil(argName string, value any) {
 	}
 }
 
-type DaggerObject = querybuilder.GraphQLMarshaller
+type DaggerObject interface {
+	querybuilder.GraphQLMarshaller
+	ID(ctx context.Context) (ID, error)
+}
 
 type gqlExtendedError struct {
 	inner *gqlerror.Error
