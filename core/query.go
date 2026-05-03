@@ -180,8 +180,13 @@ func ContextWithQuery(ctx context.Context, q *Query) context.Context {
 	return context.WithValue(ctx, queryKey{}, q)
 }
 
-func CurrentQuery(ctx context.Context) (*Query, error) {
+func currentQuery(ctx context.Context) (*Query, bool) {
 	q, ok := ctx.Value(queryKey{}).(*Query)
+	return q, ok
+}
+
+func CurrentQuery(ctx context.Context) (*Query, error) {
+	q, ok := currentQuery(ctx)
 	if !ok {
 		return nil, fmt.Errorf("no query in context")
 	}

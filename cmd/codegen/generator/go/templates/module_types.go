@@ -32,7 +32,6 @@ type NamedParsedType interface {
 	ModuleName() string
 }
 
-
 func typeName(spec NamedParsedType) string {
 	if spec.ModuleName() == "" {
 		return fmt.Sprintf("dagger.%s", spec.Name())

@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	daggerImportPath        = "dagger.io/dagger"
-	querybuilderImportPath  = "github.com/dagger/querybuilder"
+	daggerImportPath       = "dagger.io/dagger"
+	querybuilderImportPath = "github.com/dagger/querybuilder"
 )
 
 func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {

@@ -2028,7 +2028,7 @@ func (ModuleSuite) TestCrossSessionGitSockets(ctx context.Context, t *testctx.T)
 	cleanup1()
 	require.NoError(t, c1.Close())
 
-	gitRef, err := dagger.Load[*dagger.GitRef](ctx, c2, dagger.ID(ref2ID))
+	gitRef, err := dagger.Load[*dagger.GitRef](ctx, c2, ref2ID)
 	require.NoError(t, err)
 	_, err = gitRef.Tree().Sync(ctx)
 	require.NoError(t, err)

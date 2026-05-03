@@ -2303,45 +2303,6 @@ func (input InputObject[T]) ToLiteral() call.Literal {
 	return call.NewLiteralObject(args...)
 }
 
-func collectLiteralArgs(obj any) ([]*call.Argument, error) {
-	objT := reflect.TypeOf(obj)
-	objV := reflect.ValueOf(obj)
-	if objV.Kind() != reflect.Struct {
-		// TODO handle pointer?
-		return nil, fmt.Errorf("object must be a struct, got %T", obj)
-	}
-	args := []*call.Argument{}
-	for i := range objV.NumField() {
-		fieldT := objT.Field(i)
-		name := fieldT.Tag.Get("name")
-		if name == "" {
-			name = strcase.ToLowerCamel(fieldT.Name)
-		}
-		if name == "-" {
-			continue
-		}
-		fieldI := objV.Field(i).Interface()
-		if fieldT.Anonymous {
-			subArgs, err := collectLiteralArgs(fieldI)
-			if err != nil {
-				return nil, fmt.Errorf("arg %q: %w", fieldT.Name, err)
-			}
-			args = append(args, subArgs...)
-			continue
-		}
-		input, err := builtinOrInput(fieldI)
-		if err != nil {
-			return nil, fmt.Errorf("arg %q: %w", fieldT.Name, err)
-		}
-		args = append(args, call.NewArgument(
-			name,
-			input.ToLiteral(),
-			false,
-		))
-	}
-	return args, nil
-}
-
 // possibleFragmentSpreadsRule is a replacement for gqlparser's
 // PossibleFragmentSpreadsRule that handles interface-implements-interface
 // per the GraphQL spec (September 2025, §5.5.2.3).

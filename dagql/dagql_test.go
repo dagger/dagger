@@ -112,6 +112,7 @@ func recipeIDForObject[T dagql.Typed](t *testing.T, ctx context.Context, srv *da
 	idp, err := id.ID()
 	assert.NilError(t, err)
 	enc, err := idp.Encode()
+	assert.NilError(t, err)
 	return enc
 }
 

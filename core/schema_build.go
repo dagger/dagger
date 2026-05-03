@@ -21,8 +21,8 @@ type modInstall struct {
 // builders.
 func InstallCoreSchemaLoaders(dag *dagql.Server) {
 	serverForResultCall := func(ctx context.Context, resultCall *dagql.ResultCall) (*dagql.Server, error) {
-		query, err := CurrentQuery(ctx)
-		if err != nil {
+		query, ok := currentQuery(ctx)
+		if !ok {
 			return dag, nil
 		}
 		deps, err := query.ModDepsForCall(ctx, resultCall)

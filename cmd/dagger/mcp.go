@@ -7,9 +7,9 @@ import (
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/dag"
-	"github.com/dagger/querybuilder"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/querybuilder"
 	"github.com/spf13/cobra"
 )
 

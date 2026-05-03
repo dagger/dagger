@@ -19,7 +19,6 @@ import (
 	"github.com/spf13/pflag"
 
 	"dagger.io/dagger"
-	"github.com/dagger/querybuilder"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
@@ -28,6 +27,7 @@ import (
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/dagger/dagger/util/patchpreview"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/dagger/querybuilder"
 )
 
 var (

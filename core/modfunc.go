@@ -928,11 +928,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 
 	if returnValue != nil && fn.hasWorkspaceArgs() {
 		returnType := fn.returnType
-		for {
-			nullable, ok := returnType.(*NullableType)
-			if !ok {
-				break
-			}
+		for nullable, ok := returnType.(*NullableType); ok; nullable, ok = returnType.(*NullableType) {
 			returnType = nullable.Inner
 		}
 		if _, ok := returnType.(*ModuleObjectType); ok {
