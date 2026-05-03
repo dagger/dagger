@@ -42,7 +42,6 @@ require (
 )
 
 require (
-	dagger.io/dagger v0.20.6
 	github.com/99designs/gqlgen v0.17.90 // indirect
 	github.com/Khan/genqlient v0.8.1
 	github.com/go-logr/logr v1.4.3 // indirect

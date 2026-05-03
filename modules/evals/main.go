@@ -41,7 +41,7 @@ func (m *Evals) Check(
 	// +optional
 	models []string,
 ) error {
-	var evaluatorEvals []*dagger.EvaluatorEval
+	var evaluatorEvals []dagger.EvaluatorEval
 	for _, eval := range []string{
 		"basic",
 		"buildMulti",
@@ -59,11 +59,10 @@ func (m *Evals) Check(
 		"nestedObjects",
 	} {
 		// TODO: replace with self-calls
-		evaluatorEvals = append(evaluatorEvals, (&dagger.EvaluatorEval{}).WithGraphQLQuery(
+		evaluatorEvals = append(evaluatorEvals, (&dagger.EvaluatorEvalClient{}).WithGraphQLQuery(
 			querybuilder.Query().Client(dag.GraphQLClient()).
 				Select("evals").
-				Select(eval).
-				Select("asEvaluatorEval"),
+				Select(eval),
 		))
 	}
 
