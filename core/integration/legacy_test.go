@@ -95,6 +95,36 @@ func (m *Oldid) RoundTrip(ctx context.Context) (string, error) {
 	require.Equal(t, "ok\n", out)
 }
 
+func (LegacySuite) TestLegacyPythonSDKLoadFromIDCompat(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := daggerCliBase(t, c).
+		With(daggerExec("init", "--name=test", "--sdk=python", "--source=."))
+	modGen = modGen.
+		WithNewFile("dagger.json", `{"name":"test","sdk":"python","source":".","engineVersion":"v0.20.6"}`).
+		With(pythonSource(`
+import dagger
+from dagger import dag
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    async def round_trip(self) -> str:
+        id_ = await dag.container().from_("` + alpineImage + `").id()
+        return await (
+            dag.load_container_from_id(dagger.ContainerID(id_))
+            .with_exec(["echo", "ok"])
+            .stdout()
+        )
+`))
+
+	out, err := modGen.
+		With(daggerCall("round-trip")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "ok\n", out)
+}
+
 func (LegacySuite) TestLegacyTerminal(ctx context.Context, t *testctx.T) {
 	// Changed in dagger/dagger#7586
 	//

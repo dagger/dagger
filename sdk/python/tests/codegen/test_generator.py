@@ -56,6 +56,7 @@ from codegen.generator import (
     format_input_type,
     format_name,
     format_output_type,
+    generate,
 )
 from codegen.generator import (
     Enum as EnumHandler,
@@ -283,6 +284,86 @@ def test_core_sync(ctx: Context):
     assert str(handler.func_body()).endswith(
         'return await self._ctx.execute_sync(self, "sync", _args)'
     )
+
+
+def test_generate_legacy_id_facade():
+    schema = build_schema(
+        """
+        directive @expectedType(name: String!)
+            on FIELD_DEFINITION
+            | ARGUMENT_DEFINITION
+            | INPUT_FIELD_DEFINITION
+
+        interface Node { id: ID! @expectedType(name: "Node") }
+
+        interface DepCustomIface {
+            id: ID! @expectedType(name: "DepCustomIface")
+            str: String!
+        }
+
+        type Impl implements DepCustomIface {
+            id: ID! @expectedType(name: "Impl")
+            str: String!
+        }
+
+        type Container {
+            id: ID! @expectedType(name: "Container")
+            stdout: String!
+        }
+
+        type File {
+            id: ID! @expectedType(name: "File")
+        }
+
+        type Query {
+            id: ID! @expectedType(name: "Query")
+            file(id: ID! @expectedType(name: "File")): File!
+            node(id: ID!): Node
+            container: Container!
+        }
+        """
+    )
+
+    code = generate(schema, schema_version="v0.20.6")
+
+    assert "class ContainerID(Scalar):" in code
+    assert "class DepCustomIfaceID(Scalar):" in code
+    assert "class NodeID(Scalar):" not in code
+    assert "async def id(self) -> ContainerID:" in code
+    assert "return await _ctx.execute(ContainerID)" in code
+    assert "def file(self, id: FileID) -> File:" in code
+    assert "def load_container_from_id(self, id: ContainerID) -> Container:" in code
+    assert '_ctx = self._ctx.select_id("Container", id)' in code
+    assert "return Container(_ctx)" in code
+    assert (
+        "def load_dep_custom_iface_from_id("
+        "self, id: DepCustomIfaceID"
+        ") -> DepCustomIface:"
+    ) in code.replace("\n", "")
+    assert '_ctx = self._ctx.select_id("DepCustomIface", id)' in code
+    assert "return _DepCustomIfaceClient(_ctx)" in code
+    assert 'self._select("loadContainerFromID"' not in code
+
+
+def test_generate_modern_id_surface():
+    schema = build_schema(
+        """
+        directive @expectedType(name: String!)
+            on FIELD_DEFINITION
+            | ARGUMENT_DEFINITION
+            | INPUT_FIELD_DEFINITION
+
+        type Container { id: ID! @expectedType(name: "Container") }
+        type Query { container: Container! }
+        """
+    )
+
+    code = generate(schema, schema_version="v0.21.0-dev")
+
+    assert "class ContainerID(Scalar):" not in code
+    assert "load_container_from_id" not in code
+    assert "async def id(self) -> str:" in code
+    assert "return await _ctx.execute(str)" in code
 
 
 def test_user_sync_leaf(ctx: Context):
