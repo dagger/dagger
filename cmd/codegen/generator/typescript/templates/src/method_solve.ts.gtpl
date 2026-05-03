@@ -29,7 +29,7 @@
 	{{- end }}
 
 	{{- /* Write return type */ -}}
-	{{- "" }}): Promise<{{ if .TypeRef.IsVoid }}void{{ else }}{{ . | FormatReturnType }}{{ end }}> => { {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+	{{- "" }}): Promise<{{ if .TypeRef.IsVoid }}void{{ else }}{{ . | FormatFieldReturnType }}{{ end }}> => { {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 
     {{- /* If it's a scalar, make possible to return its already filled value */ -}}
     {{- if and (.TypeRef.IsScalar) (ne .ParentObject.Name "Query") (not $convertID) }}
@@ -44,12 +44,12 @@
     {{- end }}
 
     {{- /* Store promise return type that might be update in case of array */ -}}
-    {{- $promiseRetType := . | FormatReturnType -}}
+    {{- $promiseRetType := . | FormatFieldReturnType -}}
 
     {{- if and .TypeRef.IsList (IsListOfObject .TypeRef) }}
     type {{ .Name | ToLowerCase }} = {
             {{- range $v := . | GetArrayField }}
-      {{ $v.Name | ToLowerCase }}: {{ $v.TypeRef | FormatOutputType }}
+      {{ $v.Name | ToLowerCase }}: {{ $v | FormatFieldOutputType }}
             {{- end }}
     }
 {{ "" }}
@@ -88,7 +88,7 @@
       {{- if and .TypeRef.IsList (IsListOfObject .TypeRef) }}.select("{{- range $i, $v := . | GetArrayField }}{{if $i }} {{ end }}{{ $v.Name | ToLowerCase }}{{- end }}")
       {{- end }}
 
-    {{ if not .TypeRef.IsVoid }}const response: Awaited<{{ if $convertID }}{{ .TypeRef | FormatOutputType }}{{ else }}{{ $promiseRetType }}{{ end }}> = {{ end }}await ctx.execute()
+    {{ if not .TypeRef.IsVoid }}const response: Awaited<{{ if $convertID }}{{ . | FormatFieldOutputType }}{{ else }}{{ $promiseRetType }}{{ end }}> = {{ end }}await ctx.execute()
 
     {{ if $convertID -}}
       {{- if IsInterface .ParentObject }}

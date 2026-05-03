@@ -20,7 +20,7 @@ export class {{ .Name | QueryToClient | FormatName }} extends BaseClient { {{- w
             {{- /* Write private temporary field */ -}}
             {{ range $field := .Fields }}
                 {{- if $field.TypeRef.IsScalar }}
-  private readonly _{{ $field.Name }}?: {{ $field.TypeRef | FormatOutputType }} = undefined
+  private readonly _{{ $field.Name }}?: {{ $field | FormatFieldOutputType }} = undefined
                 {{- end }}
         	{{- end }}
 
@@ -34,7 +34,7 @@ export class {{ .Name | QueryToClient | FormatName }} extends BaseClient { {{- w
     ctx?: Context,
             {{- range $i, $field := .Fields }}
                {{- if $field.TypeRef.IsScalar }}
-     _{{ $field.Name }}?: {{ $field.TypeRef | FormatOutputType }},
+     _{{ $field.Name }}?: {{ $field | FormatFieldOutputType }},
                {{- end }}
             {{- end }}
    ) {
@@ -56,6 +56,22 @@ export class {{ .Name | QueryToClient | FormatName }} extends BaseClient { {{- w
   public getGQLClient() {
     return this._ctx.getGQLClient()
   }
+        {{- if LegacyTypeScriptSDKCompat }}
+          {{- range LegacyIDableTypes }}
+
+  /**
+   * Load a {{ .Name }} from its ID.
+   */
+  {{ .Name | LegacyLoadFromIDName }} = (id: {{ .Name | LegacyIDName }}): {{ .Name | QueryToClient | FormatName }} => {
+    const ctx = this._ctx.selectNode(id, "{{ .Name }}")
+            {{- if IsInterface . }}
+    return new _{{ .Name | FormatName }}Client(ctx)
+            {{- else }}
+    return new {{ .Name | QueryToClient | FormatName }}(ctx)
+            {{- end }}
+  }
+          {{- end }}
+        {{- end }}
       {{- end }}
 
 			{{- /* Write methods. */ -}}

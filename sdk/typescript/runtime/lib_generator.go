@@ -20,11 +20,12 @@ type LibGenerator struct {
 }
 
 type LibGeneratorOpts struct {
-	moduleName        string
-	modulePath        string
-	moduleSourceID    string
-	genClient         bool
-	coexistWithModule bool
+	moduleName          string
+	modulePath          string
+	moduleSourceID      string
+	moduleEngineVersion string
+	genClient           bool
+	coexistWithModule   bool
 }
 
 func NewLibGenerator(sdkSourceDir *dagger.Directory, opts *LibGeneratorOpts) *LibGenerator {
@@ -79,6 +80,10 @@ func (l *LibGenerator) GenerateBindings(
 
 	if l.Opts.moduleSourceID != "" {
 		codegenArgs = append(codegenArgs, "--module-source-id", l.Opts.moduleSourceID)
+	}
+
+	if !l.Opts.genClient && l.Opts.moduleEngineVersion != "" {
+		codegenArgs = append(codegenArgs, "--module-engine-version", l.Opts.moduleEngineVersion)
 	}
 
 	if libOrigin == Bundle && !l.Opts.genClient {

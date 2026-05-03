@@ -19,7 +19,7 @@
 export interface {{ .Name | FormatName }} { {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 			{{- range $field := .Fields }}
 				{{- if Solve . }}
-  {{ .Name | FormatName }}({{ template "interface_args" . }}): Promise<{{ . | FormatReturnType }}>
+  {{ .Name | FormatName }}({{ template "interface_args" . }}): Promise<{{ . | FormatFieldReturnType }}>
 				{{- else }}
   {{ .Name | FormatName }}({{ template "interface_args" . }}): {{ .TypeRef | FormatOutputType }}
 				{{- end }}
@@ -32,7 +32,7 @@ export class _{{ .Name | FormatName }}Client extends BaseClient { {{- with .Dire
             {{- /* Write private temporary field */ -}}
             {{ range $field := .Fields }}
                 {{- if $field.TypeRef.IsScalar }}
-  private readonly _{{ $field.Name }}?: {{ $field.TypeRef | FormatOutputType }} = undefined
+  private readonly _{{ $field.Name }}?: {{ $field | FormatFieldOutputType }} = undefined
                 {{- end }}
         	{{- end }}
 
@@ -46,7 +46,7 @@ export class _{{ .Name | FormatName }}Client extends BaseClient { {{- with .Dire
     ctx?: Context,
             {{- range $i, $field := .Fields }}
                {{- if $field.TypeRef.IsScalar }}
-     _{{ $field.Name }}?: {{ $field.TypeRef | FormatOutputType }},
+     _{{ $field.Name }}?: {{ $field | FormatFieldOutputType }},
                {{- end }}
             {{- end }}
    ) {
@@ -83,7 +83,7 @@ export class _{{ .Name | FormatName }}Client extends BaseClient { {{- with .Dire
 		{{- if .TypeRef.IsOptional }}
 			{{- $opt = "?" }}
 		{{- end }}
-		{{- .Name | FormatName }}{{ $opt }}: {{ . | FormatArgType }}
+		{{- .Name | FormatName }}{{ $opt }}: {{ . | FormatInputValueType }}
 		{{- if or (ne $index $maxIndex) $optionals }}, {{ end }}
 	{{- end }}
 	{{- if $optionals }}

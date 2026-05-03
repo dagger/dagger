@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/generator/typescript/templates"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
@@ -134,6 +135,221 @@ func TestInterfaceMethodOptionalArgDeprecated(t *testing.T) {
 	want := updateAndGetFixtures(t, "testdata/interface_method_optional_arg_deprecated_want.ts", b.String())
 
 	require.Equal(t, want, b.String())
+}
+
+var legacyUnifiedIDSchemaJSON = `
+[
+  {
+    "kind": "SCALAR",
+    "name": "ID",
+    "description": "",
+    "fields": null,
+    "inputFields": null,
+    "interfaces": [],
+    "enumValues": null,
+    "possibleTypes": null
+  },
+  {
+    "kind": "SCALAR",
+    "name": "String",
+    "description": "",
+    "fields": null,
+    "inputFields": null,
+    "interfaces": [],
+    "enumValues": null,
+    "possibleTypes": null
+  },
+  {
+    "kind": "INTERFACE",
+    "name": "Node",
+    "description": "",
+    "fields": [
+      {
+        "name": "id",
+        "description": "",
+        "args": [],
+        "type": { "kind": "NON_NULL", "ofType": { "kind": "SCALAR", "name": "ID" } },
+        "isDeprecated": false,
+        "deprecationReason": null,
+        "directives": [
+          { "name": "expectedType", "args": [{ "name": "name", "value": "\"Node\"" }] }
+        ]
+      }
+    ],
+    "inputFields": null,
+    "interfaces": [],
+    "enumValues": null,
+    "possibleTypes": null
+  },
+  {
+    "kind": "INTERFACE",
+    "name": "DepCustomIface",
+    "description": "",
+    "fields": [
+      {
+        "name": "id",
+        "description": "",
+        "args": [],
+        "type": { "kind": "NON_NULL", "ofType": { "kind": "SCALAR", "name": "ID" } },
+        "isDeprecated": false,
+        "deprecationReason": null,
+        "directives": [
+          { "name": "expectedType", "args": [{ "name": "name", "value": "\"DepCustomIface\"" }] }
+        ]
+      },
+      {
+        "name": "str",
+        "description": "",
+        "args": [],
+        "type": { "kind": "NON_NULL", "ofType": { "kind": "SCALAR", "name": "String" } },
+        "isDeprecated": false,
+        "deprecationReason": null
+      }
+    ],
+    "inputFields": null,
+    "interfaces": [],
+    "enumValues": null,
+    "possibleTypes": null
+  },
+  {
+    "kind": "OBJECT",
+    "name": "Container",
+    "description": "",
+    "fields": [
+      {
+        "name": "id",
+        "description": "",
+        "args": [],
+        "type": { "kind": "NON_NULL", "ofType": { "kind": "SCALAR", "name": "ID" } },
+        "isDeprecated": false,
+        "deprecationReason": null,
+        "directives": [
+          { "name": "expectedType", "args": [{ "name": "name", "value": "\"Container\"" }] }
+        ]
+      }
+    ],
+    "inputFields": null,
+    "interfaces": [],
+    "enumValues": null,
+    "possibleTypes": null
+  },
+  {
+    "kind": "OBJECT",
+    "name": "File",
+    "description": "",
+    "fields": [
+      {
+        "name": "id",
+        "description": "",
+        "args": [],
+        "type": { "kind": "NON_NULL", "ofType": { "kind": "SCALAR", "name": "ID" } },
+        "isDeprecated": false,
+        "deprecationReason": null,
+        "directives": [
+          { "name": "expectedType", "args": [{ "name": "name", "value": "\"File\"" }] }
+        ]
+      }
+    ],
+    "inputFields": null,
+    "interfaces": [],
+    "enumValues": null,
+    "possibleTypes": null
+  },
+  {
+    "kind": "OBJECT",
+    "name": "Query",
+    "description": "",
+    "fields": [
+      {
+        "name": "container",
+        "description": "",
+        "args": [],
+        "type": { "kind": "NON_NULL", "ofType": { "kind": "OBJECT", "name": "Container" } },
+        "isDeprecated": false,
+        "deprecationReason": null
+      },
+      {
+        "name": "file",
+        "description": "",
+        "args": [
+          {
+            "name": "id",
+            "description": "",
+            "defaultValue": null,
+            "type": { "kind": "NON_NULL", "ofType": { "kind": "SCALAR", "name": "ID" } },
+            "directives": [
+              { "name": "expectedType", "args": [{ "name": "name", "value": "\"File\"" }] }
+            ],
+            "isDeprecated": false,
+            "deprecationReason": null
+          }
+        ],
+        "type": { "kind": "NON_NULL", "ofType": { "kind": "OBJECT", "name": "File" } },
+        "isDeprecated": false,
+        "deprecationReason": null
+      }
+    ],
+    "inputFields": null,
+    "interfaces": [],
+    "enumValues": null,
+    "possibleTypes": null
+  }
+]
+`
+
+func TestLegacyTypeScriptIDFacade(t *testing.T) {
+	schema := objectsInit(t, legacyUnifiedIDSchemaJSON)
+	generator.SetSchema(&schema)
+	t.Cleanup(func() { generator.SetSchema(nil) })
+
+	got := renderAPI(t, &schema, "v0.20.6")
+
+	require.Contains(t, got, "export type ContainerID = string & { __ContainerID: never }")
+	require.Contains(t, got, "export type DepCustomIfaceID = string & { __DepCustomIfaceID: never }")
+	require.NotContains(t, got, "export type NodeID")
+	require.Contains(t, got, "id(): Promise<ID>")
+	require.Contains(t, got, "private readonly _id?: ContainerID = undefined")
+	require.Contains(t, got, "id = async (): Promise<ContainerID> => {")
+	require.Contains(t, got, "const response: Awaited<ContainerID> = await ctx.execute()")
+	require.Contains(t, got, "file = (id: FileID): File => {")
+	require.Contains(t, got, "loadContainerFromID = (id: ContainerID): Container => {")
+	require.Contains(t, got, `const ctx = this._ctx.selectNode(id, "Container")`)
+	require.Contains(t, got, "return new Container(ctx)")
+	require.Contains(t, got, "loadDepCustomIfaceFromID = (id: DepCustomIfaceID): DepCustomIface => {")
+	require.Contains(t, got, `const ctx = this._ctx.selectNode(id, "DepCustomIface")`)
+	require.Contains(t, got, "return new _DepCustomIfaceClient(ctx)")
+	require.NotContains(t, got, `this._ctx.select("loadContainerFromID"`)
+}
+
+func TestModernTypeScriptIDSurface(t *testing.T) {
+	schema := objectsInit(t, legacyUnifiedIDSchemaJSON)
+	generator.SetSchema(&schema)
+	t.Cleanup(func() { generator.SetSchema(nil) })
+
+	got := renderAPI(t, &schema, "v0.21.0-dev")
+
+	require.NotContains(t, got, "export type ContainerID")
+	require.NotContains(t, got, "loadContainerFromID")
+	require.Contains(t, got, "private readonly _id?: ID = undefined")
+	require.Contains(t, got, "id = async (): Promise<ID> => {")
+	require.Contains(t, got, "const response: Awaited<ID> = await ctx.execute()")
+}
+
+func renderAPI(t *testing.T, schema *introspection.Schema, schemaVersion string) string {
+	t.Helper()
+	tmpl := templates.New(schemaVersion, generator.Config{})
+	data := struct {
+		Schema        *introspection.Schema
+		SchemaVersion string
+		Types         []*introspection.Type
+	}{
+		Schema:        schema,
+		SchemaVersion: schemaVersion,
+		Types:         schema.Types,
+	}
+	var b bytes.Buffer
+	require.NoError(t, tmpl.ExecuteTemplate(&b, "api", data))
+	return b.String()
 }
 
 func TestInterfaceConvertIDMethodConstructsClient(t *testing.T) {

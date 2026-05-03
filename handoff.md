@@ -23,28 +23,29 @@ merge. Rust and TypeScript have also had follow-up fixes applied. Treat
 the current generated files as the post-merge baseline rather than as
 pending regeneration work.
 
-Go and Python SDK module codegen now have backwards-compatibility facades for
-module sources declaring an engine version before the unified-ID/interface
-cutover (`v0.21.0`). These facades do not restore legacy schema globally; they
-render old source symbols over the new graph:
+Go, Python, and TypeScript SDK module codegen now have backwards-compatibility
+facades for module sources declaring an engine version before the
+unified-ID/interface cutover (`v0.21.0`). These facades do not restore legacy
+schema globally; they render old source symbols over the new graph:
 
-- per-object aliases/classes such as `type ContainerID = ID` in Go and
-  `class ContainerID(Scalar)` in Python;
-- `LoadFooFromID` / `load_foo_from_id` helpers implemented with `node(id:)`
-  plus an inline fragment;
+- per-object aliases/classes/types such as `type ContainerID = ID` in Go,
+  `class ContainerID(Scalar)` in Python, and
+  `export type ContainerID = string & { __ContainerID: never }` in TypeScript;
+- `LoadFooFromID` / `load_foo_from_id` / `loadFooFromID` helpers implemented
+  with `node(id:)` plus an inline fragment;
 - legacy concrete query-builder structs/classes for GraphQL interfaces;
-- per-interface ID aliases/classes such as `DepCustomIfaceID = ID` or
-  `DepCustomIfaceID(Scalar)`;
+- per-interface ID aliases/classes/types such as `DepCustomIfaceID = ID`,
+  `DepCustomIfaceID(Scalar)`, or `DepCustomIfaceID` string brands;
 - Go module-local interface aliases/helpers such as `CustomIfaceID = dagger.ID`
   and `LoadCustomIfaceFromID`.
 
 The generators select this mode from the effective introspection schema
 version. Python reads `__schemaVersion` directly from the introspection JSON;
-Go module generation overrides that version from the module source's declared
-`engineVersion` because its generator runs outside the Python-style SDK module
-wrapper. This keeps the compatibility decision tied to the same version/view
-model as GraphQL introspection rather than teaching SDK generators to parse
-`dagger.json` themselves.
+Go and TypeScript module generation override that version from the module
+source's declared `engineVersion` because their generators run through SDK
+module wrappers. This keeps the compatibility decision tied to the same
+version/view model as GraphQL introspection rather than teaching SDK generators
+to parse `dagger.json` themselves.
 
 ## Upstream merge notes
 
@@ -122,6 +123,12 @@ Implementation notes:
 
 ### Python SDK compatibility for old module source
 
+Committed as:
+
+```text
+5f37bd096 fix(python sdk): support legacy ID helpers
+```
+
 Python codegen now reads the raw introspection `__schemaVersion` and gates a
 legacy facade on versions before `v0.21.0`. The facade restores the old Python
 source names without restoring old GraphQL fields:
@@ -142,6 +149,23 @@ interface fields, field arguments, and input fields. This matters because
 `graphql.build_client_schema` drops Dagger's custom directive applications, and
 Python needs `@expectedType` both for modern object-typed ID arguments and for
 legacy `FooID` signatures.
+
+### TypeScript SDK compatibility for old module source
+
+TypeScript codegen now follows the same regenerated-old-module policy. For
+pre-`v0.21.0` module sources it emits legacy string-branded ID aliases such as
+`ContainerID`, keeps `id()` methods typed as `Promise<ContainerID>`, and adds
+`dag.loadContainerFromID(id)` helpers implemented with `Context.selectNode(id,
+"Container")` instead of removed GraphQL root fields. GraphQL `Node` remains on
+the modern `ID` surface, so no legacy `NodeID` is generated.
+
+The TypeScript runtime now passes the module source's declared `engineVersion`
+into `codegen generate-module --module-engine-version`, so the generator's
+compatibility decision uses the same effective version/view as the module
+schema. `cmd/codegen` also honors `ClientGeneratorConfig.EngineVersion` for
+client generation from a module source. The TypeScript interface fixture root
+module was moved to `v0.21.0` so it keeps testing the modern Go caller surface
+while its TypeScript dependency modules can remain pre-cutover fixtures.
 
 The workspace split now passes.
 
@@ -196,6 +220,9 @@ go test ./cmd/codegen/... ./core/sdk
 ./hack/with-dev go test -v -count=1 -run 'TestLegacy/TestLegacyPythonSDKLoadFromIDCompat' ./core/integration/
 ./hack/with-dev go test -v -count=1 -run 'TestInterface/TestIfaceBasic/go' ./core/integration/
 ./hack/with-dev go test -v -count=1 -run 'TestInterface/TestIfaceBasic/python' ./core/integration/
+dagger call --progress=dots engine-dev test --run 'TestLegacy/TestLegacyTypeScriptSDKLoadFromIDCompat' --pkg ./core/integration/
+dagger call --progress=dots engine-dev test --run 'TestInterface/TestIfaceBasic/typescript' --pkg ./core/integration/
+./dagger --progress=dots generate typescript-sdk:client-library -y
 dagger call --progress=dots engine-dev test --run 'TestWorkspace/TestWorkspaceArgNotExposedAsCLIFlag' --pkg ./core/integration/
 dagger --progress=dots check test-split:test-workspaces
 git diff --check
@@ -210,7 +237,7 @@ modules: keep the schema hard-cut over to unified `ID`, `node(id:)`, and real
 GraphQL interfaces, but generate legacy SDK source symbols as a facade over
 that graph when the introspection/view version is before `v0.21.0`.
 
-Python now follows this policy too. TypeScript should follow the same policy
+Python and TypeScript now follow this policy too. Continue using this model
 rather than restoring `loadFooFromID` fields or per-type ID scalars globally.
 For each remaining SDK:
 
@@ -232,9 +259,8 @@ Known plumbing status from the audit:
   (`node(id:)` plus inline fragment) instead of removed root fields. It also
   preserves directive AST stubs for object/interface fields, field args, and
   input fields so `@expectedType` survives `graphql.build_client_schema`.
-- TypeScript already has schema-version conditional infrastructure in its
-  templates/codegen path; extend it with the equivalent legacy facade where
-  old TS source referenced typed IDs/load helpers or interface wrappers.
+- TypeScript now has the legacy typed-ID/load-helper facade, with runtime
+  `engineVersion` plumbing into module codegen.
 - PHP also ignores `__schemaVersion`, and Java should prefer
   `__schemaVersion` from introspection JSON when present. These are not the
   immediate ask, but they are the same class of follow-up.

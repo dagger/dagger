@@ -125,6 +125,29 @@ class Test:
 	require.Equal(t, "ok\n", out)
 }
 
+func (LegacySuite) TestLegacyTypeScriptSDKLoadFromIDCompat(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := modInit(t, c, "typescript", `
+import { ContainerID, dag, func, object } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+  @func()
+  async roundTrip(): Promise<string> {
+    const id = await dag.container().from("`+alpineImage+`").id()
+    return await dag.loadContainerFromID(id as ContainerID).withExec(["echo", "ok"]).stdout()
+  }
+}
+`).WithNewFile("dagger.json", `{"name":"test","engineVersion":"v0.20.6","sdk":{"source":"typescript"}}`)
+
+	out, err := modGen.
+		With(daggerCall("round-trip")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "ok\n", out)
+}
+
 func (LegacySuite) TestLegacyTerminal(ctx context.Context, t *testctx.T) {
 	// Changed in dagger/dagger#7586
 	//

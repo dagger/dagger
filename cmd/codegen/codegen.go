@@ -60,6 +60,9 @@ func Generate(ctx context.Context, cfg generator.Config, genFunc GenFunc) (err e
 
 	for ctx.Err() == nil {
 		schemaVersion := introspectionSchemaVersion
+		if cfg.ClientConfig != nil && cfg.ClientConfig.EngineVersion != "" {
+			schemaVersion = cfg.ClientConfig.EngineVersion
+		}
 		if cfg.ModuleConfig != nil && cfg.ModuleConfig.EngineVersion != "" {
 			schemaVersion = cfg.ModuleConfig.EngineVersion
 		}

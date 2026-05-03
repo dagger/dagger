@@ -2,6 +2,12 @@
 Export a type for each type or input existing in the GraphQL schema.
  */ -}}
 {{ define "types" }}
+	{{- if LegacyTypeScriptSDKCompat }}
+		{{- range LegacyIDableTypes }}
+export type {{ .Name | LegacyIDName }} = string & { __{{ .Name | LegacyIDName }}: never }
+{{ "" }}
+		{{- end }}
+	{{- end }}
 	{{- range .Types }}
 		{{- template "type" . }}
 	{{- end }}
@@ -172,9 +178,9 @@ export type {{ $.Name | FormatName }} = {
 
 		{{- /* Write type, if it's an id it's an output, otherwise it's an input. */ -}}
 		{{- if eq $field.Name "id" }}
-  {{ $field.Name }}{{ $opt }}: {{ $field.TypeRef | FormatOutputType }} {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+  {{ $field.Name }}{{ $opt }}: {{ $field | FormatInputValueType }} {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 		{{- else }}
-  {{ $field.Name }}{{ $opt }}: {{ $field | FormatArgType }} {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+  {{ $field.Name }}{{ $opt }}: {{ $field | FormatInputValueType }} {{- with .Directives.SourceMap }} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 		{{- end }}
 
 	{{- end }}
