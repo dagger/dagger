@@ -182,8 +182,7 @@ func (m *Evaluator) EvalsAcrossModels(
 	}
 	p := pool.NewWithResults[ModelResult]()
 	for _, model := range models {
-		ctx, modelSpan := Tracer().Start(ctx, fmt.Sprintf("model: %s", model),
-			telemetry.Reveal())
+		ctx, modelSpan := Tracer().Start(ctx, fmt.Sprintf("model: %s", model))
 		p.Go(func() ModelResult {
 			var spanErr error
 			report := ModelResult{
@@ -197,9 +196,7 @@ func (m *Evaluator) EvalsAcrossModels(
 					Name: name,
 				}
 				evalErr := (func() (rerr error) {
-					ctx, evalSpan := Tracer().Start(ctx, fmt.Sprintf("eval: %s", name),
-						telemetry.Reveal(),
-						telemetry.Encapsulate())
+					ctx, evalSpan := Tracer().Start(ctx, fmt.Sprintf("eval: %s", name))
 					defer telemetry.EndWithCause(evalSpan, &rerr)
 					stdio := telemetry.SpanStdio(ctx, "")
 					defer stdio.Close()

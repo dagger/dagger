@@ -225,7 +225,7 @@ func (w *EvalWorkspace) Evaluate(
 
 			ctx, span := Tracer().Start(ctx,
 				fmt.Sprintf("%s: attempt %d", name, attempt+1),
-				telemetry.Reveal())
+				telemetry.Boundary())
 			defer telemetry.EndWithCause(span, &rerr)
 			stdio := telemetry.SpanStdio(ctx, "")
 			defer stdio.Close()
