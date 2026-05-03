@@ -30,28 +30,35 @@ func (ps *parseState) parseGoIface(t *types.Interface, named *types.Named) (*par
 		return nil, nil
 	}
 
-	// It's safe to compare objects directly: https://github.com/golang/example/tree/1d6d2400d4027025cb8edc86a139c9c581d672f7/gotypes#objects
-	// (search "objects are routinely compared by the addresses of the underlying pointers")
-	daggerObjectIfaceMethods := make(map[types.Object]bool)
+	daggerObjectIfaceMethods := make(map[string]*types.Func)
+	daggerObjectMethodFound := make(map[string]bool)
 	daggerObjectMethodSet := types.NewMethodSet(ps.daggerObjectIfaceType)
 	for i := range daggerObjectMethodSet.Len() {
-		daggerObjectIfaceMethods[daggerObjectMethodSet.At(i).Obj()] = false
+		methodObj := daggerObjectMethodSet.At(i).Obj()
+		method, ok := methodObj.(*types.Func)
+		if !ok {
+			return nil, fmt.Errorf("expected DaggerObject method to be a func, got %T", methodObj)
+		}
+		daggerObjectIfaceMethods[method.Name()] = method
+		daggerObjectMethodFound[method.Name()] = false
 	}
 
 	goFuncTypes := []*types.Func{}
 	methodSet := types.NewMethodSet(named)
 	for i := range methodSet.Len() {
 		methodObj := methodSet.At(i).Obj()
-
-		// check if this is a method from the embedded DaggerObject interface
-		if _, ok := daggerObjectIfaceMethods[methodObj]; ok {
-			daggerObjectIfaceMethods[methodObj] = true
-			continue
-		}
-
 		goFuncType, ok := methodObj.(*types.Func)
 		if !ok {
 			return nil, fmt.Errorf("expected method to be a func, got %T", methodObj)
+		}
+
+		// Check structurally instead of by object identity. Interfaces can embed
+		// the DaggerObject from a generated dependency package (e.g.
+		// dagger.DaggerObject), whose method objects are distinct from the local
+		// generated DaggerObject even though the required method set is identical.
+		if daggerObjectMethod, ok := daggerObjectIfaceMethods[goFuncType.Name()]; ok && types.Identical(goFuncType.Type(), daggerObjectMethod.Type()) {
+			daggerObjectMethodFound[goFuncType.Name()] = true
+			continue
 		}
 
 		if !goFuncType.Exported() {
@@ -62,9 +69,9 @@ func (ps *parseState) parseGoIface(t *types.Interface, named *types.Named) (*par
 	}
 	// verify the DaggerObject interface methods are all there
 	var missingMethods []string
-	for methodObj, found := range daggerObjectIfaceMethods {
+	for methodName, found := range daggerObjectMethodFound {
 		if !found {
-			missingMethods = append(missingMethods, methodObj.Name())
+			missingMethods = append(missingMethods, methodName)
 		}
 	}
 	if len(missingMethods) > 0 {
