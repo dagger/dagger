@@ -3,11 +3,7 @@
 package dagger
 
 import (
-{{ if IsModuleCode -}}
 	"github.com/dagger/querybuilder"
-{{- else -}}
-	"github.com/dagger/querybuilder"
-{{- end }}
 )
 
 {{ range .Types }}
