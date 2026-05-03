@@ -63,6 +63,38 @@ func (m *Bare) TestFile(ctx context.Context) (bool, error) {
 	require.JSONEq(t, `{"testContainer": true, "testDirectory": true, "testFile": true}`, out)
 }
 
+func (LegacySuite) TestLegacyGoSDKLoadFromIDCompat(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		WithNewFile("dagger.json", `{"name":"oldid","sdk":"go","source":".","engineVersion":"v0.20.6"}`).
+		WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"dagger/oldid/internal/dagger"
+)
+
+type Oldid struct{}
+
+func (m *Oldid) RoundTrip(ctx context.Context) (string, error) {
+	id, err := dag.Container().From("`+alpineImage+`").ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return dag.LoadContainerFromID(dagger.ContainerID(id)).WithExec([]string{"echo", "ok"}).Stdout(ctx)
+}
+`)
+
+	out, err := modGen.
+		With(daggerCall("round-trip")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "ok\n", out)
+}
+
 func (LegacySuite) TestLegacyTerminal(ctx context.Context, t *testctx.T) {
 	// Changed in dagger/dagger#7586
 	//

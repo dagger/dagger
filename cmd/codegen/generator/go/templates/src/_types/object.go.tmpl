@@ -29,6 +29,14 @@ func (r *{{ .Name | FormatName }}) WithGraphQLQuery(q *querybuilder.Selection) *
 	}
 }
 
+{{- if and (LegacyGoSDKCompat) (HasIDField .) }}
+type {{ .Name | FormatName }}ID = ID
+
+func (r *Query) Load{{ .Name | FormatName }}FromID(id {{ .Name | FormatName }}ID) *{{ .Name | FormatName }} {
+	return &{{ .Name | FormatName }}{query: selectNode(r.query, ID(id), "{{ .Name }}")}
+}
+{{- end }}
+
 {{ range $field := .Fields }}
 {{- if HasOptionals $field.Args }}
 // {{ $field | FieldOptionsStructName }} contains options for {{ $.Name | FormatName }}.{{ $field.Name | FormatName }}
@@ -144,7 +152,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 	if err != nil {
 		return nil, err
 	}
-	var results {{ $field.TypeRef | FormatOutputType }}
+	var results {{ $field.TypeRef | InterfaceListResultType }}
 	for _, idResult := range idResults {
 		results = append(results, &{{ $eleType | ObjectName | InterfaceClientName }}{
 			query: selectNode(q.Root(), idResult.Id, "{{ $eleType | ObjectName }}"),
@@ -246,7 +254,7 @@ func (r *{{ $.Name | FormatName }}) UnmarshalJSON(bs []byte) error {
 {{ range $iface := . | ImplementedInterfaces }}
 // As{{ $iface.Name | FormatName }} returns this {{ $.Name | FormatName }} as a {{ $iface.Name | FormatName }}.
 // This is a local type conversion — no GraphQL call.
-func (r *{{ $.Name | FormatName }}) As{{ $iface.Name | FormatName }}() {{ $iface.Name | FormatName }} {
+func (r *{{ $.Name | FormatName }}) As{{ $iface.Name | FormatName }}() {{ $iface.Name | InterfaceReturnType }} {
 	return &{{ $iface.Name | InterfaceClientName }}{
 		query: r.query,
 	}

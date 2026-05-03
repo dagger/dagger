@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"fmt"
 	"go/token"
 	"go/types"
 	"os"
@@ -11,6 +12,22 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/tools/go/packages"
 )
+
+func TestLegacyModuleInterfaceIDSurface(t *testing.T) {
+	spec := &parsedIfaceType{
+		name:              "CustomIface",
+		moduleName:        "test",
+		legacyGoSDKCompat: true,
+	}
+
+	code, err := spec.ImplementationCode()
+	require.NoError(t, err)
+	got := fmt.Sprintf("%#v", code)
+
+	require.Contains(t, got, "type CustomIfaceID = dagger.ID")
+	require.Contains(t, got, "func LoadCustomIfaceFromID(r *dagger.Client, id CustomIfaceID) CustomIface")
+	require.Contains(t, got, "func (r *customIfaceImpl) ID(ctx context.Context) (CustomIfaceID, error)")
+}
 
 func TestParseGoIfaceAcceptsImportedDaggerObject(t *testing.T) {
 	dir := t.TempDir()

@@ -709,10 +709,11 @@ func (ps *parseState) fillObjectFunctionCase(
 type parseState struct {
 	schema *introspection.Schema
 
-	pkg        *packages.Package
-	fset       *token.FileSet
-	moduleName string
-	objs       []types.Object
+	pkg               *packages.Package
+	fset              *token.FileSet
+	moduleName        string
+	legacyGoSDKCompat bool
+	objs              []types.Object
 
 	methods map[string][]method
 

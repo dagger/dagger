@@ -76,6 +76,7 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"InnerType":                 funcs.InnerType,
 		"ObjectName":                funcs.ObjectName,
 		"CheckVersionCompatibility": funcs.CheckVersionCompatibility,
+		"LegacyGoSDKCompat":         funcs.legacyGoSDKCompat,
 
 		// arg formatting with directive support
 		"FormatArgType": funcs.formatArgType,
@@ -85,6 +86,8 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"IsInterfaceRef":           funcs.isInterfaceRef,
 		"IsListOfInterface":        funcs.isListOfInterface,
 		"InterfaceClientName":      funcs.interfaceClientName,
+		"InterfaceReturnType":      funcs.interfaceReturnType,
+		"InterfaceListResultType":  funcs.interfaceListResultType,
 		"PossibleTypes":            funcs.possibleTypes,
 		"ImplementedInterfaces":    funcs.implementedInterfaces,
 		"InterfaceMethodSignature": funcs.interfaceMethodSignature,
@@ -115,8 +118,22 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"HasLocalDependencies":    funcs.HasLocalDependencies,
 		"IsExtendableType":        funcs.isExtendableType,
 		"FullSchemaTypes":         funcs.fullSchemaTypes,
+		"HasIDField":              funcs.hasIDField,
 		"json":                    funcs.json,
 	}
+}
+
+// legacyGoSDKCompatCutoverVersion is the first engine version whose Go SDK
+// surface is generated with unified ID-only re-entry and first-class interface
+// client types. The -0 prerelease floor intentionally treats v0.21.0 dev
+// builds as post-cutover while keeping all v0.20.x modules in legacy mode.
+const legacyGoSDKCompatCutoverVersion = "v0.21.0-0"
+
+func (funcs goTemplateFuncs) legacyGoSDKCompat() bool {
+	if funcs.schemaVersion == "" || funcs.CommonFunctions == nil {
+		return false
+	}
+	return !funcs.CheckVersionCompatibility(legacyGoSDKCompatCutoverVersion)
 }
 
 // fullSchemaTypes returns all types from the full schema, including dependency
@@ -128,6 +145,15 @@ func (funcs goTemplateFuncs) fullSchemaTypes() []*introspection.Type {
 
 func (goTemplateFuncs) isExtendableType(t introspection.Type) bool {
 	return slices.Contains(introspection.ExtendableTypes, t.Name)
+}
+
+func (goTemplateFuncs) hasIDField(t introspection.Type) bool {
+	for _, field := range t.Fields {
+		if field.Name == "id" && field.TypeRef.IsScalar() {
+			return true
+		}
+	}
+	return false
 }
 
 func (goTemplateFuncs) json(v any) (string, error) {
@@ -364,6 +390,12 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 	if err != nil {
 		return "", err
 	}
+	if funcs.legacyGoSDKCompat() && funcs.isListOfInterface(f.TypeRef) {
+		retType, err = funcs.interfaceListResultType(f.TypeRef, scopes...)
+		if err != nil {
+			return "", err
+		}
+	}
 	convertID := funcs.ConvertID(f)
 	switch {
 	case supportsVoid && f.TypeRef.IsVoid():
@@ -374,8 +406,10 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 	case f.TypeRef.IsScalar() || f.TypeRef.IsList():
 		retType = fmt.Sprintf("(%s, error)", retType)
 	case funcs.isInterfaceRef(f.TypeRef):
-		// Interface returns are Go interfaces, not pointers to structs
-		// retType stays as-is (no * prefix)
+		retType, err = funcs.interfaceReturnType(funcs.InnerType(f.TypeRef).Name, scopes...)
+		if err != nil {
+			return "", err
+		}
 	default:
 		retType = "*" + retType
 	}
@@ -424,9 +458,41 @@ func (funcs goTemplateFuncs) isListOfInterface(t *introspection.TypeRef) bool {
 }
 
 // interfaceClientName returns the query-builder struct name for an interface.
-// e.g. "Duck" -> "DuckClient"
+// e.g. "Duck" -> "DuckClient". In legacy Go SDK compatibility mode,
+// non-Node interfaces use the pre-cutover wrapper struct name directly.
 func (funcs goTemplateFuncs) interfaceClientName(name string) string {
+	if funcs.legacyGoSDKCompat() && name != "Node" {
+		return formatName(name)
+	}
 	return formatName(name) + "Client"
+}
+
+func (funcs goTemplateFuncs) interfaceReturnType(name string, scopes ...string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("missing interface name")
+	}
+	scope := strings.Join(scopes, "")
+	if scope != "" {
+		scope += "."
+	}
+	if funcs.legacyGoSDKCompat() && name != "Node" {
+		return "*" + scope + formatName(name), nil
+	}
+	return scope + formatName(name), nil
+}
+
+func (funcs goTemplateFuncs) interfaceListResultType(t *introspection.TypeRef, scopes ...string) (string, error) {
+	if funcs.legacyGoSDKCompat() && funcs.isListOfInterface(t) {
+		inner := funcs.InnerType(t)
+		if inner.Name != "Node" {
+			scope := strings.Join(scopes, "")
+			if scope != "" {
+				scope += "."
+			}
+			return "[]*" + scope + formatName(inner.Name), nil
+		}
+	}
+	return funcs.FormatOutputType(t, scopes...)
 }
 
 // possibleTypes returns the possible concrete types for an interface type,
@@ -485,13 +551,30 @@ func (funcs goTemplateFuncs) interfaceMethodSignature(f introspection.Field) (st
 	if err != nil {
 		return "", err
 	}
+	if funcs.legacyGoSDKCompat() && funcs.isListOfInterface(f.TypeRef) {
+		retType, err = funcs.interfaceListResultType(f.TypeRef)
+		if err != nil {
+			return "", err
+		}
+	}
 	supportsVoid := funcs.CheckVersionCompatibility("v0.12.0")
+	convertID := funcs.ConvertID(f)
 	switch {
 	case supportsVoid && f.TypeRef.IsVoid():
 		sig += " error"
+	case convertID:
+		retType, err = funcs.interfaceReturnType(f.ParentObject.Name)
+		if err != nil {
+			return "", err
+		}
+		sig += fmt.Sprintf(" (%s, error)", retType)
 	case f.TypeRef.IsScalar() || f.TypeRef.IsList():
 		sig += fmt.Sprintf(" (%s, error)", retType)
 	case funcs.isInterfaceRef(f.TypeRef):
+		retType, err = funcs.interfaceReturnType(funcs.InnerType(f.TypeRef).Name)
+		if err != nil {
+			return "", err
+		}
 		sig += " " + retType
 	default:
 		sig += " *" + retType
@@ -530,13 +613,30 @@ func (funcs goTemplateFuncs) interfaceClientMethod(ifaceName string, f introspec
 	if err != nil {
 		return "", err
 	}
+	if funcs.legacyGoSDKCompat() && funcs.isListOfInterface(f.TypeRef) {
+		retType, err = funcs.interfaceListResultType(f.TypeRef)
+		if err != nil {
+			return "", err
+		}
+	}
 	supportsVoid := funcs.CheckVersionCompatibility("v0.12.0")
+	convertID := funcs.ConvertID(f)
 	switch {
 	case supportsVoid && f.TypeRef.IsVoid():
 		sig += " error"
+	case convertID:
+		retType, err = funcs.interfaceReturnType(f.ParentObject.Name)
+		if err != nil {
+			return "", err
+		}
+		sig += fmt.Sprintf(" (%s, error)", retType)
 	case f.TypeRef.IsScalar() || f.TypeRef.IsList():
 		sig += fmt.Sprintf(" (%s, error)", retType)
 	case funcs.isInterfaceRef(f.TypeRef):
+		retType, err = funcs.interfaceReturnType(funcs.InnerType(f.TypeRef).Name)
+		if err != nil {
+			return "", err
+		}
 		sig += " " + retType
 	default:
 		sig += " *" + retType
@@ -560,7 +660,11 @@ func (funcs goTemplateFuncs) formatArgType(arg introspection.InputValue, scopes 
 		if schema != nil {
 			schemaType := schema.Types.Get(expectedType)
 			if schemaType != nil && schemaType.Kind == introspection.TypeKindInterface {
-				baseType = scope + formatName(expectedType)
+				if funcs.legacyGoSDKCompat() && expectedType != "Node" {
+					baseType = "*" + scope + formatName(expectedType)
+				} else {
+					baseType = scope + formatName(expectedType)
+				}
 			}
 		}
 		if baseType == "" {

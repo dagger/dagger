@@ -13,8 +13,9 @@ import (
 
 func (ps *parseState) parseGoIface(t *types.Interface, named *types.Named) (*parsedIfaceType, error) {
 	spec := &parsedIfaceType{
-		goType:     t,
-		moduleName: ps.moduleName,
+		goType:            t,
+		moduleName:        ps.moduleName,
+		legacyGoSDKCompat: ps.legacyGoSDKCompat,
 	}
 
 	if named == nil {
@@ -108,8 +109,9 @@ type parsedIfaceType struct {
 
 	methods []*funcTypeSpec
 
-	goType     *types.Interface
-	moduleName string
+	goType            *types.Interface
+	moduleName        string
+	legacyGoSDKCompat bool
 }
 
 var _ NamedParsedType = &parsedIfaceType{}
@@ -186,8 +188,11 @@ func gqlSchemaName(name, moduleName string) string {
 // The code implementing the concrete struct that implements the interface and associated methods.
 func (spec *parsedIfaceType) ImplementationCode() (*Statement, error) {
 	// the base boilerplate methods needed for all structs implementing an api type
-	code := Empty().
-		Add(spec.concreteStructDefCode()).Line().Line().
+	code := Empty()
+	if spec.legacyGoSDKCompat {
+		code.Add(spec.legacyIDCompatCode()).Line().Line()
+	}
+	code.Add(spec.concreteStructDefCode()).Line().Line().
 		Add(spec.withGraphQLQuery()).Line().Line().
 		Add(spec.graphqlTypeMethodCode()).Line().Line().
 		Add(spec.graphqlIDTypeMethodCode()).Line().Line().
@@ -229,7 +234,23 @@ func (spec *parsedIfaceType) concreteStructName() string {
 }
 
 func (spec *parsedIfaceType) idTypeName() string {
+	if spec.legacyGoSDKCompat {
+		return spec.name + "ID"
+	}
 	return "dagger.ID"
+}
+
+func (spec *parsedIfaceType) legacyIDCompatCode() *Statement {
+	return Empty().
+		Type().Id(spec.idTypeName()).Op("=").Id("dagger").Dot("ID").Line().Line().
+		Func().Id("Load"+spec.name+"FromID").
+		Params(Id("r").Op("*").Id("dagger").Dot("Client"), Id("id").Id(spec.idTypeName())).
+		Params(Id(spec.name)).
+		Block(
+			Return(Op("&").Id(spec.concreteStructName()).Values(Dict{
+				Id("query"): Id("r").Dot("GraphQLSelection").Call().Dot("Select").Call(Lit("node")).Dot("Arg").Call(Lit("id"), Id("id")).Dot("InlineFragment").Call(Lit(spec.schemaName())),
+			})),
+		)
 }
 
 func (spec *parsedIfaceType) concreteStructCachedFieldName(method *funcTypeSpec) string {
@@ -250,7 +271,7 @@ The struct definition for the concrete implementation of the interface. e.g.:
 func (spec *parsedIfaceType) concreteStructDefCode() *Statement {
 	return Type().Id(spec.concreteStructName()).StructFunc(func(g *Group) {
 		g.Id("query").Op("*").Qual("querybuilder", "Selection")
-		g.Id("id").Op("*").Id("dagger").Dot("ID")
+		g.Id("id").Op("*").Id(spec.idTypeName())
 
 		for _, method := range spec.methods {
 			if method.returnSpec == nil {
@@ -386,7 +407,7 @@ func (spec *parsedIfaceType) unmarshalJSONMethodCode() *Statement {
 		Params(Id("bs").Id("[]byte")).
 		Params(Id("error")).
 		BlockFunc(func(g *Group) {
-			g.Var().Id("id").Id("dagger").Dot("ID")
+			g.Var().Id("id").Id(spec.idTypeName())
 			g.Id("err").Op(":=").Id("json").Dot("Unmarshal").Call(Id("bs"), Op("&").Id("id"))
 			g.If(Id("err").Op("!=").Nil()).Block(Return(Id("err")))
 			g.Op("*").Id("r").Op("=").Id(spec.concreteStructName()).Values(Dict{

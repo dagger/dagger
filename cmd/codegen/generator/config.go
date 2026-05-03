@@ -62,6 +62,11 @@ type ModuleGeneratorConfig struct {
 
 	// If set, use `@dagger.io/dagger` with the given version and use it in the generated client.
 	LibVersion string
+
+	// The engine version declared by dagger.json for this module source.
+	// Codegen uses this as the schema compatibility version when rendering
+	// module bindings from pre-cutover module sources.
+	EngineVersion string
 }
 
 type ModuleSourceDependency struct {
