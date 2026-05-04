@@ -134,12 +134,16 @@ Go function.
 func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 	objFunctionCases := map[string][]Code{}
 
+	createMod := Qual("dag", "Module").Call()
 	implementationCode := Empty()
 
 	err := funcs.visitTypes(
 		true,
 		&visitorFuncs{
 			RootVisitor: func(pkgDoc string) error {
+				if pkgDoc != "" {
+					createMod = dotLine(createMod, "WithDescription").Call(Lit(pkgDoc))
+				}
 				return nil
 			},
 			StructVisitor: func(ps *parseState, named *types.Named, obj *types.TypeName, objTypeSpec *parsedObjectType, strct *types.Struct) error {
@@ -155,6 +159,12 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 				}
 				implementationCode.Add(implCode).Line()
 
+				objTypeDefCode, err := objTypeSpec.TypeDefCode()
+				if err != nil {
+					return fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
+				}
+				createMod = dotLine(createMod, "WithObject").Call(Add(Line(), objTypeDefCode))
+
 				return nil
 			},
 			IfaceVisitor: func(ps *parseState, named *types.Named, obj *types.TypeName, ifaceTypeSpec *parsedIfaceType, iface *types.Interface) error {
@@ -165,6 +175,12 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 				}
 				implementationCode.Add(implCode).Line()
 
+				ifaceTypeDefCode, err := ifaceTypeSpec.TypeDefCode()
+				if err != nil {
+					return fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
+				}
+				createMod = dotLine(createMod, "WithInterface").Call(Add(Line(), ifaceTypeDefCode))
+
 				return nil
 			},
 			EnumVisitor: func(ps *parseState, named *types.Named, obj *types.TypeName, enumTypeSpec *parsedEnumType, enum *types.Basic) error {
@@ -174,6 +190,12 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 					return fmt.Errorf("failed to generate enum code for %s: %w", obj.Name(), err)
 				}
 				implementationCode.Add(implCode).Line()
+
+				enumTypeDefCode, err := enumTypeSpec.TypeDefCode()
+				if err != nil {
+					return fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
+				}
+				createMod = dotLine(createMod, "WithEnum").Call(Add(Line(), enumTypeDefCode))
 
 				return nil
 			},
@@ -190,9 +212,13 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 	out = append(out,
 		fmt.Sprintf("%#v", implementationCode),
 		mainSrc(funcs.CheckVersionCompatibility),
-		invokeSrc(objFunctionCases),
+		invokeSrc(objFunctionCases, createMod),
 	)
 	return strings.Join(out, "\n"), nil
+}
+
+func dotLine(a *Statement, id string) *Statement {
+	return a.Op(".").Line().Id(id)
 }
 
 const (
@@ -332,7 +358,7 @@ func findSingleGQLError(rerr error) *gqlerror.Error {
 }
 
 // the source code of the invoke func, which is the mostly dynamically generated code that actually calls the user's functions
-func invokeSrc(objFunctionCases map[string][]Code) string {
+func invokeSrc(objFunctionCases map[string][]Code, createMod Code) string {
 	// each `case` statement for every object name, which makes up the body of the invoke func
 	objNames := []string{}
 	for objName := range objFunctionCases {
@@ -344,6 +370,10 @@ func invokeSrc(objFunctionCases map[string][]Code) string {
 		functionCases := objFunctionCases[objName]
 		objCases = append(objCases, Case(Lit(objName)).Block(Switch(Id(fnNameVar)).Block(functionCases...)))
 	}
+	// when the object name is empty, return the module definition
+	objCases = append(objCases, Case(Lit("")).Block(
+		Return(createMod, Nil()),
+	))
 	// default case (return error)
 	objCases = append(objCases, Default().Block(
 		Return(Nil(), Qual("fmt", "Errorf").Call(Lit("unknown object %s"), Id(parentNameVar))),
