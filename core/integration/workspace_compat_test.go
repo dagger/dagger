@@ -6,8 +6,10 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -123,6 +125,83 @@ func (WorkspaceCompatSuite) TestLegacyBlueprintInit(ctx context.Context, t *test
 		require.NoError(t, err)
 		require.Contains(t, stderr, "--sdk")
 		require.Contains(t, stderr, "--blueprint")
+	})
+}
+
+func (WorkspaceCompatSuite) TestLegacyToolchainCompat(ctx context.Context, t *testctx.T) {
+	t.Run("customization default changes invalidate omitted arg cache", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		selected := func(out string) string {
+			lines := strings.Split(strings.TrimSpace(out), "\n")
+			if len(lines) == 0 {
+				return ""
+			}
+			return strings.TrimSpace(lines[len(lines)-1])
+		}
+		daggerJSON := func(defaultValue string) string {
+			return fmt.Sprintf(`{
+  "name": "default-cache-repro",
+  "engineVersion": "v0.20.6",
+  "toolchains": [
+    {
+      "name": "probe",
+      "source": "tool",
+      "customizations": [
+        {
+          "argument": "value",
+          "default": %q
+        }
+      ]
+    }
+  ]
+}`, defaultValue)
+		}
+
+		base := goGitBase(t, c).
+			WithWorkdir("/work/tool").
+			With(daggerModuleExec("init", "--sdk=go", "--name=probe", "--source=.")).
+			WithNewFile("main.go", `package main
+
+type Probe struct {
+	Value string
+}
+
+func New(
+	// +optional
+	value string,
+) *Probe {
+	return &Probe{Value: value}
+}
+
+func (m *Probe) Selected() string {
+	return m.Value
+}
+`)
+
+		alpha := base.
+			WithWorkdir("/work").
+			WithNewFile("dagger.json", daggerJSON("alpha"))
+
+		out, err := alpha.
+			With(daggerExecRaw("--silent", "call", "probe", "selected")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "alpha", selected(out))
+
+		beta := alpha.WithNewFile("dagger.json", daggerJSON("beta"))
+
+		out, err = beta.
+			With(daggerExecRaw("--silent", "call", "probe", "selected")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "beta", selected(out))
+
+		out, err = beta.
+			With(daggerExecRaw("--silent", "call", "probe", "--value", "beta", "selected")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "beta", selected(out))
 	})
 }
 
