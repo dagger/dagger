@@ -9,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
@@ -70,6 +71,10 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("include").Doc("Only include services matching the specified patterns"),
 			),
+		dagql.NodeFunc("update", s.update).
+			Doc("Refresh workspace-managed state and return the resulting changeset.",
+				"Currently this refreshes existing lockfile entries only.").
+			Experimental("Experimental workspace update API currently refreshes existing lockfile entries only."),
 	}.Install(srv)
 }
 
@@ -209,6 +214,9 @@ type workspaceFileArgs struct {
 	Path string
 }
 
+type workspaceUpdateArgs struct {
+}
+
 func (s *workspaceSchema) file(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
@@ -239,6 +247,91 @@ func (s *workspaceSchema) file(
 	}
 
 	return inst, nil
+}
+
+func (s *workspaceSchema) update(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceUpdateArgs,
+) (*core.Changeset, error) {
+	ws := parent.Self()
+	if ws.HostPath() == "" {
+		return nil, fmt.Errorf("workspace update is local-only")
+	}
+
+	workspaceCtx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return nil, fmt.Errorf("workspace client context: %w", err)
+	}
+
+	query, err := core.CurrentQuery(workspaceCtx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get engine client: %w", err)
+	}
+
+	lock, exists, err := readWorkspaceLockState(workspaceCtx, bk, ws)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, fmt.Errorf("workspace lockfile does not exist")
+	}
+
+	if err := core.UpdateWorkspaceLock(workspaceCtx, query, lock); err != nil {
+		return nil, fmt.Errorf("update workspace lock: %w", err)
+	}
+
+	lockBytes, err := lock.Marshal()
+	if err != nil {
+		return nil, fmt.Errorf("marshal workspace lock: %w", err)
+	}
+
+	baseDir, err := s.resolveRootfs(ctx, ws, resolveWorkspacePath(".", ws.Path), core.CopyFilter{}, false)
+	if err != nil {
+		return nil, err
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var updatedDir dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, baseDir, &updatedDir,
+		dagql.Selector{
+			Field: "withNewFile",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(path.Join(workspace.LockDirName, workspace.LockFileName))},
+				{Name: "contents", Value: dagql.String(lockBytes)},
+				{Name: "permissions", Value: dagql.Int(0o644)},
+			},
+		},
+	); err != nil {
+		return nil, fmt.Errorf("workspace update lockfile: %w", err)
+	}
+
+	baseDirID, err := baseDir.ID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get baseDir ID: %w", err)
+	}
+
+	var changes dagql.ObjectResult[*core.Changeset]
+	if err := srv.Select(ctx, updatedDir, &changes,
+		dagql.Selector{
+			Field: "changes",
+			Args: []dagql.NamedInput{
+				{Name: "from", Value: dagql.NewID[*core.Directory](baseDirID)},
+			},
+		},
+	); err != nil {
+		return nil, fmt.Errorf("workspace update changeset: %w", err)
+	}
+
+	return changes.Self(), nil
 }
 
 // resolveWorkspacePath resolves a workspace API path into a boundary-relative path:

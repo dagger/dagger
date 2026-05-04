@@ -173,3 +173,58 @@ func TestParseURL(t *testing.T) {
 		})
 	}
 }
+
+func TestParseCloneURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		url         string
+		wantSchemes []string
+		wantErr     bool
+	}{
+		{
+			name:        "https URL is single candidate",
+			url:         "https://github.com/foo/bar",
+			wantSchemes: []string{HTTPSProtocol},
+		},
+		{
+			name:        "ssh URL is single candidate",
+			url:         "ssh://git@github.com/foo/bar.git",
+			wantSchemes: []string{SSHProtocol},
+		},
+		{
+			name:        "scp-style URL is single candidate",
+			url:         "git@github.com:foo/bar.git",
+			wantSchemes: []string{SSHProtocol},
+		},
+		{
+			name:        "schemeless URL yields https then ssh candidates",
+			url:         "github.com/foo/bar",
+			wantSchemes: []string{HTTPSProtocol, SSHProtocol},
+		},
+		{
+			name:        "schemeless URL with subpath yields https then ssh candidates",
+			url:         "github.com/foo/bar/subdir",
+			wantSchemes: []string{HTTPSProtocol, SSHProtocol},
+		},
+		{
+			name:    "unsupported protocol propagates error",
+			url:     "httpx://github.com/foo/bar",
+			wantErr: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			candidates, err := ParseCloneURL(test.url)
+			if test.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, candidates, len(test.wantSchemes))
+			for i, want := range test.wantSchemes {
+				require.Equal(t, want, candidates[i].Scheme, "candidate %d scheme", i)
+			}
+		})
+	}
+}

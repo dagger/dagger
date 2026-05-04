@@ -539,8 +539,8 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(string)
 	if initializeRepo {
 		// Explicitly set the Git config 'init.defaultBranch' to the
 		// implied default to suppress "hint:" output about not having a
+		// default initial branch name set, which otherwise spams unit
 		// test logs.
-		// default initial branch name set which otherwise spams unit
 		if _, err := git.Run(ctx, "-c", "init.defaultBranch=main", "init", "--bare", "--quiet"); err != nil {
 			return fmt.Errorf("failed to init repo at %s: %w", dir, err)
 		}
@@ -562,11 +562,16 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	if curCall == nil {
 		return nil, fmt.Errorf("current call is nil")
 	}
-	cacheKeyDigest, err := curCall.RecipeDigest(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("tree cache key: %w", err)
+
+	inputs := []string{
+		ref.Name,
+		ref.SHA,
+		ref.repo.URL.Remote(),
+		fmt.Sprintf("discard git: %t", discardGitDir),
+		fmt.Sprintf("depth: %d", depth),
+		fmt.Sprintf("tags: %t", includeTags),
 	}
-	cacheKey := cacheKeyDigest.String()
+	cacheKey := hashutil.HashStrings(inputs...).String()
 	cache := query.SnapshotManager()
 	locker := query.Locker()
 	locker.Lock(indexGitSnapshot + cacheKey)
