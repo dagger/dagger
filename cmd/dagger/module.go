@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -357,6 +359,18 @@ dagger init --sdk=go
 			_, err = modSrc.GeneratedContextDirectory().Export(ctx, contextDirPath)
 			if err != nil {
 				return fmt.Errorf("failed to generate code: %w", err)
+			}
+
+			// For new Go modules, opt into skip-codegen-at-runtime by
+			// default. This writes codegen.legacyCodegenAtRuntime=false
+			// and codegen.automaticGitignore=false to the freshly-
+			// exported dagger.json. Other SDKs don't support this mode
+			// yet, so we only apply it for --sdk=go.
+			if sdk == "go" {
+				configPath := filepath.Join(contextDirPath, srcRootSubPath, modules.Filename)
+				if err := setGoSDKSkipRuntimeCodegen(configPath); err != nil {
+					return fmt.Errorf("enable skip-codegen-at-runtime: %w", err)
+				}
 			}
 
 			if sdk != "" {
@@ -1304,4 +1318,59 @@ func optionalModCmdWrapper(
 			}
 		})
 	}
+}
+
+// setGoSDKSkipRuntimeCodegen patches the newly-generated dagger.json to
+// opt this module out of runtime codegen. New Go modules created via
+// `dagger init --sdk=go` default to the opt-in path: the generated
+// files live in the repo (automaticGitignore=false) and `dagger call`
+// skips `codegen generate-module` (legacyCodegenAtRuntime=false).
+//
+// Round-trips through modules.ModuleConfigWithUserFields so the output
+// field order stays aligned with the engine's own exporter — this
+// prevents cosmetic diffs between init-time and develop-time
+// dagger.json serialization.
+func setGoSDKSkipRuntimeCodegen(configPath string) error {
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", configPath, err)
+	}
+
+	var cfg modules.ModuleConfigWithUserFields
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return fmt.Errorf("parse %s: %w", configPath, err)
+	}
+
+	if cfg.Codegen == nil {
+		cfg.Codegen = &modules.ModuleCodegenConfig{}
+	}
+	fv := false
+	cfg.Codegen.AutomaticGitignore = &fv
+	cfg.Codegen.LegacyCodegenAtRuntime = &fv
+
+	out, err := json.MarshalIndent(&cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("serialize %s: %w", configPath, err)
+	}
+	// trailing newline matches the engine's exporter output
+	out = append(out, '\n')
+	if err := os.WriteFile(configPath, out, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", configPath, err)
+	}
+
+	// The engine's exporter writes a .gitignore inside the module source
+	// directory (<source>/.gitignore) when automaticGitignore is true
+	// (the default). We just flipped that to false, so remove the stale
+	// file — otherwise Host.directory(gitignore:true) would keep
+	// excluding the very files we need committed. When `source` is unset
+	// in dagger.json, the file sits next to dagger.json.
+	srcDir := filepath.Dir(configPath)
+	if cfg.Source != "" {
+		srcDir = filepath.Join(srcDir, cfg.Source)
+	}
+	gitignorePath := filepath.Join(srcDir, ".gitignore")
+	if err := os.Remove(gitignorePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove %s: %w", gitignorePath, err)
+	}
+	return nil
 }
