@@ -2,7 +2,7 @@ module github.com/dagger/dagger/e2e/helm
 
 go 1.25.6
 
-require dagger.io/dagger v0.20.6 // indirect
+require dagger.io/dagger v0.20.7 // indirect
 
 require (
 	github.com/99designs/gqlgen v0.17.89 // indirect
