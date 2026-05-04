@@ -492,10 +492,6 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 type ClientInitOpts struct {
 	*engine.ClientMetadata
 
-	// If this is a nested client, the call that created the client (i.e. a function call or
-	// an exec with nesting enabled)
-	Call *dagql.ResultCall
-
 	// If this is a nested client, the client ID of the caller that created it
 	CallerClientID string
 
@@ -1018,7 +1014,6 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			LockMode:             lockMode,
 			Workspace:            workspaceRef,
 		},
-		Call:                   execMD.Call,
 		CallerClientID:         execMD.CallerClientID,
 		EncodedModuleID:        execMD.EncodedModuleID,
 		EncodedContentModuleID: execMD.EncodedContentModuleID,

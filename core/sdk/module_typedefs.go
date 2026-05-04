@@ -62,7 +62,6 @@ func (sdk *moduleTypes) ModuleTypes(
 	execMD := engineutil.ExecutionMetadata{
 		ClientID: identity.NewID(),
 		Call:     dagql.CurrentCall(ctx),
-		ExecID:   identity.NewID(),
 		Internal: true,
 	}
 	if execMD.Call != nil {
