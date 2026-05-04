@@ -1,0 +1,20 @@
+{
+  "name": "echo",
+  "description": "Echo module",
+  "objects": [
+    {
+      "name": "Echo",
+      "description": "Echo object",
+      "functions": [
+        {
+          "name": "say",
+          "description": "Say something",
+          "args": [
+            { "name": "msg", "type": { "kind": "NON_NULL", "ofType": { "kind": "SCALAR", "name": "String" } } }
+          ],
+          "returnType": { "kind": "NON_NULL", "ofType": { "kind": "SCALAR", "name": "String" } }
+        }
+      ]
+    }
+  ]
+}
