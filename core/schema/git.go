@@ -238,13 +238,15 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 
 	remote, err := gitutil.ParseURL(args.URL)
 	if errors.Is(err, gitutil.ErrUnknownProtocol) {
-		try := [][]dagql.NamedInput{
-			{
-				{Name: "url", Value: dagql.NewString("https://" + args.URL)},
-			},
-			{
-				{Name: "url", Value: dagql.NewString("ssh://" + args.URL)},
-			},
+		candidates, candErr := gitutil.ParseCloneURL(args.URL)
+		if candErr != nil {
+			return inst, fmt.Errorf("failed to parse Git URL: %w", candErr)
+		}
+		try := make([][]dagql.NamedInput, 0, len(candidates))
+		for _, candidate := range candidates {
+			try = append(try, []dagql.NamedInput{
+				{Name: "url", Value: dagql.NewString(candidate.String())},
+			})
 		}
 		if args.Commit != "" {
 			for i := range try {

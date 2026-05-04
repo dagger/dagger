@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/containerd/platforms"
@@ -255,17 +256,25 @@ func resolveParsedGitRefCommit(ctx context.Context, parsed *ParsedGitRefString, 
 }
 
 func loadRemoteGitMetadata(ctx context.Context, remoteURL string) (*gitutil.Remote, error) {
-	gitURL, err := gitutil.ParseURL(remoteURL)
+	candidates, err := gitutil.ParseCloneURL(remoteURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse git URL %q: %w", remoteURL, err)
 	}
 
-	repo := &RemoteGitRepository{URL: gitURL}
-	remote, err := repo.Remote(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("load git remote %q: %w", remoteURL, err)
+	var lastErr error
+	for _, gitURL := range candidates {
+		repo := &RemoteGitRepository{URL: gitURL}
+		remote, err := repo.Remote(ctx)
+		if err != nil {
+			if errors.Is(err, gitutil.ErrGitAuthFailed) {
+				lastErr = err
+				continue
+			}
+			return nil, fmt.Errorf("load git remote %q: %w", remoteURL, err)
+		}
+		return remote, nil
 	}
-	return remote, nil
+	return nil, fmt.Errorf("load git remote %q: %w", remoteURL, lastErr)
 }
 
 func resolveParsedGitRef(remote *gitutil.Remote, parsed *ParsedGitRefString, pinCommitRef string) (*gitutil.Ref, error) {
