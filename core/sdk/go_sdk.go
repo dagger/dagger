@@ -210,6 +210,13 @@ func (sdk *goSDK) Codegen(
 		return nil, fmt.Errorf("failed to scope module source for go module sdk codegen: %w", err)
 	}
 
+	// Codegen always runs the generator: it is the path that produces
+	// fresh dagger.gen.go + internal/dagger/** for `dagger develop`,
+	// `dagger init`, and `dagger install`. The skip-codegen-at-runtime
+	// optimization lives in Runtime() (baseForCommittedCodegen), which
+	// is the path taken at module load time. Short-circuiting here
+	// would silently turn `dagger develop` into a no-op for modules
+	// that have opted into legacyCodegenAtRuntime=false.
 	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
 	if err != nil {
 		return nil, err
@@ -229,21 +236,25 @@ func (sdk *goSDK) Codegen(
 	}
 
 	return &core.GeneratedCode{
-		Code: modifiedSrcDir,
-		VCSGeneratedPaths: []string{
-			"dagger.gen.go",
-			"internal/dagger/**",
-			"internal/querybuilder/**",
-			"internal/telemetry/**",
-		},
-		VCSIgnoredPaths: []string{
-			"dagger.gen.go",
-			"internal/dagger",
-			"internal/querybuilder",
-			"internal/telemetry",
-			".env", // this is here because the Go SDK does not use WithVCSIgnoredPaths on core/codegen/GeneratedCode
-		},
+		Code:              modifiedSrcDir,
+		VCSGeneratedPaths: goSDKVCSGeneratedPaths,
+		VCSIgnoredPaths:   goSDKVCSIgnoredPaths,
 	}, nil
+}
+
+var goSDKVCSGeneratedPaths = []string{
+	"dagger.gen.go",
+	"internal/dagger/**",
+	"internal/querybuilder/**",
+	"internal/telemetry/**",
+}
+
+var goSDKVCSIgnoredPaths = []string{
+	"dagger.gen.go",
+	"internal/dagger",
+	"internal/querybuilder",
+	"internal/telemetry",
+	".env", // this is here because the Go SDK does not use WithVCSIgnoredPaths on core/codegen/GeneratedCode
 }
 
 func (sdk *goSDK) Runtime(
@@ -264,7 +275,12 @@ func (sdk *goSDK) Runtime(
 		return nil, fmt.Errorf("failed to scope module source for go module sdk runtime: %w", err)
 	}
 
-	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
+	var ctr dagql.ObjectResult[*core.Container]
+	if useRuntimeCodegen(source) {
+		ctr, err = sdk.baseWithCodegen(ctx, deps, source)
+	} else {
+		ctr, err = sdk.baseForCommittedCodegen(ctx, source)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -399,6 +415,10 @@ func (sdk *goSDK) baseWithCodegen(
 	if !src.Self().ConfigExists {
 		codegenArgs = append(codegenArgs, "--is-init")
 	}
+	if sdkCfg := src.Self().SDK; sdkCfg != nil &&
+		sdkCfg.ExperimentalFeatureEnabled(core.ModuleSourceExperimentalFeatureSelfCalls) {
+		codegenArgs = append(codegenArgs, "--self-calls")
+	}
 
 	selectors := []dagql.Selector{
 		{
@@ -505,6 +525,114 @@ func (sdk *goSDK) baseWithCodegen(
 
 	if err := dag.Select(ctx, ctr, &ctr, selectors...); err != nil {
 		return ctr, fmt.Errorf("failed to mount introspection json file into go module sdk container codegen: %w", err)
+	}
+
+	return ctr, nil
+}
+
+// useRuntimeCodegen reports whether this module wants the SDK to run
+// codegen during runtime operations (dagger call, dagger functions).
+//
+// True for modules that haven't opted into the new mode via
+// codegen.legacyCodegenAtRuntime=false in dagger.json. This is also
+// the default for any module where the field is unset.
+func useRuntimeCodegen(src dagql.ObjectResult[*core.ModuleSource]) bool {
+	c := src.Self().CodegenConfig
+	if c == nil || c.LegacyCodegenAtRuntime == nil {
+		return true
+	}
+	return *c.LegacyCodegenAtRuntime
+}
+
+// requireGeneratedFiles ensures the module's committed generated
+// files are present when the module has opted out of runtime codegen.
+// If either the module's dagger.gen.go or internal/dagger/dagger.gen.go
+// is missing, return a clear actionable error.
+func requireGeneratedFiles(
+	ctx context.Context,
+	dag *dagql.Server,
+	contextDir dagql.ObjectResult[*core.Directory],
+	srcSubpath, modName string,
+) error {
+	required := []string{
+		filepath.Join(srcSubpath, "dagger.gen.go"),
+		filepath.Join(srcSubpath, "internal", "dagger", "dagger.gen.go"),
+	}
+	for _, rel := range required {
+		var exists dagql.Boolean
+		err := dag.Select(ctx, contextDir, &exists,
+			dagql.Selector{
+				Field: "exists",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.NewString(rel)},
+				},
+			},
+		)
+		if err != nil {
+			return fmt.Errorf("check generated file %q: %w", rel, err)
+		}
+		if !bool(exists) {
+			return fmt.Errorf(
+				"module %q has codegen.legacyCodegenAtRuntime=false "+
+					"but required generated file %q is missing; "+
+					"run `dagger develop` to regenerate",
+				modName, rel)
+		}
+	}
+	return nil
+}
+
+// baseForCommittedCodegen prepares the runtime container when the module
+// has opted out of runtime codegen. It mounts the module's context
+// directory as-is (no withoutFile, no schema JSON, no codegen exec),
+// verifies the expected generated files are present, and hands back a
+// container ready for `go build`.
+func (sdk *goSDK) baseForCommittedCodegen(
+	ctx context.Context,
+	src dagql.ObjectResult[*core.ModuleSource],
+) (dagql.ObjectResult[*core.Container], error) {
+	var ctr dagql.ObjectResult[*core.Container]
+
+	dag, err := sdk.root.Server.Server(ctx)
+	if err != nil {
+		return ctr, fmt.Errorf("failed to get dag for go module sdk runtime: %w", err)
+	}
+
+	modName := src.Self().ModuleOriginalName
+	contextDir := src.Self().ContextDirectory
+	srcSubpath := src.Self().SourceSubpath
+
+	if err := requireGeneratedFiles(ctx, dag, contextDir, srcSubpath, modName); err != nil {
+		return ctr, err
+	}
+
+	ctr, err = sdk.base(ctx)
+	if err != nil {
+		return ctr, err
+	}
+
+	contextDirID, err := contextDir.ID()
+	if err != nil {
+		return ctr, fmt.Errorf("failed to get module context directory ID: %w", err)
+	}
+
+	if err := dag.Select(ctx, ctr, &ctr,
+		dagql.Selector{
+			Field: "withMountedDirectory",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(goSDKUserModContextDirPath)},
+				{Name: "source", Value: dagql.NewID[*core.Directory](contextDirID)},
+			},
+		},
+		dagql.Selector{
+			Field: "withWorkdir",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(
+					filepath.Join(goSDKUserModContextDirPath, srcSubpath))},
+			},
+		},
+	); err != nil {
+		return ctr, fmt.Errorf("failed to mount module source: %w", err)
 	}
 
 	return ctr, nil
