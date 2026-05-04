@@ -87,7 +87,7 @@ func (s *currentTypeDefsTestServer) MuxEndpoint(context.Context, string, http.Ha
 	return nil
 }
 
-func (s *currentTypeDefsTestServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engineutil.ExecutionMetadata) {
+func (s *currentTypeDefsTestServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engineutil.ExecutionMetadata, dagql.AnyObjectResult) {
 }
 
 func (s *currentTypeDefsTestServer) Auth(context.Context) (*auth.RegistryAuthProvider, error) {

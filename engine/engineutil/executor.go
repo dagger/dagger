@@ -58,12 +58,10 @@ type ExecutionMetadata struct {
 	// Used when executing the module runtime itself.
 	Internal bool
 
-	Call                   *dagql.ResultCall
-	CallDigest             digest.Digest
-	EncodedModuleID        string
-	EncodedContentModuleID string
-	EncodedFunctionCall    json.RawMessage
-	CallerClientID         string
+	Call                *dagql.ResultCall
+	CallDigest          digest.Digest
+	EncodedFunctionCall json.RawMessage
+	CallerClientID      string
 
 	// If set, stdout/stderr emitted by this execution should be associated
 	// with this DAG call digest on the client side.

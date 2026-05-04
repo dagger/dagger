@@ -49,7 +49,7 @@ type mockServer struct {
 	clientMetadata *engine.ClientMetadata
 }
 
-func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engineutil.ExecutionMetadata) {
+func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engineutil.ExecutionMetadata, dagql.AnyObjectResult) {
 }
 
 func (ms *mockServer) ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error {

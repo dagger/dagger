@@ -273,9 +273,9 @@ func (sdk *goSDK) ModuleTypes(
 	if err != nil {
 		return inst, fmt.Errorf("failed to scope module for go module sdk module types: %w", err)
 	}
-	currentModuleID, err := scopedMod.ID()
+	moduleContextID, err := core.ResultIDInput(scopedMod)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get current module ID for go module sdk module types: %w", err)
+		return inst, fmt.Errorf("failed to get module context ID for go module sdk module types: %w", err)
 	}
 
 	var ctr dagql.ObjectResult[*core.Container]
@@ -312,11 +312,6 @@ func (sdk *goSDK) ModuleTypes(
 	if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
 		execMD.LockMode = clientMetadata.LockMode
 	}
-	execMD.EncodedModuleID, err = currentModuleID.Encode()
-	if err != nil {
-		return inst, err
-	}
-
 	err = dag.Select(ctx, ctr, &ctr,
 		dagql.Selector{
 			Field: "withMountedFile",
@@ -393,6 +388,10 @@ func (sdk *goSDK) ModuleTypes(
 				{
 					Name:  "execMD",
 					Value: dagql.NewDigestedSerializedString(&execMD, goSDKExecMDDigest),
+				},
+				{
+					Name:  "moduleContext",
+					Value: dagql.Opt(moduleContextID),
 				},
 			},
 		},
