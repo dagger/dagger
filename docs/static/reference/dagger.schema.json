@@ -8,6 +8,10 @@
         "automaticGitignore": {
           "type": "boolean",
           "description": "Whether to automatically generate a .gitignore file for this module."
+        },
+        "legacyCodegenAtRuntime": {
+          "type": "boolean",
+          "description": "LegacyCodegenAtRuntime controls whether the SDK runs codegen during runtime operations (dagger call, dagger functions, etc.). When explicitly false, the SDK trusts the committed generated files and skips the runtime codegen pass entirely. Codegen still runs on dagger init and dagger develop.\n\nCurrently honored only by the Go SDK; other SDKs read but ignore this field.\n\nDefault (nil or true): run codegen at runtime (legacy behavior)."
         }
       },
       "additionalProperties": false,
