@@ -107,8 +107,7 @@ func (m *Greeter) ReadCheck(ctx context.Context) error {
 			WithNewFile("/work/workspace-default-path/target-subdir/maven/hello.txt", subdirFileContent).
 			// Scaffold the greeter toolchain.
 			WithWorkdir("/work/workspace-default-path/greeter").
-			With(daggerExec("init", "--sdk=go", "--name=greeter", "--source=.")).
-			With(sdkSource("go", greeterSource)).
+			With(withModInit("go", greeterSource, "--name=greeter")).
 			// Scaffold the workspace root and register greeter as a toolchain.
 			WithWorkdir("/work").
 			With(daggerExec("init")).

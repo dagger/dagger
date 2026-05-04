@@ -194,8 +194,7 @@ func (SecretSuite) TestEmptySecretPlaintext(ctx context.Context, t *testctx.T) {
 	callMod := func(c *dagger.Client) (string, error) {
 		return goGitBase(t, c).
 			WithWorkdir("/work/secreter").
-			With(daggerExec("init", "--name=secreter", "--sdk=go", "--source=.")).
-			WithNewFile("main.go", `package main
+			With(withModInit("go", `package main
 
 import (
 	"context"
@@ -216,8 +215,7 @@ func (*Secreter) CheckEmptyPlaintext(ctx context.Context, s *dagger.Secret) erro
 	}
 	return nil
 }
-`,
-			).
+`, "--name=secreter")).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=caller", "--sdk=go", "--source=.")).
 			With(daggerExec("install", "./secreter")).
@@ -234,6 +232,7 @@ func (*Caller) Test(ctx context.Context) error {
 }
 `,
 			).
+			With(daggerExec("develop")).
 			WithEnvVariable("CACHEBUSTER", identity.NewID()).
 			With(daggerCall("test")).
 			Stdout(ctx)
@@ -247,9 +246,7 @@ func (*Caller) Test(ctx context.Context) error {
 func (SecretSuite) TestSetSecretInModuleCaching(ctx context.Context, t *testctx.T) {
 	callMod := func(c *dagger.Client) (string, error) {
 		return goGitBase(t, c).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-			WithNewFile("main.go", `package main
+			With(withModInit("go", `package main
 
 import (
 	"context"
@@ -264,8 +261,7 @@ func (*Test) Fn(ctx context.Context, rand string) (string, error) {
 		WithExec([]string{"sh", "-c", "head -c 128 /dev/random | sha256sum"}).
 		Stdout(ctx)
 }
-`,
-			).
+`)).
 			With(daggerCall("fn", "--rand", identity.NewID())).
 			Stdout(ctx)
 	}

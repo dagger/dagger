@@ -38,9 +38,7 @@ func (LegacySuite) TestLegacyExportAbsolutePath(ctx context.Context, t *testctx.
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--name=bare", "--source=.", "--sdk=go")).
-		WithNewFile("dagger.json", `{"name": "bare", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`).
-		WithNewFile("main.go", `package main
+		With(withModInit("go", `package main
 
 import "context"
 
@@ -57,8 +55,8 @@ func (m *Bare) TestDirectory(ctx context.Context) (bool, error) {
 func (m *Bare) TestFile(ctx context.Context) (bool, error) {
 	return dag.Container().WithNewFile("./path").File("./path").Export(ctx, "./path")
 }
-`,
-		)
+`, "--name=bare")).
+		WithNewFile("dagger.json", `{"name": "bare", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`)
 
 	out, err := modGen.
 		With(daggerQuery(`{testContainer, testDirectory, testFile}`)).
@@ -106,6 +104,8 @@ func (t *Test) Debug() *dagger.Terminal {
 		err = os.WriteFile(filepath.Join(modDir, "dagger.json"), []byte(`{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`), 0o644)
 		require.NoError(t, err)
 		err = os.WriteFile(filepath.Join(modDir, "main.go"), src, 0644)
+		require.NoError(t, err)
+		_, err = hostDaggerExec(ctx, t, modDir, "develop")
 		require.NoError(t, err)
 
 		// cache the module load itself so there's less to wait for in the shell invocation below
@@ -173,6 +173,8 @@ func (t *Test) Debug() *dagger.Terminal {
 		err = os.WriteFile(filepath.Join(modDir, "dagger.json"), []byte(`{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`), 0o644)
 		require.NoError(t, err)
 		err = os.WriteFile(filepath.Join(modDir, "main.go"), src, 0644)
+		require.NoError(t, err)
+		_, err = hostDaggerExec(ctx, t, modDir, "develop")
 		require.NoError(t, err)
 
 		// cache the module load itself so there's less to wait for in the shell invocation below
@@ -242,9 +244,7 @@ func (LegacySuite) TestContainerWithNewFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	out, err := daggerCliBase(t, c).
-		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`).
-		WithNewFile("main.go", `package main
+		With(withModInitAtWithDaggerJSON(".", "go", `package main
 
 import "context"
 
@@ -265,8 +265,7 @@ func (m *Test) Default(ctx context.Context) (string, error) {
         File("./foo").
         Contents(ctx)
 }
-`,
-		).
+`, `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`)).
 		With(daggerQuery(`{container default}`)).
 		Stdout(ctx)
 
@@ -283,9 +282,7 @@ func (LegacySuite) TestExecWithEntrypoint(ctx context.Context, t *testctx.T) {
 
 	for _, version := range []string{"v0.11.9", "v0.12.6"} {
 		modGen := daggerCliBase(t, c).
-			With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-			WithNewFile("dagger.json", fmt.Sprintf(`{"name": "test", "sdk": "go", "source": ".", "engineVersion": "%s"}`, version)).
-			WithNewFile("main.go", fmt.Sprintf(`package main
+			With(withModInitAtWithDaggerJSON(".", "go", fmt.Sprintf(`package main
 
 import "dagger/test/internal/dagger"
 
@@ -311,8 +308,7 @@ func (m *Test) Skip() *dagger.Container {
         SkipEntrypoint: true,
     })
 }
-`, alpineImage),
-			)
+`, alpineImage), fmt.Sprintf(`{"name": "test", "sdk": "go", "source": ".", "engineVersion": "%s"}`, version)))
 
 		out, err := modGen.With(daggerCall("use", "stdout")).Stdout(ctx)
 		require.NoError(t, err)
@@ -367,10 +363,7 @@ func (LegacySuite) TestLegacyNoExec(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	modGen := daggerCliBase(t, c).
-		WithWorkdir("/work").
-		With(daggerExec("init", "--name=test", "--source=.", "--sdk=go")).
-		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`).
-		WithNewFile("main.go", fmt.Sprintf(`package main
+		With(withModInitAtWithDaggerJSON(".", "go", fmt.Sprintf(`package main
 
 import (
     "context"
@@ -402,8 +395,7 @@ func (m *Test) NoExec(ctx context.Context) *dagger.Container {
         WithoutDefaultArgs().
         WithoutEntrypoint()
 }
-`, alpineImage),
-		)
+`, alpineImage), `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`))
 
 	out, err := modGen.With(daggerQuery(`{stdout stderr}`)).Stdout(ctx)
 	require.NoError(t, err)
@@ -426,10 +418,7 @@ func (LegacySuite) TestReturnVoid(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	out, err := daggerCliBase(t, c).
-		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-		WithWorkdir("/work").
-		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`).
-		WithNewFile("main.go", `package main
+		With(withModInitAtWithDaggerJSON(".", "go", `package main
 
 import "context"
 
@@ -439,20 +428,15 @@ func (m *Test) Test(ctx context.Context) (string, error) {
     val, err := dag.Dep().Dummy(ctx)
     return string(val), err
 }
-`,
-		).
-		WithWorkdir("/work/dep").
-		With(daggerExec("init", "--name=dep", "--sdk=go")).
-		With(sdkSource("go", `package main
+`, `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`)).
+		With(withModInitAt("dep", "go", `package main
 
 type Dep struct {}
 
 func (m *Dep) Dummy() error {
     return nil
 }
-`,
-		)).
-		WithWorkdir("/work").
+`)).
 		With(daggerExec("install", "./dep", "--compat=skip")).
 		With(daggerQuery(`{test}`)).
 		Stdout(ctx)
@@ -469,9 +453,7 @@ func (LegacySuite) TestGoAlias(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	mod := daggerCliBase(t, c).
-		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`).
-		WithNewFile("main.go", `package main
+		With(withModInitAtWithDaggerJSON(".", "go", `package main
 
 type Test struct {}
 
@@ -489,8 +471,7 @@ func (m *Test) Proto(proto NetworkProtocol) NetworkProtocol {
 		panic("nope")
 	}
 }
-`,
-		)
+`, `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`))
 	out, err := mod.
 		With(daggerCall("container", "--ctr=alpine", "--msg=world", "stdout")).
 		Stdout(ctx)
@@ -511,10 +492,7 @@ func (LegacySuite) TestPipeline(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	out, err := goGitBase(t, c).
-		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-		WithWorkdir("/work").
-		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.12.7"}`).
-		WithNewFile("main.go", `package main
+		With(withModInitAtWithDaggerJSON(".", "go", `package main
 
 import "context"
 
@@ -523,8 +501,7 @@ type Test struct {}
 func (m *Test) Fn(ctx context.Context) (string, error) {
 	return dag.Pipeline("foo").Version(ctx)
 }
-`,
-		).
+`, `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.12.7"}`)).
 		With(daggerCall("fn")).
 		Stdout(ctx)
 
@@ -540,10 +517,7 @@ func (LegacySuite) TestModuleSourceCloneURL(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	out, err := goGitBase(t, c).
-		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-		WithWorkdir("/work").
-		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.12.7"}`).
-		WithNewFile("main.go", `package main
+		With(withModInitAtWithDaggerJSON(".", "go", `package main
 
 import "context"
 
@@ -552,8 +526,7 @@ type Test struct {}
 func (m *Test) Fn(ctx context.Context) (string, error) {
 	return dag.ModuleSource("https://github.com/vito/dang.git@1388f958295ad1dac7a02149547d741092edca4b").CloneURL(ctx)
 }
-`,
-		).
+`, `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.12.7"}`)).
 		With(daggerCall("fn")).
 		Stdout(ctx)
 
@@ -567,19 +540,15 @@ func (LegacySuite) TestGoDepAlias(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	mod := daggerCliBase(t, c).
-		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`).
-		WithNewFile("main.go", `package main
+		With(withModInitAtWithDaggerJSON(".", "go", `package main
 
 type Test struct {}
 
 func (m *Test) Placeholder() string {
 	return "placeholder"
 }
-`).
-		WithWorkdir("/work/dep").
-		With(daggerExec("init", "--name=dep", "--sdk=go")).
-		WithNewFile("main.go", `package main
+`, `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`)).
+		With(withModInitAt("dep", "go", `package main
 
 type Status string
 
@@ -604,8 +573,7 @@ func (m *Dep) Invert(status Status) Status {
 		panic("invalid status")
 	}
 }
-`).
-		WithWorkdir("/work").
+`)).
 		With(daggerExec("install", "./dep", "--compat=skip")).
 		WithNewFile("main.go", `package main
 
@@ -657,10 +625,7 @@ func (LegacySuite) TestGoCodegenOptionals(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	out, err := daggerCliBase(t, c).
-		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-		WithWorkdir("/work").
-		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.12.7"}`).
-		WithNewFile("main.go", `package main
+		With(withModInitAtWithDaggerJSON(".", "go", `package main
 
 import "context"
 
@@ -670,11 +635,8 @@ func (m *Test) Greet(ctx context.Context) (string, error) {
     // In v0.13 *name* is an optional argument
     return dag.Dep("Dagger").Greeting(ctx)
 }
-`,
-		).
-		WithWorkdir("/work/dep").
-		With(daggerExec("init", "--name=dep", "--sdk=python")).
-		With(fileContents("src/dep/__init__.py", `import dagger
+`, `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.12.7"}`)).
+		With(withModInitAt("dep", "python", `import dagger
 
 @dagger.object_type
 class Dep:
@@ -683,9 +645,7 @@ class Dep:
     @dagger.function
     def greeting(self) -> str:
         return f"Hello, {self.name}!"
-`,
-		)).
-		WithWorkdir("/work").
+`)).
 		With(daggerExec("install", "./dep", "--compat=skip")).
 		With(daggerCall("greet")).
 		Stdout(ctx)
@@ -706,10 +666,7 @@ func (LegacySuite) TestGitWithKeepDir(ctx context.Context, t *testctx.T) {
 
 	for _, version := range []string{"v0.9.9", "v0.12.6"} {
 		ctr := daggerCliBase(t, c).
-			With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-			WithWorkdir("/work").
-			WithNewFile("dagger.json", fmt.Sprintf(`{"name": "test", "sdk": "go", "source": ".", "engineVersion": "%s"}`, version)).
-			WithNewFile("main.go", `package main
+			With(withModInitAtWithDaggerJSON(".", "go", `package main
 
 import (
 	"context"
@@ -729,7 +686,7 @@ func (m *Test) GetContents(ctx context.Context, cmtID string) (string, error) {
 func (m *Test) GetContentsNoKeepGitDirOpt(ctx context.Context, cmtID string) (string, error) {
 	return dag.Git("github.com/dagger/dagger").Commit(cmtID).Tree().File(".git/HEAD").Contents(ctx)
 }
-`)
+`, fmt.Sprintf(`{"name": "test", "sdk": "go", "source": ".", "engineVersion": "%s"}`, version)))
 
 		out, err := ctr.With(daggerCall("get-commit", "--cmtID=c80ac2c13df7d573a069938e01ca13f7a81f0345")).Stdout(ctx)
 		require.NoError(t, err)
@@ -754,9 +711,7 @@ func (LegacySuite) TestGoUnscopedEnumValues(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	mod := daggerCliBase(t, c).
-		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.13.4"}`).
-		WithNewFile("main.go", `package main
+		With(withModInitAtWithDaggerJSON(".", "go", `package main
 
 import "dagger/test/internal/dagger"
 
@@ -783,8 +738,7 @@ func (m *Test) NewProto(proto dagger.NetworkProtocol) dagger.NetworkProtocol {
 		panic("nope")
 	}
 }
-`,
-		)
+`, `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.13.4"}`))
 
 	out, err := mod.
 		With(daggerCall("old-proto", "--proto=TCP")).
@@ -807,10 +761,7 @@ func (LegacySuite) TestContainerWithFocus(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	out, err := goGitBase(t, c).
-		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-		WithWorkdir("/work").
-		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.13.3"}`).
-		WithNewFile("main.go", `package main
+		With(withModInitAtWithDaggerJSON(".", "go", `package main
 
 import "context"
 
@@ -824,8 +775,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 		WithExec([]string{"echo", "hello world"}).
 		Stdout(ctx)
 }
-`,
-		).
+`, `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.13.3"}`)).
 		With(daggerCall("fn")).
 		Stdout(ctx)
 
@@ -1021,7 +971,8 @@ func fetch() (string, error) {
 		WithWorkdir("/work/").
 		WithFile("app", app).
 		WithNewFile("main.go", daggermodmaingo).
-		WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.13.7"}`)
+		WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.13.7"}`).
+		With(daggerExec("develop"))
 
 	// verify that the engine uses the entrypoint when serving the legacy AsService api
 	t.Run("use entrypoint by default", func(ctx context.Context, t *testctx.T) {
@@ -1075,10 +1026,7 @@ func (LegacySuite) TestDirectoryTrailingSlash(ctx context.Context, t *testctx.T)
 	c := connect(ctx, t)
 
 	modGen := goGitBase(t, c).
-		With(daggerExec("init", "--name=bare", "--sdk=go", "--source=.")).
-		WithWorkdir("/work").
-		WithNewFile("dagger.json", `{"name": "bare", "sdk": "go", "source": ".", "engineVersion": "v0.16.0"}`).
-		WithNewFile("main.go", `package main
+		With(withModInitAtWithDaggerJSON(".", "go", `package main
 
 import (
 	"context"
@@ -1105,7 +1053,7 @@ func (m *Bare) dir() *dagger.Directory {
 		WithNewFile("foo/bar", "").
 		WithNewFile("baz", "")
 }
-`)
+`, `{"name": "bare", "sdk": "go", "source": ".", "engineVersion": "v0.16.0"}`, "--name=bare"))
 
 	out, err := modGen.
 		With(daggerQuery(`{testEntries, testGlob, testName}`)).
@@ -1457,10 +1405,7 @@ func (LegacySuite) TestLegacyGitLaxRefs(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	modGen := daggerCliBase(t, c).
-		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-		WithWorkdir("/work").
-		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.18.7"}`).
-		WithNewFile("main.go", `package main
+		With(withModInitAtWithDaggerJSON(".", "go", `package main
 
 import "context"
 
@@ -1477,7 +1422,7 @@ func (m *Test) Tag(ctx context.Context, name string) (string, error) {
 func (m *Test) Branch(ctx context.Context, name string) (string, error) {
 	return dag.Git("github.com/dagger/dagger").Branch(name).Tree().File("LICENSE").Contents(ctx)
 }
-`)
+`, `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.18.7"}`))
 
 	// main is a branch, not a commit
 	out, err := modGen.With(daggerCall("commit", "--name=main")).Stdout(ctx)
@@ -1503,10 +1448,7 @@ func (LegacySuite) TestLegacyContainerBuild(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	modGen := daggerCliBase(t, c).
-		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-		WithWorkdir("/work").
-		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.18.19"}`).
-		WithNewFile("main.go", `package main
+		With(withModInitAtWithDaggerJSON(".", "go", `package main
 
 import (
 	"context"
@@ -1529,7 +1471,7 @@ func (m *Test) Hello(ctx context.Context) error {
 	}
 	return nil
 }
-		`)
+		`, `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.18.19"}`))
 
 	_, err := modGen.With(daggerCall("hello")).Stdout(ctx)
 	require.NoError(t, err)

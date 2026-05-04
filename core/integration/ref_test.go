@@ -36,6 +36,7 @@ func (ModuleSuite) TestRefIntegration(ctx context.Context, t *testctx.T) {
 				}
 				`,
 			).
+			With(daggerExec("develop")).
 			WithWorkdir("/work").
 			With(daggerCallAt("github.com/dagger/dagger", "get-source")).
 			Stdout(ctx)

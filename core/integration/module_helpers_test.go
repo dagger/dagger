@@ -287,9 +287,38 @@ func withModInitAt(dir, sdk, contents string, extra ...string) dagger.WithContai
 		args = append(args, dir)
 		ctr = ctr.With(daggerExec(args...))
 		if contents != "" {
-			return ctr.With(sdkSourceAt(dir, sdk, contents))
+			ctr = ctr.With(sdkSourceAt(dir, sdk, contents))
+			// Run develop from inside the module dir to avoid
+			// `dagger develop -m <dir>`. The -m form makes the CLI
+			// propagate <dir> as an extra module to be loaded at engine
+			// connect time (cmd/dagger/engine.go withEngine), and that
+			// load builds the runtime from the still-stale dagger.gen.go
+			// — exactly what develop is about to fix.
+			//
+			// Changing the container's WORKDIR (not just a shell `cd`)
+			// is required: nested dagger CLI sessions resolve "."
+			// against the container's WORKDIR, not the inner process's
+			// cwd, so a subshell `cd` is invisible to the engine.
+			clean := filepath.Clean(dir)
+			if clean == "." {
+				ctr = ctr.With(daggerExec("develop"))
+			} else {
+				levels := strings.Count(clean, "/") + 1
+				back := strings.Repeat("../", levels-1) + ".."
+				ctr = ctr.WithWorkdir(dir).
+					With(daggerExec("develop")).
+					WithWorkdir(back)
+			}
 		}
 		return ctr
+	}
+}
+
+func withModInitAtWithDaggerJSON(dir, sdk, contents, daggerJSON string, extra ...string) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.
+			With(withModInitAt(dir, sdk, contents, extra...)).
+			WithNewFile("dagger.json", daggerJSON)
 	}
 }
 

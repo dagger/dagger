@@ -345,8 +345,7 @@ func (SecretProvider) TestVaultTTL(ctx context.Context, t *testctx.T) {
 	verifySecretFromVault := func(ctx context.Context, base *dagger.Container, secretURL string, tcname string) (string, error) {
 		return base.
 			WithWorkdir("/work").
-			With(daggerExec("init", "--sdk=go", "--name=foo", "--source=.")).
-			WithNewFile("main.go", `package main
+			With(withModInit("go", `package main
 
 import (
 	"context"
@@ -398,7 +397,7 @@ func (m *Foo) VerifySecret(ctx context.Context, vault *dagger.Service, secret *d
 
 	return fmt.Sprintf("original: %s\nupdated: %s", original, updated), nil
 }
-`).
+`, "--name=foo")).
 			With(daggerCall("-vvv", "verify-secret", fmt.Sprintf("--secret=%s", secretURL), "--vault=tcp://vault:8200", fmt.Sprintf("--tc=%s", tcname))).Stdout(ctx)
 	}
 

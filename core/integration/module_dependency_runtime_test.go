@@ -43,7 +43,8 @@ func (m *D) Fn(foo string) Obj {
 	return Obj{Foo: foo}
 }
 `,
-		)
+		).
+		With(daggerExec("develop"))
 
 	ctr = ctr.
 		WithWorkdir("/work/dint").
@@ -60,7 +61,8 @@ func (m *D) Fn(foo int) Obj {
 	return Obj{Foo: foo}
 }
 `,
-		)
+		).
+		With(daggerExec("develop"))
 
 	ctr = ctr.
 		WithWorkdir("/work").
@@ -79,7 +81,8 @@ func (m *C) Fn(ctx context.Context, foo string) (string, error) {
 	return dag.D().Fn(foo).Foo(ctx)
 }
 `,
-		)
+		).
+		With(daggerExec("develop"))
 
 	ctr = ctr.
 		WithWorkdir("/work").
@@ -97,7 +100,10 @@ func (m *B) Fn(ctx context.Context, foo int) (int, error) {
 	return dag.D().Fn(foo).Foo(ctx)
 }
 `,
-		)
+		).
+		WithWorkdir("/work/b").
+		With(daggerExec("develop")).
+		WithWorkdir("/work")
 
 	ctr = ctr.
 		WithWorkdir("/work").
@@ -126,7 +132,8 @@ func (m *A) Fn(ctx context.Context) (string, error) {
 	return fooStr + strconv.Itoa(fooInt), nil
 }
 `,
-		)
+		).
+		With(daggerExec("develop"))
 
 	out, err := ctr.With(daggerQuery(`{fn}`)).Stdout(ctx)
 	require.NoError(t, err)

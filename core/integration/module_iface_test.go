@@ -55,8 +55,7 @@ func (InterfaceSuite) TestIfaceGoSadPaths(ctx context.Context, t *testctx.T) {
 		_, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", `package main
+			With(withModInit("go", `package main
 type Test struct {}
 
 type BadIface interface {
@@ -66,8 +65,7 @@ type BadIface interface {
 func (m *Test) Fn() BadIface {
 	return nil
 }
-	`,
-			).
+	`)).
 			With(daggerFunctions()).
 			Sync(ctx)
 		require.Error(t, err)
@@ -82,8 +80,7 @@ func (InterfaceSuite) TestIfaceGoDanglingInterface(ctx context.Context, t *testc
 	modGen, err := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", `package main
+		With(withModInit("go", `package main
 type Test struct {}
 
 func (test *Test) Hello() string {
@@ -99,8 +96,7 @@ func (obj *DanglingObject) Hello(x DanglingIface) DanglingIface {
 type DanglingIface interface {
 	DoThing() (error)
 }
-	`,
-		).
+	`)).
 		Sync(ctx)
 	require.NoError(t, err)
 

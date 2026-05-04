@@ -198,11 +198,9 @@ func (b *Bar) GetCacheVolumeId(ctx context.Context) (string, error) {
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/bar").
-		With(daggerExec("init", "--name=bar", "--source=.", "--sdk=go")).
-		WithNewFile("main.go", barTmpl).
+		With(withModInit("go", barTmpl, "--name=bar")).
 		WithWorkdir("/work/foo").
-		With(daggerExec("init", "--name=foo", "--source=.", "--sdk=go")).
-		WithNewFile("main.go", fooTmpl)
+		With(withModInit("go", fooTmpl, "--name=foo"))
 
 	fooID, err := ctr.
 		WithWorkdir("/work/foo").
@@ -238,8 +236,7 @@ func (CacheSuite) TestCacheIdSameAcrossSession(ctx context.Context, t *testctx.T
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, session1)).
 		WithWorkdir("/work/foo").
-		With(daggerExec("init", "--name=foo", "--source=.", "--sdk=go")).
-		WithNewFile("main.go", fooTmpl)
+		With(withModInit("go", fooTmpl, "--name=foo"))
 
 	fooID, err := ctr1.
 		WithWorkdir("/work/foo").
@@ -252,8 +249,7 @@ func (CacheSuite) TestCacheIdSameAcrossSession(ctx context.Context, t *testctx.T
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, session2)).
 		WithWorkdir("/work/foo").
-		With(daggerExec("init", "--name=foo", "--source=.", "--sdk=go")).
-		WithNewFile("main.go", fooTmpl)
+		With(withModInit("go", fooTmpl, "--name=foo"))
 
 	fooID2, err := ctr2.
 		WithWorkdir("/work/foo").
@@ -313,11 +309,9 @@ func (f *Bar) Fetch(ctx context.Context, vol *dagger.CacheVolume) (string, error
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, session)).
 		WithWorkdir("/work/bar").
-		With(daggerExec("init", "--name=bar", "--source=.", "--sdk=go")).
-		WithNewFile("main.go", barTmpl).
+		With(withModInit("go", barTmpl, "--name=bar")).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--name=foo", "--source=.", "--sdk=go")).
-		WithNewFile("main.go", fooTmpl).
+		With(withModInit("go", fooTmpl, "--name=foo")).
 		With(daggerExec("use", "./bar"))
 
 	inpContent := "some-foo-bar-content"
@@ -375,12 +369,14 @@ func (CacheSuite) TestCacheNotImpactedByChangeInModuleSource(ctx context.Context
 	fooID, err := ctr.
 		WithWorkdir("/work").
 		WithNewFile("main.go", fooTmpl).
+		With(daggerExec("develop")).
 		With(daggerExec("call", "use-cache-volume")).
 		Stdout(ctx)
 	require.NoError(t, err)
 
 	fooID2, err := ctr.WithWorkdir("/work").
 		WithNewFile("main.go", barTmpl).
+		With(daggerExec("develop")).
 		With(daggerExec("call", "use-cache-volume")).
 		Stdout(ctx)
 	require.NoError(t, err)

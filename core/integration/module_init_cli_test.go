@@ -35,6 +35,9 @@ func (CLISuite) TestModuleInit(ctx context.Context, t *testctx.T) {
 			}
 			`,
 			).
+			WithWorkdir("/work/coolmod").
+			With(daggerExec("develop")).
+			WithWorkdir("/work").
 			With(daggerCallAt("coolmod", "fn")).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -111,6 +114,7 @@ func (CLISuite) TestModuleInit(ctx context.Context, t *testctx.T) {
 			func (m *B) Fn() string { return "yo" }
 			`,
 			).
+			With(daggerExec("develop")).
 			With(daggerCall("fn"))
 		out, err := ctr.Stdout(ctx)
 		require.NoError(t, err)

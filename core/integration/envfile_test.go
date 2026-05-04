@@ -505,6 +505,8 @@ func (m *Test) Foo(ctx context.Context) (string, error) {
 }
 `), 0644)
 	require.NoError(t, err)
+	developOutput, err := hostDaggerCommand(ctx, t, modDir, "develop").CombinedOutput()
+	require.NoError(t, err, string(developOutput))
 
 	depDir := filepath.Join(modDir, "dep")
 	require.NoError(t, os.Mkdir(depDir, 0755))
@@ -524,7 +526,7 @@ import (
 type Dep struct {}
 
 func (m *Dep) Bar(
-	ctx context.Context, 
+	ctx context.Context,
 	// +optional
 	s *dagger.Secret,
 ) (string, error) {
@@ -536,6 +538,8 @@ func (m *Dep) Bar(
 }
 `), 0644)
 	require.NoError(t, err)
+	developOutput, err = hostDaggerCommand(ctx, t, depDir, "develop").CombinedOutput()
+	require.NoError(t, err, string(developOutput))
 
 	installCmd := hostDaggerCommand(ctx, t, modDir, "install", depDir)
 	installOutput, err := installCmd.CombinedOutput()

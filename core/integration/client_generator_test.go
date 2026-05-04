@@ -350,15 +350,13 @@ main()
 				moduleSrc := c.Container().From(tc.baseImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work/dep").
-					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-					With(sdkSource("go", `package main
+					With(withModInit("go", `package main
 
 		type Test struct{}
 
 		func (t *Test) Hello() string {
 			return "hello"
-		}`,
-					)).
+		}`)).
 					WithWorkdir("/work").
 					WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 					With(nonNestedDevEngine(c)).
@@ -409,8 +407,7 @@ main()
 				callCmd:   []string{"go", "run", "main.go"},
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
-						With(daggerExec("init", "--name=test", "--sdk=go", "--source=.dagger")).
-						WithNewFile(".dagger/main.go", `package main
+						With(withModInitAt(".dagger", "go", `package main
 
 import "context"
 
@@ -419,7 +416,8 @@ type Test struct{}
 func (t *Test) Hello(ctx context.Context) (string, error) {
 	return dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "-n", "hello"}).Stdout(ctx)
 }
-					`).
+					`, "--name=test")).
+						With(daggerExec("develop", "-m", ".dagger")).
 						With(withGoSetup(`package main
 
 import (
@@ -1241,6 +1239,7 @@ export class GeneratorModule {
 				WithWorkdir("/work/generator").
 				With(daggerExec("init", "--name=generator-module", fmt.Sprintf("--sdk=%s", tc.generatorSDK), "--source=.")).
 				With(sdkSource(tc.generatorSDK, tc.generatorSource)).
+				With(daggerExec("develop")).
 				WithWorkdir("/work").
 				With(daggerExec("init")).
 				With(daggerExec("client", "install", "./generator"))
