@@ -818,6 +818,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		Call:              curCall,
 		ExecID:            identity.NewID(),
 		Internal:          true,
+		LockMode:          clientMetadata.LockMode,
 		AllowedLLMModules: clientMetadata.AllowedLLMModules,
 	}
 	if curCall != nil {

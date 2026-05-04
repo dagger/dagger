@@ -14,6 +14,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/auth"
+	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
@@ -35,7 +36,10 @@ type Query struct {
 	ConstructorArgs map[string]dagql.Input
 }
 
-var ErrNoCurrentModule = fmt.Errorf("no current module")
+var (
+	ErrNoCurrentModule    = fmt.Errorf("no current module")
+	ErrNoCurrentWorkspace = fmt.Errorf("no current workspace")
+)
 
 // APIs from the server+session+client that are needed by core APIs
 type Server interface {
@@ -74,6 +78,13 @@ type Server interface {
 
 	// The cached workspace result from ensureWorkspaceLoaded.
 	CurrentWorkspace(context.Context) (*Workspace, error)
+
+	// A snapshot of the current workspace lockfile for ambient live locking.
+	// Returns ok=false when lock-backed workspace access is unavailable.
+	CurrentWorkspaceLock(context.Context) (*workspacepkg.Lock, bool, error)
+
+	// Stage a lockfile lookup result for the current workspace's live lock state.
+	SetCurrentWorkspaceLookup(context.Context, string, string, []any, workspacepkg.LookupResult) error
 
 	// The Client metadata of a specific client ID within the same session as the
 	// current client.

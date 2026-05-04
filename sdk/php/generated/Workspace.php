@@ -170,4 +170,15 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
         }
         return new \Dagger\UpGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
+
+    /**
+     * Refresh workspace-managed state and return the resulting changeset.
+     *
+     * Currently this refreshes existing lockfile entries only.
+     */
+    public function update(): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('update');
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
 }

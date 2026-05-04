@@ -14963,6 +14963,16 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Refresh workspace-managed state and return the resulting changeset.
+    /// Currently this refreshes existing lockfile entries only.
+    pub fn update(&self) -> Changeset {
+        let query = self.selection.select("update");
+        Changeset {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
 }
 impl Node for Workspace {
     fn id(&self) -> impl core::future::Future<Output = Result<Id, DaggerError>> + Send {

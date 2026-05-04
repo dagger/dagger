@@ -14110,6 +14110,17 @@ export class Workspace extends BaseClient {
     const ctx = this._ctx.select("services", { ...opts })
     return new UpGroup(ctx)
   }
+
+  /**
+   * Refresh workspace-managed state and return the resulting changeset.
+   *
+   * Currently this refreshes existing lockfile entries only.
+   * @experimental
+   */
+  update = (): Changeset => {
+    const ctx = this._ctx.select("update")
+    return new Changeset(ctx)
+  }
 }
 
 export const dag = new Client()

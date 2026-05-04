@@ -308,6 +308,9 @@ func (sdk *goSDK) ModuleTypes(
 		}
 		execMD.CallDigest = callDigest
 	}
+	if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
+		execMD.LockMode = clientMetadata.LockMode
+	}
 	execMD.EncodedModuleID, err = currentModuleID.Encode()
 	if err != nil {
 		return inst, err
