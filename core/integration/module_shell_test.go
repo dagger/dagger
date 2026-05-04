@@ -482,8 +482,7 @@ type Foo struct{
 	t.Run("main object", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		out, err := modInit(t, c, "go", test).
-			With(daggerExec("init", "--sdk=go", "--source=foo", "foo")).
-			With(sdkSourceAt("foo", "go", foo)).
+			With(withModInitAt("foo", "go", foo)).
 			With(daggerShell("foo")).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -493,8 +492,7 @@ type Foo struct{
 	t.Run("stateful", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		out, err := modInit(t, c, "go", test).
-			With(daggerExec("init", "--sdk=go", "--source=foo", "foo")).
-			With(sdkSourceAt("foo", "go", foo)).
+			With(withModInitAt("foo", "go", foo)).
 			With(daggerShell(".cd foo; bar")).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -504,8 +502,7 @@ type Foo struct{
 	t.Run("stateless", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		modGen := modInit(t, c, "go", test).
-			With(daggerExec("init", "--sdk=go", "--source=foo", "foo")).
-			With(sdkSourceAt("foo", "go", foo))
+			With(withModInitAt("foo", "go", foo))
 
 		out, err := modGen.
 			With(daggerShell("foo | bar")).

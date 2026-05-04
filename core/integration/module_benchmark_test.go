@@ -254,8 +254,7 @@ func (ModuleSuite) BenchmarkLargeObjectFieldVal(ctx context.Context, b *testctx.
 		_, err := goGitBase(b, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(b, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test", "--sdk=go")).
-			With(sdkSource("go", `package main
+			With(withModInit("go", `package main
 
 import "strings"
 
@@ -289,9 +288,7 @@ func (ModuleSuite) BenchmarkCallSameModuleInParallel(ctx context.Context, b *tes
 
 		ctr := goGitBase(b, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(b, c)).
-			WithWorkdir("/work/dep").
-			With(daggerExec("init", "--name=dep", "--sdk=go")).
-			With(sdkSource("go", `package main
+			With(withModInitAt("./dep", "go", `package main
 
 import (
 	"dagger/dep/internal/dagger"
@@ -304,9 +301,7 @@ func (m *Dep) DepFn(s *dagger.Secret) string {
 	return rand.Text()
 }
 `)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-			With(sdkSource("go", `package main
+			With(withModInit("go", `package main
 
 import (
 	"context"
@@ -335,6 +330,7 @@ func (m *Test) Fn(ctx context.Context) ([]string, error) {
 }
 `)).
 			With(daggerExec("install", "./dep")).
+			With(daggerExec("develop")).
 			With(daggerCall("fn"))
 
 		out, err := ctr.Stdout(ctx)

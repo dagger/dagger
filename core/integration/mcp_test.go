@@ -82,6 +82,8 @@ func (m *Test) Greeting() string {
 	return "hello from module"
 }
 `), 0o644))
+	_, err = hostDaggerExec(ctx, t, modDir, "develop")
+	require.NoError(t, err)
 
 	functionsOut, err := hostDaggerExec(ctx, t, modDir, "functions")
 	require.NoError(t, err)

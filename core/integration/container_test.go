@@ -5339,6 +5339,7 @@ func (m *Test) Try(ctx context.Context) error {
 }
 
 		`).
+		WithExec([]string{"dagger", "develop"}).
 		WithExec([]string{"dagger", "call", "try"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeFailure}).
 		Stderr(ctx)
 	require.NoError(t, err)
