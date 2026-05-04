@@ -5,6 +5,7 @@ go 1.26.1
 replace github.com/dagger/dagger => ../..
 
 require (
+	dagger.io/dagger v0.20.6
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
 	github.com/dagger/otel-go v1.43.1-0.20260429234604-565634f4374b
 	github.com/go-task/slim-sprig/v3 v3.0.0

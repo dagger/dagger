@@ -62,7 +62,7 @@ func (r Evaluator) MarshalJSON() ([]byte, error) {
 		SystemPrompt               *dagger.File
 		DisableDefaultSystemPrompt bool
 		EvaluatorModel             string
-		Evals                      []*dagger.EvalWorkspaceEval
+		Evals                      []dagger.EvalWorkspaceEval
 	}
 	concrete.Docs = r.Docs
 	concrete.SystemPrompt = r.SystemPrompt
@@ -78,7 +78,7 @@ func (r *Evaluator) UnmarshalJSON(bs []byte) error {
 		SystemPrompt               *dagger.File
 		DisableDefaultSystemPrompt bool
 		EvaluatorModel             string
-		Evals                      []*dagger.EvalWorkspaceEval
+		Evals                      []dagger.EvalWorkspaceEval
 	}
 	err := json.Unmarshal(bs, &concrete)
 	if err != nil {
