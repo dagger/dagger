@@ -50,6 +50,11 @@ func (m *Test) FnB() string {
 	require.JSONEq(t, `{"fnA": "hi from b"}`, out)
 }
 
+// TODO(yves): once PR 1 lands on main, extend this test to assert that
+// dagger.gen.go contains self-call method bindings for the module's
+// own types (e.g. the main object). Phase-1 AST scan + schematool.Merge
+// should produce them automatically when SELF_CALLS is enabled.
+// Cross-ref: hack/designs/no-codegen-at-runtime-pr1-plan.md Task 5.4.
 func (ModuleSuite) TestSelfCalls(ctx context.Context, t *testctx.T) {
 	tcs := []struct {
 		sdk    string
