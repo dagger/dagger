@@ -261,6 +261,9 @@ func schemaJSONFileFromServer(ctx context.Context, dag *dagql.Server, hiddenType
 	if err := dag.Select(ctx, dag.Root(), &schemaJSONFile,
 		dagql.Selector{
 			Field: "__schemaJSONFile",
+			// Programmatic selectors do not inherit the server view, but this file's
+			// contents include __schemaVersion and must match the module's view.
+			View: dag.View,
 			Args: []dagql.NamedInput{
 				{
 					Name:  "hiddenTypes",

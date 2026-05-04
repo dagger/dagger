@@ -29,6 +29,9 @@ func (s *querySchema) Install(srv *dagql.Server) {
 		// module SDKs and is thus hidden the same way the rest of introspection is hidden
 		// (via the magic __ prefix).
 		dagql.NodeFunc("__schemaJSONFile", s.schemaJSONFile).
+			// The JSON includes __schemaVersion, so keep results distinct per view
+			// even when the visible schema AST is otherwise identical.
+			View(AllVersion).
 			IsPersistable().
 			WithInput(dagql.CurrentSchemaInput).
 			Doc("Get the current schema as a JSON file.").
