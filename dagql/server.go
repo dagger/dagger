@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"reflect"
 	"runtime/debug"
-	"strings"
 	"sync"
 
 	"github.com/99designs/gqlgen/graphql"
@@ -1107,9 +1106,6 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 		})
 	}
 	if err := eg.Wait(); err != nil {
-		if fallbackID, ok := rewriteWithFileRecipeToDirectoryFallback(id, err); ok {
-			return state.load(fallbackID)
-		}
 		return nil, fmt.Errorf("load %s: inputs: %w", idInputDebugString(id), err)
 	}
 	var base AnyResult
@@ -1142,105 +1138,6 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 		return hit, nil
 	}
 	return baseObj.Select(callCtx, state.srv, sel)
-}
-
-// TODO: DELETE THIS ANCIENT HACK AND ALL ASSOCIATED CRAP
-// TODO: DELETE THIS ANCIENT HACK AND ALL ASSOCIATED CRAP
-// TODO: DELETE THIS ANCIENT HACK AND ALL ASSOCIATED CRAP
-// TODO: DELETE THIS ANCIENT HACK AND ALL ASSOCIATED CRAP
-// TODO: DELETE THIS ANCIENT HACK AND ALL ASSOCIATED CRAP
-func rewriteWithFileRecipeToDirectoryFallback(id *call.ID, err error) (*call.ID, bool) {
-	if err == nil || id == nil || id.IsHandle() || id.Field() != "withFile" {
-		return nil, false
-	}
-	if !strings.Contains(err.Error(), "is a directory, not a file") {
-		return nil, false
-	}
-	if !recipeBoolArgIsTrue(id, "allowDirectorySourceFallback") {
-		return nil, false
-	}
-
-	receiver := id.Receiver()
-	if receiver == nil {
-		return nil, false
-	}
-
-	sourceArg := id.Arg("source")
-	if sourceArg == nil {
-		return nil, false
-	}
-	sourceLit, ok := sourceArg.Value().(*call.LiteralID)
-	if !ok {
-		return nil, false
-	}
-	dirSourceID, ok := directorySourceIDFromFileSourceIDForRecipeLoad(sourceLit.Value())
-	if !ok {
-		return nil, false
-	}
-
-	newArgs := make([]*call.Argument, 0, len(id.Args()))
-	for _, arg := range id.Args() {
-		switch arg.Name() {
-		case "allowDirectorySourceFallback":
-			continue
-		case "source":
-			newArgs = append(newArgs, call.NewArgument("source", call.NewLiteralID(dirSourceID), arg.IsSensitive()))
-		default:
-			newArgs = append(newArgs, arg)
-		}
-	}
-
-	opts := []call.IDOpt{
-		call.WithView(id.View()),
-		call.WithModule(id.Module()),
-		call.WithNth(int(id.Nth())),
-		call.WithEffectIDs(id.EffectIDs()),
-		call.WithArgs(newArgs...),
-		call.WithImplicitInputs(id.ImplicitInputs()...),
-	}
-	for _, extra := range id.ExtraDigests() {
-		opts = append(opts, call.WithExtraDigest(extra))
-	}
-
-	return receiver.Append(id.Type().ToAST(), "withDirectory", opts...), true
-}
-
-func recipeBoolArgIsTrue(id *call.ID, name string) bool {
-	if id == nil || id.IsHandle() {
-		return false
-	}
-	arg := id.Arg(name)
-	if arg == nil {
-		return false
-	}
-	lit, ok := arg.Value().(*call.LiteralBool)
-	return ok && lit.Value()
-}
-
-func directorySourceIDFromFileSourceIDForRecipeLoad(fileSourceID *call.ID) (*call.ID, bool) {
-	if fileSourceID == nil || fileSourceID.IsHandle() || fileSourceID.Field() != "file" {
-		return nil, false
-	}
-
-	receiver := fileSourceID.Receiver()
-	if receiver == nil {
-		return nil, false
-	}
-
-	pathArg := fileSourceID.Arg("path")
-	if pathArg == nil {
-		return nil, false
-	}
-	pathLit, ok := pathArg.Value().(*call.LiteralString)
-	if !ok {
-		return nil, false
-	}
-
-	return receiver.Append(
-		receiver.Type().ToAST(),
-		"directory",
-		call.WithArgs(call.NewArgument("path", call.NewLiteralString(pathLit.Value()), false)),
-	), true
 }
 
 func directRecipeInputIDs(id *call.ID) []*call.ID {

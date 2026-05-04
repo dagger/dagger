@@ -1758,7 +1758,7 @@ func (r Result[T]) RecipeID(ctx context.Context) (*call.ID, error) {
 	if err != nil {
 		return nil, err
 	}
-	return call.recipeID(c)
+	return call.recipeID(ctx, c)
 }
 
 func (r Result[T]) RecipeDigest(ctx context.Context) (digest.Digest, error) {

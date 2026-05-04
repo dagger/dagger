@@ -3,6 +3,7 @@ package core
 import (
 	"cmp"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1671,7 +1672,10 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 						rerr = fmt.Errorf("rebuild recipe ID for terminal exec error: %w", err)
 						return
 					}
-					callDig = callID.ContentPreferredDigest()
+					// Failed interactive execs spawn a throwaway terminal service.
+					// The service manager needs a digest-shaped key for hostname/log
+					// plumbing, but it must not participate in DAG/content identity.
+					callDig = digest.FromString(rand.Text())
 				}
 				meta := *metaSpec
 				meta.Args = []string{"/bin/sh"}

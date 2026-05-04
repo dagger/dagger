@@ -385,14 +385,10 @@ func (frame *ResultCall) RecipeID(ctx context.Context) (*call.ID, error) {
 	if err != nil {
 		return nil, err
 	}
-	return frame.recipeIDWithContext(ctx, c)
+	return frame.recipeID(ctx, c)
 }
 
-func (frame *ResultCall) recipeID(c *Cache) (*call.ID, error) {
-	return frame.recipeIDWithContext(context.Background(), c)
-}
-
-func (frame *ResultCall) recipeIDWithContext(ctx context.Context, c *Cache) (*call.ID, error) {
+func (frame *ResultCall) recipeID(ctx context.Context, c *Cache) (*call.ID, error) {
 	return frame.recipeIDWithVisiting(ctx, c, map[sharedResultID]struct{}{})
 }
 
@@ -1349,7 +1345,7 @@ func (c *Cache) RecipeIDForCall(ctx context.Context, frame *ResultCall) (*call.I
 	if frame == nil {
 		return nil, fmt.Errorf("rebuild recipe ID: nil call")
 	}
-	return frame.recipeIDWithContext(ctx, c)
+	return frame.recipeID(ctx, c)
 }
 
 func (c *Cache) RecipeDigestForCall(frame *ResultCall) (digest.Digest, error) {
