@@ -944,6 +944,9 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	src.ModuleName = modCfg.Name
 	src.ModuleOriginalName = modCfg.Name
 	src.IncludePaths = modCfg.Include
+	if err := modCfg.Codegen.Validate(); err != nil {
+		return fmt.Errorf("invalid codegen config in dagger.json: %w", err)
+	}
 	src.CodegenConfig = modCfg.Codegen
 	src.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
 	src.ConfigDependencies = modCfg.Dependencies
