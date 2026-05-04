@@ -43,7 +43,7 @@ type Evaluator struct {
 	EvaluatorModel string
 
 	// +private
-	Evals []dagger.EvalWorkspaceEval
+	Evals []*dagger.EvalWorkspaceEval
 }
 
 const MinSuccessRate = 0.8
@@ -136,15 +136,38 @@ func (m *Evaluator) WithDocsFile(
 }
 
 // WithEval adds a single evaluation to the evaluator.
-func (m *Evaluator) WithEval(eval Eval) *Evaluator {
-	m.Evals = append(m.Evals, eval)
-	return m
+func (m *Evaluator) WithEval(
+	ctx context.Context,
+	// The evaluation to add to the list of evals to run.
+	eval Eval,
+) (*Evaluator, error) {
+	id, err := eval.(interface {
+		ID(context.Context) (EvalID, error)
+	}).ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// FIXME: it would be nice to not have to do this workaround. it's hard
+	// because we want to accept Eval, but then the type has no AsWorkspaceEval().
+	//
+	// fortunately the IDs are the same nonetheless, so we can just convert it
+	// with the available plumbing
+	m.Evals = append(m.Evals, dag.LoadEvalWorkspaceEvalFromID(dagger.EvalWorkspaceEvalID(id)))
+	return m, nil
 }
 
 // WithEvals adds multiple evaluations to the evaluator.
-func (m *Evaluator) WithEvals(evals []Eval) (*Evaluator, error) {
+func (m *Evaluator) WithEvals(
+	ctx context.Context,
+	// The list of evaluations to add to the evaluator.
+	evals []Eval,
+) (*Evaluator, error) {
 	for _, eval := range evals {
-		m = m.WithEval(eval)
+		var err error
+		m, err = m.WithEval(ctx, eval)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return m, nil
 }
@@ -182,7 +205,8 @@ func (m *Evaluator) EvalsAcrossModels(
 	}
 	p := pool.NewWithResults[ModelResult]()
 	for _, model := range models {
-		ctx, modelSpan := Tracer().Start(ctx, fmt.Sprintf("model: %s", model))
+		ctx, modelSpan := Tracer().Start(ctx, fmt.Sprintf("model: %s", model),
+			telemetry.Reveal())
 		p.Go(func() ModelResult {
 			var spanErr error
 			report := ModelResult{
@@ -196,7 +220,9 @@ func (m *Evaluator) EvalsAcrossModels(
 					Name: name,
 				}
 				evalErr := (func() (rerr error) {
-					ctx, evalSpan := Tracer().Start(ctx, fmt.Sprintf("eval: %s", name))
+					ctx, evalSpan := Tracer().Start(ctx, fmt.Sprintf("eval: %s", name),
+						telemetry.Reveal(),
+						telemetry.Encapsulate())
 					defer telemetry.EndWithCause(evalSpan, &rerr)
 					stdio := telemetry.SpanStdio(ctx, "")
 					defer stdio.Close()

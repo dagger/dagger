@@ -36,7 +36,7 @@ func (dev *Examples) Evaluator_RunMyEvals( //nolint:staticcheck
 		WithDocsFile(dev.Source.File("core/llm_docs.md")).
 		WithoutDefaultSystemPrompt().
 		WithSystemPromptFile(dev.Source.File("core/llm_dagger_prompt.md")).
-		WithEvals([]dagger.EvaluatorEval{
+		WithEvals([]*dagger.EvaluatorEval{
 			// FIXME: ideally this list would live closer to where the evals are
 			// defined, but it's not possible for a module to return an interface type
 			// https://github.com/dagger/dagger/issues/7582
