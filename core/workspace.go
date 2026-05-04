@@ -12,8 +12,10 @@ type Workspace struct {
 	// directories lazily via per-call host.directory() instead.
 	rootfs dagql.ObjectResult[*Directory]
 
-	// Path is the workspace directory relative to the workspace boundary.
-	Path        string `field:"true" doc:"Workspace directory path relative to the workspace boundary."`
+	// Path is the workspace directory path, stored as boundary-relative (no leading slash).
+	// Exposed over GraphQL as an absolute workspace path (leading /) via the custom
+	// "path" resolver in core/schema/workspace.go.
+	Path        string
 	Address     string `field:"true" doc:"Canonical Dagger address of the workspace directory."`
 	Initialized bool   `field:"true" doc:"Whether .dagger/config.toml exists."`
 	ConfigPath  string `field:"true" doc:"Path to config.toml relative to the workspace boundary (empty if not initialized)."`

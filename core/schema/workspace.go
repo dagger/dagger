@@ -54,6 +54,8 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the file or directory to search for.`),
 				dagql.Arg("from").Doc(`Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.`),
 			),
+		dagql.Func("path", s.path).
+			Doc("Workspace directory path relative to the workspace boundary."),
 		dagql.Func("checks", s.checks).
 			Doc("Return all checks from modules loaded in the workspace.").
 			Args(
@@ -79,6 +81,13 @@ func (s *workspaceSchema) currentWorkspace(
 	_ struct{},
 ) (*core.Workspace, error) {
 	return parent.Server.CurrentWorkspace(ctx)
+}
+
+// path exposes the workspace's boundary-relative path as an absolute workspace
+// path (leading /) so callers get a consistent absolute form regardless of
+// whether the workspace is at the boundary root or a subdirectory.
+func (s *workspaceSchema) path(_ context.Context, ws *core.Workspace, _ struct{}) (string, error) {
+	return workspaceAPIPath(ws.Path), nil
 }
 
 type workspaceDirectoryArgs struct {
