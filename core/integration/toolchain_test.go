@@ -159,7 +159,8 @@ func New(
 func (m *Probe) Selected() string {
 	return m.Value
 }
-`)
+`).
+			With(daggerExec("develop"))
 
 		alpha := base.
 			WithWorkdir("/work").
@@ -273,7 +274,8 @@ type App struct{}
 func (m *App) GreetFromToolchain(ctx context.Context) (string, error) {
 	return dag.Hello().Message(ctx)
 }
-`)
+`).
+			With(daggerExec("develop"))
 		out, err := setup.
 			With(daggerExec("call", "greet-from-toolchain")).
 			Stdout(ctx)
@@ -293,8 +295,7 @@ func (m *App) GreetFromToolchain(ctx context.Context) (string, error) {
 			WithDirectory(".", c.Host().Directory("./testdata/checks")).
 			WithDirectory("app", c.Directory()).
 			WithWorkdir("app").
-			With(daggerExec("init", "--sdk=go", "--name=test", "--source=.")).
-			WithNewFile("main.go", `package main
+			With(withModInit("go", `package main
 
 type Test struct {
   BaseGreeting string
@@ -312,7 +313,7 @@ func New(
 func (t *Test) Hello() string {
   return t.BaseGreeting
 }
-`)
+`))
 
 		type TestCase struct {
 			sdk           string
