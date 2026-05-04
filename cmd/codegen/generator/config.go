@@ -62,6 +62,18 @@ type ModuleGeneratorConfig struct {
 
 	// If set, use `@dagger.io/dagger` with the given version and use it in the generated client.
 	LibVersion string
+
+	// LegacyTypedefs requests the legacy packages.Load-based
+	// typedef-extraction path. Only honored when the codegen binary
+	// is built with the `legacy_typedefs` build tag; otherwise
+	// GenerateModule rejects it.
+	LegacyTypedefs bool
+
+	// SelfCalls requests that the module's own declared types be
+	// merged into the generated bindings so module code can call
+	// itself. Requires the SELF_CALLS experimental feature on the
+	// module source.
+	SelfCalls bool
 }
 
 type ModuleSourceDependency struct {
