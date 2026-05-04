@@ -816,7 +816,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	execMD := engineutil.ExecutionMetadata{
 		ClientID:          identity.NewID(),
 		Call:              curCall,
-		ExecID:            identity.NewID(),
 		Internal:          true,
 		LockMode:          clientMetadata.LockMode,
 		AllowedLLMModules: clientMetadata.AllowedLLMModules,

@@ -103,9 +103,6 @@ func (r *DangRuntime) Call(
 	execMD.LockMode = clientMetadata.LockMode
 	execMD.AllowedLLMModules = clientMetadata.AllowedLLMModules
 
-	if execMD.ExecID == "" {
-		execMD.ExecID = identity.NewID()
-	}
 	if execMD.SecretToken == "" {
 		execMD.SecretToken = identity.NewID()
 	}

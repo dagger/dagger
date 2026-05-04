@@ -170,10 +170,6 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 		}
 		execMD.CallDigest = callDigest
 	}
-	if execMD.ExecID == "" {
-		execMD.ExecID = identity.NewID()
-	}
-
 	if execMD.HostAliases == nil {
 		execMD.HostAliases = make(map[string][]string)
 	}

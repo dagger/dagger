@@ -54,10 +54,6 @@ type ExecutionMetadata struct {
 	// opposed to clients running on the host which re-use a persisted ID).
 	ClientStableID string
 
-	// Unique (random) ID for this execution.
-	// This is used to deduplicate the same execution that gets evaluated multiple times.
-	ExecID string
-
 	// Internal execution initiated by dagger and not the user.
 	// Used when executing the module runtime itself.
 	Internal bool
@@ -72,11 +68,6 @@ type ExecutionMetadata struct {
 	// If set, stdout/stderr emitted by this execution should be associated
 	// with this DAG call digest on the client side.
 	LogTargetCallDigest digest.Digest
-
-	// If set, overrides the buildkit cache key used for this execution.
-	// Bridges us to the non-buildkit world by just telling buildkit to do
-	// exactly what we say for now.
-	OverrideBuildkitCacheKey digest.Digest
 
 	// hostname -> list of aliases
 	HostAliases map[string][]string
