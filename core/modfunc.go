@@ -846,28 +846,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("marshal parent value: %w", err)
 	}
 
-	modID, err := fn.mod.ID()
-	if err != nil {
-		return nil, fmt.Errorf("get module ID: %w", err)
-	}
-	execMD.EncodedModuleID, err = modID.Encode()
-	if err != nil {
-		return nil, fmt.Errorf("encode module ID: %w", err)
-	}
-
-	implementationScopedMod, err := ImplementationScopedModule(ctx, fn.mod)
-	if err != nil {
-		return nil, fmt.Errorf("get implementation-scoped module: %w", err)
-	}
-	implementationScopedModID, err := implementationScopedMod.ID()
-	if err != nil {
-		return nil, fmt.Errorf("get implementation-scoped module ID: %w", err)
-	}
-	execMD.EncodedContentModuleID, err = implementationScopedModID.Encode()
-	if err != nil {
-		return nil, fmt.Errorf("encode implementation-scoped module ID: %w", err)
-	}
-
 	fnCall := &FunctionCall{
 		Name:      fn.metadata.OriginalName,
 		Parent:    parentJSON,
@@ -900,7 +878,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	// Delegate the actual function execution to the runtime
-	outputBytes, clientID, err := runtime.Call(ctx, &execMD, fnCall)
+	outputBytes, clientID, err := runtime.Call(ctx, &execMD, fnCall, fn.mod)
 	if err != nil {
 		return nil, err
 	}

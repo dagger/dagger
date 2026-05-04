@@ -495,13 +495,8 @@ type ClientInitOpts struct {
 	// If this is a nested client, the client ID of the caller that created it
 	CallerClientID string
 
-	// If the client is running from a function in a module, this is the encoded dagQL ID
-	// of that module.
-	EncodedModuleID string
-
-	// If the client is running from a function in a module, this is the encoded
-	// content-scoped module dagQL ID.
-	EncodedContentModuleID string
+	// If the client is running from a function in a module, this is that module.
+	ModuleContext dagql.ObjectResult[*core.Module]
 
 	// If the client is running from a function in a module, this is the encoded function call
 	// metadata (of type core.FunctionCall)
@@ -606,14 +601,19 @@ func (srv *Server) initializeDaggerClient(
 	client.defaultDeps = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
 	client.servedMods = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
 
-	if opts.EncodedModuleID != "" {
-		modID := new(call.ID)
-		if err := modID.Decode(opts.EncodedModuleID); err != nil {
-			return fmt.Errorf("failed to decode module ID: %w", err)
-		}
-		modInst, err := dagql.NewID[*core.Module](modID).Load(ctx, client.dag)
+	if opts.ModuleContext.Self() != nil {
+		cache, err := dagql.EngineCache(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to load module during client init: %w", err)
+			return fmt.Errorf("failed to get engine cache for module context: %w", err)
+		}
+
+		attached, err := cache.AttachResult(ctx, opts.SessionID, client.dag, opts.ModuleContext)
+		if err != nil {
+			return fmt.Errorf("attach module context during client init: %w", err)
+		}
+		modInst, ok := attached.(dagql.ObjectResult[*core.Module])
+		if !ok {
+			return fmt.Errorf("attach module context during client init: expected %T, got %T", opts.ModuleContext, attached)
 		}
 		client.mod = modInst
 
@@ -623,15 +623,6 @@ func (srv *Server) initializeDaggerClient(
 		coreView = call.View(engine.BaseVersion(engine.NormalizeVersion(engineVersion)))
 		client.dag.View = coreView
 		coreMod = coreSchemaBase.CoreMod(coreView)
-
-		// NOTE: *technically* we should reload the module here, so that we can
-		// use the new typedefs api - but at this point we likely would
-		// have failed to load the module in the first place anyways?
-		// modInst, err = dagql.NewID[*core.Module](modID).Load(ctx, client.dag)
-		// if err != nil {
-		// 	return fmt.Errorf("failed to load module: %w", err)
-		// }
-		// client.mod = modInst.Self
 
 		client.defaultDeps = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
 		client.servedMods = client.mod.Self().Deps.WithRoot(client.dagqlRoot)
@@ -968,7 +959,7 @@ func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // execution metadata is passed alongside the request from the executor. We don't want to put all this execution metadata
 // in http headers since it includes arbitrary values from users in the function call metadata, which can exceed max header
 // size.
-func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Request, execMD *engineutil.ExecutionMetadata) {
+func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Request, execMD *engineutil.ExecutionMetadata, moduleCtx dagql.AnyObjectResult) {
 	clientVersion := execMD.ClientVersionOverride
 	if clientVersion == "" {
 		clientVersion = engine.Version
@@ -997,6 +988,18 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 		lockMode = srv.inheritedNestedClientLockMode(execMD)
 	}
 
+	var moduleContext dagql.ObjectResult[*core.Module]
+	if moduleCtx != nil {
+		typed, ok := moduleCtx.(dagql.ObjectResult[*core.Module])
+		if !ok {
+			http.Error(w, fmt.Sprintf("nested client module context is %T, not Module", moduleCtx), http.StatusInternalServerError)
+			return
+		}
+		if typed.Self() != nil {
+			moduleContext = typed
+		}
+	}
+
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
 		ClientMetadata: &engine.ClientMetadata{
 			ClientID:             execMD.ClientID,
@@ -1014,10 +1017,9 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			LockMode:             lockMode,
 			Workspace:            workspaceRef,
 		},
-		CallerClientID:         execMD.CallerClientID,
-		EncodedModuleID:        execMD.EncodedModuleID,
-		EncodedContentModuleID: execMD.EncodedContentModuleID,
-		EncodedFunctionCall:    execMD.EncodedFunctionCall,
+		CallerClientID:      execMD.CallerClientID,
+		ModuleContext:       moduleContext,
+		EncodedFunctionCall: execMD.EncodedFunctionCall,
 	}).ServeHTTP(w, r)
 }
 

@@ -56,6 +56,7 @@ type Service struct {
 	InsecureRootCapabilities      bool
 	NoInit                        bool
 	ExecMD                        *engineutil.ExecutionMetadata
+	ModuleContext                 dagql.ObjectResult[*Module]
 	ExecMeta                      *executor.Meta
 
 	// TunnelUpstream is the service that this service is tunnelling to.
@@ -348,7 +349,7 @@ func (svc *Service) startContainer(
 		execMD, err = ctr.execMeta(ctx, ContainerExecOpts{
 			ExperimentalPrivilegedNesting: svc.ExperimentalPrivilegedNesting,
 			NoInit:                        svc.NoInit,
-		}, nil)
+		}, nil, svc.ModuleContext)
 		if err != nil {
 			return err
 		}
@@ -505,7 +506,7 @@ func (svc *Service) startContainer(
 	}
 	meta.Env = append(meta.Env, secretEnv...)
 
-	worker := bk.Worker.ExecWorker(span.SpanContext(), *execMD)
+	worker := bk.Worker.ExecWorker(span.SpanContext(), *execMD, svc.ModuleContext)
 	exited := make(chan struct{})
 	runErr := make(chan error)
 	go func() {

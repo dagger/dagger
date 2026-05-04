@@ -91,6 +91,7 @@ type ContainerExecState struct {
 	Parent             dagql.ObjectResult[*Container]
 	Opts               ContainerExecOpts
 	ExecMD             *engineutil.ExecutionMetadata
+	ModuleContext      dagql.ObjectResult[*Module]
 	ExtractModuleError bool
 }
 
@@ -99,10 +100,11 @@ type ContainerExecLazy struct {
 }
 
 type persistedContainerExecLazy struct {
-	ParentResultID     uint64                        `json:"parentResultID"`
-	Opts               ContainerExecOpts             `json:"opts"`
-	ExecMD             *engineutil.ExecutionMetadata `json:"execMD,omitempty"`
-	ExtractModuleError bool                          `json:"extractModuleError,omitempty"`
+	ParentResultID        uint64                        `json:"parentResultID"`
+	ModuleContextResultID uint64                        `json:"moduleContextResultID,omitempty"`
+	Opts                  ContainerExecOpts             `json:"opts"`
+	ExecMD                *engineutil.ExecutionMetadata `json:"execMD,omitempty"`
+	ExtractModuleError    bool                          `json:"extractModuleError,omitempty"`
 }
 
 func (lazy *ContainerExecLazy) Evaluate(ctx context.Context, ctr *Container) error {
@@ -121,7 +123,22 @@ func (lazy *ContainerExecLazy) AttachDependencies(ctx context.Context, attach fu
 		return nil, err
 	}
 	lazy.State.Parent = parent
-	return []dagql.AnyResult{parent}, nil
+
+	deps := []dagql.AnyResult{parent}
+	if lazy.State.ModuleContext.Self() != nil {
+		attached, err := attach(lazy.State.ModuleContext)
+		if err != nil {
+			return nil, fmt.Errorf("attach container withExec module context: %w", err)
+		}
+		moduleContext, ok := attached.(dagql.ObjectResult[*Module])
+		if !ok {
+			return nil, fmt.Errorf("attach container withExec module context: expected %T, got %T", lazy.State.ModuleContext, attached)
+		}
+		lazy.State.ModuleContext = moduleContext
+		deps = append(deps, moduleContext)
+	}
+
+	return deps, nil
 }
 
 func (lazy *ContainerExecLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
@@ -132,16 +149,29 @@ func (lazy *ContainerExecLazy) EncodePersisted(ctx context.Context, cache dagql.
 	if err != nil {
 		return nil, err
 	}
+	var moduleContextID uint64
+	if lazy.State.ModuleContext.Self() != nil {
+		moduleContextID, err = encodePersistedObjectRef(cache, lazy.State.ModuleContext, "container withExec module context")
+		if err != nil {
+			return nil, err
+		}
+	}
 	return json.Marshal(persistedContainerExecLazy{
-		ParentResultID:     parentID,
-		Opts:               lazy.State.Opts,
-		ExecMD:             lazy.State.ExecMD,
-		ExtractModuleError: lazy.State.ExtractModuleError,
+		ParentResultID:        parentID,
+		ModuleContextResultID: moduleContextID,
+		Opts:                  lazy.State.Opts,
+		ExecMD:                lazy.State.ExecMD,
+		ExtractModuleError:    lazy.State.ExtractModuleError,
 	})
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
-func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts, parent *engineutil.ExecutionMetadata) (*engineutil.ExecutionMetadata, error) {
+func (container *Container) execMeta(
+	ctx context.Context,
+	opts ContainerExecOpts,
+	parent *engineutil.ExecutionMetadata,
+	moduleContext dagql.ObjectResult[*Module],
+) (*engineutil.ExecutionMetadata, error) {
 	execMD := engineutil.ExecutionMetadata{}
 	if parent != nil {
 		execMD = *parent
@@ -183,39 +213,14 @@ func (container *Container) execMeta(ctx context.Context, opts ContainerExecOpts
 	}
 
 	var callerModDigest digest.Digest
-	dag, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get dag server: %w", err)
-	}
-	if execMD.EncodedContentModuleID != "" {
-		callerModID := new(call.ID)
-		if err := callerModID.Decode(execMD.EncodedContentModuleID); err != nil {
-			return nil, fmt.Errorf("failed to decode content-scoped module ID: %w", err)
-		}
-		callerMod, err := dagql.NewID[*Module](callerModID).Load(ctx, dag)
+	if moduleContext.Self() != nil {
+		implementationScopedMod, err := ImplementationScopedModule(ctx, moduleContext)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load content-scoped module from encoded module ID: %w", err)
-		}
-		callerModDigest, err = callerMod.ContentPreferredDigest(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get content-scoped module digest: %w", err)
-		}
-	} else if execMD.EncodedModuleID != "" {
-		callerModID := new(call.ID)
-		if err := callerModID.Decode(execMD.EncodedModuleID); err != nil {
-			return nil, fmt.Errorf("failed to decode module ID: %w", err)
-		}
-		callerMod, err := dagql.NewID[*Module](callerModID).Load(ctx, dag)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load module from encoded module ID: %w", err)
-		}
-		implementationScopedMod, err := ImplementationScopedModule(ctx, callerMod)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get implementation-scoped module from encoded module ID: %w", err)
+			return nil, fmt.Errorf("failed to get implementation-scoped module from exec module context: %w", err)
 		}
 		callerModDigest, err = implementationScopedMod.ContentPreferredDigest(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get implementation-scoped module digest from encoded module ID: %w", err)
+			return nil, fmt.Errorf("failed to get implementation-scoped module digest from exec module context: %w", err)
 		}
 	} else if callerMod, err := query.CurrentModule(ctx); err == nil && callerMod.Self() != nil {
 		implementationScopedMod, err := ImplementationScopedModule(ctx, callerMod)
@@ -973,6 +978,7 @@ func (container *Container) WithExec(
 	parent dagql.ObjectResult[*Container],
 	opts ContainerExecOpts,
 	execMD *engineutil.ExecutionMetadata,
+	moduleContext dagql.ObjectResult[*Module],
 	extractModuleError bool,
 ) error {
 	state := &ContainerExecState{
@@ -980,6 +986,7 @@ func (container *Container) WithExec(
 		Parent:             parent,
 		Opts:               opts,
 		ExecMD:             execMD,
+		ModuleContext:      moduleContext,
 		ExtractModuleError: extractModuleError,
 	}
 	container.Lazy = &ContainerExecLazy{State: state}
@@ -1079,7 +1086,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			opts.RedirectStdin = path
 		}
 
-		execMD, err := container.execMeta(ctx, opts, state.ExecMD)
+		execMD, err := container.execMeta(ctx, opts, state.ExecMD, state.ModuleContext)
 		if err != nil {
 			return err
 		}
@@ -1876,7 +1883,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		}
 		defer detach()
 
-		execWorker := opWorker.ExecWorker(causeCtx, *execMD)
+		execWorker := opWorker.ExecWorker(causeCtx, *execMD, state.ModuleContext)
 		procInfo := executor.ProcessInfo{Meta: meta}
 		if opts.Stdin != "" {
 			procInfo.Stdin = io.NopCloser(strings.NewReader(opts.Stdin))
@@ -1930,11 +1937,16 @@ func decodePersistedContainerExecLazy(
 	if err != nil {
 		return err
 	}
+	moduleContext, err := loadPersistedObjectResultByResultID[*Module](ctx, dag, persisted.ModuleContextResultID, "container exec module context")
+	if err != nil {
+		return err
+	}
 	state := &ContainerExecState{
 		LazyState:          NewLazyState(),
 		Parent:             parent,
 		Opts:               persisted.Opts,
 		ExecMD:             persisted.ExecMD,
+		ModuleContext:      moduleContext,
 		ExtractModuleError: persisted.ExtractModuleError,
 	}
 	container.Lazy = &ContainerExecLazy{State: state}
