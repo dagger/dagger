@@ -1,0 +1,45 @@
+{
+  "name": "my-module",
+  "objects": [
+    {
+      "name": "MyModule",
+      "functions": [
+        {
+          "name": "containerEcho",
+          "description": "ContainerEcho returns a container that echoes its argument.",
+          "args": [
+            {
+              "name": "stringArg",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": { "kind": "SCALAR", "name": "String" }
+              }
+            }
+          ],
+          "returnType": { "kind": "OBJECT", "name": "Container" }
+        },
+        {
+          "name": "grepDir",
+          "description": "GrepDir greps a directory.",
+          "args": [
+            {
+              "name": "directoryArg",
+              "type": { "kind": "OBJECT", "name": "Directory" }
+            },
+            {
+              "name": "pattern",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": { "kind": "SCALAR", "name": "String" }
+              }
+            }
+          ],
+          "returnType": {
+            "kind": "NON_NULL",
+            "ofType": { "kind": "SCALAR", "name": "String" }
+          }
+        }
+      ]
+    }
+  ]
+}

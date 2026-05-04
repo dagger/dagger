@@ -1,0 +1,31 @@
+{
+  "name": "echo",
+  "objects": [
+    {
+      "name": "Echo",
+      "functions": [
+        {
+          "name": "say",
+          "description": "Say returns a greeting, optionally in a specific language.",
+          "args": [
+            {
+              "name": "msg",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": { "kind": "SCALAR", "name": "String" }
+              }
+            },
+            {
+              "name": "language",
+              "type": { "kind": "SCALAR", "name": "String" }
+            }
+          ],
+          "returnType": {
+            "kind": "NON_NULL",
+            "ofType": { "kind": "SCALAR", "name": "String" }
+          }
+        }
+      ]
+    }
+  ]
+}
