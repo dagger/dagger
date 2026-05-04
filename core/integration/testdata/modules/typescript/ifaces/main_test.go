@@ -270,11 +270,11 @@ func TestIface(t *testing.T) {
 	t.Run("ifaceListArgs", func(t *testing.T) {
 		t.Parallel()
 		strs, err := test.IfaceListArgs(ctx,
-			[]dagger.TestCustomIface{
+			[]*dagger.TestCustomIface{
 				impl.AsTestCustomIface(),
 				impl.SelfIface().AsTestCustomIface(),
 			},
-			[]dagger.TestOtherIface{
+			[]*dagger.TestOtherIface{
 				impl.OtherIface().AsTestOtherIface(),
 				impl.SelfIface().OtherIface().AsTestOtherIface(),
 			},
@@ -290,11 +290,11 @@ func TestIface(t *testing.T) {
 			strs, err := test.
 				WithIface(impl.AsTestCustomIface()).
 				WithPrivateIface(dag.Impl([]string{"private"}, []int{99}, []bool{false}, []*dagger.Directory{dag.Directory()}).AsTestCustomIface()).
-				WithIfaceList([]dagger.TestCustomIface{
+				WithIfaceList([]*dagger.TestCustomIface{
 					impl.AsTestCustomIface(),
 					impl.SelfIface().AsTestCustomIface(),
 				}).
-				WithOtherIfaceList([]dagger.TestOtherIface{
+				WithOtherIfaceList([]*dagger.TestOtherIface{
 					impl.OtherIface().AsTestOtherIface(),
 					impl.SelfIface().OtherIface().AsTestOtherIface(),
 				}).
@@ -317,11 +317,11 @@ func TestIface(t *testing.T) {
 	t.Run("returnCustomObj", func(t *testing.T) {
 		t.Parallel()
 		customObj := test.ReturnCustomObj(
-			[]dagger.TestCustomIface{
+			[]*dagger.TestCustomIface{
 				impl.AsTestCustomIface(),
 				impl.SelfIface().AsTestCustomIface(),
 			},
-			[]dagger.TestOtherIface{
+			[]*dagger.TestOtherIface{
 				impl.OtherIface().AsTestOtherIface(),
 				impl.SelfIface().OtherIface().AsTestOtherIface(),
 			},

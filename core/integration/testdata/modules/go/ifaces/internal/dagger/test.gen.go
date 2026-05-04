@@ -13,13 +13,13 @@ import (
 type TestCustomIfaceID string // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:25:6)
 
 // The `TestCustomObjID` scalar type represents an identifier for an object of type TestCustomObj.
-type TestCustomObjID string // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:303:6)
+type TestCustomObjID string // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:300:6)
 
 // The `TestID` scalar type represents an identifier for an object of type Test.
 type TestID string // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:10:6)
 
 // The `TestOtherCustomObjID` scalar type represents an identifier for an object of type TestOtherCustomObj.
-type TestOtherCustomObjID string // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:312:6)
+type TestOtherCustomObjID string // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:309:6)
 
 // The `TestOtherIfaceID` scalar type represents an identifier for an object of type TestOtherIface.
 type TestOtherIfaceID string // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:71:6)
@@ -43,7 +43,7 @@ func (r *Binding) AsTestCustomIface() *TestCustomIface { // test (../../../../..
 }
 
 // Retrieve the binding value, as type TestCustomObj
-func (r *Binding) AsTestCustomObj() *TestCustomObj { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:303:6)
+func (r *Binding) AsTestCustomObj() *TestCustomObj { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:300:6)
 	q := r.query.Select("asTestCustomObj")
 
 	return &TestCustomObj{
@@ -52,7 +52,7 @@ func (r *Binding) AsTestCustomObj() *TestCustomObj { // test (../../../../../../
 }
 
 // Retrieve the binding value, as type TestOtherCustomObj
-func (r *Binding) AsTestOtherCustomObj() *TestOtherCustomObj { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:312:6)
+func (r *Binding) AsTestOtherCustomObj() *TestOtherCustomObj { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:309:6)
 	q := r.query.Select("asTestOtherCustomObj")
 
 	return &TestOtherCustomObj{
@@ -94,7 +94,7 @@ func (r *Env) WithTestCustomIfaceOutput(name string, description string) *Env { 
 }
 
 // Create or update a binding of type TestCustomObj in the environment
-func (r *Env) WithTestCustomObjInput(name string, value *TestCustomObj, description string) *Env { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:303:6)
+func (r *Env) WithTestCustomObjInput(name string, value *TestCustomObj, description string) *Env { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:300:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withTestCustomObjInput")
 	q = q.Arg("name", name)
@@ -107,7 +107,7 @@ func (r *Env) WithTestCustomObjInput(name string, value *TestCustomObj, descript
 }
 
 // Declare a desired TestCustomObj output to be assigned in the environment
-func (r *Env) WithTestCustomObjOutput(name string, description string) *Env { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:303:6)
+func (r *Env) WithTestCustomObjOutput(name string, description string) *Env { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:300:6)
 	q := r.query.Select("withTestCustomObjOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -131,7 +131,7 @@ func (r *Env) WithTestInput(name string, value *Test, description string) *Env {
 }
 
 // Create or update a binding of type TestOtherCustomObj in the environment
-func (r *Env) WithTestOtherCustomObjInput(name string, value *TestOtherCustomObj, description string) *Env { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:312:6)
+func (r *Env) WithTestOtherCustomObjInput(name string, value *TestOtherCustomObj, description string) *Env { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:309:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withTestOtherCustomObjInput")
 	q = q.Arg("name", name)
@@ -144,7 +144,7 @@ func (r *Env) WithTestOtherCustomObjInput(name string, value *TestOtherCustomObj
 }
 
 // Declare a desired TestOtherCustomObj output to be assigned in the environment
-func (r *Env) WithTestOtherCustomObjOutput(name string, description string) *Env { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:312:6)
+func (r *Env) WithTestOtherCustomObjOutput(name string, description string) *Env { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:309:6)
 	q := r.query.Select("withTestOtherCustomObjOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -190,7 +190,7 @@ func (r *Env) WithTestOutput(name string, description string) *Env { // test (..
 }
 
 // Load a TestCustomObj from its ID.
-func (r *Query) LoadTestCustomObjFromID(id TestCustomObjID) *TestCustomObj { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:303:6)
+func (r *Query) LoadTestCustomObjFromID(id TestCustomObjID) *TestCustomObj { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:300:6)
 	q := r.query.Select("loadTestCustomObjFromID")
 	q = q.Arg("id", id)
 
@@ -210,7 +210,7 @@ func (r *Query) LoadTestFromID(id TestID) *Test { // test (../../../../../../../
 }
 
 // Load a TestOtherCustomObj from its ID.
-func (r *Query) LoadTestOtherCustomObjFromID(id TestOtherCustomObjID) *TestOtherCustomObj { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:312:6)
+func (r *Query) LoadTestOtherCustomObjFromID(id TestOtherCustomObjID) *TestOtherCustomObj { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:309:6)
 	q := r.query.Select("loadTestOtherCustomObjFromID")
 	q = q.Arg("id", id)
 
@@ -277,7 +277,7 @@ func (r *Test) BoolList(ctx context.Context, ifaceArg *TestCustomIface) ([]bool,
 	return response, q.Execute(ctx)
 }
 
-func (r *Test) DepIfaceStr(ctx context.Context) (string, error) { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:241:1)
+func (r *Test) DepIfaceStr(ctx context.Context) (string, error) { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:238:1)
 	if r.depIfaceStr != nil {
 		return *r.depIfaceStr, nil
 	}
@@ -586,7 +586,7 @@ func (r *Test) OtherIfaceListField(ctx context.Context) ([]TestOtherIface, error
 	return convert(response), nil
 }
 
-func (r *Test) ParentIfaceFields(ctx context.Context) ([]string, error) { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:270:1)
+func (r *Test) ParentIfaceFields(ctx context.Context) ([]string, error) { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:267:1)
 	q := r.query.Select("parentIfaceFields")
 
 	var response []string
@@ -595,7 +595,7 @@ func (r *Test) ParentIfaceFields(ctx context.Context) ([]string, error) { // tes
 	return response, q.Execute(ctx)
 }
 
-func (r *Test) ReturnCustomObj(ifaces []*TestCustomIface, otherIfaces []*TestOtherIface) *TestCustomObj { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:318:1)
+func (r *Test) ReturnCustomObj(ifaces []*TestCustomIface, otherIfaces []*TestOtherIface) *TestCustomObj { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:315:1)
 	q := r.query.Select("returnCustomObj")
 	q = q.Arg("ifaces", ifaces)
 	q = q.Arg("otherIfaces", otherIfaces)
@@ -751,7 +751,7 @@ func (r *Test) WithIface(iface *TestCustomIface) *Test { // test (../../../../..
 	}
 }
 
-func (r *Test) WithIfaceList(ifaces []*TestCustomIface) *Test { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:255:1)
+func (r *Test) WithIfaceList(ifaces []*TestCustomIface) *Test { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:252:1)
 	q := r.query.Select("withIfaceList")
 	q = q.Arg("ifaces", ifaces)
 
@@ -807,10 +807,10 @@ func (r *Test) WithObjList(ifaceArg *TestCustomIface, objList []*Directory) *Tes
 
 // TestWithOptionalPragmaIfaceOpts contains options for Test.WithOptionalPragmaIface
 type TestWithOptionalPragmaIfaceOpts struct {
-	Iface *TestCustomIface // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:247:2)
+	Iface *TestCustomIface // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:244:2)
 }
 
-func (r *Test) WithOptionalPragmaIface(opts ...TestWithOptionalPragmaIfaceOpts) *Test { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:245:1)
+func (r *Test) WithOptionalPragmaIface(opts ...TestWithOptionalPragmaIfaceOpts) *Test { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:242:1)
 	q := r.query.Select("withOptionalPragmaIface")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `iface` optional argument
@@ -890,7 +890,7 @@ func (r *Test) WithOtherIfaceByIface(ifaceArg *TestCustomIface, other *TestOther
 	}
 }
 
-func (r *Test) WithOtherIfaceList(ifaces []*TestOtherIface) *Test { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:260:1)
+func (r *Test) WithOtherIfaceList(ifaces []*TestOtherIface) *Test { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:257:1)
 	q := r.query.Select("withOtherIfaceList")
 	q = q.Arg("ifaces", ifaces)
 
@@ -899,7 +899,7 @@ func (r *Test) WithOtherIfaceList(ifaces []*TestOtherIface) *Test { // test (../
 	}
 }
 
-func (r *Test) WithPrivateIface(iface *TestCustomIface) *Test { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:265:1)
+func (r *Test) WithPrivateIface(iface *TestCustomIface) *Test { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:262:1)
 	assertNotNil("iface", iface)
 	q := r.query.Select("withPrivateIface")
 	q = q.Arg("iface", iface)
@@ -1391,7 +1391,7 @@ func (r *TestCustomIface) WithStrList(strListArg []string) *TestCustomIface { //
 	}
 }
 
-type TestCustomObj struct { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:303:6)
+type TestCustomObj struct { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:300:6)
 	query *querybuilder.Selection
 
 	id *TestCustomObjID
@@ -1452,7 +1452,7 @@ func (r *TestCustomObj) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *TestCustomObj) Iface() *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:304:2)
+func (r *TestCustomObj) Iface() *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:301:2)
 	q := r.query.Select("iface")
 
 	return &TestCustomIface{
@@ -1460,7 +1460,7 @@ func (r *TestCustomObj) Iface() *TestCustomIface { // test (../../../../../../..
 	}
 }
 
-func (r *TestCustomObj) IfaceList(ctx context.Context) ([]TestCustomIface, error) { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:305:2)
+func (r *TestCustomObj) IfaceList(ctx context.Context) ([]TestCustomIface, error) { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:302:2)
 	q := r.query.Select("ifaceList")
 
 	q = q.Select("id")
@@ -1492,7 +1492,7 @@ func (r *TestCustomObj) IfaceList(ctx context.Context) ([]TestCustomIface, error
 	return convert(response), nil
 }
 
-func (r *TestCustomObj) Other() *TestOtherCustomObj { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:306:2)
+func (r *TestCustomObj) Other() *TestOtherCustomObj { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:303:2)
 	q := r.query.Select("other")
 
 	return &TestOtherCustomObj{
@@ -1500,7 +1500,7 @@ func (r *TestCustomObj) Other() *TestOtherCustomObj { // test (../../../../../..
 	}
 }
 
-func (r *TestCustomObj) OtherList(ctx context.Context) ([]TestOtherCustomObj, error) { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:308:2)
+func (r *TestCustomObj) OtherList(ctx context.Context) ([]TestOtherCustomObj, error) { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:305:2)
 	q := r.query.Select("otherList")
 
 	q = q.Select("id")
@@ -1532,7 +1532,7 @@ func (r *TestCustomObj) OtherList(ctx context.Context) ([]TestOtherCustomObj, er
 	return convert(response), nil
 }
 
-func (r *TestCustomObj) OtherPtr() *TestOtherCustomObj { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:307:2)
+func (r *TestCustomObj) OtherPtr() *TestOtherCustomObj { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:304:2)
 	q := r.query.Select("otherPtr")
 
 	return &TestOtherCustomObj{
@@ -1540,7 +1540,7 @@ func (r *TestCustomObj) OtherPtr() *TestOtherCustomObj { // test (../../../../..
 	}
 }
 
-func (r *TestCustomObj) OtherPtrList(ctx context.Context) ([]TestOtherCustomObj, error) { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:309:2)
+func (r *TestCustomObj) OtherPtrList(ctx context.Context) ([]TestOtherCustomObj, error) { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:306:2)
 	q := r.query.Select("otherPtrList")
 
 	q = q.Select("id")
@@ -1572,7 +1572,7 @@ func (r *TestCustomObj) OtherPtrList(ctx context.Context) ([]TestOtherCustomObj,
 	return convert(response), nil
 }
 
-type TestOtherCustomObj struct { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:312:6)
+type TestOtherCustomObj struct { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:309:6)
 	query *querybuilder.Selection
 
 	id *TestOtherCustomObjID
@@ -1633,7 +1633,7 @@ func (r *TestOtherCustomObj) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *TestOtherCustomObj) Iface() *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:313:2)
+func (r *TestOtherCustomObj) Iface() *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:310:2)
 	q := r.query.Select("iface")
 
 	return &TestCustomIface{
@@ -1641,7 +1641,7 @@ func (r *TestOtherCustomObj) Iface() *TestCustomIface { // test (../../../../../
 	}
 }
 
-func (r *TestOtherCustomObj) IfaceList(ctx context.Context) ([]TestCustomIface, error) { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:314:2)
+func (r *TestOtherCustomObj) IfaceList(ctx context.Context) ([]TestCustomIface, error) { // test (../../../../../../../../core/integration/testdata/modules/go/ifaces/test/main.go:311:2)
 	q := r.query.Select("ifaceList")
 
 	q = q.Select("id")
