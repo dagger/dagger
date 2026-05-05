@@ -190,7 +190,7 @@ func requireSampleGitHiddenCommit(ctx context.Context, t *testctx.T, c *dagger.C
 
 func requireStrictCommit(ctx context.Context, t *testctx.T, repo *dagger.GitRepository, refStr string) {
 	ref := repo.Commit(refStr)
-	_, err := ref.Commit(ctx)
+	_, err := ref.Sha(ctx)
 	require.Error(t, err)
 	requireErrOut(t, err, "invalid commit SHA")
 }
@@ -224,11 +224,11 @@ func requireSampleGitRepo(ctx context.Context, t *testctx.T, c *dagger.Client, r
 
 	// 2. TEST COMMIT REFS
 	// sample commit
-	requireSampleGitCommit(ctx, t, c, repo.Commit("c80ac2c13df7d573a069938e01ca13f7a81f0345"))
+	requireSampleGitCommit(ctx, t, c, repo.Ref("c80ac2c13df7d573a069938e01ca13f7a81f0345"))
 	// sample hidden commit
 	// $ git ls-remote https://github.com/dagger/dagger.git | grep pull/8735
 	// 318970484f692d7a76cfa533c5d47458631c9654	refs/pull/8735/head
-	requireSampleGitHiddenCommit(ctx, t, c, repo.Commit("318970484f692d7a76cfa533c5d47458631c9654"))
+	requireSampleGitHiddenCommit(ctx, t, c, repo.Ref("318970484f692d7a76cfa533c5d47458631c9654"))
 
 	// 3. TEST TAG REFS
 	// listing tags
@@ -259,6 +259,39 @@ func requireSampleGitRepo(ctx context.Context, t *testctx.T, c *dagger.Client, r
 	requireStrictTag(ctx, t, repo, "refs/heads/main")
 	requireStrictBranch(ctx, t, repo, "v0.9.5")
 	requireStrictBranch(ctx, t, repo, "refs/tags/v0.9.5")
+}
+
+func (GitSuite) TestGitCommit(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	repo := c.Git("https://github.com/dagger/dagger")
+	sha := "c80ac2c13df7d573a069938e01ca13f7a81f0345"
+
+	commit := repo.Commit(sha)
+	gotSHA, err := commit.Sha(ctx)
+	require.NoError(t, err)
+	require.Equal(t, sha, gotSHA)
+
+	shortSHA, err := commit.ShortSha(ctx)
+	require.NoError(t, err)
+	require.Equal(t, sha[:len(shortSHA)], shortSHA)
+
+	headline, err := commit.MessageHeadline(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, headline)
+
+	authoredDate, err := commit.AuthoredDate(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, authoredDate)
+
+	parents, err := commit.ParentShas(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, parents)
+
+	refCommitSHA, err := repo.Ref(sha).AsCommit().Sha(ctx)
+	require.NoError(t, err)
+	require.Equal(t, sha, refCommitSHA)
+
+	requireSampleGitRootDir(ctx, t, c, commit.Tree())
 }
 
 func (GitSuite) TestGitRefs(ctx context.Context, t *testctx.T) {
@@ -662,7 +695,7 @@ func (GitSuite) TestGitCheckedTags(ctx context.Context, t *testctx.T) {
 
 		t.Run("commit", func(ctx context.Context, t *testctx.T) {
 			// v0.12.0 => 133917c6f9ce36d8cfdc595d9b7bd2c14cbc2c20
-			requireGitTagsExist(ctx, t, git.Commit("133917c6f9ce36d8cfdc595d9b7bd2c14cbc2c20"))
+			requireGitTagsExist(ctx, t, git.Ref("133917c6f9ce36d8cfdc595d9b7bd2c14cbc2c20"))
 		})
 
 		t.Run("head", func(ctx context.Context, t *testctx.T) {

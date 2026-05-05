@@ -404,6 +404,12 @@ func LoadGeneratorGroupFromID(id dagger.GeneratorGroupID) *dagger.GeneratorGroup
 	return client.LoadGeneratorGroupFromID(id)
 }
 
+// Load a GitCommit from its ID.
+func LoadGitCommitFromID(id dagger.GitCommitID) *dagger.GitCommit {
+	client := initClient()
+	return client.LoadGitCommitFromID(id)
+}
+
 // Load a GitRef from its ID.
 func LoadGitRefFromID(id dagger.GitRefID) *dagger.GitRef {
 	client := initClient()

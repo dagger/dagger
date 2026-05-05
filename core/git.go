@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/util/gitutil"
@@ -48,6 +50,29 @@ type GitRef struct {
 	Ref     *gitutil.Ref
 }
 
+type GitCommit struct {
+	Repo     dagql.ObjectResult[*GitRepository]
+	Backend  GitRefBackend
+	Ref      *gitutil.Ref
+	FetchRef *gitutil.Ref
+
+	metadataMu sync.Mutex
+	metadata   *GitCommitMetadata
+}
+
+type GitCommitMetadata struct {
+	SHA            string
+	ShortSHA       string
+	AuthoredDate   string
+	CommittedDate  string
+	AuthorName     string
+	AuthorEmail    string
+	CommitterName  string
+	CommitterEmail string
+	Message        string
+	ParentSHAs     []string
+}
+
 type GitRefBackend interface {
 	Tree(ctx context.Context, srv *dagql.Server, discard bool, depth int, includeTags bool) (checkout *Directory, err error)
 
@@ -61,6 +86,9 @@ var _ dagql.HasDependencyResults = (*GitRepository)(nil)
 var _ dagql.PersistedObject = (*GitRef)(nil)
 var _ dagql.PersistedObjectDecoder = (*GitRef)(nil)
 var _ dagql.HasDependencyResults = (*GitRef)(nil)
+var _ dagql.PersistedObject = (*GitCommit)(nil)
+var _ dagql.PersistedObjectDecoder = (*GitCommit)(nil)
+var _ dagql.HasDependencyResults = (*GitCommit)(nil)
 
 func NewGitRepository(ctx context.Context, backend GitRepositoryBackend) (*GitRepository, error) {
 	repo := &GitRepository{
@@ -100,6 +128,17 @@ func (*GitRef) Type() *ast.Type {
 
 func (*GitRef) TypeDescription() string {
 	return "A git ref (tag, branch, or commit)."
+}
+
+func (*GitCommit) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "GitCommit",
+		NonNull:   true,
+	}
+}
+
+func (*GitCommit) TypeDescription() string {
+	return "An immutable git commit."
 }
 
 func (repo *GitRepository) OnRelease(ctx context.Context) error {
@@ -209,18 +248,40 @@ func (ref *GitRef) AttachDependencyResults(
 	_ dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
-	if ref == nil || ref.Repo.Self() == nil {
+	if ref == nil {
 		return nil, nil
 	}
-	attached, err := attach(ref.Repo)
+	return attachGitObjectRepo(&ref.Repo, "git ref", attach)
+}
+
+func (commit *GitCommit) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if commit == nil {
+		return nil, nil
+	}
+	return attachGitObjectRepo(&commit.Repo, "git commit", attach)
+}
+
+func attachGitObjectRepo(
+	repo *dagql.ObjectResult[*GitRepository],
+	label string,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if repo == nil || repo.Self() == nil {
+		return nil, nil
+	}
+	attached, err := attach(*repo)
 	if err != nil {
-		return nil, fmt.Errorf("attach git ref repo: %w", err)
+		return nil, fmt.Errorf("attach %s repo: %w", label, err)
 	}
 	typed, ok := attached.(dagql.ObjectResult[*GitRepository])
 	if !ok {
-		return nil, fmt.Errorf("attach git ref repo: unexpected result %T", attached)
+		return nil, fmt.Errorf("attach %s repo: unexpected result %T", label, attached)
 	}
-	ref.Repo = typed
+	*repo = typed
 	return []dagql.AnyResult{typed}, nil
 }
 
@@ -403,8 +464,252 @@ func (*GitRef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 	}, nil
 }
 
+type persistedGitCommitPayload struct {
+	RepoResultID uint64 `json:"repoResultID"`
+	SHA          string `json:"sha"`
+	FetchName    string `json:"fetchName,omitempty"`
+}
+
+func (commit *GitCommit) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	_ = ctx
+	if commit == nil {
+		return nil, fmt.Errorf("encode persisted git commit: nil commit")
+	}
+	if commit.Ref == nil {
+		return nil, fmt.Errorf("encode persisted git commit: missing ref")
+	}
+	if commit.Ref.SHA == "" {
+		return nil, fmt.Errorf("encode persisted git commit: missing commit SHA")
+	}
+	repoID, err := encodePersistedObjectRef(cache, commit.Repo, "git commit repo")
+	if err != nil {
+		return nil, err
+	}
+	fetchName := ""
+	if commit.FetchRef != nil {
+		fetchName = commit.FetchRef.Name
+	}
+	payloadJSON, err := json.Marshal(persistedGitCommitPayload{
+		RepoResultID: repoID,
+		SHA:          commit.Ref.SHA,
+		FetchName:    fetchName,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal persisted git commit payload: %w", err)
+	}
+	return payloadJSON, nil
+}
+
+func (*GitCommit) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedGitCommitPayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted git commit payload: %w", err)
+	}
+	repo, err := loadPersistedObjectResultByResultID[*GitRepository](ctx, dag, persisted.RepoResultID, "git commit repo")
+	if err != nil {
+		return nil, err
+	}
+	ref := &gitutil.Ref{SHA: persisted.SHA}
+	fetchRef := ref
+	if persisted.FetchName != "" {
+		fetchRef = &gitutil.Ref{
+			Name: persisted.FetchName,
+			SHA:  persisted.SHA,
+		}
+	}
+	backend, err := repo.Self().Backend.Get(ctx, fetchRef)
+	if err != nil {
+		return nil, err
+	}
+	return &GitCommit{
+		Repo:     repo,
+		Backend:  backend,
+		Ref:      ref,
+		FetchRef: fetchRef,
+	}, nil
+}
+
 func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (*Directory, error) {
 	return ref.Backend.Tree(ctx, srv, ref.Repo.Self().DiscardGitDir || discardGitDir, depth, includeTags)
+}
+
+func (commit *GitCommit) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (*Directory, error) {
+	if commit == nil || commit.Ref == nil {
+		return nil, fmt.Errorf("git commit tree: missing commit")
+	}
+	if err := commit.prefetch(ctx, depth, includeTags); err != nil {
+		return nil, err
+	}
+	backend, err := commit.Repo.Self().Backend.Get(ctx, commit.Ref)
+	if err != nil {
+		return nil, err
+	}
+	return backend.Tree(ctx, srv, commit.Repo.Self().DiscardGitDir || discardGitDir, depth, includeTags)
+}
+
+func (commit *GitCommit) Metadata(ctx context.Context) (*GitCommitMetadata, error) {
+	if commit == nil || commit.Ref == nil {
+		return nil, fmt.Errorf("git commit metadata: missing commit")
+	}
+	if commit.Ref.SHA == "" {
+		return nil, fmt.Errorf("git commit metadata: missing commit SHA")
+	}
+	if commit.Backend == nil {
+		return nil, fmt.Errorf("git commit metadata: missing backend")
+	}
+
+	commit.metadataMu.Lock()
+	defer commit.metadataMu.Unlock()
+	if commit.metadata != nil {
+		return commit.metadata, nil
+	}
+
+	var out []byte
+	err := commit.Backend.mount(ctx, 1, false, func(git *gitutil.GitCLI) error {
+		var err error
+		out, err = git.Run(ctx, "cat-file", "commit", commit.Ref.SHA)
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read git commit metadata for %s: %w", commit.Ref.SHA, err)
+	}
+
+	meta, err := parseGitCommitMetadata(commit.Ref.SHA, string(out))
+	if err != nil {
+		return nil, fmt.Errorf("read git commit metadata for %s: %w", commit.Ref.SHA, err)
+	}
+	commit.metadata = meta
+	return meta, nil
+}
+
+func (commit *GitCommit) prefetch(ctx context.Context, depth int, includeTags bool) error {
+	if commit == nil || commit.Backend == nil {
+		return fmt.Errorf("git commit: missing backend")
+	}
+	return commit.Backend.mount(ctx, depth, includeTags, func(*gitutil.GitCLI) error {
+		return nil
+	})
+}
+
+func (commit *GitCommit) MessageHeadline(ctx context.Context) (string, error) {
+	meta, err := commit.Metadata(ctx)
+	if err != nil {
+		return "", err
+	}
+	headline, _, _ := strings.Cut(meta.Message, "\n")
+	return headline, nil
+}
+
+func (commit *GitCommit) MessageBody(ctx context.Context) (string, error) {
+	meta, err := commit.Metadata(ctx)
+	if err != nil {
+		return "", err
+	}
+	_, body, ok := strings.Cut(meta.Message, "\n")
+	if !ok {
+		return "", nil
+	}
+	return strings.TrimPrefix(body, "\n"), nil
+}
+
+func parseGitCommitMetadata(sha string, raw string) (*GitCommitMetadata, error) {
+	headers, message, _ := strings.Cut(raw, "\n\n")
+	meta := &GitCommitMetadata{
+		SHA:      sha,
+		ShortSHA: sha,
+		Message:  strings.TrimSuffix(message, "\n"),
+	}
+	if len(sha) > 7 {
+		meta.ShortSHA = sha[:7]
+	}
+
+	for _, line := range strings.Split(headers, "\n") {
+		key, value, ok := strings.Cut(line, " ")
+		if !ok {
+			continue
+		}
+		switch key {
+		case "parent":
+			meta.ParentSHAs = append(meta.ParentSHAs, value)
+		case "author":
+			sig, err := parseGitCommitSignature(value)
+			if err != nil {
+				return nil, fmt.Errorf("parse author: %w", err)
+			}
+			meta.AuthorName = sig.Name
+			meta.AuthorEmail = sig.Email
+			meta.AuthoredDate = sig.Date
+		case "committer":
+			sig, err := parseGitCommitSignature(value)
+			if err != nil {
+				return nil, fmt.Errorf("parse committer: %w", err)
+			}
+			meta.CommitterName = sig.Name
+			meta.CommitterEmail = sig.Email
+			meta.CommittedDate = sig.Date
+		}
+	}
+
+	if meta.AuthorName == "" || meta.AuthorEmail == "" || meta.AuthoredDate == "" {
+		return nil, fmt.Errorf("missing author metadata")
+	}
+	if meta.CommitterName == "" || meta.CommitterEmail == "" || meta.CommittedDate == "" {
+		return nil, fmt.Errorf("missing committer metadata")
+	}
+	return meta, nil
+}
+
+type gitCommitSignature struct {
+	Name  string
+	Email string
+	Date  string
+}
+
+func parseGitCommitSignature(raw string) (gitCommitSignature, error) {
+	nameEnd := strings.LastIndex(raw, " <")
+	emailEnd := strings.LastIndex(raw, "> ")
+	if nameEnd < 0 || emailEnd < nameEnd {
+		return gitCommitSignature{}, fmt.Errorf("invalid signature %q", raw)
+	}
+	name := raw[:nameEnd]
+	email := raw[nameEnd+2 : emailEnd]
+	dateParts := strings.Fields(raw[emailEnd+2:])
+	if len(dateParts) != 2 {
+		return gitCommitSignature{}, fmt.Errorf("invalid signature date %q", raw)
+	}
+	seconds, err := strconv.ParseInt(dateParts[0], 10, 64)
+	if err != nil {
+		return gitCommitSignature{}, fmt.Errorf("parse timestamp: %w", err)
+	}
+	offset, err := parseGitTimezoneOffset(dateParts[1])
+	if err != nil {
+		return gitCommitSignature{}, err
+	}
+	loc := time.FixedZone(dateParts[1], offset)
+	return gitCommitSignature{
+		Name:  name,
+		Email: email,
+		Date:  time.Unix(seconds, 0).In(loc).Format(time.RFC3339),
+	}, nil
+}
+
+func parseGitTimezoneOffset(raw string) (int, error) {
+	if len(raw) != 5 || (raw[0] != '+' && raw[0] != '-') {
+		return 0, fmt.Errorf("invalid timezone offset %q", raw)
+	}
+	hours, err := strconv.Atoi(raw[1:3])
+	if err != nil {
+		return 0, fmt.Errorf("parse timezone hours: %w", err)
+	}
+	minutes, err := strconv.Atoi(raw[3:5])
+	if err != nil {
+		return 0, fmt.Errorf("parse timezone minutes: %w", err)
+	}
+	offset := (hours*60 + minutes) * 60
+	if raw[0] == '-' {
+		offset = -offset
+	}
+	return offset, nil
 }
 
 // doGitCheckout performs a git checkout using the given git helper.
