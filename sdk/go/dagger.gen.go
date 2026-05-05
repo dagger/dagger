@@ -15855,8 +15855,6 @@ type WorkspaceModuleInitOpts struct {
 	Source string
 	// Additional include patterns for the module.
 	Include []string
-	// Blueprint module reference to apply to the new module.
-	Blueprint string
 	// Enable the self-calls experimental feature for the new module.
 	SelfCalls bool
 }
@@ -15879,10 +15877,6 @@ func (r *Workspace) ModuleInit(ctx context.Context, name string, opts ...Workspa
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
-		}
-		// `blueprint` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Blueprint) {
-			q = q.Arg("blueprint", opts[i].Blueprint)
 		}
 		// `selfCalls` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SelfCalls) {

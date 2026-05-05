@@ -119,7 +119,7 @@ func (GeneratorsSuite) TestGeneratorsDirectSDK(ctx context.Context, t *testctx.T
 	}
 }
 
-func (GeneratorsSuite) TestGeneratorsViaLegacyBlueprintInit(ctx context.Context, t *testctx.T) {
+func (GeneratorsSuite) TestGeneratorsViaLegacyBlueprintConfig(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	for _, tc := range []struct {
 		name string
@@ -134,7 +134,7 @@ func (GeneratorsSuite) TestGeneratorsViaLegacyBlueprintInit(ctx context.Context,
 			modGen, err := generatorsTestEnv(t, c)
 			require.NoError(t, err)
 			modGen = modGen.WithWorkdir("app").
-				With(daggerModuleExec("init", "--blueprint", "../"+tc.path))
+				WithNewFile("dagger.json", `{"name":"app","blueprint":{"name":"blueprint","source":"../`+tc.path+`"}}`)
 
 			t.Run("list", func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.

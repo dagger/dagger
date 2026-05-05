@@ -15753,7 +15753,6 @@ class Workspace(Type):
         sdk: str | None = "",
         source: str | None = "",
         include: list[str] | None = None,
-        blueprint: str | None = "",
         self_calls: bool | None = False,
     ) -> str:
         """Create a new module owned by the workspace and auto-install it in
@@ -15769,8 +15768,6 @@ class Workspace(Type):
             Source subpath within the new module.
         include:
             Additional include patterns for the module.
-        blueprint:
-            Blueprint module reference to apply to the new module.
         self_calls:
             Enable the self-calls experimental feature for the new module.
 
@@ -15793,7 +15790,6 @@ class Workspace(Type):
             Arg("sdk", sdk, ""),
             Arg("source", source, ""),
             Arg("include", [] if include is None else include, []),
-            Arg("blueprint", blueprint, ""),
             Arg("selfCalls", self_calls, False),
         ]
         _ctx = self._select("moduleInit", _args)
