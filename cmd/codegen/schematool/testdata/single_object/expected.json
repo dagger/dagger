@@ -30,6 +30,15 @@
                     "value": "\"echo\""
                   }
                 ]
+              },
+              {
+                "name": "sourceMap",
+                "args": [
+                  {
+                    "name": "module",
+                    "value": "\"echo\""
+                  }
+                ]
               }
             ]
           }
@@ -87,6 +96,15 @@
             "args": [
               {
                 "name": "name",
+                "value": "\"echo\""
+              }
+            ]
+          },
+          {
+            "name": "sourceMap",
+            "args": [
+              {
+                "name": "module",
                 "value": "\"echo\""
               }
             ]

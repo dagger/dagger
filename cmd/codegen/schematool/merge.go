@@ -231,10 +231,17 @@ func convertTypeRef(ref *TypeRef) *introspection.TypeRef {
 	}
 }
 
-// moduleDirectives builds the single @sourceModuleName directive
-// stamped on every type inserted by Merge. The directive's argument
-// value is JSON-encoded to mirror how introspection responses carry
-// directive arg values (quoted strings, not bare identifiers).
+// moduleDirectives builds the directives stamped on every type
+// inserted by Merge. Both `@sourceModuleName(name:)` (engine
+// historical marker, also used by alreadyMergedFor) and
+// `@sourceMap(module:)` are emitted: the latter is what
+// codegen file-splitting relies on (Schema.DependencyNames /
+// Include / Exclude all read it), so its presence is what causes
+// self-call types to land in their own per-module .gen.go file.
+//
+// Directive arg values are JSON-encoded to mirror how the engine's
+// introspection responses carry them (quoted strings, not bare
+// identifiers).
 func moduleDirectives(modName string) introspection.Directives {
 	value := fmt.Sprintf("%q", modName)
 	return introspection.Directives{
@@ -242,6 +249,12 @@ func moduleDirectives(modName string) introspection.Directives {
 			Name: "sourceModuleName",
 			Args: []*introspection.DirectiveArg{
 				{Name: "name", Value: &value},
+			},
+		},
+		{
+			Name: "sourceMap",
+			Args: []*introspection.DirectiveArg{
+				{Name: "module", Value: &value},
 			},
 		},
 	}
