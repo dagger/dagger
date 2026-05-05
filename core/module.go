@@ -61,9 +61,9 @@ type Module struct {
 	// instead default to the old behavior of per-session caching.
 	DisableDefaultFunctionCaching bool
 
-	// LegacyDefaultPath, when true, causes +defaultPath to resolve relative to
-	// the workspace root instead of the module's own source directory.
-	// Used for legacy blueprints/toolchains migrated to workspace modules.
+	// LegacyDefaultPath marks modules projected from legacy workspace fields.
+	// Their +defaultPath context is supplied through ContextSource during
+	// module loading.
 	LegacyDefaultPath bool
 
 	// Workspace setting values from workspace config.toml [modules.<name>.settings].
