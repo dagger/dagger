@@ -371,11 +371,22 @@ func (svc *Service) startContainer(
 	if err != nil {
 		return err
 	}
-	detachDeps, _, err := svcs.StartBindings(ctx, ctr.Services)
+	detachDeps, runningDeps, err := svcs.StartBindings(ctx, ctr.Services)
 	if err != nil {
 		return fmt.Errorf("start dependent services: %w", err)
 	}
 	cleanup.Add("detach deps", cleanups.Infallible(detachDeps))
+
+	propagateDependencyExits := len(runningDeps) > 0 &&
+		!opts.DisableDependencyPropagation &&
+		running.Key.Kind != ServiceRuntimeInteractive &&
+		(opts.IO == nil || !opts.IO.Interactive)
+	var dependencyErrCh <-chan error
+	if propagateDependencyExits {
+		var stopDependencyMonitors func()
+		dependencyErrCh, stopDependencyMonitors = monitorServiceBindings(ctx, ctr.Services, runningDeps, nil)
+		cleanup.Add("stop dependent service monitors", cleanups.Infallible(stopDependencyMonitors))
+	}
 
 	var domain string
 	if mod, err := query.ModuleParent(ctx); err == nil && svc.CustomHostname != "" {
@@ -570,6 +581,23 @@ func (svc *Service) startContainer(
 	}
 
 	var stopped atomic.Bool
+	var serviceErrMu sync.Mutex
+	var serviceErr error
+	setServiceErr := func(err error) {
+		if err == nil {
+			return
+		}
+		serviceErrMu.Lock()
+		defer serviceErrMu.Unlock()
+		if serviceErr == nil {
+			serviceErr = err
+		}
+	}
+	getServiceErr := func() error {
+		serviceErrMu.Lock()
+		defer serviceErrMu.Unlock()
+		return serviceErr
+	}
 
 	var exitErr error
 	go func() {
@@ -586,7 +614,9 @@ func (svc *Service) startContainer(
 		var telemetryErr error
 		defer telemetry.EndWithCause(span, &telemetryErr)
 		defer func() {
-			if !stopped.Load() {
+			if err := getServiceErr(); err != nil {
+				telemetryErr = err
+			} else if !stopped.Load() {
 				// we only care about the exit result (likely 137) if we weren't stopped
 				telemetryErr = exitErr
 			}
@@ -615,6 +645,9 @@ func (svc *Service) startContainer(
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-exited:
+			if err := getServiceErr(); err != nil {
+				return err
+			}
 			return exitErr
 		}
 	}
@@ -637,6 +670,17 @@ func (svc *Service) startContainer(
 			slog.Info("service exited in stop", "err", exitErr)
 			return nil
 		}
+	}
+
+	stopDueToDependencyExit := func(depErr error) error {
+		if depErr == nil {
+			depErr = fmt.Errorf("dependent service exited")
+		}
+		setServiceErr(depErr)
+		if err := stopSvc(context.Background(), true); err != nil {
+			return errors.Join(depErr, err)
+		}
+		return depErr
 	}
 
 	execSvc := func(ctx context.Context, cmd []string, env []string, sio *ServiceIO) error {
@@ -668,35 +712,55 @@ func (svc *Service) startContainer(
 		return err
 	}
 
-	select {
-	case err := <-checked:
-		if err != nil {
-			return fmt.Errorf("health check errored: %w", err)
-		}
-
-		running.Host = fullHost
-		running.Ports = ctr.Ports
-		running.Stop = stopSvc
-		running.Wait = waitSvc
-		running.Exec = execSvc
-		running.ContainerID = svcID
-		return nil
-	case <-exited:
-		if exitErr != nil {
-			var gwErr *gwpb.ExitError
-			if errors.As(exitErr, &gwErr) {
-				// Create ExecError with available service information
-				return &ExecError{
-					Err:      telemetry.TrackOrigin(gwErr, span.SpanContext()),
-					Cmd:      meta.Args,
-					ExitCode: int(gwErr.ExitCode),
-					Stdout:   stdoutBuf.String(),
-					Stderr:   stderrBuf.String(),
-				}
+	for {
+		select {
+		case err := <-checked:
+			if err != nil {
+				return fmt.Errorf("health check errored: %w", err)
 			}
-			return exitErr
+
+			running.Host = fullHost
+			running.Ports = ctr.Ports
+			running.Stop = stopSvc
+			running.Wait = waitSvc
+			running.Exec = execSvc
+			running.ContainerID = svcID
+			if dependencyErrCh != nil {
+				go func() {
+					depErr, ok := <-dependencyErrCh
+					if !ok {
+						return
+					}
+					if err := running.waitDependencyPropagationUnsuppressed(context.Background()); err != nil {
+						return
+					}
+					_ = stopDueToDependencyExit(depErr)
+				}()
+			}
+			return nil
+		case depErr, ok := <-dependencyErrCh:
+			if !ok {
+				dependencyErrCh = nil
+				continue
+			}
+			return stopDueToDependencyExit(depErr)
+		case <-exited:
+			if exitErr != nil {
+				var gwErr *gwpb.ExitError
+				if errors.As(exitErr, &gwErr) {
+					// Create ExecError with available service information
+					return &ExecError{
+						Err:      telemetry.TrackOrigin(gwErr, span.SpanContext()),
+						Cmd:      meta.Args,
+						ExitCode: int(gwErr.ExitCode),
+						Stdout:   stdoutBuf.String(),
+						Stderr:   stderrBuf.String(),
+					}
+				}
+				return exitErr
+			}
+			return fmt.Errorf("service exited before healthcheck")
 		}
-		return fmt.Errorf("service exited before healthcheck")
 	}
 }
 

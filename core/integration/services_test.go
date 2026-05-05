@@ -1086,6 +1086,38 @@ func (ServiceSuite) TestExecServiceExitShortCircuits(ctx context.Context, t *tes
 	requireErrOut(t, err, "exit code: 42")
 }
 
+func (ServiceSuite) TestServiceDependencyExitShortCircuits(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	dep := c.Container().
+		From(alpineImage).
+		WithDefaultArgs([]string{"sh", "-c", "sleep 1; echo dependency crashed >&2; exit 42"}).
+		AsService()
+
+	depHost, err := dep.Hostname(ctx)
+	require.NoError(t, err)
+
+	srv := c.Container().
+		From(alpineImage).
+		WithServiceBinding("dep", dep).
+		WithDefaultArgs([]string{"sh", "-c", "sleep 30"}).
+		AsService()
+
+	host, err := srv.Hostname(ctx)
+	require.NoError(t, err)
+
+	_, err = c.Container().
+		From(alpineImage).
+		WithEnvVariable("CACHEBUST", identity.NewID()).
+		WithServiceBinding("app", srv).
+		WithExec([]string{"sh", "-c", "sleep 10; echo should-not-run"}).
+		Sync(ctx)
+	require.Error(t, err)
+	requireErrOut(t, err, "bound service "+host+" (aliased as app) exited")
+	requireErrOut(t, err, "bound service "+depHost+" (aliased as dep) exited")
+	requireErrOut(t, err, "exit code: 42")
+}
+
 func (ServiceSuite) TestStartExecError(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

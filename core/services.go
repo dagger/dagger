@@ -89,6 +89,10 @@ type RunningService struct {
 
 	workspaceMu sync.Mutex
 
+	dependencyPropagationMu         sync.Mutex
+	dependencyPropagationSuppressed int
+	dependencyPropagationChanged    chan struct{}
+
 	manager *Services
 
 	releaseOnce sync.Once
@@ -174,8 +178,15 @@ type Startable interface {
 }
 
 type ServiceStartOpts struct {
-	ClientSpecific      bool
-	IO                  *ServiceIO
+	ClientSpecific bool
+	IO             *ServiceIO
+
+	// DisableDependencyPropagation prevents a container-backed service from being
+	// stopped automatically when one of its own service bindings exits. This is
+	// used for interactive terminals so a crashing dependency doesn't kill the
+	// user's shell.
+	DisableDependencyPropagation bool
+
 	LogTargetCallDigest digest.Digest
 }
 
@@ -469,6 +480,61 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 
 	// we should avoid blocking, and return immediately
 	go ss.stopGraceful(context.WithoutCancel(ctx), running, TerminateGracePeriod)
+}
+
+func (svc *RunningService) suppressDependencyPropagation() func() {
+	if svc == nil {
+		return func() {}
+	}
+
+	svc.dependencyPropagationMu.Lock()
+	svc.dependencyPropagationSuppressed++
+	if svc.dependencyPropagationChanged == nil {
+		svc.dependencyPropagationChanged = make(chan struct{})
+	}
+	svc.dependencyPropagationMu.Unlock()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			svc.dependencyPropagationMu.Lock()
+			defer svc.dependencyPropagationMu.Unlock()
+			if svc.dependencyPropagationSuppressed > 0 {
+				svc.dependencyPropagationSuppressed--
+			}
+			if svc.dependencyPropagationChanged == nil {
+				svc.dependencyPropagationChanged = make(chan struct{})
+			}
+			close(svc.dependencyPropagationChanged)
+			svc.dependencyPropagationChanged = make(chan struct{})
+		})
+	}
+}
+
+func (svc *RunningService) waitDependencyPropagationUnsuppressed(ctx context.Context) error {
+	if svc == nil {
+		return nil
+	}
+
+	for {
+		svc.dependencyPropagationMu.Lock()
+		suppressed := svc.dependencyPropagationSuppressed > 0
+		if svc.dependencyPropagationChanged == nil {
+			svc.dependencyPropagationChanged = make(chan struct{})
+		}
+		changed := svc.dependencyPropagationChanged
+		svc.dependencyPropagationMu.Unlock()
+
+		if !suppressed {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		case <-changed:
+		}
+	}
 }
 
 func (svc *RunningService) TrackRef(ref bkcache.Ref) {

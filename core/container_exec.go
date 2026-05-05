@@ -349,13 +349,14 @@ func isServiceBindingExitError(err error) bool {
 	return errors.As(err, &svcErr)
 }
 
-// monitorServiceBindings reports the first bound service that exits while an
-// exec is still running and cancels the exec with the service error as the cause.
+// monitorServiceBindings reports the first bound service that exits while a
+// dependent operation is still running. If cancel is set, it is called with the
+// service error as the cause.
 func monitorServiceBindings(
 	ctx context.Context,
 	bindings ServiceBindings,
 	running []*RunningService,
-	cancelExec context.CancelCauseFunc,
+	cancel context.CancelCauseFunc,
 ) (<-chan error, func()) {
 	monitorCtx, stopMonitor := context.WithCancel(ctx)
 	serviceErrCh := make(chan error, 1)
@@ -391,8 +392,8 @@ func monitorServiceBindings(
 			case serviceErrCh <- svcErr:
 			default:
 			}
-			if cancelExec != nil {
-				cancelExec(svcErr)
+			if cancel != nil {
+				cancel(svcErr)
 			}
 		}()
 	}
