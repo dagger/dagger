@@ -3,6 +3,13 @@
 
 The following Dagger Function accepts a `File` argument and copies the specified file to the Dagger module runtime container. This makes it possible to add one or more files to the runtime container and manipulate them using custom logic.
 
+:::note
+The `export` call in this recipe writes to the **module runtime container** — a short-lived container used to execute the Dagger
+Function. It does **not** write to the caller's filesystem. To persist an artifact so the caller can see it on their host, use
+the [Persisting Artifacts](../extending/persisting-artifacts.mdx) pattern: return a `File` or `Directory` and invoke `export`
+from the CLI chain.
+:::
+
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
 
