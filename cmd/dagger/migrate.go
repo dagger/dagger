@@ -30,7 +30,8 @@ var migrateCmd = &cobra.Command{
 		}
 
 		return withEngine(cmd.Context(), client.Params{
-			SkipWorkspaceModules: true,
+			SkipWorkspaceModules:           true,
+			SuppressCompatWorkspaceWarning: true,
 		}, func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
 
