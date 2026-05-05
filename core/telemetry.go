@@ -289,7 +289,7 @@ func recordStatus(ctx context.Context, res dagql.AnyResult, span trace.Span, cac
 
 func recordPending(res dagql.AnyResult, span trace.Span) {
 	if dagql.HasPendingLazyEvaluation(res) {
-		span.SetAttributes(attribute.Bool(dagql.PendingAttr, true))
+		span.SetAttributes(attribute.Bool(telemetry.PendingAttr, true))
 	}
 }
 

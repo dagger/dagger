@@ -61,6 +61,8 @@ type DB struct {
 	pendingResumeOutputs map[resumeOutputKey]SpanSet
 	pendingLogsByOutput  map[resumeOutputKey][]sdklog.Record
 	resolvedLogsBySpan   map[SpanID][]sdklog.Record
+
+	testIndex *TestIndex
 }
 
 type resumeOutputKey struct {
@@ -169,6 +171,7 @@ func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
 }
 
 func (db *DB) update(span *Span) {
+	db.noteTestSpanUpdated(span)
 	if span.Final {
 		// don't bump versions for final spans; leave the remote as the
 		// source of truth, lest we stray forward and miss an actual version bump
@@ -756,6 +759,7 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	// FIXME: refactor? can we keep some sort of flat map of spans an append
 	// children to them instead of having the single big ordered list?
 	db.Spans.Add(span)
+	db.noteTestSpanUpdated(span)
 }
 
 func (db *DB) linkResumedOutput(span *Span, creator *Span) {

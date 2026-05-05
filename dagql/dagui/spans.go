@@ -11,8 +11,8 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 
-	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/slog"
@@ -121,7 +121,10 @@ type Span struct {
 
 // Snapshot returns a snapshot of the span's current state.
 func (span *Span) Snapshot() SpanSnapshot {
-	span.ChildCount = countChildren(span.ChildSpans, FrontendOpts{})
+	// Never decrease this value; it may have been calculated from a SQL query,
+	// indicating that the span has children but we didn't fetch them
+	// (incremental loading).
+	span.ChildCount = max(span.ChildCount, countChildren(span.ChildSpans, FrontendOpts{}))
 	span.Failed_, span.FailedReason_ = span.FailedReason()
 	span.Cached_, span.CachedReason_ = span.CachedReason()
 	span.Pending_, span.PendingReason_ = span.PendingReason()
@@ -266,6 +269,11 @@ type SpanSnapshot struct {
 	Passthrough  bool `json:",omitempty"`
 	Ignore       bool `json:",omitempty"`
 
+	// Test attributes
+	TestCaseName  string     `json:",omitempty"`
+	TestSuiteName string     `json:",omitempty"`
+	TestStatus    TestStatus `json:",omitempty"`
+
 	Boundary    bool `json:",omitempty"`
 	Reveal      bool `json:",omitempty"`
 	RollUpLogs  bool `json:",omitempty"`
@@ -337,7 +345,7 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case telemetry.CanceledAttr:
 		snapshot.Canceled = val.(bool)
 
-	case dagql.PendingAttr:
+	case telemetry.PendingAttr:
 		snapshot.Pending = val.(bool)
 
 	case telemetry.UIEncapsulateAttr:
@@ -410,6 +418,15 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) { //nolint:
 	case telemetry.ContentTypeAttr:
 		snapshot.ContentType = val.(string)
 
+	case string(semconv.TestCaseNameKey):
+		snapshot.TestCaseName = val.(string)
+
+	case string(semconv.TestSuiteNameKey):
+		snapshot.TestSuiteName = val.(string)
+
+	case string(semconv.TestSuiteRunStatusKey), string(semconv.TestCaseResultStatusKey):
+		snapshot.TestStatus = mergeTestStatus(snapshot.TestStatus, normalizeTestStatus(val.(string)))
+
 	case "rpc.service":
 		// encapsulate these by default; we only maybe want to see these if their
 		// parent failed, since some happy paths might involve _expected_ failures
@@ -471,16 +488,7 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 	for parent := range span.Parents {
 		// don't propagate failure, to respect encapsulation
 		// don't propagate activity, since these are direct parents
-		changed := propagate(parent, false, false)
-
-		// If a child only starts after its parent already completed, treat it as
-		// a resumed continuation of that parent for failure purposes.
-		lateContinuation := !parent.IsRunning() && span.StartTime.After(parent.EndTime)
-		if lateContinuation && span.IsFailedOrCausedFailure() {
-			changed = parent.FailedLinks.Add(span) || changed
-		}
-
-		if changed {
+		if propagate(parent, false, false) {
 			span.db.update(parent)
 		}
 	}
@@ -515,6 +523,10 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 
 	// Update RollUp state for ancestors incrementally
 	span.updateRollUpAncestors()
+
+	if span.db != nil {
+		span.db.noteTestSpanUpdated(span)
+	}
 }
 
 // currentStateCategory determines the span's current state category for rollup counting

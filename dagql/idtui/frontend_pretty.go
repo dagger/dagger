@@ -169,6 +169,13 @@ type frontendPretty struct {
 	searchMatchSpans     map[dagui.SpanID]bool // fast lookup: does this span have any match?
 	prevSearchMatchSpans map[dagui.SpanID]bool // previous frame's matchSpans for diff-based dirtying
 	searchIdx            int                   // current match index (-1 = none)
+
+	// test view state
+	testsMode        bool
+	testsReturnSpan  dagui.SpanID
+	fullscreenTests  *TestView
+	testViews        map[dagui.SpanID]*TestView
+	testSpanChildren map[dagui.SpanID]*TestSpanChildrenView
 }
 
 // Verify interface compliance at compile time.
@@ -206,10 +213,18 @@ type treePrefix struct {
 //
 // Children that haven't changed return cached results from RenderChild.
 // The parent just concatenates cached child lines, which is O(pointers).
+type spanTreeScope struct {
+	rowsView  *dagui.RowsView
+	rows      *dagui.Rows
+	opts      dagui.FrontendOpts
+	spanTrees map[dagui.SpanID]*SpanTreeView
+}
+
 type SpanTreeView struct {
 	tuist.Compo
 	fe     *frontendPretty
 	spanID dagui.SpanID
+	scope  *spanTreeScope
 
 	// parent points to the parent SpanTreeView (nil for top-level nodes).
 	parent *SpanTreeView
@@ -265,15 +280,23 @@ func (s *SpanTreeView) SetFocused(_ tuist.Context, focused bool) {
 }
 
 // Render produces the lines for this span tree node and its children.
-// This method is stateless — all component state (prefix, children,
-// focus, spinner) is synced by syncSpanTreeState() before Render runs.
+// Prefix, child, focus, and spinner state is synced by the owning tree
+// renderer before RenderChild reaches this component.
 func (s *SpanTreeView) Render(ctx tuist.Context) {
-	row := s.fe.rows.BySpan[s.spanID]
+	rows := s.rows()
+	if rows == nil {
+		return
+	}
+	row := rows.BySpan[s.spanID]
 	if row == nil {
 		return
 	}
 
-	r := newRenderer(s.fe.db, s.fe.contentWidth/2, s.fe.FrontendOpts, s.fe.finalRender)
+	maxLiteralWidth := s.fe.contentWidth / 2
+	if s.scope != nil && ctx.Width > 0 {
+		maxLiteralWidth = ctx.Width / 2
+	}
+	r := newRenderer(s.fe.db, maxLiteralWidth, s.frontendOpts(), s.fe.finalRender)
 
 	s.selfLineCount = 0
 
@@ -305,6 +328,11 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 		ctx.Lines(titleLines...)
 	}
 
+	if inlineTests := s.renderInlineTests(ctx, r, row); len(inlineTests) > 0 {
+		s.selfLineCount += len(inlineTests)
+		ctx.Lines(inlineTests...)
+	}
+
 	// Render the rest (logs, errors, debug) into a separate buffer.
 	// Log highlighting is handled by the Vterm's own SearchQuery state,
 	// so we do NOT apply highlightANSI to these lines.
@@ -327,7 +355,7 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 		// shows the parent bar), not the child's prefix.cont (which omits
 		// the parent bar for the last child).
 		var gapCount int
-		childRow := s.fe.rows.BySpan[child.spanID]
+		childRow := rows.BySpan[child.spanID]
 		if childRow != nil {
 			gaps := s.fe.renderTreeGap(r, childRow, s.childrenGapPrefix)
 			gapCount = len(gaps)
@@ -342,6 +370,27 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 		s.childGapCounts = append(s.childGapCounts, gapCount)
 		s.childLineCounts = append(s.childLineCounts, len(result.Lines))
 	}
+}
+
+func (s *SpanTreeView) rows() *dagui.Rows {
+	if s.scope != nil {
+		return s.scope.rows
+	}
+	return s.fe.rows
+}
+
+func (s *SpanTreeView) rowsView() *dagui.RowsView {
+	if s.scope != nil {
+		return s.scope.rowsView
+	}
+	return s.fe.rowsView
+}
+
+func (s *SpanTreeView) frontendOpts() dagui.FrontendOpts {
+	if s.scope != nil {
+		return s.scope.opts
+	}
+	return s.fe.FrontendOpts
 }
 
 // indentFunc returns a fancyIndent override that uses the pre-computed prefix.
@@ -624,7 +673,7 @@ func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg strin
 			if logged {
 				fe.msgPreFinalRender.WriteString(traceMessage(fe.profile, url, msg))
 			} else if !skipLoggedOutTraceMsg() {
-				fe.msgPreFinalRender.WriteString(fmt.Sprintf(loggedOutTraceMsg, url))
+				fmt.Fprintf(&fe.msgPreFinalRender, loggedOutTraceMsg, url)
 			}
 		}
 		fe.Update()
@@ -1030,6 +1079,7 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 				sr.Update()
 			}
 		}
+		fe.updateTestViews()
 		// Don't recalculate here — set dirty flag so Render coalesces
 		// multiple ExportSpans batches into one recalculate per frame.
 		fe.viewDirty = true
@@ -1091,6 +1141,7 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 		}
 		fe.db.LogExporter().Export(context.Background(), logsCopy)
 		fe.logs.Export(context.Background(), logsCopy)
+		fe.updateTestViews()
 		fe.Update()
 	})
 	return nil
@@ -1203,6 +1254,41 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		noExitHelp = out.String(noExitHelp).Foreground(color).String()
 	}
 	var focused *dagui.Span
+	if fe.testsMode {
+		enterHelp := "trace"
+		enterEnabled := false
+		if fe.fullscreenTests != nil {
+			focused = fe.fullscreenTests.FocusedSpan()
+			enterEnabled = focused != nil
+			if expanded, isGroup := fe.fullscreenTests.FocusedPassedGroupExpanded(); isGroup {
+				enterEnabled = true
+				enterHelp = "expand"
+				if expanded {
+					enterHelp = "collapse"
+				}
+			}
+		}
+		return []key.Binding{
+			key.NewBinding(key.WithKeys("T"),
+				key.WithHelp("T", "trace")),
+			key.NewBinding(key.WithKeys("↑↓", "up", "down", "j", "k"),
+				key.WithHelp("↑↓", "select")),
+			key.NewBinding(key.WithKeys("home"),
+				key.WithHelp("home", "first")),
+			key.NewBinding(key.WithKeys("end", "space"),
+				key.WithHelp("end", "last")),
+			key.NewBinding(key.WithKeys("enter", "right", "l"),
+				key.WithHelp("enter", enterHelp),
+				KeyEnabled(enterEnabled)),
+			key.NewBinding(key.WithKeys("t"),
+				key.WithHelp("t", "start terminal"),
+				KeyEnabled(focused != nil && fe.terminalCallback(focused) != nil)),
+			key.NewBinding(key.WithKeys("esc"),
+				key.WithHelp("esc", "trace")),
+			key.NewBinding(key.WithKeys("q", "ctrl+c"),
+				key.WithHelp("q", quitMsg)),
+		}
+	}
 	if fe.FocusedSpan.IsValid() {
 		focused = fe.db.Spans.Map[fe.FocusedSpan]
 	}
@@ -1213,6 +1299,9 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		key.NewBinding(key.WithKeys("w"),
 			key.WithHelp("w", out.Hyperlink(fe.cloudURL, "web")),
 			KeyEnabled(fe.cloudURL != "")),
+		key.NewBinding(key.WithKeys("T"),
+			key.WithHelp("T", "tests"),
+			KeyEnabled(fe.db != nil && fe.db.HasTests())),
 		key.NewBinding(key.WithKeys("←↑↓→", "up", "down", "left", "right", "h", "j", "k", "l"),
 			key.WithHelp("←↑↓→", "move")),
 		key.NewBinding(key.WithKeys("home"),
@@ -1289,8 +1378,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 
 	if !fe.finalRender {
 		// Update window dimensions from tuist.
-		fe.window = windowSize{Width: ctx.Width, Height: ctx.ScreenHeight()}
-		fe.setWindowSizeLocked(fe.window)
+		fe.setWindowSizeLocked(windowSize{Width: ctx.Width, Height: ctx.ScreenHeight()})
 	} else if fe.contentWidth <= 0 {
 		// Final render without a live TUI (report mode). Set to 0
 		// so the renderer doesn't truncate (maxLiteralLen = 0).
@@ -1303,6 +1391,11 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		// Final render: just emit progress rows, no chrome or truncation.
 		progressLines := fe.renderProgressLines(r, ctx, 0)
 		ctx.Lines(progressLines...)
+		return
+	}
+
+	if fe.testsMode {
+		fe.renderTestsView(ctx)
 		return
 	}
 
@@ -1466,9 +1559,10 @@ func (fe *frontendPretty) applyTuistFocus() {
 	fe.tui.SetFocus(fe)
 }
 
-// syncSpanTreeState synchronizes the SpanTreeView component tree with
-// the current rowsView and rows. Called from recalculateViewLocked()
+// syncSpanTreeState synchronizes the main trace SpanTreeView component tree
+// with the current rowsView and rows. Called from recalculateViewLocked()
 // (i.e., from event handlers and Dispatch callbacks, never from Render).
+// Scoped span tree renderers use syncTreeNodeInScope with their own rows.
 //
 // It walks the TraceTree top-down, creating/reusing SpanTreeViews,
 // computing prefixes, and calling Update() on components whose
@@ -1520,7 +1614,17 @@ func (fe *frontendPretty) syncSpanTreeState() {
 // the current trace data. Updates prefix, focus, spinner, and children.
 // Calls Update() on any SpanTreeView whose visible state changed.
 func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
+	fe.syncTreeNodeInScope(st, newPrefix, nil)
+}
+
+func (fe *frontendPretty) syncTreeNodeInScope(st *SpanTreeView, newPrefix treePrefix, scope *spanTreeScope) {
 	changed := false
+
+	// Sync scope
+	if st.scope != scope {
+		st.scope = scope
+		changed = true
+	}
 
 	// Sync prefix
 	if st.prefix != newPrefix {
@@ -1535,9 +1639,18 @@ func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 		st.Update()
 	}
 
+	rowsView := fe.rowsView
+	opts := fe.FrontendOpts
+	spanTrees := fe.spanTrees
+	if scope != nil {
+		rowsView = scope.rowsView
+		opts = scope.opts
+		spanTrees = scope.spanTrees
+	}
+
 	// Sync children for expanded nodes
-	tree := fe.rowsView.BySpan[st.spanID]
-	if tree == nil || !tree.IsExpanded(fe.FrontendOpts) {
+	tree := rowsView.BySpan[st.spanID]
+	if tree == nil || !tree.IsExpanded(opts) {
 		// Collapsed: clear children so they get dismounted on next render
 		if len(st.children) > 0 {
 			st.children = nil
@@ -1548,9 +1661,9 @@ func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 
 	// Determine visible children
 	var childTrees []*dagui.TraceTree
-	if tree.ShouldShowRevealedSpans(fe.FrontendOpts) {
+	if tree.ShouldShowRevealedSpans(opts) {
 		for _, revealedSpan := range tree.Span.RevealedSpans.Order {
-			if revealedTree, ok := fe.rowsView.BySpan[revealedSpan.ID]; ok {
+			if revealedTree, ok := rowsView.BySpan[revealedSpan.ID]; ok {
 				childTrees = append(childTrees, revealedTree)
 			}
 		}
@@ -1584,9 +1697,10 @@ func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 			child = &SpanTreeView{
 				fe:     fe,
 				spanID: id,
+				scope:  scope,
 			}
 			st.childMap[id] = child
-			fe.spanTrees[id] = child
+			spanTrees[id] = child
 		}
 		child.parent = st
 		child.indexInParent = i
@@ -1596,7 +1710,7 @@ func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 		childPrefix := st.computeChildPrefix(out, hasNext)
 
 		// Recurse
-		fe.syncTreeNode(child, childPrefix)
+		fe.syncTreeNodeInScope(child, childPrefix, scope)
 		newChildren = append(newChildren, child)
 	}
 	for id := range st.childMap {
@@ -1667,10 +1781,7 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 	// Crop the bottom so the focused span stays within the visible
 	// screen area. Content above scrolls into terminal scrollback
 	// naturally — we never crop the top.
-	viewportHeight := ctx.ScreenHeight() - chromeHeight
-	if viewportHeight < 1 {
-		viewportHeight = 1
-	}
+	viewportHeight := max(ctx.ScreenHeight()-chromeHeight, 1)
 
 	end := len(allLines)
 	if focusLine >= 0 && len(allLines) > viewportHeight {
@@ -1694,16 +1805,10 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 //
 // Content above the visible window scrolls into terminal scrollback naturally.
 func cropEnd(totalLines, viewportHeight, focusLine, focusHeight int) int {
-	focusEnd := focusLine + focusHeight
-	if focusEnd > totalLines {
-		focusEnd = totalLines
-	}
+	focusEnd := min(focusLine+focusHeight, totalLines)
 
 	// Split remaining viewport space evenly above and below the focus root.
-	remaining := viewportHeight - focusHeight
-	if remaining < 0 {
-		remaining = 0
-	}
+	remaining := max(viewportHeight-focusHeight, 0)
 	below := remaining / 2
 
 	end := focusEnd + below
@@ -1788,7 +1893,7 @@ func (fe *frontendPretty) findFocusLine(topGapCounts []int) int {
 				len(parent.childLineCounts) != len(parent.children) {
 				return -1
 			}
-			for s := 0; s < idx; s++ {
+			for s := range idx {
 				offset += parent.childGapCounts[s] + parent.childLineCounts[s]
 			}
 			// Add the gap before this node itself.
@@ -1969,6 +2074,39 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 	lastKey := fe.pressedKey
 	fe.recordKeyPress(keyStr)
 
+	if fe.testsMode {
+		switch keyStr {
+		case "q", "ctrl+c":
+			if fe.shell != nil {
+				if fe.shellInterrupt != nil {
+					fe.shellInterrupt(errors.New("interrupted"))
+				}
+			} else {
+				fe.quitAction(ErrInterrupted)
+			}
+		case "T", "esc", "left", "h":
+			fe.closeTestsMode()
+		case "down", "j":
+			fe.goTestDown()
+		case "up", "k":
+			fe.goTestUp()
+		case "home":
+			fe.goTestStart()
+		case "end", "G", "space":
+			fe.goTestEnd()
+		case "enter", "right", "l":
+			fe.openFocusedTestTrace()
+		case "t":
+			if fe.fullscreenTests != nil {
+				if span := fe.fullscreenTests.FocusedSpan(); span != nil {
+					fe.FocusedSpan = span.ID
+					fe.terminal()
+				}
+			}
+		}
+		return
+	}
+
 	switch keyStr {
 	case "q", "ctrl+c":
 		if fe.shell != nil {
@@ -2031,6 +2169,9 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 		}
 		fe.renderVersion++
 		fe.recalculateViewLocked()
+		return
+	case "T":
+		fe.toggleTestsMode()
 		return
 	case "w":
 		if fe.cloudURL == "" {
@@ -2589,9 +2730,13 @@ func (fe *frontendPretty) goErrorOrigin() {
 }
 
 func (fe *frontendPretty) setWindowSizeLocked(msg windowSize) {
+	old := fe.window
 	fe.window = msg
 	fe.contentWidth = msg.Width
 	fe.logs.SetWidth(fe.contentWidth)
+	if old != msg {
+		fe.updateTestViews()
+	}
 	if fe.textInput != nil {
 		fe.textInput.Update()
 	}
@@ -2633,7 +2778,7 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 	if span.Message == "" && // messages are displayed in renderStep
 		(row.Expanded || row.Span.LLMTool != "") {
 		fe.renderStepLogs(out, r, row, prefix, isFocused)
-	} else if (row.Span.RollUpLogs || fe.shell != nil) && row.Depth == 0 && !row.Expanded {
+	} else if (row.Span.RollUpLogs || fe.shell != nil) && row.Depth == 0 && !row.Expanded && !fe.shouldRenderInlineTests(row) {
 		// in shell mode, we print top-level command logs unindented, like shells
 		// usually does
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil && logs.UsedHeight() > 0 {
