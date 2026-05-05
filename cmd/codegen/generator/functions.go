@@ -25,7 +25,6 @@ type FormatTypeFuncs interface {
 	FormatKindScalarFloat(representation string) string
 	FormatKindScalarBoolean(representation string) string
 	FormatKindScalarDefault(representation string, refName string, input bool) string
-	FormatKindScalarID(representation string, expectedType string) string
 	FormatKindObject(representation string, refName string, input bool) string
 	FormatKindInputObject(representation string, refName string, input bool) string
 	FormatKindEnum(representation string, refName string) string

@@ -58,15 +58,6 @@ func (f *FormatTypeFunc) FormatKindScalarDefault(representation string, refName 
 	return representation
 }
 
-func (f *FormatTypeFunc) FormatKindScalarID(representation string, expectedType string) string {
-	if expectedType == "" {
-		representation += "string"
-		return representation
-	}
-	representation += f.scope + f.formatNameFunc(expectedType)
-	return representation
-}
-
 func (f *FormatTypeFunc) FormatKindObject(representation string, refName string, input bool) string {
 	name := refName
 	if name == generator.QueryStructName {
