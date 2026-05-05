@@ -22,9 +22,10 @@ import (
 
 	"github.com/containerd/console"
 	runc "github.com/containerd/go-runc"
+	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	bkresourcestypes "github.com/dagger/dagger/internal/buildkit/executor/resources/types"
 	gatewayapi "github.com/dagger/dagger/internal/buildkit/frontend/gateway/pb"
 	randid "github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
@@ -71,55 +72,77 @@ type ExecutionMetadata struct {
 	NoInit bool
 }
 
-func (w *Worker) Run(
+func (c *Client) Run(
 	ctx context.Context,
 	id string,
 	rootMount executor.Mount,
 	mounts []executor.Mount,
 	procInfo executor.ProcessInfo,
 	started chan<- struct{},
-) (_ bkresourcestypes.Recorder, rerr error) {
+	causeCtx trace.SpanContext,
+	execMD *ExecutionMetadata,
+	sessionID string,
+	callerClientID string,
+	nestedClientMetadata *engine.ClientMetadata,
+	nestedClientModule dagql.AnyObjectResult,
+	nestedClientFunctionCall dagql.Typed,
+	nestedClientEnv dagql.AnyObjectResult,
+) (rerr error) {
 	if id == "" {
 		id = randid.NewID()
 	}
 
-	if err := w.validateEntitlements(procInfo.Meta); err != nil {
-		return nil, err
+	if err := c.validateEntitlements(procInfo.Meta); err != nil {
+		return err
 	}
 
-	state := newExecState(id, &procInfo, rootMount, mounts, started)
-	return nil, w.run(ctx, state,
-		w.setupNetwork,
-		w.injectInit,
-		w.generateBaseSpec,
-		w.filterEnvs,
-		w.setupRootfs,
-		w.setUserGroup,
-		w.setExitCodePath,
-		w.setupStdio,
-		w.setupOTel,
-		w.setupSecretScrubbing,
-		w.setProxyEnvs,
-		w.enableGPU,
-		w.createCWD,
-		w.setupNestedClient,
-		w.installCACerts,
-		w.runContainer,
+	state := newExecState(
+		id,
+		&procInfo,
+		rootMount,
+		mounts,
+		started,
+		causeCtx,
+		execMD,
+		sessionID,
+		callerClientID,
+		nestedClientMetadata,
+		nestedClientModule,
+		nestedClientFunctionCall,
+		nestedClientEnv,
+	)
+	return c.run(ctx, state,
+		c.setupNetwork,
+		c.injectInit,
+		c.generateBaseSpec,
+		c.filterEnvs,
+		c.setupRootfs,
+		c.setUserGroup,
+		c.setExitCodePath,
+		c.setupStdio,
+		c.setupOTel,
+		c.setupSecretScrubbing,
+		c.setProxyEnvs,
+		c.enableGPU,
+		c.createCWD,
+		c.setupNestedClient,
+		c.installCACerts,
+		c.runContainer,
 	)
 }
 
-func (w *Worker) run(
+func (c *Client) run(
 	ctx context.Context,
 	state *execState,
 	setupFuncs ...executorSetupFunc,
 ) (rerr error) {
-	w.mu.Lock()
-	w.running[state.id] = state
-	w.mu.Unlock()
+	c.runningMu.Lock()
+	c.running[state.id] = state
+	c.runningMu.Unlock()
 	defer func() {
-		w.mu.Lock()
-		delete(w.running, state.id)
-		w.mu.Unlock()
+		c.runningMu.Lock()
+		delete(c.running, state.id)
+		c.runningMu.Unlock()
 
 		close(state.done)
 		if err := state.cleanups.Run(); err != nil {
@@ -177,8 +200,8 @@ func (n *networkNamespace) Release(_ context.Context) error {
 	return n.cleanup.Run()
 }
 
-func (w *Worker) newNetNS(ctx context.Context, hostname string) (_ *networkNamespace, rerr error) {
-	provider, ok := w.networkProviders[pb.NetMode_UNSET] // get default CNI provider
+func (c *Client) newNetNS(ctx context.Context, hostname string) (_ *networkNamespace, rerr error) {
+	provider, ok := c.NetworkProviders[pb.NetMode_UNSET] // get default CNI provider
 	if !ok {
 		return nil, fmt.Errorf("no default network provider found")
 	}
@@ -206,13 +229,13 @@ func (w *Worker) newNetNS(ctx context.Context, hostname string) (_ *networkNames
 	}))
 
 	id := randid.NewID()
-	w.mu.Lock()
-	w.running[id] = state
-	w.mu.Unlock()
+	c.runningMu.Lock()
+	c.running[id] = state
+	c.runningMu.Unlock()
 	cleanup.Add("delete run state", cleanups.Infallible(func() {
-		w.mu.Lock()
-		delete(w.running, id)
-		w.mu.Unlock()
+		c.runningMu.Lock()
+		delete(c.running, id)
+		c.runningMu.Unlock()
 	}))
 
 	return &networkNamespace{
@@ -221,8 +244,8 @@ func (w *Worker) newNetNS(ctx context.Context, hostname string) (_ *networkNames
 	}, nil
 }
 
-func (w *Worker) Exec(ctx context.Context, id string, process executor.ProcessInfo) (err error) {
-	if err := w.validateEntitlements(process.Meta); err != nil {
+func (c *Client) Exec(ctx context.Context, id string, process executor.ProcessInfo) (err error) {
+	if err := c.validateEntitlements(process.Meta); err != nil {
 		return err
 	}
 
@@ -231,14 +254,14 @@ func (w *Worker) Exec(ctx context.Context, id string, process executor.ProcessIn
 	// context is canceled.
 	var runcState *runc.Container
 	for {
-		w.mu.RLock()
-		execState, ok := w.running[id]
-		w.mu.RUnlock()
+		c.runningMu.RLock()
+		execState, ok := c.running[id]
+		c.runningMu.RUnlock()
 		if !ok {
 			return fmt.Errorf("container %s not found", id)
 		}
 
-		runcState, _ = w.runc.State(ctx, id)
+		runcState, _ = c.Runc.State(ctx, id)
 		if runcState != nil && runcState.Status == "running" {
 			break
 		}
@@ -287,19 +310,19 @@ func (w *Worker) Exec(ctx context.Context, id string, process executor.ProcessIn
 		}
 	}
 
-	err = w.exec(ctx, id, spec.Process, process, nil)
+	err = c.exec(ctx, id, spec.Process, process, nil)
 	return exitError(ctx, "", err, process.Meta.ValidExitCodes)
 }
 
-func (w *Worker) exec(ctx context.Context, id string, specsProcess *specs.Process, process executor.ProcessInfo, started func()) error {
-	killer, err := newExecProcKiller(w.runc, id)
+func (c *Client) exec(ctx context.Context, id string, specsProcess *specs.Process, process executor.ProcessInfo, started func()) error {
+	killer, err := newExecProcKiller(c.Runc, id)
 	if err != nil {
 		return fmt.Errorf("failed to initialize process killer: %w", err)
 	}
 	defer killer.Cleanup()
 
-	return w.callWithIO(ctx, &process, started, killer, func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error {
-		return w.runc.Exec(ctx, id, *specsProcess, &runc.ExecOpts{
+	return c.callWithIO(ctx, &process, started, killer, func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error {
+		return c.Runc.Exec(ctx, id, *specsProcess, &runc.ExecOpts{
 			Started: started,
 			IO:      io,
 			PidFile: pidfile,
@@ -307,8 +330,8 @@ func (w *Worker) exec(ctx context.Context, id string, specsProcess *specs.Proces
 	})
 }
 
-func (w *Worker) validateEntitlements(meta executor.Meta) error {
-	return w.entitlements.Check(entitlements.Values{
+func (c *Client) validateEntitlements(meta executor.Meta) error {
+	return c.Entitlements.Check(entitlements.Values{
 		NetworkHost:      meta.NetMode == pb.NetMode_HOST,
 		SecurityInsecure: meta.SecurityMode == pb.SecurityMode_INSECURE,
 	})
@@ -649,7 +672,7 @@ func handleSignals(ctx context.Context, runcProcess *procHandle, signals <-chan 
 
 type runcCall func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error
 
-func (w *Worker) callWithIO(ctx context.Context, process *executor.ProcessInfo, started func(), killer procKiller, call runcCall) error {
+func (c *Client) callWithIO(ctx context.Context, process *executor.ProcessInfo, started func(), killer procKiller, call runcCall) error {
 	runcProcess, ctx := runcProcessHandle(ctx, killer)
 	defer runcProcess.Release()
 

@@ -87,7 +87,7 @@ type Server struct {
 	// buildkit+containerd entities/DBs
 	//
 
-	worker                *engineutil.Worker
+	engineUtilOpts        *engineutil.Opts
 	workerCache           bkcache.SnapshotManager
 	workerGCPolicies      []dagql.CachePrunePolicy
 	workerDefaultGCPolicy *dagql.CachePrunePolicy
@@ -406,22 +406,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	)
 
 	workerGCPolicies := getDagqlGCPolicy(*cfg, ociCfg.GCConfig, srv.rootDir)
-	workerOpt := engineutil.WorkerOpt{
-		ID:               rand.Text(),
-		Labels:           baseLabels,
-		Platforms:        srv.enabledPlatforms,
-		GCPolicy:         buildkitPruneInfosFromDagqlPolicies(workerGCPolicies),
-		NetworkProviders: srv.networkProviders,
-		Snapshotter:      workerSnapshotter,
-		ContentStore:     srv.contentStore,
-		Applier:          winlayers.NewFileSystemApplierWithWindows(srv.contentStore, apply.NewFileSystemApplier(srv.contentStore)),
-		Differ:           winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
-		ImageStore:       nil, // explicitly, because that's what upstream does too
-		RegistryHosts:    srv.registryHosts,
-		IdentityMapping:  nil, // no idmapping
-		LeaseManager:     srv.leaseManager,
-		Root:             srv.rootDir,
-	}
 
 	srv.workerCache, err = bkcache.NewSnapshotManager(bkcache.SnapshotManagerOpt{
 		Snapshotter:   workerSnapshotter,
@@ -462,14 +446,19 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, fmt.Errorf("failed to create clean mount namespace: %w", err)
 	}
 
-	srv.worker, err = engineutil.NewWorker(&engineutil.NewWorkerOpts{
-		WorkerOpt:        workerOpt,
-		WorkerRoot:       srv.workerRootDir,
+	srv.engineUtilOpts, err = engineutil.NewOpts(engineutil.Opts{
+		ID:               rand.Text(),
+		Labels:           baseLabels,
+		Platforms:        srv.enabledPlatforms,
+		NetworkProviders: srv.networkProviders,
+		Snapshotter:      workerSnapshotter,
+		ContentStore:     srv.contentStore,
+		Applier:          winlayers.NewFileSystemApplierWithWindows(srv.contentStore, apply.NewFileSystemApplier(srv.contentStore)),
+		Differ:           winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
+		IdentityMapping:  nil, // no idmapping
 		ExecutorRoot:     srv.executorRootDir,
 		TelemetryPubSub:  srv.telemetryPubSub,
-		BKSessionManager: srv.bkSessionManager,
 		SessionHandler:   srv,
-		DagqlServer:      srv,
 
 		Runc:                srv.runc,
 		DefaultCgroupParent: srv.cgroupParent,
@@ -478,13 +467,12 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		ApparmorProfile:     srv.apparmorProfile,
 		SELinux:             srv.selinux,
 		Entitlements:        srv.entitlements,
-		WorkerCache:         srv.workerCache,
 
 		HostMntNS:  hostMntNS,
 		CleanMntNS: srv.cleanMntNS,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create worker: %w", err)
+		return nil, fmt.Errorf("failed to initialize engine util opts: %w", err)
 	}
 
 	//
@@ -692,7 +680,7 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	// DB-close path. When GracefulStop is fixed, it should return those earlier
 	// errors instead of deleting this assignment.
 	//nolint:ineffassign,staticcheck // FIXME: see comment above
-	err = errors.Join(err, srv.worker.Close())
+	err = errors.Join(err, srv.engineUtilOpts.Close())
 
 	// Shutdown the global namespace worker pool
 	engineutil.ShutdownGlobalNamespaceWorkerPool()
@@ -771,8 +759,8 @@ func (srv *Server) Info(context.Context, *controlapi.InfoRequest) (*controlapi.I
 func (srv *Server) ListWorkers(context.Context, *controlapi.ListWorkersRequest) (*controlapi.ListWorkersResponse, error) {
 	resp := &controlapi.ListWorkersResponse{
 		Record: []*apitypes.WorkerRecord{{
-			ID:        srv.worker.ID(),
-			Labels:    srv.worker.Labels(),
+			ID:        srv.engineUtilOpts.ID,
+			Labels:    srv.engineUtilOpts.Labels,
 			Platforms: pb.PlatformsFromSpec(srv.enabledPlatforms),
 		}},
 	}
