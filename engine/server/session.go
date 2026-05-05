@@ -980,6 +980,7 @@ func (srv *Server) ServeHTTPToNestedClient(
 	var workspaceRef *string
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
 		clientMetadata.ClientVersion = md.ClientVersion
+		clientMetadata.AllowedLLMModules = slices.Clone(md.AllowedLLMModules)
 		extraModules = md.ExtraModules
 		loadWorkspaceModules = md.LoadWorkspaceModules
 		eagerRuntime = md.EagerRuntime
