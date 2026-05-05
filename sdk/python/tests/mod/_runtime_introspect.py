@@ -256,9 +256,20 @@ def _build_object_metadata(cls: type) -> ObjectTypeMetadata:
             has_default = field.default is not dataclasses.MISSING or (
                 field.default_factory is not dataclasses.MISSING
             )
-            default_value = (
-                field.default if field.default is not dataclasses.MISSING else None
-            )
+            if field.default is not dataclasses.MISSING:
+                default_value = field.default
+            elif field.default_factory is not dataclasses.MISSING:
+                # ``dagger.field(default=list)`` is rewritten to
+                # ``default_factory=list`` by the dagger decorator.
+                # Call the factory so we compare against the produced
+                # value (``[]`` / ``{}`` / …), matching the AST analyzer's
+                # name_map which special-cases ``list``/``dict``.
+                try:
+                    default_value = field.default_factory()
+                except Exception:
+                    default_value = None
+            else:
+                default_value = None
             fields.append(
                 FieldMetadata(
                     python_name=field.name,
