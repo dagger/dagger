@@ -132,6 +132,8 @@ type Params struct {
 
 	SkipWorkspaceModules bool
 
+	SuppressCompatWorkspaceWarning bool
+
 	// LockMode controls lockfile behavior for lookup resolution.
 	// Valid values: "disabled", "strict", "auto", "update".
 	LockMode string
@@ -1422,26 +1424,27 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	}
 
 	md := engine.ClientMetadata{
-		ClientID:                  c.ID,
-		ClientVersion:             clientVersion,
-		SessionID:                 c.SessionID,
-		ClientSecretToken:         c.SecretToken,
-		ClientHostname:            c.hostname,
-		ClientStableID:            c.stableClientID,
-		UpstreamCacheImportConfig: c.upstreamCacheImportOptions,
-		UpstreamCacheExportConfig: c.upstreamCacheExportOptions,
-		Labels:                    c.labels.AsMap(),
-		CloudOrg:                  cloudOrg,
-		DoNotTrack:                analytics.DoNotTrack(),
-		Interactive:               c.Interactive,
-		InteractiveCommand:        c.InteractiveCommand,
-		SSHAuthSocketPath:         sshAuthSock,
-		AllowedLLMModules:         c.AllowedLLMModules,
-		EagerRuntime:              c.EagerRuntime,
-		CloudAuth:                 c.CloudAuth,
-		EnableCloudScaleOut:       c.EnableCloudScaleOut,
-		CloudScaleOutEngineID:     remoteEngineID,
-		LockMode:                  c.LockMode,
+		ClientID:                       c.ID,
+		ClientVersion:                  clientVersion,
+		SessionID:                      c.SessionID,
+		ClientSecretToken:              c.SecretToken,
+		ClientHostname:                 c.hostname,
+		ClientStableID:                 c.stableClientID,
+		UpstreamCacheImportConfig:      c.upstreamCacheImportOptions,
+		UpstreamCacheExportConfig:      c.upstreamCacheExportOptions,
+		Labels:                         c.labels.AsMap(),
+		CloudOrg:                       cloudOrg,
+		DoNotTrack:                     analytics.DoNotTrack(),
+		Interactive:                    c.Interactive,
+		InteractiveCommand:             c.InteractiveCommand,
+		SSHAuthSocketPath:              sshAuthSock,
+		AllowedLLMModules:              c.AllowedLLMModules,
+		EagerRuntime:                   c.EagerRuntime,
+		SuppressCompatWorkspaceWarning: c.SuppressCompatWorkspaceWarning,
+		CloudAuth:                      c.CloudAuth,
+		EnableCloudScaleOut:            c.EnableCloudScaleOut,
+		CloudScaleOutEngineID:          remoteEngineID,
+		LockMode:                       c.LockMode,
 	}
 
 	if c.Module != "" {
