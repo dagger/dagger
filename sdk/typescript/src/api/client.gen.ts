@@ -2965,11 +2965,6 @@ export type WorkspaceModuleInitOpts = {
   include?: string[]
 
   /**
-   * Blueprint module reference to apply to the new module.
-   */
-  blueprint?: string
-
-  /**
    * Enable the self-calls experimental feature for the new module.
    */
   selfCalls?: boolean
@@ -15192,7 +15187,6 @@ export class Workspace extends BaseClient {
    * @param opts.sdk SDK to use for the new module.
    * @param opts.source Source subpath within the new module.
    * @param opts.include Additional include patterns for the module.
-   * @param opts.blueprint Blueprint module reference to apply to the new module.
    * @param opts.selfCalls Enable the self-calls experimental feature for the new module.
    */
   moduleInit = async (

@@ -16215,9 +16215,6 @@ pub struct WorkspaceMigrateOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceModuleInitOpts<'a> {
-    /// Blueprint module reference to apply to the new module.
-    #[builder(setter(into, strip_option), default)]
-    pub blueprint: Option<&'a str>,
     /// Additional include patterns for the module.
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
@@ -16598,9 +16595,6 @@ impl Workspace {
         }
         if let Some(include) = opts.include {
             query = query.arg("include", include);
-        }
-        if let Some(blueprint) = opts.blueprint {
-            query = query.arg("blueprint", blueprint);
         }
         if let Some(self_calls) = opts.self_calls {
             query = query.arg("selfCalls", self_calls);
