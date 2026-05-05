@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	ctrdmount "github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
@@ -315,6 +316,96 @@ func execNetMode(opts ContainerExecOpts) (pb.NetMode, error) {
 		return pb.NetMode_HOST, nil
 	}
 	return pb.NetMode_UNSET, nil
+}
+
+type serviceBindingExitError struct {
+	binding ServiceBinding
+	err     error
+}
+
+func (e *serviceBindingExitError) Error() string {
+	if e == nil {
+		return "bound service exited"
+	}
+	name := e.binding.Hostname
+	if name == "" {
+		name = "unknown"
+	}
+	if e.err == nil {
+		return fmt.Sprintf("bound service %s (%s) exited", name, e.binding.Aliases)
+	}
+	return fmt.Sprintf("bound service %s (%s) exited: %v", name, e.binding.Aliases, e.err)
+}
+
+func (e *serviceBindingExitError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
+func isServiceBindingExitError(err error) bool {
+	var svcErr *serviceBindingExitError
+	return errors.As(err, &svcErr)
+}
+
+// monitorServiceBindings reports the first bound service that exits while an
+// exec is still running and cancels the exec with the service error as the cause.
+func monitorServiceBindings(
+	ctx context.Context,
+	bindings ServiceBindings,
+	running []*RunningService,
+	cancelExec context.CancelCauseFunc,
+) (<-chan error, func()) {
+	monitorCtx, stopMonitor := context.WithCancel(ctx)
+	serviceErrCh := make(chan error, 1)
+
+	var wg sync.WaitGroup
+	for i, runningSvc := range running {
+		if runningSvc == nil || runningSvc.Wait == nil {
+			continue
+		}
+
+		binding := ServiceBinding{}
+		if i < len(bindings) {
+			binding = bindings[i]
+		}
+		if binding.Hostname == "" {
+			binding.Hostname = runningSvc.Host
+		}
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			err := runningSvc.Wait(monitorCtx)
+			if monitorCtx.Err() != nil {
+				return
+			}
+
+			svcErr := &serviceBindingExitError{
+				binding: binding,
+				err:     err,
+			}
+			select {
+			case serviceErrCh <- svcErr:
+			default:
+			}
+			if cancelExec != nil {
+				cancelExec(svcErr)
+			}
+		}()
+	}
+
+	var stopOnce sync.Once
+	stop := func() {
+		stopOnce.Do(func() {
+			stopMonitor()
+			wg.Wait()
+			close(serviceErrCh)
+		})
+	}
+	return serviceErrCh, stop
 }
 
 func (container *Container) secretEnvValues(ctx context.Context) ([]string, error) {
@@ -1643,13 +1734,19 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 				}
 			}
 
+			// A bound service exiting is the primary failure. Don't turn it into an
+			// ExecError for the command we canceled in response, or the user sees the
+			// command's forced exit code instead of the service failure.
+			serviceBindingExited := isServiceBindingExitError(rerr)
+
 			execMDPresent := execMD != nil
 			execInternal := false
 			hasMetaSpec := metaSpec != nil
 			if execMDPresent {
 				execInternal = execMD.Internal
 			}
-			if engineClient.Interactive &&
+			if !serviceBindingExited &&
+				engineClient.Interactive &&
 				execMDPresent &&
 				!execInternal &&
 				hasMetaSpec {
@@ -1826,15 +1923,17 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 				terminalContainerNeedsRelease = false
 			}
 
-			var existingExecErr *ExecError
-			if !errors.As(rerr, &existingExecErr) {
-				execErr, ok, err := execErrorFromMetaRef(ctx, engineClient, causeCtx, rerr, metaSpec, metaRef)
-				if err != nil {
-					rerr = errors.Join(err, rerr)
-					return
-				}
-				if ok {
-					rerr = execErr
+			if !serviceBindingExited {
+				var existingExecErr *ExecError
+				if !errors.As(rerr, &existingExecErr) {
+					execErr, ok, err := execErrorFromMetaRef(ctx, engineClient, causeCtx, rerr, metaSpec, metaRef)
+					if err != nil {
+						rerr = errors.Join(err, rerr)
+						return
+					}
+					if ok {
+						rerr = execErr
+					}
 				}
 			}
 
@@ -1867,11 +1966,22 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		if err != nil {
 			return fmt.Errorf("failed to get services: %w", err)
 		}
-		detach, _, err := svcs.StartBindings(ctx, container.Services)
+		detach, runningSvcs, err := svcs.StartBindings(ctx, container.Services)
 		if err != nil {
 			return err
 		}
 		defer detach()
+
+		execCtx := ctx
+		var cancelExec context.CancelCauseFunc
+		var serviceErrCh <-chan error
+		stopServiceMonitors := func() {}
+		if len(runningSvcs) > 0 {
+			execCtx, cancelExec = context.WithCancelCause(ctx)
+			serviceErrCh, stopServiceMonitors = monitorServiceBindings(ctx, container.Services, runningSvcs, cancelExec)
+			defer cancelExec(nil)
+			defer stopServiceMonitors()
+		}
 
 		var nestedClientMetadata *engine.ClientMetadata
 		if opts.ExperimentalPrivilegedNesting {
@@ -1899,22 +2009,50 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 				envContext = env
 			}
 		}
-		execErr := engineClient.Run(
-			ctx,
-			"",
-			rootMount,
-			execMounts,
-			procInfo,
-			nil,
-			causeCtx,
-			execMD,
-			clientMetadata.SessionID,
-			clientMetadata.ClientID,
-			nestedClientMetadata,
-			state.ModuleContext,
-			state.FunctionCall,
-			envContext,
-		)
+
+		execErrCh := make(chan error, 1)
+		go func() {
+			execErrCh <- engineClient.Run(
+				execCtx,
+				"",
+				rootMount,
+				execMounts,
+				procInfo,
+				nil,
+				causeCtx,
+				execMD,
+				clientMetadata.SessionID,
+				clientMetadata.ClientID,
+				nestedClientMetadata,
+				state.ModuleContext,
+				state.FunctionCall,
+				envContext,
+			)
+		}()
+
+		var execErr error
+		select {
+		case execErr = <-execErrCh:
+			if execErr != nil {
+				select {
+				case serviceErr := <-serviceErrCh:
+					if serviceErr != nil {
+						execErr = serviceErr
+					}
+				default:
+				}
+			}
+		case serviceErr := <-serviceErrCh:
+			if serviceErr == nil {
+				serviceErr = fmt.Errorf("bound service exited")
+			}
+			execErr = serviceErr
+			if cancelExec != nil {
+				cancelExec(serviceErr)
+			}
+			<-execErrCh
+		}
+		stopServiceMonitors()
 
 		var invalidateErr error
 		for i, ctrMount := range inputMounts {

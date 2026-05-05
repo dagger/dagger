@@ -1058,6 +1058,34 @@ func (ServiceSuite) TestExecServicesError(ctx context.Context, t *testctx.T) {
 	require.Contains(t, execErr.Stdout, "nope\n")
 }
 
+func (ServiceSuite) TestExecServiceExitShortCircuits(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srv := c.Container().
+		From(alpineImage).
+		WithDefaultArgs([]string{"sh", "-c", "while [ ! -f /checked ]; do sleep 1; done; sleep 1; echo service crashed >&2; exit 42"}).
+		WithDockerHealthcheck([]string{"touch", "/checked"}, dagger.ContainerWithDockerHealthcheckOpts{
+			Interval:      "1s",
+			Timeout:       "1s",
+			StartInterval: "100ms",
+			Retries:       3,
+		}).
+		AsService()
+
+	host, err := srv.Hostname(ctx)
+	require.NoError(t, err)
+
+	_, err = c.Container().
+		From(alpineImage).
+		WithEnvVariable("CACHEBUST", identity.NewID()).
+		WithServiceBinding("www", srv).
+		WithExec([]string{"sh", "-c", "sleep 10; echo should-not-run"}).
+		Sync(ctx)
+	require.Error(t, err)
+	requireErrOut(t, err, "bound service "+host+" (aliased as www) exited")
+	requireErrOut(t, err, "exit code: 42")
+}
+
 func (ServiceSuite) TestStartExecError(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
