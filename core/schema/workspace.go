@@ -25,6 +25,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			WithInput(dagql.PerCallInput).
 			Doc("Detect and return the current workspace.").
 			Experimental("Highly experimental API extracted from a more ambitious workspace implementation."),
+		dagql.Func("__workspaceModule", s.workspaceModule),
 	}.Install(srv)
 
 	dagql.Fields[*core.Workspace]{
