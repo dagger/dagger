@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDetectIgnoresWorkspaceConfigAndDoesNotReadFile(t *testing.T) {
+func TestDetectInitializedWorkspace(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -25,9 +25,56 @@ func TestDetectIgnoresWorkspaceConfigAndDoesNotReadFile(t *testing.T) {
 		return nil, os.ErrNotExist
 	}, "/repo/app")
 	require.NoError(t, err)
-	require.Zero(t, readCalls, "readFile should not be called in the no-config split")
+	require.Zero(t, readCalls, "readFile should not be called for structural workspace detection")
 	require.Equal(t, "/repo", ws.Root)
 	require.Equal(t, "app", ws.Path)
+	require.Empty(t, ws.Cwd)
+	require.True(t, ws.Initialized)
+}
+
+func TestDetectInitializedWorkspaceFromNestedCwd(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	existing := map[string]struct{}{
+		"/repo/.dagger":             {},
+		"/repo/.dagger/config.toml": {},
+		"/repo/.git":                {},
+	}
+
+	readCalls := 0
+	ws, err := Detect(ctx, fakePathExists(existing), func(context.Context, string) ([]byte, error) {
+		readCalls++
+		return nil, os.ErrNotExist
+	}, "/repo/app/sub")
+	require.NoError(t, err)
+	require.Zero(t, readCalls, "readFile should not be called for structural workspace detection")
+	require.Equal(t, "/repo", ws.Root)
+	require.Equal(t, ".", ws.Path)
+	require.Equal(t, "app/sub", ws.Cwd)
+	require.True(t, ws.Initialized)
+}
+
+func TestDetectMissingConfigDoesNotChangeBoundary(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	existing := map[string]struct{}{
+		"/repo/app/.dagger": {},
+		"/repo/.git":        {},
+	}
+
+	readCalls := 0
+	ws, err := Detect(ctx, fakePathExists(existing), func(context.Context, string) ([]byte, error) {
+		readCalls++
+		return nil, os.ErrNotExist
+	}, "/repo/app/sub")
+	require.NoError(t, err)
+	require.Zero(t, readCalls, "readFile should not be called for structural workspace detection")
+	require.Equal(t, "/repo", ws.Root)
+	require.Equal(t, ".", ws.Path)
+	require.Equal(t, "app/sub", ws.Cwd)
+	require.False(t, ws.Initialized)
 }
 
 func TestDetectFallsBackToCwdWithoutGit(t *testing.T) {
@@ -42,9 +89,11 @@ func TestDetectFallsBackToCwdWithoutGit(t *testing.T) {
 		return nil, os.ErrNotExist
 	}, "/repo/app")
 	require.NoError(t, err)
-	require.Zero(t, readCalls, "readFile should not be called in the no-config split")
+	require.Zero(t, readCalls, "readFile should not be called for structural workspace detection")
 	require.Equal(t, "/repo/app", ws.Root)
 	require.Equal(t, ".", ws.Path)
+	require.Empty(t, ws.Cwd)
+	require.False(t, ws.Initialized)
 }
 
 func fakePathExists(existing map[string]struct{}) PathExistsFunc {

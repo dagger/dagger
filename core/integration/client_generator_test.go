@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
+// Scope: Client generator output and generated-client dependency behavior.
+// Intent: Keep generated client behavior stable independently of workspace cleanup.
+
 import (
 	"context"
 	"encoding/json"
@@ -542,7 +546,7 @@ main()
 				moduleSrc = moduleSrc.With(tc.postSetup)
 
 				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
-					out, err := moduleSrc.With(tc.runSetup).With(daggerNonNestedRunWithWorkspaceModules(tc.callCmd...)).
+					out, err := moduleSrc.With(tc.runSetup).With(daggerNonNestedExec(append([]string{"run", "--load-workspace-modules"}, tc.callCmd...)...)).
 						Stdout(ctx)
 
 					require.NoError(t, err)
@@ -825,7 +829,7 @@ main()
 				}
 
 				out, err := regeneratedSrc.
-					With(daggerNonNestedRunWithWorkspaceModules(tc.callCmd...)).
+					With(daggerNonNestedExec(append([]string{"run", "--load-workspace-modules"}, tc.callCmd...)...)).
 					Stdout(ctx)
 
 				require.NoError(t, err)
@@ -1875,7 +1879,7 @@ func main() {
 		With(addSDKReplaceToClient(defaultGenDir)).
 		WithExec([]string{"go", "mod", "tidy"})
 
-	out, err := moduleSrc.With(daggerNonNestedRunWithWorkspaceModules("go", "run", "./cmd/main.go")).Stdout(ctx)
+	out, err := moduleSrc.With(daggerNonNestedExec("run", "--load-workspace-modules", "go", "run", "./cmd/main.go")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "result: hi, world!")
 }

@@ -596,10 +596,34 @@ func LoadUpGroupFromID(id dagger.UpGroupID) *dagger.UpGroup {
 	return client.LoadUpGroupFromID(id)
 }
 
+// Load a WorkspaceCwd from its ID.
+func LoadWorkspaceCwdFromID(id dagger.WorkspaceCwdID) *dagger.WorkspaceCwd {
+	client := initClient()
+	return client.LoadWorkspaceCwdFromID(id)
+}
+
 // Load a Workspace from its ID.
 func LoadWorkspaceFromID(id dagger.WorkspaceID) *dagger.Workspace {
 	client := initClient()
 	return client.LoadWorkspaceFromID(id)
+}
+
+// Load a WorkspaceMigration from its ID.
+func LoadWorkspaceMigrationFromID(id dagger.WorkspaceMigrationID) *dagger.WorkspaceMigration {
+	client := initClient()
+	return client.LoadWorkspaceMigrationFromID(id)
+}
+
+// Load a WorkspaceMigrationStep from its ID.
+func LoadWorkspaceMigrationStepFromID(id dagger.WorkspaceMigrationStepID) *dagger.WorkspaceMigrationStep {
+	client := initClient()
+	return client.LoadWorkspaceMigrationStepFromID(id)
+}
+
+// Load a WorkspaceModule from its ID.
+func LoadWorkspaceModuleFromID(id dagger.WorkspaceModuleID) *dagger.WorkspaceModule {
+	client := initClient()
+	return client.LoadWorkspaceModuleFromID(id)
 }
 
 // Create a new module.

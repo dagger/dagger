@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
@@ -125,13 +124,7 @@ func resolveLookupFromLock(
 }
 
 func lockHostPath(ws *core.Workspace) (string, error) {
-	if ws == nil {
-		return "", fmt.Errorf("workspace is required")
-	}
-	if ws.HostPath() == "" {
-		return "", fmt.Errorf("workspace has no host path")
-	}
-	return filepath.Join(ws.HostPath(), ws.Path, workspace.LockDirName, workspace.LockFileName), nil
+	return workspaceHostPath(ws, workspace.LockDirName, workspace.LockFileName)
 }
 
 func readWorkspaceLock(ctx context.Context, bk interface {
@@ -166,4 +159,56 @@ func readWorkspaceLockState(ctx context.Context, bk interface {
 
 func isWorkspaceLockNotFound(err error) bool {
 	return errors.Is(err, os.ErrNotExist) || status.Code(err) == codes.NotFound
+}
+
+func resolveModuleSourceLookupResult(
+	ctx context.Context,
+	query *core.Query,
+	source string,
+	policy workspace.LockPolicy,
+) (workspace.LookupResult, error) {
+	ctx = lookupRefreshContext(ctx)
+
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return workspace.LookupResult{}, fmt.Errorf("engine client: %w", err)
+	}
+
+	parsedRef, err := core.ParseRefString(ctx, core.NewCallerStatFS(bk), source, "")
+	if err != nil {
+		return workspace.LookupResult{}, fmt.Errorf("parse module source %q: %w", source, err)
+	}
+	if parsedRef.Kind != core.ModuleSourceKindGit {
+		return workspace.LookupResult{}, fmt.Errorf("module source %q is not a git source", source)
+	}
+
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return workspace.LookupResult{}, fmt.Errorf("query server: %w", err)
+	}
+
+	gitRef, err := parsedRef.Git.GitRef(ctx, dag, "")
+	if err != nil {
+		return workspace.LookupResult{}, fmt.Errorf("resolve module source %q: %w", source, err)
+	}
+
+	if policy == "" {
+		policy = moduleResolveLockPolicy(gitRef.Self().Ref)
+	}
+
+	return workspace.LookupResult{
+		Value:  gitRef.Self().Ref.SHA,
+		Policy: policy,
+	}, nil
+}
+
+func lookupRefreshContext(ctx context.Context) context.Context {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return ctx
+	}
+
+	refreshed := *clientMetadata
+	refreshed.LockMode = string(workspace.LockModeDisabled)
+	return engine.ContextWithClientMetadata(ctx, &refreshed)
 }

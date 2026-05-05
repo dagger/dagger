@@ -165,6 +165,34 @@ func TestCurrentLookupLockMode(t *testing.T) {
 	})
 }
 
+func TestWorkspaceInstallLookupContext(t *testing.T) {
+	t.Parallel()
+
+	t.Run("defaults unspecified mode to pinned", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{})
+		ctx = workspaceInstallLookupContext(ctx)
+
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		require.NoError(t, err)
+		require.Equal(t, string(workspace.LockModePinned), clientMetadata.LockMode)
+	})
+
+	t.Run("preserves explicit mode", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+			LockMode: string(workspace.LockModeDisabled),
+		})
+		ctx = workspaceInstallLookupContext(ctx)
+
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		require.NoError(t, err)
+		require.Equal(t, string(workspace.LockModeDisabled), clientMetadata.LockMode)
+	})
+}
+
 func TestLockHostPath(t *testing.T) {
 	t.Parallel()
 

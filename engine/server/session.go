@@ -898,10 +898,19 @@ func (srv *Server) getOrInitClient(
 		if opts.LoadWorkspaceModules {
 			client.clientMetadata.LoadWorkspaceModules = true
 		}
+		if opts.SkipWorkspaceModules {
+			client.clientMetadata.SkipWorkspaceModules = true
+		}
 		if client.clientMetadata.Workspace == nil && !client.workspaceLoaded {
 			if workspaceRef, ok := workspaceRefFromClientMetadata(opts.ClientMetadata); ok {
 				ref := workspaceRef
 				client.clientMetadata.Workspace = &ref
+			}
+		}
+		if client.clientMetadata.WorkspaceEnv == nil && !client.workspaceLoaded {
+			if workspaceEnv, ok := workspaceEnvFromClientMetadata(opts.ClientMetadata); ok {
+				env := workspaceEnv
+				client.clientMetadata.WorkspaceEnv = &env
 			}
 		}
 		// ExtraModules may arrive on a later request (e.g. /init) after the
@@ -909,6 +918,7 @@ func (srv *Server) getOrInitClient(
 		if len(opts.ExtraModules) > 0 && len(client.pendingExtraModules) == 0 && !client.modulesLoaded {
 			client.clientMetadata.ExtraModules = opts.ExtraModules
 			client.pendingExtraModules = opts.ExtraModules
+			client.pendingModules = suppressPendingCWDModules(client.pendingModules)
 		}
 	}
 
@@ -973,57 +983,21 @@ func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // in http headers since it includes arbitrary values from users in the function call metadata, which can exceed max header
 // size.
 func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Request, execMD *engineutil.ExecutionMetadata) {
-	clientVersion := execMD.ClientVersionOverride
-	if clientVersion == "" {
-		clientVersion = engine.Version
-	}
-
-	allowedLLMModules := execMD.AllowedLLMModules
-	var extraModules []engine.ExtraModule
-	var loadWorkspaceModules bool
-	var eagerRuntime bool
-	var workspaceRef *string
-	var lockMode string
-	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
-		clientVersion = md.ClientVersion
-		allowedLLMModules = md.AllowedLLMModules
-		extraModules = md.ExtraModules
-		loadWorkspaceModules = md.LoadWorkspaceModules
-		eagerRuntime = md.EagerRuntime
-		if declaredWorkspace, ok := workspaceRefFromClientMetadata(md); ok {
-			ref := declaredWorkspace
-			workspaceRef = &ref
-		}
-		lockMode = md.LockMode
-	}
-
-	if lockMode == "" {
-		lockMode = srv.inheritedNestedClientLockMode(execMD)
-	}
-
+	forwardedMD := readClientMetadata(r)
+	inheritedLockMode := srv.inheritedNestedClientLockMode(execMD)
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
-		ClientMetadata: &engine.ClientMetadata{
-			ClientID:             execMD.ClientID,
-			ClientVersion:        clientVersion,
-			ClientSecretToken:    execMD.SecretToken,
-			SessionID:            execMD.SessionID,
-			ClientHostname:       execMD.Hostname,
-			ClientStableID:       execMD.ClientStableID,
-			Labels:               map[string]string{},
-			SSHAuthSocketPath:    execMD.SSHAuthSocketPath,
-			AllowedLLMModules:    allowedLLMModules,
-			ExtraModules:         extraModules,
-			LoadWorkspaceModules: loadWorkspaceModules,
-			EagerRuntime:         eagerRuntime,
-			LockMode:             lockMode,
-			Workspace:            workspaceRef,
-		},
+		ClientMetadata:         nestedClientMetadata(execMD, forwardedMD, inheritedLockMode),
 		Call:                   execMD.Call,
 		CallerClientID:         execMD.CallerClientID,
 		EncodedModuleID:        execMD.EncodedModuleID,
 		EncodedContentModuleID: execMD.EncodedContentModuleID,
 		EncodedFunctionCall:    execMD.EncodedFunctionCall,
 	}).ServeHTTP(w, r)
+}
+
+func readClientMetadata(r *http.Request) *engine.ClientMetadata {
+	md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header)
+	return md
 }
 
 func (srv *Server) inheritedNestedClientLockMode(execMD *engineutil.ExecutionMetadata) string {
@@ -1057,14 +1031,17 @@ func nestedClientMetadata(execMD *engineutil.ExecutionMetadata, forwarded *engin
 
 	allowedLLMModules := execMD.AllowedLLMModules
 	var extraModules []engine.ExtraModule
+	var loadWorkspaceModules bool
 	var skipWorkspaceModules bool
 	lockMode := inheritedLockMode
 	var eagerRuntime bool
 	var workspaceRef *string
+	var workspaceEnv *string
 	if forwarded != nil {
 		clientVersion = forwarded.ClientVersion
 		allowedLLMModules = forwarded.AllowedLLMModules
 		extraModules = forwarded.ExtraModules
+		loadWorkspaceModules = forwarded.LoadWorkspaceModules
 		skipWorkspaceModules = forwarded.SkipWorkspaceModules
 		if forwarded.LockMode != "" {
 			lockMode = forwarded.LockMode
@@ -1073,6 +1050,10 @@ func nestedClientMetadata(execMD *engineutil.ExecutionMetadata, forwarded *engin
 		if declaredWorkspace, ok := workspaceRefFromClientMetadata(forwarded); ok {
 			ref := declaredWorkspace
 			workspaceRef = &ref
+		}
+		if declaredEnv, ok := workspaceEnvFromClientMetadata(forwarded); ok {
+			env := declaredEnv
+			workspaceEnv = &env
 		}
 	}
 
@@ -1087,10 +1068,12 @@ func nestedClientMetadata(execMD *engineutil.ExecutionMetadata, forwarded *engin
 		SSHAuthSocketPath:    execMD.SSHAuthSocketPath,
 		AllowedLLMModules:    allowedLLMModules,
 		ExtraModules:         extraModules,
+		LoadWorkspaceModules: loadWorkspaceModules,
 		SkipWorkspaceModules: skipWorkspaceModules,
 		LockMode:             lockMode,
 		EagerRuntime:         eagerRuntime,
 		Workspace:            workspaceRef,
+		WorkspaceEnv:         workspaceEnv,
 	}
 }
 
@@ -1453,8 +1436,8 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 }
 
 // Stitch in the given module to the list being served to the current client.
-// When includeDependencies is true, dependency modules and toolchains are
-// also served with their constructors on the Query root.
+// When includeDependencies is true, dependency modules are also served with
+// their constructors on the Query root.
 // When entrypoint is true, the module's main-object methods are promoted
 // onto the Query root.
 func (srv *Server) ServeModule(ctx context.Context, mod dagql.ObjectResult[*core.Module], includeDependencies bool, entrypoint bool) error {

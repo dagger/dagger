@@ -1,6 +1,7 @@
 package core
 
 import (
+	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -12,12 +13,21 @@ type Workspace struct {
 	// directories lazily via per-call host.directory() instead.
 	rootfs dagql.ObjectResult[*Directory]
 
+	// compatWorkspace stores the originating compat-workspace projection when
+	// this workspace was loaded from a legacy dagger.json instead of an explicit
+	// .dagger/config.toml. Internal only.
+	compatWorkspace *workspacepkg.CompatWorkspace
+
 	// Path is the workspace directory relative to the workspace boundary.
 	Path        string `field:"true" doc:"Workspace directory path relative to the workspace boundary."`
 	Address     string `field:"true" doc:"Canonical Dagger address of the workspace directory."`
 	Initialized bool   `field:"true" doc:"Whether .dagger/config.toml exists."`
 	ConfigPath  string `field:"true" doc:"Path to config.toml relative to the workspace boundary (empty if not initialized)."`
 	HasConfig   bool   `field:"true" doc:"Whether a config.toml file exists in the workspace."`
+
+	// Cwd is the current working directory within the workspace. Empty means
+	// the workspace directory itself.
+	Cwd string
 
 	// ClientID is the ID of the client that created this workspace.
 	// Used to route host filesystem operations through the correct session
@@ -52,6 +62,17 @@ func (ws *Workspace) SetHostPath(p string) {
 	ws.hostPath = p
 }
 
+// CompatWorkspace returns the internal compat-workspace provenance for this
+// workspace. Nil means this workspace was not loaded from legacy compat mode.
+func (ws *Workspace) CompatWorkspace() *workspacepkg.CompatWorkspace {
+	return ws.compatWorkspace
+}
+
+// SetCompatWorkspace sets the internal compat-workspace provenance.
+func (ws *Workspace) SetCompatWorkspace(compat *workspacepkg.CompatWorkspace) {
+	ws.compatWorkspace = compat
+}
+
 func (*Workspace) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "Workspace",
@@ -65,5 +86,57 @@ func (*Workspace) TypeDescription() string {
 
 func (ws *Workspace) Clone() *Workspace {
 	cp := *ws
+	return &cp
+}
+
+// WorkspaceCwd represents the client's current working directory within a
+// detected workspace.
+type WorkspaceCwd struct {
+	// rootfs is the pre-fetched root filesystem for remote workspaces.
+	rootfs dagql.ObjectResult[*Directory]
+
+	// Path is relative to the workspace path. Empty means the workspace path.
+	Path string `field:"true" doc:"Location of the current working directory within the workspace, relative to the workspace."`
+
+	WorkspacePath string
+	ClientID      string
+
+	// hostPath is the host filesystem path for the workspace boundary.
+	hostPath string
+}
+
+// Rootfs returns the pre-fetched root filesystem directory for remote workspaces.
+func (cwd *WorkspaceCwd) Rootfs() dagql.ObjectResult[*Directory] {
+	return cwd.rootfs
+}
+
+// SetRootfs sets the pre-fetched root filesystem.
+func (cwd *WorkspaceCwd) SetRootfs(r dagql.ObjectResult[*Directory]) {
+	cwd.rootfs = r
+}
+
+// HostPath returns the internal host filesystem path for the workspace boundary.
+func (cwd *WorkspaceCwd) HostPath() string {
+	return cwd.hostPath
+}
+
+// SetHostPath sets the internal host filesystem path.
+func (cwd *WorkspaceCwd) SetHostPath(p string) {
+	cwd.hostPath = p
+}
+
+func (*WorkspaceCwd) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "WorkspaceCwd",
+		NonNull:   true,
+	}
+}
+
+func (*WorkspaceCwd) TypeDescription() string {
+	return "The current working directory within the workspace. This is set to the directory where workspace detection started, and cannot be changed."
+}
+
+func (cwd *WorkspaceCwd) Clone() *WorkspaceCwd {
+	cp := *cwd
 	return &cp
 }

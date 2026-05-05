@@ -1,5 +1,9 @@
 package core
 
+// Workspace alignment: mostly aligned; command intent is explicit, though the file still uses host-side setup patterns.
+// Scope: Git credential forwarding for module sources and dependency installs.
+// Intent: Keep module auth behavior covered with exact host-side command helpers instead of legacy command rewriting.
+
 import (
 	"context"
 	"encoding/base64"
@@ -41,7 +45,7 @@ func (GitCredentialSuite) TestGitCredentialErrors(ctx context.Context, t *testct
 
 	// Wrapper to execute dagger commands running on host with custom env vars
 	execWithEnv := func(ctx context.Context, t *testctx.T, workDir string, env []string, args ...string) ([]byte, error) {
-		cmd := hostDaggerCommand(ctx, t, workDir, args...)
+		cmd := hostDaggerCommandRaw(ctx, t, workDir, args...)
 
 		// Start with the full environment
 		currentEnv := os.Environ()
@@ -160,7 +164,7 @@ func (m *Dep) ListFiles(ctx context.Context, dir *dagger.Directory) ([]string, e
 		require.NoError(t, err)
 
 		// Initialize the dependent module
-		_, err = hostDaggerExec(ctx, t, depModDir, "init", "--source=.", "--name=dep", "--sdk=go")
+		_, err = hostDaggerModuleExec(ctx, t, depModDir, "init", "--source=.", "--name=dep", "--sdk=go")
 		require.NoError(t, err)
 
 		// Write the main module's code with matching return type
@@ -180,11 +184,11 @@ func (m *Test) Fn(ctx context.Context, dir *dagger.Directory) ([]string, error) 
 		require.NoError(t, err)
 
 		// Initialize the main module
-		_, err = hostDaggerExec(ctx, t, rootDir, "init", "--source=.", "--name=test", "--sdk=go")
+		_, err = hostDaggerModuleExec(ctx, t, rootDir, "init", "--source=.", "--name=test", "--sdk=go")
 		require.NoError(t, err)
 
 		// Install the dependent module using relative path
-		_, err = hostDaggerExec(ctx, t, rootDir, "install", "./dep")
+		_, err = hostDaggerModuleExec(ctx, t, rootDir, "install", "./dep")
 		require.NoError(t, err)
 
 		// Execute the module with a private Git repository directory
