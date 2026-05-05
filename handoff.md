@@ -232,38 +232,22 @@ git diff --check
 
 ### SDK backwards-compatibility follow-up
 
-Go now has the intended compatibility model for regenerated pre-cutover
-modules: keep the schema hard-cut over to unified `ID`, `node(id:)`, and real
-GraphQL interfaces, but generate legacy SDK source symbols as a facade over
-that graph when the introspection/view version is before `v0.21.0`.
+The regenerated pre-cutover module compatibility model is implemented for Go,
+Python, and TypeScript. Keep using this policy for any remaining SDK work:
+leave the schema hard-cut over to unified `ID`, `node(id:)`, and real GraphQL
+interfaces, and generate legacy SDK source symbols as a facade gated on the
+effective introspection/view version (`< v0.21.0`). Legacy load helpers should
+select `node(id:)` with the expected type, not query removed root fields.
 
-Python and TypeScript now follow this policy too. Continue using this model
-rather than restoring `loadFooFromID` fields or per-type ID scalars globally.
-For each remaining SDK:
+Remaining SDK follow-up:
 
-- make the generator receive/preserve the introspection `__schemaVersion`
-  (or the existing effective schema-version equivalent);
-- gate legacy generated source surface on `< v0.21.0`;
-- implement typed-ID/load-helper compatibility by selecting `node(id:)` with
-  the expected type, not by querying removed root fields;
-- keep modern output unchanged for `v0.21.0` and newer modules;
-- add regression fixtures using unchanged old module source, especially for
-  interface arguments/returns and ID round-tripping.
-
-Known plumbing status from the audit:
-
-- Python now has the same regenerated-old-module compatibility model as Go.
-  Its codegen reads `__schemaVersion`, generates pre-`v0.21.0` typed ID
-  classes such as `ContainerID`, makes legacy `id()` methods return those
-  classes, and emits `load_foo_from_id` helpers that call `Context.select_id`
-  (`node(id:)` plus inline fragment) instead of removed root fields. It also
-  preserves directive AST stubs for object/interface fields, field args, and
-  input fields so `@expectedType` survives `graphql.build_client_schema`.
-- TypeScript now has the legacy typed-ID/load-helper facade, with runtime
-  `engineVersion` plumbing into module codegen.
-- PHP also ignores `__schemaVersion`, and Java should prefer
-  `__schemaVersion` from introspection JSON when present. These are not the
-  immediate ask, but they are the same class of follow-up.
+- PHP: preserve/read introspection `__schemaVersion`, then decide whether to
+  add the same legacy facade for regenerated pre-cutover modules.
+- Java: prefer/read introspection `__schemaVersion` when present, then decide
+  whether to add the same legacy facade for regenerated pre-cutover modules.
+- Stale checked-in generated clients are still a policy decision. If they must
+  keep working without regeneration, restore legacy schema fields/scalars only
+  under a pre-cutover view, not globally.
 
 ### Active `FromID` straggler handling
 
