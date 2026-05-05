@@ -128,21 +128,19 @@ to dagger.
   git pull $DAGGER_REPO_REMOTE "$RELEASE_BRANCH"
   ```
 
-- [ ] Determine the next release version (use `patch`/`minor`/`major` to set the release type):
+- [ ] Set the target release version:
 
   ```console
-  export ENGINE_VERSION="$(dagger call -m version next-release-version)"
+  export ENGINE_VERSION="vX.Y.Z"
 
   # this is required to interpolate $ENGINE_VERSION to the SDK release notes
   export CHANGIE_ENGINE_VERSION="$ENGINE_VERSION"
   ```
 
-- [ ] Ensure that `.changes/.next` contains `$ENGINE_VERSION` - if it doesn't,
-      update it now!
-
-  ```console
-  grep -Fx "$ENGINE_VERSION" .changes/.next || { echo "ENGINE_VERSION env var does not match what's in .changes/.next"; false }
-  ```
+- [ ] Ensure that the `release` toolchain's `targetVersion` customization in
+      `dagger.json` is set to `$ENGINE_VERSION`. The release module's
+      `@generate` functions use this value to regenerate all repo files that
+      reference the target Engine version.
 
 - [ ] Create the target release notes branch for a PR.
 
@@ -150,10 +148,10 @@ to dagger.
   git checkout -b prep-$ENGINE_VERSION
   ```
 
-- [ ] Bump internal versions (sdks + docs + helm chart) to the target version
+- [ ] Regenerate target-version files (SDKs + docs + Helm chart)
 
   ```console
-  dagger -y call release bump --engine-version="$ENGINE_VERSION"
+  dagger -y generate
   ```
 
 - [ ] Bump [Go SDK package commit](https://github.com/dagger/dagger/blob/becc3f0a6626cf6829ef96ded00d379d3126ecd4/core/sdk/go_sdk.go#L27) to the latest commit from the [dagger-go-sdk](https://github.com/dagger/dagger-go-sdk) repository.
@@ -177,7 +175,7 @@ to dagger.
 - [ ] Commit
 
   ```console
-  git add docs sdk helm lib/dagger/core core/sdk
+  git add dagger.json docs sdk helm core/sdk
   git commit -s -m "chore: bump dependencies to $ENGINE_VERSION"
   ```
 
@@ -189,7 +187,7 @@ to dagger.
   export RELEASE_PREP_PR=$(cat /tmp/prep-pr.txt | sed -r 's/^[^0-9]*([0-9]+).*/\1/')
   ```
 
-- [ ] Generate bump changes for each SDK + the helm charts
+- [ ] Generate changelog fragments for each SDK + the Helm chart
 
   ```console
   export GITHUB_USERNAME=$(gh api /user --jq .login)
@@ -209,7 +207,8 @@ to dagger.
 
 > [!NOTE]
 >
-> We need to rethink SDK-specific changelogs, they're not really used anymore other than bumping engine versions.
+> We need to rethink SDK-specific changelogs. They're not used to generate
+> target-version files anymore, and mostly duplicate the top-level release notes.
 >
 
   ```console
@@ -218,14 +217,6 @@ to dagger.
   find . -name .changes -type d -exec git add {} \;
   find . -name CHANGELOG.md -type f -exec git add {} \;
   git commit -s -m "chore: add release notes for $ENGINE_VERSION"
-  ```
-
-- [ ] Update `.changes/.next` with the next release number if known and commit it -
-      otherwise, make the file empty (but don't remove it).
-
-  ```console
-  git add .changes/.next
-  git commit -s -m 'bump .next to next release version'
   ```
 
 - [ ] Push changes, and bring the prep PR out of draft:

@@ -18,7 +18,25 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type Release struct{}
+func New(
+	// Target Dagger Engine version to release, e.g. v0.21.0.
+	targetVersion string,
+) (*Release, error) {
+	if targetVersion == "" {
+		return nil, fmt.Errorf("targetVersion is required")
+	}
+	if !semver.IsValid(targetVersion) {
+		return nil, fmt.Errorf("targetVersion must be a canonical semver like v0.21.0: %q", targetVersion)
+	}
+
+	return &Release{
+		TargetVersion: targetVersion,
+	}, nil
+}
+
+type Release struct {
+	TargetVersion string
+}
 
 type ReleaseReport struct {
 	Ref     string
