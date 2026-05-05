@@ -25,6 +25,16 @@ type ModuleEntry struct {
 	Settings          map[string]any `toml:"settings,omitempty"`
 	Entrypoint        bool           `toml:"entrypoint,omitempty"`
 	LegacyDefaultPath bool           `toml:"legacy-default-path,omitempty"`
+	Up                ModuleSkip     `toml:"up,omitempty"`
+	Generate          ModuleSkip     `toml:"generate,omitempty"`
+	Check             ModuleSkip     `toml:"check,omitempty"`
+}
+
+// ModuleSkip carries the per-action skip patterns for a module entry.
+// Patterns may be exact names or globs and apply to the action's leaf nodes
+// scoped under the module (e.g. "redis", "infra:database", "other-generators:*").
+type ModuleSkip struct {
+	Skip []string `toml:"skip,omitempty"`
 }
 
 // EnvOverlay is a named workspace environment overlay.
@@ -189,6 +199,9 @@ func cloneConfig(cfg *Config) *Config {
 				Settings:          cloneConfigMap(entry.Settings),
 				Entrypoint:        entry.Entrypoint,
 				LegacyDefaultPath: entry.LegacyDefaultPath,
+				Up:                ModuleSkip{Skip: append([]string(nil), entry.Up.Skip...)},
+				Generate:          ModuleSkip{Skip: append([]string(nil), entry.Generate.Skip...)},
+				Check:             ModuleSkip{Skip: append([]string(nil), entry.Check.Skip...)},
 			}
 		}
 	}
@@ -245,6 +258,15 @@ func writeModuleEntries(b *strings.Builder, modules map[string]ModuleEntry) bool
 		}
 		if entry.LegacyDefaultPath {
 			b.WriteString("legacy-default-path = true\n")
+		}
+		if len(entry.Up.Skip) > 0 {
+			fmt.Fprintf(b, "up.skip = %s\n", formatConfigValue(entry.Up.Skip))
+		}
+		if len(entry.Generate.Skip) > 0 {
+			fmt.Fprintf(b, "generate.skip = %s\n", formatConfigValue(entry.Generate.Skip))
+		}
+		if len(entry.Check.Skip) > 0 {
+			fmt.Fprintf(b, "check.skip = %s\n", formatConfigValue(entry.Check.Skip))
 		}
 		writeConfigTable(b, "modules."+name+".settings", entry.Settings, true)
 	}
@@ -538,6 +560,22 @@ func setConfigValue(cfg *Config, parts []string, value any) error {
 				entry.Settings = map[string]any{}
 			}
 			entry.Settings[parts[3]] = value
+		case "up", "generate", "check":
+			if len(parts) != 4 || parts[3] != "skip" {
+				return fmt.Errorf("invalid key %q; expected modules.%s.%s.skip", strings.Join(parts, "."), moduleName, parts[2])
+			}
+			skip := []string{fmt.Sprint(value)}
+			if s, ok := value.([]string); ok {
+				skip = append([]string(nil), s...)
+			}
+			switch parts[2] {
+			case "up":
+				entry.Up.Skip = skip
+			case "generate":
+				entry.Generate.Skip = skip
+			case "check":
+				entry.Check.Skip = skip
+			}
 		default:
 			return fmt.Errorf("unknown config key %q", strings.Join(parts, "."))
 		}
