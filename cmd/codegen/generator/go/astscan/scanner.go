@@ -8,6 +8,7 @@
 package astscan
 
 import (
+	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -17,6 +18,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dagger/dagger/cmd/codegen/generator/go/pragma"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/cmd/codegen/schematool"
 )
@@ -126,7 +128,7 @@ func (s *scanner) run() (*schematool.ModuleTypes, error) {
 		for _, decl := range f.Decls {
 			switch d := decl.(type) {
 			case *ast.GenDecl:
-				if err := s.walkGenDecl(out, d, imports, sameModule, enumIndex); err != nil {
+				if err := s.walkGenDecl(out, f, d, imports, sameModule, enumIndex); err != nil {
 					return nil, err
 				}
 			case *ast.FuncDecl:
@@ -142,7 +144,7 @@ func (s *scanner) run() (*schematool.ModuleTypes, error) {
 	for i, obj := range out.Objects {
 		for _, m := range methods[obj.Name] {
 			f := methodFiles[m]
-			fn, err := s.walkMethod(m, collectImports(f), sameModule)
+			fn, err := s.walkMethod(f, m, collectImports(f), sameModule)
 			if err != nil {
 				return nil, err
 			}
@@ -356,6 +358,7 @@ func enumValueFromCallExpr(value ast.Expr, enumIndex map[string]int) (callEnumVa
 // EnumDef (values populated in a later pass).
 func (s *scanner) walkGenDecl(
 	out *schematool.ModuleTypes,
+	file *ast.File,
 	gd *ast.GenDecl,
 	imports map[string]string,
 	sameModule map[string]string,
@@ -404,6 +407,7 @@ func (s *scanner) walkGenDecl(
 						continue
 					}
 					fn, err := s.walkFuncType(
+						file,
 						methodName.Name,
 						strings.TrimSpace(field.Doc.Text()),
 						ft,
@@ -437,6 +441,7 @@ func (s *scanner) walkGenDecl(
 // It skips unexported methods and drops context.Context args and
 // `error` returns.
 func (s *scanner) walkMethod(
+	file *ast.File,
 	fd *ast.FuncDecl,
 	imports map[string]string,
 	sameModule map[string]string,
@@ -445,6 +450,7 @@ func (s *scanner) walkMethod(
 		return nil, nil
 	}
 	return s.walkFuncType(
+		file,
 		fd.Name.Name,
 		strings.TrimSpace(fd.Doc.Text()),
 		fd.Type,
@@ -455,8 +461,11 @@ func (s *scanner) walkMethod(
 
 // walkFuncType is the shared core of method and interface-method
 // extraction. name is the Go identifier; description is the doc
-// comment text.
+// comment text. file is the AST file the function lives in; the
+// scanner uses its comment groups to find parameter doc/line
+// comments (Go's parser does not attach those to *ast.Field).
 func (s *scanner) walkFuncType(
+	file *ast.File,
 	name string,
 	description string,
 	ft *ast.FuncType,
@@ -469,7 +478,11 @@ func (s *scanner) walkFuncType(
 	}
 
 	if ft.Params != nil {
-		for _, field := range ft.Params.List {
+		// Unpack so each (name, type) pair becomes its own logical
+		// field. Comments attach to the first name only — matches the
+		// legacy template path.
+		unpacked := unpackFields(ft.Params.List)
+		for i, field := range unpacked {
 			tref, err := s.resolveType(field.Type, imports, sameModule, field.Type.Pos())
 			if err == errContextArg {
 				continue
@@ -481,12 +494,22 @@ func (s *scanner) walkFuncType(
 				// unnamed param; skip (Dagger modules don't use them).
 				continue
 			}
-			for _, pname := range field.Names {
-				fn.Args = append(fn.Args, schematool.FuncArg{
-					Name:    pname.Name,
-					TypeRef: tref,
-				})
+
+			docText, lineText := s.paramComments(file, ft.Params, unpacked, i)
+			argDesc, defaultJSON, optional, err := s.parseParamPragmas(docText, lineText)
+			if err != nil {
+				return nil, fmt.Errorf("function %s param %s: %w", name, field.Names[0].Name, err)
 			}
+			if optional || defaultJSON != nil {
+				tref = stripNonNull(tref)
+			}
+
+			fn.Args = append(fn.Args, schematool.FuncArg{
+				Name:         field.Names[0].Name,
+				Description:  argDesc,
+				TypeRef:      tref,
+				DefaultValue: defaultJSON,
+			})
 		}
 	}
 
@@ -566,4 +589,151 @@ func lowerFirst(s string) string {
 		return s
 	}
 	return strings.ToLower(s[:1]) + s[1:]
+}
+
+// unpackFields splits multi-name fields (e.g. `a, b string`) into one
+// logical field per name. The first name keeps the original Doc /
+// Comment groups; later names get nil comments to match how the
+// legacy template path attaches comments only to the first identifier.
+func unpackFields(fields []*ast.Field) []*ast.Field {
+	out := make([]*ast.Field, 0, len(fields))
+	for _, field := range fields {
+		if len(field.Names) <= 1 {
+			out = append(out, field)
+			continue
+		}
+		for i, name := range field.Names {
+			cp := *field
+			cp.Names = []*ast.Ident{name}
+			if i != 0 {
+				cp.Doc = nil
+				cp.Comment = nil
+			}
+			out = append(out, &cp)
+		}
+	}
+	return out
+}
+
+// paramComments returns the doc and line comment text for the i-th
+// parameter in params (after unpacking). It walks the file's comment
+// groups by line number — Go's parser does not attach comments to
+// function parameters automatically.
+//
+// Mirrors the legacy templates.commentForFuncField logic.
+func (s *scanner) paramComments(file *ast.File, params *ast.FieldList, unpacked []*ast.Field, i int) (string, string) {
+	if file == nil || params == nil || i >= len(unpacked) {
+		return "", ""
+	}
+	pos := unpacked[i].Pos()
+	tokenFile := s.fset.File(pos)
+	if tokenFile == nil {
+		return "", ""
+	}
+	line := tokenFile.Line(pos)
+
+	allowDoc := true
+	allowLine := true
+	if i == 0 {
+		startLine := tokenFile.Line(params.Pos())
+		if startLine == line || startLine == line-1 {
+			allowDoc = false
+		}
+	} else {
+		prevLine := tokenFile.Line(unpacked[i-1].Pos())
+		if prevLine == line || prevLine == line-1 {
+			allowDoc = false
+		}
+	}
+	if i+1 < len(unpacked) {
+		nextLine := tokenFile.Line(unpacked[i+1].Pos())
+		if nextLine == line {
+			allowLine = false
+		}
+	} else {
+		endLine := tokenFile.Line(params.End())
+		if endLine == line {
+			allowLine = false
+		}
+	}
+
+	var docText, lineText string
+	for _, cg := range file.Comments {
+		if s.fset.File(cg.Pos()) != tokenFile {
+			continue
+		}
+		if allowDoc && docText == "" {
+			last := cg.List[len(cg.List)-1]
+			lastLine := tokenFile.Line(last.Pos()) + strings.Count(last.Text, "\n")
+			if lastLine == line || lastLine == line-1 {
+				docText = cg.Text()
+			}
+		}
+		if allowLine && lineText == "" {
+			first := cg.List[0]
+			if tokenFile.Line(first.Pos()) == line {
+				lineText = cg.Text()
+			}
+		}
+	}
+	return docText, lineText
+}
+
+// parseParamPragmas reads dagger pragma directives from a parameter's
+// doc and line comments and returns the human description (with
+// pragmas stripped), a JSON-encoded default value (or nil), and
+// whether the parameter is optional.
+//
+// `+default=<json>` implies optional, matching the engine's
+// FunctionArg semantics.
+func (s *scanner) parseParamPragmas(docText, lineText string) (description string, defaultJSON *string, optional bool, err error) {
+	docPragmas, docRest := pragma.Parse(docText)
+	linePragmas, lineRest := pragma.Parse(lineText)
+
+	description = strings.TrimSpace(docRest)
+	if description == "" {
+		description = strings.TrimSpace(lineRest)
+	}
+
+	merged := make(map[string]any, len(docPragmas)+len(linePragmas))
+	for k, v := range docPragmas {
+		merged[k] = v
+	}
+	for k, v := range linePragmas {
+		merged[k] = v
+	}
+
+	if v, ok := merged["optional"]; ok {
+		if v == nil {
+			optional = true
+		} else if b, ok := v.(bool); ok {
+			optional = b
+		}
+	}
+	if v, ok := merged["default"]; ok {
+		encoded, encErr := json.Marshal(v)
+		if encErr != nil {
+			err = fmt.Errorf("encode default value %v: %w", v, encErr)
+			return
+		}
+		s := string(encoded)
+		defaultJSON = &s
+		// `+default=` implies optional in the engine — matches the
+		// legacy paramSpec behaviour.
+		optional = true
+	}
+	return
+}
+
+// stripNonNull removes the outermost NON_NULL wrapper from a typeref,
+// turning a "required" type into an "optional" one. No-op when ref is
+// nil or already nullable.
+func stripNonNull(ref *schematool.TypeRef) *schematool.TypeRef {
+	if ref == nil {
+		return nil
+	}
+	if ref.Kind == "NON_NULL" {
+		return ref.OfType
+	}
+	return ref
 }

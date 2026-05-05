@@ -24,6 +24,7 @@ func TestScan(t *testing.T) {
 		{"enum_untyped", "status"},
 		{"void_return", "echo"},
 		{"optional_args", "echo"},
+		{"pragma_args", "echo"},
 		{"module_local_dagger", "my-module"},
 	}
 	schema := loadSchema(t)
