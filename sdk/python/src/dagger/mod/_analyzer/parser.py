@@ -444,6 +444,9 @@ class ModuleParser:
                     func = self._parse_function(item, file_path, node.name)
                     functions.append(func)
 
+        seen_names = {f.python_name for f in functions}
+        functions.extend(self._find_inherited_functions(node, node.name, seen_names))
+
         return fields, functions, init_params, constructor
 
     def _process_annotated_assign(
@@ -871,11 +874,69 @@ class ModuleParser:
 
     def _find_class_def(self, class_name: str) -> ast.ClassDef | None:
         """Find a class definition by name in all parsed ASTs."""
-        for tree in self._asts.values():
+        found = self._find_class_def_with_file(class_name)
+        return found[0] if found else None
+
+    def _find_class_def_with_file(
+        self, class_name: str
+    ) -> tuple[ast.ClassDef, Path] | None:
+        """Find a class definition (and its source file) in all parsed ASTs."""
+        for path, tree in self._asts.items():
             for ast_node in ast.iter_child_nodes(tree):
                 if isinstance(ast_node, ast.ClassDef) and ast_node.name == class_name:
-                    return ast_node
+                    return ast_node, path
         return None
+
+    def _find_inherited_functions(
+        self,
+        node: ast.ClassDef,
+        class_name: str,
+        seen_names: set[str],
+        visited: set[str] | None = None,
+    ) -> list[FunctionMetadata]:
+        """Collect ``@function``-decorated methods from base classes via MRO.
+
+        ``class_name`` is the originating (child) class — used so resolution
+        of ``Self`` returns the child type, matching Python's runtime
+        behavior. ``seen_names`` accumulates Python names already discovered
+        on the child or earlier-walked bases so that overrides win.
+        """
+        if visited is None:
+            visited = {node.name}
+
+        inherited: list[FunctionMetadata] = []
+        for base in node.bases:
+            base_name = None
+            if isinstance(base, ast.Name):
+                base_name = base.id
+            elif isinstance(base, ast.Attribute):
+                base_name = base.attr
+
+            if base_name is None or base_name in visited:
+                continue
+            visited.add(base_name)
+
+            found = self._find_class_def_with_file(base_name)
+            if found is None:
+                continue
+            base_class, base_file = found
+
+            for item in base_class.body:
+                if (
+                    isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and has_decorator(item, "function")
+                    and item.name not in seen_names
+                ):
+                    func = self._parse_function(item, base_file, class_name)
+                    inherited.append(func)
+                    seen_names.add(item.name)
+
+            inherited.extend(
+                self._find_inherited_functions(
+                    base_class, class_name, seen_names, visited
+                )
+            )
+        return inherited
 
     def _parse_function(
         self,
