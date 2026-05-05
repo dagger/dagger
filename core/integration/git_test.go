@@ -56,7 +56,7 @@ func requireIsCommitSHA(ctx context.Context, t *testctx.T, actual string) {
 
 // verify git ref has expected commit hash
 func requireGitRefCommitEqual(ctx context.Context, t *testctx.T, expectedCommit string, ref *dagger.GitRef) {
-	commit, err := ref.Commit(ctx)
+	commit, err := ref.CommitSHA(ctx)
 	require.NoError(t, err)
 	if expectedCommit != "" {
 		require.Equal(t, expectedCommit, commit)
@@ -68,7 +68,7 @@ func requireGitRefCommitsEqual(ctx context.Context, t *testctx.T, refs ...*dagge
 	var first string
 	for i, ref := range refs {
 		if i == 0 {
-			commit, err := ref.Commit(ctx)
+			commit, err := ref.CommitSHA(ctx)
 			require.NoError(t, err)
 			first = commit
 			continue
@@ -79,14 +79,14 @@ func requireGitRefCommitsEqual(ctx context.Context, t *testctx.T, refs ...*dagge
 
 // verify git ref has expected name
 func requireGitRefNameEqual(ctx context.Context, t *testctx.T, expected string, ref *dagger.GitRef) {
-	name, err := ref.Ref(ctx)
+	name, err := ref.Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, expected, name)
 }
 
 // verify git ref name matches pattern
 func requireGitRefNameRegexp(ctx context.Context, t *testctx.T, pattern string, ref *dagger.GitRef) {
-	name, err := ref.Ref(ctx)
+	name, err := ref.Name(ctx)
 	require.NoError(t, err)
 	require.Regexp(t, pattern, name)
 }

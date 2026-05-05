@@ -149,6 +149,9 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 		dagql.NodeFunc("asCommit", s.asCommit).
 			View(AllVersion).
 			Doc(`The commit this ref resolves to.`),
+		dagql.NodeFunc("commitSHA", s.fetchCommit).
+			IsPersistable().
+			Doc(`The resolved commit SHA at this ref.`),
 		dagql.NodeFunc("tree", s.tree).
 			IsPersistable().
 			View(AllVersion).
@@ -169,10 +172,15 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("commit", s.fetchCommit).
 			IsPersistable().
-			Doc(`The resolved commit id at this ref.`),
+			Doc(`The resolved commit id at this ref.`).
+			Deprecated(`Use "commitSHA" instead.`),
+		dagql.NodeFunc("name", s.fetchRef).
+			IsPersistable().
+			Doc(`The resolved name of this ref.`),
 		dagql.NodeFunc("ref", s.fetchRef).
 			IsPersistable().
-			Doc(`The resolved ref name at this ref.`),
+			Doc(`The resolved ref name at this ref.`).
+			Deprecated(`Use "name" instead.`),
 		dagql.NodeFunc("commonAncestor", s.commonAncestor).
 			Doc(`Find the best common ancestor between this ref and another ref.`).
 			Args(

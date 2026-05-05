@@ -9032,9 +9032,11 @@ func (r *GitCommit) Tree(opts ...GitCommitTreeOpts) *Directory {
 type GitRef struct {
 	query *querybuilder.Selection
 
-	commit *string
-	id     *GitRefID
-	ref    *string
+	commit    *string
+	commitSHA *string
+	id        *GitRefID
+	name      *string
+	ref       *string
 }
 type WithGitRefFunc func(r *GitRef) *GitRef
 
@@ -9060,7 +9062,22 @@ func (r *GitRef) AsCommit() *GitCommit {
 	}
 }
 
+// The resolved commit SHA at this ref.
+func (r *GitRef) CommitSHA(ctx context.Context) (string, error) {
+	if r.commitSHA != nil {
+		return *r.commitSHA, nil
+	}
+	q := r.query.Select("commitSHA")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // The resolved commit id at this ref.
+//
+// Deprecated: Use CommitSHA instead.
 func (r *GitRef) Commit(ctx context.Context) (string, error) {
 	if r.commit != nil {
 		return *r.commit, nil
@@ -9124,7 +9141,22 @@ func (r *GitRef) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// The resolved name of this ref.
+func (r *GitRef) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // The resolved ref name at this ref.
+//
+// Deprecated: Use Name instead.
 func (r *GitRef) Ref(ctx context.Context) (string, error) {
 	if r.ref != nil {
 		return *r.ref, nil
