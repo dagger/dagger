@@ -1475,32 +1475,6 @@ func (PythonSuite) TestDocs(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "factory constructor", obj.Get("functions.#(name=external).description").String())
 	})
 
-	t.Run("inheritance", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		modGen := pythonModInit(t, c, `
-            from typing import Annotated, Self
-
-            from dagger import Doc, function, object_type
-
-            class Base:
-                """What's the object-oriented way to become wealthy?"""
-
-                @classmethod
-                def create(cls) -> Self:
-                    """Inheritance."""
-                    return cls()
-
-            @object_type
-            class Test(Base):
-                ...
-        `)
-
-		obj := inspectModuleObjects(ctx, t, modGen).Get("#(name=Test)")
-
-		require.Equal(t, "Inheritance.", obj.Get("constructor.description").String())
-	})
-
 	t.Run("interface", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -1532,6 +1506,34 @@ func (PythonSuite) TestDocs(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "A simple Duck interface", o.Get("description").String())
 		require.Equal(t, "A quack sound", f.Get("description").String())
 		require.Equal(t, "A word for the duck to speak", a.Get("description").String())
+	})
+}
+
+func (PythonSuite) TestInheritance(ctx context.Context, t *testctx.T) {
+	t.Run("inherited create constructor", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := pythonModInit(t, c, `
+            from typing import Annotated, Self
+
+            from dagger import Doc, function, object_type
+
+            class Base:
+                """What's the object-oriented way to become wealthy?"""
+
+                @classmethod
+                def create(cls) -> Self:
+                    """Inheritance."""
+                    return cls()
+
+            @object_type
+            class Test(Base):
+                ...
+        `)
+
+		obj := inspectModuleObjects(ctx, t, modGen).Get("#(name=Test)")
+
+		require.Equal(t, "Inheritance.", obj.Get("constructor.description").String())
 	})
 }
 
