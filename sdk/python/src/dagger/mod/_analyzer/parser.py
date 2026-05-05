@@ -30,6 +30,8 @@ from dagger.mod._analyzer.visitors.annotations import (
     get_annotation_string,
 )
 from dagger.mod._analyzer.visitors.decorators import (
+    DaggerAliases,
+    build_dagger_aliases,
     extract_decorator_info,
     find_decorator,
     has_decorator,
@@ -131,6 +133,11 @@ class ModuleParser:
         # ``dagger.field`` from ``dataclasses.field`` when called unqualified.
         self._file_field_origin: dict[Path, str | None] = {}
 
+        # Per-file map of dagger import aliases (``import dagger as d``,
+        # ``from dagger import object_type as ot``, etc.). Built once per
+        # file in ``_build_dagger_aliases``.
+        self._dagger_aliases: dict[Path, DaggerAliases] = {}
+
         # Module-level constants per source file, keyed by (file, name).
         # Initialized here so ``_eval_constant`` can rely on it existing even
         # when called before ``_collect_module_constants`` has run.
@@ -162,6 +169,11 @@ class ModuleParser:
         """
         # Phase 1: Parse all files
         self._parse_files()
+
+        # Phase 1.5: Compute per-file dagger import aliases. Needed before
+        # ``_collect_declaration_names`` because the latter detects
+        # decorators (``@d.object_type`` from ``import dagger as d``).
+        self._build_dagger_aliases()
 
         # Phase 2: Collect declaration names (for forward references)
         self._collect_declaration_names()
@@ -202,6 +214,17 @@ class ModuleParser:
                 msg = f"Failed to read {file_path}: {e}"
                 raise ParseError(msg) from e
 
+    def _build_dagger_aliases(self) -> None:
+        """Compute the dagger import alias map for each parsed file."""
+        for file_path, tree in self._asts.items():
+            self._dagger_aliases[file_path] = build_dagger_aliases(tree)
+
+    def _aliases_for(self, file_path: Path | None) -> DaggerAliases:
+        """Return the dagger alias map for a file (defaults if unknown)."""
+        if file_path is None:
+            return DaggerAliases.default()
+        return self._dagger_aliases.get(file_path) or DaggerAliases.default()
+
     def _collect_declaration_names(self) -> None:
         """Collect names of decorated top-level classes for forward references.
 
@@ -211,15 +234,18 @@ class ModuleParser:
         decorated classes that were never actually emitted as metadata,
         leaving dangling type references.
         """
-        for tree in self._asts.values():
+        for file_path, tree in self._asts.items():
+            aliases = self._aliases_for(file_path)
             for node in ast.iter_child_nodes(tree):
                 if not isinstance(node, ast.ClassDef):
                     continue
-                if has_decorator(node, "object_type"):
+                if has_decorator(node, "object_type", aliases):
                     self._declared_objects.add(node.name)
-                elif has_decorator(node, "interface"):
+                elif has_decorator(node, "interface", aliases):
                     self._declared_interfaces.add(node.name)
-                elif has_decorator(node, "enum_type") or self._is_enum_subclass(node):
+                elif has_decorator(node, "enum_type", aliases) or self._is_enum_subclass(
+                    node
+                ):
                     self._declared_enums.add(node.name)
 
     _ENUM_BASE_NAMES = frozenset(
@@ -408,20 +434,21 @@ class ModuleParser:
 
     def _extract_class(self, node: ast.ClassDef, file_path: Path) -> None:
         """Extract a class declaration."""
+        aliases = self._aliases_for(file_path)
         # Check for @object_type
-        if has_decorator(node, "object_type"):
+        if has_decorator(node, "object_type", aliases):
             obj = self._parse_object_type(node, file_path, is_interface=False)
             self._objects[obj.name] = obj
             return
 
         # Check for @interface
-        if has_decorator(node, "interface"):
+        if has_decorator(node, "interface", aliases):
             obj = self._parse_object_type(node, file_path, is_interface=True)
             self._objects[obj.name] = obj
             return
 
         # Check for @enum_type or enum.Enum subclass
-        if has_decorator(node, "enum_type") or self._is_enum_subclass(node):
+        if has_decorator(node, "enum_type", aliases) or self._is_enum_subclass(node):
             enum = self._parse_enum_type(node, file_path)
             self._enums[enum.name] = enum
 
@@ -437,7 +464,8 @@ class ModuleParser:
         with self._resolver.in_class(node.name):
             # Get decorator info for metadata
             decorator_type = "interface" if is_interface else "object_type"
-            decorator = find_decorator(node, decorator_type)
+            aliases = self._aliases_for(file_path)
+            decorator = find_decorator(node, decorator_type, aliases)
             decorator_info = extract_decorator_info(decorator) if decorator else None
 
             # Extract deprecation
@@ -497,13 +525,14 @@ class ModuleParser:
                         (node.name, item, file_path)
                     )
             elif isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                aliases = self._aliases_for(file_path)
                 if item.name == "create" and is_classmethod(item):
                     constructor = self._parse_constructor(item, file_path, node.name)
                 elif item.name == "__init__":
                     constructor = self._parse_init_constructor(
                         item, file_path, node.name
                     )
-                elif has_decorator(item, "function"):
+                elif has_decorator(item, "function", aliases):
                     func = self._parse_function(item, file_path, node.name)
                     functions.append(func)
 
@@ -582,18 +611,24 @@ class ModuleParser:
 
         if node.value is not None and isinstance(node.value, ast.Call):
             func = node.value.func
-            # Check for field(), dagger.field(), mod.field()
-            # but NOT dataclasses.field() or other non-dagger field() calls
-            is_name_field = (
-                isinstance(func, ast.Name)
-                and func.id == "field"
-                and self._bare_field_is_dagger(file_path)
+            aliases = self._aliases_for(file_path)
+            # Match field(), dagger.field(), mod.field(), and aliased forms
+            # like ``from dagger import field as fld; fld()``. The bare
+            # ``field`` name is ambiguous (it could be dataclasses.field) and
+            # still goes through ``_bare_field_is_dagger``; explicit aliases
+            # are trusted unconditionally because the import statement was
+            # unambiguous. Attribute access matches when the value is in the
+            # dagger package alias set, which excludes dataclasses/attrs/etc.
+            is_name_field = isinstance(func, ast.Name) and func.id in (
+                aliases.bare_field_names
             )
+            if is_name_field and func.id == "field":
+                is_name_field = self._bare_field_is_dagger(file_path)
             is_attr_field = (
                 isinstance(func, ast.Attribute)
                 and func.attr == "field"
                 and isinstance(func.value, ast.Name)
-                and func.value.id not in ("dataclasses", "attrs", "attr", "pydantic")
+                and func.value.id in aliases.package_aliases
             )
             is_field_call = is_name_field or is_attr_field
 
@@ -992,10 +1027,11 @@ class ModuleParser:
                 continue
             base_class, base_file = found
 
+            base_aliases = self._aliases_for(base_file)
             for item in base_class.body:
                 if (
                     isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
-                    and has_decorator(item, "function")
+                    and has_decorator(item, "function", base_aliases)
                     and item.name not in seen_names
                 ):
                     func = self._parse_function(item, base_file, class_name)
@@ -1019,13 +1055,14 @@ class ModuleParser:
         assert self._resolver is not None
 
         # Get decorator info
-        decorator = find_decorator(node, "function")
+        aliases = self._aliases_for(file_path)
+        decorator = find_decorator(node, "function", aliases)
         decorator_info = extract_decorator_info(decorator) if decorator else None
 
         # Check for decorator flags
-        is_check = has_decorator(node, "check")
-        is_generate = has_decorator(node, "generate")
-        is_service = has_decorator(node, "up")
+        is_check = has_decorator(node, "check", aliases)
+        is_generate = has_decorator(node, "generate", aliases)
+        is_service = has_decorator(node, "up", aliases)
 
         # Extract decorator kwargs
         func_kwargs: dict[str, Any] = {}

@@ -1599,3 +1599,99 @@ def test_ast_relative_import_resolves_decorated_class(tmp_path):
     fn = metadata.objects["Foo"].functions[0]
     assert fn.python_name == "get_helper"
     assert fn.resolved_return_type.name == "Helper"
+
+
+# -- Aliased dagger imports --------------------------------------------------
+
+
+def test_ast_aliased_dagger_module_decorators():
+    """``import dagger as d`` then ``@d.object_type`` / ``@d.function``."""
+    metadata = _analyze("""
+import dagger as d
+
+@d.object_type
+class Foo:
+    @d.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    assert "Foo" in metadata.objects
+    assert [f.python_name for f in metadata.objects["Foo"].functions] == ["hello"]
+
+
+def test_ast_aliased_decorator_from_import():
+    """``from dagger import object_type as ot, function as fn`` is recognised."""
+    metadata = _analyze("""
+from dagger import object_type as ot, function as fn
+
+@ot
+class Foo:
+    @fn
+    def hello(self) -> str:
+        return "hi"
+""")
+    assert "Foo" in metadata.objects
+    assert [f.python_name for f in metadata.objects["Foo"].functions] == ["hello"]
+
+
+def test_ast_aliased_field_call():
+    """``from dagger import field as fld`` then ``x: T = fld(...)`` is a field."""
+    metadata = _analyze("""
+import dagger
+from dagger import field as fld
+
+@dagger.object_type
+class Foo:
+    name: str = fld(default="x")
+
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    obj = metadata.objects["Foo"]
+    assert [(f.python_name, f.default_value) for f in obj.fields] == [("name", "x")]
+
+
+def test_ast_aliased_dagger_keeps_dataclasses_field_rejected():
+    """``from dataclasses import field`` is still excluded from dagger fields."""
+    metadata = _analyze("""
+import dagger
+from dataclasses import field
+
+@dagger.object_type
+class Foo:
+    name: str = field(default="x")
+
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    # dataclasses.field is not a dagger field; the assignment becomes a
+    # constructor parameter via the AnnAssign-as-param path but no
+    # FieldMetadata is created.
+    assert metadata.objects["Foo"].fields == []
+
+
+def test_ast_aliased_decorator_keeps_check_generate_up():
+    """Check/generate/up decorators also resolve via the alias map."""
+    metadata = _analyze("""
+import dagger as d
+
+@d.object_type
+class Foo:
+    @d.function
+    @d.check
+    def smoke(self) -> str: ...
+
+    @d.function
+    @d.generate
+    def gen(self) -> str: ...
+
+    @d.function
+    @d.up
+    def serve(self) -> str: ...
+""")
+    fns = {f.python_name: f for f in metadata.objects["Foo"].functions}
+    assert fns["smoke"].is_check
+    assert fns["gen"].is_generate
+    assert fns["serve"].is_service
