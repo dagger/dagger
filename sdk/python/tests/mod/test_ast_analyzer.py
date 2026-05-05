@@ -1907,6 +1907,79 @@ class Foo:
     assert param.default_path is None
 
 
+# -- Silently-dropped patterns now warn -------------------------------------
+
+
+def test_ast_property_warns(caplog):
+    """``@property`` methods are not exposed; the analyzer warns."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="dagger.mod._analyzer.parser"):
+        metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    @property
+    def computed(self) -> str:
+        return "x"
+
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    fns = [f.python_name for f in metadata.objects["Foo"].functions]
+    assert fns == ["hello"]
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("@property" in m and "computed" in m for m in msgs), msgs
+
+
+def test_ast_nested_object_type_warns(caplog):
+    """A nested @object_type class is ignored and the analyzer warns."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="dagger.mod._analyzer.parser"):
+        metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    @dagger.object_type
+    class Inner:
+        @dagger.function
+        def inner_fn(self) -> str: ...
+
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    assert "Inner" not in metadata.objects
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("nested" in m and "Inner" in m for m in msgs), msgs
+
+
+def test_ast_variadic_args_warn(caplog):
+    """``*args`` / ``**kwargs`` aren't supported; warn so the user knows."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="dagger.mod._analyzer.parser"):
+        metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self, name: str, *extras: str, **opts: int) -> str:
+        return name
+""")
+    fn = metadata.objects["Foo"].functions[0]
+    # Only the named param survives.
+    assert [p.python_name for p in fn.parameters] == ["name"]
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("*extras" in m for m in msgs), msgs
+    assert any("**opts" in m for m in msgs), msgs
+
+
 # -- Inherited fields -------------------------------------------------------
 
 

@@ -331,6 +331,48 @@ class ModuleParser:
                 ):
                     aliases[node.name.id] = node.value
 
+    @staticmethod
+    def _is_property(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+        """True when ``node`` has an ``@property`` (or @X.setter etc.) decorator."""
+        for decorator in node.decorator_list:
+            if isinstance(decorator, ast.Name) and decorator.id == "property":
+                return True
+            # @some.setter / @some.deleter / @some.getter forms
+            if (
+                isinstance(decorator, ast.Attribute)
+                and decorator.attr in ("setter", "deleter", "getter")
+            ):
+                return True
+        return False
+
+    def _warn_nested_dagger_class(
+        self,
+        nested: ast.ClassDef,
+        outer_name: str,
+        file_path: Path,
+    ) -> None:
+        """Warn when an @object_type / @interface / @enum_type is nested.
+
+        ``_collect_declaration_names`` only walks top-level classes by
+        design — registering nested decorated classes leaves dangling
+        references at the engine. Tell users why their nested class
+        didn't show up so they move it to module scope.
+        """
+        aliases = self._aliases_for(file_path)
+        for kind in ("object_type", "interface", "enum_type"):
+            if has_decorator(nested, kind, aliases):
+                logger.warning(
+                    "%s:%d: nested @%s class %s.%s is ignored. Move %r to "
+                    "module scope so it can be registered.",
+                    file_path,
+                    getattr(nested, "lineno", 0),
+                    kind,
+                    outer_name,
+                    nested.name,
+                    nested.name,
+                )
+                return
+
     def _reject_pep695_generic_class(
         self,
         node: ast.ClassDef,
@@ -772,6 +814,21 @@ class ModuleParser:
                 elif has_decorator(item, "function", aliases):
                     func = self._parse_function(item, file_path, node.name)
                     functions.append(func)
+                elif self._is_property(item):
+                    # @property fields would need runtime evaluation to
+                    # produce a value; surface the silent drop.
+                    logger.warning(
+                        "%s:%d: @property %s.%s is not exposed in the Dagger "
+                        "schema. Use @dagger.function (with or without "
+                        "@cached_property semantics in the body) to expose "
+                        "computed values.",
+                        file_path,
+                        getattr(item, "lineno", 0),
+                        node.name,
+                        item.name,
+                    )
+            elif isinstance(item, ast.ClassDef):
+                self._warn_nested_dagger_class(item, node.name, file_path)
 
         seen_names = {f.python_name for f in functions}
         functions.extend(self._find_inherited_functions(node, node.name, seen_names))
@@ -1527,6 +1584,32 @@ class ModuleParser:
 
         parameters: list[ParameterMetadata] = []
         args = node.args
+
+        # Variadic args (``*args`` / ``**kwargs``) have no representation in
+        # the Dagger API. Drop them but tell the user so they aren't left
+        # wondering why those parameters didn't make it.
+        if args.vararg is not None:
+            logger.warning(
+                "%s:%d: %s.%s declares ``*%s`` — variadic positional args "
+                "are not supported by the Dagger API and will be dropped "
+                "from the schema.",
+                file_path,
+                getattr(node, "lineno", 0),
+                self._current_class_name or "<module>",
+                node.name,
+                args.vararg.arg,
+            )
+        if args.kwarg is not None:
+            logger.warning(
+                "%s:%d: %s.%s declares ``**%s`` — variadic keyword args "
+                "are not supported by the Dagger API and will be dropped "
+                "from the schema.",
+                file_path,
+                getattr(node, "lineno", 0),
+                self._current_class_name or "<module>",
+                node.name,
+                args.kwarg.arg,
+            )
 
         # Positional-only come before regular positional; defaults in args.defaults
         # are right-aligned against the combined sequence.
