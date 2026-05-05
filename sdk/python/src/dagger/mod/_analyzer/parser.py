@@ -36,6 +36,7 @@ from dagger.mod._analyzer.visitors.decorators import (
     find_decorator,
     has_decorator,
     is_classmethod,
+    is_staticmethod,
 )
 
 logger = logging.getLogger(__name__)
@@ -1083,8 +1084,11 @@ class ModuleParser:
             return_annotation = "None"
             resolved_return = ResolvedType(kind="void", name="None", is_optional=True)
 
-        # Parse parameters
-        parameters = self._parse_parameters(node, file_path)
+        # Parse parameters. ``@staticmethod`` has no implicit receiver
+        # (no ``self``/``cls``), so the first positional is a regular
+        # argument and must not be skipped.
+        skip_first = not is_staticmethod(node)
+        parameters = self._parse_parameters(node, file_path, skip_first=skip_first)
 
         return FunctionMetadata(
             python_name=python_name,
