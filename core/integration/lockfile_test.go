@@ -163,13 +163,9 @@ func (LockfileSuite) TestGitBranchPinnedRefreshesFloatEntry(ctx context.Context,
 	queryPath := writeQueryDoc(t, workdir, "git-branch.graphql", gitBranchCommitQuery)
 	lockPath, originalLock := writeGitRefLock(t, workdir, "git.branch", lockTestGitBranchName, lockTestGitBranchCommit, workspace.PolicyFloat)
 
-	t.Logf("lock path is %s\n", lockPath)
-	t.Logf("lock contents is %s\n", originalLock)
-
 	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=pinned", "query", "--doc", queryPath)
 	require.NoError(t, err)
 	require.NotContains(t, string(out), lockTestGitBranchCommit)
-	// require.Equal(t, string(out), "weeeeeeeeeeeeeeeeeeeeeeee")
 
 	lockBytes, err := os.ReadFile(lockPath)
 	require.NoError(t, err)
@@ -186,6 +182,18 @@ func (LockfileSuite) TestGitBranchFrozenUsesFloatEntry(ctx context.Context, t *t
 	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=frozen", "query", "--doc", queryPath)
 	require.NoError(t, err)
 	require.Contains(t, string(out), lockTestGitBranchCommit)
+}
+
+func (LockfileSuite) TestLockUpdateCreatesNewFile(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+	lockPath := filepath.Join(workdir, ".dagger", "lock")
+
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "lock", "update")
+	require.NoError(t, err)
+
+	lockBytes, err := os.ReadFile(lockPath)
+	require.NoError(t, err)
+	require.Empty(t, lockBytes, "a lockfile with zero entries should not be serialized with a version")
 }
 
 func (LockfileSuite) TestLockUpdateRefreshesExistingEntry(ctx context.Context, t *testctx.T) {
@@ -370,13 +378,19 @@ func (LockfileSuite) TestWorkspaceUpdate(ctx context.Context, t *testctx.T) {
 	assertContainerFromLockEntry(t, lockBytes, workspace.PolicyFloat)
 }
 
-func (LockfileSuite) TestWorkspaceUpdateRequiresLockfile(ctx context.Context, t *testctx.T) {
+func (LockfileSuite) TestWorkspaceUpdateCreatesLockfile(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
-	updateQueryPath := writeQueryDoc(t, workdir, "update.graphql", workspaceUpdateQuery)
-
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", updateQueryPath)
-	require.Error(t, err)
-	require.ErrorContains(t, err, "workspace lockfile does not exist")
+	updateQueryPath := writeQueryDoc(t, workdir, "update.graphql", `{
+  currentWorkspace {
+    update {
+      addedPaths
+    }
+  }
+}
+`)
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", updateQueryPath)
+	require.NoError(t, err)
+	require.Contains(t, string(out), ".dagger/lock")
 }
 
 func (LockfileSuite) TestWorkspaceUpdateNestedQuery(ctx context.Context, t *testctx.T) {
