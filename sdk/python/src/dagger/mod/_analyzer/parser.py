@@ -136,6 +136,12 @@ class ModuleParser:
         # when called before ``_collect_module_constants`` has run.
         self._module_constants: dict[Path, dict[str, ast.expr]] = {}
 
+        # Module-level type aliases per source file, e.g.
+        # ``Source = Annotated[dagger.Directory, dagger.DefaultPath(".")]``.
+        # Kept separate from ``_module_constants`` so value-defaults and
+        # type-aliases can't bleed into each other's resolution paths.
+        self._module_type_aliases: dict[Path, dict[str, ast.expr]] = {}
+
         # File currently being extracted. Set by ``_extract_declarations`` so
         # ``_eval_constant`` can scope name lookups to the containing file.
         self._current_file: Path | None = None
@@ -241,20 +247,66 @@ class ModuleParser:
         default values in function signatures. Constants are scoped per
         file so two files defining ``DEFAULT = ...`` with different values
         don't silently overwrite one another.
+
+        Type-shaped assignments (``Source = Annotated[...]``,
+        ``Src = dagger.Directory``, ``MaybeDir = dagger.Directory | None``)
+        are also recorded into ``_module_type_aliases`` so that names used
+        as type annotations can be expanded to the underlying expression.
         """
         for file_path, tree in self._asts.items():
             constants = self._module_constants.setdefault(file_path, {})
+            aliases = self._module_type_aliases.setdefault(file_path, {})
             for node in ast.iter_child_nodes(tree):
                 if isinstance(node, ast.Assign):
                     for target in node.targets:
                         if isinstance(target, ast.Name):
                             constants[target.id] = node.value
+                            if self._looks_like_type_expr(node.value):
+                                aliases[target.id] = node.value
                 elif (
                     isinstance(node, ast.AnnAssign)
                     and isinstance(node.target, ast.Name)
                     and node.value is not None
                 ):
                     constants[node.target.id] = node.value
+                    if self._looks_like_type_expr(node.value):
+                        aliases[node.target.id] = node.value
+
+    def _looks_like_type_expr(self, node: ast.expr) -> bool:
+        """Return True when ``node`` looks like a type expression.
+
+        We restrict alias expansion to RHS shapes that can plausibly be a
+        type — ``Annotated[...]``, generics, ``T | None``, attribute access,
+        and bare names — so plain string/number constants stay out of the
+        type-resolution path.
+        """
+        if isinstance(node, (ast.Subscript, ast.Attribute, ast.Name)):
+            return True
+        return isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr)
+
+    def _expand_alias(
+        self,
+        annotation: ast.expr,
+        file_path: Path,
+    ) -> ast.expr:
+        """Expand a module-level type alias to its underlying expression.
+
+        Walks chained aliases (``B = A``, ``A = dagger.Directory``) and
+        protects against cycles by tracking the names already seen. If the
+        annotation isn't a known alias (or expansion hits a cycle), returns
+        the most recently expanded node — which may be the original input.
+        """
+        aliases = self._module_type_aliases.get(file_path, {})
+        if not aliases:
+            return annotation
+        seen: set[str] = set()
+        current = annotation
+        while isinstance(current, ast.Name) and current.id in aliases:
+            if current.id in seen:
+                break
+            seen.add(current.id)
+            current = aliases[current.id]
+        return current
 
     def _build_namespace(self) -> None:
         """Build the namespace for type resolution."""
@@ -544,10 +596,15 @@ class ModuleParser:
 
         # Resolve type
         location = get_location(node, str(file_path))
-        resolved_type = self._resolver.resolve(node.annotation, location=location)
+        # Expand module-level type aliases (``Src = dagger.Directory``,
+        # ``Source = Annotated[dagger.Directory, dagger.DefaultPath(".")]``)
+        # so both the resolver and the Annotated-metadata extractor see the
+        # underlying expression rather than a bare alias name.
+        expanded = self._expand_alias(node.annotation, file_path)
+        resolved_type = self._resolver.resolve(expanded, location=location)
 
         # Extract Annotated metadata
-        annotated_meta = extract_annotated_metadata(node.annotation)
+        annotated_meta = extract_annotated_metadata(expanded)
 
         # Get API name
         api_name = field_kwargs.get("name") or normalize_name(python_name)
@@ -635,6 +692,9 @@ class ModuleParser:
         annotation = (
             self._unwrap_initvar(node.annotation) if is_initvar else node.annotation
         )
+        # Expand module-level type aliases before metadata extraction and
+        # type resolution; see ``_expand_alias``.
+        annotation = self._expand_alias(annotation, file_path)
 
         # Determine init eligibility and default value
         has_default = False
@@ -908,7 +968,8 @@ class ModuleParser:
         location = get_location(node, str(file_path))
         if node.returns:
             return_annotation = get_annotation_string(node.returns)
-            resolved_return = self._resolver.resolve(node.returns, location=location)
+            expanded_return = self._expand_alias(node.returns, file_path)
+            resolved_return = self._resolver.resolve(expanded_return, location=location)
         else:
             return_annotation = "None"
             resolved_return = ResolvedType(kind="void", name="None", is_optional=True)
@@ -948,7 +1009,8 @@ class ModuleParser:
         # Parse return type (should be Self or the class name)
         if node.returns:
             return_annotation = get_annotation_string(node.returns)
-            resolved_return = self._resolver.resolve(node.returns, location=location)
+            expanded_return = self._expand_alias(node.returns, file_path)
+            resolved_return = self._resolver.resolve(expanded_return, location=location)
         else:
             return_annotation = class_name
             resolved_return = ResolvedType(kind="object", name=class_name)
@@ -1048,12 +1110,16 @@ class ModuleParser:
             if arg.annotation:
                 annotation = arg.annotation
                 annotation_str = get_annotation_string(annotation)
+                # Expand module-level type aliases before metadata extraction
+                # and resolution. ``annotation_str`` keeps the alias name so
+                # the surface representation matches what the user wrote.
+                expanded = self._expand_alias(annotation, file_path)
 
                 # Extract Annotated metadata
-                annotated_meta = extract_annotated_metadata(annotation)
+                annotated_meta = extract_annotated_metadata(expanded)
 
                 # Resolve type
-                resolved_type = self._resolver.resolve(annotation, location=location)
+                resolved_type = self._resolver.resolve(expanded, location=location)
             else:
                 annotation_str = "Any"
                 annotated_meta = None
