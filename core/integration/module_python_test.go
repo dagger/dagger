@@ -1535,6 +1535,56 @@ func (PythonSuite) TestInheritance(ctx context.Context, t *testctx.T) {
 
 		require.Equal(t, "Inheritance.", obj.Get("constructor.description").String())
 	})
+
+	t.Run("inherited functions", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := pythonModInit(t, c, `
+from typing import Annotated, Self
+
+from dagger import Doc, function, object_type
+
+class Base:
+    """Base class with inherited @function methods."""
+
+    @function
+    def with_component(self, name: Annotated[str, Doc("component name")]) -> Self:
+        """Inherited function that should be visible."""
+        return self
+
+    @function
+    async def with_context(self) -> Self:
+        """Another inherited function that should be visible."""
+        return self
+
+@object_type
+class Test(Base):
+    @function
+    def my_own_function(self) -> str:
+        """This function IS visible."""
+        return "ok"
+`)
+
+		obj := inspectModuleObjects(ctx, t, modGen).Get("#(name=Test)")
+
+		require.ElementsMatch(t,
+			[]any{"myOwnFunction", "withComponent", "withContext"},
+			obj.Get("functions.#.name").Value(),
+		)
+
+		require.Equal(t,
+			"Inherited function that should be visible.",
+			obj.Get("functions.#(name=withComponent).description").String(),
+		)
+		require.Equal(t,
+			"Another inherited function that should be visible.",
+			obj.Get("functions.#(name=withContext).description").String(),
+		)
+		require.Equal(t,
+			"component name",
+			obj.Get("functions.#(name=withComponent).args.0.description").String(),
+		)
+	})
 }
 
 func (PythonSuite) TestNameConflicts(ctx context.Context, t *testctx.T) {
