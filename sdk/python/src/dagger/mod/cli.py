@@ -13,7 +13,13 @@ import dagger
 from dagger import telemetry
 from dagger.mod._discovery import IMPORT_PKG, ast_register
 from dagger.mod._exceptions import ModuleError, ModuleLoadError, record_exception
-from dagger.mod._module import MAIN_OBJECT, MODULE_NAME, TYPE_DEF_FILE, Module
+from dagger.mod._module import (
+    MAIN_OBJECT,
+    MODULE_NAME,
+    TYPE_DEF_FILE,
+    Module,
+    legacy_register_enabled,
+)
 
 logger = logging.getLogger(__package__)
 
@@ -37,13 +43,15 @@ async def main(mod: Module | None = None, register: bool = False) -> int | None:
     # should be logged and the traceback shown on the function's stderr output.
     async with await dagger.connect():
         try:
-            if register:
+            if register and not legacy_register_enabled():
                 # Use AST-based registration (doesn't require importing module)
                 return await register_with_ast()
 
-            # For invocation, we need to load the module
+            # For invocation (and legacy registration), we need to load the module
             if mod is None:
                 mod = load_module()
+            if register:
+                return await mod.register()
             return await mod.serve()
         except (ModuleError, dagger.QueryError) as e:
             await record_exception(e)
