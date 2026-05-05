@@ -62,11 +62,6 @@ type ModuleGeneratorConfig struct {
 
 	// If set, use `@dagger.io/dagger` with the given version and use it in the generated client.
 	LibVersion string
-
-	// The engine version declared by dagger.json for this module source.
-	// Codegen uses this as the schema compatibility version when rendering
-	// module bindings from pre-cutover module sources.
-	EngineVersion string
 }
 
 type ModuleSourceDependency struct {
@@ -89,8 +84,7 @@ type ClientGeneratorConfig struct {
 	// The directory where the client will be generated.
 	ClientDir string
 
-	// The engine version from dagger.json. This is only populated when generating
-	// from a module source (not in tests) and is used as the schema compatibility
-	// version for client bindings generated from pre-cutover module sources.
+	// The engine version from dagger.json, used to pin the dagger.io/dagger dependency.
+	// This is only populated when generating from a module source (not in tests).
 	EngineVersion string
 }

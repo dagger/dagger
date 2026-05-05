@@ -83,12 +83,11 @@ type moduleConfig struct {
 	entries          map[string]bool
 
 	// Module config
-	name          string
-	subPath       string
-	modPath       string
-	sdk           string
-	engineVersion string
-	debug         bool
+	name    string
+	subPath string
+	modPath string
+	sdk     string
+	debug   bool
 
 	// Location of the SDK library
 	sdkLibOrigin SDKLibOrigin
@@ -113,11 +112,6 @@ func analyzeModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) (c
 	cfg.name, err = modSource.ModuleOriginalName(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not load module config name: %w", err)
-	}
-
-	cfg.engineVersion, err = modSource.EngineVersion(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("could not load module config engine version: %w", err)
 	}
 
 	cfg.subPath, err = modSource.SourceSubpath(ctx)
@@ -237,11 +231,6 @@ func analyzeClientConfig(ctx context.Context, modSource *dagger.ModuleSource) (c
 	cfg.modPath, err = modSource.SourceRootSubpath(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not load module config source root subpath: %w", err)
-	}
-
-	cfg.engineVersion, err = modSource.EngineVersion(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("could not load module config engine version: %w", err)
 	}
 
 	// We retrieve the SDK because if it's set, that means the module is implementing
@@ -563,9 +552,8 @@ func (c *moduleConfig) wrappedSourceCodeDirectory() *dagger.Directory {
 
 func (c *moduleConfig) libGeneratorOpts() *LibGeneratorOpts {
 	return &LibGeneratorOpts{
-		moduleName:          c.name,
-		modulePath:          c.modulePath(),
-		moduleEngineVersion: c.engineVersion,
+		moduleName: c.name,
+		modulePath: c.modulePath(),
 	}
 }
 

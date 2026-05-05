@@ -382,7 +382,6 @@ func (sdk *goSDK) ModuleTypes(
 						"--module-name", dagql.String(modName),
 						"--introspection-json-path", goSDKIntrospectionJSONPath,
 						"--lib-version", dagql.String(goSDKLibVersion),
-						"--module-engine-version", dagql.String(src.Self().EngineVersion),
 						"--output", GoSDKModuleIDPath,
 					},
 				},
@@ -604,7 +603,6 @@ func (sdk *goSDK) baseWithCodegen(
 		"--module-name", dagql.String(modName),
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
 		"--lib-version", dagql.String(goSDKLibVersion),
-		"--module-engine-version", dagql.String(src.Self().EngineVersion),
 	}
 	if !src.Self().ConfigExists {
 		codegenArgs = append(codegenArgs, "--is-init")

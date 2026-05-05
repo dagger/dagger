@@ -59,14 +59,7 @@ func Generate(ctx context.Context, cfg generator.Config, genFunc GenFunc) (err e
 	generator.SetSchemaParents(introspectionSchema)
 
 	for ctx.Err() == nil {
-		schemaVersion := introspectionSchemaVersion
-		if cfg.ClientConfig != nil && cfg.ClientConfig.EngineVersion != "" {
-			schemaVersion = cfg.ClientConfig.EngineVersion
-		}
-		if cfg.ModuleConfig != nil && cfg.ModuleConfig.EngineVersion != "" {
-			schemaVersion = cfg.ModuleConfig.EngineVersion
-		}
-		generated, err := genFunc(ctx, introspectionSchema, schemaVersion)
+		generated, err := genFunc(ctx, introspectionSchema, introspectionSchemaVersion)
 		if err != nil {
 			return err
 		}

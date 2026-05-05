@@ -30,11 +30,7 @@ func TypeDefs(ctx context.Context, cfg generator.Config, typedefFunc TypeDefFunc
 	slog.Info(fmt.Sprintf("generating %s typedefs\n", cfg.Lang))
 
 	for ctx.Err() == nil {
-		schemaVersion := introspectionSchemaVersion
-		if cfg.ModuleConfig != nil && cfg.ModuleConfig.EngineVersion != "" {
-			schemaVersion = cfg.ModuleConfig.EngineVersion
-		}
-		generated, err := typedefFunc(ctx, introspectionSchema, schemaVersion)
+		generated, err := typedefFunc(ctx, introspectionSchema, introspectionSchemaVersion)
 		if err != nil {
 			return err
 		}
