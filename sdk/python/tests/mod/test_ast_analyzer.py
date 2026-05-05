@@ -5,10 +5,23 @@ and test_future_annotations.py, verifying that analyze_source_string() extracts
 the same information the runtime Module() introspection does.
 """
 
+import sys
+
 import pytest
 
 from dagger.mod._analyzer.analyze import analyze_module, analyze_source_string
 from dagger.mod._analyzer.errors import AnalysisError, ParseError, ValidationError
+
+# Several fixtures use PEP 695 syntax (``type Source = …``,
+# ``class Foo[T]:``) inside the source string they pass to
+# ``analyze_source_string``. Python < 3.12 can't parse those, so the
+# fixture would fail with a SyntaxError before the analyzer is even
+# invoked. Skip them on older runtimes — the SDK's CI matrix runs the
+# suite on 3.12/3.13/3.14 too, where they fire normally.
+requires_py312 = pytest.mark.skipif(
+    sys.version_info < (3, 12),
+    reason="PEP 695 syntax introduced in Python 3.12",
+)
 
 
 def _analyze(source: str, main: str = "Foo", **kwargs):
@@ -1736,3 +1749,123 @@ class Foo:
 """)
     fn = metadata.objects["Foo"].functions[0]
     assert [p.python_name for p in fn.parameters] == ["x"]
+def test_ast_pep695_type_alias_with_annotated():
+    """``type Source = Annotated[...]`` (PEP 695) resolves like the legacy form."""
+    metadata = _analyze("""
+import dagger
+from typing import Annotated
+
+type Source = Annotated[dagger.Directory, dagger.DefaultPath(".")]
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(self, src: Source) -> dagger.Container:
+        ...
+""")
+    fn = metadata.objects["Foo"].functions[0]
+    param = fn.parameters[0]
+    assert param.resolved_type.kind == "object"
+    assert param.resolved_type.name == "Directory"
+    assert param.default_path == "."
+
+
+def test_ast_cross_file_type_alias_with_default_path(tmp_path):
+    """Alias defined in ``types.py`` and imported via ``from .types import …``."""
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "types.py").write_text(
+        "import dagger\n"
+        "from typing import Annotated\n"
+        'Source = Annotated[dagger.Directory, dagger.DefaultPath(".")]\n',
+        encoding="utf-8",
+    )
+    (pkg / "main.py").write_text(
+        "import dagger\n"
+        "from .types import Source\n"
+        "\n"
+        "@dagger.object_type\n"
+        "class Foo:\n"
+        "    @dagger.function\n"
+        "    def build(self, src: Source) -> dagger.Container: ...\n",
+        encoding="utf-8",
+    )
+    metadata = analyze_module(
+        source_files=[pkg / "__init__.py", pkg / "types.py", pkg / "main.py"],
+        main_object_name="Foo",
+    )
+    fn = metadata.objects["Foo"].functions[0]
+    param = fn.parameters[0]
+    # Both the underlying Directory type and the DefaultPath metadata
+    # cross the file boundary.
+    assert param.resolved_type.kind == "object"
+    assert param.resolved_type.name == "Directory"
+    assert param.default_path == "."
+
+
+def test_ast_cross_file_type_alias_chained(tmp_path):
+    """``main.py`` imports ``B``; ``types.py`` defines ``A = Directory; B = A``."""
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "types.py").write_text(
+        "import dagger\n"
+        "A = dagger.Directory\n"
+        "B = A\n",
+        encoding="utf-8",
+    )
+    (pkg / "main.py").write_text(
+        "import dagger\n"
+        "from .types import B\n"
+        "\n"
+        "@dagger.object_type\n"
+        "class Foo:\n"
+        "    @dagger.function\n"
+        "    def build(self, src: B) -> dagger.Container: ...\n",
+        encoding="utf-8",
+    )
+    metadata = analyze_module(
+        source_files=[pkg / "__init__.py", pkg / "types.py", pkg / "main.py"],
+        main_object_name="Foo",
+    )
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.name == "Directory"
+
+
+@requires_py312
+def test_ast_pep695_plain_type_alias():
+    """``type Src = dagger.Directory`` resolves to Directory."""
+    metadata = _analyze("""
+import dagger
+
+type Src = dagger.Directory
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(self, src: Src) -> dagger.Container:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.kind == "object"
+    assert param.resolved_type.name == "Directory"
+
+
+import sys
+
+# Several fixtures use PEP 695 syntax (``type Source = …``,
+# ``class Foo[T]:``) inside the source string they pass to
+# ``analyze_source_string``. Python < 3.12 can't parse those, so the
+# fixture would fail with a SyntaxError before the analyzer is even
+# invoked. Skip them on older runtimes — the SDK's CI matrix runs the
+# suite on 3.12/3.13/3.14 too, where they fire normally.
+requires_py312 = pytest.mark.skipif(
+    sys.version_info < (3, 12),
+    reason="PEP 695 syntax introduced in Python 3.12",
+)
+
+@requires_py312
+@requires_py312
+@requires_py312
+@requires_py312

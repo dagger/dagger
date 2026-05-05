@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from dagger.mod._analyzer.errors import ParseError
+from dagger.mod._analyzer.errors import ParseError, TypeResolutionError
 from dagger.mod._analyzer.metadata import (
     EnumMemberMetadata,
     EnumTypeMetadata,
@@ -40,6 +40,12 @@ from dagger.mod._analyzer.visitors.decorators import (
 )
 
 logger = logging.getLogger(__name__)
+
+# ``ast.TypeAlias`` only exists on Python 3.12+ (PEP 695). Resolve once
+# here so call sites can do a simple ``isinstance(node, _PEP695_TYPE_ALIAS)``
+# check without ``hasattr`` repeatedly. ``None`` on 3.10/3.11 — callers
+# must check for it before using.
+_PEP695_TYPE_ALIAS: type[ast.AST] | None = getattr(ast, "TypeAlias", None)
 
 
 def normalize_name(name: str) -> str:
@@ -72,6 +78,11 @@ def get_docstring(
 ) -> str | None:
     """Extract docstring from a node."""
     return ast.get_docstring(node)
+
+
+def _type_param_name(node: ast.AST) -> str:
+    """Best-effort name extraction for PEP 695 type parameters."""
+    return getattr(node, "name", "?")
 
 
 def _parse_docstring_deprecated(raw_doc: str) -> tuple[str | None, str | None]:
@@ -150,9 +161,24 @@ class ModuleParser:
         # type-aliases can't bleed into each other's resolution paths.
         self._module_type_aliases: dict[Path, dict[str, ast.expr]] = {}
 
+        # Per-file map of names brought in by relative imports to the parsed
+        # file they came from. Populated in ``_collect_relative_imports``
+        # and consumed by ``_expand_alias`` (cross-file alias resolution)
+        # and ``_eval_constant`` (cross-file constant resolution).
+        self._relative_import_origins: dict[Path, dict[str, Path]] = {}
+
         # File currently being extracted. Set by ``_extract_declarations`` so
         # ``_eval_constant`` can scope name lookups to the containing file.
         self._current_file: Path | None = None
+
+        # Class currently being parsed. Set in ``_parse_object_type`` so
+        # ``_eval_constant`` can reach class-body constants used as defaults
+        # within that class's methods.
+        self._current_class_name: str | None = None
+
+        # Class-level constants per (file, class). Populated lazily in
+        # ``_collect_class_constants_for`` the first time a class is parsed.
+        self._class_constants: dict[tuple[Path, str], dict[str, ast.expr]] = {}
 
         # Deferred external-constructor declarations, resolved in a second
         # pass after every class has been parsed so the lookup does not
@@ -181,6 +207,10 @@ class ModuleParser:
 
         # Phase 2.5: Collect module-level constants for default resolution
         self._collect_module_constants()
+
+        # Phase 2.6: Map relative-import names to the file that defines them
+        # (so cross-file aliases and constants can be resolved).
+        self._collect_relative_imports()
 
         # Record per-file origin of the unqualified ``field`` name.
         self._track_field_origins()
@@ -244,9 +274,9 @@ class ModuleParser:
                     self._declared_objects.add(node.name)
                 elif has_decorator(node, "interface", aliases):
                     self._declared_interfaces.add(node.name)
-                elif has_decorator(node, "enum_type", aliases) or self._is_enum_subclass(
-                    node
-                ):
+                elif has_decorator(
+                    node, "enum_type", aliases
+                ) or self._is_enum_subclass(node):
                     self._declared_enums.add(node.name)
 
     _ENUM_BASE_NAMES = frozenset(
@@ -298,6 +328,202 @@ class ModuleParser:
                     constants[node.target.id] = node.value
                     if self._looks_like_type_expr(node.value):
                         aliases[node.target.id] = node.value
+                elif (
+                    # PEP 695: ``type Source = Annotated[...]``. Distinct AST
+                    # node from Assign/AnnAssign — registered explicitly here
+                    # so the alias map and the resolver share one path.
+                    # ``ast.TypeAlias`` only exists on Python 3.12+; guard
+                    # the attribute access so analysis runs cleanly on 3.10
+                    # / 3.11 (which can't parse the syntax anyway).
+                    _PEP695_TYPE_ALIAS is not None
+                    and isinstance(node, _PEP695_TYPE_ALIAS)
+                    and isinstance(node.name, ast.Name)
+                ):
+                    aliases[node.name.id] = node.value
+
+    @staticmethod
+    def _is_property(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+        """True when ``node`` has an ``@property`` (or @X.setter etc.) decorator."""
+        for decorator in node.decorator_list:
+            if isinstance(decorator, ast.Name) and decorator.id == "property":
+                return True
+            # @some.setter / @some.deleter / @some.getter forms
+            if isinstance(decorator, ast.Attribute) and decorator.attr in (
+                "setter",
+                "deleter",
+                "getter",
+            ):
+                return True
+        return False
+
+    def _warn_nested_dagger_class(
+        self,
+        nested: ast.ClassDef,
+        outer_name: str,
+        file_path: Path,
+    ) -> None:
+        """Warn when an @object_type / @interface / @enum_type is nested.
+
+        ``_collect_declaration_names`` only walks top-level classes by
+        design — registering nested decorated classes leaves dangling
+        references at the engine. Tell users why their nested class
+        didn't show up so they move it to module scope.
+        """
+        aliases = self._aliases_for(file_path)
+        for kind in ("object_type", "interface", "enum_type"):
+            if has_decorator(nested, kind, aliases):
+                logger.warning(
+                    "%s:%d: nested @%s class %s.%s is ignored. Move %r to "
+                    "module scope so it can be registered.",
+                    file_path,
+                    getattr(nested, "lineno", 0),
+                    kind,
+                    outer_name,
+                    nested.name,
+                    nested.name,
+                )
+                return
+
+    def _reject_pep695_generic_class(
+        self,
+        node: ast.ClassDef,
+        file_path: Path,
+    ) -> None:
+        """Reject ``class Foo[T]:`` and ``class Foo(Generic[T]):`` early.
+
+        Dagger has no generics in its type system. Letting the resolver
+        treat ``T`` as a forward reference produces a TypeDef the engine
+        will reject at runtime — surface a clear error at parse time
+        instead.
+        """
+        if getattr(node, "type_params", None):
+            location = get_location(node, str(file_path))
+            msg = (
+                f"Class {node.name!r} declares PEP 695 type parameters "
+                f"({', '.join(_type_param_name(tp) for tp in node.type_params)}); "
+                "Dagger does not support generic types."
+            )
+            raise TypeResolutionError(msg, location=location)
+        for base in node.bases:
+            if (
+                isinstance(base, ast.Subscript)
+                and isinstance(base.value, ast.Name)
+                and base.value.id == "Generic"
+            ):
+                location = get_location(node, str(file_path))
+                msg = (
+                    f"Class {node.name!r} inherits from Generic[...]; "
+                    "Dagger does not support generic types."
+                )
+                raise TypeResolutionError(msg, location=location)
+
+    def _reject_pep695_generic_function(
+        self,
+        node: ast.FunctionDef | ast.AsyncFunctionDef,
+        file_path: Path,
+    ) -> None:
+        """Reject ``def foo[T]():`` PEP 695 syntax."""
+        if getattr(node, "type_params", None):
+            location = get_location(node, str(file_path))
+            msg = (
+                f"Function {node.name!r} declares PEP 695 type parameters "
+                f"({', '.join(_type_param_name(tp) for tp in node.type_params)}); "
+                "Dagger does not support generic functions."
+            )
+            raise TypeResolutionError(msg, location=location)
+
+    def _collect_class_constants_for(
+        self,
+        node: ast.ClassDef,
+        file_path: Path,
+    ) -> None:
+        """Index simple class-level constants for default-value resolution.
+
+        Captures both ``DEFAULT = "x"`` and ``DEFAULT: str = "x"`` shapes
+        from the class body. Inner class definitions and methods are
+        ignored — only top-of-body assignments count.
+        """
+        key = (file_path, node.name)
+        if key in self._class_constants:
+            return
+        constants: dict[str, ast.expr] = {}
+        for item in node.body:
+            if isinstance(item, ast.Assign):
+                for target in item.targets:
+                    if isinstance(target, ast.Name):
+                        constants[target.id] = item.value
+            elif (
+                isinstance(item, ast.AnnAssign)
+                and isinstance(item.target, ast.Name)
+                and item.value is not None
+            ):
+                constants[item.target.id] = item.value
+        self._class_constants[key] = constants
+
+    def _collect_relative_imports(self) -> None:
+        """Map relative-import names to the parsed file they were defined in.
+
+        For ``from .types import Source`` in ``pkg/main.py``, record
+        ``(pkg/main.py, "Source") -> pkg/types.py`` provided ``pkg/types.py``
+        is also in the parsed file set. ``_expand_alias`` consults this map
+        to follow aliases across files; ``_eval_constant`` can do the same
+        for constants.
+
+        The mapping is best-effort — when the target file isn't in the
+        parsed set (third-party package, dynamic ``__path__``, etc.), the
+        entry is just omitted and resolution falls back to the existing
+        warn/stub behavior.
+        """
+        resolved_paths = {file_path: file_path.resolve() for file_path in self._asts}
+        # Index by resolved path so we can look up ``pkg/types.py`` regardless
+        # of whether the user passed it as an absolute or relative path.
+        path_index: dict[Path, Path] = {
+            resolved: original for original, resolved in resolved_paths.items()
+        }
+
+        for file_path, tree in self._asts.items():
+            mapping = self._relative_import_origins.setdefault(file_path, {})
+            current_resolved = resolved_paths[file_path]
+            for node in ast.iter_child_nodes(tree):
+                if not isinstance(node, ast.ImportFrom) or node.level <= 0:
+                    continue
+                target = self._resolve_relative_import_target(
+                    current_resolved, node.level, node.module, path_index
+                )
+                if target is None:
+                    continue
+                for alias in node.names:
+                    if alias.name == "*":
+                        continue
+                    bound = alias.asname or alias.name
+                    mapping[bound] = target
+
+    @staticmethod
+    def _resolve_relative_import_target(
+        current_file: Path,
+        level: int,
+        module: str | None,
+        path_index: dict[Path, Path],
+    ) -> Path | None:
+        """Return the parsed-file path for ``from <level-dots><module> import …``.
+
+        ``level`` is 1 for ``from . import x``, 2 for ``from .. import x``,
+        etc. ``module`` is the dotted suffix (``"types"`` for
+        ``from .types import Source``) or ``None`` for ``from . import x``.
+        """
+        base = current_file.parent
+        for _ in range(level - 1):
+            base = base.parent
+        if module:
+            target_dir = base
+            for part in module.split("."):
+                target_dir = target_dir / part
+            for cand in (target_dir.with_suffix(".py"), target_dir / "__init__.py"):
+                resolved = cand.resolve() if cand.exists() else cand
+                if resolved in path_index:
+                    return path_index[resolved]
+        # Bare ``from . import x`` — no module to resolve to a file.
+        return None
 
     def _looks_like_type_expr(self, node: ast.expr) -> bool:
         """Return True when ``node`` looks like a type expression.
@@ -319,20 +545,43 @@ class ModuleParser:
         """Expand a module-level type alias to its underlying expression.
 
         Walks chained aliases (``B = A``, ``A = dagger.Directory``) and
-        protects against cycles by tracking the names already seen. If the
-        annotation isn't a known alias (or expansion hits a cycle), returns
-        the most recently expanded node — which may be the original input.
+        protects against cycles by tracking the names already seen. Also
+        follows aliases across files — when a name was imported via
+        ``from .types import Source``, expansion continues using
+        ``types.py``'s alias map so the foreign file's
+        ``Source = Annotated[...]`` is honored.
+
+        If the annotation isn't a known alias (or expansion hits a cycle),
+        returns the most recently expanded node — which may be the
+        original input.
         """
-        aliases = self._module_type_aliases.get(file_path, {})
-        if not aliases:
-            return annotation
-        seen: set[str] = set()
+        seen: set[tuple[Path, str]] = set()
         current = annotation
-        while isinstance(current, ast.Name) and current.id in aliases:
-            if current.id in seen:
-                break
-            seen.add(current.id)
-            current = aliases[current.id]
+        current_file = file_path
+        while isinstance(current, ast.Name):
+            name = current.id
+            local_aliases = self._module_type_aliases.get(current_file, {})
+            if name in local_aliases:
+                key = (current_file, name)
+                if key in seen:
+                    break
+                seen.add(key)
+                current = local_aliases[name]
+                continue
+            origin = self._relative_import_origins.get(current_file, {}).get(name)
+            if origin is not None:
+                origin_aliases = self._module_type_aliases.get(origin, {})
+                if name in origin_aliases:
+                    key = (origin, name)
+                    if key in seen:
+                        break
+                    seen.add(key)
+                    # Switch context: continue expanding inside the origin file
+                    # so any further chained aliases use that file's map.
+                    current_file = origin
+                    current = origin_aliases[name]
+                    continue
+            break
         return current
 
     def _build_namespace(self) -> None:
@@ -340,8 +589,8 @@ class ModuleParser:
         # Combine all ASTs for namespace building
         self._namespace = StubNamespace()
 
-        for tree in self._asts.values():
-            self._add_imports_from_tree(tree)
+        for file_path, tree in self._asts.items():
+            self._add_imports_from_tree(tree, file_path)
 
         # Add declared types
         all_declared = (
@@ -358,7 +607,7 @@ class ModuleParser:
             declared_interfaces=self._declared_interfaces,
         )
 
-    def _add_imports_from_tree(self, tree: ast.Module) -> None:
+    def _add_imports_from_tree(self, tree: ast.Module, file_path: Path) -> None:
         """Extract imports from an AST tree and add to namespace."""
         assert self._namespace is not None
         for node in ast.walk(tree):
@@ -368,6 +617,25 @@ class ModuleParser:
             elif isinstance(node, ast.ImportFrom):
                 for alias in node.names:
                     if alias.name == "*":
+                        # Static analysis can't expand a star import — we
+                        # don't read the foreign module's symbols. Decorated
+                        # classes from the same package are still picked up
+                        # via cross-file declaration scanning, but module-
+                        # level constants and type aliases imported via
+                        # ``from .x import *`` will not resolve. Warn so
+                        # users see why the schema differs from runtime.
+                        prefix = "." * node.level
+                        target = f"{prefix}{node.module or ''}" or "."
+                        logger.warning(
+                            "%s:%d: ``from %s import *`` is not expanded by "
+                            "the AST analyzer; type aliases and constants "
+                            "from %r will not resolve. Import names "
+                            "explicitly to ensure they are picked up.",
+                            file_path,
+                            getattr(node, "lineno", 0),
+                            target,
+                            target,
+                        )
                         continue
                     if node.level > 0:
                         # Relative imports (``from . import x``,
@@ -462,26 +730,45 @@ class ModuleParser:
         """Parse an @object_type or @interface decorated class."""
         assert self._resolver is not None
 
-        with self._resolver.in_class(node.name):
-            # Get decorator info for metadata
-            decorator_type = "interface" if is_interface else "object_type"
-            aliases = self._aliases_for(file_path)
-            decorator = find_decorator(node, decorator_type, aliases)
-            decorator_info = extract_decorator_info(decorator) if decorator else None
+        self._reject_pep695_generic_class(node, file_path)
 
-            # Extract deprecation
-            deprecated = None
-            if decorator_info and "deprecated" in decorator_info.kwargs:
-                deprecated = decorator_info.kwargs["deprecated"]
+        # Collect class-body constants once so ``_eval_constant`` can resolve
+        # references like ``def f(name: str = DEFAULT)`` where ``DEFAULT`` is
+        # defined inside the class.
+        self._collect_class_constants_for(node, file_path)
 
-            # Extract fields, functions, and constructor
-            fields, functions, init_params, constructor = self._extract_class_members(
-                node, file_path
-            )
+        previous_class = self._current_class_name
+        self._current_class_name = node.name
+        try:
+            with self._resolver.in_class(node.name):
+                # Get decorator info for metadata
+                decorator_type = "interface" if is_interface else "object_type"
+                aliases = self._aliases_for(file_path)
+                decorator = find_decorator(node, decorator_type, aliases)
+                decorator_info = (
+                    extract_decorator_info(decorator) if decorator else None
+                )
 
-            # Resolve constructor
-            if constructor is None and not is_interface:
-                constructor = self._resolve_constructor(node, file_path, init_params)
+                # Extract deprecation
+                deprecated = None
+                if decorator_info and "deprecated" in decorator_info.kwargs:
+                    deprecated = decorator_info.kwargs["deprecated"]
+
+                # Extract fields, functions, and constructor
+                (
+                    fields,
+                    functions,
+                    init_params,
+                    constructor,
+                ) = self._extract_class_members(node, file_path)
+
+                # Resolve constructor
+                if constructor is None and not is_interface:
+                    constructor = self._resolve_constructor(
+                        node, file_path, init_params
+                    )
+        finally:
+            self._current_class_name = previous_class
 
         return ObjectTypeMetadata(
             name=node.name,
@@ -494,7 +781,7 @@ class ModuleParser:
             location=get_location(node, str(file_path)),
         )
 
-    def _extract_class_members(
+    def _extract_class_members(  # noqa: C901, PLR0912 — class-body dispatch
         self,
         node: ast.ClassDef,
         file_path: Path,
@@ -536,9 +823,41 @@ class ModuleParser:
                 elif has_decorator(item, "function", aliases):
                     func = self._parse_function(item, file_path, node.name)
                     functions.append(func)
+                elif self._is_property(item):
+                    # @property fields would need runtime evaluation to
+                    # produce a value; surface the silent drop.
+                    logger.warning(
+                        "%s:%d: @property %s.%s is not exposed in the Dagger "
+                        "schema. Use @dagger.function (with or without "
+                        "@cached_property semantics in the body) to expose "
+                        "computed values.",
+                        file_path,
+                        getattr(item, "lineno", 0),
+                        node.name,
+                        item.name,
+                    )
+            elif isinstance(item, ast.ClassDef):
+                self._warn_nested_dagger_class(item, node.name, file_path)
 
         seen_names = {f.python_name for f in functions}
         functions.extend(self._find_inherited_functions(node, node.name, seen_names))
+
+        # Walk MRO for inherited fields the same way functions are walked.
+        # Without this, ``class Child(Base):`` where ``Base`` declares
+        # ``name: str = dagger.field(default="x")`` would not surface
+        # ``name`` as a field of ``Child`` — diverging from how
+        # dataclasses inheritance works at runtime.
+        seen_field_names = {f.python_name for f in fields}
+        seen_param_names = {p.python_name for p in init_params}
+        for base_field, base_param in self._find_inherited_fields(
+            node, node.name, seen_field_names, seen_param_names
+        ):
+            if base_field is not None:
+                fields.append(base_field)
+                seen_field_names.add(base_field.python_name)
+            if base_param is not None:
+                init_params.append(base_param)
+                seen_param_names.add(base_param.python_name)
 
         return fields, functions, init_params, constructor
 
@@ -653,8 +972,12 @@ class ModuleParser:
         expanded = self._expand_alias(node.annotation, file_path)
         resolved_type = self._resolver.resolve(expanded, location=location)
 
-        # Extract Annotated metadata
-        annotated_meta = extract_annotated_metadata(expanded)
+        # Extract Annotated metadata. The resolver lets ``Ignore(SOURCE_IGNORE)``
+        # / ``Doc(MESSAGE)`` follow a name reference to its module-level value
+        # the same way ``typing.get_type_hints`` does at runtime.
+        annotated_meta = extract_annotated_metadata(
+            expanded, resolver=self._eval_constant
+        )
 
         # Get API name
         api_name = field_kwargs.get("name") or normalize_name(python_name)
@@ -779,7 +1102,9 @@ class ModuleParser:
         resolved_type = self._resolver.resolve(annotation, location=location)
 
         # Extract Annotated metadata
-        annotated_meta = extract_annotated_metadata(annotation)
+        annotated_meta = extract_annotated_metadata(
+            annotation, resolver=self._eval_constant
+        )
 
         # Build parameter
         api_name = normalize_name(python_name)
@@ -1046,6 +1371,119 @@ class ModuleParser:
             )
         return inherited
 
+    def _is_dataclass_like(self, base_class: ast.ClassDef, base_file: Path) -> bool:
+        """True when a base class would expose its fields via dataclasses.
+
+        At runtime, dagger fields flow through ``dataclasses.fields(cls)``,
+        which only inherits from base classes that are themselves
+        dataclasses — that means @dagger.object_type / @dagger.interface
+        (which apply ``dataclass(kw_only=True)`` internally) or an explicit
+        ``@dataclass``. An undecorated base's annotations are *not*
+        promoted to fields on the child, even if the user wrote
+        ``dagger.field(...)`` in the base.
+        """
+        aliases = self._aliases_for(base_file)
+        if has_decorator(base_class, "object_type", aliases):
+            return True
+        if has_decorator(base_class, "interface", aliases):
+            return True
+        # Explicit @dataclass / @dataclasses.dataclass (with or without args).
+        for decorator in base_class.decorator_list:
+            target = decorator.func if isinstance(decorator, ast.Call) else decorator
+            if isinstance(target, ast.Name) and target.id == "dataclass":
+                return True
+            if isinstance(target, ast.Attribute) and target.attr == "dataclass":
+                return True
+        return False
+
+    def _find_inherited_fields(  # noqa: C901, PLR0912 — MRO walk dispatch
+        self,
+        node: ast.ClassDef,
+        class_name: str,
+        seen_field_names: set[str],
+        seen_param_names: set[str],
+        visited: set[str] | None = None,
+    ) -> list[tuple[FieldMetadata | None, ParameterMetadata | None]]:
+        """Walk MRO for inherited dagger ``field()`` declarations.
+
+        Mirrors ``_find_inherited_functions``, but only considers bases
+        that are themselves dataclass-like — ``@dagger.object_type``,
+        ``@dagger.interface``, or ``@dataclass``. The runtime relies on
+        Python's dataclass machinery to flatten fields across MRO, and
+        that machinery only inherits from dataclass parents. Walking
+        undecorated bases would surface fields the runtime never exposes.
+
+        Returns a list of (field, init_param) tuples. Either side can be
+        ``None`` when only one path applies (an ``init=False`` field, an
+        ``InitVar`` that contributes a param but no field, etc.).
+        """
+        if visited is None:
+            visited = {node.name}
+
+        results: list[tuple[FieldMetadata | None, ParameterMetadata | None]] = []
+        for base in node.bases:
+            base_name = None
+            if isinstance(base, ast.Name):
+                base_name = base.id
+            elif isinstance(base, ast.Attribute):
+                base_name = base.attr
+
+            if base_name is None or base_name in visited:
+                continue
+            visited.add(base_name)
+
+            found = self._find_class_def_with_file(base_name)
+            if found is None:
+                continue
+            base_class, base_file = found
+
+            # Only inherit fields from dataclass-like bases — see
+            # ``_is_dataclass_like``. Recurse anyway: a dataclass-like
+            # base might itself inherit from another dataclass-like.
+            if not self._is_dataclass_like(base_class, base_file):
+                continue
+
+            for item in base_class.body:
+                if not (
+                    isinstance(item, ast.AnnAssign)
+                    and isinstance(item.target, ast.Name)
+                ):
+                    continue
+                python_name = item.target.id
+                if python_name in seen_field_names and python_name in seen_param_names:
+                    continue
+                if self._is_non_field_annotation(item.annotation):
+                    continue
+                is_initvar = self._is_initvar_annotation(item.annotation)
+
+                field: FieldMetadata | None = None
+                if not is_initvar and python_name not in seen_field_names:
+                    field = self._parse_field(item, base_file, class_name)
+
+                param: ParameterMetadata | None = None
+                if python_name not in seen_param_names:
+                    param = self._parse_class_assignment_as_param(
+                        item, base_file, class_name, is_initvar=is_initvar
+                    )
+
+                if field is not None or param is not None:
+                    results.append((field, param))
+                    if field is not None:
+                        seen_field_names.add(python_name)
+                    if param is not None:
+                        seen_param_names.add(python_name)
+
+            results.extend(
+                self._find_inherited_fields(
+                    base_class,
+                    class_name,
+                    seen_field_names,
+                    seen_param_names,
+                    visited,
+                )
+            )
+        return results
+
     def _parse_function(
         self,
         node: ast.FunctionDef | ast.AsyncFunctionDef,
@@ -1054,6 +1492,8 @@ class ModuleParser:
     ) -> FunctionMetadata:
         """Parse a @function decorated method."""
         assert self._resolver is not None
+
+        self._reject_pep695_generic_function(node, file_path)
 
         # Get decorator info
         aliases = self._aliases_for(file_path)
@@ -1179,7 +1619,7 @@ class ModuleParser:
             location=location,
         )
 
-    def _parse_parameters(
+    def _parse_parameters(  # noqa: C901, PLR0915 — parameter dispatch
         self,
         node: ast.FunctionDef | ast.AsyncFunctionDef,
         file_path: Path,
@@ -1190,6 +1630,32 @@ class ModuleParser:
 
         parameters: list[ParameterMetadata] = []
         args = node.args
+
+        # Variadic args (``*args`` / ``**kwargs``) have no representation in
+        # the Dagger API. Drop them but tell the user so they aren't left
+        # wondering why those parameters didn't make it.
+        if args.vararg is not None:
+            logger.warning(
+                "%s:%d: %s.%s declares ``*%s`` — variadic positional args "
+                "are not supported by the Dagger API and will be dropped "
+                "from the schema.",
+                file_path,
+                getattr(node, "lineno", 0),
+                self._current_class_name or "<module>",
+                node.name,
+                args.vararg.arg,
+            )
+        if args.kwarg is not None:
+            logger.warning(
+                "%s:%d: %s.%s declares ``**%s`` — variadic keyword args "
+                "are not supported by the Dagger API and will be dropped "
+                "from the schema.",
+                file_path,
+                getattr(node, "lineno", 0),
+                self._current_class_name or "<module>",
+                node.name,
+                args.kwarg.arg,
+            )
 
         # Positional-only come before regular positional; defaults in args.defaults
         # are right-aligned against the combined sequence.
@@ -1228,8 +1694,12 @@ class ModuleParser:
                 # the surface representation matches what the user wrote.
                 expanded = self._expand_alias(annotation, file_path)
 
-                # Extract Annotated metadata
-                annotated_meta = extract_annotated_metadata(expanded)
+                # Extract Annotated metadata, threading through the parser's
+                # constant resolver so ``Ignore(NAME)`` / ``Doc(NAME)`` etc.
+                # pick up module-level constants the same way the runtime does.
+                annotated_meta = extract_annotated_metadata(
+                    expanded, resolver=self._eval_constant
+                )
 
                 # Resolve type
                 resolved_type = self._resolver.resolve(expanded, location=location)
@@ -1353,6 +1823,10 @@ class ModuleParser:
         Handles:
         - Simple string: ``ACTIVE = "ACTIVE value"`` → ("ACTIVE value", None)
         - Tuple (legacy): ``ACTIVE = "here", "doc"`` → ("here", "doc")
+        - ``enum.auto()`` / ``auto()``: warns and falls back to member name —
+          we cannot run user code to predict the actual auto-generated
+          value (1/2/3 for ``IntEnum``, lowercase name for ``StrEnum``,
+          implementation-defined for ``Enum``).
         - Other: uses member name as value
         """
         if isinstance(value_node, ast.Constant):
@@ -1369,9 +1843,35 @@ class ModuleParser:
                     doc = second.value
             return value, doc
 
+        if self._looks_like_auto_call(value_node):
+            logger.warning(
+                "Enum member %r uses ``enum.auto()`` at line %d; the AST "
+                "analyzer cannot predict the runtime-generated value and "
+                "will record %r as a fallback. Use explicit values "
+                '(``MEMBER = "value"`` or ``MEMBER = 1``) so the schema '
+                "matches the runtime.",
+                member_name,
+                getattr(value_node, "lineno", 0),
+                member_name,
+            )
+
         return member_name, None
 
-    def _eval_constant(self, node: ast.expr | None) -> Any:  # noqa: PLR0911, C901
+    @staticmethod
+    def _looks_like_auto_call(node: ast.expr) -> bool:
+        """Detect ``auto()`` / ``enum.auto()`` regardless of import form."""
+        if not isinstance(node, ast.Call):
+            return False
+        func = node.func
+        if isinstance(func, ast.Name):
+            return func.id == "auto"
+        if isinstance(func, ast.Attribute):
+            return func.attr == "auto"
+        return False
+
+    def _eval_constant(  # noqa: C901, PLR0911, PLR0912 — constant-expr dispatch
+        self, node: ast.expr | None
+    ) -> Any:
         """Evaluate a constant expression to a Python value."""
         if node is None:
             return None
@@ -1389,14 +1889,35 @@ class ModuleParser:
             }
             if node.id in name_map:
                 return name_map[node.id]
-            # Try resolving module-level constants (scoped to current file)
-            file_constants = (
-                self._module_constants.get(self._current_file, {})
-                if self._current_file is not None
-                else {}
-            )
-            if node.id in file_constants:
-                return self._eval_constant(file_constants[node.id])
+            # Resolution order matches Python's:
+            #   1. Class body — closest scope when evaluating a default
+            #      inside a method.
+            #   2. Current file's module-level constants.
+            #   3. Any file that bound this name via a relative import.
+            current = self._current_file
+            if current is not None and self._current_class_name is not None:
+                class_constants = self._class_constants.get(
+                    (current, self._current_class_name), {}
+                )
+                if node.id in class_constants:
+                    return self._eval_constant(class_constants[node.id])
+            if current is not None:
+                file_constants = self._module_constants.get(current, {})
+                if node.id in file_constants:
+                    return self._eval_constant(file_constants[node.id])
+                origin = self._relative_import_origins.get(current, {}).get(node.id)
+                if origin is not None:
+                    origin_constants = self._module_constants.get(origin, {})
+                    if node.id in origin_constants:
+                        # Switch the current-file scope so any nested name
+                        # references inside the constant resolve against the
+                        # foreign file's own constants.
+                        previous = self._current_file
+                        self._current_file = origin
+                        try:
+                            return self._eval_constant(origin_constants[node.id])
+                        finally:
+                            self._current_file = previous
             logger.warning(
                 "Unresolved name %r used in a constant expression at line %d; "
                 "falling back to the literal string.",
@@ -1421,7 +1942,23 @@ class ModuleParser:
             if isinstance(val, (int, float)):
                 return -val
 
-        # Can't evaluate - return None (will be handled at runtime)
+        # Can't evaluate. Warn so the user sees that the default they wrote
+        # didn't survive static analysis — without a warning, the parameter
+        # appears to have a default that's silently None, which mismatches
+        # the runtime behaviour. The runtime still applies the real default
+        # when the caller omits the argument.
+        try:
+            unparsed = ast.unparse(node)
+        except Exception:  # noqa: BLE001
+            unparsed = "<unparseable>"
+        logger.warning(
+            "Default expression %s at line %d could not be evaluated "
+            "statically; the schema will record no default for this "
+            "parameter (the runtime will still apply the real default "
+            "when the caller omits the argument).",
+            unparsed,
+            getattr(node, "lineno", 0),
+        )
         return None
 
     def _serialize_default(self, value: Any, *, name: str = "") -> Any:
