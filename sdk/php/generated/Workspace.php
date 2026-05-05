@@ -252,7 +252,6 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
         ?string $sdk = '',
         ?string $source = '',
         ?array $include = null,
-        ?string $blueprint = '',
         ?bool $selfCalls = false,
     ): string {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('moduleInit');
@@ -265,9 +264,6 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $include) {
         $leafQueryBuilder->setArgument('include', $include);
-        }
-        if (null !== $blueprint) {
-        $leafQueryBuilder->setArgument('blueprint', $blueprint);
         }
         if (null !== $selfCalls) {
         $leafQueryBuilder->setArgument('selfCalls', $selfCalls);

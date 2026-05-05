@@ -6369,9 +6369,6 @@ type Workspace {
     """Additional include patterns for the module."""
     include: [String!] = []
 
-    """Blueprint module reference to apply to the new module."""
-    blueprint: String = ""
-
     """Enable the self-calls experimental feature for the new module."""
     selfCalls: Boolean = false
   ): String!
@@ -6532,5 +6529,4 @@ type WorkspaceModule {
 The `WorkspaceModuleID` scalar type represents an identifier for an object of type WorkspaceModule.
 """
 scalar WorkspaceModuleID
-
 
