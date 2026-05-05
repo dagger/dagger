@@ -1804,6 +1804,95 @@ def test_ast_cross_file_type_alias_with_default_path(tmp_path):
     assert param.default_path == "."
 
 
+def test_ast_class_level_constant_default():
+    """``DEFAULT = "x"`` inside a class body resolves when used as a default."""
+    metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    DEFAULT = "x"
+
+    @dagger.function
+    def hello(self, name: str = DEFAULT) -> str:
+        return name
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.has_default is True
+    assert param.default_value == "x"
+
+
+def test_ast_class_level_annotated_constant_default():
+    """``DEFAULT: str = "x"`` inside a class body also resolves."""
+    metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    DEFAULT: str = "x"
+
+    @dagger.function
+    def hello(self, name: str = DEFAULT) -> str:
+        return name
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.default_value == "x"
+
+
+def test_ast_class_level_constant_does_not_leak():
+    """A class constant on Foo must not resolve inside Bar's defaults."""
+    metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    DEFAULT = "from-foo"
+
+    @dagger.function
+    def hello(self, name: str = DEFAULT) -> str:
+        return name
+
+@dagger.object_type
+class Bar:
+    @dagger.function
+    def hello(self, name: str = DEFAULT) -> str:
+        return name
+""", "Foo")
+    foo_param = metadata.objects["Foo"].functions[0].parameters[0]
+    bar_param = metadata.objects["Bar"].functions[0].parameters[0]
+    assert foo_param.default_value == "from-foo"
+    # Bar.DEFAULT doesn't exist; the analyzer falls back to the literal name.
+    assert bar_param.default_value == "DEFAULT"
+
+
+def test_ast_cross_file_constant_default(tmp_path):
+    """``from .constants import X`` resolves when X is used as a default."""
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "constants.py").write_text(
+        'DEFAULT_NAME = "alice"\n',
+        encoding="utf-8",
+    )
+    (pkg / "main.py").write_text(
+        "import dagger\n"
+        "from .constants import DEFAULT_NAME\n"
+        "\n"
+        "@dagger.object_type\n"
+        "class Foo:\n"
+        "    @dagger.function\n"
+        "    def hello(self, name: str = DEFAULT_NAME) -> str: ...\n",
+        encoding="utf-8",
+    )
+    metadata = analyze_module(
+        source_files=[pkg / "__init__.py", pkg / "constants.py", pkg / "main.py"],
+        main_object_name="Foo",
+    )
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.has_default is True
+    assert param.default_value == "alice"
+
+
 def test_ast_cross_file_type_alias_chained(tmp_path):
     """``main.py`` imports ``B``; ``types.py`` defines ``A = Directory; B = A``."""
     pkg = tmp_path / "pkg"
