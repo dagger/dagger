@@ -287,11 +287,22 @@ class ModuleParser:
                 for alias in node.names:
                     self._namespace.add_import(alias.name, alias.asname)
             elif isinstance(node, ast.ImportFrom):
-                module = node.module or ""
                 for alias in node.names:
-                    if alias.name != "*":
+                    if alias.name == "*":
+                        continue
+                    if node.level > 0:
+                        # Relative imports (``from . import x``,
+                        # ``from .pkg import x``) cannot be resolved without
+                        # the importing package's context, which static
+                        # analysis lacks. Bind the name to a stub so type
+                        # annotations don't NameError; cross-file decorated
+                        # classes are added separately via add_declared_type.
+                        self._namespace.add_relative_import(
+                            alias.name, alias.asname, node.module, node.level
+                        )
+                    else:
                         self._namespace.add_from_import(
-                            module, alias.name, alias.asname
+                            node.module or "", alias.name, alias.asname
                         )
 
     _NON_DAGGER_FIELD_MODULES = frozenset({"dataclasses", "attrs", "attr", "pydantic"})
