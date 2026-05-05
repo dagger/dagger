@@ -125,6 +125,10 @@ type ClientMetadata struct {
 	// use LoadWorkspaceModules instead.
 	SkipWorkspaceModules bool `json:"skip_workspace_modules,omitempty"`
 
+	// SuppressCompatWorkspaceWarning disables the user-facing warning emitted
+	// when a legacy dagger.json is projected into a compat workspace.
+	SuppressCompatWorkspaceWarning bool `json:"suppress_compat_workspace_warning,omitempty"`
+
 	// LockMode controls lockfile behavior for lookup resolution.
 	// Valid values: "disabled", "live", "pinned", "frozen".
 	LockMode string `json:"lock_mode,omitempty"`
