@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -569,11 +568,12 @@ func (s *workspaceSchema) checks(
 		return nil, err
 	}
 
-	// Build a map of toolchain module name → ignoreChecks patterns from
-	// each module's toolchain config.
-	ignoreChecks := toolchainIgnorePatterns(mods, func(cfg *modules.ModuleConfigDependency) []string {
-		return cfg.IgnoreChecks
+	ignoreChecks, err := workspaceConfigSkipPatterns(ctx, parent, func(e workspace.ModuleEntry) []string {
+		return e.Check.Skip
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	var allChecks []*core.Check
 	for _, mod := range mods {
@@ -662,9 +662,12 @@ func (s *workspaceSchema) generators(
 		return nil, err
 	}
 
-	ignoreGenerators := toolchainIgnorePatterns(mods, func(cfg *modules.ModuleConfigDependency) []string {
-		return cfg.IgnoreGenerators
+	ignoreGenerators, err := workspaceConfigSkipPatterns(ctx, parent, func(e workspace.ModuleEntry) []string {
+		return e.Generate.Skip
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	moduleGenerators := make([]workspaceGeneratorModule, 0, len(mods))
 	for _, mod := range mods {
@@ -773,9 +776,12 @@ func (s *workspaceSchema) services(
 		return nil, err
 	}
 
-	ignoreServices := toolchainIgnorePatterns(mods, func(cfg *modules.ModuleConfigDependency) []string {
-		return cfg.IgnoreServices
+	ignoreServices, err := workspaceConfigSkipPatterns(ctx, parent, func(e workspace.ModuleEntry) []string {
+		return e.Up.Skip
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	var allUps []*core.Up
 	for _, mod := range mods {
@@ -951,29 +957,24 @@ func currentWorkspacePrimaryModules(ctx context.Context) ([]dagql.ObjectResult[*
 	return mods, nil
 }
 
-// toolchainIgnorePatterns builds a map of toolchain module name → ignore
-// patterns by scanning each module's source config for toolchain entries.
-func toolchainIgnorePatterns(
-	mods []dagql.ObjectResult[*core.Module],
-	getPatterns func(*modules.ModuleConfigDependency) []string,
-) map[string][]string {
+// workspaceConfigSkipPatterns reads per-module skip patterns from the served
+// workspace's .dagger/config.toml, keyed by module name.
+func workspaceConfigSkipPatterns(
+	ctx context.Context,
+	ws *core.Workspace,
+	getter func(workspace.ModuleEntry) []string,
+) (map[string][]string, error) {
+	cfg, err := readWorkspaceConfig(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
 	result := make(map[string][]string)
-	for _, mod := range mods {
-		modSelf := mod.Self()
-		if modSelf == nil || !modSelf.Source.Valid {
-			continue
-		}
-		src := modSelf.Source.Value.Self()
-		if src == nil {
-			continue
-		}
-		for _, cfg := range src.ConfigToolchains {
-			if patterns := getPatterns(cfg); len(patterns) > 0 {
-				result[cfg.Name] = patterns
-			}
+	for name, entry := range cfg.Modules {
+		if patterns := getter(entry); len(patterns) > 0 {
+			result[name] = patterns
 		}
 	}
-	return result
+	return result, nil
 }
 
 // filterNodesByExclude removes items whose nodes match any of the exclude
