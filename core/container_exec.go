@@ -190,7 +190,6 @@ func (lazy *ContainerExecLazy) EncodePersisted(ctx context.Context, cache dagql.
 	})
 }
 
-//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (container *Container) execMeta(
 	ctx context.Context,
 	opts ContainerExecOpts,
