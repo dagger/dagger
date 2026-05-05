@@ -646,10 +646,12 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			compatWorkspace, _ = workspace.ParseCompatWorkspaceAt(data, cfgPath)
 		}
 		if compatWorkspace != nil {
-			msg := legacyWorkspaceCompatMessage(cwd, cfgPath)
-			console(ctx, msg)
-			slog.Warn(msg,
-				"config", cfgPath)
+			if clientMD == nil || !clientMD.SuppressCompatWorkspaceWarning {
+				msg := legacyWorkspaceCompatMessage(cwd, cfgPath)
+				console(ctx, msg)
+				slog.Warn(msg,
+					"config", cfgPath)
+			}
 		}
 	} else if wsConfig == nil {
 		wsDir := filepath.Join(ws.Root, ws.Path)
