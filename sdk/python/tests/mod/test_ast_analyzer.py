@@ -1695,3 +1695,44 @@ class Foo:
     assert fns["smoke"].is_check
     assert fns["gen"].is_generate
     assert fns["serve"].is_service
+
+
+# -- @staticmethod parameter handling ---------------------------------------
+
+
+def test_ast_staticmethod_first_param_preserved():
+    """``@staticmethod`` has no implicit receiver — first param is real."""
+    metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    @staticmethod
+    @dagger.function
+    def echo(x: str) -> str:
+        return x
+
+    @dagger.function
+    def hello(self, y: int) -> str:
+        return str(y)
+""")
+    fns = {f.python_name: f for f in metadata.objects["Foo"].functions}
+    # static: ``x`` survives; instance method: ``self`` is skipped, ``y`` kept.
+    assert [p.python_name for p in fns["echo"].parameters] == ["x"]
+    assert [p.python_name for p in fns["hello"].parameters] == ["y"]
+
+
+def test_ast_staticmethod_decorator_order_swapped():
+    """``@dagger.function`` over ``@staticmethod`` order also works."""
+    metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    @staticmethod
+    def echo(x: str) -> str:
+        return x
+""")
+    fn = metadata.objects["Foo"].functions[0]
+    assert [p.python_name for p in fn.parameters] == ["x"]
