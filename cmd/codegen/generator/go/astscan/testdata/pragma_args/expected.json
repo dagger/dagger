@@ -1,0 +1,52 @@
+{
+  "name": "echo",
+  "objects": [
+    {
+      "name": "Echo",
+      "functions": [
+        {
+          "name": "say",
+          "description": "Say echoes a message, optionally in a specific language.",
+          "args": [
+            {
+              "name": "msg",
+              "description": "the message to echo",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": { "kind": "SCALAR", "name": "String" }
+              }
+            },
+            {
+              "name": "language",
+              "type": { "kind": "SCALAR", "name": "String" },
+              "defaultValue": "\"en\""
+            }
+          ],
+          "returnType": {
+            "kind": "NON_NULL",
+            "ofType": { "kind": "SCALAR", "name": "String" }
+          }
+        },
+        {
+          "name": "greet",
+          "description": "Greet returns a greeting with both pragma styles applied.",
+          "args": [
+            {
+              "name": "name",
+              "type": { "kind": "SCALAR", "name": "String" }
+            },
+            {
+              "name": "count",
+              "type": { "kind": "SCALAR", "name": "Int" },
+              "defaultValue": "42"
+            }
+          ],
+          "returnType": {
+            "kind": "NON_NULL",
+            "ofType": { "kind": "SCALAR", "name": "String" }
+          }
+        }
+      ]
+    }
+  ]
+}
