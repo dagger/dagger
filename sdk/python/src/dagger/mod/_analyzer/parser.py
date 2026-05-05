@@ -160,6 +160,15 @@ class ModuleParser:
         # ``_eval_constant`` can scope name lookups to the containing file.
         self._current_file: Path | None = None
 
+        # Class currently being parsed. Set in ``_parse_object_type`` so
+        # ``_eval_constant`` can reach class-body constants used as defaults
+        # within that class's methods.
+        self._current_class_name: str | None = None
+
+        # Class-level constants per (file, class). Populated lazily in
+        # ``_collect_class_constants_for`` the first time a class is parsed.
+        self._class_constants: dict[tuple[Path, str], dict[str, ast.expr]] = {}
+
         # Deferred external-constructor declarations, resolved in a second
         # pass after every class has been parsed so the lookup does not
         # depend on file/class iteration order.
@@ -316,6 +325,34 @@ class ModuleParser:
                     and isinstance(node.name, ast.Name)
                 ):
                     aliases[node.name.id] = node.value
+
+    def _collect_class_constants_for(
+        self,
+        node: ast.ClassDef,
+        file_path: Path,
+    ) -> None:
+        """Index simple class-level constants for default-value resolution.
+
+        Captures both ``DEFAULT = "x"`` and ``DEFAULT: str = "x"`` shapes
+        from the class body. Inner class definitions and methods are
+        ignored — only top-of-body assignments count.
+        """
+        key = (file_path, node.name)
+        if key in self._class_constants:
+            return
+        constants: dict[str, ast.expr] = {}
+        for item in node.body:
+            if isinstance(item, ast.Assign):
+                for target in item.targets:
+                    if isinstance(target, ast.Name):
+                        constants[target.id] = item.value
+            elif (
+                isinstance(item, ast.AnnAssign)
+                and isinstance(item.target, ast.Name)
+                and item.value is not None
+            ):
+                constants[item.target.id] = item.value
+        self._class_constants[key] = constants
 
     def _collect_relative_imports(self) -> None:
         """Map relative-import names to the parsed file they were defined in.
@@ -589,26 +626,43 @@ class ModuleParser:
         """Parse an @object_type or @interface decorated class."""
         assert self._resolver is not None
 
-        with self._resolver.in_class(node.name):
-            # Get decorator info for metadata
-            decorator_type = "interface" if is_interface else "object_type"
-            aliases = self._aliases_for(file_path)
-            decorator = find_decorator(node, decorator_type, aliases)
-            decorator_info = extract_decorator_info(decorator) if decorator else None
+        # Collect class-body constants once so ``_eval_constant`` can resolve
+        # references like ``def f(name: str = DEFAULT)`` where ``DEFAULT`` is
+        # defined inside the class.
+        self._collect_class_constants_for(node, file_path)
 
-            # Extract deprecation
-            deprecated = None
-            if decorator_info and "deprecated" in decorator_info.kwargs:
-                deprecated = decorator_info.kwargs["deprecated"]
+        previous_class = self._current_class_name
+        self._current_class_name = node.name
+        try:
+            with self._resolver.in_class(node.name):
+                # Get decorator info for metadata
+                decorator_type = "interface" if is_interface else "object_type"
+                aliases = self._aliases_for(file_path)
+                decorator = find_decorator(node, decorator_type, aliases)
+                decorator_info = (
+                    extract_decorator_info(decorator) if decorator else None
+                )
 
-            # Extract fields, functions, and constructor
-            fields, functions, init_params, constructor = self._extract_class_members(
-                node, file_path
-            )
+                # Extract deprecation
+                deprecated = None
+                if decorator_info and "deprecated" in decorator_info.kwargs:
+                    deprecated = decorator_info.kwargs["deprecated"]
 
-            # Resolve constructor
-            if constructor is None and not is_interface:
-                constructor = self._resolve_constructor(node, file_path, init_params)
+                # Extract fields, functions, and constructor
+                (
+                    fields,
+                    functions,
+                    init_params,
+                    constructor,
+                ) = self._extract_class_members(node, file_path)
+
+                # Resolve constructor
+                if constructor is None and not is_interface:
+                    constructor = self._resolve_constructor(
+                        node, file_path, init_params
+                    )
+        finally:
+            self._current_class_name = previous_class
 
         return ObjectTypeMetadata(
             name=node.name,
@@ -1516,9 +1570,18 @@ class ModuleParser:
             }
             if node.id in name_map:
                 return name_map[node.id]
-            # Try the current file first, then any file that bound this name
-            # via a relative import (``from .constants import DEFAULT``).
+            # Resolution order matches Python's:
+            #   1. Class body — closest scope when evaluating a default
+            #      inside a method.
+            #   2. Current file's module-level constants.
+            #   3. Any file that bound this name via a relative import.
             current = self._current_file
+            if current is not None and self._current_class_name is not None:
+                class_constants = self._class_constants.get(
+                    (current, self._current_class_name), {}
+                )
+                if node.id in class_constants:
+                    return self._eval_constant(class_constants[node.id])
             if current is not None:
                 file_constants = self._module_constants.get(current, {})
                 if node.id in file_constants:
