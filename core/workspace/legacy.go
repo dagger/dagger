@@ -149,6 +149,21 @@ func (compatWorkspace *CompatWorkspace) WorkspaceConfig() *Config {
 			LegacyDefaultPath: mod.Entry.LegacyDefaultPath,
 		}
 	}
+	if compatWorkspace.Config != nil {
+		for _, tc := range compatWorkspace.Config.Toolchains {
+			if tc == nil {
+				continue
+			}
+			entry, ok := cfg.Modules[tc.Name]
+			if !ok {
+				continue
+			}
+			entry.Up.Skip = append([]string(nil), tc.IgnoreServices...)
+			entry.Generate.Skip = append([]string(nil), tc.IgnoreGenerators...)
+			entry.Check.Skip = append([]string(nil), tc.IgnoreChecks...)
+			cfg.Modules[tc.Name] = entry
+		}
+	}
 	return cfg
 }
 

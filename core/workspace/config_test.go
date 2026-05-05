@@ -242,7 +242,7 @@ func TestWriteConfigValue(t *testing.T) {
 		require.EqualError(t, err, "cannot set \"modules.greeter\" directly; specify a field like modules.greeter.settings")
 
 		_, err = WriteConfigValue(nil, "modules.greeter.unknown", "value")
-		require.EqualError(t, err, "unknown config key \"modules.greeter.unknown\"; valid fields at this level: entrypoint, legacy-default-path, settings, source")
+		require.EqualError(t, err, "unknown config key \"modules.greeter.unknown\"; valid fields at this level: check, entrypoint, generate, legacy-default-path, settings, source, up")
 
 		_, err = WriteConfigValue(nil, "ignore.path", "value")
 		require.EqualError(t, err, "invalid key \"ignore.path\"; ignore does not have sub-keys")
