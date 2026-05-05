@@ -628,11 +628,12 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 				Ref:        "github.com/dagger/mod",
 				Entrypoint: true,
 			}},
-			LoadWorkspaceModules: true,
-			EagerRuntime:         true,
-			LockMode:             string(workspace.LockModeLive),
-			Workspace:            &workspaceRef,
-			WorkspaceEnv:         &workspaceEnv,
+			LoadWorkspaceModules:           true,
+			EagerRuntime:                   true,
+			SuppressCompatWorkspaceWarning: true,
+			LockMode:                       string(workspace.LockModeLive),
+			Workspace:                      &workspaceRef,
+			WorkspaceEnv:                   &workspaceEnv,
 		}
 
 		md := nestedClientMetadataForRequest(forwarded.AppendToHTTPHeaders(http.Header{}), baseMetadata())
@@ -650,6 +651,7 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 		require.Equal(t, string(workspace.LockModeLive), md.LockMode)
 		require.True(t, md.LoadWorkspaceModules)
 		require.True(t, md.EagerRuntime)
+		require.True(t, md.SuppressCompatWorkspaceWarning)
 		require.Equal(t, "github.com/dagger/dagger@main", *md.Workspace)
 		require.Equal(t, "ci", *md.WorkspaceEnv)
 		require.Equal(t, []engine.ExtraModule{{
