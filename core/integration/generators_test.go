@@ -227,6 +227,24 @@ func (GeneratorsSuite) TestGeneratorsInstalledInWorkspace(ctx context.Context, t
 	}
 }
 
+func (GeneratorsSuite) TestWorkspaceGenerateSkip(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen, err := generatorsTestEnv(t, c)
+	require.NoError(t, err)
+
+	ctr := modGen.WithNewFile(".dagger/config.toml", `[modules.hello-with-generators]
+source = "../hello-with-generators"
+generate.skip = ["generate-other-files", "other-generators:*"]
+`)
+
+	listOut, err := ctr.With(daggerExec("generate", "-l")).CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, listOut, "hello-with-generators:generate-files")
+	require.NotContains(t, listOut, "hello-with-generators:generate-other-files")
+	require.NotContains(t, listOut, "hello-with-generators:other-generators:gen-things")
+}
+
 func (GeneratorsSuite) TestWorkspaceGeneratorsVisibleFromModule(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := generatorsTestEnv(t, c)
@@ -239,74 +257,6 @@ func (GeneratorsSuite) TestWorkspaceGeneratorsVisibleFromModule(ctx context.Cont
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "false", strings.TrimSpace(out))
-}
-
-func (GeneratorsSuite) TestToolchainIgnoreGenerators(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	modGen, err := generatorsTestEnv(t, c)
-	require.NoError(t, err)
-	modGen = modGen.
-		WithWorkdir("app").
-		With(daggerExec("init")).
-		With(daggerExec("toolchain", "install", "../hello-with-generators"))
-
-	out, err := modGen.
-		With(daggerExec("generate", "-l")).
-		CombinedOutput(ctx)
-	require.NoError(t, err)
-	require.Contains(t, out, "hello-with-generators:generate-files")
-	require.Contains(t, out, "hello-with-generators:generate-other-files")
-	require.Contains(t, out, "hello-with-generators:other-generators:gen-things")
-
-	modGen = modGen.WithNewFile("dagger.json", `{
-  "name": "app",
-  "engineVersion": "v0.20.5",
-  "toolchains": [
-    {
-      "name": "hello-with-generators",
-      "source": "../hello-with-generators",
-      "ignoreGenerators": [
-        "generate-other-files",
-        "other-generators:*"
-      ]
-    }
-  ]
-}`)
-
-	out, err = modGen.
-		With(daggerExec("generate", "-l")).
-		CombinedOutput(ctx)
-	require.NoError(t, err)
-	require.Contains(t, out, "hello-with-generators:generate-files")
-	require.NotContains(t, out, "hello-with-generators:generate-other-files")
-	require.NotContains(t, out, "hello-with-generators:other-generators:gen-things")
-
-	modGen = modGen.
-		With(daggerExec("generate", "hello-with-generators:generate-*", "-y", "--progress=plain"))
-	out, err = modGen.
-		CombinedOutput(ctx)
-	require.NoError(t, err)
-	require.Contains(t, out, "hello-with-generators:generate-files")
-	require.NotContains(t, out, "hello-with-generators:generate-other-files")
-
-	exists, err := modGen.Exists(ctx, "foo")
-	require.NoError(t, err)
-	require.True(t, exists)
-	exists, err = modGen.Exists(ctx, "bar")
-	require.NoError(t, err)
-	require.False(t, exists)
-
-	modGen = modGen.
-		With(daggerExec("generate", "hello-with-generators:other-generators:*", "-y", "--progress=plain"))
-	out, err = modGen.
-		CombinedOutput(ctx)
-	require.NoError(t, err)
-	require.NotContains(t, out, "hello-with-generators:other-generators:gen-things")
-
-	exists, err = modGen.Exists(ctx, "meta-gen")
-	require.NoError(t, err)
-	require.False(t, exists)
 }
 
 func (GeneratorsSuite) TestGeneratorResultFieldsRequireRun(ctx context.Context, t *testctx.T) {

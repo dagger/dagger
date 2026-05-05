@@ -103,6 +103,15 @@ func configDocumentMap(cfg *Config) map[string]any {
 			if len(entry.Settings) > 0 {
 				module["settings"] = cloneConfigMap(entry.Settings)
 			}
+			if len(entry.Up.Skip) > 0 {
+				module["up"] = map[string]any{"skip": append([]string(nil), entry.Up.Skip...)}
+			}
+			if len(entry.Generate.Skip) > 0 {
+				module["generate"] = map[string]any{"skip": append([]string(nil), entry.Generate.Skip...)}
+			}
+			if len(entry.Check.Skip) > 0 {
+				module["check"] = map[string]any{"skip": append([]string(nil), entry.Check.Skip...)}
+			}
 			modules[name] = module
 		}
 		values["modules"] = modules
