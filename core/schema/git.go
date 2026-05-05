@@ -96,7 +96,14 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`Tag's name (e.g., "v0.3.9").`),
 			),
 		dagql.NodeFunc("commit", s.commit).
-			View(AllVersion).
+			View(AfterVersion("v0.21.0")).
+			Doc(`Returns details of a commit.`).
+			Args(
+				// TODO: id is normally a reserved word; we should probably rename this
+				dagql.Arg("id").Doc(`Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").`),
+			),
+		dagql.NodeFunc("commit", s.commitRef).
+			View(BeforeVersion("v0.21.0")).
 			Doc(`Returns details of a commit.`).
 			Args(
 				// TODO: id is normally a reserved word; we should probably rename this
@@ -139,6 +146,9 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.GitRef]{
+		dagql.NodeFunc("asCommit", s.asCommit).
+			View(AllVersion).
+			Doc(`The commit this ref resolves to.`),
 		dagql.NodeFunc("tree", s.tree).
 			IsPersistable().
 			View(AllVersion).
@@ -168,6 +178,57 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("other").Doc(`The other ref to compare against.`),
 			),
+	}.Install(srv)
+
+	dagql.Fields[*core.GitCommit]{
+		dagql.NodeFunc("tree", s.commitTree).
+			IsPersistable().
+			View(AllVersion).
+			Doc(`The filesystem tree at this commit.`).
+			Args(
+				dagql.Arg("discardGitDir").
+					Doc(`Set to true to discard .git directory.`),
+				dagql.Arg("depth").
+					Doc(`The depth of the tree to fetch.`),
+				dagql.Arg("includeTags").
+					Doc(`Set to true to populate tag refs in the local checkout .git.`),
+			),
+		dagql.NodeFunc("sha", s.commitSHA).
+			IsPersistable().
+			Doc(`The full commit SHA.`),
+		dagql.NodeFunc("shortSha", s.commitShortSHA).
+			IsPersistable().
+			Doc(`The abbreviated commit SHA.`),
+		dagql.NodeFunc("authoredDate", s.commitAuthoredDate).
+			IsPersistable().
+			Doc(`Git author date, in RFC3339 format.`),
+		dagql.NodeFunc("committedDate", s.commitCommittedDate).
+			IsPersistable().
+			Doc(`Git committer date, in RFC3339 format.`),
+		dagql.NodeFunc("authorName", s.commitAuthorName).
+			IsPersistable().
+			Doc(`Git author name.`),
+		dagql.NodeFunc("authorEmail", s.commitAuthorEmail).
+			IsPersistable().
+			Doc(`Git author email.`),
+		dagql.NodeFunc("committerName", s.commitCommitterName).
+			IsPersistable().
+			Doc(`Git committer name.`),
+		dagql.NodeFunc("committerEmail", s.commitCommitterEmail).
+			IsPersistable().
+			Doc(`Git committer email.`),
+		dagql.NodeFunc("message", s.commitMessage).
+			IsPersistable().
+			Doc(`Full commit message.`),
+		dagql.NodeFunc("messageHeadline", s.commitMessageHeadline).
+			IsPersistable().
+			Doc(`First line of the commit message.`),
+		dagql.NodeFunc("messageBody", s.commitMessageBody).
+			IsPersistable().
+			Doc(`Commit message body, excluding the headline.`),
+		dagql.NodeFunc("parentShas", s.commitParentSHAs).
+			IsPersistable().
+			Doc(`Parent commit SHAs.`),
 	}.Install(srv)
 }
 
@@ -1010,10 +1071,18 @@ func supportsStrictRefs(ctx context.Context) bool {
 	return core.Supports(ctx, "v0.19.0")
 }
 
-func (s *gitSchema) commit(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args commitArgs) (inst dagql.Result[*core.GitRef], _ error) {
+func (s *gitSchema) commit(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args commitArgs) (inst dagql.Result[*core.GitCommit], _ error) {
 	if supportsStrictRefs(ctx) && !gitutil.IsCommitSHA(args.ID) {
 		return inst, fmt.Errorf("invalid commit SHA: %q", args.ID)
 	}
+	ref, err := parent.Self().Remote.Lookup(args.ID)
+	if err != nil {
+		return inst, err
+	}
+	return s.gitCommitResult(ctx, parent, ref)
+}
+
+func (s *gitSchema) commitRef(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args commitArgs) (inst dagql.Result[*core.GitRef], _ error) {
 	return s.ref(ctx, parent, refArgs{Name: args.ID})
 }
 
@@ -1249,6 +1318,184 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	}
 
 	return inst, nil
+}
+
+func (s *gitSchema) asCommit(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args struct{}) (inst dagql.Result[*core.GitCommit], _ error) {
+	return s.gitCommitResult(ctx, parent.Self().Repo, parent.Self().Ref)
+}
+
+func (s *gitSchema) gitCommitResult(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], ref *gitutil.Ref) (inst dagql.Result[*core.GitCommit], _ error) {
+	repo := parent.Self()
+	refBackend, err := repo.Backend.Get(ctx, ref)
+	if err != nil {
+		return inst, err
+	}
+
+	result := &core.GitCommit{
+		Repo:    parent,
+		Ref:     ref,
+		Backend: refBackend,
+	}
+	inst, err = dagql.NewResultForCurrentCall(ctx, result)
+	if err != nil {
+		return inst, err
+	}
+
+	dgstInputs := []string{
+		repo.URL.Value.String(),
+		ref.SHA,
+		strconv.FormatBool(repo.DiscardGitDir),
+	}
+	if remoteRepo, ok := repo.Backend.(*core.RemoteGitRepository); ok {
+		if remoteRepo.SSHAuthSocket.Self() != nil {
+			dgstInputs = append(dgstInputs, "sshAuthSock", string(remoteRepo.SSHAuthSocket.Self().Handle))
+		}
+		if remoteRepo.AuthToken.Self() != nil {
+			dgstInputs = append(dgstInputs, "authToken", strconv.FormatBool(remoteRepo.AuthToken.Self() != nil))
+		}
+		if remoteRepo.AuthHeader.Self() != nil {
+			dgstInputs = append(dgstInputs, "authHeader", strconv.FormatBool(remoteRepo.AuthHeader.Self() != nil))
+		}
+	}
+	inst, err = inst.WithContentDigest(ctx, hashutil.HashStrings(dgstInputs...))
+	if err != nil {
+		return inst, err
+	}
+	return inst, nil
+}
+
+func (s *gitSchema) commitTree(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args treeArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	dir, err := parent.Self().Tree(ctx, srv, args.DiscardGitDir, args.Depth, args.IncludeTags)
+	if err != nil {
+		return inst, err
+	}
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	if err != nil {
+		return inst, err
+	}
+
+	if _, ok := parent.Self().Repo.Self().Backend.(*core.RemoteGitRepository); ok {
+		ref := &core.GitRef{
+			Repo:    parent.Self().Repo,
+			Backend: parent.Self().Backend,
+			Ref:     parent.Self().Ref,
+		}
+		dgst, err := calcGitContentDigest(ref, args)
+		if err != nil {
+			return inst, err
+		}
+		inst, err = inst.WithContentDigest(ctx, dgst)
+		if err != nil {
+			return inst, err
+		}
+	}
+
+	return inst, nil
+}
+
+func gitCommitMetadata(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit]) (*core.GitCommitMetadata, error) {
+	return parent.Self().Metadata(ctx)
+}
+
+func (s *gitSchema) commitSHA(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
+	meta, err := gitCommitMetadata(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(meta.SHA), nil
+}
+
+func (s *gitSchema) commitShortSHA(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
+	meta, err := gitCommitMetadata(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(meta.ShortSHA), nil
+}
+
+func (s *gitSchema) commitAuthoredDate(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
+	meta, err := gitCommitMetadata(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(meta.AuthoredDate), nil
+}
+
+func (s *gitSchema) commitCommittedDate(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
+	meta, err := gitCommitMetadata(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(meta.CommittedDate), nil
+}
+
+func (s *gitSchema) commitAuthorName(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
+	meta, err := gitCommitMetadata(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(meta.AuthorName), nil
+}
+
+func (s *gitSchema) commitAuthorEmail(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
+	meta, err := gitCommitMetadata(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(meta.AuthorEmail), nil
+}
+
+func (s *gitSchema) commitCommitterName(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
+	meta, err := gitCommitMetadata(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(meta.CommitterName), nil
+}
+
+func (s *gitSchema) commitCommitterEmail(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
+	meta, err := gitCommitMetadata(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(meta.CommitterEmail), nil
+}
+
+func (s *gitSchema) commitMessage(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
+	meta, err := gitCommitMetadata(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(meta.Message), nil
+}
+
+func (s *gitSchema) commitMessageHeadline(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
+	headline, err := parent.Self().MessageHeadline(ctx)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(headline), nil
+}
+
+func (s *gitSchema) commitMessageBody(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
+	body, err := parent.Self().MessageBody(ctx)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(body), nil
+}
+
+func (s *gitSchema) commitParentSHAs(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.Array[dagql.String], error) {
+	meta, err := gitCommitMetadata(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	return dagql.NewStringArray(meta.ParentSHAs...), nil
 }
 
 func (s *gitSchema) fetchCommit(

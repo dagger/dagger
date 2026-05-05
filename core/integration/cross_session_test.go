@@ -2007,7 +2007,7 @@ func (ModuleSuite) TestCrossSessionGitSockets(ctx context.Context, t *testctx.T)
 
 	agentSockPath1, cleanup1 := setupPrivateRepoSSHAgent(t)
 	c1 := connect(ctx, t, dagger.WithEnvironmentVariable("SSH_AUTH_SOCK", agentSockPath1))
-	ref1ID, err := c1.Git(url).Commit(ref).ID(ctx)
+	ref1ID, err := c1.Git(url).Ref(ref).ID(ctx)
 	require.NoError(t, err)
 	var id1 call.ID
 	err = id1.Decode(string(ref1ID))
@@ -2015,7 +2015,7 @@ func (ModuleSuite) TestCrossSessionGitSockets(ctx context.Context, t *testctx.T)
 
 	agentSockPath2, _ := setupPrivateRepoSSHAgent(t)
 	c2 := connect(ctx, t, dagger.WithEnvironmentVariable("SSH_AUTH_SOCK", agentSockPath2))
-	ref2ID, err := c2.Git(url).Commit(ref).ID(ctx)
+	ref2ID, err := c2.Git(url).Ref(ref).ID(ctx)
 	require.NoError(t, err)
 	var id2 call.ID
 	err = id2.Decode(string(ref2ID))
