@@ -1359,7 +1359,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
 		DefaultArgs:        parent.Self().DefaultArgs,
 	}
-	err = ctr.WithExec(ctx, parent, args.ContainerExecOpts, md, moduleContext, false)
+	err = ctr.WithExec(ctx, parent, args.ContainerExecOpts, md, moduleContext, nil, dagql.ObjectResult[*core.Env]{}, false)
 	if err != nil {
 		return inst, err
 	}

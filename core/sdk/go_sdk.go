@@ -299,11 +299,10 @@ func (sdk *goSDK) ModuleTypes(
 
 	execMD := engineutil.ExecutionMetadata{
 		ClientID: identity.NewID(),
-		Call:     dagql.CurrentCall(ctx),
 		Internal: true,
 	}
-	if execMD.Call != nil {
-		callDigest, err := execMD.Call.RecipeDigest(ctx)
+	if curCall := dagql.CurrentCall(ctx); curCall != nil {
+		callDigest, err := curCall.RecipeDigest(ctx)
 		if err != nil {
 			return inst, fmt.Errorf("compute Go SDK exec call digest: %w", err)
 		}

@@ -1202,11 +1202,7 @@ func (m *MCP) Call(ctx context.Context, tools []LLMTool, toolCall LLMToolCall) (
 		fmt.Fprintln(stdio.Stdout, res)
 	}()
 
-	envID, err := m.env.ID()
-	if err != nil {
-		return toolErrorMessage(fmt.Errorf("failed to get env ID: %w", err)), true
-	}
-	result, err := tool.Call(EnvIDToContext(ctx, envID), toolCall.Function.Arguments)
+	result, err := tool.Call(EnvToContext(ctx, m.env), toolCall.Function.Arguments)
 	if err != nil {
 		return toolErrorMessage(err), true
 	}

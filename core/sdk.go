@@ -155,6 +155,7 @@ type ModuleRuntime interface {
 		execMD *engineutil.ExecutionMetadata,
 		fnCall *FunctionCall,
 		moduleContext dagql.ObjectResult[*Module],
+		envContext dagql.ObjectResult[*Env],
 	) (outputBytes []byte, clientID string, err error)
 }
 
@@ -175,6 +176,7 @@ func (r *ContainerRuntime) Call(
 	execMD *engineutil.ExecutionMetadata,
 	fnCall *FunctionCall,
 	moduleContext dagql.ObjectResult[*Module],
+	envContext dagql.ObjectResult[*Env],
 ) ([]byte, string, error) {
 	hideCtx := dagql.WithSkip(ctx)
 
@@ -256,7 +258,7 @@ func (r *ContainerRuntime) Call(
 		Args:                          []string{},
 		UseEntrypoint:                 true,
 		ExperimentalPrivilegedNesting: true,
-	}, execMD, moduleContext, true)
+	}, execMD, moduleContext, fnCall, envContext, true)
 	if err != nil {
 		return nil, "", fmt.Errorf("exec function: %w", err)
 	}

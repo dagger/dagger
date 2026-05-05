@@ -40,9 +40,11 @@ here). For simplicity, this Worker struct also implements that Executor interfac
 */
 type Worker struct {
 	*sharedWorkerState
-	causeCtx           trace.SpanContext
-	execMD             *ExecutionMetadata
-	nestedClientModule dagql.AnyObjectResult
+	causeCtx                 trace.SpanContext
+	execMD                   *ExecutionMetadata
+	nestedClientModule       dagql.AnyObjectResult
+	nestedClientFunctionCall dagql.Typed
+	nestedClientEnv          dagql.AnyObjectResult
 }
 
 type sharedWorkerState struct {
@@ -94,7 +96,7 @@ type WorkerOpt struct {
 }
 
 type sessionHandler interface {
-	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *ExecutionMetadata, dagql.AnyObjectResult)
+	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *ExecutionMetadata, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult)
 }
 
 type dagqlServer interface {
@@ -164,12 +166,20 @@ func NewWorker(opts *NewWorkerOpts) (*Worker, error) {
 	}}, nil
 }
 
-func (w *Worker) ExecWorker(causeCtx trace.SpanContext, execMD ExecutionMetadata, nestedClientModule dagql.AnyObjectResult) *Worker {
+func (w *Worker) ExecWorker(
+	causeCtx trace.SpanContext,
+	execMD ExecutionMetadata,
+	nestedClientModule dagql.AnyObjectResult,
+	nestedClientFunctionCall dagql.Typed,
+	nestedClientEnv dagql.AnyObjectResult,
+) *Worker {
 	return &Worker{
-		sharedWorkerState:  w.sharedWorkerState,
-		causeCtx:           causeCtx,
-		execMD:             &execMD,
-		nestedClientModule: nestedClientModule,
+		sharedWorkerState:        w.sharedWorkerState,
+		causeCtx:                 causeCtx,
+		execMD:                   &execMD,
+		nestedClientModule:       nestedClientModule,
+		nestedClientFunctionCall: nestedClientFunctionCall,
+		nestedClientEnv:          nestedClientEnv,
 	}
 }
 

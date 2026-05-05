@@ -815,7 +815,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	curCall := dagql.CurrentCall(ctx)
 	execMD := engineutil.ExecutionMetadata{
 		ClientID:          identity.NewID(),
-		Call:              curCall,
 		Internal:          true,
 		LockMode:          clientMetadata.LockMode,
 		AllowedLLMModules: clientMetadata.AllowedLLMModules,
@@ -851,22 +850,15 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		Parent:    parentJSON,
 		InputArgs: callInputs,
 	}
-	if opts.ParentTyped != nil {
-		parentID, err := opts.ParentTyped.ID()
-		if err != nil {
-			return nil, fmt.Errorf("get parent ID: %w", err)
-		}
-		fnCall.ParentID = parentID
-	}
-	if envID, ok := EnvIDFromContext(ctx); ok {
-		fnCall.EnvID = envID
-	}
 	if fn.objDef != nil {
 		fnCall.ParentName = fn.objDef.OriginalName
 	}
-	execMD.EncodedFunctionCall, err = json.Marshal(fnCall)
-	if err != nil {
-		return nil, fmt.Errorf("marshal function call: %w", err)
+
+	var envContext dagql.ObjectResult[*Env]
+	if env, ok, err := EnvFromContext(ctx); err != nil {
+		return nil, fmt.Errorf("resolve function env context: %w", err)
+	} else if ok {
+		envContext = env
 	}
 
 	// hide all this internal plumbing making up the call
@@ -878,7 +870,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	// Delegate the actual function execution to the runtime
-	outputBytes, clientID, err := runtime.Call(ctx, &execMD, fnCall, fn.mod)
+	outputBytes, clientID, err := runtime.Call(ctx, &execMD, fnCall, fn.mod, envContext)
 	if err != nil {
 		return nil, err
 	}

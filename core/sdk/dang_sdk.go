@@ -87,6 +87,7 @@ func (r *DangRuntime) Call(
 	execMD *engineutil.ExecutionMetadata,
 	fnCall *core.FunctionCall,
 	moduleContext dagql.ObjectResult[*core.Module],
+	envContext dagql.ObjectResult[*core.Env],
 ) (res []byte, clientID string, rerr error) {
 	defer func() {
 		if rerr != nil {
@@ -122,7 +123,7 @@ func (r *DangRuntime) Call(
 	if err != nil {
 		return nil, "", fmt.Errorf("get schema introspection: %w", err)
 	}
-	outputBytes, err := r.eval(ctx, query, schemaJSONFile, execMD, fnCall, moduleContext)
+	outputBytes, err := r.eval(ctx, query, schemaJSONFile, execMD, fnCall, moduleContext, envContext)
 	if err != nil {
 		return nil, "", err
 	}

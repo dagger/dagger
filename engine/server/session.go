@@ -167,6 +167,9 @@ type daggerClient struct {
 	// metadata of that ongoing function call
 	fnCall *core.FunctionCall
 
+	// If the client is executing in an Env context, this is that Env.
+	env dagql.ObjectResult[*core.Env]
+
 	// engine utility job-related state/config
 	getClientCaller  func(string) (bksession.Caller, error)
 	dialer           *net.Dialer
@@ -498,9 +501,11 @@ type ClientInitOpts struct {
 	// If the client is running from a function in a module, this is that module.
 	ModuleContext dagql.ObjectResult[*core.Module]
 
-	// If the client is running from a function in a module, this is the encoded function call
-	// metadata (of type core.FunctionCall)
-	EncodedFunctionCall json.RawMessage
+	// If the client is running from a function in a module, this is that function call.
+	FunctionCall *core.FunctionCall
+
+	// If the client is executing in an Env context, this is that Env.
+	EnvContext dagql.ObjectResult[*core.Env]
 }
 
 // requires that client.stateMu is held
@@ -569,13 +574,8 @@ func (srv *Server) initializeDaggerClient(
 		return fmt.Errorf("failed to create engine client: %w", err)
 	}
 
-	if opts.EncodedFunctionCall != nil {
-		var fnCall core.FunctionCall
-		if err := json.Unmarshal(opts.EncodedFunctionCall, &fnCall); err != nil {
-			return fmt.Errorf("failed to decode function call: %w", err)
-		}
-		client.fnCall = &fnCall
-	}
+	client.fnCall = opts.FunctionCall
+	client.env = opts.EnvContext
 
 	// setup the graphql server + module/function state for the client
 	client.dagqlRoot = core.NewRoot(srv)
@@ -955,11 +955,15 @@ func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}).ServeHTTP(w, r)
 }
 
-// ServeHTTPToNestedClient serves nested clients, including module function calls. The only difference is that additional
-// execution metadata is passed alongside the request from the executor. We don't want to put all this execution metadata
-// in http headers since it includes arbitrary values from users in the function call metadata, which can exceed max header
-// size.
-func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Request, execMD *engineutil.ExecutionMetadata, moduleCtx dagql.AnyObjectResult) {
+// ServeHTTPToNestedClient serves nested clients, including module function calls.
+func (srv *Server) ServeHTTPToNestedClient(
+	w http.ResponseWriter,
+	r *http.Request,
+	execMD *engineutil.ExecutionMetadata,
+	moduleCtx dagql.AnyObjectResult,
+	functionCall dagql.Typed,
+	envCtx dagql.AnyObjectResult,
+) {
 	clientVersion := execMD.ClientVersionOverride
 	if clientVersion == "" {
 		clientVersion = engine.Version
@@ -1000,6 +1004,28 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	var fnCall *core.FunctionCall
+	if functionCall != nil {
+		typed, ok := functionCall.(*core.FunctionCall)
+		if !ok {
+			http.Error(w, fmt.Sprintf("nested client function call is %T, not FunctionCall", functionCall), http.StatusInternalServerError)
+			return
+		}
+		fnCall = typed
+	}
+
+	var envContext dagql.ObjectResult[*core.Env]
+	if envCtx != nil {
+		typed, ok := envCtx.(dagql.ObjectResult[*core.Env])
+		if !ok {
+			http.Error(w, fmt.Sprintf("nested client env context is %T, not Env", envCtx), http.StatusInternalServerError)
+			return
+		}
+		if typed.Self() != nil {
+			envContext = typed
+		}
+	}
+
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
 		ClientMetadata: &engine.ClientMetadata{
 			ClientID:             execMD.ClientID,
@@ -1017,9 +1043,10 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			LockMode:             lockMode,
 			Workspace:            workspaceRef,
 		},
-		CallerClientID:      execMD.CallerClientID,
-		ModuleContext:       moduleContext,
-		EncodedFunctionCall: execMD.EncodedFunctionCall,
+		CallerClientID: execMD.CallerClientID,
+		ModuleContext:  moduleContext,
+		FunctionCall:   fnCall,
+		EnvContext:     envContext,
 	}).ServeHTTP(w, r)
 }
 
@@ -1862,15 +1889,12 @@ func (srv *Server) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall,
 	return client.fnCall, nil
 }
 
-func (srv *Server) CurrentEnv(ctx context.Context) (*call.ID, error) {
+func (srv *Server) CurrentEnv(ctx context.Context) (dagql.ObjectResult[*core.Env], error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
-		return nil, err
+		return dagql.ObjectResult[*core.Env]{}, err
 	}
-	if client.fnCall == nil {
-		return nil, nil
-	}
-	return client.fnCall.EnvID, nil
+	return client.env, nil
 }
 
 // Return the modules being served to the current client
