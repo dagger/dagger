@@ -101,7 +101,7 @@ func (t *Test) Debug() *dagger.Terminal {
 		require.NoError(t, err)
 		err = os.WriteFile(filepath.Join(modDir, "main.go"), src, 0644)
 		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, modDir, "develop")
+		_, err = hostDaggerExec(ctx, t, modDir, "develop", "--compat=skip")
 		require.NoError(t, err)
 
 		// cache the module load itself so there's less to wait for in the shell invocation below
@@ -170,7 +170,7 @@ func (t *Test) Debug() *dagger.Terminal {
 		require.NoError(t, err)
 		err = os.WriteFile(filepath.Join(modDir, "main.go"), src, 0644)
 		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, modDir, "develop")
+		_, err = hostDaggerExec(ctx, t, modDir, "develop", "--compat=skip")
 		require.NoError(t, err)
 
 		// cache the module load itself so there's less to wait for in the shell invocation below
@@ -968,7 +968,7 @@ func fetch() (string, error) {
 		WithFile("app", app).
 		WithNewFile("main.go", daggermodmaingo).
 		WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.13.7"}`).
-		With(daggerExec("develop"))
+		With(daggerExec("develop", "--compat=skip"))
 
 	// verify that the engine uses the entrypoint when serving the legacy AsService api
 	t.Run("use entrypoint by default", func(ctx context.Context, t *testctx.T) {
