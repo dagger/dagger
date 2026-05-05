@@ -1907,6 +1907,78 @@ class Foo:
     assert param.default_path is None
 
 
+# -- Enum value extraction --------------------------------------------------
+
+
+def test_ast_intenum_records_int_values():
+    """``LOW = 1`` on IntEnum produces value="1" in the schema."""
+    metadata = _analyze("""
+import dagger
+from enum import IntEnum
+
+@dagger.enum_type
+class Priority(IntEnum):
+    LOW = 1
+    HIGH = 100
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def get(self) -> Priority: ...
+""")
+    members = {m.name: m.value for m in metadata.enums["Priority"].members}
+    assert members == {"LOW": "1", "HIGH": "100"}
+
+
+def test_ast_enum_auto_warns(caplog):
+    """``LOW = enum.auto()`` warns; value can't be predicted statically."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="dagger.mod._analyzer.parser"):
+        metadata = _analyze("""
+import dagger
+import enum
+
+@dagger.enum_type
+class Priority(enum.Enum):
+    LOW = enum.auto()
+    HIGH = enum.auto()
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self) -> str: ...
+""")
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("enum.auto()" in m and "LOW" in m for m in msgs), msgs
+    # Fallback values are member names.
+    members = {m.name: m.value for m in metadata.enums["Priority"].members}
+    assert members == {"LOW": "LOW", "HIGH": "HIGH"}
+
+
+def test_ast_enum_bare_auto_warns(caplog):
+    """``auto()`` (imported as ``from enum import auto``) is also detected."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="dagger.mod._analyzer.parser"):
+        _analyze("""
+import dagger
+from enum import Enum, auto
+
+@dagger.enum_type
+class Priority(Enum):
+    LOW = auto()
+    HIGH = auto()
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self) -> str: ...
+""")
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("auto()" in m for m in msgs), msgs
+
+
 # -- Unresolvable defaults --------------------------------------------------
 
 

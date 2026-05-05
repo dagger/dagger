@@ -1591,6 +1591,10 @@ class ModuleParser:
         Handles:
         - Simple string: ``ACTIVE = "ACTIVE value"`` → ("ACTIVE value", None)
         - Tuple (legacy): ``ACTIVE = "here", "doc"`` → ("here", "doc")
+        - ``enum.auto()`` / ``auto()``: warns and falls back to member name —
+          we cannot run user code to predict the actual auto-generated
+          value (1/2/3 for ``IntEnum``, lowercase name for ``StrEnum``,
+          implementation-defined for ``Enum``).
         - Other: uses member name as value
         """
         if isinstance(value_node, ast.Constant):
@@ -1607,7 +1611,31 @@ class ModuleParser:
                     doc = second.value
             return value, doc
 
+        if self._looks_like_auto_call(value_node):
+            logger.warning(
+                "Enum member %r uses ``enum.auto()`` at line %d; the AST "
+                "analyzer cannot predict the runtime-generated value and "
+                "will record %r as a fallback. Use explicit values "
+                "(``MEMBER = \"value\"`` or ``MEMBER = 1``) so the schema "
+                "matches the runtime.",
+                member_name,
+                getattr(value_node, "lineno", 0),
+                member_name,
+            )
+
         return member_name, None
+
+    @staticmethod
+    def _looks_like_auto_call(node: ast.expr) -> bool:
+        """Detect ``auto()`` / ``enum.auto()`` regardless of import form."""
+        if not isinstance(node, ast.Call):
+            return False
+        func = node.func
+        if isinstance(func, ast.Name):
+            return func.id == "auto"
+        if isinstance(func, ast.Attribute):
+            return func.attr == "auto"
+        return False
 
     def _eval_constant(self, node: ast.expr | None) -> Any:  # noqa: PLR0911, C901
         """Evaluate a constant expression to a Python value."""
