@@ -137,17 +137,13 @@ func legacyBlueprintTestEnv(t *testctx.T, c *dagger.Client) *dagger.Container {
 		WithDirectory("app", c.Directory())
 }
 
-// TestLegacyBlueprintInit replaces the old blueprint_test.go coverage.
-// It should pin down what legacy --blueprint init still supports, and what it
-// should reject, now that blueprint is a compatibility concept rather than a
-// current workspace feature.
-func (WorkspaceCompatSuite) TestLegacyBlueprintInit(ctx context.Context, t *testctx.T) {
-	t.Run("local legacy blueprint init still works", func(ctx context.Context, t *testctx.T) {
+func (WorkspaceCompatSuite) TestLegacyBlueprintConfig(ctx context.Context, t *testctx.T) {
+	t.Run("local legacy blueprint config still works", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		modGen := legacyBlueprintTestEnv(t, c).
 			WithWorkdir("app").
-			With(daggerModuleExec("init", "--blueprint=../hello"))
+			WithNewFile("dagger.json", `{"name":"app","blueprint":{"name":"hello","source":"../hello"}}`)
 
 		out, err := modGen.
 			With(daggerExec("call", "message")).
@@ -169,7 +165,7 @@ func (WorkspaceCompatSuite) TestLegacyBlueprintInit(ctx context.Context, t *test
 		require.Contains(t, appConfig, "this is the app configuration")
 	})
 
-	t.Run("legacy blueprint init covers dependency-bearing and multi-sdk cases", func(ctx context.Context, t *testctx.T) {
+	t.Run("legacy blueprint config covers dependency-bearing and multi-sdk cases", func(ctx context.Context, t *testctx.T) {
 		type testCase struct {
 			name          string
 			blueprintPath string
@@ -193,7 +189,7 @@ func (WorkspaceCompatSuite) TestLegacyBlueprintInit(ctx context.Context, t *test
 				c := connect(ctx, t)
 				modGen := legacyBlueprintTestEnv(t, c).
 					WithWorkdir("app").
-					With(daggerModuleExec("init", "--blueprint="+tc.blueprintPath))
+					WithNewFile("dagger.json", `{"name":"app","blueprint":{"name":"blueprint","source":"`+tc.blueprintPath+`"}}`)
 
 				out, err := modGen.
 					With(daggerExec("call", "hello")).
@@ -204,23 +200,6 @@ func (WorkspaceCompatSuite) TestLegacyBlueprintInit(ctx context.Context, t *test
 		}
 	})
 
-	t.Run("legacy blueprint init still rejects --sdk with --blueprint", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-		modGen := legacyBlueprintTestEnv(t, c).
-			WithWorkdir("app").
-			WithExec(
-				[]string{"dagger", "module", "init", "--sdk=go", "--blueprint=../myblueprint"},
-				dagger.ContainerWithExecOpts{
-					ExperimentalPrivilegedNesting: true,
-					Expect:                        dagger.ReturnTypeFailure,
-				},
-			)
-
-		stderr, err := modGen.Stderr(ctx)
-		require.NoError(t, err)
-		require.Contains(t, stderr, "--sdk")
-		require.Contains(t, stderr, "--blueprint")
-	})
 }
 
 func (WorkspaceCompatSuite) TestLegacyToolchainCompat(ctx context.Context, t *testctx.T) {
