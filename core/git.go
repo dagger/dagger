@@ -584,12 +584,20 @@ func (commit *GitCommit) Metadata(ctx context.Context) (*GitCommitMetadata, erro
 }
 
 func (commit *GitCommit) prefetch(ctx context.Context, depth int, includeTags bool) error {
+	return commit.Mount(ctx, depth, includeTags, func(*gitutil.GitCLI) error {
+		return nil
+	})
+}
+
+// Mount mounts the commit's repository with this commit available at the requested depth.
+func (commit *GitCommit) Mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error {
 	if commit == nil || commit.Backend == nil {
 		return fmt.Errorf("git commit: missing backend")
 	}
-	return commit.Backend.mount(ctx, depth, includeTags, func(*gitutil.GitCLI) error {
-		return nil
-	})
+	if fn == nil {
+		fn = func(*gitutil.GitCLI) error { return nil }
+	}
+	return commit.Backend.mount(ctx, depth, includeTags, fn)
 }
 
 func (commit *GitCommit) MessageHeadline(ctx context.Context) (string, error) {
