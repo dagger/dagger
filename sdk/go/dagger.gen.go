@@ -8788,6 +8788,27 @@ func (r *GitCommit) WithGraphQLQuery(q *querybuilder.Selection) *GitCommit {
 	}
 }
 
+// GitCommitAncestorReleaseTagOpts contains options for GitCommit.AncestorReleaseTag
+type GitCommitAncestorReleaseTagOpts struct {
+	// Include pre-release tags when choosing the latest tag.
+	IncludePreRelease bool
+}
+
+// The latest semver release tag reachable from this commit.
+func (r *GitCommit) AncestorReleaseTag(opts ...GitCommitAncestorReleaseTagOpts) *GitRef {
+	q := r.query.Select("ancestorReleaseTag")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `includePreRelease` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IncludePreRelease) {
+			q = q.Arg("includePreRelease", opts[i].IncludePreRelease)
+		}
+	}
+
+	return &GitRef{
+		query: q,
+	}
+}
+
 // Git author email.
 func (r *GitCommit) AuthorEmail(ctx context.Context) (string, error) {
 	if r.authorEmail != nil {
@@ -8953,6 +8974,27 @@ func (r *GitCommit) ParentShas(ctx context.Context) ([]string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// GitCommitReleaseTagOpts contains options for GitCommit.ReleaseTag
+type GitCommitReleaseTagOpts struct {
+	// Include pre-release tags when choosing the latest tag.
+	IncludePreRelease bool
+}
+
+// The latest semver release tag that points directly at this commit.
+func (r *GitCommit) ReleaseTag(opts ...GitCommitReleaseTagOpts) *GitRef {
+	q := r.query.Select("releaseTag")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `includePreRelease` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IncludePreRelease) {
+			q = q.Arg("includePreRelease", opts[i].IncludePreRelease)
+		}
+	}
+
+	return &GitRef{
+		query: q,
+	}
 }
 
 // The full commit SHA.

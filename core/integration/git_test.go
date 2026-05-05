@@ -1282,6 +1282,51 @@ func (GitSuite) TestGitLatestVersion(ctx context.Context, t *testctx.T) {
 	require.Equal(t, v2commit, commit)
 }
 
+func (GitSuite) TestGitCommitReleaseTags(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "init"}).
+		WithExec([]string{"sh", "-c", `
+			echo base > file && git add file && git commit -m base && git tag v1.0.0 &&
+			echo stable > file && git add file && git commit -m stable && git tag v2.0.0 &&
+			echo rc > file && git add file && git commit -m rc && git tag v2.1.0-rc.1 &&
+			echo next > file && git add file && git commit -m next
+		`})
+
+	stableSHA, err := ctr.WithExec([]string{"git", "rev-parse", "v2.0.0^{commit}"}).Stdout(ctx)
+	require.NoError(t, err)
+	stableSHA = strings.TrimSpace(stableSHA)
+	rcSHA, err := ctr.WithExec([]string{"git", "rev-parse", "v2.1.0-rc.1^{commit}"}).Stdout(ctx)
+	require.NoError(t, err)
+	rcSHA = strings.TrimSpace(rcSHA)
+
+	git := ctr.Directory(".").AsGit()
+
+	ancestorStable, err := git.Head().TargetCommit().AncestorReleaseTag().Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/v2.0.0", ancestorStable)
+
+	ancestorPreRelease, err := git.Head().TargetCommit().
+		AncestorReleaseTag(dagger.GitCommitAncestorReleaseTagOpts{IncludePreRelease: true}).
+		Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/v2.1.0-rc.1", ancestorPreRelease)
+
+	directStable, err := git.Commit(stableSHA).ReleaseTag().Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/v2.0.0", directStable)
+
+	directPreRelease, err := git.Commit(rcSHA).
+		ReleaseTag(dagger.GitCommitReleaseTagOpts{IncludePreRelease: true}).
+		Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/v2.1.0-rc.1", directPreRelease)
+}
+
 func (GitSuite) TestGitCommonAncestor(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

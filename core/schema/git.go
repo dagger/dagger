@@ -189,6 +189,16 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.GitCommit]{
+		dagql.NodeFunc("releaseTag", s.releaseTag).
+			Doc(`The latest semver release tag that points directly at this commit.`).
+			Args(
+				dagql.Arg("includePreRelease").Doc(`Include pre-release tags when choosing the latest tag.`),
+			),
+		dagql.NodeFunc("ancestorReleaseTag", s.ancestorReleaseTag).
+			Doc(`The latest semver release tag reachable from this commit.`).
+			Args(
+				dagql.Arg("includePreRelease").Doc(`Include pre-release tags when choosing the latest tag.`),
+			),
 		dagql.NodeFunc("tree", s.commitTree).
 			IsPersistable().
 			View(AllVersion).
@@ -1505,6 +1515,281 @@ func (s *gitSchema) commitParentSHAs(ctx context.Context, parent dagql.ObjectRes
 		return nil, err
 	}
 	return dagql.NewStringArray(meta.ParentSHAs...), nil
+}
+
+type releaseTagArgs struct {
+	IncludePreRelease bool `default:"false"`
+}
+
+type gitReleaseTag struct {
+	RefName string
+	SHA     string
+	Version string
+}
+
+func (s *gitSchema) releaseTag(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.GitCommit],
+	args releaseTagArgs,
+) (dagql.Nullable[dagql.Result[*core.GitRef]], error) {
+	return s.commitReleaseTag(ctx, parent, args.IncludePreRelease, false)
+}
+
+func (s *gitSchema) ancestorReleaseTag(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.GitCommit],
+	args releaseTagArgs,
+) (dagql.Nullable[dagql.Result[*core.GitRef]], error) {
+	return s.commitReleaseTag(ctx, parent, args.IncludePreRelease, true)
+}
+
+func (s *gitSchema) commitReleaseTag(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.GitCommit],
+	includePreRelease bool,
+	ancestor bool,
+) (dagql.Nullable[dagql.Result[*core.GitRef]], error) {
+	none := dagql.Null[dagql.Result[*core.GitRef]]()
+
+	tag, err := selectGitReleaseTag(ctx, parent.Self(), includePreRelease, ancestor)
+	if err != nil {
+		return none, err
+	}
+	if tag == nil {
+		return none, nil
+	}
+
+	ref, err := s.gitRefResult(ctx, parent.Self().Repo, &gitutil.Ref{
+		Name: tag.RefName,
+		SHA:  tag.SHA,
+	})
+	if err != nil {
+		return none, err
+	}
+	return dagql.NonNull(ref), nil
+}
+
+func selectGitReleaseTag(ctx context.Context, commit *core.GitCommit, includePreRelease bool, ancestor bool) (*gitReleaseTag, error) {
+	if commit == nil || commit.Ref == nil || commit.Ref.SHA == "" {
+		return nil, fmt.Errorf("git commit release tag: missing commit SHA")
+	}
+	if commit.Repo.Self() == nil || commit.Repo.Self().Backend == nil {
+		return nil, fmt.Errorf("git commit release tag: missing repository")
+	}
+	if commit.Backend == nil {
+		return nil, fmt.Errorf("git commit release tag: missing backend")
+	}
+
+	var remoteTags map[string]string
+	if _, ok := commit.Repo.Self().Backend.(*core.RemoteGitRepository); ok {
+		remoteTags = remotePeeledTagRefs(commit.Repo.Self().Remote)
+	}
+
+	depth := 1
+	if ancestor {
+		depth = 0
+	}
+
+	var selected *gitReleaseTag
+	err := commit.Mount(ctx, depth, false, func(git *gitutil.GitCLI) error {
+		localTags := map[string]string{}
+		if _, ok := commit.Repo.Self().Backend.(*core.LocalGitRepository); ok {
+			var err error
+			localTags, err = localPeeledTagRefs(ctx, git)
+			if err != nil {
+				return err
+			}
+
+			remoteName, err := defaultGitFetchRemote(ctx, git)
+			if err != nil {
+				return err
+			}
+			if remoteName != "" {
+				remote, err := git.LsRemote(ctx, remoteName)
+				if err != nil {
+					return fmt.Errorf("list tags from git remote %q: %w", remoteName, err)
+				}
+				remoteTags = remotePeeledTagRefs(remote)
+			}
+		}
+
+		tags, err := reconcileGitTagRefs(localTags, remoteTags)
+		if err != nil {
+			return err
+		}
+		tags = semverReleaseTags(tags, includePreRelease)
+		sortGitReleaseTags(tags)
+
+		if ancestor {
+			selected = latestReachableGitReleaseTag(ctx, git, commit.Ref.SHA, tags)
+		} else {
+			selected = latestDirectGitReleaseTag(commit.Ref.SHA, tags)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return selected, nil
+}
+
+func localPeeledTagRefs(ctx context.Context, git *gitutil.GitCLI) (map[string]string, error) {
+	out, err := git.Run(ctx,
+		"for-each-ref",
+		"--format=%(refname)%09%(objecttype)%09%(objectname)%09%(*objecttype)%09%(*objectname)",
+		"refs/tags",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list local git tags: %w", err)
+	}
+
+	tags := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		fields := strings.Split(line, "\t")
+		for len(fields) < 5 {
+			fields = append(fields, "")
+		}
+
+		refName := fields[0]
+		objectType := fields[1]
+		objectSHA := fields[2]
+		peeledType := fields[3]
+		peeledSHA := fields[4]
+
+		switch {
+		case objectType == "commit" && gitutil.IsCommitSHA(objectSHA):
+			tags[refName] = objectSHA
+		case peeledType == "commit" && gitutil.IsCommitSHA(peeledSHA):
+			tags[refName] = peeledSHA
+		}
+	}
+	return tags, nil
+}
+
+func remotePeeledTagRefs(remote *gitutil.Remote) map[string]string {
+	tags := map[string]string{}
+	if remote == nil {
+		return tags
+	}
+
+	peeled := map[string]string{}
+	for _, ref := range remote.Refs {
+		if ref == nil {
+			continue
+		}
+		if tagName, ok := strings.CutSuffix(ref.Name, "^{}"); ok {
+			if strings.HasPrefix(tagName, "refs/tags/") && gitutil.IsCommitSHA(ref.SHA) {
+				peeled[tagName] = ref.SHA
+			}
+			continue
+		}
+		if strings.HasPrefix(ref.Name, "refs/tags/") && gitutil.IsCommitSHA(ref.SHA) {
+			tags[ref.Name] = ref.SHA
+		}
+	}
+	for name, sha := range peeled {
+		tags[name] = sha
+	}
+	return tags
+}
+
+func defaultGitFetchRemote(ctx context.Context, git *gitutil.GitCLI) (string, error) {
+	out, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "symbolic-ref", "--quiet", "--short", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	branch := strings.TrimSpace(string(out))
+	if branch != "" {
+		out, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "config", "--get", "branch."+branch+".remote")
+		if err != nil {
+			return "", err
+		}
+		if remote := strings.TrimSpace(string(out)); remote != "" {
+			return remote, nil
+		}
+	}
+
+	out, err = git.New(gitutil.WithIgnoreError()).Run(ctx, "remote", "get-url", "origin")
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(string(out)) == "" {
+		return "", nil
+	}
+	return "origin", nil
+}
+
+func reconcileGitTagRefs(localTags, remoteTags map[string]string) ([]gitReleaseTag, error) {
+	byName := make(map[string]gitReleaseTag, len(localTags)+len(remoteTags))
+	for name, sha := range localTags {
+		byName[name] = gitReleaseTag{RefName: name, SHA: sha}
+	}
+	for name, remoteSHA := range remoteTags {
+		if local, ok := byName[name]; ok && local.SHA != remoteSHA {
+			return nil, fmt.Errorf("git tag %q resolves to different commits locally (%s) and remotely (%s)", strings.TrimPrefix(name, "refs/tags/"), local.SHA, remoteSHA)
+		}
+		byName[name] = gitReleaseTag{RefName: name, SHA: remoteSHA}
+	}
+
+	tags := make([]gitReleaseTag, 0, len(byName))
+	for _, tag := range byName {
+		tags = append(tags, tag)
+	}
+	return tags, nil
+}
+
+func semverReleaseTags(tags []gitReleaseTag, includePreRelease bool) []gitReleaseTag {
+	releases := make([]gitReleaseTag, 0, len(tags))
+	for _, tag := range tags {
+		version := strings.TrimPrefix(tag.RefName, "refs/tags/")
+		if !semver.IsValid(version) {
+			continue
+		}
+		if !includePreRelease && semver.Prerelease(version) != "" {
+			continue
+		}
+		tag.Version = version
+		releases = append(releases, tag)
+	}
+	return releases
+}
+
+func sortGitReleaseTags(tags []gitReleaseTag) {
+	slices.SortFunc(tags, func(a, b gitReleaseTag) int {
+		if c := semver.Compare(a.Version, b.Version); c != 0 {
+			return -c
+		}
+		return cmp.Compare(a.RefName, b.RefName)
+	})
+}
+
+func latestDirectGitReleaseTag(commitSHA string, tags []gitReleaseTag) *gitReleaseTag {
+	for i := range tags {
+		if tags[i].SHA == commitSHA {
+			return &tags[i]
+		}
+	}
+	return nil
+}
+
+func latestReachableGitReleaseTag(ctx context.Context, git *gitutil.GitCLI, commitSHA string, tags []gitReleaseTag) *gitReleaseTag {
+	for i := range tags {
+		if tags[i].SHA == commitSHA {
+			return &tags[i]
+		}
+		if isGitAncestor(ctx, git, tags[i].SHA, commitSHA) {
+			return &tags[i]
+		}
+	}
+	return nil
+}
+
+func isGitAncestor(ctx context.Context, git *gitutil.GitCLI, ancestorSHA, commitSHA string) bool {
+	_, err := git.Run(ctx, "merge-base", "--is-ancestor", ancestorSHA, commitSHA)
+	return err == nil
 }
 
 func (s *gitSchema) fetchCommit(
