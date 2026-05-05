@@ -78,9 +78,6 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"CheckVersionCompatibility": funcs.CheckVersionCompatibility,
 		"LegacyGoSDKCompat":         funcs.legacyGoSDKCompat,
 
-		// arg formatting with directive support
-		"FormatArgType": funcs.formatArgType,
-
 		// interface support
 		"IsInterfaceType":          funcs.isInterfaceType,
 		"IsInterfaceRef":           funcs.isInterfaceRef,
@@ -218,7 +215,7 @@ func (funcs goTemplateFuncs) isPointer(t introspection.InputValue) (bool, error)
 	}
 
 	// Convert to a string representation to avoid code repetition.
-	representation, err := funcs.formatArgType(t)
+	representation, err := funcs.FormatInputType(t)
 	return strings.Index(representation, "*") == 0, err
 }
 
@@ -369,7 +366,7 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 			}
 			args = append(args, fmt.Sprintf("%s %s", arg.Name, outType))
 		} else {
-			inType, err := funcs.formatArgType(arg, scopes...)
+			inType, err := funcs.FormatInputType(arg, scopes...)
 			if err != nil {
 				return "", err
 			}
@@ -536,7 +533,7 @@ func (funcs goTemplateFuncs) interfaceMethodSignature(f introspection.Field) (st
 		if funcs.isArgOptional(arg) {
 			continue
 		}
-		inType, err := funcs.formatArgType(arg)
+		inType, err := funcs.FormatInputType(arg)
 		if err != nil {
 			return "", err
 		}
@@ -598,7 +595,7 @@ func (funcs goTemplateFuncs) interfaceClientMethod(ifaceName string, f introspec
 		if funcs.isArgOptional(arg) {
 			continue
 		}
-		inType, err := funcs.formatArgType(arg)
+		inType, err := funcs.FormatInputType(arg)
 		if err != nil {
 			return "", err
 		}
@@ -644,9 +641,9 @@ func (funcs goTemplateFuncs) interfaceClientMethod(ifaceName string, f introspec
 	return sig, nil
 }
 
-// formatArgType formats an argument's type, using the @expectedType directive
-// when the arg is an ID scalar. This replaces the old FooID -> *Foo conversion.
-func (funcs goTemplateFuncs) formatArgType(arg introspection.InputValue, scopes ...string) (string, error) {
+// FormatInputType formats an input value's type, using @expectedType on ID
+// inputs to recover the expected object or interface type.
+func (funcs goTemplateFuncs) FormatInputType(arg introspection.InputValue, scopes ...string) (string, error) {
 	expectedType := arg.Directives.ExpectedType()
 	if expectedType != "" {
 		// This is an ID arg with an @expectedType directive.
@@ -670,17 +667,12 @@ func (funcs goTemplateFuncs) formatArgType(arg introspection.InputValue, scopes 
 		if baseType == "" {
 			baseType = "*" + scope + formatName(expectedType)
 		}
-		// Wrap in [] for list types.
-		ref := arg.TypeRef
-		if ref != nil && ref.Kind == introspection.TypeKindNonNull {
-			ref = ref.OfType
-		}
-		if ref != nil && ref.Kind == introspection.TypeKindList {
+		if arg.TypeRef != nil && arg.TypeRef.IsList() {
 			return "[]" + baseType, nil
 		}
 		return baseType, nil
 	}
-	return funcs.FormatInputType(arg.TypeRef, scopes...)
+	return funcs.CommonFunctions.FormatInputType(arg.TypeRef, scopes...)
 }
 
 // isPartial determines if we are in a first-pass or not

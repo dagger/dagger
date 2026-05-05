@@ -43,7 +43,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- if and (eq $arg.Name "id") (eq $.Name "Query") }}
 	{{- $formattedTypeRef = $arg.TypeRef | FormatOutputType }}
 	{{- else }}
-	{{- $formattedTypeRef = FormatArgType $arg }}
+	{{- $formattedTypeRef = $arg | FormatInputType }}
 	{{- end }}
 	{{ $arg.Name | FormatName }} {{ $formattedTypeRef }}
 	{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}

@@ -11,7 +11,7 @@
 			{{- $opt = "?" }}
 		{{- end }}
 
-		{{- .Name | FormatName }}{{ $opt }}: {{ . | FormatInputValueType }}
+		{{- .Name | FormatName }}{{ $opt }}: {{ . | FormatInputType }}
 
 		{{- /* we add a ", " only if it's not the last item. */ -}}
 		{{- if ne $index $maxIndex }}

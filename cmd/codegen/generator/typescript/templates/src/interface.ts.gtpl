@@ -83,7 +83,7 @@ export class _{{ .Name | FormatName }}Client extends BaseClient { {{- with .Dire
 		{{- if .TypeRef.IsOptional }}
 			{{- $opt = "?" }}
 		{{- end }}
-		{{- .Name | FormatName }}{{ $opt }}: {{ . | FormatInputValueType }}
+		{{- .Name | FormatName }}{{ $opt }}: {{ . | FormatInputType }}
 		{{- if or (ne $index $maxIndex) $optionals }}, {{ end }}
 	{{- end }}
 	{{- if $optionals }}
