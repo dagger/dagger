@@ -20,3 +20,4 @@ export { Context } from "./common/context.js"
 // Module library
 export * from "./module/decorators.js"
 export { entrypoint } from "./module/entrypoint/entrypoint.js"
+export { getRegisteredClass } from "./module/registry.js"

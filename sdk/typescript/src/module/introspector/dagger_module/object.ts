@@ -30,6 +30,7 @@ export class DaggerObject extends Locatable implements DaggerObjectBase {
   public _constructor: DaggerConstructor | undefined = undefined
   public methods: DaggerFunctions = {}
   public properties: DaggerProperties = {}
+  public isExported: boolean = false
 
   private symbol: ts.Symbol
 
@@ -57,8 +58,9 @@ export class DaggerObject extends Locatable implements DaggerObjectBase {
     }
 
     const modifiers = ts.getCombinedModifierFlags(this.node)
+    this.isExported = (modifiers & ts.ModifierFlags.Export) !== 0
 
-    if (!(modifiers & ts.ModifierFlags.Export)) {
+    if (!this.isExported) {
       console.warn(
         `missing export in class ${this.name} at ${AST.getNodePosition(node)} but it's used by the module.`,
       )
