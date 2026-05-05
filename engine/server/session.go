@@ -923,6 +923,9 @@ func (srv *Server) getOrInitClient(
 				return nil, nil, fmt.Errorf("client %q already exists with different host service proxy client %q", clientID, client.hostServiceProxyClientID)
 			}
 		}
+		if opts.SuppressCompatWorkspaceWarning {
+			client.clientMetadata.SuppressCompatWorkspaceWarning = true
+		}
 		if client.clientMetadata.Workspace == nil && !client.workspaceLoaded {
 			if workspaceRef, ok := workspaceRefFromClientMetadata(opts.ClientMetadata); ok {
 				ref := workspaceRef
@@ -1077,6 +1080,7 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 	var extraModules []engine.ExtraModule
 	var loadWorkspaceModules bool
 	var eagerRuntime bool
+	var suppressCompatWorkspaceWarning bool
 	var workspaceRef *string
 	var workspaceEnv *string
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(h); md != nil {
@@ -1085,6 +1089,7 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 		extraModules = md.ExtraModules
 		loadWorkspaceModules = md.LoadWorkspaceModules
 		eagerRuntime = md.EagerRuntime
+		suppressCompatWorkspaceWarning = md.SuppressCompatWorkspaceWarning
 		if declaredWorkspace, ok := workspaceRefFromClientMetadata(md); ok {
 			ref := declaredWorkspace
 			workspaceRef = &ref
@@ -1101,6 +1106,7 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 	clientMetadata.ExtraModules = extraModules
 	clientMetadata.LoadWorkspaceModules = loadWorkspaceModules
 	clientMetadata.EagerRuntime = eagerRuntime
+	clientMetadata.SuppressCompatWorkspaceWarning = suppressCompatWorkspaceWarning
 	clientMetadata.Workspace = workspaceRef
 	clientMetadata.WorkspaceEnv = workspaceEnv
 	return &clientMetadata
