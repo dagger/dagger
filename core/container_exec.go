@@ -92,6 +92,8 @@ type ContainerExecState struct {
 	Opts               ContainerExecOpts
 	ExecMD             *engineutil.ExecutionMetadata
 	ModuleContext      dagql.ObjectResult[*Module]
+	FunctionCall       *FunctionCall
+	EnvContext         dagql.ObjectResult[*Env]
 	ExtractModuleError bool
 }
 
@@ -102,8 +104,10 @@ type ContainerExecLazy struct {
 type persistedContainerExecLazy struct {
 	ParentResultID        uint64                        `json:"parentResultID"`
 	ModuleContextResultID uint64                        `json:"moduleContextResultID,omitempty"`
+	EnvContextResultID    uint64                        `json:"envContextResultID,omitempty"`
 	Opts                  ContainerExecOpts             `json:"opts"`
 	ExecMD                *engineutil.ExecutionMetadata `json:"execMD,omitempty"`
+	FunctionCall          *FunctionCall                 `json:"functionCall,omitempty"`
 	ExtractModuleError    bool                          `json:"extractModuleError,omitempty"`
 }
 
@@ -137,6 +141,18 @@ func (lazy *ContainerExecLazy) AttachDependencies(ctx context.Context, attach fu
 		lazy.State.ModuleContext = moduleContext
 		deps = append(deps, moduleContext)
 	}
+	if lazy.State.EnvContext.Self() != nil {
+		attached, err := attach(lazy.State.EnvContext)
+		if err != nil {
+			return nil, fmt.Errorf("attach container withExec env context: %w", err)
+		}
+		envContext, ok := attached.(dagql.ObjectResult[*Env])
+		if !ok {
+			return nil, fmt.Errorf("attach container withExec env context: expected %T, got %T", lazy.State.EnvContext, attached)
+		}
+		lazy.State.EnvContext = envContext
+		deps = append(deps, envContext)
+	}
 
 	return deps, nil
 }
@@ -156,11 +172,20 @@ func (lazy *ContainerExecLazy) EncodePersisted(ctx context.Context, cache dagql.
 			return nil, err
 		}
 	}
+	var envContextID uint64
+	if lazy.State.EnvContext.Self() != nil {
+		envContextID, err = encodePersistedObjectRef(cache, lazy.State.EnvContext, "container withExec env context")
+		if err != nil {
+			return nil, err
+		}
+	}
 	return json.Marshal(persistedContainerExecLazy{
 		ParentResultID:        parentID,
 		ModuleContextResultID: moduleContextID,
+		EnvContextResultID:    envContextID,
 		Opts:                  lazy.State.Opts,
 		ExecMD:                lazy.State.ExecMD,
+		FunctionCall:          lazy.State.FunctionCall,
 		ExtractModuleError:    lazy.State.ExtractModuleError,
 	})
 }
@@ -190,15 +215,14 @@ func (container *Container) execMeta(
 	execMD.LockMode = clientMetadata.LockMode
 	execMD.AllowedLLMModules = clientMetadata.AllowedLLMModules
 
-	if execMD.Call == nil {
-		execMD.Call = dagql.CurrentCall(ctx)
-	}
-	if execMD.CallDigest == "" && execMD.Call != nil {
-		callDigest, err := execMD.Call.RecipeDigest(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("compute exec call digest: %w", err)
+	if execMD.CallDigest == "" {
+		if curCall := dagql.CurrentCall(ctx); curCall != nil {
+			callDigest, err := curCall.RecipeDigest(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("compute exec call digest: %w", err)
+			}
+			execMD.CallDigest = callDigest
 		}
-		execMD.CallDigest = callDigest
 	}
 	if execMD.HostAliases == nil {
 		execMD.HostAliases = make(map[string][]string)
@@ -979,6 +1003,8 @@ func (container *Container) WithExec(
 	opts ContainerExecOpts,
 	execMD *engineutil.ExecutionMetadata,
 	moduleContext dagql.ObjectResult[*Module],
+	functionCall *FunctionCall,
+	envContext dagql.ObjectResult[*Env],
 	extractModuleError bool,
 ) error {
 	state := &ContainerExecState{
@@ -987,6 +1013,8 @@ func (container *Container) WithExec(
 		Opts:               opts,
 		ExecMD:             execMD,
 		ModuleContext:      moduleContext,
+		FunctionCall:       functionCall,
+		EnvContext:         envContext,
 		ExtractModuleError: extractModuleError,
 	}
 	container.Lazy = &ContainerExecLazy{State: state}
@@ -1665,13 +1693,13 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 				hasMetaSpec {
 				var callID *call.ID
 				var callDig digest.Digest
-				if execMD.Call != nil {
+				if curCall := dagql.CurrentCall(ctx); curCall != nil {
 					dagqlCache, err := dagql.EngineCache(ctx)
 					if err != nil {
 						rerr = fmt.Errorf("get dagql cache for terminal exec error: %w", err)
 						return
 					}
-					callID, err = dagqlCache.RecipeIDForCall(ctx, execMD.Call)
+					callID, err = dagqlCache.RecipeIDForCall(ctx, curCall)
 					if err != nil {
 						rerr = fmt.Errorf("rebuild recipe ID for terminal exec error: %w", err)
 						return
@@ -1883,7 +1911,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		}
 		defer detach()
 
-		execWorker := opWorker.ExecWorker(causeCtx, *execMD, state.ModuleContext)
+		execWorker := opWorker.ExecWorker(causeCtx, *execMD, state.ModuleContext, state.FunctionCall, state.EnvContext)
 		procInfo := executor.ProcessInfo{Meta: meta}
 		if opts.Stdin != "" {
 			procInfo.Stdin = io.NopCloser(strings.NewReader(opts.Stdin))
@@ -1941,12 +1969,18 @@ func decodePersistedContainerExecLazy(
 	if err != nil {
 		return err
 	}
+	envContext, err := loadPersistedObjectResultByResultID[*Env](ctx, dag, persisted.EnvContextResultID, "container exec env context")
+	if err != nil {
+		return err
+	}
 	state := &ContainerExecState{
 		LazyState:          NewLazyState(),
 		Parent:             parent,
 		Opts:               persisted.Opts,
 		ExecMD:             persisted.ExecMD,
 		ModuleContext:      moduleContext,
+		FunctionCall:       persisted.FunctionCall,
+		EnvContext:         envContext,
 		ExtractModuleError: persisted.ExtractModuleError,
 	}
 	container.Lazy = &ContainerExecLazy{State: state}

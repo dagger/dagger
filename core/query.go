@@ -16,7 +16,6 @@ import (
 	"github.com/dagger/dagger/auth"
 	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
@@ -44,7 +43,7 @@ var (
 // APIs from the server+session+client that are needed by core APIs
 type Server interface {
 	// Handle an HTTP request from a nested Dagger client.
-	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engineutil.ExecutionMetadata, dagql.AnyObjectResult)
+	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engineutil.ExecutionMetadata, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult)
 
 	// Stitch in the given module to the list being served to the current client
 	ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error
@@ -58,8 +57,8 @@ type Server interface {
 	// If the current client is coming from a function, return the function call metadata
 	CurrentFunctionCall(context.Context) (*FunctionCall, error)
 
-	// If the current client is bound to an environment, return its ID.
-	CurrentEnv(context.Context) (*call.ID, error)
+	// If the current client is bound to an environment, return that environment.
+	CurrentEnv(context.Context) (dagql.ObjectResult[*Env], error)
 
 	// Return the modules being served to the current client
 	CurrentServedDeps(context.Context) (*SchemaBuilder, error)

@@ -22,7 +22,6 @@ import (
 
 	"github.com/containerd/console"
 	runc "github.com/containerd/go-runc"
-	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bkresourcestypes "github.com/dagger/dagger/internal/buildkit/executor/resources/types"
@@ -58,10 +57,8 @@ type ExecutionMetadata struct {
 	// Used when executing the module runtime itself.
 	Internal bool
 
-	Call                *dagql.ResultCall
-	CallDigest          digest.Digest
-	EncodedFunctionCall json.RawMessage
-	CallerClientID      string
+	CallDigest     digest.Digest
+	CallerClientID string
 
 	// If set, stdout/stderr emitted by this execution should be associated
 	// with this DAG call digest on the client side.

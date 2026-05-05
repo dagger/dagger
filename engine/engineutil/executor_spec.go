@@ -1036,7 +1036,7 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	httpSrv := &http.Server{
 		ReadHeaderTimeout: 10 * time.Second,
 		Handler: h2c.NewHandler(http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
-			w.sessionHandler.ServeHTTPToNestedClient(resp, req, w.execMD, w.nestedClientModule)
+			w.sessionHandler.ServeHTTPToNestedClient(resp, req, w.execMD, w.nestedClientModule, w.nestedClientFunctionCall, w.nestedClientEnv)
 		}), http2Srv),
 	}
 	if err := http2.ConfigureServer(httpSrv, http2Srv); err != nil {

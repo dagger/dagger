@@ -57,6 +57,8 @@ type Service struct {
 	NoInit                        bool
 	ExecMD                        *engineutil.ExecutionMetadata
 	ModuleContext                 dagql.ObjectResult[*Module]
+	FunctionCall                  *FunctionCall
+	EnvContext                    dagql.ObjectResult[*Env]
 	ExecMeta                      *executor.Meta
 
 	// TunnelUpstream is the service that this service is tunnelling to.
@@ -506,7 +508,7 @@ func (svc *Service) startContainer(
 	}
 	meta.Env = append(meta.Env, secretEnv...)
 
-	worker := bk.Worker.ExecWorker(span.SpanContext(), *execMD, svc.ModuleContext)
+	worker := bk.Worker.ExecWorker(span.SpanContext(), *execMD, svc.ModuleContext, svc.FunctionCall, svc.EnvContext)
 	exited := make(chan struct{})
 	runErr := make(chan error)
 	go func() {
