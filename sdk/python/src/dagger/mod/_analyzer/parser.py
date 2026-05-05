@@ -721,6 +721,23 @@ class ModuleParser:
         seen_names = {f.python_name for f in functions}
         functions.extend(self._find_inherited_functions(node, node.name, seen_names))
 
+        # Walk MRO for inherited fields the same way functions are walked.
+        # Without this, ``class Child(Base):`` where ``Base`` declares
+        # ``name: str = dagger.field(default="x")`` would not surface
+        # ``name`` as a field of ``Child`` — diverging from how
+        # dataclasses inheritance works at runtime.
+        seen_field_names = {f.python_name for f in fields}
+        seen_param_names = {p.python_name for p in init_params}
+        for base_field, base_param in self._find_inherited_fields(
+            node, node.name, seen_field_names, seen_param_names
+        ):
+            if base_field is not None:
+                fields.append(base_field)
+                seen_field_names.add(base_field.python_name)
+            if base_param is not None:
+                init_params.append(base_param)
+                seen_param_names.add(base_param.python_name)
+
         return fields, functions, init_params, constructor
 
     def _process_annotated_assign(
@@ -1226,6 +1243,119 @@ class ModuleParser:
                 )
             )
         return inherited
+
+    def _is_dataclass_like(self, base_class: ast.ClassDef, base_file: Path) -> bool:
+        """True when a base class would expose its fields via dataclasses.
+
+        At runtime, dagger fields flow through ``dataclasses.fields(cls)``,
+        which only inherits from base classes that are themselves
+        dataclasses — that means @dagger.object_type / @dagger.interface
+        (which apply ``dataclass(kw_only=True)`` internally) or an explicit
+        ``@dataclass``. An undecorated base's annotations are *not*
+        promoted to fields on the child, even if the user wrote
+        ``dagger.field(...)`` in the base.
+        """
+        aliases = self._aliases_for(base_file)
+        if has_decorator(base_class, "object_type", aliases):
+            return True
+        if has_decorator(base_class, "interface", aliases):
+            return True
+        # Explicit @dataclass / @dataclasses.dataclass (with or without args).
+        for decorator in base_class.decorator_list:
+            target = decorator.func if isinstance(decorator, ast.Call) else decorator
+            if isinstance(target, ast.Name) and target.id == "dataclass":
+                return True
+            if isinstance(target, ast.Attribute) and target.attr == "dataclass":
+                return True
+        return False
+
+    def _find_inherited_fields(
+        self,
+        node: ast.ClassDef,
+        class_name: str,
+        seen_field_names: set[str],
+        seen_param_names: set[str],
+        visited: set[str] | None = None,
+    ) -> list[tuple[FieldMetadata | None, ParameterMetadata | None]]:
+        """Walk MRO for inherited dagger ``field()`` declarations.
+
+        Mirrors ``_find_inherited_functions``, but only considers bases
+        that are themselves dataclass-like — ``@dagger.object_type``,
+        ``@dagger.interface``, or ``@dataclass``. The runtime relies on
+        Python's dataclass machinery to flatten fields across MRO, and
+        that machinery only inherits from dataclass parents. Walking
+        undecorated bases would surface fields the runtime never exposes.
+
+        Returns a list of (field, init_param) tuples. Either side can be
+        ``None`` when only one path applies (an ``init=False`` field, an
+        ``InitVar`` that contributes a param but no field, etc.).
+        """
+        if visited is None:
+            visited = {node.name}
+
+        results: list[tuple[FieldMetadata | None, ParameterMetadata | None]] = []
+        for base in node.bases:
+            base_name = None
+            if isinstance(base, ast.Name):
+                base_name = base.id
+            elif isinstance(base, ast.Attribute):
+                base_name = base.attr
+
+            if base_name is None or base_name in visited:
+                continue
+            visited.add(base_name)
+
+            found = self._find_class_def_with_file(base_name)
+            if found is None:
+                continue
+            base_class, base_file = found
+
+            # Only inherit fields from dataclass-like bases — see
+            # ``_is_dataclass_like``. Recurse anyway: a dataclass-like
+            # base might itself inherit from another dataclass-like.
+            if not self._is_dataclass_like(base_class, base_file):
+                continue
+
+            for item in base_class.body:
+                if not (
+                    isinstance(item, ast.AnnAssign)
+                    and isinstance(item.target, ast.Name)
+                ):
+                    continue
+                python_name = item.target.id
+                if python_name in seen_field_names and python_name in seen_param_names:
+                    continue
+                if self._is_non_field_annotation(item.annotation):
+                    continue
+                is_initvar = self._is_initvar_annotation(item.annotation)
+
+                field: FieldMetadata | None = None
+                if not is_initvar and python_name not in seen_field_names:
+                    field = self._parse_field(item, base_file, class_name)
+
+                param: ParameterMetadata | None = None
+                if python_name not in seen_param_names:
+                    param = self._parse_class_assignment_as_param(
+                        item, base_file, class_name, is_initvar=is_initvar
+                    )
+
+                if field is not None or param is not None:
+                    results.append((field, param))
+                    if field is not None:
+                        seen_field_names.add(python_name)
+                    if param is not None:
+                        seen_param_names.add(python_name)
+
+            results.extend(
+                self._find_inherited_fields(
+                    base_class,
+                    class_name,
+                    seen_field_names,
+                    seen_param_names,
+                    visited,
+                )
+            )
+        return results
 
     def _parse_function(
         self,
