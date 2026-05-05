@@ -7350,6 +7350,35 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Container-withLocalhostForward" href="#Container-withLocalhostForward"><code>withLocalhostForward</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td>
+                          <p>Forward a service port to localhost inside this container.</p>
+                          <p>The service will be started automatically when needed and detached when it is no longer needed.</p>
+                          <p>TCP traffic to 127.0.0.1:<port> inside the container will be forwarded to the specified port on the service.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>port</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span></h6>
+                                <p>Port to listen on 127.0.0.1 inside this container</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>service</code></span> - <span class="property-type"><a href="#definition-ServiceID"><code>ServiceID!</code></a></span></h6>
+                                <p>The target service</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>servicePort</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
+                                <p>Port on the service to forward to (defaults to same as port)</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withMountedCache" href="#Container-withMountedCache"><code>withMountedCache</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
                         <td> Retrieves this container plus a cache volume mounted at the given path. </td>
                       </tr>

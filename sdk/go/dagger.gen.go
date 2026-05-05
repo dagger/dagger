@@ -3009,6 +3009,34 @@ func (r *Container) WithLabel(name string, value string) *Container {
 	}
 }
 
+// ContainerWithLocalhostForwardOpts contains options for Container.WithLocalhostForward
+type ContainerWithLocalhostForwardOpts struct {
+	// Port on the service to forward to (defaults to same as port)
+	ServicePort int
+}
+
+// Forward a service port to localhost inside this container.
+//
+// The service will be started automatically when needed and detached when it is no longer needed.
+//
+// TCP traffic to 127.0.0.1:<port> inside the container will be forwarded to the specified port on the service.
+func (r *Container) WithLocalhostForward(port int, service *Service, opts ...ContainerWithLocalhostForwardOpts) *Container {
+	assertNotNil("service", service)
+	q := r.query.Select("withLocalhostForward")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `servicePort` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ServicePort) {
+			q = q.Arg("servicePort", opts[i].ServicePort)
+		}
+	}
+	q = q.Arg("port", port)
+	q = q.Arg("service", service)
+
+	return &Container{
+		query: q,
+	}
+}
+
 // ContainerWithMountedCacheOpts contains options for Container.WithMountedCache
 type ContainerWithMountedCacheOpts struct {
 	// Identifier of the directory to use as the cache volume's root.

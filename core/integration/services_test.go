@@ -2707,3 +2707,97 @@ func (ServiceSuite) TestServiceHealthcheckFailure(ctx context.Context, t *testct
 	require.Equal(t, "eek an error\n", execErr.Stderr)
 	require.Equal(t, []string{"sh", "-c", "echo 'check said no' && echo 'eek an error' >&2 && exit 42"}, execErr.Cmd)
 }
+
+func (ServiceSuite) TestLocalhostForwardSimple(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srv := c.Container().
+		From(alpineImage).
+		WithExposedPort(1337).
+		WithDefaultArgs([]string{"sh", "-c", "while true; do echo -n hello-localhost | nc -l -p 1337; done"}).
+		AsService()
+
+	stdout, err := c.Container().
+		From(alpineImage).
+		WithLocalhostForward(1337, srv).
+		WithExec([]string{"sh", "-c", "nc 127.0.0.1 1337"}).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "hello-localhost", stdout)
+}
+
+func (ServiceSuite) TestLocalhostForwardDifferentPorts(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Service listens on 1337, but we forward localhost:9090 → service:1337
+	srv := c.Container().
+		From(alpineImage).
+		WithExposedPort(1337).
+		WithDefaultArgs([]string{"sh", "-c", "while true; do echo -n remapped | nc -l -p 1337; done"}).
+		AsService()
+
+	stdout, err := c.Container().
+		From(alpineImage).
+		WithLocalhostForward(9090, srv, dagger.ContainerWithLocalhostForwardOpts{
+			ServicePort: 1337,
+		}).
+		WithExec([]string{"sh", "-c", "nc 127.0.0.1 9090"}).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "remapped", stdout)
+}
+
+func (ServiceSuite) TestLocalhostForwardMultipleServices(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srvA := c.Container().
+		From(alpineImage).
+		WithExposedPort(1337).
+		WithDefaultArgs([]string{"sh", "-c", "while true; do echo -n serviceA | nc -l -p 1337; done"}).
+		AsService()
+
+	srvB := c.Container().
+		From(alpineImage).
+		WithExposedPort(1338).
+		WithDefaultArgs([]string{"sh", "-c", "while true; do echo -n serviceB | nc -l -p 1338; done"}).
+		AsService()
+
+	stdout, err := c.Container().
+		From(alpineImage).
+		WithLocalhostForward(1337, srvA).
+		WithLocalhostForward(1338, srvB).
+		WithExec([]string{"sh", "-c", "echo -n $(nc 127.0.0.1 1337):$(nc 127.0.0.1 1338)"}).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "serviceA:serviceB", stdout)
+}
+
+func (ServiceSuite) TestLocalhostForwardReplacement(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srvA := c.Container().
+		From(alpineImage).
+		WithExposedPort(1337).
+		WithDefaultArgs([]string{"sh", "-c", "while true; do echo -n first | nc -l -p 1337; done"}).
+		AsService()
+
+	srvB := c.Container().
+		From(alpineImage).
+		WithExposedPort(1337).
+		WithDefaultArgs([]string{"sh", "-c", "while true; do echo -n second | nc -l -p 1337; done"}).
+		AsService()
+
+	// Second WithLocalhostForward on same port replaces the first
+	stdout, err := c.Container().
+		From(alpineImage).
+		WithLocalhostForward(1337, srvA).
+		WithLocalhostForward(1337, srvB).
+		WithExec([]string{"sh", "-c", "nc 127.0.0.1 1337"}).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "second", stdout)
+}

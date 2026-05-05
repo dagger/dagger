@@ -1231,6 +1231,24 @@ type Container {
   ): Container!
 
   """
+  Forward a service port to localhost inside this container.
+
+  The service will be started automatically when needed and detached when it is no longer needed.
+
+  TCP traffic to 127.0.0.1:<port> inside the container will be forwarded to the specified port on the service.
+  """
+  withLocalhostForward(
+    """Port to listen on 127.0.0.1 inside this container"""
+    port: Int!
+
+    """The target service"""
+    service: ServiceID!
+
+    """Port on the service to forward to (defaults to same as port)"""
+    servicePort: Int = 0
+  ): Container!
+
+  """
   Retrieves this container plus a cache volume mounted at the given path.
   """
   withMountedCache(

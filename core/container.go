@@ -97,6 +97,9 @@ type Container struct {
 	// Services to start before running the container.
 	Services ServiceBindings
 
+	// LocalhostForwards forward service ports to 127.0.0.1 inside the container.
+	LocalhostForwards LocalhostForwards
+
 	// The args to invoke when using the terminal api on this container.
 	DefaultTerminalCmd DefaultTerminalCmdOpts
 
@@ -254,6 +257,14 @@ type ContainerWithServiceBindingLazy struct {
 	Parent  dagql.ObjectResult[*Container]
 	Service dagql.ObjectResult[*Service]
 	Alias   string
+}
+
+type ContainerWithLocalhostForwardLazy struct {
+	LazyState
+	Parent      dagql.ObjectResult[*Container]
+	Service     dagql.ObjectResult[*Service]
+	Port        int
+	ServicePort int
 }
 
 type ContainerWithExposedPortLazy struct {
@@ -632,6 +643,13 @@ type persistedContainerWithServiceBindingLazy struct {
 	ParentResultID  uint64 `json:"parentResultID"`
 	ServiceResultID uint64 `json:"serviceResultID"`
 	Alias           string `json:"alias,omitempty"`
+}
+
+type persistedContainerWithLocalhostForwardLazy struct {
+	ParentResultID  uint64 `json:"parentResultID"`
+	ServiceResultID uint64 `json:"serviceResultID"`
+	Port            int    `json:"port"`
+	ServicePort     int    `json:"servicePort"`
 }
 
 type persistedContainerWithExposedPortLazy struct {
@@ -2749,6 +2767,50 @@ func (lazy *ContainerWithServiceBindingLazy) EncodePersisted(ctx context.Context
 	})
 }
 
+func (lazy *ContainerWithLocalhostForwardLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withLocalhostForward", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		if _, err := container.WithLocalhostForward(ctx, lazy.Port, lazy.Service, lazy.ServicePort); err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithLocalhostForwardLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withLocalhostForward parent")
+	if err != nil {
+		return nil, err
+	}
+	service, err := attachServiceResult(attach, lazy.Service, "attach container withLocalhostForward service")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	lazy.Service = service
+	return []dagql.AnyResult{parent, service}, nil
+}
+
+func (lazy *ContainerWithLocalhostForwardLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withLocalhostForward parent")
+	if err != nil {
+		return nil, err
+	}
+	serviceID, err := encodePersistedObjectRef(cache, lazy.Service, "container withLocalhostForward service")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithLocalhostForwardLazy{
+		ParentResultID:  parentID,
+		ServiceResultID: serviceID,
+		Port:            lazy.Port,
+		ServicePort:     lazy.ServicePort,
+	})
+}
+
 func (lazy *ContainerWithExposedPortLazy) Evaluate(ctx context.Context, container *Container) error {
 	return lazy.LazyState.Evaluate(ctx, "Container.withExposedPort", func(ctx context.Context) error {
 		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
@@ -4202,6 +4264,27 @@ func decodePersistedContainerLazy(
 			Parent:    parent,
 			Service:   svc,
 			Alias:     persisted.Alias,
+		}
+		return nil
+	case "withLocalhostForward":
+		var persisted persistedContainerWithLocalhostForwardLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withLocalhostForward lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withLocalhostForward parent")
+		if err != nil {
+			return err
+		}
+		svc, err := loadPersistedObjectResultByResultID[*Service](ctx, dag, persisted.ServiceResultID, "container withLocalhostForward service")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithLocalhostForwardLazy{
+			LazyState:   NewLazyState(),
+			Parent:      parent,
+			Service:     svc,
+			Port:        persisted.Port,
+			ServicePort: persisted.ServicePort,
 		}
 		return nil
 	case "withExposedPort":
@@ -6052,6 +6135,39 @@ func (container *Container) WithServiceBinding(ctx context.Context, svc dagql.Ob
 			Hostname: host,
 			Aliases:  aliases,
 		},
+	})
+
+	return container, nil
+}
+
+func (container *Container) WithLocalhostForward(ctx context.Context, port int, svc dagql.ObjectResult[*Service], servicePort int) (*Container, error) {
+	svcDig, err := svc.ContentPreferredDigest(ctx)
+	if err != nil {
+		return nil, err
+	}
+	host, err := svc.Self().Hostname(ctx, svcDig)
+	if err != nil {
+		return nil, err
+	}
+
+	// Add to Services for lifecycle management (no alias = no /etc/hosts entry)
+	container.Services.Merge(ServiceBindings{
+		{
+			Service:  svc,
+			Hostname: host,
+		},
+	})
+
+	svcPort := servicePort
+	if svcPort == 0 {
+		svcPort = port
+	}
+
+	container.LocalhostForwards.Set(LocalhostForward{
+		Service:     svc,
+		Hostname:    host,
+		Port:        port,
+		ServicePort: svcPort,
 	})
 
 	return container, nil
