@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/util/gitutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -139,6 +140,53 @@ func TestWorkspaceAPIPath(t *testing.T) {
 	t.Run("nested path is absolute from boundary", func(t *testing.T) {
 		require.Equal(t, "/services/payment", workspaceAPIPath("services/payment"))
 	})
+}
+
+func TestHighestWorkspaceGitSemverTag(t *testing.T) {
+	remote := &gitutil.Remote{Refs: []*gitutil.Ref{
+		{Name: "refs/tags/v1.0.0", SHA: "1111111111111111111111111111111111111111"},
+		{Name: "refs/tags/v1.2.0-rc.1", SHA: "2222222222222222222222222222222222222222"},
+		{Name: "refs/tags/v1.1.0", SHA: "3333333333333333333333333333333333333333"},
+		{Name: "refs/tags/not-semver", SHA: "4444444444444444444444444444444444444444"},
+	}}
+
+	t.Run("ignores prerelease by default", func(t *testing.T) {
+		tag, err := highestWorkspaceGitSemverTag(remote, false, func(*gitutil.Ref) (bool, error) {
+			return true, nil
+		})
+		require.NoError(t, err)
+		require.Equal(t, "refs/tags/v1.1.0", tag.Name)
+	})
+
+	t.Run("includes prerelease when requested", func(t *testing.T) {
+		tag, err := highestWorkspaceGitSemverTag(remote, true, func(*gitutil.Ref) (bool, error) {
+			return true, nil
+		})
+		require.NoError(t, err)
+		require.Equal(t, "refs/tags/v1.2.0-rc.1", tag.Name)
+	})
+}
+
+func TestHighestWorkspaceGitSemverTagMatchesPeeledAnnotatedTag(t *testing.T) {
+	headSHA := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	remote := &gitutil.Remote{Refs: []*gitutil.Ref{
+		{Name: "HEAD", SHA: headSHA},
+		{Name: "refs/tags/v1.0.0", SHA: "1111111111111111111111111111111111111111"},
+		{Name: "refs/tags/v1.1.0", SHA: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+		{Name: "refs/tags/v1.1.0^{}", SHA: headSHA},
+	}}
+	head, err := remote.Lookup("HEAD")
+	require.NoError(t, err)
+
+	tag, err := highestWorkspaceGitSemverTag(remote, true, func(ref *gitutil.Ref) (bool, error) {
+		resolved, err := remote.Lookup(ref.Name)
+		if err != nil {
+			return false, err
+		}
+		return resolved.SHA == head.SHA, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/v1.1.0", tag.Name)
 }
 
 func modTreeNode(parts ...string) *core.ModTreeNode {

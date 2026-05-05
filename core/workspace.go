@@ -1,6 +1,9 @@
 package core
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/dagger/dagger/dagql"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -28,6 +31,11 @@ type Workspace struct {
 	// Internal only (not in GraphQL schema). Empty for remote workspaces.
 	// Used by workspace filesystem operations that need host access.
 	hostPath string
+
+	// hasGit records whether workspace detection found a .git entry at the
+	// workspace boundary. Internal only; Workspace.git exposes the repository
+	// state and returns a domain error when this is false.
+	hasGit bool
 }
 
 // Rootfs returns the pre-fetched root filesystem directory for remote workspaces.
@@ -52,6 +60,16 @@ func (ws *Workspace) SetHostPath(p string) {
 	ws.hostPath = p
 }
 
+// HasGit reports whether workspace detection found a .git entry at the boundary.
+func (ws *Workspace) HasGit() bool {
+	return ws.hasGit
+}
+
+// SetHasGit records whether workspace detection found a .git entry.
+func (ws *Workspace) SetHasGit(hasGit bool) {
+	ws.hasGit = hasGit
+}
+
 func (*Workspace) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "Workspace",
@@ -66,4 +84,42 @@ func (*Workspace) TypeDescription() string {
 func (ws *Workspace) Clone() *Workspace {
 	cp := *ws
 	return &cp
+}
+
+// WorkspaceGit represents the git state associated with a workspace.
+type WorkspaceGit struct {
+	Workspace dagql.ObjectResult[*Workspace]
+}
+
+var _ dagql.HasDependencyResults = (*WorkspaceGit)(nil)
+
+func (*WorkspaceGit) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "WorkspaceGit",
+		NonNull:   true,
+	}
+}
+
+func (*WorkspaceGit) TypeDescription() string {
+	return "Local git state for a workspace."
+}
+
+func (wg *WorkspaceGit) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if wg == nil || wg.Workspace.Self() == nil {
+		return nil, nil
+	}
+	attached, err := attach(wg.Workspace)
+	if err != nil {
+		return nil, fmt.Errorf("attach workspace git workspace: %w", err)
+	}
+	typed, ok := attached.(dagql.ObjectResult[*Workspace])
+	if !ok {
+		return nil, fmt.Errorf("attach workspace git workspace: unexpected result %T", attached)
+	}
+	wg.Workspace = typed
+	return []dagql.AnyResult{typed}, nil
 }

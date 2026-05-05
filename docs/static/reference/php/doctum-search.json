@@ -1548,6 +1548,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\WorkspaceGit",
+			"p": "Dagger/WorkspaceGit.html",
+			"d": "<p>Local git state for a workspace.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\WorkspaceGitId",
+			"p": "Dagger/WorkspaceGitId.html",
+			"d": "<p>The <code>WorkspaceGitID</code> scalar type represents an identifier for an object of type WorkspaceGit.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\WorkspaceId",
 			"p": "Dagger/WorkspaceId.html",
 			"d": "<p>The <code>WorkspaceID</code> scalar type represents an identifier for an object of type Workspace.</p>",
@@ -1846,6 +1866,12 @@
 			"n": "Dagger\\Binding::asWorkspace",
 			"p": "Dagger/Binding.html#method_asWorkspace",
 			"d": "<p>Retrieve the binding value, as type Workspace</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asWorkspaceGit",
+			"p": "Dagger/Binding.html#method_asWorkspaceGit",
+			"d": "<p>Retrieve the binding value, as type WorkspaceGit</p>"
 		},
 		{
 			"t": "M",
@@ -2650,6 +2676,12 @@
 			"n": "Dagger\\Client::loadWorkspaceFromID",
 			"p": "Dagger/Client.html#method_loadWorkspaceFromID",
 			"d": "<p>Load a Workspace from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadWorkspaceGitFromID",
+			"p": "Dagger/Client.html#method_loadWorkspaceGitFromID",
+			"d": "<p>Load a WorkspaceGit from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -4276,6 +4308,18 @@
 			"n": "Dagger\\Env::withWorkspace",
 			"p": "Dagger/Env.html#method_withWorkspace",
 			"d": "<p>Returns a new environment with the provided workspace</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withWorkspaceGitInput",
+			"p": "Dagger/Env.html#method_withWorkspaceGitInput",
+			"d": "<p>Create or update a binding of type WorkspaceGit in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withWorkspaceGitOutput",
+			"p": "Dagger/Env.html#method_withWorkspaceGitOutput",
+			"d": "<p>Declare a desired WorkspaceGit output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",
@@ -6529,6 +6573,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::git",
+			"p": "Dagger/Workspace.html#method_git",
+			"d": "<p>Git state for this workspace. Errors if the workspace is not in a git repository.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::hasConfig",
 			"p": "Dagger/Workspace.html#method_hasConfig",
 			"d": "<p>Whether a config.toml file exists in the workspace.</p>"
@@ -6562,6 +6612,36 @@
 			"n": "Dagger\\Workspace::update",
 			"p": "Dagger/Workspace.html#method_update",
 			"d": "<p>Refresh workspace-managed state and return the resulting changeset.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceGit::currentSemverTag",
+			"p": "Dagger/WorkspaceGit.html#method_currentSemverTag",
+			"d": "<p>Highest semver tag pointing at HEAD.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceGit::head",
+			"p": "Dagger/WorkspaceGit.html#method_head",
+			"d": "<p>The checked-out HEAD of this workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceGit::id",
+			"p": "Dagger/WorkspaceGit.html#method_id",
+			"d": "<p>A unique identifier for this WorkspaceGit.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceGit::latestSemverTag",
+			"p": "Dagger/WorkspaceGit.html#method_latestSemverTag",
+			"d": "<p>Highest semver tag in the workspace repository.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\WorkspaceGit::uncommitted",
+			"p": "Dagger/WorkspaceGit.html#method_uncommitted",
+			"d": "<p>Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.</p>"
 		},
 		{
 			"t": "M",

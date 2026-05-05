@@ -177,6 +177,9 @@ type Binding {
   """Retrieve the binding value, as type Workspace"""
   asWorkspace: Workspace!
 
+  """Retrieve the binding value, as type WorkspaceGit"""
+  asWorkspaceGit: WorkspaceGit!
+
   """Returns the digest of the binding value"""
   digest: String!
 
@@ -3130,6 +3133,29 @@ type Env {
     workspace: DirectoryID!
   ): Env!
 
+  """Create or update a binding of type WorkspaceGit in the environment"""
+  withWorkspaceGitInput(
+    """The name of the binding"""
+    name: String!
+
+    """The WorkspaceGit value to assign to the binding"""
+    value: WorkspaceGitID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired WorkspaceGit output to be assigned in the environment
+  """
+  withWorkspaceGitOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type Workspace in the environment"""
   withWorkspaceInput(
     """The name of the binding"""
@@ -5370,6 +5396,9 @@ type Query {
   """Load a Workspace from its ID."""
   loadWorkspaceFromID(id: WorkspaceID!): Workspace!
 
+  """Load a WorkspaceGit from its ID."""
+  loadWorkspaceGitFromID(id: WorkspaceGitID!): WorkspaceGit!
+
   """Create a new module."""
   module: Module!
 
@@ -6162,6 +6191,11 @@ type Workspace {
     include: [String!]
   ): GeneratorGroup!
 
+  """
+  Git state for this workspace. Errors if the workspace is not in a git repository.
+  """
+  git: WorkspaceGit!
+
   """Whether a config.toml file exists in the workspace."""
   hasConfig: Boolean!
 
@@ -6187,6 +6221,45 @@ type Workspace {
   """
   update: Changeset! @experimental(reason: "Experimental workspace update API currently refreshes existing lockfile entries only.")
 }
+
+"""Local git state for a workspace."""
+type WorkspaceGit {
+  """
+  Highest semver tag pointing at HEAD.
+
+  Pre-release tags are ignored unless includePrerelease is true.
+  """
+  currentSemverTag(
+    """Include pre-release tags."""
+    includePrerelease: Boolean = true
+  ): GitRef
+
+  """The checked-out HEAD of this workspace."""
+  head: GitRef!
+
+  """A unique identifier for this WorkspaceGit."""
+  id: WorkspaceGitID!
+
+  """
+  Highest semver tag in the workspace repository.
+
+  Pre-release tags are ignored unless includePrerelease is true.
+  """
+  latestSemverTag(
+    """Include pre-release tags."""
+    includePrerelease: Boolean = false
+  ): GitRef
+
+  """
+  Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
+  """
+  uncommitted: Changeset!
+}
+
+"""
+The `WorkspaceGitID` scalar type represents an identifier for an object of type WorkspaceGit.
+"""
+scalar WorkspaceGitID
 
 """
 The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.

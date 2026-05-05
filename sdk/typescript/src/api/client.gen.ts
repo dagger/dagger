@@ -2937,6 +2937,25 @@ export type WorkspaceServicesOpts = {
   include?: string[]
 }
 
+export type WorkspaceGitCurrentSemverTagOpts = {
+  /**
+   * Include pre-release tags.
+   */
+  includePrerelease?: boolean
+}
+
+export type WorkspaceGitLatestSemverTagOpts = {
+  /**
+   * Include pre-release tags.
+   */
+  includePrerelease?: boolean
+}
+
+/**
+ * The `WorkspaceGitID` scalar type represents an identifier for an object of type WorkspaceGit.
+ */
+export type WorkspaceGitID = string & { __WorkspaceGitID: never }
+
 /**
  * The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
  */
@@ -3372,6 +3391,14 @@ export class Binding extends BaseClient {
   asWorkspace = (): Workspace => {
     const ctx = this._ctx.select("asWorkspace")
     return new Workspace(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type WorkspaceGit
+   */
+  asWorkspaceGit = (): WorkspaceGit => {
+    const ctx = this._ctx.select("asWorkspaceGit")
+    return new WorkspaceGit(ctx)
   }
 
   /**
@@ -7769,6 +7796,38 @@ export class Env extends BaseClient {
    */
   withWorkspace = (workspace: Directory): Env => {
     const ctx = this._ctx.select("withWorkspace", { workspace })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type WorkspaceGit in the environment
+   * @param name The name of the binding
+   * @param value The WorkspaceGit value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withWorkspaceGitInput = (
+    name: string,
+    value: WorkspaceGit,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceGitInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired WorkspaceGit output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withWorkspaceGitOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withWorkspaceGitOutput", {
+      name,
+      description,
+    })
     return new Env(ctx)
   }
 
@@ -13109,6 +13168,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a WorkspaceGit from its ID.
+   */
+  loadWorkspaceGitFromID = (id: WorkspaceGitID): WorkspaceGit => {
+    const ctx = this._ctx.select("loadWorkspaceGitFromID", { id })
+    return new WorkspaceGit(ctx)
+  }
+
+  /**
    * Create a new module.
    */
   module_ = (): Module_ => {
@@ -14787,6 +14854,14 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Git state for this workspace. Errors if the workspace is not in a git repository.
+   */
+  git = (): WorkspaceGit => {
+    const ctx = this._ctx.select("git")
+    return new WorkspaceGit(ctx)
+  }
+
+  /**
    * Whether a config.toml file exists in the workspace.
    */
   hasConfig = async (): Promise<boolean> => {
@@ -14848,6 +14923,75 @@ export class Workspace extends BaseClient {
    */
   update = (): Changeset => {
     const ctx = this._ctx.select("update")
+    return new Changeset(ctx)
+  }
+}
+
+/**
+ * Local git state for a workspace.
+ */
+export class WorkspaceGit extends BaseClient {
+  private readonly _id?: WorkspaceGitID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: WorkspaceGitID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this WorkspaceGit.
+   */
+  id = async (): Promise<WorkspaceGitID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<WorkspaceGitID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Highest semver tag pointing at HEAD.
+   *
+   * Pre-release tags are ignored unless includePrerelease is true.
+   * @param opts.includePrerelease Include pre-release tags.
+   */
+  currentSemverTag = (opts?: WorkspaceGitCurrentSemverTagOpts): GitRef => {
+    const ctx = this._ctx.select("currentSemverTag", { ...opts })
+    return new GitRef(ctx)
+  }
+
+  /**
+   * The checked-out HEAD of this workspace.
+   */
+  head = (): GitRef => {
+    const ctx = this._ctx.select("head")
+    return new GitRef(ctx)
+  }
+
+  /**
+   * Highest semver tag in the workspace repository.
+   *
+   * Pre-release tags are ignored unless includePrerelease is true.
+   * @param opts.includePrerelease Include pre-release tags.
+   */
+  latestSemverTag = (opts?: WorkspaceGitLatestSemverTagOpts): GitRef => {
+    const ctx = this._ctx.select("latestSemverTag", { ...opts })
+    return new GitRef(ctx)
+  }
+
+  /**
+   * Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
+   */
+  uncommitted = (): Changeset => {
+    const ctx = this._ctx.select("uncommitted")
     return new Changeset(ctx)
   }
 }
