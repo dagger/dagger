@@ -573,7 +573,6 @@ func (srv *Server) initializeDaggerClient(
 	}
 
 	client.fnCall = opts.FunctionCall
-	client.env = opts.EnvContext
 
 	// setup the graphql server + module/function state for the client
 	client.dagqlRoot = core.NewRoot(srv)
@@ -598,6 +597,23 @@ func (srv *Server) initializeDaggerClient(
 	coreMod := coreSchemaBase.CoreMod(coreView)
 	client.defaultDeps = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
 	client.servedMods = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
+
+	if opts.EnvContext.Self() != nil {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get engine cache for env context: %w", err)
+		}
+
+		attached, err := cache.AttachResult(ctx, opts.SessionID, client.dag, opts.EnvContext)
+		if err != nil {
+			return fmt.Errorf("attach env context during client init: %w", err)
+		}
+		envInst, ok := attached.(dagql.ObjectResult[*core.Env])
+		if !ok {
+			return fmt.Errorf("attach env context during client init: expected %T, got %T", opts.EnvContext, attached)
+		}
+		client.env = envInst
+	}
 
 	if opts.ModuleContext.Self() != nil {
 		cache, err := dagql.EngineCache(ctx)
