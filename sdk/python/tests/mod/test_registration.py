@@ -247,3 +247,28 @@ async def test_self_return_type():
     expected = dag.type_def().with_object("Test")
     assert to_typedef(iden.return_type) == expected
     assert to_typedef(seq.return_type) == dag.type_def().with_list_of(expected)
+
+
+def test_annotated_alias_default_path_runtime():
+    """Counterpart to test_ast_annotated_alias_drops_default_path.
+
+    The runtime path resolves the module-level Annotated alias to its
+    underlying Annotated[...] form, so DefaultPath survives. This is the
+    behaviour DAGGER_PYTHON_SDK_LEGACY restores when an AST-incompatible
+    module is encountered.
+    """
+    mod = Module()
+
+    Source = Annotated[dagger.Directory, dagger.DefaultPath(".")]
+
+    @mod.object_type
+    class SourceRepro:
+        @mod.function
+        async def grep_dir(
+            self, directory_arg: Source, pattern: str
+        ) -> str:
+            return ""
+
+    fn = mod.get_object("SourceRepro").functions["grep_dir"]
+    param = fn.parameters["directory_arg"]
+    assert param.default_path == "."
