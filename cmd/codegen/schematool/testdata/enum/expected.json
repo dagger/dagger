@@ -46,6 +46,15 @@
                 "value": "\"workflow\""
               }
             ]
+          },
+          {
+            "name": "sourceMap",
+            "args": [
+              {
+                "name": "module",
+                "value": "\"workflow\""
+              }
+            ]
           }
         ]
       }

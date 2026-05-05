@@ -47,6 +47,15 @@
                 "value": "\"zoo\""
               }
             ]
+          },
+          {
+            "name": "sourceMap",
+            "args": [
+              {
+                "name": "module",
+                "value": "\"zoo\""
+              }
+            ]
           }
         ]
       }
