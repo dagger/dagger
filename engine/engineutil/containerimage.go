@@ -114,7 +114,7 @@ func (c *Client) assembleExportedImage(
 	if err != nil {
 		return nil, err
 	}
-	return c.Worker.imageExportWriter.Assemble(ctx, req, commitOpts)
+	return c.imageExportWriter.Assemble(ctx, req, commitOpts)
 }
 
 func (c *Client) WriteContainerImageTarball(
@@ -183,7 +183,7 @@ func (c *Client) PublishContainerImage(
 		return nil, err
 	}
 	return imageexport.Export(ctx, imageexport.Deps{
-		Writer: c.Worker.imageExportWriter,
+		Writer: c.imageExportWriter,
 		Pusher: resolverPusher{resolver: resolver},
 	}, req, imageexport.ExportOpts{
 		Names:  []string{refName},
@@ -226,7 +226,7 @@ func (c *Client) ExportContainerImage(
 			Images:       imageWriter.ImagesStore,
 			ContentStore: imageWriter.ContentStore,
 			LeaseManager: imageWriter.LeaseManager,
-			Writer:       c.Worker.imageExportWriter,
+			Writer:       c.imageExportWriter,
 		}, req, imageexport.ExportOpts{
 			Names:  []string{destPath},
 			Store:  true,
@@ -237,7 +237,7 @@ func (c *Client) ExportContainerImage(
 	if imageWriter.Tarball != nil {
 		defer imageWriter.Tarball.Close()
 
-		exported, err := c.Worker.imageExportWriter.Assemble(ctx, req, commitOpts)
+		exported, err := c.imageExportWriter.Assemble(ctx, req, commitOpts)
 		if err != nil {
 			return nil, err
 		}

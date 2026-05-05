@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -48,26 +47,27 @@ func (*Env) Type() *ast.Type {
 
 type envKey struct{}
 
-func EnvIDToContext(ctx context.Context, env *call.ID) context.Context {
+func EnvToContext(ctx context.Context, env dagql.ObjectResult[*Env]) context.Context {
 	return context.WithValue(ctx, envKey{}, env)
 }
 
-func EnvIDFromContext(ctx context.Context) (res *call.ID, ok bool) {
-	// Env overidden via explicit context, i.e. from LLM to tool call
-	env, ok := ctx.Value(envKey{}).(*call.ID)
-	if ok {
-		return env, true
+func EnvFromContext(ctx context.Context) (dagql.ObjectResult[*Env], bool, error) {
+	if env, ok := ctx.Value(envKey{}).(dagql.ObjectResult[*Env]); ok && env.Self() != nil {
+		return env, true, nil
 	}
 
-	q, err := CurrentQuery(ctx)
+	q, _ := CurrentQuery(ctx)
+	if q == nil {
+		return dagql.ObjectResult[*Env]{}, false, nil
+	}
+	env, err := q.Server.CurrentEnv(ctx)
 	if err != nil {
-		return nil, false
+		return dagql.ObjectResult[*Env]{}, false, err
 	}
-	env, err = q.Server.CurrentEnv(ctx)
-	if err != nil || env == nil {
-		return nil, false
+	if env.Self() == nil {
+		return dagql.ObjectResult[*Env]{}, false, nil
 	}
-	return env, true
+	return env, true, nil
 }
 
 func NewEnv(workspace dagql.ObjectResult[*Directory], deps *SchemaBuilder) *Env {

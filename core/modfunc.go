@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
@@ -807,19 +806,9 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	// Calls without function name are internal and excluded.
 	fn.recordCall(ctx)
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	curCall := dagql.CurrentCall(ctx)
 	execMD := engineutil.ExecutionMetadata{
-		ClientID:          identity.NewID(),
-		Call:              curCall,
-		ExecID:            identity.NewID(),
-		Internal:          true,
-		LockMode:          clientMetadata.LockMode,
-		AllowedLLMModules: clientMetadata.AllowedLLMModules,
+		Internal: true,
 	}
 	if curCall != nil {
 		callDigest, err := curCall.RecipeDigest(ctx)
@@ -847,49 +836,20 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("marshal parent value: %w", err)
 	}
 
-	modID, err := fn.mod.ID()
-	if err != nil {
-		return nil, fmt.Errorf("get module ID: %w", err)
-	}
-	execMD.EncodedModuleID, err = modID.Encode()
-	if err != nil {
-		return nil, fmt.Errorf("encode module ID: %w", err)
-	}
-
-	implementationScopedMod, err := ImplementationScopedModule(ctx, fn.mod)
-	if err != nil {
-		return nil, fmt.Errorf("get implementation-scoped module: %w", err)
-	}
-	implementationScopedModID, err := implementationScopedMod.ID()
-	if err != nil {
-		return nil, fmt.Errorf("get implementation-scoped module ID: %w", err)
-	}
-	execMD.EncodedContentModuleID, err = implementationScopedModID.Encode()
-	if err != nil {
-		return nil, fmt.Errorf("encode implementation-scoped module ID: %w", err)
-	}
-
 	fnCall := &FunctionCall{
 		Name:      fn.metadata.OriginalName,
 		Parent:    parentJSON,
 		InputArgs: callInputs,
 	}
-	if opts.ParentTyped != nil {
-		parentID, err := opts.ParentTyped.ID()
-		if err != nil {
-			return nil, fmt.Errorf("get parent ID: %w", err)
-		}
-		fnCall.ParentID = parentID
-	}
-	if envID, ok := EnvIDFromContext(ctx); ok {
-		fnCall.EnvID = envID
-	}
 	if fn.objDef != nil {
 		fnCall.ParentName = fn.objDef.OriginalName
 	}
-	execMD.EncodedFunctionCall, err = json.Marshal(fnCall)
-	if err != nil {
-		return nil, fmt.Errorf("marshal function call: %w", err)
+
+	var envContext dagql.ObjectResult[*Env]
+	if env, ok, err := EnvFromContext(ctx); err != nil {
+		return nil, fmt.Errorf("resolve function env context: %w", err)
+	} else if ok {
+		envContext = env
 	}
 
 	// hide all this internal plumbing making up the call
@@ -901,11 +861,10 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	// Delegate the actual function execution to the runtime
-	outputBytes, clientID, err := runtime.Call(ctx, &execMD, fnCall)
+	outputBytes, err := runtime.Call(ctx, &execMD, fnCall, fn.mod, envContext)
 	if err != nil {
 		return nil, err
 	}
-	_ = clientID
 
 	var returnValueAny any
 	dec := json.NewDecoder(strings.NewReader(string(outputBytes)))

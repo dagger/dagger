@@ -167,6 +167,9 @@ type daggerClient struct {
 	// metadata of that ongoing function call
 	fnCall *core.FunctionCall
 
+	// If the client is executing in an Env context, this is that Env.
+	env dagql.ObjectResult[*core.Env]
+
 	// engine utility job-related state/config
 	getClientCaller  func(string) (bksession.Caller, error)
 	dialer           *net.Dialer
@@ -492,24 +495,17 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 type ClientInitOpts struct {
 	*engine.ClientMetadata
 
-	// If this is a nested client, the call that created the client (i.e. a function call or
-	// an exec with nesting enabled)
-	Call *dagql.ResultCall
-
 	// If this is a nested client, the client ID of the caller that created it
 	CallerClientID string
 
-	// If the client is running from a function in a module, this is the encoded dagQL ID
-	// of that module.
-	EncodedModuleID string
+	// If the client is running from a function in a module, this is that module.
+	ModuleContext dagql.ObjectResult[*core.Module]
 
-	// If the client is running from a function in a module, this is the encoded
-	// content-scoped module dagQL ID.
-	EncodedContentModuleID string
+	// If the client is running from a function in a module, this is that function call.
+	FunctionCall *core.FunctionCall
 
-	// If the client is running from a function in a module, this is the encoded function call
-	// metadata (of type core.FunctionCall)
-	EncodedFunctionCall json.RawMessage
+	// If the client is executing in an Env context, this is that Env.
+	EnvContext dagql.ObjectResult[*core.Env]
 }
 
 // requires that client.stateMu is held
@@ -563,28 +559,21 @@ func (srv *Server) initializeDaggerClient(
 		},
 	}
 
-	client.engineUtilClient, err = engineutil.NewClient(ctx, &engineutil.Opts{
-		Worker:              srv.worker,
-		SessionManager:      srv.bkSessionManager,
-		Dialer:              client.dialer,
-		GetClientCaller:     client.getClientCaller,
-		GetMainClientCaller: client.getMainClientCaller,
-		GetRegistryResolver: srv.RegistryResolver,
-
-		Interactive:        client.daggerSession.interactive,
-		InteractiveCommand: client.daggerSession.interactiveCommand,
-	})
+	engineUtilOpts := *srv.engineUtilOpts
+	engineUtilOpts.SessionManager = srv.bkSessionManager
+	engineUtilOpts.Dialer = client.dialer
+	engineUtilOpts.GetClientCaller = client.getClientCaller
+	engineUtilOpts.GetMainClientCaller = client.getMainClientCaller
+	engineUtilOpts.GetRegistryResolver = srv.RegistryResolver
+	engineUtilOpts.Interactive = client.daggerSession.interactive
+	engineUtilOpts.InteractiveCommand = client.daggerSession.interactiveCommand
+	client.engineUtilClient, err = engineutil.NewClient(ctx, &engineUtilOpts)
 	if err != nil {
 		return fmt.Errorf("failed to create engine client: %w", err)
 	}
 
-	if opts.EncodedFunctionCall != nil {
-		var fnCall core.FunctionCall
-		if err := json.Unmarshal(opts.EncodedFunctionCall, &fnCall); err != nil {
-			return fmt.Errorf("failed to decode function call: %w", err)
-		}
-		client.fnCall = &fnCall
-	}
+	client.fnCall = opts.FunctionCall
+	client.env = opts.EnvContext
 
 	// setup the graphql server + module/function state for the client
 	client.dagqlRoot = core.NewRoot(srv)
@@ -610,14 +599,19 @@ func (srv *Server) initializeDaggerClient(
 	client.defaultDeps = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
 	client.servedMods = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
 
-	if opts.EncodedModuleID != "" {
-		modID := new(call.ID)
-		if err := modID.Decode(opts.EncodedModuleID); err != nil {
-			return fmt.Errorf("failed to decode module ID: %w", err)
-		}
-		modInst, err := dagql.NewID[*core.Module](modID).Load(ctx, client.dag)
+	if opts.ModuleContext.Self() != nil {
+		cache, err := dagql.EngineCache(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to load module during client init: %w", err)
+			return fmt.Errorf("failed to get engine cache for module context: %w", err)
+		}
+
+		attached, err := cache.AttachResult(ctx, opts.SessionID, client.dag, opts.ModuleContext)
+		if err != nil {
+			return fmt.Errorf("attach module context during client init: %w", err)
+		}
+		modInst, ok := attached.(dagql.ObjectResult[*core.Module])
+		if !ok {
+			return fmt.Errorf("attach module context during client init: expected %T, got %T", opts.ModuleContext, attached)
 		}
 		client.mod = modInst
 
@@ -627,15 +621,6 @@ func (srv *Server) initializeDaggerClient(
 		coreView = call.View(engine.BaseVersion(engine.NormalizeVersion(engineVersion)))
 		client.dag.View = coreView
 		coreMod = coreSchemaBase.CoreMod(coreView)
-
-		// NOTE: *technically* we should reload the module here, so that we can
-		// use the new typedefs api - but at this point we likely would
-		// have failed to load the module in the first place anyways?
-		// modInst, err = dagql.NewID[*core.Module](modID).Load(ctx, client.dag)
-		// if err != nil {
-		// 	return fmt.Errorf("failed to load module: %w", err)
-		// }
-		// client.mod = modInst.Self
 
 		client.defaultDeps = core.NewSchemaBuilder(client.dagqlRoot, []core.Mod{coreMod})
 		client.servedMods = client.mod.Self().Deps.WithRoot(client.dagqlRoot)
@@ -968,25 +953,34 @@ func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}).ServeHTTP(w, r)
 }
 
-// ServeHTTPToNestedClient serves nested clients, including module function calls. The only difference is that additional
-// execution metadata is passed alongside the request from the executor. We don't want to put all this execution metadata
-// in http headers since it includes arbitrary values from users in the function call metadata, which can exceed max header
-// size.
-func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Request, execMD *engineutil.ExecutionMetadata) {
-	clientVersion := execMD.ClientVersionOverride
-	if clientVersion == "" {
-		clientVersion = engine.Version
+// ServeHTTPToNestedClient serves nested clients, including module function calls.
+func (srv *Server) ServeHTTPToNestedClient(
+	w http.ResponseWriter,
+	r *http.Request,
+	nestedClientMetadata *engine.ClientMetadata,
+	callerClientID string,
+	moduleCtx dagql.AnyObjectResult,
+	functionCall dagql.Typed,
+	envCtx dagql.AnyObjectResult,
+) {
+	if nestedClientMetadata == nil {
+		http.Error(w, "nested client metadata is nil", http.StatusInternalServerError)
+		return
 	}
+	clientMetadata := *nestedClientMetadata
+	clientMetadata.AllowedLLMModules = slices.Clone(nestedClientMetadata.AllowedLLMModules)
+	if clientMetadata.ClientVersion == "" {
+		clientMetadata.ClientVersion = engine.Version
+	}
+	clientMetadata.Labels = map[string]string{}
 
-	allowedLLMModules := execMD.AllowedLLMModules
 	var extraModules []engine.ExtraModule
 	var loadWorkspaceModules bool
 	var eagerRuntime bool
 	var workspaceRef *string
-	var lockMode string
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
-		clientVersion = md.ClientVersion
-		allowedLLMModules = md.AllowedLLMModules
+		clientMetadata.ClientVersion = md.ClientVersion
+		clientMetadata.AllowedLLMModules = slices.Clone(md.AllowedLLMModules)
 		extraModules = md.ExtraModules
 		loadWorkspaceModules = md.LoadWorkspaceModules
 		eagerRuntime = md.EagerRuntime
@@ -994,104 +988,57 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			ref := declaredWorkspace
 			workspaceRef = &ref
 		}
-		lockMode = md.LockMode
+		if md.LockMode != "" {
+			clientMetadata.LockMode = md.LockMode
+		}
 	}
 
-	if lockMode == "" {
-		lockMode = srv.inheritedNestedClientLockMode(execMD)
+	var moduleContext dagql.ObjectResult[*core.Module]
+	if moduleCtx != nil {
+		typed, ok := moduleCtx.(dagql.ObjectResult[*core.Module])
+		if !ok {
+			http.Error(w, fmt.Sprintf("nested client module context is %T, not Module", moduleCtx), http.StatusInternalServerError)
+			return
+		}
+		if typed.Self() != nil {
+			moduleContext = typed
+		}
 	}
+
+	var fnCall *core.FunctionCall
+	if functionCall != nil {
+		typed, ok := functionCall.(*core.FunctionCall)
+		if !ok {
+			http.Error(w, fmt.Sprintf("nested client function call is %T, not FunctionCall", functionCall), http.StatusInternalServerError)
+			return
+		}
+		fnCall = typed
+	}
+
+	var envContext dagql.ObjectResult[*core.Env]
+	if envCtx != nil {
+		typed, ok := envCtx.(dagql.ObjectResult[*core.Env])
+		if !ok {
+			http.Error(w, fmt.Sprintf("nested client env context is %T, not Env", envCtx), http.StatusInternalServerError)
+			return
+		}
+		if typed.Self() != nil {
+			envContext = typed
+		}
+	}
+
+	clientMetadata.ExtraModules = extraModules
+	clientMetadata.LoadWorkspaceModules = loadWorkspaceModules
+	clientMetadata.EagerRuntime = eagerRuntime
+	clientMetadata.Workspace = workspaceRef
 
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
-		ClientMetadata: &engine.ClientMetadata{
-			ClientID:             execMD.ClientID,
-			ClientVersion:        clientVersion,
-			ClientSecretToken:    execMD.SecretToken,
-			SessionID:            execMD.SessionID,
-			ClientHostname:       execMD.Hostname,
-			ClientStableID:       execMD.ClientStableID,
-			Labels:               map[string]string{},
-			SSHAuthSocketPath:    execMD.SSHAuthSocketPath,
-			AllowedLLMModules:    allowedLLMModules,
-			ExtraModules:         extraModules,
-			LoadWorkspaceModules: loadWorkspaceModules,
-			EagerRuntime:         eagerRuntime,
-			LockMode:             lockMode,
-			Workspace:            workspaceRef,
-		},
-		Call:                   execMD.Call,
-		CallerClientID:         execMD.CallerClientID,
-		EncodedModuleID:        execMD.EncodedModuleID,
-		EncodedContentModuleID: execMD.EncodedContentModuleID,
-		EncodedFunctionCall:    execMD.EncodedFunctionCall,
+		ClientMetadata: &clientMetadata,
+		CallerClientID: callerClientID,
+		ModuleContext:  moduleContext,
+		FunctionCall:   fnCall,
+		EnvContext:     envContext,
 	}).ServeHTTP(w, r)
-}
-
-func (srv *Server) inheritedNestedClientLockMode(execMD *engineutil.ExecutionMetadata) string {
-	if execMD == nil {
-		return ""
-	}
-	if execMD.LockMode != "" {
-		return execMD.LockMode
-	}
-	callerClient, err := srv.clientFromIDs(execMD.SessionID, execMD.CallerClientID)
-	if err != nil || callerClient == nil || callerClient.clientMetadata == nil {
-		return ""
-	}
-	if callerClient.clientMetadata.LockMode != "" {
-		return callerClient.clientMetadata.LockMode
-	}
-	for i := len(callerClient.parents) - 1; i >= 0; i-- {
-		parent := callerClient.parents[i]
-		if parent != nil && parent.clientMetadata != nil && parent.clientMetadata.LockMode != "" {
-			return parent.clientMetadata.LockMode
-		}
-	}
-	return ""
-}
-
-func nestedClientMetadata(execMD *engineutil.ExecutionMetadata, forwarded *engine.ClientMetadata, inheritedLockMode string) *engine.ClientMetadata {
-	clientVersion := execMD.ClientVersionOverride
-	if clientVersion == "" {
-		clientVersion = engine.Version
-	}
-
-	allowedLLMModules := execMD.AllowedLLMModules
-	var extraModules []engine.ExtraModule
-	var skipWorkspaceModules bool
-	lockMode := inheritedLockMode
-	var eagerRuntime bool
-	var workspaceRef *string
-	if forwarded != nil {
-		clientVersion = forwarded.ClientVersion
-		allowedLLMModules = forwarded.AllowedLLMModules
-		extraModules = forwarded.ExtraModules
-		skipWorkspaceModules = forwarded.SkipWorkspaceModules
-		if forwarded.LockMode != "" {
-			lockMode = forwarded.LockMode
-		}
-		eagerRuntime = forwarded.EagerRuntime
-		if declaredWorkspace, ok := workspaceRefFromClientMetadata(forwarded); ok {
-			ref := declaredWorkspace
-			workspaceRef = &ref
-		}
-	}
-
-	return &engine.ClientMetadata{
-		ClientID:             execMD.ClientID,
-		ClientVersion:        clientVersion,
-		ClientSecretToken:    execMD.SecretToken,
-		SessionID:            execMD.SessionID,
-		ClientHostname:       execMD.Hostname,
-		ClientStableID:       execMD.ClientStableID,
-		Labels:               map[string]string{},
-		SSHAuthSocketPath:    execMD.SSHAuthSocketPath,
-		AllowedLLMModules:    allowedLLMModules,
-		ExtraModules:         extraModules,
-		SkipWorkspaceModules: skipWorkspaceModules,
-		LockMode:             lockMode,
-		EagerRuntime:         eagerRuntime,
-		Workspace:            workspaceRef,
-	}
 }
 
 const InstrumentationLibrary = "dagger.io/engine.server"
@@ -1865,15 +1812,12 @@ func (srv *Server) CurrentFunctionCall(ctx context.Context) (*core.FunctionCall,
 	return client.fnCall, nil
 }
 
-func (srv *Server) CurrentEnv(ctx context.Context) (*call.ID, error) {
+func (srv *Server) CurrentEnv(ctx context.Context) (dagql.ObjectResult[*core.Env], error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
-		return nil, err
+		return dagql.ObjectResult[*core.Env]{}, err
 	}
-	if client.fnCall == nil {
-		return nil, nil
-	}
-	return client.fnCall.EnvID, nil
+	return client.env, nil
 }
 
 // Return the modules being served to the current client

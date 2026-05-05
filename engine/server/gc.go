@@ -8,7 +8,6 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/config"
-	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/disk"
@@ -77,22 +76,6 @@ func engineCacheEntrySetFromUsage(entries []dagql.CacheUsageEntry) *core.EngineC
 	}
 	set.EntryCount = len(set.EntriesList)
 	return set
-}
-
-func buildkitPruneInfosFromDagqlPolicies(policies []dagqlCachePrunePolicy) []bkclient.PruneInfo {
-	pruneOpts := make([]bkclient.PruneInfo, 0, len(policies))
-	for _, policy := range policies {
-		pruneOpts = append(pruneOpts, bkclient.PruneInfo{
-			All:           policy.All,
-			Filter:        slices.Clone(policy.Filters),
-			KeepDuration:  policy.KeepDuration,
-			ReservedSpace: policy.ReservedSpace,
-			MaxUsedSpace:  policy.MaxUsedSpace,
-			MinFreeSpace:  policy.MinFreeSpace,
-			TargetSpace:   policy.TargetSpace,
-		})
-	}
-	return pruneOpts
 }
 
 func cloneDagqlCachePrunePolicies(in []dagqlCachePrunePolicy) []dagqlCachePrunePolicy {

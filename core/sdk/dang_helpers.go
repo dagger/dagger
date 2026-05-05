@@ -15,7 +15,7 @@ import (
 	"github.com/Khan/genqlient/graphql"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/engine"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/vito/dang/pkg/dang"
 	"github.com/vito/dang/pkg/hm"
@@ -28,8 +28,11 @@ func (r *DangRuntime) eval(
 	ctx context.Context,
 	query *core.Query,
 	schemaFile dagql.Result[*core.File],
-	execMD *engineutil.ExecutionMetadata,
+	nestedClientMetadata *engine.ClientMetadata,
+	callerClientID string,
 	fnCall *core.FunctionCall,
+	moduleContext dagql.ObjectResult[*core.Module],
+	envContext dagql.ObjectResult[*core.Env],
 ) ([]byte, error) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -41,7 +44,7 @@ func (r *DangRuntime) eval(
 		ReadHeaderTimeout: 10 * time.Second,
 		Handler: http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
 			telemetry.Propagator.Inject(ctx, propagation.HeaderCarrier(req.Header))
-			query.ServeHTTPToNestedClient(resp, req, execMD)
+			query.ServeHTTPToNestedClient(resp, req, nestedClientMetadata, callerClientID, moduleContext, fnCall, envContext)
 		}),
 	}
 	defer func() {

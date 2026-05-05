@@ -268,6 +268,13 @@ func (s *serviceSchema) containerAsServiceLegacy(ctx context.Context, parent dag
 	if withExecArgs.ExecMD.Self != nil {
 		svc.ExecMD = withExecArgs.ExecMD.Self
 	}
+	if withExecArgs.ModuleContext.Valid {
+		moduleContext, err := withExecArgs.ModuleContext.Value.Load(ctx, srv)
+		if err != nil {
+			return inst, fmt.Errorf("load service module context: %w", err)
+		}
+		svc.ModuleContext = moduleContext
+	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, svc)
 }
 
