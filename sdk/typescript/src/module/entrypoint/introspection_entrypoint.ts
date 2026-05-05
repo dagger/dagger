@@ -2,6 +2,7 @@ import * as fs from "fs"
 import * as path from "path"
 
 import { connection } from "../../connect.js"
+import { emitEntrypoint } from "../introspector/entrypoint_emitter.js"
 import { scan } from "../introspector/index.js"
 import { Register } from "./register.js"
 
@@ -56,6 +57,26 @@ async function main() {
   if (process.env.DRY_RUN) {
     console.log(JSON.stringify(result, null, 2))
     process.exit(0)
+  }
+
+  // When EMIT_ENTRYPOINT_FILE is set, render a static __dagger.entrypoint.ts
+  // from the parsed module and write it. This is the codegen path used by
+  // ModuleRuntime to replace the runtime AST/reflection dispatch with a
+  // generated switch/case dispatch (mirrors the Go SDK approach).
+  const emitPath = process.env.EMIT_ENTRYPOINT_FILE
+  if (emitPath) {
+    const moduleRoot = process.env.EMIT_ENTRYPOINT_MODULE_ROOT ?? path.resolve(userSourceCodeDir, "..")
+    const sdkImportPath = process.env.EMIT_ENTRYPOINT_SDK_IMPORT ?? "@dagger.io/dagger"
+    const source = emitEntrypoint(result, {
+      moduleRoot,
+      sdkImportPath,
+      sourceDir: path.basename(userSourceCodeDir),
+    })
+    await fs.promises.writeFile(emitPath, source)
+    if (!process.env.TYPEDEF_OUTPUT_FILE) {
+      // Standalone codegen invocation — skip registration.
+      return
+    }
   }
 
   // TODO(TomChv): move that logic inside the engine at some point

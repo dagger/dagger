@@ -47,6 +47,7 @@ func (n *NodeRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 	var tsConfig *dagger.File
 	var sdkLibrary *dagger.Directory
 	var runtimeWithDep *NodeRuntime
+	var generatedEntrypoint *dagger.File
 
 	eg, gctx := errgroup.WithContext(ctx)
 
@@ -87,11 +88,28 @@ func (n *NodeRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 		return err
 	})
 
+	eg.Go(func() (err error) {
+		ctx, span := Tracer().Start(gctx, "generate dispatch entrypoint")
+		defer span.End()
+
+		clientBindings := NewLibGenerator(n.sdkSourceDir, n.cfg.libGeneratorOpts()).
+			GenerateBindings(n.introspectionJSON, Bundle, ModSourceDirPath)
+
+		generatedEntrypoint, err = NewIntrospector(n.sdkSourceDir).
+			EmitEntrypoint(
+				n.cfg.name,
+				n.cfg.source.Directory(SrcDir),
+				clientBindings,
+			).
+			Sync(ctx)
+		return err
+	})
+
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
 
-	entrypointPath := filepath.Join(n.cfg.modulePath(), SrcDir, EntrypointExecutableFile)
+	entrypointPath := filepath.Join(n.cfg.modulePath(), EntrypointExecutableFile)
 
 	// Merge all the generated files together and setup an entrypoint command.
 	ctr := runtimeWithDep.ctr.
@@ -101,7 +119,7 @@ func (n *NodeRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 		WithMountedFile("tsconfig.json", tsConfig).
 		// Merge source code directory with current directory
 		WithDirectory(".", n.cfg.wrappedSourceCodeDirectory()).
-		WithMountedFile(entrypointPath, entrypointFile()).
+		WithMountedFile(entrypointPath, generatedEntrypoint).
 		WithEntrypoint([]string{
 			"tsx", "--no-deprecation", "--tsconfig", n.cfg.tsConfigPath(), entrypointPath,
 		})
