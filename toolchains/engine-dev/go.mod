@@ -2,7 +2,7 @@ module dagger/engine-dev
 
 go 1.25.6
 
-require github.com/dagger/dagger/engine/distconsts v0.20.6
+require github.com/dagger/dagger/engine/distconsts v0.20.7
 
 replace (
 	github.com/dagger/dagger => ../..
@@ -28,7 +28,7 @@ require (
 )
 
 require (
-	dagger.io/dagger v0.20.6
+	dagger.io/dagger v0.20.7
 	github.com/99designs/gqlgen v0.17.90 // indirect
 	github.com/Khan/genqlient v0.8.1
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect

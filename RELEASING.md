@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-April%2015,%202026-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-May%204,%202026-success?style=flat-square)
 
 This document describes the process for releasing Dagger.
 
@@ -378,7 +378,7 @@ This will also kick off [`.github/workflows/evals.yml`], which is currently brok
 
   ```console
   git push "$DAGGER_REPO_REMOTE" "post-release-$ENGINE_VERSION"
-  gh pr create --title "chore: post-release during $ENGINE_VERSION" --body ""
+  gh pr create -B "$RELEASE_BRANCH" --title "chore: post-release during $ENGINE_VERSION" --body ""
   ```
 
 - [ ] If the git remote url was changed to ssh, now is a good time to revert it to https.

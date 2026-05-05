@@ -1,6 +1,6 @@
 {
   "name": "helm-e2e",
-  "engineVersion": "v0.20.6",
+  "engineVersion": "v0.20.7",
   "dependencies": [
     {
       "name": "dagger-cli",

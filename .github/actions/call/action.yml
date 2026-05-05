@@ -13,7 +13,7 @@ inputs:
 
   version:
     description: "Dagger version to run against"
-    default: "v0.20.6"
+    default: "v0.20.7"
     required: false
 
   dev-engine:
