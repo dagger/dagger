@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/dagger/dagger/core"
@@ -84,11 +85,11 @@ func (r *DangRuntime) AsContainer() (dagql.ObjectResult[*core.Container], bool) 
 
 func (r *DangRuntime) Call(
 	ctx context.Context,
-	execMD *engineutil.ExecutionMetadata,
+	_ *engineutil.ExecutionMetadata,
 	fnCall *core.FunctionCall,
 	moduleContext dagql.ObjectResult[*core.Module],
 	envContext dagql.ObjectResult[*core.Env],
-) (res []byte, clientID string, rerr error) {
+) (res []byte, rerr error) {
 	defer func() {
 		if rerr != nil {
 			rerr = convertError(rerr)
@@ -97,37 +98,32 @@ func (r *DangRuntime) Call(
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
-	execMD.CallerClientID = clientMetadata.ClientID
-	execMD.SessionID = clientMetadata.SessionID
-	execMD.LockMode = clientMetadata.LockMode
-	execMD.AllowedLLMModules = clientMetadata.AllowedLLMModules
-
-	if execMD.SecretToken == "" {
-		execMD.SecretToken = identity.NewID()
-	}
-	if execMD.ClientStableID == "" {
-		execMD.ClientStableID = identity.NewID()
-	}
-	if execMD.HostAliases == nil {
-		execMD.HostAliases = make(map[string][]string)
+	nestedClientMetadata := &engine.ClientMetadata{
+		ClientID:          identity.NewID(),
+		ClientSecretToken: identity.NewID(),
+		SessionID:         clientMetadata.SessionID,
+		ClientStableID:    identity.NewID(),
+		ClientVersion:     engine.Version,
+		AllowedLLMModules: slices.Clone(clientMetadata.AllowedLLMModules),
+		LockMode:          clientMetadata.LockMode,
 	}
 
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
-		return nil, "", fmt.Errorf("current query: %w", err)
+		return nil, fmt.Errorf("current query: %w", err)
 	}
 	schemaJSONFile, err := r.deps.SchemaIntrospectionJSONFileForModule(ctx)
 	if err != nil {
-		return nil, "", fmt.Errorf("get schema introspection: %w", err)
+		return nil, fmt.Errorf("get schema introspection: %w", err)
 	}
-	outputBytes, err := r.eval(ctx, query, schemaJSONFile, execMD, fnCall, moduleContext, envContext)
+	outputBytes, err := r.eval(ctx, query, schemaJSONFile, nestedClientMetadata, clientMetadata.ClientID, fnCall, moduleContext, envContext)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	return outputBytes, execMD.ClientID, nil
+	return outputBytes, nil
 }
 
 func convertError(rerr error) *core.Error {

@@ -12,6 +12,7 @@ import (
 	"github.com/containerd/containerd/v2/core/remotes/docker"
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	imageexport "github.com/dagger/dagger/engine/engineutil/imageexport"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
@@ -42,6 +43,9 @@ type Worker struct {
 	*sharedWorkerState
 	causeCtx                 trace.SpanContext
 	execMD                   *ExecutionMetadata
+	sessionID                string
+	callerClientID           string
+	nestedClientMetadata     *engine.ClientMetadata
 	nestedClientModule       dagql.AnyObjectResult
 	nestedClientFunctionCall dagql.Typed
 	nestedClientEnv          dagql.AnyObjectResult
@@ -96,7 +100,7 @@ type WorkerOpt struct {
 }
 
 type sessionHandler interface {
-	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *ExecutionMetadata, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult)
+	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult)
 }
 
 type dagqlServer interface {
@@ -169,6 +173,9 @@ func NewWorker(opts *NewWorkerOpts) (*Worker, error) {
 func (w *Worker) ExecWorker(
 	causeCtx trace.SpanContext,
 	execMD ExecutionMetadata,
+	sessionID string,
+	callerClientID string,
+	nestedClientMetadata *engine.ClientMetadata,
 	nestedClientModule dagql.AnyObjectResult,
 	nestedClientFunctionCall dagql.Typed,
 	nestedClientEnv dagql.AnyObjectResult,
@@ -177,6 +184,9 @@ func (w *Worker) ExecWorker(
 		sharedWorkerState:        w.sharedWorkerState,
 		causeCtx:                 causeCtx,
 		execMD:                   &execMD,
+		sessionID:                sessionID,
+		callerClientID:           callerClientID,
+		nestedClientMetadata:     nestedClientMetadata,
 		nestedClientModule:       nestedClientModule,
 		nestedClientFunctionCall: nestedClientFunctionCall,
 		nestedClientEnv:          nestedClientEnv,

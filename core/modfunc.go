@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
@@ -807,17 +806,9 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	// Calls without function name are internal and excluded.
 	fn.recordCall(ctx)
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	curCall := dagql.CurrentCall(ctx)
 	execMD := engineutil.ExecutionMetadata{
-		ClientID:          identity.NewID(),
-		Internal:          true,
-		LockMode:          clientMetadata.LockMode,
-		AllowedLLMModules: clientMetadata.AllowedLLMModules,
+		Internal: true,
 	}
 	if curCall != nil {
 		callDigest, err := curCall.RecipeDigest(ctx)
@@ -870,11 +861,10 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	// Delegate the actual function execution to the runtime
-	outputBytes, clientID, err := runtime.Call(ctx, &execMD, fnCall, fn.mod, envContext)
+	outputBytes, err := runtime.Call(ctx, &execMD, fnCall, fn.mod, envContext)
 	if err != nil {
 		return nil, err
 	}
-	_ = clientID
 
 	var returnValueAny any
 	dec := json.NewDecoder(strings.NewReader(string(outputBytes)))

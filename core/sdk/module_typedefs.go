@@ -7,9 +7,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 )
@@ -60,7 +58,6 @@ func (sdk *moduleTypes) ModuleTypes(
 	}
 
 	execMD := engineutil.ExecutionMetadata{
-		ClientID: identity.NewID(),
 		Internal: true,
 	}
 	if curCall := dagql.CurrentCall(ctx); curCall != nil {
@@ -69,9 +66,6 @@ func (sdk *moduleTypes) ModuleTypes(
 			return inst, fmt.Errorf("compute module types exec call digest: %w", err)
 		}
 		execMD.CallDigest = callDigest
-	}
-	if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
-		execMD.LockMode = clientMetadata.LockMode
 	}
 	var ctr dagql.ObjectResult[*core.Container]
 	err = dag.Select(ctx, sdk.mod.sdk, &ctr,
