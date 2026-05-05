@@ -54,8 +54,7 @@ var (
 	moduleSourcePath string
 	moduleIncludes   []string
 
-	installName   string
-	initBlueprint string
+	installName string
 
 	developSDK        string
 	developSourcePath string
@@ -118,7 +117,6 @@ func initRequestedChanges(cmd *cobra.Command) bool {
 		"name",
 		"source",
 		"include",
-		"blueprint",
 		"with-self-calls",
 	} {
 		if flag := cmd.Flags().Lookup(name); flag != nil && flag.Changed {
@@ -203,7 +201,6 @@ func init() {
 	moduleInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Source directory used by the installed SDK. Defaults to module root")
 	addDeprecatedLicenseFlag(moduleInitCmd)
 	moduleInitCmd.Flags().StringSliceVar(&moduleIncludes, "include", nil, "Paths to include when loading the module. Only needed when extra paths are required to build the module. They are expected to be relative to the directory containing the module's dagger.json file (the module source root).")
-	moduleInitCmd.Flags().StringVar(&initBlueprint, "blueprint", "", "Reference another module as blueprint")
 	moduleInitCmd.Flags().BoolVar(&selfCalls, "with-self-calls", false, "Enable self-calls capability for the module (experimental)")
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
@@ -250,15 +247,8 @@ inside .dagger/modules/<name>/ and automatically installed in .dagger/config.tom
 Use an explicit path to keep creating a standalone module instead.
 
 If --sdk is specified, the given SDK is installed in the module. You can do this later with "dagger develop".
-If --blueprint is specified, the given blueprint is installed in the module.
 `,
 	Example: `
-# Reference a remote module as blueprint
-dagger module init --blueprint=github.com/example/blueprint
-
-# Reference a local module as blueprint
-dagger module init --blueprint=../my/blueprints/simple-webapp
-
 # Implement a standalone module in Go
 dagger module init --sdk=go
 `,
@@ -355,7 +345,6 @@ dagger module init --sdk=go
 						SDK:       sdk,
 						Source:    moduleSourcePath,
 						Include:   moduleIncludes,
-						Blueprint: initBlueprint,
 						SelfCalls: selfCalls,
 					})
 				}
@@ -394,21 +383,7 @@ dagger module init --sdk=go
 			if len(moduleIncludes) > 0 {
 				modSrc = modSrc.WithIncludes(moduleIncludes)
 			}
-			// engine version must be set before setting blueprint
 			modSrc = modSrc.WithEngineVersion(modules.EngineVersionLatest)
-			// Install blueprint if specified
-			if initBlueprint != "" {
-				// Validate that we don't have both SDK and blueprint
-				if sdk != "" {
-					return fmt.Errorf("cannot specify both --sdk and --blueprint; use one or the other")
-				}
-				// Create a new module source for the blueprint installation
-				blueprintSrc := dag.ModuleSource(initBlueprint, dagger.ModuleSourceOpts{
-					DisableFindUp: true,
-				})
-				// Install the blueprint while the CLI still supports the legacy flag.
-				modSrc = modSrc.WithBlueprint(blueprintSrc) //nolint:staticcheck
-			}
 
 			if selfCalls {
 				if sdk == "" {
@@ -425,9 +400,6 @@ dagger module init --sdk=go
 
 			// Print success message to user
 			infoMessage := []any{"Initialized module", moduleName, "in", srcRootAbsPath}
-			if initBlueprint != "" {
-				infoMessage = append(infoMessage, "with blueprint", initBlueprint)
-			}
 			fmt.Fprintln(cmd.OutOrStdout(), infoMessage...)
 			return nil
 		})
