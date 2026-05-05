@@ -364,8 +364,8 @@ type pendingModule struct {
 	// constructor.
 	Entrypoint bool
 
-	// If true, resolve +defaultPath from workspace root instead of module source.
-	// Used for legacy blueprints/toolchains migrated to workspace modules.
+	// If true, this module came from legacy workspace fields whose
+	// +defaultPath inputs resolve through DefaultPathContextSourceRef.
 	LegacyDefaultPath bool
 
 	// If true, disable find-up when resolving the module source.
@@ -493,6 +493,9 @@ func workspaceConfigPendingModules(
 				mod.Ref = resolveLocalRef(ws, resolved)
 			}
 		}
+		if mod.LegacyDefaultPath {
+			mod.DefaultPathContextSourceRef = defaultPathContextRefForWorkspace(ws, resolveLocalRef)
+		}
 
 		pending = append(pending, mod)
 	}
@@ -525,10 +528,21 @@ func pendingLegacyModule(
 		ArgCustomizations: argCustomizations,
 		legacyFieldPolicy: legacyWorkspaceFieldPolicyRejectAsWorkspace,
 	}
+	mod.DefaultPathContextSourceRef = defaultPathContextRefForWorkspace(ws, resolveLocalRef)
 	if kind == core.ModuleSourceKindLocal {
 		mod.RefPin = ""
 	}
 	return mod
+}
+
+func defaultPathContextRefForWorkspace(
+	ws *workspace.Workspace,
+	resolveLocalRef func(ws *workspace.Workspace, relPath string) string,
+) string {
+	if ws == nil || resolveLocalRef == nil {
+		return ""
+	}
+	return resolveLocalRef(ws, ".")
 }
 
 func legacyCallerModuleDir(isLocal bool, moduleDir string) string {
