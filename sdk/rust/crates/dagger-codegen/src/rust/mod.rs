@@ -16,6 +16,7 @@ use self::format::FormatTypeFunc;
 use self::templates::enum_tmpl::render_enum;
 use self::templates::heading_tmpl::render_heading;
 use self::templates::input_tmpl::render_input;
+use self::templates::interface_tmpl::{render_interface, render_interface_impl_for_object};
 use self::templates::object_tmpl::render_object;
 use self::templates::scalar_tmpl::render_scalar;
 
@@ -52,15 +53,52 @@ impl Generator for RustGenerator {
                     let render = render.clone();
                     let common_funcs = common_funcs.clone();
 
-                    move |t| {
+                    move |t, interface_types| {
                         tracing::debug!("generating object");
-                        let rendered_scalar = render_object(&common_funcs, t)?;
+                        let rendered_object = render_object(&common_funcs, t)?;
 
                         let mut render = render.lock().unwrap();
-
-                        render.append(rendered_scalar);
+                        render.append(rendered_object);
                         render.push();
+
+                        // Generate `impl Interface for Object` for each
+                        // interface this object declares.
+                        if let Some(ifaces) = &t.interfaces {
+                            for iface_ref in ifaces {
+                                if let Some(iface_name) = &iface_ref.type_ref.name {
+                                    if let Some(iface_type) = interface_types
+                                        .iter()
+                                        .find(|it| it.name.as_deref() == Some(iface_name))
+                                    {
+                                        let impl_tokens = render_interface_impl_for_object(
+                                            &common_funcs,
+                                            t,
+                                            iface_type,
+                                        );
+                                        render.append(impl_tokens);
+                                        render.push();
+                                    }
+                                }
+                            }
+                        }
+
                         tracing::debug!("generated object");
+
+                        Ok(())
+                    }
+                }),
+                visit_interface: Arc::new({
+                    let render = render.clone();
+                    let common_funcs = common_funcs.clone();
+
+                    move |t| {
+                        tracing::debug!("generating interface");
+                        let rendered = render_interface(&common_funcs, t)?;
+
+                        let mut render = render.lock().unwrap();
+                        render.append(rendered);
+                        render.push();
+                        tracing::debug!("generated interface");
 
                         Ok(())
                     }

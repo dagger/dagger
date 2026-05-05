@@ -29,6 +29,14 @@ func (r *{{ .Name | FormatName }}) WithGraphQLQuery(q *querybuilder.Selection) *
 	}
 }
 
+{{- if and (LegacyGoSDKCompat) (HasIDField .) }}
+type {{ .Name | FormatName }}ID = ID
+
+func (r *Query) Load{{ .Name | FormatName }}FromID(id {{ .Name | FormatName }}ID) *{{ .Name | FormatName }} {
+	return &{{ .Name | FormatName }}{query: selectNode(r.query, ID(id), "{{ .Name }}")}
+}
+{{- end }}
+
 {{ range $field := .Fields }}
 {{- if HasOptionals $field.Args }}
 // {{ $field | FieldOptionsStructName }} contains options for {{ $.Name | FormatName }}.{{ $field.Name | FormatName }}
@@ -49,7 +57,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- if and (eq $arg.Name "id") (eq $.Name "Query") }}
 	{{- $formattedTypeRef = $arg.TypeRef | FormatOutputType }}
 	{{- else }}
-	{{- $formattedTypeRef = $arg.TypeRef | FormatInputType }}
+	{{- $formattedTypeRef = FormatArgType $arg }}
 	{{- end }}
 	{{ $arg.Name | FormatName }} {{ $formattedTypeRef }}
 	{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
@@ -117,13 +125,40 @@ type {{ $field | FieldOptionsStructName }} struct {
 		return nil, err
 	}
 	return &{{ $field.ParentObject.Name }} {
-		query: q.Root().Select("load{{ $field.ParentObject.Name }}FromID").Arg("id", id),
+		query: selectNode(q.Root(), id, "{{ $field.ParentObject.Name }}"),
 	}, nil
+
+	{{- else if IsInterfaceRef $field.TypeRef }}
+	{{- /* Interface return: wrap in the interface's query-builder struct */ -}}
+	return &{{ $typeName | InterfaceClientName }}{
+		query: q,
+	}
 
 	{{- else if $field.TypeRef.IsObject }}
 	return &{{ $typeName }} {
 		query: q,
 	}
+
+	{{- else if and $field.TypeRef.IsList (IsListOfInterface $field.TypeRef) }}
+	{{- /* List of interface: query IDs and wrap each in interface client */ -}}
+	{{$eleType := $field.TypeRef | InnerType}}
+	q = q.Select("id")
+	type {{ $field.Name | ToLowerCase }}IDResult struct {
+		Id string
+	}
+	var idResults []{{ $field.Name | ToLowerCase }}IDResult
+	q = q.Bind(&idResults)
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var results {{ $field.TypeRef | InterfaceListResultType }}
+	for _, idResult := range idResults {
+		results = append(results, &{{ $eleType | ObjectName | InterfaceClientName }}{
+			query: selectNode(q.Root(), idResult.Id, "{{ $eleType | ObjectName }}"),
+		})
+	}
+	return results, nil
 
 	{{- else if or $field.TypeRef.IsScalar $field.TypeRef.IsList }}
 		{{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
@@ -142,7 +177,7 @@ type {{ $field | FieldOptionsStructName }} struct {
         for i := range fields {
             val := {{ $field.TypeRef | FormatOutputType | FormatArrayToSingleType }}{{"{"}}{{ $field | GetArrayField | FormatArrayField }}{{"}"}}
             {{- if $eleType | IsIDableObject }}
-              val.query = q.Root().Select("load{{$eleType | ObjectName}}FromID").Arg("id", fields[i].Id)
+              val.query = selectNode(q.Root(), fields[i].Id, "{{$eleType | ObjectName}}")
             {{- end }}
             out = append(out, val)
         }
@@ -180,7 +215,7 @@ func (r *{{ $.Name | FormatName }}) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *{{ $.Name | FormatName }}) XXX_GraphQLIDType() string {
-	return "{{ $field.TypeRef | FormatOutputType }}"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -207,10 +242,22 @@ func (r *{{ $.Name | FormatName }}) UnmarshalJSON(bs []byte) error {
   if err != nil {
     return err
   }
-  *r = *dag.Load{{ $.Name | FormatName }}FromID({{$.Name | FormatName}}ID(id))
+  *r = {{ $.Name | FormatName }}{query: selectNode(dag.query, id, "{{ $.Name }}")}
   return nil
 }
 {{- end }}
 
 {{ end }}
+{{ end }}
+
+{{- /* Generate AsFoo() client-side adapters for each implemented interface */ -}}
+{{ range $iface := . | ImplementedInterfaces }}
+// As{{ $iface.Name | FormatName }} returns this {{ $.Name | FormatName }} as a {{ $iface.Name | FormatName }}.
+// This is a local type conversion — no GraphQL call.
+func (r *{{ $.Name | FormatName }}) As{{ $iface.Name | FormatName }}() {{ $iface.Name | InterfaceReturnType }} {
+	return &{{ $iface.Name | InterfaceClientName }}{
+		query: r.query,
+	}
+}
 {{ end -}}
+

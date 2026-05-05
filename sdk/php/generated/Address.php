@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.
  */
-class Address extends Client\AbstractObject implements Client\IdAble
+class Address extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Load a container from the address.
@@ -26,8 +26,8 @@ class Address extends Client\AbstractObject implements Client\IdAble
      * Load a directory from the address.
      */
     public function directory(
-        ?array $exclude = null,
-        ?array $include = null,
+        ?array $exclude = [],
+        ?array $include = [],
         ?bool $gitignore = false,
         ?bool $noCache = false,
     ): Directory {
@@ -51,8 +51,8 @@ class Address extends Client\AbstractObject implements Client\IdAble
      * Load a file from the address.
      */
     public function file(
-        ?array $exclude = null,
-        ?array $include = null,
+        ?array $exclude = [],
+        ?array $include = [],
         ?bool $gitignore = false,
         ?bool $noCache = false,
     ): File {
@@ -93,10 +93,10 @@ class Address extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Address.
      */
-    public function id(): AddressId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\AddressId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

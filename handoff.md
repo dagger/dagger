@@ -1,0 +1,292 @@
+# Handoff: unified ID + `node(id:)` migration
+
+DESIGN DOC: https://gist.github.com/vito/158619f941f529244dda00b0d45a8a1c
+
+## Current state
+
+The `interfaces` branch has been merged with `upstream/main` and the
+unified-ID/interface work is still the active direction:
+
+- per-type `loadFooFromID(id:)` schema fields stay removed;
+- per-type `FooID` SDK/schema scalars stay removed in favor of the
+  unified `ID` scalar;
+- object re-entry goes through Global Object Identification via
+  `node(id:)` plus an inline fragment;
+- object/interface ID arguments are represented as `ID` with
+  `@expectedType`, so clients and the CLI can recover the intended
+  object/interface type;
+- module interfaces are first-class dagql/GraphQL interfaces, not
+  wrapper objects or `asFoo`/`loadFooFromID` shims.
+
+The SDK clients and generated code have been regenerated after the
+merge. Rust and TypeScript have also had follow-up fixes applied. Treat
+the current generated files as the post-merge baseline rather than as
+pending regeneration work.
+
+Go, Python, and TypeScript SDK module codegen now have backwards-compatibility
+facades for module sources declaring an engine version before the
+unified-ID/interface cutover (`v0.21.0`). These facades do not restore legacy
+schema globally; they render old source symbols over the new graph:
+
+- per-object aliases/classes/types such as `type ContainerID = ID` in Go,
+  `class ContainerID(Scalar)` in Python, and
+  `export type ContainerID = string & { __ContainerID: never }` in TypeScript;
+- `LoadFooFromID` / `load_foo_from_id` / `loadFooFromID` helpers implemented
+  with `node(id:)` plus an inline fragment;
+- legacy concrete query-builder structs/classes for GraphQL interfaces;
+- per-interface ID aliases/classes/types such as `DepCustomIfaceID = ID`,
+  `DepCustomIfaceID(Scalar)`, or `DepCustomIfaceID` string brands;
+- Go module-local interface aliases/helpers such as `CustomIfaceID = dagger.ID`
+  and `LoadCustomIfaceFromID`.
+
+The generators select this mode from the effective introspection schema
+version. Python reads `__schemaVersion` directly from the introspection JSON;
+Go and TypeScript module generation override that version from the module
+source's declared `engineVersion` because their generators run through SDK
+module wrappers. This keeps the compatibility decision tied to the same
+version/view model as GraphQL introspection rather than teaching SDK generators
+to parse `dagger.json` themselves.
+
+## Upstream merge notes
+
+`upstream/main` was merged into `interfaces` in `5d4f187a4`. The detailed
+semantic conflict notes are in `CONFLICT_RESOLUTION.md`; the parts that
+matter for continuing work are:
+
+- upstream's dagql cache/result-call model was ported forward:
+  attached `dagql.ObjectResult[...]` metadata, `ID() (*call.ID, error)`,
+  result-call provenance, server forking, and operation-lease paths are
+  now part of this branch;
+- the interface/ID architecture from `interfaces` was preserved:
+  no `InterfaceAnnotatedValue`, no interface wrapper fallback, no
+  `DynamicID`, no generated `asFoo` fields, and no automatic
+  `loadFooFromID` registration;
+- `node(id:)` is the object loader/meta field, including telemetry;
+- module/type metadata should be carried as attached results and loaded
+  through the current dagql server/cache when needed.
+
+Some files referenced by older notes no longer exist after the merge.
+Most importantly, `core/typedef_from_schema.go` was removed. Unified ID
+argument reconstruction now lives in:
+
+- `core/schema/coremod.go` — shared introspection `TypeRef` → `TypeDef`
+  conversion, including `@expectedType` handling;
+- `core/schema/module.go` — live `Query` typedef reconstruction for the
+  CLI/workspace entrypoint path.
+
+The "remaining conflicts" section in `CONFLICT_RESOLUTION.md` describes
+the stop point when that file was written; later commits resolved those
+conflicts and regenerated the SDK outputs.
+
+## Recently fixed
+
+### Go SDK compatibility for old module source
+
+Committed as:
+
+```text
+8669190d2 fix(go sdk): support legacy ID helpers
+```
+
+Pre-cutover Go module source that directly references old generated symbols
+now compiles after regeneration against the new engine. Examples covered by
+the fix include:
+
+```go
+id, err := dag.Container().From("alpine").ID(ctx)
+return dag.LoadContainerFromID(dagger.ContainerID(id)).
+    WithExec([]string{"echo", "ok"}).
+    Stdout(ctx)
+```
+
+and dependency/interface patterns like:
+
+```go
+id, err := iface.(interface {
+    ID(context.Context) (CustomIfaceID, error)
+}).ID(ctx)
+loadedIface := dag.LoadDepCustomIfaceFromID(dagger.DepCustomIfaceID(id))
+```
+
+Implementation notes:
+
+- `core/sdk/go_sdk.go` passes `src.Self().EngineVersion` into
+  `codegen generate-module` and `generate-typedefs`;
+- `cmd/codegen` uses `ModuleGeneratorConfig.EngineVersion` as the effective
+  compatibility version when present;
+- Go templates use a `LegacyGoSDKCompat` predicate with cutover
+  `v0.21.0-0`, so `v0.20.x` modules get the facade while `v0.21.0-dev`
+  builds get the modern surface;
+- `Node` intentionally stays on the modern Go interface surface even in
+  legacy mode because generic `dagger.Load`/`dagger.Ref` use it as their
+  loadable constraint.
+
+### Python SDK compatibility for old module source
+
+Committed as:
+
+```text
+5f37bd096 fix(python sdk): support legacy ID helpers
+```
+
+Python codegen now reads the raw introspection `__schemaVersion` and gates a
+legacy facade on versions before `v0.21.0`. The facade restores the old Python
+source names without restoring old GraphQL fields:
+
+```python
+id_ = await dag.container().from_("alpine").id()
+return await dag.load_container_from_id(dagger.ContainerID(id_)).stdout()
+```
+
+The generated `load_foo_from_id` methods call `Context.select_id`, which builds
+`node(id:) { ... on Foo { ... } }`, and legacy `id()` methods return generated
+`FooID(Scalar)` classes. Interface IDs and interface load helpers are generated
+as well, returning the concrete hidden `_FooClient` query builder while keeping
+the public Protocol type annotation.
+
+`codegen.ast.insert_stubs` now also preserves directive AST nodes for object and
+interface fields, field arguments, and input fields. This matters because
+`graphql.build_client_schema` drops Dagger's custom directive applications, and
+Python needs `@expectedType` both for modern object-typed ID arguments and for
+legacy `FooID` signatures.
+
+### TypeScript SDK compatibility for old module source
+
+TypeScript codegen now follows the same regenerated-old-module policy. For
+pre-`v0.21.0` module sources it emits legacy string-branded ID aliases such as
+`ContainerID`, keeps `id()` methods typed as `Promise<ContainerID>`, and adds
+`dag.loadContainerFromID(id)` helpers implemented with `Context.selectNode(id,
+"Container")` instead of removed GraphQL root fields. GraphQL `Node` remains on
+the modern `ID` surface, so no legacy `NodeID` is generated.
+
+The TypeScript runtime now passes the module source's declared `engineVersion`
+into `codegen generate-module --module-engine-version`, so the generator's
+compatibility decision uses the same effective version/view as the module
+schema. `cmd/codegen` also honors `ClientGeneratorConfig.EngineVersion` for
+client generation from a module source. The TypeScript interface fixture root
+module was moved to `v0.21.0` so it keeps testing the modern Go caller surface
+while its TypeScript dependency modules can remain pre-cutover fixtures.
+
+The workspace split now passes.
+
+The original failure was a Dang runtime path still synthesizing
+`loadWorkspaceFromID`/`load<Type>FromID`. `core/sdk/dang_helpers.go` now
+converts object ID strings into a typed `GraphQLValue` backed by:
+
+```graphql
+node(id: $id) { ... on ExpectedType { ... } }
+```
+
+instead of constructing removed loader fields.
+
+The follow-on `TestWorkspaceArgNotExposedAsCLIFlag` failure was caused by
+live `Query` typedef reconstruction losing `@expectedType` information.
+That made an auto-injected `Workspace` constructor argument look like a
+plain scalar `ID`/string flag, so `dagger call magic --help` exposed
+`--source`. `currentQueryTypeDef` now uses the same `resolveArgTypeDef`
+path as the rest of core schema introspection, and `resolveIDScalar`:
+
+- recognizes the bare unified ID scalar even when canonicalized as `Id`;
+- rebuilds object/interface typedefs from `@expectedType`;
+- preserves optionality;
+- recurses through list wrappers like `[ID!]!`.
+
+Additional stale active call sites were moved to the new API:
+
+- `cmd/dagger/checks.graphql` uses `node(id:)` for `CheckGroup`;
+- `cmd/dagger/up.graphql` uses `node(id:)` for `UpGroup`;
+- `dagql/idtui/patch.go` uses aliased `node(id:)` for `Changeset`;
+- `sdk/go/client_test.go` uses `Ref[T](client, id)` instead of generated
+  `Load*FromID` helpers.
+
+These fixes were committed as:
+
+```text
+8d8c8271a fix: load unified ID refs via node
+```
+
+## Validation already run
+
+Passing locally after the recent fixes:
+
+```bash
+go test -run '^$' ./core/schema ./core/sdk ./cmd/dagger ./dagql/idtui ./core/integration
+(cd sdk/go && go test -run '^$' ./...)
+go test ./core/schema
+go test ./cmd/codegen/... ./core/sdk
+(cd sdk/python && uv run ruff check codegen/src/codegen/cli.py codegen/src/codegen/generator.py codegen/src/codegen/ast.py tests/codegen/test_generator.py)
+(cd sdk/python && uv run pytest tests/codegen/test_generator.py -q)
+./hack/with-dev go test -v -count=1 -run 'TestLegacy/TestLegacyGoSDKLoadFromIDCompat' ./core/integration/
+./hack/with-dev go test -v -count=1 -run 'TestLegacy/TestLegacyPythonSDKLoadFromIDCompat' ./core/integration/
+./hack/with-dev go test -v -count=1 -run 'TestInterface/TestIfaceBasic/go' ./core/integration/
+./hack/with-dev go test -v -count=1 -run 'TestInterface/TestIfaceBasic/python' ./core/integration/
+dagger call --progress=dots engine-dev test --run 'TestLegacy/TestLegacyTypeScriptSDKLoadFromIDCompat' --pkg ./core/integration/
+dagger call --progress=dots engine-dev test --run 'TestInterface/TestIfaceBasic/typescript' --pkg ./core/integration/
+./dagger --progress=dots generate typescript-sdk:client-library -y
+dagger call --progress=dots engine-dev test --run 'TestWorkspace/TestWorkspaceArgNotExposedAsCLIFlag' --pkg ./core/integration/
+dagger --progress=dots check test-split:test-workspaces
+git diff --check
+```
+
+## Remaining work / watch points
+
+### SDK backwards-compatibility follow-up
+
+The regenerated pre-cutover module compatibility model is implemented for Go,
+Python, and TypeScript. Keep using this policy for any remaining SDK work:
+leave the schema hard-cut over to unified `ID`, `node(id:)`, and real GraphQL
+interfaces, and generate legacy SDK source symbols as a facade gated on the
+effective introspection/view version (`< v0.21.0`). Legacy load helpers should
+select `node(id:)` with the expected type, not query removed root fields.
+
+Remaining SDK follow-up:
+
+- PHP: preserve/read introspection `__schemaVersion`, then decide whether to
+  add the same legacy facade for regenerated pre-cutover modules.
+- Java: prefer/read introspection `__schemaVersion` when present, then decide
+  whether to add the same legacy facade for regenerated pre-cutover modules.
+- Stale checked-in generated clients are still a policy decision. If they must
+  keep working without regeneration, restore legacy schema fields/scalars only
+  under a pre-cutover view, not globally.
+
+### Active `FromID` straggler handling
+
+A tracked code grep may still find old-version modules such as:
+
+```text
+modules/evaluator/main.go: dag.LoadEvalWorkspaceEvalFromID(dagger.EvalWorkspaceEvalID(id))
+```
+
+This pattern is now intentionally supported for regenerated Go modules that
+declare `engineVersion: v0.20.6`. Do not mechanically rewrite such source to
+`dagger.ID`/`dagger.Ref` unless the module is being moved to the modern
+`v0.21.0` SDK surface. If it fails, first check whether its ignored generated
+SDK under `internal/dagger` is stale and needs regeneration.
+
+### Broad grep noise
+
+Broad `FromID` searches also find historical docs, SDK codegen tests, and
+old-version/generated or untracked module outputs. Do not treat every hit
+as an immediate blocker. Prioritize active runtime/schema paths and
+tracked code that builds against the current regenerated SDKs.
+
+Useful focused grep for active tracked code:
+
+```bash
+git ls-files -z '*.go' '*.graphql' '*.dang' |
+  xargs -0 rg -n '\bLoad[A-Za-z0-9]*FromID\s*\(|\bload[A-Za-z0-9]*FromID\b|[A-Z][A-Za-z0-9]*ID!|\bdagger\.[A-Z][A-Za-z0-9]*ID\b'
+```
+
+### If more CLI/type issues appear
+
+Look first at:
+
+- `core/schema/coremod.go` for introspection type conversion and unified
+  ID `@expectedType` handling;
+- `core/schema/module.go` for live `Query` typedef construction;
+- `cmd/dagger/flags.go` and `cmd/dagger/functions.go` for CLI flag
+  creation and selection logic.
+
+The expected invariant is: GraphQL exposes `ID` plus `@expectedType`,
+while TypeDefs used by module/CLI ergonomics recover the richer
+object/interface type before deciding how to parse flags or values.

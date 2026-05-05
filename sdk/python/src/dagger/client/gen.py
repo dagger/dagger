@@ -3,6 +3,7 @@
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Protocol, runtime_checkable
 
 from typing_extensions import Self
 
@@ -11,248 +12,8 @@ from dagger.client._guards import typecheck
 from dagger.client.base import Enum, Input, Root, Scalar, Type
 
 
-class AddressID(Scalar):
-    """The `AddressID` scalar type represents an identifier for an object
-    of type Address."""
-
-
-class BindingID(Scalar):
-    """The `BindingID` scalar type represents an identifier for an object
-    of type Binding."""
-
-
-class CacheVolumeID(Scalar):
-    """The `CacheVolumeID` scalar type represents an identifier for an
-    object of type CacheVolume."""
-
-
-class ChangesetID(Scalar):
-    """The `ChangesetID` scalar type represents an identifier for an
-    object of type Changeset."""
-
-
-class CheckGroupID(Scalar):
-    """The `CheckGroupID` scalar type represents an identifier for an
-    object of type CheckGroup."""
-
-
-class CheckID(Scalar):
-    """The `CheckID` scalar type represents an identifier for an object of
-    type Check."""
-
-
-class ClientFilesyncMirrorID(Scalar):
-    """The `ClientFilesyncMirrorID` scalar type represents an identifier
-    for an object of type ClientFilesyncMirror."""
-
-
-class CloudID(Scalar):
-    """The `CloudID` scalar type represents an identifier for an object of
-    type Cloud."""
-
-
-class ContainerID(Scalar):
-    """The `ContainerID` scalar type represents an identifier for an
-    object of type Container."""
-
-
-class CurrentModuleID(Scalar):
-    """The `CurrentModuleID` scalar type represents an identifier for an
-    object of type CurrentModule."""
-
-
-class DiffStatID(Scalar):
-    """The `DiffStatID` scalar type represents an identifier for an object
-    of type DiffStat."""
-
-
-class DirectoryID(Scalar):
-    """The `DirectoryID` scalar type represents an identifier for an
-    object of type Directory."""
-
-
-class EngineCacheEntryID(Scalar):
-    """The `EngineCacheEntryID` scalar type represents an identifier for
-    an object of type EngineCacheEntry."""
-
-
-class EngineCacheEntrySetID(Scalar):
-    """The `EngineCacheEntrySetID` scalar type represents an identifier
-    for an object of type EngineCacheEntrySet."""
-
-
-class EngineCacheID(Scalar):
-    """The `EngineCacheID` scalar type represents an identifier for an
-    object of type EngineCache."""
-
-
-class EngineID(Scalar):
-    """The `EngineID` scalar type represents an identifier for an object
-    of type Engine."""
-
-
-class EnumTypeDefID(Scalar):
-    """The `EnumTypeDefID` scalar type represents an identifier for an
-    object of type EnumTypeDef."""
-
-
-class EnumValueTypeDefID(Scalar):
-    """The `EnumValueTypeDefID` scalar type represents an identifier for
-    an object of type EnumValueTypeDef."""
-
-
-class EnvFileID(Scalar):
-    """The `EnvFileID` scalar type represents an identifier for an object
-    of type EnvFile."""
-
-
-class EnvID(Scalar):
-    """The `EnvID` scalar type represents an identifier for an object of
-    type Env."""
-
-
-class EnvVariableID(Scalar):
-    """The `EnvVariableID` scalar type represents an identifier for an
-    object of type EnvVariable."""
-
-
-class ErrorID(Scalar):
-    """The `ErrorID` scalar type represents an identifier for an object of
-    type Error."""
-
-
-class ErrorValueID(Scalar):
-    """The `ErrorValueID` scalar type represents an identifier for an
-    object of type ErrorValue."""
-
-
-class FieldTypeDefID(Scalar):
-    """The `FieldTypeDefID` scalar type represents an identifier for an
-    object of type FieldTypeDef."""
-
-
-class FileID(Scalar):
-    """The `FileID` scalar type represents an identifier for an object of
-    type File."""
-
-
-class FunctionArgID(Scalar):
-    """The `FunctionArgID` scalar type represents an identifier for an
-    object of type FunctionArg."""
-
-
-class FunctionCallArgValueID(Scalar):
-    """The `FunctionCallArgValueID` scalar type represents an identifier
-    for an object of type FunctionCallArgValue."""
-
-
-class FunctionCallID(Scalar):
-    """The `FunctionCallID` scalar type represents an identifier for an
-    object of type FunctionCall."""
-
-
-class FunctionID(Scalar):
-    """The `FunctionID` scalar type represents an identifier for an object
-    of type Function."""
-
-
-class GeneratedCodeID(Scalar):
-    """The `GeneratedCodeID` scalar type represents an identifier for an
-    object of type GeneratedCode."""
-
-
-class GeneratorGroupID(Scalar):
-    """The `GeneratorGroupID` scalar type represents an identifier for an
-    object of type GeneratorGroup."""
-
-
-class GeneratorID(Scalar):
-    """The `GeneratorID` scalar type represents an identifier for an
-    object of type Generator."""
-
-
-class GitRefID(Scalar):
-    """The `GitRefID` scalar type represents an identifier for an object
-    of type GitRef."""
-
-
-class GitRepositoryID(Scalar):
-    """The `GitRepositoryID` scalar type represents an identifier for an
-    object of type GitRepository."""
-
-
-class HTTPStateID(Scalar):
-    """The `HTTPStateID` scalar type represents an identifier for an
-    object of type HTTPState."""
-
-
-class HealthcheckConfigID(Scalar):
-    """The `HealthcheckConfigID` scalar type represents an identifier for
-    an object of type HealthcheckConfig."""
-
-
-class HostID(Scalar):
-    """The `HostID` scalar type represents an identifier for an object of
-    type Host."""
-
-
-class InputTypeDefID(Scalar):
-    """The `InputTypeDefID` scalar type represents an identifier for an
-    object of type InputTypeDef."""
-
-
-class InterfaceTypeDefID(Scalar):
-    """The `InterfaceTypeDefID` scalar type represents an identifier for
-    an object of type InterfaceTypeDef."""
-
-
 class JSON(Scalar):
     """An arbitrary JSON-encoded value."""
-
-
-class JSONValueID(Scalar):
-    """The `JSONValueID` scalar type represents an identifier for an
-    object of type JSONValue."""
-
-
-class LLMID(Scalar):
-    """The `LLMID` scalar type represents an identifier for an object of
-    type LLM."""
-
-
-class LLMTokenUsageID(Scalar):
-    """The `LLMTokenUsageID` scalar type represents an identifier for an
-    object of type LLMTokenUsage."""
-
-
-class LabelID(Scalar):
-    """The `LabelID` scalar type represents an identifier for an object of
-    type Label."""
-
-
-class ListTypeDefID(Scalar):
-    """The `ListTypeDefID` scalar type represents an identifier for an
-    object of type ListTypeDef."""
-
-
-class ModuleConfigClientID(Scalar):
-    """The `ModuleConfigClientID` scalar type represents an identifier for
-    an object of type ModuleConfigClient."""
-
-
-class ModuleID(Scalar):
-    """The `ModuleID` scalar type represents an identifier for an object
-    of type Module."""
-
-
-class ModuleSourceID(Scalar):
-    """The `ModuleSourceID` scalar type represents an identifier for an
-    object of type ModuleSource."""
-
-
-class ObjectTypeDefID(Scalar):
-    """The `ObjectTypeDefID` scalar type represents an identifier for an
-    object of type ObjectTypeDef."""
 
 
 class Platform(Scalar):
@@ -261,94 +22,9 @@ class Platform(Scalar):
     "windows/amd64", "linux/arm64")."""
 
 
-class PortID(Scalar):
-    """The `PortID` scalar type represents an identifier for an object of
-    type Port."""
-
-
-class QueryID(Scalar):
-    """The `QueryID` scalar type represents an identifier for an object of
-    type Query."""
-
-
-class RemoteGitMirrorID(Scalar):
-    """The `RemoteGitMirrorID` scalar type represents an identifier for an
-    object of type RemoteGitMirror."""
-
-
-class SDKConfigID(Scalar):
-    """The `SDKConfigID` scalar type represents an identifier for an
-    object of type SDKConfig."""
-
-
-class ScalarTypeDefID(Scalar):
-    """The `ScalarTypeDefID` scalar type represents an identifier for an
-    object of type ScalarTypeDef."""
-
-
-class SearchResultID(Scalar):
-    """The `SearchResultID` scalar type represents an identifier for an
-    object of type SearchResult."""
-
-
-class SearchSubmatchID(Scalar):
-    """The `SearchSubmatchID` scalar type represents an identifier for an
-    object of type SearchSubmatch."""
-
-
-class SecretID(Scalar):
-    """The `SecretID` scalar type represents an identifier for an object
-    of type Secret."""
-
-
-class ServiceID(Scalar):
-    """The `ServiceID` scalar type represents an identifier for an object
-    of type Service."""
-
-
-class SocketID(Scalar):
-    """The `SocketID` scalar type represents an identifier for an object
-    of type Socket."""
-
-
-class SourceMapID(Scalar):
-    """The `SourceMapID` scalar type represents an identifier for an
-    object of type SourceMap."""
-
-
-class StatID(Scalar):
-    """The `StatID` scalar type represents an identifier for an object of
-    type Stat."""
-
-
-class TerminalID(Scalar):
-    """The `TerminalID` scalar type represents an identifier for an object
-    of type Terminal."""
-
-
-class TypeDefID(Scalar):
-    """The `TypeDefID` scalar type represents an identifier for an object
-    of type TypeDef."""
-
-
-class UpGroupID(Scalar):
-    """The `UpGroupID` scalar type represents an identifier for an object
-    of type UpGroup."""
-
-
-class UpID(Scalar):
-    """The `UpID` scalar type represents an identifier for an object of
-    type Up."""
-
-
 class Void(Scalar):
     """The absence of a value.  A Null Void is used as a placeholder for
     resolvers that do not return anything."""
-
-
-class WorkspaceID(Scalar):
-    """The `WorkspaceID` scalar type represents an identifier for an
-    object of type Workspace."""
 
 
 class CacheSharingMode(Enum):
@@ -651,6 +327,177 @@ class PortForward(Input):
     """Transport layer protocol to use for traffic."""
 
 
+@runtime_checkable
+class Exportable(Protocol):
+    """An object that can be exported to the host.  Calling export writes
+    the object to a path on the host filesystem and returns the path that
+    was written."""
+
+    async def export(self, path: str) -> str: ...
+
+
+@typecheck
+class _ExportableClient(Type):
+    """Concrete client for Exportable interface."""
+
+    @classmethod
+    def _graphql_name(cls) -> str:
+        return "Exportable"
+
+    async def export(self, path: str) -> str:
+        """Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("export", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> str:
+        """Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+
+@runtime_checkable
+class Node(Protocol):
+    """An object with a globally unique ID."""
+
+
+@typecheck
+class _NodeClient(Type):
+    """Concrete client for Node interface."""
+
+    @classmethod
+    def _graphql_name(cls) -> str:
+        return "Node"
+
+    async def id(self) -> str:
+        """Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+
+@runtime_checkable
+class Syncer(Protocol):
+    """An object that can be force-evaluated.  Calling sync ensures that
+    the object's entire dependency DAG has been evaluated, returning the
+    object's ID once complete."""
+
+    async def sync(self) -> str: ...
+
+
+@typecheck
+class _SyncerClient(Type):
+    """Concrete client for Syncer interface."""
+
+    @classmethod
+    def _graphql_name(cls) -> str:
+        return "Syncer"
+
+    async def id(self) -> str:
+        """Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(str)
+
+    async def sync(self) -> str:
+        """Returns
+        -------
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sync", _args)
+        return await _ctx.execute(str)
+
+
 @typecheck
 class Address(Type):
     """A standardized address to load containers, directories, secrets,
@@ -711,7 +558,7 @@ class Address(Type):
         _ctx = self._select("gitRepository", _args)
         return GitRepository(_ctx)
 
-    async def id(self) -> AddressID:
+    async def id(self) -> str:
         """A unique identifier for this Address.
 
         Note
@@ -720,9 +567,13 @@ class Address(Type):
 
         Returns
         -------
-        AddressID
-            The `AddressID` scalar type represents an identifier for an object
-            of type Address.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -733,7 +584,7 @@ class Address(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(AddressID)
+        return await _ctx.execute(str)
 
     def secret(self) -> "Secret":
         """Load a secret from the address."""
@@ -999,7 +850,7 @@ class Binding(Type):
         _ctx = self._select("digest", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> BindingID:
+    async def id(self) -> str:
         """A unique identifier for this Binding.
 
         Note
@@ -1008,9 +859,13 @@ class Binding(Type):
 
         Returns
         -------
-        BindingID
-            The `BindingID` scalar type represents an identifier for an object
-            of type Binding.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -1021,7 +876,7 @@ class Binding(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(BindingID)
+        return await _ctx.execute(str)
 
     async def is_null(self) -> bool:
         """Returns true if the binding is null
@@ -1089,7 +944,7 @@ class Binding(Type):
 class CacheVolume(Type):
     """A directory whose contents persist across runs."""
 
-    async def id(self) -> CacheVolumeID:
+    async def id(self) -> str:
         """A unique identifier for this CacheVolume.
 
         Note
@@ -1098,9 +953,13 @@ class CacheVolume(Type):
 
         Returns
         -------
-        CacheVolumeID
-            The `CacheVolumeID` scalar type represents an identifier for an
-            object of type CacheVolume.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -1111,7 +970,7 @@ class CacheVolume(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(CacheVolumeID)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -1194,7 +1053,7 @@ class Changeset(Type):
         _ctx = self._select("export", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> ChangesetID:
+    async def id(self) -> str:
         """A unique identifier for this Changeset.
 
         Note
@@ -1203,9 +1062,13 @@ class Changeset(Type):
 
         Returns
         -------
-        ChangesetID
-            The `ChangesetID` scalar type represents an identifier for an
-            object of type Changeset.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -1216,7 +1079,7 @@ class Changeset(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(ChangesetID)
+        return await _ctx.execute(str)
 
     async def is_empty(self) -> bool:
         """Returns true if the changeset is empty (i.e. there are no changes).
@@ -1305,7 +1168,7 @@ class Changeset(Type):
 
     def with_changeset(
         self,
-        changes: Self,
+        changes: Type,
         *,
         on_conflict: ChangesetMergeConflict | None = ChangesetMergeConflict.FAIL,
     ) -> Self:
@@ -1331,7 +1194,7 @@ class Changeset(Type):
 
     def with_changesets(
         self,
-        changes: list["Changeset"],
+        changes: list[Type],
         *,
         on_conflict: ChangesetsMergeConflict | None = ChangesetsMergeConflict.FAIL,
     ) -> Self:
@@ -1435,7 +1298,7 @@ class Check(Type):
         _ctx = self._select("error", _args)
         return Error(_ctx)
 
-    async def id(self) -> CheckID:
+    async def id(self) -> str:
         """A unique identifier for this Check.
 
         Note
@@ -1444,9 +1307,13 @@ class Check(Type):
 
         Returns
         -------
-        CheckID
-            The `CheckID` scalar type represents an identifier for an object
-            of type Check.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -1457,7 +1324,7 @@ class Check(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(CheckID)
+        return await _ctx.execute(str)
 
     async def name(self) -> str:
         """Return the fully qualified name of the check
@@ -1563,7 +1430,7 @@ class Check(Type):
 
 @typecheck
 class CheckGroup(Type):
-    async def id(self) -> CheckGroupID:
+    async def id(self) -> str:
         """A unique identifier for this CheckGroup.
 
         Note
@@ -1572,9 +1439,13 @@ class CheckGroup(Type):
 
         Returns
         -------
-        CheckGroupID
-            The `CheckGroupID` scalar type represents an identifier for an
-            object of type CheckGroup.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -1585,7 +1456,7 @@ class CheckGroup(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(CheckGroupID)
+        return await _ctx.execute(str)
 
     async def list_(self) -> list[Check]:
         """Return a list of individual checks and their details"""
@@ -1625,7 +1496,7 @@ class CheckGroup(Type):
 class ClientFilesyncMirror(Type):
     """An internal persistent filesync mirror."""
 
-    async def id(self) -> ClientFilesyncMirrorID:
+    async def id(self) -> str:
         """A unique identifier for this ClientFilesyncMirror.
 
         Note
@@ -1634,9 +1505,13 @@ class ClientFilesyncMirror(Type):
 
         Returns
         -------
-        ClientFilesyncMirrorID
-            The `ClientFilesyncMirrorID` scalar type represents an identifier
-            for an object of type ClientFilesyncMirror.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -1647,14 +1522,14 @@ class ClientFilesyncMirror(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(ClientFilesyncMirrorID)
+        return await _ctx.execute(str)
 
 
 @typecheck
 class Cloud(Type):
     """Dagger Cloud configuration and state"""
 
-    async def id(self) -> CloudID:
+    async def id(self) -> str:
         """A unique identifier for this Cloud.
 
         Note
@@ -1663,9 +1538,13 @@ class Cloud(Type):
 
         Returns
         -------
-        CloudID
-            The `CloudID` scalar type represents an identifier for an object
-            of type Cloud.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -1676,7 +1555,7 @@ class Cloud(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(CloudID)
+        return await _ctx.execute(str)
 
     async def trace_url(self) -> str:
         """The trace URL for the current session
@@ -1760,7 +1639,7 @@ class Container(Type):
     def as_tarball(
         self,
         *,
-        platform_variants: "list[Container] | None" = None,
+        platform_variants: list[Type] | None = None,
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
     ) -> "File":
@@ -2027,7 +1906,7 @@ class Container(Type):
         self,
         path: str,
         *,
-        platform_variants: "list[Container] | None" = None,
+        platform_variants: list[Type] | None = None,
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
         expand: bool | None = False,
@@ -2095,7 +1974,7 @@ class Container(Type):
         self,
         name: str,
         *,
-        platform_variants: "list[Container] | None" = None,
+        platform_variants: list[Type] | None = None,
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
     ) -> Void:
@@ -2200,7 +2079,7 @@ class Container(Type):
         _ctx = self._select("from", _args)
         return Container(_ctx)
 
-    async def id(self) -> ContainerID:
+    async def id(self) -> str:
         """A unique identifier for this Container.
 
         Note
@@ -2209,9 +2088,13 @@ class Container(Type):
 
         Returns
         -------
-        ContainerID
-            The `ContainerID` scalar type represents an identifier for an
-            object of type Container.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -2222,7 +2105,7 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(ContainerID)
+        return await _ctx.execute(str)
 
     async def image_ref(self) -> str:
         """The unique image reference which can only be retrieved immediately
@@ -2248,7 +2131,7 @@ class Container(Type):
 
     def import_(
         self,
-        source: "File",
+        source: Type,
         *,
         tag: str | None = "",
     ) -> Self:
@@ -2350,7 +2233,7 @@ class Container(Type):
         self,
         address: str,
         *,
-        platform_variants: "list[Container] | None" = None,
+        platform_variants: list[Type] | None = None,
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
     ) -> str:
@@ -2706,7 +2589,7 @@ class Container(Type):
     def with_directory(
         self,
         path: str,
-        source: "Directory",
+        source: Type,
         *,
         exclude: list[str] | None = None,
         include: list[str] | None = None,
@@ -2829,7 +2712,7 @@ class Container(Type):
         _ctx = self._select("withEntrypoint", _args)
         return Container(_ctx)
 
-    def with_env_file_variables(self, source: "EnvFile") -> Self:
+    def with_env_file_variables(self, source: Type) -> Self:
         """Export environment variables from an env-file to the container.
 
         Parameters
@@ -3006,7 +2889,7 @@ class Container(Type):
     def with_file(
         self,
         path: str,
-        source: "File",
+        source: Type,
         *,
         permissions: int | None = None,
         owner: str | None = "",
@@ -3045,7 +2928,7 @@ class Container(Type):
     def with_files(
         self,
         path: str,
-        sources: list["File"],
+        sources: list[Type],
         *,
         permissions: int | None = None,
         owner: str | None = "",
@@ -3103,9 +2986,9 @@ class Container(Type):
     def with_mounted_cache(
         self,
         path: str,
-        cache: CacheVolume,
+        cache: Type,
         *,
-        source: "Directory | None" = None,
+        source: Type | None = None,
         sharing: CacheSharingMode | None = CacheSharingMode.SHARED,
         owner: str | None = "",
         expand: bool | None = False,
@@ -3150,7 +3033,7 @@ class Container(Type):
     def with_mounted_directory(
         self,
         path: str,
-        source: "Directory",
+        source: Type,
         *,
         owner: str | None = "",
         read_only: bool | None = False,
@@ -3189,7 +3072,7 @@ class Container(Type):
     def with_mounted_file(
         self,
         path: str,
-        source: "File",
+        source: Type,
         *,
         owner: str | None = "",
         expand: bool | None = False,
@@ -3224,7 +3107,7 @@ class Container(Type):
     def with_mounted_secret(
         self,
         path: str,
-        source: "Secret",
+        source: Type,
         *,
         owner: str | None = "",
         mode: int | None = 256,
@@ -3337,7 +3220,7 @@ class Container(Type):
         self,
         address: str,
         username: str,
-        secret: "Secret",
+        secret: Type,
     ) -> Self:
         """Attach credentials for future publishing to a registry. Use in
         combination with publish
@@ -3360,7 +3243,7 @@ class Container(Type):
         _ctx = self._select("withRegistryAuth", _args)
         return Container(_ctx)
 
-    def with_rootfs(self, directory: "Directory") -> Self:
+    def with_rootfs(self, directory: Type) -> Self:
         """Change the container's root filesystem. The previous root filesystem
         will be lost.
 
@@ -3375,7 +3258,7 @@ class Container(Type):
         _ctx = self._select("withRootfs", _args)
         return Container(_ctx)
 
-    def with_secret_variable(self, name: str, secret: "Secret") -> Self:
+    def with_secret_variable(self, name: str, secret: Type) -> Self:
         """Set a new environment variable, using a secret value
 
         Parameters
@@ -3392,7 +3275,7 @@ class Container(Type):
         _ctx = self._select("withSecretVariable", _args)
         return Container(_ctx)
 
-    def with_service_binding(self, alias: str, service: "Service") -> Self:
+    def with_service_binding(self, alias: str, service: Type) -> Self:
         """Establish a runtime dependency from a container to a network service.
 
         The service will be started automatically when needed and detached
@@ -3453,7 +3336,7 @@ class Container(Type):
     def with_unix_socket(
         self,
         path: str,
-        source: "Socket",
+        source: Type,
         *,
         owner: str | None = "",
         expand: bool | None = False,
@@ -3863,7 +3746,7 @@ class CurrentModule(Type):
         _ctx = self._select("generators", _args)
         return GeneratorGroup(_ctx)
 
-    async def id(self) -> CurrentModuleID:
+    async def id(self) -> str:
         """A unique identifier for this CurrentModule.
 
         Note
@@ -3872,9 +3755,13 @@ class CurrentModule(Type):
 
         Returns
         -------
-        CurrentModuleID
-            The `CurrentModuleID` scalar type represents an identifier for an
-            object of type CurrentModule.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -3885,7 +3772,7 @@ class CurrentModule(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(CurrentModuleID)
+        return await _ctx.execute(str)
 
     async def name(self) -> str:
         """The name of the module being executed in
@@ -3992,7 +3879,7 @@ class DiffStat(Type):
         _ctx = self._select("addedLines", _args)
         return await _ctx.execute(int)
 
-    async def id(self) -> DiffStatID:
+    async def id(self) -> str:
         """A unique identifier for this DiffStat.
 
         Note
@@ -4001,9 +3888,13 @@ class DiffStat(Type):
 
         Returns
         -------
-        DiffStatID
-            The `DiffStatID` scalar type represents an identifier for an
-            object of type DiffStat.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -4014,7 +3905,7 @@ class DiffStat(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(DiffStatID)
+        return await _ctx.execute(str)
 
     async def kind(self) -> DiffStatKind:
         """Type of change.
@@ -4151,7 +4042,7 @@ class Directory(Type):
         _ctx = self._select("asModuleSource", _args)
         return ModuleSource(_ctx)
 
-    def changes(self, from_: Self) -> Changeset:
+    def changes(self, from_: Type) -> Changeset:
         """Return the difference between this directory and another directory,
         typically an older snapshot.
 
@@ -4189,7 +4080,7 @@ class Directory(Type):
         _ctx = self._select("chown", _args)
         return Directory(_ctx)
 
-    def diff(self, other: Self) -> Self:
+    def diff(self, other: Type) -> Self:
         """Return the difference between this directory and an another directory.
         The difference is encoded as a directory.
 
@@ -4248,9 +4139,9 @@ class Directory(Type):
         platform: Platform | None = None,
         build_args: list[BuildArg] | None = None,
         target: str | None = "",
-        secrets: "list[Secret] | None" = None,
+        secrets: list[Type] | None = None,
         no_init: bool | None = False,
-        ssh: "Socket | None" = None,
+        ssh: Type | None = None,
     ) -> Container:
         """Use Dockerfile compatibility to build a container from this directory.
         Only use this function for Dockerfile compatibility. Otherwise use the
@@ -4505,7 +4396,7 @@ class Directory(Type):
         _ctx = self._select("glob", _args)
         return await _ctx.execute(list[str])
 
-    async def id(self) -> DirectoryID:
+    async def id(self) -> str:
         """A unique identifier for this Directory.
 
         Note
@@ -4514,9 +4405,13 @@ class Directory(Type):
 
         Returns
         -------
-        DirectoryID
-            The `DirectoryID` scalar type represents an identifier for an
-            object of type Directory.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -4527,7 +4422,7 @@ class Directory(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(DirectoryID)
+        return await _ctx.execute(str)
 
     async def name(self) -> str:
         """Returns the name of the directory.
@@ -4654,7 +4549,7 @@ class Directory(Type):
     def terminal(
         self,
         *,
-        container: Container | None = None,
+        container: Type | None = None,
         cmd: list[str] | None = None,
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
@@ -4689,7 +4584,7 @@ class Directory(Type):
         _ctx = self._select("terminal", _args)
         return Directory(_ctx)
 
-    def with_changes(self, changes: Changeset) -> Self:
+    def with_changes(self, changes: Type) -> Self:
         """Return a directory with changes from another directory applied to it.
 
         Parameters
@@ -4706,7 +4601,7 @@ class Directory(Type):
     def with_directory(
         self,
         path: str,
-        source: Self,
+        source: Type,
         *,
         exclude: list[str] | None = None,
         include: list[str] | None = None,
@@ -4769,7 +4664,7 @@ class Directory(Type):
     def with_file(
         self,
         path: str,
-        source: "File",
+        source: Type,
         *,
         permissions: int | None = None,
         owner: str | None = "",
@@ -4803,7 +4698,7 @@ class Directory(Type):
     def with_files(
         self,
         path: str,
-        sources: list["File"],
+        sources: list[Type],
         *,
         permissions: int | None = None,
     ) -> Self:
@@ -4896,7 +4791,7 @@ class Directory(Type):
         _ctx = self._select("withPatch", _args)
         return Directory(_ctx)
 
-    def with_patch_file(self, patch: "File") -> Self:
+    def with_patch_file(self, patch: Type) -> Self:
         """Retrieves this directory with the given Git-compatible patch file
         applied.
 
@@ -5025,7 +4920,7 @@ class Engine(Type):
         _ctx = self._select("clients", _args)
         return await _ctx.execute(list[str])
 
-    async def id(self) -> EngineID:
+    async def id(self) -> str:
         """A unique identifier for this Engine.
 
         Note
@@ -5034,9 +4929,13 @@ class Engine(Type):
 
         Returns
         -------
-        EngineID
-            The `EngineID` scalar type represents an identifier for an object
-            of type Engine.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -5047,7 +4946,7 @@ class Engine(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(EngineID)
+        return await _ctx.execute(str)
 
     def local_cache(self) -> "EngineCache":
         """The local engine cache state tracked by dagql"""
@@ -5089,7 +4988,7 @@ class EngineCache(Type):
         _ctx = self._select("entrySet", _args)
         return EngineCacheEntrySet(_ctx)
 
-    async def id(self) -> EngineCacheID:
+    async def id(self) -> str:
         """A unique identifier for this EngineCache.
 
         Note
@@ -5098,9 +4997,13 @@ class EngineCache(Type):
 
         Returns
         -------
-        EngineCacheID
-            The `EngineCacheID` scalar type represents an identifier for an
-            object of type EngineCache.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -5111,7 +5014,7 @@ class EngineCache(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(EngineCacheID)
+        return await _ctx.execute(str)
 
     async def max_used_space(self) -> int:
         """The maximum bytes to keep in the cache without pruning.
@@ -5337,7 +5240,7 @@ class EngineCacheEntry(Type):
         _ctx = self._select("diskSpaceBytes", _args)
         return await _ctx.execute(int)
 
-    async def id(self) -> EngineCacheEntryID:
+    async def id(self) -> str:
         """A unique identifier for this EngineCacheEntry.
 
         Note
@@ -5346,9 +5249,13 @@ class EngineCacheEntry(Type):
 
         Returns
         -------
-        EngineCacheEntryID
-            The `EngineCacheEntryID` scalar type represents an identifier for
-            an object of type EngineCacheEntry.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -5359,7 +5266,7 @@ class EngineCacheEntry(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(EngineCacheEntryID)
+        return await _ctx.execute(str)
 
     async def most_recent_use_time_unix_nano(self) -> int:
         """The most recent time the cache entry was used, in Unix nanoseconds.
@@ -5457,7 +5364,7 @@ class EngineCacheEntrySet(Type):
         _ctx = self._select("entryCount", _args)
         return await _ctx.execute(int)
 
-    async def id(self) -> EngineCacheEntrySetID:
+    async def id(self) -> str:
         """A unique identifier for this EngineCacheEntrySet.
 
         Note
@@ -5466,9 +5373,13 @@ class EngineCacheEntrySet(Type):
 
         Returns
         -------
-        EngineCacheEntrySetID
-            The `EngineCacheEntrySetID` scalar type represents an identifier
-            for an object of type EngineCacheEntrySet.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -5479,7 +5390,7 @@ class EngineCacheEntrySet(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(EngineCacheEntrySetID)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -5507,7 +5418,7 @@ class EnumTypeDef(Type):
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> EnumTypeDefID:
+    async def id(self) -> str:
         """A unique identifier for this EnumTypeDef.
 
         Note
@@ -5516,9 +5427,13 @@ class EnumTypeDef(Type):
 
         Returns
         -------
-        EnumTypeDefID
-            The `EnumTypeDefID` scalar type represents an identifier for an
-            object of type EnumTypeDef.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -5529,7 +5444,7 @@ class EnumTypeDef(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(EnumTypeDefID)
+        return await _ctx.execute(str)
 
     async def members(self) -> list["EnumValueTypeDef"]:
         """The members of the enum."""
@@ -5648,7 +5563,7 @@ class EnumValueTypeDef(Type):
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> EnumValueTypeDefID:
+    async def id(self) -> str:
         """A unique identifier for this EnumValueTypeDef.
 
         Note
@@ -5657,9 +5572,13 @@ class EnumValueTypeDef(Type):
 
         Returns
         -------
-        EnumValueTypeDefID
-            The `EnumValueTypeDefID` scalar type represents an identifier for
-            an object of type EnumValueTypeDef.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -5670,7 +5589,7 @@ class EnumValueTypeDef(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(EnumValueTypeDefID)
+        return await _ctx.execute(str)
 
     async def name(self) -> str:
         """The name of the enum member.
@@ -5769,7 +5688,7 @@ class Env(Type):
         _ctx = self._select("checks", _args)
         return CheckGroup(_ctx)
 
-    async def id(self) -> EnvID:
+    async def id(self) -> str:
         """A unique identifier for this Env.
 
         Note
@@ -5778,9 +5697,13 @@ class Env(Type):
 
         Returns
         -------
-        EnvID
-            The `EnvID` scalar type represents an identifier for an object of
-            type Env.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -5791,7 +5714,7 @@ class Env(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(EnvID)
+        return await _ctx.execute(str)
 
     def input(self, name: str) -> Binding:
         """Retrieves an input binding by name"""
@@ -5846,7 +5769,7 @@ class Env(Type):
     def with_address_input(
         self,
         name: str,
-        value: Address,
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type Address in the environment
@@ -5888,7 +5811,7 @@ class Env(Type):
     def with_cache_volume_input(
         self,
         name: str,
-        value: CacheVolume,
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type CacheVolume in the environment
@@ -5930,7 +5853,7 @@ class Env(Type):
     def with_changeset_input(
         self,
         name: str,
-        value: Changeset,
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type Changeset in the environment
@@ -5972,7 +5895,7 @@ class Env(Type):
     def with_check_group_input(
         self,
         name: str,
-        value: CheckGroup,
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type CheckGroup in the environment
@@ -6014,7 +5937,7 @@ class Env(Type):
     def with_check_input(
         self,
         name: str,
-        value: Check,
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type Check in the environment
@@ -6056,7 +5979,7 @@ class Env(Type):
     def with_cloud_input(
         self,
         name: str,
-        value: Cloud,
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type Cloud in the environment
@@ -6098,7 +6021,7 @@ class Env(Type):
     def with_container_input(
         self,
         name: str,
-        value: Container,
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type Container in the environment
@@ -6151,7 +6074,7 @@ class Env(Type):
     def with_diff_stat_input(
         self,
         name: str,
-        value: DiffStat,
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type DiffStat in the environment
@@ -6193,7 +6116,7 @@ class Env(Type):
     def with_directory_input(
         self,
         name: str,
-        value: Directory,
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type Directory in the environment
@@ -6235,7 +6158,7 @@ class Env(Type):
     def with_env_file_input(
         self,
         name: str,
-        value: "EnvFile",
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type EnvFile in the environment
@@ -6277,7 +6200,7 @@ class Env(Type):
     def with_env_input(
         self,
         name: str,
-        value: Self,
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type Env in the environment
@@ -6319,7 +6242,7 @@ class Env(Type):
     def with_file_input(
         self,
         name: str,
-        value: "File",
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type File in the environment
@@ -6361,7 +6284,7 @@ class Env(Type):
     def with_generator_group_input(
         self,
         name: str,
-        value: "GeneratorGroup",
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type GeneratorGroup in the environment
@@ -6404,7 +6327,7 @@ class Env(Type):
     def with_generator_input(
         self,
         name: str,
-        value: "Generator",
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type Generator in the environment
@@ -6446,7 +6369,7 @@ class Env(Type):
     def with_git_ref_input(
         self,
         name: str,
-        value: "GitRef",
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type GitRef in the environment
@@ -6488,7 +6411,7 @@ class Env(Type):
     def with_git_repository_input(
         self,
         name: str,
-        value: "GitRepository",
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type GitRepository in the environment
@@ -6531,7 +6454,7 @@ class Env(Type):
     def with_http_state_input(
         self,
         name: str,
-        value: "HTTPState",
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type HTTPState in the environment
@@ -6573,7 +6496,7 @@ class Env(Type):
     def with_json_value_input(
         self,
         name: str,
-        value: "JSONValue",
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type JSONValue in the environment
@@ -6612,7 +6535,7 @@ class Env(Type):
         _ctx = self._select("withJSONValueOutput", _args)
         return Env(_ctx)
 
-    def with_main_module(self, module: "Module") -> Self:
+    def with_main_module(self, module: Type) -> Self:
         """Sets the main module for this environment (the project being worked
         on)
 
@@ -6625,7 +6548,7 @@ class Env(Type):
         _ctx = self._select("withMainModule", _args)
         return Env(_ctx)
 
-    def with_module(self, module: "Module") -> Self:
+    def with_module(self, module: Type) -> Self:
         """Installs a module into the environment, exposing its functions to the
         model
 
@@ -6649,7 +6572,7 @@ class Env(Type):
     def with_module_config_client_input(
         self,
         name: str,
-        value: "ModuleConfigClient",
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type ModuleConfigClient in the
@@ -6693,7 +6616,7 @@ class Env(Type):
     def with_module_input(
         self,
         name: str,
-        value: "Module",
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type Module in the environment
@@ -6735,7 +6658,7 @@ class Env(Type):
     def with_module_source_input(
         self,
         name: str,
-        value: "ModuleSource",
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type ModuleSource in the environment
@@ -6778,7 +6701,7 @@ class Env(Type):
     def with_search_result_input(
         self,
         name: str,
-        value: "SearchResult",
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type SearchResult in the environment
@@ -6821,7 +6744,7 @@ class Env(Type):
     def with_search_submatch_input(
         self,
         name: str,
-        value: "SearchSubmatch",
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type SearchSubmatch in the environment
@@ -6864,7 +6787,7 @@ class Env(Type):
     def with_secret_input(
         self,
         name: str,
-        value: "Secret",
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type Secret in the environment
@@ -6906,7 +6829,7 @@ class Env(Type):
     def with_service_input(
         self,
         name: str,
-        value: "Service",
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type Service in the environment
@@ -6948,7 +6871,7 @@ class Env(Type):
     def with_socket_input(
         self,
         name: str,
-        value: "Socket",
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type Socket in the environment
@@ -6990,7 +6913,7 @@ class Env(Type):
     def with_stat_input(
         self,
         name: str,
-        value: "Stat",
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type Stat in the environment
@@ -7074,7 +6997,7 @@ class Env(Type):
     def with_up_group_input(
         self,
         name: str,
-        value: "UpGroup",
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type UpGroup in the environment
@@ -7116,7 +7039,7 @@ class Env(Type):
     def with_up_input(
         self,
         name: str,
-        value: "Up",
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type Up in the environment
@@ -7155,7 +7078,7 @@ class Env(Type):
         _ctx = self._select("withUpOutput", _args)
         return Env(_ctx)
 
-    def with_workspace(self, workspace: Directory) -> Self:
+    def with_workspace(self, workspace: Type) -> Self:
         """Returns a new environment with the provided workspace
 
         Parameters
@@ -7172,7 +7095,7 @@ class Env(Type):
     def with_workspace_input(
         self,
         name: str,
-        value: "Workspace",
+        value: Type,
         description: str,
     ) -> Self:
         """Create or update a binding of type Workspace in the environment
@@ -7304,7 +7227,7 @@ class EnvFile(Type):
         _ctx = self._select("get", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> EnvFileID:
+    async def id(self) -> str:
         """A unique identifier for this EnvFile.
 
         Note
@@ -7313,9 +7236,13 @@ class EnvFile(Type):
 
         Returns
         -------
-        EnvFileID
-            The `EnvFileID` scalar type represents an identifier for an object
-            of type EnvFile.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -7326,7 +7253,7 @@ class EnvFile(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(EnvFileID)
+        return await _ctx.execute(str)
 
     def namespace(self, prefix: str) -> Self:
         """Filters variables by prefix and removes the pref from keys. Variables
@@ -7404,7 +7331,7 @@ class EnvFile(Type):
 class EnvVariable(Type):
     """An environment variable name and value."""
 
-    async def id(self) -> EnvVariableID:
+    async def id(self) -> str:
         """A unique identifier for this EnvVariable.
 
         Note
@@ -7413,9 +7340,13 @@ class EnvVariable(Type):
 
         Returns
         -------
-        EnvVariableID
-            The `EnvVariableID` scalar type represents an identifier for an
-            object of type EnvVariable.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -7426,7 +7357,7 @@ class EnvVariable(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(EnvVariableID)
+        return await _ctx.execute(str)
 
     async def name(self) -> str:
         """The environment variable name.
@@ -7473,7 +7404,7 @@ class EnvVariable(Type):
 
 @typecheck
 class Error(Type):
-    async def id(self) -> ErrorID:
+    async def id(self) -> str:
         """A unique identifier for this Error.
 
         Note
@@ -7482,9 +7413,13 @@ class Error(Type):
 
         Returns
         -------
-        ErrorID
-            The `ErrorID` scalar type represents an identifier for an object
-            of type Error.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -7495,7 +7430,7 @@ class Error(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(ErrorID)
+        return await _ctx.execute(str)
 
     async def message(self) -> str:
         """A description of the error.
@@ -7551,7 +7486,7 @@ class Error(Type):
 
 @typecheck
 class ErrorValue(Type):
-    async def id(self) -> ErrorValueID:
+    async def id(self) -> str:
         """A unique identifier for this ErrorValue.
 
         Note
@@ -7560,9 +7495,13 @@ class ErrorValue(Type):
 
         Returns
         -------
-        ErrorValueID
-            The `ErrorValueID` scalar type represents an identifier for an
-            object of type ErrorValue.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -7573,7 +7512,7 @@ class ErrorValue(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(ErrorValueID)
+        return await _ctx.execute(str)
 
     async def name(self) -> str:
         """The name of the value.
@@ -7665,7 +7604,7 @@ class FieldTypeDef(Type):
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> FieldTypeDefID:
+    async def id(self) -> str:
         """A unique identifier for this FieldTypeDef.
 
         Note
@@ -7674,9 +7613,13 @@ class FieldTypeDef(Type):
 
         Returns
         -------
-        FieldTypeDefID
-            The `FieldTypeDefID` scalar type represents an identifier for an
-            object of type FieldTypeDef.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -7687,7 +7630,7 @@ class FieldTypeDef(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(FieldTypeDefID)
+        return await _ctx.execute(str)
 
     async def name(self) -> str:
         """The name of the field in lowerCamelCase format.
@@ -7873,7 +7816,7 @@ class File(Type):
         _ctx = self._select("export", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> FileID:
+    async def id(self) -> str:
         """A unique identifier for this File.
 
         Note
@@ -7882,9 +7825,13 @@ class File(Type):
 
         Returns
         -------
-        FileID
-            The `FileID` scalar type represents an identifier for an object of
-            type File.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -7895,7 +7842,7 @@ class File(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(FileID)
+        return await _ctx.execute(str)
 
     async def name(self) -> str:
         """Retrieves the name of the file.
@@ -8154,7 +8101,7 @@ class Function(Type):
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> FunctionID:
+    async def id(self) -> str:
         """A unique identifier for this Function.
 
         Note
@@ -8163,9 +8110,13 @@ class Function(Type):
 
         Returns
         -------
-        FunctionID
-            The `FunctionID` scalar type represents an identifier for an
-            object of type Function.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -8176,7 +8127,7 @@ class Function(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(FunctionID)
+        return await _ctx.execute(str)
 
     async def name(self) -> str:
         """The name of the function.
@@ -8236,13 +8187,13 @@ class Function(Type):
     def with_arg(
         self,
         name: str,
-        type_def: "TypeDef",
+        type_def: Type,
         *,
         description: str | None = "",
         default_value: JSON | None = None,
         default_path: str | None = "",
         ignore: list[str] | None = None,
-        source_map: "SourceMap | None" = None,
+        source_map: Type | None = None,
         deprecated: str | None = None,
         default_address: str | None = "",
     ) -> Self:
@@ -8347,7 +8298,7 @@ class Function(Type):
         _ctx = self._select("withGenerator", _args)
         return Function(_ctx)
 
-    def with_source_map(self, source_map: "SourceMap") -> Self:
+    def with_source_map(self, source_map: Type) -> Self:
         """Returns the function with the given source map.
 
         Parameters
@@ -8489,7 +8440,7 @@ class FunctionArg(Type):
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> FunctionArgID:
+    async def id(self) -> str:
         """A unique identifier for this FunctionArg.
 
         Note
@@ -8498,9 +8449,13 @@ class FunctionArg(Type):
 
         Returns
         -------
-        FunctionArgID
-            The `FunctionArgID` scalar type represents an identifier for an
-            object of type FunctionArg.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -8511,7 +8466,7 @@ class FunctionArg(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(FunctionArgID)
+        return await _ctx.execute(str)
 
     async def ignore(self) -> list[str]:
         """Only applies to arguments of type Directory. The ignore patterns are
@@ -8574,7 +8529,7 @@ class FunctionArg(Type):
 class FunctionCall(Type):
     """An active function call."""
 
-    async def id(self) -> FunctionCallID:
+    async def id(self) -> str:
         """A unique identifier for this FunctionCall.
 
         Note
@@ -8583,9 +8538,13 @@ class FunctionCall(Type):
 
         Returns
         -------
-        FunctionCallID
-            The `FunctionCallID` scalar type represents an identifier for an
-            object of type FunctionCall.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -8596,7 +8555,7 @@ class FunctionCall(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(FunctionCallID)
+        return await _ctx.execute(str)
 
     async def input_args(self) -> list["FunctionCallArgValue"]:
         """The argument values the function is being invoked with."""
@@ -8667,7 +8626,7 @@ class FunctionCall(Type):
         _ctx = self._select("parentName", _args)
         return await _ctx.execute(str)
 
-    async def return_error(self, error: Error) -> Void | None:
+    async def return_error(self, error: Type) -> Void | None:
         """Return an error from the function.
 
         Parameters
@@ -8726,7 +8685,7 @@ class FunctionCall(Type):
 class FunctionCallArgValue(Type):
     """A value passed as a named argument to a function call."""
 
-    async def id(self) -> FunctionCallArgValueID:
+    async def id(self) -> str:
         """A unique identifier for this FunctionCallArgValue.
 
         Note
@@ -8735,9 +8694,13 @@ class FunctionCallArgValue(Type):
 
         Returns
         -------
-        FunctionCallArgValueID
-            The `FunctionCallArgValueID` scalar type represents an identifier
-            for an object of type FunctionCallArgValue.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -8748,7 +8711,7 @@ class FunctionCallArgValue(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(FunctionCallArgValueID)
+        return await _ctx.execute(str)
 
     async def name(self) -> str:
         """The name of the argument.
@@ -8801,7 +8764,7 @@ class GeneratedCode(Type):
         _ctx = self._select("code", _args)
         return Directory(_ctx)
 
-    async def id(self) -> GeneratedCodeID:
+    async def id(self) -> str:
         """A unique identifier for this GeneratedCode.
 
         Note
@@ -8810,9 +8773,13 @@ class GeneratedCode(Type):
 
         Returns
         -------
-        GeneratedCodeID
-            The `GeneratedCodeID` scalar type represents an identifier for an
-            object of type GeneratedCode.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -8823,7 +8790,7 @@ class GeneratedCode(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(GeneratedCodeID)
+        return await _ctx.execute(str)
 
     async def vcs_generated_paths(self) -> list[str]:
         """List of paths to mark generated in version control (i.e.
@@ -8942,7 +8909,7 @@ class Generator(Type):
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> GeneratorID:
+    async def id(self) -> str:
         """A unique identifier for this Generator.
 
         Note
@@ -8951,9 +8918,13 @@ class Generator(Type):
 
         Returns
         -------
-        GeneratorID
-            The `GeneratorID` scalar type represents an identifier for an
-            object of type Generator.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -8964,7 +8935,7 @@ class Generator(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(GeneratorID)
+        return await _ctx.execute(str)
 
     async def is_empty(self) -> bool:
         """Whether changeset from the last generator run is empty or not
@@ -9075,7 +9046,7 @@ class GeneratorGroup(Type):
         _ctx = self._select("changes", _args)
         return Changeset(_ctx)
 
-    async def id(self) -> GeneratorGroupID:
+    async def id(self) -> str:
         """A unique identifier for this GeneratorGroup.
 
         Note
@@ -9084,9 +9055,13 @@ class GeneratorGroup(Type):
 
         Returns
         -------
-        GeneratorGroupID
-            The `GeneratorGroupID` scalar type represents an identifier for an
-            object of type GeneratorGroup.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -9097,7 +9072,7 @@ class GeneratorGroup(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(GeneratorGroupID)
+        return await _ctx.execute(str)
 
     async def is_empty(self) -> bool:
         """Whether the generated changeset from the last run is empty or not
@@ -9165,7 +9140,7 @@ class GitRef(Type):
         _ctx = self._select("commit", _args)
         return await _ctx.execute(str)
 
-    def common_ancestor(self, other: Self) -> Self:
+    def common_ancestor(self, other: Type) -> Self:
         """Find the best common ancestor between this ref and another ref.
 
         Parameters
@@ -9179,7 +9154,7 @@ class GitRef(Type):
         _ctx = self._select("commonAncestor", _args)
         return GitRef(_ctx)
 
-    async def id(self) -> GitRefID:
+    async def id(self) -> str:
         """A unique identifier for this GitRef.
 
         Note
@@ -9188,9 +9163,13 @@ class GitRef(Type):
 
         Returns
         -------
-        GitRefID
-            The `GitRefID` scalar type represents an identifier for an object
-            of type GitRef.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -9201,7 +9180,7 @@ class GitRef(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(GitRefID)
+        return await _ctx.execute(str)
 
     async def ref(self) -> str:
         """The resolved ref name at this ref.
@@ -9329,7 +9308,7 @@ class GitRepository(Type):
         _ctx = self._select("head", _args)
         return GitRef(_ctx)
 
-    async def id(self) -> GitRepositoryID:
+    async def id(self) -> str:
         """A unique identifier for this GitRepository.
 
         Note
@@ -9338,9 +9317,13 @@ class GitRepository(Type):
 
         Returns
         -------
-        GitRepositoryID
-            The `GitRepositoryID` scalar type represents an identifier for an
-            object of type GitRepository.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -9351,7 +9334,7 @@ class GitRepository(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(GitRepositoryID)
+        return await _ctx.execute(str)
 
     def latest_version(self) -> GitRef:
         """Returns details for the latest semver tag."""
@@ -9452,7 +9435,7 @@ class GitRepository(Type):
 class HTTPState(Type):
     """An internal persistent HTTP state."""
 
-    async def id(self) -> HTTPStateID:
+    async def id(self) -> str:
         """A unique identifier for this HTTPState.
 
         Note
@@ -9461,9 +9444,13 @@ class HTTPState(Type):
 
         Returns
         -------
-        HTTPStateID
-            The `HTTPStateID` scalar type represents an identifier for an
-            object of type HTTPState.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -9474,7 +9461,7 @@ class HTTPState(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(HTTPStateID)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -9502,7 +9489,7 @@ class HealthcheckConfig(Type):
         _ctx = self._select("args", _args)
         return await _ctx.execute(list[str])
 
-    async def id(self) -> HealthcheckConfigID:
+    async def id(self) -> str:
         """A unique identifier for this HealthcheckConfig.
 
         Note
@@ -9511,9 +9498,13 @@ class HealthcheckConfig(Type):
 
         Returns
         -------
-        HealthcheckConfigID
-            The `HealthcheckConfigID` scalar type represents an identifier for
-            an object of type HealthcheckConfig.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -9524,7 +9515,7 @@ class HealthcheckConfig(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(HealthcheckConfigID)
+        return await _ctx.execute(str)
 
     async def interval(self) -> str:
         """Interval between running healthcheck. Example:30s
@@ -9766,7 +9757,7 @@ class Host(Type):
         _ctx = self._select("findUp", _args)
         return await _ctx.execute(str | None)
 
-    async def id(self) -> HostID:
+    async def id(self) -> str:
         """A unique identifier for this Host.
 
         Note
@@ -9775,9 +9766,13 @@ class Host(Type):
 
         Returns
         -------
-        HostID
-            The `HostID` scalar type represents an identifier for an object of
-            type Host.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -9788,7 +9783,7 @@ class Host(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(HostID)
+        return await _ctx.execute(str)
 
     def service(
         self,
@@ -9819,7 +9814,7 @@ class Host(Type):
 
     def tunnel(
         self,
-        service: "Service",
+        service: Type,
         *,
         native: bool | None = False,
         ports: list[PortForward] | None = None,
@@ -9881,7 +9876,7 @@ class InputTypeDef(Type):
         _ctx = self._select("fields", _args)
         return await _ctx.execute_object_list(FieldTypeDef)
 
-    async def id(self) -> InputTypeDefID:
+    async def id(self) -> str:
         """A unique identifier for this InputTypeDef.
 
         Note
@@ -9890,9 +9885,13 @@ class InputTypeDef(Type):
 
         Returns
         -------
-        InputTypeDefID
-            The `InputTypeDefID` scalar type represents an identifier for an
-            object of type InputTypeDef.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -9903,7 +9902,7 @@ class InputTypeDef(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(InputTypeDefID)
+        return await _ctx.execute(str)
 
     async def name(self) -> str:
         """The name of the input object.
@@ -9958,7 +9957,7 @@ class InterfaceTypeDef(Type):
         _ctx = self._select("functions", _args)
         return await _ctx.execute_object_list(Function)
 
-    async def id(self) -> InterfaceTypeDefID:
+    async def id(self) -> str:
         """A unique identifier for this InterfaceTypeDef.
 
         Note
@@ -9967,9 +9966,13 @@ class InterfaceTypeDef(Type):
 
         Returns
         -------
-        InterfaceTypeDefID
-            The `InterfaceTypeDefID` scalar type represents an identifier for
-            an object of type InterfaceTypeDef.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -9980,7 +9983,7 @@ class InterfaceTypeDef(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(InterfaceTypeDefID)
+        return await _ctx.execute(str)
 
     async def name(self) -> str:
         """The name of the interface.
@@ -10170,7 +10173,7 @@ class JSONValue(Type):
         _ctx = self._select("fields", _args)
         return await _ctx.execute(list[str])
 
-    async def id(self) -> JSONValueID:
+    async def id(self) -> str:
         """A unique identifier for this JSONValue.
 
         Note
@@ -10179,9 +10182,13 @@ class JSONValue(Type):
 
         Returns
         -------
-        JSONValueID
-            The `JSONValueID` scalar type represents an identifier for an
-            object of type JSONValue.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -10192,7 +10199,7 @@ class JSONValue(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(JSONValueID)
+        return await _ctx.execute(str)
 
     def new_boolean(self, value: bool) -> Self:
         """Encode a boolean to json
@@ -10250,7 +10257,7 @@ class JSONValue(Type):
         _ctx = self._select("withContents", _args)
         return JSONValue(_ctx)
 
-    def with_field(self, path: list[str], value: Self) -> Self:
+    def with_field(self, path: list[str], value: Type) -> Self:
         """Set a new field at the given path
 
         Parameters
@@ -10359,7 +10366,7 @@ class LLM(Type):
         _ctx = self._select("historyJSON", _args)
         return await _ctx.execute(JSON)
 
-    async def id(self) -> LLMID:
+    async def id(self) -> str:
         """A unique identifier for this LLM.
 
         Note
@@ -10368,9 +10375,13 @@ class LLM(Type):
 
         Returns
         -------
-        LLMID
-            The `LLMID` scalar type represents an identifier for an object of
-            type LLM.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -10381,7 +10392,7 @@ class LLM(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(LLMID)
+        return await _ctx.execute(str)
 
     async def last_reply(self) -> str:
         """return the last llm reply from the history
@@ -10530,7 +10541,7 @@ class LLM(Type):
         _ctx = self._select("withBlockedFunction", _args)
         return LLM(_ctx)
 
-    def with_env(self, env: Env) -> Self:
+    def with_env(self, env: Type) -> Self:
         """allow the LLM to interact with an environment via MCP"""
         _args = [
             Arg("env", env),
@@ -10538,7 +10549,7 @@ class LLM(Type):
         _ctx = self._select("withEnv", _args)
         return LLM(_ctx)
 
-    def with_mcp_server(self, name: str, service: "Service") -> Self:
+    def with_mcp_server(self, name: str, service: Type) -> Self:
         """Add an external MCP server to the LLM
 
         Parameters
@@ -10583,7 +10594,7 @@ class LLM(Type):
         _ctx = self._select("withPrompt", _args)
         return LLM(_ctx)
 
-    def with_prompt_file(self, file: File) -> Self:
+    def with_prompt_file(self, file: Type) -> Self:
         """append the contents of a file to the llm context
 
         Parameters
@@ -10685,7 +10696,7 @@ class LLMTokenUsage(Type):
         _ctx = self._select("cachedTokenWrites", _args)
         return await _ctx.execute(int)
 
-    async def id(self) -> LLMTokenUsageID:
+    async def id(self) -> str:
         """A unique identifier for this LLMTokenUsage.
 
         Note
@@ -10694,9 +10705,13 @@ class LLMTokenUsage(Type):
 
         Returns
         -------
-        LLMTokenUsageID
-            The `LLMTokenUsageID` scalar type represents an identifier for an
-            object of type LLMTokenUsage.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -10707,7 +10722,7 @@ class LLMTokenUsage(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(LLMTokenUsageID)
+        return await _ctx.execute(str)
 
     async def input_tokens(self) -> int:
         """Returns
@@ -10771,7 +10786,7 @@ class LLMTokenUsage(Type):
 class Label(Type):
     """A simple key value object that represents a label."""
 
-    async def id(self) -> LabelID:
+    async def id(self) -> str:
         """A unique identifier for this Label.
 
         Note
@@ -10780,9 +10795,13 @@ class Label(Type):
 
         Returns
         -------
-        LabelID
-            The `LabelID` scalar type represents an identifier for an object
-            of type Label.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -10793,7 +10812,7 @@ class Label(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(LabelID)
+        return await _ctx.execute(str)
 
     async def name(self) -> str:
         """The label name.
@@ -10848,7 +10867,7 @@ class ListTypeDef(Type):
         _ctx = self._select("elementTypeDef", _args)
         return TypeDef(_ctx)
 
-    async def id(self) -> ListTypeDefID:
+    async def id(self) -> str:
         """A unique identifier for this ListTypeDef.
 
         Note
@@ -10857,9 +10876,13 @@ class ListTypeDef(Type):
 
         Returns
         -------
-        ListTypeDefID
-            The `ListTypeDefID` scalar type represents an identifier for an
-            object of type ListTypeDef.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -10870,7 +10893,7 @@ class ListTypeDef(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(ListTypeDefID)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -11005,7 +11028,7 @@ class Module(Type):
         _ctx = self._select("generators", _args)
         return GeneratorGroup(_ctx)
 
-    async def id(self) -> ModuleID:
+    async def id(self) -> str:
         """A unique identifier for this Module.
 
         Note
@@ -11014,9 +11037,13 @@ class Module(Type):
 
         Returns
         -------
-        ModuleID
-            The `ModuleID` scalar type represents an identifier for an object
-            of type Module.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -11027,7 +11054,7 @@ class Module(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(ModuleID)
+        return await _ctx.execute(str)
 
     async def interfaces(self) -> list["TypeDef"]:
         """Interfaces served by this module."""
@@ -11193,7 +11220,7 @@ class Module(Type):
         _ctx = self._select("withDescription", _args)
         return Module(_ctx)
 
-    def with_enum(self, enum: "TypeDef") -> Self:
+    def with_enum(self, enum: Type) -> Self:
         """This module plus the given Enum type and associated values"""
         _args = [
             Arg("enum", enum),
@@ -11201,7 +11228,7 @@ class Module(Type):
         _ctx = self._select("withEnum", _args)
         return Module(_ctx)
 
-    def with_interface(self, iface: "TypeDef") -> Self:
+    def with_interface(self, iface: Type) -> Self:
         """This module plus the given Interface type and associated functions"""
         _args = [
             Arg("iface", iface),
@@ -11209,7 +11236,7 @@ class Module(Type):
         _ctx = self._select("withInterface", _args)
         return Module(_ctx)
 
-    def with_object(self, object: "TypeDef") -> Self:
+    def with_object(self, object: Type) -> Self:
         """This module plus the given Object type and associated functions."""
         _args = [
             Arg("object", object),
@@ -11271,7 +11298,7 @@ class ModuleConfigClient(Type):
         _ctx = self._select("generator", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> ModuleConfigClientID:
+    async def id(self) -> str:
         """A unique identifier for this ModuleConfigClient.
 
         Note
@@ -11280,9 +11307,13 @@ class ModuleConfigClient(Type):
 
         Returns
         -------
-        ModuleConfigClientID
-            The `ModuleConfigClientID` scalar type represents an identifier
-            for an object of type ModuleConfigClient.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -11293,7 +11324,7 @@ class ModuleConfigClient(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(ModuleConfigClientID)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -11537,7 +11568,7 @@ class ModuleSource(Type):
         _ctx = self._select("htmlURL", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> ModuleSourceID:
+    async def id(self) -> str:
         """A unique identifier for this ModuleSource.
 
         Note
@@ -11546,9 +11577,13 @@ class ModuleSource(Type):
 
         Returns
         -------
-        ModuleSourceID
-            The `ModuleSourceID` scalar type represents an identifier for an
-            object of type ModuleSource.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -11559,7 +11594,7 @@ class ModuleSource(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(ModuleSourceID)
+        return await _ctx.execute(str)
 
     def introspection_schema_json(self) -> File:
         """The introspection schema JSON file for this module source.
@@ -11824,7 +11859,7 @@ class ModuleSource(Type):
         _ctx = self._select("version", _args)
         return await _ctx.execute(str)
 
-    def with_blueprint(self, blueprint: Self) -> Self:
+    def with_blueprint(self, blueprint: Type) -> Self:
         """Set a blueprint for the module source.
 
         Parameters
@@ -11855,7 +11890,7 @@ class ModuleSource(Type):
         _ctx = self._select("withClient", _args)
         return ModuleSource(_ctx)
 
-    def with_dependencies(self, dependencies: list["ModuleSource"]) -> Self:
+    def with_dependencies(self, dependencies: list[Type]) -> Self:
         """Append the provided dependencies to the module source's dependency
         list.
 
@@ -11959,7 +11994,7 @@ class ModuleSource(Type):
         _ctx = self._select("withSourceSubpath", _args)
         return ModuleSource(_ctx)
 
-    def with_toolchains(self, toolchains: list["ModuleSource"]) -> Self:
+    def with_toolchains(self, toolchains: list[Type]) -> Self:
         """Add toolchains to the module source.
 
         Parameters
@@ -12159,7 +12194,7 @@ class ObjectTypeDef(Type):
         _ctx = self._select("functions", _args)
         return await _ctx.execute_object_list(Function)
 
-    async def id(self) -> ObjectTypeDefID:
+    async def id(self) -> str:
         """A unique identifier for this ObjectTypeDef.
 
         Note
@@ -12168,9 +12203,13 @@ class ObjectTypeDef(Type):
 
         Returns
         -------
-        ObjectTypeDefID
-            The `ObjectTypeDefID` scalar type represents an identifier for an
-            object of type ObjectTypeDef.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -12181,7 +12220,7 @@ class ObjectTypeDef(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(ObjectTypeDefID)
+        return await _ctx.execute(str)
 
     async def name(self) -> str:
         """The name of the object.
@@ -12277,7 +12316,7 @@ class Port(Type):
         _ctx = self._select("experimentalSkipHealthcheck", _args)
         return await _ctx.execute(bool)
 
-    async def id(self) -> PortID:
+    async def id(self) -> str:
         """A unique identifier for this Port.
 
         Note
@@ -12286,9 +12325,13 @@ class Port(Type):
 
         Returns
         -------
-        PortID
-            The `PortID` scalar type represents an identifier for an object of
-            type Port.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -12299,7 +12342,7 @@ class Port(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(PortID)
+        return await _ctx.execute(str)
 
     async def port(self) -> int:
         """The port number.
@@ -12360,7 +12403,7 @@ class Query(Root):
         self,
         key: str,
         *,
-        source: Directory | None = None,
+        source: Type | None = None,
         sharing: CacheSharingMode | None = CacheSharingMode.SHARED,
         owner: str | None = "",
     ) -> CacheVolume:
@@ -12613,7 +12656,7 @@ class Query(Root):
         _ctx = self._select("file", _args)
         return File(_ctx)
 
-    def function(self, name: str, return_type: "TypeDef") -> Function:
+    def function(self, name: str, return_type: Type) -> Function:
         """Creates a function.
 
         Parameters
@@ -12631,7 +12674,7 @@ class Query(Root):
         _ctx = self._select("function", _args)
         return Function(_ctx)
 
-    def generated_code(self, code: Directory) -> GeneratedCode:
+    def generated_code(self, code: Type) -> GeneratedCode:
         """Create a code generation result, given a directory containing the
         generated code.
         """
@@ -12647,11 +12690,11 @@ class Query(Root):
         *,
         keep_git_dir: bool | None = True,
         ssh_known_hosts: str | None = "",
-        ssh_auth_socket: "Socket | None" = None,
+        ssh_auth_socket: Type | None = None,
         http_auth_username: str | None = "",
-        http_auth_token: "Secret | None" = None,
-        http_auth_header: "Secret | None" = None,
-        experimental_service_host: "Service | None" = None,
+        http_auth_token: Type | None = None,
+        http_auth_header: Type | None = None,
+        experimental_service_host: Type | None = None,
     ) -> GitRepository:
         """Queries a Git repository.
 
@@ -12706,8 +12749,8 @@ class Query(Root):
         name: str | None = None,
         permissions: int | None = None,
         checksum: str | None = None,
-        auth_header: "Secret | None" = None,
-        experimental_service_host: "Service | None" = None,
+        auth_header: Type | None = None,
+        experimental_service_host: Type | None = None,
     ) -> File:
         """Returns a file containing an http remote url content.
 
@@ -12738,7 +12781,7 @@ class Query(Root):
         _ctx = self._select("http", _args)
         return File(_ctx)
 
-    async def id(self) -> QueryID:
+    async def id(self) -> str:
         """A unique identifier for this Query.
 
         Note
@@ -12747,9 +12790,13 @@ class Query(Root):
 
         Returns
         -------
-        QueryID
-            The `QueryID` scalar type represents an identifier for an object
-            of type Query.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -12760,7 +12807,7 @@ class Query(Root):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(QueryID)
+        return await _ctx.execute(str)
 
     def json(self) -> JSONValue:
         """Initialize a JSON value"""
@@ -12792,544 +12839,6 @@ class Query(Root):
         ]
         _ctx = self._select("llm", _args)
         return LLM(_ctx)
-
-    def load_address_from_id(self, id: AddressID) -> Address:
-        """Load a Address from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadAddressFromID", _args)
-        return Address(_ctx)
-
-    def load_binding_from_id(self, id: BindingID) -> Binding:
-        """Load a Binding from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadBindingFromID", _args)
-        return Binding(_ctx)
-
-    def load_cache_volume_from_id(self, id: CacheVolumeID) -> CacheVolume:
-        """Load a CacheVolume from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadCacheVolumeFromID", _args)
-        return CacheVolume(_ctx)
-
-    def load_changeset_from_id(self, id: ChangesetID) -> Changeset:
-        """Load a Changeset from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadChangesetFromID", _args)
-        return Changeset(_ctx)
-
-    def load_check_from_id(self, id: CheckID) -> Check:
-        """Load a Check from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadCheckFromID", _args)
-        return Check(_ctx)
-
-    def load_check_group_from_id(self, id: CheckGroupID) -> CheckGroup:
-        """Load a CheckGroup from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadCheckGroupFromID", _args)
-        return CheckGroup(_ctx)
-
-    def load_client_filesync_mirror_from_id(
-        self, id: ClientFilesyncMirrorID
-    ) -> ClientFilesyncMirror:
-        """Load a ClientFilesyncMirror from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadClientFilesyncMirrorFromID", _args)
-        return ClientFilesyncMirror(_ctx)
-
-    def load_cloud_from_id(self, id: CloudID) -> Cloud:
-        """Load a Cloud from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadCloudFromID", _args)
-        return Cloud(_ctx)
-
-    def load_container_from_id(self, id: ContainerID) -> Container:
-        """Load a Container from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadContainerFromID", _args)
-        return Container(_ctx)
-
-    def load_current_module_from_id(self, id: CurrentModuleID) -> CurrentModule:
-        """Load a CurrentModule from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadCurrentModuleFromID", _args)
-        return CurrentModule(_ctx)
-
-    def load_diff_stat_from_id(self, id: DiffStatID) -> DiffStat:
-        """Load a DiffStat from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadDiffStatFromID", _args)
-        return DiffStat(_ctx)
-
-    def load_directory_from_id(self, id: DirectoryID) -> Directory:
-        """Load a Directory from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadDirectoryFromID", _args)
-        return Directory(_ctx)
-
-    def load_engine_cache_entry_from_id(
-        self, id: EngineCacheEntryID
-    ) -> EngineCacheEntry:
-        """Load a EngineCacheEntry from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEngineCacheEntryFromID", _args)
-        return EngineCacheEntry(_ctx)
-
-    def load_engine_cache_entry_set_from_id(
-        self, id: EngineCacheEntrySetID
-    ) -> EngineCacheEntrySet:
-        """Load a EngineCacheEntrySet from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEngineCacheEntrySetFromID", _args)
-        return EngineCacheEntrySet(_ctx)
-
-    def load_engine_cache_from_id(self, id: EngineCacheID) -> EngineCache:
-        """Load a EngineCache from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEngineCacheFromID", _args)
-        return EngineCache(_ctx)
-
-    def load_engine_from_id(self, id: EngineID) -> Engine:
-        """Load a Engine from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEngineFromID", _args)
-        return Engine(_ctx)
-
-    def load_enum_type_def_from_id(self, id: EnumTypeDefID) -> EnumTypeDef:
-        """Load a EnumTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEnumTypeDefFromID", _args)
-        return EnumTypeDef(_ctx)
-
-    def load_enum_value_type_def_from_id(
-        self, id: EnumValueTypeDefID
-    ) -> EnumValueTypeDef:
-        """Load a EnumValueTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEnumValueTypeDefFromID", _args)
-        return EnumValueTypeDef(_ctx)
-
-    def load_env_file_from_id(self, id: EnvFileID) -> EnvFile:
-        """Load a EnvFile from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEnvFileFromID", _args)
-        return EnvFile(_ctx)
-
-    def load_env_from_id(self, id: EnvID) -> Env:
-        """Load a Env from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEnvFromID", _args)
-        return Env(_ctx)
-
-    def load_env_variable_from_id(self, id: EnvVariableID) -> EnvVariable:
-        """Load a EnvVariable from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEnvVariableFromID", _args)
-        return EnvVariable(_ctx)
-
-    def load_error_from_id(self, id: ErrorID) -> Error:
-        """Load a Error from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadErrorFromID", _args)
-        return Error(_ctx)
-
-    def load_error_value_from_id(self, id: ErrorValueID) -> ErrorValue:
-        """Load a ErrorValue from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadErrorValueFromID", _args)
-        return ErrorValue(_ctx)
-
-    def load_field_type_def_from_id(self, id: FieldTypeDefID) -> FieldTypeDef:
-        """Load a FieldTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFieldTypeDefFromID", _args)
-        return FieldTypeDef(_ctx)
-
-    def load_file_from_id(self, id: FileID) -> File:
-        """Load a File from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFileFromID", _args)
-        return File(_ctx)
-
-    def load_function_arg_from_id(self, id: FunctionArgID) -> FunctionArg:
-        """Load a FunctionArg from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFunctionArgFromID", _args)
-        return FunctionArg(_ctx)
-
-    def load_function_call_arg_value_from_id(
-        self, id: FunctionCallArgValueID
-    ) -> FunctionCallArgValue:
-        """Load a FunctionCallArgValue from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFunctionCallArgValueFromID", _args)
-        return FunctionCallArgValue(_ctx)
-
-    def load_function_call_from_id(self, id: FunctionCallID) -> FunctionCall:
-        """Load a FunctionCall from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFunctionCallFromID", _args)
-        return FunctionCall(_ctx)
-
-    def load_function_from_id(self, id: FunctionID) -> Function:
-        """Load a Function from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFunctionFromID", _args)
-        return Function(_ctx)
-
-    def load_generated_code_from_id(self, id: GeneratedCodeID) -> GeneratedCode:
-        """Load a GeneratedCode from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadGeneratedCodeFromID", _args)
-        return GeneratedCode(_ctx)
-
-    def load_generator_from_id(self, id: GeneratorID) -> Generator:
-        """Load a Generator from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadGeneratorFromID", _args)
-        return Generator(_ctx)
-
-    def load_generator_group_from_id(self, id: GeneratorGroupID) -> GeneratorGroup:
-        """Load a GeneratorGroup from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadGeneratorGroupFromID", _args)
-        return GeneratorGroup(_ctx)
-
-    def load_git_ref_from_id(self, id: GitRefID) -> GitRef:
-        """Load a GitRef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadGitRefFromID", _args)
-        return GitRef(_ctx)
-
-    def load_git_repository_from_id(self, id: GitRepositoryID) -> GitRepository:
-        """Load a GitRepository from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadGitRepositoryFromID", _args)
-        return GitRepository(_ctx)
-
-    def load_http_state_from_id(self, id: HTTPStateID) -> HTTPState:
-        """Load a HTTPState from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadHTTPStateFromID", _args)
-        return HTTPState(_ctx)
-
-    def load_healthcheck_config_from_id(
-        self, id: HealthcheckConfigID
-    ) -> HealthcheckConfig:
-        """Load a HealthcheckConfig from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadHealthcheckConfigFromID", _args)
-        return HealthcheckConfig(_ctx)
-
-    def load_host_from_id(self, id: HostID) -> Host:
-        """Load a Host from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadHostFromID", _args)
-        return Host(_ctx)
-
-    def load_input_type_def_from_id(self, id: InputTypeDefID) -> InputTypeDef:
-        """Load a InputTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadInputTypeDefFromID", _args)
-        return InputTypeDef(_ctx)
-
-    def load_interface_type_def_from_id(
-        self, id: InterfaceTypeDefID
-    ) -> InterfaceTypeDef:
-        """Load a InterfaceTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadInterfaceTypeDefFromID", _args)
-        return InterfaceTypeDef(_ctx)
-
-    def load_json_value_from_id(self, id: JSONValueID) -> JSONValue:
-        """Load a JSONValue from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadJSONValueFromID", _args)
-        return JSONValue(_ctx)
-
-    def load_llm_from_id(self, id: LLMID) -> LLM:
-        """Load a LLM from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadLLMFromID", _args)
-        return LLM(_ctx)
-
-    def load_llm_token_usage_from_id(self, id: LLMTokenUsageID) -> LLMTokenUsage:
-        """Load a LLMTokenUsage from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadLLMTokenUsageFromID", _args)
-        return LLMTokenUsage(_ctx)
-
-    def load_label_from_id(self, id: LabelID) -> Label:
-        """Load a Label from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadLabelFromID", _args)
-        return Label(_ctx)
-
-    def load_list_type_def_from_id(self, id: ListTypeDefID) -> ListTypeDef:
-        """Load a ListTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadListTypeDefFromID", _args)
-        return ListTypeDef(_ctx)
-
-    def load_module_config_client_from_id(
-        self, id: ModuleConfigClientID
-    ) -> ModuleConfigClient:
-        """Load a ModuleConfigClient from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadModuleConfigClientFromID", _args)
-        return ModuleConfigClient(_ctx)
-
-    def load_module_from_id(self, id: ModuleID) -> Module:
-        """Load a Module from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadModuleFromID", _args)
-        return Module(_ctx)
-
-    def load_module_source_from_id(self, id: ModuleSourceID) -> ModuleSource:
-        """Load a ModuleSource from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadModuleSourceFromID", _args)
-        return ModuleSource(_ctx)
-
-    def load_object_type_def_from_id(self, id: ObjectTypeDefID) -> ObjectTypeDef:
-        """Load a ObjectTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadObjectTypeDefFromID", _args)
-        return ObjectTypeDef(_ctx)
-
-    def load_port_from_id(self, id: PortID) -> Port:
-        """Load a Port from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadPortFromID", _args)
-        return Port(_ctx)
-
-    def load_query_from_id(self, id: QueryID) -> Self:
-        """Load a Query from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadQueryFromID", _args)
-        return Query(_ctx)
-
-    def load_remote_git_mirror_from_id(
-        self, id: RemoteGitMirrorID
-    ) -> "RemoteGitMirror":
-        """Load a RemoteGitMirror from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadRemoteGitMirrorFromID", _args)
-        return RemoteGitMirror(_ctx)
-
-    def load_sdk_config_from_id(self, id: SDKConfigID) -> "SDKConfig":
-        """Load a SDKConfig from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSDKConfigFromID", _args)
-        return SDKConfig(_ctx)
-
-    def load_scalar_type_def_from_id(self, id: ScalarTypeDefID) -> "ScalarTypeDef":
-        """Load a ScalarTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadScalarTypeDefFromID", _args)
-        return ScalarTypeDef(_ctx)
-
-    def load_search_result_from_id(self, id: SearchResultID) -> "SearchResult":
-        """Load a SearchResult from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSearchResultFromID", _args)
-        return SearchResult(_ctx)
-
-    def load_search_submatch_from_id(self, id: SearchSubmatchID) -> "SearchSubmatch":
-        """Load a SearchSubmatch from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSearchSubmatchFromID", _args)
-        return SearchSubmatch(_ctx)
-
-    def load_secret_from_id(self, id: SecretID) -> "Secret":
-        """Load a Secret from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSecretFromID", _args)
-        return Secret(_ctx)
-
-    def load_service_from_id(self, id: ServiceID) -> "Service":
-        """Load a Service from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadServiceFromID", _args)
-        return Service(_ctx)
-
-    def load_socket_from_id(self, id: SocketID) -> "Socket":
-        """Load a Socket from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSocketFromID", _args)
-        return Socket(_ctx)
-
-    def load_source_map_from_id(self, id: SourceMapID) -> "SourceMap":
-        """Load a SourceMap from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSourceMapFromID", _args)
-        return SourceMap(_ctx)
-
-    def load_stat_from_id(self, id: StatID) -> "Stat":
-        """Load a Stat from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadStatFromID", _args)
-        return Stat(_ctx)
-
-    def load_terminal_from_id(self, id: TerminalID) -> "Terminal":
-        """Load a Terminal from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadTerminalFromID", _args)
-        return Terminal(_ctx)
-
-    def load_type_def_from_id(self, id: TypeDefID) -> "TypeDef":
-        """Load a TypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadTypeDefFromID", _args)
-        return TypeDef(_ctx)
-
-    def load_up_from_id(self, id: UpID) -> "Up":
-        """Load a Up from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadUpFromID", _args)
-        return Up(_ctx)
-
-    def load_up_group_from_id(self, id: UpGroupID) -> "UpGroup":
-        """Load a UpGroup from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadUpGroupFromID", _args)
-        return UpGroup(_ctx)
-
-    def load_workspace_from_id(self, id: WorkspaceID) -> "Workspace":
-        """Load a Workspace from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadWorkspaceFromID", _args)
-        return Workspace(_ctx)
 
     def module(self) -> Module:
         """Create a new module."""
@@ -13374,6 +12883,14 @@ class Query(Root):
         ]
         _ctx = self._select("moduleSource", _args)
         return ModuleSource(_ctx)
+
+    def node(self, id: Type) -> Node:
+        """Load any object by its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("node", _args)
+        return _NodeClient(_ctx)
 
     def secret(
         self,
@@ -13477,19 +12994,12 @@ class Query(Root):
         _ctx = self._select("version", _args)
         return await _ctx.execute(str)
 
-    def with_(self, cb: Callable[["Query"], "Query"]) -> "Query":
-        """Call the provided callable with current Query.
-
-        This is useful for reusability and readability by not breaking the calling chain.
-        """
-        return cb(self)
-
 
 @typecheck
 class RemoteGitMirror(Type):
     """An internal persistent bare git mirror."""
 
-    async def id(self) -> RemoteGitMirrorID:
+    async def id(self) -> str:
         """A unique identifier for this RemoteGitMirror.
 
         Note
@@ -13498,9 +13008,13 @@ class RemoteGitMirror(Type):
 
         Returns
         -------
-        RemoteGitMirrorID
-            The `RemoteGitMirrorID` scalar type represents an identifier for
-            an object of type RemoteGitMirror.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -13511,7 +13025,7 @@ class RemoteGitMirror(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(RemoteGitMirrorID)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -13538,7 +13052,7 @@ class SDKConfig(Type):
         _ctx = self._select("debug", _args)
         return await _ctx.execute(bool)
 
-    async def id(self) -> SDKConfigID:
+    async def id(self) -> str:
         """A unique identifier for this SDKConfig.
 
         Note
@@ -13547,9 +13061,13 @@ class SDKConfig(Type):
 
         Returns
         -------
-        SDKConfigID
-            The `SDKConfigID` scalar type represents an identifier for an
-            object of type SDKConfig.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -13560,7 +13078,7 @@ class SDKConfig(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(SDKConfigID)
+        return await _ctx.execute(str)
 
     async def source(self) -> str:
         """Source of the SDK. Either a name of a builtin SDK or a module source
@@ -13610,7 +13128,7 @@ class ScalarTypeDef(Type):
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> ScalarTypeDefID:
+    async def id(self) -> str:
         """A unique identifier for this ScalarTypeDef.
 
         Note
@@ -13619,9 +13137,13 @@ class ScalarTypeDef(Type):
 
         Returns
         -------
-        ScalarTypeDefID
-            The `ScalarTypeDefID` scalar type represents an identifier for an
-            object of type ScalarTypeDef.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -13632,7 +13154,7 @@ class ScalarTypeDef(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(ScalarTypeDefID)
+        return await _ctx.execute(str)
 
     async def name(self) -> str:
         """The name of the scalar.
@@ -13722,7 +13244,7 @@ class SearchResult(Type):
         _ctx = self._select("filePath", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> SearchResultID:
+    async def id(self) -> str:
         """A unique identifier for this SearchResult.
 
         Note
@@ -13731,9 +13253,13 @@ class SearchResult(Type):
 
         Returns
         -------
-        SearchResultID
-            The `SearchResultID` scalar type represents an identifier for an
-            object of type SearchResult.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -13744,7 +13270,7 @@ class SearchResult(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(SearchResultID)
+        return await _ctx.execute(str)
 
     async def line_number(self) -> int:
         """The first line that matched.
@@ -13818,7 +13344,7 @@ class SearchSubmatch(Type):
         _ctx = self._select("end", _args)
         return await _ctx.execute(int)
 
-    async def id(self) -> SearchSubmatchID:
+    async def id(self) -> str:
         """A unique identifier for this SearchSubmatch.
 
         Note
@@ -13827,9 +13353,13 @@ class SearchSubmatch(Type):
 
         Returns
         -------
-        SearchSubmatchID
-            The `SearchSubmatchID` scalar type represents an identifier for an
-            object of type SearchSubmatch.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -13840,7 +13370,7 @@ class SearchSubmatch(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(SearchSubmatchID)
+        return await _ctx.execute(str)
 
     async def start(self) -> int:
         """The match's start offset within the matched lines.
@@ -13890,7 +13420,7 @@ class Secret(Type):
     """A reference to a secret value, which can be handled more safely
     than the value itself."""
 
-    async def id(self) -> SecretID:
+    async def id(self) -> str:
         """A unique identifier for this Secret.
 
         Note
@@ -13899,9 +13429,13 @@ class Secret(Type):
 
         Returns
         -------
-        SecretID
-            The `SecretID` scalar type represents an identifier for an object
-            of type Secret.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -13912,7 +13446,7 @@ class Secret(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(SecretID)
+        return await _ctx.execute(str)
 
     async def name(self) -> str:
         """The name of this secret.
@@ -14046,7 +13580,7 @@ class Service(Type):
         _ctx = self._select("hostname", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> ServiceID:
+    async def id(self) -> str:
         """A unique identifier for this Service.
 
         Note
@@ -14055,9 +13589,13 @@ class Service(Type):
 
         Returns
         -------
-        ServiceID
-            The `ServiceID` scalar type represents an identifier for an object
-            of type Service.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -14068,7 +13606,7 @@ class Service(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(ServiceID)
+        return await _ctx.execute(str)
 
     async def ports(self) -> list[Port]:
         """Retrieves the list of ports provided by the service."""
@@ -14199,7 +13737,7 @@ class Service(Type):
 class Socket(Type):
     """A Unix or TCP/IP socket that can be mounted into a container."""
 
-    async def id(self) -> SocketID:
+    async def id(self) -> str:
         """A unique identifier for this Socket.
 
         Note
@@ -14208,9 +13746,13 @@ class Socket(Type):
 
         Returns
         -------
-        SocketID
-            The `SocketID` scalar type represents an identifier for an object
-            of type Socket.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -14221,7 +13763,7 @@ class Socket(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(SocketID)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -14270,7 +13812,7 @@ class SourceMap(Type):
         _ctx = self._select("filename", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> SourceMapID:
+    async def id(self) -> str:
         """A unique identifier for this SourceMap.
 
         Note
@@ -14279,9 +13821,13 @@ class SourceMap(Type):
 
         Returns
         -------
-        SourceMapID
-            The `SourceMapID` scalar type represents an identifier for an
-            object of type SourceMap.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -14292,7 +13838,7 @@ class SourceMap(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(SourceMapID)
+        return await _ctx.execute(str)
 
     async def line(self) -> int:
         """The line number within the filename.
@@ -14382,7 +13928,7 @@ class Stat(Type):
         _ctx = self._select("fileType", _args)
         return await _ctx.execute(FileType | None)
 
-    async def id(self) -> StatID:
+    async def id(self) -> str:
         """A unique identifier for this Stat.
 
         Note
@@ -14391,9 +13937,13 @@ class Stat(Type):
 
         Returns
         -------
-        StatID
-            The `StatID` scalar type represents an identifier for an object of
-            type Stat.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -14404,7 +13954,7 @@ class Stat(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(StatID)
+        return await _ctx.execute(str)
 
     async def name(self) -> str:
         """file name
@@ -14474,7 +14024,7 @@ class Stat(Type):
 class Terminal(Type):
     """An interactive terminal that clients can connect to."""
 
-    async def id(self) -> TerminalID:
+    async def id(self) -> str:
         """A unique identifier for this Terminal.
 
         Note
@@ -14483,9 +14033,13 @@ class Terminal(Type):
 
         Returns
         -------
-        TerminalID
-            The `TerminalID` scalar type represents an identifier for an
-            object of type Terminal.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -14496,7 +14050,7 @@ class Terminal(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(TerminalID)
+        return await _ctx.execute(str)
 
     async def sync(self) -> Self:
         """Forces evaluation of the pipeline in the engine.
@@ -14569,7 +14123,7 @@ class TypeDef(Type):
         _ctx = self._select("asScalar", _args)
         return ScalarTypeDef(_ctx)
 
-    async def id(self) -> TypeDefID:
+    async def id(self) -> str:
         """A unique identifier for this TypeDef.
 
         Note
@@ -14578,9 +14132,13 @@ class TypeDef(Type):
 
         Returns
         -------
-        TypeDefID
-            The `TypeDefID` scalar type represents an identifier for an object
-            of type TypeDef.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -14591,7 +14149,7 @@ class TypeDef(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(TypeDefID)
+        return await _ctx.execute(str)
 
     async def kind(self) -> TypeDefKind:
         """The kind of type this is (e.g. primitive, list, object).
@@ -14652,7 +14210,7 @@ class TypeDef(Type):
         _ctx = self._select("optional", _args)
         return await _ctx.execute(bool)
 
-    def with_constructor(self, function: Function) -> Self:
+    def with_constructor(self, function: Type) -> Self:
         """Adds a function for constructing a new instance of an Object TypeDef,
         failing if the type is not an object.
         """
@@ -14667,7 +14225,7 @@ class TypeDef(Type):
         name: str,
         *,
         description: str | None = "",
-        source_map: SourceMap | None = None,
+        source_map: Type | None = None,
     ) -> Self:
         """Returns a TypeDef of kind Enum with the provided name.
 
@@ -14698,7 +14256,7 @@ class TypeDef(Type):
         *,
         value: str | None = "",
         description: str | None = "",
-        source_map: SourceMap | None = None,
+        source_map: Type | None = None,
         deprecated: str | None = None,
     ) -> Self:
         """Adds a static value for an Enum TypeDef, failing if the type is not an
@@ -14732,7 +14290,7 @@ class TypeDef(Type):
         value: str,
         *,
         description: str | None = "",
-        source_map: SourceMap | None = None,
+        source_map: Type | None = None,
         deprecated: str | None = None,
     ) -> Self:
         """Adds a static value for an Enum TypeDef, failing if the type is not an
@@ -14769,10 +14327,10 @@ class TypeDef(Type):
     def with_field(
         self,
         name: str,
-        type_def: Self,
+        type_def: Type,
         *,
         description: str | None = "",
-        source_map: SourceMap | None = None,
+        source_map: Type | None = None,
         deprecated: str | None = None,
     ) -> Self:
         """Adds a static field for an Object TypeDef, failing if the type is not
@@ -14801,7 +14359,7 @@ class TypeDef(Type):
         _ctx = self._select("withField", _args)
         return TypeDef(_ctx)
 
-    def with_function(self, function: Function) -> Self:
+    def with_function(self, function: Type) -> Self:
         """Adds a function for an Object or Interface TypeDef, failing if the
         type is not one of those kinds.
         """
@@ -14816,7 +14374,7 @@ class TypeDef(Type):
         name: str,
         *,
         description: str | None = "",
-        source_map: SourceMap | None = None,
+        source_map: Type | None = None,
     ) -> Self:
         """Returns a TypeDef of kind Interface with the provided name."""
         _args = [
@@ -14835,7 +14393,7 @@ class TypeDef(Type):
         _ctx = self._select("withKind", _args)
         return TypeDef(_ctx)
 
-    def with_list_of(self, element_type: Self) -> Self:
+    def with_list_of(self, element_type: Type) -> Self:
         """Returns a TypeDef of kind List with the provided type for its
         elements.
         """
@@ -14850,7 +14408,7 @@ class TypeDef(Type):
         name: str,
         *,
         description: str | None = "",
-        source_map: SourceMap | None = None,
+        source_map: Type | None = None,
         deprecated: str | None = None,
     ) -> Self:
         """Returns a TypeDef of kind Object with the provided name.
@@ -14921,7 +14479,7 @@ class Up(Type):
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> UpID:
+    async def id(self) -> str:
         """A unique identifier for this Up.
 
         Note
@@ -14930,9 +14488,13 @@ class Up(Type):
 
         Returns
         -------
-        UpID
-            The `UpID` scalar type represents an identifier for an object of
-            type Up.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -14943,7 +14505,7 @@ class Up(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(UpID)
+        return await _ctx.execute(str)
 
     async def name(self) -> str:
         """Return the fully qualified name of the service
@@ -15009,7 +14571,7 @@ class Up(Type):
 
 @typecheck
 class UpGroup(Type):
-    async def id(self) -> UpGroupID:
+    async def id(self) -> str:
         """A unique identifier for this UpGroup.
 
         Note
@@ -15018,9 +14580,13 @@ class UpGroup(Type):
 
         Returns
         -------
-        UpGroupID
-            The `UpGroupID` scalar type represents an identifier for an object
-            of type UpGroup.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -15031,7 +14597,7 @@ class UpGroup(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(UpGroupID)
+        return await _ctx.execute(str)
 
     async def list_(self) -> list[Up]:
         """Return a list of individual services and their details"""
@@ -15283,7 +14849,7 @@ class Workspace(Type):
         _ctx = self._select("hasConfig", _args)
         return await _ctx.execute(bool)
 
-    async def id(self) -> WorkspaceID:
+    async def id(self) -> str:
         """A unique identifier for this Workspace.
 
         Note
@@ -15292,9 +14858,13 @@ class Workspace(Type):
 
         Returns
         -------
-        WorkspaceID
-            The `WorkspaceID` scalar type represents an identifier for an
-            object of type Workspace.
+        str
+            The `ID` scalar type represents a unique identifier, often used to
+            refetch an object or as key for a cache. The ID type appears in a
+            JSON response as a String; however, it is not intended to be
+            human-readable. When expected as an input type, any string (such
+            as `"4"`) or integer (such as `4`) input value will be accepted as
+            an ID.
 
         Raises
         ------
@@ -15305,7 +14875,7 @@ class Workspace(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return await _ctx.execute(WorkspaceID)
+        return await _ctx.execute(str)
 
     async def initialized(self) -> bool:
         """Whether .dagger/config.toml exists.
@@ -15392,154 +14962,92 @@ dag = Client()
 __all__ = [
     "JSON",
     "LLM",
-    "LLMID",
     "Address",
-    "AddressID",
     "Binding",
-    "BindingID",
     "BuildArg",
     "CacheSharingMode",
     "CacheVolume",
-    "CacheVolumeID",
     "Changeset",
-    "ChangesetID",
     "ChangesetMergeConflict",
     "ChangesetsMergeConflict",
     "Check",
     "CheckGroup",
-    "CheckGroupID",
-    "CheckID",
     "Client",
     "ClientFilesyncMirror",
-    "ClientFilesyncMirrorID",
     "Cloud",
-    "CloudID",
     "Container",
-    "ContainerID",
     "CurrentModule",
-    "CurrentModuleID",
     "DiffStat",
-    "DiffStatID",
     "DiffStatKind",
     "Directory",
-    "DirectoryID",
     "Engine",
     "EngineCache",
     "EngineCacheEntry",
-    "EngineCacheEntryID",
     "EngineCacheEntrySet",
-    "EngineCacheEntrySetID",
-    "EngineCacheID",
-    "EngineID",
     "EnumTypeDef",
-    "EnumTypeDefID",
     "EnumValueTypeDef",
-    "EnumValueTypeDefID",
     "Env",
     "EnvFile",
-    "EnvFileID",
-    "EnvID",
     "EnvVariable",
-    "EnvVariableID",
     "Error",
-    "ErrorID",
     "ErrorValue",
-    "ErrorValueID",
     "ExistsType",
+    "Exportable",
     "FieldTypeDef",
-    "FieldTypeDefID",
     "File",
-    "FileID",
     "FileType",
     "Function",
     "FunctionArg",
-    "FunctionArgID",
     "FunctionCachePolicy",
     "FunctionCall",
     "FunctionCallArgValue",
-    "FunctionCallArgValueID",
-    "FunctionCallID",
-    "FunctionID",
     "GeneratedCode",
-    "GeneratedCodeID",
     "Generator",
     "GeneratorGroup",
-    "GeneratorGroupID",
-    "GeneratorID",
     "GitRef",
-    "GitRefID",
     "GitRepository",
-    "GitRepositoryID",
     "HTTPState",
-    "HTTPStateID",
     "HealthcheckConfig",
-    "HealthcheckConfigID",
     "Host",
-    "HostID",
     "ImageLayerCompression",
     "ImageMediaTypes",
     "InputTypeDef",
-    "InputTypeDefID",
     "InterfaceTypeDef",
-    "InterfaceTypeDefID",
     "JSONValue",
-    "JSONValueID",
     "LLMTokenUsage",
-    "LLMTokenUsageID",
     "Label",
-    "LabelID",
     "ListTypeDef",
-    "ListTypeDefID",
     "Module",
     "ModuleConfigClient",
-    "ModuleConfigClientID",
-    "ModuleID",
     "ModuleSource",
     "ModuleSourceExperimentalFeature",
-    "ModuleSourceID",
     "ModuleSourceKind",
     "NetworkProtocol",
+    "Node",
     "ObjectTypeDef",
-    "ObjectTypeDefID",
     "PipelineLabel",
     "Platform",
     "Port",
     "PortForward",
-    "PortID",
     "Query",
-    "QueryID",
     "RemoteGitMirror",
-    "RemoteGitMirrorID",
     "ReturnType",
     "SDKConfig",
-    "SDKConfigID",
     "ScalarTypeDef",
-    "ScalarTypeDefID",
     "SearchResult",
-    "SearchResultID",
     "SearchSubmatch",
-    "SearchSubmatchID",
     "Secret",
-    "SecretID",
     "Service",
-    "ServiceID",
     "Socket",
-    "SocketID",
     "SourceMap",
-    "SourceMapID",
     "Stat",
-    "StatID",
+    "Syncer",
     "Terminal",
-    "TerminalID",
     "TypeDef",
-    "TypeDefID",
     "TypeDefKind",
     "Up",
     "UpGroup",
-    "UpGroupID",
-    "UpID",
     "Void",
     "Workspace",
-    "WorkspaceID",
     "dag",
 ]

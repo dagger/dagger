@@ -7,6 +7,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestIsDangSDKModuleRef(t *testing.T) {
+	require.True(t, isDangSDKModuleRef("github.com/vito/dang/dagger-sdk"))
+	require.True(t, isDangSDKModuleRef("github.com/vito/dang/dagger-sdk@352d057a4d4c4d77612104f842671b512495ef30"))
+	require.True(t, isDangSDKModuleRef("https://github.com/vito/dang/dagger-sdk@main"))
+	require.False(t, isDangSDKModuleRef("github.com/vito/dang"))
+	require.False(t, isDangSDKModuleRef("github.com/notvito/dang/dagger-sdk"))
+}
+
 func TestParseSDKName(t *testing.T) {
 	originalTag := engine.Tag
 	defer func() {

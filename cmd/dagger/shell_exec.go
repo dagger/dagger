@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"dagger.io/dagger"
+	callpkg "github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
@@ -447,6 +448,24 @@ func (h *shellCallHandler) functionCall(ctx context.Context, st *ShellState, nam
 	}
 
 	newSt := st.WithCall(fn, argValues)
+
+	// When a function returns an interface type, the pipeline can't
+	// continue without knowing the concrete type. If the function has
+	// an "id" argument, decode it to discover the concrete type and
+	// set an inline fragment so subsequent pipeline steps resolve
+	// against the concrete type's fields.
+	if fn.ReturnType.Kind == dagger.TypeDefKindInterfaceKind {
+		if idVal, ok := argValues["id"]; ok {
+			idStr := fmt.Sprintf("%v", idVal)
+			var id callpkg.ID
+			if err := id.Decode(idStr); err == nil {
+				typeName := id.Type().NamedType()
+				last := &newSt.Calls[len(newSt.Calls)-1]
+				last.InlineFragment = typeName
+				last.ReturnObject = typeName
+			}
+		}
+	}
 
 	return &newSt, nil
 }

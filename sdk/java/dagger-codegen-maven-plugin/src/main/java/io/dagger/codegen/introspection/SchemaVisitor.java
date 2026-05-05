@@ -8,6 +8,8 @@ public interface SchemaVisitor {
 
   void visitObject(Type type);
 
+  void visitInterface(Type type);
+
   void visitInput(Type type);
 
   void visitEnum(Type type);

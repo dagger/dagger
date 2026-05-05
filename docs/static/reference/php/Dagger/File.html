@@ -86,7 +86,7 @@
 
     
     <p>        class
-    <strong>File</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
+    <strong>File</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Exportable.html"><abbr title="Dagger\Exportable">Exportable</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>, <a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a>
 </p>
 
         
@@ -203,7 +203,7 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
+                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
                 </div>
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
@@ -226,7 +226,7 @@
                     array
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_search">search</a>(string $pattern, bool|null $literal = false, bool|null $multiline = false, bool|null $dotall = false, bool|null $insensitive = false, bool|null $skipIgnored = false, bool|null $skipHidden = false, bool|null $filesOnly = false, int|null $limit = null, array|null $paths = null, array|null $globs = null)
+                    <a href="#method_search">search</a>(string $pattern, bool|null $literal = false, bool|null $multiline = false, bool|null $dotall = false, bool|null $insensitive = false, bool|null $skipIgnored = false, bool|null $skipHidden = false, bool|null $filesOnly = false, int|null $limit = null, array|null $paths = [], array|null $globs = [])
         
                                             <p><p>Searches for content matching the given regular expression or literal string.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -253,7 +253,7 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/FileId.html"><abbr title="Dagger\FileId">FileId</abbr></a>
+                    <a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a>
                 </div>
                 <div class="col-md-8">
                     <a href="#method_sync">sync</a>()
@@ -641,7 +641,7 @@
                     <div class="method-item">
                     <h3 id="method_id">
         <div class="location">at line 90</div>
-        <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
+        <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
     </h3>
@@ -658,7 +658,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a></td>
+            <td><a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -706,7 +706,7 @@
                     <h3 id="method_search">
         <div class="location">at line 110</div>
         <code>                    array
-    <strong>search</strong>(string $pattern, bool|null $literal = false, bool|null $multiline = false, bool|null $dotall = false, bool|null $insensitive = false, bool|null $skipIgnored = false, bool|null $skipHidden = false, bool|null $filesOnly = false, int|null $limit = null, array|null $paths = null, array|null $globs = null)
+    <strong>search</strong>(string $pattern, bool|null $literal = false, bool|null $multiline = false, bool|null $dotall = false, bool|null $insensitive = false, bool|null $skipIgnored = false, bool|null $skipHidden = false, bool|null $filesOnly = false, int|null $limit = null, array|null $paths = [], array|null $globs = [])
         </code>
     </h3>
     <div class="details">    
@@ -861,7 +861,7 @@
                     <div class="method-item">
                     <h3 id="method_sync">
         <div class="location">at line 179</div>
-        <code>                    <a href="../Dagger/FileId.html"><abbr title="Dagger\FileId">FileId</abbr></a>
+        <code>                    <a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a>
     <strong>sync</strong>()
         </code>
     </h3>
@@ -878,7 +878,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/FileId.html"><abbr title="Dagger\FileId">FileId</abbr></a></td>
+            <td><a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -892,7 +892,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withName">
-        <div class="location">at line 188</div>
+        <div class="location">at line 189</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
     <strong>withName</strong>(string $name)
         </code>
@@ -934,7 +934,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withReplaced">
-        <div class="location">at line 206</div>
+        <div class="location">at line 207</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
     <strong>withReplaced</strong>(string $search, string $replacement, bool|null $all = false, int|null $firstFrom = null)
         </code>
@@ -994,7 +994,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withTimestamps">
-        <div class="location">at line 227</div>
+        <div class="location">at line 228</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
     <strong>withTimestamps</strong>(int $timestamp)
         </code>

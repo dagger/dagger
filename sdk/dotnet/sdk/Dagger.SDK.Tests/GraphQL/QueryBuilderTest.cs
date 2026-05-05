@@ -78,4 +78,42 @@ public class QueryBuilderTest
 
         Assert.AreEqual("query{envVariables{value}}", query3);
     }
+
+    [TestMethod]
+    public void TestSelect_InlineFragment()
+    {
+        var query = QueryBuilder
+            .Builder()
+            .Select("node", [new Argument("id", new StringValue("abc"))])
+            .InlineFragment("Container")
+            .Select("stdout")
+            .Build();
+
+        Assert.AreEqual("query{node(id:\"abc\"){...on Container{stdout}}}", query);
+    }
+
+    [TestMethod]
+    public void TestSelect_InlineFragment_Nested()
+    {
+        var query = QueryBuilder
+            .Builder()
+            .Select("node", [new Argument("id", new StringValue("abc"))])
+            .InlineFragment("Container")
+            .Select("envVariables")
+            .Select("id")
+            .Build();
+
+        Assert.AreEqual("query{node(id:\"abc\"){...on Container{envVariables{id}}}}", query);
+    }
+
+    [TestMethod]
+    public void TestNodeQueryBuilder()
+    {
+        var query = global::Dagger.SDK.Object
+            .NodeQueryBuilder("some-id", "EnvVariable")
+            .Select("name")
+            .Build();
+
+        Assert.AreEqual("query{node(id:\"some-id\"){...on EnvVariable{name}}}", query);
+    }
 }

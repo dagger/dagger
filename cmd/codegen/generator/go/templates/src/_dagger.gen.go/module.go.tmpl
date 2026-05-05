@@ -15,7 +15,7 @@ import (
 	"{{.PackageImport}}/internal/dagger"
 
 
-	"{{.UtilityPkgImport}}/querybuilder"
+	"github.com/dagger/querybuilder"
 )
 
 var dag = dagger.Connect()
@@ -33,7 +33,10 @@ func setMarshalContext(ctx context.Context) {
 	dagger.SetMarshalContext(ctx)
 }
 
-type DaggerObject = querybuilder.GraphQLMarshaller
+type DaggerObject interface {
+	querybuilder.GraphQLMarshaller
+	ID(ctx context.Context) (dagger.ID, error)
+}
 
 type ExecError = dagger.ExecError
 
@@ -45,7 +48,7 @@ type ExecError = dagger.ExecError
 {{ .Description | Comment }}
 type {{ $name }} = dagger.{{ $name }}
 
-{{ if eq .Kind "OBJECT" }}
+{{ if or (eq .Kind "OBJECT") (eq .Kind "INTERFACE") }}
 {{- if . | IsSelfChainable }}
 type With{{ $name }}Func = dagger.With{{ $name }}Func
 {{ end }}

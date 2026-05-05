@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A comparison between two directories representing changes that can be applied.
  */
-class Changeset extends Client\AbstractObject implements Client\IdAble
+class Changeset extends Client\AbstractObject implements Client\IdAble, Exportable, Node, Syncer
 {
     /**
      * Files and directories that were added in the newer directory.
@@ -71,10 +71,10 @@ class Changeset extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Changeset.
      */
-    public function id(): ChangesetId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\ChangesetId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -116,10 +116,11 @@ class Changeset extends Client\AbstractObject implements Client\IdAble
     /**
      * Force evaluation in the engine.
      */
-    public function sync(): ChangesetId
+    public function sync(): Changeset
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        return new \Dagger\ChangesetId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+        $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this;
     }
 
     /**
@@ -127,10 +128,8 @@ class Changeset extends Client\AbstractObject implements Client\IdAble
      *
      * By default the operation will fail in case of conflicts, for instance a file modified in both changesets. The behavior can be adjusted using onConflict argument
      */
-    public function withChangeset(
-        ChangesetId|Changeset $changes,
-        ?ChangesetMergeConflict $onConflict = null,
-    ): Changeset {
+    public function withChangeset(Changeset $changes, ?ChangesetMergeConflict $onConflict = null): Changeset
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withChangeset');
         $innerQueryBuilder->setArgument('changes', $changes);
         if (null !== $onConflict) {

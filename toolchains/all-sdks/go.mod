@@ -1,8 +1,9 @@
 module dagger/all-sdks
 
-go 1.25.6
+go 1.26.1
 
 require (
+	dagger.io/dagger v0.20.6
 	github.com/Khan/genqlient v0.8.1
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
 	github.com/dagger/otel-go v1.43.1-0.20260429234604-565634f4374b
@@ -35,7 +36,6 @@ require (
 replace github.com/dagger/dagger => ../..
 
 require (
-	dagger.io/dagger v0.20.6
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

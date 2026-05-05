@@ -699,9 +699,9 @@ export class Test {
 			require.NoError(t, err)
 			id := gjson.Get(out, "set.id").String()
 
-			out, err = modGen.With(daggerQuery(`{loadTestFromID(id: "%s"){get}}`, id)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{test: node(id: "%s"){ ... on Test { get } }}`, id)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"loadTestFromID":{"get": "abc"}}`, out)
+			require.JSONEq(t, `{"test":{"get": "abc"}}`, out)
 		})
 	}
 }

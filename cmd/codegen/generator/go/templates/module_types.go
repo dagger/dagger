@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 
 	"dagger.io/dagger"
-	"github.com/iancoleman/strcase"
 )
 
 // A Go type that has been parsed and can be registered with the dagger API
@@ -31,11 +30,6 @@ type NamedParsedType interface {
 	ParsedType
 	Name() string
 	ModuleName() string
-}
-
-func loadFromIDGQLFieldName(spec NamedParsedType) string {
-	// NOTE: unfortunately we currently need to account for namespacing here
-	return fmt.Sprintf("load%s%sFromID", strcase.ToCamel(spec.ModuleName()), spec.Name())
 }
 
 func typeName(spec NamedParsedType) string {

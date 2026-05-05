@@ -944,14 +944,16 @@ EXPOSE 8080
 	res, err := testutil.QueryWithClient[struct {
 		Container struct {
 			ExposedPorts []core.Port
-		} `json:"loadContainerFromID"`
+		} `json:"container"`
 	}](c, t, `
-        query Test($id: ContainerID!) {
-            loadContainerFromID(id: $id) {
-                exposedPorts {
-                    port
-                    protocol
-                    description
+        query Test($id: ID!) {
+            container: node(id: $id) {
+                ... on Container {
+                    exposedPorts {
+                        port
+                        protocol
+                        description
+                    }
                 }
             }
         }`,
@@ -1028,18 +1030,20 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 		require.NoError(t, err)
 
 		res, err := testutil.QueryWithClient[struct {
-			LoadDirectoryFromID struct {
+			Directory struct {
 				DockerBuild struct {
 					File struct {
 						Contents string
 					}
 				}
-			} `json:"loadDirectoryFromID"`
-		}](c, t, `query Test($dir: DirectoryID!, $sock: SocketID!) {
-			loadDirectoryFromID(id: $dir) {
-				dockerBuild(ssh: $sock) {
-					file(path: "/result") {
-						contents
+			} `json:"directory"`
+		}](c, t, `query Test($dir: ID!, $sock: ID!) {
+			directory: node(id: $dir) {
+				... on Directory {
+					dockerBuild(ssh: $sock) {
+						file(path: "/result") {
+							contents
+						}
 					}
 				}
 			}
@@ -1050,7 +1054,7 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 			},
 		})
 		require.NoError(t, err)
-		require.Equal(t, "hello", res.LoadDirectoryFromID.DockerBuild.File.Contents)
+		require.Equal(t, "hello", res.Directory.DockerBuild.File.Contents)
 	})
 
 	t.Run("remote frontend", func(ctx context.Context, t *testctx.T) {
@@ -1059,18 +1063,20 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 		require.NoError(t, err)
 
 		res, err := testutil.QueryWithClient[struct {
-			LoadDirectoryFromID struct {
+			Directory struct {
 				DockerBuild struct {
 					File struct {
 						Contents string
 					}
 				}
-			} `json:"loadDirectoryFromID"`
-		}](c, t, `query Test($dir: DirectoryID!, $sock: SocketID!) {
-			loadDirectoryFromID(id: $dir) {
-				dockerBuild(ssh: $sock) {
-					file(path: "/result") {
-						contents
+			} `json:"directory"`
+		}](c, t, `query Test($dir: ID!, $sock: ID!) {
+			directory: node(id: $dir) {
+				... on Directory {
+					dockerBuild(ssh: $sock) {
+						file(path: "/result") {
+							contents
+						}
 					}
 				}
 			}
@@ -1081,7 +1087,7 @@ RUN --mount=type=ssh sh -c 'echo -n hello | nc -w1 -N -U $SSH_AUTH_SOCK > /resul
 			},
 		})
 		require.NoError(t, err)
-		require.Equal(t, "hello", res.LoadDirectoryFromID.DockerBuild.File.Contents)
+		require.Equal(t, "hello", res.Directory.DockerBuild.File.Contents)
 	})
 
 	t.Run("without ssh socket fails", func(ctx context.Context, t *testctx.T) {

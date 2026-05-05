@@ -16,14 +16,13 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/dagger/querybuilder"
+
 {{ if IsModuleCode }}
-	"{{.UtilityPkgImport}}/querybuilder"
-	
 	telemetry "github.com/dagger/otel-go"
 {{ end }}
 
 {{- if IsStandaloneClient }}
-	"dagger.io/dagger/querybuilder"
 	"dagger.io/dagger"
 {{ end }}
 )
@@ -55,7 +54,10 @@ func assertNotNil(argName string, value any) {
 	}
 }
 
-type DaggerObject = querybuilder.GraphQLMarshaller
+type DaggerObject interface {
+	querybuilder.GraphQLMarshaller
+	ID(ctx context.Context) (ID, error)
+}
 
 type gqlExtendedError struct {
 	inner *gqlerror.Error
@@ -153,6 +155,7 @@ func (e *ExecError) Unwrap() error {
 {{ range .Types }}
 {{ if eq .Kind "SCALAR" }}{{ template "_types/scalar.go.tmpl" . }}{{ end }}
 {{ if eq .Kind "OBJECT" }}{{ template "_types/object.go.tmpl" . }}{{ end }}
+{{ if eq .Kind "INTERFACE" }}{{ template "_types/interface.go.tmpl" . }}{{ end }}
 {{ if eq .Kind "INPUT_OBJECT" }}{{ template "_types/input.go.tmpl" . }}{{ end }}
 {{ if eq .Kind "ENUM" }}{{ template "_types/enum.go.tmpl" . }}{{ end }}
 {{ end }}
@@ -182,6 +185,11 @@ func Connect() *Client {
 // GraphQLClient returns the underlying graphql.Client
 func (c *Client) GraphQLClient() graphql.Client {
 	return c.client
+}
+
+// GraphQLSelection returns the root query selection.
+func (c *Client) GraphQLSelection() *querybuilder.Selection {
+	return c.query
 }
 
 func getClientParams() (graphql.Client, *querybuilder.Selection) {
@@ -257,3 +265,50 @@ func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Reques
 {{ if IsStandaloneClient }}
 {{ template "_dagger.gen.go/client.go.tmpl" . }}
 {{ end }}
+
+// selectNode returns a query selection for node(id:) scoped to the
+// given type via an inline fragment.
+func selectNode(q *querybuilder.Selection, id any, typeName string) *querybuilder.Selection {
+	return q.Select("node").Arg("id", id).InlineFragment(typeName)
+}
+
+// Loadable is the constraint for types that can be loaded from an ID.
+// Every generated object and interface client type satisfies this.
+type Loadable[T any] interface {
+	Node
+	WithGraphQLQuery(*querybuilder.Selection) T
+}
+
+// Ref returns a lazy reference to a node by its ID without making a
+// network call. The returned value can be used to chain further queries.
+func Ref[T Loadable[T]](c *Client, id ID) T {
+	var zero T
+	return zero.WithGraphQLQuery(selectNode(c.query, id, zero.XXX_GraphQLType()))
+}
+
+// Load loads a node by its ID with type safety. It verifies that the
+// node exists and matches the expected type before returning.
+//
+// The type parameter can be a concrete type or an interface. The
+// __typename check is done through the inline fragment so that
+// interface loads succeed when the concrete type (e.g. "Impl")
+// implements the expected interface (e.g. "CustomIface").
+func Load[T Loadable[T]](ctx context.Context, c *Client, id ID) (T, error) {
+	var zero T
+	expectedType := zero.XXX_GraphQLType()
+
+	// Query __typename through the inline fragment. For concrete types
+	// this is equivalent to a direct check. For interfaces, the fragment
+	// only matches if the concrete type implements the interface — an
+	// empty result means the ID doesn't satisfy the expected type.
+	q := selectNode(c.query, id, expectedType)
+	var typeName string
+	if err := q.Select("__typename").Bind(&typeName).Execute(ctx); err != nil {
+		return zero, fmt.Errorf("load %s: %w", expectedType, err)
+	}
+	if typeName == "" {
+		return zero, fmt.Errorf("load %s: node not found or does not implement %s", expectedType, expectedType)
+	}
+
+	return zero.WithGraphQLQuery(selectNode(c.query, id, expectedType)), nil
+}

@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A content-addressed service providing TCP connectivity.
  */
-class Service extends Client\AbstractObject implements Client\IdAble
+class Service extends Client\AbstractObject implements Client\IdAble, Node, Syncer
 {
     /**
      * Retrieves an endpoint that clients can use to reach this container.
@@ -44,10 +44,10 @@ class Service extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Service.
      */
-    public function id(): ServiceId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\ServiceId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -64,34 +64,37 @@ class Service extends Client\AbstractObject implements Client\IdAble
      *
      * Services bound to a Container do not need to be manually started.
      */
-    public function start(): ServiceId
+    public function start(): Service
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('start');
-        return new \Dagger\ServiceId((string)$this->queryLeaf($leafQueryBuilder, 'start'));
+        $this->queryLeaf($leafQueryBuilder, 'start');
+        return $this;
     }
 
     /**
      * Stop the service.
      */
-    public function stop(?bool $kill = false): ServiceId
+    public function stop(?bool $kill = false): Service
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('stop');
         if (null !== $kill) {
         $leafQueryBuilder->setArgument('kill', $kill);
         }
-        return new \Dagger\ServiceId((string)$this->queryLeaf($leafQueryBuilder, 'stop'));
+        $this->queryLeaf($leafQueryBuilder, 'stop');
+        return $this;
     }
 
     /**
      * Forces evaluation of the pipeline in the engine.
      */
-    public function sync(): ServiceId
+    public function sync(): Service
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        return new \Dagger\ServiceId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+        $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this;
     }
 
-    public function terminal(?array $cmd = null): Service
+    public function terminal(?array $cmd = []): Service
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
         if (null !== $cmd) {

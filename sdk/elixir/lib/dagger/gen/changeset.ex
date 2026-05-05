@@ -82,8 +82,9 @@ defmodule Dagger.Changeset do
          %Dagger.DiffStat{
            query_builder:
              QB.query()
-             |> QB.select("loadDiffStatFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("DiffStat"),
            client: changeset.client
          }
        end}
@@ -104,7 +105,7 @@ defmodule Dagger.Changeset do
   @doc """
   A unique identifier for this Changeset.
   """
-  @spec id(t()) :: {:ok, Dagger.ChangesetID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = changeset) do
     query_builder =
       changeset.query_builder |> QB.select("id")
@@ -172,8 +173,9 @@ defmodule Dagger.Changeset do
        %Dagger.Changeset{
          query_builder:
            QB.query()
-           |> QB.select("loadChangesetFromID")
-           |> QB.put_arg("id", id),
+           |> QB.select("node")
+           |> QB.put_arg("id", id)
+           |> QB.inline_fragment("Changeset"),
          client: changeset.client
        }}
     end
@@ -207,7 +209,7 @@ defmodule Dagger.Changeset do
 
   Only FAIL and FAIL_EARLY conflict strategies are supported (octopus merge cannot use -X ours/theirs).
   """
-  @spec with_changesets(t(), [Dagger.ChangesetID.t()], [
+  @spec with_changesets(t(), [String.t()], [
           {:on_conflict, Dagger.ChangesetsMergeConflict.t() | nil}
         ]) :: Dagger.Changeset.t()
   def with_changesets(%__MODULE__{} = changeset, changes, optional_args \\ []) do
@@ -233,6 +235,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.Changeset do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_changeset_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.Changeset{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("Changeset"),
+       client: dag.client
+     }}
   end
 end

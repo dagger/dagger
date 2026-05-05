@@ -460,7 +460,7 @@ defmodule Dagger.Binding do
   @doc """
   A unique identifier for this Binding.
   """
-  @spec id(t()) :: {:ok, Dagger.BindingID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = binding) do
     query_builder =
       binding.query_builder |> QB.select("id")
@@ -511,6 +511,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.Binding do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_binding_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.Binding{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("Binding"),
+       client: dag.client
+     }}
   end
 end

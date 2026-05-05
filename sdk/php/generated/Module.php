@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A Dagger module.
  */
-class Module extends Client\AbstractObject implements Client\IdAble
+class Module extends Client\AbstractObject implements Client\IdAble, Node, Syncer
 {
     /**
      * Return the check defined by the module with the given name. Must match to exactly one check.
@@ -99,10 +99,10 @@ class Module extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Module.
      */
-    public function id(): ModuleId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\ModuleId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -204,10 +204,11 @@ class Module extends Client\AbstractObject implements Client\IdAble
     /**
      * Forces evaluation of the module, including any loading into the engine and associated validation.
      */
-    public function sync(): ModuleId
+    public function sync(): Module
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        return new \Dagger\ModuleId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+        $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this;
     }
 
     /**
@@ -232,7 +233,7 @@ class Module extends Client\AbstractObject implements Client\IdAble
     /**
      * This module plus the given Enum type and associated values
      */
-    public function withEnum(TypeDefId|TypeDef $enum): Module
+    public function withEnum(TypeDef $enum): Module
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnum');
         $innerQueryBuilder->setArgument('enum', $enum);
@@ -242,7 +243,7 @@ class Module extends Client\AbstractObject implements Client\IdAble
     /**
      * This module plus the given Interface type and associated functions
      */
-    public function withInterface(TypeDefId|TypeDef $iface): Module
+    public function withInterface(TypeDef $iface): Module
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withInterface');
         $innerQueryBuilder->setArgument('iface', $iface);
@@ -252,7 +253,7 @@ class Module extends Client\AbstractObject implements Client\IdAble
     /**
      * This module plus the given Object type and associated functions.
      */
-    public function withObject(TypeDefId|TypeDef $object): Module
+    public function withObject(TypeDef $object): Module
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withObject');
         $innerQueryBuilder->setArgument('object', $object);

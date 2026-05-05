@@ -54,6 +54,64 @@ func TestObjectOptionalArgsDeprecatedNoDescription(t *testing.T) {
 	require.Equal(t, want, got)
 }
 
+func TestObjectFieldsTemplateOptionalIDArgUsesExpectedType(t *testing.T) {
+	schemaJSON := `
+    {
+      "description": "Root query",
+      "fields": [
+        {
+          "args": [
+            {
+              "defaultValue": null,
+              "description": "Project source directory",
+              "isDeprecated": false,
+              "deprecationReason": null,
+              "name": "source",
+              "type": {
+                "kind": "SCALAR",
+                "name": "ID"
+              },
+              "directives": [
+                {
+                  "name": "expectedType",
+                  "args": [
+                    {
+                      "name": "name",
+                      "value": "\"Directory\""
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "deprecationReason": null,
+          "description": "A Go project",
+          "isDeprecated": false,
+          "name": "go",
+          "type": {
+            "kind": "NON_NULL",
+            "ofType": {
+              "kind": "OBJECT",
+              "name": "Go"
+            }
+          }
+        }
+      ],
+      "kind": "OBJECT",
+      "name": "Query"
+    }
+`
+
+	schema, object := loadSchemaFromTypeJSON(t, schemaJSON)
+	tmpl := parseTemplateFiles(t, schema, "_types/object_fields.go.tmpl")
+	require.NotNil(t, tmpl)
+
+	got := renderTemplate(t, tmpl, object)
+
+	require.Contains(t, got, "Source *Directory")
+	require.NotContains(t, got, "Source ID")
+}
+
 func TestObjectMethodDeprecated(t *testing.T) {
 	schemaJSON := `
     {

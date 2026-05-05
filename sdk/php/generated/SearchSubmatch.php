@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace Dagger;
 
-class SearchSubmatch extends Client\AbstractObject implements Client\IdAble
+class SearchSubmatch extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The match's end offset within the matched lines.
@@ -22,10 +22,10 @@ class SearchSubmatch extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this SearchSubmatch.
      */
-    public function id(): SearchSubmatchId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\SearchSubmatchId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

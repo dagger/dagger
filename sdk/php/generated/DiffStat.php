@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace Dagger;
 
-class DiffStat extends Client\AbstractObject implements Client\IdAble
+class DiffStat extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Number of added lines for this path.
@@ -22,10 +22,10 @@ class DiffStat extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this DiffStat.
      */
-    public function id(): DiffStatId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\DiffStatId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

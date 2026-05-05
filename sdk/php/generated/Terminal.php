@@ -11,15 +11,15 @@ namespace Dagger;
 /**
  * An interactive terminal that clients can connect to.
  */
-class Terminal extends Client\AbstractObject implements Client\IdAble
+class Terminal extends Client\AbstractObject implements Client\IdAble, Node, Syncer
 {
     /**
      * A unique identifier for this Terminal.
      */
-    public function id(): TerminalId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\TerminalId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -27,9 +27,10 @@ class Terminal extends Client\AbstractObject implements Client\IdAble
      *
      * It doesn't run the default command if no exec has been set.
      */
-    public function sync(): TerminalId
+    public function sync(): Terminal
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
-        return new \Dagger\TerminalId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+        $this->queryLeaf($leafQueryBuilder, 'sync');
+        return $this;
     }
 }

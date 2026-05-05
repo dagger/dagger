@@ -21,6 +21,7 @@ import (
 	"github.com/vito/dang/pkg/hm"
 	"github.com/vito/dang/pkg/introspection"
 	"github.com/vito/dang/pkg/ioctx"
+	"github.com/vito/dang/pkg/querybuilder"
 	"go.opentelemetry.io/otel/propagation"
 )
 
@@ -827,43 +828,68 @@ func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string,
 	return res, nil
 }
 
+func stringToDang(env dang.EvalEnv, v string, fieldType hm.Type) (dang.Value, error) {
+	modType, ok := fieldType.(*dang.Module)
+	if !ok || modType == dang.StringType {
+		return dang.StringValue{Val: v}, nil
+	}
+
+	if modType.Kind == dang.EnumKind {
+		if enumVal, found := env.Get(modType.Named); found {
+			if enumMod, ok := enumVal.(*dang.ModuleValue); ok {
+				if val, found := enumMod.Get(v); found {
+					return val, nil
+				}
+				return nil, fmt.Errorf("unknown enum value %s.%s", modType.Named, v)
+			}
+		}
+		return nil, fmt.Errorf("enum type %s not found in environment", modType.Named)
+	}
+
+	if modType.Kind == dang.ScalarKind {
+		return dang.ScalarValue{Val: v, ScalarType: modType}, nil
+	}
+
+	nodeVal, found := env.Get("node")
+	if !found {
+		return nil, fmt.Errorf("node field not found in environment")
+	}
+	nodeFn, ok := nodeVal.(dang.GraphQLFunction)
+	if !ok {
+		return nil, fmt.Errorf("node field is %T, not dang.GraphQLFunction", nodeVal)
+	}
+
+	field := *nodeFn.Field
+	field.TypeRef = &introspection.TypeRef{
+		Kind: introspection.TypeKindNonNull,
+		OfType: &introspection.TypeRef{
+			Kind: introspection.TypeKindObject,
+			Name: modType.Named,
+		},
+	}
+	if schemaType := nodeFn.Schema.Types.Get(modType.Named); schemaType != nil {
+		field.TypeRef.OfType.Kind = schemaType.Kind
+	}
+
+	return dang.GraphQLValue{
+		Name:       "node",
+		TypeName:   modType.Named,
+		Field:      &field,
+		ValType:    hm.NonNullType{Type: modType},
+		Client:     nodeFn.Client,
+		Schema:     nodeFn.Schema,
+		TypeEnv:    nodeFn.TypeEnv,
+		QueryChain: querybuilder.Query().Select("node").Arg("id", v).InlineFragment(modType.Named),
+	}, nil
+}
+
 func anyToDang(ctx context.Context, env dang.EvalEnv, val any, fieldType hm.Type) (dang.Value, error) {
 	if nonNull, ok := fieldType.(hm.NonNullType); ok {
 		return anyToDang(ctx, env, val, nonNull.Type)
 	}
 	switch v := val.(type) {
 	case string:
-		if modType, ok := fieldType.(*dang.Module); ok && modType != dang.StringType {
-			if modType.Kind == dang.EnumKind {
-				if enumVal, found := env.Get(modType.Named); found {
-					if enumMod, ok := enumVal.(*dang.ModuleValue); ok {
-						if val, found := enumMod.Get(v); found {
-							return val, nil
-						}
-						return nil, fmt.Errorf("unknown enum value %s.%s", modType.Named, v)
-					}
-				}
-				return nil, fmt.Errorf("enum type %s not found in environment", modType.Named)
-			}
-
-			if modType.Kind == dang.ScalarKind {
-				return dang.ScalarValue{Val: v, ScalarType: modType}, nil
-			}
-
-			sel := &dang.FunCall{
-				Fun: &dang.Select{
-					Field: &dang.Symbol{Name: fmt.Sprintf("load%sFromID", modType.Named)},
-				},
-				Args: dang.Record{
-					dang.Keyed[dang.Node]{
-						Key:   "id",
-						Value: &dang.String{Value: v},
-					},
-				},
-			}
-			return sel.Eval(ctx, env)
-		}
-		return dang.StringValue{Val: v}, nil
+		return stringToDang(env, v, fieldType)
 	case int:
 		return dang.IntValue{Val: v}, nil
 	case json.Number:

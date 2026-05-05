@@ -11,15 +11,13 @@ class QueryBuilder extends GqlQueryBuilder
     public function setArgument(string $argumentName, $argumentValue): QueryBuilder|AbstractQueryBuilder
     {
         if ($argumentValue instanceof IdAble) {
-            $value = $argumentValue->id();
-        } else {
-            $value = $argumentValue;
+            $argumentValue = $argumentValue->id();
         }
 
-        if ($value instanceof AbstractScalar) {
-            $value = $value->getValue();
+        if ($argumentValue instanceof AbstractScalar) {
+            $argumentValue = $argumentValue->getValue();
         }
 
-        return parent::setArgument($argumentName, $value);
+        return parent::setArgument($argumentName, $argumentValue);
     }
 }

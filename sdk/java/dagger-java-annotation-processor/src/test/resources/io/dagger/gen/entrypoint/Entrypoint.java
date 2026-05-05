@@ -9,10 +9,10 @@ import io.dagger.client.Directory;
 import io.dagger.client.Function;
 import io.dagger.client.FunctionCall;
 import io.dagger.client.FunctionCallArgValue;
+import io.dagger.client.ID;
 import io.dagger.client.JSON;
 import io.dagger.client.JsonConverter;
 import io.dagger.client.Module;
-import io.dagger.client.ModuleID;
 import io.dagger.client.Platform;
 import io.dagger.client.TypeDef;
 import io.dagger.client.TypeDefKind;
@@ -60,7 +60,7 @@ public class Entrypoint {
 
       JSON result;
       if (parentName.isEmpty()) {
-        ModuleID modID = register();
+        ID modID = register();
         result = JsonConverter.toJSON(modID);
       } else {
         result = invoke(parentJson, parentName, fnName, inputArgs);
@@ -80,7 +80,7 @@ public class Entrypoint {
     }
   }
 
-  private ModuleID register()
+  private ID register()
       throws ExecutionException, DaggerQueryException, InterruptedException {
     Module module = dag().module().withDescription("Dagger Java Module example").withObject(dag()
         .typeDef()

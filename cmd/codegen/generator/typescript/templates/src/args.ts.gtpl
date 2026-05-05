@@ -1,6 +1,5 @@
 {{- /* Write arguments. */ -}}
 {{ define "args" }}
-	{{- $parentName := .ParentObject.Name | FormatName }}
 	{{- $required := GetRequiredArgs .Args }}
 	{{- $maxIndex := Subtract (len $required) 1 }}
 
@@ -12,11 +11,7 @@
 			{{- $opt = "?" }}
 		{{- end }}
 
-		{{- if and (eq .Name "id") (eq $parentName "Query") }}
-			{{- .Name | FormatName }}{{ $opt }}: {{ .TypeRef | FormatOutputType }}
-		{{- else }}
-			{{- .Name | FormatName }}{{ $opt }}: {{ .TypeRef | FormatInputType }}
-		{{- end }}
+		{{- .Name | FormatName }}{{ $opt }}: {{ . | FormatInputValueType }}
 
 		{{- /* we add a ", " only if it's not the last item. */ -}}
 		{{- if ne $index $maxIndex }}

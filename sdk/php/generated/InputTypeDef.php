@@ -14,7 +14,7 @@ namespace Dagger;
  * in the core API. It is not used by user modules and shouldn't ever be as user
  * module accept input objects via their id rather than graphql input types.
  */
-class InputTypeDef extends Client\AbstractObject implements Client\IdAble
+class InputTypeDef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Static fields defined on this input object, if any.
@@ -28,10 +28,10 @@ class InputTypeDef extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this InputTypeDef.
      */
-    public function id(): InputTypeDefId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\InputTypeDefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

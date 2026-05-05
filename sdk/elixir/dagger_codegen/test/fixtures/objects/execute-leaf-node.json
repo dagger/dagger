@@ -1,11 +1,13 @@
 {
   "description": "An environment variable name and value.",
+  "directives": [],
   "enumValues": [],
   "fields": [
     {
       "args": [],
       "deprecationReason": null,
       "description": "The environment variable name.",
+      "directives": [],
       "isDeprecated": false,
       "name": "name",
       "type": {
@@ -20,7 +22,13 @@
     }
   ],
   "inputFields": [],
-  "interfaces": [],
+  "interfaces": [
+    {
+      "kind": "INTERFACE",
+      "name": "Node",
+      "ofType": null
+    }
+  ],
   "kind": "OBJECT",
   "name": "EnvVariable",
   "possibleTypes": []

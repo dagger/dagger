@@ -20,6 +20,8 @@ pub fn format_struct_name(s: &str) -> String {
         "ref" => "r#ref".to_string(),
         "enum" => "r#enum".to_string(),
         "loop" => "r#loop".to_string(),
+        "mod" => "r#mod".to_string(),
+        "type" => "r#type".to_string(),
         _ => s,
     }
 }
@@ -34,8 +36,9 @@ pub fn field_options_struct_name(field: &FullTypeFields) -> Option<String> {
 }
 
 pub fn format_function(funcs: &CommonFunctions, field: &FullTypeFields) -> Option<rust::Tokens> {
+    let is_convert_id = CommonFunctions::convert_id(field);
     let is_async = field.type_.pipe(|t| &t.type_ref).pipe(|t| {
-        if t.is_object() || t.is_list_of_objects() {
+        if !is_convert_id && (t.is_object() || t.is_list_of_objects()) {
             None
         } else {
             Some(quote! {
@@ -62,10 +65,7 @@ pub fn format_function(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
 
     let args = format_function_args(funcs, field, lifecycle.as_ref());
 
-    let output_type = field
-        .type_
-        .pipe(|t| &t.type_ref)
-        .pipe(|t| render_output_type(funcs, t));
+    let output_type = render_field_output_type(funcs, field);
 
     if let Some((args, desc, true)) = args {
         let required_args = format_required_function_args(funcs, field);
@@ -74,7 +74,7 @@ pub fn format_function(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
             $(&desc)
             $(&signature)(
                 $(required_args)
-            ) -> $(output_type.as_ref()) {
+            ) -> $(&output_type) {
                 let mut query = self.selection.select($(quoted(field.name.as_ref())));
 
                 $(render_required_args(funcs, field))
@@ -113,7 +113,10 @@ pub fn format_function(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
     }
 }
 
-fn render_required_args(_funcs: &CommonFunctions, field: &FullTypeFields) -> Option<rust::Tokens> {
+pub(crate) fn render_required_args(
+    _funcs: &CommonFunctions,
+    field: &FullTypeFields,
+) -> Option<rust::Tokens> {
     if let Some(args) = field.args.as_ref() {
         let args = args
             .iter()
@@ -241,7 +244,50 @@ fn render_output_type(funcs: &CommonFunctions, type_ref: &TypeRef) -> rust::Toke
     }
 }
 
+/// Render the output type for a field, accounting for ConvertID.
+/// When ConvertID applies, the return type is the parent object, not ID.
+fn render_field_output_type(funcs: &CommonFunctions, field: &FullTypeFields) -> rust::Tokens {
+    if CommonFunctions::convert_id(field) {
+        let parent_name = field
+            .parent_type
+            .as_ref()
+            .and_then(|p| p.name.as_ref())
+            .map(|n| format_name(n))
+            .unwrap_or_default();
+        let dagger_error = rust::import("crate::errors", "DaggerError");
+        return quote! {
+            Result<$parent_name, $dagger_error>
+        };
+    }
+    render_output_type(funcs, &field.type_.as_ref().unwrap().type_ref)
+}
+
 fn render_execution(funcs: &CommonFunctions, field: &FullTypeFields) -> rust::Tokens {
+    // ConvertID: field returns ID that should be converted to parent object.
+    // Execute the query to get the ID, then construct a new parent via
+    // root.node(id).inline_fragment(type_name).
+    if CommonFunctions::convert_id(field) {
+        let parent_name = field
+            .parent_type
+            .as_ref()
+            .and_then(|p| p.name.as_ref())
+            .map(|n| format_name(n))
+            .unwrap_or_default();
+        let graphql_name = field
+            .parent_type
+            .as_ref()
+            .and_then(|p| p.name.as_deref())
+            .unwrap_or_default();
+        return quote! {
+            let id: Id = query.execute(self.graphql_client.clone()).await?;
+            Ok($(&parent_name) {
+                proc: self.proc.clone(),
+                selection: query.root().select("node").arg("id", &id.0).inline_fragment($(quoted(graphql_name))),
+                graphql_client: self.graphql_client.clone(),
+            })
+        };
+    }
+
     if let Some(true) = field.type_.pipe(|t| t.type_ref.is_object()) {
         let output_type = funcs.format_output_type(&field.type_.as_ref().unwrap().type_ref);
         return quote! {

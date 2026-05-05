@@ -527,6 +527,20 @@ func resolverServer(resolver TypeResolver) *Server {
 	return dag
 }
 
+func persistedEnvelopeObjectTypeNames(env PersistedResultEnvelope, names []string) []string {
+	switch env.Kind {
+	case persistedResultKindObject:
+		if env.TypeName != "" {
+			names = append(names, env.TypeName)
+		}
+	case persistedResultKindList:
+		for _, item := range env.Items {
+			names = persistedEnvelopeObjectTypeNames(item, names)
+		}
+	}
+	return names
+}
+
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver TypeResolver, hit AnyResult) (AnyResult, error) {
 	if resolver == nil {
@@ -566,7 +580,7 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 				c.registerLazyEvaluation(res, hit)
 				return hit, nil
 			}
-			objRes, err := wrapSharedResultWithResolver(res, hit.HitCache(), resolver)
+			objRes, err := wrapSharedResultWithResolver(ctx, res, hit.HitCache(), resolver)
 			if err != nil {
 				return nil, fmt.Errorf("reconstruct object result from cache hit payload: %w", err)
 			}
@@ -613,9 +627,24 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 			finishPersistDecode(err)
 			return nil, err
 		}
-		dag := resolverServer(resolver)
+		decodeResolver := resolver
+		seenTypeNames := map[string]struct{}{}
+		for _, typeName := range persistedEnvelopeObjectTypeNames(*state.persistedEnvelope, nil) {
+			if _, seen := seenTypeNames[typeName]; seen {
+				continue
+			}
+			seenTypeNames[typeName] = struct{}{}
+			var err error
+			decodeResolver, err = resolverForSharedResultObject(ctx, decodeResolver, res, typeName)
+			if err != nil {
+				err = fmt.Errorf("decode persisted hit payload: %w", err)
+				finishPersistDecode(err)
+				return nil, err
+			}
+		}
+		dag := resolverServer(decodeResolver)
 		if dag == nil {
-			err := fmt.Errorf("decode persisted hit payload: type resolver %T does not provide dagql server", resolver)
+			err := fmt.Errorf("decode persisted hit payload: type resolver %T does not provide dagql server", decodeResolver)
 			finishPersistDecode(err)
 			return nil, err
 		}
@@ -653,6 +682,7 @@ func (c *Cache) ensurePersistedHitValueLoaded(ctx context.Context, resolver Type
 		if onReleaser, ok := UnwrapAs[OnReleaser](decoded); ok {
 			res.onRelease = joinOnRelease(c.resultSnapshotLeaseCleanup(res), onReleaser.OnRelease)
 		}
+		resolver = decodeResolver
 		if err := c.syncResultSnapshotLeases(ctx, res); err != nil {
 			err = fmt.Errorf("sync persisted hit owner leases: %w", err)
 			finishPersistDecode(err)

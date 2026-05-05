@@ -69,7 +69,12 @@ func (base *CoreSchemaBase) Fork(ctx context.Context, root *core.Query, view cal
 	if err != nil {
 		return nil, err
 	}
-	return state.server.Fork(ctx, root)
+	forked, err := state.server.Fork(ctx, root)
+	if err != nil {
+		return nil, err
+	}
+	core.InstallCoreSchemaLoaders(forked)
+	return forked, nil
 }
 
 func (base *CoreSchemaBase) viewState(ctx context.Context, view call.View) (*coreSchemaViewState, error) {
@@ -312,6 +317,157 @@ func (m *CoreMod) TypeDefs(ctx context.Context, dag *dagql.Server) (dagql.Object
 	return state.typedefs, nil
 }
 
+func buildCoreTypeDefFunctions(
+	ctx context.Context,
+	dag *dagql.Server,
+	introspectionType *introspection.Type,
+) ([]dagql.ID[*core.Function], bool, error) {
+	fnIDs := make([]dagql.ID[*core.Function], 0, len(introspectionType.Fields))
+	isIdable := false
+	for _, introspectionField := range introspectionType.Fields {
+		if introspectionField.Name == "id" {
+			isIdable = true
+			continue
+		}
+
+		rtType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionField.TypeRef, false, false)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to convert return type: %w", err)
+		}
+		if !ok {
+			continue
+		}
+		rtTypeID, err := core.ResultIDInput(rtType)
+		if err != nil {
+			return nil, false, err
+		}
+		var fn dagql.ObjectResult[*core.Function]
+		if err := dag.Select(ctx, dag.Root(), &fn, dagql.Selector{
+			Field: "__function",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(introspectionField.Name)},
+				{Name: "returnType", Value: rtTypeID},
+			},
+		}); err != nil {
+			return nil, false, err
+		}
+		if introspectionField.Description != "" {
+			if err := dag.Select(ctx, fn, &fn, dagql.Selector{
+				Field: "withDescription",
+				Args:  []dagql.NamedInput{{Name: "description", Value: dagql.String(introspectionField.Description)}},
+			}); err != nil {
+				return nil, false, err
+			}
+		}
+		if introspectionField.DeprecationReason != nil {
+			if err := dag.Select(ctx, fn, &fn, dagql.Selector{
+				Field: "withDeprecated",
+				Args:  []dagql.NamedInput{{Name: "reason", Value: core.OptString(introspectionField.DeprecationReason)}},
+			}); err != nil {
+				return nil, false, err
+			}
+		}
+
+		for _, introspectionArg := range introspectionField.Args {
+			argType, ok, err := resolveArgTypeDef(ctx, dag, introspectionArg)
+			if err != nil {
+				return nil, false, fmt.Errorf("failed to convert argument type for %s.%s(%s): %w", introspectionType.Name, introspectionField.Name, introspectionArg.Name, err)
+			}
+			if !ok {
+				continue
+			}
+			argTypeID, err := core.ResultIDInput(argType)
+			if err != nil {
+				return nil, false, err
+			}
+			var defaultValue core.JSON
+			if introspectionArg.DefaultValue != nil {
+				defaultValue = core.JSON(*introspectionArg.DefaultValue)
+			}
+			var fnArg dagql.ObjectResult[*core.FunctionArg]
+			if err := dag.Select(ctx, dag.Root(), &fnArg, dagql.Selector{
+				Field: "__functionArgExact",
+				Args: []dagql.NamedInput{
+					{Name: "name", Value: dagql.String(introspectionArg.Name)},
+					{Name: "typeDef", Value: argTypeID},
+					{Name: "description", Value: dagql.String(introspectionArg.Description)},
+					{Name: "defaultValue", Value: defaultValue},
+					{Name: "deprecated", Value: core.OptString(introspectionArg.DeprecationReason)},
+				},
+			}); err != nil {
+				return nil, false, err
+			}
+			fnArgID, err := core.ResultIDInput(fnArg)
+			if err != nil {
+				return nil, false, err
+			}
+			if err := dag.Select(ctx, fn, &fn, dagql.Selector{
+				Field: "__withArg",
+				Args:  []dagql.NamedInput{{Name: "arg", Value: fnArgID}},
+			}); err != nil {
+				return nil, false, err
+			}
+		}
+
+		fnID, err := core.ResultIDInput(fn)
+		if err != nil {
+			return nil, false, err
+		}
+		fnIDs = append(fnIDs, fnID)
+	}
+	return fnIDs, isIdable, nil
+}
+
+func buildCoreObjectLikeTypeDef[T dagql.Typed](
+	ctx context.Context,
+	dag *dagql.Server,
+	introspectionType *introspection.Type,
+	baseSelector string,
+	wrapSelector string,
+	wrapArg string,
+) (dagql.ObjectResult[*core.TypeDef], bool, error) {
+	var zero dagql.ObjectResult[*core.TypeDef]
+	var obj dagql.ObjectResult[T]
+	if err := dag.Select(ctx, dag.Root(), &obj, dagql.Selector{
+		Field: baseSelector,
+		Args: []dagql.NamedInput{
+			{Name: "name", Value: dagql.String(introspectionType.Name)},
+			{Name: "description", Value: dagql.String(introspectionType.Description)},
+		},
+	}); err != nil {
+		return zero, false, err
+	}
+
+	fnIDs, isIdable, err := buildCoreTypeDefFunctions(ctx, dag, introspectionType)
+	if err != nil {
+		return zero, false, err
+	}
+	for _, fnID := range fnIDs {
+		if err := dag.Select(ctx, obj, &obj, dagql.Selector{
+			Field: "__withFunction",
+			Args:  []dagql.NamedInput{{Name: "function", Value: fnID}},
+		}); err != nil {
+			return zero, false, err
+		}
+	}
+
+	if !isIdable && introspectionType.Name != "Query" {
+		return zero, false, nil
+	}
+	objID, err := core.ResultIDInput(obj)
+	if err != nil {
+		return zero, false, err
+	}
+	typeDef, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+		Field: wrapSelector,
+		Args:  []dagql.NamedInput{{Name: wrapArg, Value: objID}},
+	})
+	if err != nil {
+		return zero, false, err
+	}
+	return typeDef, true, nil
+}
+
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (m *CoreMod) buildTypeDefs(ctx context.Context, dag *dagql.Server) (dagql.ObjectResultArray[*core.TypeDef], error) {
 	dagqlSchema := dagqlintrospection.WrapSchema(dag.Schema())
@@ -342,130 +498,36 @@ func (m *CoreMod) buildTypeDefs(ctx context.Context, dag *dagql.Server) (dagql.O
 	for _, introspectionType := range schema.Types {
 		switch introspectionType.Kind {
 		case introspection.TypeKindObject:
-			var obj dagql.ObjectResult[*core.ObjectTypeDef]
-			if err := dag.Select(ctx, dag.Root(), &obj, dagql.Selector{
-				Field: "__objectTypeDef",
-				Args: []dagql.NamedInput{
-					{Name: "name", Value: dagql.String(introspectionType.Name)},
-					{Name: "description", Value: dagql.String(introspectionType.Description)},
-				},
-			}); err != nil {
-				return nil, err
-			}
-
-			isIdable := false
-			for _, introspectionField := range introspectionType.Fields {
-				if introspectionField.Name == "id" {
-					isIdable = true
-					continue
-				}
-
-				rtType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionField.TypeRef, false, false)
-				if err != nil {
-					return nil, fmt.Errorf("failed to convert return type: %w", err)
-				}
-				if !ok {
-					continue
-				}
-				rtTypeID, err := core.ResultIDInput(rtType)
-				if err != nil {
-					return nil, err
-				}
-				var fn dagql.ObjectResult[*core.Function]
-				if err := dag.Select(ctx, dag.Root(), &fn, dagql.Selector{
-					Field: "__function",
-					Args: []dagql.NamedInput{
-						{Name: "name", Value: dagql.String(introspectionField.Name)},
-						{Name: "returnType", Value: rtTypeID},
-					},
-				}); err != nil {
-					return nil, err
-				}
-				if introspectionField.Description != "" {
-					if err := dag.Select(ctx, fn, &fn, dagql.Selector{
-						Field: "withDescription",
-						Args:  []dagql.NamedInput{{Name: "description", Value: dagql.String(introspectionField.Description)}},
-					}); err != nil {
-						return nil, err
-					}
-				}
-				if introspectionField.DeprecationReason != nil {
-					if err := dag.Select(ctx, fn, &fn, dagql.Selector{
-						Field: "withDeprecated",
-						Args:  []dagql.NamedInput{{Name: "reason", Value: core.OptString(introspectionField.DeprecationReason)}},
-					}); err != nil {
-						return nil, err
-					}
-				}
-
-				for _, introspectionArg := range introspectionField.Args {
-					argType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionArg.TypeRef, false, true)
-					if err != nil {
-						return nil, fmt.Errorf("failed to convert argument type: %w", err)
-					}
-					if !ok {
-						continue
-					}
-					argTypeID, err := core.ResultIDInput(argType)
-					if err != nil {
-						return nil, err
-					}
-					var defaultValue core.JSON
-					if introspectionArg.DefaultValue != nil {
-						defaultValue = core.JSON(*introspectionArg.DefaultValue)
-					}
-					var fnArg dagql.ObjectResult[*core.FunctionArg]
-					if err := dag.Select(ctx, dag.Root(), &fnArg, dagql.Selector{
-						Field: "__functionArgExact",
-						Args: []dagql.NamedInput{
-							{Name: "name", Value: dagql.String(introspectionArg.Name)},
-							{Name: "typeDef", Value: argTypeID},
-							{Name: "description", Value: dagql.String(introspectionArg.Description)},
-							{Name: "defaultValue", Value: defaultValue},
-							{Name: "deprecated", Value: core.OptString(introspectionArg.DeprecationReason)},
-						},
-					}); err != nil {
-						return nil, err
-					}
-					fnArgID, err := core.ResultIDInput(fnArg)
-					if err != nil {
-						return nil, err
-					}
-					if err := dag.Select(ctx, fn, &fn, dagql.Selector{
-						Field: "__withArg",
-						Args:  []dagql.NamedInput{{Name: "arg", Value: fnArgID}},
-					}); err != nil {
-						return nil, err
-					}
-				}
-
-				fnID, err := core.ResultIDInput(fn)
-				if err != nil {
-					return nil, err
-				}
-				if err := dag.Select(ctx, obj, &obj, dagql.Selector{
-					Field: "__withFunction",
-					Args:  []dagql.NamedInput{{Name: "function", Value: fnID}},
-				}); err != nil {
-					return nil, err
-				}
-			}
-
-			if !isIdable && introspectionType.Name != "Query" {
-				continue
-			}
-			objID, err := core.ResultIDInput(obj)
+			typeDef, ok, err := buildCoreObjectLikeTypeDef[*core.ObjectTypeDef](
+				ctx,
+				dag,
+				introspectionType,
+				"__objectTypeDef",
+				"__withObjectTypeDef",
+				"objectTypeDef",
+			)
 			if err != nil {
 				return nil, err
 			}
-			typeDef, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
-				Field: "__withObjectTypeDef",
-				Args:  []dagql.NamedInput{{Name: "objectTypeDef", Value: objID}},
-			})
+			if ok {
+				typeDefs = append(typeDefs, typeDef)
+			}
+
+		case introspection.TypeKindInterface:
+			typeDef, ok, err := buildCoreObjectLikeTypeDef[*core.InterfaceTypeDef](
+				ctx,
+				dag,
+				introspectionType,
+				"__interfaceTypeDef",
+				"__withInterfaceTypeDef",
+				"interfaceTypeDef",
+			)
 			if err != nil {
 				return nil, err
 			}
-			typeDefs = append(typeDefs, typeDef)
+			if ok {
+				typeDefs = append(typeDefs, typeDef)
+			}
 
 		case introspection.TypeKindInputObject:
 			var input dagql.ObjectResult[*core.InputTypeDef]
@@ -619,7 +681,7 @@ func (m *CoreMod) buildTypeDefs(ctx context.Context, dag *dagql.Server) (dagql.O
 			typeDefs = append(typeDefs, typeDef)
 
 		default:
-			continue
+			return nil, fmt.Errorf("unexpected type kind %q for %q", introspectionType.Kind, introspectionType.Name)
 		}
 	}
 	return typeDefs, nil
@@ -879,26 +941,97 @@ func (enum *CoreModEnum) TypeDef(ctx context.Context) (dagql.ObjectResult[*core.
 	})
 }
 
-func introspectionRefToTypeDef(ctx context.Context, dag *dagql.Server, introspectionType *introspection.TypeRef, nonNull, isInput bool) (dagql.ObjectResult[*core.TypeDef], bool, error) {
-	maybeOptional := func(inst dagql.ObjectResult[*core.TypeDef]) (dagql.ObjectResult[*core.TypeDef], error) {
-		if nonNull {
-			return inst, nil
-		}
-		if err := dag.Select(ctx, inst, &inst, dagql.Selector{
-			Field: "withOptional",
-			Args:  []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(true)}},
-		}); err != nil {
-			return inst, fmt.Errorf("make typedef optional: %w", err)
-		}
+func maybeOptional(ctx context.Context, dag *dagql.Server, inst dagql.ObjectResult[*core.TypeDef], nonNull bool) (dagql.ObjectResult[*core.TypeDef], error) {
+	if nonNull {
 		return inst, nil
 	}
+	if err := dag.Select(ctx, inst, &inst, dagql.Selector{
+		Field: "withOptional",
+		Args:  []dagql.NamedInput{{Name: "optional", Value: dagql.Boolean(true)}},
+	}); err != nil {
+		return inst, fmt.Errorf("make typedef optional: %w", err)
+	}
+	return inst, nil
+}
 
+// resolveArgTypeDef converts an introspection arg's TypeRef into a TypeDef,
+// also handling the unified ID scalar via @expectedType directives.
+func resolveArgTypeDef(ctx context.Context, dag *dagql.Server, arg introspection.InputValue) (dagql.ObjectResult[*core.TypeDef], bool, error) {
+	argType, ok, err := introspectionRefToTypeDef(ctx, dag, arg.TypeRef, false, true)
+	if err != nil || !ok {
+		return argType, ok, err
+	}
+
+	if expectedName := arg.Directives.ExpectedType(); expectedName != "" {
+		resolved, changed, err := resolveIDScalar(ctx, dag, argType, expectedName)
+		if err != nil || changed {
+			return resolved, changed, err
+		}
+	}
+
+	return argType, true, nil
+}
+
+func resolveIDScalar(ctx context.Context, dag *dagql.Server, typeDef dagql.ObjectResult[*core.TypeDef], expectedName string) (dagql.ObjectResult[*core.TypeDef], bool, error) {
+	self := typeDef.Self()
+	switch self.Kind {
+	case core.TypeDefKindScalar:
+		if !self.AsScalar.Valid {
+			return typeDef, false, nil
+		}
+		scalar := self.AsScalar.Value.Self()
+		if scalar.OriginalName != "ID" && scalar.Name != "ID" {
+			return typeDef, false, nil
+		}
+
+		field := "withObject"
+		if _, ok := dag.InterfaceType(expectedName); ok {
+			field = "withInterface"
+		}
+		inst, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+			Field: field,
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(expectedName)}},
+		})
+		if err != nil {
+			return dagql.ObjectResult[*core.TypeDef]{}, false, err
+		}
+		inst, err = maybeOptional(ctx, dag, inst, !self.Optional)
+		return inst, true, err
+
+	case core.TypeDefKindList:
+		if !self.AsList.Valid {
+			return typeDef, false, nil
+		}
+		elem, changed, err := resolveIDScalar(ctx, dag, self.AsList.Value.Self().ElementTypeDef, expectedName)
+		if err != nil || !changed {
+			return typeDef, changed, err
+		}
+		elemID, err := core.ResultIDInput(elem)
+		if err != nil {
+			return dagql.ObjectResult[*core.TypeDef]{}, false, err
+		}
+		inst, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+			Field: "withListOf",
+			Args:  []dagql.NamedInput{{Name: "elementType", Value: elemID}},
+		})
+		if err != nil {
+			return dagql.ObjectResult[*core.TypeDef]{}, false, err
+		}
+		inst, err = maybeOptional(ctx, dag, inst, !self.Optional)
+		return inst, true, err
+	}
+
+	return typeDef, false, nil
+}
+
+func introspectionRefToTypeDef(ctx context.Context, dag *dagql.Server, introspectionType *introspection.TypeRef, nonNull, isInput bool) (dagql.ObjectResult[*core.TypeDef], bool, error) {
 	switch introspectionType.Kind {
 	case introspection.TypeKindNonNull:
 		return introspectionRefToTypeDef(ctx, dag, introspectionType.OfType, true, isInput)
 
 	case introspection.TypeKindScalar:
-		if isInput && strings.HasSuffix(introspectionType.Name, "ID") {
+		// TODO: just remove?
+		if isInput && introspectionType.Name != "ID" && strings.HasSuffix(introspectionType.Name, "ID") {
 			inst, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
 				Field: "withObject",
 				Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(strings.TrimSuffix(introspectionType.Name, "ID"))}},
@@ -906,7 +1039,7 @@ func introspectionRefToTypeDef(ctx context.Context, dag *dagql.Server, introspec
 			if err != nil {
 				return dagql.ObjectResult[*core.TypeDef]{}, false, err
 			}
-			inst, err = maybeOptional(inst)
+			inst, err = maybeOptional(ctx, dag, inst, nonNull)
 			return inst, true, err
 		}
 
@@ -949,7 +1082,7 @@ func introspectionRefToTypeDef(ctx context.Context, dag *dagql.Server, introspec
 		if err != nil {
 			return dagql.ObjectResult[*core.TypeDef]{}, false, err
 		}
-		inst, err = maybeOptional(inst)
+		inst, err = maybeOptional(ctx, dag, inst, nonNull)
 		return inst, true, err
 
 	case introspection.TypeKindEnum:
@@ -960,7 +1093,7 @@ func introspectionRefToTypeDef(ctx context.Context, dag *dagql.Server, introspec
 		if err != nil {
 			return dagql.ObjectResult[*core.TypeDef]{}, false, err
 		}
-		inst, err = maybeOptional(inst)
+		inst, err = maybeOptional(ctx, dag, inst, nonNull)
 		return inst, true, err
 
 	case introspection.TypeKindList:
@@ -982,7 +1115,7 @@ func introspectionRefToTypeDef(ctx context.Context, dag *dagql.Server, introspec
 		if err != nil {
 			return dagql.ObjectResult[*core.TypeDef]{}, false, err
 		}
-		inst, err = maybeOptional(inst)
+		inst, err = maybeOptional(ctx, dag, inst, nonNull)
 		return inst, true, err
 
 	case introspection.TypeKindObject:
@@ -993,7 +1126,18 @@ func introspectionRefToTypeDef(ctx context.Context, dag *dagql.Server, introspec
 		if err != nil {
 			return dagql.ObjectResult[*core.TypeDef]{}, false, err
 		}
-		inst, err = maybeOptional(inst)
+		inst, err = maybeOptional(ctx, dag, inst, nonNull)
+		return inst, true, err
+
+	case introspection.TypeKindInterface:
+		inst, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
+			Field: "withInterface",
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(introspectionType.Name)}},
+		})
+		if err != nil {
+			return dagql.ObjectResult[*core.TypeDef]{}, false, err
+		}
+		inst, err = maybeOptional(ctx, dag, inst, nonNull)
 		return inst, true, err
 
 	case introspection.TypeKindInputObject:
@@ -1016,10 +1160,10 @@ func introspectionRefToTypeDef(ctx context.Context, dag *dagql.Server, introspec
 		if err != nil {
 			return dagql.ObjectResult[*core.TypeDef]{}, false, err
 		}
-		inst, err = maybeOptional(inst)
+		inst, err = maybeOptional(ctx, dag, inst, nonNull)
 		return inst, true, err
 
 	default:
-		return dagql.ObjectResult[*core.TypeDef]{}, false, fmt.Errorf("unexpected type kind %s", introspectionType.Kind)
+		return dagql.ObjectResult[*core.TypeDef]{}, false, fmt.Errorf("unexpected type kind %q for %q", introspectionType.Kind, introspectionType.Name)
 	}
 }

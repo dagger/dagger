@@ -20,6 +20,7 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"github.com/vektah/gqlparser/v2/parser"
 	"github.com/vektah/gqlparser/v2/validator"
+	validatorcore "github.com/vektah/gqlparser/v2/validator/core"
 	"github.com/vektah/gqlparser/v2/validator/rules"
 	"github.com/zeebo/xxh3"
 	"golang.org/x/sync/errgroup"
@@ -32,12 +33,14 @@ import (
 // Server represents a GraphQL server whose schema is dynamically modified at
 // runtime.
 type Server struct {
-	root       AnyObjectResult
-	telemetry  AroundFunc
-	objects    map[string]ObjectType
-	scalars    map[string]ScalarType
-	typeDefs   map[string]TypeDef
-	directives map[string]DirectiveSpec
+	root           AnyObjectResult
+	telemetry      AroundFunc
+	objects        map[string]ObjectType
+	interfaces     map[string]*Interface
+	autoInterfaces []*Interface // core interfaces auto-implemented by qualifying types
+	scalars        map[string]ScalarType
+	typeDefs       map[string]TypeDef
+	directives     map[string]DirectiveSpec
 
 	schemas       map[call.View]*ast.Schema
 	schemaDigests map[call.View]digest.Digest
@@ -61,6 +64,19 @@ type Server struct {
 	// Load, LoadType, and callers that need to bypass proxies (proxy
 	// resolvers, SDK plumbing) use Canonical() to reach it.
 	canonical *Server
+
+	// nodeLoader, if set, is called by the node(id:) resolver to load
+	// an object from its ID. This allows the Dagger core layer to
+	// resolve IDs through a server that has all necessary module
+	// dependencies installed, rather than being limited to the
+	// current server's schema.
+	nodeLoader func(ctx context.Context, id *call.ID) (AnyObjectResult, error)
+
+	// resultServerForCall, if set, returns a server capable of reconstructing
+	// cached or persisted results produced by a call. This lets the Dagger core
+	// layer rebuild module-aware schemas for cache hits whose object type belongs
+	// to a dependency module that is not installed in the current server.
+	resultServerForCall func(ctx context.Context, resultCall *ResultCall) (*Server, error)
 }
 
 func (s *Server) Canonical() *Server {
@@ -72,6 +88,20 @@ func (s *Server) Canonical() *Server {
 
 func (s *Server) SetCanonical(canonical *Server) {
 	s.canonical = canonical
+}
+
+// SetNodeLoader sets a custom loader for the node(id:) resolver.
+// This allows the Dagger core layer to resolve IDs through a server
+// that has all necessary module dependencies installed.
+func (s *Server) SetNodeLoader(loader func(ctx context.Context, id *call.ID) (AnyObjectResult, error)) {
+	s.nodeLoader = loader
+}
+
+// SetResultServerForCall sets a custom schema resolver for cached result
+// reconstruction. The returned server must be able to resolve object types
+// referenced by the result call.
+func (s *Server) SetResultServerForCall(loader func(ctx context.Context, resultCall *ResultCall) (*Server, error)) {
+	s.resultServerForCall = loader
 }
 
 type InstallHook interface {
@@ -110,6 +140,21 @@ func NewServer[T Typed](_ context.Context, root T) (*Server, error) {
 		class:  rootClass,
 	}
 	srv.root = rootRes
+
+	// Install core interfaces before any objects so that InstallObject
+	// can auto-implement them for qualifying classes.
+	//
+	// autoInterfaces are checked in order for every installed object/interface.
+	nodeIface := NewInterface("Node", "An object with a globally unique ID.")
+	nodeIface.AddField(InterfaceFieldSpec{
+		FieldSpec: FieldSpec{
+			Name: "id",
+			Type: AnyID{},
+		},
+	})
+	srv.interfaces[nodeIface.TypeName()] = nodeIface
+	srv.autoInterfaces = []*Interface{nodeIface}
+
 	srv.InstallObject(rootClass)
 	for _, scalar := range coreScalars {
 		srv.InstallScalar(scalar)
@@ -117,12 +162,51 @@ func NewServer[T Typed](_ context.Context, root T) (*Server, error) {
 	for _, directive := range coreDirectives {
 		srv.InstallDirective(directive)
 	}
+
+	// Install the node(id: ID!): Node field on the root query.
+	srv.Root().ObjectType().Extend(
+		FieldSpec{
+			Name:        "node",
+			Description: "Load any object by its ID.",
+			Type: &interfaceTyped{
+				name:    "Node",
+				nonNull: false,
+			},
+			Args: NewInputSpecs(
+				InputSpec{
+					Name: "id",
+					Type: AnyID{},
+				},
+			),
+			DoNotCache: "There's no point caching the loading call of an ID vs. letting the ID's calls cache on their own.",
+		},
+		func(ctx context.Context, _ AnyResult, args map[string]Input) (AnyResult, error) {
+			idable, ok := args["id"].(IDable)
+			if !ok {
+				return nil, fmt.Errorf("expected IDable, got %T", args["id"])
+			}
+			id, err := idable.ID()
+			if err != nil {
+				return nil, fmt.Errorf("expected valid ID: %w", err)
+			}
+			loaderSrv := CurrentDagqlServer(ctx)
+			if loaderSrv == nil {
+				loaderSrv = srv
+			}
+			if loaderSrv.nodeLoader != nil {
+				return loaderSrv.nodeLoader(ctx, id)
+			}
+			return loaderSrv.Load(ctx, id)
+		},
+	)
+
 	return srv, nil
 }
 
 func newBlankServer() *Server {
 	return &Server{
 		objects:       map[string]ObjectType{},
+		interfaces:    map[string]*Interface{},
 		scalars:       map[string]ScalarType{},
 		typeDefs:      map[string]TypeDef{},
 		directives:    map[string]DirectiveSpec{},
@@ -141,10 +225,17 @@ func (s *Server) Fork(_ context.Context, root Typed) (*Server, error) {
 	out := newBlankServer()
 	out.telemetry = s.telemetry
 	out.View = s.View
+	out.canonical = s.canonical
+	out.nodeLoader = s.nodeLoader
+	out.resultServerForCall = s.resultServerForCall
 
 	s.installLock.RLock()
 	defer s.installLock.RUnlock()
 
+	for name, iface := range s.interfaces {
+		out.interfaces[name] = iface
+	}
+	out.autoInterfaces = append(out.autoInterfaces, s.autoInterfaces...)
 	for name, scalar := range s.scalars {
 		out.scalars[name] = scalar
 	}
@@ -186,6 +277,19 @@ func (s *Server) Fork(_ context.Context, root Typed) (*Server, error) {
 	return out, nil
 }
 
+// interfaceTyped is a Typed marker that returns an interface type name.
+type interfaceTyped struct {
+	name    string
+	nonNull bool
+}
+
+func (m *interfaceTyped) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: m.name,
+		NonNull:   m.nonNull,
+	}
+}
+
 func (s *Server) invalidateSchemaCache() {
 	s.schemaLock.Lock()
 	clear(s.schemas)
@@ -213,6 +317,15 @@ func NewDefaultHandler(es graphql.ExecutableSchema) *handler.Server {
 		// inputArgs incorrectly.
 		validationRules.RemoveRule(rules.ScalarLeafsRule.Name)
 
+		// Replace PossibleFragmentSpreads with a version that handles
+		// interface-implements-interface per the GraphQL spec.  The
+		// default rule only checks possibleTypes overlap, which fails
+		// when an interface has no concrete implementors in the current
+		// schema view (e.g. `... on TestCustomIface` inside `node(id:)`
+		// when the concrete types are in other modules).  Per the spec,
+		// `... on A` is valid in a `B` context when A implements B.
+		validationRules.ReplaceRule(rules.PossibleFragmentSpreadsRule.Name, possibleFragmentSpreadsRule)
+
 		return validationRules
 	})
 
@@ -224,8 +337,7 @@ var coreScalars = []ScalarType{
 	Int(0),
 	Float(0),
 	String(""),
-	// instead of a single ID type, each object has its own ID type
-	// ID{},
+	AnyID{},
 }
 
 var coreDirectives = []DirectiveSpec{
@@ -274,6 +386,125 @@ var coreDirectives = []DirectiveSpec{
 			DirectiveLocationEnumValue,
 		},
 	},
+	{
+		Name:        "sourceMap",
+		Description: FormatDescription(`Indicates the source information for where a given field is defined.`),
+		Args: NewInputSpecs(
+			InputSpec{
+				Name: "module",
+				Type: String(""),
+			},
+			InputSpec{
+				Name: "filename",
+				Type: String(""),
+			},
+			InputSpec{
+				Name: "line",
+				Type: Int(0),
+			},
+			InputSpec{
+				Name: "column",
+				Type: Int(0),
+			},
+			InputSpec{
+				Name: "url",
+				Type: String(""),
+			},
+		),
+		Locations: []DirectiveLocation{
+			DirectiveLocationScalar,
+			DirectiveLocationObject,
+			DirectiveLocationFieldDefinition,
+			DirectiveLocationArgumentDefinition,
+			DirectiveLocationUnion,
+			DirectiveLocationEnum,
+			DirectiveLocationEnumValue,
+			DirectiveLocationInputObject,
+		},
+	},
+	{
+		Name:        "enumValue",
+		Description: FormatDescription(`Indicates the underlying value of an enum member.`),
+		Args: NewInputSpecs(
+			InputSpec{
+				Name: "value",
+				Type: String(""),
+			},
+		),
+		Locations: []DirectiveLocation{
+			DirectiveLocationEnumValue,
+		},
+	},
+	{
+		Name:        "defaultPath",
+		Description: FormatDescription(`Indicates that the argument defaults to a contextual path.`),
+		Args: NewInputSpecs(
+			InputSpec{
+				Name: "path",
+				Type: String(""),
+			},
+		),
+		Locations: []DirectiveLocation{
+			DirectiveLocationArgumentDefinition,
+		},
+	},
+	{
+		Name:        "defaultAddress",
+		Description: FormatDescription(`Indicates that the argument defaults to a container address.`),
+		Args: NewInputSpecs(
+			InputSpec{
+				Name: "address",
+				Type: String(""),
+			},
+		),
+		Locations: []DirectiveLocation{
+			DirectiveLocationArgumentDefinition,
+		},
+	},
+	{
+		Name:        "ignorePatterns",
+		Description: FormatDescription(`Filter directory contents using .gitignore-style glob patterns.`),
+		Args: NewInputSpecs(
+			InputSpec{
+				Name: "patterns",
+				Type: ArrayInput[String](nil),
+			},
+		),
+		Locations: []DirectiveLocation{
+			DirectiveLocationArgumentDefinition,
+		},
+	},
+	{
+		Name:        "expectedType",
+		Description: FormatDescription(`Indicates the expected object or interface type for an ID value. On arguments, indicates what type of ID is expected. On fields, indicates the type of the returned ID.`),
+		Args: NewInputSpecs(
+			InputSpec{
+				Name:        "name",
+				Description: FormatDescription(`The name of the expected type.`),
+				Type:        String(""),
+			},
+		),
+		Locations: []DirectiveLocation{
+			DirectiveLocationArgumentDefinition,
+			DirectiveLocationFieldDefinition,
+		},
+	},
+	{
+		Name:        "check",
+		Description: FormatDescription(`Indicates that this function is a check.`),
+		Args:        NewInputSpecs(), // none
+		Locations: []DirectiveLocation{
+			DirectiveLocationFieldDefinition,
+		},
+	},
+	{
+		Name:        "generate",
+		Description: FormatDescription(`Indicates that this function is a generate function.`),
+		Args:        NewInputSpecs(), // none
+		Locations: []DirectiveLocation{
+			DirectiveLocationFieldDefinition,
+		},
+	},
 }
 
 // Root returns the root object of the server. It is suitable for passing to
@@ -295,50 +526,14 @@ func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) O
 	s.invalidateSchemaCache()
 
 	s.objects[class.TypeName()] = class
-	if idType, hasID := class.IDType(); hasID {
-		s.scalars[idType.TypeName()] = idType
 
-		spec := FieldSpec{
-			Name:        fmt.Sprintf("load%sFromID", class.TypeName()),
-			Description: fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
-			Type:        class.Typed(),
-			Args: NewInputSpecs(
-				InputSpec{
-					Name: "id",
-					Type: idType,
-				},
-			),
-			Directives: directives,
+	// Auto-implement core interfaces for qualifying classes.
+	if impl, ok := class.(InterfaceImplementor); ok {
+		for _, iface := range s.autoInterfaces {
+			if iface.Satisfies(class, "") {
+				impl.ImplementInterface(iface)
+			}
 		}
-
-		s.Root().ObjectType().ExtendLoadByID(
-			spec,
-			func(ctx context.Context, _ AnyResult, args map[string]Input) (AnyResult, error) {
-				idable, ok := args["id"].(IDable)
-				if !ok {
-					return nil, fmt.Errorf("expected IDable, got %T", args["id"])
-				}
-				id, err := idable.ID()
-				if err != nil {
-					return nil, fmt.Errorf("expected valid ID: %w", err)
-				}
-				if id.Type() == nil {
-					return nil, fmt.Errorf("expected typed ID, got untyped ID")
-				}
-				if id.Type().ToAST().NamedType != class.TypeName() {
-					return nil, fmt.Errorf("expected ID of type %q, got %q", class.TypeName(), id.Type().ToAST().NamedType)
-				}
-				srv := CurrentDagqlServer(ctx)
-				if srv == nil {
-					return nil, fmt.Errorf("current dagql server not found")
-				}
-				res, err := srv.Load(ctx, id)
-				if err != nil {
-					return nil, fmt.Errorf("load: %w", err)
-				}
-				return res, nil
-			},
-		)
 	}
 	s.installLock.Unlock()
 
@@ -347,6 +542,88 @@ func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) O
 	}
 
 	return class
+}
+
+// AutoImplementInterfaces re-checks whether the given object type satisfies
+// any auto-interfaces that it didn't qualify for at InstallObject time. This
+// is needed because fields like "sync" are installed after InstallObject.
+func (s *Server) AutoImplementInterfaces(class ObjectType) {
+	impl, ok := class.(InterfaceImplementor)
+	if !ok {
+		return
+	}
+	s.installLock.Lock()
+	defer s.installLock.Unlock()
+	for _, iface := range s.autoInterfaces {
+		if iface.HasImplementor(class.TypeName()) {
+			continue
+		}
+		if iface.Satisfies(class, "") {
+			impl.ImplementInterface(iface)
+		}
+	}
+}
+
+// InstallInterface installs the given Interface type into the schema.
+// If an interface with the same name is already installed, it is returned.
+func (s *Server) InstallInterface(iface *Interface, directives ...*ast.Directive) *Interface {
+	s.installLock.Lock()
+	defer s.installLock.Unlock()
+	if len(directives) > 0 {
+		iface.addDirectives(directives...)
+	}
+	return s.installInterfaceLocked(iface)
+}
+
+// installInterfaceLocked is the lock-held implementation of InstallInterface.
+func (s *Server) installInterfaceLocked(iface *Interface) *Interface {
+	if existing, ok := s.interfaces[iface.TypeName()]; ok {
+		return existing
+	}
+	s.interfaces[iface.TypeName()] = iface
+
+	// Auto-implement core interfaces for qualifying interfaces.
+	for _, autoIface := range s.autoInterfaces {
+		if autoIface.TypeName() == iface.TypeName() {
+			continue
+		}
+		if autoIface.SatisfiedByInterface(iface, "") {
+			iface.ImplementInterface(autoIface)
+		}
+	}
+
+	s.invalidateSchemaCache()
+	return iface
+}
+
+// AddAutoInterface registers an interface for automatic implementation.
+// Any subsequently installed object or interface that structurally satisfies
+// it will automatically declare conformance. Already-installed objects are
+// NOT retroactively checked — call this before installing objects, or use
+// AutoImplementInterfaces to re-check specific types.
+func (s *Server) AddAutoInterface(iface *Interface) {
+	s.installLock.Lock()
+	defer s.installLock.Unlock()
+	iface = s.installInterfaceLocked(iface)
+	s.autoInterfaces = append(s.autoInterfaces, iface)
+
+	// Resolve interface-implements-interface among all auto-interfaces.
+	for _, other := range s.autoInterfaces {
+		if other.TypeName() == iface.TypeName() {
+			continue
+		}
+		if other.SatisfiedByInterface(iface, "") {
+			iface.ImplementInterface(other)
+		}
+	}
+}
+
+// InterfaceType returns the Interface with the given name, if it exists.
+func (s *Server) InterfaceType(name string) (*Interface, bool) {
+	s.installLock.RLock()
+	defer s.installLock.RUnlock()
+	t, ok := s.interfaces[name]
+	return t, ok
 }
 
 // InstallScalar installs the given Scalar type into the schema, or returns the
@@ -448,6 +725,17 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 			}
 			schema.AddTypes(def)
 			schema.AddPossibleType(def.Name, def)
+
+			// Also register this object as a possible type for each interface it
+			// declares via def.Interfaces.
+			for _, ifaceName := range def.Interfaces {
+				schema.AddPossibleType(ifaceName, def)
+			}
+		})
+		// Emit interface definitions.
+		sortutil.RangeSorted(s.interfaces, func(_ string, iface *Interface) {
+			def := iface.Definition(view)
+			schema.AddTypes(def)
 		})
 		sortutil.RangeSorted(s.scalars, func(_ string, t ScalarType) {
 			def := definition(ast.Scalar, t, view)
@@ -589,6 +877,9 @@ func (s *Server) Resolve(ctx context.Context, self AnyObjectResult, sels ...Sele
 
 	if len(sels) == 1 {
 		sel := sels[0]
+		if !s.selectionMatches(sel, self.ObjectType().TypeName()) {
+			return map[string]any{}, nil
+		}
 		// Resolve is in the hot path, so avoiding overhead of goroutines, sync.Map, etc. when there's only
 		// one selection (probably the most common case) likely pays off.
 		res, err := s.resolvePath(ctx, self, sel)
@@ -603,6 +894,9 @@ func (s *Server) Resolve(ctx context.Context, self AnyObjectResult, sels ...Sele
 	pool := pool.New().WithErrors()
 	for _, sel := range sels {
 		pool.Go(func() error {
+			if !s.selectionMatches(sel, self.ObjectType().TypeName()) {
+				return nil
+			}
 			res, err := s.resolvePath(ctx, self, sel)
 			if err != nil {
 				return err
@@ -621,6 +915,15 @@ func (s *Server) Resolve(ctx context.Context, self AnyObjectResult, sels ...Sele
 		return true
 	})
 	return resultsMap, nil
+}
+
+func (s *Server) selectionMatches(sel Selection, objectTypeName string) bool {
+	for _, condition := range sel.TypeConditions {
+		if !s.typeConditionMatches(condition, objectTypeName) {
+			return false
+		}
+	}
+	return true
 }
 
 // Load loads the object with the given ID.
@@ -1241,8 +1544,15 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 }
 
 func (s *Server) isObjectType(typeName string) bool {
-	_, ok := s.ObjectType(typeName)
-	return ok
+	if _, ok := s.ObjectType(typeName); ok {
+		return true
+	}
+	// Interface types also need to be treated as "object-like" for selection purposes,
+	// since their values are concrete objects that support field selection.
+	if _, ok := s.InterfaceType(typeName); ok {
+		return true
+	}
+	return false
 }
 
 // Attach an install hook
@@ -1474,6 +1784,11 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 		return nil, fmt.Errorf("cannot resolve selector path with nth")
 	}
 
+	// __typename returns the concrete type name of the current object.
+	if sel.Selector.Field == "__typename" {
+		return self.ObjectType().TypeName(), nil
+	}
+
 	leaseCtx, release, err := withOperationLease(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("acquire operation lease: %w", err)
@@ -1571,6 +1886,11 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 	return s.Resolve(ctx, node, sel.Subselections...)
 }
 
+// ToSelectable converts an AnyResult to an AnyObjectResult if possible.
+func (s *Server) ToSelectable(val AnyResult) (AnyObjectResult, error) {
+	return s.toSelectable(val)
+}
+
 func (s *Server) toSelectable(val AnyResult) (AnyObjectResult, error) {
 	if sel, ok := val.(AnyObjectResult); ok {
 		// We always support returning something that's already Selectable, e.g. an
@@ -1584,45 +1904,71 @@ func (s *Server) toSelectable(val AnyResult) (AnyObjectResult, error) {
 		return class.New(val)
 	}
 
-	// if this is an interface value, we may only know about the underlying object
-	// it's wrapping, check that
-	if iface, ok := UnwrapAs[InterfaceValue](val); ok {
-		obj, err := iface.UnderlyingObject()
-		if err != nil {
-			return nil, fmt.Errorf("toSelectable iface conversion: %w", err)
-		}
-		className := obj.Type().Name()
-		class, ok = s.ObjectType(className)
-		if ok {
-			shared := val.cacheSharedResult()
-			frame := shared.loadResultCall()
-			if shared == nil || frame == nil {
-				return nil, fmt.Errorf("toSelectable iface conversion: missing result call frame")
-			}
-			val, err = NewResultForCall(obj, frame)
-			if err != nil {
-				return nil, fmt.Errorf("toSelectable iface conversion: %w", err)
-			}
-			return class.New(val)
-		}
-	}
-
 	return nil, fmt.Errorf("toSelectable: unknown type %q", val.Type().Name())
+}
+
+// typeConditionMatches returns true if the given type condition (from a
+// fragment spread or inline fragment) matches the given object type name.
+//
+// A match occurs if:
+// - The condition is empty (unconditional).
+// - The condition is the exact object type name.
+// - The condition names an interface that the object type implements.
+func (s *Server) typeConditionMatches(condition string, objectTypeName string) bool {
+	if condition == "" {
+		return true
+	}
+	if condition == objectTypeName {
+		return true
+	}
+	// Check if condition names an interface that this object implements.
+	if iface, ok := s.InterfaceType(condition); ok && iface.HasImplementor(objectTypeName) {
+		return true
+	}
+	// Check if objectTypeName is an interface and condition is one of its
+	// implementors. This handles inline fragments like `... on Point` when
+	// the current selection context is an interface like `Node`.
+	if iface, ok := s.InterfaceType(objectTypeName); ok && iface.HasImplementor(condition) {
+		return true
+	}
+	return false
 }
 
 func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.OperationContext, self *ast.Type, astSels ast.SelectionSet) ([]Selection, error) {
 	vars := gqlOp.Variables
 
+	// fieldParser is the common interface for parsing fields from objects and interfaces.
+	type fieldParser interface {
+		ParseField(ctx context.Context, view call.View, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error)
+	}
+
+	s.installLock.RLock()
 	class := s.objects[self.Name()]
-	if class == nil {
-		return nil, fmt.Errorf("parseASTSelections: not an Object type: %q", self.Name())
+	iface := s.interfaces[self.Name()]
+	s.installLock.RUnlock()
+
+	var parser fieldParser
+	if class != nil {
+		parser = class
+	} else if iface != nil {
+		parser = iface
+	} else {
+		return nil, fmt.Errorf("parseASTSelections: not an Object or Interface type: %q", self.Name())
 	}
 
 	sels := []Selection{}
 	for _, sel := range astSels {
 		switch x := sel.(type) {
 		case *ast.Field:
-			sel, resType, err := class.ParseField(ctx, s.View, x, vars)
+			// __typename is a built-in meta-field on every object/interface type.
+			if x.Name == "__typename" {
+				sels = append(sels, Selection{
+					Alias:    x.Alias,
+					Selector: Selector{Field: "__typename"},
+				})
+				continue
+			}
+			sel, resType, err := parser.ParseField(ctx, s.View, x, vars)
 			if err != nil {
 				return nil, fmt.Errorf("parse field %q: %w", x.Name, err)
 			}
@@ -1644,12 +1990,41 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 			if fragment == nil {
 				return nil, fmt.Errorf("unknown fragment: %s", x.Name)
 			}
-			if len(fragment.SelectionSet) > 0 {
-				subsels, err := s.parseASTSelections(ctx, gqlOp, self, fragment.SelectionSet)
-				if err != nil {
-					return nil, err
+			// Check type condition: only include if the fragment's type matches
+			// the current object type (or is empty / matches an interface).
+			if s.typeConditionMatches(fragment.TypeCondition, self.Name()) {
+				if len(fragment.SelectionSet) > 0 {
+					// Parse against the fragment's type condition if it differs
+					// from the current context (e.g. narrowing from an interface).
+					fragSelf := self
+					if fragment.TypeCondition != "" && fragment.TypeCondition != self.Name() {
+						fragSelf = &ast.Type{NamedType: fragment.TypeCondition, NonNull: true}
+					}
+					subsels, err := s.parseASTSelections(ctx, gqlOp, fragSelf, fragment.SelectionSet)
+					if err != nil {
+						return nil, err
+					}
+					subsels = addTypeCondition(subsels, fragment.TypeCondition)
+					sels = append(sels, subsels...)
 				}
-				sels = append(sels, subsels...)
+			}
+		case *ast.InlineFragment:
+			// If the type condition matches (or is empty), recurse into its selections.
+			if x.TypeCondition == "" || s.typeConditionMatches(x.TypeCondition, self.Name()) {
+				if len(x.SelectionSet) > 0 {
+					// Parse against the type condition if it narrows from the
+					// current context (e.g. `... on Point` within a Node).
+					fragSelf := self
+					if x.TypeCondition != "" && x.TypeCondition != self.Name() {
+						fragSelf = &ast.Type{NamedType: x.TypeCondition, NonNull: true}
+					}
+					subsels, err := s.parseASTSelections(ctx, gqlOp, fragSelf, x.SelectionSet)
+					if err != nil {
+						return nil, err
+					}
+					subsels = addTypeCondition(subsels, x.TypeCondition)
+					sels = append(sels, subsels...)
+				}
 			}
 		default:
 			return nil, fmt.Errorf("unknown field type: %T", x)
@@ -1659,11 +2034,22 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 	return sels, nil
 }
 
+func addTypeCondition(sels []Selection, condition string) []Selection {
+	if condition == "" {
+		return sels
+	}
+	for i := range sels {
+		sels[i].TypeConditions = append(sels[i].TypeConditions, condition)
+	}
+	return sels
+}
+
 // Selection represents a selection of a field on an object.
 type Selection struct {
-	Alias         string
-	Selector      Selector
-	Subselections []Selection
+	Alias          string
+	Selector       Selector
+	Subselections  []Selection
+	TypeConditions []string
 }
 
 // Name returns the name of the selection, which is either the alias or the
@@ -1840,4 +2226,96 @@ func (input InputObject[T]) ToLiteral() call.Literal {
 		args = append(args, call.NewArgument(field.name, field.value.ToLiteral(), false))
 	}
 	return call.NewLiteralObject(args...)
+}
+
+// possibleFragmentSpreadsRule is a replacement for gqlparser's
+// PossibleFragmentSpreadsRule that handles interface-implements-interface
+// per the GraphQL spec (September 2025, §5.5.2.3).
+//
+// The default rule only checks possibleTypes overlap. When an interface
+// has no concrete implementors in the current schema view (common with
+// module-scoped schemas), the overlap is empty and the rule rejects
+// valid spreads like `... on CustomIface` inside `node(id:)`.
+//
+// Per the spec, `... on A` is valid in a `B` context when interface A
+// declares `implements B`, because any future concrete type implementing
+// A must also implement B.
+func possibleFragmentSpreadsRule(observers *validatorcore.Events, addError validatorcore.AddErrFunc) {
+	validate := func(walker *validatorcore.Walker, parentDef *ast.Definition, fragmentName string, emitError func()) {
+		if parentDef == nil {
+			return
+		}
+
+		fragmentDef := walker.Schema.Types[fragmentName]
+		if fragmentDef == nil || !fragmentDef.IsCompositeType() {
+			return
+		}
+
+		// Per the spec: if the fragment type is an interface that
+		// implements the parent interface, the spread is always valid.
+		if parentDef.Kind == ast.Interface && fragmentDef.Kind == ast.Interface {
+			for _, iface := range fragmentDef.Interfaces {
+				if iface == parentDef.Name {
+					return
+				}
+			}
+		}
+
+		// Fall back to the standard possibleTypes overlap check.
+		var parentDefs []*ast.Definition
+		switch parentDef.Kind {
+		case ast.Object:
+			parentDefs = []*ast.Definition{parentDef}
+		case ast.Interface, ast.Union:
+			parentDefs = walker.Schema.GetPossibleTypes(parentDef)
+		default:
+			return
+		}
+
+		fragmentDefs := walker.Schema.GetPossibleTypes(fragmentDef)
+		for _, fd := range fragmentDefs {
+			for _, pd := range parentDefs {
+				if pd.Name == fd.Name {
+					return
+				}
+			}
+		}
+
+		emitError()
+	}
+
+	observers.OnInlineFragment(func(walker *validatorcore.Walker, inlineFragment *ast.InlineFragment) {
+		validate(walker, inlineFragment.ObjectDefinition, inlineFragment.TypeCondition, func() {
+			addError(
+				validatorcore.Message(
+					`Fragment cannot be spread here as objects of type "%s" can never be of type "%s".`,
+					inlineFragment.ObjectDefinition.Name,
+					inlineFragment.TypeCondition,
+				),
+				validatorcore.At(inlineFragment.Position),
+			)
+		})
+	})
+
+	observers.OnFragmentSpread(func(walker *validatorcore.Walker, fragmentSpread *ast.FragmentSpread) {
+		if fragmentSpread.Definition == nil {
+			return
+		}
+		validate(
+			walker,
+			fragmentSpread.ObjectDefinition,
+			fragmentSpread.Definition.TypeCondition,
+			func() {
+				addError(
+					validatorcore.Message(
+						`Fragment "%s" cannot be spread here as objects of type "%s" can never be of type "%s".`,
+						fragmentSpread.Name,
+						fragmentSpread.ObjectDefinition.Name,
+						fragmentSpread.Definition.TypeCondition,
+					),
+					validatorcore.At(fragmentSpread.Position),
+				)
+			},
+		)
+	})
 }

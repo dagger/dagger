@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 import Module from "node:module"
 
+import * as clientGen from "../api/client.gen.js"
 import { dag, TypeDefKind } from "../api/client.gen.js"
 import { Context } from "../common/context.js"
 import { FunctionNotFound } from "../common/errors/index.js"
@@ -28,6 +29,10 @@ export class Executor {
     }
 
     return module[key]
+  }
+
+  hasObject(object: string): boolean {
+    return !!this.daggerModule.objects[object]
   }
 
   buildClass(object: string, state: State): any {
@@ -147,8 +152,8 @@ class InterfaceWrapper {
   ) {
     this._ctx = new Context([], new Connection(dag.getGQLClient()))
 
-    // Load the interface by its identifier
-    this._ctx = this._ctx.select(`load${ifaceName}FromID`, { id: ifaceId })
+    // Load the interface by its identifier via node(id:)
+    this._ctx = this._ctx.selectNode(ifaceId, ifaceName)
 
     Object.entries(fcts).forEach(([name, fct]) => {
       const argKeys = Object.keys(fct.arguments)
@@ -213,10 +218,21 @@ class InterfaceWrapper {
             }
 
             // Otherwise, we can just load the objects from the API
-            return await Promise.all(
-              // @ts-ignore
-              ids.map(({ id }) => dag[`load${listTypeDef.name}FromID`](id)),
-            )
+            // using node(id:) with an inline fragment.
+            return ids.map(({ id }) => {
+              const ctx = new Context(
+                [],
+                new Connection(dag.getGQLClient()),
+              ).selectNode(id, typedef.name)
+              const className = (clientGen as any)[typedef.name]
+                ? typedef.name
+                : `${typedef.name}_`
+              const cls = (clientGen as any)[className]
+              if (cls) {
+                return new cls(ctx)
+              }
+              return new clientGen.BaseClient(ctx)
+            })
           }
         }
 

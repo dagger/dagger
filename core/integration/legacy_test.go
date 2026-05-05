@@ -63,6 +63,91 @@ func (m *Bare) TestFile(ctx context.Context) (bool, error) {
 	require.JSONEq(t, `{"testContainer": true, "testDirectory": true, "testFile": true}`, out)
 }
 
+func (LegacySuite) TestLegacyGoSDKLoadFromIDCompat(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		WithNewFile("dagger.json", `{"name":"oldid","sdk":"go","source":".","engineVersion":"v0.20.6"}`).
+		WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"dagger/oldid/internal/dagger"
+)
+
+type Oldid struct{}
+
+func (m *Oldid) RoundTrip(ctx context.Context) (string, error) {
+	id, err := dag.Container().From("`+alpineImage+`").ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return dag.LoadContainerFromID(dagger.ContainerID(id)).WithExec([]string{"echo", "ok"}).Stdout(ctx)
+}
+`)
+
+	out, err := modGen.
+		With(daggerCall("round-trip")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "ok\n", out)
+}
+
+func (LegacySuite) TestLegacyPythonSDKLoadFromIDCompat(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := daggerCliBase(t, c).
+		With(daggerExec("init", "--name=test", "--sdk=python", "--source=."))
+	modGen = modGen.
+		WithNewFile("dagger.json", `{"name":"test","sdk":"python","source":".","engineVersion":"v0.20.6"}`).
+		With(pythonSource(`
+import dagger
+from dagger import dag
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    async def round_trip(self) -> str:
+        id_ = await dag.container().from_("` + alpineImage + `").id()
+        return await (
+            dag.load_container_from_id(dagger.ContainerID(id_))
+            .with_exec(["echo", "ok"])
+            .stdout()
+        )
+`))
+
+	out, err := modGen.
+		With(daggerCall("round-trip")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "ok\n", out)
+}
+
+func (LegacySuite) TestLegacyTypeScriptSDKLoadFromIDCompat(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := modInit(t, c, "typescript", `
+import { ContainerID, dag, func, object } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+  @func()
+  async roundTrip(): Promise<string> {
+    const id = await dag.container().from("`+alpineImage+`").id()
+    return await dag.loadContainerFromID(id as ContainerID).withExec(["echo", "ok"]).stdout()
+  }
+}
+`).WithNewFile("dagger.json", `{"name":"test","engineVersion":"v0.20.6","sdk":{"source":"typescript"}}`)
+
+	out, err := modGen.
+		With(daggerCall("round-trip")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "ok\n", out)
+}
+
 func (LegacySuite) TestLegacyTerminal(ctx context.Context, t *testctx.T) {
 	// Changed in dagger/dagger#7586
 	//

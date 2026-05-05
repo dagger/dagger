@@ -170,6 +170,15 @@ func (r *TypescriptSDKDev) ClientLibrary() *Changeset { // typescript-sdk-dev (.
 	}
 }
 
+// Format the SDK source with prettier via eslint --fix
+func (r *TypescriptSDKDev) Format() *Changeset { // typescript-sdk-dev (../../../../:0:0)
+	q := r.query.Select("format")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // A unique identifier for this TypescriptSdkDev.
 func (r *TypescriptSDKDev) ID(ctx context.Context) (TypescriptSDKDevID, error) {
 	if r.id != nil {

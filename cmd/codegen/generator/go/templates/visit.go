@@ -56,10 +56,11 @@ func (funcs goTemplateFuncs) visitTypes(
 	}
 
 	ps := &parseState{
-		pkg:        funcs.modulePkg,
-		fset:       funcs.moduleFset,
-		schema:     funcs.fullSchema,
-		moduleName: funcs.cfg.ModuleConfig.ModuleName,
+		pkg:               funcs.modulePkg,
+		fset:              funcs.moduleFset,
+		schema:            funcs.fullSchema,
+		moduleName:        funcs.cfg.ModuleConfig.ModuleName,
+		legacyGoSDKCompat: funcs.legacyGoSDKCompat(),
 
 		methods: make(map[string][]method),
 	}

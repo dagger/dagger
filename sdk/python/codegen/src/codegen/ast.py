@@ -8,20 +8,36 @@ def insert_stubs(introspection: Any, schema: graphql.GraphQLSchema):
     for tp in introspection["types"]:
         tp_schema = schema.get_type(tp["name"])
         if isinstance(tp_schema, graphql.GraphQLObjectType):
-            fields = []
-            for field in tp["fields"]:
+            fields = insert_field_stubs(tp, tp_schema)
+
+            tp_schema.ast_node = graphql.ObjectTypeDefinitionNode(
+                fields=fields,
+                directives=parse_directives(tp["directives"]),
+            )
+
+        elif isinstance(tp_schema, graphql.GraphQLInterfaceType):
+            fields = insert_field_stubs(tp, tp_schema)
+
+            tp_schema.ast_node = graphql.InterfaceTypeDefinitionNode(
+                fields=fields,
+                directives=parse_directives(tp["directives"]),
+            )
+
+        elif isinstance(tp_schema, graphql.GraphQLInputObjectType):
+            input_fields = []
+            for field in tp["inputFields"]:
                 if field["name"] not in tp_schema.fields:
                     continue
                 field_schema = tp_schema.fields[field["name"]]
-                field_schema.ast_node = graphql.FieldDefinitionNode(
+                field_schema.ast_node = graphql.InputValueDefinitionNode(
                     name=graphql.NameNode(value=field["name"]),
                     description=field["description"],
                     directives=parse_directives(field["directives"]),
                 )
-                fields.append(field_schema.ast_node)
+                input_fields.append(field_schema.ast_node)
 
-            tp_schema.ast_node = graphql.ObjectTypeDefinitionNode(
-                fields=fields,
+            tp_schema.ast_node = graphql.InputObjectTypeDefinitionNode(
+                fields=input_fields,
                 directives=parse_directives(tp["directives"]),
             )
 
@@ -42,7 +58,36 @@ def insert_stubs(introspection: Any, schema: graphql.GraphQLSchema):
                     directives=parse_directives(tp["directives"]),
                 )
 
-    # TODO: add support for other graphql declarations
+
+def insert_field_stubs(
+    introspection_type: dict[str, Any],
+    schema_type: graphql.GraphQLObjectType | graphql.GraphQLInterfaceType,
+) -> list[graphql.FieldDefinitionNode]:
+    fields = []
+    for field in introspection_type["fields"]:
+        if field["name"] not in schema_type.fields:
+            continue
+        field_schema = schema_type.fields[field["name"]]
+        args = []
+        for arg in field["args"]:
+            if arg["name"] not in field_schema.args:
+                continue
+            arg_schema = field_schema.args[arg["name"]]
+            arg_schema.ast_node = graphql.InputValueDefinitionNode(
+                name=graphql.NameNode(value=arg["name"]),
+                description=arg["description"],
+                directives=parse_directives(arg["directives"]),
+            )
+            args.append(arg_schema.ast_node)
+
+        field_schema.ast_node = graphql.FieldDefinitionNode(
+            name=graphql.NameNode(value=field["name"]),
+            description=field["description"],
+            arguments=args,
+            directives=parse_directives(field["directives"]),
+        )
+        fields.append(field_schema.ast_node)
+    return fields
 
 
 def parse_directives(
