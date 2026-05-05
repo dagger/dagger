@@ -133,6 +133,18 @@ func (fn *ModuleFunction) cacheImplicitInputs() []dagql.ImplicitInput {
 		implicitInputs = append(implicitInputs, dagql.PerSessionInput)
 	}
 
+	// Mix the module variant digest into the cache key so that the same module
+	// source loaded with different legacy customizations (which rewrite primitive
+	// defaults) does not share cached function results across variants.
+	if variant := fn.mod.Self().AsModuleVariantDigest; variant != "" {
+		implicitInputs = append(implicitInputs, dagql.ImplicitInput{
+			Name: "cachePerModuleVariant",
+			Resolver: func(context.Context, map[string]dagql.Input) (dagql.Input, error) {
+				return dagql.NewString(variant), nil
+			},
+		})
+	}
+
 	return implicitInputs
 }
 
