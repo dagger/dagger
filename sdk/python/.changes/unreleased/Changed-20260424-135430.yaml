@@ -1,0 +1,6 @@
+kind: Changed
+body: New modules defaults to python 3.14
+time: 2026-04-24T13:54:30.014177089+02:00
+custom:
+    Author: eunomie
+    PR: "13027"
