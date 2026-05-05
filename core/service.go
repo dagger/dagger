@@ -519,27 +519,32 @@ func (svc *Service) startContainer(
 		}
 	}
 
-	worker := bk.Worker.ExecWorker(
-		span.SpanContext(),
-		*execMD,
-		clientMetadata.SessionID,
-		clientMetadata.ClientID,
-		nestedClientMetadata,
-		svc.ModuleContext,
-		svc.FunctionCall,
-		svc.EnvContext,
-	)
 	exited := make(chan struct{})
 	runErr := make(chan error)
 	go func() {
-		_, err := worker.Run(ctx, svcID, p.Root, p.Mounts, executor.ProcessInfo{
-			Meta:   *meta,
-			Stdin:  stdinReader,
-			Stdout: stdoutWriters,
-			Stderr: stderrWriters,
-			Resize: resize,
-			Signal: signal,
-		}, started)
+		err := bk.Run(
+			ctx,
+			svcID,
+			p.Root,
+			p.Mounts,
+			executor.ProcessInfo{
+				Meta:   *meta,
+				Stdin:  stdinReader,
+				Stdout: stdoutWriters,
+				Stderr: stderrWriters,
+				Resize: resize,
+				Signal: signal,
+			},
+			started,
+			span.SpanContext(),
+			execMD,
+			clientMetadata.SessionID,
+			clientMetadata.ClientID,
+			nestedClientMetadata,
+			svc.ModuleContext,
+			svc.FunctionCall,
+			svc.EnvContext,
+		)
 		runErr <- err
 	}()
 	select {
@@ -551,7 +556,7 @@ func (svc *Service) startContainer(
 	checked := make(chan error, 1)
 
 	if ctr.Config.Healthcheck != nil {
-		dockerHealthcheck, err := newDockerHealthcheck(worker, svcID, ctr, span.SpanContext())
+		dockerHealthcheck, err := newDockerHealthcheck(bk, svcID, ctr, span.SpanContext())
 		if err != nil {
 			return fmt.Errorf("failed to setup docker healthcheck: %w", err)
 		}
@@ -653,7 +658,7 @@ func (svc *Service) startContainer(
 			stderrWriter = sio.Stderr
 			resizeCh = convertResizeChannel(ctx, sio.ResizeCh)
 		}
-		err = worker.Exec(ctx, svcID, executor.ProcessInfo{
+		err = bk.Exec(ctx, svcID, executor.ProcessInfo{
 			Meta:   meta,
 			Stdin:  stdinReader,
 			Stdout: stdoutWriter,
@@ -1101,7 +1106,7 @@ func (svc *Service) runAndSnapshotChanges(
 		return res, false, err
 	}
 
-	usage, err := bk.Worker.Snapshotter.Usage(ctx, mutableRef.SnapshotID())
+	usage, err := bk.Snapshotter.Usage(ctx, mutableRef.SnapshotID())
 	if err != nil {
 		return res, false, fmt.Errorf("failed to check for changes: %w", err)
 	}

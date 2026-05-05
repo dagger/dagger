@@ -1122,11 +1122,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		if err != nil {
 			return fmt.Errorf("failed to get engine client: %w", err)
 		}
-		opWorker := engineClient.Worker
 		causeCtx := trace.SpanContextFromContext(ctx)
-		if opWorker == nil {
-			return fmt.Errorf("missing buildkit worker")
-		}
 
 		rootOutputBinding := func(ref bkcache.ImmutableRef) error {
 			dirPath := "/"
@@ -1913,9 +1909,19 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			}
 		}
 
-		execWorker := opWorker.ExecWorker(
+		procInfo := executor.ProcessInfo{Meta: meta}
+		if opts.Stdin != "" {
+			procInfo.Stdin = io.NopCloser(strings.NewReader(opts.Stdin))
+		}
+		execErr := engineClient.Run(
+			ctx,
+			"",
+			rootMount,
+			execMounts,
+			procInfo,
+			nil,
 			causeCtx,
-			*execMD,
+			execMD,
 			clientMetadata.SessionID,
 			clientMetadata.ClientID,
 			nestedClientMetadata,
@@ -1923,11 +1929,6 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			state.FunctionCall,
 			state.EnvContext,
 		)
-		procInfo := executor.ProcessInfo{Meta: meta}
-		if opts.Stdin != "" {
-			procInfo.Stdin = io.NopCloser(strings.NewReader(opts.Stdin))
-		}
-		_, execErr := execWorker.Run(ctx, "", rootMount, execMounts, procInfo, nil)
 
 		var invalidateErr error
 		for i, ctrMount := range inputMounts {

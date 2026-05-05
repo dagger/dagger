@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"os"
 	"sync"
 
 	contentapi "github.com/containerd/containerd/api/services/content/v1"
@@ -14,13 +16,26 @@ import (
 	containerd "github.com/containerd/containerd/v2/client"
 	"github.com/containerd/containerd/v2/core/content"
 	contentproxy "github.com/containerd/containerd/v2/core/content/proxy"
+	"github.com/containerd/containerd/v2/core/diff"
 	"github.com/containerd/containerd/v2/core/images"
 	"github.com/containerd/containerd/v2/core/leases"
 	leasesproxy "github.com/containerd/containerd/v2/core/leases/proxy"
+	runc "github.com/containerd/go-runc"
+	"github.com/dagger/dagger/dagql"
+	imageexport "github.com/dagger/dagger/engine/engineutil/imageexport"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
+	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
+	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
+	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
+	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
+	"github.com/dagger/dagger/internal/buildkit/util/network"
+	"github.com/docker/docker/pkg/idtools"
+	"github.com/hashicorp/go-multierror"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -34,9 +49,34 @@ import (
 	"github.com/dagger/dagger/engine/session/terminal"
 )
 
-// Opts for a Client that are shared across all instances for a given DaggerServer
+// Opts combines server-scoped runtime dependencies with per-client session plumbing.
+// Server-scoped fields are initialized once with NewOpts and shallow-copied for each client.
 type Opts struct {
-	Worker              *Worker
+	ID               string
+	Labels           map[string]string
+	Platforms        []ocispecs.Platform
+	NetworkProviders map[pb.NetMode]network.Provider
+	Snapshotter      snapshot.Snapshotter
+	ContentStore     *containerdsnapshot.Store
+	Applier          diff.Applier
+	Differ           diff.Comparer
+	IdentityMapping  *idtools.IdentityMapping
+
+	ExecutorRoot    string
+	TelemetryPubSub http.Handler
+	SessionHandler  sessionHandler
+
+	Runc                *runc.Runc
+	DefaultCgroupParent string
+	ProcessMode         oci.ProcessMode
+	DNSConfig           *oci.DNSConfig
+	ApparmorProfile     string
+	SELinux             bool
+	Entitlements        entitlements.Set
+
+	HostMntNS  *os.File
+	CleanMntNS *os.File
+
 	SessionManager      *bksession.Manager
 	Dialer              *net.Dialer
 	GetClientCaller     func(string) (bksession.Caller, error)
@@ -45,6 +85,10 @@ type Opts struct {
 
 	Interactive        bool
 	InteractiveCommand []string
+
+	imageExportWriter *imageexport.Writer
+	running           map[string]*execState
+	runningMu         *sync.RWMutex
 }
 
 // Client is dagger's internal engine utility client
@@ -56,7 +100,47 @@ type Client struct {
 	closeMu  sync.RWMutex
 }
 
+type sessionHandler interface {
+	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult)
+}
+
+func NewOpts(opts Opts) (*Opts, error) {
+	imageWriter, err := imageexport.NewWriter(imageexport.WriterOpt{
+		Snapshotter:  opts.Snapshotter,
+		ContentStore: opts.ContentStore,
+		Applier:      opts.Applier,
+		Differ:       opts.Differ,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create image writer: %w", err)
+	}
+
+	opts.imageExportWriter = imageWriter
+	opts.running = make(map[string]*execState)
+	opts.runningMu = &sync.RWMutex{}
+	return &opts, nil
+}
+
 func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
+	if opts.imageExportWriter == nil {
+		imageWriter, err := imageexport.NewWriter(imageexport.WriterOpt{
+			Snapshotter:  opts.Snapshotter,
+			ContentStore: opts.ContentStore,
+			Applier:      opts.Applier,
+			Differ:       opts.Differ,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("create image writer: %w", err)
+		}
+		opts.imageExportWriter = imageWriter
+	}
+	if opts.running == nil {
+		opts.running = make(map[string]*execState)
+	}
+	if opts.runningMu == nil {
+		opts.runningMu = &sync.RWMutex{}
+	}
+
 	// override the outer cancel, we will manage cancellation ourselves here
 	ctx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
 	client := &Client{
@@ -66,6 +150,19 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 	}
 
 	return client, nil
+}
+
+func (opts *Opts) Close() error {
+	if opts == nil {
+		return nil
+	}
+	var rerr error
+	for _, provider := range opts.NetworkProviders {
+		if err := provider.Close(); err != nil {
+			rerr = multierror.Append(rerr, err)
+		}
+	}
+	return rerr
 }
 
 func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, context.CancelCauseFunc, error) {
@@ -88,7 +185,7 @@ func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, co
 }
 
 func (c *Client) NewNetworkNamespace(ctx context.Context, hostname string) (Namespaced, error) {
-	return c.Worker.newNetNS(ctx, hostname)
+	return c.newNetNS(ctx, hostname)
 }
 
 func RunInNetNS[T any](
@@ -105,9 +202,9 @@ func RunInNetNS[T any](
 		return zero, errors.New("namespace is nil")
 	}
 
-	c.Worker.mu.RLock()
-	runState, ok := c.Worker.running[ns.NamespaceID()]
-	c.Worker.mu.RUnlock()
+	c.runningMu.RLock()
+	runState, ok := c.running[ns.NamespaceID()]
+	c.runningMu.RUnlock()
 	if !ok {
 		return zero, fmt.Errorf("namespace for %s not found in running state", ns.NamespaceID())
 	}

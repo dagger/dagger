@@ -24,6 +24,7 @@ import (
 	ctdoci "github.com/containerd/containerd/v2/pkg/oci"
 	"github.com/containerd/continuity/fs"
 	runc "github.com/containerd/go-runc"
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/engineutil/resources"
 	"github.com/dagger/dagger/engine/slog"
@@ -116,6 +117,15 @@ type execState struct {
 	startedOnce *sync.Once
 	startedCh   chan<- struct{}
 
+	causeCtx                 trace.SpanContext
+	execMD                   *ExecutionMetadata
+	sessionID                string
+	callerClientID           string
+	nestedClientMetadata     *engine.ClientMetadata
+	nestedClientModule       dagql.AnyObjectResult
+	nestedClientFunctionCall dagql.Typed
+	nestedClientEnv          dagql.AnyObjectResult
+
 	doneErr error
 	done    chan struct{}
 }
@@ -126,24 +136,45 @@ func newExecState(
 	rootMount executor.Mount,
 	mounts []executor.Mount,
 	startedCh chan<- struct{},
+	causeCtx trace.SpanContext,
+	execMD *ExecutionMetadata,
+	sessionID string,
+	callerClientID string,
+	nestedClientMetadata *engine.ClientMetadata,
+	nestedClientModule dagql.AnyObjectResult,
+	nestedClientFunctionCall dagql.Typed,
+	nestedClientEnv dagql.AnyObjectResult,
 ) *execState {
+	execMDCopy := &ExecutionMetadata{}
+	if execMD != nil {
+		cp := *execMD
+		execMDCopy = &cp
+	}
 	return &execState{
-		id:          id,
-		procInfo:    procInfo,
-		rootMount:   rootMount,
-		mounts:      mounts,
-		cleanups:    &cleanups.Cleanups{},
-		startedOnce: &sync.Once{},
-		startedCh:   startedCh,
-		done:        make(chan struct{}),
+		id:                       id,
+		procInfo:                 procInfo,
+		rootMount:                rootMount,
+		mounts:                   mounts,
+		cleanups:                 &cleanups.Cleanups{},
+		startedOnce:              &sync.Once{},
+		startedCh:                startedCh,
+		causeCtx:                 causeCtx,
+		execMD:                   execMDCopy,
+		sessionID:                sessionID,
+		callerClientID:           callerClientID,
+		nestedClientMetadata:     nestedClientMetadata,
+		nestedClientModule:       nestedClientModule,
+		nestedClientFunctionCall: nestedClientFunctionCall,
+		nestedClientEnv:          nestedClientEnv,
+		done:                     make(chan struct{}),
 	}
 }
 
 type executorSetupFunc func(context.Context, *execState) error
 
 //nolint:gocyclo
-func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
-	provider, ok := w.networkProviders[state.procInfo.Meta.NetMode]
+func (c *Client) setupNetwork(ctx context.Context, state *execState) error {
+	provider, ok := c.NetworkProviders[state.procInfo.Meta.NetMode]
 	if !ok {
 		return fmt.Errorf("unknown network mode %s", state.procInfo.Meta.NetMode)
 	}
@@ -162,14 +193,14 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 	state.cleanups.Add("close network namespace", networkNamespace.Close)
 	state.networkNamespace = networkNamespace
 
-	state.resolvConfPath, err = oci.GetResolvConf(ctx, w.executorRoot, w.idmap, w.dns, state.procInfo.Meta.NetMode)
+	state.resolvConfPath, err = oci.GetResolvConf(ctx, c.ExecutorRoot, c.IdentityMapping, c.DNSConfig, state.procInfo.Meta.NetMode)
 	if err != nil {
 		return fmt.Errorf("get base resolv.conf: %w", err)
 	}
 
 	var cleanupBaseHosts func()
 	state.hostsFilePath, cleanupBaseHosts, err = oci.GetHostsFile(
-		ctx, w.executorRoot, state.procInfo.Meta.ExtraHosts, w.idmap, state.procInfo.Meta.Hostname)
+		ctx, c.ExecutorRoot, state.procInfo.Meta.ExtraHosts, c.IdentityMapping, state.procInfo.Meta.Hostname)
 	if err != nil {
 		return fmt.Errorf("get base hosts file: %w", err)
 	}
@@ -177,15 +208,15 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 		state.cleanups.Add("cleanup base hosts file", cleanups.Infallible(cleanupBaseHosts))
 	}
 
-	if w.sessionID == "" {
+	if state.sessionID == "" {
 		return nil
 	}
 
 	extraSearchDomains := []string{}
-	if w.execMD != nil {
-		extraSearchDomains = append(extraSearchDomains, w.execMD.ExtraSearchDomains...)
+	if state.execMD != nil {
+		extraSearchDomains = append(extraSearchDomains, state.execMD.ExtraSearchDomains...)
 	}
-	extraSearchDomains = append(extraSearchDomains, network.SessionDomain(w.sessionID))
+	extraSearchDomains = append(extraSearchDomains, network.SessionDomain(state.sessionID))
 
 	baseResolvFile, err := os.Open(state.resolvConfPath)
 	if err != nil {
@@ -239,7 +270,7 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 		}
 	}
 
-	if len(w.execMD.HostAliases) == 0 {
+	if len(state.execMD.HostAliases) == 0 {
 		return nil
 	}
 
@@ -272,7 +303,7 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 		return fmt.Errorf("copy base hosts file: %w", err)
 	}
 
-	for target, aliases := range w.execMD.HostAliases {
+	for target, aliases := range state.execMD.HostAliases {
 		var ips []net.IP
 		var errs error
 		for _, domain := range append([]string{""}, extraSearchDomains...) {
@@ -331,8 +362,8 @@ func (m hostBindMountRef) Mount() ([]mount.Mount, func() error, error) {
 	}}, func() error { return nil }, nil
 }
 
-func (w *Worker) injectInit(_ context.Context, state *execState) error {
-	if w.execMD != nil && w.execMD.NoInit {
+func (c *Client) injectInit(_ context.Context, state *execState) error {
+	if state.execMD != nil && state.execMD.NoInit {
 		return nil
 	}
 
@@ -347,7 +378,7 @@ func (w *Worker) injectInit(_ context.Context, state *execState) error {
 	return nil
 }
 
-func (w *Worker) generateBaseSpec(ctx context.Context, state *execState) error {
+func (c *Client) generateBaseSpec(ctx context.Context, state *execState) error {
 	var extraOpts []ctdoci.SpecOpts
 	if state.procInfo.Meta.ReadonlyRootFS {
 		extraOpts = append(extraOpts, ctdoci.WithRootFSReadonly())
@@ -361,11 +392,11 @@ func (w *Worker) generateBaseSpec(ctx context.Context, state *execState) error {
 		state.resolvConfPath,
 		state.hostsFilePath,
 		state.networkNamespace,
-		w.cgroupParent,
-		w.processMode,
-		w.idmap,
-		w.apparmorProfile,
-		w.selinux,
+		c.DefaultCgroupParent,
+		c.ProcessMode,
+		c.IdentityMapping,
+		c.ApparmorProfile,
+		c.SELinux,
 		"",
 		extraOpts...,
 	)
@@ -378,7 +409,7 @@ func (w *Worker) generateBaseSpec(ctx context.Context, state *execState) error {
 	return nil
 }
 
-func (w *Worker) filterEnvs(_ context.Context, state *execState) error {
+func (c *Client) filterEnvs(_ context.Context, state *execState) error {
 	state.origEnvMap = make(map[string]string)
 	filteredEnvs := make([]string, 0, len(state.spec.Process.Env))
 	for _, env := range state.spec.Process.Env {
@@ -397,7 +428,7 @@ func (w *Worker) filterEnvs(_ context.Context, state *execState) error {
 }
 
 //nolint:gocyclo
-func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
+func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 	var err error
 	state.rootfsPath, err = os.MkdirTemp("", "rootfs")
 	if err != nil {
@@ -572,7 +603,7 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 	return nil
 }
 
-func (w *Worker) setUserGroup(_ context.Context, state *execState) error {
+func (c *Client) setUserGroup(_ context.Context, state *execState) error {
 	var err error
 	state.uid, state.gid, state.sgids, err = oci.GetUser(state.rootfsPath, state.procInfo.Meta.User)
 	if err != nil {
@@ -593,14 +624,14 @@ func (w *Worker) setUserGroup(_ context.Context, state *execState) error {
 	return nil
 }
 
-func (w *Worker) setExitCodePath(_ context.Context, state *execState) error {
+func (c *Client) setExitCodePath(_ context.Context, state *execState) error {
 	if state.metaMountDirPath != "" {
 		state.exitCodePath = filepath.Join(state.metaMountDirPath, MetaMountExitCodePath)
 	}
 	return nil
 }
 
-func (w *Worker) setupStdio(_ context.Context, state *execState) error {
+func (c *Client) setupStdio(_ context.Context, state *execState) error {
 	if state.procInfo.Meta.Tty {
 		state.spec.Process.Terminal = true
 		// no more stdio setup needed
@@ -643,7 +674,7 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 	stderrWriters = append(stderrWriters, stderrFile)
 	stderrWriters = append(stderrWriters, combinedOutputFile)
 
-	if w.execMD != nil && (w.execMD.RedirectStdinPath != "" || w.execMD.RedirectStdoutPath != "" || w.execMD.RedirectStderrPath != "") {
+	if state.execMD != nil && (state.execMD.RedirectStdinPath != "" || state.execMD.RedirectStdoutPath != "" || state.execMD.RedirectStderrPath != "") {
 		ctrFS, err := containerfs.NewContainerFS(state.spec, nil)
 		if err != nil {
 			return err
@@ -657,7 +688,7 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 			ctrCwd = filepath.Join("/", ctrCwd)
 		}
 
-		redirectStdinPath := w.execMD.RedirectStdinPath
+		redirectStdinPath := state.execMD.RedirectStdinPath
 		if redirectStdinPath != "" {
 			if state.procInfo.Stdin != nil {
 				return fmt.Errorf("cannot set redirect stdin path %q when stdin is already set", redirectStdinPath)
@@ -673,7 +704,7 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 			state.procInfo.Stdin = io.NopCloser(redirectStdinFile)
 		}
 
-		redirectStdoutPath := w.execMD.RedirectStdoutPath
+		redirectStdoutPath := state.execMD.RedirectStdoutPath
 		if redirectStdoutPath != "" {
 			if !path.IsAbs(redirectStdoutPath) {
 				redirectStdoutPath = filepath.Join(ctrCwd, redirectStdoutPath)
@@ -689,7 +720,7 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 			stdoutWriters = append(stdoutWriters, redirectStdoutFile)
 		}
 
-		redirectStderrPath := w.execMD.RedirectStderrPath
+		redirectStderrPath := state.execMD.RedirectStderrPath
 		if redirectStderrPath != "" {
 			if !path.IsAbs(redirectStderrPath) {
 				redirectStderrPath = filepath.Join(ctrCwd, redirectStderrPath)
@@ -712,32 +743,32 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 	return nil
 }
 
-func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
+func (c *Client) setupOTel(ctx context.Context, state *execState) error {
 	if state.procInfo.Meta.NetMode != pb.NetMode_UNSET {
 		// align with setupNetwork; otherwise we hang waiting for a netNS worker
 		return nil
 	}
 
-	if w.causeCtx.IsValid() {
-		ctx = trace.ContextWithSpanContext(ctx, w.causeCtx)
+	if state.causeCtx.IsValid() {
+		ctx = trace.ContextWithSpanContext(ctx, state.causeCtx)
 	}
 
 	var destSession string
 	var destClientID string
-	if w.sessionID != "" {
-		destSession = w.sessionID
+	if state.sessionID != "" {
+		destSession = state.sessionID
 
 		// Send telemetry to the caller client, *not* the nested client (ClientID).
 		//
 		// If you set ClientID here, nested dagger CLI calls made against an engine running
 		// as a service in Dagger will end up in a loop sending logs to themselves.
-		destClientID = w.callerClientID
+		destClientID = state.callerClientID
 	}
 
 	stdioAttrs := []log.KeyValue{}
-	if w.execMD != nil && w.execMD.LogTargetCallDigest != "" {
+	if state.execMD != nil && state.execMD.LogTargetCallDigest != "" {
 		stdioAttrs = append(stdioAttrs,
-			log.String(telemetry.DagDigestAttr, w.execMD.LogTargetCallDigest.String()),
+			log.String(telemetry.DagDigestAttr, state.execMD.LogTargetCallDigest.String()),
 		)
 	}
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, stdioAttrs...)
@@ -758,7 +789,7 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 			}
 			r.Header.Set("X-Dagger-Session-ID", destSession)
 			r.Header.Set("X-Dagger-Client-ID", destClientID)
-			w.telemetryPubSub.ServeHTTP(rw, r)
+			c.TelemetryPubSub.ServeHTTP(rw, r)
 		}),
 		ReadHeaderTimeout: 5 * time.Second, // for gocritic
 	}
@@ -810,11 +841,11 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 	return nil
 }
 
-func (w *Worker) setupSecretScrubbing(ctx context.Context, state *execState) error {
-	if w.execMD == nil {
+func (c *Client) setupSecretScrubbing(ctx context.Context, state *execState) error {
+	if state.execMD == nil {
 		return nil
 	}
-	if len(w.execMD.SecretEnvNames) == 0 && len(w.execMD.SecretFilePaths) == 0 {
+	if len(state.execMD.SecretEnvNames) == 0 && len(state.execMD.SecretFilePaths) == 0 {
 		return nil
 	}
 
@@ -827,7 +858,7 @@ func (w *Worker) setupSecretScrubbing(ctx context.Context, state *execState) err
 	}
 
 	var secretFilePaths []string
-	for _, filePath := range w.execMD.SecretFilePaths {
+	for _, filePath := range state.execMD.SecretFilePaths {
 		if !path.IsAbs(filePath) {
 			filePath = filepath.Join(ctrCwd, filePath)
 		}
@@ -844,12 +875,12 @@ func (w *Worker) setupSecretScrubbing(ctx context.Context, state *execState) err
 	}
 
 	stdoutR, stdoutW := io.Pipe()
-	stdoutScrubReader, err := NewSecretScrubReader(stdoutR, state.spec.Process.Env, w.execMD.SecretEnvNames, secretFilePaths)
+	stdoutScrubReader, err := NewSecretScrubReader(stdoutR, state.spec.Process.Env, state.execMD.SecretEnvNames, secretFilePaths)
 	if err != nil {
 		return fmt.Errorf("setup stdout secret scrubbing: %w", err)
 	}
 	stderrR, stderrW := io.Pipe()
-	stderrScrubReader, err := NewSecretScrubReader(stderrR, state.spec.Process.Env, w.execMD.SecretEnvNames, secretFilePaths)
+	stderrScrubReader, err := NewSecretScrubReader(stderrR, state.spec.Process.Env, state.execMD.SecretEnvNames, secretFilePaths)
 	if err != nil {
 		return fmt.Errorf("setup stderr secret scrubbing: %w", err)
 	}
@@ -881,7 +912,7 @@ func (w *Worker) setupSecretScrubbing(ctx context.Context, state *execState) err
 	return nil
 }
 
-func (w *Worker) setProxyEnvs(_ context.Context, state *execState) error {
+func (c *Client) setProxyEnvs(_ context.Context, state *execState) error {
 	for _, upperProxyEnvName := range engine.ProxyEnvNames {
 		upperProxyVal, upperSet := state.origEnvMap[upperProxyEnvName]
 
@@ -910,12 +941,12 @@ func (w *Worker) setProxyEnvs(_ context.Context, state *execState) error {
 		}
 	}
 
-	if w.execMD == nil {
+	if state.execMD == nil {
 		return nil
 	}
 
 	const systemEnvPrefix = "_DAGGER_ENGINE_SYSTEMENV_"
-	for _, systemEnvName := range w.execMD.SystemEnvNames {
+	for _, systemEnvName := range state.execMD.SystemEnvNames {
 		if _, ok := state.origEnvMap[systemEnvName]; ok {
 			// don't overwrite explicit user-provided values
 			continue
@@ -929,11 +960,11 @@ func (w *Worker) setProxyEnvs(_ context.Context, state *execState) error {
 	return nil
 }
 
-func (w *Worker) enableGPU(_ context.Context, state *execState) error {
-	if w.execMD == nil {
+func (c *Client) enableGPU(_ context.Context, state *execState) error {
+	if state.execMD == nil {
 		return nil
 	}
-	if len(w.execMD.EnabledGPUs) == 0 {
+	if len(state.execMD.EnabledGPUs) == 0 {
 		return nil
 	}
 
@@ -949,13 +980,13 @@ func (w *Worker) enableGPU(_ context.Context, state *execState) error {
 		Path: "/usr/bin/nvidia-container-runtime-hook",
 	})
 	state.spec.Process.Env = append(state.spec.Process.Env, fmt.Sprintf("NVIDIA_VISIBLE_DEVICES=%s",
-		strings.Join(w.execMD.EnabledGPUs, ","),
+		strings.Join(state.execMD.EnabledGPUs, ","),
 	))
 
 	return nil
 }
 
-func (w *Worker) createCWD(_ context.Context, state *execState) error {
+func (c *Client) createCWD(_ context.Context, state *execState) error {
 	newp, err := fs.RootPath(state.rootfsPath, state.procInfo.Meta.Cwd)
 	if err != nil {
 		return fmt.Errorf("working dir %s points to invalid target: %w", newp, err)
@@ -969,24 +1000,24 @@ func (w *Worker) createCWD(_ context.Context, state *execState) error {
 	return nil
 }
 
-func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr error) {
-	if w.nestedClientMetadata == nil || w.nestedClientMetadata.ClientID == "" {
+func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr error) {
+	if state.nestedClientMetadata == nil || state.nestedClientMetadata.ClientID == "" {
 		return nil
 	}
 
-	if w.nestedClientMetadata.ClientSecretToken == "" {
-		w.nestedClientMetadata.ClientSecretToken = randid.NewID()
+	if state.nestedClientMetadata.ClientSecretToken == "" {
+		state.nestedClientMetadata.ClientSecretToken = randid.NewID()
 	}
-	if w.nestedClientMetadata.ClientHostname == "" {
-		w.nestedClientMetadata.ClientHostname = state.spec.Hostname
+	if state.nestedClientMetadata.ClientHostname == "" {
+		state.nestedClientMetadata.ClientHostname = state.spec.Hostname
 	}
 
 	// propagate trace ctx to session attachables
-	ctx = trace.ContextWithSpanContext(ctx, w.causeCtx)
+	ctx = trace.ContextWithSpanContext(ctx, state.causeCtx)
 
-	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+w.nestedClientMetadata.ClientSecretToken)
+	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+state.nestedClientMetadata.ClientSecretToken)
 
-	w.nestedClientMetadata.ClientStableID = randid.NewID()
+	state.nestedClientMetadata.ClientStableID = randid.NewID()
 
 	// include SSH_AUTH_SOCK if it's set in the exec's env vars
 	if sockPath, ok := state.origEnvMap["SSH_AUTH_SOCK"]; ok {
@@ -996,18 +1027,18 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 				if err != nil {
 					return fmt.Errorf("failed to expand homedir: %w", err)
 				}
-				w.nestedClientMetadata.SSHAuthSocketPath = expandedPath
+				state.nestedClientMetadata.SSHAuthSocketPath = expandedPath
 			} else {
 				return fmt.Errorf("HOME not set, cannot expand SSH_AUTH_SOCK path: %s", sockPath)
 			}
 		} else {
-			w.nestedClientMetadata.SSHAuthSocketPath = sockPath
+			state.nestedClientMetadata.SSHAuthSocketPath = sockPath
 		}
 	}
 
 	// include overridden client version if it's set in the exec's env vars
 	if version, ok := state.origEnvMap["_EXPERIMENTAL_DAGGER_VERSION"]; ok {
-		w.nestedClientMetadata.ClientVersion = version
+		state.nestedClientMetadata.ClientVersion = version
 	}
 
 	srvCtx, srvCancel := context.WithCancelCause(ctx)
@@ -1035,7 +1066,7 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	httpSrv := &http.Server{
 		ReadHeaderTimeout: 10 * time.Second,
 		Handler: h2c.NewHandler(http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
-			w.sessionHandler.ServeHTTPToNestedClient(resp, req, w.nestedClientMetadata, w.callerClientID, w.nestedClientModule, w.nestedClientFunctionCall, w.nestedClientEnv)
+			c.SessionHandler.ServeHTTPToNestedClient(resp, req, state.nestedClientMetadata, state.callerClientID, state.nestedClientModule, state.nestedClientFunctionCall, state.nestedClientEnv)
 		}), http2Srv),
 	}
 	if err := http2.ConfigureServer(httpSrv, http2Srv); err != nil {
@@ -1060,7 +1091,7 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	return nil
 }
 
-func (w *Worker) installCACerts(ctx context.Context, state *execState) error {
+func (c *Client) installCACerts(ctx context.Context, state *execState) error {
 	caInstaller, err := cacerts.NewInstaller(ctx, state.spec, func(ctx context.Context, args ...string) error {
 		output := new(bytes.Buffer)
 		caExecState := &execState{
@@ -1107,7 +1138,7 @@ func (w *Worker) installCACerts(ctx context.Context, state *execState) error {
 		caExecState.spec.Process.Cwd = "/"
 		caExecState.spec.Process.Terminal = false
 
-		if err := w.run(ctx, caExecState, w.runContainer); err != nil {
+		if err := c.run(ctx, caExecState, c.runContainer); err != nil {
 			return fmt.Errorf("installer command failed: %w, output: %s", err, output.String())
 		}
 		return nil
@@ -1136,8 +1167,8 @@ func (w *Worker) installCACerts(ctx context.Context, state *execState) error {
 }
 
 //nolint:gocyclo
-func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error) {
-	bundle := filepath.Join(w.executorRoot, state.id)
+func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error) {
+	bundle := filepath.Join(c.ExecutorRoot, state.id)
 	if err := os.Mkdir(bundle, 0o711); err != nil {
 		return err
 	}
@@ -1160,16 +1191,16 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 	lg := bklog.G(ctx).
 		WithField("id", state.id).
 		WithField("args", state.spec.Process.Args)
-	if w.execMD != nil {
-		if w.execMD.CallDigest != "" {
-			lg = lg.WithField("call_id", w.execMD.CallDigest)
+	if state.execMD != nil {
+		if state.execMD.CallDigest != "" {
+			lg = lg.WithField("call_id", state.execMD.CallDigest)
 		}
 	}
-	if w.callerClientID != "" {
-		lg = lg.WithField("caller_client_id", w.callerClientID)
+	if state.callerClientID != "" {
+		lg = lg.WithField("caller_client_id", state.callerClientID)
 	}
-	if w.nestedClientMetadata != nil && w.nestedClientMetadata.ClientID != "" {
-		lg = lg.WithField("nested_client_id", w.nestedClientMetadata.ClientID)
+	if state.nestedClientMetadata != nil && state.nestedClientMetadata.ClientID != "" {
+		lg = lg.WithField("nested_client_id", state.nestedClientMetadata.ClientID)
 	}
 	lg.Info("starting container")
 	defer func() {
@@ -1179,15 +1210,15 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 	trace.SpanFromContext(ctx).AddEvent("Container created")
 
 	state.cleanups.Add("runc delete container", func() error {
-		return w.runc.Delete(context.WithoutCancel(ctx), state.id, &runc.DeleteOpts{})
+		return c.Runc.Delete(context.WithoutCancel(ctx), state.id, &runc.DeleteOpts{})
 	})
 
 	cgroupPath := state.spec.Linux.CgroupsPath
-	if cgroupPath != "" && w.execMD != nil && w.execMD.CallDigest != "" {
+	if cgroupPath != "" && state.execMD != nil && state.execMD.CallDigest != "" {
 		meter := telemetry.Meter(ctx, InstrumentationLibrary)
 
 		commonAttrs := []attribute.KeyValue{
-			attribute.String(telemetry.DagDigestAttr, string(w.execMD.CallDigest)),
+			attribute.String(telemetry.DagDigestAttr, string(state.execMD.CallDigest)),
 		}
 		spanContext := trace.SpanContextFromContext(ctx)
 		if spanContext.HasSpanID() {
@@ -1247,7 +1278,7 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 		})
 	}
 
-	killer := newRunProcKiller(w.runc, state.id)
+	killer := newRunProcKiller(c.Runc, state.id)
 
 	runcCall := func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error {
 		/*
@@ -1319,7 +1350,7 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 					return fmt.Errorf("unshare fs attrs: %w", err)
 				}
 				// switch to the clean mount namespace free of leaks from other unrelated engine mounts
-				if err := unix.Setns(int(w.cleanMntNS.Fd()), unix.CLONE_NEWNS); err != nil {
+				if err := unix.Setns(int(c.CleanMntNS.Fd()), unix.CLONE_NEWNS); err != nil {
 					return fmt.Errorf("setns clean mount namespace: %w", err)
 				}
 				// do a final unshare, forking from the clean mount namespace to get a final fully isolated mount namespace for runc
@@ -1330,7 +1361,7 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 				defer func() {
 					// best effort try to setns back to the host mount namespace so the go runtime can re-use this thread rather than
 					// burning it off
-					err := unix.Setns(int(w.hostMntNS.Fd()), unix.CLONE_NEWNS)
+					err := unix.Setns(int(c.HostMntNS.Fd()), unix.CLONE_NEWNS)
 					if err != nil {
 						slog.Error("failed to setns host mount namespace after container run", "err", err)
 					} else {
@@ -1351,7 +1382,7 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 				}
 			}
 
-			_, err = w.runc.Run(ctx, state.id, bundle, &runc.CreateOpts{
+			_, err = c.Runc.Run(ctx, state.id, bundle, &runc.CreateOpts{
 				Started:   started,
 				IO:        io,
 				ExtraArgs: []string{"--keep"},
@@ -1361,5 +1392,5 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 		return eg.Wait()
 	}
 
-	return exitError(ctx, state.exitCodePath, w.callWithIO(ctx, state.procInfo, startedCallback, killer, runcCall), state.procInfo.Meta.ValidExitCodes)
+	return exitError(ctx, state.exitCodePath, c.callWithIO(ctx, state.procInfo, startedCallback, killer, runcCall), state.procInfo.Meta.ValidExitCodes)
 }

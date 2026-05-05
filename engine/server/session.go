@@ -559,17 +559,15 @@ func (srv *Server) initializeDaggerClient(
 		},
 	}
 
-	client.engineUtilClient, err = engineutil.NewClient(ctx, &engineutil.Opts{
-		Worker:              srv.worker,
-		SessionManager:      srv.bkSessionManager,
-		Dialer:              client.dialer,
-		GetClientCaller:     client.getClientCaller,
-		GetMainClientCaller: client.getMainClientCaller,
-		GetRegistryResolver: srv.RegistryResolver,
-
-		Interactive:        client.daggerSession.interactive,
-		InteractiveCommand: client.daggerSession.interactiveCommand,
-	})
+	engineUtilOpts := *srv.engineUtilOpts
+	engineUtilOpts.SessionManager = srv.bkSessionManager
+	engineUtilOpts.Dialer = client.dialer
+	engineUtilOpts.GetClientCaller = client.getClientCaller
+	engineUtilOpts.GetMainClientCaller = client.getMainClientCaller
+	engineUtilOpts.GetRegistryResolver = srv.RegistryResolver
+	engineUtilOpts.Interactive = client.daggerSession.interactive
+	engineUtilOpts.InteractiveCommand = client.daggerSession.interactiveCommand
+	client.engineUtilClient, err = engineutil.NewClient(ctx, &engineUtilOpts)
 	if err != nil {
 		return fmt.Errorf("failed to create engine client: %w", err)
 	}
