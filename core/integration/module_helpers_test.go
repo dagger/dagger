@@ -234,6 +234,8 @@ func sdkSourceFile(sdk string) string {
 		return "src/test/__init__.py"
 	case "typescript":
 		return "src/index.ts"
+	case "dang":
+		return "main.dang"
 	case "java", "./sdk/java":
 		return "src/main/java/io/dagger/modules/test/Test.java"
 	default:
