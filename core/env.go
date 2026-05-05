@@ -56,8 +56,8 @@ func EnvFromContext(ctx context.Context) (dagql.ObjectResult[*Env], bool, error)
 		return env, true, nil
 	}
 
-	q, err := CurrentQuery(ctx)
-	if err != nil {
+	q, _ := CurrentQuery(ctx)
+	if q == nil {
 		return dagql.ObjectResult[*Env]{}, false, nil
 	}
 	env, err := q.Server.CurrentEnv(ctx)
