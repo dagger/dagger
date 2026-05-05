@@ -967,31 +967,7 @@ func (srv *Server) ServeHTTPToNestedClient(
 		http.Error(w, "nested client metadata is nil", http.StatusInternalServerError)
 		return
 	}
-	clientMetadata := *nestedClientMetadata
-	clientMetadata.AllowedLLMModules = slices.Clone(nestedClientMetadata.AllowedLLMModules)
-	if clientMetadata.ClientVersion == "" {
-		clientMetadata.ClientVersion = engine.Version
-	}
-	clientMetadata.Labels = map[string]string{}
-
-	var extraModules []engine.ExtraModule
-	var loadWorkspaceModules bool
-	var eagerRuntime bool
-	var workspaceRef *string
-	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
-		clientMetadata.ClientVersion = md.ClientVersion
-		clientMetadata.AllowedLLMModules = slices.Clone(md.AllowedLLMModules)
-		extraModules = md.ExtraModules
-		loadWorkspaceModules = md.LoadWorkspaceModules
-		eagerRuntime = md.EagerRuntime
-		if declaredWorkspace, ok := workspaceRefFromClientMetadata(md); ok {
-			ref := declaredWorkspace
-			workspaceRef = &ref
-		}
-		if md.LockMode != "" {
-			clientMetadata.LockMode = md.LockMode
-		}
-	}
+	clientMetadata := nestedClientMetadataForRequest(r.Header, nestedClientMetadata)
 
 	var moduleContext dagql.ObjectResult[*core.Module]
 	if moduleCtx != nil {
@@ -1027,18 +1003,47 @@ func (srv *Server) ServeHTTPToNestedClient(
 		}
 	}
 
-	clientMetadata.ExtraModules = extraModules
-	clientMetadata.LoadWorkspaceModules = loadWorkspaceModules
-	clientMetadata.EagerRuntime = eagerRuntime
-	clientMetadata.Workspace = workspaceRef
-
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
-		ClientMetadata: &clientMetadata,
+		ClientMetadata: clientMetadata,
 		CallerClientID: callerClientID,
 		ModuleContext:  moduleContext,
 		FunctionCall:   fnCall,
 		EnvContext:     envContext,
 	}).ServeHTTP(w, r)
+}
+
+func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.ClientMetadata) *engine.ClientMetadata {
+	clientMetadata := *nestedClientMetadata
+	clientMetadata.AllowedLLMModules = slices.Clone(nestedClientMetadata.AllowedLLMModules)
+	if clientMetadata.ClientVersion == "" {
+		clientMetadata.ClientVersion = engine.Version
+	}
+	clientMetadata.Labels = map[string]string{}
+
+	var extraModules []engine.ExtraModule
+	var loadWorkspaceModules bool
+	var eagerRuntime bool
+	var workspaceRef *string
+	if md, _ := engine.ClientMetadataFromHTTPHeaders(h); md != nil {
+		clientMetadata.ClientVersion = md.ClientVersion
+		clientMetadata.AllowedLLMModules = slices.Clone(md.AllowedLLMModules)
+		extraModules = md.ExtraModules
+		loadWorkspaceModules = md.LoadWorkspaceModules
+		eagerRuntime = md.EagerRuntime
+		if declaredWorkspace, ok := workspaceRefFromClientMetadata(md); ok {
+			ref := declaredWorkspace
+			workspaceRef = &ref
+		}
+		if md.LockMode != "" {
+			clientMetadata.LockMode = md.LockMode
+		}
+	}
+
+	clientMetadata.ExtraModules = extraModules
+	clientMetadata.LoadWorkspaceModules = loadWorkspaceModules
+	clientMetadata.EagerRuntime = eagerRuntime
+	clientMetadata.Workspace = workspaceRef
+	return &clientMetadata
 }
 
 const InstrumentationLibrary = "dagger.io/engine.server"
