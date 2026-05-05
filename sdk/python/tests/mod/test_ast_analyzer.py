@@ -1736,3 +1736,43 @@ class Foo:
 """)
     fn = metadata.objects["Foo"].functions[0]
     assert [p.python_name for p in fn.parameters] == ["x"]
+
+
+# -- Star imports ------------------------------------------------------------
+
+
+def test_ast_star_import_warns(caplog):
+    """``from .x import *`` is not expanded; the analyzer warns loudly."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="dagger.mod._analyzer.parser"):
+        metadata = _analyze("""
+import dagger
+from .types import *
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    assert "Foo" in metadata.objects
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("from .types import *" in m for m in messages), messages
+
+
+def test_ast_star_import_does_not_break_resolution():
+    """A star import alongside a regular import must not break analysis."""
+    metadata = _analyze("""
+import dagger
+from typing import Annotated
+from .helpers import *
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self, x: dagger.Container) -> str:
+        return ""
+""")
+    fn = metadata.objects["Foo"].functions[0]
+    assert fn.parameters[0].resolved_type.name == "Container"

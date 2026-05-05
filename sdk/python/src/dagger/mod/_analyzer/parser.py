@@ -340,8 +340,8 @@ class ModuleParser:
         # Combine all ASTs for namespace building
         self._namespace = StubNamespace()
 
-        for tree in self._asts.values():
-            self._add_imports_from_tree(tree)
+        for file_path, tree in self._asts.items():
+            self._add_imports_from_tree(tree, file_path)
 
         # Add declared types
         all_declared = (
@@ -358,7 +358,7 @@ class ModuleParser:
             declared_interfaces=self._declared_interfaces,
         )
 
-    def _add_imports_from_tree(self, tree: ast.Module) -> None:
+    def _add_imports_from_tree(self, tree: ast.Module, file_path: Path) -> None:
         """Extract imports from an AST tree and add to namespace."""
         assert self._namespace is not None
         for node in ast.walk(tree):
@@ -368,6 +368,25 @@ class ModuleParser:
             elif isinstance(node, ast.ImportFrom):
                 for alias in node.names:
                     if alias.name == "*":
+                        # Static analysis can't expand a star import — we
+                        # don't read the foreign module's symbols. Decorated
+                        # classes from the same package are still picked up
+                        # via cross-file declaration scanning, but module-
+                        # level constants and type aliases imported via
+                        # ``from .x import *`` will not resolve. Warn so
+                        # users see why the schema differs from runtime.
+                        prefix = "." * node.level
+                        target = f"{prefix}{node.module or ''}" or "."
+                        logger.warning(
+                            "%s:%d: ``from %s import *`` is not expanded by "
+                            "the AST analyzer; type aliases and constants "
+                            "from %r will not resolve. Import names "
+                            "explicitly to ensure they are picked up.",
+                            file_path,
+                            getattr(node, "lineno", 0),
+                            target,
+                            target,
+                        )
                         continue
                     if node.level > 0:
                         # Relative imports (``from . import x``,
