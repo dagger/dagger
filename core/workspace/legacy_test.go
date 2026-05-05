@@ -144,3 +144,38 @@ func TestParseCompatWorkspace(t *testing.T) {
 	require.NoError(t, err)
 	require.Nil(t, noCompat)
 }
+
+func TestWorkspaceConfigMigratesToolchainSkipFields(t *testing.T) {
+	t.Parallel()
+
+	compat, err := ParseCompatWorkspace([]byte(`{
+		"name": "app",
+		"toolchains": [{
+			"name": "hello",
+			"source": "./hello",
+			"ignoreChecks": ["flaky-check"],
+			"ignoreGenerators": ["generate-other-files", "other-generators:*"],
+			"ignoreServices": ["redis", "infra:database"]
+		}]
+	}`))
+	require.NoError(t, err)
+	require.NotNil(t, compat)
+
+	cfg := compat.WorkspaceConfig()
+	entry, ok := cfg.Modules["hello"]
+	require.True(t, ok)
+	require.Equal(t, []string{"flaky-check"}, entry.Check.Skip)
+	require.Equal(t, []string{"generate-other-files", "other-generators:*"}, entry.Generate.Skip)
+	require.Equal(t, []string{"redis", "infra:database"}, entry.Up.Skip)
+
+	out := SerializeConfig(cfg)
+	require.Contains(t, string(out), `up.skip = ["redis", "infra:database"]`)
+	require.Contains(t, string(out), `generate.skip = ["generate-other-files", "other-generators:*"]`)
+	require.Contains(t, string(out), `check.skip = ["flaky-check"]`)
+
+	roundTrip, err := ParseConfig(out)
+	require.NoError(t, err)
+	require.Equal(t, []string{"flaky-check"}, roundTrip.Modules["hello"].Check.Skip)
+	require.Equal(t, []string{"generate-other-files", "other-generators:*"}, roundTrip.Modules["hello"].Generate.Skip)
+	require.Equal(t, []string{"redis", "infra:database"}, roundTrip.Modules["hello"].Up.Skip)
+}
