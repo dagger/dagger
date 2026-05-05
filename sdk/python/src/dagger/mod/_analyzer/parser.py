@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from dagger.mod._analyzer.errors import ParseError
+from dagger.mod._analyzer.errors import ParseError, TypeResolutionError
 from dagger.mod._analyzer.metadata import (
     EnumMemberMetadata,
     EnumTypeMetadata,
@@ -72,6 +72,11 @@ def get_docstring(
 ) -> str | None:
     """Extract docstring from a node."""
     return ast.get_docstring(node)
+
+
+def _type_param_name(node: ast.AST) -> str:
+    """Best-effort name extraction for PEP 695 type parameters."""
+    return getattr(node, "name", "?")
 
 
 def _parse_docstring_deprecated(raw_doc: str) -> tuple[str | None, str | None]:
@@ -325,6 +330,96 @@ class ModuleParser:
                     and isinstance(node.name, ast.Name)
                 ):
                     aliases[node.name.id] = node.value
+
+    @staticmethod
+    def _is_property(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+        """True when ``node`` has an ``@property`` (or @X.setter etc.) decorator."""
+        for decorator in node.decorator_list:
+            if isinstance(decorator, ast.Name) and decorator.id == "property":
+                return True
+            # @some.setter / @some.deleter / @some.getter forms
+            if (
+                isinstance(decorator, ast.Attribute)
+                and decorator.attr in ("setter", "deleter", "getter")
+            ):
+                return True
+        return False
+
+    def _warn_nested_dagger_class(
+        self,
+        nested: ast.ClassDef,
+        outer_name: str,
+        file_path: Path,
+    ) -> None:
+        """Warn when an @object_type / @interface / @enum_type is nested.
+
+        ``_collect_declaration_names`` only walks top-level classes by
+        design — registering nested decorated classes leaves dangling
+        references at the engine. Tell users why their nested class
+        didn't show up so they move it to module scope.
+        """
+        aliases = self._aliases_for(file_path)
+        for kind in ("object_type", "interface", "enum_type"):
+            if has_decorator(nested, kind, aliases):
+                logger.warning(
+                    "%s:%d: nested @%s class %s.%s is ignored. Move %r to "
+                    "module scope so it can be registered.",
+                    file_path,
+                    getattr(nested, "lineno", 0),
+                    kind,
+                    outer_name,
+                    nested.name,
+                    nested.name,
+                )
+                return
+
+    def _reject_pep695_generic_class(
+        self,
+        node: ast.ClassDef,
+        file_path: Path,
+    ) -> None:
+        """Reject ``class Foo[T]:`` and ``class Foo(Generic[T]):`` early.
+
+        Dagger has no generics in its type system. Letting the resolver
+        treat ``T`` as a forward reference produces a TypeDef the engine
+        will reject at runtime — surface a clear error at parse time
+        instead.
+        """
+        if getattr(node, "type_params", None):
+            location = get_location(node, str(file_path))
+            msg = (
+                f"Class {node.name!r} declares PEP 695 type parameters "
+                f"({', '.join(_type_param_name(tp) for tp in node.type_params)}); "
+                "Dagger does not support generic types."
+            )
+            raise TypeResolutionError(msg, location=location)
+        for base in node.bases:
+            if (
+                isinstance(base, ast.Subscript)
+                and isinstance(base.value, ast.Name)
+                and base.value.id == "Generic"
+            ):
+                location = get_location(node, str(file_path))
+                msg = (
+                    f"Class {node.name!r} inherits from Generic[...]; "
+                    "Dagger does not support generic types."
+                )
+                raise TypeResolutionError(msg, location=location)
+
+    def _reject_pep695_generic_function(
+        self,
+        node: ast.FunctionDef | ast.AsyncFunctionDef,
+        file_path: Path,
+    ) -> None:
+        """Reject ``def foo[T]():`` PEP 695 syntax."""
+        if getattr(node, "type_params", None):
+            location = get_location(node, str(file_path))
+            msg = (
+                f"Function {node.name!r} declares PEP 695 type parameters "
+                f"({', '.join(_type_param_name(tp) for tp in node.type_params)}); "
+                "Dagger does not support generic functions."
+            )
+            raise TypeResolutionError(msg, location=location)
 
     def _collect_class_constants_for(
         self,
@@ -626,6 +721,8 @@ class ModuleParser:
         """Parse an @object_type or @interface decorated class."""
         assert self._resolver is not None
 
+        self._reject_pep695_generic_class(node, file_path)
+
         # Collect class-body constants once so ``_eval_constant`` can resolve
         # references like ``def f(name: str = DEFAULT)`` where ``DEFAULT`` is
         # defined inside the class.
@@ -717,6 +814,21 @@ class ModuleParser:
                 elif has_decorator(item, "function", aliases):
                     func = self._parse_function(item, file_path, node.name)
                     functions.append(func)
+                elif self._is_property(item):
+                    # @property fields would need runtime evaluation to
+                    # produce a value; surface the silent drop.
+                    logger.warning(
+                        "%s:%d: @property %s.%s is not exposed in the Dagger "
+                        "schema. Use @dagger.function (with or without "
+                        "@cached_property semantics in the body) to expose "
+                        "computed values.",
+                        file_path,
+                        getattr(item, "lineno", 0),
+                        node.name,
+                        item.name,
+                    )
+            elif isinstance(item, ast.ClassDef):
+                self._warn_nested_dagger_class(item, node.name, file_path)
 
         seen_names = {f.python_name for f in functions}
         functions.extend(self._find_inherited_functions(node, node.name, seen_names))
@@ -1244,31 +1356,6 @@ class ModuleParser:
             )
         return inherited
 
-    def _is_dataclass_like(self, base_class: ast.ClassDef, base_file: Path) -> bool:
-        """True when a base class would expose its fields via dataclasses.
-
-        At runtime, dagger fields flow through ``dataclasses.fields(cls)``,
-        which only inherits from base classes that are themselves
-        dataclasses — that means @dagger.object_type / @dagger.interface
-        (which apply ``dataclass(kw_only=True)`` internally) or an explicit
-        ``@dataclass``. An undecorated base's annotations are *not*
-        promoted to fields on the child, even if the user wrote
-        ``dagger.field(...)`` in the base.
-        """
-        aliases = self._aliases_for(base_file)
-        if has_decorator(base_class, "object_type", aliases):
-            return True
-        if has_decorator(base_class, "interface", aliases):
-            return True
-        # Explicit @dataclass / @dataclasses.dataclass (with or without args).
-        for decorator in base_class.decorator_list:
-            target = decorator.func if isinstance(decorator, ast.Call) else decorator
-            if isinstance(target, ast.Name) and target.id == "dataclass":
-                return True
-            if isinstance(target, ast.Attribute) and target.attr == "dataclass":
-                return True
-        return False
-
     def _find_inherited_fields(
         self,
         node: ast.ClassDef,
@@ -1279,12 +1366,12 @@ class ModuleParser:
     ) -> list[tuple[FieldMetadata | None, ParameterMetadata | None]]:
         """Walk MRO for inherited dagger ``field()`` declarations.
 
-        Mirrors ``_find_inherited_functions``, but only considers bases
-        that are themselves dataclass-like — ``@dagger.object_type``,
-        ``@dagger.interface``, or ``@dataclass``. The runtime relies on
-        Python's dataclass machinery to flatten fields across MRO, and
-        that machinery only inherits from dataclass parents. Walking
-        undecorated bases would surface fields the runtime never exposes.
+        Mirrors ``_find_inherited_functions``. ``class_name`` is the
+        originating (child) class so ``Self`` annotations on inherited
+        fields resolve to the child. ``seen_field_names`` /
+        ``seen_param_names`` accumulate names already discovered on the
+        child or earlier bases — child overrides win, matching Python's
+        MRO behaviour.
 
         Returns a list of (field, init_param) tuples. Either side can be
         ``None`` when only one path applies (an ``init=False`` field, an
@@ -1309,12 +1396,6 @@ class ModuleParser:
             if found is None:
                 continue
             base_class, base_file = found
-
-            # Only inherit fields from dataclass-like bases — see
-            # ``_is_dataclass_like``. Recurse anyway: a dataclass-like
-            # base might itself inherit from another dataclass-like.
-            if not self._is_dataclass_like(base_class, base_file):
-                continue
 
             for item in base_class.body:
                 if not (
@@ -1365,6 +1446,8 @@ class ModuleParser:
     ) -> FunctionMetadata:
         """Parse a @function decorated method."""
         assert self._resolver is not None
+
+        self._reject_pep695_generic_function(node, file_path)
 
         # Get decorator info
         aliases = self._aliases_for(file_path)
@@ -1501,6 +1584,32 @@ class ModuleParser:
 
         parameters: list[ParameterMetadata] = []
         args = node.args
+
+        # Variadic args (``*args`` / ``**kwargs``) have no representation in
+        # the Dagger API. Drop them but tell the user so they aren't left
+        # wondering why those parameters didn't make it.
+        if args.vararg is not None:
+            logger.warning(
+                "%s:%d: %s.%s declares ``*%s`` — variadic positional args "
+                "are not supported by the Dagger API and will be dropped "
+                "from the schema.",
+                file_path,
+                getattr(node, "lineno", 0),
+                self._current_class_name or "<module>",
+                node.name,
+                args.vararg.arg,
+            )
+        if args.kwarg is not None:
+            logger.warning(
+                "%s:%d: %s.%s declares ``**%s`` — variadic keyword args "
+                "are not supported by the Dagger API and will be dropped "
+                "from the schema.",
+                file_path,
+                getattr(node, "lineno", 0),
+                self._current_class_name or "<module>",
+                node.name,
+                args.kwarg.arg,
+            )
 
         # Positional-only come before regular positional; defaults in args.defaults
         # are right-aligned against the combined sequence.
