@@ -1907,6 +1907,53 @@ class Foo:
     assert param.default_path is None
 
 
+# -- Unresolvable defaults --------------------------------------------------
+
+
+def test_ast_function_call_default_warns(caplog):
+    """``def f(name = os.environ.get("X", "y"))`` warns; default is None."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="dagger.mod._analyzer.parser"):
+        metadata = _analyze("""
+import dagger
+import os
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self, name: str = os.environ.get("HOME", "x")) -> str:
+        return name
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.has_default is True
+    assert param.default_value is None
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("could not be evaluated statically" in m for m in msgs), msgs
+
+
+def test_ast_subscript_default_warns(caplog):
+    """``def f(name = D["k"])`` warns; default is None."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="dagger.mod._analyzer.parser"):
+        metadata = _analyze("""
+import dagger
+
+DEFAULTS = {"name": "x"}
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self, name: str = DEFAULTS["name"]) -> str:
+        return name
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.default_value is None
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("could not be evaluated statically" in m for m in msgs)
+
+
 # -- Rejected types (Literal/dict/TypeVar/PEP-695) --------------------------
 
 

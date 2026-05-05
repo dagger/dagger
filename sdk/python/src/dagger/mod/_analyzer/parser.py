@@ -1680,7 +1680,23 @@ class ModuleParser:
             if isinstance(val, (int, float)):
                 return -val
 
-        # Can't evaluate - return None (will be handled at runtime)
+        # Can't evaluate. Warn so the user sees that the default they wrote
+        # didn't survive static analysis — without a warning, the parameter
+        # appears to have a default that's silently None, which mismatches
+        # the runtime behaviour. The runtime still applies the real default
+        # when the caller omits the argument.
+        try:
+            unparsed = ast.unparse(node)
+        except Exception:  # noqa: BLE001
+            unparsed = "<unparseable>"
+        logger.warning(
+            "Default expression %s at line %d could not be evaluated "
+            "statically; the schema will record no default for this "
+            "parameter (the runtime will still apply the real default "
+            "when the caller omits the argument).",
+            unparsed,
+            getattr(node, "lineno", 0),
+        )
         return None
 
     def _serialize_default(self, value: Any, *, name: str = "") -> Any:
