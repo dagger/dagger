@@ -414,19 +414,31 @@ class EmitContext {
       lines.push(`  const __obj: any = { ...(state ?? {}) }`)
     }
     lines.push(`  if (state) {`)
-    // Coerce ALL declared properties (exposed or not) — non-exposed iface /
-    // IDable fields (like IfaceFieldPrivateField) still need to be wrapped
-    // back into runtime instances so user code can call their methods.
+    // For each declared property: rename alias-key to source-name and
+    // coerce the value when the type needs a runtime transform (IDable load,
+    // iface wrap, enum value→name, list recursion, etc.). For non-exposed
+    // properties this still applies — engine state may carry them under the
+    // declared name (no alias possible without a decorator).
     for (const prop of Object.values(obj.properties)) {
-      if (!prop.type || !needsTransform(prop.type)) continue
+      if (!prop.type) continue
       const fieldName = prop.alias ?? prop.name
+      const xform = needsTransform(prop.type)
+      const renamed = fieldName !== prop.name
+      if (!xform && !renamed) continue
       const access = `state[${jsStringLit(fieldName)}]`
       const target = `__obj[${jsStringLit(prop.name)}]`
       lines.push(
         `    if (${access} !== undefined && ${access} !== null) {`,
       )
-      lines.push(`      ${target} = ${this.coerceExpr(access, prop.type)}`)
+      lines.push(
+        `      ${target} = ${xform ? this.coerceExpr(access, prop.type) : access}`,
+      )
       lines.push(`    }`)
+      if (renamed) {
+        // The leading Object.assign copied state[alias] to __obj[alias];
+        // remove it so user code doesn't see two copies.
+        lines.push(`    delete __obj[${jsStringLit(fieldName)}]`)
+      }
     }
     lines.push(`  }`)
     lines.push(`  return __obj`)
@@ -442,21 +454,29 @@ class EmitContext {
       `async function serialize${obj.name}(__obj: ${ty}): Promise<any> {`,
     )
     lines.push(`  if (__obj === null || __obj === undefined) return __obj`)
-    // Spread enumerable props so non-registered state still ferries through
-    // (used for chainable plain-field state like `greeting`/`name`).
+    // Spread enumerable props so non-declared state still ferries through
+    // (chainable plain-field pattern: `greeting`/`name` on Tester).
     lines.push(`  const __state: any = { ...__obj }`)
-    // Serialize ALL declared properties (exposed or not) — we need .id() to
-    // be called on iface / IDable values even if they're stored on
-    // non-decorated fields.
+    // For each declared property: rename source-name to alias-key and apply
+    // any value transform (await .id() for IDables, value→name for enums,
+    // recurse into lists / module-defined objects).
     for (const prop of Object.values(obj.properties)) {
-      if (!prop.type || !needsTransform(prop.type)) continue
+      if (!prop.type) continue
       const fieldName = prop.alias ?? prop.name
+      const xform = needsTransform(prop.type)
+      const renamed = fieldName !== prop.name
+      if (!xform && !renamed) continue
       const access = `(__obj as any)[${jsStringLit(prop.name)}]`
       lines.push(`  if (${access} !== undefined && ${access} !== null) {`)
       lines.push(
-        `    __state[${jsStringLit(fieldName)}] = ${this.serializeExpr(access, prop.type)}`,
+        `    __state[${jsStringLit(fieldName)}] = ${xform ? this.serializeExpr(access, prop.type) : access}`,
       )
       lines.push(`  }`)
+      if (renamed) {
+        // Remove the spread-copied value at the source name to avoid a stale
+        // duplicate alongside the alias key.
+        lines.push(`  delete __state[${jsStringLit(prop.name)}]`)
+      }
     }
     lines.push(`  return __state`)
     lines.push(`}`)
@@ -827,6 +847,17 @@ class EmitContext {
     lines.push(`  const __result = await __parent.${method.name}(${callArgs.join(", ")})`)
 
     if (method.returnType) {
+      // Guard: if the return type is the integer kind but the user returned
+      // a float, surface the same suggestion the runtime SDK uses.
+      if (method.returnType.kind === TypeDefKind.IntegerKind) {
+        lines.push(
+          `  if (typeof __result === "number" && __result % 1 !== 0) {`,
+        )
+        lines.push(
+          `    throw new Error(\`cannot return float '\${__result}' if return type is 'number' (integer), please use 'float' as return type instead\`)`,
+        )
+        lines.push(`  }`)
+      }
       lines.push(...this.renderReturnSerialization(method.returnType))
     } else {
       lines.push(`  return null`)
