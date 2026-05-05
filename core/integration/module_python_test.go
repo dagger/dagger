@@ -1475,32 +1475,6 @@ func (PythonSuite) TestDocs(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "factory constructor", obj.Get("functions.#(name=external).description").String())
 	})
 
-	t.Run("inheritance", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		modGen := pythonModInit(t, c, `
-            from typing import Annotated, Self
-
-            from dagger import Doc, function, object_type
-
-            class Base:
-                """What's the object-oriented way to become wealthy?"""
-
-                @classmethod
-                def create(cls) -> Self:
-                    """Inheritance."""
-                    return cls()
-
-            @object_type
-            class Test(Base):
-                ...
-        `)
-
-		obj := inspectModuleObjects(ctx, t, modGen).Get("#(name=Test)")
-
-		require.Equal(t, "Inheritance.", obj.Get("constructor.description").String())
-	})
-
 	t.Run("interface", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -1532,6 +1506,328 @@ func (PythonSuite) TestDocs(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "A simple Duck interface", o.Get("description").String())
 		require.Equal(t, "A quack sound", f.Get("description").String())
 		require.Equal(t, "A word for the duck to speak", a.Get("description").String())
+	})
+}
+
+func (PythonSuite) TestInheritance(ctx context.Context, t *testctx.T) {
+	t.Run("inherited create constructor", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := pythonModInit(t, c, `
+            from typing import Annotated, Self
+
+            from dagger import Doc, function, object_type
+
+            class Base:
+                """What's the object-oriented way to become wealthy?"""
+
+                @classmethod
+                def create(cls) -> Self:
+                    """Inheritance."""
+                    return cls()
+
+            @object_type
+            class Test(Base):
+                ...
+        `)
+
+		obj := inspectModuleObjects(ctx, t, modGen).Get("#(name=Test)")
+
+		require.Equal(t, "Inheritance.", obj.Get("constructor.description").String())
+	})
+
+	t.Run("inherited functions", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := pythonModInit(t, c, `
+from typing import Annotated, Self
+
+from dagger import Doc, function, object_type
+
+class Base:
+    """Base class with inherited @function methods."""
+
+    @function
+    def with_component(self, name: Annotated[str, Doc("component name")]) -> Self:
+        """Inherited function that should be visible."""
+        return self
+
+    @function
+    async def with_context(self) -> Self:
+        """Another inherited function that should be visible."""
+        return self
+
+@object_type
+class Test(Base):
+    @function
+    def my_own_function(self) -> str:
+        """This function IS visible."""
+        return "ok"
+`)
+
+		obj := inspectModuleObjects(ctx, t, modGen).Get("#(name=Test)")
+
+		require.ElementsMatch(t,
+			[]any{"myOwnFunction", "withComponent", "withContext"},
+			obj.Get("functions.#.name").Value(),
+		)
+
+		require.Equal(t,
+			"Inherited function that should be visible.",
+			obj.Get("functions.#(name=withComponent).description").String(),
+		)
+		require.Equal(t,
+			"Another inherited function that should be visible.",
+			obj.Get("functions.#(name=withContext).description").String(),
+		)
+		require.Equal(t,
+			"component name",
+			obj.Get("functions.#(name=withComponent).args.0.description").String(),
+		)
+	})
+}
+
+// TestASTFollowUp exercises Python patterns the AST analyzer used to drop
+// silently or mishandle. Each subtest stands alone, but the whole suite is
+// also a useful single-glance read for "what does the analyzer cover now?".
+func (PythonSuite) TestASTFollowUp(ctx context.Context, t *testctx.T) {
+	t.Run("aliased dagger module and decorators", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// ``import dagger as d`` plus ``from dagger import object_type as ot,
+		// function as fn`` — the decorator name allow-list used to miss
+		// every aliased form.
+		modGen := pythonModInit(t, c, `
+import dagger as d
+from dagger import object_type as ot, function as fn, field as fld
+
+@ot
+class Test:
+    name: str = fld(default="aliased")
+
+    @fn
+    def hello(self, msg: str = "world") -> str:
+        return self.name + ":" + msg
+
+    @d.function
+    def echo(self, msg: str) -> str:
+        return msg
+`)
+		out, err := modGen.With(daggerQuery(`{test{hello, echo(msg:"hi")}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"test":{"hello":"aliased:world","echo":"hi"}}`, out)
+	})
+
+	t.Run("inherited fields and functions across MRO", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Base declares a @dagger.field and a @dagger.function; the child
+		// inherits both. Pre-fix neither would surface in the schema.
+		modGen := pythonModInit(t, c, `
+from typing import Self
+
+import dagger
+from dagger import field, function, object_type
+
+class Base:
+    name: str = field(default="from-base")
+
+    @function
+    def with_name(self, name: str) -> Self:
+        self.name = name
+        return self
+
+@object_type
+class Test(Base):
+    @function
+    def greet(self) -> str:
+        return "hello " + self.name
+`)
+		out, err := modGen.With(daggerQuery(`{test{withName(name:"alice"){greet}}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"test":{"withName":{"greet":"hello alice"}}}`, out)
+	})
+
+	t.Run("Optional[Annotated[...]] metadata recursion", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// DefaultPath used to be lost when Annotated was wrapped in
+		// Optional[…]. The schema's args should still report
+		// defaultPath=".".
+		modGen := pythonModInit(t, c, `
+from typing import Optional, Annotated
+
+import dagger
+from dagger import DefaultPath, function, object_type
+
+@object_type
+class Test:
+    @function
+    def list_root(
+        self,
+        src: Optional[Annotated[dagger.Directory, DefaultPath(".")]] = None,
+    ) -> str:
+        if src is None:
+            return ""
+        return src.__class__.__name__
+`)
+		obj := inspectModuleObjects(ctx, t, modGen).Get("#(name=Test)")
+		arg := obj.Get("functions.#(name=listRoot).args.0")
+		require.Equal(t, "src", arg.Get("name").String())
+		require.Equal(t, ".", arg.Get("defaultPath").String())
+	})
+
+	t.Run("@staticmethod first parameter survives", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// @staticmethod has no implicit receiver — pre-fix the first
+		// argument was dropped as if it were ``self``.
+		modGen := pythonModInit(t, c, `
+import dagger
+from dagger import function, object_type
+
+@object_type
+class Test:
+    @staticmethod
+    @function
+    def shout(msg: str) -> str:
+        return msg.upper()
+`)
+		out, err := modGen.With(daggerQuery(`{test{shout(msg:"hi")}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"test":{"shout":"HI"}}`, out)
+	})
+
+	t.Run("class-body constants used as defaults", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// ``DEFAULT = "x"`` declared inside the class body was silently
+		// recorded as the literal name string.
+		modGen := pythonModInit(t, c, `
+import dagger
+from dagger import function, object_type
+
+@object_type
+class Test:
+    DEFAULT = "fallback"
+
+    @function
+    def hello(self, msg: str = DEFAULT) -> str:
+        return msg
+`)
+		out, err := modGen.With(daggerQuery(`{test{hello}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"test":{"hello":"fallback"}}`, out)
+	})
+
+	t.Run("IntEnum with explicit integer values", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Explicit int values flow through (the pre-fix behaviour was
+		// already correct for ``LOW = 1``; this guards against
+		// regressions, especially after the auto() warning landed).
+		modGen := pythonModInit(t, c, `
+from enum import IntEnum
+
+import dagger
+from dagger import function, object_type
+
+@dagger.enum_type
+class Priority(IntEnum):
+    LOW = 1
+    HIGH = 100
+
+@object_type
+class Test:
+    @function
+    def get(self) -> Priority:
+        return Priority.HIGH
+
+    @function
+    def name_of(self, p: Priority) -> str:
+        return p.name
+`)
+		out, err := modGen.With(daggerQuery(`{test{get, nameOf(p: HIGH)}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"test":{"get":"HIGH","nameOf":"HIGH"}}`, out)
+	})
+
+	t.Run("multi-file: cross-file alias and constant", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// Alias and constant defined in helpers.py and imported into
+		// __init__.py via ``from .helpers import …``. Pre-fix the alias
+		// resolved to an opaque object type and the constant became
+		// the literal string ``"DEFAULT_NAME"``.
+		modGen := daggerCliBase(t, c).
+			With(daggerInitPython()).
+			With(fileContents("src/test/helpers.py", `
+import dagger
+from typing import Annotated
+
+DEFAULT_NAME = "from-helpers"
+
+# Module-level type alias used cross-file.
+Source = Annotated[dagger.Directory, dagger.DefaultPath(".")]
+`)).
+			With(fileContents("src/test/__init__.py", `
+import dagger
+from dagger import function, object_type
+
+from .helpers import DEFAULT_NAME, Source
+
+@object_type
+class Test:
+    @function
+    def hello(self, name: str = DEFAULT_NAME) -> str:
+        return name
+
+    @function
+    async def list_dir(self, src: Source) -> list[str]:
+        return await src.entries()
+`))
+		obj := inspectModuleObjects(ctx, t, modGen).Get("#(name=Test)")
+
+		// Cross-file constant reaches the schema.
+		require.Equal(
+			t,
+			`"from-helpers"`,
+			obj.Get(`functions.#(name=hello).args.#(name=name).defaultValue`).String(),
+		)
+		// Cross-file alias resolves to Directory + DefaultPath = ".".
+		require.Equal(
+			t,
+			"DIRECTORY_KIND",
+			obj.Get(`functions.#(name=listDir).args.#(name=src).typeDef.kind`).String(),
+		)
+		require.Equal(
+			t,
+			".",
+			obj.Get(`functions.#(name=listDir).args.#(name=src).defaultPath`).String(),
+		)
+	})
+
+	t.Run("rejected: Literal", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := pythonModInit(t, c, `
+from typing import Literal
+
+import dagger
+from dagger import function, object_type
+
+@object_type
+class Test:
+    @function
+    def env(self, kind: Literal["dev", "prod"]) -> str:
+        return kind
+`)
+		// Calling any function should fail at registration, not silently
+		// produce a broken schema. The error must mention Literal so the
+		// user knows what to fix.
+		_, err := modGen.With(daggerQuery(`{test{env(kind:"dev")}}`)).Stdout(ctx)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "Literal")
 	})
 }
 

@@ -17,25 +17,82 @@ class DecoratorInfo:
     node: ast.expr | None = None  # The original AST node
 
 
-# Known Dagger decorators and their possible names
-DAGGER_DECORATORS = {
-    # @dagger.object_type or @mod.object_type or @object_type
-    "object_type": {"object_type", "dagger.object_type", "mod.object_type"},
-    # @dagger.function or @mod.function or @function
-    "function": {"function", "dagger.function", "mod.function"},
-    # @dagger.field or @mod.field or @field
-    "field": {"field", "dagger.field", "mod.field"},
-    # @dagger.interface or @mod.interface or @interface
-    "interface": {"interface", "dagger.interface", "mod.interface"},
-    # @dagger.enum_type or @mod.enum_type or @enum_type
-    "enum_type": {"enum_type", "dagger.enum_type", "mod.enum_type"},
-    # @dagger.check or @mod.check or @check
-    "check": {"check", "dagger.check", "mod.check"},
-    # @dagger.generate or @mod.generate or @generate
-    "generate": {"generate", "dagger.generate", "mod.generate"},
-    # @dagger.up or @mod.up or @up
-    "up": {"up", "dagger.up", "mod.up"},
-}
+# Canonical names of dagger decorators (and ``field``, which is also matched
+# through the same alias machinery for the ``x: T = field()`` shape).
+DAGGER_DECORATOR_NAMES: frozenset[str] = frozenset(
+    {
+        "object_type",
+        "function",
+        "field",
+        "interface",
+        "enum_type",
+        "check",
+        "generate",
+        "up",
+    },
+)
+
+
+@dataclasses.dataclass
+class DaggerAliases:
+    """Per-file map of names bound to the dagger package and decorators.
+
+    Captures everything an ``import``/``from`` chain in a single file can do
+    to rename a dagger decorator: ``import dagger as d``, ``from dagger
+    import object_type as ot``, ``from dagger import field as fld``.
+
+    A default-constructed instance recognises only the unaliased forms
+    (``dagger``, ``mod``, and bare ``object_type``/``function``/...), which
+    matches the historical static behaviour.
+    """
+
+    # Names whose attribute access resolves to dagger.X — typically
+    # ``{"dagger", "mod"}`` plus any aliases from ``import dagger as <x>``
+    # or ``from dagger import mod as <x>``.
+    package_aliases: set[str] = dataclasses.field(default_factory=set)
+
+    # Bare names bound to a canonical dagger decorator. Always contains the
+    # identity mapping for unaliased decorators, plus any ``from dagger
+    # import X as Y`` entries.
+    bare_decorators: dict[str, str] = dataclasses.field(default_factory=dict)
+
+    # Bare names that resolve to ``dagger.field`` (used by the field-call
+    # detection in the parser).
+    bare_field_names: set[str] = dataclasses.field(default_factory=set)
+
+    @classmethod
+    def default(cls) -> DaggerAliases:
+        """Static defaults — same names the analyzer historically matched."""
+        instance = cls(
+            package_aliases={"dagger", "mod"},
+            bare_decorators={name: name for name in DAGGER_DECORATOR_NAMES},
+            bare_field_names={"field"},
+        )
+        return instance
+
+
+def resolve_dagger_decorator(
+    decorator: ast.expr,
+    aliases: DaggerAliases,
+) -> str | None:
+    """Map a decorator AST node to its canonical dagger decorator name.
+
+    Handles the call form (``@function()``) by recursing on ``.func``.
+    Returns ``None`` when the decorator is not a dagger decorator under
+    the given aliases.
+    """
+    if isinstance(decorator, ast.Call):
+        return resolve_dagger_decorator(decorator.func, aliases)
+    if isinstance(decorator, ast.Name):
+        return aliases.bare_decorators.get(decorator.id)
+    if isinstance(decorator, ast.Attribute):
+        if (
+            isinstance(decorator.value, ast.Name)
+            and decorator.value.id in aliases.package_aliases
+            and decorator.attr in DAGGER_DECORATOR_NAMES
+        ):
+            return decorator.attr
+    return None
 
 
 def get_decorator_name(decorator: ast.expr) -> str:
@@ -60,54 +117,100 @@ def get_decorator_name(decorator: ast.expr) -> str:
 def has_decorator(
     node: ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef,
     decorator_type: str,
+    aliases: DaggerAliases | None = None,
 ) -> bool:
     """Check if a node has a specific Dagger decorator.
 
     Args:
         node: The AST node to check.
         decorator_type: One of "object_type", "function", "field", etc.
+        aliases: Per-file dagger import aliases. Defaults to the static
+            unaliased forms when not provided.
 
     Returns
     -------
         True if the node has the decorator.
     """
-    if decorator_type not in DAGGER_DECORATORS:
+    if decorator_type not in DAGGER_DECORATOR_NAMES:
         return False
 
-    valid_names = DAGGER_DECORATORS[decorator_type]
-
-    for decorator in node.decorator_list:
-        name = get_decorator_name(decorator)
-        if name in valid_names:
-            return True
-
-    return False
+    aliases = aliases or DaggerAliases.default()
+    return any(
+        resolve_dagger_decorator(d, aliases) == decorator_type
+        for d in node.decorator_list
+    )
 
 
 def find_decorator(
-    node: ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef, decorator_type: str
+    node: ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef,
+    decorator_type: str,
+    aliases: DaggerAliases | None = None,
 ) -> ast.expr | None:
     """Find a specific Dagger decorator on a node.
 
     Args:
         node: The AST node to check.
         decorator_type: One of "object_type", "function", "field", etc.
+        aliases: Per-file dagger import aliases. Defaults to the static
+            unaliased forms when not provided.
 
     Returns
     -------
         The decorator AST node, or None if not found.
     """
-    if decorator_type not in DAGGER_DECORATORS:
+    if decorator_type not in DAGGER_DECORATOR_NAMES:
         return None
 
-    valid_names = DAGGER_DECORATORS[decorator_type]
-
+    aliases = aliases or DaggerAliases.default()
     for decorator in node.decorator_list:
-        name = get_decorator_name(decorator)
-        if name in valid_names:
+        if resolve_dagger_decorator(decorator, aliases) == decorator_type:
             return decorator
 
     return None
+
+
+def build_dagger_aliases(tree: ast.Module) -> DaggerAliases:
+    """Compute the dagger alias map for a single source file.
+
+    Walks top-level imports only — local imports inside functions or
+    conditional blocks would shadow these names per-scope, but the
+    analyzer treats decorators as module-level constructs.
+    """
+    aliases = DaggerAliases.default()
+
+    for node in ast.iter_child_nodes(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                # ``import dagger as d`` → ``d`` resolves to dagger.
+                # ``import dagger.mod`` → ``dagger`` is bound (already in
+                # defaults); the ``mod`` attribute access is reached via
+                # ``dagger.mod`` so we don't need to track it specially.
+                if alias.name == "dagger":
+                    aliases.package_aliases.add(alias.asname or "dagger")
+                elif alias.name == "dagger.mod":
+                    aliases.package_aliases.add(alias.asname or "dagger")
+            continue
+
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        if node.level > 0:
+            # Relative imports can't bind dagger — skip.
+            continue
+        if node.module not in ("dagger", "dagger.mod"):
+            continue
+
+        for alias in node.names:
+            if alias.name == "*":
+                continue
+            bound = alias.asname or alias.name
+            if alias.name in DAGGER_DECORATOR_NAMES:
+                aliases.bare_decorators[bound] = alias.name
+            if alias.name == "field":
+                aliases.bare_field_names.add(bound)
+            if alias.name == "mod":
+                aliases.package_aliases.add(bound)
+
+    return aliases
 
 
 def extract_decorator_info(decorator: ast.expr) -> DecoratorInfo:

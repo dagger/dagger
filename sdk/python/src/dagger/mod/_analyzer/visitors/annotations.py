@@ -39,8 +39,62 @@ def is_annotated_type(annotation: ast.expr) -> bool:
     return False
 
 
+def find_annotated(annotation: ast.expr) -> ast.expr | None:
+    """Find an ``Annotated[...]`` node inside Optional/Union/``| None`` wrappings.
+
+    Returns the ``Annotated`` subscript when one is reachable through any
+    sequence of nullable wrappers (``Optional[Annotated[T, …]]``,
+    ``Annotated[T, …] | None``, ``Union[Annotated[T, …], None]``), or
+    ``None`` when no such inner Annotated exists. ``list[Annotated[T, …]]``
+    and other generic containers are *not* traversed — element-level
+    metadata doesn't apply to the parameter as a whole.
+    """
+    if is_annotated_type(annotation):
+        return annotation
+
+    # ``Optional[X]`` / ``Union[X, None]``
+    if isinstance(annotation, ast.Subscript):
+        base_name = None
+        if isinstance(annotation.value, ast.Name):
+            base_name = annotation.value.id
+        elif isinstance(annotation.value, ast.Attribute):
+            base_name = annotation.value.attr
+        if base_name == "Optional":
+            return find_annotated(annotation.slice)
+        if base_name == "Union":
+            slice_val = annotation.slice
+            args = (
+                slice_val.elts if isinstance(slice_val, ast.Tuple) else [slice_val]
+            )
+            for arg in args:
+                inner = find_annotated(arg)
+                if inner is not None:
+                    return inner
+        return None
+
+    # ``X | None`` / ``None | X``
+    if isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr):
+        for side in (annotation.left, annotation.right):
+            if isinstance(side, ast.Constant) and side.value is None:
+                continue
+            if isinstance(side, ast.Name) and side.id in ("None", "NoneType"):
+                continue
+            inner = find_annotated(side)
+            if inner is not None:
+                return inner
+
+    return None
+
+
 def extract_annotated_metadata(annotation: ast.expr) -> AnnotatedMetadata:
     """Extract metadata from an Annotated[T, ...] type annotation.
+
+    Drills through nullable wrappers (``Optional[Annotated[…]]``,
+    ``Annotated[…] | None``, ``Union[Annotated[…], None]``) so the
+    metadata still applies — these wrappings are about cardinality, not
+    a different type. Generic containers (``list[Annotated[…]]``) are
+    not traversed; element-level metadata doesn't apply to the
+    parameter as a whole.
 
     Args:
         annotation: An AST node representing an Annotated type.
@@ -49,8 +103,10 @@ def extract_annotated_metadata(annotation: ast.expr) -> AnnotatedMetadata:
     -------
         AnnotatedMetadata with the base type and extracted metadata.
     """
-    if not is_annotated_type(annotation):
+    annotated = find_annotated(annotation)
+    if annotated is None:
         return AnnotatedMetadata(base_type=annotation)
+    annotation = annotated
 
     # Get the subscript slice (the contents of Annotated[...])
     subscript = annotation.slice  # type: ignore[attr-defined]

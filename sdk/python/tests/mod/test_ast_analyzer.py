@@ -990,6 +990,87 @@ class Foo(Base):
     assert ctor.is_constructor is True
 
 
+def test_ast_inherited_functions_from_base_class():
+    """``@function``-decorated methods on a base class are inherited (issue #13089)."""
+    metadata = _analyze("""
+import dagger
+from typing import Self
+
+class Base:
+    @dagger.function
+    def with_component(self, name: str) -> Self:
+        '''Inherited function that should be visible.'''
+        return self
+
+    @dagger.function
+    async def with_context(self) -> Self:
+        '''Another inherited function that should be visible.'''
+        return self
+
+@dagger.object_type
+class Foo(Base):
+    @dagger.function
+    def my_own_function(self) -> str:
+        '''This function IS visible.'''
+        return "ok"
+""")
+    funcs = {f.python_name: f for f in metadata.objects["Foo"].functions}
+    assert set(funcs) == {"my_own_function", "with_component", "with_context"}
+    assert funcs["with_component"].doc == ("Inherited function that should be visible.")
+    assert funcs["with_context"].doc == (
+        "Another inherited function that should be visible."
+    )
+    assert funcs["with_context"].is_async is True
+
+
+def test_ast_inherited_function_override_wins():
+    """A child's ``@function`` override is preferred over the base's."""
+    metadata = _analyze("""
+import dagger
+
+class Base:
+    @dagger.function
+    def greet(self) -> str:
+        '''base docstring'''
+        return "base"
+
+@dagger.object_type
+class Foo(Base):
+    @dagger.function
+    def greet(self) -> str:
+        '''child docstring'''
+        return "child"
+""")
+    funcs = [f for f in metadata.objects["Foo"].functions if f.python_name == "greet"]
+    assert len(funcs) == 1
+    assert funcs[0].doc == "child docstring"
+
+
+def test_ast_inherited_functions_multilevel():
+    """Functions from grandparent classes are also discovered."""
+    metadata = _analyze("""
+import dagger
+
+class Grandparent:
+    @dagger.function
+    def from_grandparent(self) -> str:
+        return ""
+
+class Parent(Grandparent):
+    @dagger.function
+    def from_parent(self) -> str:
+        return ""
+
+@dagger.object_type
+class Foo(Parent):
+    @dagger.function
+    def from_child(self) -> str:
+        return ""
+""")
+    names = {f.python_name for f in metadata.objects["Foo"].functions}
+    assert names == {"from_child", "from_parent", "from_grandparent"}
+
+
 def test_ast_external_constructor_simple():
     """``alt = function(Other)`` copies the target's constructor signature."""
     metadata = _analyze("""
@@ -1289,3 +1370,1092 @@ class Foo:
     fn = metadata.objects["Foo"].functions[0]
     names = [p.python_name for p in fn.parameters]
     assert names == ["x"]
+
+
+# -- Module-level type aliases ------------------------------------------------
+
+
+def test_ast_type_alias_with_annotated_default_path():
+    """`Source = Annotated[dagger.Directory, dagger.DefaultPath(".")]` resolves.
+
+    Both the underlying ``Directory`` type and the ``DefaultPath`` metadata
+    must be picked up when the alias is referenced as a parameter annotation.
+    """
+    metadata = _analyze("""
+import dagger
+from typing import Annotated
+
+Source = Annotated[dagger.Directory, dagger.DefaultPath(".")]
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(self, src: Source) -> dagger.Container:
+        ...
+""")
+    fn = metadata.objects["Foo"].functions[0]
+    param = fn.parameters[0]
+    assert param.python_name == "src"
+    assert param.resolved_type.kind == "object"
+    assert param.resolved_type.name == "Directory"
+    assert param.default_path == "."
+
+
+def test_ast_type_alias_with_annotated_on_field():
+    """The same alias used on a field must unwrap to ``Directory``."""
+    metadata = _analyze("""
+import dagger
+from typing import Annotated
+
+Source = Annotated[dagger.Directory, dagger.DefaultPath(".")]
+
+@dagger.object_type
+class Foo:
+    src: Source = dagger.field()
+""")
+    field = metadata.objects["Foo"].fields[0]
+    assert field.python_name == "src"
+    assert field.resolved_type.kind == "object"
+    assert field.resolved_type.name == "Directory"
+
+
+def test_ast_plain_type_alias():
+    """``Src = dagger.Directory`` resolves to Directory."""
+    metadata = _analyze("""
+import dagger
+
+Src = dagger.Directory
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(self, src: Src) -> dagger.Container:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.kind == "object"
+    assert param.resolved_type.name == "Directory"
+
+
+def test_ast_optional_type_alias():
+    """``MaybeDir = dagger.Directory | None`` resolves to optional Directory."""
+    metadata = _analyze("""
+import dagger
+
+MaybeDir = dagger.Directory | None
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(self, src: MaybeDir = None) -> dagger.Container:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.name == "Directory"
+    assert param.resolved_type.is_optional is True
+
+
+def test_ast_chained_type_alias():
+    """An alias pointing at another alias resolves through both."""
+    metadata = _analyze("""
+import dagger
+
+A = dagger.Directory
+B = A
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(self, src: B) -> dagger.Container:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.name == "Directory"
+
+
+def test_ast_cyclic_type_alias_does_not_recurse():
+    """A self-referential alias must not loop; falls back to the warn path."""
+    # ``A = B; B = A`` cannot be resolved to a real type. The analyzer should
+    # not recurse forever — it falls back to the existing unresolved-name
+    # path (warn + assume object), same behavior as a missing import.
+    metadata = _analyze("""
+import dagger
+
+A = B
+B = A
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(self, src: A) -> dagger.Container:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    # Expansion stopped at the cycle; the resolver fell back to assuming
+    # an object type with the alias name.
+    assert param.resolved_type.kind == "object"
+
+
+# -- Relative imports --------------------------------------------------------
+
+
+def test_ast_relative_import_module():
+    """``from . import sibling`` must not crash the analyzer."""
+    metadata = _analyze("""
+import dagger
+from . import render
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    assert "Foo" in metadata.objects
+    assert [f.python_name for f in metadata.objects["Foo"].functions] == ["hello"]
+
+
+def test_ast_relative_import_from_submodule():
+    """``from .submodule import Name`` must not crash the analyzer."""
+    metadata = _analyze("""
+import dagger
+from .helpers import Helper
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    assert "Foo" in metadata.objects
+
+
+def test_ast_relative_import_does_not_resolve_top_level_module():
+    """``from .json import X`` must NOT pick up the stdlib ``json`` module.
+
+    A relative import is unambiguously package-internal; resolving it
+    against ``sys.path`` would silently bind the wrong object and break
+    type analysis in surprising ways.
+    """
+    metadata = _analyze("""
+import dagger
+from .json import dumps
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    assert "Foo" in metadata.objects
+
+
+def test_ast_relative_import_parent_package():
+    """``from ..pkg import Name`` (multi-dot) must not crash the analyzer."""
+    metadata = _analyze("""
+import dagger
+from ..siblings import Helper
+from ...root import Other
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    assert "Foo" in metadata.objects
+
+
+def test_ast_relative_import_resolves_decorated_class(tmp_path):
+    """A decorated class imported relatively is still discovered cross-file."""
+    pkg = tmp_path / "relpkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "helpers.py").write_text(
+        "import dagger\n"
+        "\n"
+        "@dagger.object_type\n"
+        "class Helper:\n"
+        '    name: str = dagger.field(default="h")\n',
+        encoding="utf-8",
+    )
+    (pkg / "main.py").write_text(
+        "import dagger\n"
+        "from .helpers import Helper\n"
+        "\n"
+        "@dagger.object_type\n"
+        "class Foo:\n"
+        "    @dagger.function\n"
+        "    def get_helper(self) -> Helper:\n"
+        "        return Helper()\n",
+        encoding="utf-8",
+    )
+
+    metadata = analyze_module(
+        source_files=[pkg / "__init__.py", pkg / "helpers.py", pkg / "main.py"],
+        main_object_name="Foo",
+    )
+    assert {"Foo", "Helper"} <= set(metadata.objects)
+    fn = metadata.objects["Foo"].functions[0]
+    assert fn.python_name == "get_helper"
+    assert fn.resolved_return_type.name == "Helper"
+
+
+# -- Aliased dagger imports --------------------------------------------------
+
+
+def test_ast_aliased_dagger_module_decorators():
+    """``import dagger as d`` then ``@d.object_type`` / ``@d.function``."""
+    metadata = _analyze("""
+import dagger as d
+
+@d.object_type
+class Foo:
+    @d.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    assert "Foo" in metadata.objects
+    assert [f.python_name for f in metadata.objects["Foo"].functions] == ["hello"]
+
+
+def test_ast_aliased_decorator_from_import():
+    """``from dagger import object_type as ot, function as fn`` is recognised."""
+    metadata = _analyze("""
+from dagger import object_type as ot, function as fn
+
+@ot
+class Foo:
+    @fn
+    def hello(self) -> str:
+        return "hi"
+""")
+    assert "Foo" in metadata.objects
+    assert [f.python_name for f in metadata.objects["Foo"].functions] == ["hello"]
+
+
+def test_ast_aliased_field_call():
+    """``from dagger import field as fld`` then ``x: T = fld(...)`` is a field."""
+    metadata = _analyze("""
+import dagger
+from dagger import field as fld
+
+@dagger.object_type
+class Foo:
+    name: str = fld(default="x")
+
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    obj = metadata.objects["Foo"]
+    assert [(f.python_name, f.default_value) for f in obj.fields] == [("name", "x")]
+
+
+def test_ast_aliased_dagger_keeps_dataclasses_field_rejected():
+    """``from dataclasses import field`` is still excluded from dagger fields."""
+    metadata = _analyze("""
+import dagger
+from dataclasses import field
+
+@dagger.object_type
+class Foo:
+    name: str = field(default="x")
+
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    # dataclasses.field is not a dagger field; the assignment becomes a
+    # constructor parameter via the AnnAssign-as-param path but no
+    # FieldMetadata is created.
+    assert metadata.objects["Foo"].fields == []
+
+
+def test_ast_aliased_decorator_keeps_check_generate_up():
+    """Check/generate/up decorators also resolve via the alias map."""
+    metadata = _analyze("""
+import dagger as d
+
+@d.object_type
+class Foo:
+    @d.function
+    @d.check
+    def smoke(self) -> str: ...
+
+    @d.function
+    @d.generate
+    def gen(self) -> str: ...
+
+    @d.function
+    @d.up
+    def serve(self) -> str: ...
+""")
+    fns = {f.python_name: f for f in metadata.objects["Foo"].functions}
+    assert fns["smoke"].is_check
+    assert fns["gen"].is_generate
+    assert fns["serve"].is_service
+
+
+# -- @staticmethod parameter handling ---------------------------------------
+
+
+def test_ast_staticmethod_first_param_preserved():
+    """``@staticmethod`` has no implicit receiver — first param is real."""
+    metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    @staticmethod
+    @dagger.function
+    def echo(x: str) -> str:
+        return x
+
+    @dagger.function
+    def hello(self, y: int) -> str:
+        return str(y)
+""")
+    fns = {f.python_name: f for f in metadata.objects["Foo"].functions}
+    # static: ``x`` survives; instance method: ``self`` is skipped, ``y`` kept.
+    assert [p.python_name for p in fns["echo"].parameters] == ["x"]
+    assert [p.python_name for p in fns["hello"].parameters] == ["y"]
+
+
+def test_ast_staticmethod_decorator_order_swapped():
+    """``@dagger.function`` over ``@staticmethod`` order also works."""
+    metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    @staticmethod
+    def echo(x: str) -> str:
+        return x
+""")
+    fn = metadata.objects["Foo"].functions[0]
+    assert [p.python_name for p in fn.parameters] == ["x"]
+
+
+# -- Star imports ------------------------------------------------------------
+
+
+def test_ast_star_import_warns(caplog):
+    """``from .x import *`` is not expanded; the analyzer warns loudly."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="dagger.mod._analyzer.parser"):
+        metadata = _analyze("""
+import dagger
+from .types import *
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    assert "Foo" in metadata.objects
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("from .types import *" in m for m in messages), messages
+
+
+def test_ast_pep695_type_alias_with_annotated():
+    """``type Source = Annotated[...]`` (PEP 695) resolves like the legacy form."""
+    metadata = _analyze("""
+import dagger
+from typing import Annotated
+
+type Source = Annotated[dagger.Directory, dagger.DefaultPath(".")]
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(self, src: Source) -> dagger.Container:
+        ...
+""")
+    fn = metadata.objects["Foo"].functions[0]
+    param = fn.parameters[0]
+    assert param.resolved_type.kind == "object"
+    assert param.resolved_type.name == "Directory"
+    assert param.default_path == "."
+
+
+def test_ast_cross_file_type_alias_with_default_path(tmp_path):
+    """Alias defined in ``types.py`` and imported via ``from .types import …``."""
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "types.py").write_text(
+        "import dagger\n"
+        "from typing import Annotated\n"
+        'Source = Annotated[dagger.Directory, dagger.DefaultPath(".")]\n',
+        encoding="utf-8",
+    )
+    (pkg / "main.py").write_text(
+        "import dagger\n"
+        "from .types import Source\n"
+        "\n"
+        "@dagger.object_type\n"
+        "class Foo:\n"
+        "    @dagger.function\n"
+        "    def build(self, src: Source) -> dagger.Container: ...\n",
+        encoding="utf-8",
+    )
+    metadata = analyze_module(
+        source_files=[pkg / "__init__.py", pkg / "types.py", pkg / "main.py"],
+        main_object_name="Foo",
+    )
+    fn = metadata.objects["Foo"].functions[0]
+    param = fn.parameters[0]
+    # Both the underlying Directory type and the DefaultPath metadata
+    # cross the file boundary.
+    assert param.resolved_type.kind == "object"
+    assert param.resolved_type.name == "Directory"
+    assert param.default_path == "."
+
+
+# -- Annotated metadata recursion -------------------------------------------
+
+
+def test_ast_optional_annotated_extracts_metadata():
+    """``Optional[Annotated[T, DefaultPath]]`` keeps the DefaultPath."""
+    metadata = _analyze("""
+import dagger
+from typing import Optional, Annotated
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(
+        self,
+        src: Optional[Annotated[dagger.Directory, dagger.DefaultPath(".")]] = None,
+    ) -> dagger.Container:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.name == "Directory"
+    assert param.resolved_type.is_optional is True
+    assert param.default_path == "."
+
+
+def test_ast_pep604_annotated_or_none_extracts_metadata():
+    """``Annotated[T, DefaultPath] | None`` (PEP 604) keeps the DefaultPath."""
+    metadata = _analyze("""
+import dagger
+from typing import Annotated
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(
+        self,
+        src: Annotated[dagger.Directory, dagger.DefaultPath(".")] | None = None,
+    ) -> dagger.Container:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.name == "Directory"
+    assert param.resolved_type.is_optional is True
+    assert param.default_path == "."
+
+
+def test_ast_union_annotated_extracts_metadata():
+    """``Union[Annotated[T, X], None]`` keeps the metadata."""
+    metadata = _analyze("""
+import dagger
+from typing import Annotated, Union
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(
+        self,
+        src: Union[Annotated[dagger.Directory, dagger.DefaultPath(".")], None] = None,
+    ) -> dagger.Container:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.name == "Directory"
+    assert param.default_path == "."
+
+
+def test_ast_list_annotated_does_not_lift_element_metadata():
+    """``list[Annotated[T, X]]`` does NOT promote X to the parameter level."""
+    # Element-level metadata semantics aren't well-defined at the parameter
+    # level — keep the analyzer conservative rather than guess.
+    metadata = _analyze("""
+import dagger
+from typing import Annotated
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(
+        self,
+        src: list[Annotated[dagger.Directory, dagger.DefaultPath(".")]],
+    ) -> dagger.Container:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    # The list element type is still resolved correctly via the resolver…
+    assert param.resolved_type.kind == "list"
+    assert param.resolved_type.element_type is not None
+    assert param.resolved_type.element_type.name == "Directory"
+    # …but the parameter itself doesn't claim a default_path.
+    assert param.default_path is None
+
+
+# -- Silently-dropped patterns now warn -------------------------------------
+
+
+def test_ast_property_warns(caplog):
+    """``@property`` methods are not exposed; the analyzer warns."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="dagger.mod._analyzer.parser"):
+        metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    @property
+    def computed(self) -> str:
+        return "x"
+
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    fns = [f.python_name for f in metadata.objects["Foo"].functions]
+    assert fns == ["hello"]
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("@property" in m and "computed" in m for m in msgs), msgs
+
+
+def test_ast_nested_object_type_warns(caplog):
+    """A nested @object_type class is ignored and the analyzer warns."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="dagger.mod._analyzer.parser"):
+        metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    @dagger.object_type
+    class Inner:
+        @dagger.function
+        def inner_fn(self) -> str: ...
+
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    assert "Inner" not in metadata.objects
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("nested" in m and "Inner" in m for m in msgs), msgs
+
+
+def test_ast_variadic_args_warn(caplog):
+    """``*args`` / ``**kwargs`` aren't supported; warn so the user knows."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="dagger.mod._analyzer.parser"):
+        metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self, name: str, *extras: str, **opts: int) -> str:
+        return name
+""")
+    fn = metadata.objects["Foo"].functions[0]
+    # Only the named param survives.
+    assert [p.python_name for p in fn.parameters] == ["name"]
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("*extras" in m for m in msgs), msgs
+    assert any("**opts" in m for m in msgs), msgs
+
+
+# -- Inherited fields -------------------------------------------------------
+
+
+def test_ast_inherited_fields_from_base_class():
+    """Fields on a dataclass-like base flow through to the child.
+
+    The runtime relies on ``dataclasses.fields(cls)`` to flatten fields
+    across MRO, which only inherits from dataclass parents — i.e.
+    ``@dagger.object_type`` / ``@dagger.interface`` (which apply
+    ``dataclass`` internally) or an explicit ``@dataclass``.
+    """
+    metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Base:
+    name: str = dagger.field(default="x")
+    count: int = dagger.field(default=0)
+
+@dagger.object_type
+class Foo(Base):
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    obj = metadata.objects["Foo"]
+    assert [(f.python_name, f.default_value) for f in obj.fields] == [
+        ("name", "x"),
+        ("count", 0),
+    ]
+    # Inherited fields also flow into the auto-derived constructor.
+    ctor = obj.constructor
+    assert ctor is not None
+    assert [(p.python_name, p.default_value) for p in ctor.parameters] == [
+        ("name", "x"),
+        ("count", 0),
+    ]
+
+
+def test_ast_undecorated_base_does_not_inherit_fields():
+    """A non-dataclass base's annotations don't become fields on the child.
+
+    This matches runtime behavior: ``dataclass(Foo)`` only walks
+    dataclass bases, so ``Base`` here is invisible to the field path.
+    """
+    metadata = _analyze("""
+import dagger
+
+class Base:
+    name: str = dagger.field(default="x")
+
+@dagger.object_type
+class Foo(Base):
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    assert metadata.objects["Foo"].fields == []
+
+
+def test_ast_inherited_field_override_wins():
+    """A child's field declaration overrides the base's."""
+    metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Base:
+    name: str = dagger.field(default="base")
+
+@dagger.object_type
+class Foo(Base):
+    name: str = dagger.field(default="foo")
+
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    obj = metadata.objects["Foo"]
+    assert [(f.python_name, f.default_value) for f in obj.fields] == [("name", "foo")]
+
+
+def test_ast_inherited_fields_multilevel():
+    """Fields from dataclass-like grandparent classes are also discovered."""
+    metadata = _analyze("""
+import dagger
+from dataclasses import dataclass
+
+@dataclass
+class Grandparent:
+    a: str = dagger.field(default="g")
+
+@dagger.object_type
+class Parent(Grandparent):
+    b: str = dagger.field(default="p")
+
+@dagger.object_type
+class Foo(Parent):
+    c: str = dagger.field(default="c")
+
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""", "Foo")
+    obj = metadata.objects["Foo"]
+    assert {f.python_name for f in obj.fields} == {"a", "b", "c"}
+
+
+# -- Enum value extraction --------------------------------------------------
+
+
+def test_ast_intenum_records_int_values():
+    """``LOW = 1`` on IntEnum produces value="1" in the schema."""
+    metadata = _analyze("""
+import dagger
+from enum import IntEnum
+
+@dagger.enum_type
+class Priority(IntEnum):
+    LOW = 1
+    HIGH = 100
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def get(self) -> Priority: ...
+""")
+    members = {m.name: m.value for m in metadata.enums["Priority"].members}
+    assert members == {"LOW": "1", "HIGH": "100"}
+
+
+def test_ast_enum_auto_warns(caplog):
+    """``LOW = enum.auto()`` warns; value can't be predicted statically."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="dagger.mod._analyzer.parser"):
+        metadata = _analyze("""
+import dagger
+import enum
+
+@dagger.enum_type
+class Priority(enum.Enum):
+    LOW = enum.auto()
+    HIGH = enum.auto()
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self) -> str: ...
+""")
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("enum.auto()" in m and "LOW" in m for m in msgs), msgs
+    # Fallback values are member names.
+    members = {m.name: m.value for m in metadata.enums["Priority"].members}
+    assert members == {"LOW": "LOW", "HIGH": "HIGH"}
+
+
+def test_ast_enum_bare_auto_warns(caplog):
+    """``auto()`` (imported as ``from enum import auto``) is also detected."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="dagger.mod._analyzer.parser"):
+        _analyze("""
+import dagger
+from enum import Enum, auto
+
+@dagger.enum_type
+class Priority(Enum):
+    LOW = auto()
+    HIGH = auto()
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self) -> str: ...
+""")
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("auto()" in m for m in msgs), msgs
+
+
+# -- Unresolvable defaults --------------------------------------------------
+
+
+def test_ast_function_call_default_warns(caplog):
+    """``def f(name = os.environ.get("X", "y"))`` warns; default is None."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="dagger.mod._analyzer.parser"):
+        metadata = _analyze("""
+import dagger
+import os
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self, name: str = os.environ.get("HOME", "x")) -> str:
+        return name
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.has_default is True
+    assert param.default_value is None
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("could not be evaluated statically" in m for m in msgs), msgs
+
+
+def test_ast_subscript_default_warns(caplog):
+    """``def f(name = D["k"])`` warns; default is None."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="dagger.mod._analyzer.parser"):
+        metadata = _analyze("""
+import dagger
+
+DEFAULTS = {"name": "x"}
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self, name: str = DEFAULTS["name"]) -> str:
+        return name
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.default_value is None
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("could not be evaluated statically" in m for m in msgs)
+
+
+# -- Rejected types (Literal/dict/TypeVar/PEP-695) --------------------------
+
+
+def test_ast_literal_type_is_rejected():
+    """``Literal[...]`` is not a Dagger type — fail loud, not silent."""
+    from dagger.mod._analyzer.errors import TypeResolutionError
+
+    with pytest.raises(TypeResolutionError) as excinfo:
+        _analyze("""
+import dagger
+from typing import Literal
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def env(self, kind: Literal["dev", "prod"]) -> str: ...
+""")
+    assert "Literal[...]" in str(excinfo.value)
+
+
+def test_ast_dict_type_is_rejected():
+    """``dict[K, V]`` is not a Dagger type."""
+    from dagger.mod._analyzer.errors import TypeResolutionError
+
+    with pytest.raises(TypeResolutionError) as excinfo:
+        _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def env(self) -> dict[str, str]: ...
+""")
+    assert "dict[...]" in str(excinfo.value)
+
+
+def test_ast_mapping_type_is_rejected():
+    """``Mapping[K, V]`` is also rejected."""
+    from dagger.mod._analyzer.errors import TypeResolutionError
+
+    with pytest.raises(TypeResolutionError):
+        _analyze("""
+import dagger
+from typing import Mapping
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def env(self) -> Mapping[str, str]: ...
+""")
+
+
+def test_ast_pep695_class_generics_are_rejected():
+    """``class Foo[T]:`` (PEP 695) is rejected with a clear message."""
+    from dagger.mod._analyzer.errors import TypeResolutionError
+
+    with pytest.raises(TypeResolutionError) as excinfo:
+        _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo[T]:
+    @dagger.function
+    def echo(self, x: T) -> T: ...
+""")
+    assert "PEP 695" in str(excinfo.value)
+
+
+def test_ast_pep695_function_generics_are_rejected():
+    """``def f[T](...):`` (PEP 695) is rejected."""
+    from dagger.mod._analyzer.errors import TypeResolutionError
+
+    with pytest.raises(TypeResolutionError):
+        _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def echo[T](self, x: T) -> T: ...
+""")
+
+
+def test_ast_generic_base_class_is_rejected():
+    """``class Foo(Generic[T]):`` is rejected."""
+    from dagger.mod._analyzer.errors import TypeResolutionError
+
+    with pytest.raises(TypeResolutionError) as excinfo:
+        _analyze("""
+import dagger
+from typing import Generic, TypeVar
+
+T = TypeVar("T")
+
+@dagger.object_type
+class Foo(Generic[T]):
+    @dagger.function
+    def echo(self, x: T) -> T: ...
+""")
+    assert "Generic[...]" in str(excinfo.value)
+
+
+def test_ast_class_level_constant_default():
+    """``DEFAULT = "x"`` inside a class body resolves when used as a default."""
+    metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    DEFAULT = "x"
+
+    @dagger.function
+    def hello(self, name: str = DEFAULT) -> str:
+        return name
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.has_default is True
+    assert param.default_value == "x"
+
+
+def test_ast_class_level_annotated_constant_default():
+    """``DEFAULT: str = "x"`` inside a class body also resolves."""
+    metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    DEFAULT: str = "x"
+
+    @dagger.function
+    def hello(self, name: str = DEFAULT) -> str:
+        return name
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.default_value == "x"
+
+
+def test_ast_class_level_constant_does_not_leak():
+    """A class constant on Foo must not resolve inside Bar's defaults."""
+    metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    DEFAULT = "from-foo"
+
+    @dagger.function
+    def hello(self, name: str = DEFAULT) -> str:
+        return name
+
+@dagger.object_type
+class Bar:
+    @dagger.function
+    def hello(self, name: str = DEFAULT) -> str:
+        return name
+""", "Foo")
+    foo_param = metadata.objects["Foo"].functions[0].parameters[0]
+    bar_param = metadata.objects["Bar"].functions[0].parameters[0]
+    assert foo_param.default_value == "from-foo"
+    # Bar.DEFAULT doesn't exist; the analyzer falls back to the literal name.
+    assert bar_param.default_value == "DEFAULT"
+
+
+def test_ast_cross_file_constant_default(tmp_path):
+    """``from .constants import X`` resolves when X is used as a default."""
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "constants.py").write_text(
+        'DEFAULT_NAME = "alice"\n',
+        encoding="utf-8",
+    )
+    (pkg / "main.py").write_text(
+        "import dagger\n"
+        "from .constants import DEFAULT_NAME\n"
+        "\n"
+        "@dagger.object_type\n"
+        "class Foo:\n"
+        "    @dagger.function\n"
+        "    def hello(self, name: str = DEFAULT_NAME) -> str: ...\n",
+        encoding="utf-8",
+    )
+    metadata = analyze_module(
+        source_files=[pkg / "__init__.py", pkg / "constants.py", pkg / "main.py"],
+        main_object_name="Foo",
+    )
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.has_default is True
+    assert param.default_value == "alice"
+
+
+def test_ast_cross_file_type_alias_chained(tmp_path):
+    """``main.py`` imports ``B``; ``types.py`` defines ``A = Directory; B = A``."""
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "types.py").write_text(
+        "import dagger\n"
+        "A = dagger.Directory\n"
+        "B = A\n",
+        encoding="utf-8",
+    )
+    (pkg / "main.py").write_text(
+        "import dagger\n"
+        "from .types import B\n"
+        "\n"
+        "@dagger.object_type\n"
+        "class Foo:\n"
+        "    @dagger.function\n"
+        "    def build(self, src: B) -> dagger.Container: ...\n",
+        encoding="utf-8",
+    )
+    metadata = analyze_module(
+        source_files=[pkg / "__init__.py", pkg / "types.py", pkg / "main.py"],
+        main_object_name="Foo",
+    )
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.name == "Directory"
+
+
+def test_ast_pep695_plain_type_alias():
+    """``type Src = dagger.Directory`` resolves to Directory."""
+    metadata = _analyze("""
+import dagger
+
+type Src = dagger.Directory
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(self, src: Src) -> dagger.Container:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.kind == "object"
+    assert param.resolved_type.name == "Directory"
+
+
+def test_ast_star_import_does_not_break_resolution():
+    """A star import alongside a regular import must not break analysis."""
+    metadata = _analyze("""
+import dagger
+from typing import Annotated
+from .helpers import *
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self, x: dagger.Container) -> str:
+        return ""
+""")
+    fn = metadata.objects["Foo"].functions[0]
+    assert fn.parameters[0].resolved_type.name == "Container"
