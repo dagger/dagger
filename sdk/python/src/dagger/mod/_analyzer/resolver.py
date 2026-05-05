@@ -376,6 +376,27 @@ class TypeResolver:
         ):
             return self._resolve_ast(slice_val.elts[0], location)
 
+        # Reject types Dagger does not support outright. Falling through to
+        # ``eval_annotation`` would silently produce a TypeDef with a
+        # nonsense name that the engine can't honor.
+        if base_name == "Literal":
+            msg = (
+                "Literal[...] is not a Dagger type. Use a string parameter "
+                "or define an enum with @dagger.enum_type."
+            )
+            raise TypeResolutionError(
+                msg, annotation=ast.unparse(node), location=location
+            )
+        if base_name in ("dict", "Dict", "Mapping", "MutableMapping"):
+            msg = (
+                f"{base_name}[...] is not a Dagger type. Map types are not "
+                "supported in the Dagger API; use a dedicated object_type "
+                "or pass a list of pairs."
+            )
+            raise TypeResolutionError(
+                msg, annotation=ast.unparse(node), location=location
+            )
+
         # Unknown generic - try to evaluate
         try:
             evaled = self.namespace.eval_annotation(node, location=location)
@@ -527,6 +548,16 @@ class TypeResolver:
         # Handle stub types
         if is_stub_type(t):
             return ResolvedType(kind="object", name=t.__name__)
+
+        # Reject TypeVar usage in annotations — Dagger has no generics, and
+        # silently treating ``T`` as an opaque object produces broken
+        # TypeDefs the engine rejects at runtime.
+        if isinstance(t, typing.TypeVar):
+            msg = (
+                f"TypeVar {t.__name__!r} is not a Dagger type. The Dagger "
+                "API does not support generics; declare a concrete type."
+            )
+            raise TypeResolutionError(msg, location=location)
 
         # Handle primitives
         if t in (str, int, float, bool, bytes):
