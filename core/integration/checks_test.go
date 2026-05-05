@@ -100,7 +100,7 @@ func (ChecksSuite) TestChecksDirectSDK(ctx context.Context, t *testctx.T) {
 	}
 }
 
-func (ChecksSuite) TestChecksViaLegacyBlueprintInit(ctx context.Context, t *testctx.T) {
+func (ChecksSuite) TestChecksViaLegacyBlueprintConfig(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	for _, tc := range []struct {
 		name string
@@ -112,11 +112,10 @@ func (ChecksSuite) TestChecksViaLegacyBlueprintInit(ctx context.Context, t *test
 		{"java", "hello-with-checks-java"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			// Install hello-with-checks through the legacy blueprint path.
 			modGen, err := checksTestEnv(t, c)
 			require.NoError(t, err)
 			modGen = modGen.WithWorkdir("app").
-				With(daggerModuleExec("init", "--blueprint", "../"+tc.path))
+				WithNewFile("dagger.json", `{"name":"app","blueprint":{"name":"blueprint","source":"../`+tc.path+`"}}`)
 			// list checks
 			out, err := modGen.
 				With(daggerExec("check", "-l")).
