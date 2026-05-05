@@ -1356,6 +1356,31 @@ class ModuleParser:
             )
         return inherited
 
+    def _is_dataclass_like(self, base_class: ast.ClassDef, base_file: Path) -> bool:
+        """True when a base class would expose its fields via dataclasses.
+
+        At runtime, dagger fields flow through ``dataclasses.fields(cls)``,
+        which only inherits from base classes that are themselves
+        dataclasses — that means @dagger.object_type / @dagger.interface
+        (which apply ``dataclass(kw_only=True)`` internally) or an explicit
+        ``@dataclass``. An undecorated base's annotations are *not*
+        promoted to fields on the child, even if the user wrote
+        ``dagger.field(...)`` in the base.
+        """
+        aliases = self._aliases_for(base_file)
+        if has_decorator(base_class, "object_type", aliases):
+            return True
+        if has_decorator(base_class, "interface", aliases):
+            return True
+        # Explicit @dataclass / @dataclasses.dataclass (with or without args).
+        for decorator in base_class.decorator_list:
+            target = decorator.func if isinstance(decorator, ast.Call) else decorator
+            if isinstance(target, ast.Name) and target.id == "dataclass":
+                return True
+            if isinstance(target, ast.Attribute) and target.attr == "dataclass":
+                return True
+        return False
+
     def _find_inherited_fields(
         self,
         node: ast.ClassDef,
@@ -1366,12 +1391,12 @@ class ModuleParser:
     ) -> list[tuple[FieldMetadata | None, ParameterMetadata | None]]:
         """Walk MRO for inherited dagger ``field()`` declarations.
 
-        Mirrors ``_find_inherited_functions``. ``class_name`` is the
-        originating (child) class so ``Self`` annotations on inherited
-        fields resolve to the child. ``seen_field_names`` /
-        ``seen_param_names`` accumulate names already discovered on the
-        child or earlier bases — child overrides win, matching Python's
-        MRO behaviour.
+        Mirrors ``_find_inherited_functions``, but only considers bases
+        that are themselves dataclass-like — ``@dagger.object_type``,
+        ``@dagger.interface``, or ``@dataclass``. The runtime relies on
+        Python's dataclass machinery to flatten fields across MRO, and
+        that machinery only inherits from dataclass parents. Walking
+        undecorated bases would surface fields the runtime never exposes.
 
         Returns a list of (field, init_param) tuples. Either side can be
         ``None`` when only one path applies (an ``init=False`` field, an
@@ -1396,6 +1421,12 @@ class ModuleParser:
             if found is None:
                 continue
             base_class, base_file = found
+
+            # Only inherit fields from dataclass-like bases — see
+            # ``_is_dataclass_like``. Recurse anyway: a dataclass-like
+            # base might itself inherit from another dataclass-like.
+            if not self._is_dataclass_like(base_class, base_file):
+                continue
 
             for item in base_class.body:
                 if not (

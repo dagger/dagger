@@ -1984,10 +1984,17 @@ class Foo:
 
 
 def test_ast_inherited_fields_from_base_class():
-    """``dagger.field()`` declarations on a base class are inherited."""
+    """Fields on a dataclass-like base flow through to the child.
+
+    The runtime relies on ``dataclasses.fields(cls)`` to flatten fields
+    across MRO, which only inherits from dataclass parents — i.e.
+    ``@dagger.object_type`` / ``@dagger.interface`` (which apply
+    ``dataclass`` internally) or an explicit ``@dataclass``.
+    """
     metadata = _analyze("""
 import dagger
 
+@dagger.object_type
 class Base:
     name: str = dagger.field(default="x")
     count: int = dagger.field(default=0)
@@ -2012,11 +2019,33 @@ class Foo(Base):
     ]
 
 
+def test_ast_undecorated_base_does_not_inherit_fields():
+    """A non-dataclass base's annotations don't become fields on the child.
+
+    This matches runtime behavior: ``dataclass(Foo)`` only walks
+    dataclass bases, so ``Base`` here is invisible to the field path.
+    """
+    metadata = _analyze("""
+import dagger
+
+class Base:
+    name: str = dagger.field(default="x")
+
+@dagger.object_type
+class Foo(Base):
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    assert metadata.objects["Foo"].fields == []
+
+
 def test_ast_inherited_field_override_wins():
     """A child's field declaration overrides the base's."""
     metadata = _analyze("""
 import dagger
 
+@dagger.object_type
 class Base:
     name: str = dagger.field(default="base")
 
@@ -2033,13 +2062,16 @@ class Foo(Base):
 
 
 def test_ast_inherited_fields_multilevel():
-    """Fields from grandparent classes are also discovered."""
+    """Fields from dataclass-like grandparent classes are also discovered."""
     metadata = _analyze("""
 import dagger
+from dataclasses import dataclass
 
+@dataclass
 class Grandparent:
     a: str = dagger.field(default="g")
 
+@dagger.object_type
 class Parent(Grandparent):
     b: str = dagger.field(default="p")
 
@@ -2050,7 +2082,7 @@ class Foo(Parent):
     @dagger.function
     def hello(self) -> str:
         return "hi"
-""")
+""", "Foo")
     obj = metadata.objects["Foo"]
     assert {f.python_name for f in obj.fields} == {"a", "b", "c"}
 
