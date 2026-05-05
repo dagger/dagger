@@ -1816,6 +1816,97 @@ def test_ast_cross_file_type_alias_with_default_path(tmp_path):
     assert param.default_path == "."
 
 
+# -- Annotated metadata recursion -------------------------------------------
+
+
+def test_ast_optional_annotated_extracts_metadata():
+    """``Optional[Annotated[T, DefaultPath]]`` keeps the DefaultPath."""
+    metadata = _analyze("""
+import dagger
+from typing import Optional, Annotated
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(
+        self,
+        src: Optional[Annotated[dagger.Directory, dagger.DefaultPath(".")]] = None,
+    ) -> dagger.Container:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.name == "Directory"
+    assert param.resolved_type.is_optional is True
+    assert param.default_path == "."
+
+
+def test_ast_pep604_annotated_or_none_extracts_metadata():
+    """``Annotated[T, DefaultPath] | None`` (PEP 604) keeps the DefaultPath."""
+    metadata = _analyze("""
+import dagger
+from typing import Annotated
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(
+        self,
+        src: Annotated[dagger.Directory, dagger.DefaultPath(".")] | None = None,
+    ) -> dagger.Container:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.name == "Directory"
+    assert param.resolved_type.is_optional is True
+    assert param.default_path == "."
+
+
+def test_ast_union_annotated_extracts_metadata():
+    """``Union[Annotated[T, X], None]`` keeps the metadata."""
+    metadata = _analyze("""
+import dagger
+from typing import Annotated, Union
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(
+        self,
+        src: Union[Annotated[dagger.Directory, dagger.DefaultPath(".")], None] = None,
+    ) -> dagger.Container:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.name == "Directory"
+    assert param.default_path == "."
+
+
+def test_ast_list_annotated_does_not_lift_element_metadata():
+    """``list[Annotated[T, X]]`` does NOT promote X to the parameter level."""
+    # Element-level metadata semantics aren't well-defined at the parameter
+    # level — keep the analyzer conservative rather than guess.
+    metadata = _analyze("""
+import dagger
+from typing import Annotated
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(
+        self,
+        src: list[Annotated[dagger.Directory, dagger.DefaultPath(".")]],
+    ) -> dagger.Container:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    # The list element type is still resolved correctly via the resolver…
+    assert param.resolved_type.kind == "list"
+    assert param.resolved_type.element_type is not None
+    assert param.resolved_type.element_type.name == "Directory"
+    # …but the parameter itself doesn't claim a default_path.
+    assert param.default_path is None
+
+
 def test_ast_class_level_constant_default():
     """``DEFAULT = "x"`` inside a class body resolves when used as a default."""
     metadata = _analyze("""
