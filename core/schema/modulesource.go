@@ -3024,9 +3024,9 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		// to latest engine versions.
 		ForceDefaultFunctionCaching bool `internal:"true" default:"false"`
 
-		// LegacyDefaultPath, when true, causes +defaultPath to resolve relative
-		// to the workspace root instead of the module's own source directory.
-		// Used for legacy toolchains loaded from dagger.json.
+		// LegacyDefaultPath marks modules projected from legacy workspace fields.
+		// The caller should also pass DefaultPathContextSourceRef so
+		// +defaultPath inputs resolve from the legacy project/workspace context.
 		LegacyDefaultPath bool `internal:"true" default:"false"`
 
 		// LegacyArgCustomizationsJSON is a JSON-encoded []*modules.ModuleConfigArgument

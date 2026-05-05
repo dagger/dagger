@@ -68,6 +68,7 @@ func TestPendingLegacyModule(t *testing.T) {
 		require.Equal(t, "go", mod.Name)
 		require.False(t, mod.Entrypoint)
 		require.True(t, mod.LegacyDefaultPath)
+		require.Equal(t, "/resolved/.", mod.DefaultPathContextSourceRef)
 		require.Equal(t, map[string]any{"foo": "bar"}, mod.ConfigDefaults)
 		require.Len(t, mod.ArgCustomizations, 1)
 		require.Equal(t, "./custom-config.txt", mod.ArgCustomizations[0].DefaultPath)
@@ -92,6 +93,7 @@ func TestPendingLegacyModule(t *testing.T) {
 		require.Equal(t, "blueprint", mod.Name)
 		require.True(t, mod.Entrypoint)
 		require.True(t, mod.LegacyDefaultPath)
+		require.Equal(t, "/resolved/.", mod.DefaultPathContextSourceRef)
 		require.Nil(t, mod.ConfigDefaults)
 	})
 }
@@ -101,7 +103,7 @@ func TestWorkspaceConfigPendingModules(t *testing.T) {
 
 	ws := &workspace.Workspace{Root: "/repo", Path: "."}
 	resolveLocalRef := func(_ *workspace.Workspace, relPath string) string {
-		return "/resolved/" + filepath.Clean(relPath)
+		return filepath.Join("/resolved", relPath)
 	}
 
 	pending := workspaceConfigPendingModules(ws, &workspace.Config{
@@ -113,7 +115,8 @@ func TestWorkspaceConfigPendingModules(t *testing.T) {
 				Settings:   map[string]any{"message": "hello"},
 			},
 			"alpha": {
-				Source: "modules/alpha",
+				Source:            "modules/alpha",
+				LegacyDefaultPath: true,
 			},
 		},
 	}, resolveLocalRef)
@@ -124,6 +127,8 @@ func TestWorkspaceConfigPendingModules(t *testing.T) {
 	require.Empty(t, pending[0].RefPin)
 	require.False(t, pending[0].Entrypoint)
 	require.True(t, pending[0].DisableFindUp)
+	require.True(t, pending[0].LegacyDefaultPath)
+	require.Equal(t, "/resolved", pending[0].DefaultPathContextSourceRef)
 	require.True(t, pending[0].DefaultsFromDotEnv)
 
 	require.Equal(t, "zeta", pending[1].Name)
@@ -131,6 +136,8 @@ func TestWorkspaceConfigPendingModules(t *testing.T) {
 	require.Empty(t, pending[1].RefPin)
 	require.True(t, pending[1].Entrypoint)
 	require.True(t, pending[1].DisableFindUp)
+	require.False(t, pending[1].LegacyDefaultPath)
+	require.Empty(t, pending[1].DefaultPathContextSourceRef)
 	require.True(t, pending[1].DefaultsFromDotEnv)
 	require.Equal(t, map[string]any{"message": "hello"}, pending[1].ConfigDefaults)
 }
