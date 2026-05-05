@@ -29,58 +29,116 @@ from dagger.mod._analyzer.visitors.annotations import unwrap_annotated
 
 logger = logging.getLogger(__name__)
 
-# Known Dagger types from the API
-DAGGER_OBJECT_TYPES = {
-    "Container",
-    "Directory",
-    "File",
-    "Secret",
-    "Service",
-    "CacheVolume",
-    "Socket",
-    "ModuleSource",
-    "Module",
-    "GitRepository",
-    "GitRef",
-    "Terminal",
-    "Host",
-    "Client",
-}
+# Hardcoded fallbacks used when the dagger package can't be imported at
+# analysis time (stub-only environment, broken install, …). These are
+# only the types the analyzer originally recognised — the live ``dagger``
+# package is queried first via ``_load_known_dagger_types`` to pick up
+# anything added after this list was last touched (e.g. ``Changeset``,
+# ``Binding``, ``LLM``, …).
+_FALLBACK_DAGGER_OBJECT_TYPES = frozenset(
+    {
+        "Container",
+        "Directory",
+        "File",
+        "Secret",
+        "Service",
+        "CacheVolume",
+        "Socket",
+        "ModuleSource",
+        "Module",
+        "GitRepository",
+        "GitRef",
+        "Terminal",
+        "Host",
+        "Client",
+    }
+)
+_FALLBACK_DAGGER_SCALAR_TYPES = frozenset(
+    {
+        "Platform",
+        "JSON",
+        "ContainerID",
+        "DirectoryID",
+        "FileID",
+        "SecretID",
+        "ServiceID",
+        "CacheVolumeID",
+        "SocketID",
+        "ModuleSourceID",
+        "ModuleID",
+        "GitRepositoryID",
+        "GitRefID",
+        "TerminalID",
+    }
+)
+_FALLBACK_DAGGER_ENUM_TYPES = frozenset(
+    {
+        "CacheSharingMode",
+        "ChangesetMergeConflict",
+        "ChangesetsMergeConflict",
+        "ExistsType",
+        "FileType",
+        "FunctionCachePolicy",
+        "ImageLayerCompression",
+        "ImageMediaTypes",
+        "ModuleSourceExperimentalFeature",
+        "ModuleSourceKind",
+        "NetworkProtocol",
+        "ReturnType",
+        "TypeDefKind",
+    }
+)
 
-# Dagger scalar types
-DAGGER_SCALAR_TYPES = {
-    "Platform",
-    "JSON",
-    "ContainerID",
-    "DirectoryID",
-    "FileID",
-    "SecretID",
-    "ServiceID",
-    "CacheVolumeID",
-    "SocketID",
-    "ModuleSourceID",
-    "ModuleID",
-    "GitRepositoryID",
-    "GitRefID",
-    "TerminalID",
-}
 
-# Dagger enum types from the API
-DAGGER_ENUM_TYPES = {
-    "CacheSharingMode",
-    "ChangesetMergeConflict",
-    "ChangesetsMergeConflict",
-    "ExistsType",
-    "FileType",
-    "FunctionCachePolicy",
-    "ImageLayerCompression",
-    "ImageMediaTypes",
-    "ModuleSourceExperimentalFeature",
-    "ModuleSourceKind",
-    "NetworkProtocol",
-    "ReturnType",
-    "TypeDefKind",
-}
+def _load_known_dagger_types() -> tuple[set[str], set[str], set[str]]:
+    """Discover known dagger types from the live ``dagger`` package.
+
+    Returns ``(objects, scalars, enums)`` populated by reflecting on
+    the actually-installed dagger module so newly added types
+    (``Changeset``, ``Binding``, ``LLM``, …) don't trigger spurious
+    "unresolved type" warnings.
+
+    Falls back to the hardcoded sets if dagger can't be imported, so
+    the analyzer still has *some* knowledge of the common types in a
+    stub-only environment.
+    """
+    try:
+        import dagger as dagger_pkg
+        from dagger.client import base as dagger_base
+    except Exception:  # noqa: BLE001 — partial install, etc.
+        return (
+            set(_FALLBACK_DAGGER_OBJECT_TYPES),
+            set(_FALLBACK_DAGGER_SCALAR_TYPES),
+            set(_FALLBACK_DAGGER_ENUM_TYPES),
+        )
+
+    objects: set[str] = set(_FALLBACK_DAGGER_OBJECT_TYPES)
+    scalars: set[str] = set(_FALLBACK_DAGGER_SCALAR_TYPES)
+    enums: set[str] = set(_FALLBACK_DAGGER_ENUM_TYPES)
+
+    object_base = getattr(dagger_base, "Type", None)
+    scalar_base = getattr(dagger_base, "Scalar", None)
+    enum_base = getattr(dagger_base, "Enum", None)
+
+    for name in dir(dagger_pkg):
+        if name.startswith("_"):
+            continue
+        attr = getattr(dagger_pkg, name, None)
+        if not isinstance(attr, type):
+            continue
+        if scalar_base is not None and issubclass(attr, scalar_base):
+            scalars.add(name)
+        elif enum_base is not None and issubclass(attr, enum_base):
+            enums.add(name)
+        elif object_base is not None and issubclass(attr, object_base):
+            objects.add(name)
+
+    return objects, scalars, enums
+
+
+DAGGER_OBJECT_TYPES, DAGGER_SCALAR_TYPES, DAGGER_ENUM_TYPES = (
+    _load_known_dagger_types()
+)
 
 # Primitive type mapping
 PRIMITIVE_TYPES = {
