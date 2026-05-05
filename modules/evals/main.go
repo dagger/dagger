@@ -4,7 +4,7 @@ import (
 	"context"
 	"dagger/evals/internal/dagger"
 
-	"github.com/dagger/querybuilder"
+	"dagger.io/dagger/querybuilder"
 )
 
 // Models smart enough to follow instructions like 'do X three times.'
@@ -41,7 +41,7 @@ func (m *Evals) Check(
 	// +optional
 	models []string,
 ) error {
-	var evaluatorEvals []dagger.EvaluatorEval
+	var evaluatorEvals []*dagger.EvaluatorEval
 	for _, eval := range []string{
 		"basic",
 		"buildMulti",
@@ -59,10 +59,11 @@ func (m *Evals) Check(
 		"nestedObjects",
 	} {
 		// TODO: replace with self-calls
-		evaluatorEvals = append(evaluatorEvals, (&dagger.EvaluatorEvalClient{}).WithGraphQLQuery(
+		evaluatorEvals = append(evaluatorEvals, (&dagger.EvaluatorEval{}).WithGraphQLQuery(
 			querybuilder.Query().Client(dag.GraphQLClient()).
 				Select("evals").
-				Select(eval),
+				Select(eval).
+				Select("asEvaluatorEval"),
 		))
 	}
 
