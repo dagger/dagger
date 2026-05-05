@@ -1,0 +1,17 @@
+[package]
+name = "{{.PackageName}}"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "{{.BinaryName}}"
+path = "src/main.rs"
+
+[dependencies]
+dagger-sdk = { path = "{{.SdkPath}}/crates/dagger-sdk" }
+tokio = { version = "1", features = ["full"] }
+serde_json = "1"
+eyre = "0.6"
+
+[workspace]
+exclude = ["{{.SdkPath}}"]
