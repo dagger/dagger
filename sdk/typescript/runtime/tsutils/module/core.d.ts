@@ -25,8 +25,6 @@ export function object(): ClassDecorator
 export function field(alias?: string): PropertyDecorator
 export function enumType(): ClassDecorator
 export function entrypoint(files: string[]): Promise<void>
-export function getRegisteredClass(
-  name: string,
-): { new (...args: unknown[]): unknown } | undefined
+export function getRegisteredClass(name: string): { new(...args: any[]): any } | undefined
 
 export function getTracer(name?: string): unknown

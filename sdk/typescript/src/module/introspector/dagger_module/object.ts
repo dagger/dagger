@@ -31,7 +31,6 @@ export class DaggerObject extends Locatable implements DaggerObjectBase {
   public methods: DaggerFunctions = {}
   public properties: DaggerProperties = {}
   public isExported: boolean = false
-  public isDefaultExport: boolean = false
 
   private symbol: ts.Symbol
 
@@ -60,9 +59,6 @@ export class DaggerObject extends Locatable implements DaggerObjectBase {
 
     const modifiers = ts.getCombinedModifierFlags(this.node)
     this.isExported = (modifiers & ts.ModifierFlags.Export) !== 0
-    // `export default class Foo` sets both Export and Default; the entrypoint
-    // must import it as a default import rather than a named one.
-    this.isDefaultExport = (modifiers & ts.ModifierFlags.Default) !== 0
 
     if (!this.isExported) {
       console.warn(
