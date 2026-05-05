@@ -1289,3 +1289,108 @@ class Foo:
     fn = metadata.objects["Foo"].functions[0]
     names = [p.python_name for p in fn.parameters]
     assert names == ["x"]
+
+
+# -- Relative imports --------------------------------------------------------
+
+
+def test_ast_relative_import_module():
+    """``from . import sibling`` must not crash the analyzer."""
+    metadata = _analyze("""
+import dagger
+from . import render
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    assert "Foo" in metadata.objects
+    assert [f.python_name for f in metadata.objects["Foo"].functions] == ["hello"]
+
+
+def test_ast_relative_import_from_submodule():
+    """``from .submodule import Name`` must not crash the analyzer."""
+    metadata = _analyze("""
+import dagger
+from .helpers import Helper
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    assert "Foo" in metadata.objects
+
+
+def test_ast_relative_import_does_not_resolve_top_level_module():
+    """``from .json import X`` must NOT pick up the stdlib ``json`` module.
+
+    A relative import is unambiguously package-internal; resolving it
+    against ``sys.path`` would silently bind the wrong object and break
+    type analysis in surprising ways.
+    """
+    metadata = _analyze("""
+import dagger
+from .json import dumps
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    assert "Foo" in metadata.objects
+
+
+def test_ast_relative_import_parent_package():
+    """``from ..pkg import Name`` (multi-dot) must not crash the analyzer."""
+    metadata = _analyze("""
+import dagger
+from ..siblings import Helper
+from ...root import Other
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    assert "Foo" in metadata.objects
+
+
+def test_ast_relative_import_resolves_decorated_class(tmp_path):
+    """A decorated class imported relatively is still discovered cross-file."""
+    pkg = tmp_path / "relpkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "helpers.py").write_text(
+        "import dagger\n"
+        "\n"
+        "@dagger.object_type\n"
+        "class Helper:\n"
+        '    name: str = dagger.field(default="h")\n',
+        encoding="utf-8",
+    )
+    (pkg / "main.py").write_text(
+        "import dagger\n"
+        "from .helpers import Helper\n"
+        "\n"
+        "@dagger.object_type\n"
+        "class Foo:\n"
+        "    @dagger.function\n"
+        "    def get_helper(self) -> Helper:\n"
+        "        return Helper()\n",
+        encoding="utf-8",
+    )
+
+    metadata = analyze_module(
+        source_files=[pkg / "__init__.py", pkg / "helpers.py", pkg / "main.py"],
+        main_object_name="Foo",
+    )
+    assert {"Foo", "Helper"} <= set(metadata.objects)
+    fn = metadata.objects["Foo"].functions[0]
+    assert fn.python_name == "get_helper"
+    assert fn.resolved_return_type.name == "Helper"
