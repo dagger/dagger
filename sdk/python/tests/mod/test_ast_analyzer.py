@@ -990,6 +990,87 @@ class Foo(Base):
     assert ctor.is_constructor is True
 
 
+def test_ast_inherited_functions_from_base_class():
+    """``@function``-decorated methods on a base class are inherited (issue #13089)."""
+    metadata = _analyze("""
+import dagger
+from typing import Self
+
+class Base:
+    @dagger.function
+    def with_component(self, name: str) -> Self:
+        '''Inherited function that should be visible.'''
+        return self
+
+    @dagger.function
+    async def with_context(self) -> Self:
+        '''Another inherited function that should be visible.'''
+        return self
+
+@dagger.object_type
+class Foo(Base):
+    @dagger.function
+    def my_own_function(self) -> str:
+        '''This function IS visible.'''
+        return "ok"
+""")
+    funcs = {f.python_name: f for f in metadata.objects["Foo"].functions}
+    assert set(funcs) == {"my_own_function", "with_component", "with_context"}
+    assert funcs["with_component"].doc == ("Inherited function that should be visible.")
+    assert funcs["with_context"].doc == (
+        "Another inherited function that should be visible."
+    )
+    assert funcs["with_context"].is_async is True
+
+
+def test_ast_inherited_function_override_wins():
+    """A child's ``@function`` override is preferred over the base's."""
+    metadata = _analyze("""
+import dagger
+
+class Base:
+    @dagger.function
+    def greet(self) -> str:
+        '''base docstring'''
+        return "base"
+
+@dagger.object_type
+class Foo(Base):
+    @dagger.function
+    def greet(self) -> str:
+        '''child docstring'''
+        return "child"
+""")
+    funcs = [f for f in metadata.objects["Foo"].functions if f.python_name == "greet"]
+    assert len(funcs) == 1
+    assert funcs[0].doc == "child docstring"
+
+
+def test_ast_inherited_functions_multilevel():
+    """Functions from grandparent classes are also discovered."""
+    metadata = _analyze("""
+import dagger
+
+class Grandparent:
+    @dagger.function
+    def from_grandparent(self) -> str:
+        return ""
+
+class Parent(Grandparent):
+    @dagger.function
+    def from_parent(self) -> str:
+        return ""
+
+@dagger.object_type
+class Foo(Parent):
+    @dagger.function
+    def from_child(self) -> str:
+        return ""
+""")
+    names = {f.python_name for f in metadata.objects["Foo"].functions}
+    assert names == {"from_child", "from_parent", "from_grandparent"}
+
+
 def test_ast_external_constructor_simple():
     """``alt = function(Other)`` copies the target's constructor signature."""
     metadata = _analyze("""
