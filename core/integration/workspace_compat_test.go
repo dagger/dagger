@@ -521,7 +521,15 @@ func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.
 		ctr := legacyCompatDangSource(t, c, "hello from migrated compat").
 			With(compatDaggerExec("migrate", "-y"))
 
-		_, err := ctr.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
+		stdout, err := ctr.Stdout(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, stdout, "inferring from dagger.json")
+
+		stderr, err := ctr.Stderr(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, stderr, "inferring from dagger.json")
+
+		_, err = ctr.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
 		require.Error(t, err, "root dagger.json should be removed after migration")
 
 		configOut, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
