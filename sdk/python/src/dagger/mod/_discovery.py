@@ -106,8 +106,25 @@ def _collect_package_files(pkg_path: Path, source_files: list[str]) -> None:
             source_files.append(str(py_file))
 
     for subdir in sorted(pkg_path.iterdir()):
-        if subdir.is_dir() and not subdir.name.startswith("_"):
-            _collect_package_files(subdir, source_files)
+        if not subdir.is_dir():
+            continue
+        if subdir.name.startswith("_") and subdir.name != "__pycache__":
+            # Underscore-prefixed packages are skipped (Python convention
+            # for "private" packages). Warn when they contain .py files
+            # that look like they could host dagger types — silent skips
+            # have caused real "where did my type go?" debugging sessions.
+            py_files = list(subdir.rglob("*.py"))
+            if py_files:
+                logger.warning(
+                    "Skipping underscore-prefixed subpackage %r (%d .py "
+                    "file(s) ignored). If this directory contains "
+                    "@dagger.object_type / @dagger.enum_type declarations, "
+                    "rename it without the leading underscore.",
+                    str(subdir),
+                    len(py_files),
+                )
+            continue
+        _collect_package_files(subdir, source_files)
 
     if init_file and init_file.exists():
         source_files.append(str(init_file))
