@@ -245,8 +245,6 @@ github.com/dagger/otel-go v1.43.1-0.20260429234604-565634f4374b h1:sxFypv4cR9Cyf
 github.com/dagger/otel-go v1.43.1-0.20260429234604-565634f4374b/go.mod h1:vv6aXBitZfuTD1oGatJcbUBP+UAdl4DepQxw0yJicgQ=
 github.com/dagger/testctx v0.1.2 h1:p9/92CttP6N3AhTWnAOrGfFGGNSqD5uDgY32+LISFoE=
 github.com/dagger/testctx v0.1.2/go.mod h1:2T9w5oiFscVVzgQo7YW2q1WxVkLFumHWjwlGQqVT/Sk=
-github.com/dagger/testctx/oteltest v0.1.2 h1:uw84VFKcHY9AVjx/ETWT0hw6+fds1001ozkGLQBTi54=
-github.com/dagger/testctx/oteltest v0.1.2/go.mod h1:v7p9Fe87Kw0nirDk8wES2YgOG66em0jeKxrXlckftMs=
 github.com/danielgatis/go-ansicode v1.0.7 h1:ozOFtNlQHgI3lMJFbT0CxqbbToqtT7mu8GXOwq10Xn0=
 github.com/danielgatis/go-ansicode v1.0.7/go.mod h1:xft3lPCsvHAC9KEGRcEzX+Jm8bTyUbya4rk7zD/nWvk=
 github.com/danielgatis/go-iterator v0.0.1 h1:pTptWDVAKzR0EUdtfmFMP3v+hSetqB091V9um1DTO8I=
@@ -765,8 +763,6 @@ github.com/vishvananda/netns v0.0.5 h1:DfiHV+j8bA32MFM7bfEunvT8IAqQ/NzSJHtcmW5zd
 github.com/vishvananda/netns v0.0.5/go.mod h1:SpkAiCQRtJ6TvvxPnOSyH3BMl6unz3xZlaprSwhNNJM=
 github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb h1:Ho4c8V5nikU9zaeXc95IyCAdU4rZAwOoKwMe6HQW/6M=
 github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb/go.mod h1:/641L6H9ILAQTmBZrVkUCCNpp1H1vOoQIQzBvQ6Fm7o=
-github.com/vito/dang v0.0.0-20260406185415-0d08427e2a24 h1:QXHoJNaCRE+n/52B+Rv4rCU7UxXmBSt9AmAlxNO1o8Y=
-github.com/vito/dang v0.0.0-20260406185415-0d08427e2a24/go.mod h1:o28FQa7kdD1BgWXjNq8+UfPpCCEBxvkSDxmoZSWEdBE=
 github.com/vito/dang v0.0.0-20260429194942-2c2c91186f4e h1:7NiSeWONDOTnYzdaqqiB3CaLkDzXbO1j27RXN6I9BTw=
 github.com/vito/dang v0.0.0-20260429194942-2c2c91186f4e/go.mod h1:ccaXEUTw1+RWvVmkACG6hTHkL6Ac+XUghv/+eWHXkXg=
 github.com/vito/go-interact v1.0.2 h1:viJuANio3WH9utUG4rKbJC9V3JR5JgYNS+i0efeA+GU=
