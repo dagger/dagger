@@ -1907,6 +1907,108 @@ class Foo:
     assert param.default_path is None
 
 
+# -- Rejected types (Literal/dict/TypeVar/PEP-695) --------------------------
+
+
+def test_ast_literal_type_is_rejected():
+    """``Literal[...]`` is not a Dagger type — fail loud, not silent."""
+    from dagger.mod._analyzer.errors import TypeResolutionError
+
+    with pytest.raises(TypeResolutionError) as excinfo:
+        _analyze("""
+import dagger
+from typing import Literal
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def env(self, kind: Literal["dev", "prod"]) -> str: ...
+""")
+    assert "Literal[...]" in str(excinfo.value)
+
+
+def test_ast_dict_type_is_rejected():
+    """``dict[K, V]`` is not a Dagger type."""
+    from dagger.mod._analyzer.errors import TypeResolutionError
+
+    with pytest.raises(TypeResolutionError) as excinfo:
+        _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def env(self) -> dict[str, str]: ...
+""")
+    assert "dict[...]" in str(excinfo.value)
+
+
+def test_ast_mapping_type_is_rejected():
+    """``Mapping[K, V]`` is also rejected."""
+    from dagger.mod._analyzer.errors import TypeResolutionError
+
+    with pytest.raises(TypeResolutionError):
+        _analyze("""
+import dagger
+from typing import Mapping
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def env(self) -> Mapping[str, str]: ...
+""")
+
+
+def test_ast_pep695_class_generics_are_rejected():
+    """``class Foo[T]:`` (PEP 695) is rejected with a clear message."""
+    from dagger.mod._analyzer.errors import TypeResolutionError
+
+    with pytest.raises(TypeResolutionError) as excinfo:
+        _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo[T]:
+    @dagger.function
+    def echo(self, x: T) -> T: ...
+""")
+    assert "PEP 695" in str(excinfo.value)
+
+
+def test_ast_pep695_function_generics_are_rejected():
+    """``def f[T](...):`` (PEP 695) is rejected."""
+    from dagger.mod._analyzer.errors import TypeResolutionError
+
+    with pytest.raises(TypeResolutionError):
+        _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def echo[T](self, x: T) -> T: ...
+""")
+
+
+def test_ast_generic_base_class_is_rejected():
+    """``class Foo(Generic[T]):`` is rejected."""
+    from dagger.mod._analyzer.errors import TypeResolutionError
+
+    with pytest.raises(TypeResolutionError) as excinfo:
+        _analyze("""
+import dagger
+from typing import Generic, TypeVar
+
+T = TypeVar("T")
+
+@dagger.object_type
+class Foo(Generic[T]):
+    @dagger.function
+    def echo(self, x: T) -> T: ...
+""")
+    assert "Generic[...]" in str(excinfo.value)
+
+
 def test_ast_class_level_constant_default():
     """``DEFAULT = "x"`` inside a class body resolves when used as a default."""
     metadata = _analyze("""

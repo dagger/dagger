@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from dagger.mod._analyzer.errors import ParseError
+from dagger.mod._analyzer.errors import ParseError, TypeResolutionError
 from dagger.mod._analyzer.metadata import (
     EnumMemberMetadata,
     EnumTypeMetadata,
@@ -72,6 +72,11 @@ def get_docstring(
 ) -> str | None:
     """Extract docstring from a node."""
     return ast.get_docstring(node)
+
+
+def _type_param_name(node: ast.AST) -> str:
+    """Best-effort name extraction for PEP 695 type parameters."""
+    return getattr(node, "name", "?")
 
 
 def _parse_docstring_deprecated(raw_doc: str) -> tuple[str | None, str | None]:
@@ -325,6 +330,54 @@ class ModuleParser:
                     and isinstance(node.name, ast.Name)
                 ):
                     aliases[node.name.id] = node.value
+
+    def _reject_pep695_generic_class(
+        self,
+        node: ast.ClassDef,
+        file_path: Path,
+    ) -> None:
+        """Reject ``class Foo[T]:`` and ``class Foo(Generic[T]):`` early.
+
+        Dagger has no generics in its type system. Letting the resolver
+        treat ``T`` as a forward reference produces a TypeDef the engine
+        will reject at runtime — surface a clear error at parse time
+        instead.
+        """
+        if getattr(node, "type_params", None):
+            location = get_location(node, str(file_path))
+            msg = (
+                f"Class {node.name!r} declares PEP 695 type parameters "
+                f"({', '.join(_type_param_name(tp) for tp in node.type_params)}); "
+                "Dagger does not support generic types."
+            )
+            raise TypeResolutionError(msg, location=location)
+        for base in node.bases:
+            if (
+                isinstance(base, ast.Subscript)
+                and isinstance(base.value, ast.Name)
+                and base.value.id == "Generic"
+            ):
+                location = get_location(node, str(file_path))
+                msg = (
+                    f"Class {node.name!r} inherits from Generic[...]; "
+                    "Dagger does not support generic types."
+                )
+                raise TypeResolutionError(msg, location=location)
+
+    def _reject_pep695_generic_function(
+        self,
+        node: ast.FunctionDef | ast.AsyncFunctionDef,
+        file_path: Path,
+    ) -> None:
+        """Reject ``def foo[T]():`` PEP 695 syntax."""
+        if getattr(node, "type_params", None):
+            location = get_location(node, str(file_path))
+            msg = (
+                f"Function {node.name!r} declares PEP 695 type parameters "
+                f"({', '.join(_type_param_name(tp) for tp in node.type_params)}); "
+                "Dagger does not support generic functions."
+            )
+            raise TypeResolutionError(msg, location=location)
 
     def _collect_class_constants_for(
         self,
@@ -625,6 +678,8 @@ class ModuleParser:
     ) -> ObjectTypeMetadata:
         """Parse an @object_type or @interface decorated class."""
         assert self._resolver is not None
+
+        self._reject_pep695_generic_class(node, file_path)
 
         # Collect class-body constants once so ``_eval_constant`` can resolve
         # references like ``def f(name: str = DEFAULT)`` where ``DEFAULT`` is
@@ -1235,6 +1290,8 @@ class ModuleParser:
     ) -> FunctionMetadata:
         """Parse a @function decorated method."""
         assert self._resolver is not None
+
+        self._reject_pep695_generic_function(node, file_path)
 
         # Get decorator info
         aliases = self._aliases_for(file_path)
