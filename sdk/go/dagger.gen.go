@@ -226,6 +226,9 @@ type GeneratorGroupID string
 // The `GeneratorID` scalar type represents an identifier for an object of type Generator.
 type GeneratorID string
 
+// The `GitCommitID` scalar type represents an identifier for an object of type GitCommit.
+type GitCommitID string
+
 // The `GitRefID` scalar type represents an identifier for an object of type GitRef.
 type GitRefID string
 
@@ -704,6 +707,15 @@ func (r *Binding) AsGeneratorGroup() *GeneratorGroup {
 	q := r.query.Select("asGeneratorGroup")
 
 	return &GeneratorGroup{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type GitCommit
+func (r *Binding) AsGitCommit() *GitCommit {
+	q := r.query.Select("asGitCommit")
+
+	return &GitCommit{
 		query: q,
 	}
 }
@@ -6158,6 +6170,30 @@ func (r *Env) WithGeneratorOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type GitCommit in the environment
+func (r *Env) WithGitCommitInput(name string, value *GitCommit, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withGitCommitInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired GitCommit output to be assigned in the environment
+func (r *Env) WithGitCommitOutput(name string, description string) *Env {
+	q := r.query.Select("withGitCommitOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create or update a binding of type GitRef in the environment
 func (r *Env) WithGitRefInput(name string, value *GitRef, description string) *Env {
 	assertNotNil("value", value)
@@ -8728,6 +8764,270 @@ func (r *GeneratorGroup) Run() *GeneratorGroup {
 	}
 }
 
+// An immutable git commit.
+type GitCommit struct {
+	query *querybuilder.Selection
+
+	authorEmail     *string
+	authorName      *string
+	authoredDate    *string
+	committedDate   *string
+	committerEmail  *string
+	committerName   *string
+	id              *GitCommitID
+	message         *string
+	messageBody     *string
+	messageHeadline *string
+	sha             *string
+	shortSha        *string
+}
+
+func (r *GitCommit) WithGraphQLQuery(q *querybuilder.Selection) *GitCommit {
+	return &GitCommit{
+		query: q,
+	}
+}
+
+// Git author email.
+func (r *GitCommit) AuthorEmail(ctx context.Context) (string, error) {
+	if r.authorEmail != nil {
+		return *r.authorEmail, nil
+	}
+	q := r.query.Select("authorEmail")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Git author name.
+func (r *GitCommit) AuthorName(ctx context.Context) (string, error) {
+	if r.authorName != nil {
+		return *r.authorName, nil
+	}
+	q := r.query.Select("authorName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Git author date, in RFC3339 format.
+func (r *GitCommit) AuthoredDate(ctx context.Context) (string, error) {
+	if r.authoredDate != nil {
+		return *r.authoredDate, nil
+	}
+	q := r.query.Select("authoredDate")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Git committer date, in RFC3339 format.
+func (r *GitCommit) CommittedDate(ctx context.Context) (string, error) {
+	if r.committedDate != nil {
+		return *r.committedDate, nil
+	}
+	q := r.query.Select("committedDate")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Git committer email.
+func (r *GitCommit) CommitterEmail(ctx context.Context) (string, error) {
+	if r.committerEmail != nil {
+		return *r.committerEmail, nil
+	}
+	q := r.query.Select("committerEmail")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Git committer name.
+func (r *GitCommit) CommitterName(ctx context.Context) (string, error) {
+	if r.committerName != nil {
+		return *r.committerName, nil
+	}
+	q := r.query.Select("committerName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this GitCommit.
+func (r *GitCommit) ID(ctx context.Context) (GitCommitID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response GitCommitID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *GitCommit) XXX_GraphQLType() string {
+	return "GitCommit"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *GitCommit) XXX_GraphQLIDType() string {
+	return "GitCommitID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *GitCommit) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *GitCommit) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Full commit message.
+func (r *GitCommit) Message(ctx context.Context) (string, error) {
+	if r.message != nil {
+		return *r.message, nil
+	}
+	q := r.query.Select("message")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Commit message body, excluding the headline.
+func (r *GitCommit) MessageBody(ctx context.Context) (string, error) {
+	if r.messageBody != nil {
+		return *r.messageBody, nil
+	}
+	q := r.query.Select("messageBody")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// First line of the commit message.
+func (r *GitCommit) MessageHeadline(ctx context.Context) (string, error) {
+	if r.messageHeadline != nil {
+		return *r.messageHeadline, nil
+	}
+	q := r.query.Select("messageHeadline")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Parent commit SHAs.
+func (r *GitCommit) ParentShas(ctx context.Context) ([]string, error) {
+	q := r.query.Select("parentShas")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The full commit SHA.
+func (r *GitCommit) Sha(ctx context.Context) (string, error) {
+	if r.sha != nil {
+		return *r.sha, nil
+	}
+	q := r.query.Select("sha")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The abbreviated commit SHA.
+func (r *GitCommit) ShortSha(ctx context.Context) (string, error) {
+	if r.shortSha != nil {
+		return *r.shortSha, nil
+	}
+	q := r.query.Select("shortSha")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// GitCommitTreeOpts contains options for GitCommit.Tree
+type GitCommitTreeOpts struct {
+	// Set to true to discard .git directory.
+	DiscardGitDir bool
+	// The depth of the tree to fetch.
+	//
+	// Default: 1
+	Depth int
+	// Set to true to populate tag refs in the local checkout .git.
+	IncludeTags bool
+
+	SSHKnownHosts string
+
+	SSHAuthSocket *Socket
+}
+
+// The filesystem tree at this commit.
+func (r *GitCommit) Tree(opts ...GitCommitTreeOpts) *Directory {
+	q := r.query.Select("tree")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `discardGitDir` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DiscardGitDir) {
+			q = q.Arg("discardGitDir", opts[i].DiscardGitDir)
+		}
+		// `depth` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Depth) {
+			q = q.Arg("depth", opts[i].Depth)
+		}
+		// `includeTags` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IncludeTags) {
+			q = q.Arg("includeTags", opts[i].IncludeTags)
+		}
+		// `sshKnownHosts` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SSHKnownHosts) {
+			q = q.Arg("sshKnownHosts", opts[i].SSHKnownHosts)
+		}
+		// `sshAuthSocket` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SSHAuthSocket) {
+			q = q.Arg("sshAuthSocket", opts[i].SSHAuthSocket)
+		}
+	}
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // A git ref (tag, branch, or commit).
 type GitRef struct {
 	query *querybuilder.Selection
@@ -8747,6 +9047,15 @@ func (r *GitRef) With(f WithGitRefFunc) *GitRef {
 
 func (r *GitRef) WithGraphQLQuery(q *querybuilder.Selection) *GitRef {
 	return &GitRef{
+		query: q,
+	}
+}
+
+// The commit this ref resolves to.
+func (r *GitRef) AsCommit() *GitCommit {
+	q := r.query.Select("asCommit")
+
+	return &GitCommit{
 		query: q,
 	}
 }
@@ -8910,11 +9219,11 @@ func (r *GitRepository) Branches(ctx context.Context, opts ...GitRepositoryBranc
 }
 
 // Returns details of a commit.
-func (r *GitRepository) Commit(id string) *GitRef {
+func (r *GitRepository) Commit(id string) *GitCommit {
 	q := r.query.Select("commit")
 	q = q.Arg("id", id)
 
-	return &GitRef{
+	return &GitCommit{
 		query: q,
 	}
 }
@@ -12952,6 +13261,16 @@ func (r *Query) LoadGeneratorGroupFromID(id GeneratorGroupID) *GeneratorGroup {
 	q = q.Arg("id", id)
 
 	return &GeneratorGroup{
+		query: q,
+	}
+}
+
+// Load a GitCommit from its ID.
+func (r *Query) LoadGitCommitFromID(id GitCommitID) *GitCommit {
+	q := r.query.Select("loadGitCommitFromID")
+	q = q.Arg("id", id)
+
+	return &GitCommit{
 		query: q,
 	}
 }
