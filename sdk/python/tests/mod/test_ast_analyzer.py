@@ -1907,6 +1907,81 @@ class Foo:
     assert param.default_path is None
 
 
+# -- Inherited fields -------------------------------------------------------
+
+
+def test_ast_inherited_fields_from_base_class():
+    """``dagger.field()`` declarations on a base class are inherited."""
+    metadata = _analyze("""
+import dagger
+
+class Base:
+    name: str = dagger.field(default="x")
+    count: int = dagger.field(default=0)
+
+@dagger.object_type
+class Foo(Base):
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    obj = metadata.objects["Foo"]
+    assert [(f.python_name, f.default_value) for f in obj.fields] == [
+        ("name", "x"),
+        ("count", 0),
+    ]
+    # Inherited fields also flow into the auto-derived constructor.
+    ctor = obj.constructor
+    assert ctor is not None
+    assert [(p.python_name, p.default_value) for p in ctor.parameters] == [
+        ("name", "x"),
+        ("count", 0),
+    ]
+
+
+def test_ast_inherited_field_override_wins():
+    """A child's field declaration overrides the base's."""
+    metadata = _analyze("""
+import dagger
+
+class Base:
+    name: str = dagger.field(default="base")
+
+@dagger.object_type
+class Foo(Base):
+    name: str = dagger.field(default="foo")
+
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    obj = metadata.objects["Foo"]
+    assert [(f.python_name, f.default_value) for f in obj.fields] == [("name", "foo")]
+
+
+def test_ast_inherited_fields_multilevel():
+    """Fields from grandparent classes are also discovered."""
+    metadata = _analyze("""
+import dagger
+
+class Grandparent:
+    a: str = dagger.field(default="g")
+
+class Parent(Grandparent):
+    b: str = dagger.field(default="p")
+
+@dagger.object_type
+class Foo(Parent):
+    c: str = dagger.field(default="c")
+
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+""")
+    obj = metadata.objects["Foo"]
+    assert {f.python_name for f in obj.fields} == {"a", "b", "c"}
+
+
 # -- Enum value extraction --------------------------------------------------
 
 

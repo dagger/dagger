@@ -776,6 +776,23 @@ class ModuleParser:
         seen_names = {f.python_name for f in functions}
         functions.extend(self._find_inherited_functions(node, node.name, seen_names))
 
+        # Walk MRO for inherited fields the same way functions are walked.
+        # Without this, ``class Child(Base):`` where ``Base`` declares
+        # ``name: str = dagger.field(default="x")`` would not surface
+        # ``name`` as a field of ``Child`` — diverging from how
+        # dataclasses inheritance works at runtime.
+        seen_field_names = {f.python_name for f in fields}
+        seen_param_names = {p.python_name for p in init_params}
+        for base_field, base_param in self._find_inherited_fields(
+            node, node.name, seen_field_names, seen_param_names
+        ):
+            if base_field is not None:
+                fields.append(base_field)
+                seen_field_names.add(base_field.python_name)
+            if base_param is not None:
+                init_params.append(base_param)
+                seen_param_names.add(base_param.python_name)
+
         return fields, functions, init_params, constructor
 
     def _process_annotated_assign(
@@ -1281,6 +1298,88 @@ class ModuleParser:
                 )
             )
         return inherited
+
+    def _find_inherited_fields(
+        self,
+        node: ast.ClassDef,
+        class_name: str,
+        seen_field_names: set[str],
+        seen_param_names: set[str],
+        visited: set[str] | None = None,
+    ) -> list[tuple[FieldMetadata | None, ParameterMetadata | None]]:
+        """Walk MRO for inherited dagger ``field()`` declarations.
+
+        Mirrors ``_find_inherited_functions``. ``class_name`` is the
+        originating (child) class so ``Self`` annotations on inherited
+        fields resolve to the child. ``seen_field_names`` /
+        ``seen_param_names`` accumulate names already discovered on the
+        child or earlier bases — child overrides win, matching Python's
+        MRO behaviour.
+
+        Returns a list of (field, init_param) tuples. Either side can be
+        ``None`` when only one path applies (an ``init=False`` field, an
+        ``InitVar`` that contributes a param but no field, etc.).
+        """
+        if visited is None:
+            visited = {node.name}
+
+        results: list[tuple[FieldMetadata | None, ParameterMetadata | None]] = []
+        for base in node.bases:
+            base_name = None
+            if isinstance(base, ast.Name):
+                base_name = base.id
+            elif isinstance(base, ast.Attribute):
+                base_name = base.attr
+
+            if base_name is None or base_name in visited:
+                continue
+            visited.add(base_name)
+
+            found = self._find_class_def_with_file(base_name)
+            if found is None:
+                continue
+            base_class, base_file = found
+
+            for item in base_class.body:
+                if not (
+                    isinstance(item, ast.AnnAssign)
+                    and isinstance(item.target, ast.Name)
+                ):
+                    continue
+                python_name = item.target.id
+                if python_name in seen_field_names and python_name in seen_param_names:
+                    continue
+                if self._is_non_field_annotation(item.annotation):
+                    continue
+                is_initvar = self._is_initvar_annotation(item.annotation)
+
+                field: FieldMetadata | None = None
+                if not is_initvar and python_name not in seen_field_names:
+                    field = self._parse_field(item, base_file, class_name)
+
+                param: ParameterMetadata | None = None
+                if python_name not in seen_param_names:
+                    param = self._parse_class_assignment_as_param(
+                        item, base_file, class_name, is_initvar=is_initvar
+                    )
+
+                if field is not None or param is not None:
+                    results.append((field, param))
+                    if field is not None:
+                        seen_field_names.add(python_name)
+                    if param is not None:
+                        seen_param_names.add(python_name)
+
+            results.extend(
+                self._find_inherited_fields(
+                    base_class,
+                    class_name,
+                    seen_field_names,
+                    seen_param_names,
+                    visited,
+                )
+            )
+        return results
 
     def _parse_function(
         self,
