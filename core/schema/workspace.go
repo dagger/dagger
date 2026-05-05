@@ -78,7 +78,6 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("sdk").Doc("SDK to use for the new module."),
 				dagql.Arg("source").Doc("Source subpath within the new module."),
 				dagql.Arg("include").Doc("Additional include patterns for the module."),
-				dagql.Arg("blueprint").Doc("Blueprint module reference to apply to the new module."),
 				dagql.Arg("selfCalls").Doc("Enable the self-calls experimental feature for the new module."),
 			),
 		dagql.Func("configRead", s.configRead).

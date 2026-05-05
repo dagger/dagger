@@ -219,7 +219,6 @@ type workspaceModuleInitOptions struct {
 	SDK       string
 	Source    string
 	Include   []string
-	Blueprint string
 	SelfCalls bool
 }
 
@@ -230,7 +229,6 @@ func initWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client,
 		SDK:       opts.SDK,
 		Source:    opts.Source,
 		Include:   opts.Include,
-		Blueprint: opts.Blueprint,
 		SelfCalls: opts.SelfCalls,
 	})
 	if err != nil {
