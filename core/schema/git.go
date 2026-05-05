@@ -1332,9 +1332,10 @@ func (s *gitSchema) gitCommitResult(ctx context.Context, parent dagql.ObjectResu
 	}
 
 	result := &core.GitCommit{
-		Repo:    parent,
-		Ref:     ref,
-		Backend: refBackend,
+		Repo:     parent,
+		Ref:      &gitutil.Ref{SHA: ref.SHA},
+		FetchRef: ref,
+		Backend:  refBackend,
 	}
 	inst, err = dagql.NewResultForCurrentCall(ctx, result)
 	if err != nil {

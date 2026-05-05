@@ -51,9 +51,13 @@ type GitRef struct {
 }
 
 type GitCommit struct {
-	Repo    dagql.ObjectResult[*GitRepository]
-	Backend GitRefBackend
-	Ref     *gitutil.Ref
+	Repo     dagql.ObjectResult[*GitRepository]
+	Backend  GitRefBackend
+	Ref      *gitutil.Ref
+	FetchRef *gitutil.Ref
+
+	metadataMu sync.Mutex
+	metadata   *GitCommitMetadata
 }
 
 type GitCommitMetadata struct {
@@ -244,19 +248,10 @@ func (ref *GitRef) AttachDependencyResults(
 	_ dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
-	if ref == nil || ref.Repo.Self() == nil {
+	if ref == nil {
 		return nil, nil
 	}
-	attached, err := attach(ref.Repo)
-	if err != nil {
-		return nil, fmt.Errorf("attach git ref repo: %w", err)
-	}
-	typed, ok := attached.(dagql.ObjectResult[*GitRepository])
-	if !ok {
-		return nil, fmt.Errorf("attach git ref repo: unexpected result %T", attached)
-	}
-	ref.Repo = typed
-	return []dagql.AnyResult{typed}, nil
+	return attachGitObjectRepo(&ref.Repo, "git ref", attach)
 }
 
 func (commit *GitCommit) AttachDependencyResults(
@@ -264,18 +259,29 @@ func (commit *GitCommit) AttachDependencyResults(
 	_ dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
-	if commit == nil || commit.Repo.Self() == nil {
+	if commit == nil {
 		return nil, nil
 	}
-	attached, err := attach(commit.Repo)
+	return attachGitObjectRepo(&commit.Repo, "git commit", attach)
+}
+
+func attachGitObjectRepo(
+	repo *dagql.ObjectResult[*GitRepository],
+	label string,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if repo == nil || repo.Self() == nil {
+		return nil, nil
+	}
+	attached, err := attach(*repo)
 	if err != nil {
-		return nil, fmt.Errorf("attach git commit repo: %w", err)
+		return nil, fmt.Errorf("attach %s repo: %w", label, err)
 	}
 	typed, ok := attached.(dagql.ObjectResult[*GitRepository])
 	if !ok {
-		return nil, fmt.Errorf("attach git commit repo: unexpected result %T", attached)
+		return nil, fmt.Errorf("attach %s repo: unexpected result %T", label, attached)
 	}
-	commit.Repo = typed
+	*repo = typed
 	return []dagql.AnyResult{typed}, nil
 }
 
@@ -458,7 +464,11 @@ func (*GitRef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 	}, nil
 }
 
-type persistedGitCommitPayload persistedGitRefPayload
+type persistedGitCommitPayload struct {
+	RepoResultID uint64 `json:"repoResultID"`
+	SHA          string `json:"sha"`
+	FetchName    string `json:"fetchName,omitempty"`
+}
 
 func (commit *GitCommit) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
 	_ = ctx
@@ -468,14 +478,21 @@ func (commit *GitCommit) EncodePersistedObject(ctx context.Context, cache dagql.
 	if commit.Ref == nil {
 		return nil, fmt.Errorf("encode persisted git commit: missing ref")
 	}
+	if commit.Ref.SHA == "" {
+		return nil, fmt.Errorf("encode persisted git commit: missing commit SHA")
+	}
 	repoID, err := encodePersistedObjectRef(cache, commit.Repo, "git commit repo")
 	if err != nil {
 		return nil, err
 	}
+	fetchName := ""
+	if commit.FetchRef != nil {
+		fetchName = commit.FetchRef.Name
+	}
 	payloadJSON, err := json.Marshal(persistedGitCommitPayload{
 		RepoResultID: repoID,
-		Name:         commit.Ref.Name,
 		SHA:          commit.Ref.SHA,
+		FetchName:    fetchName,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("marshal persisted git commit payload: %w", err)
@@ -492,18 +509,23 @@ func (*GitCommit) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 	if err != nil {
 		return nil, err
 	}
-	ref := &gitutil.Ref{
-		Name: persisted.Name,
-		SHA:  persisted.SHA,
+	ref := &gitutil.Ref{SHA: persisted.SHA}
+	fetchRef := ref
+	if persisted.FetchName != "" {
+		fetchRef = &gitutil.Ref{
+			Name: persisted.FetchName,
+			SHA:  persisted.SHA,
+		}
 	}
-	backend, err := repo.Self().Backend.Get(ctx, ref)
+	backend, err := repo.Self().Backend.Get(ctx, fetchRef)
 	if err != nil {
 		return nil, err
 	}
 	return &GitCommit{
-		Repo:    repo,
-		Backend: backend,
-		Ref:     ref,
+		Repo:     repo,
+		Backend:  backend,
+		Ref:      ref,
+		FetchRef: fetchRef,
 	}, nil
 }
 
@@ -512,7 +534,17 @@ func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bo
 }
 
 func (commit *GitCommit) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (*Directory, error) {
-	return commit.Backend.Tree(ctx, srv, commit.Repo.Self().DiscardGitDir || discardGitDir, depth, includeTags)
+	if commit == nil || commit.Ref == nil {
+		return nil, fmt.Errorf("git commit tree: missing commit")
+	}
+	if err := commit.prefetch(ctx, depth, includeTags); err != nil {
+		return nil, err
+	}
+	backend, err := commit.Repo.Self().Backend.Get(ctx, commit.Ref)
+	if err != nil {
+		return nil, err
+	}
+	return backend.Tree(ctx, srv, commit.Repo.Self().DiscardGitDir || discardGitDir, depth, includeTags)
 }
 
 func (commit *GitCommit) Metadata(ctx context.Context) (*GitCommitMetadata, error) {
@@ -521,6 +553,15 @@ func (commit *GitCommit) Metadata(ctx context.Context) (*GitCommitMetadata, erro
 	}
 	if commit.Ref.SHA == "" {
 		return nil, fmt.Errorf("git commit metadata: missing commit SHA")
+	}
+	if commit.Backend == nil {
+		return nil, fmt.Errorf("git commit metadata: missing backend")
+	}
+
+	commit.metadataMu.Lock()
+	defer commit.metadataMu.Unlock()
+	if commit.metadata != nil {
+		return commit.metadata, nil
 	}
 
 	var out []byte
@@ -537,7 +578,17 @@ func (commit *GitCommit) Metadata(ctx context.Context) (*GitCommitMetadata, erro
 	if err != nil {
 		return nil, fmt.Errorf("read git commit metadata for %s: %w", commit.Ref.SHA, err)
 	}
+	commit.metadata = meta
 	return meta, nil
+}
+
+func (commit *GitCommit) prefetch(ctx context.Context, depth int, includeTags bool) error {
+	if commit == nil || commit.Backend == nil {
+		return fmt.Errorf("git commit: missing backend")
+	}
+	return commit.Backend.mount(ctx, depth, includeTags, func(*gitutil.GitCLI) error {
+		return nil
+	})
 }
 
 func (commit *GitCommit) MessageHeadline(ctx context.Context) (string, error) {
