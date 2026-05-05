@@ -8309,7 +8309,7 @@ func configFile(dirPath string, cfg *modules.ModuleConfig) dagger.WithContainerF
 // command for a dagger cli call direct on the host
 func hostDaggerCommand(ctx context.Context, t testing.TB, workdir string, args ...string) *exec.Cmd {
 	t.Helper()
-	cmd := exec.Command(daggerCliPath(t), args...)
+	cmd := exec.CommandContext(ctx, daggerCliPath(t), args...)
 	cleanupExec(t, cmd)
 	cmd.Env = append(os.Environ(), telemetry.PropagationEnv(ctx)...)
 	cmd.Dir = workdir
