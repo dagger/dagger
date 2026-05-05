@@ -9053,13 +9053,19 @@ func (r *GitRef) WithGraphQLQuery(q *querybuilder.Selection) *GitRef {
 	}
 }
 
-// The commit this ref resolves to.
-func (r *GitRef) AsCommit() *GitCommit {
-	q := r.query.Select("asCommit")
-
-	return &GitCommit{
-		query: q,
+// The resolved commit id at this ref.
+//
+// Deprecated: Use "commitSHA" instead.
+func (r *GitRef) Commit(ctx context.Context) (string, error) {
+	if r.commit != nil {
+		return *r.commit, nil
 	}
+	q := r.query.Select("commit")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The resolved commit SHA at this ref.
@@ -9068,21 +9074,6 @@ func (r *GitRef) CommitSHA(ctx context.Context) (string, error) {
 		return *r.commitSHA, nil
 	}
 	q := r.query.Select("commitSHA")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The resolved commit id at this ref.
-//
-// Deprecated: Use CommitSHA instead.
-func (r *GitRef) Commit(ctx context.Context) (string, error) {
-	if r.commit != nil {
-		return *r.commit, nil
-	}
-	q := r.query.Select("commit")
 
 	var response string
 
@@ -9156,7 +9147,7 @@ func (r *GitRef) Name(ctx context.Context) (string, error) {
 
 // The resolved ref name at this ref.
 //
-// Deprecated: Use Name instead.
+// Deprecated: Use "name" instead.
 func (r *GitRef) Ref(ctx context.Context) (string, error) {
 	if r.ref != nil {
 		return *r.ref, nil
@@ -9167,6 +9158,15 @@ func (r *GitRef) Ref(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// The commit this ref resolves to.
+func (r *GitRef) TargetCommit() *GitCommit {
+	q := r.query.Select("targetCommit")
+
+	return &GitCommit{
+		query: q,
+	}
 }
 
 // GitRefTreeOpts contains options for GitRef.Tree

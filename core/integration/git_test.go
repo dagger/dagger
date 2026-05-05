@@ -287,7 +287,7 @@ func (GitSuite) TestGitCommit(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, parents)
 
-	refCommitSHA, err := repo.Ref(sha).AsCommit().Sha(ctx)
+	refCommitSHA, err := repo.Ref(sha).TargetCommit().Sha(ctx)
 	require.NoError(t, err)
 	require.Equal(t, sha, refCommitSHA)
 
