@@ -1816,6 +1816,34 @@ def test_ast_cross_file_type_alias_with_default_path(tmp_path):
     assert param.default_path == "."
 
 
+def test_ast_cross_file_constant_default(tmp_path):
+    """``from .constants import X`` resolves when X is used as a default."""
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "constants.py").write_text(
+        'DEFAULT_NAME = "alice"\n',
+        encoding="utf-8",
+    )
+    (pkg / "main.py").write_text(
+        "import dagger\n"
+        "from .constants import DEFAULT_NAME\n"
+        "\n"
+        "@dagger.object_type\n"
+        "class Foo:\n"
+        "    @dagger.function\n"
+        "    def hello(self, name: str = DEFAULT_NAME) -> str: ...\n",
+        encoding="utf-8",
+    )
+    metadata = analyze_module(
+        source_files=[pkg / "__init__.py", pkg / "constants.py", pkg / "main.py"],
+        main_object_name="Foo",
+    )
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.has_default is True
+    assert param.default_value == "alice"
+
+
 def test_ast_cross_file_type_alias_chained(tmp_path):
     """``main.py`` imports ``B``; ``types.py`` defines ``A = Directory; B = A``."""
     pkg = tmp_path / "pkg"

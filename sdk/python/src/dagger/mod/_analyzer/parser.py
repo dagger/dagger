@@ -1516,14 +1516,26 @@ class ModuleParser:
             }
             if node.id in name_map:
                 return name_map[node.id]
-            # Try resolving module-level constants (scoped to current file)
-            file_constants = (
-                self._module_constants.get(self._current_file, {})
-                if self._current_file is not None
-                else {}
-            )
-            if node.id in file_constants:
-                return self._eval_constant(file_constants[node.id])
+            # Try the current file first, then any file that bound this name
+            # via a relative import (``from .constants import DEFAULT``).
+            current = self._current_file
+            if current is not None:
+                file_constants = self._module_constants.get(current, {})
+                if node.id in file_constants:
+                    return self._eval_constant(file_constants[node.id])
+                origin = self._relative_import_origins.get(current, {}).get(node.id)
+                if origin is not None:
+                    origin_constants = self._module_constants.get(origin, {})
+                    if node.id in origin_constants:
+                        # Switch the current-file scope so any nested name
+                        # references inside the constant resolve against the
+                        # foreign file's own constants.
+                        previous = self._current_file
+                        self._current_file = origin
+                        try:
+                            return self._eval_constant(origin_constants[node.id])
+                        finally:
+                            self._current_file = previous
             logger.warning(
                 "Unresolved name %r used in a constant expression at line %d; "
                 "falling back to the literal string.",
