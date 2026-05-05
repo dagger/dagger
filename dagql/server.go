@@ -877,6 +877,9 @@ func (s *Server) Resolve(ctx context.Context, self AnyObjectResult, sels ...Sele
 
 	if len(sels) == 1 {
 		sel := sels[0]
+		if !s.selectionMatches(sel, self.ObjectType().TypeName()) {
+			return map[string]any{}, nil
+		}
 		// Resolve is in the hot path, so avoiding overhead of goroutines, sync.Map, etc. when there's only
 		// one selection (probably the most common case) likely pays off.
 		res, err := s.resolvePath(ctx, self, sel)
@@ -891,6 +894,9 @@ func (s *Server) Resolve(ctx context.Context, self AnyObjectResult, sels ...Sele
 	pool := pool.New().WithErrors()
 	for _, sel := range sels {
 		pool.Go(func() error {
+			if !s.selectionMatches(sel, self.ObjectType().TypeName()) {
+				return nil
+			}
 			res, err := s.resolvePath(ctx, self, sel)
 			if err != nil {
 				return err
@@ -909,6 +915,15 @@ func (s *Server) Resolve(ctx context.Context, self AnyObjectResult, sels ...Sele
 		return true
 	})
 	return resultsMap, nil
+}
+
+func (s *Server) selectionMatches(sel Selection, objectTypeName string) bool {
+	for _, condition := range sel.TypeConditions {
+		if !s.typeConditionMatches(condition, objectTypeName) {
+			return false
+		}
+	}
+	return true
 }
 
 // Load loads the object with the given ID.
@@ -1989,6 +2004,7 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 					if err != nil {
 						return nil, err
 					}
+					subsels = addTypeCondition(subsels, fragment.TypeCondition)
 					sels = append(sels, subsels...)
 				}
 			}
@@ -2006,6 +2022,7 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 					if err != nil {
 						return nil, err
 					}
+					subsels = addTypeCondition(subsels, x.TypeCondition)
 					sels = append(sels, subsels...)
 				}
 			}
@@ -2017,11 +2034,22 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 	return sels, nil
 }
 
+func addTypeCondition(sels []Selection, condition string) []Selection {
+	if condition == "" {
+		return sels
+	}
+	for i := range sels {
+		sels[i].TypeConditions = append(sels[i].TypeConditions, condition)
+	}
+	return sels
+}
+
 // Selection represents a selection of a field on an object.
 type Selection struct {
-	Alias         string
-	Selector      Selector
-	Subselections []Selection
+	Alias          string
+	Selector       Selector
+	Subselections  []Selection
+	TypeConditions []string
 }
 
 // Name returns the name of the selection, which is either the alias or the

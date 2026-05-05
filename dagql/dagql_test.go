@@ -3834,6 +3834,66 @@ func TestInterfaces(t *testing.T) {
 		assert.Equal(t, 20, res.Point.Y)
 	})
 
+	t.Run("node applies fragment type conditions at runtime", func(t *testing.T) {
+		srv := newExternalDagqlServerForTest(t, Query{})
+		points.Install[Query](srv)
+
+		gql := newTestClient(srv)
+
+		var created struct {
+			Point struct {
+				ID string
+			}
+		}
+		req(t, gql, `query {
+			point(x: 11, y: 12) {
+				id
+			}
+		}`, &created)
+
+		var res struct {
+			Loaded struct {
+				Value int
+				Y     int
+			}
+		}
+		req(t, gql, `query {
+			loaded: node(id: "`+created.Point.ID+`") {
+				... on Point {
+					value: x
+				}
+				...PointFields
+				... on Line {
+					lineLength: length
+				}
+				...LineFields
+			}
+		}
+		fragment PointFields on Point {
+			y
+		}
+		fragment LineFields on Line {
+			direction
+		}`, &res)
+		assert.Equal(t, 11, res.Loaded.Value)
+		assert.Equal(t, 12, res.Loaded.Y)
+
+		var noMatch map[string]map[string]any
+		req(t, gql, `query {
+			loaded: node(id: "`+created.Point.ID+`") {
+				... on Line {
+					length
+				}
+				...LineFields
+			}
+		}
+		fragment LineFields on Line {
+			direction
+		}`, &noMatch)
+		require.Contains(t, noMatch, "loaded")
+		require.Empty(t, noMatch["loaded"])
+	})
+
 	t.Run("inline fragment with interface type condition", func(t *testing.T) {
 		srv := newExternalDagqlServerForTest(t, Query{})
 		introspection.Install[Query](srv)
