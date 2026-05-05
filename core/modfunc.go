@@ -244,7 +244,7 @@ func (fn *ModuleFunction) mergeUserDefaultsTypeDefs(ctx context.Context) error {
 		}
 		updatedArgRes := currentArgRes
 		argTypeDef := currentArgRes.Self().TypeDef.Self()
-		if argDefault.IsObject() || (argDefault.IsList() &&
+		if argDefault.IsServiceRef() || argDefault.IsObject() || (argDefault.IsList() &&
 			argTypeDef != nil &&
 			argTypeDef.Kind == TypeDefKindList &&
 			argTypeDef.AsList.Valid &&
@@ -378,7 +378,7 @@ func (udp *UserDefaultPrimitive) DagqlInput() (dagql.Input, error) {
 
 func (fn *ModuleFunction) newUserDefault(arg *FunctionArg, userInput string) *UserDefault {
 	return &UserDefault{
-		UserDefaultPrimitive{
+		UserDefaultPrimitive: UserDefaultPrimitive{
 			Function:  fn,
 			Arg:       arg,
 			UserInput: userInput,
@@ -388,6 +388,43 @@ func (fn *ModuleFunction) newUserDefault(arg *FunctionArg, userInput string) *Us
 
 type UserDefault struct {
 	UserDefaultPrimitive
+
+	// ServiceRef is the colon-separated path to a +up function whose Service
+	// should be injected as this arg's default. Set when the workspace config
+	// contains { from = "<module>:<function>" } for this arg.
+	ServiceRef string
+}
+
+func (ud *UserDefault) IsServiceRef() bool {
+	return ud.ServiceRef != ""
+}
+
+// resolveServiceRef evaluates the +up function referenced by ud.ServiceRef
+// (e.g. "docusaurus:serve") on the dagql server and returns its Service ID.
+func (ud *UserDefault) resolveServiceRef(ctx context.Context) (any, error) {
+	parts := strings.Split(ud.ServiceRef, ":")
+	if len(parts) < 2 {
+		return nil, ud.errorf(nil, "invalid service reference %q: expected <module>:<function>", ud.ServiceRef)
+	}
+
+	srv := dagql.CurrentDagqlServer(ctx)
+
+	// Build selectors: first the module name, then each subsequent function name.
+	selectors := make([]dagql.Selector, len(parts))
+	for i, part := range parts {
+		selectors[i] = dagql.Selector{Field: gqlFieldName(part)}
+	}
+
+	var svcResult dagql.AnyObjectResult
+	if err := srv.Select(ctx, srv.Root(), &svcResult, selectors...); err != nil {
+		return nil, ud.errorf(err, "resolve service reference %q", ud.ServiceRef)
+	}
+
+	id, err := svcResult.Select(ctx, srv, dagql.Selector{Field: "id"})
+	if err != nil {
+		return nil, ud.errorf(err, "get service ID from reference %q", ud.ServiceRef)
+	}
+	return id.Unwrap(), nil
 }
 
 func (ud *UserDefault) IsObject() bool {
@@ -399,7 +436,7 @@ func (ud *UserDefault) IsList() bool {
 }
 
 func (ud *UserDefault) CallInput(ctx context.Context) (*FunctionCallArgValue, error) {
-	if !ud.IsObject() &&
+	if !ud.IsServiceRef() && !ud.IsObject() &&
 		(!ud.IsList() ||
 			!ud.Arg.TypeDef.Self().AsList.Valid ||
 			ud.Arg.TypeDef.Self().AsList.Value.Self() == nil ||
@@ -422,6 +459,12 @@ func (ud *UserDefault) CallInput(ctx context.Context) (*FunctionCallArgValue, er
 }
 
 func (ud *UserDefault) Value(ctx context.Context) (any, error) {
+	// Service reference: resolve by evaluating the +up function on the
+	// referenced module via the dagql server.
+	if ud.IsServiceRef() {
+		return ud.resolveServiceRef(ctx)
+	}
+
 	if !ud.IsObject() && !ud.IsList() {
 		return ud.UserDefaultPrimitive.Value()
 	}
@@ -492,7 +535,7 @@ func (ud *UserDefault) Value(ctx context.Context) (any, error) {
 }
 
 func (ud *UserDefault) DagqlID(ctx context.Context) (dagql.Input, error) {
-	if !ud.IsObject() && !ud.IsList() {
+	if !ud.IsServiceRef() && !ud.IsObject() && !ud.IsList() {
 		return nil, ud.errorf(nil, "DagqlID(): primitive type has no ID")
 	}
 	value, err := ud.Value(ctx)
@@ -555,6 +598,12 @@ func (fn *ModuleFunction) UserDefault(ctx context.Context, argName string) (*Use
 	if fn.mod.Self().WorkspaceConfig != nil && isConstructor {
 		val, ok := lookupConfigCaseInsensitive(fn.mod.Self().WorkspaceConfig, arg.Self().OriginalName, arg.Self().Name)
 		if ok {
+			// Check for service reference: { from = "<module>:<function>" }
+			if ref, ok := extractServiceRef(val); ok {
+				ud := fn.newUserDefault(arg.Self(), ref)
+				ud.ServiceRef = ref
+				return ud, true, nil
+			}
 			return fn.newUserDefault(arg.Self(), configValueToString(val)), true, nil
 		}
 		// Not in workspace config — only fall through to .env if enabled
@@ -1416,4 +1465,23 @@ func configValueToString(v any) string {
 	default:
 		return fmt.Sprint(v)
 	}
+}
+
+// extractServiceRef checks if a config value is a service reference of the
+// form { from = "<module>:<function>" }. Returns the reference path and true
+// if it matches, or ("", false) otherwise.
+func extractServiceRef(val any) (string, bool) {
+	m, ok := val.(map[string]any)
+	if !ok {
+		return "", false
+	}
+	from, ok := m["from"]
+	if !ok {
+		return "", false
+	}
+	ref, ok := from.(string)
+	if !ok || ref == "" {
+		return "", false
+	}
+	return ref, true
 }
