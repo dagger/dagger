@@ -210,11 +210,6 @@ func (container *Container) execMeta(
 	if err != nil {
 		return nil, err
 	}
-	execMD.CallerClientID = clientMetadata.ClientID
-	execMD.SessionID = clientMetadata.SessionID
-	execMD.LockMode = clientMetadata.LockMode
-	execMD.AllowedLLMModules = clientMetadata.AllowedLLMModules
-
 	if execMD.CallDigest == "" {
 		if curCall := dagql.CurrentCall(ctx); curCall != nil {
 			callDigest, err := curCall.RecipeDigest(ctx)
@@ -266,14 +261,6 @@ func (container *Container) execMeta(
 	if len(execMD.EnabledGPUs) > 0 {
 		if gpuSupportEnabled := os.Getenv("_EXPERIMENTAL_DAGGER_GPU_SUPPORT"); gpuSupportEnabled == "" {
 			return nil, fmt.Errorf("GPU support is not enabled, set _EXPERIMENTAL_DAGGER_GPU_SUPPORT")
-		}
-	}
-
-	// this allows executed containers to communicate back to this API
-	if opts.ExperimentalPrivilegedNesting {
-		// establish new client ID for the nested client
-		if execMD.ClientID == "" {
-			execMD.ClientID = identity.NewID()
 		}
 	}
 
@@ -1069,6 +1056,10 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		query, err := CurrentQuery(ctx)
 		if err != nil {
 			return fmt.Errorf("get current query: %w", err)
+		}
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return fmt.Errorf("get current client metadata: %w", err)
 		}
 		releaseLockedCaches, err := lockMountedCaches(ctx, inputMounts)
 		if err != nil {
@@ -1911,7 +1902,27 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		}
 		defer detach()
 
-		execWorker := opWorker.ExecWorker(causeCtx, *execMD, state.ModuleContext, state.FunctionCall, state.EnvContext)
+		var nestedClientMetadata *engine.ClientMetadata
+		if opts.ExperimentalPrivilegedNesting {
+			nestedClientMetadata = &engine.ClientMetadata{
+				ClientID:          identity.NewID(),
+				ClientVersion:     engine.Version,
+				SessionID:         clientMetadata.SessionID,
+				AllowedLLMModules: slices.Clone(clientMetadata.AllowedLLMModules),
+				LockMode:          clientMetadata.LockMode,
+			}
+		}
+
+		execWorker := opWorker.ExecWorker(
+			causeCtx,
+			*execMD,
+			clientMetadata.SessionID,
+			clientMetadata.ClientID,
+			nestedClientMetadata,
+			state.ModuleContext,
+			state.FunctionCall,
+			state.EnvContext,
+		)
 		procInfo := executor.ProcessInfo{Meta: meta}
 		if opts.Stdin != "" {
 			procInfo.Stdin = io.NopCloser(strings.NewReader(opts.Stdin))

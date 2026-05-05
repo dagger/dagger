@@ -177,13 +177,15 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 		state.cleanups.Add("cleanup base hosts file", cleanups.Infallible(cleanupBaseHosts))
 	}
 
-	if w.execMD == nil || w.execMD.SessionID == "" {
+	if w.sessionID == "" {
 		return nil
 	}
 
 	extraSearchDomains := []string{}
-	extraSearchDomains = append(extraSearchDomains, w.execMD.ExtraSearchDomains...)
-	extraSearchDomains = append(extraSearchDomains, network.SessionDomain(w.execMD.SessionID))
+	if w.execMD != nil {
+		extraSearchDomains = append(extraSearchDomains, w.execMD.ExtraSearchDomains...)
+	}
+	extraSearchDomains = append(extraSearchDomains, network.SessionDomain(w.sessionID))
 
 	baseResolvFile, err := os.Open(state.resolvConfPath)
 	if err != nil {
@@ -722,14 +724,14 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 
 	var destSession string
 	var destClientID string
-	if w.execMD != nil && w.execMD.SessionID != "" {
-		destSession = w.execMD.SessionID
+	if w.sessionID != "" {
+		destSession = w.sessionID
 
 		// Send telemetry to the caller client, *not* the nested client (ClientID).
 		//
 		// If you set ClientID here, nested dagger CLI calls made against an engine running
 		// as a service in Dagger will end up in a loop sending logs to themselves.
-		destClientID = w.execMD.CallerClientID
+		destClientID = w.callerClientID
 	}
 
 	stdioAttrs := []log.KeyValue{}
@@ -968,26 +970,23 @@ func (w *Worker) createCWD(_ context.Context, state *execState) error {
 }
 
 func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr error) {
-	if w.execMD == nil {
-		return nil
-	}
-	if w.execMD.ClientID == "" {
+	if w.nestedClientMetadata == nil || w.nestedClientMetadata.ClientID == "" {
 		return nil
 	}
 
-	if w.execMD.SecretToken == "" {
-		w.execMD.SecretToken = randid.NewID()
+	if w.nestedClientMetadata.ClientSecretToken == "" {
+		w.nestedClientMetadata.ClientSecretToken = randid.NewID()
 	}
-	if w.execMD.Hostname == "" {
-		w.execMD.Hostname = state.spec.Hostname
+	if w.nestedClientMetadata.ClientHostname == "" {
+		w.nestedClientMetadata.ClientHostname = state.spec.Hostname
 	}
 
 	// propagate trace ctx to session attachables
 	ctx = trace.ContextWithSpanContext(ctx, w.causeCtx)
 
-	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+w.execMD.SecretToken)
+	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+w.nestedClientMetadata.ClientSecretToken)
 
-	w.execMD.ClientStableID = randid.NewID()
+	w.nestedClientMetadata.ClientStableID = randid.NewID()
 
 	// include SSH_AUTH_SOCK if it's set in the exec's env vars
 	if sockPath, ok := state.origEnvMap["SSH_AUTH_SOCK"]; ok {
@@ -997,18 +996,18 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 				if err != nil {
 					return fmt.Errorf("failed to expand homedir: %w", err)
 				}
-				w.execMD.SSHAuthSocketPath = expandedPath
+				w.nestedClientMetadata.SSHAuthSocketPath = expandedPath
 			} else {
 				return fmt.Errorf("HOME not set, cannot expand SSH_AUTH_SOCK path: %s", sockPath)
 			}
 		} else {
-			w.execMD.SSHAuthSocketPath = sockPath
+			w.nestedClientMetadata.SSHAuthSocketPath = sockPath
 		}
 	}
 
 	// include overridden client version if it's set in the exec's env vars
 	if version, ok := state.origEnvMap["_EXPERIMENTAL_DAGGER_VERSION"]; ok {
-		w.execMD.ClientVersionOverride = version
+		w.nestedClientMetadata.ClientVersion = version
 	}
 
 	srvCtx, srvCancel := context.WithCancelCause(ctx)
@@ -1036,7 +1035,7 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	httpSrv := &http.Server{
 		ReadHeaderTimeout: 10 * time.Second,
 		Handler: h2c.NewHandler(http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
-			w.sessionHandler.ServeHTTPToNestedClient(resp, req, w.execMD, w.nestedClientModule, w.nestedClientFunctionCall, w.nestedClientEnv)
+			w.sessionHandler.ServeHTTPToNestedClient(resp, req, w.nestedClientMetadata, w.callerClientID, w.nestedClientModule, w.nestedClientFunctionCall, w.nestedClientEnv)
 		}), http2Srv),
 	}
 	if err := http2.ConfigureServer(httpSrv, http2Srv); err != nil {
@@ -1165,12 +1164,12 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 		if w.execMD.CallDigest != "" {
 			lg = lg.WithField("call_id", w.execMD.CallDigest)
 		}
-		if w.execMD.CallerClientID != "" {
-			lg = lg.WithField("caller_client_id", w.execMD.CallerClientID)
-		}
-		if w.execMD.ClientID != "" {
-			lg = lg.WithField("nested_client_id", w.execMD.ClientID)
-		}
+	}
+	if w.callerClientID != "" {
+		lg = lg.WithField("caller_client_id", w.callerClientID)
+	}
+	if w.nestedClientMetadata != nil && w.nestedClientMetadata.ClientID != "" {
+		lg = lg.WithField("nested_client_id", w.nestedClientMetadata.ClientID)
 	}
 	lg.Info("starting container")
 	defer func() {

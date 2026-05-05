@@ -508,7 +508,27 @@ func (svc *Service) startContainer(
 	}
 	meta.Env = append(meta.Env, secretEnv...)
 
-	worker := bk.Worker.ExecWorker(span.SpanContext(), *execMD, svc.ModuleContext, svc.FunctionCall, svc.EnvContext)
+	var nestedClientMetadata *engine.ClientMetadata
+	if svc.ExperimentalPrivilegedNesting {
+		nestedClientMetadata = &engine.ClientMetadata{
+			ClientID:          identity.NewID(),
+			ClientVersion:     engine.Version,
+			SessionID:         clientMetadata.SessionID,
+			AllowedLLMModules: slices.Clone(clientMetadata.AllowedLLMModules),
+			LockMode:          clientMetadata.LockMode,
+		}
+	}
+
+	worker := bk.Worker.ExecWorker(
+		span.SpanContext(),
+		*execMD,
+		clientMetadata.SessionID,
+		clientMetadata.ClientID,
+		nestedClientMetadata,
+		svc.ModuleContext,
+		svc.FunctionCall,
+		svc.EnvContext,
+	)
 	exited := make(chan struct{})
 	runErr := make(chan error)
 	go func() {

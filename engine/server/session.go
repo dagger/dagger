@@ -959,25 +959,29 @@ func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (srv *Server) ServeHTTPToNestedClient(
 	w http.ResponseWriter,
 	r *http.Request,
-	execMD *engineutil.ExecutionMetadata,
+	nestedClientMetadata *engine.ClientMetadata,
+	callerClientID string,
 	moduleCtx dagql.AnyObjectResult,
 	functionCall dagql.Typed,
 	envCtx dagql.AnyObjectResult,
 ) {
-	clientVersion := execMD.ClientVersionOverride
-	if clientVersion == "" {
-		clientVersion = engine.Version
+	if nestedClientMetadata == nil {
+		http.Error(w, "nested client metadata is nil", http.StatusInternalServerError)
+		return
 	}
+	clientMetadata := *nestedClientMetadata
+	clientMetadata.AllowedLLMModules = slices.Clone(nestedClientMetadata.AllowedLLMModules)
+	if clientMetadata.ClientVersion == "" {
+		clientMetadata.ClientVersion = engine.Version
+	}
+	clientMetadata.Labels = map[string]string{}
 
-	allowedLLMModules := execMD.AllowedLLMModules
 	var extraModules []engine.ExtraModule
 	var loadWorkspaceModules bool
 	var eagerRuntime bool
 	var workspaceRef *string
-	var lockMode string
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
-		clientVersion = md.ClientVersion
-		allowedLLMModules = md.AllowedLLMModules
+		clientMetadata.ClientVersion = md.ClientVersion
 		extraModules = md.ExtraModules
 		loadWorkspaceModules = md.LoadWorkspaceModules
 		eagerRuntime = md.EagerRuntime
@@ -985,11 +989,9 @@ func (srv *Server) ServeHTTPToNestedClient(
 			ref := declaredWorkspace
 			workspaceRef = &ref
 		}
-		lockMode = md.LockMode
-	}
-
-	if lockMode == "" {
-		lockMode = srv.inheritedNestedClientLockMode(execMD)
+		if md.LockMode != "" {
+			clientMetadata.LockMode = md.LockMode
+		}
 	}
 
 	var moduleContext dagql.ObjectResult[*core.Module]
@@ -1026,96 +1028,18 @@ func (srv *Server) ServeHTTPToNestedClient(
 		}
 	}
 
+	clientMetadata.ExtraModules = extraModules
+	clientMetadata.LoadWorkspaceModules = loadWorkspaceModules
+	clientMetadata.EagerRuntime = eagerRuntime
+	clientMetadata.Workspace = workspaceRef
+
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
-		ClientMetadata: &engine.ClientMetadata{
-			ClientID:             execMD.ClientID,
-			ClientVersion:        clientVersion,
-			ClientSecretToken:    execMD.SecretToken,
-			SessionID:            execMD.SessionID,
-			ClientHostname:       execMD.Hostname,
-			ClientStableID:       execMD.ClientStableID,
-			Labels:               map[string]string{},
-			SSHAuthSocketPath:    execMD.SSHAuthSocketPath,
-			AllowedLLMModules:    allowedLLMModules,
-			ExtraModules:         extraModules,
-			LoadWorkspaceModules: loadWorkspaceModules,
-			EagerRuntime:         eagerRuntime,
-			LockMode:             lockMode,
-			Workspace:            workspaceRef,
-		},
-		CallerClientID: execMD.CallerClientID,
+		ClientMetadata: &clientMetadata,
+		CallerClientID: callerClientID,
 		ModuleContext:  moduleContext,
 		FunctionCall:   fnCall,
 		EnvContext:     envContext,
 	}).ServeHTTP(w, r)
-}
-
-func (srv *Server) inheritedNestedClientLockMode(execMD *engineutil.ExecutionMetadata) string {
-	if execMD == nil {
-		return ""
-	}
-	if execMD.LockMode != "" {
-		return execMD.LockMode
-	}
-	callerClient, err := srv.clientFromIDs(execMD.SessionID, execMD.CallerClientID)
-	if err != nil || callerClient == nil || callerClient.clientMetadata == nil {
-		return ""
-	}
-	if callerClient.clientMetadata.LockMode != "" {
-		return callerClient.clientMetadata.LockMode
-	}
-	for i := len(callerClient.parents) - 1; i >= 0; i-- {
-		parent := callerClient.parents[i]
-		if parent != nil && parent.clientMetadata != nil && parent.clientMetadata.LockMode != "" {
-			return parent.clientMetadata.LockMode
-		}
-	}
-	return ""
-}
-
-func nestedClientMetadata(execMD *engineutil.ExecutionMetadata, forwarded *engine.ClientMetadata, inheritedLockMode string) *engine.ClientMetadata {
-	clientVersion := execMD.ClientVersionOverride
-	if clientVersion == "" {
-		clientVersion = engine.Version
-	}
-
-	allowedLLMModules := execMD.AllowedLLMModules
-	var extraModules []engine.ExtraModule
-	var skipWorkspaceModules bool
-	lockMode := inheritedLockMode
-	var eagerRuntime bool
-	var workspaceRef *string
-	if forwarded != nil {
-		clientVersion = forwarded.ClientVersion
-		allowedLLMModules = forwarded.AllowedLLMModules
-		extraModules = forwarded.ExtraModules
-		skipWorkspaceModules = forwarded.SkipWorkspaceModules
-		if forwarded.LockMode != "" {
-			lockMode = forwarded.LockMode
-		}
-		eagerRuntime = forwarded.EagerRuntime
-		if declaredWorkspace, ok := workspaceRefFromClientMetadata(forwarded); ok {
-			ref := declaredWorkspace
-			workspaceRef = &ref
-		}
-	}
-
-	return &engine.ClientMetadata{
-		ClientID:             execMD.ClientID,
-		ClientVersion:        clientVersion,
-		ClientSecretToken:    execMD.SecretToken,
-		SessionID:            execMD.SessionID,
-		ClientHostname:       execMD.Hostname,
-		ClientStableID:       execMD.ClientStableID,
-		Labels:               map[string]string{},
-		SSHAuthSocketPath:    execMD.SSHAuthSocketPath,
-		AllowedLLMModules:    allowedLLMModules,
-		ExtraModules:         extraModules,
-		SkipWorkspaceModules: skipWorkspaceModules,
-		LockMode:             lockMode,
-		EagerRuntime:         eagerRuntime,
-		Workspace:            workspaceRef,
-	}
 }
 
 const InstrumentationLibrary = "dagger.io/engine.server"

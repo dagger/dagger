@@ -41,24 +41,11 @@ import (
 )
 
 type ExecutionMetadata struct {
-	ClientID    string
-	SessionID   string
-	SecretToken string
-	Hostname    string
-	LockMode    string
-
-	// The "stable" ID of the client that is used to identify filesync cache refs
-	// across different clients running on the same host.
-	// For now, nested execs are just always given a random unique ID each exec (as
-	// opposed to clients running on the host which re-use a persisted ID).
-	ClientStableID string
-
 	// Internal execution initiated by dagger and not the user.
 	// Used when executing the module runtime itself.
 	Internal bool
 
-	CallDigest     digest.Digest
-	CallerClientID string
+	CallDigest digest.Digest
 
 	// If set, stdout/stderr emitted by this execution should be associated
 	// with this DAG call digest on the client side.
@@ -80,19 +67,8 @@ type ExecutionMetadata struct {
 
 	EnabledGPUs []string
 
-	// Path to the SSH auth socket. Used for Dagger-in-Dagger support.
-	SSHAuthSocketPath string
-
 	// If true, skip injecting dagger-init into the container.
 	NoInit bool
-
-	// list of remote modules allowed to access LLM APIs
-	// any value of "all" bypasses restrictions, a nil slice imposes them
-	AllowedLLMModules []string
-
-	// If set (typically via "_EXPERIMENTAL_DAGGER_VERSION" env var), this forces the client
-	// to be at the specified version. Currently only used for integ testing.
-	ClientVersionOverride string
 }
 
 func (w *Worker) Run(

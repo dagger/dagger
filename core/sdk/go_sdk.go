@@ -13,7 +13,6 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/engineutil"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/mitchellh/mapstructure"
 	"github.com/opencontainers/go-digest"
@@ -298,7 +297,6 @@ func (sdk *goSDK) ModuleTypes(
 	}
 
 	execMD := engineutil.ExecutionMetadata{
-		ClientID: identity.NewID(),
 		Internal: true,
 	}
 	if curCall := dagql.CurrentCall(ctx); curCall != nil {
@@ -307,9 +305,6 @@ func (sdk *goSDK) ModuleTypes(
 			return inst, fmt.Errorf("compute Go SDK exec call digest: %w", err)
 		}
 		execMD.CallDigest = callDigest
-	}
-	if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
-		execMD.LockMode = clientMetadata.LockMode
 	}
 	err = dag.Select(ctx, ctr, &ctr,
 		dagql.Selector{
