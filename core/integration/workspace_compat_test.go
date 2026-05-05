@@ -580,6 +580,59 @@ func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.
 	})
 }
 
+// TestCompatMigrationToolchainSkipFields covers the legacy → workspace-config
+// migration of the per-toolchain ignore lists (ignoreChecks, ignoreGenerators,
+// ignoreServices), which translate into [modules.<name>] check.skip /
+// generate.skip / up.skip in the workspace config.
+func (WorkspaceCompatSuite) TestCompatMigrationToolchainSkipFields(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen, err := generatorsTestEnv(t, c)
+	require.NoError(t, err)
+
+	ctr := modGen.
+		WithWorkdir("app").
+		WithNewFile("dagger.json", `{
+  "name": "app",
+  "engineVersion": "v0.20.5",
+  "toolchains": [
+    {
+      "name": "hello-with-generators",
+      "source": "../hello-with-generators",
+      "ignoreGenerators": [
+        "generate-other-files",
+        "other-generators:*"
+      ]
+    }
+  ]
+}`).
+		With(compatDaggerExec("migrate", "-y"))
+
+	configOut, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, configOut, "[modules.hello-with-generators]")
+	require.Contains(t, configOut, `generate.skip = ["generate-other-files", "other-generators:*"]`)
+
+	listOut, err := ctr.With(compatDaggerExec("generate", "-l")).CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, listOut, "hello-with-generators:generate-files")
+	require.NotContains(t, listOut, "hello-with-generators:generate-other-files")
+	require.NotContains(t, listOut, "hello-with-generators:other-generators:gen-things")
+
+	runCtr := ctr.With(compatDaggerExec("generate", "hello-with-generators:generate-*", "-y", "--progress=plain"))
+	runOut, err := runCtr.CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, runOut, "hello-with-generators:generate-files")
+	require.NotContains(t, runOut, "hello-with-generators:generate-other-files")
+
+	exists, err := runCtr.Exists(ctx, "foo")
+	require.NoError(t, err)
+	require.True(t, exists)
+	exists, err = runCtr.Exists(ctx, "bar")
+	require.NoError(t, err)
+	require.False(t, exists)
+}
+
 // TestCompatAndMigratedWorkspaceMatch should prove the core contract of the
 // new design: compat mode and migrated workspace mode expose the same runtime
 // behavior for the same legacy project.

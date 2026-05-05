@@ -216,6 +216,24 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 	})
 }
 
+func (ChecksSuite) TestWorkspaceCheckSkip(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := checksTestEnv(t, c)
+	require.NoError(t, err)
+
+	ctr := modGen.WithNewFile(".dagger/config.toml", `[modules.hello-with-checks]
+source = "../hello-with-checks"
+check.skip = ["failing-check", "failing-container"]
+`)
+
+	out, err := ctr.With(daggerExec("check", "-l")).CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "hello-with-checks:passing-check")
+	require.Contains(t, out, "hello-with-checks:passing-container")
+	require.NotContains(t, out, "hello-with-checks:failing-check")
+	require.NotContains(t, out, "hello-with-checks:failing-container")
+}
+
 func (ChecksSuite) TestChecksFailFast(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := checksTestEnv(t, c)
