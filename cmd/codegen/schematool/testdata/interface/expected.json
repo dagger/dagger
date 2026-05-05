@@ -1,0 +1,66 @@
+{
+  "__schema": {
+    "queryType": {
+      "name": "Query"
+    },
+    "types": [
+      {
+        "kind": "OBJECT",
+        "name": "Query",
+        "interfaces": [],
+        "directives": []
+      },
+      {
+        "kind": "OBJECT",
+        "name": "Container",
+        "interfaces": [],
+        "directives": []
+      },
+      {
+        "kind": "INTERFACE",
+        "name": "Animal",
+        "description": "Animal makes a sound",
+        "fields": [
+          {
+            "name": "sound",
+            "description": "Sound produces a noise",
+            "type": {
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String"
+              }
+            },
+            "args": [],
+            "isDeprecated": false,
+            "deprecationReason": null,
+            "directives": []
+          }
+        ],
+        "interfaces": [],
+        "directives": [
+          {
+            "name": "sourceModuleName",
+            "args": [
+              {
+                "name": "name",
+                "value": "\"zoo\""
+              }
+            ]
+          },
+          {
+            "name": "sourceMap",
+            "args": [
+              {
+                "name": "module",
+                "value": "\"zoo\""
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "directives": []
+  },
+  "__schemaVersion": "test"
+}

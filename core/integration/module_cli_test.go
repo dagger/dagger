@@ -39,6 +39,7 @@ func (CLISuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 			}
 			`,
 			).
+			With(daggerExec("develop")).
 			With(daggerCallAt("coolmod", "fn")).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -115,6 +116,7 @@ func (CLISuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 			func (m *B) Fn() string { return "yo" }
 			`,
 			).
+			With(daggerExec("develop")).
 			With(daggerCall("fn"))
 		out, err := ctr.Stdout(ctx)
 		require.NoError(t, err)
@@ -405,6 +407,7 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 			}
 			`,
 			).
+			With(daggerExec("develop")).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.")).
 			With(daggerExec("install", "./dep"))
@@ -472,6 +475,7 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 			}
 			`,
 			).
+			With(daggerExec("develop")).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.")).
 			With(daggerExec("install", "./dep")).
@@ -491,7 +495,8 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 				return "hi from work " + depStr, nil
 			}
 			`,
-			)
+			).
+			With(daggerExec("develop", "-m", "../work"))
 
 		out, err := ctr.With(daggerCallAt("../work", "fn")).Stdout(ctx)
 		require.NoError(t, err)
@@ -612,6 +617,7 @@ func (m *GitRepo) RemoteB() *RemoteB {
 }
 `,
 			).
+			With(daggerExec("develop")).
 			WithNewFile("/work/remote_a.go", `package main
 
 type RemoteA struct{}
@@ -661,6 +667,7 @@ func (m *Dep) Method3(ctx context.Context) string {
 }
 `,
 			).
+			With(daggerExec("develop")).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
 			WithNewFile("/work/main.go", `package main
@@ -708,6 +715,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 			func (m *Dep) DepFn(ctx context.Context, str string) string { return str }
 			`,
 			).
+			With(daggerExec("develop")).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=test", "--name=test", "--sdk=go", "test")).
 			With(daggerExec("install", "-m=test", "./subdir/dep")).
@@ -719,7 +727,8 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 
 			func (m *Test) Fn(ctx context.Context) (string, error) { return dag.Dep().DepFn(ctx, "hi dep") }
 			`,
-			)
+			).
+			With(daggerExec("develop"))
 
 		// try invoking it from a few different paths, just for more corner case coverage
 
@@ -796,7 +805,8 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 
             func (m *Test2) Fn(ctx context.Context) (string, error) { return dag.Dep().DepFn(ctx, "hi from test2") }
             `,
-				)
+				).
+				With(daggerExec("develop"))
 
 			out, err := ctr.With(daggerCallAt("/work/test2", "fn")).Stdout(ctx)
 			require.NoError(t, err)
@@ -872,6 +882,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 }
 `,
 			).
+			With(daggerExec("develop")).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--sdk=go", "--name=foo", "--source=.")).
 			With(daggerExec("install", "--eager-runtime", "./dep")).
@@ -887,26 +898,22 @@ func (m *Dep) Fn(ctx context.Context) string {
 		base := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=subdir/dep", "--name=dep", "--sdk=go", "subdir/dep")).
-			WithNewFile("/work/subdir/dep/main.go", `package main
+			With(withModInitAt("subdir/dep", "go", `package main
 
 			import "context"
 
 			type Dep struct {}
 
 			func (m *Dep) DepFn(ctx context.Context, str string) string { return str }
-			`,
-			).
-			With(daggerExec("init", "--source=test", "--name=test", "--sdk=go", "test")).
-			WithNewFile("/work/test/main.go", `package main
+			`, "subdir/dep")).
+			With(withModInitAt("test", "go", `package main
 
 			import "context"
 
 			type Test struct {}
 
 			func (m *Test) Fn(ctx context.Context) (string, error) { return dag.Dep().DepFn(ctx, "hi dep") }
-			`,
-			)
+			`, "test"))
 
 		t.Run("from src dir", func(ctx context.Context, t *testctx.T) {
 			// sanity test normal case
@@ -1078,6 +1085,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 }
 `,
 					).
+					With(daggerExec("develop")).
 					With(daggerCall("fn")).
 					Stdout(ctx)
 				require.NoError(t, err)
@@ -1145,6 +1153,7 @@ func (CLISuite) TestDaggerInstallOrder(ctx context.Context, t *testctx.T) {
 			func (m *DepAbc) DepFn(ctx context.Context, str string) string { return str }
 			`,
 		).
+		With(daggerExec("develop")).
 		WithWorkdir("/work/dep-xyz").
 		With(daggerExec("init", "--source=.", "--name=dep-xyz", "--sdk=go")).
 		WithNewFile("/work/dep-xyz/main.go", `package main
@@ -1156,6 +1165,7 @@ func (CLISuite) TestDaggerInstallOrder(ctx context.Context, t *testctx.T) {
 			func (m *DepXyz) DepFn(ctx context.Context, str string) string { return str }
 			`,
 		).
+		With(daggerExec("develop")).
 		WithWorkdir("/work").
 		With(daggerExec("init", "--source=test", "--name=test", "--sdk=go"))
 
@@ -1191,8 +1201,7 @@ func (CLISuite) TestCLIFunctions(ctx context.Context, t *testctx.T) {
 	ctr := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", `package main
+		With(withModInit("go", `package main
 
 import (
 	"context"
@@ -1260,8 +1269,7 @@ func (m *OtherObj) FnE() *dagger.Container {
 	return nil
 }
 
-`,
-		)
+`))
 
 	t.Run("top-level", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.With(daggerFunctions()).Stdout(ctx)
@@ -1373,7 +1381,8 @@ type Foo struct{}
 func (f *Foo) ContainerEcho(ctx context.Context, input string) (string, error) {
 	return dag.Bar().ContainerEcho(input).Stdout(ctx)
 }
-`)
+`).
+				With(daggerExec("develop"))
 
 			daggerjson, err := ctr.File("dagger.json").Contents(ctx)
 			require.NoError(t, err)
@@ -1834,8 +1843,7 @@ func (m *Hello) Hello() string {
 	testCtr := base.
 		// Initialize 'hello' module with Go SDK
 		WithWorkdir("/work/test/nosdk/hello").
-		With(daggerExec("init", "--sdk=go", "--name=hello")).
-		WithNewFile("main.go", helloCode).
+		With(withModInit("go", helloCode, "--name=hello")).
 		// Initialize 'nosdk' module and install 'hello'
 		WithWorkdir("/work/test/nosdk").
 		With(daggerExec("init", "--name=nosdk")).

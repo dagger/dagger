@@ -352,8 +352,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
-				With(daggerExec("init", "--name=test", "--sdk=go")).
-				With(sdkSource("go", `package main
+				With(withModInit("go", `package main
 
 import (
 	"context"

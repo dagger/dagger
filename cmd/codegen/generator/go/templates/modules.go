@@ -1,19 +1,18 @@
 package templates
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"sort"
 	"strings"
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/generator/go/pragma"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	. "github.com/dave/jennifer/jen" //nolint:staticcheck
 	"github.com/iancoleman/strcase"
@@ -134,12 +133,16 @@ Go function.
 func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 	objFunctionCases := map[string][]Code{}
 
+	createMod := Qual("dag", "Module").Call()
 	implementationCode := Empty()
 
 	err := funcs.visitTypes(
 		true,
 		&visitorFuncs{
 			RootVisitor: func(pkgDoc string) error {
+				if pkgDoc != "" {
+					createMod = dotLine(createMod, "WithDescription").Call(Lit(pkgDoc))
+				}
 				return nil
 			},
 			StructVisitor: func(ps *parseState, named *types.Named, obj *types.TypeName, objTypeSpec *parsedObjectType, strct *types.Struct) error {
@@ -155,6 +158,12 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 				}
 				implementationCode.Add(implCode).Line()
 
+				objTypeDefCode, err := objTypeSpec.TypeDefCode()
+				if err != nil {
+					return fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
+				}
+				createMod = dotLine(createMod, "WithObject").Call(Add(Line(), objTypeDefCode))
+
 				return nil
 			},
 			IfaceVisitor: func(ps *parseState, named *types.Named, obj *types.TypeName, ifaceTypeSpec *parsedIfaceType, iface *types.Interface) error {
@@ -165,6 +174,12 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 				}
 				implementationCode.Add(implCode).Line()
 
+				ifaceTypeDefCode, err := ifaceTypeSpec.TypeDefCode()
+				if err != nil {
+					return fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
+				}
+				createMod = dotLine(createMod, "WithInterface").Call(Add(Line(), ifaceTypeDefCode))
+
 				return nil
 			},
 			EnumVisitor: func(ps *parseState, named *types.Named, obj *types.TypeName, enumTypeSpec *parsedEnumType, enum *types.Basic) error {
@@ -174,6 +189,12 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 					return fmt.Errorf("failed to generate enum code for %s: %w", obj.Name(), err)
 				}
 				implementationCode.Add(implCode).Line()
+
+				enumTypeDefCode, err := enumTypeSpec.TypeDefCode()
+				if err != nil {
+					return fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
+				}
+				createMod = dotLine(createMod, "WithEnum").Call(Add(Line(), enumTypeDefCode))
 
 				return nil
 			},
@@ -190,9 +211,13 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 	out = append(out,
 		fmt.Sprintf("%#v", implementationCode),
 		mainSrc(funcs.CheckVersionCompatibility),
-		invokeSrc(objFunctionCases),
+		invokeSrc(objFunctionCases, createMod),
 	)
 	return strings.Join(out, "\n"), nil
+}
+
+func dotLine(a *Statement, id string) *Statement {
+	return a.Op(".").Line().Id(id)
 }
 
 const (
@@ -332,7 +357,7 @@ func findSingleGQLError(rerr error) *gqlerror.Error {
 }
 
 // the source code of the invoke func, which is the mostly dynamically generated code that actually calls the user's functions
-func invokeSrc(objFunctionCases map[string][]Code) string {
+func invokeSrc(objFunctionCases map[string][]Code, createMod Code) string {
 	// each `case` statement for every object name, which makes up the body of the invoke func
 	objNames := []string{}
 	for objName := range objFunctionCases {
@@ -344,6 +369,10 @@ func invokeSrc(objFunctionCases map[string][]Code) string {
 		functionCases := objFunctionCases[objName]
 		objCases = append(objCases, Case(Lit(objName)).Block(Switch(Id(fnNameVar)).Block(functionCases...)))
 	}
+	// when the object name is empty, return the module definition
+	objCases = append(objCases, Case(Lit("")).Block(
+		Return(createMod, Nil()),
+	))
 	// default case (return error)
 	objCases = append(objCases, Default().Block(
 		Return(Nil(), Qual("fmt", "Errorf").Call(Lit("unknown object %s"), Id(parentNameVar))),
@@ -1084,63 +1113,11 @@ func (ps *parseState) functionCallArgCode(t types.Type, access *Statement) (type
 	}
 }
 
-var pragmaCommentRegexp = regexp.MustCompile(`[ \t]*\+[ \t]*(\S+?)(?:(=[ \t]*)|(?:\r?\n|$))`)
-
-// parsePragmaComment parses a dagger "pragma", that is used to define additional metadata about a parameter.
-func parsePragmaComment(comment string) (data map[string]any, rest string) {
-	data = map[string]any{}
-	lastEnd := 0
-	for _, v := range pragmaCommentRegexp.FindAllStringSubmatchIndex(comment, -1) {
-		// Skip matches that start before we've finished processing
-		if v[0] < lastEnd {
-			continue
-		}
-
-		var key string
-		if v[2] != -1 {
-			key = comment[v[2]:v[3]]
-		}
-
-		var value any
-		end := v[1]
-		if v[4] != -1 {
-			dec := json.NewDecoder(strings.NewReader(comment[v[5]:]))
-			if err := dec.Decode(&value); err == nil {
-				// attempt to parse as json (this can span multiple-lines)
-				end = v[5] + int(dec.InputOffset())
-				idx := strings.IndexAny(comment[end:], "\n")
-				if idx == -1 {
-					end = len(comment)
-				} else {
-					end += idx + 1
-				}
-			} else {
-				// otherwise, just read till the end of the line
-				idx := strings.IndexAny(comment[v[5]:], "\n")
-				var valueStr string
-				if idx == -1 {
-					valueStr = comment[v[5]:]
-					end = len(comment)
-				} else {
-					idx += v[5]
-					valueStr = strings.TrimSuffix(comment[v[5]:idx], "\r")
-					end = idx + 1
-				}
-				if len(valueStr) == 0 {
-					value = nil
-				} else {
-					value = valueStr
-				}
-			}
-		}
-
-		data[key] = value
-		rest += comment[lastEnd:v[0]]
-		lastEnd = end
-	}
-	rest += comment[lastEnd:]
-
-	return data, rest
+// parsePragmaComment parses a dagger "pragma", that is used to define
+// additional metadata about a parameter. Implementation lives in the
+// shared pragma package so the AST-scan codepath uses the same parser.
+func parsePragmaComment(comment string) (map[string]any, string) {
+	return pragma.Parse(comment)
 }
 
 func asInlineStruct(t types.Type) (*types.Struct, bool) {

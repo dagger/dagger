@@ -781,8 +781,7 @@ func (s ChangesetSuite) TestExport(ctx context.Context, t *testctx.T) {
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", `package main
+		With(withModInit("go", `package main
 
 import (
 	"dagger/test/internal/dagger"
@@ -814,7 +813,7 @@ func (t *Test) NoChanges() *dagger.Changeset {
 	return t.Dir.Changes(t.Dir)
 }
 `,
-		).
+		)).
 		With(daggerCall("dir", "-o", "./outdir"))
 
 	t.Run("export", func(ctx context.Context, t *testctx.T) {

@@ -41,6 +41,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			func (m *Test) Fn() string { return "wowzas" }
 			`,
 			).
+			With(daggerExec("develop")).
 			WithNewFile("/work/dagger.json", `{"name": "test", "sdk": "go", "include": ["foo"], "exclude": ["blah", "!bar"], "dependencies": ["foo"]}`)
 
 		// verify develop updates config to new format
@@ -97,6 +98,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			}
 			`,
 				).
+				With(daggerExec("develop")).
 				WithWorkdir("/work").
 				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go"))
 		}
@@ -276,6 +278,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			func (m *Test) Fn() string { return "wowzas" }
 			`,
 			).
+			With(daggerExec("develop")).
 			WithNewFile("/work/dagger.json", `{
 				"$schema": "https://docs.dagger.io/reference/dagger.schema.json",
 				"name": "test",
@@ -328,6 +331,7 @@ func (ConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 			}
 			`,
 			).
+			With(daggerExec("develop")).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			With(daggerExec("install", "--name", "foo", "./dep")).
@@ -365,7 +369,8 @@ func (ConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 				Str string
 			}
 			`,
-			)
+			).
+			With(daggerExec("develop"))
 
 		out, err := ctr.With(daggerCall("fn")).Stdout(ctx)
 		require.NoError(t, err)
@@ -401,6 +406,7 @@ func (ConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 			}
 			`,
 			).
+			With(daggerExec("develop")).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			With(daggerExec("install", "--name", "foo", "./dep")).
@@ -414,7 +420,8 @@ func (ConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 				return dag.Foo().Fn(ctx)
 			}
 			`,
-			)
+			).
+			With(daggerExec("develop"))
 
 		out, err := ctr.With(daggerCall("fn")).Stdout(ctx)
 		require.NoError(t, err)
@@ -438,6 +445,7 @@ func (ConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 			}
 			`,
 			).
+			With(daggerExec("develop")).
 			WithWorkdir("/work/dep2").
 			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
 			WithNewFile("/work/dep2/main.go", `package main
@@ -451,6 +459,7 @@ func (ConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 			}
 			`,
 			).
+			With(daggerExec("develop")).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			With(daggerExec("install", "--name", "foo", "./dep1")).
@@ -473,7 +482,8 @@ func (ConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 				return dep1 + " " + dep2, nil
 			}
 			`,
-			)
+			).
+			With(daggerExec("develop"))
 
 		out, err := ctr.With(daggerCall("fn")).Stdout(ctx)
 		require.NoError(t, err)
@@ -588,9 +598,7 @@ func (ConfigSuite) TestSDKConfig(ctx context.Context, t *testctx.T) {
 				ctr := c.Container().From(golangImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work").
-					With(daggerExec("init", "--sdk=go", "--name=foo", "--source=.")).
-					WithNewFile("dagger.json", tc.daggerjson).
-					WithNewFile("main.go", `package main
+					With(withModInit("go", `package main
 
 import (
 	"os"
@@ -601,7 +609,8 @@ type Foo struct{}
 func (m *Foo) CheckEnv() string {
 	return os.Getenv("GOPRIVATE")
 }
-	`)
+	`, "--name=foo")).
+					WithNewFile("dagger.json", tc.daggerjson)
 
 				output, err := ctr.With(daggerCall("check-env")).Stdout(ctx)
 				if tc.expectedError != "" {
@@ -812,7 +821,8 @@ func (m *Coolsdk) WithConfig(
 					ctr = ctr.
 						WithWorkdir("/work/"+tc.sdk).
 						With(daggerExec("init", "--name="+tc.sdk, "--sdk="+tc.customSDKUnderlyingSDK)).
-						WithNewFile("main.go", tc.customSDKSource)
+						WithNewFile("main.go", tc.customSDKSource).
+						With(daggerExec("develop"))
 				}
 
 				// create a module that use the custom sdk
@@ -962,6 +972,7 @@ func (m *Coolsdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dag
 					WithWorkdir("/work/" + tc.sdk).
 					With(daggerExec("init", "--name="+tc.sdk, "--sdk="+tc.customSDKUnderlyingSDK)).
 					With(sdkSource(tc.customSDKUnderlyingSDK, tc.customSDKSource)).
+					With(daggerExec("develop")).
 					WithWorkdir("/work")
 			}
 
@@ -1106,8 +1117,7 @@ func (ConfigSuite) TestContextDefaultsToSourceRoot(ctx context.Context, t *testc
 	ctr := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/coolsdk").
-		With(daggerExec("init", "--source=.", "--name=cool-sdk", "--sdk=go")).
-		WithNewFile("main.go", `package main
+		With(withModInit("go", `package main
 
 import (
 	"context"
@@ -1144,8 +1154,8 @@ func (m *CoolSdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJso
 func (m *CoolSdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.GeneratedCode {
 	return dag.GeneratedCode(modSource.WithSDK("go").AsModule().GeneratedContextDirectory())
 }
-`,
-		).
+`, "--name=cool-sdk")).
+		With(daggerExec("develop")).
 		WithWorkdir("/work").
 		WithNewFile("random-file", "").
 		With(daggerExec("init", "--source=.", "--name=test", "--sdk=coolsdk")).
@@ -1167,7 +1177,8 @@ func (m *Test) Fn() ([]string, error) {
 	return names, nil
 }
 `,
-		)
+		).
+		With(daggerExec("develop"))
 
 	out, err := ctr.
 		With(daggerCall("fn")).
@@ -1489,7 +1500,8 @@ func (m *Work) Fn(ctx context.Context) (string, error) {
 	return dag.Foo().ContainerEcho("hi").Stdout(ctx)
 }
 `,
-					)
+					).
+					With(daggerExec("develop"))
 
 				out, err = ctr.With(daggerCall("fn")).Stdout(ctx)
 				require.NoError(t, err)
@@ -1532,7 +1544,8 @@ func (ConfigSuite) TestDepPins(ctx context.Context, t *testctx.T) {
 				return strings.ToUpper(s), nil
 			}
 			`,
-		)
+		).
+		With(daggerExec("develop"))
 
 	modCfgContents, err := ctr.
 		File("dagger.json").
@@ -1548,7 +1561,8 @@ func (ConfigSuite) TestDepPins(ctx context.Context, t *testctx.T) {
 	})
 	rewrittenModCfg, err := json.Marshal(modCfg)
 	require.NoError(t, err)
-	ctr = ctr.WithNewFile("dagger.json", string(rewrittenModCfg))
+	ctr = ctr.WithNewFile("dagger.json", string(rewrittenModCfg)).
+		With(daggerExec("develop"))
 
 	out, err := ctr.With(daggerExec("call", "hello")).Stdout(ctx)
 	require.NoError(t, err)
