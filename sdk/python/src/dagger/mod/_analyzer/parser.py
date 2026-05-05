@@ -298,6 +298,14 @@ class ModuleParser:
                     constants[node.target.id] = node.value
                     if self._looks_like_type_expr(node.value):
                         aliases[node.target.id] = node.value
+                elif (
+                    # PEP 695: ``type Source = Annotated[...]``. Distinct AST
+                    # node from Assign/AnnAssign — registered explicitly here
+                    # so the alias map and the resolver share one path.
+                    isinstance(node, ast.TypeAlias)
+                    and isinstance(node.name, ast.Name)
+                ):
+                    aliases[node.name.id] = node.value
 
     def _looks_like_type_expr(self, node: ast.expr) -> bool:
         """Return True when ``node`` looks like a type expression.

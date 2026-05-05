@@ -1761,6 +1761,45 @@ class Foo:
     assert any("from .types import *" in m for m in messages), messages
 
 
+def test_ast_pep695_type_alias_with_annotated():
+    """``type Source = Annotated[...]`` (PEP 695) resolves like the legacy form."""
+    metadata = _analyze("""
+import dagger
+from typing import Annotated
+
+type Source = Annotated[dagger.Directory, dagger.DefaultPath(".")]
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(self, src: Source) -> dagger.Container:
+        ...
+""")
+    fn = metadata.objects["Foo"].functions[0]
+    param = fn.parameters[0]
+    assert param.resolved_type.kind == "object"
+    assert param.resolved_type.name == "Directory"
+    assert param.default_path == "."
+
+
+def test_ast_pep695_plain_type_alias():
+    """``type Src = dagger.Directory`` resolves to Directory."""
+    metadata = _analyze("""
+import dagger
+
+type Src = dagger.Directory
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(self, src: Src) -> dagger.Container:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.kind == "object"
+    assert param.resolved_type.name == "Directory"
+
+
 def test_ast_star_import_does_not_break_resolution():
     """A star import alongside a regular import must not break analysis."""
     metadata = _analyze("""
