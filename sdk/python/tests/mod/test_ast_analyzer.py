@@ -1289,3 +1289,127 @@ class Foo:
     fn = metadata.objects["Foo"].functions[0]
     names = [p.python_name for p in fn.parameters]
     assert names == ["x"]
+
+
+# -- Module-level type aliases ------------------------------------------------
+
+
+def test_ast_type_alias_with_annotated_default_path():
+    """`Source = Annotated[dagger.Directory, dagger.DefaultPath(".")]` resolves.
+
+    Both the underlying ``Directory`` type and the ``DefaultPath`` metadata
+    must be picked up when the alias is referenced as a parameter annotation.
+    """
+    metadata = _analyze("""
+import dagger
+from typing import Annotated
+
+Source = Annotated[dagger.Directory, dagger.DefaultPath(".")]
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(self, src: Source) -> dagger.Container:
+        ...
+""")
+    fn = metadata.objects["Foo"].functions[0]
+    param = fn.parameters[0]
+    assert param.python_name == "src"
+    assert param.resolved_type.kind == "object"
+    assert param.resolved_type.name == "Directory"
+    assert param.default_path == "."
+
+
+def test_ast_type_alias_with_annotated_on_field():
+    """The same alias used on a field must unwrap to ``Directory``."""
+    metadata = _analyze("""
+import dagger
+from typing import Annotated
+
+Source = Annotated[dagger.Directory, dagger.DefaultPath(".")]
+
+@dagger.object_type
+class Foo:
+    src: Source = dagger.field()
+""")
+    field = metadata.objects["Foo"].fields[0]
+    assert field.python_name == "src"
+    assert field.resolved_type.kind == "object"
+    assert field.resolved_type.name == "Directory"
+
+
+def test_ast_plain_type_alias():
+    """``Src = dagger.Directory`` resolves to Directory."""
+    metadata = _analyze("""
+import dagger
+
+Src = dagger.Directory
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(self, src: Src) -> dagger.Container:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.kind == "object"
+    assert param.resolved_type.name == "Directory"
+
+
+def test_ast_optional_type_alias():
+    """``MaybeDir = dagger.Directory | None`` resolves to optional Directory."""
+    metadata = _analyze("""
+import dagger
+
+MaybeDir = dagger.Directory | None
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(self, src: MaybeDir = None) -> dagger.Container:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.name == "Directory"
+    assert param.resolved_type.is_optional is True
+
+
+def test_ast_chained_type_alias():
+    """An alias pointing at another alias resolves through both."""
+    metadata = _analyze("""
+import dagger
+
+A = dagger.Directory
+B = A
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(self, src: B) -> dagger.Container:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.name == "Directory"
+
+
+def test_ast_cyclic_type_alias_does_not_recurse():
+    """A self-referential alias must not loop; falls back to the warn path."""
+    # ``A = B; B = A`` cannot be resolved to a real type. The analyzer should
+    # not recurse forever — it falls back to the existing unresolved-name
+    # path (warn + assume object), same behavior as a missing import.
+    metadata = _analyze("""
+import dagger
+
+A = B
+B = A
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(self, src: A) -> dagger.Container:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    # Expansion stopped at the cycle; the resolver fell back to assuming
+    # an object type with the alias name.
+    assert param.resolved_type.kind == "object"
