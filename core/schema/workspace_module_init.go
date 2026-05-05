@@ -17,7 +17,6 @@ type workspaceModuleInitArgs struct {
 	SDK       string   `default:""`
 	Source    string   `default:""`
 	Include   []string `default:"[]"`
-	Blueprint string   `default:""`
 	SelfCalls bool     `default:"false"`
 }
 
@@ -31,9 +30,6 @@ func (s *workspaceSchema) moduleInit(
 	}
 	if args.Name == "" {
 		return "", fmt.Errorf("module name is required")
-	}
-	if args.Blueprint != "" && args.SDK != "" {
-		return "", fmt.Errorf("cannot specify both --sdk and --blueprint; use one or the other")
 	}
 	if args.SelfCalls && args.SDK == "" {
 		return "", fmt.Errorf("cannot enable self-calls feature without specifying --sdk")
@@ -82,9 +78,6 @@ func (s *workspaceSchema) moduleInit(
 	}
 
 	msg := fmt.Sprintf("Created module %q at %s\nInstalled in %s", args.Name, modulePath, configPath)
-	if args.Blueprint != "" {
-		msg += fmt.Sprintf("\nUsing blueprint %s", args.Blueprint)
-	}
 	return dagql.String(msg), nil
 }
 
@@ -158,31 +151,6 @@ func (s *workspaceSchema) exportWorkspaceModule(
 			Args: []dagql.NamedInput{{
 				Name:  "patterns",
 				Value: patterns,
-			}},
-		})
-	}
-	if args.Blueprint != "" {
-		var blueprint dagql.ObjectResult[*core.ModuleSource]
-		if err := srv.Select(ctx, srv.Root(), &blueprint,
-			dagql.Selector{
-				Field: "moduleSource",
-				Args: []dagql.NamedInput{
-					{Name: "refString", Value: dagql.String(args.Blueprint)},
-					{Name: "disableFindUp", Value: dagql.Boolean(true)},
-				},
-			},
-		); err != nil {
-			return "", fmt.Errorf("load blueprint module: %w", err)
-		}
-		blueprintID, err := blueprint.ID()
-		if err != nil {
-			return "", fmt.Errorf("load blueprint module ID: %w", err)
-		}
-		selectors = append(selectors, dagql.Selector{
-			Field: "withBlueprint",
-			Args: []dagql.NamedInput{{
-				Name:  "blueprint",
-				Value: dagql.NewID[*core.ModuleSource](blueprintID),
 			}},
 		})
 	}
