@@ -1960,3 +1960,105 @@ class Foo:
     assert param.default_path is None
 
 
+
+
+# -- Annotated metadata with module-level constant references --------------
+
+
+def test_ast_ignore_with_module_level_constant():
+    """``Ignore(SOURCE_IGNORE)`` follows a name reference to the constant.
+
+    Surfaced by a real-world divergence in misty-step/thinktank and
+    interTwin-eu/itwinai/ci where users factor a long ignore list into
+    a module-level constant for readability. Pre-fix the analyzer
+    silently dropped the metadata; the runtime resolved the name and
+    used the real list.
+    """
+    metadata = _analyze("""
+import dagger
+from typing import Annotated
+from dagger import Ignore
+
+SOURCE_IGNORE = [".git", "node_modules", ".cache"]
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(
+        self,
+        src: Annotated[dagger.Directory, Ignore(SOURCE_IGNORE)],
+    ) -> str:
+        return "ok"
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.ignore == [".git", "node_modules", ".cache"]
+
+
+def test_ast_doc_with_module_level_constant():
+    """``Doc(MESSAGE)`` follows a name reference to the constant string."""
+    metadata = _analyze("""
+import dagger
+from typing import Annotated
+from dagger import Doc
+
+DOC_TEXT = "the source directory"
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(
+        self,
+        src: Annotated[dagger.Directory, Doc(DOC_TEXT)],
+    ) -> str:
+        return "ok"
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.doc == "the source directory"
+
+
+def test_ast_default_path_with_module_level_constant():
+    """``DefaultPath(PATH)`` follows a name reference."""
+    metadata = _analyze("""
+import dagger
+from typing import Annotated
+from dagger import DefaultPath
+
+ROOT_PATH = "."
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(
+        self,
+        src: Annotated[dagger.Directory, DefaultPath(ROOT_PATH)] = None,
+    ) -> str:
+        return "ok"
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.default_path == "."
+
+
+def test_ast_ignore_with_unresolvable_constant_falls_back():
+    """When the constant can't be resolved, ``ignore`` stays None.
+
+    A name reference the analyzer can't resolve (e.g. an imported
+    constant from a third-party module) shouldn't crash analysis —
+    just leave the metadata field unset, matching the prior behaviour.
+    """
+    metadata = _analyze("""
+import dagger
+from typing import Annotated
+from dagger import Ignore
+from third_party_pkg import EXTERNAL_PATTERNS
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def build(
+        self,
+        src: Annotated[dagger.Directory, Ignore(EXTERNAL_PATTERNS)],
+    ) -> str:
+        return "ok"
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.ignore is None

@@ -1276,28 +1276,48 @@ requires_py312 = pytest.mark.skipif(
 )
 
 @requires_py312
-@requires_py311
-@requires_py311
-    """Undecorated bases contribute @function methods only, not fields.
 
-    Python MRO surfaces the inherited ``@function`` regardless; the
-    dagger field path goes through ``dataclasses.fields`` which only
-    walks dataclass parents. The differential test confirms both sides
-    agree on this distinction.
-@requires_py311
-    """``from __future__ import annotations`` makes every annotation a string.
 
-    Both paths should agree on the resolved metadata as if the import
-    weren't present.
+# ---------------------------------------------------------------------------
+# Real-world pattern caught by the one-off corpus run: module-level
+# constants used as arguments inside Annotated metadata.
+# ---------------------------------------------------------------------------
+
+
+def test_diff_ignore_with_module_level_constant():
+    """``Ignore(SOURCE_IGNORE)`` and ``Doc(MESSAGE)`` resolve through constants.
+
+    Pattern observed in misty-step/thinktank and interTwin-eu/itwinai/ci —
+    users factor a long ignore list (and a doc string) out as a
+    module-level constant for readability. Pre-fix, the AST analyzer
+    silently dropped both because the metadata extractor only honoured
+    literal arguments. Now both paths agree.
     """
-    """``Annotated[Annotated[T, X], Y]`` flattens to ``Annotated[T, X, Y]``.
+    source = """
+import dagger
+from typing import Annotated
+from dagger import Doc, Ignore
 
-    typing flattens nested Annotated forms at runtime; the AST analyzer
-    should reach the same metadata set.
-    """
-@requires_py311
-@requires_py311
-@requires_py311
-@requires_py311
-        "types.py": ("import dagger\nA = dagger.Directory\nB = A\n"),
-@requires_py312
+SOURCE_IGNORE = [
+    ".git",
+    "node_modules",
+    "_build",
+    ".cache",
+]
+SOURCE_DOC = "Repo source directory"
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    async def build(
+        self,
+        source: Annotated[
+            dagger.Directory,
+            Ignore(SOURCE_IGNORE),
+            Doc(SOURCE_DOC),
+        ],
+    ) -> dagger.Container:
+        ...
+"""
+    ast_md, runtime_md = _both(source)
+    assert_metadata_equivalent(ast_md, runtime_md)
