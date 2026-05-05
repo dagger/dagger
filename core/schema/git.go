@@ -152,7 +152,7 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.GitRef]{
-		dagql.NodeFunc("asCommit", s.asCommit).
+		dagql.NodeFunc("targetCommit", s.targetCommit).
 			View(AllVersion).
 			Doc(`The commit this ref resolves to.`),
 		dagql.NodeFunc("commitSHA", s.fetchCommit).
@@ -1405,7 +1405,7 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	return inst, nil
 }
 
-func (s *gitSchema) asCommit(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args struct{}) (inst dagql.Result[*core.GitCommit], _ error) {
+func (s *gitSchema) targetCommit(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args struct{}) (inst dagql.Result[*core.GitCommit], _ error) {
 	return s.gitCommitResult(ctx, parent.Self().Repo, parent.Self().Ref)
 }
 
