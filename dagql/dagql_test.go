@@ -3894,6 +3894,59 @@ func TestInterfaces(t *testing.T) {
 		require.Empty(t, noMatch["loaded"])
 	})
 
+	t.Run("resolve applies fragment type conditions using loaded object schema", func(t *testing.T) {
+		cache := newCache(t)
+		ctx := dagql.ContextWithCache(testContext(), cache)
+
+		sourceSrv := newExternalDagqlServerForTest(t, Query{})
+		points.Install[Query](sourceSrv)
+
+		var point dagql.ObjectResult[*points.Point]
+		assert.NilError(t, sourceSrv.Select(ctx, sourceSrv.Root(), &point, dagql.Selector{
+			Field: "point",
+			Args: []dagql.NamedInput{
+				{Name: "x", Value: dagql.NewInt(13)},
+				{Name: "y", Value: dagql.NewInt(14)},
+			},
+		}))
+
+		// Resolve through a server that knows the fragment interface but has no
+		// registered Point -> Spatial implementor relationship. This mirrors a
+		// dependency-aware node load returning an object from a different schema.
+		querySrv := newExternalDagqlServerForTest(t, Query{})
+		spatial := dagql.NewInterface("Spatial", "Something with spatial coordinates.")
+		spatial.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "id",
+				Type: dagql.AnyID{},
+			},
+		})
+		spatial.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "x",
+				Type: dagql.Int(0),
+			},
+		})
+		spatial.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "y",
+				Type: dagql.Int(0),
+			},
+		})
+		querySrv.InstallInterface(spatial)
+
+		res, err := querySrv.Resolve(ctx, point, dagql.Selection{
+			Selector:       dagql.Selector{Field: "id"},
+			TypeConditions: []string{"Spatial"},
+		})
+		assert.NilError(t, err)
+		idVal, ok := res["id"].(dagql.AnyID)
+		assert.Assert(t, ok)
+		id, err := idVal.ID()
+		assert.NilError(t, err)
+		assert.Assert(t, id.IsHandle())
+	})
+
 	t.Run("inline fragment with interface type condition", func(t *testing.T) {
 		srv := newExternalDagqlServerForTest(t, Query{})
 		introspection.Install[Query](srv)

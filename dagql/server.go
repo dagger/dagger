@@ -877,7 +877,7 @@ func (s *Server) Resolve(ctx context.Context, self AnyObjectResult, sels ...Sele
 
 	if len(sels) == 1 {
 		sel := sels[0]
-		if !s.selectionMatches(sel, self.ObjectType().TypeName()) {
+		if !s.selectionMatches(sel, self.ObjectType()) {
 			return map[string]any{}, nil
 		}
 		// Resolve is in the hot path, so avoiding overhead of goroutines, sync.Map, etc. when there's only
@@ -892,9 +892,10 @@ func (s *Server) Resolve(ctx context.Context, self AnyObjectResult, sels ...Sele
 	results := new(sync.Map)
 
 	pool := pool.New().WithErrors()
+	objectType := self.ObjectType()
 	for _, sel := range sels {
 		pool.Go(func() error {
-			if !s.selectionMatches(sel, self.ObjectType().TypeName()) {
+			if !s.selectionMatches(sel, objectType) {
 				return nil
 			}
 			res, err := s.resolvePath(ctx, self, sel)
@@ -917,13 +918,52 @@ func (s *Server) Resolve(ctx context.Context, self AnyObjectResult, sels ...Sele
 	return resultsMap, nil
 }
 
-func (s *Server) selectionMatches(sel Selection, objectTypeName string) bool {
+func (s *Server) selectionMatches(sel Selection, objectType ObjectType) bool {
 	for _, condition := range sel.TypeConditions {
-		if !s.typeConditionMatches(condition, objectTypeName) {
+		if !s.typeConditionMatchesObject(condition, objectType) {
 			return false
 		}
 	}
 	return true
+}
+
+type objectTypeWithInterfaces interface {
+	Interfaces() []*Interface
+}
+
+func (s *Server) typeConditionMatchesObject(condition string, objectType ObjectType) bool {
+	if objectType == nil {
+		return condition == ""
+	}
+	objectTypeName := objectType.TypeName()
+	if s.typeConditionMatches(condition, objectTypeName) {
+		return true
+	}
+	// A node loader can return an object instantiated by a dependency-aware
+	// schema. In that case this server may know the fragment interface but not
+	// have the loaded object's implementor relationship registered, so check the
+	// actual object type structurally before dropping the selection.
+	if conditionIface, ok := s.InterfaceType(condition); ok && conditionIface.Satisfies(objectType, s.View) {
+		return true
+	}
+	// If the object type itself carries interface relationships from the schema
+	// that instantiated it, honor those too.
+	withInterfaces, ok := objectType.(objectTypeWithInterfaces)
+	if !ok {
+		return false
+	}
+	for _, iface := range withInterfaces.Interfaces() {
+		if iface == nil {
+			continue
+		}
+		if iface.TypeName() == condition {
+			return true
+		}
+		if _, ok := iface.Interfaces()[condition]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // Load loads the object with the given ID.
@@ -1922,14 +1962,27 @@ func (s *Server) typeConditionMatches(condition string, objectTypeName string) b
 		return true
 	}
 	// Check if condition names an interface that this object implements.
-	if iface, ok := s.InterfaceType(condition); ok && iface.HasImplementor(objectTypeName) {
+	conditionIface, conditionIsIface := s.InterfaceType(condition)
+	if conditionIsIface && conditionIface.HasImplementor(objectTypeName) {
 		return true
 	}
 	// Check if objectTypeName is an interface and condition is one of its
 	// implementors. This handles inline fragments like `... on Point` when
 	// the current selection context is an interface like `Node`.
-	if iface, ok := s.InterfaceType(objectTypeName); ok && iface.HasImplementor(condition) {
+	objectIface, objectIsIface := s.InterfaceType(objectTypeName)
+	if objectIsIface && objectIface.HasImplementor(condition) {
 		return true
+	}
+	// Two interface types overlap if they share at least one possible runtime
+	// implementation. This keeps parse-time filtering permissive enough for
+	// fragments like `node { ... on SomeInterface { id } }` even when neither
+	// interface directly implements the other.
+	if conditionIsIface && objectIsIface {
+		for implementor := range conditionIface.Implementors() {
+			if objectIface.HasImplementor(implementor) {
+				return true
+			}
+		}
 	}
 	return false
 }

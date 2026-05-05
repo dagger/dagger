@@ -132,7 +132,7 @@ func (iface *InterfaceType) loadImpl(ctx context.Context, id *call.ID) (*loadedI
 	if err != nil {
 		return nil, fmt.Errorf("current query: %w", err)
 	}
-	if id == nil || id.EngineResultID() == 0 {
+	if id == nil || !id.IsHandle() || id.EngineResultID() == 0 {
 		return nil, fmt.Errorf("load interface implementation: expected attached result ID")
 	}
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)

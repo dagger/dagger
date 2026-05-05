@@ -42,7 +42,7 @@ func InstallCoreSchemaLoaders(dag *dagql.Server) {
 	// current server's schema, which may only contain core types.
 	dag.SetResultServerForCall(serverForResultCall)
 	dag.SetNodeLoader(func(ctx context.Context, id *call.ID) (dagql.AnyObjectResult, error) {
-		if id == nil || id.EngineResultID() == 0 {
+		if id == nil || !id.IsHandle() || id.EngineResultID() == 0 {
 			return dag.Load(ctx, id)
 		}
 		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
