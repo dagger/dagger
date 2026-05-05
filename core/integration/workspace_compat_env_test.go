@@ -106,7 +106,11 @@ DEFAULTS_GREETING=salutations-outer
 DEFAULTS_MESSAGE_NAME=planete-outer
 `,
 			"",
-			[]string{"dagger", "-m", "./app", "call", "message"},
+			// The app dagger.json contains legacy workspace fields, so an
+			// explicit outer-workdir invocation must select it as a workspace.
+			// Direct `-m ./app` loading is covered by the legacy direct-load
+			// error tests.
+			[]string{"dagger", "-W", "./app", "call", "message"},
 			dagger.ReturnTypeSuccess,
 			"salutations-outer, planete-outer!",
 		},
@@ -178,7 +182,11 @@ DEFAULTS_GREETING=salutations-outer
 DEFAULTS_MESSAGE_NAME=planete-outer
 `,
 			"",
-			[]string{"dagger", "-m", "./app", "call", "defaults", "message"},
+			// The app dagger.json contains legacy workspace fields, so an
+			// explicit outer-workdir invocation must select it as a workspace.
+			// Direct `-m ./app` loading is covered by the legacy direct-load
+			// error tests.
+			[]string{"dagger", "-W", "./app", "call", "defaults", "message"},
 			dagger.ReturnTypeSuccess,
 			"salutations-outer, planete-outer!",
 		},
