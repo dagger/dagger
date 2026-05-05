@@ -150,6 +150,12 @@ class ModuleParser:
         # type-aliases can't bleed into each other's resolution paths.
         self._module_type_aliases: dict[Path, dict[str, ast.expr]] = {}
 
+        # Per-file map of names brought in by relative imports to the parsed
+        # file they came from. Populated in ``_collect_relative_imports``
+        # and consumed by ``_expand_alias`` (cross-file alias resolution)
+        # and ``_eval_constant`` (cross-file constant resolution).
+        self._relative_import_origins: dict[Path, dict[str, Path]] = {}
+
         # File currently being extracted. Set by ``_extract_declarations`` so
         # ``_eval_constant`` can scope name lookups to the containing file.
         self._current_file: Path | None = None
@@ -181,6 +187,10 @@ class ModuleParser:
 
         # Phase 2.5: Collect module-level constants for default resolution
         self._collect_module_constants()
+
+        # Phase 2.6: Map relative-import names to the file that defines them
+        # (so cross-file aliases and constants can be resolved).
+        self._collect_relative_imports()
 
         # Record per-file origin of the unqualified ``field`` name.
         self._track_field_origins()
@@ -307,6 +317,73 @@ class ModuleParser:
                 ):
                     aliases[node.name.id] = node.value
 
+    def _collect_relative_imports(self) -> None:
+        """Map relative-import names to the parsed file they were defined in.
+
+        For ``from .types import Source`` in ``pkg/main.py``, record
+        ``(pkg/main.py, "Source") -> pkg/types.py`` provided ``pkg/types.py``
+        is also in the parsed file set. ``_expand_alias`` consults this map
+        to follow aliases across files; ``_eval_constant`` can do the same
+        for constants.
+
+        The mapping is best-effort — when the target file isn't in the
+        parsed set (third-party package, dynamic ``__path__``, etc.), the
+        entry is just omitted and resolution falls back to the existing
+        warn/stub behavior.
+        """
+        resolved_paths = {
+            file_path: file_path.resolve() for file_path in self._asts
+        }
+        # Index by resolved path so we can look up ``pkg/types.py`` regardless
+        # of whether the user passed it as an absolute or relative path.
+        path_index: dict[Path, Path] = {}
+        for original, resolved in resolved_paths.items():
+            path_index[resolved] = original
+
+        for file_path, tree in self._asts.items():
+            mapping = self._relative_import_origins.setdefault(file_path, {})
+            current_resolved = resolved_paths[file_path]
+            for node in ast.iter_child_nodes(tree):
+                if not isinstance(node, ast.ImportFrom) or node.level <= 0:
+                    continue
+                target = self._resolve_relative_import_target(
+                    current_resolved, node.level, node.module, path_index
+                )
+                if target is None:
+                    continue
+                for alias in node.names:
+                    if alias.name == "*":
+                        continue
+                    bound = alias.asname or alias.name
+                    mapping[bound] = target
+
+    @staticmethod
+    def _resolve_relative_import_target(
+        current_file: Path,
+        level: int,
+        module: str | None,
+        path_index: dict[Path, Path],
+    ) -> Path | None:
+        """Return the parsed-file path for ``from <level-dots><module> import …``.
+
+        ``level`` is 1 for ``from . import x``, 2 for ``from .. import x``,
+        etc. ``module`` is the dotted suffix (``"types"`` for
+        ``from .types import Source``) or ``None`` for ``from . import x``.
+        """
+        base = current_file.parent
+        for _ in range(level - 1):
+            base = base.parent
+        if module:
+            target_dir = base
+            for part in module.split("."):
+                target_dir = target_dir / part
+            for cand in (target_dir.with_suffix(".py"), target_dir / "__init__.py"):
+                resolved = cand.resolve() if cand.exists() else cand
+                if resolved in path_index:
+                    return path_index[resolved]
+        # Bare ``from . import x`` — no module to resolve to a file.
+        return None
+
     def _looks_like_type_expr(self, node: ast.expr) -> bool:
         """Return True when ``node`` looks like a type expression.
 
@@ -327,20 +404,43 @@ class ModuleParser:
         """Expand a module-level type alias to its underlying expression.
 
         Walks chained aliases (``B = A``, ``A = dagger.Directory``) and
-        protects against cycles by tracking the names already seen. If the
-        annotation isn't a known alias (or expansion hits a cycle), returns
-        the most recently expanded node — which may be the original input.
+        protects against cycles by tracking the names already seen. Also
+        follows aliases across files — when a name was imported via
+        ``from .types import Source``, expansion continues using
+        ``types.py``'s alias map so the foreign file's
+        ``Source = Annotated[...]`` is honored.
+
+        If the annotation isn't a known alias (or expansion hits a cycle),
+        returns the most recently expanded node — which may be the
+        original input.
         """
-        aliases = self._module_type_aliases.get(file_path, {})
-        if not aliases:
-            return annotation
-        seen: set[str] = set()
+        seen: set[tuple[Path, str]] = set()
         current = annotation
-        while isinstance(current, ast.Name) and current.id in aliases:
-            if current.id in seen:
-                break
-            seen.add(current.id)
-            current = aliases[current.id]
+        current_file = file_path
+        while isinstance(current, ast.Name):
+            name = current.id
+            local_aliases = self._module_type_aliases.get(current_file, {})
+            if name in local_aliases:
+                key = (current_file, name)
+                if key in seen:
+                    break
+                seen.add(key)
+                current = local_aliases[name]
+                continue
+            origin = self._relative_import_origins.get(current_file, {}).get(name)
+            if origin is not None:
+                origin_aliases = self._module_type_aliases.get(origin, {})
+                if name in origin_aliases:
+                    key = (origin, name)
+                    if key in seen:
+                        break
+                    seen.add(key)
+                    # Switch context: continue expanding inside the origin file
+                    # so any further chained aliases use that file's map.
+                    current_file = origin
+                    current = origin_aliases[name]
+                    continue
+            break
         return current
 
     def _build_namespace(self) -> None:

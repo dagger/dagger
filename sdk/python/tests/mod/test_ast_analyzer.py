@@ -1782,6 +1782,69 @@ class Foo:
     assert param.default_path == "."
 
 
+def test_ast_cross_file_type_alias_with_default_path(tmp_path):
+    """Alias defined in ``types.py`` and imported via ``from .types import …``."""
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "types.py").write_text(
+        "import dagger\n"
+        "from typing import Annotated\n"
+        'Source = Annotated[dagger.Directory, dagger.DefaultPath(".")]\n',
+        encoding="utf-8",
+    )
+    (pkg / "main.py").write_text(
+        "import dagger\n"
+        "from .types import Source\n"
+        "\n"
+        "@dagger.object_type\n"
+        "class Foo:\n"
+        "    @dagger.function\n"
+        "    def build(self, src: Source) -> dagger.Container: ...\n",
+        encoding="utf-8",
+    )
+    metadata = analyze_module(
+        source_files=[pkg / "__init__.py", pkg / "types.py", pkg / "main.py"],
+        main_object_name="Foo",
+    )
+    fn = metadata.objects["Foo"].functions[0]
+    param = fn.parameters[0]
+    # Both the underlying Directory type and the DefaultPath metadata
+    # cross the file boundary.
+    assert param.resolved_type.kind == "object"
+    assert param.resolved_type.name == "Directory"
+    assert param.default_path == "."
+
+
+def test_ast_cross_file_type_alias_chained(tmp_path):
+    """``main.py`` imports ``B``; ``types.py`` defines ``A = Directory; B = A``."""
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "types.py").write_text(
+        "import dagger\n"
+        "A = dagger.Directory\n"
+        "B = A\n",
+        encoding="utf-8",
+    )
+    (pkg / "main.py").write_text(
+        "import dagger\n"
+        "from .types import B\n"
+        "\n"
+        "@dagger.object_type\n"
+        "class Foo:\n"
+        "    @dagger.function\n"
+        "    def build(self, src: B) -> dagger.Container: ...\n",
+        encoding="utf-8",
+    )
+    metadata = analyze_module(
+        source_files=[pkg / "__init__.py", pkg / "types.py", pkg / "main.py"],
+        main_object_name="Foo",
+    )
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.name == "Directory"
+
+
 def test_ast_pep695_plain_type_alias():
     """``type Src = dagger.Directory`` resolves to Directory."""
     metadata = _analyze("""
