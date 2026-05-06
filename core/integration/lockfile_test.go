@@ -415,7 +415,7 @@ func (LockfileSuite) TestWorkspaceUpdateNestedQuery(ctx context.Context, t *test
 }
 
 func (LockfileSuite) TestWorkspaceModuleLockUpdate(ctx context.Context, t *testctx.T) {
-	t.Run("top-level update is a no-op in an empty initialized workspace", func(ctx context.Context, t *testctx.T) {
+	t.Run("top-level update is a no-op with empty workspace config", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c).
 			With(daggerExec("workspace", "init"))

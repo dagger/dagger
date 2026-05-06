@@ -59,7 +59,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		msg, err := c.CurrentWorkspace().Install(ctx, ref, dagger.WorkspaceInstallOpts{Name: "mywolfi"})
 		require.NoError(t, err)
 		require.Equal(t,
-			"Initialized workspace in "+filepath.Join(workdir, ".dagger")+"\n"+
+			"Created workspace config in "+filepath.Join(workdir, ".dagger")+"\n"+
 				`Installed module "mywolfi" in `+filepath.Join(workdir, ".dagger", workspacecfg.ConfigFileName),
 			msg,
 		)
@@ -92,14 +92,14 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--sdk=go", "dep")
+		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--sdk=go", "dep", ".")
 		require.NoError(t, err)
 
 		c := connect(ctx, t, dagger.WithWorkdir(workdir))
 		msg, err := c.CurrentWorkspace().Install(ctx, "./dep")
 		require.NoError(t, err)
 		require.Equal(t,
-			"Initialized workspace in "+filepath.Join(workdir, ".dagger")+"\n"+
+			"Created workspace config in "+filepath.Join(workdir, ".dagger")+"\n"+
 				`Installed module "dep" in `+filepath.Join(workdir, ".dagger", workspacecfg.ConfigFileName),
 			msg,
 		)
@@ -120,13 +120,13 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--sdk=go", "dep")
+		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--sdk=go", "dep", ".")
 		require.NoError(t, err)
 
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
 		require.NoError(t, err)
 		outStr := strings.TrimSpace(string(out))
-		require.Contains(t, outStr, "Initialized workspace in "+filepath.Join(workdir, workspacecfg.LockDirName))
+		require.Contains(t, outStr, "Created workspace config in "+filepath.Join(workdir, workspacecfg.LockDirName))
 		require.Contains(t, outStr, `Installed module "dep" in `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName))
 
 		cfg := readInstalledWorkspaceConfig(t, workdir)
@@ -142,7 +142,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", ref)
 		require.NoError(t, err)
 		require.Equal(t,
-			"Initialized workspace in "+filepath.Join(workdir, workspacecfg.LockDirName)+"\n"+
+			"Created workspace config in "+filepath.Join(workdir, workspacecfg.LockDirName)+"\n"+
 				`Installed module "wolfi" in `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName),
 			strings.TrimSpace(string(out)),
 		)
@@ -159,7 +159,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		initGitRepo(ctx, t, workdir)
 		initGitRepo(ctx, t, depDir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--sdk=go", "dep")
+		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--sdk=go", "dep", ".")
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(depDir, "main.go"), []byte(`package main
 
@@ -191,15 +191,15 @@ entrypoint = true
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--sdk=go", "dep")
+		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--sdk=go", "dep", ".")
 		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, workdir, "module", "init", "--sdk=go", "app")
+		_, err = hostDaggerExec(ctx, t, workdir, "module", "init", "--sdk=go", "app", ".")
 		require.NoError(t, err)
 
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
 		require.NoError(t, err)
 		outStr := strings.TrimSpace(string(out))
-		require.Contains(t, outStr, "Initialized workspace in "+filepath.Join(workdir, workspacecfg.LockDirName))
+		require.Contains(t, outStr, "Created workspace config in "+filepath.Join(workdir, workspacecfg.LockDirName))
 		require.Contains(t, outStr, `Installed module "dep" in `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName))
 
 		moduleConfig, err := os.ReadFile(filepath.Join(workdir, workspacecfg.ModuleConfigFileName))
@@ -278,7 +278,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleMutation(ctx context.Context, t 
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--sdk=go", "dep")
+		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--sdk=go", "dep", ".")
 		require.NoError(t, err)
 
 		writeWorkspaceConfigFile(t, workdir, `[modules.dep]
@@ -551,6 +551,51 @@ type HelloWorld {
 		out, err = base.With(daggerShell("greeter | greet")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hello, world!", out)
+	})
+
+	t.Run("configured workspace ignores cwd module", func(ctx context.Context, t *testctx.T) {
+		ctr := workspaceBase(t, c).
+			With(initDangBlueprint("configured", `
+type Configured {
+  pub greet: String! {
+    "hello from configured workspace"
+  }
+}
+`)).
+			WithNewFile("modules/cwd/dagger.json", `{"name":"cwd","sdk":{"source":"dang"}}`).
+			WithNewFile("modules/cwd/main.dang", `
+type Cwd {
+  pub greet: String! {
+    "hello from cwd module"
+  }
+}
+`)
+
+		out, err := ctr.
+			WithWorkdir("/work/modules/cwd").
+			With(daggerCall("greet")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from configured workspace", strings.TrimSpace(out))
+	})
+
+	t.Run("cwd module remains fallback without workspace config", func(ctx context.Context, t *testctx.T) {
+		ctr := workspaceBase(t, c).
+			WithNewFile("modules/cwd/dagger.json", `{"name":"cwd","sdk":{"source":"dang"}}`).
+			WithNewFile("modules/cwd/main.dang", `
+type Cwd {
+  pub greet: String! {
+    "hello from cwd module"
+  }
+}
+`)
+
+		out, err := ctr.
+			WithWorkdir("/work/modules/cwd").
+			With(daggerCall("greet")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from cwd module", strings.TrimSpace(out))
 	})
 }
 

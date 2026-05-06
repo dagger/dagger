@@ -153,7 +153,7 @@ func (s *workspaceSchema) workspaceMigrationLockBytes(
 		})
 	}
 	if len(refreshMods) > 0 {
-		if err := refreshWorkspaceModuleLookups(ctx, query, lock, refreshMods); err != nil {
+		if err := refreshWorkspaceModuleLookups(ctx, query, lock, workspace.LockDirName, refreshMods); err != nil {
 			return nil, fmt.Errorf("refresh migrated module lookups: %w", err)
 		}
 	}

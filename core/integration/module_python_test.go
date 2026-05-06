@@ -2162,7 +2162,7 @@ func daggerInitPythonAt(modPath string, args ...string) dagger.WithContainerFunc
 	if modPath != "" {
 		execArgs = append(execArgs, "--source="+modPath, modPath)
 	} else {
-		execArgs = append(execArgs, "--source=.")
+		execArgs = append(execArgs, "--source=.", ".")
 	}
 	return daggerExec(execArgs...)
 }

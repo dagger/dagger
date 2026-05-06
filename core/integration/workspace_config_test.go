@@ -19,10 +19,10 @@ import (
 
 const currentWorkspaceConfigQuery = `{
   currentWorkspace {
-    path
-    initialized
+    cwd
     hasConfig
-    configPath
+    configDirectory
+    configFile
   }
 }
 `
@@ -276,16 +276,16 @@ func (WorkspaceSuite) TestCurrentWorkspaceConfigBoundary(ctx context.Context, t 
 	require.NoError(t, err)
 	require.JSONEq(t, fmt.Sprintf(`{
 		"currentWorkspace": {
-			"path": "app",
-			"initialized": true,
+			"cwd": "app/sub",
 			"hasConfig": true,
-			"configPath": %q
+			"configDirectory": %q,
+			"configFile": %q
 		}
-	}`, filepath.Join("app", workspace.LockDirName, workspace.ConfigFileName)), string(out))
+	}`, filepath.Join("app", workspace.LockDirName), filepath.Join("app", workspace.LockDirName, workspace.ConfigFileName)), string(out))
 }
 
 func (WorkspaceSuite) TestWorkspaceInitCommand(ctx context.Context, t *testctx.T) {
-	t.Run("creates config for the current workspace directory", func(ctx context.Context, t *testctx.T) {
+	t.Run("creates config at the workspace root by default", func(ctx context.Context, t *testctx.T) {
 		workdir := t.TempDir()
 		nestedDir := filepath.Join(workdir, "app", "sub")
 
@@ -297,9 +297,42 @@ func (WorkspaceSuite) TestWorkspaceInitCommand(ctx context.Context, t *testctx.T
 		))
 		initGitRepo(ctx, t, workdir)
 
-		out, err := hostDaggerExecRaw(ctx, t, nestedDir, "--silent", "init")
+		out, err := hostDaggerExecRaw(ctx, t, nestedDir, "--silent", "workspace", "init")
 		require.NoError(t, err)
-		require.Equal(t, fmt.Sprintf("Initialized workspace in %s", filepath.Join(nestedDir, workspace.LockDirName)), strings.TrimSpace(string(out)))
+		require.Equal(t, fmt.Sprintf("Created workspace config in %s", filepath.Join(workdir, workspace.LockDirName)), strings.TrimSpace(string(out)))
+
+		configHostPath := filepath.Join(workdir, workspace.LockDirName, workspace.ConfigFileName)
+		configContents, err := os.ReadFile(configHostPath)
+		require.NoError(t, err)
+		require.Contains(t, string(configContents), "[modules]")
+
+		out, err = hostDaggerExec(ctx, t, nestedDir, "--silent", "query", "--doc", "query.graphql")
+		require.NoError(t, err)
+		require.JSONEq(t, fmt.Sprintf(`{
+			"currentWorkspace": {
+				"cwd": "app/sub",
+				"hasConfig": true,
+				"configDirectory": %q,
+				"configFile": %q
+			}
+		}`, workspace.LockDirName, filepath.Join(workspace.LockDirName, workspace.ConfigFileName)), string(out))
+	})
+
+	t.Run("creates config at the workspace cwd with --here", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		nestedDir := filepath.Join(workdir, "app", "sub")
+
+		require.NoError(t, os.MkdirAll(nestedDir, 0o755))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(nestedDir, "query.graphql"),
+			[]byte(currentWorkspaceConfigQuery),
+			0o644,
+		))
+		initGitRepo(ctx, t, workdir)
+
+		out, err := hostDaggerExecRaw(ctx, t, nestedDir, "--silent", "workspace", "init", "--here")
+		require.NoError(t, err)
+		require.Equal(t, fmt.Sprintf("Created workspace config in %s", filepath.Join(nestedDir, workspace.LockDirName)), strings.TrimSpace(string(out)))
 
 		configHostPath := filepath.Join(nestedDir, workspace.LockDirName, workspace.ConfigFileName)
 		configContents, err := os.ReadFile(configHostPath)
@@ -310,12 +343,12 @@ func (WorkspaceSuite) TestWorkspaceInitCommand(ctx context.Context, t *testctx.T
 		require.NoError(t, err)
 		require.JSONEq(t, fmt.Sprintf(`{
 			"currentWorkspace": {
-				"path": "app/sub",
-				"initialized": true,
+				"cwd": "app/sub",
 				"hasConfig": true,
-				"configPath": %q
+				"configDirectory": %q,
+				"configFile": %q
 			}
-		}`, filepath.Join("app", "sub", workspace.LockDirName, workspace.ConfigFileName)), string(out))
+		}`, filepath.Join("app", "sub", workspace.LockDirName), filepath.Join("app", "sub", workspace.LockDirName, workspace.ConfigFileName)), string(out))
 	})
 
 	t.Run("rejects reinitialization", func(ctx context.Context, t *testctx.T) {
@@ -330,7 +363,7 @@ func (WorkspaceSuite) TestWorkspaceInitCommand(ctx context.Context, t *testctx.T
 
 		_, err = hostDaggerExec(ctx, t, nestedDir, "--silent", "workspace", "init")
 		require.Error(t, err)
-		requireErrOut(t, err, fmt.Sprintf("workspace already initialized at %s", filepath.Join(nestedDir, workspace.LockDirName)))
+		requireErrOut(t, err, fmt.Sprintf("workspace config already exists at %s", filepath.Join(workdir, workspace.LockDirName)))
 	})
 }
 
@@ -583,7 +616,7 @@ func (WorkspaceSuite) TestWorkspaceConfigurationLifecycle(ctx context.Context, t
 		require.Contains(t, string(configContents), "[modules]")
 	})
 
-	t.Run("workspace config detects the nearest initialized boundary", func(ctx context.Context, t *testctx.T) {
+	t.Run("workspace config detects the nearest config", func(ctx context.Context, t *testctx.T) {
 		workdir := t.TempDir()
 		nestedDir := filepath.Join(workdir, "app", "sub")
 
