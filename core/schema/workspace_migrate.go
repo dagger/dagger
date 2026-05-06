@@ -13,12 +13,15 @@ import (
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type workspaceMigrateArgs struct {
 	// Proceed even if modules cannot be loaded to generate settings hints.
 	Force bool `default:"false"`
 }
+
+type workspaceMigrationProgressContextKey struct{}
 
 func (s *workspaceSchema) migrate(
 	ctx context.Context,
@@ -42,9 +45,6 @@ func (s *workspaceSchema) migrate(
 		}, nil
 	}
 
-	ctx, span := core.Tracer(ctx).Start(ctx, "prepare workspace migration")
-	defer telemetry.EndWithCause(span, &rerr)
-
 	workspaceCtx, err := s.withWorkspaceClientContext(ctx, ws)
 	if err != nil {
 		return nil, fmt.Errorf("workspace client context: %w", err)
@@ -55,15 +55,20 @@ func (s *workspaceSchema) migrate(
 		return nil, err
 	}
 
-	var plan *workspace.MigrationPlan
-	if err := func() (rerr error) {
-		_, span := core.Tracer(ctx).Start(ctx, "plan migration")
+	showProgress := shouldRecordWorkspaceMigrationProgress(ctx, query, ws)
+	ctx = context.WithValue(ctx, workspaceMigrationProgressContextKey{}, showProgress)
+	if showProgress {
+		var span trace.Span
+		ctx, span = core.Tracer(ctx).Start(ctx, "prepare migration diff")
 		defer telemetry.EndWithCause(span, &rerr)
-		plan, rerr = workspace.PlanMigration(compatWorkspace)
-		return rerr
-	}(); err != nil {
+	}
+
+	var plan *workspace.MigrationPlan
+	plan, err = workspace.PlanMigration(compatWorkspace)
+	if err != nil {
 		return nil, err
 	}
+	recordWorkspaceMigrationModuleSpans(ctx, compatWorkspace.Modules)
 	cfg, err := workspace.ParseConfig(plan.WorkspaceConfigData)
 	if err != nil {
 		return nil, fmt.Errorf("parse planned workspace config: %w", err)
@@ -121,7 +126,7 @@ func (s *workspaceSchema) workspaceMigrationLockBytes(
 	query *core.Query,
 	plan *workspace.MigrationPlan,
 ) (_ []byte, rerr error) {
-	ctx, span := core.Tracer(ctx).Start(ctx, "refresh workspace lock")
+	ctx, span := core.Tracer(ctx).Start(ctx, "refresh workspace lock", telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
 
 	var lock *workspace.Lock
@@ -174,7 +179,7 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 	plan *workspace.MigrationPlan,
 	lockBytes []byte,
 ) (_ *core.Changeset, rerr error) {
-	ctx, span := core.Tracer(ctx).Start(ctx, "build migration changeset")
+	ctx, span := core.Tracer(ctx).Start(ctx, "build migration changeset", workspaceMigrationWrapperSpanOpts(ctx)...)
 	defer telemetry.EndWithCause(span, &rerr)
 
 	baseDir, updatedDir, err := s.workspaceMigrationPreparedDirectories(ctx, ws, plan)
@@ -186,27 +191,29 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 		return nil, err
 	}
 
-	updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, filepath.Join(workspace.LockDirName, workspace.ConfigFileName), plan.WorkspaceConfigData, "write workspace config")
+	workspaceConfigPath := filepath.Join(workspace.LockDirName, workspace.ConfigFileName)
+	updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, workspaceConfigPath, plan.WorkspaceConfigData, "workspace configuration: "+workspaceMigrationDisplayPath(workspaceConfigPath))
 	if err != nil {
 		return nil, err
 	}
 
 	if len(plan.MigrationReportData) > 0 {
-		updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, plan.MigrationReportPath, plan.MigrationReportData, "write migration report")
+		updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, plan.MigrationReportPath, plan.MigrationReportData, "migration report: "+workspaceMigrationDisplayPath(plan.MigrationReportPath))
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if len(lockBytes) > 0 {
-		updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, filepath.Join(workspace.LockDirName, workspace.LockFileName), lockBytes, "write workspace lock")
+		workspaceLockPath := filepath.Join(workspace.LockDirName, workspace.LockFileName)
+		updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, workspaceLockPath, lockBytes, "write workspace lock", telemetry.Internal())
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if err := func() (rerr error) {
-		removeCtx, span := core.Tracer(ctx).Start(ctx, "remove legacy config")
+		removeCtx, span := core.Tracer(ctx).Start(ctx, "remove legacy config", telemetry.Internal())
 		defer telemetry.EndWithCause(span, &rerr)
 		var err error
 		updatedDir, err = workspaceMigrationSelectDirectory(removeCtx, updatedDir, "withoutFile", []dagql.NamedInput{
@@ -219,7 +226,7 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 
 	var changes *core.Changeset
 	if err := func() (rerr error) {
-		diffCtx, span := core.Tracer(ctx).Start(ctx, "compute migration changeset")
+		diffCtx, span := core.Tracer(ctx).Start(ctx, "compute migration changeset", telemetry.Internal())
 		defer telemetry.EndWithCause(span, &rerr)
 		var err error
 		changes, err = workspaceMigrationChanges(diffCtx, updatedDir, baseDir)
@@ -235,7 +242,7 @@ func (s *workspaceSchema) workspaceMigrationPreparedDirectories(
 	ws *core.Workspace,
 	plan *workspace.MigrationPlan,
 ) (_ dagql.ObjectResult[*core.Directory], _ dagql.ObjectResult[*core.Directory], rerr error) {
-	ctx, span := core.Tracer(ctx).Start(ctx, "prepare migrated workspace directory")
+	ctx, span := core.Tracer(ctx).Start(ctx, "prepare migrated workspace directory", workspaceMigrationWrapperSpanOpts(ctx)...)
 	defer telemetry.EndWithCause(span, &rerr)
 
 	baseDir, err := s.workspaceMigrationBaseDirectory(ctx, ws, plan)
@@ -250,7 +257,7 @@ func (s *workspaceSchema) workspaceMigrationPreparedDirectories(
 			return dagql.ObjectResult[*core.Directory]{}, dagql.ObjectResult[*core.Directory]{}, err
 		}
 
-		updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, plan.MigratedModuleConfigPath, plan.MigratedModuleConfigData, "write migrated module config")
+		updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, plan.MigratedModuleConfigPath, plan.MigratedModuleConfigData, "move module: "+workspace.ModuleConfigFileName+" -> "+workspaceMigrationDisplayPath(plan.MigratedModuleConfigPath))
 		if err != nil {
 			return dagql.ObjectResult[*core.Directory]{}, dagql.ObjectResult[*core.Directory]{}, err
 		}
@@ -272,6 +279,53 @@ func workspaceMigrationTargetPaths(plan *workspace.MigrationPlan, lockBytes []by
 		paths = append(paths, filepath.Join(workspace.LockDirName, workspace.LockFileName))
 	}
 	return paths
+}
+
+func recordWorkspaceMigrationModuleSpans(ctx context.Context, modules []workspace.CompatWorkspaceModule) {
+	if !workspaceMigrationProgressEnabled(ctx) {
+		return
+	}
+
+	seen := make(map[string]struct{}, len(modules))
+	for _, mod := range modules {
+		if mod.Source == "" {
+			continue
+		}
+		if _, ok := seen[mod.Source]; ok {
+			continue
+		}
+		seen[mod.Source] = struct{}{}
+
+		_, span := core.Tracer(ctx).Start(ctx, "install module: "+mod.Source)
+		span.End()
+	}
+}
+
+func shouldRecordWorkspaceMigrationProgress(ctx context.Context, query *core.Query, ws *core.Workspace) bool {
+	if query == nil {
+		return true
+	}
+	seenKeys, err := query.TelemetrySeenKeyStore(ctx)
+	if err != nil {
+		return true
+	}
+	return dagql.ShouldEmitTelemetry(ctx, seenKeys, "workspace.migrate.progress:"+ws.HostPath(), false)
+}
+
+func workspaceMigrationProgressEnabled(ctx context.Context) bool {
+	enabled, ok := ctx.Value(workspaceMigrationProgressContextKey{}).(bool)
+	return !ok || enabled
+}
+
+func workspaceMigrationWrapperSpanOpts(ctx context.Context) []trace.SpanStartOption {
+	if !workspaceMigrationProgressEnabled(ctx) {
+		return []trace.SpanStartOption{telemetry.Internal()}
+	}
+	return []trace.SpanStartOption{telemetry.Passthrough()}
+}
+
+func workspaceMigrationDisplayPath(filePath string) string {
+	return path.Clean(filepath.ToSlash(filePath))
 }
 
 func validateWorkspaceMigrationTargetPaths(
@@ -322,11 +376,15 @@ func withWorkspaceMigrationFile(
 	filePath string,
 	contents []byte,
 	spanName string,
+	spanOpts ...trace.SpanStartOption,
 ) (updated dagql.ObjectResult[*core.Directory], rerr error) {
 	if spanName == "" {
 		spanName = "write migration file"
 	}
-	ctx, span := core.Tracer(ctx).Start(ctx, spanName)
+	if !workspaceMigrationProgressEnabled(ctx) {
+		spanOpts = append(spanOpts, telemetry.Internal())
+	}
+	ctx, span := core.Tracer(ctx).Start(ctx, spanName, spanOpts...)
 	defer telemetry.EndWithCause(span, &rerr)
 	updated, err := workspaceMigrationSelectDirectory(ctx, dir, "withNewFile", []dagql.NamedInput{
 		{Name: "path", Value: dagql.NewString(path.Clean(filepath.ToSlash(filePath)))},
