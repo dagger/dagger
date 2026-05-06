@@ -2300,11 +2300,7 @@ func (fe *frontendPretty) terminalCallback(span *dagui.Span) func() error {
 			if err != nil {
 				return err
 			}
-			c, err := dagger.Load[*dagger.Container](fe.runCtx, fe.dag, dagger.ID(id))
-			if err != nil {
-				return err
-			}
-			_, err = c.Terminal().Sync(fe.runCtx)
+			_, err = dagger.Ref[*dagger.Container](fe.dag, dagger.ID(id)).Terminal().Sync(fe.runCtx)
 			return err
 		}
 	case "Directory":
@@ -2316,11 +2312,7 @@ func (fe *frontendPretty) terminalCallback(span *dagui.Span) func() error {
 			if err != nil {
 				return err
 			}
-			d, err := dagger.Load[*dagger.Directory](fe.runCtx, fe.dag, dagger.ID(id))
-			if err != nil {
-				return err
-			}
-			_, err = d.Terminal().Sync(fe.runCtx)
+			_, err = dagger.Ref[*dagger.Directory](fe.dag, dagger.ID(id)).Terminal().Sync(fe.runCtx)
 			return err
 		}
 	case "Service":
@@ -2329,11 +2321,7 @@ func (fe *frontendPretty) terminalCallback(span *dagui.Span) func() error {
 			if err != nil {
 				return err
 			}
-			s, err := dagger.Load[*dagger.Service](fe.runCtx, fe.dag, dagger.ID(id))
-			if err != nil {
-				return err
-			}
-			_, err = s.Terminal().Sync(fe.runCtx)
+			_, err = dagger.Ref[*dagger.Service](fe.dag, dagger.ID(id)).Terminal().Sync(fe.runCtx)
 			return err
 		}
 	}
