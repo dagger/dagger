@@ -21,11 +21,20 @@ type workspaceSchema struct{}
 var _ SchemaResolvers = &workspaceSchema{}
 
 func (s *workspaceSchema) Install(srv *dagql.Server) {
+	currentWorkspaceField := dagql.Func("currentWorkspace", s.currentWorkspace).
+		WithInput(dagql.PerCallInput).
+		Doc("Detect and return the current workspace.").
+		Experimental("Highly experimental API extracted from a more ambitious workspace implementation.").
+		PassthroughTelemetry()
+
+	migrateField := dagql.Func("migrate", s.migrate).
+		DoNotCache("Plans workspace migration against live host filesystem").
+		Doc("Plan the explicit migration needed for the current workspace.",
+			"The returned plan has an empty changeset and no steps when no migration is needed.").
+		PassthroughTelemetry()
+
 	dagql.Fields[*core.Query]{
-		dagql.Func("currentWorkspace", s.currentWorkspace).
-			WithInput(dagql.PerCallInput).
-			Doc("Detect and return the current workspace.").
-			Experimental("Highly experimental API extracted from a more ambitious workspace implementation."),
+		currentWorkspaceField,
 		dagql.Func("__workspaceModule", s.workspaceModule),
 	}.Install(srv)
 
@@ -141,10 +150,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Refresh workspace-managed state and return the resulting changeset.",
 				"Currently this refreshes existing lockfile entries only.").
 			Experimental("Experimental workspace update API currently refreshes existing lockfile entries only."),
-		dagql.Func("migrate", s.migrate).
-			DoNotCache("Plans workspace migration against live host filesystem").
-			Doc("Plan the explicit migration needed for the current workspace.",
-				"The returned plan has an empty changeset and no steps when no migration is needed."),
+		migrateField,
 	}.Install(srv)
 
 	dagql.Fields[*core.WorkspaceCwd]{
