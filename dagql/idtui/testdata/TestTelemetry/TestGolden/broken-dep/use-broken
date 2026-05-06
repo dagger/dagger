@@ -6,20 +6,32 @@ Expected stderr:
 │ ┃ XX:XX:XX INF connected name=xxxxxxxxxxxxx.xxxxxxxxxxxxx.dagger.local client-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx server-version=vX.X.X-xxxxxxxxxxxx-xxxxxxxxxxxx
 ╰╴✔ starting session X.Xs
 
-✔ load workspace: . X.Xs
-╰╴✔ loading type definitions X.Xs
-
-✔ parsing command line arguments X.Xs
-
-$ brokenDep: BrokenDep! X.Xs CACHED
-✘ .useBroken: Void X.Xs ERROR
-├╴$ broken: Broken! X.Xs CACHED
-╰╴✘ .broken: Void X.Xs ERROR
-  ╰╴✘ load sdk runtime X.Xs ERROR
-    ! 4x exit code: 1
-    ╰╴✘ go SDK: load runtime X.Xs ERROR
-      ┃ # dagger/broken
-      ┃ ./main.go:6:6: undefined: ctx
-      ! 5x exit code: 1
+✘ load workspace: . X.Xs ERROR
+╰╴✘ loading type definitions X.Xs ERROR
+  ╰╴✔ load extra module: ./viztest/broken-dep X.Xs
+    ╰╴✘ ModuleSource.asModule: Module! X.Xs ERROR
+      ╰╴✘ load dep modules X.Xs ERROR
+        ╰╴✘ ModuleSource.asModule: Module! X.Xs ERROR
+          ├╴✘ go SDK: load runtime X.Xs ERROR
+          │ ! 4x exit code: 1
+          │ ├╴✘ withExec go build -ldflags '-s -w' -o /runtime . X.Xs ERROR
+          │ │ ┃ # dagger/broken
+          │ │ ┃ ./main.go:6:6: undefined: ctx
+          │ │ ! exit code: 1
+          │ ├╴✘ .withEntrypoint(args: ["/runtime"]): Container! X.Xs ERROR
+          │ │ ! 2x exit code: 1
+          │ ├╴✘ withWorkdir /scratch X.Xs ERROR
+          │ │ ! 2x exit code: 1
+          │ ├╴✘ .withoutMount(path: "/go/pkg/mod"): Container! X.Xs ERROR
+          │ │ ! 2x exit code: 1
+          │ ╰╴✘ .withoutMount(path: "/root/.cache/go-build"): Container! X.Xs ERROR
+          │   ! 2x exit code: 1
+          │
+          ╰╴✘ asModule getModDef X.Xs ERROR
+            ┇ load workspace: . › loading type definitions › load extra module: ./viztest/broken-dep › ModuleSource.asModule › load dep modules › ModuleSource.asModule › go SDK: load runtime ›
+            ✘ withExec go build -ldflags '-s -w' -o /runtime . X.Xs ERROR
+            ┃ # dagger/broken
+            ┃ ./main.go:6:6: undefined: ctx
+            ! exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

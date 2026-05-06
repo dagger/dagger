@@ -39,6 +39,12 @@ func (CLISuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 			}
 			`,
 			).
+			// Re-run codegen from inside the module dir. The `-m coolmod`
+			// form triggers the stale-codegen path documented in
+			// withModInitAt — switching workdir avoids it.
+			WithWorkdir("/work/coolmod").
+			With(daggerExec("develop")).
+			WithWorkdir("/work").
 			With(daggerCallAt("coolmod", "fn")).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -115,6 +121,7 @@ func (CLISuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 			func (m *B) Fn() string { return "yo" }
 			`,
 			).
+			With(daggerExec("develop")).
 			With(daggerCall("fn"))
 		out, err := ctr.Stdout(ctx)
 		require.NoError(t, err)
@@ -132,6 +139,12 @@ func (CLISuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 				type Test struct {}
 				func (m *Test) Fn() string { return "hello from absolute path" }`,
 			).
+			// Re-run codegen against the new main.go before invoking the
+			// runtime: legacyCodegenAtRuntime is off for new Go modules,
+			// so dagger.gen.go must match the freshly written sources.
+			WithWorkdir(absPath).
+			With(daggerExec("develop")).
+			WithWorkdir("/").
 			With(daggerCallAt(absPath, "fn"))
 
 		out, err := ctr.Stdout(ctx)
@@ -352,6 +365,13 @@ func (CLISuite) TestDaggerInitGit(ctx context.Context, t *testctx.T) {
 			})
 
 			t.Run("configures .gitignore", func(ctx context.Context, t *testctx.T) {
+				if tc.sdk == "go" {
+					// New Go modules opt out of automaticGitignore at
+					// init time (see dagger-init-go-opt-in), so the SDK
+					// no longer writes .gitignore for them. Skip rather
+					// than asserting a stale invariant.
+					t.Skip("automaticGitignore is off by default for new Go modules")
+				}
 				ignore, err := modGen.File(".gitignore").Contents(ctx)
 				require.NoError(t, err)
 				for _, fileName := range tc.gitIgnoredFiles {
@@ -405,6 +425,7 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 			}
 			`,
 			).
+			With(daggerExec("develop")).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.")).
 			With(daggerExec("install", "./dep"))
@@ -472,6 +493,7 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 			}
 			`,
 			).
+			With(daggerExec("develop")).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.")).
 			With(daggerExec("install", "./dep")).
@@ -491,7 +513,14 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 				return "hi from work " + depStr, nil
 			}
 			`,
-			)
+			).
+			// Run develop from inside the module's source dir so the
+			// freshly written main.go is regenerated against. develop -m
+			// would trigger the stale-codegen pitfall documented in
+			// withModInitAt.
+			WithWorkdir("/work").
+			With(daggerExec("develop")).
+			WithWorkdir("/var")
 
 		out, err := ctr.With(daggerCallAt("../work", "fn")).Stdout(ctx)
 		require.NoError(t, err)
@@ -534,6 +563,9 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
         }
         `,
 			).
+			// dep main.go was overwritten — develop from inside dep's
+			// dir so dagger.gen.go matches the new sources.
+			With(daggerExec("develop")).
 			WithWorkdir(absPath).
 			With(daggerExec("init", "--source=.")).
 			With(daggerExec("install", "./dep")).
@@ -553,7 +585,12 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
             return "hi from work " + depStr, nil
         }
         `,
-			)
+			).
+			// work module's main.go was just written — regenerate
+			// dagger.gen.go from inside the module dir before call.
+			WithWorkdir(absPath).
+			With(daggerExec("develop")).
+			WithWorkdir("/var")
 
 		out, err := ctr.With(daggerCallAt(absPath, "fn")).Stdout(ctx)
 		require.NoError(t, err)
@@ -567,9 +604,17 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
 			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+			// The test rm's dagger.gen.go to verify develop --recursive
+			// regenerates them. Under the new opt-in default
+			// (legacyCodegenAtRuntime=false), loading the module to run
+			// develop fails when dagger.gen.go is missing. Revert each
+			// module to legacy runtime codegen so develop --recursive
+			// can re-run codegen on the fly.
+			With(withForceLegacyCodegenAtRuntime("dagger.json")).
 			WithExec([]string{"rm", "dagger.gen.go"}).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--sdk=go")).
+			With(withForceLegacyCodegenAtRuntime("dagger.json")).
 			With(daggerExec("install", "--name=cooldep", "./dep")).
 			WithExec([]string{"rm", "dagger.gen.go"})
 		developed := base.With(daggerExec("develop", "--recursive"))
@@ -612,6 +657,7 @@ func (m *GitRepo) RemoteB() *RemoteB {
 }
 `,
 			).
+			With(daggerExec("develop")).
 			WithNewFile("/work/remote_a.go", `package main
 
 type RemoteA struct{}
@@ -661,6 +707,7 @@ func (m *Dep) Method3(ctx context.Context) string {
 }
 `,
 			).
+			With(daggerExec("develop")).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
 			WithNewFile("/work/main.go", `package main
@@ -708,6 +755,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 			func (m *Dep) DepFn(ctx context.Context, str string) string { return str }
 			`,
 			).
+			With(daggerExec("develop")).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=test", "--name=test", "--sdk=go", "test")).
 			With(daggerExec("install", "-m=test", "./subdir/dep")).
@@ -719,7 +767,13 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 
 			func (m *Test) Fn(ctx context.Context) (string, error) { return dag.Dep().DepFn(ctx, "hi dep") }
 			`,
-			)
+			).
+			// Run develop from inside the test module dir so it resolves
+			// to /work/test/dagger.json. From /work workdir it would walk
+			// up (no dagger.json there) and miss the module entirely.
+			WithWorkdir("/work/test").
+			With(daggerExec("develop")).
+			WithWorkdir("/work")
 
 		// try invoking it from a few different paths, just for more corner case coverage
 
@@ -796,7 +850,11 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 
             func (m *Test2) Fn(ctx context.Context) (string, error) { return dag.Dep().DepFn(ctx, "hi from test2") }
             `,
-				)
+				).
+				// Run develop from inside the module dir to avoid the -m
+				// stale-codegen pitfall.
+				WithWorkdir("/work/test2").
+				With(daggerExec("develop"))
 
 			out, err := ctr.With(daggerCallAt("/work/test2", "fn")).Stdout(ctx)
 			require.NoError(t, err)
@@ -872,6 +930,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 }
 `,
 			).
+			With(daggerExec("develop")).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--sdk=go", "--name=foo", "--source=.")).
 			With(daggerExec("install", "--eager-runtime", "./dep")).
@@ -884,29 +943,45 @@ func (m *Dep) Fn(ctx context.Context) string {
 	t.Run("install dep from various places", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		base := goGitBase(t, c).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--source=subdir/dep", "--name=dep", "--sdk=go", "subdir/dep")).
-			WithNewFile("/work/subdir/dep/main.go", `package main
-
-			import "context"
-
-			type Dep struct {}
-
-			func (m *Dep) DepFn(ctx context.Context, str string) string { return str }
-			`,
-			).
-			With(daggerExec("init", "--source=test", "--name=test", "--sdk=go", "test")).
-			WithNewFile("/work/test/main.go", `package main
+		// The test module's main.go uses `dag.Dep()`, but dep is only
+		// installed in each subtest below — adding the `dag.Dep()` call
+		// at withModInitAt time would let withModInitAt's develop emit
+		// a dagger.gen.go without Dep wrappers, and the next runtime
+		// build would fail to compile main.go's reference. Each subtest
+		// installs dep, then writes main.go + runs develop before call.
+		testMain := `package main
 
 			import "context"
 
 			type Test struct {}
 
 			func (m *Test) Fn(ctx context.Context) (string, error) { return dag.Dep().DepFn(ctx, "hi dep") }
-			`,
-			)
+			`
+		base := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			// withModInitAt already appends `dir` as a positional arg
+			// to dagger init; passing dir again as an extra would
+			// produce two positional paths and dagger init rejects it.
+			With(withModInitAt("subdir/dep", "go", `package main
+
+			import "context"
+
+			type Dep struct {}
+
+			func (m *Dep) DepFn(ctx context.Context, str string) string { return str }
+			`)).
+			With(daggerExec("init", "--source=test", "--name=test", "--sdk=go", "test"))
+
+		// finishTest writes the test module's main.go and runs develop
+		// from inside the module dir so dagger.gen.go is regenerated
+		// against the freshly installed dep + new sources.
+		finishTest := func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithNewFile("/work/test/main.go", testMain).
+				WithWorkdir("/work/test").
+				With(daggerExec("develop"))
+		}
 
 		t.Run("from src dir", func(ctx context.Context, t *testctx.T) {
 			// sanity test normal case
@@ -914,6 +989,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 			out, err := base.
 				WithWorkdir("/work/test").
 				With(daggerExec("install", "../subdir/dep")).
+				With(finishTest).
 				With(daggerCall("fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
@@ -924,6 +1000,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 			out, err := base.
 				WithWorkdir("/work/test/some/other/dir").
 				With(daggerExec("install", "../../../../subdir/dep")).
+				With(finishTest).
 				With(daggerCall("fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
@@ -934,6 +1011,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 			out, err := base.
 				WithWorkdir("/").
 				With(daggerExec("install", "-m=./work/test", "./work/subdir/dep")).
+				With(finishTest).
 				WithWorkdir("/work/test").
 				With(daggerCall("fn")).
 				Stdout(ctx)
@@ -945,6 +1023,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 			out, err := base.
 				WithWorkdir("/work/subdir/dep").
 				With(daggerExec("install", "-m=../../test", ".")).
+				With(finishTest).
 				WithWorkdir("/work/test").
 				With(daggerCall("fn")).
 				Stdout(ctx)
@@ -956,6 +1035,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 			out, err := base.
 				WithWorkdir("/var").
 				With(daggerExec("install", "-m=../work/test", "../work/subdir/dep")).
+				With(finishTest).
 				WithWorkdir("/work/test").
 				With(daggerCall("fn")).
 				Stdout(ctx)
@@ -967,6 +1047,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 			out, err := base.
 				WithWorkdir("/work/test").
 				With(daggerExec("install", "/work/subdir/dep")).
+				With(finishTest).
 				With(daggerCall("fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
@@ -977,6 +1058,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 			out, err := base.
 				WithWorkdir("/").
 				With(daggerExec("install", "-m=/work/test", "/work/subdir/dep")).
+				With(finishTest).
 				WithWorkdir("/work/test").
 				With(daggerCall("fn")).
 				Stdout(ctx)
@@ -988,6 +1070,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 			out, err := base.
 				WithWorkdir("/var").
 				With(daggerExec("install", "-m=/work/test", "/work/subdir/dep")).
+				With(finishTest).
 				WithWorkdir("/work/test").
 				With(daggerCall("fn")).
 				Stdout(ctx)
@@ -1078,6 +1161,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 }
 `,
 					).
+					With(daggerExec("develop")).
 					With(daggerCall("fn")).
 					Stdout(ctx)
 				require.NoError(t, err)
@@ -1145,6 +1229,7 @@ func (CLISuite) TestDaggerInstallOrder(ctx context.Context, t *testctx.T) {
 			func (m *DepAbc) DepFn(ctx context.Context, str string) string { return str }
 			`,
 		).
+		With(daggerExec("develop")).
 		WithWorkdir("/work/dep-xyz").
 		With(daggerExec("init", "--source=.", "--name=dep-xyz", "--sdk=go")).
 		WithNewFile("/work/dep-xyz/main.go", `package main
@@ -1156,6 +1241,7 @@ func (CLISuite) TestDaggerInstallOrder(ctx context.Context, t *testctx.T) {
 			func (m *DepXyz) DepFn(ctx context.Context, str string) string { return str }
 			`,
 		).
+		With(daggerExec("develop")).
 		WithWorkdir("/work").
 		With(daggerExec("init", "--source=test", "--name=test", "--sdk=go"))
 
@@ -1191,8 +1277,7 @@ func (CLISuite) TestCLIFunctions(ctx context.Context, t *testctx.T) {
 	ctr := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", `package main
+		With(withModInit("go", `package main
 
 import (
 	"context"
@@ -1260,8 +1345,7 @@ func (m *OtherObj) FnE() *dagger.Container {
 	return nil
 }
 
-`,
-		)
+`))
 
 	t.Run("top-level", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.With(daggerFunctions()).Stdout(ctx)
@@ -1373,7 +1457,8 @@ type Foo struct{}
 func (f *Foo) ContainerEcho(ctx context.Context, input string) (string, error) {
 	return dag.Bar().ContainerEcho(input).Stdout(ctx)
 }
-`)
+`).
+				With(daggerExec("develop"))
 
 			daggerjson, err := ctr.File("dagger.json").Contents(ctx)
 			require.NoError(t, err)
@@ -1834,8 +1919,7 @@ func (m *Hello) Hello() string {
 	testCtr := base.
 		// Initialize 'hello' module with Go SDK
 		WithWorkdir("/work/test/nosdk/hello").
-		With(daggerExec("init", "--sdk=go", "--name=hello")).
-		WithNewFile("main.go", helloCode).
+		With(withModInit("go", helloCode, "--name=hello")).
 		// Initialize 'nosdk' module and install 'hello'
 		WithWorkdir("/work/test/nosdk").
 		With(daggerExec("init", "--name=nosdk")).

@@ -1,0 +1,14 @@
+{
+  "name": "workflow",
+  "description": "Workflow module",
+  "enums": [
+    {
+      "name": "Status",
+      "description": "Status represents a state",
+      "values": [
+        { "name": "PENDING", "description": "Pending state" },
+        { "name": "ACTIVE", "description": "Active state" }
+      ]
+    }
+  ]
+}

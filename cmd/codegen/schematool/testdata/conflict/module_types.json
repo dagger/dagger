@@ -1,0 +1,10 @@
+{
+  "name": "conflicting",
+  "description": "Module that redeclares Container",
+  "objects": [
+    {
+      "name": "Container",
+      "description": "My own Container"
+    }
+  ]
+}

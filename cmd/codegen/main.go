@@ -21,7 +21,8 @@ func init() {
 	rootCmd.AddCommand(generateClientCmd)
 	rootCmd.AddCommand(generateModuleCmd)
 	rootCmd.AddCommand(generateLibraryCmd)
-	rootCmd.AddCommand(generateTypeDefsCmd)
+	rootCmd.AddCommand(inspectSchemaCmd)
+	rootCmd.AddCommand(mergeSchemaCmd)
 
 	rootCmd.PersistentFlags().StringVar(&lang, "lang", "go", "language to generate")
 	rootCmd.PersistentFlags().StringVarP(&outputDir, "output", "o", ".", "output directory")

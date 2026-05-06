@@ -1140,8 +1140,7 @@ func (WorkspaceSuite) TestEntrypointProxyDirectoryField(ctx context.Context, t *
 	base := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--name=playground", "--sdk=go", "--source=.")).
-		WithNewFile("main.go", `package main
+		With(withModInit("go", `package main
 
 import (
 	"dagger/playground/internal/dagger"
@@ -1158,7 +1157,7 @@ func New() Playground {
 func (p *Playground) SayHello() string {
 	return "hello!"
 }
-`)
+`, "--name=playground"))
 
 	// Query through entrypoint proxies — exercises ContainerRuntime.Call
 	// because the proxy resolver delegates to the inner server, which

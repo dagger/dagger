@@ -107,8 +107,7 @@ func (m *Greeter) ReadCheck(ctx context.Context) error {
 			WithNewFile("/work/workspace-default-path/target-subdir/maven/hello.txt", subdirFileContent).
 			// Scaffold the greeter toolchain.
 			WithWorkdir("/work/workspace-default-path/greeter").
-			With(daggerExec("init", "--sdk=go", "--name=greeter", "--source=.")).
-			With(sdkSource("go", greeterSource)).
+			With(withModInit("go", greeterSource, "--name=greeter")).
 			// Scaffold the workspace root and register greeter as a toolchain.
 			WithWorkdir("/work").
 			With(daggerExec("init")).
@@ -248,8 +247,7 @@ func (m *Greeter) Read(ctx context.Context) (string, error) {
 
 	toolchainBareSetup := goGitBase(t, c).
 		WithNewFile("/work/target-subdir/nested/hello.txt", toolchainFileContent).
-		With(daggerExec("init", "--sdk=go", "--name=greeter", "--source=.")).
-		With(sdkSource("go", greeterSource)).
+		With(withModInit("go", greeterSource, "--name=greeter")).
 		WithExec([]string{"sh", "-c", `git add . && git commit -m "init toolchain"`}).
 		WithExec([]string{"sh", "-c", `
 set -eux
@@ -332,8 +330,7 @@ func (m *Greeter) Read(ctx context.Context) (string, error) {
 		return goGitBase(t, c).
 			WithNewFile("/work/target-subdir/maven/hello.txt", moduleFileContent).
 			WithWorkdir("/work/toolchains/greeter").
-			With(daggerExec("init", "--sdk=go", "--name=greeter", "--source=.")).
-			With(sdkSource("go", greeterSource)).
+			With(withModInit("go", greeterSource, "--name=greeter")).
 			WithWorkdir("/work").
 			With(daggerExec("init")).
 			With(daggerExec("toolchain", "install", "./toolchains/greeter")).
@@ -430,8 +427,7 @@ func (m *Greeter) Read(ctx context.Context) (string, error) {
 
 	toolchainBareSetup := goGitBase(t, c).
 		WithNewFile("/work/target-subdir/maven/hello.txt", toolchainFileContent).
-		With(daggerExec("init", "--sdk=go", "--name=greeter", "--source=.")).
-		With(sdkSource("go", greeterSource)).
+		With(withModInit("go", greeterSource, "--name=greeter")).
 		WithExec([]string{"sh", "-c", `git add . && git commit -m "init toolchain"`}).
 		WithExec([]string{"sh", "-c", `
 set -eux

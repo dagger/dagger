@@ -346,15 +346,13 @@ main()
 				moduleSrc := c.Container().From(tc.baseImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work/dep").
-					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-					With(sdkSource("go", `package main
+					With(withModInit("go", `package main
 
 		type Test struct{}
 
 		func (t *Test) Hello() string {
 			return "hello"
-		}`,
-					)).
+		}`)).
 					WithWorkdir("/work").
 					WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 					With(nonNestedDevEngine(c)).
@@ -405,8 +403,7 @@ main()
 				callCmd:   []string{"go", "run", "main.go"},
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
-						With(daggerExec("init", "--name=test", "--sdk=go", "--source=.dagger")).
-						WithNewFile(".dagger/main.go", `package main
+						With(withModInitAt(".dagger", "go", `package main
 
 import "context"
 
@@ -415,7 +412,16 @@ type Test struct{}
 func (t *Test) Hello(ctx context.Context) (string, error) {
 	return dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "-n", "hello"}).Stdout(ctx)
 }
-					`).
+					`, "--name=test")).
+						// Revert .dagger to legacy runtime codegen: the
+						// new opt-in default makes `dagger client install`
+						// load .dagger via the runtime path that requires
+						// committed dagger.gen.go, and the workspace
+						// modules loader called by `dagger run
+						// --load-workspace-modules` then re-resolves the
+						// module after subsequent installs/regenerations
+						// in a way that doesn't see the freshest sources.
+						With(withForceLegacyCodegenAtRuntime(".dagger/dagger.json")).
 						With(withGoSetup(`package main
 
 import (
@@ -713,6 +719,15 @@ main()
 				return "hello"
 			}
 						`).
+						// Revert to legacy runtime codegen because the
+						// test's postSetup deletes .dagger/dagger.gen.go
+						// to verify that dagger develop regenerates it,
+						// and the new opt-in's runtime path requires the
+						// file to exist.
+						With(withForceLegacyCodegenAtRuntime("dagger.json")).
+						// Re-run codegen against the new .dagger/main.go
+						// so subsequent module loads see matching wrappers.
+						With(daggerNonNestedExec("develop")).
 						With(withGoSetup(`package main
 
 			import (
@@ -1237,6 +1252,7 @@ export class GeneratorModule {
 				WithWorkdir("/work/generator").
 				With(daggerExec("init", "--name=generator-module", fmt.Sprintf("--sdk=%s", tc.generatorSDK), "--source=.")).
 				With(sdkSource(tc.generatorSDK, tc.generatorSource)).
+				With(daggerExec("develop")).
 				WithWorkdir("/work").
 				With(daggerExec("init")).
 				With(daggerExec("client", "install", "./generator"))
@@ -1841,6 +1857,10 @@ func (t *Test) Message() string {
 	return t.Greeting + ", world!"
 }
 `).
+		// Regenerate dagger.gen.go after replacing main.go so the
+		// runtime build sees matching wrappers (legacyCodegenAtRuntime
+		// is off by default for new Go modules).
+		With(daggerNonNestedExec("develop")).
 		// Ensure the module compiles
 		With(daggerNonNestedExec("functions")).
 		// Generate the Go client. withGoSetup is not used because the

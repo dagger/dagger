@@ -1,0 +1,118 @@
+{
+  "__schema": {
+    "queryType": {
+      "name": "Query"
+    },
+    "types": [
+      {
+        "kind": "OBJECT",
+        "name": "Query",
+        "fields": [
+          {
+            "name": "echo",
+            "description": "Echo object",
+            "type": {
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "OBJECT",
+                "name": "Echo"
+              }
+            },
+            "args": [],
+            "isDeprecated": false,
+            "deprecationReason": null,
+            "directives": [
+              {
+                "name": "sourceModuleName",
+                "args": [
+                  {
+                    "name": "name",
+                    "value": "\"echo\""
+                  }
+                ]
+              },
+              {
+                "name": "sourceMap",
+                "args": [
+                  {
+                    "name": "module",
+                    "value": "\"echo\""
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "interfaces": [],
+        "directives": []
+      },
+      {
+        "kind": "OBJECT",
+        "name": "Container",
+        "interfaces": [],
+        "directives": []
+      },
+      {
+        "kind": "OBJECT",
+        "name": "Echo",
+        "description": "Echo object",
+        "fields": [
+          {
+            "name": "say",
+            "description": "Say something",
+            "type": {
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String"
+              }
+            },
+            "args": [
+              {
+                "name": "msg",
+                "description": "",
+                "defaultValue": null,
+                "type": {
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "kind": "SCALAR",
+                    "name": "String"
+                  }
+                },
+                "directives": [],
+                "isDeprecated": false,
+                "deprecationReason": null
+              }
+            ],
+            "isDeprecated": false,
+            "deprecationReason": null,
+            "directives": []
+          }
+        ],
+        "interfaces": [],
+        "directives": [
+          {
+            "name": "sourceModuleName",
+            "args": [
+              {
+                "name": "name",
+                "value": "\"echo\""
+              }
+            ]
+          },
+          {
+            "name": "sourceMap",
+            "args": [
+              {
+                "name": "module",
+                "value": "\"echo\""
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "directives": []
+  },
+  "__schemaVersion": "test"
+}
