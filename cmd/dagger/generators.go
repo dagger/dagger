@@ -29,9 +29,8 @@ func init() {
 }
 
 var generateCmd = &cobra.Command{
-	Hidden: true,
-	Use:    "generate [options] [pattern...]",
-	Short:  "Generate assets of your project",
+	Use:   "generate [options] [pattern...]",
+	Short: "Generate assets of your project",
 	Long: `Generate assets of your project
 
 Examples:
@@ -40,7 +39,8 @@ Examples:
   dagger generate go:bin                     # Generate by selecting the generator function
   dagger -W github.com/acme/ws generate go:bin  # Generate against explicit workspace
 `,
-	Args: cobra.ArbitraryArgs,
+	GroupID: execGroup.ID,
+	Args:    cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		params := client.Params{
 			EnableCloudScaleOut:  enableScaleOut,
