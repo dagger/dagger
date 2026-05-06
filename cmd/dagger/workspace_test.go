@@ -59,6 +59,17 @@ func TestWorkspaceCommandGrouping(t *testing.T) {
 	require.Equal(t, workspaceGroup.ID, lockCmd.GroupID)
 }
 
+func TestExecutionCommandGrouping(t *testing.T) {
+	require.Equal(t, execGroup.ID, queryCmd.GroupID)
+	require.Equal(t, execGroup.ID, runCmd.GroupID)
+	require.Equal(t, execGroup.ID, checksCmd.GroupID)
+	require.Equal(t, execGroup.ID, generateCmd.GroupID)
+	require.Equal(t, execGroup.ID, upCmd.GroupID)
+	require.False(t, checksCmd.Hidden)
+	require.False(t, generateCmd.Hidden)
+	require.False(t, upCmd.Hidden)
+}
+
 func TestRootHelpShowsWorkspaceCommandGroup(t *testing.T) {
 	oldOut := rootCmd.OutOrStdout()
 	oldErr := rootCmd.ErrOrStderr()
@@ -90,6 +101,29 @@ func TestRootHelpShowsWorkspaceCommandGroup(t *testing.T) {
 	require.Contains(t, workspaceSection, "  workspace")
 	require.Contains(t, workspaceSection, "  migrate")
 	require.Contains(t, workspaceSection, "  lock")
+}
+
+func TestRootHelpShowsExecutionCommandGroup(t *testing.T) {
+	oldOut := rootCmd.OutOrStdout()
+	oldErr := rootCmd.ErrOrStderr()
+	var out bytes.Buffer
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&out)
+	t.Cleanup(func() {
+		rootCmd.SetOut(oldOut)
+		rootCmd.SetErr(oldErr)
+	})
+
+	require.NoError(t, rootCmd.Help())
+
+	help := out.String()
+	require.Contains(t, help, "EXECUTION COMMANDS")
+
+	require.Contains(t, help, "  check")
+	require.Contains(t, help, "  generate")
+	require.Contains(t, help, "  query")
+	require.Contains(t, help, "  run")
+	require.Contains(t, help, "  up")
 }
 
 func TestGenHelpDoesNotPanicWithModuleSubcommands(t *testing.T) {
