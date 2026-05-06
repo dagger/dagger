@@ -12,6 +12,10 @@ type CallRequest struct {
 	TTL            int64
 	DoNotCache     bool
 	IsPersistable  bool
+
+	// PassthroughTelemetry keeps the call span available for trace metadata while
+	// asking the UI to show its children in its place.
+	PassthroughTelemetry bool
 }
 
 func (req *CallRequest) Clone() *CallRequest {
@@ -23,11 +27,12 @@ func (req *CallRequest) Clone() *CallRequest {
 		frame = &ResultCall{}
 	}
 	return &CallRequest{
-		ResultCall:     frame,
-		ConcurrencyKey: req.ConcurrencyKey,
-		TTL:            req.TTL,
-		DoNotCache:     req.DoNotCache,
-		IsPersistable:  req.IsPersistable,
+		ResultCall:           frame,
+		ConcurrencyKey:       req.ConcurrencyKey,
+		TTL:                  req.TTL,
+		DoNotCache:           req.DoNotCache,
+		IsPersistable:        req.IsPersistable,
+		PassthroughTelemetry: req.PassthroughTelemetry,
 	}
 }
 
