@@ -38,6 +38,43 @@ func TestMatchWorkspaceInclude(t *testing.T) {
 	})
 }
 
+func TestWorkspaceConfigWithCompatFallback(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("no config and no compat returns empty config", func(t *testing.T) {
+		cfg, err := workspaceConfigWithCompatFallback(ctx, &core.Workspace{})
+		require.NoError(t, err)
+		require.Empty(t, cfg.Modules)
+		require.Empty(t, cfg.Ports)
+	})
+
+	t.Run("compat workspace projects skips and port mappings", func(t *testing.T) {
+		compat, err := workspace.ParseCompatWorkspace([]byte(`{
+			"name": "app",
+			"toolchains": [{
+				"name": "hello-with-services",
+				"source": "./hello-with-services",
+				"ignoreServices": ["redis", "infra:database"],
+				"portMappings": {
+					"web": ["3000:80"]
+				}
+			}]
+		}`))
+		require.NoError(t, err)
+		require.NotNil(t, compat)
+
+		ws := &core.Workspace{}
+		ws.SetCompatWorkspace(compat)
+		cfg, err := workspaceConfigWithCompatFallback(ctx, ws)
+		require.NoError(t, err)
+		require.Equal(t, []string{"redis", "infra:database"}, cfg.Modules["hello-with-services"].Up.Skip)
+		require.Equal(t, workspace.PortMapping{
+			BackendService: "hello-with-services:web",
+			BackendPort:    80,
+		}, cfg.Ports["3000"])
+	})
+}
+
 func TestWorkspaceConfigSkipPatterns(t *testing.T) {
 	ctx := context.Background()
 
