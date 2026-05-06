@@ -210,39 +210,21 @@ up.skip = ["redis"]
 	require.Contains(t, out, "hello-with-services:infra:database")
 }
 
-func (UpSuite) TestUpPortMapping(ctx context.Context, t *testctx.T) {
-	t.Skip("compat: legacy toolchains[].portMappings drops at runtime; awaiting top-level [ports.<host>] syntax + migration")
-
+func (UpSuite) TestWorkspaceUpPortMapping(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := upTestEnv(t, c)
 	require.NoError(t, err)
 
-	// Install hello-with-services as a toolchain with port mapping
-	// Remap web from port 80 to host port 3000
-	modGen = modGen.
-		WithWorkdir("app").
-		With(daggerExec("init")).
-		WithNewFile("dagger.json", `{
-  "name": "app",
-  "engineVersion": "v0.16.0",
-  "toolchains": [
-    {
-      "name": "hello-with-services",
-      "source": "../hello-with-services",
-      "portMappings": {
-        "web": ["3000:80"]
-      },
-      "ignoreServices": [
-        "redis",
-        "infra:database"
-      ]
-    }
-  ]
-}`)
+	ctr := modGen.WithNewFile(".dagger/config.toml", `[modules.hello-with-services]
+source = "../hello-with-services"
+up.skip = ["redis", "infra:database"]
 
-	// Run dagger up in the background with port mapping, verify service
-	// is accessible on the remapped port.
-	out, err := modGen.
+[ports.3000]
+backendService = "hello-with-services:web"
+backendPort = 80
+`)
+
+	out, err := ctr.
 		With(daggerUpVerify("", "http://localhost:3000", "nginx",
 			"OK: port mapping works", 120)).
 		CombinedOutput(ctx)
