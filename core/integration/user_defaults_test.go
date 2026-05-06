@@ -648,7 +648,7 @@ class Test:
 
 func (UserDefaultsSuite) TestSimple(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ctr := nestedDaggerContainer(t, c, "go", "defaults")
+	base := nestedDaggerContainer(t, c, "go", "defaults")
 	for _, tc := range []struct {
 		description    string
 		dotEnvPath     string
@@ -742,6 +742,7 @@ DEFAULTS_MESSAGE_NAME=monde
 	} {
 		tc := tc
 		t.Run(tc.description, func(ctx context.Context, t *testctx.T) {
+			ctr := base
 			if tc.prepare != nil {
 				ctr = tc.prepare(ctr)
 			}
