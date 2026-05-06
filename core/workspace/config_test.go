@@ -235,6 +235,23 @@ func TestWriteConfigValue(t *testing.T) {
 		}, cfg.Env["ci"])
 	})
 
+	t.Run("writes module skip fields", func(t *testing.T) {
+		t.Parallel()
+
+		data, err := WriteConfigValue(nil, "modules.greeter.generate.skip", "generate-other-files, other-generators:*")
+		require.NoError(t, err)
+		data, err = WriteConfigValue(data, "modules.greeter.check.skip", "flaky-check")
+		require.NoError(t, err)
+		data, err = WriteConfigValue(data, "modules.greeter.up.skip", "redis, infra:database")
+		require.NoError(t, err)
+
+		cfg, err := ParseConfig(data)
+		require.NoError(t, err)
+		require.Equal(t, []string{"generate-other-files", "other-generators:*"}, cfg.Modules["greeter"].Generate.Skip)
+		require.Equal(t, []string{"flaky-check"}, cfg.Modules["greeter"].Check.Skip)
+		require.Equal(t, []string{"redis", "infra:database"}, cfg.Modules["greeter"].Up.Skip)
+	})
+
 	t.Run("rejects invalid keys", func(t *testing.T) {
 		t.Parallel()
 
