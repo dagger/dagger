@@ -374,7 +374,7 @@ func (WorkspaceCompatSuite) TestCompatWarning(ctx context.Context, t *testctx.T)
 	blueprintDir := filepath.Join(workdir, "blueprint")
 	require.NoError(t, os.MkdirAll(blueprintDir, 0o755))
 
-	_, err := hostDaggerExec(ctx, t, blueprintDir, "module", "init", "--sdk=go", "hello")
+	_, err := hostDaggerExec(ctx, t, blueprintDir, "module", "init", "--sdk=go", "hello", ".")
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(blueprintDir, "main.go"), []byte(`package main
 
