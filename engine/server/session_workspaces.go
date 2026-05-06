@@ -735,8 +735,9 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		}
 	}
 
-	// (2) CWD module (nearest dagger.json by find-up from the caller)
-	if hasModuleConfig && !hasPendingExtraModules(client) && !suppressCWDModuleForCompatWorkspace(compatWorkspace, moduleDir) {
+	// (2) CWD module fallback (nearest dagger.json by find-up from the caller).
+	// Initialized workspace config owns module loading completely.
+	if wsConfig == nil && hasModuleConfig && !hasPendingExtraModules(client) && !suppressCWDModuleForCompatWorkspace(compatWorkspace, moduleDir) {
 		wsDir := filepath.Join(ws.Root, ws.Path)
 		rel, _ := filepath.Rel(wsDir, moduleDir)
 		pending = append(pending, pendingModule{
