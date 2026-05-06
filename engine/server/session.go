@@ -1199,10 +1199,9 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 
 func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
 	ctx := r.Context()
-	bklog.G(ctx).Debugf("session attachables handling conn %s", client.clientID)
+	slog.DebugContext(ctx, "session attachables handling conn", "clientID", client.clientID)
 	defer func() {
-		bklog.G(ctx).WithError(rerr).Debugf("session attachables handle conn done %s", client.clientID)
-		slog.ExtraDebug("session attachables handle conn done",
+		slog.DebugContext(ctx, "session attachables handle conn done",
 			"err", rerr,
 			"ctxErr", ctx.Err(),
 			"clientID", client.clientID,

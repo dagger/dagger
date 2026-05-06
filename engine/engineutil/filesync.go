@@ -11,11 +11,11 @@ import (
 	"path/filepath"
 
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
-	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/fsutil"
 	fsutiltypes "github.com/dagger/dagger/internal/fsutil/types"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 func (c *Client) diffcopy(ctx context.Context, opts engine.LocalImportOpts, msg any) error {
@@ -90,14 +90,10 @@ func (c *Client) LocalDirExport(
 	merge bool,
 	removePaths []string,
 ) (rerr error) {
-	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("export_path", destPath))
-	bklog.G(ctx).Debug("exporting local dir")
+	ctx = slog.WithLogger(ctx, slog.FromContext(ctx).With("export_path", destPath))
+	slog.DebugContext(ctx, "exporting local dir")
 	defer func() {
-		lg := bklog.G(ctx)
-		if rerr != nil {
-			lg = lg.WithError(rerr)
-		}
-		lg.Trace("finished exporting local dir")
+		slog.TraceContext(ctx, "finished exporting local dir", "err", rerr)
 	}()
 
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
@@ -144,18 +140,14 @@ func (c *Client) LocalFileExport(
 	destPath string,
 	allowParentDirPath bool,
 ) (rerr error) {
-	ctx = bklog.WithLogger(ctx, bklog.G(ctx).
-		WithField("export_path", destPath).
-		WithField("file_path", filePath).
-		WithField("allow_parent_dir_path", allowParentDirPath),
-	)
-	bklog.G(ctx).Debug("exporting local file")
+	ctx = slog.WithLogger(ctx, slog.FromContext(ctx).With(
+		"export_path", destPath,
+		"file_path", filePath,
+		"allow_parent_dir_path", allowParentDirPath,
+	))
+	slog.DebugContext(ctx, "exporting local file")
 	defer func() {
-		lg := bklog.G(ctx)
-		if rerr != nil {
-			lg = lg.WithError(rerr)
-		}
-		lg.Trace("finished exporting local file")
+		slog.TraceContext(ctx, "finished exporting local file", "err", rerr)
 	}()
 
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
@@ -230,14 +222,10 @@ func (c *Client) LocalFileExport(
 // IOReaderExport exports the contents of an io.Reader to the caller's local fs as a file
 // TODO: de-dupe this with the above method to extent possible
 func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath string, destMode os.FileMode) (rerr error) {
-	ctx = bklog.WithLogger(ctx, bklog.G(ctx).WithField("export_path", destPath))
-	bklog.G(ctx).Debug("exporting bytes")
+	ctx = slog.WithLogger(ctx, slog.FromContext(ctx).With("export_path", destPath))
+	slog.DebugContext(ctx, "exporting bytes")
 	defer func() {
-		lg := bklog.G(ctx)
-		if rerr != nil {
-			lg = lg.WithError(rerr)
-		}
-		lg.Trace("finished exporting bytes")
+		slog.TraceContext(ctx, "finished exporting bytes", "err", rerr)
 	}()
 
 	ctx = engine.LocalExportOpts{

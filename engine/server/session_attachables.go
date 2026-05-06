@@ -11,21 +11,13 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/v2/defaults"
-	"github.com/dagger/dagger/internal/buildkit/util/bklog"
-	"github.com/dagger/dagger/internal/buildkit/util/grpcerrors"
-	"github.com/dagger/dagger/internal/buildkit/util/tracing"
-	"github.com/sirupsen/logrus"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/dagger/dagger/engine/engineutil"
+	"github.com/dagger/dagger/engine/slog"
 )
-
-var sessionAttachablePropagators = propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{})
 
 type sessionAttachableManager struct {
 	mu      sync.Mutex
@@ -180,22 +172,13 @@ func attachableClientConn(ctx context.Context, conn net.Conn) (context.Context, 
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(defaults.DefaultMaxRecvMsgSize)),
 		grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(defaults.DefaultMaxSendMsgSize)),
-		grpc.WithUnaryInterceptor(grpcerrors.UnaryClientInterceptor),
-		grpc.WithStreamInterceptor(grpcerrors.StreamClientInterceptor),
 	}
 
-	if span := trace.SpanFromContext(ctx); span.SpanContext().IsValid() {
-		statsHandler := tracing.ClientStatsHandler(
-			otelgrpc.WithTracerProvider(span.TracerProvider()),
-			otelgrpc.WithPropagators(sessionAttachablePropagators),
-		)
-		dialOpts = append(dialOpts, grpc.WithStatsHandler(statsHandler))
-	}
-
-	cc, err := grpc.DialContext(ctx, "localhost", dialOpts...)
+	cc, err := grpc.NewClient("passthrough:localhost", dialOpts...)
 	if err != nil {
 		return ctx, nil, fmt.Errorf("failed to create grpc client: %w", err)
 	}
+	cc.Connect()
 
 	ctx, cancel := context.WithCancelCause(ctx)
 	go monitorAttachableHealth(ctx, cc, cancel)
@@ -230,36 +213,41 @@ func monitorAttachableHealth(ctx context.Context, cc *grpc.ClientConn, cancelCon
 			cancel(context.Canceled)
 
 			lastHealthcheckDuration = time.Since(healthcheckStart)
-			logFields := logrus.Fields{
-				"timeout":        timeout,
-				"actualDuration": lastHealthcheckDuration,
-			}
 
 			if err != nil {
 				select {
 				case <-ctx.Done():
-					bklog.G(ctx).Debug("context done, skipping healthcheck error")
+					slog.DebugContext(ctx, "context done, skipping healthcheck error")
 					return
 				default:
 				}
 				if failedBefore {
-					bklog.G(ctx).Debug("healthcheck failed fatally")
+					slog.DebugContext(ctx, "healthcheck failed fatally")
 					return
 				}
 
 				failedBefore = true
 				consecutiveSuccessful = 0
-				bklog.G(ctx).WithFields(logFields).Debug("healthcheck failed")
+				slog.DebugContext(ctx, "healthcheck failed",
+					"timeout", timeout,
+					"actualDuration", lastHealthcheckDuration,
+				)
 			} else {
 				consecutiveSuccessful++
 
 				if consecutiveSuccessful >= 5 && failedBefore {
 					failedBefore = false
-					bklog.G(ctx).WithFields(logFields).Debug("reset healthcheck failure")
+					slog.DebugContext(ctx, "reset healthcheck failure",
+						"timeout", timeout,
+						"actualDuration", lastHealthcheckDuration,
+					)
 				}
 			}
 
-			bklog.G(ctx).WithFields(logFields).Trace("healthcheck completed")
+			slog.TraceContext(ctx, "healthcheck completed",
+				"timeout", timeout,
+				"actualDuration", lastHealthcheckDuration,
+			)
 		}
 	}
 }

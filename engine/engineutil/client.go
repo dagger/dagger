@@ -29,7 +29,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
-	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
 	"github.com/dagger/dagger/internal/buildkit/util/network"
 	"github.com/docker/docker/pkg/idtools"
@@ -46,6 +45,7 @@ import (
 	"github.com/dagger/dagger/engine/session/prompt"
 	"github.com/dagger/dagger/engine/session/store"
 	"github.com/dagger/dagger/engine/session/terminal"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 type SessionCaller interface {
@@ -225,9 +225,9 @@ func (c *Client) GetSessionCaller(ctx context.Context) (_ SessionCaller, rerr er
 		return nil, err
 	}
 
-	bklog.G(ctx).Tracef("getting session for %q", clientMetadata.ClientID)
+	slog.TraceContext(ctx, "getting session", "clientID", clientMetadata.ClientID)
 	defer func() {
-		bklog.G(ctx).WithError(rerr).Tracef("got session for %q", clientMetadata.ClientID)
+		slog.TraceContext(ctx, "got session", "clientID", clientMetadata.ClientID, "err", rerr)
 	}()
 
 	caller, err := c.GetClientCaller(ctx, clientMetadata.ClientID)
@@ -295,7 +295,7 @@ func (c *Client) ListenHostToContainer(
 		for {
 			res, err := listener.Recv()
 			if err != nil {
-				bklog.G(ctx).Warnf("listener recv err: %s", err)
+				slog.WarnContext(ctx, "listener recv err", "err", err)
 				return
 			}
 
@@ -311,7 +311,7 @@ func (c *Client) ListenHostToContainer(
 			if !found {
 				conn, err = c.Dialer.Dial(proto, upstream)
 				if err != nil {
-					bklog.G(ctx).Warnf("failed to dial %s %s: %s", proto, upstream, err)
+					slog.WarnContext(ctx, "failed to dial", "proto", proto, "upstream", upstream, "err", err)
 					sendL.Lock()
 					err = listener.Send(&h2c.ListenRequest{
 						ConnId: connID,
@@ -580,7 +580,7 @@ func (c *Client) OpenTerminal(
 			res, err := term.Recv()
 			if err != nil {
 				if !errors.Is(err, io.EOF) {
-					bklog.G(ctx).Warnf("terminal recv err: %v", err)
+					slog.WarnContext(ctx, "terminal recv err", "err", err)
 					errCh <- err
 				}
 				return
@@ -589,7 +589,7 @@ func (c *Client) OpenTerminal(
 			case *terminal.SessionResponse_Stdin:
 				_, err := stdinW.Write(msg.Stdin)
 				if err != nil {
-					bklog.G(ctx).Warnf("failed to write stdin: %v", err)
+					slog.WarnContext(ctx, "failed to write stdin", "err", err)
 					errCh <- err
 					return
 				}

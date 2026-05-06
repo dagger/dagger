@@ -28,7 +28,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
 	"github.com/dagger/dagger/internal/buildkit/session/secrets"
 	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
-	"github.com/dagger/dagger/internal/buildkit/util/grpcerrors"
 	"github.com/docker/cli/cli/config"
 	"github.com/google/uuid"
 	"github.com/vito/go-sse/sse"
@@ -45,6 +44,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"dagger.io/dagger"
@@ -742,12 +742,7 @@ func ConnectSessionAttachables(
 }
 
 func NewSessionAttachablesServer(ctx context.Context, conn net.Conn, attachables ...SessionAttachable) *SessionAttachablesServer {
-	sessionSrvOpts := []grpc.ServerOption{
-		grpc.UnaryInterceptor(grpcerrors.UnaryServerInterceptor),
-		grpc.StreamInterceptor(grpcerrors.StreamServerInterceptor),
-	}
-
-	srv := grpc.NewServer(sessionSrvOpts...)
+	srv := grpc.NewServer()
 	grpc_health_v1.RegisterHealthServer(srv, health.NewServer())
 	for _, attachable := range attachables {
 		attachable.Register(srv)
@@ -1243,7 +1238,7 @@ func (c *Client) serveHijackedHTTP(ctx context.Context, cancel context.CancelCau
 		defer serverConn.Close()
 		defer clientConn.Close()
 		_, err := io.Copy(serverConn, clientConn)
-		if errors.Is(err, io.EOF) || grpcerrors.Code(err) == codes.Canceled {
+		if errors.Is(err, io.EOF) || status.Code(err) == codes.Canceled {
 			err = nil
 		}
 		if err != nil {
@@ -1255,7 +1250,7 @@ func (c *Client) serveHijackedHTTP(ctx context.Context, cancel context.CancelCau
 		defer serverConn.Close()
 		defer clientConn.Close()
 		_, err := io.Copy(clientConn, serverConn)
-		if errors.Is(err, io.EOF) || grpcerrors.Code(err) == codes.Canceled {
+		if errors.Is(err, io.EOF) || status.Code(err) == codes.Canceled {
 			err = nil
 		}
 		if err != nil {
