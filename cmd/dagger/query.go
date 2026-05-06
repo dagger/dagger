@@ -52,7 +52,13 @@ EOF
 			cmd.SetContext(idtui.WithPrintTraceLink(cmd.Context(), true))
 		}
 
-		return optionalModCmdWrapper(Query, "")(cmd, args)
+		_, explicitModRefSet := getExplicitModuleSourceRef()
+		return withEngine(cmd.Context(), client.Params{
+			LoadWorkspaceModules: !moduleNoURL && !explicitModRefSet,
+			SingleQuery:          true,
+		}, func(ctx context.Context, engineClient *client.Client) error {
+			return Query(ctx, engineClient, nil, cmd, args)
+		})
 	},
 	Annotations: map[string]string{
 		printTraceLinkKey: "true",
