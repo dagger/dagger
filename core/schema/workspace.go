@@ -278,7 +278,8 @@ func (s *workspaceSchema) update(
 		return nil, err
 	}
 	if !exists {
-		return nil, fmt.Errorf("workspace lockfile does not exist")
+		// create a new empty lockfile, so we can still create a file rather than return an error
+		lock = workspace.NewLock()
 	}
 
 	if err := core.UpdateWorkspaceLock(workspaceCtx, query, lock); err != nil {

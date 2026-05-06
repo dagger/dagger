@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,7 +12,6 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/engineutil"
 	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -424,79 +424,118 @@ func TestWorkspaceBindingMode(t *testing.T) {
 	})
 }
 
-func TestNestedClientMetadata(t *testing.T) {
+func TestNestedClientMetadataForRequest(t *testing.T) {
 	t.Parallel()
 
-	execMD := &engineutil.ExecutionMetadata{
-		ClientID:          "nested-client",
-		SessionID:         "session",
-		SecretToken:       "secret",
-		Hostname:          "nested-host",
-		ClientStableID:    "stable",
-		SSHAuthSocketPath: "/tmp/ssh.sock",
-		AllowedLLMModules: []string{"parent"},
+	baseMetadata := func() *engine.ClientMetadata {
+		return &engine.ClientMetadata{
+			ClientID:          "nested-client",
+			ClientSecretToken: "secret",
+			SessionID:         "session",
+			ClientHostname:    "nested-host",
+			ClientStableID:    "stable",
+			ClientVersion:     "",
+			Labels: map[string]string{
+				"ignored": "true",
+			},
+			SSHAuthSocketPath: "/tmp/ssh.sock",
+			AllowedLLMModules: []string{"parent"},
+			ExtraModules: []engine.ExtraModule{{
+				Ref: "github.com/dagger/base-extra",
+			}},
+			LoadWorkspaceModules: true,
+			EagerRuntime:         true,
+			LockMode:             string(workspace.LockModeFrozen),
+			Workspace:            stringPtr("github.com/dagger/base@main"),
+		}
 	}
 
-	t.Run("inherits forwarded lock mode", func(t *testing.T) {
+	t.Run("inherits live nested client identity and policy without forwarded metadata", func(t *testing.T) {
 		t.Parallel()
 
-		md := nestedClientMetadata(execMD, &engine.ClientMetadata{
-			ClientVersion:        "v-test",
-			AllowedLLMModules:    []string{"child"},
-			ExtraModules:         []engine.ExtraModule{{Ref: "github.com/dagger/mod", Entrypoint: true}},
-			SkipWorkspaceModules: true,
-			LockMode:             string(workspace.LockModeLive),
-			EagerRuntime:         true,
-			Workspace:            stringPtr("github.com/dagger/dagger@main"),
-		}, string(workspace.LockModeFrozen))
+		base := baseMetadata()
+		md := nestedClientMetadataForRequest(http.Header{}, base)
 
 		require.Equal(t, "nested-client", md.ClientID)
+		require.Equal(t, "secret", md.ClientSecretToken)
+		require.Equal(t, "session", md.SessionID)
+		require.Equal(t, "nested-host", md.ClientHostname)
+		require.Equal(t, "stable", md.ClientStableID)
+		require.Equal(t, engine.Version, md.ClientVersion)
+		require.Empty(t, md.Labels)
+		require.Equal(t, "/tmp/ssh.sock", md.SSHAuthSocketPath)
+		require.Equal(t, []string{"parent"}, md.AllowedLLMModules)
+		require.Equal(t, string(workspace.LockModeFrozen), md.LockMode)
+		require.Empty(t, md.ExtraModules)
+		require.False(t, md.LoadWorkspaceModules)
+		require.False(t, md.EagerRuntime)
+		require.Nil(t, md.Workspace)
+
+		base.AllowedLLMModules[0] = "mutated"
+		require.Equal(t, []string{"parent"}, md.AllowedLLMModules)
+	})
+
+	t.Run("overlays request-scoped forwarded metadata", func(t *testing.T) {
+		t.Parallel()
+
+		workspaceRef := "github.com/dagger/dagger@main"
+		forwarded := engine.ClientMetadata{
+			ClientID:          "forwarded-client",
+			ClientSecretToken: "forwarded-secret",
+			SessionID:         "forwarded-session",
+			ClientHostname:    "forwarded-host",
+			ClientStableID:    "forwarded-stable",
+			ClientVersion:     "v-test",
+			Labels: map[string]string{
+				"forwarded": "ignored",
+			},
+			SSHAuthSocketPath: "/tmp/forwarded-ssh.sock",
+			AllowedLLMModules: []string{"child"},
+			ExtraModules: []engine.ExtraModule{{
+				Ref:        "github.com/dagger/mod",
+				Entrypoint: true,
+			}},
+			LoadWorkspaceModules: true,
+			EagerRuntime:         true,
+			LockMode:             string(workspace.LockModeLive),
+			Workspace:            &workspaceRef,
+		}
+
+		md := nestedClientMetadataForRequest(forwarded.AppendToHTTPHeaders(http.Header{}), baseMetadata())
+
+		require.Equal(t, "nested-client", md.ClientID)
+		require.Equal(t, "secret", md.ClientSecretToken)
+		require.Equal(t, "session", md.SessionID)
+		require.Equal(t, "nested-host", md.ClientHostname)
+		require.Equal(t, "stable", md.ClientStableID)
+		require.Equal(t, "/tmp/ssh.sock", md.SSHAuthSocketPath)
+		require.Empty(t, md.Labels)
+
 		require.Equal(t, "v-test", md.ClientVersion)
 		require.Equal(t, []string{"child"}, md.AllowedLLMModules)
 		require.Equal(t, string(workspace.LockModeLive), md.LockMode)
-		require.True(t, md.SkipWorkspaceModules)
+		require.True(t, md.LoadWorkspaceModules)
 		require.True(t, md.EagerRuntime)
 		require.Equal(t, "github.com/dagger/dagger@main", *md.Workspace)
-		require.Len(t, md.ExtraModules, 1)
+		require.Equal(t, []engine.ExtraModule{{
+			Ref:        "github.com/dagger/mod",
+			Entrypoint: true,
+		}}, md.ExtraModules)
 	})
 
-	t.Run("falls back to caller lock mode when child omits it", func(t *testing.T) {
+	t.Run("keeps parent lock mode when forwarded metadata omits it", func(t *testing.T) {
 		t.Parallel()
 
-		md := nestedClientMetadata(execMD, &engine.ClientMetadata{
+		forwarded := engine.ClientMetadata{
 			ClientVersion:     "v-test",
 			AllowedLLMModules: []string{"child"},
-		}, string(workspace.LockModeLive))
+		}
 
-		require.Equal(t, string(workspace.LockModeLive), md.LockMode)
-	})
+		md := nestedClientMetadataForRequest(forwarded.AppendToHTTPHeaders(http.Header{}), baseMetadata())
 
-	t.Run("falls back to execution metadata defaults", func(t *testing.T) {
-		t.Parallel()
-
-		md := nestedClientMetadata(execMD, nil, "")
-
-		require.Equal(t, engine.Version, md.ClientVersion)
-		require.Equal(t, []string{"parent"}, md.AllowedLLMModules)
-		require.Empty(t, md.LockMode)
-		require.Nil(t, md.Workspace)
-	})
-}
-
-func TestInheritedNestedClientLockMode(t *testing.T) {
-	t.Parallel()
-
-	t.Run("prefers execution metadata lock mode", func(t *testing.T) {
-		t.Parallel()
-
-		srv := &Server{}
-		mode := srv.inheritedNestedClientLockMode(&engineutil.ExecutionMetadata{
-			LockMode:       string(workspace.LockModeLive),
-			SessionID:      "session",
-			CallerClientID: "caller",
-		})
-
-		require.Equal(t, string(workspace.LockModeLive), mode)
+		require.Equal(t, "v-test", md.ClientVersion)
+		require.Equal(t, []string{"child"}, md.AllowedLLMModules)
+		require.Equal(t, string(workspace.LockModeFrozen), md.LockMode)
 	})
 }
 
