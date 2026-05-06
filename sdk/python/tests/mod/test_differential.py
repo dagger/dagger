@@ -498,7 +498,6 @@ class Foo:
 """
     ast_md, runtime_md = _both(source)
     assert_metadata_equivalent(ast_md, runtime_md)
-    assert_metadata_equivalent(ast_md, runtime_md)
 
 
 # ---------------------------------------------------------------------------
@@ -1255,27 +1254,176 @@ def test_diff_kitchen_sink():
     ast_md, runtime_md = _both(KITCHEN_SINK)
     assert_metadata_equivalent(ast_md, runtime_md)
 
-Python version policy: most fixtures use syntax that works on every
-supported version (3.10+). Fixtures that depend on a feature added in
-a later release carry a ``@requires_py3XX`` marker so the SDK's
-existing CI matrix automatically exercises each pattern on every
-version that can actually run it — and skips it on older ones rather
-than failing with a misleading SyntaxError.
-import sys
-# Version markers for fixtures that use syntax/runtime features added in a
-# specific Python release. The CI matrix runs the SDK suite on 3.10-3.14;
-# these markers ensure each version-gated fixture only fires on a runtime
-# that can actually parse and evaluate it.
-requires_py311 = pytest.mark.skipif(
-    sys.version_info < (3, 11),
-    reason="typing.Self introduced in Python 3.11",
-)
-requires_py312 = pytest.mark.skipif(
-    sys.version_info < (3, 12),
-    reason="PEP 695 ``type X = …`` introduced in Python 3.12",
-)
+
+# ---------------------------------------------------------------------------
+# Multi-file fixtures — exercise patterns that need a real package on disk:
+# relative imports, cross-file aliases, cross-file constants.
+# ---------------------------------------------------------------------------
+
+
+def test_diff_multifile_cross_file_type_alias(tmp_path: Path):
+    """Alias defined in ``types.py`` and imported via ``from .types``."""
+    files = {
+        "__init__.py": "",
+        "types.py": (
+            "import dagger\n"
+            "from typing import Annotated\n"
+            'Source = Annotated[dagger.Directory, dagger.DefaultPath(".")]\n'
+        ),
+        "main.py": (
+            "import dagger\n"
+            "from .types import Source\n"
+            "\n"
+            "@dagger.object_type\n"
+            "class Foo:\n"
+            "    @dagger.function\n"
+            "    def build(self, src: Source) -> dagger.Container: ...\n"
+        ),
+    }
+    ast_md, runtime_md = _both_pkg(files, "Foo", tmp_path=tmp_path)
+    assert_metadata_equivalent(ast_md, runtime_md)
+
+
+def test_diff_multifile_cross_file_constant_default(tmp_path: Path):
+    """Constant defined in ``constants.py`` used as a default in main.py."""
+    files = {
+        "__init__.py": "",
+        "constants.py": 'DEFAULT_NAME = "alice"\n',
+        "main.py": (
+            "import dagger\n"
+            "from .constants import DEFAULT_NAME\n"
+            "\n"
+            "@dagger.object_type\n"
+            "class Foo:\n"
+            "    @dagger.function\n"
+            "    def hello(self, name: str = DEFAULT_NAME) -> str:\n"
+            "        return name\n"
+        ),
+    }
+    ast_md, runtime_md = _both_pkg(files, "Foo", tmp_path=tmp_path)
+    assert_metadata_equivalent(ast_md, runtime_md)
+
+
+def test_diff_multifile_inherited_field_across_files(tmp_path: Path):
+    """A dataclass-like base in one file, child in another."""
+    files = {
+        "__init__.py": "",
+        "base.py": (
+            "import dagger\n"
+            "\n"
+            "@dagger.object_type\n"
+            "class Base:\n"
+            '    name: str = dagger.field(default="from-base")\n'
+        ),
+        "main.py": (
+            "import dagger\n"
+            "from .base import Base\n"
+            "\n"
+            "@dagger.object_type\n"
+            "class Foo(Base):\n"
+            "    @dagger.function\n"
+            "    def greet(self) -> str:\n"
+            '        return "hello " + self.name\n'
+        ),
+    }
+    ast_md, runtime_md = _both_pkg(files, "Foo", tmp_path=tmp_path)
+    assert_metadata_equivalent(ast_md, runtime_md)
+
+
+def test_diff_multifile_relative_import_decorated_class(tmp_path: Path):
+    """Decorated class lives in helpers.py, used as a return type in main."""
+    files = {
+        "__init__.py": "",
+        "helpers.py": (
+            "import dagger\n"
+            "\n"
+            "@dagger.object_type\n"
+            "class Helper:\n"
+            '    name: str = dagger.field(default="h")\n'
+        ),
+        "main.py": (
+            "import dagger\n"
+            "from .helpers import Helper\n"
+            "\n"
+            "@dagger.object_type\n"
+            "class Foo:\n"
+            "    @dagger.function\n"
+            "    def get_helper(self) -> Helper:\n"
+            "        return Helper()\n"
+        ),
+    }
+    ast_md, runtime_md = _both_pkg(files, "Foo", tmp_path=tmp_path)
+    assert_metadata_equivalent(ast_md, runtime_md)
+
+
+def test_diff_multifile_chained_cross_file_alias(tmp_path: Path):
+    """``main`` imports B; ``types`` defines ``A = Directory; B = A``."""
+    files = {
+        "__init__.py": "",
+        "types.py": ("import dagger\nA = dagger.Directory\nB = A\n"),
+        "main.py": (
+            "import dagger\n"
+            "from .types import B\n"
+            "\n"
+            "@dagger.object_type\n"
+            "class Foo:\n"
+            "    @dagger.function\n"
+            "    def build(self, src: B) -> dagger.Container: ...\n"
+        ),
+    }
+    ast_md, runtime_md = _both_pkg(files, "Foo", tmp_path=tmp_path)
+    assert_metadata_equivalent(ast_md, runtime_md)
+
+
+def test_diff_multifile_subpackage(tmp_path: Path):
+    """Decorated class lives in a subpackage (``pkg/sub/types.py``)."""
+    files = {
+        "__init__.py": "",
+        "sub/__init__.py": "",
+        "sub/types.py": (
+            "import dagger\n"
+            "\n"
+            "@dagger.object_type\n"
+            "class Helper:\n"
+            '    name: str = dagger.field(default="sub")\n'
+        ),
+        "main.py": (
+            "import dagger\n"
+            "from .sub.types import Helper\n"
+            "\n"
+            "@dagger.object_type\n"
+            "class Foo:\n"
+            "    @dagger.function\n"
+            "    def get_helper(self) -> Helper:\n"
+            "        return Helper()\n"
+        ),
+    }
+    ast_md, runtime_md = _both_pkg(files, "Foo", tmp_path=tmp_path)
+    assert_metadata_equivalent(ast_md, runtime_md)
+
 
 @requires_py312
+def test_diff_multifile_pep695_type_alias_across_files(tmp_path: Path):
+    """``type Source = …`` in types.py, imported via ``from .types``."""
+    files = {
+        "__init__.py": "",
+        "types.py": (
+            "import dagger\n"
+            "from typing import Annotated\n"
+            'type Source = Annotated[dagger.Directory, dagger.DefaultPath(".")]\n'
+        ),
+        "main.py": (
+            "import dagger\n"
+            "from .types import Source\n"
+            "\n"
+            "@dagger.object_type\n"
+            "class Foo:\n"
+            "    @dagger.function\n"
+            "    def build(self, src: Source) -> dagger.Container: ...\n"
+        ),
+    }
+    ast_md, runtime_md = _both_pkg(files, "Foo", tmp_path=tmp_path)
+    assert_metadata_equivalent(ast_md, runtime_md)
 
 
 # ---------------------------------------------------------------------------

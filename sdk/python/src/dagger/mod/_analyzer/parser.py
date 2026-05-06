@@ -41,6 +41,12 @@ from dagger.mod._analyzer.visitors.decorators import (
 
 logger = logging.getLogger(__name__)
 
+# ``ast.TypeAlias`` only exists on Python 3.12+ (PEP 695). Resolve once
+# here so call sites can do a simple ``isinstance(node, _PEP695_TYPE_ALIAS)``
+# check without ``hasattr`` repeatedly. ``None`` on 3.10/3.11 — callers
+# must check for it before using.
+_PEP695_TYPE_ALIAS: type[ast.AST] | None = getattr(ast, "TypeAlias", None)
+
 
 def normalize_name(name: str) -> str:
     """Normalize a Python name for API usage.
@@ -268,9 +274,9 @@ class ModuleParser:
                     self._declared_objects.add(node.name)
                 elif has_decorator(node, "interface", aliases):
                     self._declared_interfaces.add(node.name)
-                elif has_decorator(node, "enum_type", aliases) or self._is_enum_subclass(
-                    node
-                ):
+                elif has_decorator(
+                    node, "enum_type", aliases
+                ) or self._is_enum_subclass(node):
                     self._declared_enums.add(node.name)
 
     _ENUM_BASE_NAMES = frozenset(
@@ -326,7 +332,11 @@ class ModuleParser:
                     # PEP 695: ``type Source = Annotated[...]``. Distinct AST
                     # node from Assign/AnnAssign — registered explicitly here
                     # so the alias map and the resolver share one path.
-                    isinstance(node, ast.TypeAlias)
+                    # ``ast.TypeAlias`` only exists on Python 3.12+; guard
+                    # the attribute access so analysis runs cleanly on 3.10
+                    # / 3.11 (which can't parse the syntax anyway).
+                    _PEP695_TYPE_ALIAS is not None
+                    and isinstance(node, _PEP695_TYPE_ALIAS)
                     and isinstance(node.name, ast.Name)
                 ):
                     aliases[node.name.id] = node.value
@@ -338,9 +348,10 @@ class ModuleParser:
             if isinstance(decorator, ast.Name) and decorator.id == "property":
                 return True
             # @some.setter / @some.deleter / @some.getter forms
-            if (
-                isinstance(decorator, ast.Attribute)
-                and decorator.attr in ("setter", "deleter", "getter")
+            if isinstance(decorator, ast.Attribute) and decorator.attr in (
+                "setter",
+                "deleter",
+                "getter",
             ):
                 return True
         return False
@@ -463,14 +474,12 @@ class ModuleParser:
         entry is just omitted and resolution falls back to the existing
         warn/stub behavior.
         """
-        resolved_paths = {
-            file_path: file_path.resolve() for file_path in self._asts
-        }
+        resolved_paths = {file_path: file_path.resolve() for file_path in self._asts}
         # Index by resolved path so we can look up ``pkg/types.py`` regardless
         # of whether the user passed it as an absolute or relative path.
-        path_index: dict[Path, Path] = {}
-        for original, resolved in resolved_paths.items():
-            path_index[resolved] = original
+        path_index: dict[Path, Path] = {
+            resolved: original for original, resolved in resolved_paths.items()
+        }
 
         for file_path, tree in self._asts.items():
             mapping = self._relative_import_origins.setdefault(file_path, {})
@@ -772,7 +781,7 @@ class ModuleParser:
             location=get_location(node, str(file_path)),
         )
 
-    def _extract_class_members(
+    def _extract_class_members(  # noqa: C901, PLR0912 — class-body dispatch
         self,
         node: ast.ClassDef,
         file_path: Path,
@@ -963,8 +972,12 @@ class ModuleParser:
         expanded = self._expand_alias(node.annotation, file_path)
         resolved_type = self._resolver.resolve(expanded, location=location)
 
-        # Extract Annotated metadata
-        annotated_meta = extract_annotated_metadata(expanded)
+        # Extract Annotated metadata. The resolver lets ``Ignore(SOURCE_IGNORE)``
+        # / ``Doc(MESSAGE)`` follow a name reference to its module-level value
+        # the same way ``typing.get_type_hints`` does at runtime.
+        annotated_meta = extract_annotated_metadata(
+            expanded, resolver=self._eval_constant
+        )
 
         # Get API name
         api_name = field_kwargs.get("name") or normalize_name(python_name)
@@ -1089,7 +1102,9 @@ class ModuleParser:
         resolved_type = self._resolver.resolve(annotation, location=location)
 
         # Extract Annotated metadata
-        annotated_meta = extract_annotated_metadata(annotation)
+        annotated_meta = extract_annotated_metadata(
+            annotation, resolver=self._eval_constant
+        )
 
         # Build parameter
         api_name = normalize_name(python_name)
@@ -1356,7 +1371,32 @@ class ModuleParser:
             )
         return inherited
 
-    def _find_inherited_fields(
+    def _is_dataclass_like(self, base_class: ast.ClassDef, base_file: Path) -> bool:
+        """True when a base class would expose its fields via dataclasses.
+
+        At runtime, dagger fields flow through ``dataclasses.fields(cls)``,
+        which only inherits from base classes that are themselves
+        dataclasses — that means @dagger.object_type / @dagger.interface
+        (which apply ``dataclass(kw_only=True)`` internally) or an explicit
+        ``@dataclass``. An undecorated base's annotations are *not*
+        promoted to fields on the child, even if the user wrote
+        ``dagger.field(...)`` in the base.
+        """
+        aliases = self._aliases_for(base_file)
+        if has_decorator(base_class, "object_type", aliases):
+            return True
+        if has_decorator(base_class, "interface", aliases):
+            return True
+        # Explicit @dataclass / @dataclasses.dataclass (with or without args).
+        for decorator in base_class.decorator_list:
+            target = decorator.func if isinstance(decorator, ast.Call) else decorator
+            if isinstance(target, ast.Name) and target.id == "dataclass":
+                return True
+            if isinstance(target, ast.Attribute) and target.attr == "dataclass":
+                return True
+        return False
+
+    def _find_inherited_fields(  # noqa: C901, PLR0912 — MRO walk dispatch
         self,
         node: ast.ClassDef,
         class_name: str,
@@ -1366,12 +1406,12 @@ class ModuleParser:
     ) -> list[tuple[FieldMetadata | None, ParameterMetadata | None]]:
         """Walk MRO for inherited dagger ``field()`` declarations.
 
-        Mirrors ``_find_inherited_functions``. ``class_name`` is the
-        originating (child) class so ``Self`` annotations on inherited
-        fields resolve to the child. ``seen_field_names`` /
-        ``seen_param_names`` accumulate names already discovered on the
-        child or earlier bases — child overrides win, matching Python's
-        MRO behaviour.
+        Mirrors ``_find_inherited_functions``, but only considers bases
+        that are themselves dataclass-like — ``@dagger.object_type``,
+        ``@dagger.interface``, or ``@dataclass``. The runtime relies on
+        Python's dataclass machinery to flatten fields across MRO, and
+        that machinery only inherits from dataclass parents. Walking
+        undecorated bases would surface fields the runtime never exposes.
 
         Returns a list of (field, init_param) tuples. Either side can be
         ``None`` when only one path applies (an ``init=False`` field, an
@@ -1396,6 +1436,12 @@ class ModuleParser:
             if found is None:
                 continue
             base_class, base_file = found
+
+            # Only inherit fields from dataclass-like bases — see
+            # ``_is_dataclass_like``. Recurse anyway: a dataclass-like
+            # base might itself inherit from another dataclass-like.
+            if not self._is_dataclass_like(base_class, base_file):
+                continue
 
             for item in base_class.body:
                 if not (
@@ -1573,7 +1619,7 @@ class ModuleParser:
             location=location,
         )
 
-    def _parse_parameters(
+    def _parse_parameters(  # noqa: C901, PLR0915 — parameter dispatch
         self,
         node: ast.FunctionDef | ast.AsyncFunctionDef,
         file_path: Path,
@@ -1648,8 +1694,12 @@ class ModuleParser:
                 # the surface representation matches what the user wrote.
                 expanded = self._expand_alias(annotation, file_path)
 
-                # Extract Annotated metadata
-                annotated_meta = extract_annotated_metadata(expanded)
+                # Extract Annotated metadata, threading through the parser's
+                # constant resolver so ``Ignore(NAME)`` / ``Doc(NAME)`` etc.
+                # pick up module-level constants the same way the runtime does.
+                annotated_meta = extract_annotated_metadata(
+                    expanded, resolver=self._eval_constant
+                )
 
                 # Resolve type
                 resolved_type = self._resolver.resolve(expanded, location=location)
@@ -1798,7 +1848,7 @@ class ModuleParser:
                 "Enum member %r uses ``enum.auto()`` at line %d; the AST "
                 "analyzer cannot predict the runtime-generated value and "
                 "will record %r as a fallback. Use explicit values "
-                "(``MEMBER = \"value\"`` or ``MEMBER = 1``) so the schema "
+                '(``MEMBER = "value"`` or ``MEMBER = 1``) so the schema '
                 "matches the runtime.",
                 member_name,
                 getattr(value_node, "lineno", 0),
@@ -1819,7 +1869,9 @@ class ModuleParser:
             return func.attr == "auto"
         return False
 
-    def _eval_constant(self, node: ast.expr | None) -> Any:  # noqa: PLR0911, C901
+    def _eval_constant(  # noqa: C901, PLR0911, PLR0912 — constant-expr dispatch
+        self, node: ast.expr | None
+    ) -> Any:
         """Evaluate a constant expression to a Python value."""
         if node is None:
             return None

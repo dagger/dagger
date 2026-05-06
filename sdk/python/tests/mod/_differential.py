@@ -90,7 +90,9 @@ def _compare_object(
             f"runtime={runtime_obj.is_interface}"
         )
 
-    _compare_fields(where, ast_obj.fields, runtime_obj.fields, diffs, ignore_default_values)
+    _compare_fields(
+        where, ast_obj.fields, runtime_obj.fields, diffs, ignore_default_values
+    )
     _compare_functions(
         where, ast_obj.functions, runtime_obj.functions, diffs, ignore_default_values
     )
@@ -124,7 +126,8 @@ def _compare_fields(
         _compare_resolved(path, ast_f.resolved_type, rt_f.resolved_type, diffs)
         if ast_f.has_default != rt_f.has_default:
             diffs.append(
-                f"{path}.has_default: ast={ast_f.has_default} runtime={rt_f.has_default}"
+                f"{path}.has_default: "
+                f"ast={ast_f.has_default} runtime={rt_f.has_default}"
             )
         if not ignore_default_values:
             _compare_default(path, ast_f.default_value, rt_f.default_value, diffs)
@@ -156,7 +159,10 @@ def _compare_functions(
                 f"{path}.api_name: ast={ast_fn.api_name!r} runtime={rt_fn.api_name!r}"
             )
         _compare_resolved(
-            f"{path}->return", ast_fn.resolved_return_type, rt_fn.resolved_return_type, diffs
+            f"{path}->return",
+            ast_fn.resolved_return_type,
+            rt_fn.resolved_return_type,
+            diffs,
         )
         if ast_fn.is_async != rt_fn.is_async:
             diffs.append(
@@ -199,7 +205,8 @@ def _compare_parameters(
         _compare_resolved(path, ast_p.resolved_type, rt_p.resolved_type, diffs)
         if ast_p.has_default != rt_p.has_default:
             diffs.append(
-                f"{path}.has_default: ast={ast_p.has_default} runtime={rt_p.has_default}"
+                f"{path}.has_default: "
+                f"ast={ast_p.has_default} runtime={rt_p.has_default}"
             )
         if not ignore_default_values:
             _compare_default(path, ast_p.default_value, rt_p.default_value, diffs)
@@ -214,9 +221,7 @@ def _compare_parameters(
                 f"runtime={rt_p.default_address!r}"
             )
         if (ast_p.ignore or None) != (rt_p.ignore or None):
-            diffs.append(
-                f"{path}.ignore: ast={ast_p.ignore} runtime={rt_p.ignore}"
-            )
+            diffs.append(f"{path}.ignore: ast={ast_p.ignore} runtime={rt_p.ignore}")
 
 
 def _compare_resolved(
@@ -231,7 +236,8 @@ def _compare_resolved(
         diffs.append(f"{where}.name: ast={ast_t.name!r} runtime={runtime_t.name!r}")
     if ast_t.is_optional != runtime_t.is_optional:
         diffs.append(
-            f"{where}.is_optional: ast={ast_t.is_optional} runtime={runtime_t.is_optional}"
+            f"{where}.is_optional: "
+            f"ast={ast_t.is_optional} runtime={runtime_t.is_optional}"
         )
     if ast_t.is_self != runtime_t.is_self:
         diffs.append(
@@ -288,6 +294,4 @@ def _compare_enum(
     ast_members = {m.name: m.value for m in ast_enum.members}
     runtime_members = {m.name: m.value for m in runtime_enum.members}
     if ast_members != runtime_members:
-        diffs.append(
-            f"{where}.members: ast={ast_members} runtime={runtime_members}"
-        )
+        diffs.append(f"{where}.members: ast={ast_members} runtime={runtime_members}")

@@ -136,9 +136,7 @@ def _load_known_dagger_types() -> tuple[set[str], set[str], set[str]]:
     return objects, scalars, enums
 
 
-DAGGER_OBJECT_TYPES, DAGGER_SCALAR_TYPES, DAGGER_ENUM_TYPES = (
-    _load_known_dagger_types()
-)
+DAGGER_OBJECT_TYPES, DAGGER_SCALAR_TYPES, DAGGER_ENUM_TYPES = _load_known_dagger_types()
 
 # Primitive type mapping
 PRIMITIVE_TYPES = {

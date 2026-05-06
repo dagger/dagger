@@ -63,12 +63,11 @@ class DaggerAliases:
     @classmethod
     def default(cls) -> DaggerAliases:
         """Static defaults — same names the analyzer historically matched."""
-        instance = cls(
+        return cls(
             package_aliases={"dagger", "mod"},
             bare_decorators={name: name for name in DAGGER_DECORATOR_NAMES},
             bare_field_names={"field"},
         )
-        return instance
 
 
 def resolve_dagger_decorator(
@@ -85,13 +84,13 @@ def resolve_dagger_decorator(
         return resolve_dagger_decorator(decorator.func, aliases)
     if isinstance(decorator, ast.Name):
         return aliases.bare_decorators.get(decorator.id)
-    if isinstance(decorator, ast.Attribute):
-        if (
-            isinstance(decorator.value, ast.Name)
-            and decorator.value.id in aliases.package_aliases
-            and decorator.attr in DAGGER_DECORATOR_NAMES
-        ):
-            return decorator.attr
+    if (
+        isinstance(decorator, ast.Attribute)
+        and isinstance(decorator.value, ast.Name)
+        and decorator.value.id in aliases.package_aliases
+        and decorator.attr in DAGGER_DECORATOR_NAMES
+    ):
+        return decorator.attr
     return None
 
 
@@ -169,7 +168,9 @@ def find_decorator(
     return None
 
 
-def build_dagger_aliases(tree: ast.Module) -> DaggerAliases:
+def build_dagger_aliases(  # noqa: C901 — import-shape dispatch
+    tree: ast.Module,
+) -> DaggerAliases:
     """Compute the dagger alias map for a single source file.
 
     Walks top-level imports only — local imports inside functions or
@@ -185,9 +186,7 @@ def build_dagger_aliases(tree: ast.Module) -> DaggerAliases:
                 # ``import dagger.mod`` → ``dagger`` is bound (already in
                 # defaults); the ``mod`` attribute access is reached via
                 # ``dagger.mod`` so we don't need to track it specially.
-                if alias.name == "dagger":
-                    aliases.package_aliases.add(alias.asname or "dagger")
-                elif alias.name == "dagger.mod":
+                if alias.name in ("dagger", "dagger.mod"):
                     aliases.package_aliases.add(alias.asname or "dagger")
             continue
 

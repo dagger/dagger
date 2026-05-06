@@ -15,6 +15,7 @@ is the repo's current ``main`` branch. Skip the whole file by setting
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
@@ -29,7 +30,6 @@ from dagger.mod._analyzer.analyze import analyze_module
 
 from ._differential import assert_metadata_equivalent
 from ._runtime_introspect import runtime_introspect_package
-
 
 CORPUS_URL = "https://github.com/telchak/daggerverse.git"
 CORPUS_REF = os.environ.get("DAGGERVERSE_CORPUS_REF", "main")
@@ -89,10 +89,8 @@ def daggerverse_sys_path(daggerverse_corpus: Path) -> Iterator[None]:
         yield
     finally:
         for entry in added:
-            try:
+            with contextlib.suppress(ValueError):
                 sys.path.remove(entry)
-            except ValueError:
-                pass
 
 
 def _python_modules(corpus_root: Path) -> list[Path]:
@@ -198,9 +196,9 @@ def _collect_corpus_modules() -> list[Path]:
 
 def test_daggerverse_module_diff(
     daggerverse_corpus: Path,
-    daggerverse_sys_path: None,
+    daggerverse_sys_path: None,  # noqa: ARG001 — fixture has side effects
     tmp_path: Path,
-    request: pytest.FixtureRequest,
+    request: pytest.FixtureRequest,  # noqa: ARG001 — pytest plumbing
 ) -> None:
     """For every Python module in the corpus, AST output must match runtime."""
     modules = _python_modules(daggerverse_corpus)
@@ -219,14 +217,14 @@ def test_daggerverse_module_diff(
         ast_paths = _materialise_for_ast(module_dir, files, tmp_path / module_dir.name)
         try:
             ast_md = analyze_module(source_files=ast_paths, main_object_name=main)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — surface any analyzer crash
             failures.append((module_dir.name, f"AST analyze raised: {exc!r}"))
             continue
 
         # Runtime side — imports the package via importlib.
         try:
             runtime_md = runtime_introspect_package(files, main)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — surface any import crash
             failures.append((module_dir.name, f"runtime import raised: {exc!r}"))
             continue
 
@@ -236,11 +234,6 @@ def test_daggerverse_module_diff(
             failures.append((module_dir.name, str(exc)))
 
     if failures:
-        report = "\n\n".join(
-            f"=== {name} ===\n{detail}" for name, detail in failures
-        )
-        msg = (
-            f"{len(failures)}/{len(modules)} daggerverse modules diverge:\n\n"
-            f"{report}"
-        )
+        report = "\n\n".join(f"=== {name} ===\n{detail}" for name, detail in failures)
+        msg = f"{len(failures)}/{len(modules)} daggerverse modules diverge:\n\n{report}"
         raise AssertionError(msg)

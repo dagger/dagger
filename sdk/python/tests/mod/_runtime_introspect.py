@@ -14,6 +14,7 @@ an oracle.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import enum as enum_module
 import importlib.util
@@ -37,7 +38,6 @@ from dagger.mod._analyzer.metadata import (
     ResolvedType,
 )
 from dagger.mod._module import FIELD_DEF_KEY, FUNCTION_DEF_KEY
-
 
 _DAGGER_OBJECT_TYPES = {
     "Container",
@@ -88,7 +88,8 @@ def runtime_introspect(source: str, main_object_name: str) -> ModuleMetadata:
 
     mod_name = f"_runtime_introspect_{tmp_path.stem}"
     spec = importlib.util.spec_from_file_location(mod_name, tmp_path)
-    assert spec is not None and spec.loader is not None
+    assert spec is not None
+    assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[mod_name] = module
     try:
@@ -150,20 +151,15 @@ def runtime_introspect_package(
             # Drop every cached module under our package so a follow-up
             # call starts clean even if it reuses a name.
             for mod_name in list(sys.modules):
-                if (
-                    mod_name == package_name
-                    or mod_name.startswith(package_name + ".")
-                ):
+                if mod_name == package_name or mod_name.startswith(package_name + "."):
                     sys.modules.pop(mod_name, None)
-            try:
+            with contextlib.suppress(ValueError):
                 sys.path.remove(str(tmp_root))
-            except ValueError:
-                pass
     finally:
         shutil.rmtree(tmp_root, ignore_errors=True)
 
 
-def _build_package_metadata(
+def _build_package_metadata(  # noqa: C901 — submodule walking dispatch
     package: Any, main_object_name: str
 ) -> ModuleMetadata:
     """Walk a package's submodules and merge their decorated classes.
@@ -185,7 +181,7 @@ def _build_package_metadata(
         if module.__name__ in visited:
             return
         visited.add(module.__name__)
-        for name, obj in vars(module).items():
+        for obj in vars(module).values():
             if not isinstance(obj, type):
                 continue
             # Only count classes whose ``__module__`` is somewhere inside
@@ -204,7 +200,7 @@ def _build_package_metadata(
         ):
             try:
                 submodule = importlib.import_module(info.name)
-            except Exception:
+            except Exception:  # noqa: BLE001 — third-party submodules may fail
                 continue
             _ingest(submodule)
 
@@ -239,8 +235,8 @@ def _build_module_metadata(module: Any, main_object_name: str) -> ModuleMetadata
     )
 
 
-def _build_object_metadata(cls: type) -> ObjectTypeMetadata:
-    obj_def = getattr(cls, "__dagger_object_type__")
+def _build_object_metadata(cls: type) -> ObjectTypeMetadata:  # noqa: C901
+    obj_def = cls.__dagger_object_type__
     is_interface = bool(getattr(obj_def, "interface", False))
 
     fields: list[FieldMetadata] = []
@@ -266,7 +262,7 @@ def _build_object_metadata(cls: type) -> ObjectTypeMetadata:
                 # name_map which special-cases ``list``/``dict``.
                 try:
                     default_value = field.default_factory()
-                except Exception:
+                except Exception:  # noqa: BLE001 — user factory may raise
                     default_value = None
             else:
                 default_value = None
@@ -305,20 +301,16 @@ def _build_object_metadata(cls: type) -> ObjectTypeMetadata:
     )
 
 
-def _build_function_metadata(
-    owner: type, func: Any, meta: Any
-) -> FunctionMetadata:
+def _build_function_metadata(owner: type, func: Any, meta: Any) -> FunctionMetadata:
     sig = inspect.signature(func)
     try:
         type_hints = typing.get_type_hints(func, include_extras=True)
-    except Exception:
+    except Exception:  # noqa: BLE001 — get_type_hints raises NameError etc.
         type_hints = {}
 
     return_annotation = type_hints.get("return", sig.return_annotation)
     if return_annotation is inspect.Signature.empty or return_annotation is None:
-        resolved_return = ResolvedType(
-            kind="void", name="None", is_optional=True
-        )
+        resolved_return = ResolvedType(kind="void", name="None", is_optional=True)
         return_str = "None"
     else:
         resolved_return = _resolve_type(return_annotation, owner.__name__)
@@ -331,7 +323,10 @@ def _build_function_metadata(
         # receiver. So only skip the first positional named ``self``.
         if i == 0 and param_name in ("self", "cls"):
             continue
-        if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+        if param.kind in (
+            inspect.Parameter.VAR_POSITIONAL,
+            inspect.Parameter.VAR_KEYWORD,
+        ):
             continue
 
         annotation = type_hints.get(param_name, param.annotation)
@@ -410,11 +405,16 @@ def _build_enum_metadata(cls: type) -> EnumTypeMetadata:
     )
 
 
-def _resolve_type(annotation: Any, current_class: str) -> ResolvedType:
+def _resolve_type(  # noqa: C901, PLR0911, PLR0912 — typing dispatch is naturally branchy
+    annotation: Any, current_class: str
+) -> ResolvedType:
     """Map a runtime type to a ResolvedType matching the AST analyzer's shape."""
     # Unwrap PEP 695 ``type X = …``. ``typing.get_type_hints`` returns the
     # alias object itself; reach the underlying type via ``__value__``.
-    if hasattr(annotation, "__value__") and type(annotation).__name__ == "TypeAliasType":
+    if (
+        hasattr(annotation, "__value__")
+        and type(annotation).__name__ == "TypeAliasType"
+    ):
         return _resolve_type(annotation.__value__, current_class)
     # Unwrap Annotated.
     origin = get_origin(annotation)
@@ -444,6 +444,7 @@ def _resolve_type(annotation: Any, current_class: str) -> ResolvedType:
 
     # X | None (PEP 604)
     import types as types_module
+
     if isinstance(annotation, types_module.UnionType):
         args = [a for a in annotation.__args__ if a is not type(None)]
         has_none = any(a is type(None) for a in annotation.__args__)
@@ -458,6 +459,7 @@ def _resolve_type(annotation: Any, current_class: str) -> ResolvedType:
 
     # list[T] / Sequence[T] etc.
     import collections.abc as collections_abc
+
     if origin in (list, collections_abc.Sequence, collections_abc.Iterable):
         args = get_args(annotation)
         if args:
@@ -495,11 +497,24 @@ def _resolve_type(annotation: Any, current_class: str) -> ResolvedType:
     return ResolvedType(kind="object", name=str(annotation))
 
 
-def _extract_annotated_metadata(
+_AnnotatedMetaTuple = tuple[
+    str | None,  # doc
+    str | None,  # default_path
+    str | None,  # default_address
+    list[str] | None,  # ignore
+    str | None,  # deprecated
+    str | None,  # alt_name
+]
+
+
+def _extract_annotated_metadata(  # noqa: C901, PLR0912 — typing dispatch
     annotation: Any,
-) -> tuple[str | None, str | None, str | None, list[str] | None, str | None, str | None]:
+) -> _AnnotatedMetaTuple:
     """Return (doc, default_path, default_address, ignore, deprecated, alt_name)."""
-    if hasattr(annotation, "__value__") and type(annotation).__name__ == "TypeAliasType":
+    if (
+        hasattr(annotation, "__value__")
+        and type(annotation).__name__ == "TypeAliasType"
+    ):
         return _extract_annotated_metadata(annotation.__value__)
     if get_origin(annotation) is not typing.Annotated:
         # Could still be wrapped: Optional[Annotated[T, …]] etc. Drill in.
@@ -511,6 +526,7 @@ def _extract_annotated_metadata(
                 if any(inner):
                     return inner
         import types as types_module
+
         if isinstance(annotation, types_module.UnionType):
             for arg in annotation.__args__:
                 if arg is type(None):

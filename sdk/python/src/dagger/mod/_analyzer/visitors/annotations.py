@@ -48,7 +48,9 @@ def is_annotated_type(annotation: ast.expr) -> bool:
     return False
 
 
-def find_annotated(annotation: ast.expr) -> ast.expr | None:
+def find_annotated(  # noqa: C901, PLR0912 — annotation-shape dispatch
+    annotation: ast.expr,
+) -> ast.expr | None:
     """Find an ``Annotated[...]`` node inside Optional/Union/``| None`` wrappings.
 
     Returns the ``Annotated`` subscript when one is reachable through any
@@ -72,9 +74,7 @@ def find_annotated(annotation: ast.expr) -> ast.expr | None:
             return find_annotated(annotation.slice)
         if base_name == "Union":
             slice_val = annotation.slice
-            args = (
-                slice_val.elts if isinstance(slice_val, ast.Tuple) else [slice_val]
-            )
+            args = slice_val.elts if isinstance(slice_val, ast.Tuple) else [slice_val]
             for arg in args:
                 inner = find_annotated(arg)
                 if inner is not None:
