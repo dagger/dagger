@@ -17,6 +17,16 @@ type Config struct {
 	Ignore             []string               `toml:"ignore"`
 	DefaultsFromDotEnv bool                   `toml:"defaults_from_dotenv,omitempty"`
 	Env                map[string]EnvOverlay  `toml:"env"`
+	Ports              map[string]PortMapping `toml:"ports,omitempty"`
+}
+
+// PortMapping declares a host port that forwards to a workspace service.
+// The map key on Config.Ports is the host port (string for TOML key shape:
+// `[ports.3000]`). BackendService is the service path scoped under a workspace
+// module (e.g. "hello-with-services:web").
+type PortMapping struct {
+	BackendService string `toml:"backendService"`
+	BackendPort    int    `toml:"backendPort"`
 }
 
 // ModuleEntry represents a single module entry in the workspace config.
@@ -174,10 +184,14 @@ func SerializeConfig(cfg *Config) []byte {
 		b.WriteString("defaults_from_dotenv = true\n\n")
 	}
 
-	if writeModuleEntries(&b, cfg.Modules) && len(cfg.Env) > 0 {
+	wroteModules := writeModuleEntries(&b, cfg.Modules)
+	if wroteModules && (len(cfg.Env) > 0 || len(cfg.Ports) > 0) {
 		b.WriteString("\n")
 	}
-	writeEnvEntries(&b, cfg.Env)
+	if writeEnvEntries(&b, cfg.Env) && len(cfg.Ports) > 0 {
+		b.WriteString("\n")
+	}
+	writePortEntries(&b, cfg.Ports)
 
 	return []byte(b.String())
 }
@@ -218,6 +232,12 @@ func cloneConfig(cfg *Config) *Config {
 				}
 			}
 			cloned.Env[envName] = clonedEnv
+		}
+	}
+	if len(cfg.Ports) > 0 {
+		cloned.Ports = make(map[string]PortMapping, len(cfg.Ports))
+		for host, pm := range cfg.Ports {
+			cloned.Ports[host] = pm
 		}
 	}
 	return cloned
@@ -308,6 +328,30 @@ func writeEnvEntries(b *strings.Builder, envs map[string]EnvOverlay) bool {
 			}
 			writeConfigTable(b, "env."+name+".modules."+moduleName+".settings", env.Modules[moduleName].Settings, false)
 		}
+	}
+
+	return true
+}
+
+func writePortEntries(b *strings.Builder, ports map[string]PortMapping) bool {
+	if len(ports) == 0 {
+		return false
+	}
+
+	hosts := make([]string, 0, len(ports))
+	for host := range ports {
+		hosts = append(hosts, host)
+	}
+	sort.Strings(hosts)
+
+	for i, host := range hosts {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		pm := ports[host]
+		fmt.Fprintf(b, "[ports.%s]\n", host)
+		fmt.Fprintf(b, "backendService = %q\n", pm.BackendService)
+		fmt.Fprintf(b, "backendPort = %d\n", pm.BackendPort)
 	}
 
 	return true
@@ -601,6 +645,29 @@ func setConfigValue(cfg *Config, parts []string, value any) error {
 		module.Settings[parts[5]] = value
 		env.Modules[moduleName] = module
 		cfg.Env[envName] = env
+		return nil
+	case "ports":
+		if len(parts) != 3 {
+			return fmt.Errorf("invalid key %q; expected ports.<host>.backendService or ports.<host>.backendPort", strings.Join(parts, "."))
+		}
+		if cfg.Ports == nil {
+			cfg.Ports = map[string]PortMapping{}
+		}
+		host := parts[1]
+		pm := cfg.Ports[host]
+		switch parts[2] {
+		case "backendService":
+			pm.BackendService = fmt.Sprint(value)
+		case "backendPort":
+			port, ok := value.(int64)
+			if !ok {
+				return fmt.Errorf("ports.%s.backendPort must be an integer", host)
+			}
+			pm.BackendPort = int(port)
+		default:
+			return fmt.Errorf("unknown config key %q", strings.Join(parts, "."))
+		}
+		cfg.Ports[host] = pm
 		return nil
 	default:
 		return fmt.Errorf("unknown config key %q", strings.Join(parts, "."))
