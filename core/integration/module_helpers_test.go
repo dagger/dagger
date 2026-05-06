@@ -1,8 +1,8 @@
 package core
 
-// Workspace alignment: aligned; helper-only file for exact module-era command and fixture helpers.
-// Scope: Explicit module command helpers, raw CLI helpers, module fixtures, and module introspection helpers.
-// Intent: Keep post-workspace module tests on exact-by-intent helpers while legacy rewrite shims live separately.
+// Workspace alignment: aligned; helper-only file for CLI command helpers, module fixtures, and module introspection helpers.
+// Scope: Raw CLI helpers, module fixtures, and shared module introspection utilities.
+// Intent: Keep test command invocations explicit so callsites show the real `dagger` command shape.
 
 import (
 	"bytes"
@@ -34,10 +34,6 @@ func daggerExecRaw(args ...string) dagger.WithContainerFunc {
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
-}
-
-func daggerModuleExec(args ...string) dagger.WithContainerFunc {
-	return daggerExecRaw(append([]string{"module"}, args...)...)
 }
 
 func daggerClientInstall(generator string) dagger.WithContainerFunc {
@@ -160,16 +156,6 @@ func hostDaggerExecRaw(ctx context.Context, t testing.TB, workdir string, args .
 	return output, err
 }
 
-func hostDaggerModuleCommand(ctx context.Context, t testing.TB, workdir string, args ...string) *exec.Cmd {
-	t.Helper()
-	return hostDaggerCommandRaw(ctx, t, workdir, append([]string{"module"}, args...)...)
-}
-
-func hostDaggerModuleExec(ctx context.Context, t testing.TB, workdir string, args ...string) ([]byte, error) {
-	t.Helper()
-	return hostDaggerExecRaw(ctx, t, workdir, append([]string{"module"}, args...)...)
-}
-
 func cleanupExec(t testing.TB, cmd *exec.Cmd) {
 	t.Cleanup(func() {
 		if cmd.Process == nil {
@@ -284,7 +270,7 @@ func withModInitAt(dir, sdk, contents string, extra ...string) dagger.WithContai
 		if name == "." {
 			name = "test"
 		}
-		args := []string{"init", name, "--sdk=" + sdk, "--source=" + dir}
+		args := []string{"module", "init", name, "--sdk=" + sdk, "--source=" + dir}
 		args = append(args, extra...)
 		args = append(args, dir)
 		ctr = ctr.With(daggerExec(args...))
