@@ -28,23 +28,18 @@ func GenerateEntrypoint(cmd *cobra.Command, args []string) error {
 	ctx = telemetry.InitEmbedded(ctx, nil)
 	defer telemetry.Close()
 
-	// Entrypoint rendering is file-to-file: it reads the typedef JSON and
-	// renders the dispatch entrypoint. It never needs an engine connection or
-	// schema introspection, so build the config directly instead of going
-	// through getGlobalConfig, which dials the engine whenever no introspection
-	// JSON is provided. That lets this run in standalone/nested codegen contexts
-	// where no engine is available.
-	cfg := generator.Config{
-		Lang:      generator.SDKLang(lang),
-		OutputDir: outputDir,
-		Bundle:    bundle,
-		EntrypointConfig: &generator.EntrypointGeneratorConfig{
-			TypedefJSONPath: entrypointTypedefPath,
-			OutputFile:      entrypointOutputFile,
-			ModuleRoot:      entrypointModuleRoot,
-			SDKImportPath:   entrypointSDKImport,
-			SourceDir:       entrypointSourceDir,
-		},
+	cfg, err := getGlobalConfig(ctx, false)
+	if err != nil {
+		return fmt.Errorf("failed to get global configuration: %w", err)
+	}
+	defer cfg.Close()
+
+	cfg.EntrypointConfig = &generator.EntrypointGeneratorConfig{
+		TypedefJSONPath: entrypointTypedefPath,
+		OutputFile:      entrypointOutputFile,
+		ModuleRoot:      entrypointModuleRoot,
+		SDKImportPath:   entrypointSDKImport,
+		SourceDir:       entrypointSourceDir,
 	}
 
 	gen, err := getGenerator(cfg)

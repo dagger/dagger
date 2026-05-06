@@ -17,31 +17,31 @@ import (
 func EntrypointTemplateFuncs(module *TypedefModule, opts EntrypointOptions) template.FuncMap {
 	c := &entrypointFuncCtx{module: module, opts: opts}
 	return template.FuncMap{
-		"jsString":             jsString,
-		"pascalize":            pascalize,
-		"coerceExpr":           c.coerceExpr,
-		"serializeExpr":        c.serializeExpr,
-		"renderTypeDef":        c.renderTypeDef,
-		"renderArgCall":        c.renderArgCall,
-		"renderFunctionExpr":   c.renderFunctionExpr,
-		"classRuntimeRef":      c.classRuntimeRef,
-		"classTypeRef":         c.classTypeRef,
-		"isExportedClass":      c.isExportedClass,
-		"coercedVarName":       coercedVarName,
-		"needsTransform":       needsTransform,
-		"isPrimitive":          isPrimitive,
-		"isInteger":            func(t *TypedefType) bool { return t != nil && t.Kind == KindInteger },
-		"argCoercionLine":      c.argCoercionLine,
-		"hasDefault":           hasDefault,
-		"engineIfaceTypeName":  c.engineIfaceTypeName,
-		"plannedImports":       c.plannedImports,
-		"isVariadic":           func(a *TypedefArgument) bool { return a.IsVariadic },
-		"propFieldName":        propFieldName,
-		"sortedKeysObjects":    sortedObjectKeys,
-		"sortedKeysEnums":      sortedEnumKeys,
-		"sortedKeysIfaces":     sortedInterfaceKeys,
-		"sortedKeysMethods":    sortedFunctionKeys,
-		"sortedKeysProps":      sortedPropertyKeys,
+		"jsString":          jsString,
+		"pascalize":         pascalize,
+		"coerceExpr":        c.coerceExpr,
+		"serializeExpr":     c.serializeExpr,
+		"renderTypeDef":     c.renderTypeDef,
+		"renderArgCall":     c.renderArgCall,
+		"renderFunctionExpr": c.renderFunctionExpr,
+		"classRuntimeRef":   c.classRuntimeRef,
+		"classTypeRef":      c.classTypeRef,
+		"isExportedClass":   c.isExportedClass,
+		"coercedVarName":    coercedVarName,
+		"needsTransform":    needsTransform,
+		"isPrimitive":       isPrimitive,
+		"isInteger":         func(t *TypedefType) bool { return t != nil && t.Kind == KindInteger },
+		"argCoercionLine":   c.argCoercionLine,
+		"hasDefault":        hasDefault,
+		"engineLoadFnName":  c.engineLoadFnName,
+		"plannedImports":    c.plannedImports,
+		"isVariadic":        func(a *TypedefArgument) bool { return a.IsVariadic },
+		"propFieldName":     propFieldName,
+		"sortedKeysObjects": sortedObjectKeys,
+		"sortedKeysEnums":   sortedEnumKeys,
+		"sortedKeysIfaces":  sortedInterfaceKeys,
+		"sortedKeysMethods": sortedFunctionKeys,
+		"sortedKeysProps":   sortedPropertyKeys,
 		"sortedKeysEnumValues": sortedEnumValueKeys,
 		"dict": func(values ...any) (map[string]any, error) {
 			if len(values)%2 != 0 {
@@ -69,50 +69,16 @@ func (c *entrypointFuncCtx) isExportedClass(obj *TypedefObject) bool {
 	return obj.Kind == "class" && obj.IsExported
 }
 
-// entrypointReservedBindings are the module-scope identifiers the generated
-// entrypoint imports from the SDK or declares itself. A user class whose name
-// matches one of these must be imported under an alias, otherwise it shadows
-// the entrypoint's own binding (e.g. a user `Context` class vs the SDK's
-// `Context`).
-var entrypointReservedBindings = map[string]bool{
-	// SDK imports
-	"Context":             true,
-	"DaggerError":         true,
-	"FunctionCachePolicy": true,
-	"TypeDefKind":         true,
-	"connection":          true,
-	"dag":                 true,
-	"getRegisteredClass":  true,
-	"__dagger":            true,
-	"telemetry":           true,
-	// entrypoint-internal declarations
-	"__loadCoreObject": true,
-	"formatError":      true,
-	"invoke":           true,
-	"dispatch":         true,
-	"register":         true,
-}
-
-// classBinding returns the local identifier an exported user class is imported
-// under: the class name, unless it collides with a reserved entrypoint binding,
-// in which case it's aliased.
-func (c *entrypointFuncCtx) classBinding(name string) string {
-	if entrypointReservedBindings[name] {
-		return "__UserClass_" + name
-	}
-	return name
-}
-
 func (c *entrypointFuncCtx) classRuntimeRef(obj *TypedefObject) string {
 	if obj.Kind == "class" && !obj.IsExported {
 		return "__cls_" + obj.Name
 	}
-	return c.classBinding(obj.Name)
+	return obj.Name
 }
 
 func (c *entrypointFuncCtx) classTypeRef(obj *TypedefObject) string {
 	if obj.Kind == "class" && obj.IsExported {
-		return c.classBinding(obj.Name)
+		return obj.Name
 	}
 	return "any"
 }
@@ -130,9 +96,7 @@ func (c *entrypointFuncCtx) coerceExpr(expr string, t *TypedefType) string {
 		if _, ok := c.module.Objects[t.Name]; ok {
 			return fmt.Sprintf("rebuild%s(%s)", t.Name, expr)
 		}
-		// Core/dependency object: the engine hands us an ID string; load a
-		// typed client from it via node(id:) (unified-ID API, post-#12041).
-		return fmt.Sprintf("__loadCoreObject(%s, %s)", expr, jsString(t.Name))
+		return fmt.Sprintf("dag.load%sFromID(%s)", t.Name, expr)
 	case KindEnum:
 		e, ok := c.module.Enums[t.Name]
 		if !ok {
@@ -239,13 +203,13 @@ func (c *entrypointFuncCtx) renderArgCall(arg *TypedefArgument) string {
 	}
 	td := c.renderTypeDef(arg.Type)
 	if arg.IsOptional {
-		td += ".withOptional(true)"
+		td = td + ".withOptional(true)"
 	}
 	if hasDefault(arg) {
 		dv, ok := c.resolveDefaultValue(arg)
 		if !ok {
 			if !arg.IsOptional {
-				td += ".withOptional(true)"
+				td = td + ".withOptional(true)"
 			}
 		} else {
 			b, _ := json.Marshal(dv)
@@ -318,39 +282,24 @@ func (c *entrypointFuncCtx) renderFunctionExpr(fn *TypedefFunction) string {
 
 // argCoercionLine emits a single `const __arg_X = ...` declaration coercing
 // the engine-supplied JSON value into a runtime value the user method
-// expects (node(id:) load for core IDables, rebuilder for module objects,
-// enum map, iface wrap, etc.).
+// expects (loadXFromID for IDables, rebuilder for module objects, enum map,
+// iface wrap, etc.).
 func (c *entrypointFuncCtx) argCoercionLine(arg *TypedefArgument) string {
 	v := coercedVarName(arg)
 	access := fmt.Sprintf("args[%s]", jsString(arg.Name))
 	if hasDefault(arg) && isPrimitive(arg.Type) {
 		return fmt.Sprintf("const %s = %s", v, c.coerceExpr(access, arg.Type))
 	}
-	// An omitted arg has no key in inputArgs, so `access` is undefined.
-	// Normalize that (and an explicit null) to a sensible default matching the
-	// runtime loader contract:
-	//   - a variadic arg defaults to an empty array so the `...` spread is safe
-	//   - a nullable arg with no default becomes null (user code typed
-	//     `T | null` must receive null, not undefined)
-	fallback := access
-	switch {
-	case arg.IsVariadic:
-		fallback = "[]"
-	case arg.IsNullable && !hasDefault(arg):
-		fallback = "null"
-	}
 	return fmt.Sprintf(
 		"const %s = %s === undefined || %s === null ? %s : %s",
-		v, access, access, fallback, c.coerceExpr(access, arg.Type),
+		v, access, access, access, c.coerceExpr(access, arg.Type),
 	)
 }
 
-// engineIfaceTypeName returns "<Module><Iface>" — the namespaced GraphQL type
-// name under which a module interface is registered in the schema. The iface
-// wrapper uses it with node(id:) (via Context.selectNode) to instantiate from
-// its engine-side ID.
-func (c *entrypointFuncCtx) engineIfaceTypeName(iface *TypedefInterface) string {
-	return pascalize(c.module.Name) + iface.Name
+// engineLoadFnName returns "load<Module><Iface>FromID" — the GraphQL field
+// the iface wrapper calls to instantiate from its engine-side ID.
+func (c *entrypointFuncCtx) engineLoadFnName(iface *TypedefInterface) string {
+	return "load" + pascalize(c.module.Name) + iface.Name + "FromID"
 }
 
 // plannedImports returns an ordered slice of import lines to emit. Encodes
@@ -365,9 +314,6 @@ func (c *entrypointFuncCtx) plannedImports() []importLine {
 		From:  sdk,
 		Names: []string{"Context", "Error as DaggerError", "FunctionCachePolicy", "TypeDefKind", "connection", "dag", "getRegisteredClass"},
 	})
-	// Namespace import of the generated client so __loadCoreObject can look up
-	// core/dependency object classes by name when loading them from an ID.
-	lines = append(lines, importLine{From: sdk, Namespace: "* as __dagger"})
 	lines = append(lines, importLine{From: sdk + "/telemetry", Namespace: "* as telemetry"})
 
 	// Group user imports by file path, deduping side-effect-only files.
@@ -388,18 +334,9 @@ func (c *entrypointFuncCtx) plannedImports() []importLine {
 			groups[path] = g
 			order = append(order, path)
 		}
-		switch {
-		case obj.IsDefaultExport:
-			// A default import binds whatever local name we choose, so just use
-			// the (possibly aliased) binding directly.
-			g.Default = c.classBinding(obj.Name)
-		case obj.IsExported:
-			if binding := c.classBinding(obj.Name); binding != obj.Name {
-				g.Names = append(g.Names, obj.Name+" as "+binding)
-			} else {
-				g.Names = append(g.Names, obj.Name)
-			}
-		default:
+		if obj.IsExported {
+			g.Names = append(g.Names, obj.Name)
+		} else {
 			g.SideEffect = true
 		}
 	}
@@ -414,7 +351,6 @@ func (c *entrypointFuncCtx) plannedImports() []importLine {
 type importLine struct {
 	From       string
 	Names      []string
-	Default    string // default import binding (e.g. `export default class Foo`)
 	Namespace  string
 	SideEffect bool
 }
@@ -477,7 +413,7 @@ func isPrimitive(t *TypedefType) bool {
 }
 
 func hasDefault(arg *TypedefArgument) bool {
-	return len(arg.DefaultValue) > 0 && string(arg.DefaultValue) != "null"
+	return arg.DefaultValue != nil && len(arg.DefaultValue) > 0 && string(arg.DefaultValue) != "null"
 }
 
 func coercedVarName(arg *TypedefArgument) string {
@@ -538,9 +474,9 @@ func sortedKeys[V any](m map[string]V) []string {
 	return keys
 }
 
-func sortedObjectKeys(m map[string]*TypedefObject) []string       { return sortedKeys(m) }
-func sortedEnumKeys(m map[string]*TypedefEnum) []string           { return sortedKeys(m) }
+func sortedObjectKeys(m map[string]*TypedefObject) []string      { return sortedKeys(m) }
+func sortedEnumKeys(m map[string]*TypedefEnum) []string          { return sortedKeys(m) }
 func sortedEnumValueKeys(m map[string]*TypedefEnumValue) []string { return sortedKeys(m) }
-func sortedFunctionKeys(m map[string]*TypedefFunction) []string   { return sortedKeys(m) }
-func sortedPropertyKeys(m map[string]*TypedefProperty) []string   { return sortedKeys(m) }
+func sortedFunctionKeys(m map[string]*TypedefFunction) []string  { return sortedKeys(m) }
+func sortedPropertyKeys(m map[string]*TypedefProperty) []string  { return sortedKeys(m) }
 func sortedInterfaceKeys(m map[string]*TypedefInterface) []string { return sortedKeys(m) }

@@ -113,6 +113,7 @@ func (n *NodeRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 				n.cfg.name,
 				n.cfg.source.Directory(SrcDir),
 				clientBindings,
+				n.sdkSourceDir,
 			).
 			Sync(ctx)
 		return err

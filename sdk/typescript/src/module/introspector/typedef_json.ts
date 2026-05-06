@@ -1,18 +1,7 @@
 import { TypeDefKind } from "../../api/client.gen.js"
-import { DaggerArgument } from "./dagger_module/argument.js"
-import {
-  DaggerEnumBase,
-  DaggerEnumBaseValue,
-} from "./dagger_module/enumBase.js"
-import { DaggerFunction } from "./dagger_module/function.js"
-import { DaggerInterface } from "./dagger_module/interface.js"
-import { DaggerInterfaceFunction } from "./dagger_module/interfaceFunction.js"
 import { DaggerModule } from "./dagger_module/module.js"
-import {
-  DaggerObjectBase,
-  DaggerObjectPropertyBase,
-} from "./dagger_module/objectBase.js"
-import { ListTypeDef, ObjectTypeDef, TypeDef } from "./typedef.js"
+import { DaggerObjectBase } from "./dagger_module/objectBase.js"
+import { TypeDef } from "./typedef.js"
 
 /**
  * Serialize a parsed DaggerModule into a stable JSON shape that downstream
@@ -36,15 +25,11 @@ export function serializeModule(module: DaggerModule): unknown {
 function serializeObject(obj: DaggerObjectBase) {
   const isExported = (obj as DaggerObjectBase & { isExported?: boolean })
     .isExported
-  const isDefaultExport = (
-    obj as DaggerObjectBase & { isDefaultExport?: boolean }
-  ).isDefaultExport
   const ctor = obj._constructor
   return {
     name: obj.name,
     kind: obj.kind(),
     isExported: isExported !== false,
-    isDefaultExport: isDefaultExport === true,
     description: obj.description,
     deprecated: obj.deprecated,
     location: obj.getLocation(),
@@ -59,25 +44,24 @@ function serializeObject(obj: DaggerObjectBase) {
   }
 }
 
-function serializeFunction(fn: DaggerFunction | DaggerInterfaceFunction) {
+function serializeFunction(fn: any) {
   // Emit arguments as an ordered array — argument position matters for
   // positional dispatch and Go's `map` iteration loses order.
-  const f = fn as DaggerFunction
   return {
-    name: f.name,
-    alias: f.alias,
-    cache: f.cache,
-    description: f.description,
-    deprecated: f.deprecated,
-    isCheck: f.isCheck === true,
-    isGenerator: f.isGenerator === true,
-    isUp: f.isUp === true,
-    returnType: f.returnType ? serializeType(f.returnType) : undefined,
-    arguments: Object.values(f.arguments).map(serializeArgument),
+    name: fn.name,
+    alias: fn.alias,
+    cache: fn.cache,
+    description: fn.description,
+    deprecated: fn.deprecated,
+    isCheck: fn.isCheck === true,
+    isGenerator: fn.isGenerator === true,
+    isUp: fn.isUp === true,
+    returnType: fn.returnType ? serializeType(fn.returnType) : undefined,
+    arguments: Object.values(fn.arguments).map(serializeArgument),
   }
 }
 
-function serializeArgument(arg: DaggerArgument) {
+function serializeArgument(arg: any) {
   return {
     name: arg.name,
     description: arg.description,
@@ -93,7 +77,7 @@ function serializeArgument(arg: DaggerArgument) {
   }
 }
 
-function serializeProperty(prop: DaggerObjectPropertyBase) {
+function serializeProperty(prop: any) {
   return {
     name: prop.name,
     alias: prop.alias,
@@ -104,11 +88,11 @@ function serializeProperty(prop: DaggerObjectPropertyBase) {
   }
 }
 
-function serializeEnum(enum_: DaggerEnumBase) {
+function serializeEnum(enum_: any) {
   return {
     name: enum_.name,
     description: enum_.description,
-    values: mapValues(enum_.values, (v: DaggerEnumBaseValue) => ({
+    values: mapValues(enum_.values, (v: any) => ({
       name: v.name,
       value: v.value,
       description: v.description,
@@ -117,7 +101,7 @@ function serializeEnum(enum_: DaggerEnumBase) {
   }
 }
 
-function serializeInterface(iface: DaggerInterface) {
+function serializeInterface(iface: any) {
   return {
     name: iface.name,
     description: iface.description,
@@ -130,13 +114,13 @@ function serializeType(t: TypeDef<TypeDefKind>): unknown {
     case TypeDefKind.ListKind:
       return {
         kind: t.kind,
-        typeDef: serializeType((t as ListTypeDef).typeDef),
+        typeDef: serializeType((t as any).typeDef),
       }
     case TypeDefKind.ObjectKind:
     case TypeDefKind.EnumKind:
     case TypeDefKind.InterfaceKind:
     case TypeDefKind.ScalarKind:
-      return { kind: t.kind, name: (t as ObjectTypeDef).name }
+      return { kind: t.kind, name: (t as any).name }
     default:
       return { kind: t.kind }
   }
