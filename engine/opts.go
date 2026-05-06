@@ -121,6 +121,11 @@ type ClientMetadata struct {
 	// When false, only the core API is exposed by default.
 	LoadWorkspaceModules bool `json:"load_workspace_modules,omitempty"`
 
+	// SingleQuery declares that this client will send at most one GraphQL query
+	// request before disconnecting. The engine may use the query document to
+	// optimize session initialization.
+	SingleQuery bool `json:"single_query,omitempty"`
+
 	// SkipWorkspaceModules is a legacy compatibility input. New clients should
 	// use LoadWorkspaceModules instead.
 	SkipWorkspaceModules bool `json:"skip_workspace_modules,omitempty"`
