@@ -27,7 +27,7 @@ func (c *Client) diffcopy(ctx context.Context, opts engine.LocalImportOpts, msg 
 
 	ctx = opts.AppendToOutgoingContext(ctx)
 
-	clientCaller, err := c.GetSessionCaller(ctx, false)
+	clientCaller, err := c.GetSessionCaller(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get requester session: %w", err)
 	}
@@ -111,28 +111,30 @@ func (c *Client) LocalDirExport(
 		return err
 	}
 
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	caller, err := c.GetSessionCaller(ctx)
 	if err != nil {
-		return err
-	}
-
-	caller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
-	if err != nil {
-		return err
+		return fmt.Errorf("failed to get requester session attachables: %w", err)
 	}
 
 	destPath = path.Clean(destPath)
+	method := "/moby.filesync.v1.FileSend/DiffCopy"
+	if !caller.Supports(method) {
+		return fmt.Errorf("method %s not supported by the client", method)
+	}
+
 	ctx = engine.LocalExportOpts{
 		Path:        destPath,
 		Merge:       merge,
 		RemovePaths: removePaths,
 	}.AppendToOutgoingContext(ctx)
 
-	if err := filesync.CopyToCaller(ctx, outputFS, 0, caller, nil); err != nil {
-		return err
+	diffCopyClient, err := filesync.NewFileSendClient(caller.Conn()).DiffCopy(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create diff copy client: %w", err)
 	}
+	defer diffCopyClient.CloseSend()
 
-	return nil
+	return sendDiffCopyToCaller(diffCopyClient, outputFS, nil)
 }
 
 func (c *Client) LocalFileExport(
@@ -182,7 +184,7 @@ func (c *Client) LocalFileExport(
 		FileMode:           stat.Mode().Perm(),
 	}.AppendToOutgoingContext(ctx)
 
-	clientCaller, err := c.GetSessionCaller(ctx, false)
+	clientCaller, err := c.GetSessionCaller(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get requester session: %w", err)
 	}
@@ -245,7 +247,7 @@ func (c *Client) IOReaderExport(ctx context.Context, r io.Reader, destPath strin
 		FileMode:         destMode,
 	}.AppendToOutgoingContext(ctx)
 
-	clientCaller, err := c.GetSessionCaller(ctx, false)
+	clientCaller, err := c.GetSessionCaller(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get requester session: %w", err)
 	}

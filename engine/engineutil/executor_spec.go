@@ -71,9 +71,6 @@ const (
 	DaggerSessionTokenEnv = "DAGGER_SESSION_TOKEN"
 	DaggerEngineNumCPUEnv = "DAGGER_ENGINE_NUM_CPU"
 
-	// this is set by buildkit, we cannot change
-	BuildkitSessionIDHeader = "x-docker-expose-session-uuid"
-
 	BuildkitQemuEmulatorMountPoint = "/dev/.buildkit_qemu_emulator"
 
 	cgroupSampleInterval     = 5 * time.Second

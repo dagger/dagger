@@ -12,17 +12,14 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine"
-	bksession "github.com/dagger/dagger/internal/buildkit/session"
+	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 )
 
 type fakeSessionCaller struct {
-	id string
-}
-
-func (caller *fakeSessionCaller) Context() context.Context {
-	return context.Background()
+	id   string
+	conn *grpc.ClientConn
 }
 
 func (caller *fakeSessionCaller) Supports(string) bool {
@@ -30,11 +27,7 @@ func (caller *fakeSessionCaller) Supports(string) bool {
 }
 
 func (caller *fakeSessionCaller) Conn() *grpc.ClientConn {
-	return nil
-}
-
-func (caller *fakeSessionCaller) SharedKey() string {
-	return caller.id
+	return caller.conn
 }
 
 func TestPendingLegacyModule(t *testing.T) {
@@ -308,7 +301,7 @@ func TestResolveHostServiceCallerFallsBackToParentForSyntheticNestedClient(t *te
 
 	parentCaller := &fakeSessionCaller{id: "parent"}
 	parent := &daggerClient{clientID: "parent"}
-	parent.getHostServiceCaller = func(id string) (bksession.Caller, error) {
+	parent.getHostServiceCaller = func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
 		require.Equal(t, "parent", id)
 		return parentCaller, nil
 	}
@@ -319,49 +312,36 @@ func TestResolveHostServiceCallerFallsBackToParentForSyntheticNestedClient(t *te
 		parents:                  []*daggerClient{parent},
 	}
 
-	var calls []struct {
-		id     string
-		noWait bool
-	}
+	child.daggerSession = &daggerSession{attachables: newSessionAttachableManager()}
 
-	caller, err := child.resolveHostServiceCaller("child", func(id string, noWait bool) (bksession.Caller, error) {
-		calls = append(calls, struct {
-			id     string
-			noWait bool
-		}{id: id, noWait: noWait})
-		return nil, nil
-	})
+	caller, err := child.resolveHostServiceCaller(context.Background(), "child")
 	require.NoError(t, err)
 	require.Same(t, parentCaller, caller)
-	require.Equal(t, []struct {
-		id     string
-		noWait bool
-	}{
-		{id: "child", noWait: true},
-	}, calls)
 }
 
 func TestResolveHostServiceCallerPrefersCurrentClientAttachable(t *testing.T) {
 	t.Parallel()
 
-	currentCaller := &fakeSessionCaller{id: "child"}
+	currentCaller := &sessionAttachableCaller{
+		ctx:       context.Background(),
+		supported: map[string]struct{}{},
+	}
 	parent := &daggerClient{clientID: "parent"}
-	parent.getHostServiceCaller = func(string) (bksession.Caller, error) {
+	parent.getHostServiceCaller = func(context.Context, string) (engineutil.SessionCaller, error) {
 		t.Fatal("unexpected parent fallback")
 		return nil, nil
 	}
+	attachables := newSessionAttachableManager()
+	attachables.callers["child"] = currentCaller
 
 	child := &daggerClient{
 		clientID:                 "child",
 		hostServiceProxyClientID: "parent",
 		parents:                  []*daggerClient{parent},
+		daggerSession:            &daggerSession{attachables: attachables},
 	}
 
-	caller, err := child.resolveHostServiceCaller("child", func(id string, noWait bool) (bksession.Caller, error) {
-		require.Equal(t, "child", id)
-		require.True(t, noWait)
-		return currentCaller, nil
-	})
+	caller, err := child.resolveHostServiceCaller(context.Background(), "child")
 	require.NoError(t, err)
 	require.Same(t, currentCaller, caller)
 }
@@ -371,12 +351,12 @@ func TestResolveHostServiceCallerUsesBlockingLookupForOtherClients(t *testing.T)
 
 	otherCaller := &fakeSessionCaller{id: "other"}
 	child := &daggerClient{clientID: "child"}
-
-	caller, err := child.resolveHostServiceCaller("other", func(id string, noWait bool) (bksession.Caller, error) {
+	child.getClientCaller = func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
 		require.Equal(t, "other", id)
-		require.False(t, noWait)
 		return otherCaller, nil
-	})
+	}
+
+	caller, err := child.resolveHostServiceCaller(context.Background(), "other")
 	require.NoError(t, err)
 	require.Same(t, otherCaller, caller)
 }

@@ -54,7 +54,7 @@ func canonicalModuleReference(src *core.ModuleSource) string {
 
 // ensureWorkspaceLoaded detects the workspace from the client's working directory
 // and loads all configured modules onto the dagql server. Called from serveQuery
-// (not initializeDaggerClient) because it requires the client's buildkit session
+// (not initializeDaggerClient) because it requires the client's session attachables
 // to access the client's filesystem for workspace detection.
 func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClient) error {
 	mode, workspaceRef := workspaceBindingMode(client)
@@ -69,10 +69,10 @@ func (srv *Server) ensureWorkspaceLoaded(ctx context.Context, client *daggerClie
 		return client.workspaceErr
 	}
 
-	// Wait for the client's buildkit session to be available.
+	// Wait for the client's session attachables to be available.
 	// Don't mark as loaded on failure — allow retry on next request.
-	if _, err := client.getClientCaller(client.clientID); err != nil {
-		return fmt.Errorf("waiting for client session: %w", err)
+	if _, err := client.getClientCaller(ctx, client.clientID); err != nil {
+		return fmt.Errorf("waiting for client session attachables: %w", err)
 	}
 
 	var err error
@@ -665,10 +665,10 @@ func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient
 		return client.modulesErr
 	}
 
-	// Wait for the client's buildkit session to be available.
+	// Wait for the client's session attachables to be available.
 	// Don't mark as loaded on failure — allow retry on next request.
-	if _, err := client.getClientCaller(client.clientID); err != nil {
-		return fmt.Errorf("waiting for client session: %w", err)
+	if _, err := client.getClientCaller(ctx, client.clientID); err != nil {
+		return fmt.Errorf("waiting for client session attachables: %w", err)
 	}
 
 	loads := gatherModuleLoadRequests(client.pendingModules, client.pendingExtraModules)

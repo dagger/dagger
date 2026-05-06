@@ -28,7 +28,6 @@ import (
 	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
-	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
@@ -48,6 +47,11 @@ import (
 	"github.com/dagger/dagger/engine/session/store"
 	"github.com/dagger/dagger/engine/session/terminal"
 )
+
+type SessionCaller interface {
+	Conn() *grpc.ClientConn
+	Supports(method string) bool
+}
 
 // Opts combines server-scoped runtime dependencies with per-client session plumbing.
 // Server-scoped fields are initialized once with NewOpts and shallow-copied for each client.
@@ -77,11 +81,10 @@ type Opts struct {
 	HostMntNS  *os.File
 	CleanMntNS *os.File
 
-	SessionManager       *bksession.Manager
 	Dialer               *net.Dialer
-	GetClientCaller      func(string) (bksession.Caller, error)
-	GetHostServiceCaller func(string) (bksession.Caller, error)
-	GetMainClientCaller  func() (bksession.Caller, error)
+	GetClientCaller      func(context.Context, string) (SessionCaller, error)
+	GetHostServiceCaller func(context.Context, string) (SessionCaller, error)
+	GetMainClientCaller  func(context.Context) (SessionCaller, error)
 	GetRegistryResolver  func(context.Context) (*serverresolver.Resolver, error)
 
 	Interactive        bool
@@ -216,7 +219,7 @@ func RunInNetNS[T any](
 	return runInNetNS(ctx, runState, fn)
 }
 
-func (c *Client) GetSessionCaller(ctx context.Context, wait bool) (_ bksession.Caller, rerr error) {
+func (c *Client) GetSessionCaller(ctx context.Context) (_ SessionCaller, rerr error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -227,12 +230,12 @@ func (c *Client) GetSessionCaller(ctx context.Context, wait bool) (_ bksession.C
 		bklog.G(ctx).WithError(rerr).Tracef("got session for %q", clientMetadata.ClientID)
 	}()
 
-	caller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, !wait)
+	caller, err := c.GetClientCaller(ctx, clientMetadata.ClientID)
 	if err != nil {
 		return nil, err
 	}
 	if caller == nil {
-		return nil, fmt.Errorf("session for %q not found", clientMetadata.ClientID)
+		return nil, fmt.Errorf("session attachables for client %q not found", clientMetadata.ClientID)
 	}
 	return caller, nil
 }
@@ -246,7 +249,7 @@ func (c *Client) ListenHostToContainer(
 		return nil, nil, err
 	}
 
-	clientCaller, err := c.GetSessionCaller(ctx, false)
+	clientCaller, err := c.GetSessionCaller(ctx)
 	if err != nil {
 		err = fmt.Errorf("failed to get requester session: %w", err)
 		cancel(fmt.Errorf("listen host to container error: %w", err))
@@ -388,7 +391,7 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 	if err != nil {
 		return nil, err
 	}
-	caller, err := c.GetHostServiceCaller(md.ClientID)
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
 	}
@@ -414,7 +417,7 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 
 func (c *Client) PromptAllowLLM(ctx context.Context, moduleRepoURL string) error {
 	// the flag hasn't allowed this LLM call, so prompt the user
-	caller, err := c.GetMainClientCaller()
+	caller, err := c.GetMainClientCaller(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get main client caller to prompt for allow llm: %w", err)
 	}
@@ -436,7 +439,7 @@ func (c *Client) PromptAllowLLM(ctx context.Context, moduleRepoURL string) error
 }
 
 func (c *Client) PromptHumanHelp(ctx context.Context, title, question string) (string, error) {
-	caller, err := c.GetMainClientCaller()
+	caller, err := c.GetMainClientCaller(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get main client caller to prompt user for human help: %w", err)
 	}
@@ -457,7 +460,7 @@ func (c *Client) GetGitConfig(ctx context.Context) ([]*git.GitConfigEntry, error
 	if err != nil {
 		return nil, err
 	}
-	caller, err := c.GetHostServiceCaller(md.ClientID)
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
 	}
@@ -497,7 +500,7 @@ type TerminalClient struct {
 func (c *Client) OpenTerminal(
 	ctx context.Context,
 ) (*TerminalClient, error) {
-	caller, err := c.GetMainClientCaller()
+	caller, err := c.GetMainClientCaller(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get main client caller: %w", err)
 	}
@@ -626,7 +629,7 @@ func (c *Client) OpenTerminal(
 func (c *Client) OpenPipe(
 	ctx context.Context,
 ) (io.ReadWriteCloser, error) {
-	caller, err := c.GetMainClientCaller()
+	caller, err := c.GetMainClientCaller(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get main client caller: %w", err)
 	}
@@ -648,7 +651,7 @@ func (c *Client) WriteImage(
 	if err != nil {
 		return nil, err
 	}
-	caller, err := c.GetHostServiceCaller(md.ClientID)
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client caller: %w", err)
 	}
@@ -690,7 +693,7 @@ func (c *Client) ReadImage(
 	if err != nil {
 		return nil, err
 	}
-	caller, err := c.GetHostServiceCaller(md.ClientID)
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client caller: %w", err)
 	}
@@ -721,7 +724,7 @@ func (c *Client) ReadImage(
 	return nil, fmt.Errorf("client has no supported api for loading image")
 }
 
-func callerSupports(caller bksession.Caller, desc *grpc.ServiceDesc) bool {
+func callerSupports(caller SessionCaller, desc *grpc.ServiceDesc) bool {
 	for _, method := range desc.Methods {
 		if !caller.Supports(fmt.Sprintf("/%s/%s", desc.ServiceName, method.MethodName)) {
 			return false
