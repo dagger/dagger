@@ -62,7 +62,7 @@ func (ModuleSuite) TestModuleSchemaVersion(ctx context.Context, t *testctx.T) {
 		work := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--sdk=go", "--source=.", "foo")).
+			With(daggerExec("module", "init", "--sdk=go", "--source=.", "foo")).
 			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.11.0"}`).
 			WithNewFile("main.go", `package main
 
@@ -108,7 +108,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 		work := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
-			With(daggerExec("init", "--sdk=go", "--source=.", "dep")).
+			With(daggerExec("module", "init", "--sdk=go", "--source=.", "dep")).
 			WithNewFile("dagger.json", `{"name": "dep", "sdk": "go", "source": ".", "engineVersion": "v0.11.0"}`).
 			WithNewFile("main.go", `package main
 
@@ -136,8 +136,8 @@ func schemaVersion(ctx context.Context) (string, error) {
 `,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--sdk=go", "--source=.", "foo")).
-			With(daggerExec("install", "./dep")).
+			With(daggerExec("module", "init", "--sdk=go", "--source=.", "foo")).
+			With(daggerExec("module", "install", "./dep")).
 			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.10.0", "dependencies": [{"name": "dep", "source": "dep"}]}`).
 			WithNewFile("main.go", `package main
 
@@ -309,7 +309,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.0.0"}`).
 			WithNewFile("main.go", moduleSrc)
 
-		work = work.With(daggerExec("install", "github.com/shykes/hello"))
+		work = work.With(daggerExec("module", "install", "github.com/shykes/hello"))
 		daggerJSON, err := work.
 			File("dagger.json").
 			Contents(ctx)
@@ -343,7 +343,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.0.0"}`).
 			WithNewFile("main.go", moduleSrc)
 
-		work = work.With(daggerExec("update"))
+		work = work.With(daggerExec("module", "update"))
 		daggerJSON, err := work.
 			File("dagger.json").
 			Contents(ctx)
