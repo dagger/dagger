@@ -386,28 +386,38 @@ type Beta {
 }
 
 // TestModuleLoadingPrecedence should cover the explicit runtime precedence
-// rules after dedupe: extra modules > CWD module > ambient workspace modules.
+// rules after dedupe: configured workspaces own module loading, unconfigured
+// workspaces may fall back to CWD modules, and extra modules win when present.
 func (ModuleLoadingSuite) TestModuleLoadingPrecedence(ctx context.Context, t *testctx.T) {
-	t.Run("cwd module overrides ambient entrypoint", func(ctx context.Context, t *testctx.T) {
+	t.Run("configured workspace ignores cwd module", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c).
-			With(initDangBlueprint("ambient", `
-type Ambient {
-  pub build: String! {
-    "ambient build"
-  }
-}
-`)).
+			WithNewFile(".dagger/config.toml", `[modules.ambient]
+source = "modules/ambient"
+entrypoint = true
+`).
+			With(moduleLoadingDangModule(".dagger/modules/ambient", "ambient", "Ambient", "build", "ambient build")).
+			With(moduleLoadingDangModule("nested", "nested", "Nested", "build", "cwd build")).
+			WithWorkdir("/work/nested")
+
+		out, err := ctr.With(moduleLoadingDaggerCall("build")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "ambient build", strings.TrimSpace(out))
+
+		out, err = ctr.With(moduleLoadingDaggerCallFail("nested", "build")).CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "nested")
+	})
+
+	t.Run("cwd module is fallback without workspace config", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
 			With(moduleLoadingDangModule("nested", "nested", "Nested", "build", "cwd build")).
 			WithWorkdir("/work/nested")
 
 		out, err := ctr.With(moduleLoadingDaggerCall("build")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "cwd build", strings.TrimSpace(out))
-
-		out, err = ctr.With(moduleLoadingDaggerCall("ambient", "build")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "ambient build", strings.TrimSpace(out))
 	})
 
 	t.Run("extra module suppresses cwd module", func(ctx context.Context, t *testctx.T) {
