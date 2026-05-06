@@ -3,7 +3,6 @@ package schema
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/dagger/dagger/cmd/codegen/introspection"
@@ -330,7 +329,7 @@ func buildCoreTypeDefFunctions(
 			continue
 		}
 
-		rtType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionField.TypeRef, false, false)
+		rtType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionField.TypeRef, false)
 		if err != nil {
 			return nil, false, fmt.Errorf("failed to convert return type: %w", err)
 		}
@@ -539,7 +538,7 @@ func (m *CoreMod) buildTypeDefs(ctx context.Context, dag *dagql.Server) (dagql.O
 			}
 
 			for _, introspectionField := range introspectionType.InputFields {
-				fieldType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionField.TypeRef, false, false)
+				fieldType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionField.TypeRef, false)
 				if err != nil {
 					return nil, fmt.Errorf("failed to convert return type: %w", err)
 				}
@@ -960,7 +959,7 @@ func maybeOptional(ctx context.Context, dag *dagql.Server, inst dagql.ObjectResu
 // resolveArgTypeDef converts an introspection arg's TypeRef into a TypeDef,
 // also handling the unified ID scalar via @expectedType directives.
 func resolveArgTypeDef(ctx context.Context, dag *dagql.Server, arg introspection.InputValue) (dagql.ObjectResult[*core.TypeDef], bool, error) {
-	argType, ok, err := introspectionRefToTypeDef(ctx, dag, arg.TypeRef, false, true)
+	argType, ok, err := introspectionRefToTypeDef(ctx, dag, arg.TypeRef, false)
 	if err != nil || !ok {
 		return argType, ok, err
 	}
@@ -1027,25 +1026,12 @@ func resolveIDScalar(ctx context.Context, dag *dagql.Server, typeDef dagql.Objec
 	return typeDef, false, nil
 }
 
-func introspectionRefToTypeDef(ctx context.Context, dag *dagql.Server, introspectionType *introspection.TypeRef, nonNull, isInput bool) (dagql.ObjectResult[*core.TypeDef], bool, error) {
+func introspectionRefToTypeDef(ctx context.Context, dag *dagql.Server, introspectionType *introspection.TypeRef, nonNull bool) (dagql.ObjectResult[*core.TypeDef], bool, error) {
 	switch introspectionType.Kind {
 	case introspection.TypeKindNonNull:
-		return introspectionRefToTypeDef(ctx, dag, introspectionType.OfType, true, isInput)
+		return introspectionRefToTypeDef(ctx, dag, introspectionType.OfType, true)
 
 	case introspection.TypeKindScalar:
-		// TODO: just remove?
-		if isInput && introspectionType.Name != "ID" && strings.HasSuffix(introspectionType.Name, "ID") {
-			inst, err := core.SelectTypeDefWithServer(ctx, dag, dagql.Selector{
-				Field: "withObject",
-				Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(strings.TrimSuffix(introspectionType.Name, "ID"))}},
-			})
-			if err != nil {
-				return dagql.ObjectResult[*core.TypeDef]{}, false, err
-			}
-			inst, err = maybeOptional(ctx, dag, inst, nonNull)
-			return inst, true, err
-		}
-
 		var (
 			inst dagql.ObjectResult[*core.TypeDef]
 			err  error
@@ -1100,7 +1086,7 @@ func introspectionRefToTypeDef(ctx context.Context, dag *dagql.Server, introspec
 		return inst, true, err
 
 	case introspection.TypeKindList:
-		elementTypeDef, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionType.OfType, false, isInput)
+		elementTypeDef, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionType.OfType, false)
 		if err != nil {
 			return dagql.ObjectResult[*core.TypeDef]{}, false, fmt.Errorf("failed to convert list element type: %w", err)
 		}

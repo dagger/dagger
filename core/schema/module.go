@@ -2406,7 +2406,7 @@ func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectRe
 	}
 
 	for _, introspectionField := range codeGenType.Fields {
-		rtType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionField.TypeRef, false, false)
+		rtType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionField.TypeRef, false)
 		if err != nil {
 			return dagql.ObjectResult[*core.TypeDef]{}, fmt.Errorf("failed to convert return type: %w", err)
 		}
