@@ -126,7 +126,7 @@ func (ModuleLoadingSuite) TestModuleSourceResolution(ctx context.Context, t *tes
 		out, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/wórk/sub/").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			With(daggerExec("init", "--source=.", "--sdk=go", "test")).
 			WithNewFile("/wórk/sub/main.go", `package main
  			import (
  				"context"
@@ -375,8 +375,8 @@ type Beta {
   }
 }
 `)).
-		With(daggerWorkspaceExec("config", "modules.alpha.entrypoint", "true")).
-		With(daggerWorkspaceExec("config", "modules.beta.entrypoint", "true"))
+		With(daggerExec("workspace", "config", "modules.alpha.entrypoint", "true")).
+		With(daggerExec("workspace", "config", "modules.beta.entrypoint", "true"))
 
 	out, err := ctr.With(moduleLoadingDaggerExecFail("functions")).CombinedOutput(ctx)
 	require.NoError(t, err)
@@ -508,8 +508,8 @@ type Beta {
   }
 }
 `)).
-			With(daggerWorkspaceExec("config", "modules.alpha.entrypoint", "true")).
-			With(daggerWorkspaceExec("config", "modules.beta.entrypoint", "true"))
+			With(daggerExec("workspace", "config", "modules.alpha.entrypoint", "true")).
+			With(daggerExec("workspace", "config", "modules.beta.entrypoint", "true"))
 
 		out, err := ctr.With(moduleLoadingDaggerExecFail("functions")).CombinedOutput(ctx)
 		require.NoError(t, err)
@@ -640,7 +640,7 @@ type Dirs {
 		base := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--name=playground", "--sdk=go", "--source=.")).
+			With(daggerExec("init", "--sdk=go", "--source=.", "playground")).
 			WithNewFile("main.go", `package main
 
 import (

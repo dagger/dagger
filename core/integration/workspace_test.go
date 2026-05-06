@@ -73,7 +73,7 @@ func initDangModule(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
 			With(ensureWorkspaceInit()).
-			With(daggerModuleExec("init", "--sdk=dang", "--name="+name)).
+			With(daggerExec("init", "--sdk=dang", name)).
 			WithNewFile(".dagger/modules/"+name+"/main.dang", source)
 	}
 }
@@ -83,7 +83,7 @@ func initDangModule(name, source string) dagger.WithContainerFunc {
 func initStandaloneDangModule(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
-			With(daggerModuleExec("init", "--sdk=dang", "--source=.", "--name="+name)).
+			With(daggerExec("init", "--sdk=dang", "--source=.", name)).
 			WithNewFile("main.dang", source)
 	}
 }
@@ -94,9 +94,9 @@ func initDangBlueprint(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
 			With(ensureWorkspaceInit()).
-			With(daggerModuleExec("init", "--sdk=dang", "--name="+name)).
+			With(daggerExec("init", "--sdk=dang", name)).
 			WithNewFile(".dagger/modules/"+name+"/main.dang", source).
-			With(daggerWorkspaceExec("config", "modules."+name+".entrypoint", "true"))
+			With(daggerExec("workspace", "config", "modules."+name+".entrypoint", "true"))
 	}
 }
 
@@ -106,15 +106,15 @@ func initDangBlueprint(name, source string) dagger.WithContainerFunc {
 func initHostDangBlueprint(ctx context.Context, t testing.TB, workdir, name, source string) {
 	t.Helper()
 
-	_, err := hostDaggerWorkspaceExec(ctx, t, workdir, "init")
+	_, err := hostDaggerExec(ctx, t, workdir, "workspace", "init")
 	require.NoError(t, err)
 
-	_, err = hostDaggerModuleExec(ctx, t, workdir, "init", "--sdk=dang", "--name="+name)
+	_, err = hostDaggerExec(ctx, t, workdir, "init", "--sdk=dang", name)
 	require.NoError(t, err)
 
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".dagger", "modules", name, "main.dang"), []byte(source), 0o644))
 
-	_, err = hostDaggerWorkspaceExec(ctx, t, workdir, "config", "modules."+name+".entrypoint", "true")
+	_, err = hostDaggerExec(ctx, t, workdir, "workspace", "config", "modules."+name+".entrypoint", "true")
 	require.NoError(t, err)
 }
 
