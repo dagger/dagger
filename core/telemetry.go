@@ -129,6 +129,9 @@ func AroundFunc(
 	if dagql.IsInternal(ctx) {
 		attrs = append(attrs, attribute.Bool(telemetry.UIInternalAttr, true))
 	}
+	if req.PassthroughTelemetry {
+		attrs = append(attrs, attribute.Bool(telemetry.UIPassthroughAttr, true))
+	}
 
 	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
 
