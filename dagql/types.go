@@ -158,13 +158,6 @@ type AnyObjectResult interface {
 	Select(context.Context, *Server, Selector) (AnyResult, error)
 }
 
-// PostCallable is a type that has a callback attached that needs to always run before returned to a caller
-// whether or not the type is being returned from cache or not
-type PostCallable interface {
-	// Call the postcall func (or no-op if none is set)
-	PostCall(context.Context) error
-}
-
 // A type that has a callback attached that needs to always run when the result is removed
 // from the cache
 type OnReleaser interface {
