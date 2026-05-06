@@ -321,6 +321,133 @@ func TestDetectAndLoadWorkspaceDoesNotLoadModulesByDefault(t *testing.T) {
 	require.Empty(t, client.pendingModules)
 }
 
+func TestDetectAndLoadWorkspaceIgnoresCWDModuleWhenConfigExists(t *testing.T) {
+	t.Parallel()
+
+	existingFiles := map[string]bool{
+		"/repo/.git":                            true,
+		"/repo/.dagger/config.toml":             true,
+		"/repo/mymod/dagger.json":               true,
+		"/repo/mymod":                           true,
+		"/repo/.dagger/modules/dev":             true,
+		"/repo/.dagger/modules/dev/dagger.json": true,
+	}
+
+	statFS := core.StatFSFunc(func(_ context.Context, path string) (string, *core.Stat, error) {
+		path = filepath.Clean(path)
+		if existingFiles[path] {
+			return filepath.Dir(path), &core.Stat{
+				Name: filepath.Base(path),
+			}, nil
+		}
+		return "", nil, os.ErrNotExist
+	})
+
+	readFile := func(_ context.Context, path string) ([]byte, error) {
+		switch filepath.Clean(path) {
+		case "/repo/.dagger/config.toml":
+			return []byte(`[modules.dev]
+source = "modules/dev"
+entrypoint = true
+`), nil
+		case "/repo/mymod/dagger.json":
+			return []byte(`{"name":"cwd","sdk":{"source":"dang"}}`), nil
+		default:
+			return nil, os.ErrNotExist
+		}
+	}
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		ClientID: "test-client",
+	})
+
+	client := &daggerClient{
+		pendingWorkspaceLoad: true,
+		clientMetadata: &engine.ClientMetadata{
+			LoadWorkspaceModules: true,
+		},
+	}
+
+	srv := &Server{}
+	err := srv.detectAndLoadWorkspace(ctx, client,
+		statFS,
+		readFile,
+		"/repo/mymod",
+		func(ws *workspace.Workspace, relPath string) string {
+			return filepath.Join(ws.Root, ws.Path, relPath)
+		},
+		nil,
+		true,
+	)
+	require.NoError(t, err)
+	require.Equal(t, ".", client.workspace.Path)
+	require.Equal(t, "mymod", client.workspace.Cwd)
+
+	require.Len(t, client.pendingModules, 1)
+	require.Equal(t, moduleLoadKindAmbient, client.pendingModules[0].Kind)
+	require.Equal(t, "/repo/.dagger/modules/dev", client.pendingModules[0].Ref)
+	require.Equal(t, "dev", client.pendingModules[0].Name)
+	require.True(t, client.pendingModules[0].Entrypoint)
+}
+
+func TestDetectAndLoadWorkspaceLoadsCWDModuleWithoutConfig(t *testing.T) {
+	t.Parallel()
+
+	existingFiles := map[string]bool{
+		"/repo/.git":              true,
+		"/repo/mymod/dagger.json": true,
+	}
+
+	statFS := core.StatFSFunc(func(_ context.Context, path string) (string, *core.Stat, error) {
+		path = filepath.Clean(path)
+		if existingFiles[path] {
+			return filepath.Dir(path), &core.Stat{
+				Name: filepath.Base(path),
+			}, nil
+		}
+		return "", nil, os.ErrNotExist
+	})
+
+	readFile := func(_ context.Context, path string) ([]byte, error) {
+		if filepath.Clean(path) == "/repo/mymod/dagger.json" {
+			return []byte(`{"name":"cwd","sdk":{"source":"dang"}}`), nil
+		}
+		return nil, os.ErrNotExist
+	}
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		ClientID: "test-client",
+	})
+
+	client := &daggerClient{
+		pendingWorkspaceLoad: true,
+		clientMetadata: &engine.ClientMetadata{
+			LoadWorkspaceModules: true,
+		},
+	}
+
+	srv := &Server{}
+	err := srv.detectAndLoadWorkspace(ctx, client,
+		statFS,
+		readFile,
+		"/repo/mymod",
+		func(ws *workspace.Workspace, relPath string) string {
+			return filepath.Join(ws.Root, ws.Path, relPath)
+		},
+		nil,
+		true,
+	)
+	require.NoError(t, err)
+	require.Equal(t, ".", client.workspace.Path)
+	require.Equal(t, "mymod", client.workspace.Cwd)
+
+	require.Len(t, client.pendingModules, 1)
+	require.Equal(t, moduleLoadKindCWD, client.pendingModules[0].Kind)
+	require.Equal(t, "/repo/mymod", client.pendingModules[0].Ref)
+	require.Equal(t, "cwd", client.pendingModules[0].Name)
+	require.True(t, client.pendingModules[0].Entrypoint)
+}
+
 func TestIsSameModuleReference(t *testing.T) {
 	t.Parallel()
 
