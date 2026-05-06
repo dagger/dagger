@@ -61,13 +61,17 @@ var settingsCmd = &cobra.Command{
 				if err != nil {
 					return err
 				}
-				_, err = state.Workspace.ConfigWrite(ctx, workspaceSettingConfigKey(module.Name, arg.Name), args[2])
+				_, err = state.Workspace.ConfigWrite(ctx, workspaceSettingConfigKey(module.Name, arg.Name), args[2], dagger.WorkspaceConfigWriteOpts{Here: workspaceHere})
 				return err
 			default:
 				return fmt.Errorf("expected 0-3 arguments, got %d", len(args))
 			}
 		})
 	},
+}
+
+func init() {
+	addWorkspaceHereFlag(settingsCmd)
 }
 
 type workspaceSettingsModule struct {
