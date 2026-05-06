@@ -951,16 +951,27 @@ func currentWorkspacePrimaryModules(ctx context.Context) ([]dagql.ObjectResult[*
 }
 
 // workspaceConfigSkipPatterns reads per-module skip patterns from the served
-// workspace's .dagger/config.toml, keyed by module name.
+// workspace config shape, keyed by module name. In legacy compat workspaces,
+// there is no .dagger/config.toml yet, so use the shared compat projection that
+// migration also persists.
 func workspaceConfigSkipPatterns(
 	ctx context.Context,
 	ws *core.Workspace,
 	getter func(workspace.ModuleEntry) []string,
 ) (map[string][]string, error) {
-	cfg, err := readWorkspaceConfig(ctx, ws)
-	if err != nil {
-		return nil, err
+	var cfg *workspace.Config
+	if ws.HasConfig {
+		var err error
+		cfg, err = readWorkspaceConfig(ctx, ws)
+		if err != nil {
+			return nil, err
+		}
+	} else if compat := ws.CompatWorkspace(); compat != nil {
+		cfg = compat.WorkspaceConfig()
+	} else {
+		cfg = &workspace.Config{}
 	}
+
 	result := make(map[string][]string)
 	for name, entry := range cfg.Modules {
 		if patterns := getter(entry); len(patterns) > 0 {
