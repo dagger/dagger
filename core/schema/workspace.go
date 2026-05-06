@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/dagger/dagger/core"
@@ -817,34 +818,26 @@ func (s *workspaceSchema) services(
 		allUps = append(allUps, filtered...)
 	}
 
-	// Resolve port mappings from toolchain config.
-	for _, mod := range mods {
-		modSelf := mod.Self()
-		if modSelf == nil || !modSelf.Source.Valid {
-			continue
+	// Resolve port mappings from the workspace config's top-level [ports.<host>]
+	// declarations.
+	wsCfg, err := readWorkspaceConfig(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	for hostStr, pm := range wsCfg.Ports {
+		host, err := strconv.Atoi(hostStr)
+		if err != nil {
+			return nil, fmt.Errorf("workspace port key %q: %w", hostStr, err)
 		}
-		src := modSelf.Source.Value.Self()
-		if src == nil {
-			continue
-		}
-		for _, cfg := range src.ConfigToolchains {
-			if len(cfg.PortMappings) == 0 {
+		for _, up := range allUps {
+			if up.Name() != pm.BackendService {
 				continue
 			}
-			for _, up := range allUps {
-				for svcName, rawMappings := range cfg.PortMappings {
-					fullPath := cfg.Name + ":" + svcName
-					if up.Name() == fullPath {
-						for _, raw := range rawMappings {
-							pf, err := core.ParsePortMapping(raw)
-							if err != nil {
-								return nil, fmt.Errorf("port mapping for %q: %w", fullPath, err)
-							}
-							up.PortMappings = append(up.PortMappings, pf)
-						}
-					}
-				}
-			}
+			up.PortMappings = append(up.PortMappings, core.PortForward{
+				Frontend: &host,
+				Backend:  pm.BackendPort,
+				Protocol: core.NetworkProtocolTCP,
+			})
 		}
 	}
 
