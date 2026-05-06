@@ -13,8 +13,10 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui/multiprefixw"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/cleanups"
 	"github.com/muesli/termenv"
+	"github.com/pkg/browser"
 	"github.com/vito/go-interact/interact"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -128,7 +130,24 @@ func (fe *frontendLogs) MetricExporter() sdkmetric.Exporter {
 	return &logsMetricExporter{fe: fe}
 }
 
-func (fe *frontendLogs) SetCloudURL(ctx context.Context, url string, msg string, logged bool) {}
+func (fe *frontendLogs) SetCloudURL(ctx context.Context, url string, msg string, logged bool) {
+	if fe.opts.OpenWeb {
+		if err := browser.OpenURL(url); err != nil {
+			slog.Warn("failed to open URL", "url", url, "err", err)
+		}
+	}
+	if fe.opts.Silent {
+		return
+	}
+
+	if cmdContext, ok := FromCmdContext(ctx); ok && cmdContext.printTraceLink {
+		if logged {
+			fe.out.Write([]byte(traceMessage(fe.profile, url, msg) + "\n"))
+		} else if !skipLoggedOutTraceMsg() {
+			fmt.Fprintf(fe.out, loggedOutTraceMsg+"\n", url)
+		}
+	}
+}
 
 func (fe *frontendLogs) Shell(ctx context.Context, handler ShellHandler) {
 	// Logs frontend doesn't support shell
