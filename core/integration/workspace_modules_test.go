@@ -92,7 +92,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "init", "--sdk=go", "dep")
+		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--sdk=go", "dep")
 		require.NoError(t, err)
 
 		c := connect(ctx, t, dagger.WithWorkdir(workdir))
@@ -120,7 +120,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "init", "--sdk=go", "dep")
+		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--sdk=go", "dep")
 		require.NoError(t, err)
 
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
@@ -159,7 +159,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		initGitRepo(ctx, t, workdir)
 		initGitRepo(ctx, t, depDir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "init", "--sdk=go", "dep")
+		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--sdk=go", "dep")
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(depDir, "main.go"), []byte(`package main
 
@@ -191,9 +191,9 @@ entrypoint = true
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "init", "--sdk=go", "dep")
+		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--sdk=go", "dep")
 		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, workdir, "init", "--sdk=go", "app")
+		_, err = hostDaggerExec(ctx, t, workdir, "module", "init", "--sdk=go", "app")
 		require.NoError(t, err)
 
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
@@ -278,7 +278,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleMutation(ctx context.Context, t 
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "init", "--sdk=go", "dep")
+		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--sdk=go", "dep")
 		require.NoError(t, err)
 
 		writeWorkspaceConfigFile(t, workdir, `[modules.dep]
@@ -305,9 +305,9 @@ source = "../existing"
 
 		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "workspace", "init")
 		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, appDir, "init", "--sdk=go", "app", ".")
+		_, err = hostDaggerExec(ctx, t, appDir, "module", "init", "--sdk=go", "app", ".")
 		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, depDir, "init", "--sdk=go", "dep", ".")
+		_, err = hostDaggerExec(ctx, t, depDir, "module", "init", "--sdk=go", "dep", ".")
 		require.NoError(t, err)
 		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "module", "install", "--mod=./app", "./dep")
 		require.NoError(t, err)
@@ -463,9 +463,9 @@ func (WorkspaceModulesSuite) TestModuleScopedDependencyCommands(ctx context.Cont
 
 		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "workspace", "init")
 		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, appDir, "init", "--sdk=go", "app", ".")
+		_, err = hostDaggerExec(ctx, t, appDir, "module", "init", "--sdk=go", "app", ".")
 		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, depDir, "init", "--sdk=go", "dep", ".")
+		_, err = hostDaggerExec(ctx, t, depDir, "module", "init", "--sdk=go", "dep", ".")
 		require.NoError(t, err)
 
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "module", "install", "--mod=./app", "./dep")

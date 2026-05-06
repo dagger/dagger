@@ -18,7 +18,7 @@ func (CLISuite) TestModuleFunctions(ctx context.Context, t *testctx.T) {
 	ctr := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--sdk=go", "test")).
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "test")).
 		WithNewFile("main.go", `package main
 
 import (
@@ -218,14 +218,14 @@ func (m *Hello) Hello() string {
 
 	testCtr := base.
 		WithWorkdir("/work/test/nosdk/hello").
-		With(daggerExec("init", "--sdk=go", "hello")).
+		With(daggerExec("module", "init", "--sdk=go", "hello")).
 		WithNewFile("main.go", helloCode).
 		WithWorkdir("/work/test/nosdk").
-		With(daggerExec("init", "nosdk")).
-		With(daggerExec("install", "./hello")).
+		With(daggerExec("module", "init", "nosdk")).
+		With(daggerExec("module", "install", "./hello")).
 		WithWorkdir("/work/test").
-		With(daggerExec("init", "test")).
-		With(daggerExec("install", "./nosdk"))
+		With(daggerExec("module", "init", "test")).
+		With(daggerExec("module", "install", "./nosdk"))
 
 	daggerJSON, err := testCtr.File("dagger.json").Contents(ctx)
 	require.NoError(t, err)

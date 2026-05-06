@@ -290,7 +290,7 @@ export class Test {
 					WithDirectory("/work/backend", c.Directory().WithNewFile("foo.txt", "foo")).
 					WithDirectory("/work/frontend", c.Directory().WithNewFile("bar.txt", "bar")).
 					WithWorkdir("/work/ci").
-					With(daggerExec("init", "test", "--sdk="+tc.sdk, "--source=dagger")).
+					With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, "--source=dagger")).
 					WithWorkdir("/work/ci/dagger").
 					With(sdkSource(tc.sdk, tc.source)).
 					WithDirectory("/work/ci/dagger/sub", c.Directory().WithNewFile("sub.txt", "sub")).
@@ -552,7 +552,7 @@ export class Test {
 					WithWorkdir("/work").
 					WithDirectory("/work/backend", c.Directory().WithNewFile("foo.txt", "foo")).
 					WithDirectory("/work/frontend", c.Directory().WithNewFile("bar.txt", "bar")).
-					With(daggerExec("init", "test", "--sdk="+tc.sdk, "--source=dagger")).
+					With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, "--source=dagger")).
 					WithDirectory("/work/dagger/sub", c.Directory().WithNewFile("sub.txt", "sub")).
 					WithWorkdir("/work/dagger").
 					With(sdkSource(tc.sdk, tc.source)).
@@ -718,7 +718,7 @@ export class Test {
 				modGen := goGitBase(t, c).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work").
-					With(daggerExec("init", "test", "--sdk="+tc.sdk, "--source=dagger")).
+					With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, "--source=dagger")).
 					WithWorkdir("/work/dagger").
 					With(sdkSource(tc.sdk, tc.source)).
 					WithWorkdir("/work")
@@ -760,7 +760,7 @@ export class Test {
 		ctr := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
-			With(daggerExec("init", "--source=.", "--sdk=go", "dep")).
+			With(daggerExec("module", "init", "--source=.", "--sdk=go", "dep")).
 			WithNewFile("main.go", `package main
 
 import (
@@ -798,8 +798,8 @@ func (m *Dep) GetRelSource(
 
 		ctr = ctr.
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--sdk=go", "test")).
-			With(daggerExec("install", "./dep")).
+			With(daggerExec("module", "init", "--source=.", "--sdk=go", "test")).
+			With(daggerExec("module", "install", "./dep")).
 			WithNewFile("main.go", `package main
 
 import (
@@ -845,7 +845,7 @@ func (m *Test) GetRelDepSource() *dagger.Directory {
 		ctr := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
-			With(daggerExec("init", "--source=.", "--sdk=go", "dep")).
+			With(daggerExec("module", "init", "--source=.", "--sdk=go", "dep")).
 			WithNewFile("main.go", `package main
 
 import (
@@ -874,7 +874,7 @@ func (m *Dep) GetRelSource(
 
 		ctr = ctr.
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--sdk=go", "test")).
+			With(daggerExec("module", "init", "--source=.", "--sdk=go", "test")).
 			WithNewFile("main.go", `package main
 
 import (
@@ -1308,7 +1308,7 @@ func (ModuleSuite) TestContextGitRemoteDep(ctx context.Context, t *testctx.T) {
 			// create a module that depends on the remote module
 			modGen := goGitBase(t, c).
 				WithWorkdir("/work").
-				With(daggerExec("init", "--sdk=go", "--source=.", "test")).
+				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test")).
 				WithNewFile("dagger.json", `{
 			"name": "test",
 	"source": ".",
@@ -1397,7 +1397,7 @@ func (ModuleSuite) TestContextGitRemoteDepNamedPin(ctx context.Context, t *testc
 
 	modGen := goGitBase(t, c).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--sdk=go", "--source=.", "test")).
+		With(daggerExec("module", "init", "--sdk=go", "--source=.", "test")).
 		WithNewFile("dagger.json", `{
 			"name": "test",
 			"source": ".",
@@ -1476,7 +1476,7 @@ func (ModuleSuite) TestIgnore(ctx context.Context, t *testctx.T) {
 		WithWorkdir("/work").
 		WithDirectory("/work/backend", c.Directory().WithNewFile("foo.txt", "foo").WithNewFile("bar.txt", "bar")).
 		WithDirectory("/work/frontend", c.Directory().WithNewFile("bar.txt", "bar")).
-		With(daggerExec("init", "--sdk=go", "--source=dagger", "test")).
+		With(daggerExec("module", "init", "--sdk=go", "--source=dagger", "test")).
 		WithWorkdir("/work/dagger").
 		With(sdkSource("go", `
 package main
@@ -1769,11 +1769,11 @@ class Test:
 						WithNewFile("bar.txt", "bar").
 						WithDirectory("bar", c.Directory().WithNewFile("baz.txt", "baz"))).
 					WithWorkdir("/work/dep").
-					With(daggerExec("init", "test", "--sdk="+tc.sdk, "--source=.")).
+					With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, "--source=.")).
 					With(sdkSource(tc.sdk, tc.source)).
 					WithWorkdir("/work").
-					With(daggerExec("init", "--sdk=go", "--source=.", "test-mod")).
-					With(daggerExec("install", "./dep")).
+					With(daggerExec("module", "init", "--sdk=go", "--source=.", "test-mod")).
+					With(daggerExec("module", "install", "./dep")).
 					With(sdkSource("go", `package main
 
 import (
@@ -1803,7 +1803,7 @@ func (ModuleSuite) TestGitignore(ctx context.Context, t *testctx.T) {
 	modGen := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/dagger").
-		With(daggerExec("init", "--sdk=go", "--source=.", "test")).
+		With(daggerExec("module", "init", "--sdk=go", "--source=.", "test")).
 		WithDirectory("./backend", c.Directory().WithNewFile("foo.txt", "foo")).
 		WithDirectory("./frontend", c.Directory().WithNewFile("bar.txt", "bar")).
 		WithNewFile("./.gitignore", "frontend/*.txt\n").
@@ -2029,7 +2029,7 @@ func (z *Test) Fn(
 			WithWorkdir(workdir).
 			WithoutDirectory(filepath.Join(workdir, ".dagger")).
 			WithoutFile(filepath.Join(workdir, "dagger.json")).
-			With(daggerExec("init", "--sdk=go", "--source=.dagger", "test")).
+			With(daggerExec("module", "init", "--sdk=go", "--source=.dagger", "test")).
 			WithNewFile(filepath.Join(workdir, ".dagger/main.go"), src)
 	}
 
@@ -2050,7 +2050,7 @@ func (ModuleSuite) TestDefaultPathNoCache(ctx context.Context, t *testctx.T) {
 	t.Run("sources are reloaded when changed with defaultPath", func(ctx context.Context, t *testctx.T) {
 		modDir := t.TempDir()
 
-		_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--sdk=go", "test")
+		_, err := hostDaggerExec(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test")
 		require.NoError(t, err)
 
 		initialContent := "initial content"
