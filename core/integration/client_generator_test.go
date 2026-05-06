@@ -413,7 +413,10 @@ func (t *Test) Hello(ctx context.Context) (string, error) {
 	return dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "-n", "hello"}).Stdout(ctx)
 }
 					`, "--name=test")).
-						With(daggerExec("develop", "-m", ".dagger")).
+						// withModInitAt already runs dagger develop in the
+						// .dagger workdir; the redundant `develop -m .dagger`
+						// would re-trigger the stale-codegen path discussed
+						// in withModInitAt and break the runtime build.
 						With(withGoSetup(`package main
 
 import (
@@ -711,6 +714,11 @@ main()
 				return "hello"
 			}
 						`).
+						// Re-run codegen against the new .dagger/main.go
+						// so subsequent module loads see matching wrappers
+						// (legacyCodegenAtRuntime is off by default for
+						// new Go modules).
+						With(daggerNonNestedExec("develop")).
 						With(withGoSetup(`package main
 
 			import (
@@ -1840,6 +1848,10 @@ func (t *Test) Message() string {
 	return t.Greeting + ", world!"
 }
 `).
+		// Regenerate dagger.gen.go after replacing main.go so the
+		// runtime build sees matching wrappers (legacyCodegenAtRuntime
+		// is off by default for new Go modules).
+		With(daggerNonNestedExec("develop")).
 		// Ensure the module compiles
 		With(daggerNonNestedExec("functions")).
 		// Generate the Go client. withGoSetup is not used because the
