@@ -126,7 +126,7 @@ func (ModuleLoadingSuite) TestModuleSourceResolution(ctx context.Context, t *tes
 		out, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/wórk/sub/").
-			With(daggerExec("init", "--source=.", "--sdk=go", "test")).
+			With(daggerExec("module", "init", "--source=.", "--sdk=go", "test")).
 			WithNewFile("/wórk/sub/main.go", `package main
  			import (
  				"context"
@@ -640,7 +640,7 @@ type Dirs {
 		base := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--sdk=go", "--source=.", "playground")).
+			With(daggerExec("module", "init", "--sdk=go", "--source=.", "playground")).
 			WithNewFile("main.go", `package main
 
 import (

@@ -152,12 +152,12 @@ func (ModuleSuite) TestLoops(ctx context.Context, t *testctx.T) {
 
 	_, err := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		With(daggerExec("init", "--sdk=go", "depA", "depA")).
-		With(daggerExec("init", "--sdk=go", "depB", "depB")).
-		With(daggerExec("init", "--sdk=go", "depC", "depC")).
-		With(daggerExec("install", "-m=depC", "./depB")).
-		With(daggerExec("install", "-m=depB", "./depA")).
-		With(daggerExec("install", "-m=depA", "./depC")).
+		With(daggerExec("module", "init", "--sdk=go", "depA", "depA")).
+		With(daggerExec("module", "init", "--sdk=go", "depB", "depB")).
+		With(daggerExec("module", "init", "--sdk=go", "depC", "depC")).
+		With(daggerExec("module", "install", "-m=depC", "./depB")).
+		With(daggerExec("module", "install", "-m=depB", "./depA")).
+		With(daggerExec("module", "install", "-m=depA", "./depC")).
 		With(daggerCallAt("depA", "--help")).
 		Sync(ctx)
 	requireErrOut(t, err, `module "depA" has a circular dependency on itself through dependency "depC"`)
@@ -242,7 +242,7 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 					_, err := c.Container().From(golangImage).
 						WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 						WithWorkdir("/work").
-						With(daggerExec("init", "test", "--sdk="+tc.sdk)).
+						With(daggerExec("module", "init", "test", "--sdk="+tc.sdk)).
 						With(sdkSource(tc.sdk, tc.source)).
 						With(daggerQuery(`{fn{id}}`)).
 						Sync(ctx)
@@ -273,7 +273,7 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 					_, err := c.Container().From(golangImage).
 						WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 						WithWorkdir("/work").
-						With(daggerExec("init", "test", "--sdk="+tc.sdk)).
+						With(daggerExec("module", "init", "test", "--sdk="+tc.sdk)).
 						With(sdkSource(tc.sdk, tc.source)).
 						With(daggerQuery(`{id}`)).
 						Sync(ctx)
