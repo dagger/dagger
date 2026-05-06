@@ -189,7 +189,7 @@ func (GeneratorsSuite) TestGeneratorsInstalledInWorkspace(ctx context.Context, t
 			modGen = modGen.
 				WithWorkdir("app").
 				With(daggerExec("workspace", "init")).
-				With(daggerExec("install", "../"+tc.path))
+				With(daggerExec("module", "install", "../"+tc.path))
 
 			t.Run("list", func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.
