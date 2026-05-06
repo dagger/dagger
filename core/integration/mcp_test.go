@@ -71,7 +71,7 @@ func initMCPTestModule(ctx context.Context, t testing.TB) string {
 
 	modDir := t.TempDir()
 
-	_, err := hostDaggerExec(ctx, t, modDir, "init", "--name=test", "--sdk=go", "--source=.")
+	_, err := hostDaggerExec(ctx, t, modDir, "init", "--sdk=go", "--source=.", "test")
 	require.NoError(t, err)
 
 	require.NoError(t, os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
