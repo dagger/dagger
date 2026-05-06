@@ -35,7 +35,6 @@ func init() {
 }
 
 var checksCmd = &cobra.Command{
-	Hidden:  true,
 	Aliases: []string{"checks"},
 	Use:     "check [options] [pattern...]",
 	Short:   "Check the state of your project by running tests, linters, etc.",
@@ -47,7 +46,8 @@ Examples:
   dagger check go:lint            # Run the go:lint check and any subchecks
   dagger -W github.com/acme/ws check go:lint  # Run check(s) against explicit workspace
 `,
-	Args: cobra.ArbitraryArgs,
+	GroupID: execGroup.ID,
+	Args:    cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		params := client.Params{
 			EnableCloudScaleOut:  enableScaleOut,
