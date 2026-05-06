@@ -820,7 +820,7 @@ func (s *workspaceSchema) services(
 
 	// Resolve port mappings from the workspace config's top-level [ports.<host>]
 	// declarations.
-	wsCfg, err := readWorkspaceConfig(ctx, parent)
+	wsCfg, err := workspaceConfigWithCompatFallback(ctx, parent)
 	if err != nil {
 		return nil, err
 	}
@@ -950,6 +950,28 @@ func currentWorkspacePrimaryModules(ctx context.Context) ([]dagql.ObjectResult[*
 	return mods, nil
 }
 
+// workspaceConfigWithCompatFallback returns the real workspace config when it
+// exists, the shared legacy compat projection when it does not, or an empty
+// config for workspaces with neither.
+func workspaceConfigWithCompatFallback(
+	ctx context.Context,
+	ws *core.Workspace,
+) (*workspace.Config, error) {
+	if ws.HasConfig {
+		cfg, err := readWorkspaceConfig(ctx, ws)
+		if err != nil {
+			return nil, err
+		}
+		return cfg, nil
+	}
+
+	if compat := ws.CompatWorkspace(); compat != nil {
+		return compat.WorkspaceConfig(), nil
+	}
+
+	return &workspace.Config{}, nil
+}
+
 // workspaceConfigSkipPatterns reads per-module skip patterns from the served
 // workspace config shape, keyed by module name. In legacy compat workspaces,
 // there is no .dagger/config.toml yet, so use the shared compat projection that
@@ -959,17 +981,9 @@ func workspaceConfigSkipPatterns(
 	ws *core.Workspace,
 	getter func(workspace.ModuleEntry) []string,
 ) (map[string][]string, error) {
-	var cfg *workspace.Config
-	if ws.HasConfig {
-		var err error
-		cfg, err = readWorkspaceConfig(ctx, ws)
-		if err != nil {
-			return nil, err
-		}
-	} else if compat := ws.CompatWorkspace(); compat != nil {
-		cfg = compat.WorkspaceConfig()
-	} else {
-		cfg = &workspace.Config{}
+	cfg, err := workspaceConfigWithCompatFallback(ctx, ws)
+	if err != nil {
+		return nil, err
 	}
 
 	result := make(map[string][]string)
