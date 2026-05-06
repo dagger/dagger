@@ -438,7 +438,7 @@ class Syncer(Protocol):
     the object's entire dependency DAG has been evaluated, returning the
     object's ID once complete."""
 
-    async def sync(self) -> str: ...
+    async def sync(self) -> Self: ...
 
 
 @typecheck
@@ -475,18 +475,8 @@ class _SyncerClient(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(str)
 
-    async def sync(self) -> str:
-        """Returns
-        -------
-        str
-            The `ID` scalar type represents a unique identifier, often used to
-            refetch an object or as key for a cache. The ID type appears in a
-            JSON response as a String; however, it is not intended to be
-            human-readable. When expected as an input type, any string (such
-            as `"4"`) or integer (such as `4`) input value will be accepted as
-            an ID.
-
-        Raises
+    async def sync(self) -> Self:
+        """Raises
         ------
         ExecuteTimeoutError
             If the time to execute the query exceeds the configured timeout.
@@ -494,8 +484,10 @@ class _SyncerClient(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("sync", _args)
-        return await _ctx.execute(str)
+        return await self._ctx.execute_sync(self, "sync", _args)
+
+    def __await__(self):
+        return self.sync().__await__()
 
 
 @typecheck
@@ -1168,7 +1160,7 @@ class Changeset(Type):
 
     def with_changeset(
         self,
-        changes: Type,
+        changes: Self,
         *,
         on_conflict: ChangesetMergeConflict | None = ChangesetMergeConflict.FAIL,
     ) -> Self:
@@ -1194,7 +1186,7 @@ class Changeset(Type):
 
     def with_changesets(
         self,
-        changes: list[Type],
+        changes: list["Changeset"],
         *,
         on_conflict: ChangesetsMergeConflict | None = ChangesetsMergeConflict.FAIL,
     ) -> Self:
@@ -1639,7 +1631,7 @@ class Container(Type):
     def as_tarball(
         self,
         *,
-        platform_variants: list[Type] | None = None,
+        platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
     ) -> "File":
@@ -1906,7 +1898,7 @@ class Container(Type):
         self,
         path: str,
         *,
-        platform_variants: list[Type] | None = None,
+        platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
         expand: bool | None = False,
@@ -1974,7 +1966,7 @@ class Container(Type):
         self,
         name: str,
         *,
-        platform_variants: list[Type] | None = None,
+        platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
     ) -> Void:
@@ -2131,7 +2123,7 @@ class Container(Type):
 
     def import_(
         self,
-        source: Type,
+        source: "File",
         *,
         tag: str | None = "",
     ) -> Self:
@@ -2233,7 +2225,7 @@ class Container(Type):
         self,
         address: str,
         *,
-        platform_variants: list[Type] | None = None,
+        platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
     ) -> str:
@@ -2589,7 +2581,7 @@ class Container(Type):
     def with_directory(
         self,
         path: str,
-        source: Type,
+        source: "Directory",
         *,
         exclude: list[str] | None = None,
         include: list[str] | None = None,
@@ -2712,7 +2704,7 @@ class Container(Type):
         _ctx = self._select("withEntrypoint", _args)
         return Container(_ctx)
 
-    def with_env_file_variables(self, source: Type) -> Self:
+    def with_env_file_variables(self, source: "EnvFile") -> Self:
         """Export environment variables from an env-file to the container.
 
         Parameters
@@ -2889,7 +2881,7 @@ class Container(Type):
     def with_file(
         self,
         path: str,
-        source: Type,
+        source: "File",
         *,
         permissions: int | None = None,
         owner: str | None = "",
@@ -2928,7 +2920,7 @@ class Container(Type):
     def with_files(
         self,
         path: str,
-        sources: list[Type],
+        sources: list["File"],
         *,
         permissions: int | None = None,
         owner: str | None = "",
@@ -2986,9 +2978,9 @@ class Container(Type):
     def with_mounted_cache(
         self,
         path: str,
-        cache: Type,
+        cache: CacheVolume,
         *,
-        source: Type | None = None,
+        source: "Directory | None" = None,
         sharing: CacheSharingMode | None = CacheSharingMode.SHARED,
         owner: str | None = "",
         expand: bool | None = False,
@@ -3033,7 +3025,7 @@ class Container(Type):
     def with_mounted_directory(
         self,
         path: str,
-        source: Type,
+        source: "Directory",
         *,
         owner: str | None = "",
         read_only: bool | None = False,
@@ -3072,7 +3064,7 @@ class Container(Type):
     def with_mounted_file(
         self,
         path: str,
-        source: Type,
+        source: "File",
         *,
         owner: str | None = "",
         expand: bool | None = False,
@@ -3107,7 +3099,7 @@ class Container(Type):
     def with_mounted_secret(
         self,
         path: str,
-        source: Type,
+        source: "Secret",
         *,
         owner: str | None = "",
         mode: int | None = 256,
@@ -3220,7 +3212,7 @@ class Container(Type):
         self,
         address: str,
         username: str,
-        secret: Type,
+        secret: "Secret",
     ) -> Self:
         """Attach credentials for future publishing to a registry. Use in
         combination with publish
@@ -3243,7 +3235,7 @@ class Container(Type):
         _ctx = self._select("withRegistryAuth", _args)
         return Container(_ctx)
 
-    def with_rootfs(self, directory: Type) -> Self:
+    def with_rootfs(self, directory: "Directory") -> Self:
         """Change the container's root filesystem. The previous root filesystem
         will be lost.
 
@@ -3258,7 +3250,7 @@ class Container(Type):
         _ctx = self._select("withRootfs", _args)
         return Container(_ctx)
 
-    def with_secret_variable(self, name: str, secret: Type) -> Self:
+    def with_secret_variable(self, name: str, secret: "Secret") -> Self:
         """Set a new environment variable, using a secret value
 
         Parameters
@@ -3275,7 +3267,7 @@ class Container(Type):
         _ctx = self._select("withSecretVariable", _args)
         return Container(_ctx)
 
-    def with_service_binding(self, alias: str, service: Type) -> Self:
+    def with_service_binding(self, alias: str, service: "Service") -> Self:
         """Establish a runtime dependency from a container to a network service.
 
         The service will be started automatically when needed and detached
@@ -3336,7 +3328,7 @@ class Container(Type):
     def with_unix_socket(
         self,
         path: str,
-        source: Type,
+        source: "Socket",
         *,
         owner: str | None = "",
         expand: bool | None = False,
@@ -4042,7 +4034,7 @@ class Directory(Type):
         _ctx = self._select("asModuleSource", _args)
         return ModuleSource(_ctx)
 
-    def changes(self, from_: Type) -> Changeset:
+    def changes(self, from_: Self) -> Changeset:
         """Return the difference between this directory and another directory,
         typically an older snapshot.
 
@@ -4080,7 +4072,7 @@ class Directory(Type):
         _ctx = self._select("chown", _args)
         return Directory(_ctx)
 
-    def diff(self, other: Type) -> Self:
+    def diff(self, other: Self) -> Self:
         """Return the difference between this directory and an another directory.
         The difference is encoded as a directory.
 
@@ -4139,9 +4131,9 @@ class Directory(Type):
         platform: Platform | None = None,
         build_args: list[BuildArg] | None = None,
         target: str | None = "",
-        secrets: list[Type] | None = None,
+        secrets: "list[Secret] | None" = None,
         no_init: bool | None = False,
-        ssh: Type | None = None,
+        ssh: "Socket | None" = None,
     ) -> Container:
         """Use Dockerfile compatibility to build a container from this directory.
         Only use this function for Dockerfile compatibility. Otherwise use the
@@ -4549,7 +4541,7 @@ class Directory(Type):
     def terminal(
         self,
         *,
-        container: Type | None = None,
+        container: Container | None = None,
         cmd: list[str] | None = None,
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
@@ -4584,7 +4576,7 @@ class Directory(Type):
         _ctx = self._select("terminal", _args)
         return Directory(_ctx)
 
-    def with_changes(self, changes: Type) -> Self:
+    def with_changes(self, changes: Changeset) -> Self:
         """Return a directory with changes from another directory applied to it.
 
         Parameters
@@ -4601,7 +4593,7 @@ class Directory(Type):
     def with_directory(
         self,
         path: str,
-        source: Type,
+        source: Self,
         *,
         exclude: list[str] | None = None,
         include: list[str] | None = None,
@@ -4664,7 +4656,7 @@ class Directory(Type):
     def with_file(
         self,
         path: str,
-        source: Type,
+        source: "File",
         *,
         permissions: int | None = None,
         owner: str | None = "",
@@ -4698,7 +4690,7 @@ class Directory(Type):
     def with_files(
         self,
         path: str,
-        sources: list[Type],
+        sources: list["File"],
         *,
         permissions: int | None = None,
     ) -> Self:
@@ -4791,7 +4783,7 @@ class Directory(Type):
         _ctx = self._select("withPatch", _args)
         return Directory(_ctx)
 
-    def with_patch_file(self, patch: Type) -> Self:
+    def with_patch_file(self, patch: "File") -> Self:
         """Retrieves this directory with the given Git-compatible patch file
         applied.
 
@@ -5769,7 +5761,7 @@ class Env(Type):
     def with_address_input(
         self,
         name: str,
-        value: Type,
+        value: Address,
         description: str,
     ) -> Self:
         """Create or update a binding of type Address in the environment
@@ -5811,7 +5803,7 @@ class Env(Type):
     def with_cache_volume_input(
         self,
         name: str,
-        value: Type,
+        value: CacheVolume,
         description: str,
     ) -> Self:
         """Create or update a binding of type CacheVolume in the environment
@@ -5853,7 +5845,7 @@ class Env(Type):
     def with_changeset_input(
         self,
         name: str,
-        value: Type,
+        value: Changeset,
         description: str,
     ) -> Self:
         """Create or update a binding of type Changeset in the environment
@@ -5895,7 +5887,7 @@ class Env(Type):
     def with_check_group_input(
         self,
         name: str,
-        value: Type,
+        value: CheckGroup,
         description: str,
     ) -> Self:
         """Create or update a binding of type CheckGroup in the environment
@@ -5937,7 +5929,7 @@ class Env(Type):
     def with_check_input(
         self,
         name: str,
-        value: Type,
+        value: Check,
         description: str,
     ) -> Self:
         """Create or update a binding of type Check in the environment
@@ -5979,7 +5971,7 @@ class Env(Type):
     def with_cloud_input(
         self,
         name: str,
-        value: Type,
+        value: Cloud,
         description: str,
     ) -> Self:
         """Create or update a binding of type Cloud in the environment
@@ -6021,7 +6013,7 @@ class Env(Type):
     def with_container_input(
         self,
         name: str,
-        value: Type,
+        value: Container,
         description: str,
     ) -> Self:
         """Create or update a binding of type Container in the environment
@@ -6074,7 +6066,7 @@ class Env(Type):
     def with_diff_stat_input(
         self,
         name: str,
-        value: Type,
+        value: DiffStat,
         description: str,
     ) -> Self:
         """Create or update a binding of type DiffStat in the environment
@@ -6116,7 +6108,7 @@ class Env(Type):
     def with_directory_input(
         self,
         name: str,
-        value: Type,
+        value: Directory,
         description: str,
     ) -> Self:
         """Create or update a binding of type Directory in the environment
@@ -6158,7 +6150,7 @@ class Env(Type):
     def with_env_file_input(
         self,
         name: str,
-        value: Type,
+        value: "EnvFile",
         description: str,
     ) -> Self:
         """Create or update a binding of type EnvFile in the environment
@@ -6200,7 +6192,7 @@ class Env(Type):
     def with_env_input(
         self,
         name: str,
-        value: Type,
+        value: Self,
         description: str,
     ) -> Self:
         """Create or update a binding of type Env in the environment
@@ -6242,7 +6234,7 @@ class Env(Type):
     def with_file_input(
         self,
         name: str,
-        value: Type,
+        value: "File",
         description: str,
     ) -> Self:
         """Create or update a binding of type File in the environment
@@ -6284,7 +6276,7 @@ class Env(Type):
     def with_generator_group_input(
         self,
         name: str,
-        value: Type,
+        value: "GeneratorGroup",
         description: str,
     ) -> Self:
         """Create or update a binding of type GeneratorGroup in the environment
@@ -6327,7 +6319,7 @@ class Env(Type):
     def with_generator_input(
         self,
         name: str,
-        value: Type,
+        value: "Generator",
         description: str,
     ) -> Self:
         """Create or update a binding of type Generator in the environment
@@ -6369,7 +6361,7 @@ class Env(Type):
     def with_git_ref_input(
         self,
         name: str,
-        value: Type,
+        value: "GitRef",
         description: str,
     ) -> Self:
         """Create or update a binding of type GitRef in the environment
@@ -6411,7 +6403,7 @@ class Env(Type):
     def with_git_repository_input(
         self,
         name: str,
-        value: Type,
+        value: "GitRepository",
         description: str,
     ) -> Self:
         """Create or update a binding of type GitRepository in the environment
@@ -6454,7 +6446,7 @@ class Env(Type):
     def with_http_state_input(
         self,
         name: str,
-        value: Type,
+        value: "HTTPState",
         description: str,
     ) -> Self:
         """Create or update a binding of type HTTPState in the environment
@@ -6496,7 +6488,7 @@ class Env(Type):
     def with_json_value_input(
         self,
         name: str,
-        value: Type,
+        value: "JSONValue",
         description: str,
     ) -> Self:
         """Create or update a binding of type JSONValue in the environment
@@ -6535,7 +6527,7 @@ class Env(Type):
         _ctx = self._select("withJSONValueOutput", _args)
         return Env(_ctx)
 
-    def with_main_module(self, module: Type) -> Self:
+    def with_main_module(self, module: "Module") -> Self:
         """Sets the main module for this environment (the project being worked
         on)
 
@@ -6548,7 +6540,7 @@ class Env(Type):
         _ctx = self._select("withMainModule", _args)
         return Env(_ctx)
 
-    def with_module(self, module: Type) -> Self:
+    def with_module(self, module: "Module") -> Self:
         """Installs a module into the environment, exposing its functions to the
         model
 
@@ -6572,7 +6564,7 @@ class Env(Type):
     def with_module_config_client_input(
         self,
         name: str,
-        value: Type,
+        value: "ModuleConfigClient",
         description: str,
     ) -> Self:
         """Create or update a binding of type ModuleConfigClient in the
@@ -6616,7 +6608,7 @@ class Env(Type):
     def with_module_input(
         self,
         name: str,
-        value: Type,
+        value: "Module",
         description: str,
     ) -> Self:
         """Create or update a binding of type Module in the environment
@@ -6658,7 +6650,7 @@ class Env(Type):
     def with_module_source_input(
         self,
         name: str,
-        value: Type,
+        value: "ModuleSource",
         description: str,
     ) -> Self:
         """Create or update a binding of type ModuleSource in the environment
@@ -6701,7 +6693,7 @@ class Env(Type):
     def with_search_result_input(
         self,
         name: str,
-        value: Type,
+        value: "SearchResult",
         description: str,
     ) -> Self:
         """Create or update a binding of type SearchResult in the environment
@@ -6744,7 +6736,7 @@ class Env(Type):
     def with_search_submatch_input(
         self,
         name: str,
-        value: Type,
+        value: "SearchSubmatch",
         description: str,
     ) -> Self:
         """Create or update a binding of type SearchSubmatch in the environment
@@ -6787,7 +6779,7 @@ class Env(Type):
     def with_secret_input(
         self,
         name: str,
-        value: Type,
+        value: "Secret",
         description: str,
     ) -> Self:
         """Create or update a binding of type Secret in the environment
@@ -6829,7 +6821,7 @@ class Env(Type):
     def with_service_input(
         self,
         name: str,
-        value: Type,
+        value: "Service",
         description: str,
     ) -> Self:
         """Create or update a binding of type Service in the environment
@@ -6871,7 +6863,7 @@ class Env(Type):
     def with_socket_input(
         self,
         name: str,
-        value: Type,
+        value: "Socket",
         description: str,
     ) -> Self:
         """Create or update a binding of type Socket in the environment
@@ -6913,7 +6905,7 @@ class Env(Type):
     def with_stat_input(
         self,
         name: str,
-        value: Type,
+        value: "Stat",
         description: str,
     ) -> Self:
         """Create or update a binding of type Stat in the environment
@@ -6997,7 +6989,7 @@ class Env(Type):
     def with_up_group_input(
         self,
         name: str,
-        value: Type,
+        value: "UpGroup",
         description: str,
     ) -> Self:
         """Create or update a binding of type UpGroup in the environment
@@ -7039,7 +7031,7 @@ class Env(Type):
     def with_up_input(
         self,
         name: str,
-        value: Type,
+        value: "Up",
         description: str,
     ) -> Self:
         """Create or update a binding of type Up in the environment
@@ -7078,7 +7070,7 @@ class Env(Type):
         _ctx = self._select("withUpOutput", _args)
         return Env(_ctx)
 
-    def with_workspace(self, workspace: Type) -> Self:
+    def with_workspace(self, workspace: Directory) -> Self:
         """Returns a new environment with the provided workspace
 
         Parameters
@@ -7095,7 +7087,7 @@ class Env(Type):
     def with_workspace_input(
         self,
         name: str,
-        value: Type,
+        value: "Workspace",
         description: str,
     ) -> Self:
         """Create or update a binding of type Workspace in the environment
@@ -8187,13 +8179,13 @@ class Function(Type):
     def with_arg(
         self,
         name: str,
-        type_def: Type,
+        type_def: "TypeDef",
         *,
         description: str | None = "",
         default_value: JSON | None = None,
         default_path: str | None = "",
         ignore: list[str] | None = None,
-        source_map: Type | None = None,
+        source_map: "SourceMap | None" = None,
         deprecated: str | None = None,
         default_address: str | None = "",
     ) -> Self:
@@ -8298,7 +8290,7 @@ class Function(Type):
         _ctx = self._select("withGenerator", _args)
         return Function(_ctx)
 
-    def with_source_map(self, source_map: Type) -> Self:
+    def with_source_map(self, source_map: "SourceMap") -> Self:
         """Returns the function with the given source map.
 
         Parameters
@@ -8626,7 +8618,7 @@ class FunctionCall(Type):
         _ctx = self._select("parentName", _args)
         return await _ctx.execute(str)
 
-    async def return_error(self, error: Type) -> Void | None:
+    async def return_error(self, error: Error) -> Void | None:
         """Return an error from the function.
 
         Parameters
@@ -9140,7 +9132,7 @@ class GitRef(Type):
         _ctx = self._select("commit", _args)
         return await _ctx.execute(str)
 
-    def common_ancestor(self, other: Type) -> Self:
+    def common_ancestor(self, other: Self) -> Self:
         """Find the best common ancestor between this ref and another ref.
 
         Parameters
@@ -9814,7 +9806,7 @@ class Host(Type):
 
     def tunnel(
         self,
-        service: Type,
+        service: "Service",
         *,
         native: bool | None = False,
         ports: list[PortForward] | None = None,
@@ -10257,7 +10249,7 @@ class JSONValue(Type):
         _ctx = self._select("withContents", _args)
         return JSONValue(_ctx)
 
-    def with_field(self, path: list[str], value: Type) -> Self:
+    def with_field(self, path: list[str], value: Self) -> Self:
         """Set a new field at the given path
 
         Parameters
@@ -10541,7 +10533,7 @@ class LLM(Type):
         _ctx = self._select("withBlockedFunction", _args)
         return LLM(_ctx)
 
-    def with_env(self, env: Type) -> Self:
+    def with_env(self, env: Env) -> Self:
         """allow the LLM to interact with an environment via MCP"""
         _args = [
             Arg("env", env),
@@ -10549,7 +10541,7 @@ class LLM(Type):
         _ctx = self._select("withEnv", _args)
         return LLM(_ctx)
 
-    def with_mcp_server(self, name: str, service: Type) -> Self:
+    def with_mcp_server(self, name: str, service: "Service") -> Self:
         """Add an external MCP server to the LLM
 
         Parameters
@@ -10594,7 +10586,7 @@ class LLM(Type):
         _ctx = self._select("withPrompt", _args)
         return LLM(_ctx)
 
-    def with_prompt_file(self, file: Type) -> Self:
+    def with_prompt_file(self, file: File) -> Self:
         """append the contents of a file to the llm context
 
         Parameters
@@ -11220,7 +11212,7 @@ class Module(Type):
         _ctx = self._select("withDescription", _args)
         return Module(_ctx)
 
-    def with_enum(self, enum: Type) -> Self:
+    def with_enum(self, enum: "TypeDef") -> Self:
         """This module plus the given Enum type and associated values"""
         _args = [
             Arg("enum", enum),
@@ -11228,7 +11220,7 @@ class Module(Type):
         _ctx = self._select("withEnum", _args)
         return Module(_ctx)
 
-    def with_interface(self, iface: Type) -> Self:
+    def with_interface(self, iface: "TypeDef") -> Self:
         """This module plus the given Interface type and associated functions"""
         _args = [
             Arg("iface", iface),
@@ -11236,7 +11228,7 @@ class Module(Type):
         _ctx = self._select("withInterface", _args)
         return Module(_ctx)
 
-    def with_object(self, object: Type) -> Self:
+    def with_object(self, object: "TypeDef") -> Self:
         """This module plus the given Object type and associated functions."""
         _args = [
             Arg("object", object),
@@ -11859,7 +11851,7 @@ class ModuleSource(Type):
         _ctx = self._select("version", _args)
         return await _ctx.execute(str)
 
-    def with_blueprint(self, blueprint: Type) -> Self:
+    def with_blueprint(self, blueprint: Self) -> Self:
         """Set a blueprint for the module source.
 
         Parameters
@@ -11890,7 +11882,7 @@ class ModuleSource(Type):
         _ctx = self._select("withClient", _args)
         return ModuleSource(_ctx)
 
-    def with_dependencies(self, dependencies: list[Type]) -> Self:
+    def with_dependencies(self, dependencies: list["ModuleSource"]) -> Self:
         """Append the provided dependencies to the module source's dependency
         list.
 
@@ -11994,7 +11986,7 @@ class ModuleSource(Type):
         _ctx = self._select("withSourceSubpath", _args)
         return ModuleSource(_ctx)
 
-    def with_toolchains(self, toolchains: list[Type]) -> Self:
+    def with_toolchains(self, toolchains: list["ModuleSource"]) -> Self:
         """Add toolchains to the module source.
 
         Parameters
@@ -12403,7 +12395,7 @@ class Query(Root):
         self,
         key: str,
         *,
-        source: Type | None = None,
+        source: Directory | None = None,
         sharing: CacheSharingMode | None = CacheSharingMode.SHARED,
         owner: str | None = "",
     ) -> CacheVolume:
@@ -12656,7 +12648,7 @@ class Query(Root):
         _ctx = self._select("file", _args)
         return File(_ctx)
 
-    def function(self, name: str, return_type: Type) -> Function:
+    def function(self, name: str, return_type: "TypeDef") -> Function:
         """Creates a function.
 
         Parameters
@@ -12674,7 +12666,7 @@ class Query(Root):
         _ctx = self._select("function", _args)
         return Function(_ctx)
 
-    def generated_code(self, code: Type) -> GeneratedCode:
+    def generated_code(self, code: Directory) -> GeneratedCode:
         """Create a code generation result, given a directory containing the
         generated code.
         """
@@ -12690,11 +12682,11 @@ class Query(Root):
         *,
         keep_git_dir: bool | None = True,
         ssh_known_hosts: str | None = "",
-        ssh_auth_socket: Type | None = None,
+        ssh_auth_socket: "Socket | None" = None,
         http_auth_username: str | None = "",
-        http_auth_token: Type | None = None,
-        http_auth_header: Type | None = None,
-        experimental_service_host: Type | None = None,
+        http_auth_token: "Secret | None" = None,
+        http_auth_header: "Secret | None" = None,
+        experimental_service_host: "Service | None" = None,
     ) -> GitRepository:
         """Queries a Git repository.
 
@@ -12749,8 +12741,8 @@ class Query(Root):
         name: str | None = None,
         permissions: int | None = None,
         checksum: str | None = None,
-        auth_header: Type | None = None,
-        experimental_service_host: Type | None = None,
+        auth_header: "Secret | None" = None,
+        experimental_service_host: "Service | None" = None,
     ) -> File:
         """Returns a file containing an http remote url content.
 
@@ -14210,7 +14202,7 @@ class TypeDef(Type):
         _ctx = self._select("optional", _args)
         return await _ctx.execute(bool)
 
-    def with_constructor(self, function: Type) -> Self:
+    def with_constructor(self, function: Function) -> Self:
         """Adds a function for constructing a new instance of an Object TypeDef,
         failing if the type is not an object.
         """
@@ -14225,7 +14217,7 @@ class TypeDef(Type):
         name: str,
         *,
         description: str | None = "",
-        source_map: Type | None = None,
+        source_map: SourceMap | None = None,
     ) -> Self:
         """Returns a TypeDef of kind Enum with the provided name.
 
@@ -14256,7 +14248,7 @@ class TypeDef(Type):
         *,
         value: str | None = "",
         description: str | None = "",
-        source_map: Type | None = None,
+        source_map: SourceMap | None = None,
         deprecated: str | None = None,
     ) -> Self:
         """Adds a static value for an Enum TypeDef, failing if the type is not an
@@ -14290,7 +14282,7 @@ class TypeDef(Type):
         value: str,
         *,
         description: str | None = "",
-        source_map: Type | None = None,
+        source_map: SourceMap | None = None,
         deprecated: str | None = None,
     ) -> Self:
         """Adds a static value for an Enum TypeDef, failing if the type is not an
@@ -14327,10 +14319,10 @@ class TypeDef(Type):
     def with_field(
         self,
         name: str,
-        type_def: Type,
+        type_def: Self,
         *,
         description: str | None = "",
-        source_map: Type | None = None,
+        source_map: SourceMap | None = None,
         deprecated: str | None = None,
     ) -> Self:
         """Adds a static field for an Object TypeDef, failing if the type is not
@@ -14359,7 +14351,7 @@ class TypeDef(Type):
         _ctx = self._select("withField", _args)
         return TypeDef(_ctx)
 
-    def with_function(self, function: Type) -> Self:
+    def with_function(self, function: Function) -> Self:
         """Adds a function for an Object or Interface TypeDef, failing if the
         type is not one of those kinds.
         """
@@ -14374,7 +14366,7 @@ class TypeDef(Type):
         name: str,
         *,
         description: str | None = "",
-        source_map: Type | None = None,
+        source_map: SourceMap | None = None,
     ) -> Self:
         """Returns a TypeDef of kind Interface with the provided name."""
         _args = [
@@ -14393,7 +14385,7 @@ class TypeDef(Type):
         _ctx = self._select("withKind", _args)
         return TypeDef(_ctx)
 
-    def with_list_of(self, element_type: Type) -> Self:
+    def with_list_of(self, element_type: Self) -> Self:
         """Returns a TypeDef of kind List with the provided type for its
         elements.
         """
@@ -14408,7 +14400,7 @@ class TypeDef(Type):
         name: str,
         *,
         description: str | None = "",
-        source_map: Type | None = None,
+        source_map: SourceMap | None = None,
         deprecated: str | None = None,
     ) -> Self:
         """Returns a TypeDef of kind Object with the provided name.
