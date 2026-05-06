@@ -79,7 +79,7 @@ If `dagger.runtime` is not set, but a `bun.lock` or `bun.lockb` file is present,
 ```shell
 bun init
 bun install // to generate the bun.lock file
-dagger module init --sdk=typescript --name=example --source=.
+dagger module init --sdk=typescript --source=. example
 ```
 
 :::important
@@ -96,7 +96,7 @@ If a `deno.json` file is present, Dagger will [automatically detect](#automatic-
 
 ```shell
 deno init
-dagger module init --sdk=typescript --name=example --source=.
+dagger module init --sdk=typescript --source=. example
 ```
 
 :::important
