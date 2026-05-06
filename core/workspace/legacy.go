@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/dagger/dagger/core/modules"
 )
@@ -162,9 +164,44 @@ func (compatWorkspace *CompatWorkspace) WorkspaceConfig() *Config {
 			entry.Generate.Skip = append([]string(nil), tc.IgnoreGenerators...)
 			entry.Check.Skip = append([]string(nil), tc.IgnoreChecks...)
 			cfg.Modules[tc.Name] = entry
+
+			for svc, raws := range tc.PortMappings {
+				for _, raw := range raws {
+					host, container, err := parseHostContainerPort(raw)
+					if err != nil {
+						continue
+					}
+					if cfg.Ports == nil {
+						cfg.Ports = map[string]PortMapping{}
+					}
+					cfg.Ports[strconv.Itoa(host)] = PortMapping{
+						BackendService: tc.Name + ":" + svc,
+						BackendPort:    container,
+					}
+				}
+			}
 		}
 	}
 	return cfg
+}
+
+// parseHostContainerPort parses a "host:container" port string. Local
+// reimplementation of the engine's core.ParsePortMapping to avoid an import
+// cycle (core/workspace is imported by core).
+func parseHostContainerPort(raw string) (host, container int, err error) {
+	parts := strings.Split(raw, ":")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("port mapping %q: expected host:container", raw)
+	}
+	host, err = strconv.Atoi(parts[0])
+	if err != nil || host < 1 || host > 65535 {
+		return 0, 0, fmt.Errorf("port mapping %q: invalid host port %q", raw, parts[0])
+	}
+	container, err = strconv.Atoi(parts[1])
+	if err != nil || container < 1 || container > 65535 {
+		return 0, 0, fmt.Errorf("port mapping %q: invalid container port %q", raw, parts[1])
+	}
+	return host, container, nil
 }
 
 func legacyConfigCreatesCompatWorkspace(cfg *modules.ModuleConfig) bool {

@@ -135,6 +135,16 @@ func configDocumentMap(cfg *Config) map[string]any {
 		}
 		values["env"] = envs
 	}
+	if len(cfg.Ports) > 0 {
+		ports := make(map[string]any, len(cfg.Ports))
+		for host, pm := range cfg.Ports {
+			ports[host] = map[string]any{
+				"backendService": pm.BackendService,
+				"backendPort":    int64(pm.BackendPort),
+			}
+		}
+		values["ports"] = ports
+	}
 
 	return values
 }
@@ -194,6 +204,15 @@ func deleteRemovedConfigRoots(doc *neontoml.Document, existingCfg, desiredCfg *C
 		}
 		if err := doc.Delete("env." + formatConfigPathSegment(envName)); err != nil {
 			return fmt.Errorf("delete env %q: %w", envName, err)
+		}
+	}
+
+	for host := range existingCfg.Ports {
+		if _, ok := desiredCfg.Ports[host]; ok {
+			continue
+		}
+		if err := doc.Delete("ports." + formatConfigPathSegment(host)); err != nil {
+			return fmt.Errorf("delete port %q: %w", host, err)
 		}
 	}
 
