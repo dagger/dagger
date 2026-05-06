@@ -760,7 +760,7 @@ export class Test {
 		ctr := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
-			With(daggerExec("module", "init", "--source=.", "--sdk=go", "dep")).
+			With(daggerExec("module", "init", "--source=.", "--sdk=go", "dep", ".")).
 			WithNewFile("main.go", `package main
 
 import (
@@ -798,7 +798,7 @@ func (m *Dep) GetRelSource(
 
 		ctr = ctr.
 			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--source=.", "--sdk=go", "test")).
+			With(daggerExec("module", "init", "--source=.", "--sdk=go", "test", ".")).
 			With(daggerExec("module", "install", "./dep")).
 			WithNewFile("main.go", `package main
 
@@ -845,7 +845,7 @@ func (m *Test) GetRelDepSource() *dagger.Directory {
 		ctr := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
-			With(daggerExec("module", "init", "--source=.", "--sdk=go", "dep")).
+			With(daggerExec("module", "init", "--source=.", "--sdk=go", "dep", ".")).
 			WithNewFile("main.go", `package main
 
 import (
@@ -874,7 +874,7 @@ func (m *Dep) GetRelSource(
 
 		ctr = ctr.
 			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--source=.", "--sdk=go", "test")).
+			With(daggerExec("module", "init", "--source=.", "--sdk=go", "test", ".")).
 			WithNewFile("main.go", `package main
 
 import (
@@ -1308,7 +1308,7 @@ func (ModuleSuite) TestContextGitRemoteDep(ctx context.Context, t *testctx.T) {
 			// create a module that depends on the remote module
 			modGen := goGitBase(t, c).
 				WithWorkdir("/work").
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test")).
+				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
 				WithNewFile("dagger.json", `{
 			"name": "test",
 	"source": ".",
@@ -1397,7 +1397,7 @@ func (ModuleSuite) TestContextGitRemoteDepNamedPin(ctx context.Context, t *testc
 
 	modGen := goGitBase(t, c).
 		WithWorkdir("/work").
-		With(daggerExec("module", "init", "--sdk=go", "--source=.", "test")).
+		With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
 		WithNewFile("dagger.json", `{
 			"name": "test",
 			"source": ".",
@@ -1803,7 +1803,7 @@ func (ModuleSuite) TestGitignore(ctx context.Context, t *testctx.T) {
 	modGen := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/dagger").
-		With(daggerExec("module", "init", "--sdk=go", "--source=.", "test")).
+		With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
 		WithDirectory("./backend", c.Directory().WithNewFile("foo.txt", "foo")).
 		WithDirectory("./frontend", c.Directory().WithNewFile("bar.txt", "bar")).
 		WithNewFile("./.gitignore", "frontend/*.txt\n").
@@ -2050,7 +2050,7 @@ func (ModuleSuite) TestDefaultPathNoCache(ctx context.Context, t *testctx.T) {
 	t.Run("sources are reloaded when changed with defaultPath", func(ctx context.Context, t *testctx.T) {
 		modDir := t.TempDir()
 
-		_, err := hostDaggerExec(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test")
+		_, err := hostDaggerExec(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test", ".")
 		require.NoError(t, err)
 
 		initialContent := "initial content"

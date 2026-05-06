@@ -196,7 +196,11 @@ func TestWorkspaceInstallLookupContext(t *testing.T) {
 func TestLockHostPath(t *testing.T) {
 	t.Parallel()
 
-	ws := &core.Workspace{Path: filepath.Join("apps", "api")}
+	configDir := filepath.Join("apps", "api", ".dagger")
+	ws := &core.Workspace{
+		ConfigDirectory: &configDir,
+		HasConfig:       true,
+	}
 	ws.SetHostPath("/repo")
 
 	lockPath, err := lockHostPath(ws)
@@ -208,7 +212,11 @@ func TestReadWorkspaceLock(t *testing.T) {
 	t.Parallel()
 
 	makeWorkspace := func() *core.Workspace {
-		ws := &core.Workspace{Path: "."}
+		configDir := ".dagger"
+		ws := &core.Workspace{
+			ConfigDirectory: &configDir,
+			HasConfig:       true,
+		}
 		ws.SetHostPath("/repo")
 		return ws
 	}

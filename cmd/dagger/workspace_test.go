@@ -28,7 +28,7 @@ func TestInstallAndUpdateCommandFlags(t *testing.T) {
 	require.Nil(t, cmd.Flags().Lookup("mod"))
 	require.Nil(t, cmd.Flags().Lookup("compat"))
 	require.NotNil(t, cmd.Flags().Lookup("name"))
-	require.Contains(t, cmd.Long, "If the current directory is not yet a workspace, this initializes one first.")
+	require.Contains(t, cmd.Long, "If no workspace config is selected")
 
 	cmd, _, err = rootCmd.Find([]string{"module", "install"})
 	require.NoError(t, err)
@@ -50,7 +50,8 @@ func TestInstallAndUpdateCommandFlags(t *testing.T) {
 func TestWorkspaceCommandGrouping(t *testing.T) {
 	require.Equal(t, workspaceGroup.ID, configCmd.GroupID)
 	require.Equal(t, workspaceGroup.ID, envCmd.GroupID)
-	require.Equal(t, workspaceGroup.ID, initCmd.GroupID)
+	require.Equal(t, moduleGroup.ID, initCmd.GroupID)
+	require.True(t, initCmd.Hidden)
 	require.Equal(t, workspaceGroup.ID, settingsCmd.GroupID)
 	require.Equal(t, workspaceGroup.ID, workspaceCmd.GroupID)
 	require.Equal(t, workspaceGroup.ID, moduleDepInstallCmd.GroupID)
@@ -94,7 +95,7 @@ func TestRootHelpShowsWorkspaceCommandGroup(t *testing.T) {
 	workspaceSection := help[workspaceIdx:moduleIdx]
 	require.Contains(t, workspaceSection, "  config")
 	require.Contains(t, workspaceSection, "  env")
-	require.Contains(t, workspaceSection, "  init")
+	require.NotContains(t, workspaceSection, "  init")
 	require.Contains(t, workspaceSection, "  install")
 	require.Contains(t, workspaceSection, "  update")
 	require.Contains(t, workspaceSection, "  settings")
@@ -230,13 +231,13 @@ func TestWriteWorkspaceInfo(t *testing.T) {
 		var out bytes.Buffer
 		err := writeWorkspaceInfo(&out, workspaceInfoView{
 			Address:    "github.com/acme/ws/toolchains/changelog@main",
-			Path:       "toolchains/changelog",
-			ConfigPath: ".dagger/config.toml",
+			Cwd:        "toolchains/changelog",
+			ConfigFile: ".dagger/config.toml",
 		})
 		require.NoError(t, err)
 		require.Equal(t,
 			"Address: github.com/acme/ws/toolchains/changelog@main\n"+
-				"Path:    toolchains/changelog\n"+
+				"Cwd:     toolchains/changelog\n"+
 				"Config:  .dagger/config.toml\n",
 			out.String(),
 		)
@@ -246,12 +247,12 @@ func TestWriteWorkspaceInfo(t *testing.T) {
 		var out bytes.Buffer
 		err := writeWorkspaceInfo(&out, workspaceInfoView{
 			Address: "github.com/acme/ws",
-			Path:    ".",
+			Cwd:     ".",
 		})
 		require.NoError(t, err)
 		require.Equal(t,
 			"Address: github.com/acme/ws\n"+
-				"Path:    .\n"+
+				"Cwd:     .\n"+
 				"Config:  none\n",
 			out.String(),
 		)
