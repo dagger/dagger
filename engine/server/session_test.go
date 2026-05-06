@@ -91,6 +91,66 @@ func TestPendingLegacyModule(t *testing.T) {
 	})
 }
 
+func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
+	t.Parallel()
+
+	mods := []pendingModule{
+		{Kind: moduleLoadKindAmbient, Name: "foo", Entrypoint: false},
+		{Kind: moduleLoadKindAmbient, Name: "bar-baz", Entrypoint: true},
+		{Kind: moduleLoadKindCWD, Name: "local", Entrypoint: true},
+	}
+
+	t.Run("constructor match loads only matching module", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, []string{"foo"})
+		require.Equal(t, []pendingModule{mods[0]}, filtered)
+	})
+
+	t.Run("unknown root field with multiple entrypoints loads all", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, []string{"doThing"})
+		require.Equal(t, mods, filtered)
+	})
+
+	t.Run("unknown root field with one entrypoint loads entrypoint", func(t *testing.T) {
+		t.Parallel()
+
+		oneEntrypoint := []pendingModule{mods[0], mods[1]}
+		filtered := filterPendingWorkspaceModulesForRootFields(oneEntrypoint, []string{"doThing"})
+		require.Equal(t, []pendingModule{mods[1]}, filtered)
+	})
+
+	t.Run("introspection loads all", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, []string{"__schema"})
+		require.Equal(t, mods, filtered)
+	})
+
+	t.Run("current typedefs loads all", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, []string{"currentTypeDefs"})
+		require.Equal(t, mods, filtered)
+	})
+
+	t.Run("current module loads all", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, []string{"currentModule"})
+		require.Equal(t, mods, filtered)
+	})
+
+	t.Run("core-only query loads none", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesForRootFields(mods, []string{"container", "version"})
+		require.Empty(t, filtered)
+	})
+}
+
 func TestWorkspaceConfigPendingModules(t *testing.T) {
 	t.Parallel()
 
