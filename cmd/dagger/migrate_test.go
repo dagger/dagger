@@ -37,7 +37,7 @@ func TestDetectMigrationTarget(t *testing.T) {
 		target, status, err := detectMigrationTarget(root)
 		require.NoError(t, err)
 		require.Nil(t, target)
-		require.Equal(t, "No migration needed: workspace already initialized.", status)
+		require.Equal(t, "No migration needed: workspace config already exists.", status)
 	})
 
 	t.Run("reports when legacy module is not compat-eligible", func(t *testing.T) {

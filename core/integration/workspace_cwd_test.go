@@ -22,7 +22,7 @@ func (WorkspaceSuite) TestCurrentWorkspaceRootAndCwd(ctx context.Context, t *tes
 		{
 			name:        "detection starts at workspace root",
 			clientOpts:  []dagger.ClientOpt{dagger.WithWorkdir(fixture.root)},
-			wantCwdPath: "",
+			wantCwdPath: ".",
 		},
 		{
 			name:        "detection starts below workspace root",
@@ -40,18 +40,18 @@ func (WorkspaceSuite) TestCurrentWorkspaceRootAndCwd(ctx context.Context, t *tes
 			t.Run("workspace root", func(ctx context.Context, t *testctx.T) {
 				res, err := testutil.Query[currentWorkspaceRootResult](t, `{
 					currentWorkspace {
-						path
-						rootFile: file(path: "root.txt") {
+						cwd
+						rootFile: file(path: "/root.txt") {
 							contents
 						}
-						rootDirectory: directory(path: ".") {
+						rootDirectory: directory(path: "/") {
 							entries
 						}
 					}
 				}`, nil, tc.clientOpts...)
 				require.NoError(t, err)
 
-				require.Equal(t, ".", res.CurrentWorkspace.Path)
+				require.Equal(t, tc.wantCwdPath, res.CurrentWorkspace.Cwd)
 				require.Equal(t, "from workspace root", res.CurrentWorkspace.RootFile.Contents)
 				require.Contains(t, res.CurrentWorkspace.RootDirectory.Entries, "root.txt")
 				require.Contains(t, res.CurrentWorkspace.RootDirectory.Entries, "subdir/")
@@ -61,22 +61,19 @@ func (WorkspaceSuite) TestCurrentWorkspaceRootAndCwd(ctx context.Context, t *tes
 			t.Run("workspace cwd", func(ctx context.Context, t *testctx.T) {
 				cwdFilePath := "cwd.txt"
 				wantCwdContents := "from workspace cwd"
-				if tc.wantCwdPath == "" {
+				if tc.wantCwdPath == "." {
 					cwdFilePath = "root.txt"
 					wantCwdContents = "from workspace root"
 				}
 
 				res, err := testutil.Query[currentWorkspaceCwdResult](t, `query WorkspaceCwd($cwdFilePath: String!) {
 					currentWorkspace {
-						path
-						cwd {
-							path
-							cwdFile: file(path: $cwdFilePath) {
-								contents
-							}
-							cwdDirectory: directory(path: ".") {
-								entries
-							}
+						cwd
+						cwdFile: file(path: $cwdFilePath) {
+							contents
+						}
+						cwdDirectory: directory(path: ".") {
+							entries
 						}
 					}
 				}`, &testutil.QueryOptions{
@@ -86,15 +83,14 @@ func (WorkspaceSuite) TestCurrentWorkspaceRootAndCwd(ctx context.Context, t *tes
 				}, tc.clientOpts...)
 				require.NoError(t, err)
 
-				require.Equal(t, ".", res.CurrentWorkspace.Path)
-				require.Equal(t, tc.wantCwdPath, res.CurrentWorkspace.Cwd.Path)
-				require.Equal(t, wantCwdContents, res.CurrentWorkspace.Cwd.CwdFile.Contents)
-				if tc.wantCwdPath == "" {
-					require.Contains(t, res.CurrentWorkspace.Cwd.CwdDirectory.Entries, "root.txt")
-					require.Contains(t, res.CurrentWorkspace.Cwd.CwdDirectory.Entries, "subdir/")
+				require.Equal(t, tc.wantCwdPath, res.CurrentWorkspace.Cwd)
+				require.Equal(t, wantCwdContents, res.CurrentWorkspace.CwdFile.Contents)
+				if tc.wantCwdPath == "." {
+					require.Contains(t, res.CurrentWorkspace.CwdDirectory.Entries, "root.txt")
+					require.Contains(t, res.CurrentWorkspace.CwdDirectory.Entries, "subdir/")
 				} else {
-					require.Contains(t, res.CurrentWorkspace.Cwd.CwdDirectory.Entries, "cwd.txt")
-					require.NotContains(t, res.CurrentWorkspace.Cwd.CwdDirectory.Entries, "root.txt")
+					require.Contains(t, res.CurrentWorkspace.CwdDirectory.Entries, "cwd.txt")
+					require.NotContains(t, res.CurrentWorkspace.CwdDirectory.Entries, "root.txt")
 				}
 			})
 		})
@@ -127,7 +123,7 @@ func newWorkspaceCwdFixture(t *testctx.T) workspaceCwdFixture {
 
 type currentWorkspaceRootResult struct {
 	CurrentWorkspace struct {
-		Path          string
+		Cwd           string
 		RootFile      fileContentsResult
 		RootDirectory directoryEntriesResult
 	}
@@ -135,12 +131,9 @@ type currentWorkspaceRootResult struct {
 
 type currentWorkspaceCwdResult struct {
 	CurrentWorkspace struct {
-		Path string
-		Cwd  struct {
-			Path         string
-			CwdFile      fileContentsResult
-			CwdDirectory directoryEntriesResult
-		}
+		Cwd          string
+		CwdFile      fileContentsResult
+		CwdDirectory directoryEntriesResult
 	}
 }
 

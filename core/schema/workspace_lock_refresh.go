@@ -62,7 +62,11 @@ func (s *workspaceSchema) refreshModules(
 	if err != nil {
 		return nil, err
 	}
-	if err := refreshWorkspaceModuleLookups(workspaceCtx, query, lock, modules); err != nil {
+	configDir, err := workspaceConfigDirectory(ws)
+	if err != nil {
+		return nil, err
+	}
+	if err := refreshWorkspaceModuleLookups(workspaceCtx, query, lock, configDir, modules); err != nil {
 		return nil, err
 	}
 
@@ -73,6 +77,7 @@ func refreshWorkspaceModuleLookups(
 	ctx context.Context,
 	query *core.Query,
 	lock *workspace.Lock,
+	configDir string,
 	modules []workspaceRefreshModule,
 ) error {
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -84,7 +89,7 @@ func refreshWorkspaceModuleLookups(
 	for _, mod := range modules {
 		result, ok := resultsBySource[mod.Source]
 		if !ok {
-			kind, err := resolveWorkspaceModuleSourceKind(ctx, srv, workspaceRefreshModuleRef(mod.Source))
+			kind, err := resolveWorkspaceModuleSourceKind(ctx, srv, workspaceRefreshModuleRef(configDir, mod.Source))
 			if err != nil {
 				return fmt.Errorf("module %q source %q: %w", mod.Name, mod.Source, err)
 			}
@@ -159,11 +164,11 @@ func resolveWorkspaceModuleSourceKind(ctx context.Context, srv *dagql.Server, so
 	return kind, nil
 }
 
-func workspaceRefreshModuleRef(source string) string {
+func workspaceRefreshModuleRef(configDir, source string) string {
 	if core.FastModuleSourceKindCheck(source, "") != core.ModuleSourceKindLocal {
 		return source
 	}
-	return filepath.Join(workspace.LockDirName, source)
+	return filepath.Join(configDir, source)
 }
 
 func (s *workspaceSchema) workspaceLockChangeset(
@@ -176,7 +181,12 @@ func (s *workspaceSchema) workspaceLockChangeset(
 		return nil, fmt.Errorf("marshal workspace lock: %w", err)
 	}
 
-	baseDir, err := s.resolveRootfs(ctx, ws, resolveWorkspacePath(".", ws.Path), core.CopyFilter{}, false)
+	configDir, err := workspaceConfigDirectory(ws)
+	if err != nil {
+		return nil, err
+	}
+
+	baseDir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +201,7 @@ func (s *workspaceSchema) workspaceLockChangeset(
 		dagql.Selector{
 			Field: "withNewFile",
 			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(path.Join(workspace.LockDirName, workspace.LockFileName))},
+				{Name: "path", Value: dagql.NewString(path.Join(filepath.ToSlash(configDir), workspace.LockFileName))},
 				{Name: "contents", Value: dagql.String(lockBytes)},
 				{Name: "permissions", Value: dagql.Int(0o644)},
 			},
