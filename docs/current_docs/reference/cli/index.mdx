@@ -34,7 +34,7 @@ dagger [options] [subcommand | file...]
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
       --x-release string             Run an experimental release from a Dagger git ref
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -95,7 +95,7 @@ dagger call [options] [function]...
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
       --x-release string             Run an experimental release from a Dagger git ref
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -142,7 +142,7 @@ dagger config [key] [value]
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
       --x-release string             Run an experimental release from a Dagger git ref
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -180,7 +180,7 @@ dagger core [options]
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
       --x-release string             Run an experimental release from a Dagger git ref
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -245,7 +245,7 @@ dagger develop [options]
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
       --x-release string             Run an experimental release from a Dagger git ref
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -271,7 +271,7 @@ Manage workspace environments
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -304,7 +304,7 @@ dagger env create NAME
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -334,7 +334,7 @@ dagger env list
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -364,7 +364,7 @@ dagger env rm NAME
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -417,7 +417,7 @@ dagger functions [options] [function]...
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
       --x-release string             Run an experimental release from a Dagger git ref
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -452,7 +452,7 @@ dagger init
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
       --x-release string             Run an experimental release from a Dagger git ref
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -501,7 +501,7 @@ dagger install github.com/shykes/daggerverse/hello@v0.3.0
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
       --x-release string             Run an experimental release from a Dagger git ref
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -528,7 +528,7 @@ Manage workspace lockfiles
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
       --x-release string             Run an experimental release from a Dagger git ref
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -568,7 +568,7 @@ dagger lock update [module...]
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
       --x-release string             Run an experimental release from a Dagger git ref
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -599,7 +599,7 @@ dagger login [options] [org]
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
       --x-release string             Run an experimental release from a Dagger git ref
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -630,7 +630,7 @@ dagger logout
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
       --x-release string             Run an experimental release from a Dagger git ref
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -671,7 +671,7 @@ dagger migrate
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -697,7 +697,7 @@ Manage modules
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -764,7 +764,7 @@ dagger module init --sdk=go ci ./submod
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -818,7 +818,7 @@ dagger module install github.com/shykes/daggerverse/hello@v0.3.0
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -872,7 +872,7 @@ dagger module update [options] [<DEPENDENCY>...] [flags]
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -942,7 +942,7 @@ EOF
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
       --x-release string             Run an experimental release from a Dagger git ref
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1006,7 +1006,7 @@ dagger run python main.py
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
       --x-release string             Run an experimental release from a Dagger git ref
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1037,7 +1037,7 @@ dagger settings [module] [key] [value]
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
       --x-release string             Run an experimental release from a Dagger git ref
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1283,7 +1283,7 @@ dagger uninstall hello
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
       --x-release string             Run an experimental release from a Dagger git ref
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1329,7 +1329,7 @@ dagger update [module...]
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
       --x-release string             Run an experimental release from a Dagger git ref
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1366,7 +1366,7 @@ dagger version
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
       --x-release string             Run an experimental release from a Dagger git ref
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1392,7 +1392,7 @@ Manage the current workspace
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1440,7 +1440,7 @@ dagger workspace config [key] [value] [flags]
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1470,7 +1470,7 @@ dagger workspace info [flags]
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1504,7 +1504,7 @@ dagger workspace init [flags]
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
@@ -1543,7 +1543,7 @@ dagger workspace list [flags]
   -s, --silent                       Do not show progress at all
   -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
   -w, --web                          Open trace URL in a web browser
-  -W, --workspace string             Select the workspace to load (local path or git ref)
+  -W, --workspace string             Select the workspace location to load from (local path or git ref)
 ```
 
 ### SEE ALSO
