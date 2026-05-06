@@ -48,7 +48,7 @@ func legacyWorkspaceBase(t testing.TB, c *dagger.Client, config string, ops ...d
 
 func ensureWorkspaceInit() dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
-		return ctr.WithExec([]string{"sh", "-c", "test -f .dagger/config.toml || dagger workspace init"}, dagger.ContainerWithExecOpts{
+		return ctr.WithExec([]string{"sh", "-c", "dagger workspace config-file | grep -vx none >/dev/null || dagger workspace init --here"}, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
@@ -59,8 +59,7 @@ func ensureWorkspaceInit() dagger.WithContainerFunc {
 func initDangModule(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
-			With(ensureWorkspaceInit()).
-			With(daggerExec("module", "init", "--sdk=dang", name)).
+			With(daggerExec("module", "init", "--here", "--sdk=dang", name)).
 			WithNewFile(".dagger/modules/"+name+"/main.dang", source)
 	}
 }
@@ -80,8 +79,7 @@ func initStandaloneDangModule(name, source string) dagger.WithContainerFunc {
 func initDangBlueprint(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
-			With(ensureWorkspaceInit()).
-			With(daggerExec("module", "init", "--sdk=dang", name)).
+			With(daggerExec("module", "init", "--here", "--sdk=dang", name)).
 			WithNewFile(".dagger/modules/"+name+"/main.dang", source).
 			With(daggerExec("workspace", "config", "modules."+name+".entrypoint", "true"))
 	}

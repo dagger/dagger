@@ -18,6 +18,7 @@ type workspaceModuleInitArgs struct {
 	Source    string   `default:""`
 	Include   []string `default:"[]"`
 	SelfCalls bool     `default:"false"`
+	Here      bool     `default:"false"`
 }
 
 func (s *workspaceSchema) moduleInit(
@@ -25,9 +26,6 @@ func (s *workspaceSchema) moduleInit(
 	parent *core.Workspace,
 	args workspaceModuleInitArgs,
 ) (dagql.String, error) {
-	if !parent.HasConfig {
-		return "", fmt.Errorf("no config.toml found in workspace")
-	}
 	if args.Name == "" {
 		return "", fmt.Errorf("module name is required")
 	}
@@ -35,7 +33,7 @@ func (s *workspaceSchema) moduleInit(
 		return "", fmt.Errorf("cannot enable self-calls feature without specifying --sdk")
 	}
 
-	cfg, err := readWorkspaceConfig(ctx, parent)
+	cfg, initialized, err := loadWorkspaceConfigForMutation(ctx, parent, workspaceConfigInitIfMissing, args.Here)
 	if err != nil {
 		return "", err
 	}
@@ -43,7 +41,11 @@ func (s *workspaceSchema) moduleInit(
 		return "", fmt.Errorf("module %q already exists in workspace config", args.Name)
 	}
 
-	modulePath, err := workspaceHostPath(parent, workspace.LockDirName, "modules", args.Name)
+	configDirRel, err := workspaceConfigDirectory(parent)
+	if err != nil {
+		return "", err
+	}
+	modulePath, err := workspaceHostPath(parent, configDirRel, "modules", args.Name)
 	if err != nil {
 		return "", err
 	}
@@ -78,6 +80,9 @@ func (s *workspaceSchema) moduleInit(
 	}
 
 	msg := fmt.Sprintf("Created module %q at %s\nInstalled in %s", args.Name, modulePath, configPath)
+	if initialized {
+		msg = fmt.Sprintf("Created workspace config in %s\n%s", filepath.Dir(configPath), msg)
+	}
 	return dagql.String(msg), nil
 }
 
