@@ -21,7 +21,7 @@ func (ModuleSuite) TestInvalidSDK(ctx context.Context, t *testctx.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=bare", "--sdk=foo-bar"))
+			With(daggerExec("init", "--sdk=foo-bar", "bare"))
 
 		_, err := modGen.
 			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
@@ -36,7 +36,7 @@ func (ModuleSuite) TestInvalidSDK(ctx context.Context, t *testctx.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=bare", "--sdk=go@main"))
+			With(daggerExec("init", "--sdk=go@main", "bare"))
 
 		_, err := modGen.
 			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
@@ -247,7 +247,7 @@ export class Test {
 			}
 
 			mod := inspectModule(ctx, t,
-				modGen.With(daggerExec("init", "--source=.", "--name=test", "--sdk="+tc.sdk)))
+				modGen.With(daggerExec("init", "--source=.", "test", "--sdk="+tc.sdk)))
 
 			require.Equal(t,
 				"Test module, short description\n\nLong description, with full sentences.",

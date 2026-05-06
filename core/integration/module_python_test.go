@@ -55,7 +55,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			With(daggerExec("init", "--source=.")).
+			With(daggerExec("init", "test", "--source=.")).
 			With(daggerExec("develop", "--sdk=python", "--source=.")).
 			With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).
 			Stdout(ctx)
@@ -68,7 +68,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		_, err := daggerCliBase(t, c).
-			With(daggerExec("init", "--source=.")).
+			With(daggerExec("init", "test", "--source=.")).
 			With(pyprojectExtra(nil, "")).
 			With(daggerExec("develop", "--sdk=python", "--source=.")).
 			Sync(ctx)
@@ -80,7 +80,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			With(daggerInitPython("--name=hello-world")).
+			With(daggerInitPython("hello-world")).
 			With(fileContents("src/hello_world/__init__.py", `
                 from dagger import field, function, object_type
 
@@ -116,7 +116,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
                     def message(self) -> str:
                         return f"Hello, {self.my_name}!"
             `).
-			With(daggerExec("init", "--name=bare", "--sdk=python"))
+			With(daggerExec("init", "--sdk=python", "bare"))
 
 		daggerDirEnts, err := modGen.Directory("/work/.dagger").Entries(ctx)
 		require.NoError(t, err)
@@ -137,7 +137,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithExec([]string{"mkdir", "-p", ".git"}).
-			With(daggerExec("init", "--name=bare", "--sdk=python"))
+			With(daggerExec("init", "--sdk=python", "bare"))
 
 		daggerDirEnts, err := modGen.Directory("/work").Entries(ctx)
 		require.NoError(t, err)
@@ -186,7 +186,7 @@ class HelloWorld:
         return f"Hello, {self.my_name}!"
 `,
 			).
-			With(daggerExec("init", "--name=hello-world", "--sdk=python", "--source=."))
+			With(daggerExec("init", "--sdk=python", "--source=.", "hello-world"))
 
 		out, err := modGen.With(daggerQuery(`{message}`)).Stdout(ctx)
 		require.NoError(t, err)
@@ -243,7 +243,7 @@ class Test:
         return f"Hello, {self.my_name}!"
 `,
 			).
-			With(daggerExec("init", "--name=test", "--sdk=python", "--source=."))
+			With(daggerExec("init", "--sdk=python", "--source=.", "test"))
 
 		out, err := modGen.With(daggerQuery(`{message}`)).Stdout(ctx)
 		require.NoError(t, err)
@@ -290,7 +290,7 @@ class Test:
         return f"Hello, {self.my_name}!"
 `,
 			).
-			With(daggerExec("init", "--name=test", "--sdk=python", "--source=."))
+			With(daggerExec("init", "--sdk=python", "--source=.", "test"))
 
 		out, err := modGen.With(daggerQuery(`{message}`)).Stdout(ctx)
 		require.NoError(t, err)
@@ -776,7 +776,7 @@ class Test:
         return f"{v.major}.{v.minor}"
 `,
 			)).
-			With(daggerExec("init", "--sdk=../extended", "--name=test", "--source=.")).
+			With(daggerExec("init", "--sdk=../extended", "--source=.", "test")).
 			// use-uv = false should be ignored
 			WithExec([]string{"test", "-f", "uv.lock"}).
 			With(daggerCall("version")).
@@ -1869,7 +1869,7 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
 
 	ctr := goGitBase(t, c).
 		WithWorkdir("/work/dep").
-		With(daggerInitPython("--name=dep")).
+		With(daggerInitPython("dep")).
 		With(fileContents("src/dep/__init__.py", `
             import dagger
 
@@ -2040,7 +2040,7 @@ func (PythonSuite) TestErrors(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctr := goGitBase(t, c).
 		WithWorkdir("/work/dep").
-		With(daggerInitPython("--name=dep")).
+		With(daggerInitPython("dep")).
 		With(fileContents("src/dep/__init__.py", fmt.Sprintf(`
             import dagger
             from dagger import dag
@@ -2157,7 +2157,7 @@ version = "0.0.0"
 func daggerInitPythonAt(modPath string, args ...string) dagger.WithContainerFunc {
 	execArgs := append([]string{"init", "--sdk=python"}, args...)
 	if len(args) == 0 {
-		execArgs = append(execArgs, "--name=test")
+		execArgs = append(execArgs, "test")
 	}
 	if modPath != "" {
 		execArgs = append(execArgs, "--source="+modPath, modPath)
