@@ -707,6 +707,12 @@ func validateKeyAgainstType(parts []string, t reflect.Type, fullKey string) erro
 			return fmt.Errorf("invalid key %q; config keys cannot be nested deeper", fullKey)
 		}
 		return nil
+	case reflect.Struct:
+		if len(rest) == 0 {
+			return fmt.Errorf("cannot set %q directly; specify a field like %s.%s",
+				fullKey, fullKey, preferredExampleFieldName(fieldType))
+		}
+		return validateKeyAgainstType(rest, fieldType, fullKey)
 	default:
 		if len(rest) > 0 {
 			return fmt.Errorf("invalid key %q; %s does not have sub-keys", fullKey, parts[0])
