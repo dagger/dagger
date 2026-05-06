@@ -138,7 +138,7 @@ func (m *Foo) HowCoolIsDagger() string {
 [url "ssh://git@github.com/"]
 	insteadOf = https://github.com/
 `).
-			With(daggerExec("init", "--name=foo", "--sdk=go", "--source=.")).
+			With(daggerExec("init", "--sdk=go", "--source=.", "foo")).
 			WithNewFile("main.go", privateDepCode).
 			WithNewFile("dagger.json", daggerjson)
 

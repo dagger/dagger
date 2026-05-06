@@ -247,8 +247,8 @@ func (ChecksSuite) TestChecksAsToolchain(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			modGen = modGen.
 				WithWorkdir("app").
-				With(daggerWorkspaceExec("init")).
-				With(daggerWorkspaceInstall("../" + tc.path))
+				With(daggerExec("workspace", "init")).
+				With(daggerExec("install", "../"+tc.path))
 			// list checks
 			out, err := modGen.
 				With(daggerExec("check", "-l")).

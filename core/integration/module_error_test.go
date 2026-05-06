@@ -21,7 +21,7 @@ func (ModuleSuite) TestExecError(ctx context.Context, t *testctx.T) {
 	modGen := c.Container().From(alpineImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=playground", "--sdk=go")).
+		With(daggerExec("init", "--source=.", "--sdk=go", "playground")).
 		WithNewFile("main.go", `
 package main
 
@@ -58,7 +58,7 @@ func (ModuleSuite) TestHostError(ctx context.Context, t *testctx.T) {
 	_, err := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		With(daggerExec("init", "--source=.", "--sdk=go", "test")).
 		WithNewFile("/work/main.go", `package main
  			import (
  				"context"
@@ -82,7 +82,7 @@ func (ModuleSuite) TestEngineError(ctx context.Context, t *testctx.T) {
 	_, err := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		With(daggerExec("init", "--source=.", "--sdk=go", "test")).
 		WithNewFile("/work/main.go", `package main
  			import (
  				"context"
@@ -102,7 +102,7 @@ func (ModuleSuite) TestEngineError(ctx context.Context, t *testctx.T) {
 func (ModuleSuite) TestLargeErrors(ctx context.Context, t *testctx.T) {
 	modDir := t.TempDir()
 
-	_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+	_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--sdk=go", "test")
 	require.NoError(t, err)
 
 	moduleSrc := `package main
