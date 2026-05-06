@@ -23,7 +23,7 @@ func (CLISuite) TestModuleInit(ctx context.Context, t *testctx.T) {
 		out, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=coolmod", "--sdk=go", "coolmod")).
+			With(daggerExec("module", "init", "--source=coolmod", "--sdk=go", "coolmod")).
 			WithNewFile("/work/coolmod/main.go", `package main
 
 			import "context"
@@ -66,7 +66,7 @@ func (CLISuite) TestModuleInit(ctx context.Context, t *testctx.T) {
 		} {
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				srcRootDir := ctr.
-					With(daggerExec("init", "test", "--sdk="+tc.sdk)).
+					With(daggerExec("module", "init", "test", "--sdk="+tc.sdk)).
 					Directory(".")
 				srcRootEnts, err := srcRootDir.Entries(ctx)
 				require.NoError(t, err)
@@ -84,7 +84,7 @@ func (CLISuite) TestModuleInit(ctx context.Context, t *testctx.T) {
 
 		ctr := goGitBase(t, c).
 			WithWorkdir("/var").
-			With(daggerExec("init", "--source=../work/some/subdir", "--sdk=go", "test", "../work")).
+			With(daggerExec("module", "init", "--source=../work/some/subdir", "--sdk=go", "test", "../work")).
 			With(daggerCallAt("../work", "container-echo", "--string-arg", "yo", "stdout"))
 		out, err := ctr.Stdout(ctx)
 		require.NoError(t, err)
@@ -101,9 +101,9 @@ func (CLISuite) TestModuleInit(ctx context.Context, t *testctx.T) {
 
 		ctr := goGitBase(t, c).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--sdk=go", "a", ".")).
+			With(daggerExec("module", "init", "--sdk=go", "a", ".")).
 			WithWorkdir("/work/subdir").
-			With(daggerExec("init", "--sdk=go", "--source=.", "b", ".")).
+			With(daggerExec("module", "init", "--sdk=go", "--source=.", "b", ".")).
 			WithNewFile("./main.go", `package main
 
 			type B struct {}
@@ -123,7 +123,7 @@ func (CLISuite) TestModuleInit(ctx context.Context, t *testctx.T) {
 		absPath := "/work/mymodule"
 		ctr := goGitBase(t, c).
 			WithWorkdir("/").
-			With(daggerExec("init", "test", "--source="+absPath, "--sdk=go", absPath)).
+			With(daggerExec("module", "init", "test", "--source="+absPath, "--sdk=go", absPath)).
 			WithNewFile(absPath+"/main.go", `package main
 				type Test struct {}
 				func (m *Test) Fn() string { return "hello from absolute path" }`,
@@ -141,7 +141,7 @@ func (CLISuite) TestModuleInit(ctx context.Context, t *testctx.T) {
 		absPath := "/work/mymodule"
 		ctr := goGitBase(t, c).
 			WithWorkdir("/").
-			With(daggerExec("init", "--source=.", "--sdk=go", "test", absPath))
+			With(daggerExec("module", "init", "--source=.", "--sdk=go", "test", absPath))
 
 		_, err := ctr.Stdout(ctx)
 		require.Error(t, err)
@@ -156,7 +156,7 @@ func (CLISuite) TestModuleInitLicense(ctx context.Context, t *testctx.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--sdk=go", "licensed-to-ill"))
+			With(daggerExec("module", "init", "--sdk=go", "licensed-to-ill"))
 
 		files, err := modGen.Directory(".").Entries(ctx)
 		require.NoError(t, err)
@@ -169,7 +169,7 @@ func (CLISuite) TestModuleInitLicense(ctx context.Context, t *testctx.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--sdk=go", "--license=false", "empty-license"))
+			With(daggerExec("module", "init", "--sdk=go", "--license=false", "empty-license"))
 
 		files, err := modGen.Directory(".").Entries(ctx)
 		require.NoError(t, err)
@@ -182,7 +182,7 @@ func (CLISuite) TestModuleInitLicense(ctx context.Context, t *testctx.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--sdk=go", "--license=true", "no-license"))
+			With(daggerExec("module", "init", "--sdk=go", "--license=true", "no-license"))
 
 		_, err := modGen.Stdout(ctx)
 		require.Error(t, err)
@@ -195,7 +195,7 @@ func (CLISuite) TestModuleInitLicense(ctx context.Context, t *testctx.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--sdk=go", "--license=MIT", "no-license"))
+			With(daggerExec("module", "init", "--sdk=go", "--license=MIT", "no-license"))
 
 		_, err := modGen.Stdout(ctx)
 		require.Error(t, err)
@@ -208,7 +208,7 @@ func (CLISuite) TestModuleInitLicense(ctx context.Context, t *testctx.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "no-license")).
+			With(daggerExec("module", "init", "--source=.", "no-license")).
 			With(daggerExecRaw("develop", "--sdk=go"))
 
 		files, err := modGen.Directory(".").Entries(ctx)
@@ -262,7 +262,7 @@ func (CLISuite) TestModuleInitGit(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
 			modGen := goGitBase(t, c).
-				With(daggerExec("init", "bare", "--sdk="+tc.sdk))
+				With(daggerExec("module", "init", "bare", "--sdk="+tc.sdk))
 
 			out, err := modGen.
 				With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
@@ -288,7 +288,7 @@ func (CLISuite) TestModuleInitGit(ctx context.Context, t *testctx.T) {
 
 			t.Run("does not configure .gitignore if disabled", func(ctx context.Context, t *testctx.T) {
 				modGen := goGitBase(t, c).
-					With(daggerExec("init", "--source=.", "bare"))
+					With(daggerExec("module", "init", "--source=.", "bare"))
 
 				// TODO: make this configurable
 				modCfgContents, err := modGen.File("dagger.json").Contents(ctx)
