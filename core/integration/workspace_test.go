@@ -16,19 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func daggerWorkspaceExec(args ...string) dagger.WithContainerFunc {
-	return daggerExecRaw(append([]string{"workspace"}, args...)...)
-}
-
-func daggerWorkspaceInstall(args ...string) dagger.WithContainerFunc {
-	return daggerExecRaw(append([]string{"install"}, args...)...)
-}
-
-func hostDaggerWorkspaceExec(ctx context.Context, t testing.TB, workdir string, args ...string) ([]byte, error) {
-	t.Helper()
-	return hostDaggerExecRaw(ctx, t, workdir, append([]string{"workspace"}, args...)...)
-}
-
 // workspaceBase returns a container with git, the dagger CLI, and an
 // initialized git repo at /work — the starting point for workspace tests.
 func workspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
@@ -73,7 +60,7 @@ func initDangModule(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
 			With(ensureWorkspaceInit()).
-			With(daggerExec("init", "--sdk=dang", name)).
+			With(daggerExec("module", "init", "--sdk=dang", name)).
 			WithNewFile(".dagger/modules/"+name+"/main.dang", source)
 	}
 }
@@ -83,7 +70,7 @@ func initDangModule(name, source string) dagger.WithContainerFunc {
 func initStandaloneDangModule(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
-			With(daggerExec("init", "--sdk=dang", "--source=.", name)).
+			With(daggerExec("module", "init", "--sdk=dang", "--source=.", name)).
 			WithNewFile("main.dang", source)
 	}
 }
@@ -94,7 +81,7 @@ func initDangBlueprint(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
 			With(ensureWorkspaceInit()).
-			With(daggerExec("init", "--sdk=dang", name)).
+			With(daggerExec("module", "init", "--sdk=dang", name)).
 			WithNewFile(".dagger/modules/"+name+"/main.dang", source).
 			With(daggerExec("workspace", "config", "modules."+name+".entrypoint", "true"))
 	}
@@ -109,7 +96,7 @@ func initHostDangBlueprint(ctx context.Context, t testing.TB, workdir, name, sou
 	_, err := hostDaggerExec(ctx, t, workdir, "workspace", "init")
 	require.NoError(t, err)
 
-	_, err = hostDaggerExec(ctx, t, workdir, "init", "--sdk=dang", name)
+	_, err = hostDaggerExec(ctx, t, workdir, "module", "init", "--sdk=dang", name)
 	require.NoError(t, err)
 
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".dagger", "modules", name, "main.dang"), []byte(source), 0o644))
