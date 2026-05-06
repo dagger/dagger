@@ -875,11 +875,11 @@ rm -rf /tmp/main
 mkdir -p /tmp/main
 cd /tmp/main
 
-dagger module init --sdk=go main >/dev/null
+dagger module init --sdk=go main . >/dev/null
 
 mkdir -p dep
 cd dep
-dagger module init --sdk=python dep >/dev/null
+dagger module init --sdk=python dep . >/dev/null
 
 cd /tmp/main
 dagger install ./dep >/dev/null

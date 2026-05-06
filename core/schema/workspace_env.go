@@ -33,6 +33,7 @@ func (s *workspaceSchema) envList(
 
 type workspaceEnvMutationArgs struct {
 	Name string
+	Here bool `default:"false"`
 }
 
 func (s *workspaceSchema) envCreate(
@@ -43,11 +44,7 @@ func (s *workspaceSchema) envCreate(
 	if args.Name == "" {
 		return "", fmt.Errorf("environment name is required")
 	}
-	if !parent.HasConfig {
-		return "", fmt.Errorf("no config.toml found in workspace")
-	}
-
-	cfg, err := readWorkspaceConfig(ctx, parent)
+	cfg, _, err := loadWorkspaceConfigForMutation(ctx, parent, workspaceConfigInitIfMissing, args.Here)
 	if err != nil {
 		return "", err
 	}
@@ -69,11 +66,7 @@ func (s *workspaceSchema) envRemove(
 	if args.Name == "" {
 		return "", fmt.Errorf("environment name is required")
 	}
-	if !parent.HasConfig {
-		return "", fmt.Errorf("no config.toml found in workspace")
-	}
-
-	cfg, err := readWorkspaceConfig(ctx, parent)
+	cfg, _, err := loadWorkspaceConfigForMutation(ctx, parent, workspaceConfigMustExist, args.Here)
 	if err != nil {
 		return "", err
 	}

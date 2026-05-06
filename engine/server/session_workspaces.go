@@ -187,7 +187,7 @@ func (srv *Server) loadWorkspaceFromHostPath(ctx context.Context, client *dagger
 	}
 
 	resolveLocalRef := func(ws *workspace.Workspace, relPath string) string {
-		return filepath.Join(ws.Root, ws.Path, relPath)
+		return filepath.Join(ws.Root, relPath)
 	}
 
 	return srv.detectAndLoadWorkspace(ctx, client,
@@ -304,7 +304,7 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerCl
 	}
 
 	resolveLocalRef := func(ws *workspace.Workspace, relPath string) string {
-		subPath := filepath.Join(ws.Root, ws.Path, relPath)
+		subPath := filepath.Join(ws.Root, relPath)
 		return core.GitRefString(parsedRef.cloneRef, subPath, parsedRef.version)
 	}
 
@@ -316,7 +316,7 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerCl
 		parsedRef.workspaceSubdir,
 		resolveLocalRef,
 		func(ws *workspace.Workspace) string {
-			return remoteWorkspaceAddress(parsedRef.cloneRef, ws.Path, parsedRef.version)
+			return remoteWorkspaceAddress(parsedRef.cloneRef, ws.Cwd, parsedRef.version)
 		},
 		false, // isLocal
 		tree,  // pre-built rootfs for remote
@@ -437,7 +437,10 @@ func loadWorkspaceConfig(
 	readFile func(context.Context, string) ([]byte, error),
 	ws *workspace.Workspace,
 ) (*workspace.Config, error) {
-	configPath := filepath.Join(ws.Root, ws.Path, workspace.LockDirName, workspace.ConfigFileName)
+	if !ws.HasConfig {
+		return nil, nil
+	}
+	configPath := filepath.Join(ws.Root, ws.ConfigFile)
 	data, err := readFile(ctx, configPath)
 	if err != nil {
 		if isWorkspaceNotFound(err) {
@@ -464,6 +467,7 @@ func workspaceConfigPendingModules(
 	if cfg == nil || len(cfg.Modules) == 0 {
 		return nil
 	}
+	configDir := ws.ConfigDirectory
 
 	names := make([]string, 0, len(cfg.Modules))
 	for name := range cfg.Modules {
@@ -487,7 +491,7 @@ func workspaceConfigPendingModules(
 		}
 
 		if core.FastModuleSourceKindCheck(entry.Source, "") == core.ModuleSourceKindLocal {
-			resolved := workspace.ResolveModuleEntrySource(workspace.LockDirName, entry.Source)
+			resolved := workspace.ResolveModuleEntrySource(configDir, entry.Source)
 			if filepath.IsAbs(resolved) {
 				mod.Ref = resolved
 			} else {
@@ -543,7 +547,11 @@ func defaultPathContextRefForWorkspace(
 	if ws == nil || resolveLocalRef == nil {
 		return ""
 	}
-	return resolveLocalRef(ws, ".")
+	base := "."
+	if ws.HasConfig && ws.ConfigDirectory != "" {
+		base = filepath.Dir(ws.ConfigDirectory)
+	}
+	return resolveLocalRef(ws, base)
 }
 
 func legacyCallerModuleDir(isLocal bool, moduleDir string) string {
@@ -605,21 +613,22 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	workspaceEnv, hasWorkspaceEnv := workspaceEnvFromClientMetadata(clientMD)
 
 	// --- Detect workspace (pure — no dagger.json knowledge) ---
-	ws, err := workspace.Detect(ctx, func(ctx context.Context, path string) (string, bool, error) {
+	pathExists := func(ctx context.Context, path string) (string, bool, error) {
 		return core.StatFSExists(ctx, statFS, path)
-	}, readFile, cwd)
+	}
+	var ws *workspace.Workspace
+	var err error
+	if isLocal {
+		ws, err = workspace.Detect(ctx, pathExists, readFile, cwd)
+	} else {
+		ws, err = workspace.DetectInRoot(ctx, pathExists, readFile, cwd, ".")
+	}
 	if err != nil {
 		return err
 	}
-	if !isLocal {
-		// Remote workspaces always retain the cloned git tree as their rootfs.
-		// Fold the detector's root into Path before converting to core.Workspace.
-		ws.Path = filepath.Join(ws.Root, ws.Path)
-		ws.Root = "."
-	}
 
 	var wsConfig *workspace.Config
-	if ws.Initialized {
+	if ws.HasConfig {
 		wsConfig, err = loadWorkspaceConfig(ctx, readFile, ws)
 		if err != nil {
 			return err
@@ -627,13 +636,13 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	}
 
 	// --- Compat mode: build the ambient compat workspace from legacy dagger.json ---
-	// Once an initialized workspace config exists, it owns ambient workspace
-	// module loading. Legacy dagger.json compatibility remains only for
-	// uninitialized workspaces.
+	// Once a workspace config is selected, it owns ambient workspace module
+	// loading. Legacy dagger.json compatibility remains only when no workspace
+	// config is selected.
 	var compatWorkspace *workspace.CompatWorkspace
 	moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
 	if hasModuleConfig && wsConfig != nil {
-		wsDir := filepath.Clean(filepath.Join(ws.Root, ws.Path))
+		wsDir := filepath.Clean(ws.Root)
 		rel, err := filepath.Rel(wsDir, filepath.Clean(moduleDir))
 		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			moduleDir = ""
@@ -655,8 +664,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			}
 		}
 	} else if wsConfig == nil {
-		wsDir := filepath.Join(ws.Root, ws.Path)
-		slog.Info("No workspace modules detected.", "path", wsDir)
+		slog.Info("No workspace modules detected.", "path", ws.Root)
 	}
 
 	// Build + cache core.Workspace.
@@ -697,8 +705,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	if compatWorkspace != nil {
 		configWS := *ws
 		configWS.Root = moduleDir
-		configWS.Path = "."
-		configWS.Cwd = ""
+		configWS.Cwd = "."
 		resolveCompatRef = func(_ *workspace.Workspace, relPath string) string {
 			return resolveLocalRef(&configWS, relPath)
 		}
@@ -723,8 +730,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 			pending = append(pending, mod)
 		}
 		if compatWorkspace.MainModule != nil {
-			wsDir := filepath.Join(ws.Root, ws.Path)
-			rel, _ := filepath.Rel(wsDir, moduleDir)
+			rel, _ := filepath.Rel(ws.Root, moduleDir)
 			mod := pendingModule{
 				Kind:              moduleLoadKindAmbient,
 				Ref:               resolveLocalRef(ws, rel),
@@ -737,10 +743,10 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	}
 
 	// (2) CWD module fallback (nearest dagger.json by find-up from the caller).
-	// Initialized workspace config owns module loading completely.
+	// A selected workspace config owns module loading completely; the cwd module
+	// is only inferred when no workspace config is selected.
 	if wsConfig == nil && hasModuleConfig && !hasPendingExtraModules(client) && !suppressCWDModuleForCompatWorkspace(compatWorkspace, moduleDir) {
-		wsDir := filepath.Join(ws.Root, ws.Path)
-		rel, _ := filepath.Rel(wsDir, moduleDir)
+		rel, _ := filepath.Rel(ws.Root, moduleDir)
 		pending = append(pending, pendingModule{
 			Kind:       moduleLoadKindCWD,
 			Ref:        resolveLocalRef(ws, rel),
@@ -791,18 +797,19 @@ func (srv *Server) buildCoreWorkspace(
 	}
 
 	coreWS := &core.Workspace{
-		Address:     address,
-		Path:        detected.Path,
-		Cwd:         detected.Cwd,
-		Initialized: detected.Initialized,
-		HasConfig:   detected.Initialized,
-		ClientID:    clientMetadata.ClientID,
+		Address:   address,
+		Cwd:       detected.Cwd,
+		HasConfig: detected.HasConfig,
+		ClientID:  clientMetadata.ClientID,
 	}
 	if coreWS.Address == "" {
-		coreWS.Address = localWorkspaceAddress(detected.Root, detected.Path)
+		coreWS.Address = localWorkspaceAddress(detected.Root, detected.Cwd)
 	}
-	if detected.Initialized {
-		coreWS.ConfigPath = filepath.Join(detected.Path, workspace.LockDirName, workspace.ConfigFileName)
+	if detected.HasConfig {
+		configDirectory := detected.ConfigDirectory
+		configFile := detected.ConfigFile
+		coreWS.ConfigDirectory = &configDirectory
+		coreWS.ConfigFile = &configFile
 	}
 
 	if isLocal {
@@ -817,16 +824,16 @@ func (srv *Server) buildCoreWorkspace(
 	return coreWS, nil
 }
 
-func localWorkspaceAddress(root, workspacePath string) string {
-	workspaceDir := filepath.Join(root, workspacePath)
+func localWorkspaceAddress(root, workspaceCwd string) string {
+	workspaceDir := filepath.Join(root, workspaceCwd)
 	return (&url.URL{
 		Scheme: "file",
 		Path:   filepath.ToSlash(workspaceDir),
 	}).String()
 }
 
-func remoteWorkspaceAddress(cloneRef, workspacePath, version string) string {
-	return core.GitRefString(cloneRef, workspacePath, version)
+func remoteWorkspaceAddress(cloneRef, workspaceCwd, version string) string {
+	return core.GitRefString(cloneRef, workspaceCwd, version)
 }
 
 // cloneGitTree clones a git repository and returns its directory tree.

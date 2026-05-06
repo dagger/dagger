@@ -45,7 +45,7 @@ func daggerReportCallFailure(args ...string) dagger.WithContainerFunc {
 // TestContextualWorkspaceSelection should cover which workspace gets injected
 // from context before any module code runs.
 func (ContextualWorkspaceSuite) TestContextualWorkspaceSelection(ctx context.Context, t *testctx.T) {
-	t.Run("initialized workspace is inferred from nearest config boundary", func(ctx context.Context, t *testctx.T) {
+	t.Run("workspace config is inferred from nearest config directory", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		ctr := workspaceBase(t, c).
@@ -65,7 +65,7 @@ type Paths {
     self.workspaceValue = ws.file("app.txt").contents
     self.boundaryValue = ws.file("/repo.txt").contents
     self.foundValue = ws.findUp(name: "repo.txt", from: ".") ?? ""
-    self.workspacePath = ws.path
+    self.workspacePath = ws.cwd
     self.workspaceAddress = ws.address
     self
   }
@@ -102,7 +102,7 @@ type Myapp {
   pub boundaryValue: String!
 
   new(ws: Workspace!) {
-    self.workspacePath = ws.path
+    self.workspacePath = ws.cwd
     self.workspaceAddress = ws.address
     self.boundaryValue = ws.file("/repo.txt").contents
     self
@@ -124,7 +124,7 @@ type Myapp {
 		require.Equal(t, "hello from compat workspace", strings.TrimSpace(out))
 	})
 
-	t.Run("nearest initialized workspace beats an outer initialized workspace", func(ctx context.Context, t *testctx.T) {
+	t.Run("nearest workspace config beats an outer workspace config", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		ctr := workspaceBase(t, c).
@@ -137,7 +137,7 @@ type Paths {
   pub workspaceAddress: String!
 
   new(ws: Workspace!) {
-    self.workspacePath = ws.path
+    self.workspacePath = ws.cwd
     self.workspaceAddress = ws.address
     self
   }
@@ -165,7 +165,7 @@ type Standalone {
   pub workspacePath: String!
 
   new(ws: Workspace!) {
-    self.workspacePath = ws.path
+    self.workspacePath = ws.cwd
     self
   }
 }
@@ -177,7 +177,7 @@ type Standalone {
 		require.Contains(t, out, "no current workspace")
 	})
 
-	t.Run("initialized workspace beats outer compat inference", func(ctx context.Context, t *testctx.T) {
+	t.Run("workspace config beats outer compat inference", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		ctr := legacyWorkspaceBase(t, c, `{
@@ -201,7 +201,7 @@ type Paths {
   pub workspaceAddress: String!
 
   new(ws: Workspace!) {
-    self.workspacePath = ws.path
+    self.workspacePath = ws.cwd
     self.workspaceAddress = ws.address
     self
   }
@@ -222,7 +222,7 @@ type Paths {
 // TestContextualWorkspaceShape should pin down the observable properties of
 // the injected Workspace once it has been selected.
 func (ContextualWorkspaceSuite) TestContextualWorkspaceShape(ctx context.Context, t *testctx.T) {
-	t.Run("workspace path and address reflect injected boundary", func(ctx context.Context, t *testctx.T) {
+	t.Run("workspace cwd and address reflect selected location", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		ctr := workspaceBase(t, c).
@@ -234,7 +234,7 @@ type Paths {
   pub workspaceAddress: String!
 
   new(ws: Workspace!) {
-    self.workspacePath = ws.path
+    self.workspacePath = ws.cwd
     self.workspaceAddress = ws.address
     self
   }
