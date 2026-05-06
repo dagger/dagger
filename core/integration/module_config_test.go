@@ -1155,6 +1155,9 @@ func (m *CoolSdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dag
 	return dag.GeneratedCode(modSource.WithSDK("go").AsModule().GeneratedContextDirectory())
 }
 `, "--name=cool-sdk")).
+		// See TestCustomSDK/local for the rationale on opting cool-sdk
+		// out of legacyCodegenAtRuntime=false.
+		With(withForceLegacyCodegenAtRuntime("dagger.json")).
 		With(daggerExec("develop")).
 		WithWorkdir("/work").
 		WithNewFile("random-file", "").

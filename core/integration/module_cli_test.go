@@ -39,9 +39,12 @@ func (CLISuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 			}
 			`,
 			).
-			// Re-run codegen against the new main.go (workdir is /work
-			// but the module lives in coolmod, so address it explicitly).
-			With(daggerExec("develop", "-m", "coolmod")).
+			// Re-run codegen from inside the module dir. The `-m coolmod`
+			// form triggers the stale-codegen path documented in
+			// withModInitAt — switching workdir avoids it.
+			WithWorkdir("/work/coolmod").
+			With(daggerExec("develop")).
+			WithWorkdir("/work").
 			With(daggerCallAt("coolmod", "fn")).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -511,7 +514,13 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 			}
 			`,
 			).
-			With(daggerExec("develop", "-m", "../work"))
+			// Run develop from inside the module's source dir so the
+			// freshly written main.go is regenerated against. develop -m
+			// would trigger the stale-codegen pitfall documented in
+			// withModInitAt.
+			WithWorkdir("/work").
+			With(daggerExec("develop")).
+			WithWorkdir("/var")
 
 		out, err := ctr.With(daggerCallAt("../work", "fn")).Stdout(ctx)
 		require.NoError(t, err)
@@ -554,6 +563,9 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
         }
         `,
 			).
+			// dep main.go was overwritten — develop from inside dep's
+			// dir so dagger.gen.go matches the new sources.
+			With(daggerExec("develop")).
 			WithWorkdir(absPath).
 			With(daggerExec("init", "--source=.")).
 			With(daggerExec("install", "./dep")).
@@ -573,7 +585,12 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
             return "hi from work " + depStr, nil
         }
         `,
-			)
+			).
+			// work module's main.go was just written — regenerate
+			// dagger.gen.go from inside the module dir before call.
+			WithWorkdir(absPath).
+			With(daggerExec("develop")).
+			WithWorkdir("/var")
 
 		out, err := ctr.With(daggerCallAt(absPath, "fn")).Stdout(ctx)
 		require.NoError(t, err)
@@ -587,9 +604,17 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
 			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+			// The test rm's dagger.gen.go to verify develop --recursive
+			// regenerates them. Under the new opt-in default
+			// (legacyCodegenAtRuntime=false), loading the module to run
+			// develop fails when dagger.gen.go is missing. Revert each
+			// module to legacy runtime codegen so develop --recursive
+			// can re-run codegen on the fly.
+			With(withForceLegacyCodegenAtRuntime("dagger.json")).
 			WithExec([]string{"rm", "dagger.gen.go"}).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--sdk=go")).
+			With(withForceLegacyCodegenAtRuntime("dagger.json")).
 			With(daggerExec("install", "--name=cooldep", "./dep")).
 			WithExec([]string{"rm", "dagger.gen.go"})
 		developed := base.With(daggerExec("develop", "--recursive"))
@@ -743,7 +768,12 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 			func (m *Test) Fn(ctx context.Context) (string, error) { return dag.Dep().DepFn(ctx, "hi dep") }
 			`,
 			).
-			With(daggerExec("develop"))
+			// Run develop from inside the test module dir so it resolves
+			// to /work/test/dagger.json. From /work workdir it would walk
+			// up (no dagger.json there) and miss the module entirely.
+			WithWorkdir("/work/test").
+			With(daggerExec("develop")).
+			WithWorkdir("/work")
 
 		// try invoking it from a few different paths, just for more corner case coverage
 
@@ -821,6 +851,9 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
             func (m *Test2) Fn(ctx context.Context) (string, error) { return dag.Dep().DepFn(ctx, "hi from test2") }
             `,
 				).
+				// Run develop from inside the module dir to avoid the -m
+				// stale-codegen pitfall.
+				WithWorkdir("/work/test2").
 				With(daggerExec("develop"))
 
 			out, err := ctr.With(daggerCallAt("/work/test2", "fn")).Stdout(ctx)
@@ -910,9 +943,26 @@ func (m *Dep) Fn(ctx context.Context) string {
 	t.Run("install dep from various places", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
+		// The test module's main.go uses `dag.Dep()`, but dep is only
+		// installed in each subtest below — adding the `dag.Dep()` call
+		// at withModInitAt time would let withModInitAt's develop emit
+		// a dagger.gen.go without Dep wrappers, and the next runtime
+		// build would fail to compile main.go's reference. Each subtest
+		// installs dep, then writes main.go + runs develop before call.
+		testMain := `package main
+
+			import "context"
+
+			type Test struct {}
+
+			func (m *Test) Fn(ctx context.Context) (string, error) { return dag.Dep().DepFn(ctx, "hi dep") }
+			`
 		base := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
+			// withModInitAt already appends `dir` as a positional arg
+			// to dagger init; passing dir again as an extra would
+			// produce two positional paths and dagger init rejects it.
 			With(withModInitAt("subdir/dep", "go", `package main
 
 			import "context"
@@ -920,15 +970,18 @@ func (m *Dep) Fn(ctx context.Context) string {
 			type Dep struct {}
 
 			func (m *Dep) DepFn(ctx context.Context, str string) string { return str }
-			`, "subdir/dep")).
-			With(withModInitAt("test", "go", `package main
+			`)).
+			With(daggerExec("init", "--source=test", "--name=test", "--sdk=go", "test"))
 
-			import "context"
-
-			type Test struct {}
-
-			func (m *Test) Fn(ctx context.Context) (string, error) { return dag.Dep().DepFn(ctx, "hi dep") }
-			`, "test"))
+		// finishTest writes the test module's main.go and runs develop
+		// from inside the module dir so dagger.gen.go is regenerated
+		// against the freshly installed dep + new sources.
+		finishTest := func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithNewFile("/work/test/main.go", testMain).
+				WithWorkdir("/work/test").
+				With(daggerExec("develop"))
+		}
 
 		t.Run("from src dir", func(ctx context.Context, t *testctx.T) {
 			// sanity test normal case
@@ -936,6 +989,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 			out, err := base.
 				WithWorkdir("/work/test").
 				With(daggerExec("install", "../subdir/dep")).
+				With(finishTest).
 				With(daggerCall("fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
@@ -946,6 +1000,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 			out, err := base.
 				WithWorkdir("/work/test/some/other/dir").
 				With(daggerExec("install", "../../../../subdir/dep")).
+				With(finishTest).
 				With(daggerCall("fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
@@ -956,6 +1011,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 			out, err := base.
 				WithWorkdir("/").
 				With(daggerExec("install", "-m=./work/test", "./work/subdir/dep")).
+				With(finishTest).
 				WithWorkdir("/work/test").
 				With(daggerCall("fn")).
 				Stdout(ctx)
@@ -967,6 +1023,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 			out, err := base.
 				WithWorkdir("/work/subdir/dep").
 				With(daggerExec("install", "-m=../../test", ".")).
+				With(finishTest).
 				WithWorkdir("/work/test").
 				With(daggerCall("fn")).
 				Stdout(ctx)
@@ -978,6 +1035,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 			out, err := base.
 				WithWorkdir("/var").
 				With(daggerExec("install", "-m=../work/test", "../work/subdir/dep")).
+				With(finishTest).
 				WithWorkdir("/work/test").
 				With(daggerCall("fn")).
 				Stdout(ctx)
@@ -989,6 +1047,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 			out, err := base.
 				WithWorkdir("/work/test").
 				With(daggerExec("install", "/work/subdir/dep")).
+				With(finishTest).
 				With(daggerCall("fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
@@ -999,6 +1058,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 			out, err := base.
 				WithWorkdir("/").
 				With(daggerExec("install", "-m=/work/test", "/work/subdir/dep")).
+				With(finishTest).
 				WithWorkdir("/work/test").
 				With(daggerCall("fn")).
 				Stdout(ctx)
@@ -1010,6 +1070,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 			out, err := base.
 				WithWorkdir("/var").
 				With(daggerExec("install", "-m=/work/test", "/work/subdir/dep")).
+				With(finishTest).
 				WithWorkdir("/work/test").
 				With(daggerCall("fn")).
 				Stdout(ctx)

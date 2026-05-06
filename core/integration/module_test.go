@@ -2203,6 +2203,14 @@ func (m *CoolSdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dag
 	return dag.GeneratedCode(modSource.WithSDK("go").AsModule().GeneratedContextDirectory())
 }
 `, "--name=cool-sdk")).
+			// cool-sdk is a Go module loaded as another module's SDK.
+			// dagger init --sdk=go opts it into legacyCodegenAtRuntime=false,
+			// which doesn't survive being loaded as an external SDK across
+			// session boundaries (dagger develop on the test module runs
+			// cool-sdk's Codegen but a subsequent dagger call re-resolves
+			// the SDK and fails to load it). Revert to legacy mode so
+			// runtime codegen handles the chicken-and-egg.
+			With(withForceLegacyCodegenAtRuntime("dagger.json")).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=coolsdk")).
 			WithNewFile("main.go", `package main
@@ -2309,6 +2317,9 @@ func (m *CoolSdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dag
 	return dag.GeneratedCode(modSource.WithSDK("go").AsModule().GeneratedContextDirectory())
 }
 `, "--name=cool-sdk")).
+			// See TestCustomSDK/local for the rationale on opting cool-sdk
+			// out of legacyCodegenAtRuntime=false.
+			With(withForceLegacyCodegenAtRuntime("dagger.json")).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=coolsdk")).
 			WithNewFile("main.go", `package main
@@ -8484,6 +8495,43 @@ func withModInitAtWithDaggerJSON(dir, sdk, contents, daggerJSON string, extra ..
 		return ctr.
 			With(withModInitAt(dir, sdk, contents, extra...)).
 			WithNewFile("dagger.json", daggerJSON)
+	}
+}
+
+// withForceLegacyCodegenAtRuntime drops the entire codegen block from
+// the dagger.json at the given path, so the module reverts to the
+// legacy defaults (runtime codegen, automaticGitignore=true). Useful
+// for custom-SDK tests that load a Go module as another module's SDK
+// and can't tolerate the new opt-in's stale-codegen failure modes.
+//
+// Compiles a tiny Go program (golangImage has go on PATH) so we can
+// edit the JSON robustly without worrying about trailing-comma /
+// multi-line block removal.
+func withForceLegacyCodegenAtRuntime(daggerJSONPath string) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		const prog = `package main
+import (
+	"encoding/json"
+	"os"
+)
+func main() {
+	p := os.Args[1]
+	b, err := os.ReadFile(p)
+	if err != nil { panic(err) }
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil { panic(err) }
+	delete(m, "codegen")
+	out, err := json.MarshalIndent(m, "", "  ")
+	if err != nil { panic(err) }
+	out = append(out, '\n')
+	if err := os.WriteFile(p, out, 0o644); err != nil { panic(err) }
+}
+`
+		// Write the helper outside /tmp — golangImage mounts /tmp as
+		// tmpfs and the file would vanish in the next exec layer.
+		return ctr.
+			WithNewFile("/strip_codegen.go", prog).
+			WithExec([]string{"go", "run", "/strip_codegen.go", daggerJSONPath})
 	}
 }
 

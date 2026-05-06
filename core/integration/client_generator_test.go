@@ -413,10 +413,15 @@ func (t *Test) Hello(ctx context.Context) (string, error) {
 	return dag.Container().From("alpine:3.20.2").WithExec([]string{"echo", "-n", "hello"}).Stdout(ctx)
 }
 					`, "--name=test")).
-						// withModInitAt already runs dagger develop in the
-						// .dagger workdir; the redundant `develop -m .dagger`
-						// would re-trigger the stale-codegen path discussed
-						// in withModInitAt and break the runtime build.
+						// Revert .dagger to legacy runtime codegen: the
+						// new opt-in default makes `dagger client install`
+						// load .dagger via the runtime path that requires
+						// committed dagger.gen.go, and the workspace
+						// modules loader called by `dagger run
+						// --load-workspace-modules` then re-resolves the
+						// module after subsequent installs/regenerations
+						// in a way that doesn't see the freshest sources.
+						With(withForceLegacyCodegenAtRuntime(".dagger/dagger.json")).
 						With(withGoSetup(`package main
 
 import (
@@ -714,10 +719,14 @@ main()
 				return "hello"
 			}
 						`).
+						// Revert to legacy runtime codegen because the
+						// test's postSetup deletes .dagger/dagger.gen.go
+						// to verify that dagger develop regenerates it,
+						// and the new opt-in's runtime path requires the
+						// file to exist.
+						With(withForceLegacyCodegenAtRuntime("dagger.json")).
 						// Re-run codegen against the new .dagger/main.go
-						// so subsequent module loads see matching wrappers
-						// (legacyCodegenAtRuntime is off by default for
-						// new Go modules).
+						// so subsequent module loads see matching wrappers.
 						With(daggerNonNestedExec("develop")).
 						With(withGoSetup(`package main
 
