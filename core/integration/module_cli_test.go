@@ -39,7 +39,9 @@ func (CLISuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 			}
 			`,
 			).
-			With(daggerExec("develop")).
+			// Re-run codegen against the new main.go (workdir is /work
+			// but the module lives in coolmod, so address it explicitly).
+			With(daggerExec("develop", "-m", "coolmod")).
 			With(daggerCallAt("coolmod", "fn")).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -134,6 +136,12 @@ func (CLISuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 				type Test struct {}
 				func (m *Test) Fn() string { return "hello from absolute path" }`,
 			).
+			// Re-run codegen against the new main.go before invoking the
+			// runtime: legacyCodegenAtRuntime is off for new Go modules,
+			// so dagger.gen.go must match the freshly written sources.
+			WithWorkdir(absPath).
+			With(daggerExec("develop")).
+			WithWorkdir("/").
 			With(daggerCallAt(absPath, "fn"))
 
 		out, err := ctr.Stdout(ctx)
@@ -354,6 +362,13 @@ func (CLISuite) TestDaggerInitGit(ctx context.Context, t *testctx.T) {
 			})
 
 			t.Run("configures .gitignore", func(ctx context.Context, t *testctx.T) {
+				if tc.sdk == "go" {
+					// New Go modules opt out of automaticGitignore at
+					// init time (see dagger-init-go-opt-in), so the SDK
+					// no longer writes .gitignore for them. Skip rather
+					// than asserting a stale invariant.
+					t.Skip("automaticGitignore is off by default for new Go modules")
+				}
 				ignore, err := modGen.File(".gitignore").Contents(ctx)
 				require.NoError(t, err)
 				for _, fileName := range tc.gitIgnoredFiles {
