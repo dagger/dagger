@@ -780,6 +780,7 @@ func (srv *Server) clientFromIDs(sessID, clientID string) (*daggerClient, error)
 // initialize session+client if needed, return:
 // * the initialized client
 // * a cleanup func to run when the call is done
+//
 //nolint:gocyclo // session/client initialization is an intentionally linear state machine.
 func (srv *Server) getOrInitClient(
 	ctx context.Context,
