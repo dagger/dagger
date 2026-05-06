@@ -30,6 +30,7 @@ func (r *DangRuntime) eval(
 	schemaFile dagql.Result[*core.File],
 	nestedClientMetadata *engine.ClientMetadata,
 	callerClientID string,
+	hostServiceProxyToCaller bool,
 	fnCall *core.FunctionCall,
 	moduleContext dagql.ObjectResult[*core.Module],
 	envContext dagql.ObjectResult[*core.Env],
@@ -44,7 +45,7 @@ func (r *DangRuntime) eval(
 		ReadHeaderTimeout: 10 * time.Second,
 		Handler: http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
 			telemetry.Propagator.Inject(ctx, propagation.HeaderCarrier(req.Header))
-			query.ServeHTTPToNestedClient(resp, req, nestedClientMetadata, callerClientID, moduleContext, fnCall, envContext)
+			query.ServeHTTPToNestedClient(resp, req, nestedClientMetadata, callerClientID, hostServiceProxyToCaller, moduleContext, fnCall, envContext)
 		}),
 	}
 	defer func() {

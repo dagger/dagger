@@ -171,9 +171,11 @@ type daggerClient struct {
 	env dagql.ObjectResult[*core.Env]
 
 	// engine utility job-related state/config
-	getClientCaller  func(string) (bksession.Caller, error)
-	dialer           *net.Dialer
-	engineUtilClient *engineutil.Client
+	hostServiceProxyClientID string
+	getClientCaller          func(string) (bksession.Caller, error)
+	getHostServiceCaller     func(string) (bksession.Caller, error)
+	dialer                   *net.Dialer
+	engineUtilClient         *engineutil.Client
 
 	// SQLite database storing telemetry + anything else
 	tracerProvider *sdktrace.TracerProvider
@@ -498,6 +500,10 @@ type ClientInitOpts struct {
 	// If this is a nested client, the client ID of the caller that created it
 	CallerClientID string
 
+	// If set, host-backed services for this client may proxy through this
+	// ancestor when this client has no session attachables of its own.
+	HostServiceProxyClientID string
+
 	// If the client is running from a function in a module, this is that module.
 	ModuleContext dagql.ObjectResult[*core.Module]
 
@@ -531,7 +537,11 @@ func (srv *Server) initializeDaggerClient(
 		return caller, err
 	}
 	client.getClientCaller = func(id string) (bksession.Caller, error) {
-		return client.resolveClientCaller(id, getClientCaller)
+		return getClientCaller(id, false)
+	}
+	client.hostServiceProxyClientID = opts.HostServiceProxyClientID
+	client.getHostServiceCaller = func(id string) (bksession.Caller, error) {
+		return client.resolveHostServiceCaller(id, getClientCaller)
 	}
 
 	var err error
@@ -563,6 +573,7 @@ func (srv *Server) initializeDaggerClient(
 	engineUtilOpts.SessionManager = srv.bkSessionManager
 	engineUtilOpts.Dialer = client.dialer
 	engineUtilOpts.GetClientCaller = client.getClientCaller
+	engineUtilOpts.GetHostServiceCaller = client.getHostServiceCaller
 	engineUtilOpts.GetMainClientCaller = client.getMainClientCaller
 	engineUtilOpts.GetRegistryResolver = srv.RegistryResolver
 	engineUtilOpts.Interactive = client.daggerSession.interactive
@@ -702,22 +713,27 @@ func (srv *Server) initializeDaggerClient(
 	return nil
 }
 
-func (client *daggerClient) resolveClientCaller(
+func (client *daggerClient) resolveHostServiceCaller(
 	id string,
 	getClientCaller func(string, bool) (bksession.Caller, error),
 ) (bksession.Caller, error) {
-	if id == client.clientID && len(client.parents) > 0 {
+	if id == client.clientID && client.hostServiceProxyClientID != "" {
 		// Synthetic nested clients (e.g. builtin dang evaluation) do not
 		// establish their own session attachables. When host-backed services
 		// such as git config are requested through the current client ID, fall
-		// back to the immediate parent client chain.
+		// back to the explicit proxy client chain.
 		caller, err := getClientCaller(id, true)
 		if err != nil || caller != nil {
 			return caller, err
 		}
 
-		parent := client.parents[len(client.parents)-1]
-		return parent.getClientCaller(parent.clientID)
+		for i := len(client.parents) - 1; i >= 0; i-- {
+			parent := client.parents[i]
+			if parent.clientID == client.hostServiceProxyClientID {
+				return parent.getHostServiceCaller(parent.clientID)
+			}
+		}
+		return nil, fmt.Errorf("host service proxy client %q not found for client %q", client.hostServiceProxyClientID, client.clientID)
 	}
 
 	return getClientCaller(id, false)
@@ -899,6 +915,15 @@ func (srv *Server) getOrInitClient(
 		if opts.LoadWorkspaceModules {
 			client.clientMetadata.LoadWorkspaceModules = true
 		}
+		if opts.HostServiceProxyClientID != "" {
+			switch client.hostServiceProxyClientID {
+			case "":
+				client.hostServiceProxyClientID = opts.HostServiceProxyClientID
+			case opts.HostServiceProxyClientID:
+			default:
+				return nil, nil, fmt.Errorf("client %q already exists with different host service proxy client %q", clientID, client.hostServiceProxyClientID)
+			}
+		}
 		if client.clientMetadata.Workspace == nil && !client.workspaceLoaded {
 			if workspaceRef, ok := workspaceRefFromClientMetadata(opts.ClientMetadata); ok {
 				ref := workspaceRef
@@ -975,6 +1000,7 @@ func (srv *Server) ServeHTTPToNestedClient(
 	r *http.Request,
 	nestedClientMetadata *engine.ClientMetadata,
 	callerClientID string,
+	hostServiceProxyToCaller bool,
 	moduleCtx dagql.AnyObjectResult,
 	functionCall dagql.Typed,
 	envCtx dagql.AnyObjectResult,
@@ -1019,12 +1045,18 @@ func (srv *Server) ServeHTTPToNestedClient(
 		}
 	}
 
+	var hostServiceProxyClientID string
+	if hostServiceProxyToCaller {
+		hostServiceProxyClientID = callerClientID
+	}
+
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
-		ClientMetadata: clientMetadata,
-		CallerClientID: callerClientID,
-		ModuleContext:  moduleContext,
-		FunctionCall:   fnCall,
-		EnvContext:     envContext,
+		ClientMetadata:           clientMetadata,
+		CallerClientID:           callerClientID,
+		HostServiceProxyClientID: hostServiceProxyClientID,
+		ModuleContext:            moduleContext,
+		FunctionCall:             fnCall,
+		EnvContext:               envContext,
 	}).ServeHTTP(w, r)
 }
 
@@ -1313,6 +1345,12 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	ctx = core.ContextWithQuery(ctx, client.dagqlRoot)
 
 	r = r.WithContext(ctx)
+
+	if client.hostServiceProxyClientID == "" {
+		if _, err := client.getClientCaller(client.clientID); err != nil {
+			return gqlErr(fmt.Errorf("waiting for client session: %w", err), http.StatusInternalServerError)
+		}
+	}
 
 	// Load workspace modules and extra modules (e.g. from -m flag). These are
 	// deferred from initializeDaggerClient because they need the client's

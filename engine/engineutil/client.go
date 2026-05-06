@@ -77,11 +77,12 @@ type Opts struct {
 	HostMntNS  *os.File
 	CleanMntNS *os.File
 
-	SessionManager      *bksession.Manager
-	Dialer              *net.Dialer
-	GetClientCaller     func(string) (bksession.Caller, error)
-	GetMainClientCaller func() (bksession.Caller, error)
-	GetRegistryResolver func(context.Context) (*serverresolver.Resolver, error)
+	SessionManager       *bksession.Manager
+	Dialer               *net.Dialer
+	GetClientCaller      func(string) (bksession.Caller, error)
+	GetHostServiceCaller func(string) (bksession.Caller, error)
+	GetMainClientCaller  func() (bksession.Caller, error)
+	GetRegistryResolver  func(context.Context) (*serverresolver.Resolver, error)
 
 	Interactive        bool
 	InteractiveCommand []string
@@ -101,7 +102,7 @@ type Client struct {
 }
 
 type sessionHandler interface {
-	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult)
+	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult)
 }
 
 func NewOpts(opts Opts) (*Opts, error) {
@@ -139,6 +140,9 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 	}
 	if opts.runningMu == nil {
 		opts.runningMu = &sync.RWMutex{}
+	}
+	if opts.GetHostServiceCaller == nil {
+		opts.GetHostServiceCaller = opts.GetClientCaller
 	}
 
 	// override the outer cancel, we will manage cancellation ourselves here
@@ -384,7 +388,7 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 	if err != nil {
 		return nil, err
 	}
-	caller, err := c.GetClientCaller(md.ClientID)
+	caller, err := c.GetHostServiceCaller(md.ClientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
 	}
@@ -453,7 +457,7 @@ func (c *Client) GetGitConfig(ctx context.Context) ([]*git.GitConfigEntry, error
 	if err != nil {
 		return nil, err
 	}
-	caller, err := c.GetClientCaller(md.ClientID)
+	caller, err := c.GetHostServiceCaller(md.ClientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
 	}
@@ -644,7 +648,7 @@ func (c *Client) WriteImage(
 	if err != nil {
 		return nil, err
 	}
-	caller, err := c.GetClientCaller(md.ClientID)
+	caller, err := c.GetHostServiceCaller(md.ClientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client caller: %w", err)
 	}
@@ -686,7 +690,7 @@ func (c *Client) ReadImage(
 	if err != nil {
 		return nil, err
 	}
-	caller, err := c.GetClientCaller(md.ClientID)
+	caller, err := c.GetHostServiceCaller(md.ClientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client caller: %w", err)
 	}

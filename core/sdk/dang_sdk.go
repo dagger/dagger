@@ -119,7 +119,7 @@ func (r *DangRuntime) Call(
 	if err != nil {
 		return nil, fmt.Errorf("get schema introspection: %w", err)
 	}
-	outputBytes, err := r.eval(ctx, query, schemaJSONFile, nestedClientMetadata, clientMetadata.ClientID, fnCall, moduleContext, envContext)
+	outputBytes, err := r.eval(ctx, query, schemaJSONFile, nestedClientMetadata, clientMetadata.ClientID, true, fnCall, moduleContext, envContext)
 	if err != nil {
 		return nil, err
 	}

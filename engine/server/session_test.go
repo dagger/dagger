@@ -303,19 +303,20 @@ func TestEnsureWorkspaceLoadedKeepsExistingWorkspaceBinding(t *testing.T) {
 	require.Same(t, existing, child.workspace)
 }
 
-func TestResolveClientCallerFallsBackToParentForSyntheticNestedClient(t *testing.T) {
+func TestResolveHostServiceCallerFallsBackToParentForSyntheticNestedClient(t *testing.T) {
 	t.Parallel()
 
 	parentCaller := &fakeSessionCaller{id: "parent"}
 	parent := &daggerClient{clientID: "parent"}
-	parent.getClientCaller = func(id string) (bksession.Caller, error) {
+	parent.getHostServiceCaller = func(id string) (bksession.Caller, error) {
 		require.Equal(t, "parent", id)
 		return parentCaller, nil
 	}
 
 	child := &daggerClient{
-		clientID: "child",
-		parents:  []*daggerClient{parent},
+		clientID:                 "child",
+		hostServiceProxyClientID: "parent",
+		parents:                  []*daggerClient{parent},
 	}
 
 	var calls []struct {
@@ -323,7 +324,7 @@ func TestResolveClientCallerFallsBackToParentForSyntheticNestedClient(t *testing
 		noWait bool
 	}
 
-	caller, err := child.resolveClientCaller("child", func(id string, noWait bool) (bksession.Caller, error) {
+	caller, err := child.resolveHostServiceCaller("child", func(id string, noWait bool) (bksession.Caller, error) {
 		calls = append(calls, struct {
 			id     string
 			noWait bool
@@ -340,22 +341,23 @@ func TestResolveClientCallerFallsBackToParentForSyntheticNestedClient(t *testing
 	}, calls)
 }
 
-func TestResolveClientCallerPrefersCurrentClientAttachable(t *testing.T) {
+func TestResolveHostServiceCallerPrefersCurrentClientAttachable(t *testing.T) {
 	t.Parallel()
 
 	currentCaller := &fakeSessionCaller{id: "child"}
 	parent := &daggerClient{clientID: "parent"}
-	parent.getClientCaller = func(string) (bksession.Caller, error) {
+	parent.getHostServiceCaller = func(string) (bksession.Caller, error) {
 		t.Fatal("unexpected parent fallback")
 		return nil, nil
 	}
 
 	child := &daggerClient{
-		clientID: "child",
-		parents:  []*daggerClient{parent},
+		clientID:                 "child",
+		hostServiceProxyClientID: "parent",
+		parents:                  []*daggerClient{parent},
 	}
 
-	caller, err := child.resolveClientCaller("child", func(id string, noWait bool) (bksession.Caller, error) {
+	caller, err := child.resolveHostServiceCaller("child", func(id string, noWait bool) (bksession.Caller, error) {
 		require.Equal(t, "child", id)
 		require.True(t, noWait)
 		return currentCaller, nil
@@ -364,13 +366,13 @@ func TestResolveClientCallerPrefersCurrentClientAttachable(t *testing.T) {
 	require.Same(t, currentCaller, caller)
 }
 
-func TestResolveClientCallerUsesBlockingLookupForOtherClients(t *testing.T) {
+func TestResolveHostServiceCallerUsesBlockingLookupForOtherClients(t *testing.T) {
 	t.Parallel()
 
 	otherCaller := &fakeSessionCaller{id: "other"}
 	child := &daggerClient{clientID: "child"}
 
-	caller, err := child.resolveClientCaller("other", func(id string, noWait bool) (bksession.Caller, error) {
+	caller, err := child.resolveHostServiceCaller("other", func(id string, noWait bool) (bksession.Caller, error) {
 		require.Equal(t, "other", id)
 		require.False(t, noWait)
 		return otherCaller, nil
