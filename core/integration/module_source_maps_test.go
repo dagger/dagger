@@ -168,7 +168,7 @@ export class Dep {
 
 			modGen := modInit(t, c, "go", goBaseSrc).
 				With(withModInitAt("./dep", tc.sdk, tc.src)).
-				With(daggerExec("install", "./dep"))
+				With(daggerExec("module", "install", "./dep"))
 
 			codegenContents, err := modGen.File("internal/dagger/dep.gen.go").Contents(ctx)
 			require.NoError(t, err)
@@ -185,7 +185,7 @@ export class Dep {
 
 			modGen := modInit(t, c, "typescript", tsBaseSrc).
 				With(withModInitAt("./dep", tc.sdk, tc.src)).
-				With(daggerExec("install", "./dep"))
+				With(daggerExec("module", "install", "./dep"))
 
 			codegenContents, err := modGen.File(sdkCodegenFile(t, "typescript")).Contents(ctx)
 			require.NoError(t, err)
