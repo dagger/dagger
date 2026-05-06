@@ -145,6 +145,38 @@ func TestParseCompatWorkspace(t *testing.T) {
 	require.Nil(t, noCompat)
 }
 
+func TestWorkspaceConfigMigratesPortMappings(t *testing.T) {
+	t.Parallel()
+
+	compat, err := ParseCompatWorkspace([]byte(`{
+		"name": "app",
+		"toolchains": [{
+			"name": "hello",
+			"source": "./hello",
+			"portMappings": {
+				"web": ["3000:80"],
+				"api": ["8080:8080"]
+			}
+		}]
+	}`))
+	require.NoError(t, err)
+	require.NotNil(t, compat)
+
+	cfg := compat.WorkspaceConfig()
+	require.Equal(t, PortMapping{BackendService: "hello:web", BackendPort: 80}, cfg.Ports["3000"])
+	require.Equal(t, PortMapping{BackendService: "hello:api", BackendPort: 8080}, cfg.Ports["8080"])
+
+	out := SerializeConfig(cfg)
+	require.Contains(t, string(out), `[ports.3000]`)
+	require.Contains(t, string(out), `backendService = "hello:web"`)
+	require.Contains(t, string(out), `backendPort = 80`)
+
+	roundTrip, err := ParseConfig(out)
+	require.NoError(t, err)
+	require.Equal(t, PortMapping{BackendService: "hello:web", BackendPort: 80}, roundTrip.Ports["3000"])
+	require.Equal(t, PortMapping{BackendService: "hello:api", BackendPort: 8080}, roundTrip.Ports["8080"])
+}
+
 func TestWorkspaceConfigMigratesToolchainSkipFields(t *testing.T) {
 	t.Parallel()
 
