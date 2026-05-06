@@ -49,7 +49,7 @@ func (ModuleSuite) BenchmarkLotsOfFunctions(ctx context.Context, b *testctx.B) {
 				WithMountedFile(testCLIBinPath, daggerCliFile(b, c)).
 				WithWorkdir("/work").
 				WithNewFile("/work/main.go", mainSrc).
-				With(daggerExec("init", "--source=.", "--name=potatoSack", "--sdk=go"))
+				With(daggerExec("init", "--source=.", "--sdk=go", "potatoSack"))
 
 			var eg errgroup.Group
 			for i := range funcCount {
@@ -90,7 +90,7 @@ class PotatoSack:
 			WithMountedFile(testCLIBinPath, daggerCliFile(b, c)).
 			WithWorkdir("/work").
 			With(fileContents("src/potato_sack/__init__.py", mainSrc)).
-			With(daggerExec("init", "--source=.", "--name=potatoSack", "--sdk=python"))
+			With(daggerExec("init", "--source=.", "--sdk=python", "potatoSack"))
 
 		var eg errgroup.Group
 		for i := range funcCount {
@@ -135,7 +135,7 @@ export class PotatoSack {
 			WithMountedFile(testCLIBinPath, daggerCliFile(b, c)).
 			WithWorkdir("/work").
 			With(sdkSource("typescript", mainSrc)).
-			With(daggerExec("init", "--name=potatoSack", "--sdk=typescript", "--source=."))
+			With(daggerExec("init", "--sdk=typescript", "--source=.", "potatoSack"))
 
 		var eg errgroup.Group
 		for i := range funcCount {
@@ -258,7 +258,7 @@ func (ModuleSuite) BenchmarkLargeObjectFieldVal(ctx context.Context, b *testctx.
 		_, err := goGitBase(b, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(b, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test", "--sdk=go")).
+			With(daggerExec("init", "--sdk=go", "test")).
 			With(sdkSource("go", `package main
 
 import "strings"
@@ -294,7 +294,7 @@ func (ModuleSuite) BenchmarkCallSameModuleInParallel(ctx context.Context, b *tes
 		ctr := goGitBase(b, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(b, c)).
 			WithWorkdir("/work/dep").
-			With(daggerExec("init", "--name=dep", "--sdk=go")).
+			With(daggerExec("init", "--sdk=go", "dep")).
 			With(sdkSource("go", `package main
 
 import (
@@ -309,7 +309,7 @@ func (m *Dep) DepFn(s *dagger.Secret) string {
 }
 `)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+			With(daggerExec("init", "--sdk=go", "--source=.", "test")).
 			With(sdkSource("go", `package main
 
 import (

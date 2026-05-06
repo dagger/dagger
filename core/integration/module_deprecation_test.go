@@ -316,7 +316,7 @@ query ModuleIntrospection($path: String!) {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			modDir := t.TempDir()
 
-			_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk="+tc.sdk)
+			_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "test", "--sdk="+tc.sdk)
 			require.NoError(t, err)
 			require.NoError(t, tc.writeFiles(modDir))
 
@@ -571,7 +571,7 @@ class Test:
 		t.Run(fmt.Sprintf("%s rejects deprecated required arguments", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			modDir := t.TempDir()
 
-			_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk="+tc.sdk)
+			_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "test", "--sdk="+tc.sdk)
 			require.NoError(t, err)
 
 			target := filepath.Join(modDir, sdkSourceFile(tc.sdk))
@@ -700,7 +700,7 @@ class Test:
 		t.Run(fmt.Sprintf("%s allows deprecated optional arguments", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			modDir := t.TempDir()
 
-			_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk="+tc.sdk)
+			_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "test", "--sdk="+tc.sdk)
 			require.NoError(t, err)
 
 			target := filepath.Join(modDir, sdkSourceFile(tc.sdk))
