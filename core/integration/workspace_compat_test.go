@@ -679,6 +679,50 @@ func (WorkspaceCompatSuite) TestCompatMigrationPortMappings(ctx context.Context,
 	require.Contains(t, out, "OK: port mapping works")
 }
 
+// TestCompatUpSkipsAndPortMappingsBeforeMigration covers compat behavior before
+// migration writes .dagger/config.toml. Legacy ignoreServices and portMappings
+// should be read through the same workspace config projection that migration
+// writes.
+func (WorkspaceCompatSuite) TestCompatUpSkipsAndPortMappingsBeforeMigration(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen, err := upTestEnv(t, c)
+	require.NoError(t, err)
+
+	ctr := modGen.
+		WithWorkdir("app").
+		WithNewFile("dagger.json", `{
+  "name": "app",
+  "engineVersion": "v0.20.5",
+  "toolchains": [
+    {
+      "name": "hello-with-services",
+      "source": "../hello-with-services",
+      "portMappings": {
+        "web": ["3000:80"]
+      },
+      "ignoreServices": [
+        "redis",
+        "infra:database"
+      ]
+    }
+  ]
+}`)
+
+	listOut, err := ctr.With(compatDaggerExec("up", "-l")).CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, listOut, "hello-with-services:web")
+	require.NotContains(t, listOut, "hello-with-services:redis")
+	require.NotContains(t, listOut, "hello-with-services:infra:database")
+
+	out, err := ctr.
+		With(daggerUpVerify("", "http://localhost:3000", "nginx",
+			"OK: compat port mapping works", 120)).
+		CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "OK: compat port mapping works")
+}
+
 // TestCompatAndMigratedWorkspaceMatch should prove the core contract of the
 // new design: compat mode and migrated workspace mode expose the same runtime
 // behavior for the same legacy project.
