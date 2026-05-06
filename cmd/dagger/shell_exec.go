@@ -11,7 +11,6 @@ import (
 	"sync"
 
 	"dagger.io/dagger"
-	callpkg "github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
@@ -438,6 +437,18 @@ func (h *shellCallHandler) functionCall(ctx context.Context, st *ShellState, nam
 	call := st.Function()
 
 	fn, err := call.GetNextDef(def, name)
+	// If the current value is typed as an interface, the next command may be
+	// provided by its concrete implementation rather than the interface itself.
+	// Ask GraphQL for the concrete __typename and continue through an inline
+	// fragment so we don't have to invent some sort of inline fragment shell
+	// syntax.
+	if err != nil && def.GetInterface(call.ReturnObject) != nil {
+		st, err = h.resolveConcreteReturnObject(ctx, st)
+		if err == nil {
+			call = st.Function()
+			fn, err = call.GetNextDef(def, name)
+		}
+	}
 	if err != nil {
 		return st, err
 	}
@@ -449,23 +460,29 @@ func (h *shellCallHandler) functionCall(ctx context.Context, st *ShellState, nam
 
 	newSt := st.WithCall(fn, argValues)
 
-	// When a function returns an interface type, the pipeline can't
-	// continue without knowing the concrete type. If the function has
-	// an "id" argument, decode it to discover the concrete type and
-	// set an inline fragment so subsequent pipeline steps resolve
-	// against the concrete type's fields.
-	if fn.ReturnType.Kind == dagger.TypeDefKindInterfaceKind {
-		if idVal, ok := argValues["id"]; ok {
-			idStr := fmt.Sprintf("%v", idVal)
-			var id callpkg.ID
-			if err := id.Decode(idStr); err == nil {
-				typeName := id.Type().NamedType()
-				last := &newSt.Calls[len(newSt.Calls)-1]
-				last.InlineFragment = typeName
-				last.ReturnObject = typeName
-			}
-		}
+	return &newSt, nil
+}
+
+func (h *shellCallHandler) resolveConcreteReturnObject(ctx context.Context, st *ShellState) (*ShellState, error) {
+	call := st.Function()
+
+	var typeName string
+	q := st.QueryBuilder(h.dag).Select("__typename")
+	if query, err := q.Build(ctx); err == nil {
+		slog.SpanLogger(ctx, InstrumentationLibrary).Debug("resolving concrete return type", "query", query)
 	}
+	if err := q.Bind(&typeName).Execute(ctx); err != nil {
+		return st, fmt.Errorf("resolve concrete type for %q: %w", call.Name, err)
+	}
+	if typeName == "" {
+		return st, fmt.Errorf("resolve concrete type for %q: returned null", call.Name)
+	}
+
+	newSt := *st
+	newSt.Calls = slices.Clone(st.Calls)
+	last := &newSt.Calls[len(newSt.Calls)-1]
+	last.InlineFragment = typeName
+	last.ReturnObject = typeName
 
 	return &newSt, nil
 }
