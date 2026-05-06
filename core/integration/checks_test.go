@@ -248,7 +248,7 @@ func (ChecksSuite) TestChecksAsToolchain(ctx context.Context, t *testctx.T) {
 			modGen = modGen.
 				WithWorkdir("app").
 				With(daggerExec("workspace", "init")).
-				With(daggerExec("install", "../"+tc.path))
+				With(daggerExec("module", "install", "../"+tc.path))
 			// list checks
 			out, err := modGen.
 				With(daggerExec("check", "-l")).
