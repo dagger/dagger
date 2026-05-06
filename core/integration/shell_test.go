@@ -65,7 +65,7 @@ func (m *Hello) Hello() string {
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		WithWorkdir("/work/test/nosdk/hello").
-		With(daggerExec("module", "init", "--sdk=go", "hello")).
+		With(daggerExec("module", "init", "--sdk=go", "hello", ".")).
 		WithNewFile("main.go", helloCode).
 		WithWorkdir("/work/test/nosdk").
 		With(daggerExec("module", "init", "nosdk")).
@@ -101,7 +101,7 @@ func (m *Hello) Hello() string {
 
 func (ShellSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *testctx.T) {
 	tmpdir := t.TempDir()
-	initOutput, err := hostDaggerExec(ctx, t, tmpdir, "module", "init", "--source=.", "--sdk=go", "test")
+	initOutput, err := hostDaggerExec(ctx, t, tmpdir, "module", "init", "--source=.", "--sdk=go", "test", ".")
 	require.NoError(t, err, string(initOutput))
 
 	err = os.WriteFile(filepath.Join(tmpdir, "main.go"), []byte(`package main

@@ -27,9 +27,10 @@ func TestDetectInitializedWorkspace(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, readCalls, "readFile should not be called for structural workspace detection")
 	require.Equal(t, "/repo", ws.Root)
-	require.Equal(t, "app", ws.Path)
-	require.Empty(t, ws.Cwd)
-	require.True(t, ws.Initialized)
+	require.Equal(t, "app", ws.Cwd)
+	require.True(t, ws.HasConfig)
+	require.Equal(t, "app/.dagger", ws.ConfigDirectory)
+	require.Equal(t, "app/.dagger/config.toml", ws.ConfigFile)
 }
 
 func TestDetectInitializedWorkspaceFromNestedCwd(t *testing.T) {
@@ -50,9 +51,10 @@ func TestDetectInitializedWorkspaceFromNestedCwd(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, readCalls, "readFile should not be called for structural workspace detection")
 	require.Equal(t, "/repo", ws.Root)
-	require.Equal(t, ".", ws.Path)
 	require.Equal(t, "app/sub", ws.Cwd)
-	require.True(t, ws.Initialized)
+	require.True(t, ws.HasConfig)
+	require.Equal(t, ".dagger", ws.ConfigDirectory)
+	require.Equal(t, ".dagger/config.toml", ws.ConfigFile)
 }
 
 func TestDetectMissingConfigDoesNotChangeBoundary(t *testing.T) {
@@ -72,9 +74,10 @@ func TestDetectMissingConfigDoesNotChangeBoundary(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, readCalls, "readFile should not be called for structural workspace detection")
 	require.Equal(t, "/repo", ws.Root)
-	require.Equal(t, ".", ws.Path)
 	require.Equal(t, "app/sub", ws.Cwd)
-	require.False(t, ws.Initialized)
+	require.False(t, ws.HasConfig)
+	require.Empty(t, ws.ConfigDirectory)
+	require.Empty(t, ws.ConfigFile)
 }
 
 func TestDetectFallsBackToCwdWithoutGit(t *testing.T) {
@@ -91,9 +94,10 @@ func TestDetectFallsBackToCwdWithoutGit(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, readCalls, "readFile should not be called for structural workspace detection")
 	require.Equal(t, "/repo/app", ws.Root)
-	require.Equal(t, ".", ws.Path)
-	require.Empty(t, ws.Cwd)
-	require.False(t, ws.Initialized)
+	require.Equal(t, ".", ws.Cwd)
+	require.False(t, ws.HasConfig)
+	require.Empty(t, ws.ConfigDirectory)
+	require.Empty(t, ws.ConfigFile)
 }
 
 func fakePathExists(existing map[string]struct{}) PathExistsFunc {
