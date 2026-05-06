@@ -55,7 +55,7 @@ func (InterfaceSuite) TestIfaceGoSadPaths(ctx context.Context, t *testctx.T) {
 		_, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--sdk=go", "test")).
+			With(daggerExec("module", "init", "--source=.", "--sdk=go", "test")).
 			WithNewFile("main.go", `package main
 type Test struct {}
 
@@ -82,7 +82,7 @@ func (InterfaceSuite) TestIfaceGoDanglingInterface(ctx context.Context, t *testc
 	modGen, err := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--sdk=go", "test")).
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "test")).
 		WithNewFile("main.go", `package main
 type Test struct {}
 
@@ -220,7 +220,7 @@ class Test:
 					With(withModInitAt("mallard", tc.sdk, tc.depSource)).
 					With(daggerCallAt("mallard", "quack")).
 					With(withModInit(rtc.sdk, rtc.testSource)).
-					With(daggerExec("install", "./mallard")).
+					With(daggerExec("module", "install", "./mallard")).
 					With(daggerCall("get-duck", "quack")).
 					Stdout(ctx)
 
