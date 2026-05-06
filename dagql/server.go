@@ -949,21 +949,37 @@ func (s *Server) typeConditionMatchesObject(condition string, objectType ObjectT
 	// If the object type itself carries interface relationships from the schema
 	// that instantiated it, honor those too.
 	withInterfaces, ok := objectType.(objectTypeWithInterfaces)
-	if !ok {
-		return false
+	if ok {
+		for _, iface := range withInterfaces.Interfaces() {
+			if iface == nil {
+				continue
+			}
+			if iface.TypeName() == condition {
+				return true
+			}
+			if _, ok := iface.Interfaces()[condition]; ok {
+				return true
+			}
+		}
 	}
-	for _, iface := range withInterfaces.Interfaces() {
-		if iface == nil {
-			continue
-		}
-		if iface.TypeName() == condition {
-			return true
-		}
-		if _, ok := iface.Interfaces()[condition]; ok {
-			return true
-		}
+	// A dependency object may be loaded from a schema that did not register this
+	// server's interface as an implementor relationship, even though the object is
+	// compatible enough to evaluate the fragment. Avoid dropping the fragment in
+	// that case; actual field resolution will still fail if field signatures aren't
+	// usable.
+	if conditionIface, ok := s.InterfaceType(condition); ok && interfaceFieldsPresent(conditionIface, objectType, s.View) {
+		return true
 	}
 	return false
+}
+
+func interfaceFieldsPresent(iface *Interface, objectType ObjectType, view call.View) bool {
+	for _, ifaceField := range iface.FieldSpecs(view) {
+		if _, ok := objectType.FieldSpec(ifaceField.Name, view); !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // Load loads the object with the given ID.
@@ -1022,6 +1038,9 @@ func (s *Server) LoadType(ctx context.Context, id *call.ID) (_ AnyResult, rerr e
 	ctx = srvToContext(ctx, s)
 	if id == nil {
 		return nil, fmt.Errorf("load type: nil ID")
+	}
+	if !id.IsHandle() && id.Type() == nil {
+		return nil, fmt.Errorf("load type: invalid recipe ID")
 	}
 	if c := s.canonical; c != nil {
 		return c.LoadType(ctx, id)
@@ -1105,6 +1124,9 @@ func (state *recipeLoadState) load(id *call.ID) (AnyResult, error) {
 	}
 	if id.IsHandle() {
 		return state.srv.LoadType(state.ctx, id)
+	}
+	if id.Type() == nil {
+		return nil, fmt.Errorf("load recipe: invalid ID")
 	}
 
 	key := id.Digest().String()

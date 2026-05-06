@@ -780,6 +780,9 @@ func (obj *CoreModObject) ConvertFromSDKResult(ctx context.Context, value any) (
 	if err := idp.Decode(id); err != nil {
 		return nil, err
 	}
+	if !idp.IsHandle() && idp.Type() == nil {
+		return nil, fmt.Errorf("empty %s ID", obj.name)
+	}
 
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {

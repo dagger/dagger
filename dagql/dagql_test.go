@@ -3933,7 +3933,14 @@ func TestInterfaces(t *testing.T) {
 				Type: dagql.Int(0),
 			},
 		})
+		spatial.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "self",
+				Type: dagql.String(""),
+			},
+		})
 		querySrv.InstallInterface(spatial)
+		assert.Assert(t, !spatial.Satisfies(point.ObjectType(), ""), "Point should not strictly satisfy Spatial")
 
 		res, err := querySrv.Resolve(ctx, point, dagql.Selection{
 			Selector:       dagql.Selector{Field: "id"},
