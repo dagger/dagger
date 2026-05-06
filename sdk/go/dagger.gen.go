@@ -335,9 +335,6 @@ type UpID string
 // A Null Void is used as a placeholder for resolvers that do not return anything.
 type Void string
 
-// The `WorkspaceCwdID` scalar type represents an identifier for an object of type WorkspaceCwd.
-type WorkspaceCwdID string
-
 // The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
 type WorkspaceID string
 
@@ -873,15 +870,6 @@ func (r *Binding) AsWorkspace() *Workspace {
 	q := r.query.Select("asWorkspace")
 
 	return &Workspace{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type WorkspaceCwd
-func (r *Binding) AsWorkspaceCwd() *WorkspaceCwd {
-	q := r.query.Select("asWorkspaceCwd")
-
-	return &WorkspaceCwd{
 		query: q,
 	}
 }
@@ -6622,30 +6610,6 @@ func (r *Env) WithWorkspace(workspace *Directory) *Env {
 	assertNotNil("workspace", workspace)
 	q := r.query.Select("withWorkspace")
 	q = q.Arg("workspace", workspace)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type WorkspaceCwd in the environment
-func (r *Env) WithWorkspaceCwdInput(name string, value *WorkspaceCwd, description string) *Env {
-	assertNotNil("value", value)
-	q := r.query.Select("withWorkspaceCwdInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired WorkspaceCwd output to be assigned in the environment
-func (r *Env) WithWorkspaceCwdOutput(name string, description string) *Env {
-	q := r.query.Select("withWorkspaceCwdOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
 
 	return &Env{
 		query: q,
@@ -13436,16 +13400,6 @@ func (r *Query) LoadUpGroupFromID(id UpGroupID) *UpGroup {
 	}
 }
 
-// Load a WorkspaceCwd from its ID.
-func (r *Query) LoadWorkspaceCwdFromID(id WorkspaceCwdID) *WorkspaceCwd {
-	q := r.query.Select("loadWorkspaceCwdFromID")
-	q = q.Arg("id", id)
-
-	return &WorkspaceCwd{
-		query: q,
-	}
-}
-
 // Load a Workspace from its ID.
 func (r *Query) LoadWorkspaceFromID(id WorkspaceID) *Workspace {
 	q := r.query.Select("loadWorkspaceFromID")
@@ -15435,21 +15389,21 @@ func (r *UpGroup) Run() *UpGroup {
 type Workspace struct {
 	query *querybuilder.Selection
 
-	address     *string
-	clientId    *string
-	configPath  *string
-	configRead  *string
-	configWrite *string
-	envCreate   *string
-	envRemove   *string
-	findUp      *string
-	hasConfig   *bool
-	id          *WorkspaceID
-	init        *string
-	initialized *bool
-	install     *string
-	moduleInit  *string
-	path        *string
+	address         *string
+	clientId        *string
+	configDirectory *string
+	configFile      *string
+	configRead      *string
+	configWrite     *string
+	cwd             *string
+	envCreate       *string
+	envRemove       *string
+	findUp          *string
+	hasConfig       *bool
+	id              *WorkspaceID
+	init            *string
+	install         *string
+	moduleInit      *string
 }
 
 func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
@@ -15458,7 +15412,7 @@ func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
 	}
 }
 
-// Canonical Dagger address of the workspace directory.
+// Canonical Dagger address of the workspace location.
 func (r *Workspace) Address(ctx context.Context) (string, error) {
 	if r.address != nil {
 		return *r.address, nil
@@ -15511,12 +15465,25 @@ func (r *Workspace) ClientID(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Path to config.toml relative to the workspace boundary (empty if not initialized).
-func (r *Workspace) ConfigPath(ctx context.Context) (string, error) {
-	if r.configPath != nil {
-		return *r.configPath, nil
+// Selected workspace config directory relative to the workspace root, if any.
+func (r *Workspace) ConfigDirectory(ctx context.Context) (string, error) {
+	if r.configDirectory != nil {
+		return *r.configDirectory, nil
 	}
-	q := r.query.Select("configPath")
+	q := r.query.Select("configDirectory")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Selected workspace config file relative to the workspace root, if any.
+func (r *Workspace) ConfigFile(ctx context.Context) (string, error) {
+	if r.configFile != nil {
+		return *r.configFile, nil
+	}
+	q := r.query.Select("configFile")
 
 	var response string
 
@@ -15555,12 +15522,24 @@ func (r *Workspace) ConfigRead(ctx context.Context, opts ...WorkspaceConfigReadO
 	return response, q.Execute(ctx)
 }
 
+// WorkspaceConfigWriteOpts contains options for Workspace.ConfigWrite
+type WorkspaceConfigWriteOpts struct {
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
+}
+
 // Write a configuration value to config.toml.
-func (r *Workspace) ConfigWrite(ctx context.Context, key string, value string) (string, error) {
+func (r *Workspace) ConfigWrite(ctx context.Context, key string, value string, opts ...WorkspaceConfigWriteOpts) (string, error) {
 	if r.configWrite != nil {
 		return *r.configWrite, nil
 	}
 	q := r.query.Select("configWrite")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+	}
 	q = q.Arg("key", key)
 	q = q.Arg("value", value)
 
@@ -15570,13 +15549,17 @@ func (r *Workspace) ConfigWrite(ctx context.Context, key string, value string) (
 	return response, q.Execute(ctx)
 }
 
-// The current working directory within the workspace.
-func (r *Workspace) Cwd() *WorkspaceCwd {
+// Current location within the workspace root. Relative paths in workspace APIs resolve from here.
+func (r *Workspace) Cwd(ctx context.Context) (string, error) {
+	if r.cwd != nil {
+		return *r.cwd, nil
+	}
 	q := r.query.Select("cwd")
 
-	return &WorkspaceCwd{
-		query: q,
-	}
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // WorkspaceDirectoryOpts contains options for Workspace.Directory
@@ -15591,7 +15574,7 @@ type WorkspaceDirectoryOpts struct {
 
 // Returns a Directory from the workspace.
 //
-// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+// Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
 func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Directory {
 	q := r.query.Select("directory")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -15615,12 +15598,24 @@ func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Dire
 	}
 }
 
+// WorkspaceEnvCreateOpts contains options for Workspace.EnvCreate
+type WorkspaceEnvCreateOpts struct {
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
+}
+
 // Create a named workspace environment if it does not already exist.
-func (r *Workspace) EnvCreate(ctx context.Context, name string) (string, error) {
+func (r *Workspace) EnvCreate(ctx context.Context, name string, opts ...WorkspaceEnvCreateOpts) (string, error) {
 	if r.envCreate != nil {
 		return *r.envCreate, nil
 	}
 	q := r.query.Select("envCreate")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+	}
 	q = q.Arg("name", name)
 
 	var response string
@@ -15639,12 +15634,24 @@ func (r *Workspace) EnvList(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
+// WorkspaceEnvRemoveOpts contains options for Workspace.EnvRemove
+type WorkspaceEnvRemoveOpts struct {
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
+}
+
 // Remove a named workspace environment.
-func (r *Workspace) EnvRemove(ctx context.Context, name string) (string, error) {
+func (r *Workspace) EnvRemove(ctx context.Context, name string, opts ...WorkspaceEnvRemoveOpts) (string, error) {
 	if r.envRemove != nil {
 		return *r.envRemove, nil
 	}
 	q := r.query.Select("envRemove")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+	}
 	q = q.Arg("name", name)
 
 	var response string
@@ -15655,7 +15662,7 @@ func (r *Workspace) EnvRemove(ctx context.Context, name string) (string, error) 
 
 // Returns a File from the workspace.
 //
-// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+// Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
 func (r *Workspace) File(path string) *File {
 	q := r.query.Select("file")
 	q = q.Arg("path", path)
@@ -15667,7 +15674,7 @@ func (r *Workspace) File(path string) *File {
 
 // WorkspaceFindUpOpts contains options for Workspace.FindUp
 type WorkspaceFindUpOpts struct {
-	// Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.
+	// Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root.
 	//
 	// Default: "."
 	From string
@@ -15677,9 +15684,9 @@ type WorkspaceFindUpOpts struct {
 //
 // Returns the absolute workspace path if found, or null if not found.
 //
-// Relative start paths resolve from the workspace directory.
+// Relative start paths resolve from the workspace cwd.
 //
-// The search stops at the workspace boundary and will not traverse above it.
+// The search stops at the workspace root and will not traverse above it.
 func (r *Workspace) FindUp(ctx context.Context, name string, opts ...WorkspaceFindUpOpts) (string, error) {
 	if r.findUp != nil {
 		return *r.findUp, nil
@@ -15720,7 +15727,7 @@ func (r *Workspace) Generators(opts ...WorkspaceGeneratorsOpts) *GeneratorGroup 
 	}
 }
 
-// Whether a config.toml file exists in the workspace.
+// Whether a workspace config file exists.
 func (r *Workspace) HasConfig(ctx context.Context) (bool, error) {
 	if r.hasConfig != nil {
 		return *r.hasConfig, nil
@@ -15773,27 +15780,26 @@ func (r *Workspace) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// Initialize a new workspace, creating .dagger/config.toml.
-func (r *Workspace) Init(ctx context.Context) (string, error) {
+// WorkspaceInitOpts contains options for Workspace.Init
+type WorkspaceInitOpts struct {
+	// Create the workspace config directory at the workspace cwd instead of using the default write target.
+	Here bool
+}
+
+// Initialize workspace config, creating .dagger/config.toml.
+func (r *Workspace) Init(ctx context.Context, opts ...WorkspaceInitOpts) (string, error) {
 	if r.init != nil {
 		return *r.init, nil
 	}
 	q := r.query.Select("init")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+	}
 
 	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Whether .dagger/config.toml exists.
-func (r *Workspace) Initialized(ctx context.Context) (bool, error) {
-	if r.initialized != nil {
-		return *r.initialized, nil
-	}
-	q := r.query.Select("initialized")
-
-	var response bool
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -15803,6 +15809,8 @@ func (r *Workspace) Initialized(ctx context.Context) (bool, error) {
 type WorkspaceInstallOpts struct {
 	// Override name for the installed module entry.
 	Name string
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
 }
 
 // Install a module into the workspace, writing config.toml to the host.
@@ -15815,6 +15823,10 @@ func (r *Workspace) Install(ctx context.Context, ref string, opts ...WorkspaceIn
 		// `name` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Name) {
 			q = q.Arg("name", opts[i].Name)
+		}
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
 		}
 	}
 	q = q.Arg("ref", ref)
@@ -15857,6 +15869,8 @@ type WorkspaceModuleInitOpts struct {
 	Include []string
 	// Enable the self-calls experimental feature for the new module.
 	SelfCalls bool
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
 }
 
 // Create a new module owned by the workspace and auto-install it in config.toml.
@@ -15881,6 +15895,10 @@ func (r *Workspace) ModuleInit(ctx context.Context, name string, opts ...Workspa
 		// `selfCalls` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SelfCalls) {
 			q = q.Arg("selfCalls", opts[i].SelfCalls)
+		}
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
 		}
 	}
 	q = q.Arg("name", name)
@@ -15922,19 +15940,6 @@ func (r *Workspace) ModuleList(ctx context.Context) ([]WorkspaceModule, error) {
 	}
 
 	return convert(response), nil
-}
-
-// Workspace directory path relative to the workspace boundary.
-func (r *Workspace) Path(ctx context.Context) (string, error) {
-	if r.path != nil {
-		return *r.path, nil
-	}
-	q := r.query.Select("path")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
 // WorkspaceRefreshModulesOpts contains options for Workspace.RefreshModules
@@ -15994,121 +15999,6 @@ func (r *Workspace) Update() *Changeset {
 	return &Changeset{
 		query: q,
 	}
-}
-
-// The current working directory within the workspace. This is set to the directory where workspace detection started, and cannot be changed.
-type WorkspaceCwd struct {
-	query *querybuilder.Selection
-
-	id   *WorkspaceCwdID
-	path *string
-}
-
-func (r *WorkspaceCwd) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceCwd {
-	return &WorkspaceCwd{
-		query: q,
-	}
-}
-
-// WorkspaceCwdDirectoryOpts contains options for WorkspaceCwd.Directory
-type WorkspaceCwdDirectoryOpts struct {
-	// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
-	Exclude []string
-	// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
-	Include []string
-	// Apply .gitignore filter rules inside the directory.
-	Gitignore bool
-}
-
-// Returns a Directory from the current working directory within the workspace.
-//
-// Relative paths resolve from the current working directory. Absolute paths resolve from the workspace boundary.
-func (r *WorkspaceCwd) Directory(path string, opts ...WorkspaceCwdDirectoryOpts) *Directory {
-	q := r.query.Select("directory")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `exclude` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Exclude) {
-			q = q.Arg("exclude", opts[i].Exclude)
-		}
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-		// `gitignore` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Gitignore) {
-			q = q.Arg("gitignore", opts[i].Gitignore)
-		}
-	}
-	q = q.Arg("path", path)
-
-	return &Directory{
-		query: q,
-	}
-}
-
-// Returns a File from the current working directory within the workspace.
-//
-// Relative paths resolve from the current working directory. Absolute paths resolve from the workspace boundary.
-func (r *WorkspaceCwd) File(path string) *File {
-	q := r.query.Select("file")
-	q = q.Arg("path", path)
-
-	return &File{
-		query: q,
-	}
-}
-
-// A unique identifier for this WorkspaceCwd.
-func (r *WorkspaceCwd) ID(ctx context.Context) (WorkspaceCwdID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response WorkspaceCwdID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *WorkspaceCwd) XXX_GraphQLType() string {
-	return "WorkspaceCwd"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *WorkspaceCwd) XXX_GraphQLIDType() string {
-	return "WorkspaceCwdID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *WorkspaceCwd) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *WorkspaceCwd) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// Location of the current working directory within the workspace, relative to the workspace.
-func (r *WorkspaceCwd) Path(ctx context.Context) (string, error) {
-	if r.path != nil {
-		return *r.path, nil
-	}
-	q := r.query.Select("path")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
 // A planned workspace migration.

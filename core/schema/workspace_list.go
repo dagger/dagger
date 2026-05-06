@@ -24,7 +24,10 @@ func (s *workspaceSchema) moduleList(
 		return nil, err
 	}
 
-	configDir := filepath.Dir(parent.ConfigPath)
+	configDir, err := workspaceConfigDirectory(parent)
+	if err != nil {
+		return nil, err
+	}
 	modules := make(core.WorkspaceModules, 0, len(cfg.Modules))
 	for name, entry := range cfg.Modules {
 		source := filepath.ToSlash(workspace.ResolveModuleEntrySource(configDir, entry.Source))
