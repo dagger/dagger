@@ -258,12 +258,16 @@ func (r *ContainerRuntime) Call(
 		Args:                          []string{},
 		UseEntrypoint:                 true,
 		ExperimentalPrivilegedNesting: true,
-	}, execMD, moduleContext, fnCall, envContext, true)
+	}, execMD, moduleContext, fnCall, true)
 	if err != nil {
 		return nil, fmt.Errorf("exec function: %w", err)
 	}
 
-	err = execCtr.Sync(ctx)
+	syncCtx := ctx
+	if envContext.Self() != nil {
+		syncCtx = EnvToContext(syncCtx, envContext)
+	}
+	err = execCtr.Sync(syncCtx)
 	if err != nil {
 		var modExecErr *ModuleExecError
 		if errors.As(err, &modExecErr) {
