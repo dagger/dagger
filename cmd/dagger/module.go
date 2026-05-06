@@ -50,7 +50,6 @@ var (
 	deprecatedLicense string
 	compatVersion     string
 
-	moduleName       string
 	moduleSourcePath string
 	moduleIncludes   []string
 
@@ -126,6 +125,16 @@ func initRequestedChanges(cmd *cobra.Command) bool {
 	return false
 }
 
+func validateModuleInitArgs(cmd *cobra.Command, args []string) error {
+	if len(args) > 2 {
+		return fmt.Errorf("accepts at most 2 arg(s), received %d", len(args))
+	}
+	if len(args) == 0 {
+		return fmt.Errorf("module name is required")
+	}
+	return nil
+}
+
 func addWorkspaceInstallFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the module in the workspace. Defaults to the name of the module being installed.")
 }
@@ -197,7 +206,6 @@ func init() {
 	shellAddFlags(rootCmd)
 
 	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "Optionally install a Dagger SDK")
-	moduleInitCmd.Flags().StringVar(&moduleName, "name", "", "Name of the new module (defaults to parent directory name)")
 	moduleInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Source directory used by the installed SDK. Defaults to module root")
 	addDeprecatedLicenseFlag(moduleInitCmd)
 	moduleInitCmd.Flags().StringSliceVar(&moduleIncludes, "include", nil, "Paths to include when loading the module. Only needed when extra paths are required to build the module. They are expected to be relative to the directory containing the module's dagger.json file (the module source root).")
@@ -236,23 +244,26 @@ func init() {
 }
 
 var moduleInitCmd = &cobra.Command{
-	Use:   "init [options] [path]",
+	Use:   "init [options] NAME [PATH]",
 	Short: "Initialize a new module",
 	Long: `Initialize a new module at the given path.
 
 This creates a dagger.json file at the specified directory, making it the root of the new module.
 
-If no path is provided and the current workspace is already initialized, the module is created
-inside .dagger/modules/<name>/ and automatically installed in .dagger/config.toml.
-Use an explicit path to keep creating a standalone module instead.
+If no path is provided and the current workspace is already initialized, the
+module is created inside .dagger/modules/<name>/ and automatically installed in
+.dagger/config.toml. Use an explicit path to create a standalone module instead.
 
 If --sdk is specified, the given SDK is installed in the module. You can do this later with "dagger develop".
 `,
 	Example: `
-# Implement a standalone module in Go
-dagger module init --sdk=go
+# Implement a workspace module in Go
+dagger module init --sdk=go ci
+
+# Implement a standalone module in Go at an explicit path
+dagger module init --sdk=go ci ./submod
 `,
-	Args: cobra.MaximumNArgs(1),
+	Args: validateModuleInitArgs,
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
 		ctx := cmd.Context()
 		if err := checkDeprecatedLicenseFlag(cmd); err != nil {
@@ -269,9 +280,11 @@ dagger module init --sdk=go
 			if err != nil {
 				return fmt.Errorf("failed to get current working directory: %w", err)
 			}
+
+			initName := extraArgs[0]
 			srcRootArg := cwd
-			if len(extraArgs) > 0 {
-				srcRootArg = extraArgs[0]
+			if len(extraArgs) == 2 {
+				srcRootArg = extraArgs[1]
 			}
 			if filepath.IsAbs(srcRootArg) {
 				srcRootArg, err = filepath.Rel(cwd, srcRootArg)
@@ -315,11 +328,6 @@ dagger module init --sdk=go
 			}
 			srcRootAbsPath := filepath.Join(contextDirPath, srcRootSubPath)
 
-			// default module name to directory of source root
-			if moduleName == "" {
-				moduleName = filepath.Base(srcRootAbsPath)
-			}
-
 			// Standalone init supports targeting a directory that does not exist yet.
 			// Create it before SDK setup probes the host path so progress output
 			// does not show false "not found" errors for a path we are about to export.
@@ -331,7 +339,7 @@ dagger module init --sdk=go
 				return fmt.Errorf("failed to stat module directory: %w", err)
 			}
 
-			if len(extraArgs) == 0 {
+			if srcRootArg == cwd {
 				hasConfig, err := dag.CurrentWorkspace().HasConfig(ctx)
 				if err != nil {
 					return fmt.Errorf("failed to load workspace config state: %w", err)
@@ -341,7 +349,7 @@ dagger module init --sdk=go
 						return fmt.Errorf("--source must be relative when initializing a workspace module")
 					}
 					return initWorkspaceModule(ctx, cmd.OutOrStdout(), dag, workspaceModuleInitOptions{
-						Name:      moduleName,
+						Name:      initName,
 						SDK:       sdk,
 						Source:    moduleSourcePath,
 						Include:   moduleIncludes,
@@ -373,7 +381,7 @@ dagger module init --sdk=go
 				}
 			}
 
-			modSrc = modSrc.WithName(moduleName)
+			modSrc = modSrc.WithName(initName)
 			if sdk != "" {
 				modSrc = modSrc.WithSDK(sdk)
 			}
@@ -399,7 +407,7 @@ dagger module init --sdk=go
 			}
 
 			// Print success message to user
-			infoMessage := []any{"Initialized module", moduleName, "in", srcRootAbsPath}
+			infoMessage := []any{"Initialized module", initName, "in", srcRootAbsPath}
 			fmt.Fprintln(cmd.OutOrStdout(), infoMessage...)
 			return nil
 		})

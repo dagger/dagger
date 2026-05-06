@@ -225,7 +225,7 @@ func daggerUpInitModFn(ctx context.Context, t *testctx.T, defaultPort string) st
 	err := os.WriteFile(filepath.Join(modDir, "main.go"), fmt.Appendf(nil, mainGoTmpl, defaultPort), 0o644)
 	require.NoError(t, err)
 
-	_, err = hostDaggerModuleExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+	_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--sdk=go", "test")
 	require.NoError(t, err)
 
 	// cache the module load itself so there's less to wait for below

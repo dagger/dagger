@@ -29,7 +29,7 @@ func TestWorkspaceModules(t *testing.T) {
 func initWorkspaceDangModule(ctx context.Context, t *testctx.T, ctr *dagger.Container, name string) *dagger.Container {
 	t.Helper()
 
-	initCtr := ctr.WithExec([]string{"dagger", "module", "init", "--sdk=dang", "--name=" + name}, dagger.ContainerWithExecOpts{
+	initCtr := ctr.WithExec([]string{"dagger", "module", "init", "--sdk=dang", name}, dagger.ContainerWithExecOpts{
 		Expect:                        dagger.ReturnTypeAny,
 		ExperimentalPrivilegedNesting: true,
 	})
@@ -92,7 +92,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerModuleExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go")
+		_, err := hostDaggerExec(ctx, t, depDir, "init", "--sdk=go", "dep")
 		require.NoError(t, err)
 
 		c := connect(ctx, t, dagger.WithWorkdir(workdir))
@@ -120,7 +120,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerModuleExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go")
+		_, err := hostDaggerExec(ctx, t, depDir, "init", "--sdk=go", "dep")
 		require.NoError(t, err)
 
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
@@ -159,7 +159,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		initGitRepo(ctx, t, workdir)
 		initGitRepo(ctx, t, depDir)
 
-		_, err := hostDaggerModuleExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go")
+		_, err := hostDaggerExec(ctx, t, depDir, "init", "--sdk=go", "dep")
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(depDir, "main.go"), []byte(`package main
 
@@ -191,9 +191,9 @@ entrypoint = true
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerModuleExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go")
+		_, err := hostDaggerExec(ctx, t, depDir, "init", "--sdk=go", "dep")
 		require.NoError(t, err)
-		_, err = hostDaggerModuleExec(ctx, t, workdir, "init", "--name=app", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, workdir, "init", "--sdk=go", "app")
 		require.NoError(t, err)
 
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
@@ -278,7 +278,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleMutation(ctx context.Context, t 
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerModuleExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go")
+		_, err := hostDaggerExec(ctx, t, depDir, "init", "--sdk=go", "dep")
 		require.NoError(t, err)
 
 		writeWorkspaceConfigFile(t, workdir, `[modules.dep]
@@ -305,9 +305,9 @@ source = "../existing"
 
 		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "workspace", "init")
 		require.NoError(t, err)
-		_, err = hostDaggerModuleExec(ctx, t, appDir, "init", "--name=app", "--sdk=go", ".")
+		_, err = hostDaggerExec(ctx, t, appDir, "init", "--sdk=go", "app", ".")
 		require.NoError(t, err)
-		_, err = hostDaggerModuleExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go", ".")
+		_, err = hostDaggerExec(ctx, t, depDir, "init", "--sdk=go", "dep", ".")
 		require.NoError(t, err)
 		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "module", "install", "--mod=./app", "./dep")
 		require.NoError(t, err)
@@ -325,7 +325,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInit(ctx context.Context, t *tes
 	c := connect(ctx, t)
 	base := workspaceBase(t, c)
 
-	t.Run("initialized workspace creates a config-owned module", func(ctx context.Context, t *testctx.T) {
+	t.Run("positional name creates config-owned workspace module", func(ctx context.Context, t *testctx.T) {
 		ctr := initWorkspaceDangModule(ctx, t, base.With(daggerExec("workspace", "init")), "mymod").
 			WithNewFile(".dagger/modules/mymod/main.dang", `
 type Mymod {
@@ -350,7 +350,7 @@ type Mymod {
 		require.NoError(t, err)
 	})
 
-	t.Run("workspace root loads config-owned modules", func(ctx context.Context, t *testctx.T) {
+	t.Run("positional name module is callable from workspace root", func(ctx context.Context, t *testctx.T) {
 		ctr := initWorkspaceDangModule(ctx, t, base.With(daggerExec("workspace", "init")), "mymod").
 			WithNewFile(".dagger/modules/mymod/main.dang", `
 type Mymod {
@@ -369,10 +369,10 @@ type Mymod {
 		require.Equal(t, "hello workspace", strings.TrimSpace(out))
 	})
 
-	t.Run("explicit path keeps standalone init inside a workspace", func(ctx context.Context, t *testctx.T) {
+	t.Run("positional name with workspace-local path creates standalone module", func(ctx context.Context, t *testctx.T) {
 		initCtr := base.
 			With(daggerExec("workspace", "init")).
-			WithExec([]string{"dagger", "module", "init", "--sdk=dang", "--name=standalone", "./submod"}, dagger.ContainerWithExecOpts{
+			WithExec([]string{"dagger", "module", "init", "--sdk=dang", "standalone", "./submod"}, dagger.ContainerWithExecOpts{
 				Expect:                        dagger.ReturnTypeAny,
 				ExperimentalPrivilegedNesting: true,
 			})
@@ -411,6 +411,42 @@ type Standalone {
 		require.NoError(t, err)
 		require.Equal(t, "hello standalone", strings.TrimSpace(out))
 	})
+
+	t.Run("positional name with outside path creates standalone module", func(ctx context.Context, t *testctx.T) {
+		ctr := base.
+			With(daggerExec("workspace", "init")).
+			WithExec([]string{"dagger", "module", "init", "--sdk=dang", "external", "../outside"}, dagger.ContainerWithExecOpts{
+				ExperimentalPrivilegedNesting: true,
+			})
+
+		djson, err := ctr.WithExec([]string{"cat", "../outside/dagger.json"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, djson, `"name": "external"`)
+
+		cfg, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, cfg, "external")
+
+		_, err = ctr.WithExec([]string{"test", "!", "-f", ".dagger/modules/external/dagger.json"}).Sync(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("module init rejects missing positional name", func(ctx context.Context, t *testctx.T) {
+		ctr := base.
+			With(daggerExec("workspace", "init")).
+			WithExec([]string{"dagger", "module", "init", "--sdk=dang"}, dagger.ContainerWithExecOpts{
+				Expect:                        dagger.ReturnTypeAny,
+				ExperimentalPrivilegedNesting: true,
+			})
+
+		code, err := ctr.ExitCode(ctx)
+		require.NoError(t, err)
+		require.NotZero(t, code)
+
+		errOut, err := ctr.Stderr(ctx)
+		require.NoError(t, err)
+		require.Contains(t, errOut, "module name is required")
+	})
 }
 
 // TestModuleScopedDependencyCommands covers module-specific dependency changes
@@ -427,9 +463,9 @@ func (WorkspaceModulesSuite) TestModuleScopedDependencyCommands(ctx context.Cont
 
 		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "workspace", "init")
 		require.NoError(t, err)
-		_, err = hostDaggerModuleExec(ctx, t, appDir, "init", "--name=app", "--sdk=go", ".")
+		_, err = hostDaggerExec(ctx, t, appDir, "init", "--sdk=go", "app", ".")
 		require.NoError(t, err)
-		_, err = hostDaggerModuleExec(ctx, t, depDir, "init", "--name=dep", "--sdk=go", ".")
+		_, err = hostDaggerExec(ctx, t, depDir, "init", "--sdk=go", "dep", ".")
 		require.NoError(t, err)
 
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "module", "install", "--mod=./app", "./dep")
