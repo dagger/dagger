@@ -38,6 +38,41 @@ func TestMatchWorkspaceInclude(t *testing.T) {
 	})
 }
 
+func TestWorkspaceConfigSkipPatterns(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("missing config has no skips", func(t *testing.T) {
+		patterns, err := workspaceConfigSkipPatterns(ctx, &core.Workspace{}, func(entry workspace.ModuleEntry) []string {
+			return entry.Generate.Skip
+		})
+		require.NoError(t, err)
+		require.Empty(t, patterns)
+	})
+
+	t.Run("compat workspace uses projected skips", func(t *testing.T) {
+		compat, err := workspace.ParseCompatWorkspace([]byte(`{
+			"name": "app",
+			"toolchains": [{
+				"name": "hello-with-generators",
+				"source": "./hello-with-generators",
+				"ignoreGenerators": ["generate-other-files", "other-generators:*"]
+			}]
+		}`))
+		require.NoError(t, err)
+		require.NotNil(t, compat)
+
+		ws := &core.Workspace{}
+		ws.SetCompatWorkspace(compat)
+		patterns, err := workspaceConfigSkipPatterns(ctx, ws, func(entry workspace.ModuleEntry) []string {
+			return entry.Generate.Skip
+		})
+		require.NoError(t, err)
+		require.Equal(t, map[string][]string{
+			"hello-with-generators": []string{"generate-other-files", "other-generators:*"},
+		}, patterns)
+	})
+}
+
 func TestFilterGeneratorsByInclude(t *testing.T) {
 	ctx := context.Background()
 	generators := []*core.Generator{
