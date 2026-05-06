@@ -73,10 +73,10 @@ type Test {
   }
 }
 `)).
-		With(daggerExec("install", "./gochild")).
-		With(daggerExec("install", "./pychild")).
-		With(daggerExec("install", "./tschild")).
-		With(daggerExec("install", "./dangchild"))
+		With(daggerExec("module", "install", "./gochild")).
+		With(daggerExec("module", "install", "./pychild")).
+		With(daggerExec("module", "install", "./tschild")).
+		With(daggerExec("module", "install", "./dangchild"))
 
 	for _, tc := range []struct {
 		name string
