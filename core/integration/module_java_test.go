@@ -33,7 +33,7 @@ func (JavaSuite) TestInit(_ context.Context, t *testctx.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--sdk=github.com/dagger/dagger/sdk/java", "bare"))
+			With(daggerExec("module", "init", "--sdk=github.com/dagger/dagger/sdk/java", "bare"))
 
 		out, err := modGen.
 			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
@@ -53,7 +53,7 @@ func (JavaSuite) TestInit(_ context.Context, t *testctx.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--sdk=java", "bare"))
+			With(daggerExec("module", "init", "--sdk=java", "bare"))
 
 		out, err := modGen.
 			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
@@ -72,7 +72,7 @@ func (JavaSuite) TestInit(_ context.Context, t *testctx.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--sdk=java@main", "bare"))
+			With(daggerExec("module", "init", "--sdk=java@main", "bare"))
 
 		out, err := modGen.
 			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
