@@ -152,6 +152,7 @@ func (t *TypescriptSdk) Codegen(
 		cfg.name,
 		codegen.Directory(SrcDir),
 		clientBindings,
+		t.SDKSourceDir,
 	)
 	codegen = codegen.WithFile(EntrypointExecutableFile, entrypoint)
 
