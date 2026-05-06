@@ -713,8 +713,7 @@ func (s *scanner) parseParamPragmas(docText, lineText string) (description strin
 	if v, ok := merged["default"]; ok {
 		encoded, encErr := json.Marshal(v)
 		if encErr != nil {
-			err = fmt.Errorf("encode default value %v: %w", v, encErr)
-			return
+			return description, nil, optional, fmt.Errorf("encode default value %v: %w", v, encErr)
 		}
 		s := string(encoded)
 		defaultJSON = &s
@@ -722,7 +721,7 @@ func (s *scanner) parseParamPragmas(docText, lineText string) (description strin
 		// legacy paramSpec behaviour.
 		optional = true
 	}
-	return
+	return description, defaultJSON, optional, nil
 }
 
 // stripNonNull removes the outermost NON_NULL wrapper from a typeref,
