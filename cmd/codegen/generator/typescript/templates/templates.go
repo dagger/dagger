@@ -30,3 +30,31 @@ func New(
 	tmpl := template.Must(template.New(topLevelTemplate).Funcs(funcs).ParseFS(srcs, fileNames...))
 	return tmpl
 }
+
+// NewEntrypoint creates a template that renders the static dispatch
+// `__dagger.entrypoint.ts` file. The templates live under
+// src/entrypoint/*.gtpl and consume the typedef JSON shape produced by the
+// SDK introspector.
+func NewEntrypoint(module *TypedefModule, opts EntrypointOptions) *template.Template {
+	return template.Must(
+		template.New("entrypoint").
+			Funcs(EntrypointTemplateFuncs(module, opts)).
+			ParseFS(srcs, "src/entrypoint/*.gtpl"),
+	)
+}
+
+// EntrypointOptions controls how user-source imports and SDK references are
+// rendered in the generated entrypoint.
+type EntrypointOptions struct {
+	// SDKImportPath is the bare specifier the entrypoint uses to import
+	// runtime helpers (defaults to "@dagger.io/dagger").
+	SDKImportPath string
+
+	// ModuleRoot is the absolute path of the user's module root, used to
+	// resolve relative TS import paths for each registered @object class.
+	ModuleRoot string
+
+	// SourceDir is the user's source directory name relative to ModuleRoot
+	// (defaults to "src").
+	SourceDir string
+}
