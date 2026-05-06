@@ -45,7 +45,7 @@ var envCreateCmd = &cobra.Command{
 		return withEngine(cmd.Context(), client.Params{
 			SkipWorkspaceModules: true,
 		}, func(ctx context.Context, engineClient *client.Client) error {
-			return workspaceEnvCreate(ctx, engineClient.Dagger(), args[0])
+			return workspaceEnvCreate(ctx, engineClient.Dagger(), args[0], workspaceHere)
 		})
 	},
 }
@@ -58,13 +58,15 @@ var envRmCmd = &cobra.Command{
 		return withEngine(cmd.Context(), client.Params{
 			SkipWorkspaceModules: true,
 		}, func(ctx context.Context, engineClient *client.Client) error {
-			return workspaceEnvRemove(ctx, engineClient.Dagger(), args[0])
+			return workspaceEnvRemove(ctx, engineClient.Dagger(), args[0], workspaceHere)
 		})
 	},
 }
 
 func init() {
 	envCmd.AddCommand(envListCmd, envCreateCmd, envRmCmd)
+	addWorkspaceHereFlag(envCreateCmd)
+	addWorkspaceHereFlag(envRmCmd)
 
 	setWorkspaceFlagPolicy(envCreateCmd, workspaceFlagPolicyLocalOnly)
 	setWorkspaceFlagPolicy(envRmCmd, workspaceFlagPolicyLocalOnly)
@@ -88,7 +90,7 @@ func workspaceEnvList(ctx context.Context, dag *dagger.Client) ([]string, error)
 	return res.CurrentWorkspace.EnvList, nil
 }
 
-func workspaceEnvCreate(ctx context.Context, dag *dagger.Client, name string) error {
+func workspaceEnvCreate(ctx context.Context, dag *dagger.Client, name string, here bool) error {
 	var res struct {
 		CurrentWorkspace struct {
 			EnvCreate string
@@ -96,16 +98,17 @@ func workspaceEnvCreate(ctx context.Context, dag *dagger.Client, name string) er
 	}
 
 	return dag.Do(ctx, &dagger.Request{
-		Query: `query($name: String!) { currentWorkspace { envCreate(name: $name) } }`,
+		Query: `query($name: String!, $here: Boolean!) { currentWorkspace { envCreate(name: $name, here: $here) } }`,
 		Variables: map[string]any{
 			"name": name,
+			"here": here,
 		},
 	}, &dagger.Response{
 		Data: &res,
 	})
 }
 
-func workspaceEnvRemove(ctx context.Context, dag *dagger.Client, name string) error {
+func workspaceEnvRemove(ctx context.Context, dag *dagger.Client, name string, here bool) error {
 	var res struct {
 		CurrentWorkspace struct {
 			EnvRemove string
@@ -113,9 +116,10 @@ func workspaceEnvRemove(ctx context.Context, dag *dagger.Client, name string) er
 	}
 
 	return dag.Do(ctx, &dagger.Request{
-		Query: `query($name: String!) { currentWorkspace { envRemove(name: $name) } }`,
+		Query: `query($name: String!, $here: Boolean!) { currentWorkspace { envRemove(name: $name, here: $here) } }`,
 		Variables: map[string]any{
 			"name": name,
+			"here": here,
 		},
 	}, &dagger.Response{
 		Data: &res,
