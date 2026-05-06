@@ -164,7 +164,7 @@ func (m *Dep) ListFiles(ctx context.Context, dir *dagger.Directory) ([]string, e
 		require.NoError(t, err)
 
 		// Initialize the dependent module
-		_, err = hostDaggerModuleExec(ctx, t, depModDir, "init", "--source=.", "--name=dep", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, depModDir, "init", "--source=.", "--sdk=go", "dep")
 		require.NoError(t, err)
 
 		// Write the main module's code with matching return type
@@ -184,11 +184,11 @@ func (m *Test) Fn(ctx context.Context, dir *dagger.Directory) ([]string, error) 
 		require.NoError(t, err)
 
 		// Initialize the main module
-		_, err = hostDaggerModuleExec(ctx, t, rootDir, "init", "--source=.", "--name=test", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, rootDir, "init", "--source=.", "--sdk=go", "test")
 		require.NoError(t, err)
 
 		// Install the dependent module using relative path
-		_, err = hostDaggerModuleExec(ctx, t, rootDir, "install", "./dep")
+		_, err = hostDaggerExec(ctx, t, rootDir, "install", "./dep")
 		require.NoError(t, err)
 
 		// Execute the module with a private Git repository directory

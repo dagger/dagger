@@ -43,7 +43,7 @@ Following these principles leads to writing tests for your Dagger modules using 
 ```bash
 mkdir tests
 cd tests
-dagger module init --name=tests --sdk=go --source=.
+dagger module init --sdk=go --source=. tests
 dagger module install ..
 ```
 
@@ -70,7 +70,7 @@ func (m *Tests) Hello(ctx context.Context) error {
 ```bash
 mkdir tests
 cd tests
-dagger module init --name=tests --sdk=python --source=.
+dagger module init --sdk=python --source=. tests
 dagger module install ..
 ```
 
@@ -93,7 +93,7 @@ class Tests:
 ```bash
 mkdir tests
 cd tests
-dagger module init --name=tests --sdk=typescript --source=.
+dagger module init --sdk=typescript --source=. tests
 dagger module install ..
 ```
 
@@ -137,7 +137,7 @@ You can combine example modules with the test module pattern to turn those examp
 ```bash
 mkdir -p examples/go
 cd examples/go
-dagger module init --name=examples/go --sdk=go --source=.
+dagger module init --sdk=go --source=. examples/go
 dagger module install ../..
 ```
 
@@ -163,7 +163,7 @@ func (m *Examples) GreeterHello(ctx context.Context) error {
 ```bash
 mkdir -p examples/python
 cd examples/python
-dagger module init --name=examples/python --sdk=python --source=.
+dagger module init --sdk=python --source=. examples/python
 dagger module install ../..
 ```
 
@@ -185,7 +185,7 @@ class Examples:
 ```bash
 mkdir -p examples/typescript
 cd examples/typescript
-dagger module init --name=examples/typescript --sdk=typescript --source=.
+dagger module init --sdk=typescript --source=. examples/typescript
 dagger module install ../..
 ```
 
