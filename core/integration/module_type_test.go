@@ -819,7 +819,7 @@ export class Test {
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
-				With(daggerExec("init", "test", "--sdk="+tc.sdk)).
+				With(daggerExec("module", "init", "test", "--sdk="+tc.sdk)).
 				With(sdkSource(tc.sdk, tc.source))
 
 			out, err := modGen.With(daggerQuery(`{sayHello(name: "world"){id}}`)).Stdout(ctx)
@@ -1561,7 +1561,7 @@ export class Test {
 
 				modGen := modInit(t, c, tc.sdk, tc.source).
 					With(withModInitAt("./dep", "go", depSrc)).
-					With(daggerExec("install", "./dep"))
+					With(daggerExec("module", "install", "./dep"))
 
 				out, err := modGen.With(daggerQuery(`{active inactive}`)).Stdout(ctx)
 				require.NoError(t, err)
@@ -1630,7 +1630,7 @@ func (m *Test) TestNull(ctx context.Context) (string, error) {
 
 			modGen := modInit(t, c, "go", src).
 				With(withModInitAt("./dep", "go", depSrc)).
-				With(daggerExec("install", "./dep"))
+				With(daggerExec("module", "install", "./dep"))
 
 			out, err := modGen.With(daggerQuery(`{testBool}`)).Stdout(ctx)
 			require.NoError(t, err)
@@ -1643,7 +1643,7 @@ func (m *Test) TestNull(ctx context.Context) (string, error) {
 
 			modGen := modInit(t, c, "go", src).
 				With(withModInitAt("./dep", "go", depSrc)).
-				With(daggerExec("install", "./dep"))
+				With(daggerExec("module", "install", "./dep"))
 
 			out, err := modGen.With(daggerQuery(`{testNull}`)).Stdout(ctx)
 			require.NoError(t, err)

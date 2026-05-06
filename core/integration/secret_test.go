@@ -212,7 +212,7 @@ func (SecretSuite) TestEmptySecretPlaintext(ctx context.Context, t *testctx.T) {
 	callMod := func(c *dagger.Client) (string, error) {
 		return goGitBase(t, c).
 			WithWorkdir("/work/secreter").
-			With(daggerExec("init", "--sdk=go", "--source=.", "secreter")).
+			With(daggerExec("module", "init", "--sdk=go", "--source=.", "secreter")).
 			WithNewFile("main.go", `package main
 
 import (
@@ -237,8 +237,8 @@ func (*Secreter) CheckEmptyPlaintext(ctx context.Context, s *dagger.Secret) erro
 `,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--sdk=go", "--source=.", "caller")).
-			With(daggerExec("install", "./secreter")).
+			With(daggerExec("module", "init", "--sdk=go", "--source=.", "caller")).
+			With(daggerExec("module", "install", "./secreter")).
 			WithNewFile("main.go", `package main
 
 import (
@@ -266,7 +266,7 @@ func (SecretSuite) TestSetSecretInModuleCaching(ctx context.Context, t *testctx.
 	callMod := func(c *dagger.Client) (string, error) {
 		return goGitBase(t, c).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--sdk=go", "--source=.", "test")).
+			With(daggerExec("module", "init", "--sdk=go", "--source=.", "test")).
 			WithNewFile("main.go", `package main
 
 import (
