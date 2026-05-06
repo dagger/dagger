@@ -234,7 +234,7 @@ func (WorkspaceCompatSuite) TestLegacyToolchainCompat(ctx context.Context, t *te
 
 		base := goGitBase(t, c).
 			WithWorkdir("/work/tool").
-			With(daggerModuleExec("init", "--sdk=go", "--name=probe", "--source=.")).
+			With(daggerExec("init", "--sdk=go", "--source=.", "probe")).
 			WithNewFile("main.go", `package main
 
 type Probe struct {
@@ -374,7 +374,7 @@ func (WorkspaceCompatSuite) TestCompatWarning(ctx context.Context, t *testctx.T)
 	blueprintDir := filepath.Join(workdir, "blueprint")
 	require.NoError(t, os.MkdirAll(blueprintDir, 0o755))
 
-	_, err := hostDaggerModuleExec(ctx, t, blueprintDir, "init", "--sdk=go", "--name=hello")
+	_, err := hostDaggerExec(ctx, t, blueprintDir, "init", "--sdk=go", "hello")
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(blueprintDir, "main.go"), []byte(`package main
 

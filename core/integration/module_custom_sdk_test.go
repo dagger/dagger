@@ -19,7 +19,7 @@ func (ModuleSuite) TestCustomSDK(ctx context.Context, t *testctx.T) {
 		ctr := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/coolsdk").
-			With(daggerExec("init", "--source=.", "--name=cool-sdk", "--sdk=go")).
+			With(daggerExec("init", "--source=.", "--sdk=go", "cool-sdk")).
 			WithNewFile("main.go", `package main
 
 import (
@@ -59,7 +59,7 @@ func (m *CoolSdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dag
 `,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=coolsdk")).
+			With(daggerExec("init", "--source=.", "--sdk=coolsdk", "test")).
 			WithNewFile("main.go", `package main
 
 import "os"
@@ -90,7 +90,7 @@ func (m *Test) Fn() string {
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				With(privateSetup).
 				WithWorkdir("/work").
-				With(daggerExec("init", "--source=.", "--name=test", "--sdk="+testGitModuleRef(tc, "cool-sdk"))).
+				With(daggerExec("init", "--source=.", "test", "--sdk="+testGitModuleRef(tc, "cool-sdk"))).
 				WithNewFile("main.go", `package main
 
 import "os"
@@ -121,7 +121,7 @@ func (m *Test) Fn() string {
 		ctr := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/coolsdk").
-			With(daggerExec("init", "--source=.", "--name=cool-sdk", "--sdk=go")).
+			With(daggerExec("init", "--source=.", "--sdk=go", "cool-sdk")).
 			WithNewFile("main.go", `package main
 
 import (
@@ -165,7 +165,7 @@ func (m *CoolSdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dag
 `,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=coolsdk")).
+			With(daggerExec("init", "--source=.", "--sdk=coolsdk", "test")).
 			WithNewFile("main.go", `package main
 
 type Test struct {}
@@ -191,7 +191,7 @@ func (ModuleSuite) TestUnbundleSDK(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithDirectory("/work/sdk", c.Host().Directory("./testdata/sdks/only-codegen")).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test", "--sdk=./sdk", "--source=."))
+			With(daggerExec("init", "--sdk=./sdk", "--source=.", "test"))
 
 		t.Run("can run dagger develop", func(ctx context.Context, t *testctx.T) {
 			generatedFile, err := ctr.With(daggerExec("develop")).File("/work/hello.txt").Contents(ctx)
@@ -220,7 +220,7 @@ func (ModuleSuite) TestUnbundleSDK(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithDirectory("/work/sdk", c.Host().Directory("./testdata/sdks/only-runtime")).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test", "--sdk=./sdk", "--source=."))
+			With(daggerExec("init", "--sdk=./sdk", "--source=.", "test"))
 
 		t.Run("can run dagger develop without failing", func(ctx context.Context, t *testctx.T) {
 			_, err := ctr.With(daggerExec("develop")).Sync(ctx)
