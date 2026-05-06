@@ -14,6 +14,7 @@ import (
 type workspaceInstallArgs struct {
 	Ref  string
 	Name string `default:""`
+	Here bool   `default:"false"`
 }
 
 func (s *workspaceSchema) install(
@@ -21,12 +22,12 @@ func (s *workspaceSchema) install(
 	parent *core.Workspace,
 	args workspaceInstallArgs,
 ) (dagql.String, error) {
-	name, sourcePath, err := s.resolveWorkspaceInstall(ctx, parent, args.Ref, args.Name)
+	name, sourcePath, err := s.resolveWorkspaceInstall(ctx, parent, args.Ref, args.Name, args.Here)
 	if err != nil {
 		return "", err
 	}
 
-	cfg, initialized, err := loadWorkspaceConfigForMutation(ctx, parent, workspaceConfigInitIfMissing)
+	cfg, initialized, err := loadWorkspaceConfigForMutation(ctx, parent, workspaceConfigInitIfMissing, args.Here)
 	if err != nil {
 		return "", err
 	}
@@ -58,7 +59,7 @@ func (s *workspaceSchema) install(
 
 	msg := fmt.Sprintf("Installed module %q in %s", name, cfgPath)
 	if initialized {
-		msg = fmt.Sprintf("Initialized workspace in %s\n%s", filepath.Dir(cfgPath), msg)
+		msg = fmt.Sprintf("Created workspace config in %s\n%s", filepath.Dir(cfgPath), msg)
 	}
 	return dagql.String(msg), nil
 }
@@ -68,6 +69,7 @@ func (s *workspaceSchema) resolveWorkspaceInstall(
 	ws *core.Workspace,
 	ref string,
 	name string,
+	here bool,
 ) (string, string, error) {
 	var err error
 	ctx, err = withWorkspaceClientContext(ctx, ws)
@@ -107,7 +109,8 @@ func (s *workspaceSchema) resolveWorkspaceInstall(
 		return "", "", fmt.Errorf("resolve local module source %q: missing local metadata", ref)
 	}
 
-	workspaceConfigPath, err := configHostPath(ws)
+	workspaceConfigDirRel := workspaceConfigDirectoryForWrite(ws, here)
+	workspaceConfigPath, err := workspaceHostPath(ws, workspaceConfigDirRel, workspace.ConfigFileName)
 	if err != nil {
 		return "", "", err
 	}

@@ -121,7 +121,7 @@ func probeMigratableModuleConfig(dir string) (*migrationTarget, string, error) {
 	workspaceConfigPath := filepath.Join(dir, workspacecfg.LockDirName, workspacecfg.ConfigFileName)
 	switch _, err := os.Stat(workspaceConfigPath); {
 	case err == nil:
-		return nil, "No migration needed: workspace already initialized.", nil
+		return nil, "No migration needed: workspace config already exists.", nil
 	case !os.IsNotExist(err):
 		return nil, "", fmt.Errorf("checking %s: %w", workspaceConfigPath, err)
 	}

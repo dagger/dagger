@@ -186,20 +186,33 @@ func TestSelectVisibleGeneratorModules(t *testing.T) {
 }
 
 func TestResolveWorkspacePath(t *testing.T) {
-	t.Run("relative path resolves from workspace directory", func(t *testing.T) {
-		require.Equal(t, "services/payment/src", resolveWorkspacePath("src", "services/payment"))
+	t.Run("relative path resolves from workspace cwd", func(t *testing.T) {
+		got, err := resolveWorkspacePath("src", "services/payment")
+		require.NoError(t, err)
+		require.Equal(t, "services/payment/src", got)
 	})
 
-	t.Run("dot resolves to workspace directory", func(t *testing.T) {
-		require.Equal(t, "services/payment", resolveWorkspacePath(".", "services/payment"))
+	t.Run("dot resolves to workspace cwd", func(t *testing.T) {
+		got, err := resolveWorkspacePath(".", "services/payment")
+		require.NoError(t, err)
+		require.Equal(t, "services/payment", got)
 	})
 
-	t.Run("absolute path resolves from workspace boundary", func(t *testing.T) {
-		require.Equal(t, "shared/config", resolveWorkspacePath("/shared/config", "services/payment"))
+	t.Run("absolute path resolves from workspace root", func(t *testing.T) {
+		got, err := resolveWorkspacePath("/shared/config", "services/payment")
+		require.NoError(t, err)
+		require.Equal(t, "shared/config", got)
 	})
 
-	t.Run("root absolute path resolves to boundary root", func(t *testing.T) {
-		require.Equal(t, "", resolveWorkspacePath("/", "services/payment"))
+	t.Run("root absolute path resolves to workspace root", func(t *testing.T) {
+		got, err := resolveWorkspacePath("/", "services/payment")
+		require.NoError(t, err)
+		require.Equal(t, ".", got)
+	})
+
+	t.Run("relative path cannot escape workspace root", func(t *testing.T) {
+		_, err := resolveWorkspacePath("../..", "services/payment")
+		require.ErrorContains(t, err, "escapes workspace root")
 	})
 }
 
