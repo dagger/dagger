@@ -124,7 +124,11 @@ func resolveLookupFromLock(
 }
 
 func lockHostPath(ws *core.Workspace) (string, error) {
-	return workspaceHostPath(ws, workspace.LockDirName, workspace.LockFileName)
+	configDir, err := workspaceConfigDirectory(ws)
+	if err != nil {
+		return "", err
+	}
+	return workspaceHostPath(ws, configDir, workspace.LockFileName)
 }
 
 func readWorkspaceLock(ctx context.Context, bk interface {
