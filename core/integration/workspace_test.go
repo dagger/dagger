@@ -105,6 +105,50 @@ func initHostDangBlueprint(ctx context.Context, t testing.TB, workdir, name, sou
 	require.NoError(t, err)
 }
 
+// TestSingleQueryWorkspaceModuleLoadingSkipsUnreferencedBrokenModules locks in
+// the user-visible behavior behind the SingleQuery optimization. A single raw
+// GraphQL query that names one workspace module should only load that module;
+// unrelated workspace modules must not be loaded eagerly just because they are
+// present in the workspace config.
+func (WorkspaceSuite) TestSingleQueryWorkspaceModuleLoadingSkipsUnreferencedBrokenModules(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		WithNewFile(".dagger/config.toml", `[modules.good]
+source = "modules/good"
+
+[modules.bad]
+source = "modules/bad"
+`).
+		With(moduleLoadingDangModule(".dagger/modules/good", "good", "Good", "ping", "healthy module loaded")).
+		WithNewFile(".dagger/modules/bad/dagger.json", `{"name":"bad","sdk":{"source":"dang"}}`).
+		WithNewFile(".dagger/modules/bad/main.dang", `
+type Bad {
+  pub broken: String! {
+    this is intentionally invalid dang source
+  }
+}
+`)
+
+	t.Run("query naming only the healthy module succeeds", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerQuery(`{ good { ping } }`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"good":{"ping":"healthy module loaded"}}`, out)
+	})
+
+	t.Run("full schema query still loads every workspace module", func(ctx context.Context, t *testctx.T) {
+		fullSchema := base.WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{
+			Stdin:                         `{ __schema { queryType { name } } }`,
+			ExperimentalPrivilegedNesting: true,
+			Expect:                        dagger.ReturnTypeFailure,
+		})
+
+		errOut, err := fullSchema.Stderr(ctx)
+		require.NoError(t, err)
+		require.Contains(t, errOut, "bad")
+	})
+}
+
 // TestEntrypointWithFieldHidden verifies that the synthetic `with` field
 // installed on Query for entrypoint constructors with arguments is hidden
 // from user-facing CLI listings (`dagger functions`, `dagger call --help`)

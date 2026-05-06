@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	telemetry "github.com/dagger/otel-go"
+	"github.com/iancoleman/strcase"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -930,6 +931,155 @@ func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient
 
 	client.modulesLoaded = true
 	return nil
+}
+
+func (client *daggerClient) narrowPendingWorkspaceModulesForSingleQuery(rootFields []string) {
+	client.modulesMu.Lock()
+	defer client.modulesMu.Unlock()
+
+	if client.modulesLoaded || len(client.pendingModules) == 0 {
+		return
+	}
+	client.pendingModules = filterPendingWorkspaceModulesForRootFields(client.pendingModules, rootFields)
+}
+
+func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, rootFields []string) []pendingModule {
+	if len(mods) == 0 || rootFieldsRequireFullWorkspaceSchema(rootFields) {
+		return mods
+	}
+
+	selected := make([]bool, len(mods))
+	unknownRootField := false
+	for _, field := range rootFields {
+		if isCoreRootField(field) {
+			continue
+		}
+		matched := false
+		for i, mod := range mods {
+			if pendingModuleRootFieldName(mod) == field {
+				selected[i] = true
+				matched = true
+			}
+		}
+		if !matched {
+			unknownRootField = true
+		}
+	}
+
+	if unknownRootField {
+		entrypoints := pendingWorkspaceEntrypointIndexes(mods)
+		switch len(entrypoints) {
+		case 0:
+			// Leave the field unresolved; GraphQL validation will report the real error.
+		case 1:
+			selected[entrypoints[0]] = true
+		default:
+			// More than one possible entrypoint could serve the field. Preserve the
+			// existing behavior, including any conflict error from arbitration.
+			return mods
+		}
+	}
+
+	filtered := make([]pendingModule, 0, len(mods))
+	for i, mod := range mods {
+		if selected[i] {
+			filtered = append(filtered, mod)
+		}
+	}
+	return filtered
+}
+
+func rootFieldsRequireFullWorkspaceSchema(fields []string) bool {
+	for _, field := range fields {
+		switch field {
+		case "__schema",
+			"__type",
+			"__schemaJSONFile",
+			"__workspaceModule",
+			"currentEnv",
+			"currentModule",
+			"currentTypeDefs",
+			"currentWorkspace":
+			return true
+		}
+	}
+	return false
+}
+
+func pendingWorkspaceEntrypointIndexes(mods []pendingModule) []int {
+	var indexes []int
+	for i, mod := range mods {
+		if mod.Entrypoint {
+			indexes = append(indexes, i)
+		}
+	}
+	return indexes
+}
+
+func pendingModuleRootFieldName(mod pendingModule) string {
+	if mod.Name != "" {
+		return strcase.ToLowerCamel(mod.Name)
+	}
+	return strcase.ToLowerCamel(moduleProgressName(mod))
+}
+
+func isCoreRootField(field string) bool {
+	switch field {
+	case "__typename",
+		"__schemaJSONFile",
+		"__loadInputTypeDef",
+		"__function",
+		"__functionArg",
+		"__functionArgExact",
+		"__fieldTypeDef",
+		"__fieldTypeDefExact",
+		"__enumMemberTypeDef",
+		"__enumValueTypeDef",
+		"__listTypeDef",
+		"__objectTypeDef",
+		"__interfaceTypeDef",
+		"__inputTypeDef",
+		"__scalarTypeDef",
+		"__enumTypeDef",
+		"__workspaceModule",
+		"_builtinContainer",
+		"_clientFilesyncMirror",
+		"_httpState",
+		"_remoteGitMirror",
+		"address",
+		"cacheVolume",
+		"changeset",
+		"cloud",
+		"container",
+		"currentEnv",
+		"currentFunctionCall",
+		"currentModule",
+		"defaultPlatform",
+		"directory",
+		"engine",
+		"env",
+		"envFile",
+		"error",
+		"file",
+		"function",
+		"generatedCode",
+		"git",
+		"host",
+		"http",
+		"json",
+		"llm",
+		"module",
+		"moduleSource",
+		"pipeline",
+		"secret",
+		"setSecret",
+		"sourceMap",
+		"typeDef",
+		"version":
+		return true
+	default:
+		return false
+	}
 }
 
 func (srv *Server) resolveModuleLoad(

@@ -209,6 +209,8 @@ type daggerClient struct {
 	modulesMu           sync.Mutex
 	modulesLoaded       bool
 	modulesErr          error
+	singleQueryMu       sync.Mutex
+	singleQueryServed   bool
 
 	// NOTE: do not use this field directly as it may not be open
 	// after the client has shutdown; use TelemetryDB() instead
@@ -923,6 +925,9 @@ func (srv *Server) getOrInitClient(
 				return nil, nil, fmt.Errorf("client %q already exists with different host service proxy client %q", clientID, client.hostServiceProxyClientID)
 			}
 		}
+		if opts.SingleQuery {
+			client.clientMetadata.SingleQuery = true
+		}
 		if opts.SuppressCompatWorkspaceWarning {
 			client.clientMetadata.SuppressCompatWorkspaceWarning = true
 		}
@@ -1079,6 +1084,7 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 
 	var extraModules []engine.ExtraModule
 	var loadWorkspaceModules bool
+	var singleQuery bool
 	var eagerRuntime bool
 	var suppressCompatWorkspaceWarning bool
 	var workspaceRef *string
@@ -1088,6 +1094,7 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 		clientMetadata.AllowedLLMModules = slices.Clone(md.AllowedLLMModules)
 		extraModules = md.ExtraModules
 		loadWorkspaceModules = md.LoadWorkspaceModules
+		singleQuery = md.SingleQuery
 		eagerRuntime = md.EagerRuntime
 		suppressCompatWorkspaceWarning = md.SuppressCompatWorkspaceWarning
 		if declaredWorkspace, ok := workspaceRefFromClientMetadata(md); ok {
@@ -1105,6 +1112,7 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 
 	clientMetadata.ExtraModules = extraModules
 	clientMetadata.LoadWorkspaceModules = loadWorkspaceModules
+	clientMetadata.SingleQuery = singleQuery
 	clientMetadata.EagerRuntime = eagerRuntime
 	clientMetadata.SuppressCompatWorkspaceWarning = suppressCompatWorkspaceWarning
 	clientMetadata.Workspace = workspaceRef
@@ -1358,9 +1366,19 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	r = r.WithContext(ctx)
 
 	if client.hostServiceProxyClientID == "" {
+		x
 		if _, err := client.getClientCaller(ctx, client.clientID); err != nil {
 			return gqlErr(fmt.Errorf("waiting for client session attachables: %w", err), http.StatusInternalServerError)
 		}
+	}
+
+	if err := client.claimSingleQueryRequest(); err != nil {
+		return gqlErr(err, http.StatusBadRequest)
+	}
+
+	peekRootFieldsOK, peekRootFields, err := peekSingleQueryRootFields(r, client.clientMetadata)
+	if err != nil {
+		return gqlErr(fmt.Errorf("peeking single-query root fields: %w", err), http.StatusBadRequest)
 	}
 
 	// Load workspace modules and extra modules (e.g. from -m flag). These are
@@ -1369,6 +1387,9 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	// attachables handshake completes (after init locks are released).
 	if err := srv.ensureWorkspaceLoaded(ctx, client); err != nil {
 		return gqlErr(fmt.Errorf("loading workspace: %w", err), http.StatusInternalServerError)
+	}
+	if peekRootFieldsOK {
+		client.narrowPendingWorkspaceModulesForSingleQuery(peekRootFields)
 	}
 	if err := srv.ensureModulesLoaded(ctx, client); err != nil {
 		return gqlErr(fmt.Errorf("loading modules: %w", err), http.StatusInternalServerError)
@@ -1391,6 +1412,27 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 
 	gqlSrv.ServeHTTP(w, r)
 	return nil
+}
+
+func (client *daggerClient) claimSingleQueryRequest() error {
+	if client.clientMetadata == nil || !client.clientMetadata.SingleQuery {
+		return nil
+	}
+
+	client.singleQueryMu.Lock()
+	defer client.singleQueryMu.Unlock()
+	if client.singleQueryServed {
+		return errors.New("client declared single_query but sent multiple GraphQL requests")
+	}
+	client.singleQueryServed = true
+	return nil
+}
+
+func peekSingleQueryRootFields(r *http.Request, clientMD *engine.ClientMetadata) (bool, []string, error) {
+	if clientMD == nil || !clientMD.SingleQuery || !clientMD.LoadWorkspaceModules || clientMD.SkipWorkspaceModules {
+		return false, nil, nil
+	}
+	return dagql.PeekRootFields(r)
 }
 
 func (srv *Server) serveInit(w http.ResponseWriter, _ *http.Request, client *daggerClient) (rerr error) {
