@@ -62,7 +62,7 @@ func (ModuleSuite) TestModuleSchemaVersion(ctx context.Context, t *testctx.T) {
 		work := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=foo", "--sdk=go", "--source=.")).
+			With(daggerExec("init", "--sdk=go", "--source=.", "foo")).
 			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.11.0"}`).
 			WithNewFile("main.go", `package main
 
@@ -108,7 +108,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 		work := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
-			With(daggerExec("init", "--name=dep", "--sdk=go", "--source=.")).
+			With(daggerExec("init", "--sdk=go", "--source=.", "dep")).
 			WithNewFile("dagger.json", `{"name": "dep", "sdk": "go", "source": ".", "engineVersion": "v0.11.0"}`).
 			WithNewFile("main.go", `package main
 
@@ -136,7 +136,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 `,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=foo", "--sdk=go", "--source=.")).
+			With(daggerExec("init", "--sdk=go", "--source=.", "foo")).
 			With(daggerExec("install", "./dep")).
 			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.10.0", "dependencies": [{"name": "dep", "source": "dep"}]}`).
 			WithNewFile("main.go", `package main

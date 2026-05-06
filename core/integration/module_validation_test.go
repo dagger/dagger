@@ -152,9 +152,9 @@ func (ModuleSuite) TestLoops(ctx context.Context, t *testctx.T) {
 
 	_, err := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		With(daggerExec("init", "--name=depA", "--sdk=go", "depA")).
-		With(daggerExec("init", "--name=depB", "--sdk=go", "depB")).
-		With(daggerExec("init", "--name=depC", "--sdk=go", "depC")).
+		With(daggerExec("init", "--sdk=go", "depA", "depA")).
+		With(daggerExec("init", "--sdk=go", "depB", "depB")).
+		With(daggerExec("init", "--sdk=go", "depC", "depC")).
 		With(daggerExec("install", "-m=depC", "./depB")).
 		With(daggerExec("install", "-m=depB", "./depA")).
 		With(daggerExec("install", "-m=depA", "./depC")).
@@ -242,7 +242,7 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 					_, err := c.Container().From(golangImage).
 						WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 						WithWorkdir("/work").
-						With(daggerExec("init", "--name=test", "--sdk="+tc.sdk)).
+						With(daggerExec("init", "test", "--sdk="+tc.sdk)).
 						With(sdkSource(tc.sdk, tc.source)).
 						With(daggerQuery(`{fn{id}}`)).
 						Sync(ctx)
@@ -273,7 +273,7 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 					_, err := c.Container().From(golangImage).
 						WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 						WithWorkdir("/work").
-						With(daggerExec("init", "--name=test", "--sdk="+tc.sdk)).
+						With(daggerExec("init", "test", "--sdk="+tc.sdk)).
 						With(sdkSource(tc.sdk, tc.source)).
 						With(daggerQuery(`{id}`)).
 						Sync(ctx)

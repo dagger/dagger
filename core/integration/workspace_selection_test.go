@@ -429,7 +429,7 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceBindingPropagation(ctx conte
 			With(workspaceSelectionEnvWorkspace("/work/ambient", "ambient-base", "ambient-ci")).
 			WithWorkdir("/work/selected").
 			With(workspaceSelectionDaggerExec("workspace", "init")).
-			With(workspaceSelectionDaggerExec("module", "init", "--sdk=go", "--name=nester")).
+			With(workspaceSelectionDaggerExec("module", "init", "--sdk=go", "nester")).
 			WithNewFile("/work/selected/.dagger/modules/nester/main.go", workspaceSelectionNestedModuleSource()).
 			WithNewFile("/work/selected/.dagger/config.toml", `[modules.nester]
 source = "modules/nester"
@@ -455,7 +455,7 @@ greeting = "selected-ci"
 			With(workspaceSelectionEnvWorkspace("/work/ambient", "ambient-base", "ambient-ci")).
 			WithWorkdir("/work/selected").
 			With(workspaceSelectionDaggerExec("workspace", "init")).
-			With(workspaceSelectionDaggerExec("module", "init", "--sdk=go", "--name=nester")).
+			With(workspaceSelectionDaggerExec("module", "init", "--sdk=go", "nester")).
 			WithNewFile("/work/selected/.dagger/modules/nester/main.go", workspaceSelectionNestedModuleSource()).
 			WithNewFile("/work/selected/.dagger/config.toml", `[modules.nester]
 source = "modules/nester"
