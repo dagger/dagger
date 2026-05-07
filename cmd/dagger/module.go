@@ -259,7 +259,7 @@ var moduleInitCmd = &cobra.Command{
 This creates a dagger.json file at the specified directory, making it the root of the new module.
 
 If no path is provided, the module is created inside the selected workspace
-config directory's `modules/<name>/` and automatically installed in config.toml.
+config directory's "modules/<name>/" and automatically installed in config.toml.
 When no workspace config is selected yet, one is created at the workspace root.
 Use --here to create it at the workspace cwd instead, or use an explicit path to
 create a standalone module.
