@@ -209,7 +209,7 @@ func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run f
 		runErr = errors.Join(runErr, cleanup())
 	}
 
-	fe.finalRender()
+	fe.finalRender(runErr)
 
 	fe.db.WriteDot(opts.DotOutputFilePath, opts.DotFocusField, opts.DotShowInternal)
 
@@ -429,7 +429,7 @@ func (fe *frontendPlain) render() {
 	fe.mu.Unlock()
 }
 
-func (fe *frontendPlain) finalRender() {
+func (fe *frontendPlain) finalRender(runErr error) {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 
@@ -443,6 +443,7 @@ func (fe *frontendPlain) finalRender() {
 		// if we rendered anything, leave a newline
 		fmt.Fprintln(stderr)
 	}
+	fe.renderRootErrorCauses(runErr)
 
 	var telemetryErr error
 	if p := fe.telemetryError.Load(); p != nil {
@@ -454,6 +455,82 @@ func (fe *frontendPlain) finalRender() {
 		fmt.Fprintln(stderr, "\n"+fe.msgPreFinalRender.String()+"\n")
 	}
 	renderPrimaryOutput(stderr, fe.db)
+}
+
+// renderRootErrorCauses prints root-cause spans referenced by the final error
+// when normal tree rendering did not already show them. This keeps failures from
+// lazy work visible without broadly marking successful install-site spans failed.
+func (fe *frontendPlain) renderRootErrorCauses(err error) {
+	if err == nil {
+		return
+	}
+	origins := telemetry.ParseErrorOrigins(err.Error())
+	if len(origins) == 0 {
+		return
+	}
+
+	for _, origin := range origins {
+		if !origin.IsValid() {
+			continue
+		}
+		spanID := dagui.SpanID{SpanID: origin.SpanID()}
+		span := fe.db.Spans.Map[spanID]
+		if span == nil {
+			continue
+		}
+		spanDt := fe.data[spanID]
+		if spanDt != nil && spanDt.ended {
+			continue
+		}
+		fe.renderRootErrorCause(span)
+	}
+}
+
+func (fe *frontendPlain) renderRootErrorCause(cause *dagui.Span) {
+	var chain []*dagui.Span
+	for cur := cause; cur != nil; {
+		chain = append(chain, cur)
+		if !cur.ParentID.IsValid() {
+			break
+		}
+		cur = fe.db.Spans.Map[cur.ParentID]
+	}
+	slices.Reverse(chain)
+	chain = slices.DeleteFunc(chain, func(span *dagui.Span) bool {
+		return span != cause && span.Call() == nil && span.Name == ""
+	})
+	if len(chain) == 0 {
+		return
+	}
+
+	fmt.Fprintln(fe.output)
+	for depth, span := range chain[:len(chain)-1] {
+		spanDt := fe.data[span.ID]
+		if spanDt == nil {
+			spanDt = &spanData{ready: true}
+			fe.data[span.ID] = spanDt
+		}
+		if !spanDt.started {
+			fe.renderStep(span, depth, false)
+			spanDt.started = true
+		}
+	}
+
+	depth := len(chain) - 1
+	spanDt := fe.data[cause.ID]
+	if spanDt == nil {
+		spanDt = &spanData{ready: true}
+		fe.data[cause.ID] = spanDt
+	}
+	if !spanDt.started {
+		fe.renderStep(cause, depth, false)
+		spanDt.started = true
+	}
+	fe.renderLogs(&dagui.TraceTree{Span: cause}, depth)
+	if !spanDt.ended {
+		fe.renderStep(cause, depth, true)
+		spanDt.ended = true
+	}
 }
 
 func (fe *frontendPlain) renderProgress() {
