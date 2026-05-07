@@ -10,32 +10,43 @@ import (
 	"github.com/dagger/dagger/dagql"
 )
 
+type workspaceModuleListArgs struct {
+	Module string `default:""`
+}
+
 func (s *workspaceSchema) moduleList(
 	ctx context.Context,
-	parent *core.Workspace,
-	_ struct{},
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceModuleListArgs,
 ) (dagql.ObjectResultArray[*core.WorkspaceModule], error) {
-	if parent.ConfigFile == "" {
+	ws := parent.Self()
+	if ws.ConfigFile == "" {
 		return nil, nil
 	}
 
-	cfg, err := readWorkspaceConfig(ctx, parent)
+	cfg, err := readWorkspaceConfig(ctx, ws)
 	if err != nil {
 		return nil, err
 	}
 
-	configDir, err := workspaceConfigDirectory(parent)
+	configDir, err := workspaceConfigDirectory(ws)
 	if err != nil {
 		return nil, err
 	}
 	modules := make(core.WorkspaceModules, 0, len(cfg.Modules))
 	for name, entry := range cfg.Modules {
+		if args.Module != "" && name != args.Module {
+			continue
+		}
 		source := filepath.ToSlash(workspace.ResolveModuleEntrySource(configDir, entry.Source))
 		modules = append(modules, &core.WorkspaceModule{
 			Name:       name,
 			Entrypoint: entry.Entrypoint,
 			Source:     source,
 		})
+	}
+	if args.Module != "" && len(modules) == 0 {
+		return nil, fmt.Errorf("module %q is not installed in the workspace", args.Module)
 	}
 	modules.Sort()
 
@@ -46,7 +57,7 @@ func (s *workspaceSchema) moduleList(
 	}
 	for _, module := range modules {
 		var result dagql.ObjectResult[*core.WorkspaceModule]
-		if err := dag.Select(ctx, dag.Root(), &result, dagql.Selector{
+		if err := dag.Select(ctx, parent, &result, dagql.Selector{
 			Field: "__workspaceModule",
 			Args: []dagql.NamedInput{
 				{Name: "name", Value: dagql.String(module.Name)},
@@ -63,7 +74,7 @@ func (s *workspaceSchema) moduleList(
 
 func (s *workspaceSchema) workspaceModule(
 	ctx context.Context,
-	parent *core.Query,
+	parent *core.Workspace,
 	args struct {
 		Name       string
 		Entrypoint bool
