@@ -286,7 +286,7 @@ type Changeset {
   """
   withChangeset(
     """Changes to merge into the actual changeset"""
-    changes: ID!
+    changes: ID! @expectedType(name: "Changeset")
 
     """What to do on a merge conflict"""
     onConflict: ChangesetMergeConflict = FAIL
@@ -301,7 +301,7 @@ type Changeset {
   """
   withChangesets(
     """List of changesets to merge into the actual changeset"""
-    changes: [ID!]!
+    changes: [ID!]! @expectedType(name: "Changeset")
 
     """What to do on a merge conflict"""
     onConflict: ChangesetsMergeConflict = FAIL
@@ -470,7 +470,7 @@ type Container {
 
     Used for multi-platform images.
     """
-    platformVariants: [ID!] = []
+    platformVariants: [ID!] = [] @expectedType(name: "Container")
 
     """
     Force each layer of the image to use the specified compression algorithm.
@@ -593,7 +593,7 @@ type Container {
 
     Used for multi-platform image.
     """
-    platformVariants: [ID!] = []
+    platformVariants: [ID!] = [] @expectedType(name: "Container")
 
     """
     Force each layer of the exported image to use the specified compression algorithm.
@@ -631,7 +631,7 @@ type Container {
 
     Used for multi-platform image.
     """
-    platformVariants: [ID!] = []
+    platformVariants: [ID!] = [] @expectedType(name: "Container")
 
     """
     Force each layer of the exported image to use the specified compression algorithm.
@@ -697,7 +697,7 @@ type Container {
   """Reads the container from an OCI tarball."""
   import(
     """File to read the container from."""
-    source: ID!
+    source: ID! @expectedType(name: "File")
 
     """
     Identifies the tag to import from the archive, if the archive bundles multiple tags.
@@ -738,7 +738,7 @@ type Container {
 
     Used for multi-platform image.
     """
-    platformVariants: [ID!] = []
+    platformVariants: [ID!] = [] @expectedType(name: "Container")
 
     """
     Force each layer of the published image to use the specified compression algorithm.
@@ -922,7 +922,7 @@ type Container {
     path: String!
 
     """Identifier of the directory to write"""
-    source: ID!
+    source: ID! @expectedType(name: "Directory")
 
     """
     Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
@@ -1012,7 +1012,7 @@ type Container {
   """Export environment variables from an env-file to the container."""
   withEnvFileVariables(
     """Identifier of the envfile"""
-    source: ID!
+    source: ID! @expectedType(name: "EnvFile")
   ): Container!
 
   """Set a new environment variable in the container."""
@@ -1141,7 +1141,7 @@ type Container {
     path: String!
 
     """File to add"""
-    source: ID!
+    source: ID! @expectedType(name: "File")
 
     """Permissions of the new file. Example: 0600"""
     permissions: Int
@@ -1170,7 +1170,7 @@ type Container {
     path: String!
 
     """Identifiers of the files to copy."""
-    sources: [ID!]!
+    sources: [ID!]! @expectedType(name: "File")
 
     """Permission given to the copied files (e.g., 0600)."""
     permissions: Int
@@ -1208,10 +1208,10 @@ type Container {
     path: String!
 
     """Identifier of the cache volume to mount."""
-    cache: ID!
+    cache: ID! @expectedType(name: "CacheVolume")
 
     """Identifier of the directory to use as the cache volume's root."""
-    source: ID
+    source: ID @expectedType(name: "Directory")
 
     """Sharing mode of the cache volume."""
     sharing: CacheSharingMode = SHARED
@@ -1242,7 +1242,7 @@ type Container {
     path: String!
 
     """Identifier of the mounted directory."""
-    source: ID!
+    source: ID! @expectedType(name: "Directory")
 
     """
     A user:group to set for the mounted directory and its contents.
@@ -1269,7 +1269,7 @@ type Container {
     path: String!
 
     """Identifier of the mounted file."""
-    source: ID!
+    source: ID! @expectedType(name: "File")
 
     """
     A user or user:group to set for the mounted file.
@@ -1295,7 +1295,7 @@ type Container {
     path: String!
 
     """Identifier of the secret to mount."""
-    source: ID!
+    source: ID! @expectedType(name: "Secret")
 
     """
     A user:group to set for the mounted secret.
@@ -1387,7 +1387,7 @@ type Container {
     username: String!
 
     """The API key, password or token to authenticate to this registry"""
-    secret: ID!
+    secret: ID! @expectedType(name: "Secret")
   ): Container!
 
   """
@@ -1395,7 +1395,7 @@ type Container {
   """
   withRootfs(
     """The new root filesystem."""
-    directory: ID!
+    directory: ID! @expectedType(name: "Directory")
   ): Container!
 
   """Set a new environment variable, using a secret value"""
@@ -1404,7 +1404,7 @@ type Container {
     name: String!
 
     """Identifier of the secret value."""
-    secret: ID!
+    secret: ID! @expectedType(name: "Secret")
   ): Container!
 
   """
@@ -1424,7 +1424,7 @@ type Container {
     alias: String!
 
     """The target service"""
-    service: ID!
+    service: ID! @expectedType(name: "Service")
   ): Container!
 
   """Return a snapshot with a symlink"""
@@ -1452,7 +1452,7 @@ type Container {
     path: String!
 
     """Identifier of the socket to forward."""
-    source: ID!
+    source: ID! @expectedType(name: "Socket")
 
     """
     A user:group to set for the mounted socket.
@@ -1764,7 +1764,7 @@ type Directory {
   """
   changes(
     """The base directory snapshot to compare against"""
-    from: ID!
+    from: ID! @expectedType(name: "Directory")
   ): Changeset!
 
   """Change the owner of the directory contents recursively."""
@@ -1787,7 +1787,7 @@ type Directory {
   """
   diff(
     """The directory to compare against"""
-    other: ID!
+    other: ID! @expectedType(name: "Directory")
   ): Directory!
 
   """
@@ -1829,7 +1829,7 @@ type Directory {
 
     They will be mounted at /run/secrets/[secret-name].
     """
-    secrets: [ID!] = []
+    secrets: [ID!] = [] @expectedType(name: "Secret")
 
     """
     If set, skip the automatic init process injected into containers created by RUN statements.
@@ -1847,7 +1847,7 @@ type Directory {
 
     Typically obtained via host.unixSocket() pointing to the SSH_AUTH_SOCK.
     """
-    ssh: ID
+    ssh: ID @expectedType(name: "Socket")
   ): Container!
 
   """Returns a list of files and directories at the given path."""
@@ -1992,7 +1992,7 @@ type Directory {
   """
   terminal(
     """If set, override the default container used for the terminal."""
-    container: ID
+    container: ID @expectedType(name: "Container")
 
     """
     If set, override the container's default terminal command and invoke these command arguments instead.
@@ -2015,7 +2015,7 @@ type Directory {
   """Return a directory with changes from another directory applied to it."""
   withChanges(
     """Changes to apply to the directory"""
-    changes: ID!
+    changes: ID! @expectedType(name: "Changeset")
   ): Directory!
 
   """Return a snapshot with a directory added"""
@@ -2024,7 +2024,7 @@ type Directory {
     path: String!
 
     """Identifier of the directory to copy."""
-    source: ID!
+    source: ID! @expectedType(name: "Directory")
 
     """
     Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
@@ -2066,7 +2066,7 @@ type Directory {
     path: String!
 
     """Identifier of the file to copy."""
-    source: ID!
+    source: ID! @expectedType(name: "File")
 
     """Permission given to the copied file (e.g., 0600)."""
     permissions: Int
@@ -2089,7 +2089,7 @@ type Directory {
     path: String!
 
     """Identifiers of the files to copy."""
-    sources: [ID!]!
+    sources: [ID!]! @expectedType(name: "File")
 
     """Permission given to the copied files (e.g., 0600)."""
     permissions: Int
@@ -2137,7 +2137,7 @@ type Directory {
   """
   withPatchFile(
     """File containing the patch to apply"""
-    patch: ID!
+    patch: ID! @expectedType(name: "File")
   ): Directory! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
   """Return a snapshot with a symlink"""
@@ -2385,7 +2385,7 @@ type Env {
     name: String!
 
     """The Address value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "Address")
 
     """The purpose of the input"""
     description: String!
@@ -2406,7 +2406,7 @@ type Env {
     name: String!
 
     """The CacheVolume value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "CacheVolume")
 
     """The purpose of the input"""
     description: String!
@@ -2427,7 +2427,7 @@ type Env {
     name: String!
 
     """The Changeset value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "Changeset")
 
     """The purpose of the input"""
     description: String!
@@ -2448,7 +2448,7 @@ type Env {
     name: String!
 
     """The CheckGroup value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "CheckGroup")
 
     """The purpose of the input"""
     description: String!
@@ -2469,7 +2469,7 @@ type Env {
     name: String!
 
     """The Check value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "Check")
 
     """The purpose of the input"""
     description: String!
@@ -2490,7 +2490,7 @@ type Env {
     name: String!
 
     """The Cloud value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "Cloud")
 
     """The purpose of the input"""
     description: String!
@@ -2511,7 +2511,7 @@ type Env {
     name: String!
 
     """The Container value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "Container")
 
     """The purpose of the input"""
     description: String!
@@ -2539,7 +2539,7 @@ type Env {
     name: String!
 
     """The DiffStat value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "DiffStat")
 
     """The purpose of the input"""
     description: String!
@@ -2560,7 +2560,7 @@ type Env {
     name: String!
 
     """The Directory value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "Directory")
 
     """The purpose of the input"""
     description: String!
@@ -2581,7 +2581,7 @@ type Env {
     name: String!
 
     """The EnvFile value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "EnvFile")
 
     """The purpose of the input"""
     description: String!
@@ -2602,7 +2602,7 @@ type Env {
     name: String!
 
     """The Env value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "Env")
 
     """The purpose of the input"""
     description: String!
@@ -2623,7 +2623,7 @@ type Env {
     name: String!
 
     """The File value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "File")
 
     """The purpose of the input"""
     description: String!
@@ -2644,7 +2644,7 @@ type Env {
     name: String!
 
     """The GeneratorGroup value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "GeneratorGroup")
 
     """The purpose of the input"""
     description: String!
@@ -2667,7 +2667,7 @@ type Env {
     name: String!
 
     """The Generator value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "Generator")
 
     """The purpose of the input"""
     description: String!
@@ -2688,7 +2688,7 @@ type Env {
     name: String!
 
     """The GitRef value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "GitRef")
 
     """The purpose of the input"""
     description: String!
@@ -2709,7 +2709,7 @@ type Env {
     name: String!
 
     """The GitRepository value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "GitRepository")
 
     """The purpose of the input"""
     description: String!
@@ -2732,7 +2732,7 @@ type Env {
     name: String!
 
     """The HTTPState value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "HTTPState")
 
     """The purpose of the input"""
     description: String!
@@ -2753,7 +2753,7 @@ type Env {
     name: String!
 
     """The JSONValue value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "JSONValue")
 
     """The purpose of the input"""
     description: String!
@@ -2773,14 +2773,14 @@ type Env {
 
   Contextual path arguments will be populated using the environment's workspace.
   """
-  withMainModule(module: ID!): Env!
+  withMainModule(module: ID! @expectedType(name: "Module")): Env!
 
   """
   Installs a module into the environment, exposing its functions to the model
 
   Contextual path arguments will be populated using the environment's workspace.
   """
-  withModule(module: ID!): Env! @deprecated(reason: "Use withMainModule instead")
+  withModule(module: ID! @expectedType(name: "Module")): Env! @deprecated(reason: "Use withMainModule instead")
 
   """
   Create or update a binding of type ModuleConfigClient in the environment
@@ -2790,7 +2790,7 @@ type Env {
     name: String!
 
     """The ModuleConfigClient value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "ModuleConfigClient")
 
     """The purpose of the input"""
     description: String!
@@ -2813,7 +2813,7 @@ type Env {
     name: String!
 
     """The Module value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "Module")
 
     """The purpose of the input"""
     description: String!
@@ -2834,7 +2834,7 @@ type Env {
     name: String!
 
     """The ModuleSource value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "ModuleSource")
 
     """The purpose of the input"""
     description: String!
@@ -2857,7 +2857,7 @@ type Env {
     name: String!
 
     """The SearchResult value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "SearchResult")
 
     """The purpose of the input"""
     description: String!
@@ -2880,7 +2880,7 @@ type Env {
     name: String!
 
     """The SearchSubmatch value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "SearchSubmatch")
 
     """The purpose of the input"""
     description: String!
@@ -2903,7 +2903,7 @@ type Env {
     name: String!
 
     """The Secret value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "Secret")
 
     """The purpose of the input"""
     description: String!
@@ -2924,7 +2924,7 @@ type Env {
     name: String!
 
     """The Service value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "Service")
 
     """The purpose of the input"""
     description: String!
@@ -2945,7 +2945,7 @@ type Env {
     name: String!
 
     """The Socket value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "Socket")
 
     """The purpose of the input"""
     description: String!
@@ -2966,7 +2966,7 @@ type Env {
     name: String!
 
     """The Stat value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "Stat")
 
     """The purpose of the input"""
     description: String!
@@ -3008,7 +3008,7 @@ type Env {
     name: String!
 
     """The UpGroup value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "UpGroup")
 
     """The purpose of the input"""
     description: String!
@@ -3029,7 +3029,7 @@ type Env {
     name: String!
 
     """The Up value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "Up")
 
     """The purpose of the input"""
     description: String!
@@ -3047,7 +3047,7 @@ type Env {
   """Returns a new environment with the provided workspace"""
   withWorkspace(
     """The directory to set as the host filesystem"""
-    workspace: ID!
+    workspace: ID! @expectedType(name: "Directory")
   ): Env!
 
   """Create or update a binding of type Workspace in the environment"""
@@ -3056,7 +3056,7 @@ type Env {
     name: String!
 
     """The Workspace value to assign to the binding"""
-    value: ID!
+    value: ID! @expectedType(name: "Workspace")
 
     """The purpose of the input"""
     description: String!
@@ -3235,7 +3235,7 @@ type File {
   """Parse as an env file"""
   asEnvFile(
     """Replace "${VAR}" or "$VAR" with the value of other vars"""
-    expand: Boolean
+    expand: Boolean @deprecated(reason: "Variable expansion is now enabled by default")
   ): EnvFile!
 
   """Parse the file contents as JSON."""
@@ -3398,13 +3398,13 @@ enum FileType {
   SYMLINK
 
   """regular file type"""
-  REGULAR_TYPE
+  REGULAR_TYPE @enumValue(value: "REGULAR")
 
   """directory file type"""
-  DIRECTORY_TYPE
+  DIRECTORY_TYPE @enumValue(value: "DIRECTORY")
 
   """symlink file type"""
-  SYMLINK_TYPE
+  SYMLINK_TYPE @enumValue(value: "SYMLINK")
 }
 
 """
@@ -3445,7 +3445,7 @@ type Function {
     name: String!
 
     """The type of the argument"""
-    typeDef: ID!
+    typeDef: ID! @expectedType(name: "TypeDef")
 
     """A doc string for the argument, if any"""
     description: String = ""
@@ -3464,7 +3464,7 @@ type Function {
     ignore: [String!] = []
 
     """The source map for the argument definition."""
-    sourceMap: ID
+    sourceMap: ID @expectedType(name: "SourceMap")
 
     """If deprecated, the reason or migration path."""
     deprecated: String
@@ -3504,7 +3504,7 @@ type Function {
   """Returns the function with the given source map."""
   withSourceMap(
     """The source map for the function definition."""
-    sourceMap: ID!
+    sourceMap: ID! @expectedType(name: "SourceMap")
   ): Function!
 
   """
@@ -3595,7 +3595,7 @@ type FunctionCall {
   """Return an error from the function."""
   returnError(
     """The error to return."""
-    error: ID!
+    error: ID! @expectedType(name: "Error")
   ): Void
 
   """Set the return value of the function call to the provided value."""
@@ -3705,7 +3705,7 @@ type GitRef {
   """Find the best common ancestor between this ref and another ref."""
   commonAncestor(
     """The other ref to compare against."""
-    other: ID!
+    other: ID! @expectedType(name: "GitRef")
   ): GitRef!
 
   """A unique identifier for this GitRef."""
@@ -3898,7 +3898,7 @@ type Host {
   """Creates a tunnel that forwards traffic from the host to a service."""
   tunnel(
     """Service to send traffic from the tunnel."""
-    service: ID!
+    service: ID! @expectedType(name: "Service")
 
     """
     Map each service port to the same port on the host, as if the service were running natively.
@@ -3934,18 +3934,18 @@ enum ImageLayerCompression {
   Zstd
   EStarGZ
   Uncompressed
-  GZIP
-  ZSTD
-  ESTARGZ
-  UNCOMPRESSED
+  GZIP @enumValue(value: "Gzip")
+  ZSTD @enumValue(value: "Zstd")
+  ESTARGZ @enumValue(value: "EStarGZ")
+  UNCOMPRESSED @enumValue(value: "Uncompressed")
 }
 
 """Mediatypes to use in published or exported image metadata."""
 enum ImageMediaTypes {
   OCIMediaTypes
   DockerMediaTypes
-  OCI
-  DOCKER
+  OCI @enumValue(value: "OCIMediaTypes")
+  DOCKER @enumValue(value: "DockerMediaTypes")
 }
 
 """
@@ -4055,7 +4055,7 @@ type JSONValue {
     path: [String!]!
 
     """The new value of the field"""
-    value: ID!
+    value: ID! @expectedType(name: "JSONValue")
   ): JSONValue!
 }
 
@@ -4127,7 +4127,7 @@ type LLM {
   ): LLM!
 
   """allow the LLM to interact with an environment via MCP"""
-  withEnv(env: ID!): LLM!
+  withEnv(env: ID! @expectedType(name: "Env")): LLM!
 
   """Add an external MCP server to the LLM"""
   withMCPServer(
@@ -4135,7 +4135,7 @@ type LLM {
     name: String!
 
     """The MCP service to run and communicate with over stdio"""
-    service: ID!
+    service: ID! @expectedType(name: "Service")
   ): LLM!
 
   """swap out the llm model"""
@@ -4153,7 +4153,7 @@ type LLM {
   """append the contents of a file to the llm context"""
   withPromptFile(
     """The file to read the prompt from"""
-    file: ID!
+    file: ID! @expectedType(name: "File")
   ): LLM!
 
   """
@@ -4332,13 +4332,13 @@ type Module {
   ): Module!
 
   """This module plus the given Enum type and associated values"""
-  withEnum(enum: ID!): Module!
+  withEnum(enum: ID! @expectedType(name: "TypeDef")): Module!
 
   """This module plus the given Interface type and associated functions"""
-  withInterface(iface: ID!): Module!
+  withInterface(iface: ID! @expectedType(name: "TypeDef")): Module!
 
   """This module plus the given Object type and associated functions."""
-  withObject(object: ID!): Module!
+  withObject(object: ID! @expectedType(name: "TypeDef")): Module!
 }
 
 """The client generated for the module."""
@@ -4502,7 +4502,7 @@ type ModuleSource {
   """Set a blueprint for the module source."""
   withBlueprint(
     """The blueprint module to set."""
-    blueprint: ID!
+    blueprint: ID! @expectedType(name: "ModuleSource")
   ): ModuleSource!
 
   """Update the module source with a new client to generate."""
@@ -4519,7 +4519,7 @@ type ModuleSource {
   """
   withDependencies(
     """The dependencies to append."""
-    dependencies: [ID!]!
+    dependencies: [ID!]! @expectedType(name: "ModuleSource")
   ): ModuleSource!
 
   """Upgrade the engine version of the module to the given value."""
@@ -4566,7 +4566,7 @@ type ModuleSource {
   """Add toolchains to the module source."""
   withToolchains(
     """The toolchain modules to add."""
-    toolchains: [ID!]!
+    toolchains: [ID!]! @expectedType(name: "ModuleSource")
   ): ModuleSource!
 
   """Update the blueprint module to the latest version."""
@@ -4631,9 +4631,9 @@ enum ModuleSourceKind {
   LOCAL_SOURCE
   GIT_SOURCE
   DIR_SOURCE
-  LOCAL
-  GIT
-  DIR
+  LOCAL @enumValue(value: "LOCAL_SOURCE")
+  GIT @enumValue(value: "GIT_SOURCE")
+  DIR @enumValue(value: "DIR_SOURCE")
 }
 
 """Transport layer network protocol associated to a port."""
@@ -4722,7 +4722,7 @@ input PortForward {
   backend: Int!
 
   """Transport layer protocol to use for traffic."""
-  protocol: NetworkProtocol
+  protocol: NetworkProtocol = TCP
 }
 
 """The root of the DAG."""
@@ -4740,7 +4740,7 @@ type Query {
     key: String!
 
     """Identifier of the directory to use as the cache volume's root."""
-    source: ID
+    source: ID @expectedType(name: "Directory")
 
     """Sharing mode of the cache volume."""
     sharing: CacheSharingMode = SHARED
@@ -4842,7 +4842,7 @@ type Query {
   """Initialize an environment file"""
   envFile(
     """Replace "${VAR}" or "$VAR" with the value of other vars"""
-    expand: Boolean
+    expand: Boolean @deprecated(reason: "Variable expansion is now enabled by default")
   ): EnvFile!
 
   """Create a new error."""
@@ -4875,13 +4875,13 @@ type Query {
     name: String!
 
     """Return type of the function."""
-    returnType: ID!
+    returnType: ID! @expectedType(name: "TypeDef")
   ): Function!
 
   """
   Create a code generation result, given a directory containing the generated code.
   """
-  generatedCode(code: ID!): GeneratedCode!
+  generatedCode(code: ID! @expectedType(name: "Directory")): GeneratedCode!
 
   """Queries a Git repository."""
   git(
@@ -4895,25 +4895,25 @@ type Query {
     url: String!
 
     """DEPRECATED: Set to true to keep .git directory."""
-    keepGitDir: Boolean = true
+    keepGitDir: Boolean = true @deprecated(reason: "Set to true to keep .git directory.")
 
     """Set SSH known hosts"""
     sshKnownHosts: String = ""
 
     """Set SSH auth socket"""
-    sshAuthSocket: ID
+    sshAuthSocket: ID @expectedType(name: "Socket")
 
     """Username used to populate the password during basic HTTP Authorization"""
     httpAuthUsername: String = ""
 
     """Secret used to populate the password during basic HTTP Authorization"""
-    httpAuthToken: ID
+    httpAuthToken: ID @expectedType(name: "Secret")
 
     """Secret used to populate the Authorization HTTP header"""
-    httpAuthHeader: ID
+    httpAuthHeader: ID @expectedType(name: "Secret")
 
     """A service which must be started before the repo is fetched."""
-    experimentalServiceHost: ID
+    experimentalServiceHost: ID @expectedType(name: "Service")
   ): GitRepository!
 
   """Queries the host environment."""
@@ -4934,10 +4934,10 @@ type Query {
     checksum: String
 
     """Secret used to populate the Authorization HTTP header"""
-    authHeader: ID
+    authHeader: ID @expectedType(name: "Secret")
 
     """A service which must be started before the URL is fetched."""
-    experimentalServiceHost: ID
+    experimentalServiceHost: ID @expectedType(name: "Service")
   ): File!
 
   """A unique identifier for this Query."""
@@ -5330,7 +5330,7 @@ type TypeDef {
   """
   Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
   """
-  withConstructor(function: ID!): TypeDef!
+  withConstructor(function: ID! @expectedType(name: "Function")): TypeDef!
 
   """
   Returns a TypeDef of kind Enum with the provided name.
@@ -5347,7 +5347,7 @@ type TypeDef {
     description: String = ""
 
     """The source map for the enum definition."""
-    sourceMap: ID
+    sourceMap: ID @expectedType(name: "SourceMap")
   ): TypeDef!
 
   """
@@ -5364,7 +5364,7 @@ type TypeDef {
     description: String = ""
 
     """The source map for the enum member definition."""
-    sourceMap: ID
+    sourceMap: ID @expectedType(name: "SourceMap")
 
     """If deprecated, the reason or migration path."""
     deprecated: String
@@ -5381,7 +5381,7 @@ type TypeDef {
     description: String = ""
 
     """The source map for the enum value definition."""
-    sourceMap: ID
+    sourceMap: ID @expectedType(name: "SourceMap")
 
     """If deprecated, the reason or migration path."""
     deprecated: String
@@ -5395,13 +5395,13 @@ type TypeDef {
     name: String!
 
     """The type of the field"""
-    typeDef: ID!
+    typeDef: ID! @expectedType(name: "TypeDef")
 
     """A doc string for the field, if any"""
     description: String = ""
 
     """The source map for the field definition."""
-    sourceMap: ID
+    sourceMap: ID @expectedType(name: "SourceMap")
 
     """If deprecated, the reason or migration path."""
     deprecated: String
@@ -5410,10 +5410,10 @@ type TypeDef {
   """
   Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.
   """
-  withFunction(function: ID!): TypeDef!
+  withFunction(function: ID! @expectedType(name: "Function")): TypeDef!
 
   """Returns a TypeDef of kind Interface with the provided name."""
-  withInterface(name: String!, description: String = "", sourceMap: ID): TypeDef!
+  withInterface(name: String!, description: String = "", sourceMap: ID @expectedType(name: "SourceMap")): TypeDef!
 
   """Sets the kind of the type."""
   withKind(kind: TypeDefKind!): TypeDef!
@@ -5421,7 +5421,7 @@ type TypeDef {
   """
   Returns a TypeDef of kind List with the provided type for its elements.
   """
-  withListOf(elementType: ID!): TypeDef!
+  withListOf(elementType: ID! @expectedType(name: "TypeDef")): TypeDef!
 
   """
   Returns a TypeDef of kind Object with the provided name.
@@ -5430,7 +5430,7 @@ type TypeDef {
   only to refer to an object. This is how functions are able to return their own
   object, or any other circular reference.
   """
-  withObject(name: String!, description: String = "", sourceMap: ID, deprecated: String): TypeDef!
+  withObject(name: String!, description: String = "", sourceMap: ID @expectedType(name: "SourceMap"), deprecated: String): TypeDef!
 
   """Sets whether this type can be set to null."""
   withOptional(optional: Boolean!): TypeDef!
@@ -5499,45 +5499,45 @@ enum TypeDefKind {
   ENUM_KIND
 
   """A string value."""
-  STRING
+  STRING @enumValue(value: "STRING_KIND")
 
   """An integer value."""
-  INTEGER
+  INTEGER @enumValue(value: "INTEGER_KIND")
 
   """A float value."""
-  FLOAT
+  FLOAT @enumValue(value: "FLOAT_KIND")
 
   """A boolean value."""
-  BOOLEAN
+  BOOLEAN @enumValue(value: "BOOLEAN_KIND")
 
   """A scalar value of any basic kind."""
-  SCALAR
+  SCALAR @enumValue(value: "SCALAR_KIND")
 
   """
   Always paired with a ListTypeDef.
 
   A list of values all having the same type.
   """
-  LIST
+  LIST @enumValue(value: "LIST_KIND")
 
   """
   Always paired with an ObjectTypeDef.
 
   A named type defined in the GraphQL schema, with fields and functions.
   """
-  OBJECT
+  OBJECT @enumValue(value: "OBJECT_KIND")
 
   """
   Always paired with an InterfaceTypeDef.
 
   A named type of functions that can be matched+implemented by other objects+interfaces.
   """
-  INTERFACE
+  INTERFACE @enumValue(value: "INTERFACE_KIND")
 
   """
   A graphql input type, used only when representing the core API via TypeDefs.
   """
-  INPUT
+  INPUT @enumValue(value: "INPUT_KIND")
 
   """
   A special kind used to signify that no value is returned.
@@ -5546,14 +5546,14 @@ enum TypeDefKind {
   specifying this Kind is always Optional, as the Void is never actually
   represented.
   """
-  VOID
+  VOID @enumValue(value: "VOID_KIND")
 
   """
   A GraphQL enum type and its values
 
   Always paired with an EnumTypeDef.
   """
-  ENUM
+  ENUM @enumValue(value: "ENUM_KIND")
 }
 
 type Up {
