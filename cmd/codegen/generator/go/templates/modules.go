@@ -194,6 +194,10 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) {
 	return strings.Join(out, "\n"), nil
 }
 
+func dotLine(a *Statement, id string) *Statement {
+	return a.Op(".").Line().Id(id)
+}
+
 const (
 	parentJSONVar  = "parentJSON"
 	parentNameVar  = "parentName"
