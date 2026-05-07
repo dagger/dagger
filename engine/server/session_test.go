@@ -411,6 +411,62 @@ func TestDetectAndLoadWorkspaceLoadsCWDModuleWithoutConfig(t *testing.T) {
 	require.True(t, client.pendingModules[0].Entrypoint)
 }
 
+func TestDetectAndLoadWorkspaceLoadsCWDModuleWithoutWorkspace(t *testing.T) {
+	t.Parallel()
+
+	existingFiles := map[string]bool{
+		"/tmp/mymod/dagger.json": true,
+	}
+
+	statFS := core.StatFSFunc(func(_ context.Context, path string) (string, *core.Stat, error) {
+		path = filepath.Clean(path)
+		if existingFiles[path] {
+			return filepath.Dir(path), &core.Stat{
+				Name: filepath.Base(path),
+			}, nil
+		}
+		return "", nil, os.ErrNotExist
+	})
+
+	readFile := func(_ context.Context, path string) ([]byte, error) {
+		if filepath.Clean(path) == "/tmp/mymod/dagger.json" {
+			return []byte(`{"name":"mymod"}`), nil
+		}
+		return nil, os.ErrNotExist
+	}
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		ClientID: "test-client",
+	})
+
+	client := &daggerClient{
+		pendingWorkspaceLoad: true,
+		clientMetadata: &engine.ClientMetadata{
+			LoadWorkspaceModules: true,
+		},
+	}
+
+	srv := &Server{}
+	err := srv.detectAndLoadWorkspace(ctx, client,
+		statFS,
+		readFile,
+		"/tmp/mymod",
+		func(ws *workspace.Workspace, relPath string) string {
+			return filepath.Join(ws.Root, relPath)
+		},
+		nil,
+		true,
+	)
+	require.NoError(t, err)
+	require.Nil(t, client.workspace)
+
+	require.Len(t, client.pendingModules, 1)
+	require.Equal(t, moduleLoadKindCWD, client.pendingModules[0].Kind)
+	require.Equal(t, "mymod", client.pendingModules[0].Name)
+	require.Equal(t, "/tmp/mymod", client.pendingModules[0].Ref)
+	require.True(t, client.pendingModules[0].Entrypoint)
+}
+
 func TestRemoteWorkspaceCwdUsesDetectionStart(t *testing.T) {
 	t.Parallel()
 
@@ -465,6 +521,68 @@ func TestRemoteWorkspaceCwdUsesDetectionStart(t *testing.T) {
 	require.Equal(t, "subdir", client.workspace.Cwd)
 	require.Equal(t, "github.com/acme/repo/subdir@main", client.workspace.Address)
 	require.Equal(t, filepath.Join(".dagger", workspace.ConfigFileName), client.workspace.ConfigFile)
+}
+
+func TestRemoteWorkspaceLoadsCWDModuleFromDetectionStart(t *testing.T) {
+	t.Parallel()
+
+	existingFiles := map[string]bool{
+		"subdir/dagger.json": true,
+	}
+
+	statFS := core.StatFSFunc(func(_ context.Context, path string) (string, *core.Stat, error) {
+		path = filepath.Clean(path)
+		if existingFiles[path] {
+			return filepath.Dir(path), &core.Stat{
+				Name: filepath.Base(path),
+			}, nil
+		}
+		return "", nil, os.ErrNotExist
+	})
+
+	readFile := func(_ context.Context, path string) ([]byte, error) {
+		if filepath.Clean(path) == "subdir/dagger.json" {
+			return []byte(`{"name":"remote-mod"}`), nil
+		}
+		return nil, os.ErrNotExist
+	}
+
+	resolveLocalRef := func(ws *workspace.Workspace, relPath string) string {
+		subPath := filepath.Join(ws.Root, relPath)
+		return core.GitRefString("github.com/acme/repo", subPath, "main")
+	}
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		ClientID: "test-client",
+	})
+
+	client := &daggerClient{
+		pendingWorkspaceLoad: true,
+		clientMetadata: &engine.ClientMetadata{
+			LoadWorkspaceModules: true,
+		},
+	}
+
+	srv := &Server{}
+	err := srv.detectAndLoadWorkspaceWithRootfs(ctx, client,
+		statFS,
+		readFile,
+		"subdir/child",
+		resolveLocalRef,
+		func(ws *workspace.Workspace) string {
+			return remoteWorkspaceAddress("github.com/acme/repo", ws.Cwd, "main")
+		},
+		false,
+		dagql.ObjectResult[*core.Directory]{},
+	)
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join("subdir", "child"), client.workspace.Cwd)
+
+	require.Len(t, client.pendingModules, 1)
+	require.Equal(t, moduleLoadKindCWD, client.pendingModules[0].Kind)
+	require.Equal(t, "remote-mod", client.pendingModules[0].Name)
+	require.Equal(t, core.GitRefString("github.com/acme/repo", "subdir", "main"), client.pendingModules[0].Ref)
+	require.True(t, client.pendingModules[0].Entrypoint)
 }
 
 func TestDetectAndLoadWorkspaceDoesNotLoadModulesByDefault(t *testing.T) {
