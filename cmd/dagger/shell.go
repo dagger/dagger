@@ -62,6 +62,9 @@ var shellCmd = &cobra.Command{
 		})
 	},
 	Hidden: true,
+	Annotations: map[string]string{
+		showFinalProgressKey: "true",
+	},
 }
 
 type shellCallHandler struct {
