@@ -1014,7 +1014,6 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	fe.ZoomedSpan = fe.db.PrimarySpan
 	fe.viewDirty = false
 	fe.recalculateViewLocked()
-	fe.shownErrs = map[dagui.SpanID]bool{}
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
@@ -1022,7 +1021,6 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 		for _, line := range fe.tui.RenderLines() {
 			fmt.Fprintln(w, line)
 		}
-		fe.renderMissingRootErrorCauses(w)
 
 		if fe.msgPreFinalRender.Len() > 0 {
 			defer func() {
@@ -1052,61 +1050,6 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 
 	// Replay the primary output log to stdout/stderr.
 	return renderPrimaryOutput(w, fe.db)
-}
-
-// renderMissingRootErrorCauses prints root-cause spans referenced by the final
-// error when normal tree rendering did not already show them. This keeps
-// failures from lazy work visible without broadly marking successful
-// install-site spans failed.
-func (fe *frontendPretty) renderMissingRootErrorCauses(w io.Writer) {
-	if fe.err == nil || fe.shell != nil {
-		return
-	}
-	origins := telemetry.ParseErrorOrigins(fe.err.Error())
-	if len(origins) == 0 {
-		return
-	}
-
-	anchor := fe.db.Spans.Map[fe.db.PrimarySpan]
-	if anchor == nil {
-		anchor = fe.db.RootSpan
-	}
-	if anchor == nil {
-		return
-	}
-
-	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts, fe.finalRender)
-	row := &dagui.TraceRow{
-		Span:     anchor,
-		Expanded: true,
-	}
-	ctx := tuist.Context{Context: context.Background()}
-
-	buf := new(strings.Builder)
-	out := NewOutput(buf, termenv.WithProfile(fe.profile))
-	for _, origin := range origins {
-		if !origin.IsValid() {
-			continue
-		}
-		spanID := dagui.SpanID{SpanID: origin.SpanID()}
-		if fe.shownErrs[spanID] {
-			continue
-		}
-		cause := fe.db.Spans.Map[spanID]
-		if cause == nil {
-			continue
-		}
-		if buf.Len() > 0 {
-			fmt.Fprintln(buf)
-		}
-		fe.renderErrorCause(ctx, out, r, row, "", cause)
-	}
-	if buf.Len() == 0 {
-		return
-	}
-	fmt.Fprintln(w)
-	fmt.Fprint(w, strings.TrimRight(buf.String(), "\n"))
-	fmt.Fprintln(w)
 }
 
 func (fe *frontendPretty) SpanExporter() sdktrace.SpanExporter {
@@ -2849,15 +2792,9 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 			}
 		}
 	}
-	if len(row.Span.ErrorOrigins.Order) > 0 {
-		var causes []*dagui.Span
+	if len(row.Span.ErrorOrigins.Order) > 0 && (!row.Expanded || !row.HasChildren) {
+		multi := len(row.Span.ErrorOrigins.Order) > 1
 		for _, cause := range row.Span.ErrorOrigins.Order {
-			if fe.shouldRenderErrorCause(row, cause) {
-				causes = append(causes, cause)
-			}
-		}
-		multi := len(causes) > 1
-		for _, cause := range causes {
 			if multi {
 				var gapBuf strings.Builder
 				gapOut := NewOutput(&gapBuf, termenv.WithProfile(fe.profile))
@@ -2871,31 +2808,6 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 		fe.renderStepError(out, r, row, prefix)
 	}
 	fe.renderDebug(out, row.Span, prefix+Block25+" ", false)
-}
-
-func (fe *frontendPretty) shouldRenderErrorCause(row *dagui.TraceRow, cause *dagui.Span) bool {
-	if cause == nil {
-		return false
-	}
-	if !row.Expanded || !row.HasChildren {
-		return true
-	}
-	if fe.rows == nil {
-		return true
-	}
-	causeRow := fe.rows.BySpan[cause.ID]
-	if causeRow == nil {
-		// The origin is hidden (e.g. an encapsulated exec under a successful
-		// install-site span), so render it from the failed span that linked to it.
-		return true
-	}
-	for cur := causeRow.Parent; cur != nil; cur = cur.Parent {
-		if cur.Span.ID == row.Span.ID {
-			// The expanded subtree will render the origin itself; avoid duplicating it.
-			return false
-		}
-	}
-	return true
 }
 
 func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix string, force bool) {
