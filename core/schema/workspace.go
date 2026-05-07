@@ -35,10 +35,10 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 
 	dagql.Fields[*core.Query]{
 		currentWorkspaceField,
-		dagql.Func("__workspaceModule", s.workspaceModule),
 	}.Install(srv)
 
 	dagql.Fields[*core.Workspace]{
+		dagql.Func("__workspaceModule", s.workspaceModule),
 		dagql.NodeFunc("directory", s.directory).
 			WithInput(dagql.PerClientInput).
 			Doc(`Returns a Directory from the workspace.`,
@@ -125,9 +125,12 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc("Environment name."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
-		dagql.Func("moduleList", s.moduleList).
+		dagql.NodeFunc("moduleList", s.moduleList).
 			DoNotCache("Reads live config from host").
-			Doc("List modules defined in the workspace configuration."),
+			Doc("List modules defined in the workspace configuration.").
+			Args(
+				dagql.Arg("module").Doc("Optional module alias to inspect."),
+			),
 		dagql.Func("checks", s.checks).
 			Doc("Return all checks from modules loaded in the workspace.").
 			Args(
