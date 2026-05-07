@@ -593,18 +593,12 @@ func (s *moduleSourceSchema) gitModuleSource(
 		lookupLock     *workspaceLookupLock
 	)
 	if refPin == "" {
-		lockMode, err := currentLookupLockMode(ctx)
+		lockMode, loadedLookupLock, err := lookupLockForMode(ctx, query.Self(), lockModulesResolveOperation)
 		if err != nil {
-			return inst, fmt.Errorf("%s lock mode: %w", lockModulesResolveOperation, err)
+			return inst, err
 		}
+		lookupLock = loadedLookupLock
 		if lockMode != workspace.LockModeDisabled {
-			lookupLock, err = loadWorkspaceLookupLock(ctx, query.Self())
-			if err != nil {
-				return inst, fmt.Errorf("%s lockfile: %w", lockModulesResolveOperation, err)
-			}
-			if lookupLock == nil {
-				return inst, fmt.Errorf("experimental lockfile support is local-only")
-			}
 			lockResolution, err = resolveLookupFromLock(
 				lockMode,
 				lookupLock.lock,

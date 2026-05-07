@@ -18,11 +18,14 @@ type Workspace struct {
 	// .dagger/config.toml. Internal only.
 	compatWorkspace *workspacepkg.CompatWorkspace
 
-	Address         string  `field:"true" doc:"Canonical Dagger address of the workspace location."`
-	Cwd             string  `field:"true" doc:"Current location within the workspace root. Relative paths in workspace APIs resolve from here."`
-	ConfigDirectory *string `field:"true" doc:"Selected workspace config directory relative to the workspace root, if any."`
-	ConfigFile      *string `field:"true" doc:"Selected workspace config file relative to the workspace root, if any."`
-	HasConfig       bool    `field:"true" doc:"Whether a workspace config file exists."`
+	Address    string `field:"true" doc:"Canonical Dagger address of the workspace location."`
+	Cwd        string `field:"true" doc:"Current location within the workspace root. Relative paths in workspace APIs resolve from here."`
+	ConfigFile string `field:"true" doc:"Selected native workspace config file relative to the workspace root, if any."`
+
+	// LockFile is the selected lockfile path relative to the workspace root.
+	// It is independent from ConfigFile: compat config and missing native config
+	// can still have a writable local lockfile.
+	LockFile string
 
 	// ClientID is the ID of the client that created this workspace.
 	// Used to route host filesystem operations through the correct session

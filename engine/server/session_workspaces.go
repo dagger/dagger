@@ -437,7 +437,7 @@ func loadWorkspaceConfig(
 	readFile func(context.Context, string) ([]byte, error),
 	ws *workspace.Workspace,
 ) (*workspace.Config, error) {
-	if !ws.HasConfig {
+	if ws.ConfigFile == "" {
 		return nil, nil
 	}
 	configPath := filepath.Join(ws.Root, ws.ConfigFile)
@@ -467,7 +467,7 @@ func workspaceConfigPendingModules(
 	if cfg == nil || len(cfg.Modules) == 0 {
 		return nil
 	}
-	configDir := ws.ConfigDirectory
+	configDir := filepath.Dir(ws.ConfigFile)
 
 	names := make([]string, 0, len(cfg.Modules))
 	for name := range cfg.Modules {
@@ -548,8 +548,8 @@ func defaultPathContextRefForWorkspace(
 		return ""
 	}
 	base := "."
-	if ws.HasConfig && ws.ConfigDirectory != "" {
-		base = filepath.Dir(ws.ConfigDirectory)
+	if ws.ConfigFile != "" {
+		base = filepath.Dir(filepath.Dir(ws.ConfigFile))
 	}
 	return resolveLocalRef(ws, base)
 }
@@ -586,10 +586,20 @@ func suppressCWDModuleForCompatWorkspace(compatWorkspace *workspace.CompatWorksp
 	return filepath.Clean(compatWorkspace.ProjectRoot) == filepath.Clean(moduleDir)
 }
 
-// detectAndLoadWorkspaceWithRootfs is the unified core of workspace detection
-// and module gathering. It detects the current workspace root, applies legacy
-// dagger.json compat, and gathers all modules to be loaded later by
-// ensureModulesLoaded.
+// detectAndLoadWorkspaceWithRootfs is the unified core of workspace discovery
+// and module gathering.
+//
+// The workspace model is deliberately layered and this flow should stay
+// readable in that order:
+//  1. Detect the workspace root.
+//  2. Detect native workspace config within that root.
+//  3. Detect local lockfile binding within that root.
+//  4. Normalize native config or compat dagger.json at this chokepoint.
+//  5. Gather modules from the normalized config.
+//  6. Load modules later through ensureModulesLoaded.
+//
+// Compat belongs here: once legacy dagger.json is projected into pending modules
+// and effective config, most downstream code should not branch on compat.
 //
 // It works for both local and remote workspaces, parameterized by the filesystem
 // abstraction (statFS/readFile) and reference resolution (resolveLocalRef).
@@ -619,16 +629,21 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	var ws *workspace.Workspace
 	var err error
 	if isLocal {
-		ws, err = workspace.Detect(ctx, pathExists, readFile, cwd)
+		ws, err = workspace.Detect(ctx, pathExists, cwd)
 	} else {
-		ws, err = workspace.DetectInRoot(ctx, pathExists, readFile, cwd, ".")
+		ws, err = workspace.DetectInRoot(ctx, pathExists, cwd, ".")
 	}
 	if err != nil {
 		return err
 	}
+	if ws == nil {
+		client.workspace = nil
+		client.pendingModules = nil
+		return nil
+	}
 
 	var wsConfig *workspace.Config
-	if ws.HasConfig {
+	if ws.ConfigFile != "" {
 		wsConfig, err = loadWorkspaceConfig(ctx, readFile, ws)
 		if err != nil {
 			return err
@@ -797,21 +812,15 @@ func (srv *Server) buildCoreWorkspace(
 	}
 
 	coreWS := &core.Workspace{
-		Address:   address,
-		Cwd:       detected.Cwd,
-		HasConfig: detected.HasConfig,
-		ClientID:  clientMetadata.ClientID,
+		Address:    address,
+		Cwd:        detected.Cwd,
+		ConfigFile: detected.ConfigFile,
+		LockFile:   detected.LockFile,
+		ClientID:   clientMetadata.ClientID,
 	}
 	if coreWS.Address == "" {
 		coreWS.Address = localWorkspaceAddress(detected.Root, detected.Cwd)
 	}
-	if detected.HasConfig {
-		configDirectory := detected.ConfigDirectory
-		configFile := detected.ConfigFile
-		coreWS.ConfigDirectory = &configDirectory
-		coreWS.ConfigFile = &configFile
-	}
-
 	if isLocal {
 		// Local: store host path only. Directories are resolved lazily
 		// via per-call host.directory() in resolveRootfs.

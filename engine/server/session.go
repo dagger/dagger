@@ -1678,7 +1678,7 @@ func (srv *Server) SetCurrentWorkspaceLookup(
 
 func (srv *Server) currentWorkspaceLockBinding(client *daggerClient) (*core.Workspace, workspaceLockKey, string, bool, error) {
 	ws := client.workspace
-	if ws == nil || ws.HostPath() == "" || !ws.HasConfig {
+	if ws == nil || ws.HostPath() == "" || ws.LockFile == "" {
 		return nil, workspaceLockKey{}, "", false, nil
 	}
 	lockPath, err := workspaceLockPath(ws)
@@ -1757,10 +1757,10 @@ func workspaceLockPath(ws *core.Workspace) (string, error) {
 	if ws.HostPath() == "" {
 		return "", fmt.Errorf("workspace has no host path")
 	}
-	if !ws.HasConfig || ws.ConfigDirectory == nil || *ws.ConfigDirectory == "" {
-		return "", fmt.Errorf("workspace has no config directory")
+	if ws.LockFile == "" {
+		return "", fmt.Errorf("workspace lockfile is not selected")
 	}
-	return filepath.Join(ws.HostPath(), *ws.ConfigDirectory, workspace.LockFileName), nil
+	return filepath.Join(ws.HostPath(), ws.LockFile), nil
 }
 
 func readWorkspaceLockState(ctx context.Context, bk interface {
