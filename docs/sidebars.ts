@@ -77,6 +77,27 @@ module.exports = {
     },
 
     // ========================================
+    // CORE CONCEPTS
+    // ========================================
+    {
+      type: "category",
+      label: "Core Concepts",
+      link: {
+        type: "doc",
+        id: "introduction/core-concepts/index",
+      },
+      collapsible: true,
+      collapsed: true,
+      items: [
+        "introduction/core-concepts/workspaces",
+        "introduction/core-concepts/modules",
+        "introduction/core-concepts/functions",
+        "introduction/core-concepts/checks",
+        "introduction/core-concepts/caching",
+      ],
+    },
+
+    // ========================================
     // DEVELOPING MODULES
     // ========================================
     {
@@ -112,27 +133,6 @@ module.exports = {
             "extending/types/llm",
           ],
         },
-      ],
-    },
-
-    // ========================================
-    // CORE CONCEPTS
-    // ========================================
-    {
-      type: "category",
-      label: "Core Concepts",
-      link: {
-        type: "doc",
-        id: "introduction/core-concepts/index",
-      },
-      collapsible: true,
-      collapsed: true,
-      items: [
-        "introduction/core-concepts/workspaces",
-        "introduction/core-concepts/modules",
-        "introduction/core-concepts/functions",
-        "introduction/core-concepts/checks",
-        "introduction/core-concepts/caching",
       ],
     },
 
