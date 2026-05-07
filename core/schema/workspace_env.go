@@ -14,7 +14,7 @@ func (s *workspaceSchema) envList(
 	parent *core.Workspace,
 	_ struct{},
 ) (dagql.Array[dagql.String], error) {
-	if !parent.HasConfig {
+	if parent.ConfigFile == "" {
 		return nil, fmt.Errorf("no config.toml found in workspace")
 	}
 

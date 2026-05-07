@@ -175,11 +175,11 @@ type workspaceSettingsState struct {
 
 func loadWorkspaceSettingsState(ctx context.Context, dag *dagger.Client) (*workspaceSettingsState, error) {
 	ws := dag.CurrentWorkspace()
-	hasConfig, err := ws.HasConfig(ctx)
+	configFile, err := ws.ConfigFile(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if !hasConfig {
+	if configFile == "" {
 		return nil, fmt.Errorf("no config.toml found in workspace")
 	}
 
