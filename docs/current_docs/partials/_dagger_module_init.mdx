@@ -1,4 +1,4 @@
-A new Dagger module is initialized by calling `dagger module init NAME [PATH]`. This creates a new `dagger.json` configuration file, together with sample Dagger Function source code. If `PATH` is omitted inside an initialized workspace, the module is created in `.dagger/modules/NAME` and added to the workspace configuration. If `PATH` is provided, the module is created at that path as a standalone module. Use `dagger init` to initialize a workspace.
+A new Dagger module is initialized by calling `dagger module init NAME [PATH]`. This creates a new `dagger.json` configuration file, together with sample Dagger Function source code. If `PATH` is omitted, the module is created in `.dagger/modules/NAME` and added to the workspace configuration. If `PATH` is provided, the module is created at that path as a standalone module.
 
 Once a module is initialized, `dagger develop --sdk=...` sets up or updates all the resources needed to develop the module locally. By default, the module source code will be stored in the current working directory, unless an alternative is specified with the `--source` argument.
 
