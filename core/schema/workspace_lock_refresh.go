@@ -3,7 +3,6 @@ package schema
 import (
 	"context"
 	"fmt"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -30,7 +29,7 @@ func (s *workspaceSchema) refreshModules(
 	if ws.HostPath() == "" {
 		return nil, fmt.Errorf("workspace lock refresh is local-only")
 	}
-	if !ws.HasConfig {
+	if ws.ConfigFile == "" {
 		return nil, fmt.Errorf("no config.toml found in workspace")
 	}
 
@@ -181,9 +180,8 @@ func (s *workspaceSchema) workspaceLockChangeset(
 		return nil, fmt.Errorf("marshal workspace lock: %w", err)
 	}
 
-	configDir, err := workspaceConfigDirectory(ws)
-	if err != nil {
-		return nil, err
+	if ws.LockFile == "" {
+		return nil, fmt.Errorf("workspace lockfile is not selected")
 	}
 
 	baseDir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
@@ -201,7 +199,7 @@ func (s *workspaceSchema) workspaceLockChangeset(
 		dagql.Selector{
 			Field: "withNewFile",
 			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(path.Join(filepath.ToSlash(configDir), workspace.LockFileName))},
+				{Name: "path", Value: dagql.NewString(filepath.ToSlash(ws.LockFile))},
 				{Name: "contents", Value: dagql.String(lockBytes)},
 				{Name: "permissions", Value: dagql.Int(0o644)},
 			},

@@ -20,8 +20,6 @@ import (
 const currentWorkspaceConfigQuery = `{
   currentWorkspace {
     cwd
-    hasConfig
-    configDirectory
     configFile
   }
 }
@@ -277,11 +275,9 @@ func (WorkspaceSuite) TestCurrentWorkspaceConfigBoundary(ctx context.Context, t 
 	require.JSONEq(t, fmt.Sprintf(`{
 		"currentWorkspace": {
 			"cwd": "app/sub",
-			"hasConfig": true,
-			"configDirectory": %q,
 			"configFile": %q
 		}
-	}`, filepath.Join("app", workspace.LockDirName), filepath.Join("app", workspace.LockDirName, workspace.ConfigFileName)), string(out))
+	}`, filepath.Join("app", workspace.LockDirName, workspace.ConfigFileName)), string(out))
 }
 
 func (WorkspaceSuite) TestWorkspaceInitCommand(ctx context.Context, t *testctx.T) {
@@ -311,11 +307,9 @@ func (WorkspaceSuite) TestWorkspaceInitCommand(ctx context.Context, t *testctx.T
 		require.JSONEq(t, fmt.Sprintf(`{
 			"currentWorkspace": {
 				"cwd": "app/sub",
-				"hasConfig": true,
-				"configDirectory": %q,
 				"configFile": %q
 			}
-		}`, workspace.LockDirName, filepath.Join(workspace.LockDirName, workspace.ConfigFileName)), string(out))
+		}`, filepath.Join(workspace.LockDirName, workspace.ConfigFileName)), string(out))
 	})
 
 	t.Run("creates config at the workspace cwd with --here", func(ctx context.Context, t *testctx.T) {
@@ -344,11 +338,9 @@ func (WorkspaceSuite) TestWorkspaceInitCommand(ctx context.Context, t *testctx.T
 		require.JSONEq(t, fmt.Sprintf(`{
 			"currentWorkspace": {
 				"cwd": "app/sub",
-				"hasConfig": true,
-				"configDirectory": %q,
 				"configFile": %q
 			}
-		}`, filepath.Join("app", "sub", workspace.LockDirName), filepath.Join("app", "sub", workspace.LockDirName, workspace.ConfigFileName)), string(out))
+		}`, filepath.Join("app", "sub", workspace.LockDirName, workspace.ConfigFileName)), string(out))
 	})
 
 	t.Run("rejects reinitialization", func(ctx context.Context, t *testctx.T) {

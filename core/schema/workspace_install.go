@@ -22,6 +22,10 @@ func (s *workspaceSchema) install(
 	parent *core.Workspace,
 	args workspaceInstallArgs,
 ) (dagql.String, error) {
+	if parent.CompatWorkspace() != nil {
+		return "", fmt.Errorf("workspace is using legacy dagger.json config; run dagger migrate first")
+	}
+
 	name, sourcePath, err := s.resolveWorkspaceInstall(ctx, parent, args.Ref, args.Name, args.Here)
 	if err != nil {
 		return "", err
