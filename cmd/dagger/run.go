@@ -61,7 +61,8 @@ dagger run python main.py
 	Args:         cobra.MinimumNArgs(1),
 	SilenceUsage: true,
 	Annotations: map[string]string{
-		printTraceLinkKey: "true",
+		printTraceLinkKey:    "true",
+		showFinalProgressKey: "true",
 	},
 }
 
