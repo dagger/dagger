@@ -23,13 +23,11 @@ import (
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/identity"
-	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	bkauth "github.com/dagger/dagger/internal/buildkit/session/auth"
 	"github.com/dagger/dagger/internal/buildkit/session/auth/authprovider"
 	"github.com/dagger/dagger/internal/buildkit/session/filesync"
 	"github.com/dagger/dagger/internal/buildkit/session/secrets"
 	"github.com/dagger/dagger/internal/buildkit/session/sshforward"
-	"github.com/dagger/dagger/internal/buildkit/util/grpcerrors"
 	"github.com/docker/cli/cli/config"
 	"github.com/google/uuid"
 	"github.com/vito/go-sse/sse"
@@ -46,6 +44,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"dagger.io/dagger"
@@ -68,6 +67,10 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 )
+
+type SessionAttachable interface {
+	Register(*grpc.Server)
+}
 
 const (
 	// cache configs that should be applied to be import and export
@@ -162,7 +165,7 @@ type Client struct {
 	bkVersion  string
 	bkName     string
 	numCPU     int
-	sessionSrv *BuildkitSessionServer
+	sessionSrv *SessionAttachablesServer
 
 	// A client for the dagger API that is directly hooked up to this engine client.
 	// Currently used for the dagger CLI so it can avoid making a subprocess of itself...
@@ -550,7 +553,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 	clientMetadata := c.clientMetadata()
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &clientMetadata)
 
-	attachables := []bksession.Attachable{
+	attachables := []SessionAttachable{
 		// sockets
 		SocketProvider{EnableHostNetworkAccess: true},
 		// secrets
@@ -598,13 +601,13 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		}
 	}()
 
-	c.sessionSrv, err = ConnectBuildkitSession(ctx,
+	c.sessionSrv, err = ConnectSessionAttachables(ctx,
 		sessionConn,
 		c.AppendHTTPRequestHeaders(http.Header{}),
 		attachables...,
 	)
 	if err != nil {
-		return fmt.Errorf("connect buildkit session: %w", err)
+		return fmt.Errorf("connect session attachables: %w", err)
 	}
 
 	c.eg.Go(func() error {
@@ -633,7 +636,7 @@ func (c *Client) startE2ESession(ctx context.Context, callerSessionConn *grpc.Cl
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &clientMetadata)
 
 	// session attachables that proxy back to the original caller's session
-	attachables := []bksession.Attachable{
+	attachables := []SessionAttachable{
 		FilesyncSourceProxy{
 			Client: filesync.NewFileSyncClient(callerSessionConn),
 		},
@@ -661,13 +664,13 @@ func (c *Client) startE2ESession(ctx context.Context, callerSessionConn *grpc.Cl
 		}
 	}()
 
-	c.sessionSrv, err = ConnectBuildkitSession(ctx,
+	c.sessionSrv, err = ConnectSessionAttachables(ctx,
 		sessionConn,
 		c.AppendHTTPRequestHeaders(http.Header{}),
 		attachables...,
 	)
 	if err != nil {
-		return fmt.Errorf("connect buildkit session: %w", err)
+		return fmt.Errorf("connect session attachables: %w", err)
 	}
 
 	c.eg.Go(func() error {
@@ -687,13 +690,13 @@ func (c *Client) startE2ESession(ctx context.Context, callerSessionConn *grpc.Cl
 	return nil
 }
 
-func ConnectBuildkitSession(
+func ConnectSessionAttachables(
 	ctx context.Context,
 	conn net.Conn,
 	headers http.Header,
-	attachables ...bksession.Attachable,
-) (*BuildkitSessionServer, error) {
-	sessionSrv := NewBuildkitSessionServer(ctx, conn, attachables...)
+	attachables ...SessionAttachable,
+) (*SessionAttachablesServer, error) {
+	sessionSrv := NewSessionAttachablesServer(ctx, conn, attachables...)
 	for _, methodURL := range sessionSrv.MethodURLs {
 		headers.Add(engine.SessionMethodNameMetaKey, methodURL)
 	}
@@ -738,13 +741,8 @@ func ConnectBuildkitSession(
 	return sessionSrv, nil
 }
 
-func NewBuildkitSessionServer(ctx context.Context, conn net.Conn, attachables ...bksession.Attachable) *BuildkitSessionServer {
-	sessionSrvOpts := []grpc.ServerOption{
-		grpc.UnaryInterceptor(grpcerrors.UnaryServerInterceptor),
-		grpc.StreamInterceptor(grpcerrors.StreamServerInterceptor),
-	}
-
-	srv := grpc.NewServer(sessionSrvOpts...)
+func NewSessionAttachablesServer(ctx context.Context, conn net.Conn, attachables ...SessionAttachable) *SessionAttachablesServer {
+	srv := grpc.NewServer()
 	grpc_health_v1.RegisterHealthServer(srv, health.NewServer())
 	for _, attachable := range attachables {
 		attachable.Register(srv)
@@ -753,11 +751,11 @@ func NewBuildkitSessionServer(ctx context.Context, conn net.Conn, attachables ..
 	var methodURLs []string
 	for name, svc := range srv.GetServiceInfo() {
 		for _, method := range svc.Methods {
-			methodURLs = append(methodURLs, bksession.MethodURL(name, method.Name))
+			methodURLs = append(methodURLs, sessionMethodURL(name, method.Name))
 		}
 	}
 
-	return &BuildkitSessionServer{
+	return &SessionAttachablesServer{
 		Server:      srv,
 		Attachables: attachables,
 		MethodURLs:  methodURLs,
@@ -765,14 +763,18 @@ func NewBuildkitSessionServer(ctx context.Context, conn net.Conn, attachables ..
 	}
 }
 
-type BuildkitSessionServer struct {
+func sessionMethodURL(service, method string) string {
+	return "/" + service + "/" + method
+}
+
+type SessionAttachablesServer struct {
 	*grpc.Server
 	MethodURLs  []string
 	Conn        net.Conn
-	Attachables []bksession.Attachable
+	Attachables []SessionAttachable
 }
 
-func (srv *BuildkitSessionServer) Run(ctx context.Context) {
+func (srv *SessionAttachablesServer) Run(ctx context.Context) {
 	defer srv.Conn.Close()
 	defer srv.Stop()
 
@@ -1236,7 +1238,7 @@ func (c *Client) serveHijackedHTTP(ctx context.Context, cancel context.CancelCau
 		defer serverConn.Close()
 		defer clientConn.Close()
 		_, err := io.Copy(serverConn, clientConn)
-		if errors.Is(err, io.EOF) || grpcerrors.Code(err) == codes.Canceled {
+		if errors.Is(err, io.EOF) || status.Code(err) == codes.Canceled {
 			err = nil
 		}
 		if err != nil {
@@ -1248,7 +1250,7 @@ func (c *Client) serveHijackedHTTP(ctx context.Context, cancel context.CancelCau
 		defer serverConn.Close()
 		defer clientConn.Close()
 		_, err := io.Copy(clientConn, serverConn)
-		if errors.Is(err, io.EOF) || grpcerrors.Code(err) == codes.Canceled {
+		if errors.Is(err, io.EOF) || status.Code(err) == codes.Canceled {
 			err = nil
 		}
 		if err != nil {

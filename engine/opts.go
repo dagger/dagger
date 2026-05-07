@@ -363,7 +363,7 @@ func decodeMeta(md metadata.MD, key string, dest any) error {
 	return nil
 }
 
-// encodeOpts comes from buildkit session/filesync/filesync.go
+// encodeOpts preserves the existing filesync metadata header encoding.
 func encodeOpts(opts map[string][]string) map[string][]string {
 	md := make(map[string][]string, len(opts))
 	for k, v := range opts {
@@ -376,7 +376,7 @@ func encodeOpts(opts map[string][]string) map[string][]string {
 	return md
 }
 
-// decodeOpts comes from buildkit session/filesync/filesync.go
+// decodeOpts preserves the existing filesync metadata header decoding.
 func decodeOpts(opts map[string][]string) map[string][]string {
 	md := make(map[string][]string, len(opts))
 	for k, v := range opts {
@@ -402,7 +402,7 @@ func decodeOpts(opts map[string][]string) map[string][]string {
 // encodeStringForHeader encodes a string value so it can be used in grpc header. This encoding
 // is backwards compatible and avoids encoding ASCII characters.
 //
-// encodeStringForHeader comes from buildkit session/filesync/filesync.go
+// encodeStringForHeader preserves the existing filesync metadata header encoding.
 func encodeStringForHeader(inputs []string) ([]string, bool) {
 	var encode bool
 loop:

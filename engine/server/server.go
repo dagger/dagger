@@ -35,7 +35,6 @@ import (
 	apitypes "github.com/dagger/dagger/internal/buildkit/api/types"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/archutil"
 	"github.com/dagger/dagger/internal/buildkit/util/disk"
@@ -91,8 +90,6 @@ type Server struct {
 	workerCache           bkcache.SnapshotManager
 	workerGCPolicies      []dagql.CachePrunePolicy
 	workerDefaultGCPolicy *dagql.CachePrunePolicy
-
-	bkSessionManager *bksession.Manager
 
 	containerdMetaBoltDB *bolt.DB
 	containerdMetaDB     *ctdmetadata.DB
@@ -276,11 +273,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 
 	srv.leaseManager = leaseutil.WithNamespace(ctdmetadata.NewLeaseManager(srv.containerdMetaDB), "dagger")
-
-	srv.bkSessionManager, err = bksession.NewManager()
-	if err != nil {
-		return nil, err
-	}
 
 	srv.contentStore = containerdsnapshot.NewContentStore(srv.containerdMetaDB.ContentStore(), "dagger")
 

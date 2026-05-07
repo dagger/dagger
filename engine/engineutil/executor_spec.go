@@ -71,9 +71,6 @@ const (
 	DaggerSessionTokenEnv = "DAGGER_SESSION_TOKEN"
 	DaggerEngineNumCPUEnv = "DAGGER_ENGINE_NUM_CPU"
 
-	// this is set by buildkit, we cannot change
-	BuildkitSessionIDHeader = "x-docker-expose-session-uuid"
-
 	BuildkitQemuEmulatorMountPoint = "/dev/.buildkit_qemu_emulator"
 
 	cgroupSampleInterval     = 5 * time.Second
@@ -1066,7 +1063,7 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	httpSrv := &http.Server{
 		ReadHeaderTimeout: 10 * time.Second,
 		Handler: h2c.NewHandler(http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
-			c.SessionHandler.ServeHTTPToNestedClient(resp, req, state.nestedClientMetadata, state.callerClientID, state.nestedClientModule, state.nestedClientFunctionCall, state.nestedClientEnv)
+			c.SessionHandler.ServeHTTPToNestedClient(resp, req, state.nestedClientMetadata, state.callerClientID, false, state.nestedClientModule, state.nestedClientFunctionCall, state.nestedClientEnv)
 		}), http2Srv),
 	}
 	if err := http2.ConfigureServer(httpSrv, http2Srv); err != nil {

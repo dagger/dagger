@@ -28,9 +28,7 @@ import (
 	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
-	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
-	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
 	"github.com/dagger/dagger/internal/buildkit/util/network"
 	"github.com/docker/docker/pkg/idtools"
@@ -47,7 +45,13 @@ import (
 	"github.com/dagger/dagger/engine/session/prompt"
 	"github.com/dagger/dagger/engine/session/store"
 	"github.com/dagger/dagger/engine/session/terminal"
+	"github.com/dagger/dagger/engine/slog"
 )
+
+type SessionCaller interface {
+	Conn() *grpc.ClientConn
+	Supports(method string) bool
+}
 
 // Opts combines server-scoped runtime dependencies with per-client session plumbing.
 // Server-scoped fields are initialized once with NewOpts and shallow-copied for each client.
@@ -77,11 +81,11 @@ type Opts struct {
 	HostMntNS  *os.File
 	CleanMntNS *os.File
 
-	SessionManager      *bksession.Manager
-	Dialer              *net.Dialer
-	GetClientCaller     func(string) (bksession.Caller, error)
-	GetMainClientCaller func() (bksession.Caller, error)
-	GetRegistryResolver func(context.Context) (*serverresolver.Resolver, error)
+	Dialer               *net.Dialer
+	GetClientCaller      func(context.Context, string) (SessionCaller, error)
+	GetHostServiceCaller func(context.Context, string) (SessionCaller, error)
+	GetMainClientCaller  func(context.Context) (SessionCaller, error)
+	GetRegistryResolver  func(context.Context) (*serverresolver.Resolver, error)
 
 	Interactive        bool
 	InteractiveCommand []string
@@ -101,7 +105,7 @@ type Client struct {
 }
 
 type sessionHandler interface {
-	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult)
+	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult)
 }
 
 func NewOpts(opts Opts) (*Opts, error) {
@@ -139,6 +143,9 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 	}
 	if opts.runningMu == nil {
 		opts.runningMu = &sync.RWMutex{}
+	}
+	if opts.GetHostServiceCaller == nil {
+		opts.GetHostServiceCaller = opts.GetClientCaller
 	}
 
 	// override the outer cancel, we will manage cancellation ourselves here
@@ -212,23 +219,23 @@ func RunInNetNS[T any](
 	return runInNetNS(ctx, runState, fn)
 }
 
-func (c *Client) GetSessionCaller(ctx context.Context, wait bool) (_ bksession.Caller, rerr error) {
+func (c *Client) GetSessionCaller(ctx context.Context) (_ SessionCaller, rerr error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	bklog.G(ctx).Tracef("getting session for %q", clientMetadata.ClientID)
+	slog.TraceContext(ctx, "getting session", "clientID", clientMetadata.ClientID)
 	defer func() {
-		bklog.G(ctx).WithError(rerr).Tracef("got session for %q", clientMetadata.ClientID)
+		slog.TraceContext(ctx, "got session", "clientID", clientMetadata.ClientID, "err", rerr)
 	}()
 
-	caller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, !wait)
+	caller, err := c.GetClientCaller(ctx, clientMetadata.ClientID)
 	if err != nil {
 		return nil, err
 	}
 	if caller == nil {
-		return nil, fmt.Errorf("session for %q not found", clientMetadata.ClientID)
+		return nil, fmt.Errorf("session attachables for client %q not found", clientMetadata.ClientID)
 	}
 	return caller, nil
 }
@@ -242,7 +249,7 @@ func (c *Client) ListenHostToContainer(
 		return nil, nil, err
 	}
 
-	clientCaller, err := c.GetSessionCaller(ctx, false)
+	clientCaller, err := c.GetSessionCaller(ctx)
 	if err != nil {
 		err = fmt.Errorf("failed to get requester session: %w", err)
 		cancel(fmt.Errorf("listen host to container error: %w", err))
@@ -288,7 +295,7 @@ func (c *Client) ListenHostToContainer(
 		for {
 			res, err := listener.Recv()
 			if err != nil {
-				bklog.G(ctx).Warnf("listener recv err: %s", err)
+				slog.WarnContext(ctx, "listener recv err", "err", err)
 				return
 			}
 
@@ -304,7 +311,7 @@ func (c *Client) ListenHostToContainer(
 			if !found {
 				conn, err = c.Dialer.Dial(proto, upstream)
 				if err != nil {
-					bklog.G(ctx).Warnf("failed to dial %s %s: %s", proto, upstream, err)
+					slog.WarnContext(ctx, "failed to dial", "proto", proto, "upstream", upstream, "err", err)
 					sendL.Lock()
 					err = listener.Send(&h2c.ListenRequest{
 						ConnId: connID,
@@ -384,7 +391,7 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 	if err != nil {
 		return nil, err
 	}
-	caller, err := c.GetClientCaller(md.ClientID)
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
 	}
@@ -410,7 +417,7 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 
 func (c *Client) PromptAllowLLM(ctx context.Context, moduleRepoURL string) error {
 	// the flag hasn't allowed this LLM call, so prompt the user
-	caller, err := c.GetMainClientCaller()
+	caller, err := c.GetMainClientCaller(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get main client caller to prompt for allow llm: %w", err)
 	}
@@ -432,7 +439,7 @@ func (c *Client) PromptAllowLLM(ctx context.Context, moduleRepoURL string) error
 }
 
 func (c *Client) PromptHumanHelp(ctx context.Context, title, question string) (string, error) {
-	caller, err := c.GetMainClientCaller()
+	caller, err := c.GetMainClientCaller(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get main client caller to prompt user for human help: %w", err)
 	}
@@ -453,7 +460,7 @@ func (c *Client) GetGitConfig(ctx context.Context) ([]*git.GitConfigEntry, error
 	if err != nil {
 		return nil, err
 	}
-	caller, err := c.GetClientCaller(md.ClientID)
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
 	}
@@ -493,7 +500,7 @@ type TerminalClient struct {
 func (c *Client) OpenTerminal(
 	ctx context.Context,
 ) (*TerminalClient, error) {
-	caller, err := c.GetMainClientCaller()
+	caller, err := c.GetMainClientCaller(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get main client caller: %w", err)
 	}
@@ -573,7 +580,7 @@ func (c *Client) OpenTerminal(
 			res, err := term.Recv()
 			if err != nil {
 				if !errors.Is(err, io.EOF) {
-					bklog.G(ctx).Warnf("terminal recv err: %v", err)
+					slog.WarnContext(ctx, "terminal recv err", "err", err)
 					errCh <- err
 				}
 				return
@@ -582,7 +589,7 @@ func (c *Client) OpenTerminal(
 			case *terminal.SessionResponse_Stdin:
 				_, err := stdinW.Write(msg.Stdin)
 				if err != nil {
-					bklog.G(ctx).Warnf("failed to write stdin: %v", err)
+					slog.WarnContext(ctx, "failed to write stdin", "err", err)
 					errCh <- err
 					return
 				}
@@ -622,7 +629,7 @@ func (c *Client) OpenTerminal(
 func (c *Client) OpenPipe(
 	ctx context.Context,
 ) (io.ReadWriteCloser, error) {
-	caller, err := c.GetMainClientCaller()
+	caller, err := c.GetMainClientCaller(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get main client caller: %w", err)
 	}
@@ -644,7 +651,7 @@ func (c *Client) WriteImage(
 	if err != nil {
 		return nil, err
 	}
-	caller, err := c.GetClientCaller(md.ClientID)
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client caller: %w", err)
 	}
@@ -686,7 +693,7 @@ func (c *Client) ReadImage(
 	if err != nil {
 		return nil, err
 	}
-	caller, err := c.GetClientCaller(md.ClientID)
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client caller: %w", err)
 	}
@@ -717,7 +724,7 @@ func (c *Client) ReadImage(
 	return nil, fmt.Errorf("client has no supported api for loading image")
 }
 
-func callerSupports(caller bksession.Caller, desc *grpc.ServiceDesc) bool {
+func callerSupports(caller SessionCaller, desc *grpc.ServiceDesc) bool {
 	for _, method := range desc.Methods {
 		if !caller.Supports(fmt.Sprintf("/%s/%s", desc.ServiceName, method.MethodName)) {
 			return false

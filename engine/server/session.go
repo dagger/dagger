@@ -20,7 +20,6 @@ import (
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
-	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
@@ -67,6 +66,8 @@ type daggerSession struct {
 
 	clients  map[string]*daggerClient // clientID -> client
 	clientMu sync.RWMutex
+
+	attachables *sessionAttachableManager
 
 	closingCtx       context.Context
 	cancelClosing    context.CancelCauseFunc
@@ -171,9 +172,11 @@ type daggerClient struct {
 	env dagql.ObjectResult[*core.Env]
 
 	// engine utility job-related state/config
-	getClientCaller  func(string) (bksession.Caller, error)
-	dialer           *net.Dialer
-	engineUtilClient *engineutil.Client
+	hostServiceProxyClientID string
+	getClientCaller          func(context.Context, string) (engineutil.SessionCaller, error)
+	getHostServiceCaller     func(context.Context, string) (engineutil.SessionCaller, error)
+	dialer                   *net.Dialer
+	engineUtilClient         *engineutil.Client
 
 	// SQLite database storing telemetry + anything else
 	tracerProvider *sdktrace.TracerProvider
@@ -282,8 +285,8 @@ func (client *daggerClient) ShutdownTelemetry(ctx context.Context) error {
 	return errs
 }
 
-func (client *daggerClient) getMainClientCaller() (bksession.Caller, error) {
-	return client.getClientCaller(client.daggerSession.mainClientCallerID)
+func (client *daggerClient) getMainClientCaller(ctx context.Context) (engineutil.SessionCaller, error) {
+	return client.getClientCaller(ctx, client.daggerSession.mainClientCallerID)
 }
 
 func (sess *daggerSession) LoadOrStoreTelemetrySeenKey(key string) bool {
@@ -319,6 +322,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.sessionID = clientMetadata.SessionID
 	sess.mainClientCallerID = clientMetadata.ClientID
 	sess.clients = map[string]*daggerClient{}
+	sess.attachables = newSessionAttachableManager()
 	sess.endpoints = map[string]http.Handler{}
 	sess.closingCtx, sess.cancelClosing = context.WithCancelCause(context.Background())
 	sess.shutdownCh = make(chan struct{})
@@ -498,6 +502,10 @@ type ClientInitOpts struct {
 	// If this is a nested client, the client ID of the caller that created it
 	CallerClientID string
 
+	// If set, host-backed services for this client may proxy through this
+	// ancestor when this client has no session attachables of its own.
+	HostServiceProxyClientID string
+
 	// If the client is running from a function in a module, this is that module.
 	ModuleContext dagql.ObjectResult[*core.Module]
 
@@ -521,17 +529,18 @@ func (srv *Server) initializeDaggerClient(
 		"mainClientID", client.daggerSession.mainClientCallerID,
 	)
 	slog.Info("initializing new client")
-	var callerG singleflight.Group[string, bksession.Caller]
-	getClientCaller := func(id string, noWait bool) (bksession.Caller, error) {
+	var callerG singleflight.Group[string, engineutil.SessionCaller]
+	client.getClientCaller = func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
-		caller, _, err := callerG.Do(ctx, id, func(ctx context.Context) (bksession.Caller, error) {
-			return srv.bkSessionManager.Get(ctx, id, noWait)
+		caller, _, err := callerG.Do(ctx, id, func(ctx context.Context) (engineutil.SessionCaller, error) {
+			return client.daggerSession.attachables.Wait(ctx, id)
 		})
 		return caller, err
 	}
-	client.getClientCaller = func(id string) (bksession.Caller, error) {
-		return client.resolveClientCaller(id, getClientCaller)
+	client.hostServiceProxyClientID = opts.HostServiceProxyClientID
+	client.getHostServiceCaller = func(ctx context.Context, id string) (engineutil.SessionCaller, error) {
+		return client.resolveHostServiceCaller(ctx, id)
 	}
 
 	var err error
@@ -560,9 +569,9 @@ func (srv *Server) initializeDaggerClient(
 	}
 
 	engineUtilOpts := *srv.engineUtilOpts
-	engineUtilOpts.SessionManager = srv.bkSessionManager
 	engineUtilOpts.Dialer = client.dialer
 	engineUtilOpts.GetClientCaller = client.getClientCaller
+	engineUtilOpts.GetHostServiceCaller = client.getHostServiceCaller
 	engineUtilOpts.GetMainClientCaller = client.getMainClientCaller
 	engineUtilOpts.GetRegistryResolver = srv.RegistryResolver
 	engineUtilOpts.Interactive = client.daggerSession.interactive
@@ -702,25 +711,29 @@ func (srv *Server) initializeDaggerClient(
 	return nil
 }
 
-func (client *daggerClient) resolveClientCaller(
+func (client *daggerClient) resolveHostServiceCaller(
+	ctx context.Context,
 	id string,
-	getClientCaller func(string, bool) (bksession.Caller, error),
-) (bksession.Caller, error) {
-	if id == client.clientID && len(client.parents) > 0 {
+) (engineutil.SessionCaller, error) {
+	if id == client.clientID && client.hostServiceProxyClientID != "" {
 		// Synthetic nested clients (e.g. builtin dang evaluation) do not
 		// establish their own session attachables. When host-backed services
 		// such as git config are requested through the current client ID, fall
-		// back to the immediate parent client chain.
-		caller, err := getClientCaller(id, true)
-		if err != nil || caller != nil {
-			return caller, err
+		// back to the explicit proxy client chain.
+		if caller, ok := client.daggerSession.attachables.Lookup(id); ok {
+			return caller, nil
 		}
 
-		parent := client.parents[len(client.parents)-1]
-		return parent.getClientCaller(parent.clientID)
+		for i := len(client.parents) - 1; i >= 0; i-- {
+			parent := client.parents[i]
+			if parent.clientID == client.hostServiceProxyClientID {
+				return parent.getHostServiceCaller(ctx, parent.clientID)
+			}
+		}
+		return nil, fmt.Errorf("host service proxy client %q not found for client %q", client.hostServiceProxyClientID, client.clientID)
 	}
 
-	return getClientCaller(id, false)
+	return client.getClientCaller(ctx, id)
 }
 
 func (srv *Server) clientFromContext(ctx context.Context) (*daggerClient, error) {
@@ -767,6 +780,8 @@ func (srv *Server) clientFromIDs(sessID, clientID string) (*daggerClient, error)
 // initialize session+client if needed, return:
 // * the initialized client
 // * a cleanup func to run when the call is done
+//
+//nolint:gocyclo // session/client initialization is an intentionally linear state machine.
 func (srv *Server) getOrInitClient(
 	ctx context.Context,
 	opts *ClientInitOpts,
@@ -899,6 +914,15 @@ func (srv *Server) getOrInitClient(
 		if opts.LoadWorkspaceModules {
 			client.clientMetadata.LoadWorkspaceModules = true
 		}
+		if opts.HostServiceProxyClientID != "" {
+			switch client.hostServiceProxyClientID {
+			case "":
+				client.hostServiceProxyClientID = opts.HostServiceProxyClientID
+			case opts.HostServiceProxyClientID:
+			default:
+				return nil, nil, fmt.Errorf("client %q already exists with different host service proxy client %q", clientID, client.hostServiceProxyClientID)
+			}
+		}
 		if client.clientMetadata.Workspace == nil && !client.workspaceLoaded {
 			if workspaceRef, ok := workspaceRefFromClientMetadata(opts.ClientMetadata); ok {
 				ref := workspaceRef
@@ -975,6 +999,7 @@ func (srv *Server) ServeHTTPToNestedClient(
 	r *http.Request,
 	nestedClientMetadata *engine.ClientMetadata,
 	callerClientID string,
+	hostServiceProxyToCaller bool,
 	moduleCtx dagql.AnyObjectResult,
 	functionCall dagql.Typed,
 	envCtx dagql.AnyObjectResult,
@@ -1019,12 +1044,18 @@ func (srv *Server) ServeHTTPToNestedClient(
 		}
 	}
 
+	var hostServiceProxyClientID string
+	if hostServiceProxyToCaller {
+		hostServiceProxyClientID = callerClientID
+	}
+
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
-		ClientMetadata: clientMetadata,
-		CallerClientID: callerClientID,
-		ModuleContext:  moduleContext,
-		FunctionCall:   fnCall,
-		EnvContext:     envContext,
+		ClientMetadata:           clientMetadata,
+		CallerClientID:           callerClientID,
+		HostServiceProxyClientID: hostServiceProxyClientID,
+		ModuleContext:            moduleContext,
+		FunctionCall:             fnCall,
+		EnvContext:               envContext,
 	}).ServeHTTP(w, r)
 }
 
@@ -1169,10 +1200,9 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 
 func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
 	ctx := r.Context()
-	bklog.G(ctx).Debugf("session manager handling conn %s", client.clientID)
+	slog.DebugContext(ctx, "session attachables handling conn", "clientID", client.clientID)
 	defer func() {
-		bklog.G(ctx).WithError(rerr).Debugf("session manager handle conn done %s", client.clientID)
-		slog.ExtraDebug("session manager handle conn done",
+		slog.DebugContext(ctx, "session attachables handle conn done",
 			"err", rerr,
 			"ctxErr", ctx.Err(),
 			"clientID", client.clientID,
@@ -1180,9 +1210,8 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 	}()
 
 	// verify this isn't overwriting an existing active session
-	existingCaller, err := srv.bkSessionManager.Get(ctx, client.clientID, true)
-	if err == nil && existingCaller != nil {
-		err := fmt.Errorf("buildkit session %q already exists", client.clientID)
+	if _, ok := client.daggerSession.attachables.Lookup(client.clientID); ok {
+		err := fmt.Errorf("session attachables for client %q already exist", client.clientID)
 		return httpErr(err, http.StatusBadRequest)
 	}
 
@@ -1229,14 +1258,9 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 	// they add noticeable memory allocation overhead, especially for heavy filesync use cases.
 	ctx = trace.ContextWithSpan(ctx, trace.SpanFromContext(nil)) //nolint:staticcheck // we have to provide a nil context...
 
-	err = srv.bkSessionManager.HandleConn(ctx, conn, map[string][]string{
-		engine.SessionIDMetaKey:         {client.clientID},
-		engine.SessionNameMetaKey:       {client.clientID},
-		engine.SessionSharedKeyMetaKey:  {""},
-		engine.SessionMethodNameMetaKey: r.Header.Values(engine.SessionMethodNameMetaKey),
-	})
+	err = client.daggerSession.attachables.Register(ctx, client.clientID, conn, r.Header.Values(engine.SessionMethodNameMetaKey))
 	if err != nil {
-		panic(fmt.Errorf("handleConn: %w", err))
+		panic(fmt.Errorf("handle session attachables: %w", err))
 	}
 	return nil
 }
@@ -1314,9 +1338,15 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 
 	r = r.WithContext(ctx)
 
+	if client.hostServiceProxyClientID == "" {
+		if _, err := client.getClientCaller(ctx, client.clientID); err != nil {
+			return gqlErr(fmt.Errorf("waiting for client session attachables: %w", err), http.StatusInternalServerError)
+		}
+	}
+
 	// Load workspace modules and extra modules (e.g. from -m flag). These are
 	// deferred from initializeDaggerClient because they need the client's
-	// buildkit session, which only becomes available after the session
+	// session attachables, which only become available after the session
 	// attachables handshake completes (after init locks are released).
 	if err := srv.ensureWorkspaceLoaded(ctx, client); err != nil {
 		return gqlErr(fmt.Errorf("loading workspace: %w", err), http.StatusInternalServerError)
@@ -1879,7 +1909,7 @@ func (srv *Server) SpecificClientAttachableConn(ctx context.Context, clientID st
 	if err != nil {
 		return nil, err
 	}
-	caller, err := client.getClientCaller(clientID)
+	caller, err := client.getClientCaller(ctx, clientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get session attachable caller for client %q: %w", clientID, err)
 	}
@@ -1902,7 +1932,7 @@ func (srv *Server) sessionMainClientConn(ctx context.Context, sess *daggerSessio
 	if err != nil {
 		return nil, fmt.Errorf("failed to get main client %q: %w", sess.mainClientCallerID, err)
 	}
-	caller, err := client.getClientCaller(sess.mainClientCallerID)
+	caller, err := client.getClientCaller(ctx, sess.mainClientCallerID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get main client caller %q: %w", sess.mainClientCallerID, err)
 	}
@@ -2090,7 +2120,7 @@ func (srv *Server) CloudEngineClient(
 		return nil, false, err
 	}
 	parentCallerCtx := engine.ContextWithClientMetadata(ctx, parentClient.clientMetadata)
-	parentSession, err := parentClient.engineUtilClient.GetSessionCaller(parentCallerCtx, false)
+	parentSession, err := parentClient.engineUtilClient.GetSessionCaller(parentCallerCtx)
 	if err != nil {
 		return nil, false, err
 	}

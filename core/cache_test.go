@@ -14,7 +14,6 @@ import (
 	bkconfig "github.com/dagger/dagger/engine/snapshots/config"
 	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	"github.com/dagger/dagger/internal/buildkit/client"
-	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -157,14 +156,6 @@ func (*cacheVolumeTestImmutableRef) ExportChain(context.Context, bkconfig.RefCon
 
 func (*cacheVolumeTestImmutableRef) Finalize(context.Context) error {
 	panic("unexpected Finalize call")
-}
-
-func (*cacheVolumeTestImmutableRef) Extract(context.Context, bksession.Group) error {
-	panic("unexpected Extract call")
-}
-
-func (*cacheVolumeTestImmutableRef) FileList(context.Context, bksession.Group) ([]string, error) {
-	panic("unexpected FileList call")
 }
 
 func (*cacheVolumeTestImmutableRef) GetDescription() string {
