@@ -30,6 +30,9 @@ var listenCmd = &cobra.Command{
 	RunE:    optionalModCmdWrapper(Listen, os.Getenv("DAGGER_SESSION_TOKEN")),
 	Hidden:  true,
 	Short:   "Starts the engine server",
+	Annotations: map[string]string{
+		showFinalProgressKey: "true",
+	},
 }
 
 func init() {
