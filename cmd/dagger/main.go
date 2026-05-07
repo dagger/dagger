@@ -200,6 +200,7 @@ var rootCmd = &cobra.Command{
 		// if we got this far, CLI parsing worked just fine; no
 		// need to show usage for runtime errors
 		cmd.SilenceUsage = true
+		applyCommandProgressDefaults(cmd)
 
 		if cpuprofile != "" {
 			profF, err := os.Create(cpuprofile)
@@ -516,17 +517,35 @@ const (
 	workspaceFlagPolicyAnnotation = "workspaceFlagPolicy"
 	workspaceFlagPolicyDisallow   = "disallow"
 	workspaceFlagPolicyLocalOnly  = "local-only"
+
+	showFinalProgressKey = "showFinalProgress"
 )
+
+func commandShowsFinalProgress(cmd *cobra.Command) bool {
+	for c := cmd; c != nil; c = c.Parent() {
+		if c.Annotations[showFinalProgressKey] == "true" {
+			return true
+		}
+	}
+	return false
+}
+
+func applyCommandProgressDefaults(cmd *cobra.Command) {
+	verbosity := dagui.HideCompletedVerbosity
+	if commandShowsFinalProgress(cmd) {
+		verbosity = dagui.ShowCompletedVerbosity
+	}
+	verbosity += verbose
+	verbosity -= quiet
+	opts.Verbosity = verbosity
+}
 
 func main() {
 	parseGlobalFlags()
-	opts.Verbosity += dagui.ShowCompletedVerbosity // keep progress by default
-	opts.Verbosity += verbose                      // raise verbosity with -v
-	opts.Verbosity -= quiet                        // lower verbosity with -q
-	opts.Silent = silent                           // show no progress
-	opts.Debug = debugFlag                         // show everything
-	opts.RevealNoisySpans = reveal                 // disable 'reveal: true' mechanic (for tests)
-	opts.ExpandCompleted = expandCompleted         // leave things expanded as they complete
+	opts.Silent = silent                   // show no progress
+	opts.Debug = debugFlag                 // show everything
+	opts.RevealNoisySpans = reveal         // disable 'reveal: true' mechanic (for tests)
+	opts.ExpandCompleted = expandCompleted // leave things expanded as they complete
 	opts.OpenWeb = web
 	opts.NoExit = noExit
 	opts.DotOutputFilePath = dotOutputFilePath
