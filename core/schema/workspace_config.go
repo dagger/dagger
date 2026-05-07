@@ -32,6 +32,9 @@ func (s *workspaceSchema) workspaceInit(
 	if parent.HostPath() == "" {
 		return "", fmt.Errorf("workspace init is local-only")
 	}
+	if parent.CompatWorkspace() != nil {
+		return "", fmt.Errorf("workspace is using legacy dagger.json config; run dagger migrate first")
+	}
 
 	configDirRel := workspaceConfigDirectoryForWrite(parent, args.Here)
 	configPath, err := workspaceHostPath(parent, configDirRel, workspace.ConfigFileName)
@@ -40,7 +43,7 @@ func (s *workspaceSchema) workspaceInit(
 	}
 	configDir := filepath.Dir(configPath)
 
-	if parent.HasConfig && workspaceSameConfigDirectory(parent, configDirRel) {
+	if parent.ConfigFile != "" && workspaceSameConfigDirectory(parent, configDirRel) {
 		return "", fmt.Errorf("workspace config already exists at %s", configDir)
 	}
 
@@ -84,11 +87,14 @@ func loadWorkspaceConfigForMutation(
 	policy workspaceConfigMutationPolicy,
 	here bool,
 ) (*workspace.Config, bool, error) {
-	if ws.HasConfig && (!here || workspaceSameConfigDirectory(ws, workspaceConfigDirectoryForWrite(ws, true))) {
+	if ws.ConfigFile != "" && (!here || workspaceSameConfigDirectory(ws, workspaceConfigDirectoryForWrite(ws, true))) {
 		cfg, err := readWorkspaceConfig(ctx, ws)
 		return cfg, false, err
 	}
 
+	if ws.CompatWorkspace() != nil {
+		return nil, false, fmt.Errorf("workspace is using legacy dagger.json config; run dagger migrate first")
+	}
 	if policy == workspaceConfigMustExist {
 		return nil, false, fmt.Errorf("no config.toml found in workspace")
 	}
@@ -106,7 +112,7 @@ func loadWorkspaceConfigForMutation(
 
 func ensureWorkspaceInitialized(ctx context.Context, bk *engineutil.Client, ws *core.Workspace, here bool) error {
 	configDirRel := workspaceConfigDirectoryForWrite(ws, here)
-	if ws.HasConfig && workspaceSameConfigDirectory(ws, configDirRel) {
+	if ws.ConfigFile != "" && workspaceSameConfigDirectory(ws, configDirRel) {
 		return nil
 	}
 
@@ -119,7 +125,6 @@ func ensureWorkspaceInitialized(ctx context.Context, bk *engineutil.Client, ws *
 	}
 
 	setWorkspaceConfigSelection(ws, configDirRel)
-	ws.HasConfig = true
 	return nil
 }
 
@@ -127,39 +132,42 @@ func workspaceConfigDirectoryForWrite(ws *core.Workspace, here bool) string {
 	if here {
 		return cleanWorkspaceRelPath(filepath.Join(ws.Cwd, workspace.LockDirName))
 	}
-	if ws.HasConfig && ws.ConfigDirectory != nil && *ws.ConfigDirectory != "" {
-		return cleanWorkspaceRelPath(*ws.ConfigDirectory)
+	if ws.ConfigFile != "" {
+		return filepath.Dir(cleanWorkspaceRelPath(ws.ConfigFile))
 	}
 	return workspace.LockDirName
 }
 
 func workspaceConfigDirectory(ws *core.Workspace) (string, error) {
-	if !ws.HasConfig || ws.ConfigDirectory == nil || *ws.ConfigDirectory == "" {
-		return "", fmt.Errorf("no config.toml found in workspace")
+	configFile, err := workspaceConfigFile(ws)
+	if err != nil {
+		return "", err
 	}
-	return cleanWorkspaceRelPath(*ws.ConfigDirectory), nil
+	return filepath.Dir(configFile), nil
 }
 
 func workspaceConfigFile(ws *core.Workspace) (string, error) {
-	if !ws.HasConfig || ws.ConfigFile == nil || *ws.ConfigFile == "" {
+	if ws.ConfigFile == "" {
 		return "", fmt.Errorf("no config.toml found in workspace")
 	}
-	return cleanWorkspaceRelPath(*ws.ConfigFile), nil
+	return cleanWorkspaceRelPath(ws.ConfigFile), nil
 }
 
 func workspaceSameConfigDirectory(ws *core.Workspace, configDir string) bool {
-	if !ws.HasConfig || ws.ConfigDirectory == nil {
+	selectedDir, err := workspaceConfigDirectory(ws)
+	if err != nil {
 		return false
 	}
-	return cleanWorkspaceRelPath(*ws.ConfigDirectory) == cleanWorkspaceRelPath(configDir)
+	return selectedDir == cleanWorkspaceRelPath(configDir)
 }
 
 func setWorkspaceConfigSelection(ws *core.Workspace, configDir string) {
 	configDir = cleanWorkspaceRelPath(configDir)
 	configFile := cleanWorkspaceRelPath(filepath.Join(configDir, workspace.ConfigFileName))
-	ws.ConfigDirectory = &configDir
-	ws.ConfigFile = &configFile
-	ws.HasConfig = true
+	if ws.LockFile == "" {
+		ws.LockFile = cleanWorkspaceRelPath(filepath.Join(configDir, workspace.LockFileName))
+	}
+	ws.ConfigFile = configFile
 }
 
 func cleanWorkspaceRelPath(p string) string {
@@ -198,10 +206,6 @@ func exportConfigToHost(ctx context.Context, bk *engineutil.Client, ws *core.Wor
 }
 
 func readConfigBytes(ctx context.Context, ws *core.Workspace) ([]byte, error) {
-	if !ws.HasConfig {
-		return nil, fmt.Errorf("no config.toml found in workspace")
-	}
-
 	configPath, err := configHostPath(ws)
 	if err != nil {
 		return nil, err
