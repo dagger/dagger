@@ -27,7 +27,7 @@ const (
 	LockModeStrict = LockModeFrozen
 
 	// DefaultLockMode is used when no mode is explicitly set.
-	DefaultLockMode = LockModeDisabled
+	DefaultLockMode = LockModePinned
 )
 
 // LockPolicy controls update intent for a lock entry.
