@@ -432,6 +432,15 @@ func cwdModuleName(ctx context.Context, readFile func(context.Context, string) (
 	return cfg.Name
 }
 
+func pendingCWDModule(ctx context.Context, readFile func(context.Context, string) ([]byte, error), moduleDir, ref string) pendingModule {
+	return pendingModule{
+		Kind:       moduleLoadKindCWD,
+		Ref:        ref,
+		Name:       cwdModuleName(ctx, readFile, moduleDir),
+		Entrypoint: true,
+	}
+}
+
 func loadWorkspaceConfig(
 	ctx context.Context,
 	readFile func(context.Context, string) ([]byte, error),
@@ -639,6 +648,17 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	if ws == nil {
 		client.workspace = nil
 		client.pendingModules = nil
+		if loadModules {
+			moduleDir, hasModuleConfig, err := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
+			if err != nil {
+				return fmt.Errorf("finding cwd module: %w", err)
+			}
+			if hasModuleConfig && !hasPendingExtraModules(client) {
+				client.pendingModules = []pendingModule{
+					pendingCWDModule(ctx, readFile, moduleDir, moduleDir),
+				}
+			}
+		}
 		return nil
 	}
 
@@ -762,12 +782,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	// is only inferred when no workspace config is selected.
 	if wsConfig == nil && hasModuleConfig && !hasPendingExtraModules(client) && !suppressCWDModuleForCompatWorkspace(compatWorkspace, moduleDir) {
 		rel, _ := filepath.Rel(ws.Root, moduleDir)
-		pending = append(pending, pendingModule{
-			Kind:       moduleLoadKindCWD,
-			Ref:        resolveLocalRef(ws, rel),
-			Name:       cwdModuleName(ctx, readFile, moduleDir),
-			Entrypoint: true,
-		})
+		pending = append(pending, pendingCWDModule(ctx, readFile, moduleDir, resolveLocalRef(ws, rel)))
 	}
 
 	// (3) Extra modules from -m flag are stored separately in
