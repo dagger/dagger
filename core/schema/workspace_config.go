@@ -280,6 +280,14 @@ func (s *workspaceSchema) configRead(
 	parent *core.Workspace,
 	args configReadArgs,
 ) (dagql.String, error) {
+	if parent.ConfigFile == "" {
+		result, err := workspace.ReadConfigValue(nil, args.Key)
+		if err != nil {
+			return "", err
+		}
+		return dagql.String(result), nil
+	}
+
 	if envName, ok := selectedWorkspaceEnv(ctx); ok && !isExplicitEnvConfigKey(args.Key) {
 		cfg, err := readWorkspaceConfig(ctx, parent)
 		if err != nil {
