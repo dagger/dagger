@@ -151,7 +151,7 @@ In a workspace, the lockfile is the **source of truth for dependency pins**. Unl
 
 Key workspace-specific behaviors:
 
-- **Enabled by default**: Workspaces use lockfiles by default (`--lock=pinned`), unlike the lockfile primitive's default of `disabled`. This means workspace module resolution, container base images, and git refs are all pinned on first run and reused on subsequent runs.
+- **Enabled by default**: Workspaces use lockfiles by default (`--lock=pinned`). This means workspace module resolution, container base images, and git refs are all pinned on first run and reused on subsequent runs.
 - **Lock file location**: `.dagger/lock`, derived from the workspace root.
 - **Update flow**: `dagger lock update` refreshes entries in the lockfile. Running with `--lock=live` refreshes entries as they are encountered during execution.
 
