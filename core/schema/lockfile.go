@@ -61,6 +61,37 @@ func currentLookupLockMode(ctx context.Context) (workspace.LockMode, error) {
 	return workspace.ResolveLockMode(clientMetadata.LockMode)
 }
 
+// lookupLockForMode is the policy boundary between ordinary lookups and
+// workspace lockfiles. Default/live/pinned lookups use a writable local
+// workspace lock binding when one exists; without one they resolve live and
+// skip lock writes. Frozen mode is different: it is an explicit request to
+// enforce a lockfile, so absence of a writable workspace lock is an error.
+func lookupLockForMode(
+	ctx context.Context,
+	query *core.Query,
+	operation string,
+) (workspace.LockMode, *workspaceLookupLock, error) {
+	lockMode, err := currentLookupLockMode(ctx)
+	if err != nil {
+		return "", nil, fmt.Errorf("%s lock mode: %w", operation, err)
+	}
+	if lockMode == workspace.LockModeDisabled {
+		return lockMode, nil, nil
+	}
+
+	lookupLock, err := loadWorkspaceLookupLock(ctx, query)
+	if err != nil {
+		return "", nil, fmt.Errorf("%s lockfile: %w", operation, err)
+	}
+	if lookupLock == nil {
+		if lockMode == workspace.LockModeFrozen {
+			return "", nil, fmt.Errorf("%s lockfile: no writable workspace lockfile is available", operation)
+		}
+		return workspace.LockModeDisabled, nil, nil
+	}
+	return lockMode, lookupLock, nil
+}
+
 type lookupLockResolution struct {
 	Pin         string
 	Policy      workspace.LockPolicy
@@ -124,11 +155,10 @@ func resolveLookupFromLock(
 }
 
 func lockHostPath(ws *core.Workspace) (string, error) {
-	configDir, err := workspaceConfigDirectory(ws)
-	if err != nil {
-		return "", err
+	if ws.LockFile == "" {
+		return "", fmt.Errorf("workspace lockfile is not selected")
 	}
-	return workspaceHostPath(ws, configDir, workspace.LockFileName)
+	return workspaceHostPath(ws, ws.LockFile)
 }
 
 func readWorkspaceLock(ctx context.Context, bk interface {

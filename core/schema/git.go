@@ -863,22 +863,16 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 		lookupLock     *workspaceLookupLock
 	)
 	if args.Commit == "" && args.LockOperation != "" {
-		lockMode, err := currentLookupLockMode(ctx)
+		query, err := core.CurrentQuery(ctx)
 		if err != nil {
-			return inst, fmt.Errorf("%s lock mode: %w", args.LockOperation, err)
+			return inst, err
 		}
+		lockMode, loadedLookupLock, err := lookupLockForMode(ctx, query, args.LockOperation)
+		if err != nil {
+			return inst, err
+		}
+		lookupLock = loadedLookupLock
 		if lockMode != workspace.LockModeDisabled {
-			query, err := core.CurrentQuery(ctx)
-			if err != nil {
-				return inst, err
-			}
-			lookupLock, err = loadWorkspaceLookupLock(ctx, query)
-			if err != nil {
-				return inst, fmt.Errorf("%s lockfile: %w", args.LockOperation, err)
-			}
-			if lookupLock == nil {
-				return inst, fmt.Errorf("experimental lockfile support is local-only")
-			}
 			lockInputs, err := gitLockInputs(repo, args.LockOperation, args.LockName)
 			if err != nil {
 				return inst, fmt.Errorf("%s lock inputs: %w", args.LockOperation, err)
