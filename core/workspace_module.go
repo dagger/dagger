@@ -24,6 +24,24 @@ func (*WorkspaceModule) TypeDescription() string {
 	return "A module entry in the workspace configuration."
 }
 
+// WorkspaceModuleSetting describes one constructor-backed module setting.
+type WorkspaceModuleSetting struct {
+	Key         string `field:"true" doc:"The setting key."`
+	Value       string `field:"true" doc:"The configured value after applying the selected workspace environment, or empty when unset."`
+	Description string `field:"true" doc:"The constructor argument description."`
+}
+
+func (*WorkspaceModuleSetting) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "WorkspaceModuleSetting",
+		NonNull:   true,
+	}
+}
+
+func (*WorkspaceModuleSetting) TypeDescription() string {
+	return "A constructor-backed module setting."
+}
+
 type WorkspaceModules []*WorkspaceModule
 
 func (m WorkspaceModules) Sort() {
