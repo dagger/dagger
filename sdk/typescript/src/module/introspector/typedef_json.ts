@@ -1,6 +1,9 @@
 import { TypeDefKind } from "../../api/client.gen.js"
 import { DaggerArgument } from "./dagger_module/argument.js"
-import { DaggerEnum, DaggerEnumValue } from "./dagger_module/enum.js"
+import {
+  DaggerEnumBase,
+  DaggerEnumBaseValue,
+} from "./dagger_module/enumBase.js"
 import { DaggerFunction } from "./dagger_module/function.js"
 import { DaggerInterface } from "./dagger_module/interface.js"
 import { DaggerInterfaceFunction } from "./dagger_module/interfaceFunction.js"
@@ -97,11 +100,11 @@ function serializeProperty(prop: DaggerObjectPropertyBase) {
   }
 }
 
-function serializeEnum(enum_: DaggerEnum) {
+function serializeEnum(enum_: DaggerEnumBase) {
   return {
     name: enum_.name,
     description: enum_.description,
-    values: mapValues(enum_.values, (v: DaggerEnumValue) => ({
+    values: mapValues(enum_.values, (v: DaggerEnumBaseValue) => ({
       name: v.name,
       value: v.value,
       description: v.description,
