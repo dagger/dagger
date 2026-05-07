@@ -15,7 +15,7 @@ func (s *workspaceSchema) moduleList(
 	parent *core.Workspace,
 	_ struct{},
 ) (dagql.ObjectResultArray[*core.WorkspaceModule], error) {
-	if !parent.HasConfig {
+	if parent.ConfigFile == "" {
 		return nil, nil
 	}
 
