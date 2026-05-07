@@ -165,6 +165,55 @@ func TestCurrentLookupLockMode(t *testing.T) {
 	})
 }
 
+func TestLookupLockForMode(t *testing.T) {
+	t.Parallel()
+
+	const operation = "container.from"
+
+	t.Run("pinned without workspace lock resolves live without writes", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+			LockMode: string(workspace.LockModePinned),
+		})
+		query := &core.Query{Server: &currentTypeDefsTestServer{}}
+
+		mode, lock, err := lookupLockForMode(ctx, query, operation)
+		require.NoError(t, err)
+		require.Equal(t, workspace.LockModeDisabled, mode)
+		require.Nil(t, lock)
+	})
+
+	t.Run("frozen without workspace lock fails", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+			LockMode: string(workspace.LockModeFrozen),
+		})
+		query := &core.Query{Server: &currentTypeDefsTestServer{}}
+
+		_, _, err := lookupLockForMode(ctx, query, operation)
+		require.ErrorContains(t, err, "no writable workspace lockfile is available")
+	})
+
+	t.Run("uses available workspace lock", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+			LockMode: string(workspace.LockModePinned),
+		})
+		query := &core.Query{Server: &currentTypeDefsTestServer{
+			workspaceLock:   workspace.NewLock(),
+			workspaceLockOK: true,
+		}}
+
+		mode, lock, err := lookupLockForMode(ctx, query, operation)
+		require.NoError(t, err)
+		require.Equal(t, workspace.LockModePinned, mode)
+		require.NotNil(t, lock)
+	})
+}
+
 func TestWorkspaceInstallLookupContext(t *testing.T) {
 	t.Parallel()
 
@@ -196,10 +245,9 @@ func TestWorkspaceInstallLookupContext(t *testing.T) {
 func TestLockHostPath(t *testing.T) {
 	t.Parallel()
 
-	configDir := filepath.Join("apps", "api", ".dagger")
 	ws := &core.Workspace{
-		ConfigDirectory: &configDir,
-		HasConfig:       true,
+		ConfigFile: filepath.Join("apps", "api", ".dagger", "config.toml"),
+		LockFile:   filepath.Join("apps", "api", ".dagger", "lock"),
 	}
 	ws.SetHostPath("/repo")
 
@@ -212,10 +260,9 @@ func TestReadWorkspaceLock(t *testing.T) {
 	t.Parallel()
 
 	makeWorkspace := func() *core.Workspace {
-		configDir := ".dagger"
 		ws := &core.Workspace{
-			ConfigDirectory: &configDir,
-			HasConfig:       true,
+			ConfigFile: filepath.Join(".dagger", "config.toml"),
+			LockFile:   filepath.Join(".dagger", "lock"),
 		}
 		ws.SetHostPath("/repo")
 		return ws

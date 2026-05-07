@@ -1056,21 +1056,13 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, nil
 	}
 
-	lockMode, err := currentLookupLockMode(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("container.from lock mode: %w", err)
-	}
-
 	var lookupLock *workspaceLookupLock
 	var rawLock *workspace.Lock
+	lockMode, lookupLock, err := lookupLockForMode(ctx, query, lockContainerFromOperation)
+	if err != nil {
+		return inst, err
+	}
 	if lockMode != workspace.LockModeDisabled {
-		lookupLock, err = loadWorkspaceLookupLock(ctx, query)
-		if err != nil {
-			return inst, fmt.Errorf("container.from lockfile: %w", err)
-		}
-		if lookupLock == nil {
-			return inst, fmt.Errorf("experimental lockfile support is local-only")
-		}
 		rawLock = lookupLock.lock
 	}
 
