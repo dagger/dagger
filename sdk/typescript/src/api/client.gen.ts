@@ -9,7 +9,7 @@ import { Context } from "../common/context.js"
  */
 export type float = number
 
-export class BaseClient {
+class BaseClient {
   /**
    * @hidden
    */

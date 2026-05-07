@@ -231,7 +231,9 @@ class InterfaceWrapper {
               if (cls) {
                 return new cls(ctx)
               }
-              return new clientGen.BaseClient(ctx)
+              throw new Error(
+                `Generated client class not found for core type ${typedef.name}`,
+              )
             })
           }
         }

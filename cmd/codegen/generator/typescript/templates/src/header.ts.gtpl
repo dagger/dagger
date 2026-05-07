@@ -86,7 +86,7 @@ export async function connect(
  */
 export type float = number
 
-export class BaseClient {
+class BaseClient {
   /**
    * @hidden
    */

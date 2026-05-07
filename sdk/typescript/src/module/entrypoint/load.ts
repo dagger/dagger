@@ -190,8 +190,9 @@ export async function loadValue(
       if (cls) {
         return new cls(ctx)
       }
-      // Fallback: return a BaseClient with the right context
-      return new clientGen.BaseClient(ctx)
+      throw new Error(
+        `Generated client class not found for core type ${objectType}`,
+      )
     }
     case TypeDefKind.InterfaceKind: {
       const interfaceType = (type as TypeDef<TypeDefKind.InterfaceKind>).name
