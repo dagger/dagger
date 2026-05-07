@@ -325,7 +325,7 @@ Notes:
 ### Implemented Semantics
 
 - [x] `--lock=disabled|live|pinned|frozen`
-- [x] default lock mode is `disabled`
+- [x] default lock mode is `pinned`
 - [x] `live` writes through
 - [x] `pinned` writes through for `float` and missing entries
 - [x] `frozen` reuses both `pin` and `float` entries and fails on misses
@@ -565,7 +565,7 @@ Important constraints:
 
 ### UX and maintenance follow-ups
 
-- [ ] decide whether `disabled` should remain the long-term default
+- [x] decide whether `disabled` should remain the long-term default
 - [ ] decide whether `dagger lock update` should gain richer output or selection flags
 - [ ] decide whether lock update should prune stale entries
 - [ ] decide whether to add a public lockfile DagQL API later
