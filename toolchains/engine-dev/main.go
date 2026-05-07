@@ -101,10 +101,6 @@ func (dev *EngineDev) WithLogLevel(level string) *EngineDev {
 	return dev
 }
 
-func (dev *EngineDev) sourceWithEbpfObjects() *dagger.Directory {
-	return dev.Source.With(build.EbpfGenerate)
-}
-
 // Build an ephemeral environment with the Dagger CLI and engine built from source, installed and ready to use
 func (dev *EngineDev) Playground(
 	ctx context.Context,
@@ -375,18 +371,8 @@ func (dev *EngineDev) ConfigSchema(filename string) *dagger.File {
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
 // +generate
-func (dev *EngineDev) Generate(ctx context.Context) (*dagger.Changeset, error) {
-	// ebpf object files are actually expected to only be generated during a build, not
-	// committed, so we remove stubs and real ones before+after go generate
+func (dev *EngineDev) Generate(_ context.Context) (*dagger.Changeset, error) {
 	base := dev.Source
-	ebpfObjectFiles, err := base.Glob(ctx, "**/*_bpfel.o")
-	if err != nil {
-		return nil, err
-	}
-	if len(ebpfObjectFiles) > 0 {
-		base = base.WithoutFiles(ebpfObjectFiles)
-	}
-
 	withGoGenerate := dag.Go(dagger.GoOpts{
 		Source: dev.Source,
 		ExtraPackages: []string{
@@ -403,7 +389,6 @@ func (dev *EngineDev) Generate(ctx context.Context) (*dagger.Changeset, error) {
 		WithMountedDirectory("./github.com/gogo/googleapis", dag.Git("https://github.com/gogo/googleapis.git").Tag("v1.4.1").Tree()).
 		WithMountedDirectory("./github.com/gogo/protobuf", dag.Git("https://github.com/gogo/protobuf.git").Tag("v1.3.2").Tree()).
 		WithExec([]string{"go", "generate", "-v", "./..."}).
-		WithExec([]string{"find", "engine/ebpf", "-name", "*_bpfel.o", "-delete"}).
 		WithExec([]string{"go", "test", "./dagql", "-update"}).
 		Directory(".")
 	changes := changes(base, withGoGenerate, []string{"github.com"})
