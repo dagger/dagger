@@ -12,15 +12,12 @@ Dagger is built around a few core concepts that work together to enable powerful
 
 ## [Workspaces](/core-concepts/workspaces)
 
-**Your project's Dagger configuration.**
+**Your project, managed by Dagger.**
 
-A workspace is a directory with a `.dagger/` folder that defines which modules your project uses and how they're configured. It's the connection between your codebase and Dagger.
+A workspace is your Git repository. Dagger stores its configuration in a `.dagger/` directory, created automatically when you first install a module.
 
 ```shell
-# Initialize a workspace
-dagger init
-
-# Install a module
+# Install a module (creates .dagger/ if needed)
 dagger install github.com/dagger/eslint
 ```
 
