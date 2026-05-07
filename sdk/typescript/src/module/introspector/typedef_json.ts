@@ -1,7 +1,15 @@
 import { TypeDefKind } from "../../api/client.gen.js"
+import { DaggerArgument } from "./dagger_module/argument.js"
+import { DaggerEnum, DaggerEnumValue } from "./dagger_module/enum.js"
+import { DaggerFunction } from "./dagger_module/function.js"
+import { DaggerInterface } from "./dagger_module/interface.js"
+import { DaggerInterfaceFunction } from "./dagger_module/interfaceFunction.js"
 import { DaggerModule } from "./dagger_module/module.js"
-import { DaggerObjectBase } from "./dagger_module/objectBase.js"
-import { TypeDef } from "./typedef.js"
+import {
+  DaggerObjectBase,
+  DaggerObjectPropertyBase,
+} from "./dagger_module/objectBase.js"
+import { ListTypeDef, ObjectTypeDef, TypeDef } from "./typedef.js"
 
 /**
  * Serialize a parsed DaggerModule into a stable JSON shape that downstream
@@ -44,24 +52,25 @@ function serializeObject(obj: DaggerObjectBase) {
   }
 }
 
-function serializeFunction(fn: any) {
+function serializeFunction(fn: DaggerFunction | DaggerInterfaceFunction) {
   // Emit arguments as an ordered array — argument position matters for
   // positional dispatch and Go's `map` iteration loses order.
+  const f = fn as DaggerFunction
   return {
-    name: fn.name,
-    alias: fn.alias,
-    cache: fn.cache,
-    description: fn.description,
-    deprecated: fn.deprecated,
-    isCheck: fn.isCheck === true,
-    isGenerator: fn.isGenerator === true,
-    isUp: fn.isUp === true,
-    returnType: fn.returnType ? serializeType(fn.returnType) : undefined,
-    arguments: Object.values(fn.arguments).map(serializeArgument),
+    name: f.name,
+    alias: f.alias,
+    cache: f.cache,
+    description: f.description,
+    deprecated: f.deprecated,
+    isCheck: f.isCheck === true,
+    isGenerator: f.isGenerator === true,
+    isUp: f.isUp === true,
+    returnType: f.returnType ? serializeType(f.returnType) : undefined,
+    arguments: Object.values(f.arguments).map(serializeArgument),
   }
 }
 
-function serializeArgument(arg: any) {
+function serializeArgument(arg: DaggerArgument) {
   return {
     name: arg.name,
     description: arg.description,
@@ -77,7 +86,7 @@ function serializeArgument(arg: any) {
   }
 }
 
-function serializeProperty(prop: any) {
+function serializeProperty(prop: DaggerObjectPropertyBase) {
   return {
     name: prop.name,
     alias: prop.alias,
@@ -88,11 +97,11 @@ function serializeProperty(prop: any) {
   }
 }
 
-function serializeEnum(enum_: any) {
+function serializeEnum(enum_: DaggerEnum) {
   return {
     name: enum_.name,
     description: enum_.description,
-    values: mapValues(enum_.values, (v: any) => ({
+    values: mapValues(enum_.values, (v: DaggerEnumValue) => ({
       name: v.name,
       value: v.value,
       description: v.description,
@@ -101,7 +110,7 @@ function serializeEnum(enum_: any) {
   }
 }
 
-function serializeInterface(iface: any) {
+function serializeInterface(iface: DaggerInterface) {
   return {
     name: iface.name,
     description: iface.description,
@@ -114,13 +123,13 @@ function serializeType(t: TypeDef<TypeDefKind>): unknown {
     case TypeDefKind.ListKind:
       return {
         kind: t.kind,
-        typeDef: serializeType((t as any).typeDef),
+        typeDef: serializeType((t as ListTypeDef).typeDef),
       }
     case TypeDefKind.ObjectKind:
     case TypeDefKind.EnumKind:
     case TypeDefKind.InterfaceKind:
     case TypeDefKind.ScalarKind:
-      return { kind: t.kind, name: (t as any).name }
+      return { kind: t.kind, name: (t as ObjectTypeDef).name }
     default:
       return { kind: t.kind }
   }
