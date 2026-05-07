@@ -249,7 +249,8 @@ func runWorkspaceInit(cmd *cobra.Command, _ []string) error {
 
 func runWorkspaceConfig(cmd *cobra.Command, args []string) error {
 	return withEngine(cmd.Context(), client.Params{
-		SkipWorkspaceModules: true,
+		SkipWorkspaceModules:           true,
+		SuppressCompatWorkspaceWarning: true,
 	}, func(ctx context.Context, engineClient *client.Client) error {
 		ws := engineClient.Dagger().CurrentWorkspace()
 
@@ -276,7 +277,12 @@ func printWorkspaceConfig(ctx context.Context, out io.Writer, ws *dagger.Workspa
 		return err
 	}
 
-	_, err = fmt.Fprintln(out, strings.TrimRight(value, "\n"))
+	value = strings.TrimRight(value, "\n")
+	if key == "" && value == "" {
+		return nil
+	}
+
+	_, err = fmt.Fprintln(out, value)
 	return err
 }
 
