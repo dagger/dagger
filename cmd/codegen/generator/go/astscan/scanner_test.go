@@ -26,6 +26,7 @@ func TestScan(t *testing.T) {
 		{"optional_args", "echo"},
 		{"pragma_args", "echo"},
 		{"module_local_dagger", "my-module"},
+		{"method_promotion", "aliases"},
 	}
 	schema := loadSchema(t)
 	for _, tc := range cases {

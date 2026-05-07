@@ -1,12 +1,10 @@
 // Package astscan extracts a Dagger module's declared types from
-// Go source code using go/parser + go/ast. It resolves type
-// references against the module's imports and the supplied
-// introspection schema; it does NOT invoke `go build` or
-// packages.Load.
+// Go source code using go/parser + go/ast and the standard library
+// type-checker (go/types) driven by a schema-synthesized importer.
 //
-// The scanner is the foundation for skipping the seed-codegen +
-// `go get` + full type-check round trip the existing template-based
-// path requires before it can discover module types.
+// It does NOT invoke `go build`, `go get`, or packages.Load — but it
+// gets the same name- and method-set semantics those would provide,
+// because go/types is the same engine the Go compiler uses.
 package astscan
 
 import (
@@ -15,12 +13,14 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/dagger/dagger/cmd/codegen/generator/go/pragma"
+	"github.com/dagger/dagger/cmd/codegen/generator/go/typescheck"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/cmd/codegen/schematool"
 )
@@ -37,12 +37,19 @@ func Scan(dir, moduleName string, schema *introspection.Schema) (*schematool.Mod
 	if err != nil {
 		return nil, err
 	}
+	// Run go/types over the parsed files using a schema-synthesized
+	// importer for dagger imports. Errors are collected but don't halt
+	// resolution — the resolver surfaces position-aware diagnostics
+	// when a specific expression can't be resolved.
+	checked := typescheck.Check(fset, files, "dagger/"+moduleName, schema)
 	return (&scanner{
 		fset:       fset,
 		files:      files,
 		pkgName:    pkgName,
 		schema:     schema,
 		moduleName: moduleName,
+		info:       checked.Info,
+		userPkg:    checked.Pkg,
 	}).run()
 }
 
@@ -52,6 +59,8 @@ type scanner struct {
 	pkgName    string      // name of the package the files belong to
 	schema     *introspection.Schema
 	moduleName string
+	info       *types.Info    // populated by typescheck.Check
+	userPkg    *types.Package // user package; same-module references compare against it
 }
 
 // parseFiles reads .go files in dir (non-recursive, skipping _test.go)
@@ -126,11 +135,10 @@ func (s *scanner) run() (*schematool.ModuleTypes, error) {
 	enumIndex := map[string]int{} // enum name → index in out.Enums
 
 	for _, f := range s.files {
-		imports := collectImports(f)
 		for _, decl := range f.Decls {
 			switch d := decl.(type) {
 			case *ast.GenDecl:
-				if err := s.walkGenDecl(out, f, d, imports, sameModule, enumIndex); err != nil {
+				if err := s.walkGenDecl(out, f, d, sameModule, enumIndex); err != nil {
 					return nil, err
 				}
 			case *ast.FuncDecl:
@@ -146,7 +154,7 @@ func (s *scanner) run() (*schematool.ModuleTypes, error) {
 	for i, obj := range out.Objects {
 		for _, m := range methods[obj.Name] {
 			f := methodFiles[m]
-			fn, err := s.walkMethod(f, m, collectImports(f), sameModule)
+			fn, err := s.walkMethod(f, m, sameModule)
 			if err != nil {
 				return nil, err
 			}
@@ -362,7 +370,6 @@ func (s *scanner) walkGenDecl(
 	out *schematool.ModuleTypes,
 	file *ast.File,
 	gd *ast.GenDecl,
-	imports map[string]string,
 	sameModule map[string]string,
 	enumIndex map[string]int,
 ) error {
@@ -413,7 +420,6 @@ func (s *scanner) walkGenDecl(
 						methodName.Name,
 						strings.TrimSpace(field.Doc.Text()),
 						ft,
-						imports,
 						sameModule,
 					)
 					if err != nil {
@@ -445,7 +451,6 @@ func (s *scanner) walkGenDecl(
 func (s *scanner) walkMethod(
 	file *ast.File,
 	fd *ast.FuncDecl,
-	imports map[string]string,
 	sameModule map[string]string,
 ) (*schematool.Function, error) {
 	if !fd.Name.IsExported() {
@@ -456,7 +461,6 @@ func (s *scanner) walkMethod(
 		fd.Name.Name,
 		strings.TrimSpace(fd.Doc.Text()),
 		fd.Type,
-		imports,
 		sameModule,
 	)
 }
@@ -471,7 +475,6 @@ func (s *scanner) walkFuncType(
 	name string,
 	description string,
 	ft *ast.FuncType,
-	imports map[string]string,
 	sameModule map[string]string,
 ) (*schematool.Function, error) {
 	fn := &schematool.Function{
@@ -485,7 +488,7 @@ func (s *scanner) walkFuncType(
 		// legacy template path.
 		unpacked := unpackFields(ft.Params.List)
 		for i, field := range unpacked {
-			tref, err := s.resolveType(field.Type, imports, sameModule, field.Type.Pos())
+			tref, err := s.resolveType(field.Type, sameModule, field.Type.Pos())
 			if err == errContextArg {
 				continue
 			}
@@ -521,7 +524,7 @@ func (s *scanner) walkFuncType(
 			if ident, ok := res.Type.(*ast.Ident); ok && ident.Name == "error" {
 				continue
 			}
-			tref, err := s.resolveType(res.Type, imports, sameModule, res.Type.Pos())
+			tref, err := s.resolveType(res.Type, sameModule, res.Type.Pos())
 			if err != nil {
 				return nil, fmt.Errorf("function %s return: %w", name, err)
 			}
@@ -551,22 +554,6 @@ func (s *scanner) posf(pos token.Pos, format string, args ...any) error {
 	}
 	p := s.fset.Position(pos)
 	return fmt.Errorf("%s:%d:%d: %s", p.Filename, p.Line, p.Column, msg)
-}
-
-func collectImports(f *ast.File) map[string]string {
-	imports := map[string]string{}
-	for _, imp := range f.Imports {
-		path := trimQuotes(imp.Path.Value)
-		alias := ""
-		if imp.Name != nil {
-			alias = imp.Name.Name
-		} else {
-			parts := strings.Split(path, "/")
-			alias = parts[len(parts)-1]
-		}
-		imports[alias] = path
-	}
-	return imports
 }
 
 func trimQuotes(s string) string {

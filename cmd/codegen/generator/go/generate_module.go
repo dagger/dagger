@@ -63,12 +63,16 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 	// already contains the merged types; pass-1's packages.Load then
 	// succeeds against that gen file.
 	//
-	// Scan is gated on SelfCalls because its output is only consumed
-	// by Merge. For non-self-calls modules (e.g. the Python SDK's own
-	// Go runtime, which has stdlib-interface methods like MarshalJSON
-	// on internal types that the AST resolver currently can't handle)
-	// we skip this entire path — there's no point scanning just to
-	// discard the result, and the scan would surface spurious errors.
+	// Gated on SelfCalls because the scan output is only consumed by
+	// Merge — and because non-self-calls modules can legitimately
+	// declare methods whose signatures aren't expressible in the
+	// Dagger schema (e.g. the Python SDK's Go runtime has
+	// `MarshalJSON() []byte` to satisfy json.Marshaler). The
+	// go/types-based resolver follows aliases and unknown-import
+	// stubs the way the Go compiler does, but it can't make a
+	// stdlib-interface method into a Dagger schema function. Running
+	// the scan when its output will be discarded would just surface
+	// such errors for no reason.
 	//
 	// When no user source exists yet (brand-new `dagger init`), Scan
 	// returns an empty ModuleTypes and Merge is a no-op.
