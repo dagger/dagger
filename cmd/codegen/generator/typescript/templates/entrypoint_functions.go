@@ -17,31 +17,31 @@ import (
 func EntrypointTemplateFuncs(module *TypedefModule, opts EntrypointOptions) template.FuncMap {
 	c := &entrypointFuncCtx{module: module, opts: opts}
 	return template.FuncMap{
-		"jsString":          jsString,
-		"pascalize":         pascalize,
-		"coerceExpr":        c.coerceExpr,
-		"serializeExpr":     c.serializeExpr,
-		"renderTypeDef":     c.renderTypeDef,
-		"renderArgCall":     c.renderArgCall,
-		"renderFunctionExpr": c.renderFunctionExpr,
-		"classRuntimeRef":   c.classRuntimeRef,
-		"classTypeRef":      c.classTypeRef,
-		"isExportedClass":   c.isExportedClass,
-		"coercedVarName":    coercedVarName,
-		"needsTransform":    needsTransform,
-		"isPrimitive":       isPrimitive,
-		"isInteger":         func(t *TypedefType) bool { return t != nil && t.Kind == KindInteger },
-		"argCoercionLine":   c.argCoercionLine,
-		"hasDefault":        hasDefault,
-		"engineLoadFnName":  c.engineLoadFnName,
-		"plannedImports":    c.plannedImports,
-		"isVariadic":        func(a *TypedefArgument) bool { return a.IsVariadic },
-		"propFieldName":     propFieldName,
-		"sortedKeysObjects": sortedObjectKeys,
-		"sortedKeysEnums":   sortedEnumKeys,
-		"sortedKeysIfaces":  sortedInterfaceKeys,
-		"sortedKeysMethods": sortedFunctionKeys,
-		"sortedKeysProps":   sortedPropertyKeys,
+		"jsString":             jsString,
+		"pascalize":            pascalize,
+		"coerceExpr":           c.coerceExpr,
+		"serializeExpr":        c.serializeExpr,
+		"renderTypeDef":        c.renderTypeDef,
+		"renderArgCall":        c.renderArgCall,
+		"renderFunctionExpr":   c.renderFunctionExpr,
+		"classRuntimeRef":      c.classRuntimeRef,
+		"classTypeRef":         c.classTypeRef,
+		"isExportedClass":      c.isExportedClass,
+		"coercedVarName":       coercedVarName,
+		"needsTransform":       needsTransform,
+		"isPrimitive":          isPrimitive,
+		"isInteger":            func(t *TypedefType) bool { return t != nil && t.Kind == KindInteger },
+		"argCoercionLine":      c.argCoercionLine,
+		"hasDefault":           hasDefault,
+		"engineLoadFnName":     c.engineLoadFnName,
+		"plannedImports":       c.plannedImports,
+		"isVariadic":           func(a *TypedefArgument) bool { return a.IsVariadic },
+		"propFieldName":        propFieldName,
+		"sortedKeysObjects":    sortedObjectKeys,
+		"sortedKeysEnums":      sortedEnumKeys,
+		"sortedKeysIfaces":     sortedInterfaceKeys,
+		"sortedKeysMethods":    sortedFunctionKeys,
+		"sortedKeysProps":      sortedPropertyKeys,
 		"sortedKeysEnumValues": sortedEnumValueKeys,
 		"dict": func(values ...any) (map[string]any, error) {
 			if len(values)%2 != 0 {
@@ -203,13 +203,13 @@ func (c *entrypointFuncCtx) renderArgCall(arg *TypedefArgument) string {
 	}
 	td := c.renderTypeDef(arg.Type)
 	if arg.IsOptional {
-		td = td + ".withOptional(true)"
+		td += ".withOptional(true)"
 	}
 	if hasDefault(arg) {
 		dv, ok := c.resolveDefaultValue(arg)
 		if !ok {
 			if !arg.IsOptional {
-				td = td + ".withOptional(true)"
+				td += ".withOptional(true)"
 			}
 		} else {
 			b, _ := json.Marshal(dv)
@@ -413,7 +413,7 @@ func isPrimitive(t *TypedefType) bool {
 }
 
 func hasDefault(arg *TypedefArgument) bool {
-	return arg.DefaultValue != nil && len(arg.DefaultValue) > 0 && string(arg.DefaultValue) != "null"
+	return len(arg.DefaultValue) > 0 && string(arg.DefaultValue) != "null"
 }
 
 func coercedVarName(arg *TypedefArgument) string {
@@ -474,9 +474,9 @@ func sortedKeys[V any](m map[string]V) []string {
 	return keys
 }
 
-func sortedObjectKeys(m map[string]*TypedefObject) []string      { return sortedKeys(m) }
-func sortedEnumKeys(m map[string]*TypedefEnum) []string          { return sortedKeys(m) }
+func sortedObjectKeys(m map[string]*TypedefObject) []string       { return sortedKeys(m) }
+func sortedEnumKeys(m map[string]*TypedefEnum) []string           { return sortedKeys(m) }
 func sortedEnumValueKeys(m map[string]*TypedefEnumValue) []string { return sortedKeys(m) }
-func sortedFunctionKeys(m map[string]*TypedefFunction) []string  { return sortedKeys(m) }
-func sortedPropertyKeys(m map[string]*TypedefProperty) []string  { return sortedKeys(m) }
+func sortedFunctionKeys(m map[string]*TypedefFunction) []string   { return sortedKeys(m) }
+func sortedPropertyKeys(m map[string]*TypedefProperty) []string   { return sortedKeys(m) }
 func sortedInterfaceKeys(m map[string]*TypedefInterface) []string { return sortedKeys(m) }
