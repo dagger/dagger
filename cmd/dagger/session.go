@@ -35,6 +35,9 @@ func sessionCmd() *cobra.Command {
 		Hidden:       true,
 		RunE:         EngineSession,
 		SilenceUsage: true,
+		Annotations: map[string]string{
+			showFinalProgressKey: "true",
+		},
 	}
 	cmd.Flags().StringVar(&sessionVersion, "version", "", "")
 	// This is not used by kept for backward compatibility.

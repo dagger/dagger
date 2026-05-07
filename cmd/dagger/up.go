@@ -38,6 +38,9 @@ Examples:
 `,
 	GroupID: execGroup.ID,
 	Args:    cobra.ArbitraryArgs,
+	Annotations: map[string]string{
+		showFinalProgressKey: "true",
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return withEngine(
 			cmd.Context(),
