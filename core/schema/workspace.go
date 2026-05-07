@@ -371,7 +371,7 @@ func (s *workspaceSchema) update(
 	if ws.HostPath() == "" {
 		return nil, fmt.Errorf("workspace update is local-only")
 	}
-	if !ws.HasConfig {
+	if ws.ConfigFile == "" {
 		return core.NewEmptyChangeset(ctx)
 	}
 
@@ -930,7 +930,7 @@ func workspaceConfigWithCompatFallback(
 	ctx context.Context,
 	ws *core.Workspace,
 ) (*workspace.Config, error) {
-	if ws.HasConfig {
+	if ws.ConfigFile != "" {
 		cfg, err := readWorkspaceConfig(ctx, ws)
 		if err != nil {
 			return nil, err

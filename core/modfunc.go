@@ -1169,7 +1169,7 @@ func (fn *ModuleFunction) loadWorkspaceArg(
 	if err != nil {
 		return nil, fmt.Errorf("load workspace: %w", err)
 	}
-	if !ws.Self().HasConfig && ws.Self().CompatWorkspace() == nil {
+	if ws.Self().ConfigFile == "" && ws.Self().CompatWorkspace() == nil {
 		return nil, fmt.Errorf("%w: workspace arguments require a selected workspace config or legacy compat workspace", ErrNoCurrentWorkspace)
 	}
 
