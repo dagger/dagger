@@ -161,7 +161,12 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 		migrateField,
 	}.Install(srv)
 
-	dagql.Fields[*core.WorkspaceModule]{}.Install(srv)
+	dagql.Fields[*core.WorkspaceModule]{
+		dagql.NodeFunc("settings", s.moduleSettings).
+			DoNotCache("Reads live config and module metadata from the workspace").
+			Doc("List constructor-backed settings for this module."),
+	}.Install(srv)
+	dagql.Fields[*core.WorkspaceModuleSetting]{}.Install(srv)
 	dagql.Fields[*core.WorkspaceMigration]{}.Install(srv)
 	dagql.Fields[*core.WorkspaceMigrationStep]{}.Install(srv)
 }
