@@ -23,7 +23,7 @@ dagger [options] [subcommand | file...]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -m, --mod string                   Module reference to load, either a local path or a remote git repo (defaults to current directory)
       --model string                 LLM model to use (e.g., 'claude-sonnet-4-5', 'gpt-4.1')
   -E, --no-exit                      Leave the TUI running after completion
@@ -86,7 +86,7 @@ dagger call [options] [function]...
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -132,7 +132,7 @@ dagger config [key] [value]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -169,7 +169,7 @@ dagger core [options]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -233,7 +233,7 @@ dagger develop [options]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -259,7 +259,7 @@ Manage workspace environments
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -292,7 +292,7 @@ dagger env create NAME
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -322,7 +322,7 @@ dagger env list
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -352,7 +352,7 @@ dagger env rm NAME
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -404,7 +404,7 @@ dagger functions [options] [function]...
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -438,7 +438,7 @@ dagger init
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -486,7 +486,7 @@ dagger install github.com/shykes/daggerverse/hello@v0.3.0
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -512,7 +512,7 @@ Manage workspace lockfiles
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -551,7 +551,7 @@ dagger lock update [module...]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -581,7 +581,7 @@ dagger login [options] [org]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -611,7 +611,7 @@ dagger logout
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -652,7 +652,7 @@ dagger migrate
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -678,7 +678,7 @@ Manage modules
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -745,7 +745,7 @@ dagger module init --sdk=go ci ./submod
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -799,7 +799,7 @@ dagger module install github.com/shykes/daggerverse/hello@v0.3.0
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -853,7 +853,7 @@ dagger module update [options] [<DEPENDENCY>...] [flags]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -922,7 +922,7 @@ EOF
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -985,7 +985,7 @@ dagger run python main.py
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -1015,7 +1015,7 @@ dagger settings [module] [key] [value]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -1064,7 +1064,7 @@ dagger uninstall hello
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -1109,7 +1109,7 @@ dagger update [module...]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -1145,7 +1145,7 @@ dagger version
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -1171,7 +1171,7 @@ Manage the current workspace
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -1219,7 +1219,7 @@ dagger workspace config [key] [value] [flags]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -1249,7 +1249,7 @@ dagger workspace info [flags]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -1283,7 +1283,7 @@ dagger workspace init [flags]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -1322,7 +1322,7 @@ dagger workspace list [flags]
       --env string                   Apply the named workspace environment overlay
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
