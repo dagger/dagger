@@ -27,6 +27,7 @@ func TestLegacyModuleInterfaceIDSurface(t *testing.T) {
 	require.Contains(t, got, "type CustomIfaceID = dagger.ID")
 	require.Contains(t, got, "func LoadCustomIfaceFromID(r *dagger.Client, id CustomIfaceID) CustomIface")
 	require.Contains(t, got, "func (r *customIfaceImpl) ID(ctx context.Context) (CustomIfaceID, error)")
+	require.Contains(t, got, "r.QueryBuilder().Select")
 }
 
 func TestParseGoIfaceAcceptsImportedDaggerObject(t *testing.T) {

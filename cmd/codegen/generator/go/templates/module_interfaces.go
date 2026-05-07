@@ -248,7 +248,7 @@ func (spec *parsedIfaceType) legacyIDCompatCode() *Statement {
 		Params(Id(spec.name)).
 		Block(
 			Return(Op("&").Id(spec.concreteStructName()).Values(Dict{
-				Id("query"): Id("r").Dot("GraphQLSelection").Call().Dot("Select").Call(Lit("node")).Dot("Arg").Call(Lit("id"), Id("id")).Dot("InlineFragment").Call(Lit(spec.schemaName())),
+				Id("query"): Id("r").Dot("QueryBuilder").Call().Dot("Select").Call(Lit("node")).Dot("Arg").Call(Lit("id"), Id("id")).Dot("InlineFragment").Call(Lit(spec.schemaName())),
 			})),
 		)
 }
@@ -397,7 +397,7 @@ The UnmarshalJSON method attached to the concrete implementation of the interfac
 		if err != nil {
 			return err
 		}
-		*r = customIfaceImpl{query: dag.GraphQLSelection().Select("node").Arg("id", id).InlineFragment("CustomIface")}
+		*r = customIfaceImpl{query: dag.QueryBuilder().Select("node").Arg("id", id).InlineFragment("CustomIface")}
 		return nil
 	}
 */
@@ -411,7 +411,7 @@ func (spec *parsedIfaceType) unmarshalJSONMethodCode() *Statement {
 			g.Id("err").Op(":=").Id("json").Dot("Unmarshal").Call(Id("bs"), Op("&").Id("id"))
 			g.If(Id("err").Op("!=").Nil()).Block(Return(Id("err")))
 			g.Op("*").Id("r").Op("=").Id(spec.concreteStructName()).Values(Dict{
-				Id("query"): Id("dag").Dot("GraphQLSelection").Call().Dot("Select").Call(Lit("node")).Dot("Arg").Call(Lit("id"), Id("id")).Dot("InlineFragment").Call(Lit(spec.schemaName())),
+				Id("query"): Id("dag").Dot("QueryBuilder").Call().Dot("Select").Call(Lit("node")).Dot("Arg").Call(Lit("id"), Id("id")).Dot("InlineFragment").Call(Lit(spec.schemaName())),
 			})
 			g.Return(Nil())
 		})
