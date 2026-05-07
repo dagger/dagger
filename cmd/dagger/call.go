@@ -30,8 +30,9 @@ var callCoreCmd = &FuncCommand{
 	Short:             "Call a core function",
 	DisableModuleLoad: true,
 	Annotations: map[string]string{
-		"experimental":    "true",
-		printTraceLinkKey: "true",
+		"experimental":       "true",
+		printTraceLinkKey:    "true",
+		showFinalProgressKey: "true",
 	},
 }
 
@@ -39,7 +40,8 @@ var callModCmd = &FuncCommand{
 	Name:  "call [options] [function]...",
 	Short: "Call one or more functions, interconnected into a pipeline",
 	Annotations: map[string]string{
-		printTraceLinkKey: "true",
+		printTraceLinkKey:    "true",
+		showFinalProgressKey: "true",
 	},
 }
 
