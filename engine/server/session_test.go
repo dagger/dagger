@@ -155,11 +155,10 @@ func TestWorkspaceConfigPendingModules(t *testing.T) {
 	t.Parallel()
 
 	ws := &workspace.Workspace{
-		Root:            "/repo",
-		Cwd:             ".",
-		ConfigDirectory: workspace.LockDirName,
-		ConfigFile:      filepath.Join(workspace.LockDirName, workspace.ConfigFileName),
-		HasConfig:       true,
+		Root:       "/repo",
+		Cwd:        ".",
+		ConfigFile: filepath.Join(workspace.LockDirName, workspace.ConfigFileName),
+		LockFile:   filepath.Join(workspace.LockDirName, workspace.LockFileName),
 	}
 	resolveLocalRef := func(_ *workspace.Workspace, relPath string) string {
 		return filepath.Join("/resolved", relPath)
@@ -341,7 +340,7 @@ source = "modules/local"
 	)
 	require.NoError(t, err)
 	require.Equal(t, "mymod", client.workspace.Cwd)
-	require.True(t, client.workspace.HasConfig)
+	require.Equal(t, filepath.Join(workspace.LockDirName, workspace.ConfigFileName), client.workspace.ConfigFile)
 
 	require.Len(t, client.pendingModules, 2)
 	require.Equal(t, moduleLoadKindAmbient, client.pendingModules[0].Kind)
@@ -403,7 +402,7 @@ func TestDetectAndLoadWorkspaceLoadsCWDModuleWithoutConfig(t *testing.T) {
 		true,
 	)
 	require.NoError(t, err)
-	require.False(t, client.workspace.HasConfig)
+	require.Empty(t, client.workspace.ConfigFile)
 
 	require.Len(t, client.pendingModules, 1)
 	require.Equal(t, moduleLoadKindCWD, client.pendingModules[0].Kind)
@@ -465,9 +464,7 @@ func TestRemoteWorkspaceCwdUsesDetectionStart(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "subdir", client.workspace.Cwd)
 	require.Equal(t, "github.com/acme/repo/subdir@main", client.workspace.Address)
-	require.True(t, client.workspace.HasConfig)
-	require.Equal(t, ".dagger", *client.workspace.ConfigDirectory)
-	require.Equal(t, filepath.Join(".dagger", workspace.ConfigFileName), *client.workspace.ConfigFile)
+	require.Equal(t, filepath.Join(".dagger", workspace.ConfigFileName), client.workspace.ConfigFile)
 }
 
 func TestDetectAndLoadWorkspaceDoesNotLoadModulesByDefault(t *testing.T) {
@@ -720,18 +717,16 @@ func TestBuildCoreWorkspaceIncludesConfigState(t *testing.T) {
 		t.Parallel()
 
 		ws, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
-			Root:            "/repo",
-			Cwd:             filepath.Join("services", "payment", "src"),
-			ConfigDirectory: filepath.Join("services", "payment", workspace.LockDirName),
-			ConfigFile:      filepath.Join("services", "payment", workspace.LockDirName, workspace.ConfigFileName),
-			HasConfig:       true,
+			Root:       "/repo",
+			Cwd:        filepath.Join("services", "payment", "src"),
+			ConfigFile: filepath.Join("services", "payment", workspace.LockDirName, workspace.ConfigFileName),
+			LockFile:   filepath.Join("services", "payment", workspace.LockDirName, workspace.LockFileName),
 		}, true, dagql.ObjectResult[*core.Directory]{}, "")
 		require.NoError(t, err)
 		require.Equal(t, "file:///repo/services/payment/src", ws.Address)
 		require.Equal(t, filepath.Join("services", "payment", "src"), ws.Cwd)
-		require.True(t, ws.HasConfig)
-		require.Equal(t, filepath.Join("services", "payment", workspace.LockDirName), *ws.ConfigDirectory)
-		require.Equal(t, filepath.Join("services", "payment", workspace.LockDirName, workspace.ConfigFileName), *ws.ConfigFile)
+		require.Equal(t, filepath.Join("services", "payment", workspace.LockDirName, workspace.ConfigFileName), ws.ConfigFile)
+		require.Equal(t, filepath.Join("services", "payment", workspace.LockDirName, workspace.LockFileName), ws.LockFile)
 		require.Equal(t, "/repo", ws.HostPath())
 	})
 
@@ -739,13 +734,13 @@ func TestBuildCoreWorkspaceIncludesConfigState(t *testing.T) {
 		t.Parallel()
 
 		ws, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
-			Root: "/repo",
-			Cwd:  ".",
+			Root:     "/repo",
+			Cwd:      ".",
+			LockFile: filepath.Join(workspace.LockDirName, workspace.LockFileName),
 		}, true, dagql.ObjectResult[*core.Directory]{}, "")
 		require.NoError(t, err)
-		require.False(t, ws.HasConfig)
-		require.Nil(t, ws.ConfigDirectory)
-		require.Nil(t, ws.ConfigFile)
+		require.Empty(t, ws.ConfigFile)
+		require.Equal(t, filepath.Join(workspace.LockDirName, workspace.LockFileName), ws.LockFile)
 	})
 }
 
