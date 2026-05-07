@@ -241,13 +241,36 @@ entrypoint = true
 	require.Equal(t, "false", strings.TrimSpace(string(out)))
 }
 
-func (WorkspaceSuite) TestWorkspaceConfigRequiresInit(ctx context.Context, t *testctx.T) {
-	workdir := t.TempDir()
-	initGitRepo(ctx, t, workdir)
+func (WorkspaceSuite) TestWorkspaceConfigReadWithoutNativeConfig(ctx context.Context, t *testctx.T) {
+	t.Run("full read is empty", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
 
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config")
-	require.Error(t, err)
-	requireErrOut(t, err, "no config.toml found in workspace")
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config")
+		require.NoError(t, err)
+		require.Empty(t, string(out))
+	})
+
+	t.Run("full read in compat workspace is empty and quiet", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
+		require.NoError(t, os.WriteFile(filepath.Join(workdir, workspace.ModuleConfigFileName), []byte(`{
+  "name": "app"
+}`), 0o644))
+
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "config")
+		require.NoError(t, err)
+		require.Empty(t, string(out))
+	})
+
+	t.Run("explicit missing key still errors", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
+
+		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.missing.source")
+		require.Error(t, err)
+		requireErrOut(t, err, `key "modules.missing.source" is not set`)
+	})
 }
 
 func (WorkspaceSuite) TestCurrentWorkspaceConfigBoundary(ctx context.Context, t *testctx.T) {
