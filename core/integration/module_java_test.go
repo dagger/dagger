@@ -39,6 +39,11 @@ func (JavaSuite) TestInit(_ context.Context, t *testctx.T) {
 	})
 
 	t.Run("from alias", func(ctx context.Context, t *testctx.T) {
+		// The alias expands to github.com/dagger/dagger/sdk/java@engine.Tag.
+		// Local dev-engine builds synthesize a pseudo tag that is not a Git ref;
+		// remote/CI builds use a commit SHA and keep this alias coverage active.
+		skipSDKAliasIfDevTag(t, "Java")
+
 		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).

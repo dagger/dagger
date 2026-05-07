@@ -56,6 +56,11 @@ func (ElixirSuite) TestInit(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("from alias", func(ctx context.Context, t *testctx.T) {
+		// The alias expands to github.com/dagger/dagger/sdk/elixir@engine.Tag.
+		// Local dev-engine builds synthesize a pseudo tag that is not a Git ref;
+		// remote/CI builds use a commit SHA and keep this alias coverage active.
+		skipSDKAliasIfDevTag(t, "Elixir")
+
 		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).

@@ -20,6 +20,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/otel-go/oteltestctx"
 	"github.com/dagger/testctx"
@@ -263,6 +264,13 @@ func daggerCliBase(t testing.TB, c *dagger.Client) *dagger.Container {
 }
 
 const testCLIBinPath = "/bin/dagger"
+
+func skipSDKAliasIfDevTag(t *testctx.T, sdkName string) {
+	t.Helper()
+	if engine.IsDevVersion(engine.Tag) {
+		t.Skipf("requires %s SDK alias to resolve engine tag to a git ref; engine tag %q is a dev pseudo-version", sdkName, engine.Tag)
+	}
+}
 
 func goCache(c *dagger.Client) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
