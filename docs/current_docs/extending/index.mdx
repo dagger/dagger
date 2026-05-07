@@ -10,11 +10,11 @@ When pre-built modules don't cover your needs, you can write your own. A module 
 
 ## When to develop a module
 
-**Install first.** Browse the [Daggerverse](https://daggerverse.dev) and check if someone has already built what you need. `dagger install` is always faster than writing code.
+Modules range from project-specific to general-purpose.
 
-**Then customize.** If an existing module is close but not quite right, you can often configure it via your workspace config rather than forking it.
+A project-specific module automates something unique to your codebase — a custom deploy script, a build that stitches together internal tools, an integration test that needs your exact infrastructure. Start here. It lives in `.dagger/modules/`, it doesn't need to be polished, and you can always generalize later.
 
-**Then build.** Write a module when your workflow is specific to your project, you need to compose multiple tools, or you want to share reusable automation with the community.
+A general-purpose module solves a problem for anyone — linting, testing, container builds. If you're building one of these, check what's already installable with `dagger install` before starting from scratch.
 
 ## Get started
 
