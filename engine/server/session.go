@@ -1366,7 +1366,6 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	r = r.WithContext(ctx)
 
 	if client.hostServiceProxyClientID == "" {
-		x
 		if _, err := client.getClientCaller(ctx, client.clientID); err != nil {
 			return gqlErr(fmt.Errorf("waiting for client session attachables: %w", err), http.StatusInternalServerError)
 		}
