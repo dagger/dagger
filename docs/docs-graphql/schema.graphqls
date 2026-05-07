@@ -56,7 +56,7 @@ A standardized address to load containers, directories, secrets, and other
 object types. Address format depends on the type, and is validated at type
 selection.
 """
-type Address {
+type Address implements Node {
   """Load a container from the address."""
   container: Container!
 
@@ -88,7 +88,7 @@ type Address {
   value: String!
 }
 
-type Binding {
+type Binding implements Node {
   """Retrieve the binding value, as type Address"""
   asAddress: Address!
 
@@ -222,7 +222,7 @@ enum CacheSharingMode {
 }
 
 """A directory whose contents persist across runs."""
-type CacheVolume {
+type CacheVolume implements Node {
   """A unique identifier for this CacheVolume."""
   id: ID!
 }
@@ -230,7 +230,7 @@ type CacheVolume {
 """
 A comparison between two directories representing changes that can be applied.
 """
-type Changeset {
+type Changeset implements Exportable & Node & Syncer {
   """Files and directories that were added in the newer directory."""
   addedPaths: [String!]!
 
@@ -346,7 +346,7 @@ enum ChangesetsMergeConflict {
   FAIL
 }
 
-type Check {
+type Check implements Node {
   """
   The type of check: 'check' for annotated checks, 'generate' for generate-as-checks
   """
@@ -383,7 +383,7 @@ type Check {
   run: Check!
 }
 
-type CheckGroup {
+type CheckGroup implements Node {
   """A unique identifier for this CheckGroup."""
   id: ID!
 
@@ -401,13 +401,13 @@ type CheckGroup {
 }
 
 """An internal persistent filesync mirror."""
-type ClientFilesyncMirror {
+type ClientFilesyncMirror implements Node {
   """A unique identifier for this ClientFilesyncMirror."""
   id: ID!
 }
 
 """Dagger Cloud configuration and state"""
-type Cloud {
+type Cloud implements Node {
   """A unique identifier for this Cloud."""
   id: ID!
 
@@ -416,7 +416,7 @@ type Cloud {
 }
 
 """An OCI-compatible container, also known as a Docker container."""
-type Container {
+type Container implements Exportable & Node & Syncer {
   """
   Turn the container into a Service.
 
@@ -1636,7 +1636,7 @@ type Container {
 }
 
 """Reflective module API provided to functions at runtime."""
-type CurrentModule {
+type CurrentModule implements Node {
   """The dependencies of the module."""
   dependencies: [Module!]!
 
@@ -1697,7 +1697,7 @@ type CurrentModule {
   ): File!
 }
 
-type DiffStat {
+type DiffStat implements Node {
   """Number of added lines for this path."""
   addedLines: Int!
 
@@ -1733,7 +1733,7 @@ enum DiffStatKind {
 }
 
 """A directory."""
-type Directory {
+type Directory implements Exportable & Node & Syncer {
   """Converts this directory to a local git repository"""
   asGit: GitRepository!
 
@@ -2185,7 +2185,7 @@ type Directory {
 }
 
 """The Dagger engine configuration and state"""
-type Engine {
+type Engine implements Node {
   """The list of connected client IDs"""
   clients: [String!]!
 
@@ -2200,7 +2200,7 @@ type Engine {
 }
 
 """A cache storage for the Dagger engine"""
-type EngineCache {
+type EngineCache implements Node {
   """The current set of entries in the cache"""
   entrySet(key: String = ""): EngineCacheEntrySet!
 
@@ -2251,7 +2251,7 @@ type EngineCache {
 }
 
 """An individual cache entry in a cache entry set"""
-type EngineCacheEntry {
+type EngineCacheEntry implements Node {
   """Whether the cache entry is actively being used."""
   activelyUsed: Boolean!
 
@@ -2277,7 +2277,7 @@ type EngineCacheEntry {
 }
 
 """A set of cache entries returned by a query to a cache"""
-type EngineCacheEntrySet {
+type EngineCacheEntrySet implements Node {
   """The total disk space used by the cache entries in this set."""
   diskSpaceBytes: Int!
 
@@ -2292,7 +2292,7 @@ type EngineCacheEntrySet {
 }
 
 """A definition of a custom enum defined in a Module."""
-type EnumTypeDef {
+type EnumTypeDef implements Node {
   """A doc string for the enum, if any."""
   description: String!
 
@@ -2318,7 +2318,7 @@ type EnumTypeDef {
 }
 
 """A definition of a value in a custom enum defined in a Module."""
-type EnumValueTypeDef {
+type EnumValueTypeDef implements Node {
   """The reason this enum member is deprecated, if any."""
   deprecated: String
 
@@ -2338,7 +2338,7 @@ type EnumValueTypeDef {
   value: String!
 }
 
-type Env {
+type Env implements Node {
   """
   Return the check with the given name from the installed modules. Must match exactly one check.
   """
@@ -3078,7 +3078,7 @@ type Env {
 }
 
 """A collection of environment variables."""
-type EnvFile {
+type EnvFile implements Node {
   """Return as a file"""
   asFile: File!
 
@@ -3140,7 +3140,7 @@ type EnvFile {
 }
 
 """An environment variable name and value."""
-type EnvVariable {
+type EnvVariable implements Node {
   """A unique identifier for this EnvVariable."""
   id: ID!
 
@@ -3151,7 +3151,7 @@ type EnvVariable {
   value: String!
 }
 
-type Error {
+type Error implements Node {
   """A unique identifier for this Error."""
   id: ID!
 
@@ -3171,7 +3171,7 @@ type Error {
   ): Error!
 }
 
-type ErrorValue {
+type ErrorValue implements Node {
   """A unique identifier for this ErrorValue."""
   id: ID!
 
@@ -3199,7 +3199,7 @@ An object that can be exported to the host.
 
 Calling export writes the object to a path on the host filesystem and returns the path that was written.
 """
-interface Exportable {
+interface Exportable implements Node {
   export(path: String!): String!
   id: ID!
 }
@@ -3210,7 +3210,7 @@ A definition of a field on a custom object defined in a Module.
 A field on an object has a static value, as opposed to a function on an object
 whose value is computed by invoking code (and can accept arguments).
 """
-type FieldTypeDef {
+type FieldTypeDef implements Node {
   """The reason this enum member is deprecated, if any."""
   deprecated: String
 
@@ -3231,7 +3231,7 @@ type FieldTypeDef {
 }
 
 """A file."""
-type File {
+type File implements Exportable & Node & Syncer {
   """Parse as an env file"""
   asEnvFile(
     """Replace "${VAR}" or "$VAR" with the value of other vars"""
@@ -3412,7 +3412,7 @@ Function represents a resolver provided by a Module.
 
 A function always evaluates against a parent object and is given a set of named arguments.
 """
-type Function {
+type Function implements Node {
   """Arguments accepted by the function, if any."""
   args: [FunctionArg!]!
 
@@ -3518,7 +3518,7 @@ An argument accepted by a function.
 
 This is a specification for an argument at function definition time, not an argument passed at function call time.
 """
-type FunctionArg {
+type FunctionArg implements Node {
   """
   Only applies to arguments of type Container. If the argument is not set, load
   it from the given address (e.g. alpine:latest)
@@ -3570,7 +3570,7 @@ enum FunctionCachePolicy {
 }
 
 """An active function call."""
-type FunctionCall {
+type FunctionCall implements Node {
   """A unique identifier for this FunctionCall."""
   id: ID!
 
@@ -3606,7 +3606,7 @@ type FunctionCall {
 }
 
 """A value passed as a named argument to a function call."""
-type FunctionCallArgValue {
+type FunctionCallArgValue implements Node {
   """A unique identifier for this FunctionCallArgValue."""
   id: ID!
 
@@ -3618,7 +3618,7 @@ type FunctionCallArgValue {
 }
 
 """The result of running an SDK's codegen."""
-type GeneratedCode {
+type GeneratedCode implements Node {
   """The directory containing the generated code."""
   code: Directory!
 
@@ -3640,7 +3640,7 @@ type GeneratedCode {
   withVCSIgnoredPaths(paths: [String!]!): GeneratedCode!
 }
 
-type Generator {
+type Generator implements Node {
   """The generated changeset from the last run"""
   changes: Changeset!
 
@@ -3669,7 +3669,7 @@ type Generator {
   run: Generator!
 }
 
-type GeneratorGroup {
+type GeneratorGroup implements Node {
   """
   The combined changes from the last run of the generators
 
@@ -3698,7 +3698,7 @@ type GeneratorGroup {
 }
 
 """A git ref (tag, branch, or commit)."""
-type GitRef {
+type GitRef implements Node {
   """The resolved commit id at this ref."""
   commit: String!
 
@@ -3728,7 +3728,7 @@ type GitRef {
 }
 
 """A git repository."""
-type GitRepository {
+type GitRepository implements Node {
   """Returns details of a branch."""
   branch(
     """Branch's name (e.g., "main")."""
@@ -3786,13 +3786,13 @@ type GitRepository {
 }
 
 """An internal persistent HTTP state."""
-type HTTPState {
+type HTTPState implements Node {
   """A unique identifier for this HTTPState."""
   id: ID!
 }
 
 """Image healthcheck configuration."""
-type HealthcheckConfig {
+type HealthcheckConfig implements Node {
   """Healthcheck command arguments."""
   args: [String!]!
 
@@ -3826,7 +3826,7 @@ type HealthcheckConfig {
 }
 
 """Information about the host environment."""
-type Host {
+type Host implements Node {
   """Accesses a container image on the host."""
   containerImage(
     """Name of the image to access."""
@@ -3954,7 +3954,7 @@ This is currently only used to represent pre-existing usage of graphql input typ
 in the core API. It is not used by user modules and shouldn't ever be as user
 module accept input objects via their id rather than graphql input types.
 """
-type InputTypeDef {
+type InputTypeDef implements Node {
   """Static fields defined on this input object, if any."""
   fields: [FieldTypeDef!]!
 
@@ -3966,7 +3966,7 @@ type InputTypeDef {
 }
 
 """A definition of a custom interface defined in a Module."""
-type InterfaceTypeDef {
+type InterfaceTypeDef implements Node {
   """The doc string for the interface, if any."""
   description: String!
 
@@ -3991,7 +3991,7 @@ type InterfaceTypeDef {
 """An arbitrary JSON-encoded value."""
 scalar JSON
 
-type JSONValue {
+type JSONValue implements Node {
   """Decode an array from json"""
   asArray: [JSONValue!]!
 
@@ -4059,7 +4059,7 @@ type JSONValue {
   ): JSONValue!
 }
 
-type LLM {
+type LLM implements Node & Syncer {
   """create a branch in the LLM's history"""
   attempt(number: Int!): LLM!
 
@@ -4177,7 +4177,7 @@ type LLM {
   withoutSystemPrompts: LLM!
 }
 
-type LLMTokenUsage {
+type LLMTokenUsage implements Node {
   cachedTokenReads: Int!
 
   cachedTokenWrites: Int!
@@ -4193,7 +4193,7 @@ type LLMTokenUsage {
 }
 
 """A simple key value object that represents a label."""
-type Label {
+type Label implements Node {
   """A unique identifier for this Label."""
   id: ID!
 
@@ -4205,7 +4205,7 @@ type Label {
 }
 
 """A definition of a list type in a Module."""
-type ListTypeDef {
+type ListTypeDef implements Node {
   """The type of the elements in the list."""
   elementTypeDef: TypeDef!
 
@@ -4214,7 +4214,7 @@ type ListTypeDef {
 }
 
 """A Dagger module."""
-type Module {
+type Module implements Node & Syncer {
   """
   Return the check defined by the module with the given name. Must match to exactly one check.
   """
@@ -4342,7 +4342,7 @@ type Module {
 }
 
 """The client generated for the module."""
-type ModuleConfigClient {
+type ModuleConfigClient implements Node {
   """The directory the client is generated in."""
   directory: String!
 
@@ -4356,7 +4356,7 @@ type ModuleConfigClient {
 """
 The source needed to load and run a module, along with any metadata about the source such as versions/urls/etc.
 """
-type ModuleSource {
+type ModuleSource implements Node & Syncer {
   """
   Load the source as a module. If this is a local source, the parent directory
   must have been provided during module source creation
@@ -4648,7 +4648,7 @@ interface Node {
 }
 
 """A definition of a custom object defined in a Module."""
-type ObjectTypeDef {
+type ObjectTypeDef implements Node {
   """The function used to construct new instances of this object, if any."""
   constructor: Function
 
@@ -4696,7 +4696,7 @@ The format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7", "windows/amd64
 scalar Platform
 
 """A port exposed by a container."""
-type Port {
+type Port implements Node {
   """The port description."""
   description: String
 
@@ -4726,7 +4726,7 @@ input PortForward {
 }
 
 """The root of the DAG."""
-type Query {
+type Query implements Node {
   """
   initialize an address to load directories, containers, secrets or other object types.
   """
@@ -5042,7 +5042,7 @@ type Query {
 }
 
 """An internal persistent bare git mirror."""
-type RemoteGitMirror {
+type RemoteGitMirror implements Node {
   """A unique identifier for this RemoteGitMirror."""
   id: ID!
 }
@@ -5060,7 +5060,7 @@ enum ReturnType {
 }
 
 """The SDK config of the module."""
-type SDKConfig {
+type SDKConfig implements Node {
   """
   Whether to start the SDK runtime in debug mode with an interactive terminal.
   """
@@ -5076,7 +5076,7 @@ type SDKConfig {
 }
 
 """A definition of a custom scalar defined in a Module."""
-type ScalarTypeDef {
+type ScalarTypeDef implements Node {
   """A doc string for the scalar, if any."""
   description: String!
 
@@ -5092,7 +5092,7 @@ type ScalarTypeDef {
   sourceModuleName: String!
 }
 
-type SearchResult {
+type SearchResult implements Node {
   """The byte offset of this line within the file."""
   absoluteOffset: Int!
 
@@ -5112,7 +5112,7 @@ type SearchResult {
   submatches: [SearchSubmatch!]!
 }
 
-type SearchSubmatch {
+type SearchSubmatch implements Node {
   """The match's end offset within the matched lines."""
   end: Int!
 
@@ -5129,7 +5129,7 @@ type SearchSubmatch {
 """
 A reference to a secret value, which can be handled more safely than the value itself.
 """
-type Secret {
+type Secret implements Node {
   """A unique identifier for this Secret."""
   id: ID!
 
@@ -5144,7 +5144,7 @@ type Secret {
 }
 
 """A content-addressed service providing TCP connectivity."""
-type Service {
+type Service implements Node & Syncer {
   """
   Retrieves an endpoint that clients can use to reach this container.
 
@@ -5214,13 +5214,13 @@ type Service {
 }
 
 """A Unix or TCP/IP socket that can be mounted into a container."""
-type Socket {
+type Socket implements Node {
   """A unique identifier for this Socket."""
   id: ID!
 }
 
 """Source location information."""
-type SourceMap {
+type SourceMap implements Node {
   """The column number within the line."""
   column: Int!
 
@@ -5243,7 +5243,7 @@ type SourceMap {
 }
 
 """A file or directory status object."""
-type Stat {
+type Stat implements Node {
   """file type"""
   fileType: FileType
 
@@ -5265,13 +5265,13 @@ An object that can be force-evaluated.
 
 Calling sync ensures that the object's entire dependency DAG has been evaluated, returning the object's ID once complete.
 """
-interface Syncer {
+interface Syncer implements Node {
   id: ID!
   sync: ID! @expectedType(name: "Syncer")
 }
 
 """An interactive terminal that clients can connect to."""
-type Terminal {
+type Terminal implements Node & Syncer {
   """A unique identifier for this Terminal."""
   id: ID!
 
@@ -5284,7 +5284,7 @@ type Terminal {
 }
 
 """A definition of a parameter or return type in a Module."""
-type TypeDef {
+type TypeDef implements Node {
   """
   If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
   """
@@ -5556,7 +5556,7 @@ enum TypeDefKind {
   ENUM @enumValue(value: "ENUM_KIND")
 }
 
-type Up {
+type Up implements Node {
   """The description of the service"""
   description: String!
 
@@ -5576,7 +5576,7 @@ type Up {
   run: Up!
 }
 
-type UpGroup {
+type UpGroup implements Node {
   """A unique identifier for this UpGroup."""
   id: ID!
 
@@ -5595,7 +5595,7 @@ A Null Void is used as a placeholder for resolvers that do not return anything.
 scalar Void
 
 """A Dagger workspace detected from the current working directory."""
-type Workspace {
+type Workspace implements Node {
   """Canonical Dagger address of the workspace directory."""
   address: String!
 

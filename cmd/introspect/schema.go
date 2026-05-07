@@ -93,16 +93,7 @@ func formatType(w io.Writer, t *introspection.Type) {
 
 	case introspection.TypeKindObject:
 		fmt.Fprintf(w, "type %s", t.Name)
-
-		// add interfaces if present
-		// if len(t.Interfaces) > 0 {
-		// 	interfaces := make([]string, len(t.Interfaces))
-		// 	for i, iface := range t.Interfaces {
-		// 		interfaces[i] = iface.Name
-		// 	}
-		// 	fmt.Fprintf(w, " implements %s", strings.Join(interfaces, " & "))
-		// }
-
+		formatInterfaces(w, t.Interfaces)
 		formatDirectiveApplications(w, t.Directives)
 		fmt.Fprint(w, " {\n")
 		formatDescribed(w, t.Fields, func(field *introspection.Field) string { return field.Description }, formatField)
@@ -110,6 +101,7 @@ func formatType(w io.Writer, t *introspection.Type) {
 
 	case introspection.TypeKindInterface:
 		fmt.Fprintf(w, "interface %s", t.Name)
+		formatInterfaces(w, t.Interfaces)
 		formatDirectiveApplications(w, t.Directives)
 		fmt.Fprint(w, " {\n")
 		formatDescribed(w, t.Fields, func(field *introspection.Field) string { return field.Description }, formatField)
@@ -131,6 +123,23 @@ func formatType(w io.Writer, t *introspection.Type) {
 	}
 
 	fmt.Fprintln(w)
+}
+
+func formatInterfaces(w io.Writer, interfaces []*introspection.Type) {
+	if len(interfaces) == 0 {
+		return
+	}
+
+	names := make([]string, 0, len(interfaces))
+	for _, iface := range interfaces {
+		if iface == nil || iface.Name == "" {
+			continue
+		}
+		names = append(names, iface.Name)
+	}
+	if len(names) > 0 {
+		fmt.Fprintf(w, " implements %s", strings.Join(names, " & "))
+	}
 }
 
 func formatDescription(w io.Writer, indent string, description string) {

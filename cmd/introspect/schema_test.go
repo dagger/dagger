@@ -19,8 +19,12 @@ func TestFormatTypeRendersDirectiveApplications(t *testing.T) {
 		{
 			name: "object type fields and field arguments",
 			typ: &introspection.Type{
-				Kind:       introspection.TypeKindObject,
-				Name:       "Obj",
+				Kind: introspection.TypeKindObject,
+				Name: "Obj",
+				Interfaces: []*introspection.Type{
+					{Kind: introspection.TypeKindInterface, Name: "Node"},
+					{Kind: introspection.TypeKindInterface, Name: "Syncer"},
+				},
 				Directives: directives(directive("objectDirective", directiveArg("name", `"Obj"`))),
 				Fields: []*introspection.Field{
 					{
@@ -38,7 +42,7 @@ func TestFormatTypeRendersDirectiveApplications(t *testing.T) {
 					},
 				},
 			},
-			want: "type Obj @objectDirective(name: \"Obj\") {\n" +
+			want: "type Obj implements Node & Syncer @objectDirective(name: \"Obj\") {\n" +
 				"  field(arg: String = \"default\" @expectedType(name: \"ArgType\")): ID @expectedType(name: \"Obj\")\n" +
 				"}\n",
 		},
@@ -90,14 +94,17 @@ func TestFormatTypeRendersDirectiveApplications(t *testing.T) {
 		{
 			name: "interface",
 			typ: &introspection.Type{
-				Kind:       introspection.TypeKindInterface,
-				Name:       "Iface",
+				Kind: introspection.TypeKindInterface,
+				Name: "Iface",
+				Interfaces: []*introspection.Type{
+					{Kind: introspection.TypeKindInterface, Name: "Parent"},
+				},
 				Directives: directives(directive("interfaceDirective")),
 				Fields: []*introspection.Field{
 					{Name: "id", TypeRef: idRef},
 				},
 			},
-			want: "interface Iface @interfaceDirective {\n" +
+			want: "interface Iface implements Parent @interfaceDirective {\n" +
 				"  id: ID\n" +
 				"}\n",
 		},
