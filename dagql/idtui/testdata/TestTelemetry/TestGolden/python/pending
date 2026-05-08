@@ -34,7 +34,6 @@ Expected stderr:
 ├╴✔ withExec sleep 1 X.Xs
 ├╴✘ withExec false X.Xs ERROR
 │ ! exit code: 1
-╰╴✘ withExec sleep 1 X.Xs ERROR
-  ! exit code: 1
+╰╴○ withExec sleep 1 X.Xs
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

@@ -21,6 +21,10 @@ type Viztest struct {
 	Num int
 }
 
+type ModuleTypeReturn struct {
+	Container *dagger.Container
+}
+
 // HelloWorld returns the string "Hello, world!"
 // +cache="session"
 func (*Viztest) HelloWorld() string {
@@ -533,6 +537,17 @@ RUN echo hello, world!
 RUN echo im failing && false
 `).
 		DockerBuild()
+}
+
+// +cache="session"
+func (*Viztest) ModuleTypeReturnFail() *ModuleTypeReturn {
+	return &ModuleTypeReturn{
+		Container: dag.Container().
+			From("alpine").
+			WithEnvVariable("NOW", time.Now().String()).
+			WithExec([]string{"sh", "-c", "echo module type container failing; exit 1"}).
+			WithEnvVariable("AFTER", "should stay pending"),
+	}
 }
 
 // +cache="session"

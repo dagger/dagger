@@ -379,13 +379,6 @@ func (s *SpanTreeView) rows() *dagui.Rows {
 	return s.fe.rows
 }
 
-func (s *SpanTreeView) rowsView() *dagui.RowsView {
-	if s.scope != nil {
-		return s.scope.rowsView
-	}
-	return s.fe.rowsView
-}
-
 func (s *SpanTreeView) frontendOpts() dagui.FrontendOpts {
 	if s.scope != nil {
 		return s.scope.opts
@@ -2793,8 +2786,16 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 		}
 	}
 	if len(row.Span.ErrorOrigins.Order) > 0 && (!row.Expanded || !row.HasChildren) {
-		multi := len(row.Span.ErrorOrigins.Order) > 1
+		// Filter self-references: a span propagated as its own error origin
+		// should never be rendered as the cause of itself.
+		origins := make([]*dagui.Span, 0, len(row.Span.ErrorOrigins.Order))
 		for _, cause := range row.Span.ErrorOrigins.Order {
+			if cause.ID != row.Span.ID {
+				origins = append(origins, cause)
+			}
+		}
+		multi := len(origins) > 1
+		for _, cause := range origins {
 			if multi {
 				var gapBuf strings.Builder
 				gapOut := NewOutput(&gapBuf, termenv.WithProfile(fe.profile))
@@ -2803,6 +2804,9 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 				fmt.Fprintln(out, strings.TrimRight(gapBuf.String(), " "))
 			}
 			fe.renderErrorCause(ctx, out, r, row, prefix, cause)
+		}
+		if len(origins) == 0 {
+			fe.renderStepError(out, r, row, prefix)
 		}
 	} else {
 		fe.renderStepError(out, r, row, prefix)

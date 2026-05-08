@@ -1309,8 +1309,8 @@ type ServiceBinding struct {
 func (bndp ServiceBindings) AttachDependencyResults(
 	owner string,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
-) ([]dagql.AnyResult, error) {
-	owned := make([]dagql.AnyResult, 0, len(bndp))
+) ([]dagql.DependencyResult, error) {
+	owned := make([]dagql.DependencyResult, 0, len(bndp))
 	for i := range bndp {
 		binding := &bndp[i]
 		if binding.Service.Self() == nil {
@@ -1325,7 +1325,10 @@ func (bndp ServiceBindings) AttachDependencyResults(
 			return nil, fmt.Errorf("attach %s service %q: unexpected result %T", owner, binding.Hostname, attached)
 		}
 		binding.Service = typed
-		owned = append(owned, typed)
+		owned = append(owned, dagql.DependencyResult{
+			Result: typed,
+			Owned:  false,
+		})
 	}
 	return owned, nil
 }

@@ -119,6 +119,11 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 			"with-exec", "--args", "echo,hey",
 			"stdout",
 		}, Fail: true},
+		{Function: "module-type-return-fail", Args: []string{"container", "sync"}, Fail: true, FuzzyTest: func(t *testctx.T, out string) {
+			require.Contains(t, out, ".moduleTypeReturnFail")
+			require.Contains(t, out, "module type container failing")
+			require.Contains(t, out, "withExec sh -c 'echo module type container failing; exit 1'")
+		}},
 		{Function: "revealed-spans"},
 
 		{Function: "git-readme", Args: []string{
