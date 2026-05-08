@@ -319,7 +319,13 @@ func shouldRecordWorkspaceMigrationProgress(ctx context.Context, query *core.Que
 	if err != nil {
 		return true
 	}
-	return dagql.ShouldEmitTelemetry(ctx, seenKeys, "workspace.migrate.progress:"+ws.HostPath(), false)
+	key := "workspace.migrate.progress:" + ws.HostPath()
+	if ws.ClientID != "" {
+		// Keep migration summaries visible for separate CLI clients that use the
+		// same host path, while still deduping repeated selects within one client.
+		key += ":" + ws.ClientID
+	}
+	return dagql.ShouldEmitTelemetry(ctx, seenKeys, key, false)
 }
 
 func workspaceMigrationProgressEnabled(ctx context.Context) bool {
