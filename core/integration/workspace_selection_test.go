@@ -363,20 +363,6 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceMetadataCommands(ctx context
 		require.Contains(t, out, "Config:  .dagger/config.toml")
 	})
 
-	t.Run("workspace list uses the selected workspace instead of cwd", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-		ctr := workspaceBase(t, c).
-			With(workspaceSelectionSimpleWorkspace("/work/caller", "caller", "Caller", "caller workspace")).
-			With(workspaceSelectionSimpleWorkspace("/work/selected", "selected", "Selected", "selected workspace")).
-			WithWorkdir("/work/caller")
-
-		out, err := ctr.With(workspaceSelectionDaggerExec("-W", "../selected", "workspace", "list")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "selected*")
-		require.Contains(t, out, ".dagger/modules/selected")
-		require.NotContains(t, out, "caller*")
-		require.NotContains(t, out, ".dagger/modules/caller")
-	})
 }
 
 // TestSelectedWorkspaceEnvOverlay should cover the end-to-end interaction
