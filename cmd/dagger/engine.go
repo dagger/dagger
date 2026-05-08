@@ -10,6 +10,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/client/imageload"
+	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -71,7 +72,9 @@ func withEngine(
 	params client.Params,
 	fn runClientCallback,
 ) (rerr error) {
-	applyWorkspaceClientParams(&params)
+	if err := applyWorkspaceClientParams(&params); err != nil {
+		return err
+	}
 	if !moduleNoURL {
 		if modRef, _ := getExplicitModuleSourceRef(); modRef != "" {
 			params.Module = modRef
@@ -159,15 +162,30 @@ func withEngine(
 	})
 }
 
-func applyWorkspaceClientParams(params *client.Params) {
+func applyWorkspaceClientParams(params *client.Params) error {
 	if params.Workspace == nil && workspaceRef != "" {
 		ref := workspaceRef
+		if !isObviouslyRemoteWorkspaceRef(ref) {
+			// --workdir answers where this CLI command is running from. -W
+			// answers which workspace the user selected. If -W is relative, it
+			// follows the command cwd after --workdir has been applied:
+			// `--workdir /work/shell -W ./ws` selects /work/shell/ws. Send that
+			// host path to the engine; the engine still owns workspace detection
+			// from there: git root, config, lock, compat. Remote refs stay
+			// untouched for engine-side git parsing.
+			absRef, err := pathutil.Abs(ref)
+			if err != nil {
+				return fmt.Errorf("resolve workspace: %w", err)
+			}
+			ref = absRef
+		}
 		params.Workspace = &ref
 	}
 	if params.WorkspaceEnv == nil && workspaceEnv != "" {
 		env := workspaceEnv
 		params.WorkspaceEnv = &env
 	}
+	return nil
 }
 
 func resolveLockMode(paramLockMode, globalLockMode string) (string, error) {

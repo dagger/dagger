@@ -233,14 +233,6 @@ var rootCmd = &cobra.Command{
 				return fmt.Errorf("start pprof: %w", err)
 			}
 		}
-		resolvedWorkdir, err := NormalizeWorkdir(workdir)
-		if err != nil {
-			return err
-		}
-		if err := os.Chdir(resolvedWorkdir); err != nil {
-			return fmt.Errorf("change workdir: %w", err)
-		}
-		workdir = resolvedWorkdir
 		if err := validateWorkspaceFlagPolicy(cmd, args); err != nil {
 			return err
 		}
@@ -395,12 +387,12 @@ func disableFlagsInUseLine(cmd *cobra.Command) {
 	}
 }
 
-func parseGlobalFlags() {
+func parseGlobalFlags(args []string) {
 	flags := pflag.NewFlagSet("global", pflag.ContinueOnError)
 	flags.Usage = func() {}
 	flags.ParseErrorsAllowlist.UnknownFlags = true
 	installGlobalFlags(flags)
-	if err := flags.Parse(os.Args[1:]); err != nil && !errors.Is(err, pflag.ErrHelp) {
+	if err := flags.Parse(args); err != nil && !errors.Is(err, pflag.ErrHelp) {
 		fmt.Fprintln(stderr, err)
 		os.Exit(1)
 	}
@@ -541,7 +533,22 @@ func applyCommandProgressDefaults(cmd *cobra.Command) {
 }
 
 func main() {
-	parseGlobalFlags()
+	installGlobalFlags(rootCmd.PersistentFlags())
+
+	// Some global flags affect how the client connects, so read them before
+	// Cobra executes the command tree. Cobra still does the normal parse later.
+	parseGlobalFlags(os.Args[1:])
+	resolvedWorkdir, err := NormalizeWorkdir(workdir)
+	if err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+		os.Exit(1)
+	}
+	if err := os.Chdir(resolvedWorkdir); err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), fmt.Errorf("change workdir: %w", err))
+		os.Exit(1)
+	}
+	workdir = resolvedWorkdir
+
 	opts.Silent = silent                   // show no progress
 	opts.Debug = debugFlag                 // show everything
 	opts.RevealNoisySpans = reveal         // disable 'reveal: true' mechanic (for tests)
@@ -594,8 +601,6 @@ func main() {
 		os.Exit(1)
 	}
 	interactiveCommandParsed = parsedCommand
-
-	installGlobalFlags(rootCmd.PersistentFlags())
 
 	ctx := context.Background()
 	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
