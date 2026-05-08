@@ -69,6 +69,10 @@ func (s *currentTypeDefsTestServer) SpecificClientAttachableConn(context.Context
 	return nil, nil
 }
 
+func (s *currentTypeDefsTestServer) SpecificClientAttachableConnIfAvailable(context.Context, string) (*grpc.ClientConn, bool, error) {
+	return nil, false, nil
+}
+
 func (s *currentTypeDefsTestServer) DefaultDeps(context.Context) (*core.SchemaBuilder, error) {
 	return nil, nil
 }

@@ -1923,6 +1923,22 @@ func (srv *Server) SpecificClientAttachableConn(ctx context.Context, clientID st
 	return conn, nil
 }
 
+func (srv *Server) SpecificClientAttachableConnIfAvailable(ctx context.Context, clientID string) (*grpc.ClientConn, bool, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	caller, ok := client.daggerSession.attachables.Lookup(clientID)
+	if !ok {
+		return nil, false, nil
+	}
+	conn := caller.Conn()
+	if conn == nil {
+		return nil, false, fmt.Errorf("session attachable conn for client %q was nil", clientID)
+	}
+	return conn, true, nil
+}
+
 func (srv *Server) sessionMainClientConn(ctx context.Context, sess *daggerSession) (*grpc.ClientConn, error) {
 	_ = ctx
 	if sess == nil {

@@ -46,6 +46,7 @@ type mockServer struct {
 	functionCall   *FunctionCall
 	env            dagql.ObjectResult[*Env]
 	clientMetadata *engine.ClientMetadata
+	attachables    map[string]*grpc.ClientConn
 }
 
 func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult) {
@@ -126,6 +127,11 @@ func (ms *mockServer) CurrentWorkspace(context.Context) (*Workspace, error) {
 
 func (ms *mockServer) SpecificClientAttachableConn(context.Context, string) (*grpc.ClientConn, error) {
 	return nil, nil
+}
+
+func (ms *mockServer) SpecificClientAttachableConnIfAvailable(_ context.Context, clientID string) (*grpc.ClientConn, bool, error) {
+	conn := ms.attachables[clientID]
+	return conn, conn != nil, nil
 }
 
 func (ms *mockServer) CurrentWorkspaceLock(context.Context) (*workspacepkg.Lock, bool, error) {

@@ -307,11 +307,24 @@ func (c *Cache) BindSessionResource(_ context.Context, sessionID string, clientI
 }
 
 func (c *Cache) ResolveSessionResource(
-	_ context.Context,
+	ctx context.Context,
 	sessionID string,
 	clientID string,
 	handle SessionResourceHandle,
 ) (any, error) {
+	candidates, err := c.ResolveSessionResourceCandidates(ctx, sessionID, clientID, handle)
+	if err != nil {
+		return nil, err
+	}
+	return candidates[0].Value, nil
+}
+
+func (c *Cache) ResolveSessionResourceCandidates(
+	_ context.Context,
+	sessionID string,
+	clientID string,
+	handle SessionResourceHandle,
+) ([]SessionResourceCandidate, error) {
 	if c == nil {
 		return nil, errors.New("resolve session resource: nil cache")
 	}
@@ -332,18 +345,47 @@ func (c *Cache) ResolveSessionResource(
 		c.sessionMu.Unlock()
 		return nil, fmt.Errorf("resolve session resource %q: no bound resource for session %q", handle, sessionID)
 	}
-	if value, ok := bindings.byClientID[clientID]; ok {
-		c.sessionMu.Unlock()
-		return value, nil
-	}
-	if bindings.latestClientID != "" {
-		if value, ok := bindings.byClientID[bindings.latestClientID]; ok {
-			c.sessionMu.Unlock()
-			return value, nil
+
+	candidates := make([]SessionResourceCandidate, 0, len(bindings.byClientID))
+	seen := make(map[string]struct{}, len(bindings.byClientID))
+	appendCandidate := func(candidateClientID string) {
+		if candidateClientID == "" {
+			return
 		}
+		if _, ok := seen[candidateClientID]; ok {
+			return
+		}
+		value, ok := bindings.byClientID[candidateClientID]
+		if !ok {
+			return
+		}
+		seen[candidateClientID] = struct{}{}
+		candidates = append(candidates, SessionResourceCandidate{
+			ClientID: candidateClientID,
+			Value:    value,
+		})
+	}
+
+	appendCandidate(clientID)
+	appendCandidate(bindings.latestClientID)
+
+	otherClientIDs := make([]string, 0, len(bindings.byClientID))
+	for candidateClientID := range bindings.byClientID {
+		if _, ok := seen[candidateClientID]; ok {
+			continue
+		}
+		otherClientIDs = append(otherClientIDs, candidateClientID)
+	}
+	slices.Sort(otherClientIDs)
+	for _, candidateClientID := range otherClientIDs {
+		appendCandidate(candidateClientID)
 	}
 	c.sessionMu.Unlock()
-	return nil, fmt.Errorf("resolve session resource %q: no binding for client %q in session %q", handle, clientID, sessionID)
+
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("resolve session resource %q: no binding for client %q in session %q", handle, clientID, sessionID)
+	}
+	return candidates, nil
 }
 
 func (c *Cache) captureSessionLazySpanContext(ctx context.Context, sessionID string, res AnyResult) {
@@ -1072,6 +1114,11 @@ type sharedResultID uint64
 type sessionResourceBindings struct {
 	latestClientID string
 	byClientID     map[string]any
+}
+
+type SessionResourceCandidate struct {
+	ClientID string
+	Value    any
 }
 
 func compareSessionResourceHandles(a, b SessionResourceHandle) int {

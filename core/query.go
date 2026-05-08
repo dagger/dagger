@@ -104,6 +104,10 @@ type Server interface {
 	// same session as the current client.
 	SpecificClientAttachableConn(context.Context, string) (*grpc.ClientConn, error)
 
+	// The active session attachables connection for a specific client ID within
+	// the same session as the current client, without waiting for it to appear.
+	SpecificClientAttachableConnIfAvailable(context.Context, string) (*grpc.ClientConn, bool, error)
+
 	// The auth provider for the current client
 	Auth(context.Context) (*auth.RegistryAuthProvider, error)
 
