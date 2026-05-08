@@ -83,7 +83,6 @@ a workspace binding.
 - `check`
 - `generate`
 - `workspace info`
-- `workspace list`
 - `init`
 - `install`
 - `update`

@@ -184,7 +184,7 @@ The flag is an opaque string passed to the engine, which resolves it (local path
 
 `--workspace` does not change the process working directory. The hidden legacy `--workdir` flag changes cwd but carries no workspace semantics. When both are present, `--workdir` applies first, then `--workspace` is interpreted relative to the resulting cwd.
 
-Commands that accept `--workspace`: `call`, `functions`, `check`, `generate`, `workspace info`, `workspace list`, `init`, `install`, `update`, `lock update`, `workspace config`, `config` (alias of `workspace config`).
+Commands that accept `--workspace`: `call`, `functions`, `check`, `generate`, `workspace info`, `init`, `install`, `update`, `lock update`, `workspace config`, `config` (alias of `workspace config`).
 
 Commands that are module-centric or otherwise unrelated (`migrate`, `module ...`) reject `--workspace`.
 
