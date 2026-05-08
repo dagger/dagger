@@ -150,7 +150,6 @@ func newDangNestedClientMetadata(ctx context.Context) (*engine.ClientMetadata, *
 		ClientVersion:     engine.Version,
 		AllowedLLMModules: slices.Clone(clientMetadata.AllowedLLMModules),
 		LockMode:          clientMetadata.LockMode,
-		WorkspaceEnv:      clientMetadata.WorkspaceEnv,
 	}
 
 	return clientMetadata, nestedClientMetadata, nil
