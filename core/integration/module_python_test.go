@@ -55,7 +55,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			With(daggerExec("module", "init", "test", "--source=.")).
+			With(daggerExec("module", "init", "test", "--source=.", ".")).
 			With(daggerExec("develop", "--sdk=python", "--source=.")).
 			With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).
 			Stdout(ctx)
@@ -68,7 +68,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		_, err := daggerCliBase(t, c).
-			With(daggerExec("module", "init", "test", "--source=.")).
+			With(daggerExec("module", "init", "test", "--source=.", ".")).
 			With(pyprojectExtra(nil, "")).
 			With(daggerExec("develop", "--sdk=python", "--source=.")).
 			Sync(ctx)
@@ -116,7 +116,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
                     def message(self) -> str:
                         return f"Hello, {self.my_name}!"
             `).
-			With(daggerExec("module", "init", "--sdk=python", "bare"))
+			With(daggerExec("module", "init", "--sdk=python", "bare", "."))
 
 		daggerDirEnts, err := modGen.Directory("/work/.dagger").Entries(ctx)
 		require.NoError(t, err)
@@ -137,7 +137,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithExec([]string{"mkdir", "-p", ".git"}).
-			With(daggerExec("module", "init", "--sdk=python", "bare"))
+			With(daggerExec("module", "init", "--sdk=python", "bare", "."))
 
 		daggerDirEnts, err := modGen.Directory("/work").Entries(ctx)
 		require.NoError(t, err)
@@ -186,7 +186,7 @@ class HelloWorld:
         return f"Hello, {self.my_name}!"
 `,
 			).
-			With(daggerExec("module", "init", "--sdk=python", "--source=.", "hello-world"))
+			With(daggerExec("module", "init", "--sdk=python", "--source=.", "hello-world", "."))
 
 		out, err := modGen.With(daggerQuery(`{message}`)).Stdout(ctx)
 		require.NoError(t, err)
@@ -197,7 +197,7 @@ class HelloWorld:
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			With(daggerExec("module", "init", "--sdk=python", "project2")).
+			With(daggerExec("module", "init", "--sdk=python", "project2", ".")).
 			WithExec([]string{"test", "-f", "project2/src/project_2/main.py"}).
 			With(daggerCallAt("project2", "container-echo", "--string-arg", "hello", "stdout")).
 			Stdout(ctx)
@@ -243,7 +243,7 @@ class Test:
         return f"Hello, {self.my_name}!"
 `,
 			).
-			With(daggerExec("module", "init", "--sdk=python", "--source=.", "test"))
+			With(daggerExec("module", "init", "--sdk=python", "--source=.", "test", "."))
 
 		out, err := modGen.With(daggerQuery(`{message}`)).Stdout(ctx)
 		require.NoError(t, err)
@@ -290,7 +290,7 @@ class Test:
         return f"Hello, {self.my_name}!"
 `,
 			).
-			With(daggerExec("module", "init", "--sdk=python", "--source=.", "test"))
+			With(daggerExec("module", "init", "--sdk=python", "--source=.", "test", "."))
 
 		out, err := modGen.With(daggerQuery(`{message}`)).Stdout(ctx)
 		require.NoError(t, err)
@@ -776,7 +776,7 @@ class Test:
         return f"{v.major}.{v.minor}"
 `,
 			)).
-			With(daggerExec("module", "init", "--sdk=../extended", "--source=.", "test")).
+			With(daggerExec("module", "init", "--sdk=../extended", "--source=.", "test", ".")).
 			// use-uv = false should be ignored
 			WithExec([]string{"test", "-f", "uv.lock"}).
 			With(daggerCall("version")).

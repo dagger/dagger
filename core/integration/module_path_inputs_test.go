@@ -290,7 +290,7 @@ export class Test {
 					WithDirectory("/work/backend", c.Directory().WithNewFile("foo.txt", "foo")).
 					WithDirectory("/work/frontend", c.Directory().WithNewFile("bar.txt", "bar")).
 					WithWorkdir("/work/ci").
-					With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, "--source=dagger")).
+					With(daggerExec("module", "init", "test", ".", "--sdk="+tc.sdk, "--source=dagger")).
 					WithWorkdir("/work/ci/dagger").
 					With(sdkSource(tc.sdk, tc.source)).
 					WithDirectory("/work/ci/dagger/sub", c.Directory().WithNewFile("sub.txt", "sub")).
