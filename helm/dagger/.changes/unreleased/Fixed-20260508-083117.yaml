@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  Allow configuring Helm chart StatefulSet engine replicas.
+time: 2026-05-08T08:31:17.194139480+04:00
+custom:
+    Author: immanuwell
+    PR: "13116"

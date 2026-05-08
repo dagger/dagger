@@ -38,6 +38,10 @@ engine:
   ### StatefulSet specific configuration
   #
   statefulSet:
+    # Number of Dagger Engine replicas.
+    # Only increase this when using persistent volumes, not hostPath.
+    replicas: 1
+
     # PVC retention policy (applies to all PVCs)
     # Only available in Kubernetes 1.23+
     persistentVolumeClaimRetentionPolicy:
