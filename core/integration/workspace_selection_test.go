@@ -183,23 +183,26 @@ func (m *Nester) Greeting() string {
 }
 
 func (m *Nester) NestedWorkspace(ctx context.Context, cli *dagger.File) (string, error) {
-	return m.nested(ctx, cli, "query", "{currentWorkspace{cwd configFile}}")
+	return m.nested(ctx, cli, []string{"query"}, dagger.ContainerWithExecOpts{
+		ExperimentalPrivilegedNesting: true,
+		Stdin:                         "{currentWorkspace{cwd configFile}}",
+	})
 }
 
 func (m *Nester) NestedGreeting(ctx context.Context, cli *dagger.File) (string, error) {
-	return m.nested(ctx, cli, "call", "greeting")
+	return m.nested(ctx, cli, []string{"call", "greeting"}, dagger.ContainerWithExecOpts{
+		ExperimentalPrivilegedNesting: true,
+	})
 }
 
-func (m *Nester) nested(ctx context.Context, cli *dagger.File, args ...string) (string, error) {
+func (m *Nester) nested(ctx context.Context, cli *dagger.File, args []string, opts dagger.ContainerWithExecOpts) (string, error) {
 	execArgs := append([]string{"dagger", "--progress=report"}, args...)
 	out, err := dag.Container().
 		From("` + alpineImage + `").
 		WithMountedFile("/bin/dagger", cli).
 		WithExec([]string{"mkdir", "-p", "/empty"}).
 		WithWorkdir("/empty").
-		WithExec(execArgs, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		}).
+		WithExec(execArgs, opts).
 		Stdout(ctx)
 	if err != nil {
 		return "", err
@@ -290,9 +293,9 @@ func (WorkspaceSelectionSuite) TestWorkspaceSelectionCommandPolicy(ctx context.C
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c)
 
-		out, err := ctr.With(workspaceSelectionDaggerExecFail("-W", ".", "module", "develop")).CombinedOutput(ctx)
+		out, err := ctr.With(workspaceSelectionDaggerExecFail("-W", ".", "develop")).CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, `--workspace is not supported for "dagger module develop"`)
+		require.Contains(t, out, `--workspace is not supported for "dagger develop"`)
 
 		out, err = ctr.With(workspaceSelectionDaggerExecFail("-W", ".", "migrate")).CombinedOutput(ctx)
 		require.NoError(t, err)
