@@ -1314,11 +1314,36 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 	if args.ExecMD.Self != nil {
 		md = args.ExecMD.Self
 	}
+
 	var moduleContext dagql.ObjectResult[*core.Module]
+	var functionCall *core.FunctionCall
 	if args.ModuleContext.Valid {
 		moduleContext, err = args.ModuleContext.Value.Load(ctx, srv)
 		if err != nil {
 			return inst, fmt.Errorf("load exec module context: %w", err)
+		}
+	} else {
+		// If this exec starts a privileged nested Dagger client, that client
+		// should inherit the workspace/env of the module function that created
+		// the exec unless it explicitly selects another workspace. The container
+		// cwd may be unrelated to the caller's workspace, so rediscovery from
+		// that cwd would lose the parent binding. moduleContext records the
+		// owning module, but is hidden from the public Container.withExec API;
+		// when withExec runs inside a module function, recover the owner from the
+		// current Query and store it on the exec state.
+		query, err := core.CurrentQuery(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("resolve exec module context: %w", err)
+		}
+		moduleContext, err = query.CurrentModule(ctx)
+		if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
+			return inst, fmt.Errorf("resolve exec module context: %w", err)
+		}
+		if moduleContext.Self() != nil {
+			functionCall, err = query.CurrentFunctionCall(ctx)
+			if err != nil && !errors.Is(err, core.ErrNoCurrentModule) {
+				return inst, fmt.Errorf("resolve exec function context: %w", err)
+			}
 		}
 	}
 
@@ -1351,7 +1376,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
 		DefaultArgs:        parent.Self().DefaultArgs,
 	}
-	err = ctr.WithExec(ctx, parent, args.ContainerExecOpts, md, moduleContext, nil, false)
+	err = ctr.WithExec(ctx, parent, args.ContainerExecOpts, md, moduleContext, functionCall, false)
 	if err != nil {
 		return inst, err
 	}
