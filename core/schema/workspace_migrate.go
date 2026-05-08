@@ -98,13 +98,16 @@ func (s *workspaceSchema) migrate(
 
 	warnings := workspaceMigrationWarnings(plan)
 
-	lockBytes, err := s.workspaceMigrationLockBytes(workspaceCtx, query, plan)
+	lock, err := s.workspaceMigrationLock(workspaceCtx, query, plan)
 	if err != nil {
 		return nil, err
 	}
 
-	changes, err := s.workspaceMigrationChangeset(ctx, ws, plan, lockBytes)
+	changes, err := s.workspaceMigrationChangeset(ctx, ws, plan)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.stageWorkspaceMigrationLock(workspaceCtx, query, lock); err != nil {
 		return nil, err
 	}
 
@@ -121,11 +124,11 @@ func (s *workspaceSchema) migrate(
 	}, nil
 }
 
-func (s *workspaceSchema) workspaceMigrationLockBytes(
+func (s *workspaceSchema) workspaceMigrationLock(
 	ctx context.Context,
 	query *core.Query,
 	plan *workspace.MigrationPlan,
-) (_ []byte, rerr error) {
+) (_ *workspace.Lock, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "refresh workspace lock", telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
 
@@ -165,19 +168,37 @@ func (s *workspaceSchema) workspaceMigrationLockBytes(
 	if len(entries) == 0 {
 		return nil, nil
 	}
+	return lock, nil
+}
 
-	lockBytes, err := lock.Marshal()
-	if err != nil {
-		return nil, fmt.Errorf("marshal workspace lock: %w", err)
+func (s *workspaceSchema) stageWorkspaceMigrationLock(
+	ctx context.Context,
+	query *core.Query,
+	lock *workspace.Lock,
+) (rerr error) {
+	if lock == nil {
+		return nil
 	}
-	return lockBytes, nil
+
+	ctx, span := core.Tracer(ctx).Start(ctx, "stage workspace lock", telemetry.Internal())
+	defer telemetry.EndWithCause(span, &rerr)
+
+	entries, err := lock.Entries()
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := query.SetCurrentWorkspaceLookup(ctx, entry.Namespace, entry.Operation, entry.Inputs, entry.Result); err != nil {
+			return fmt.Errorf("stage workspace lock entry for %s: %w", entry.Operation, err)
+		}
+	}
+	return nil
 }
 
 func (s *workspaceSchema) workspaceMigrationChangeset(
 	ctx context.Context,
 	ws *core.Workspace,
 	plan *workspace.MigrationPlan,
-	lockBytes []byte,
 ) (_ *core.Changeset, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "build migration changeset", workspaceMigrationWrapperSpanOpts(ctx)...)
 	defer telemetry.EndWithCause(span, &rerr)
@@ -187,7 +208,7 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 		return nil, err
 	}
 
-	if err := validateWorkspaceMigrationTargetPaths(ctx, baseDir, workspaceMigrationTargetPaths(plan, lockBytes)); err != nil {
+	if err := validateWorkspaceMigrationTargetPaths(ctx, baseDir, workspaceMigrationTargetPaths(plan)); err != nil {
 		return nil, err
 	}
 
@@ -199,14 +220,6 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 
 	if len(plan.MigrationReportData) > 0 {
 		updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, plan.MigrationReportPath, plan.MigrationReportData, "migration report: "+workspaceMigrationDisplayPath(plan.MigrationReportPath))
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if len(lockBytes) > 0 {
-		workspaceLockPath := filepath.Join(workspace.LockDirName, workspace.LockFileName)
-		updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, workspaceLockPath, lockBytes, "write workspace lock", telemetry.Internal())
 		if err != nil {
 			return nil, err
 		}
@@ -266,17 +279,14 @@ func (s *workspaceSchema) workspaceMigrationPreparedDirectories(
 	return baseDir, updatedDir, nil
 }
 
-func workspaceMigrationTargetPaths(plan *workspace.MigrationPlan, lockBytes []byte) []string {
-	paths := make([]string, 0, 4)
+func workspaceMigrationTargetPaths(plan *workspace.MigrationPlan) []string {
+	paths := make([]string, 0, 3)
 	if len(plan.MigratedModuleConfigData) > 0 {
 		paths = append(paths, plan.MigratedModuleConfigPath)
 	}
 	paths = append(paths, filepath.Join(workspace.LockDirName, workspace.ConfigFileName))
 	if len(plan.MigrationReportData) > 0 {
 		paths = append(paths, plan.MigrationReportPath)
-	}
-	if len(lockBytes) > 0 {
-		paths = append(paths, filepath.Join(workspace.LockDirName, workspace.LockFileName))
 	}
 	return paths
 }
