@@ -2455,6 +2455,46 @@ func TestViews(t *testing.T) {
 	})
 }
 
+func TestIDRecipeArgSchemaByVersion(t *testing.T) {
+	srv := newExternalDagqlServerForTest(t, Query{})
+
+	for _, tc := range []struct {
+		name       string
+		view       call.View
+		nonNull    bool
+		hasDefault bool
+	}{
+		{
+			name:       "current",
+			view:       "",
+			nonNull:    true,
+			hasDefault: true,
+		},
+		{
+			name:       "before defaulted args were supported by go codegen",
+			view:       "v0.12.9",
+			nonNull:    false,
+			hasDefault: false,
+		},
+		{
+			name:       "after defaulted args were supported by go codegen",
+			view:       "v0.13.0",
+			nonNull:    true,
+			hasDefault: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			query := srv.SchemaForView(tc.view).Types["Query"]
+			id := query.Fields.ForName("id")
+			require.NotNil(t, id)
+			recipe := id.Arguments.ForName("recipe")
+			require.NotNil(t, recipe)
+			assert.Equal(t, tc.nonNull, recipe.Type.NonNull)
+			assert.Equal(t, tc.hasDefault, recipe.DefaultValue != nil)
+		})
+	}
+}
+
 func TestViewsCaching(t *testing.T) {
 	srv := newExternalDagqlServerForTest(t, Query{})
 	gql := newTestClient(srv)

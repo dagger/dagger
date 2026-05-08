@@ -78,39 +78,60 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 		invalidateSchemaCache: srv.invalidateSchemaCache,
 	}
 	if !opts.NoIDs {
-		class.Install(
-			Field[T]{
+		idFunc := func(ctx context.Context, self ObjectResult[T], args map[string]Input, _ call.View) (AnyResult, error) {
+			var recipe bool
+			switch v := args["recipe"].(type) {
+			case Boolean:
+				recipe = bool(v)
+			case Optional[Boolean]:
+				recipe = bool(v.GetOr(Boolean(false)))
+			}
+
+			var (
+				selfID *call.ID
+				err    error
+			)
+			if recipe {
+				selfID, err = self.RecipeID(ctx)
+			} else {
+				selfID, err = self.ID()
+			}
+			if err != nil {
+				return nil, err
+			}
+			return NewResultForCurrentCall(ctx, NewDynamicID[T](selfID, opts.Typed))
+		}
+		idField := func(view ViewFilter, recipeArg InputSpec) Field[T] {
+			return Field[T]{
 				Spec: &FieldSpec{
 					Name:        "id",
 					Description: fmt.Sprintf("A unique identifier for this %s.", class.TypeName()),
 					Type:        ID[T]{inner: opts.Typed},
-					Args: NewInputSpecs(
-						InputSpec{
-							Name:        "recipe",
-							Description: "Return the canonical recipe-form ID instead of the default runtime handle ID.",
-							Type:        Boolean(false),
-							Default:     Boolean(false),
-						},
-					),
-					DoNotCache: "IDs describe the current attached result; cache hits could return stale runtime handles for an equivalent object.",
+					Args:        NewInputSpecs(recipeArg),
+					ViewFilter:  view,
+					DoNotCache:  "IDs describe the current attached result; cache hits could return stale runtime handles for an equivalent object.",
 				},
-				Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, _ call.View) (AnyResult, error) {
-					recipe, _ := args["recipe"].(Boolean)
-					var (
-						selfID *call.ID
-						err    error
-					)
-					if bool(recipe) {
-						selfID, err = self.RecipeID(ctx)
-					} else {
-						selfID, err = self.ID()
-					}
-					if err != nil {
-						return nil, err
-					}
-					return NewResultForCurrentCall(ctx, NewDynamicID[T](selfID, opts.Typed))
+				Func: idFunc,
+			}
+		}
+		class.Install(
+			idField(
+				BeforeVersion("v0.13.0"),
+				InputSpec{
+					Name:        "recipe",
+					Description: "Return the canonical recipe-form ID instead of the default runtime handle ID.",
+					Type:        Optional[Boolean]{Value: Boolean(false)},
 				},
-			},
+			),
+			idField(
+				AfterVersion("v0.13.0"),
+				InputSpec{
+					Name:        "recipe",
+					Description: "Return the canonical recipe-form ID instead of the default runtime handle ID.",
+					Type:        Boolean(false),
+					Default:     Boolean(false),
+				},
+			),
 		)
 		class.idable = true
 	}
