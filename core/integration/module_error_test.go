@@ -21,7 +21,7 @@ func (ModuleSuite) TestExecError(ctx context.Context, t *testctx.T) {
 	modGen := c.Container().From(alpineImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("module", "init", "--source=.", "--sdk=go", "playground")).
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "playground", ".")).
 		WithNewFile("main.go", `
 package main
 
