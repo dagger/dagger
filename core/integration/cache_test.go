@@ -198,10 +198,10 @@ func (b *Bar) GetCacheVolumeId(ctx context.Context) (string, error) {
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/bar").
-		With(daggerExec("module", "init", "--source=.", "--sdk=go", "bar")).
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "bar", ".")).
 		WithNewFile("main.go", barTmpl).
 		WithWorkdir("/work/foo").
-		With(daggerExec("module", "init", "--source=.", "--sdk=go", "foo")).
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "foo", ".")).
 		WithNewFile("main.go", fooTmpl)
 
 	fooID, err := ctr.
@@ -238,7 +238,7 @@ func (CacheSuite) TestCacheIdSameAcrossSession(ctx context.Context, t *testctx.T
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, session1)).
 		WithWorkdir("/work/foo").
-		With(daggerExec("module", "init", "--source=.", "--sdk=go", "foo")).
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "foo", ".")).
 		WithNewFile("main.go", fooTmpl)
 
 	fooID, err := ctr1.
@@ -252,7 +252,7 @@ func (CacheSuite) TestCacheIdSameAcrossSession(ctx context.Context, t *testctx.T
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, session2)).
 		WithWorkdir("/work/foo").
-		With(daggerExec("module", "init", "--source=.", "--sdk=go", "foo")).
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "foo", ".")).
 		WithNewFile("main.go", fooTmpl)
 
 	fooID2, err := ctr2.
@@ -313,10 +313,10 @@ func (f *Bar) Fetch(ctx context.Context, vol *dagger.CacheVolume) (string, error
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, session)).
 		WithWorkdir("/work/bar").
-		With(daggerExec("module", "init", "--source=.", "--sdk=go", "bar")).
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "bar", ".")).
 		WithNewFile("main.go", barTmpl).
 		WithWorkdir("/work").
-		With(daggerExec("module", "init", "--source=.", "--sdk=go", "foo")).
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "foo", ".")).
 		WithNewFile("main.go", fooTmpl).
 		With(daggerExec("module", "install", "./bar"))
 
@@ -370,7 +370,7 @@ func (CacheSuite) TestCacheNotImpactedByChangeInModuleSource(ctx context.Context
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, session)).
 		WithWorkdir("/work").
-		With(daggerExec("module", "init", "--source=.", "--sdk=go", "foo"))
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "foo", "."))
 
 	fooID, err := ctr.
 		WithWorkdir("/work").
