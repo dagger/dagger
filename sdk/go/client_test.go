@@ -1,9 +1,10 @@
 package dagger
 
 import (
+	"bytes"
 	"context"
 	"errors"
-	"io"
+	"sync"
 	"testing"
 
 	"dagger.io/dagger/engineconn"
@@ -116,19 +117,35 @@ func TestContainer(t *testing.T) {
 	require.Equal(t, "3.16.2\n", contents)
 }
 
-// TODO: fix this test, it's actually broken, the result is an empty string
-// We could use a buffer, however the regexp want need to be updated, the
-// display of Dagger has change since.
+// lockedBuffer captures Connect log output safely because session startup logs
+// can be written from multiple goroutines.
+type lockedBuffer struct {
+	buf bytes.Buffer
+	mu  sync.Mutex
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 func TestConnectOption(t *testing.T) {
-	t.Skip("test broken with io.Pipe and empty string on the standard output." +
-		"We need to update the test with new output and use a buffer to catch" +
-		"output.")
 	t.Parallel()
 	ctx := context.Background()
 
-	r, w := io.Pipe()
-	c, err := Connect(ctx, WithLogOutput(w))
+	buf := new(lockedBuffer)
+	// NO_COLOR disables ANSI color codes in progress output so we can
+	// match log content reliably without having to strip escape sequences.
+	c, err := Connect(ctx, WithLogOutput(buf), WithEnvironmentVariable("NO_COLOR", "1"))
 	require.NoError(t, err)
+	defer c.Close()
 
 	_, err = c.
 		Container().
@@ -137,29 +154,20 @@ func TestConnectOption(t *testing.T) {
 		Contents(ctx)
 	require.NoError(t, err)
 
-	err = c.Close()
-	w.Close()
-	require.NoError(t, err)
+	logOutput := buf.String()
+	require.NotEmpty(t, logOutput)
 
 	wants := []string{
-		"#1 resolve image config for docker.io/library/alpine:3.16.1",
-		"#1 DONE [0-9.]+s",
-		"#2 docker-image://docker.io/library/alpine:3.16.1",
-		"#2 resolve docker.io/library/alpine:3.16.1 [0-9.]+s done",
-		"#2 (DONE [0-9.]+s|CACHED)",
+		"Creating new Engine session",
+		"Establishing connection to Engine",
+		"Container.from(address: \"alpine:3.16.1\")",
+		"Container.file(path: \"/etc/alpine-release\")",
+		"Container.file DONE",
+		"File.contents DONE",
 	}
 
-	logOutput, err := io.ReadAll(r)
-	require.NoError(t, err)
-
-	// Empty
-	// fmt.Println(string(logOutput))
-
 	for _, want := range wants {
-		// NOTE: the string is empty
-		// This pass the test
-		// require.Regexp(t, "", want)
-		require.Regexp(t, string(logOutput), want)
+		require.Contains(t, logOutput, want)
 	}
 }
 
