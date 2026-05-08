@@ -1088,7 +1088,7 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 	var eagerRuntime bool
 	var suppressCompatWorkspaceWarning bool
 	var workspaceRef *string
-	var workspaceEnv *string
+	workspaceEnv := nestedClientMetadata.WorkspaceEnv
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(h); md != nil {
 		clientMetadata.ClientVersion = md.ClientVersion
 		clientMetadata.AllowedLLMModules = slices.Clone(md.AllowedLLMModules)
