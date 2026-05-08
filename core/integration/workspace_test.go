@@ -69,7 +69,7 @@ func initDangModule(name, source string) dagger.WithContainerFunc {
 func initStandaloneDangModule(name, source string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
-			With(daggerExec("module", "init", "--sdk=dang", "--source=.", name)).
+			With(daggerExec("module", "init", "--sdk=dang", "--source=.", name, ".")).
 			WithNewFile("main.dang", source)
 	}
 }
