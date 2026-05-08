@@ -18,10 +18,10 @@ defmodule Dagger.Error do
   @doc """
   A unique identifier for this Error.
   """
-  @spec id(t(), boolean()) :: {:ok, Dagger.ErrorID.t()} | {:error, term()}
-  def id(%__MODULE__{} = error, recipe) do
+  @spec id(t(), [{:recipe, boolean()}]) :: {:ok, Dagger.ErrorID.t()} | {:error, term()}
+  def id(%__MODULE__{} = error, optional_args \\ []) do
     query_builder =
-      error.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
+      error.query_builder |> QB.select("id") |> QB.maybe_put_arg("recipe", optional_args[:recipe])
 
     Client.execute(error.client, query_builder)
   end

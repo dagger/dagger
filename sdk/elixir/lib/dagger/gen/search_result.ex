@@ -40,10 +40,12 @@ defmodule Dagger.SearchResult do
   @doc """
   A unique identifier for this SearchResult.
   """
-  @spec id(t(), boolean()) :: {:ok, Dagger.SearchResultID.t()} | {:error, term()}
-  def id(%__MODULE__{} = search_result, recipe) do
+  @spec id(t(), [{:recipe, boolean()}]) :: {:ok, Dagger.SearchResultID.t()} | {:error, term()}
+  def id(%__MODULE__{} = search_result, optional_args \\ []) do
     query_builder =
-      search_result.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
+      search_result.query_builder
+      |> QB.select("id")
+      |> QB.maybe_put_arg("recipe", optional_args[:recipe])
 
     Client.execute(search_result.client, query_builder)
   end

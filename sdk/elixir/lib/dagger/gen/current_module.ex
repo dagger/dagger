@@ -74,10 +74,12 @@ defmodule Dagger.CurrentModule do
   @doc """
   A unique identifier for this CurrentModule.
   """
-  @spec id(t(), boolean()) :: {:ok, Dagger.CurrentModuleID.t()} | {:error, term()}
-  def id(%__MODULE__{} = current_module, recipe) do
+  @spec id(t(), [{:recipe, boolean()}]) :: {:ok, Dagger.CurrentModuleID.t()} | {:error, term()}
+  def id(%__MODULE__{} = current_module, optional_args \\ []) do
     query_builder =
-      current_module.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
+      current_module.query_builder
+      |> QB.select("id")
+      |> QB.maybe_put_arg("recipe", optional_args[:recipe])
 
     Client.execute(current_module.client, query_builder)
   end

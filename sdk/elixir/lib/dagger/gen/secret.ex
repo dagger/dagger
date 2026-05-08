@@ -18,10 +18,12 @@ defmodule Dagger.Secret do
   @doc """
   A unique identifier for this Secret.
   """
-  @spec id(t(), boolean()) :: {:ok, Dagger.SecretID.t()} | {:error, term()}
-  def id(%__MODULE__{} = secret, recipe) do
+  @spec id(t(), [{:recipe, boolean()}]) :: {:ok, Dagger.SecretID.t()} | {:error, term()}
+  def id(%__MODULE__{} = secret, optional_args \\ []) do
     query_builder =
-      secret.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
+      secret.query_builder
+      |> QB.select("id")
+      |> QB.maybe_put_arg("recipe", optional_args[:recipe])
 
     Client.execute(secret.client, query_builder)
   end

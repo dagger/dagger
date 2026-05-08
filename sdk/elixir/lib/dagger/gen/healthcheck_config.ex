@@ -29,10 +29,13 @@ defmodule Dagger.HealthcheckConfig do
   @doc """
   A unique identifier for this HealthcheckConfig.
   """
-  @spec id(t(), boolean()) :: {:ok, Dagger.HealthcheckConfigID.t()} | {:error, term()}
-  def id(%__MODULE__{} = healthcheck_config, recipe) do
+  @spec id(t(), [{:recipe, boolean()}]) ::
+          {:ok, Dagger.HealthcheckConfigID.t()} | {:error, term()}
+  def id(%__MODULE__{} = healthcheck_config, optional_args \\ []) do
     query_builder =
-      healthcheck_config.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
+      healthcheck_config.query_builder
+      |> QB.select("id")
+      |> QB.maybe_put_arg("recipe", optional_args[:recipe])
 
     Client.execute(healthcheck_config.client, query_builder)
   end

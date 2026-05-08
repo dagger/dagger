@@ -18,10 +18,12 @@ defmodule Dagger.EnvVariable do
   @doc """
   A unique identifier for this EnvVariable.
   """
-  @spec id(t(), boolean()) :: {:ok, Dagger.EnvVariableID.t()} | {:error, term()}
-  def id(%__MODULE__{} = env_variable, recipe) do
+  @spec id(t(), [{:recipe, boolean()}]) :: {:ok, Dagger.EnvVariableID.t()} | {:error, term()}
+  def id(%__MODULE__{} = env_variable, optional_args \\ []) do
     query_builder =
-      env_variable.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
+      env_variable.query_builder
+      |> QB.select("id")
+      |> QB.maybe_put_arg("recipe", optional_args[:recipe])
 
     Client.execute(env_variable.client, query_builder)
   end

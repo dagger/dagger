@@ -29,10 +29,12 @@ defmodule Dagger.SearchSubmatch do
   @doc """
   A unique identifier for this SearchSubmatch.
   """
-  @spec id(t(), boolean()) :: {:ok, Dagger.SearchSubmatchID.t()} | {:error, term()}
-  def id(%__MODULE__{} = search_submatch, recipe) do
+  @spec id(t(), [{:recipe, boolean()}]) :: {:ok, Dagger.SearchSubmatchID.t()} | {:error, term()}
+  def id(%__MODULE__{} = search_submatch, optional_args \\ []) do
     query_builder =
-      search_submatch.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
+      search_submatch.query_builder
+      |> QB.select("id")
+      |> QB.maybe_put_arg("recipe", optional_args[:recipe])
 
     Client.execute(search_submatch.client, query_builder)
   end

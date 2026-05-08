@@ -89,10 +89,10 @@ defmodule Dagger.Host do
   @doc """
   A unique identifier for this Host.
   """
-  @spec id(t(), boolean()) :: {:ok, Dagger.HostID.t()} | {:error, term()}
-  def id(%__MODULE__{} = host, recipe) do
+  @spec id(t(), [{:recipe, boolean()}]) :: {:ok, Dagger.HostID.t()} | {:error, term()}
+  def id(%__MODULE__{} = host, optional_args \\ []) do
     query_builder =
-      host.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
+      host.query_builder |> QB.select("id") |> QB.maybe_put_arg("recipe", optional_args[:recipe])
 
     Client.execute(host.client, query_builder)
   end

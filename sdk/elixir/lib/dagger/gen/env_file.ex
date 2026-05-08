@@ -57,10 +57,12 @@ defmodule Dagger.EnvFile do
   @doc """
   A unique identifier for this EnvFile.
   """
-  @spec id(t(), boolean()) :: {:ok, Dagger.EnvFileID.t()} | {:error, term()}
-  def id(%__MODULE__{} = env_file, recipe) do
+  @spec id(t(), [{:recipe, boolean()}]) :: {:ok, Dagger.EnvFileID.t()} | {:error, term()}
+  def id(%__MODULE__{} = env_file, optional_args \\ []) do
     query_builder =
-      env_file.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
+      env_file.query_builder
+      |> QB.select("id")
+      |> QB.maybe_put_arg("recipe", optional_args[:recipe])
 
     Client.execute(env_file.client, query_builder)
   end

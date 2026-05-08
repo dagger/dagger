@@ -48,10 +48,12 @@ defmodule Dagger.Service do
   @doc """
   A unique identifier for this Service.
   """
-  @spec id(t(), boolean()) :: {:ok, Dagger.ServiceID.t()} | {:error, term()}
-  def id(%__MODULE__{} = service, recipe) do
+  @spec id(t(), [{:recipe, boolean()}]) :: {:ok, Dagger.ServiceID.t()} | {:error, term()}
+  def id(%__MODULE__{} = service, optional_args \\ []) do
     query_builder =
-      service.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
+      service.query_builder
+      |> QB.select("id")
+      |> QB.maybe_put_arg("recipe", optional_args[:recipe])
 
     Client.execute(service.client, query_builder)
   end

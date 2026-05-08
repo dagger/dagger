@@ -40,10 +40,10 @@ defmodule Dagger.Port do
   @doc """
   A unique identifier for this Port.
   """
-  @spec id(t(), boolean()) :: {:ok, Dagger.PortID.t()} | {:error, term()}
-  def id(%__MODULE__{} = port, recipe) do
+  @spec id(t(), [{:recipe, boolean()}]) :: {:ok, Dagger.PortID.t()} | {:error, term()}
+  def id(%__MODULE__{} = port, optional_args \\ []) do
     query_builder =
-      port.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
+      port.query_builder |> QB.select("id") |> QB.maybe_put_arg("recipe", optional_args[:recipe])
 
     Client.execute(port.client, query_builder)
   end

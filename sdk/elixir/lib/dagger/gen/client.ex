@@ -413,10 +413,12 @@ defmodule Dagger.Client do
   @doc """
   A unique identifier for this Query.
   """
-  @spec id(t(), boolean()) :: {:ok, Dagger.QueryID.t()} | {:error, term()}
-  def id(%__MODULE__{} = client, recipe) do
+  @spec id(t(), [{:recipe, boolean()}]) :: {:ok, Dagger.QueryID.t()} | {:error, term()}
+  def id(%__MODULE__{} = client, optional_args \\ []) do
     query_builder =
-      client.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
+      client.query_builder
+      |> QB.select("id")
+      |> QB.maybe_put_arg("recipe", optional_args[:recipe])
 
     Client.execute(client.client, query_builder)
   end

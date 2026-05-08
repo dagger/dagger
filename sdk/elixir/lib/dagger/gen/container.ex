@@ -365,10 +365,12 @@ defmodule Dagger.Container do
   @doc """
   A unique identifier for this Container.
   """
-  @spec id(t(), boolean()) :: {:ok, Dagger.ContainerID.t()} | {:error, term()}
-  def id(%__MODULE__{} = container, recipe) do
+  @spec id(t(), [{:recipe, boolean()}]) :: {:ok, Dagger.ContainerID.t()} | {:error, term()}
+  def id(%__MODULE__{} = container, optional_args \\ []) do
     query_builder =
-      container.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
+      container.query_builder
+      |> QB.select("id")
+      |> QB.maybe_put_arg("recipe", optional_args[:recipe])
 
     Client.execute(container.client, query_builder)
   end

@@ -104,10 +104,12 @@ defmodule Dagger.Changeset do
   @doc """
   A unique identifier for this Changeset.
   """
-  @spec id(t(), boolean()) :: {:ok, Dagger.ChangesetID.t()} | {:error, term()}
-  def id(%__MODULE__{} = changeset, recipe) do
+  @spec id(t(), [{:recipe, boolean()}]) :: {:ok, Dagger.ChangesetID.t()} | {:error, term()}
+  def id(%__MODULE__{} = changeset, optional_args \\ []) do
     query_builder =
-      changeset.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
+      changeset.query_builder
+      |> QB.select("id")
+      |> QB.maybe_put_arg("recipe", optional_args[:recipe])
 
     Client.execute(changeset.client, query_builder)
   end

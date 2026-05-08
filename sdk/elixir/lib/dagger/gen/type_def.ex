@@ -102,10 +102,12 @@ defmodule Dagger.TypeDef do
   @doc """
   A unique identifier for this TypeDef.
   """
-  @spec id(t(), boolean()) :: {:ok, Dagger.TypeDefID.t()} | {:error, term()}
-  def id(%__MODULE__{} = type_def, recipe) do
+  @spec id(t(), [{:recipe, boolean()}]) :: {:ok, Dagger.TypeDefID.t()} | {:error, term()}
+  def id(%__MODULE__{} = type_def, optional_args \\ []) do
     query_builder =
-      type_def.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
+      type_def.query_builder
+      |> QB.select("id")
+      |> QB.maybe_put_arg("recipe", optional_args[:recipe])
 
     Client.execute(type_def.client, query_builder)
   end

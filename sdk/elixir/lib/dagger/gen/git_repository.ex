@@ -73,10 +73,12 @@ defmodule Dagger.GitRepository do
   @doc """
   A unique identifier for this GitRepository.
   """
-  @spec id(t(), boolean()) :: {:ok, Dagger.GitRepositoryID.t()} | {:error, term()}
-  def id(%__MODULE__{} = git_repository, recipe) do
+  @spec id(t(), [{:recipe, boolean()}]) :: {:ok, Dagger.GitRepositoryID.t()} | {:error, term()}
+  def id(%__MODULE__{} = git_repository, optional_args \\ []) do
     query_builder =
-      git_repository.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
+      git_repository.query_builder
+      |> QB.select("id")
+      |> QB.maybe_put_arg("recipe", optional_args[:recipe])
 
     Client.execute(git_repository.client, query_builder)
   end

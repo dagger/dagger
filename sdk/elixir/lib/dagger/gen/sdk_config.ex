@@ -29,10 +29,12 @@ defmodule Dagger.SDKConfig do
   @doc """
   A unique identifier for this SDKConfig.
   """
-  @spec id(t(), boolean()) :: {:ok, Dagger.SDKConfigID.t()} | {:error, term()}
-  def id(%__MODULE__{} = sdk_config, recipe) do
+  @spec id(t(), [{:recipe, boolean()}]) :: {:ok, Dagger.SDKConfigID.t()} | {:error, term()}
+  def id(%__MODULE__{} = sdk_config, optional_args \\ []) do
     query_builder =
-      sdk_config.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
+      sdk_config.query_builder
+      |> QB.select("id")
+      |> QB.maybe_put_arg("recipe", optional_args[:recipe])
 
     Client.execute(sdk_config.client, query_builder)
   end
