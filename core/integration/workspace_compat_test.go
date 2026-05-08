@@ -509,6 +509,25 @@ source = "`+remoteRef+`"
 	})
 }
 
+func (WorkspaceCompatSuite) TestGenericAsModuleIgnoresLegacyWorkspaceFields(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	src := c.Directory().
+		WithNewFile("dagger.json", `{
+  "name": "app",
+  "toolchains": [
+    {
+      "name": "go",
+      "source": "./toolchains/go"
+    }
+  ]
+}`).
+		AsModuleSource()
+
+	_, err := src.AsModule().Sync(ctx)
+	require.NoError(t, err)
+}
+
 // TestCompatMigration should cover the explicit handoff from compat runtime to
 // workspace migration.
 func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.T) {
