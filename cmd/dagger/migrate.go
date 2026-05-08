@@ -24,6 +24,9 @@ var migrateCmd = &cobra.Command{
 	Long:    "Converts a legacy dagger.json to the .dagger/config.toml workspace format.",
 	GroupID: workspaceGroup.ID,
 	Args:    cobra.NoArgs,
+	Annotations: map[string]string{
+		showFinalProgressKey: "true",
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if migrateList {
 			return migrateListModules(cmd)
