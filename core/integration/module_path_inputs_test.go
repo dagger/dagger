@@ -291,6 +291,7 @@ export class Test {
 					WithDirectory("/work/frontend", c.Directory().WithNewFile("bar.txt", "bar")).
 					WithWorkdir("/work/ci").
 					With(daggerExec("module", "init", "test", ".", "--sdk="+tc.sdk, "--source=dagger")).
+					WithNewFile("/work/ci/LICENSE", "").
 					WithWorkdir("/work/ci/dagger").
 					With(sdkSource(tc.sdk, tc.source)).
 					WithDirectory("/work/ci/dagger/sub", c.Directory().WithNewFile("sub.txt", "sub")).
@@ -552,7 +553,8 @@ export class Test {
 					WithWorkdir("/work").
 					WithDirectory("/work/backend", c.Directory().WithNewFile("foo.txt", "foo")).
 					WithDirectory("/work/frontend", c.Directory().WithNewFile("bar.txt", "bar")).
-					With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, "--source=dagger")).
+					With(daggerExec("module", "init", "test", ".", "--sdk="+tc.sdk, "--source=dagger")).
+					WithNewFile("/work/LICENSE", "").
 					WithDirectory("/work/dagger/sub", c.Directory().WithNewFile("sub.txt", "sub")).
 					WithWorkdir("/work/dagger").
 					With(sdkSource(tc.sdk, tc.source)).
@@ -718,7 +720,7 @@ export class Test {
 				modGen := goGitBase(t, c).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work").
-					With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, "--source=dagger")).
+					With(daggerExec("module", "init", "test", ".", "--sdk="+tc.sdk, "--source=dagger")).
 					WithWorkdir("/work/dagger").
 					With(sdkSource(tc.sdk, tc.source)).
 					WithWorkdir("/work")
@@ -1476,7 +1478,8 @@ func (ModuleSuite) TestIgnore(ctx context.Context, t *testctx.T) {
 		WithWorkdir("/work").
 		WithDirectory("/work/backend", c.Directory().WithNewFile("foo.txt", "foo").WithNewFile("bar.txt", "bar")).
 		WithDirectory("/work/frontend", c.Directory().WithNewFile("bar.txt", "bar")).
-		With(daggerExec("module", "init", "--sdk=go", "--source=dagger", "test")).
+		With(daggerExec("module", "init", "--sdk=go", "--source=dagger", "test", ".")).
+		WithNewFile("/work/LICENSE", "").
 		WithWorkdir("/work/dagger").
 		With(sdkSource("go", `
 package main
@@ -1769,10 +1772,10 @@ class Test:
 						WithNewFile("bar.txt", "bar").
 						WithDirectory("bar", c.Directory().WithNewFile("baz.txt", "baz"))).
 					WithWorkdir("/work/dep").
-					With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, "--source=.")).
+					With(daggerExec("module", "init", "test", ".", "--sdk="+tc.sdk, "--source=.")).
 					With(sdkSource(tc.sdk, tc.source)).
 					WithWorkdir("/work").
-					With(daggerExec("module", "init", "--sdk=go", "--source=.", "test-mod")).
+					With(daggerExec("module", "init", "--sdk=go", "--source=.", "test-mod", ".")).
 					With(daggerExec("module", "install", "./dep")).
 					With(sdkSource("go", `package main
 
@@ -2029,7 +2032,7 @@ func (z *Test) Fn(
 			WithWorkdir(workdir).
 			WithoutDirectory(filepath.Join(workdir, ".dagger")).
 			WithoutFile(filepath.Join(workdir, "dagger.json")).
-			With(daggerExec("module", "init", "--sdk=go", "--source=.dagger", "test")).
+			With(daggerExec("module", "init", "--sdk=go", "--source=.dagger", "test", ".")).
 			WithNewFile(filepath.Join(workdir, ".dagger/main.go"), src)
 	}
 
