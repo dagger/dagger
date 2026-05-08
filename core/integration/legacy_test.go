@@ -38,7 +38,7 @@ func (LegacySuite) TestLegacyExportAbsolutePath(ctx context.Context, t *testctx.
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("module", "init", "--source=.", "--sdk=go", "bare")).
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "bare", ".")).
 		WithNewFile("dagger.json", `{"name": "bare", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`).
 		WithNewFile("main.go", `package main
 
@@ -337,7 +337,7 @@ func (LegacySuite) TestExecWithSkipEntrypointCompat(ctx context.Context, t *test
 	c := connect(ctx, t)
 
 	out, err := goGitBase(t, c).
-		With(daggerExec("module", "init", "--sdk=python", "--source=.", "test")).
+		With(daggerExec("module", "init", "--sdk=python", "--source=.", "test", ".")).
 		WithWorkdir("/work").
 		WithNewFile("dagger.json", `{"name": "test", "sdk": "python", "source": ".", "engineVersion": "v0.12.6"}`).
 		With(pythonSource(`
@@ -442,7 +442,7 @@ func (m *Test) Test(ctx context.Context) (string, error) {
 `,
 		).
 		WithWorkdir("/work/dep").
-		With(daggerExec("module", "init", "--sdk=go", "dep")).
+		With(daggerExec("module", "init", "--sdk=go", "dep", ".")).
 		With(sdkSource("go", `package main
 
 type Dep struct {}
@@ -578,7 +578,7 @@ func (m *Test) Placeholder() string {
 }
 `).
 		WithWorkdir("/work/dep").
-		With(daggerExec("module", "init", "--sdk=go", "dep")).
+		With(daggerExec("module", "init", "--sdk=go", "dep", ".")).
 		WithNewFile("main.go", `package main
 
 type Status string
@@ -673,7 +673,7 @@ func (m *Test) Greet(ctx context.Context) (string, error) {
 `,
 		).
 		WithWorkdir("/work/dep").
-		With(daggerExec("module", "init", "--sdk=python", "dep")).
+		With(daggerExec("module", "init", "--sdk=python", "dep", ".")).
 		With(fileContents("src/dep/__init__.py", `import dagger
 
 @dagger.object_type
@@ -1075,7 +1075,7 @@ func (LegacySuite) TestDirectoryTrailingSlash(ctx context.Context, t *testctx.T)
 	c := connect(ctx, t)
 
 	modGen := goGitBase(t, c).
-		With(daggerExec("module", "init", "--sdk=go", "--source=.", "bare")).
+		With(daggerExec("module", "init", "--sdk=go", "--source=.", "bare", ".")).
 		WithWorkdir("/work").
 		WithNewFile("dagger.json", `{"name": "bare", "sdk": "go", "source": ".", "engineVersion": "v0.16.0"}`).
 		WithNewFile("main.go", `package main

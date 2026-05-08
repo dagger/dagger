@@ -29,7 +29,7 @@ func (ElixirSuite) TestInit(ctx context.Context, t *testctx.T) {
 
 		out, err := goGitBase(t, c).
 			WithDirectory("/work/sdk/elixir", c.Host().Directory(sdkSrc)).
-			With(daggerExec("module", "init", "--sdk=./sdk/elixir", "bare")).
+			With(daggerExec("module", "init", "--sdk=./sdk/elixir", "bare", ".")).
 			With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).
 			Stdout(ctx)
 
@@ -43,7 +43,7 @@ func (ElixirSuite) TestInit(ctx context.Context, t *testctx.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=github.com/dagger/dagger/sdk/elixir", "bare"))
+			With(daggerExec("module", "init", "--sdk=github.com/dagger/dagger/sdk/elixir", "bare", "."))
 
 		out, err := modGen.
 			With(daggerCall("container-echo", "--string-arg=hello", "stdout")).
@@ -58,7 +58,7 @@ func (ElixirSuite) TestInit(ctx context.Context, t *testctx.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=elixir", "bare"))
+			With(daggerExec("module", "init", "--sdk=elixir", "bare", "."))
 
 		out, err := modGen.
 			With(daggerCall("container-echo", "--string-arg=hello", "stdout")).
@@ -73,7 +73,7 @@ func (ElixirSuite) TestInit(ctx context.Context, t *testctx.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=elixir@main", "bare"))
+			With(daggerExec("module", "init", "--sdk=elixir@main", "bare", "."))
 
 		out, err := modGen.
 			With(daggerCall("container-echo", "--string-arg=hello", "stdout")).
