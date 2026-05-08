@@ -152,17 +152,17 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 	require.NoError(t, err)
 	modGen = modGen.WithWorkdir("hello-with-generate-checks")
 
-	t.Run("list includes generators", func(ctx context.Context, t *testctx.T) {
+	t.Run("list includes generator checks inline", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.
 			With(daggerExec("check", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		// Should list both regular checks and generators
 		require.Contains(t, out, "passing-check")
 		require.Contains(t, out, "empty-generate")
 		require.Contains(t, out, "non-empty-generate")
-		// Should show "Generators" section header
-		require.Contains(t, out, "Generators")
+		require.Regexp(t, `passing-check\s+check\s+`, out)
+		require.Regexp(t, `empty-generate\s+generate\s+`, out)
+		require.NotContains(t, out, "Generators")
 	})
 
 	t.Run("list with no-generate excludes generators", func(ctx context.Context, t *testctx.T) {
