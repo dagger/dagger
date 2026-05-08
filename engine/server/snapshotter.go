@@ -31,7 +31,7 @@ func newSnapshotter(
 	cfg bkconfig.OCIConfig,
 	mdStore *storage.MetaStore,
 ) (ctdsnapshot.Snapshotter, string, error) {
-	useBboltFreelistMap()
+	configureBboltDefaults()
 
 	var (
 		name    = cfg.Snapshotter
