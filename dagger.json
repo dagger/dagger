@@ -1,9 +1,6 @@
 {
   "name": "dagger-dev",
   "engineVersion": "v0.20.6",
-  "sdk": {
-    "source": "go"
-  },
   "toolchains": [
     {
       "name": "changelog",
@@ -149,16 +146,5 @@
       "name": "typescript-sdk",
       "source": "toolchains/typescript-sdk-dev"
     }
-  ],
-  "include": [
-    "sdk/typescript/runtime/**/*",
-    "engine/distconsts",
-    "go.mod",
-    "go.sum",
-    "util/patchpreview"
-  ],
-  "source": ".dagger",
-  "codegen": {
-    "automaticGitignore": false
-  }
+  ]
 }
