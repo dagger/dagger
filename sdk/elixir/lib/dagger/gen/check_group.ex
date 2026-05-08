@@ -18,10 +18,10 @@ defmodule Dagger.CheckGroup do
   @doc """
   A unique identifier for this CheckGroup.
   """
-  @spec id(t()) :: {:ok, Dagger.CheckGroupID.t()} | {:error, term()}
-  def id(%__MODULE__{} = check_group) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.CheckGroupID.t()} | {:error, term()}
+  def id(%__MODULE__{} = check_group, recipe) do
     query_builder =
-      check_group.query_builder |> QB.select("id")
+      check_group.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(check_group.client, query_builder)
   end

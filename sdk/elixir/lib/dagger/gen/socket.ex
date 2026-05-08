@@ -18,10 +18,10 @@ defmodule Dagger.Socket do
   @doc """
   A unique identifier for this Socket.
   """
-  @spec id(t()) :: {:ok, Dagger.SocketID.t()} | {:error, term()}
-  def id(%__MODULE__{} = socket) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.SocketID.t()} | {:error, term()}
+  def id(%__MODULE__{} = socket, recipe) do
     query_builder =
-      socket.query_builder |> QB.select("id")
+      socket.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(socket.client, query_builder)
   end

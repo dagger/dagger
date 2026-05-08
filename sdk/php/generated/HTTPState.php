@@ -16,9 +16,12 @@ class HTTPState extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this HTTPState.
      */
-    public function id(): HTTPStateId
+    public function id(?bool $recipe = false): HTTPStateId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\HTTPStateId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 }

@@ -39,10 +39,10 @@ defmodule Dagger.GeneratorGroup do
   @doc """
   A unique identifier for this GeneratorGroup.
   """
-  @spec id(t()) :: {:ok, Dagger.GeneratorGroupID.t()} | {:error, term()}
-  def id(%__MODULE__{} = generator_group) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.GeneratorGroupID.t()} | {:error, term()}
+  def id(%__MODULE__{} = generator_group, recipe) do
     query_builder =
-      generator_group.query_builder |> QB.select("id")
+      generator_group.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(generator_group.client, query_builder)
   end

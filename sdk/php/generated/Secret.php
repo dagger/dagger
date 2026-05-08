@@ -16,9 +16,12 @@ class Secret extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Secret.
      */
-    public function id(): SecretId
+    public function id(?bool $recipe = false): SecretId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\SecretId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

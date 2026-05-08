@@ -25,9 +25,12 @@ class ListTypeDef extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this ListTypeDef.
      */
-    public function id(): ListTypeDefId
+    public function id(?bool $recipe = false): ListTypeDefId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\ListTypeDefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 }

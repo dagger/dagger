@@ -18,10 +18,10 @@ defmodule Dagger.Label do
   @doc """
   A unique identifier for this Label.
   """
-  @spec id(t()) :: {:ok, Dagger.LabelID.t()} | {:error, term()}
-  def id(%__MODULE__{} = label) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.LabelID.t()} | {:error, term()}
+  def id(%__MODULE__{} = label, recipe) do
     query_builder =
-      label.query_builder |> QB.select("id")
+      label.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(label.client, query_builder)
   end

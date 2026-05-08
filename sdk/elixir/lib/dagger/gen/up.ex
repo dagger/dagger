@@ -29,10 +29,10 @@ defmodule Dagger.Up do
   @doc """
   A unique identifier for this Up.
   """
-  @spec id(t()) :: {:ok, Dagger.UpID.t()} | {:error, term()}
-  def id(%__MODULE__{} = up) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.UpID.t()} | {:error, term()}
+  def id(%__MODULE__{} = up, recipe) do
     query_builder =
-      up.query_builder |> QB.select("id")
+      up.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(up.client, query_builder)
   end

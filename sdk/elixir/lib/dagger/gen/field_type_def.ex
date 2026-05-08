@@ -42,10 +42,10 @@ defmodule Dagger.FieldTypeDef do
   @doc """
   A unique identifier for this FieldTypeDef.
   """
-  @spec id(t()) :: {:ok, Dagger.FieldTypeDefID.t()} | {:error, term()}
-  def id(%__MODULE__{} = field_type_def) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.FieldTypeDefID.t()} | {:error, term()}
+  def id(%__MODULE__{} = field_type_def, recipe) do
     query_builder =
-      field_type_def.query_builder |> QB.select("id")
+      field_type_def.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(field_type_def.client, query_builder)
   end

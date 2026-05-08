@@ -25,9 +25,12 @@ class GeneratedCode extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this GeneratedCode.
      */
-    public function id(): GeneratedCodeId
+    public function id(?bool $recipe = false): GeneratedCodeId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\GeneratedCodeId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

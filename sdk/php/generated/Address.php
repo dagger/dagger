@@ -93,9 +93,12 @@ class Address extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Address.
      */
-    public function id(): AddressId
+    public function id(?bool $recipe = false): AddressId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\AddressId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

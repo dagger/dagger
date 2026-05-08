@@ -16,9 +16,12 @@ class FunctionCallArgValue extends Client\AbstractObject implements Client\IdAbl
     /**
      * A unique identifier for this FunctionCallArgValue.
      */
-    public function id(): FunctionCallArgValueId
+    public function id(?bool $recipe = false): FunctionCallArgValueId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\FunctionCallArgValueId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

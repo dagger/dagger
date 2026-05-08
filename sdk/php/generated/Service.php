@@ -44,9 +44,12 @@ class Service extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Service.
      */
-    public function id(): ServiceId
+    public function id(?bool $recipe = false): ServiceId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\ServiceId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

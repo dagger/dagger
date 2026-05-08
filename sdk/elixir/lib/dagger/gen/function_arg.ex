@@ -75,10 +75,10 @@ defmodule Dagger.FunctionArg do
   @doc """
   A unique identifier for this FunctionArg.
   """
-  @spec id(t()) :: {:ok, Dagger.FunctionArgID.t()} | {:error, term()}
-  def id(%__MODULE__{} = function_arg) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.FunctionArgID.t()} | {:error, term()}
+  def id(%__MODULE__{} = function_arg, recipe) do
     query_builder =
-      function_arg.query_builder |> QB.select("id")
+      function_arg.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(function_arg.client, query_builder)
   end

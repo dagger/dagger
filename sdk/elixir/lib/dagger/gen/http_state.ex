@@ -18,10 +18,10 @@ defmodule Dagger.HTTPState do
   @doc """
   A unique identifier for this HTTPState.
   """
-  @spec id(t()) :: {:ok, Dagger.HTTPStateID.t()} | {:error, term()}
-  def id(%__MODULE__{} = http_state) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.HTTPStateID.t()} | {:error, term()}
+  def id(%__MODULE__{} = http_state, recipe) do
     query_builder =
-      http_state.query_builder |> QB.select("id")
+      http_state.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(http_state.client, query_builder)
   end

@@ -83,9 +83,12 @@ class JsonValue extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this JSONValue.
      */
-    public function id(): JsonValueId
+    public function id(?bool $recipe = false): JsonValueId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\JsonValueId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

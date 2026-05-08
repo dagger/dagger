@@ -16,9 +16,12 @@ class Label extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Label.
      */
-    public function id(): LabelId
+    public function id(?bool $recipe = false): LabelId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\LabelId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

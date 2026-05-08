@@ -1,9 +1,7 @@
 use std::{ops::Deref, sync::Arc};
 
-use dagger_sdk::core::introspection::{FullType, FullTypeFields, InputValue, TypeRef, __TypeKind};
-use itertools::Itertools;
-
 use crate::utility::OptionExt;
+use dagger_sdk::core::introspection::{FullType, FullTypeFields, InputValue, TypeRef, __TypeKind};
 
 pub trait FormatTypeFuncs {
     fn format_kind_list(&self, representation: &str, input: bool, immutable: bool) -> String;
@@ -239,25 +237,30 @@ pub trait InputValuesExt {
     fn has_optionals(&self) -> bool;
 }
 
+pub trait InputValueExt {
+    fn is_required(&self) -> bool;
+    fn is_optional(&self) -> bool;
+}
+
+impl InputValueExt for InputValue {
+    fn is_required(&self) -> bool {
+        !self.is_optional()
+    }
+
+    fn is_optional(&self) -> bool {
+        self.type_.is_optional() || self.default_value.is_some()
+    }
+}
+
 impl InputValuesExt for Vec<&InputValue> {
     fn has_optionals(&self) -> bool {
-        !self
-            .iter()
-            .map(|k| k.type_.is_optional())
-            .filter(|t| *t)
-            .collect_vec()
-            .is_empty()
+        self.iter().any(|k| k.is_optional())
     }
 }
 
 impl InputValuesExt for Vec<InputValue> {
     fn has_optionals(&self) -> bool {
-        !self
-            .iter()
-            .map(|k| k.type_.is_optional())
-            .filter(|t| *t)
-            .collect_vec()
-            .is_empty()
+        self.iter().any(|k| k.is_optional())
     }
 }
 
@@ -266,7 +269,7 @@ mod test {
     use dagger_sdk::core::introspection::{FullType, InputValue, TypeRef, __TypeKind};
     use pretty_assertions::assert_eq;
 
-    use crate::functions::{InputValuesExt, TypeRefExt};
+    use crate::functions::{InputValueExt, InputValuesExt, TypeRefExt};
 
     use super::get_type_from_name;
 
@@ -402,6 +405,24 @@ mod test {
     }
 
     #[test]
+    fn input_values_has_optionals_has_default() {
+        let input = vec![InputValue {
+            name: "some-name".to_string(),
+            description: None,
+            type_: TypeRef {
+                kind: Some(__TypeKind::NON_NULL),
+                name: None,
+                of_type: None,
+            },
+            default_value: Some("false".to_string()),
+        }];
+
+        let output = input.has_optionals();
+
+        assert_eq!(output, true);
+    }
+
+    #[test]
     fn input_values_has_optionals_is_required() {
         let input = vec![
             InputValue {
@@ -429,5 +450,39 @@ mod test {
         let output = input.has_optionals();
 
         assert_eq!(output, false);
+    }
+
+    #[test]
+    fn input_value_is_optional_with_default() {
+        let input = InputValue {
+            name: "some-name".to_string(),
+            description: None,
+            type_: TypeRef {
+                kind: Some(__TypeKind::NON_NULL),
+                name: None,
+                of_type: None,
+            },
+            default_value: Some("false".to_string()),
+        };
+
+        assert_eq!(input.is_optional(), true);
+        assert_eq!(input.is_required(), false);
+    }
+
+    #[test]
+    fn input_value_is_required_without_default() {
+        let input = InputValue {
+            name: "some-name".to_string(),
+            description: None,
+            type_: TypeRef {
+                kind: Some(__TypeKind::NON_NULL),
+                name: None,
+                of_type: None,
+            },
+            default_value: None,
+        };
+
+        assert_eq!(input.is_optional(), false);
+        assert_eq!(input.is_required(), true);
     }
 }

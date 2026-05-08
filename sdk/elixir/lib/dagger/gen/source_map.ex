@@ -40,10 +40,10 @@ defmodule Dagger.SourceMap do
   @doc """
   A unique identifier for this SourceMap.
   """
-  @spec id(t()) :: {:ok, Dagger.SourceMapID.t()} | {:error, term()}
-  def id(%__MODULE__{} = source_map) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.SourceMapID.t()} | {:error, term()}
+  def id(%__MODULE__{} = source_map, recipe) do
     query_builder =
-      source_map.query_builder |> QB.select("id")
+      source_map.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(source_map.client, query_builder)
   end

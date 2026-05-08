@@ -63,9 +63,12 @@ class FunctionArg extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this FunctionArg.
      */
-    public function id(): FunctionArgId
+    public function id(?bool $recipe = false): FunctionArgId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\FunctionArgId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

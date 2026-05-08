@@ -279,10 +279,10 @@ defmodule Dagger.Directory do
   @doc """
   A unique identifier for this Directory.
   """
-  @spec id(t()) :: {:ok, Dagger.DirectoryID.t()} | {:error, term()}
-  def id(%__MODULE__{} = directory) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.DirectoryID.t()} | {:error, term()}
+  def id(%__MODULE__{} = directory, recipe) do
     query_builder =
-      directory.query_builder |> QB.select("id")
+      directory.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(directory.client, query_builder)
   end

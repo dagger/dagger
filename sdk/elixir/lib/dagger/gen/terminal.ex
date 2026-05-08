@@ -18,10 +18,10 @@ defmodule Dagger.Terminal do
   @doc """
   A unique identifier for this Terminal.
   """
-  @spec id(t()) :: {:ok, Dagger.TerminalID.t()} | {:error, term()}
-  def id(%__MODULE__{} = terminal) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.TerminalID.t()} | {:error, term()}
+  def id(%__MODULE__{} = terminal, recipe) do
     query_builder =
-      terminal.query_builder |> QB.select("id")
+      terminal.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(terminal.client, query_builder)
   end

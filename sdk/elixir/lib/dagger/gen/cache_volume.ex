@@ -18,10 +18,10 @@ defmodule Dagger.CacheVolume do
   @doc """
   A unique identifier for this CacheVolume.
   """
-  @spec id(t()) :: {:ok, Dagger.CacheVolumeID.t()} | {:error, term()}
-  def id(%__MODULE__{} = cache_volume) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.CacheVolumeID.t()} | {:error, term()}
+  def id(%__MODULE__{} = cache_volume, recipe) do
     query_builder =
-      cache_volume.query_builder |> QB.select("id")
+      cache_volume.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(cache_volume.client, query_builder)
   end

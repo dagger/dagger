@@ -29,10 +29,10 @@ defmodule Dagger.ScalarTypeDef do
   @doc """
   A unique identifier for this ScalarTypeDef.
   """
-  @spec id(t()) :: {:ok, Dagger.ScalarTypeDefID.t()} | {:error, term()}
-  def id(%__MODULE__{} = scalar_type_def) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.ScalarTypeDefID.t()} | {:error, term()}
+  def id(%__MODULE__{} = scalar_type_def, recipe) do
     query_builder =
-      scalar_type_def.query_builder |> QB.select("id")
+      scalar_type_def.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(scalar_type_def.client, query_builder)
   end

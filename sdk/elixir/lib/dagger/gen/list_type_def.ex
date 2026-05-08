@@ -32,10 +32,10 @@ defmodule Dagger.ListTypeDef do
   @doc """
   A unique identifier for this ListTypeDef.
   """
-  @spec id(t()) :: {:ok, Dagger.ListTypeDefID.t()} | {:error, term()}
-  def id(%__MODULE__{} = list_type_def) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.ListTypeDefID.t()} | {:error, term()}
+  def id(%__MODULE__{} = list_type_def, recipe) do
     query_builder =
-      list_type_def.query_builder |> QB.select("id")
+      list_type_def.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(list_type_def.client, query_builder)
   end

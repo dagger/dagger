@@ -28,9 +28,12 @@ class InputTypeDef extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this InputTypeDef.
      */
-    public function id(): InputTypeDefId
+    public function id(?bool $recipe = false): InputTypeDefId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\InputTypeDefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

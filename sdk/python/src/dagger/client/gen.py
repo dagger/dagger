@@ -711,12 +711,18 @@ class Address(Type):
         _ctx = self._select("gitRepository", _args)
         return GitRepository(_ctx)
 
-    async def id(self) -> AddressID:
+    async def id(self, *, recipe: bool = False) -> AddressID:
         """A unique identifier for this Address.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -731,7 +737,9 @@ class Address(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(AddressID)
 
@@ -999,12 +1007,18 @@ class Binding(Type):
         _ctx = self._select("digest", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> BindingID:
+    async def id(self, *, recipe: bool = False) -> BindingID:
         """A unique identifier for this Binding.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -1019,7 +1033,9 @@ class Binding(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(BindingID)
 
@@ -1089,12 +1105,18 @@ class Binding(Type):
 class CacheVolume(Type):
     """A directory whose contents persist across runs."""
 
-    async def id(self) -> CacheVolumeID:
+    async def id(self, *, recipe: bool = False) -> CacheVolumeID:
         """A unique identifier for this CacheVolume.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -1109,7 +1131,9 @@ class CacheVolume(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(CacheVolumeID)
 
@@ -1194,12 +1218,18 @@ class Changeset(Type):
         _ctx = self._select("export", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> ChangesetID:
+    async def id(self, *, recipe: bool = False) -> ChangesetID:
         """A unique identifier for this Changeset.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -1214,7 +1244,9 @@ class Changeset(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(ChangesetID)
 
@@ -1435,12 +1467,18 @@ class Check(Type):
         _ctx = self._select("error", _args)
         return Error(_ctx)
 
-    async def id(self) -> CheckID:
+    async def id(self, *, recipe: bool = False) -> CheckID:
         """A unique identifier for this Check.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -1455,7 +1493,9 @@ class Check(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(CheckID)
 
@@ -1563,12 +1603,18 @@ class Check(Type):
 
 @typecheck
 class CheckGroup(Type):
-    async def id(self) -> CheckGroupID:
+    async def id(self, *, recipe: bool = False) -> CheckGroupID:
         """A unique identifier for this CheckGroup.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -1583,7 +1629,9 @@ class CheckGroup(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(CheckGroupID)
 
@@ -1625,12 +1673,18 @@ class CheckGroup(Type):
 class ClientFilesyncMirror(Type):
     """An internal persistent filesync mirror."""
 
-    async def id(self) -> ClientFilesyncMirrorID:
+    async def id(self, *, recipe: bool = False) -> ClientFilesyncMirrorID:
         """A unique identifier for this ClientFilesyncMirror.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -1645,7 +1699,9 @@ class ClientFilesyncMirror(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(ClientFilesyncMirrorID)
 
@@ -1654,12 +1710,18 @@ class ClientFilesyncMirror(Type):
 class Cloud(Type):
     """Dagger Cloud configuration and state"""
 
-    async def id(self) -> CloudID:
+    async def id(self, *, recipe: bool = False) -> CloudID:
         """A unique identifier for this Cloud.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -1674,7 +1736,9 @@ class Cloud(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(CloudID)
 
@@ -2200,12 +2264,18 @@ class Container(Type):
         _ctx = self._select("from", _args)
         return Container(_ctx)
 
-    async def id(self) -> ContainerID:
+    async def id(self, *, recipe: bool = False) -> ContainerID:
         """A unique identifier for this Container.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -2220,7 +2290,9 @@ class Container(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(ContainerID)
 
@@ -3863,12 +3935,18 @@ class CurrentModule(Type):
         _ctx = self._select("generators", _args)
         return GeneratorGroup(_ctx)
 
-    async def id(self) -> CurrentModuleID:
+    async def id(self, *, recipe: bool = False) -> CurrentModuleID:
         """A unique identifier for this CurrentModule.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -3883,7 +3961,9 @@ class CurrentModule(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(CurrentModuleID)
 
@@ -3992,12 +4072,18 @@ class DiffStat(Type):
         _ctx = self._select("addedLines", _args)
         return await _ctx.execute(int)
 
-    async def id(self) -> DiffStatID:
+    async def id(self, *, recipe: bool = False) -> DiffStatID:
         """A unique identifier for this DiffStat.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -4012,7 +4098,9 @@ class DiffStat(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(DiffStatID)
 
@@ -4505,12 +4593,18 @@ class Directory(Type):
         _ctx = self._select("glob", _args)
         return await _ctx.execute(list[str])
 
-    async def id(self) -> DirectoryID:
+    async def id(self, *, recipe: bool = False) -> DirectoryID:
         """A unique identifier for this Directory.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -4525,7 +4619,9 @@ class Directory(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(DirectoryID)
 
@@ -5025,12 +5121,18 @@ class Engine(Type):
         _ctx = self._select("clients", _args)
         return await _ctx.execute(list[str])
 
-    async def id(self) -> EngineID:
+    async def id(self, *, recipe: bool = False) -> EngineID:
         """A unique identifier for this Engine.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -5045,7 +5147,9 @@ class Engine(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(EngineID)
 
@@ -5089,12 +5193,18 @@ class EngineCache(Type):
         _ctx = self._select("entrySet", _args)
         return EngineCacheEntrySet(_ctx)
 
-    async def id(self) -> EngineCacheID:
+    async def id(self, *, recipe: bool = False) -> EngineCacheID:
         """A unique identifier for this EngineCache.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -5109,7 +5219,9 @@ class EngineCache(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(EngineCacheID)
 
@@ -5337,12 +5449,18 @@ class EngineCacheEntry(Type):
         _ctx = self._select("diskSpaceBytes", _args)
         return await _ctx.execute(int)
 
-    async def id(self) -> EngineCacheEntryID:
+    async def id(self, *, recipe: bool = False) -> EngineCacheEntryID:
         """A unique identifier for this EngineCacheEntry.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -5357,7 +5475,9 @@ class EngineCacheEntry(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(EngineCacheEntryID)
 
@@ -5457,12 +5577,18 @@ class EngineCacheEntrySet(Type):
         _ctx = self._select("entryCount", _args)
         return await _ctx.execute(int)
 
-    async def id(self) -> EngineCacheEntrySetID:
+    async def id(self, *, recipe: bool = False) -> EngineCacheEntrySetID:
         """A unique identifier for this EngineCacheEntrySet.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -5477,7 +5603,9 @@ class EngineCacheEntrySet(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(EngineCacheEntrySetID)
 
@@ -5507,12 +5635,18 @@ class EnumTypeDef(Type):
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> EnumTypeDefID:
+    async def id(self, *, recipe: bool = False) -> EnumTypeDefID:
         """A unique identifier for this EnumTypeDef.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -5527,7 +5661,9 @@ class EnumTypeDef(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(EnumTypeDefID)
 
@@ -5648,12 +5784,18 @@ class EnumValueTypeDef(Type):
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> EnumValueTypeDefID:
+    async def id(self, *, recipe: bool = False) -> EnumValueTypeDefID:
         """A unique identifier for this EnumValueTypeDef.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -5668,7 +5810,9 @@ class EnumValueTypeDef(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(EnumValueTypeDefID)
 
@@ -5769,12 +5913,18 @@ class Env(Type):
         _ctx = self._select("checks", _args)
         return CheckGroup(_ctx)
 
-    async def id(self) -> EnvID:
+    async def id(self, *, recipe: bool = False) -> EnvID:
         """A unique identifier for this Env.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -5789,7 +5939,9 @@ class Env(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(EnvID)
 
@@ -7304,12 +7456,18 @@ class EnvFile(Type):
         _ctx = self._select("get", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> EnvFileID:
+    async def id(self, *, recipe: bool = False) -> EnvFileID:
         """A unique identifier for this EnvFile.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -7324,7 +7482,9 @@ class EnvFile(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(EnvFileID)
 
@@ -7404,12 +7564,18 @@ class EnvFile(Type):
 class EnvVariable(Type):
     """An environment variable name and value."""
 
-    async def id(self) -> EnvVariableID:
+    async def id(self, *, recipe: bool = False) -> EnvVariableID:
         """A unique identifier for this EnvVariable.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -7424,7 +7590,9 @@ class EnvVariable(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(EnvVariableID)
 
@@ -7473,12 +7641,18 @@ class EnvVariable(Type):
 
 @typecheck
 class Error(Type):
-    async def id(self) -> ErrorID:
+    async def id(self, *, recipe: bool = False) -> ErrorID:
         """A unique identifier for this Error.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -7493,7 +7667,9 @@ class Error(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(ErrorID)
 
@@ -7551,12 +7727,18 @@ class Error(Type):
 
 @typecheck
 class ErrorValue(Type):
-    async def id(self) -> ErrorValueID:
+    async def id(self, *, recipe: bool = False) -> ErrorValueID:
         """A unique identifier for this ErrorValue.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -7571,7 +7753,9 @@ class ErrorValue(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(ErrorValueID)
 
@@ -7665,12 +7849,18 @@ class FieldTypeDef(Type):
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> FieldTypeDefID:
+    async def id(self, *, recipe: bool = False) -> FieldTypeDefID:
         """A unique identifier for this FieldTypeDef.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -7685,7 +7875,9 @@ class FieldTypeDef(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(FieldTypeDefID)
 
@@ -7873,12 +8065,18 @@ class File(Type):
         _ctx = self._select("export", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> FileID:
+    async def id(self, *, recipe: bool = False) -> FileID:
         """A unique identifier for this File.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -7893,7 +8091,9 @@ class File(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(FileID)
 
@@ -8154,12 +8354,18 @@ class Function(Type):
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> FunctionID:
+    async def id(self, *, recipe: bool = False) -> FunctionID:
         """A unique identifier for this Function.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -8174,7 +8380,9 @@ class Function(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(FunctionID)
 
@@ -8489,12 +8697,18 @@ class FunctionArg(Type):
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> FunctionArgID:
+    async def id(self, *, recipe: bool = False) -> FunctionArgID:
         """A unique identifier for this FunctionArg.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -8509,7 +8723,9 @@ class FunctionArg(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(FunctionArgID)
 
@@ -8574,12 +8790,18 @@ class FunctionArg(Type):
 class FunctionCall(Type):
     """An active function call."""
 
-    async def id(self) -> FunctionCallID:
+    async def id(self, *, recipe: bool = False) -> FunctionCallID:
         """A unique identifier for this FunctionCall.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -8594,7 +8816,9 @@ class FunctionCall(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(FunctionCallID)
 
@@ -8726,12 +8950,18 @@ class FunctionCall(Type):
 class FunctionCallArgValue(Type):
     """A value passed as a named argument to a function call."""
 
-    async def id(self) -> FunctionCallArgValueID:
+    async def id(self, *, recipe: bool = False) -> FunctionCallArgValueID:
         """A unique identifier for this FunctionCallArgValue.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -8746,7 +8976,9 @@ class FunctionCallArgValue(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(FunctionCallArgValueID)
 
@@ -8801,12 +9033,18 @@ class GeneratedCode(Type):
         _ctx = self._select("code", _args)
         return Directory(_ctx)
 
-    async def id(self) -> GeneratedCodeID:
+    async def id(self, *, recipe: bool = False) -> GeneratedCodeID:
         """A unique identifier for this GeneratedCode.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -8821,7 +9059,9 @@ class GeneratedCode(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(GeneratedCodeID)
 
@@ -8942,12 +9182,18 @@ class Generator(Type):
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> GeneratorID:
+    async def id(self, *, recipe: bool = False) -> GeneratorID:
         """A unique identifier for this Generator.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -8962,7 +9208,9 @@ class Generator(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(GeneratorID)
 
@@ -9075,12 +9323,18 @@ class GeneratorGroup(Type):
         _ctx = self._select("changes", _args)
         return Changeset(_ctx)
 
-    async def id(self) -> GeneratorGroupID:
+    async def id(self, *, recipe: bool = False) -> GeneratorGroupID:
         """A unique identifier for this GeneratorGroup.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -9095,7 +9349,9 @@ class GeneratorGroup(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(GeneratorGroupID)
 
@@ -9179,12 +9435,18 @@ class GitRef(Type):
         _ctx = self._select("commonAncestor", _args)
         return GitRef(_ctx)
 
-    async def id(self) -> GitRefID:
+    async def id(self, *, recipe: bool = False) -> GitRefID:
         """A unique identifier for this GitRef.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -9199,7 +9461,9 @@ class GitRef(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(GitRefID)
 
@@ -9329,12 +9593,18 @@ class GitRepository(Type):
         _ctx = self._select("head", _args)
         return GitRef(_ctx)
 
-    async def id(self) -> GitRepositoryID:
+    async def id(self, *, recipe: bool = False) -> GitRepositoryID:
         """A unique identifier for this GitRepository.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -9349,7 +9619,9 @@ class GitRepository(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(GitRepositoryID)
 
@@ -9452,12 +9724,18 @@ class GitRepository(Type):
 class HTTPState(Type):
     """An internal persistent HTTP state."""
 
-    async def id(self) -> HTTPStateID:
+    async def id(self, *, recipe: bool = False) -> HTTPStateID:
         """A unique identifier for this HTTPState.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -9472,7 +9750,9 @@ class HTTPState(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(HTTPStateID)
 
@@ -9502,12 +9782,18 @@ class HealthcheckConfig(Type):
         _ctx = self._select("args", _args)
         return await _ctx.execute(list[str])
 
-    async def id(self) -> HealthcheckConfigID:
+    async def id(self, *, recipe: bool = False) -> HealthcheckConfigID:
         """A unique identifier for this HealthcheckConfig.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -9522,7 +9808,9 @@ class HealthcheckConfig(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(HealthcheckConfigID)
 
@@ -9766,12 +10054,18 @@ class Host(Type):
         _ctx = self._select("findUp", _args)
         return await _ctx.execute(str | None)
 
-    async def id(self) -> HostID:
+    async def id(self, *, recipe: bool = False) -> HostID:
         """A unique identifier for this Host.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -9786,7 +10080,9 @@ class Host(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(HostID)
 
@@ -9881,12 +10177,18 @@ class InputTypeDef(Type):
         _ctx = self._select("fields", _args)
         return await _ctx.execute_object_list(FieldTypeDef)
 
-    async def id(self) -> InputTypeDefID:
+    async def id(self, *, recipe: bool = False) -> InputTypeDefID:
         """A unique identifier for this InputTypeDef.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -9901,7 +10203,9 @@ class InputTypeDef(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(InputTypeDefID)
 
@@ -9958,12 +10262,18 @@ class InterfaceTypeDef(Type):
         _ctx = self._select("functions", _args)
         return await _ctx.execute_object_list(Function)
 
-    async def id(self) -> InterfaceTypeDefID:
+    async def id(self, *, recipe: bool = False) -> InterfaceTypeDefID:
         """A unique identifier for this InterfaceTypeDef.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -9978,7 +10288,9 @@ class InterfaceTypeDef(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(InterfaceTypeDefID)
 
@@ -10170,12 +10482,18 @@ class JSONValue(Type):
         _ctx = self._select("fields", _args)
         return await _ctx.execute(list[str])
 
-    async def id(self) -> JSONValueID:
+    async def id(self, *, recipe: bool = False) -> JSONValueID:
         """A unique identifier for this JSONValue.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -10190,7 +10508,9 @@ class JSONValue(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(JSONValueID)
 
@@ -10359,12 +10679,18 @@ class LLM(Type):
         _ctx = self._select("historyJSON", _args)
         return await _ctx.execute(JSON)
 
-    async def id(self) -> LLMID:
+    async def id(self, *, recipe: bool = False) -> LLMID:
         """A unique identifier for this LLM.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -10379,7 +10705,9 @@ class LLM(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(LLMID)
 
@@ -10685,12 +11013,18 @@ class LLMTokenUsage(Type):
         _ctx = self._select("cachedTokenWrites", _args)
         return await _ctx.execute(int)
 
-    async def id(self) -> LLMTokenUsageID:
+    async def id(self, *, recipe: bool = False) -> LLMTokenUsageID:
         """A unique identifier for this LLMTokenUsage.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -10705,7 +11039,9 @@ class LLMTokenUsage(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(LLMTokenUsageID)
 
@@ -10771,12 +11107,18 @@ class LLMTokenUsage(Type):
 class Label(Type):
     """A simple key value object that represents a label."""
 
-    async def id(self) -> LabelID:
+    async def id(self, *, recipe: bool = False) -> LabelID:
         """A unique identifier for this Label.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -10791,7 +11133,9 @@ class Label(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(LabelID)
 
@@ -10848,12 +11192,18 @@ class ListTypeDef(Type):
         _ctx = self._select("elementTypeDef", _args)
         return TypeDef(_ctx)
 
-    async def id(self) -> ListTypeDefID:
+    async def id(self, *, recipe: bool = False) -> ListTypeDefID:
         """A unique identifier for this ListTypeDef.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -10868,7 +11218,9 @@ class ListTypeDef(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(ListTypeDefID)
 
@@ -11005,12 +11357,18 @@ class Module(Type):
         _ctx = self._select("generators", _args)
         return GeneratorGroup(_ctx)
 
-    async def id(self) -> ModuleID:
+    async def id(self, *, recipe: bool = False) -> ModuleID:
         """A unique identifier for this Module.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -11025,7 +11383,9 @@ class Module(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(ModuleID)
 
@@ -11271,12 +11631,18 @@ class ModuleConfigClient(Type):
         _ctx = self._select("generator", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> ModuleConfigClientID:
+    async def id(self, *, recipe: bool = False) -> ModuleConfigClientID:
         """A unique identifier for this ModuleConfigClient.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -11291,7 +11657,9 @@ class ModuleConfigClient(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(ModuleConfigClientID)
 
@@ -11537,12 +11905,18 @@ class ModuleSource(Type):
         _ctx = self._select("htmlURL", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> ModuleSourceID:
+    async def id(self, *, recipe: bool = False) -> ModuleSourceID:
         """A unique identifier for this ModuleSource.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -11557,7 +11931,9 @@ class ModuleSource(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(ModuleSourceID)
 
@@ -12159,12 +12535,18 @@ class ObjectTypeDef(Type):
         _ctx = self._select("functions", _args)
         return await _ctx.execute_object_list(Function)
 
-    async def id(self) -> ObjectTypeDefID:
+    async def id(self, *, recipe: bool = False) -> ObjectTypeDefID:
         """A unique identifier for this ObjectTypeDef.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -12179,7 +12561,9 @@ class ObjectTypeDef(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(ObjectTypeDefID)
 
@@ -12277,12 +12661,18 @@ class Port(Type):
         _ctx = self._select("experimentalSkipHealthcheck", _args)
         return await _ctx.execute(bool)
 
-    async def id(self) -> PortID:
+    async def id(self, *, recipe: bool = False) -> PortID:
         """A unique identifier for this Port.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -12297,7 +12687,9 @@ class Port(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(PortID)
 
@@ -12738,12 +13130,18 @@ class Query(Root):
         _ctx = self._select("http", _args)
         return File(_ctx)
 
-    async def id(self) -> QueryID:
+    async def id(self, *, recipe: bool = False) -> QueryID:
         """A unique identifier for this Query.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -12758,7 +13156,9 @@ class Query(Root):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(QueryID)
 
@@ -13489,12 +13889,18 @@ class Query(Root):
 class RemoteGitMirror(Type):
     """An internal persistent bare git mirror."""
 
-    async def id(self) -> RemoteGitMirrorID:
+    async def id(self, *, recipe: bool = False) -> RemoteGitMirrorID:
         """A unique identifier for this RemoteGitMirror.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -13509,7 +13915,9 @@ class RemoteGitMirror(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(RemoteGitMirrorID)
 
@@ -13538,12 +13946,18 @@ class SDKConfig(Type):
         _ctx = self._select("debug", _args)
         return await _ctx.execute(bool)
 
-    async def id(self) -> SDKConfigID:
+    async def id(self, *, recipe: bool = False) -> SDKConfigID:
         """A unique identifier for this SDKConfig.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -13558,7 +13972,9 @@ class SDKConfig(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(SDKConfigID)
 
@@ -13610,12 +14026,18 @@ class ScalarTypeDef(Type):
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> ScalarTypeDefID:
+    async def id(self, *, recipe: bool = False) -> ScalarTypeDefID:
         """A unique identifier for this ScalarTypeDef.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -13630,7 +14052,9 @@ class ScalarTypeDef(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(ScalarTypeDefID)
 
@@ -13722,12 +14146,18 @@ class SearchResult(Type):
         _ctx = self._select("filePath", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> SearchResultID:
+    async def id(self, *, recipe: bool = False) -> SearchResultID:
         """A unique identifier for this SearchResult.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -13742,7 +14172,9 @@ class SearchResult(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(SearchResultID)
 
@@ -13818,12 +14250,18 @@ class SearchSubmatch(Type):
         _ctx = self._select("end", _args)
         return await _ctx.execute(int)
 
-    async def id(self) -> SearchSubmatchID:
+    async def id(self, *, recipe: bool = False) -> SearchSubmatchID:
         """A unique identifier for this SearchSubmatch.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -13838,7 +14276,9 @@ class SearchSubmatch(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(SearchSubmatchID)
 
@@ -13890,12 +14330,18 @@ class Secret(Type):
     """A reference to a secret value, which can be handled more safely
     than the value itself."""
 
-    async def id(self) -> SecretID:
+    async def id(self, *, recipe: bool = False) -> SecretID:
         """A unique identifier for this Secret.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -13910,7 +14356,9 @@ class Secret(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(SecretID)
 
@@ -14046,12 +14494,18 @@ class Service(Type):
         _ctx = self._select("hostname", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> ServiceID:
+    async def id(self, *, recipe: bool = False) -> ServiceID:
         """A unique identifier for this Service.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -14066,7 +14520,9 @@ class Service(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(ServiceID)
 
@@ -14199,12 +14655,18 @@ class Service(Type):
 class Socket(Type):
     """A Unix or TCP/IP socket that can be mounted into a container."""
 
-    async def id(self) -> SocketID:
+    async def id(self, *, recipe: bool = False) -> SocketID:
         """A unique identifier for this Socket.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -14219,7 +14681,9 @@ class Socket(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(SocketID)
 
@@ -14270,12 +14734,18 @@ class SourceMap(Type):
         _ctx = self._select("filename", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> SourceMapID:
+    async def id(self, *, recipe: bool = False) -> SourceMapID:
         """A unique identifier for this SourceMap.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -14290,7 +14760,9 @@ class SourceMap(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(SourceMapID)
 
@@ -14382,12 +14854,18 @@ class Stat(Type):
         _ctx = self._select("fileType", _args)
         return await _ctx.execute(FileType | None)
 
-    async def id(self) -> StatID:
+    async def id(self, *, recipe: bool = False) -> StatID:
         """A unique identifier for this Stat.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -14402,7 +14880,9 @@ class Stat(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(StatID)
 
@@ -14474,12 +14954,18 @@ class Stat(Type):
 class Terminal(Type):
     """An interactive terminal that clients can connect to."""
 
-    async def id(self) -> TerminalID:
+    async def id(self, *, recipe: bool = False) -> TerminalID:
         """A unique identifier for this Terminal.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -14494,7 +14980,9 @@ class Terminal(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(TerminalID)
 
@@ -14569,12 +15057,18 @@ class TypeDef(Type):
         _ctx = self._select("asScalar", _args)
         return ScalarTypeDef(_ctx)
 
-    async def id(self) -> TypeDefID:
+    async def id(self, *, recipe: bool = False) -> TypeDefID:
         """A unique identifier for this TypeDef.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -14589,7 +15083,9 @@ class TypeDef(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(TypeDefID)
 
@@ -14921,12 +15417,18 @@ class Up(Type):
         _ctx = self._select("description", _args)
         return await _ctx.execute(str)
 
-    async def id(self) -> UpID:
+    async def id(self, *, recipe: bool = False) -> UpID:
         """A unique identifier for this Up.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -14941,7 +15443,9 @@ class Up(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(UpID)
 
@@ -15009,12 +15513,18 @@ class Up(Type):
 
 @typecheck
 class UpGroup(Type):
-    async def id(self) -> UpGroupID:
+    async def id(self, *, recipe: bool = False) -> UpGroupID:
         """A unique identifier for this UpGroup.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -15029,7 +15539,9 @@ class UpGroup(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(UpGroupID)
 
@@ -15283,12 +15795,18 @@ class Workspace(Type):
         _ctx = self._select("hasConfig", _args)
         return await _ctx.execute(bool)
 
-    async def id(self) -> WorkspaceID:
+    async def id(self, *, recipe: bool = False) -> WorkspaceID:
         """A unique identifier for this Workspace.
 
         Note
         ----
         This is lazily evaluated, no operation is actually run.
+
+        Parameters
+        ----------
+        recipe:
+            Return the canonical recipe-form ID instead of the default runtime
+            handle ID.
 
         Returns
         -------
@@ -15303,7 +15821,9 @@ class Workspace(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("recipe", recipe, False),
+        ]
         _ctx = self._select("id", _args)
         return await _ctx.execute(WorkspaceID)
 

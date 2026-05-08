@@ -46,9 +46,12 @@ class CurrentModule extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this CurrentModule.
      */
-    public function id(): CurrentModuleId
+    public function id(?bool $recipe = false): CurrentModuleId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\CurrentModuleId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

@@ -32,10 +32,10 @@ defmodule Dagger.Stat do
   @doc """
   A unique identifier for this Stat.
   """
-  @spec id(t()) :: {:ok, Dagger.StatID.t()} | {:error, term()}
-  def id(%__MODULE__{} = stat) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.StatID.t()} | {:error, term()}
+  def id(%__MODULE__{} = stat, recipe) do
     query_builder =
-      stat.query_builder |> QB.select("id")
+      stat.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(stat.client, query_builder)
   end

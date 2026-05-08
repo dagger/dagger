@@ -176,7 +176,7 @@
                     <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_id">id</a>()
+                    <a href="#method_id">id</a>(bool|null $recipe = false)
         
                                             <p><p>A unique identifier for this EnvFile.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -441,7 +441,7 @@
                     <h3 id="method_id">
         <div class="location">at line 51</div>
         <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
-    <strong>id</strong>()
+    <strong>id</strong>(bool|null $recipe = false)
         </code>
     </h3>
     <div class="details">    
@@ -452,6 +452,16 @@
                             <p><p>A unique identifier for this EnvFile.</p></p>                        
         </div>
         <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>bool|null</td>
+                <td>$recipe</td>
+                <td></td>
+            </tr>
+            </table>
+
             
                             <h4>Return Value</h4>
 
@@ -471,7 +481,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_namespace">
-        <div class="location">at line 60</div>
+        <div class="location">at line 63</div>
         <code>                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
     <strong>namespace</strong>(string $prefix)
         </code>
@@ -513,7 +523,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_variables">
-        <div class="location">at line 70</div>
+        <div class="location">at line 73</div>
         <code>                    array
     <strong>variables</strong>(bool|null $raw = null)
         </code>
@@ -555,7 +565,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withVariable">
-        <div class="location">at line 82</div>
+        <div class="location">at line 85</div>
         <code>                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
     <strong>withVariable</strong>(string $name, string $value)
         </code>
@@ -602,7 +612,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutVariable">
-        <div class="location">at line 93</div>
+        <div class="location">at line 96</div>
         <code>                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
     <strong>withoutVariable</strong>(string $name)
         </code>

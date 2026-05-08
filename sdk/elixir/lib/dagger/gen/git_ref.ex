@@ -45,10 +45,10 @@ defmodule Dagger.GitRef do
   @doc """
   A unique identifier for this GitRef.
   """
-  @spec id(t()) :: {:ok, Dagger.GitRefID.t()} | {:error, term()}
-  def id(%__MODULE__{} = git_ref) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.GitRefID.t()} | {:error, term()}
+  def id(%__MODULE__{} = git_ref, recipe) do
     query_builder =
-      git_ref.query_builder |> QB.select("id")
+      git_ref.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(git_ref.client, query_builder)
   end

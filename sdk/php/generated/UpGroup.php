@@ -13,9 +13,12 @@ class UpGroup extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this UpGroup.
      */
-    public function id(): UpGroupId
+    public function id(?bool $recipe = false): UpGroupId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\UpGroupId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

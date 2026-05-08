@@ -43,9 +43,12 @@ class EngineCacheEntrySet extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this EngineCacheEntrySet.
      */
-    public function id(): EngineCacheEntrySetId
+    public function id(?bool $recipe = false): EngineCacheEntrySetId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\EngineCacheEntrySetId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 }

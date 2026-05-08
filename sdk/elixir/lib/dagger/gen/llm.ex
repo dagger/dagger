@@ -93,10 +93,10 @@ defmodule Dagger.LLM do
   @doc """
   A unique identifier for this LLM.
   """
-  @spec id(t()) :: {:ok, Dagger.LLMID.t()} | {:error, term()}
-  def id(%__MODULE__{} = llm) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.LLMID.t()} | {:error, term()}
+  def id(%__MODULE__{} = llm, recipe) do
     query_builder =
-      llm.query_builder |> QB.select("id")
+      llm.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(llm.client, query_builder)
   end

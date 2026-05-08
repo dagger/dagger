@@ -29,10 +29,10 @@ defmodule Dagger.Engine do
   @doc """
   A unique identifier for this Engine.
   """
-  @spec id(t()) :: {:ok, Dagger.EngineID.t()} | {:error, term()}
-  def id(%__MODULE__{} = engine) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.EngineID.t()} | {:error, term()}
+  def id(%__MODULE__{} = engine, recipe) do
     query_builder =
-      engine.query_builder |> QB.select("id")
+      engine.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(engine.client, query_builder)
   end

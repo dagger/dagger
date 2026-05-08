@@ -18,10 +18,10 @@ defmodule Dagger.ClientFilesyncMirror do
   @doc """
   A unique identifier for this ClientFilesyncMirror.
   """
-  @spec id(t()) :: {:ok, Dagger.ClientFilesyncMirrorID.t()} | {:error, term()}
-  def id(%__MODULE__{} = client_filesync_mirror) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.ClientFilesyncMirrorID.t()} | {:error, term()}
+  def id(%__MODULE__{} = client_filesync_mirror, recipe) do
     query_builder =
-      client_filesync_mirror.query_builder |> QB.select("id")
+      client_filesync_mirror.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(client_filesync_mirror.client, query_builder)
   end

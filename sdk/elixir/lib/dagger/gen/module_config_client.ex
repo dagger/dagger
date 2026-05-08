@@ -40,10 +40,10 @@ defmodule Dagger.ModuleConfigClient do
   @doc """
   A unique identifier for this ModuleConfigClient.
   """
-  @spec id(t()) :: {:ok, Dagger.ModuleConfigClientID.t()} | {:error, term()}
-  def id(%__MODULE__{} = module_config_client) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.ModuleConfigClientID.t()} | {:error, term()}
+  def id(%__MODULE__{} = module_config_client, recipe) do
     query_builder =
-      module_config_client.query_builder |> QB.select("id")
+      module_config_client.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(module_config_client.client, query_builder)
   end

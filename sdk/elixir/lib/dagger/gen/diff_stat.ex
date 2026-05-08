@@ -29,10 +29,10 @@ defmodule Dagger.DiffStat do
   @doc """
   A unique identifier for this DiffStat.
   """
-  @spec id(t()) :: {:ok, Dagger.DiffStatID.t()} | {:error, term()}
-  def id(%__MODULE__{} = diff_stat) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.DiffStatID.t()} | {:error, term()}
+  def id(%__MODULE__{} = diff_stat, recipe) do
     query_builder =
-      diff_stat.query_builder |> QB.select("id")
+      diff_stat.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(diff_stat.client, query_builder)
   end

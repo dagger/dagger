@@ -98,10 +98,10 @@ defmodule Dagger.ObjectTypeDef do
   @doc """
   A unique identifier for this ObjectTypeDef.
   """
-  @spec id(t()) :: {:ok, Dagger.ObjectTypeDefID.t()} | {:error, term()}
-  def id(%__MODULE__{} = object_type_def) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.ObjectTypeDefID.t()} | {:error, term()}
+  def id(%__MODULE__{} = object_type_def, recipe) do
     query_builder =
-      object_type_def.query_builder |> QB.select("id")
+      object_type_def.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(object_type_def.client, query_builder)
   end

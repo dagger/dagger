@@ -16,9 +16,12 @@ class FunctionCall extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this FunctionCall.
      */
-    public function id(): FunctionCallId
+    public function id(?bool $recipe = false): FunctionCallId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\FunctionCallId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

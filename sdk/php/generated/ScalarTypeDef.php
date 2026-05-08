@@ -25,9 +25,12 @@ class ScalarTypeDef extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this ScalarTypeDef.
      */
-    public function id(): ScalarTypeDefId
+    public function id(?bool $recipe = false): ScalarTypeDefId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\ScalarTypeDefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

@@ -18,10 +18,10 @@ defmodule Dagger.RemoteGitMirror do
   @doc """
   A unique identifier for this RemoteGitMirror.
   """
-  @spec id(t()) :: {:ok, Dagger.RemoteGitMirrorID.t()} | {:error, term()}
-  def id(%__MODULE__{} = remote_git_mirror) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.RemoteGitMirrorID.t()} | {:error, term()}
+  def id(%__MODULE__{} = remote_git_mirror, recipe) do
     query_builder =
-      remote_git_mirror.query_builder |> QB.select("id")
+      remote_git_mirror.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(remote_git_mirror.client, query_builder)
   end

@@ -34,10 +34,10 @@ defmodule Dagger.EngineCache do
   @doc """
   A unique identifier for this EngineCache.
   """
-  @spec id(t()) :: {:ok, Dagger.EngineCacheID.t()} | {:error, term()}
-  def id(%__MODULE__{} = engine_cache) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.EngineCacheID.t()} | {:error, term()}
+  def id(%__MODULE__{} = engine_cache, recipe) do
     query_builder =
-      engine_cache.query_builder |> QB.select("id")
+      engine_cache.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(engine_cache.client, query_builder)
   end

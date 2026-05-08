@@ -64,10 +64,10 @@ defmodule Dagger.Function do
   @doc """
   A unique identifier for this Function.
   """
-  @spec id(t()) :: {:ok, Dagger.FunctionID.t()} | {:error, term()}
-  def id(%__MODULE__{} = function) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.FunctionID.t()} | {:error, term()}
+  def id(%__MODULE__{} = function, recipe) do
     query_builder =
-      function.query_builder |> QB.select("id")
+      function.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(function.client, query_builder)
   end

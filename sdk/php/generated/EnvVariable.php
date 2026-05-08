@@ -16,9 +16,12 @@ class EnvVariable extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this EnvVariable.
      */
-    public function id(): EnvVariableId
+    public function id(?bool $recipe = false): EnvVariableId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\EnvVariableId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

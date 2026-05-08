@@ -39,6 +39,14 @@ public class InputObject {
     this.type = type;
   }
 
+  boolean isRequired() {
+    return !type.isOptional() && defaultValue == null;
+  }
+
+  boolean isOptional() {
+    return !isRequired();
+  }
+
   @Override
   public String toString() {
     return "InputValue{"

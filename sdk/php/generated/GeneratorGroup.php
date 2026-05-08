@@ -29,9 +29,12 @@ class GeneratorGroup extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this GeneratorGroup.
      */
-    public function id(): GeneratorGroupId
+    public function id(?bool $recipe = false): GeneratorGroupId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\GeneratorGroupId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

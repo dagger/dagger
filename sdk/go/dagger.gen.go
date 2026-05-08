@@ -485,12 +485,24 @@ func (r *Address) GitRepository() *GitRepository {
 	}
 }
 
+// AddressIDOpts contains options for Address.ID
+type AddressIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Address.
-func (r *Address) ID(ctx context.Context) (AddressID, error) {
+func (r *Address) ID(ctx context.Context, opts ...AddressIDOpts) (AddressID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response AddressID
 
@@ -878,12 +890,24 @@ func (r *Binding) Digest(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// BindingIDOpts contains options for Binding.ID
+type BindingIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Binding.
-func (r *Binding) ID(ctx context.Context) (BindingID, error) {
+func (r *Binding) ID(ctx context.Context, opts ...BindingIDOpts) (BindingID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response BindingID
 
@@ -970,12 +994,24 @@ func (r *CacheVolume) WithGraphQLQuery(q *querybuilder.Selection) *CacheVolume {
 	}
 }
 
+// CacheVolumeIDOpts contains options for CacheVolume.ID
+type CacheVolumeIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this CacheVolume.
-func (r *CacheVolume) ID(ctx context.Context) (CacheVolumeID, error) {
+func (r *CacheVolume) ID(ctx context.Context, opts ...CacheVolumeIDOpts) (CacheVolumeID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response CacheVolumeID
 
@@ -1118,12 +1154,24 @@ func (r *Changeset) Export(ctx context.Context, path string) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// ChangesetIDOpts contains options for Changeset.ID
+type ChangesetIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Changeset.
-func (r *Changeset) ID(ctx context.Context) (ChangesetID, error) {
+func (r *Changeset) ID(ctx context.Context, opts ...ChangesetIDOpts) (ChangesetID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response ChangesetID
 
@@ -1342,12 +1390,24 @@ func (r *Check) Error() *Error {
 	}
 }
 
+// CheckIDOpts contains options for Check.ID
+type CheckIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Check.
-func (r *Check) ID(ctx context.Context) (CheckID, error) {
+func (r *Check) ID(ctx context.Context, opts ...CheckIDOpts) (CheckID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response CheckID
 
@@ -1469,12 +1529,24 @@ func (r *CheckGroup) WithGraphQLQuery(q *querybuilder.Selection) *CheckGroup {
 	}
 }
 
+// CheckGroupIDOpts contains options for CheckGroup.ID
+type CheckGroupIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this CheckGroup.
-func (r *CheckGroup) ID(ctx context.Context) (CheckGroupID, error) {
+func (r *CheckGroup) ID(ctx context.Context, opts ...CheckGroupIDOpts) (CheckGroupID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response CheckGroupID
 
@@ -1585,12 +1657,24 @@ func (r *ClientFilesyncMirror) WithGraphQLQuery(q *querybuilder.Selection) *Clie
 	}
 }
 
+// ClientFilesyncMirrorIDOpts contains options for ClientFilesyncMirror.ID
+type ClientFilesyncMirrorIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this ClientFilesyncMirror.
-func (r *ClientFilesyncMirror) ID(ctx context.Context) (ClientFilesyncMirrorID, error) {
+func (r *ClientFilesyncMirror) ID(ctx context.Context, opts ...ClientFilesyncMirrorIDOpts) (ClientFilesyncMirrorID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response ClientFilesyncMirrorID
 
@@ -1639,12 +1723,24 @@ func (r *Cloud) WithGraphQLQuery(q *querybuilder.Selection) *Cloud {
 	}
 }
 
+// CloudIDOpts contains options for Cloud.ID
+type CloudIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Cloud.
-func (r *Cloud) ID(ctx context.Context) (CloudID, error) {
+func (r *Cloud) ID(ctx context.Context, opts ...CloudIDOpts) (CloudID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response CloudID
 
@@ -2182,12 +2278,24 @@ func (r *Container) From(address string) *Container {
 	}
 }
 
+// ContainerIDOpts contains options for Container.ID
+type ContainerIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Container.
-func (r *Container) ID(ctx context.Context) (ContainerID, error) {
+func (r *Container) ID(ctx context.Context, opts ...ContainerIDOpts) (ContainerID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response ContainerID
 
@@ -3726,12 +3834,24 @@ func (r *CurrentModule) Generators(opts ...CurrentModuleGeneratorsOpts) *Generat
 	}
 }
 
+// CurrentModuleIDOpts contains options for CurrentModule.ID
+type CurrentModuleIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this CurrentModule.
-func (r *CurrentModule) ID(ctx context.Context) (CurrentModuleID, error) {
+func (r *CurrentModule) ID(ctx context.Context, opts ...CurrentModuleIDOpts) (CurrentModuleID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response CurrentModuleID
 
@@ -3862,12 +3982,24 @@ func (r *DiffStat) AddedLines(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx)
 }
 
+// DiffStatIDOpts contains options for DiffStat.ID
+type DiffStatIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this DiffStat.
-func (r *DiffStat) ID(ctx context.Context) (DiffStatID, error) {
+func (r *DiffStat) ID(ctx context.Context, opts ...DiffStatIDOpts) (DiffStatID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response DiffStatID
 
@@ -4314,12 +4446,24 @@ func (r *Directory) Glob(ctx context.Context, pattern string) ([]string, error) 
 	return response, q.Execute(ctx)
 }
 
+// DirectoryIDOpts contains options for Directory.ID
+type DirectoryIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Directory.
-func (r *Directory) ID(ctx context.Context) (DirectoryID, error) {
+func (r *Directory) ID(ctx context.Context, opts ...DirectoryIDOpts) (DirectoryID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response DirectoryID
 
@@ -4822,12 +4966,24 @@ func (r *Engine) Clients(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
+// EngineIDOpts contains options for Engine.ID
+type EngineIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Engine.
-func (r *Engine) ID(ctx context.Context) (EngineID, error) {
+func (r *Engine) ID(ctx context.Context, opts ...EngineIDOpts) (EngineID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response EngineID
 
@@ -4922,12 +5078,24 @@ func (r *EngineCache) EntrySet(opts ...EngineCacheEntrySetOpts) *EngineCacheEntr
 	}
 }
 
+// EngineCacheIDOpts contains options for EngineCache.ID
+type EngineCacheIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this EngineCache.
-func (r *EngineCache) ID(ctx context.Context) (EngineCacheID, error) {
+func (r *EngineCache) ID(ctx context.Context, opts ...EngineCacheIDOpts) (EngineCacheID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response EngineCacheID
 
@@ -5131,12 +5299,24 @@ func (r *EngineCacheEntry) DiskSpaceBytes(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx)
 }
 
+// EngineCacheEntryIDOpts contains options for EngineCacheEntry.ID
+type EngineCacheEntryIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this EngineCacheEntry.
-func (r *EngineCacheEntry) ID(ctx context.Context) (EngineCacheEntryID, error) {
+func (r *EngineCacheEntry) ID(ctx context.Context, opts ...EngineCacheEntryIDOpts) (EngineCacheEntryID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response EngineCacheEntryID
 
@@ -5271,12 +5451,24 @@ func (r *EngineCacheEntrySet) EntryCount(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx)
 }
 
+// EngineCacheEntrySetIDOpts contains options for EngineCacheEntrySet.ID
+type EngineCacheEntrySetIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this EngineCacheEntrySet.
-func (r *EngineCacheEntrySet) ID(ctx context.Context) (EngineCacheEntrySetID, error) {
+func (r *EngineCacheEntrySet) ID(ctx context.Context, opts ...EngineCacheEntrySetIDOpts) (EngineCacheEntrySetID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response EngineCacheEntrySetID
 
@@ -5340,12 +5532,24 @@ func (r *EnumTypeDef) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// EnumTypeDefIDOpts contains options for EnumTypeDef.ID
+type EnumTypeDefIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this EnumTypeDef.
-func (r *EnumTypeDef) ID(ctx context.Context) (EnumTypeDefID, error) {
+func (r *EnumTypeDef) ID(ctx context.Context, opts ...EnumTypeDefIDOpts) (EnumTypeDefID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response EnumTypeDefID
 
@@ -5526,12 +5730,24 @@ func (r *EnumValueTypeDef) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// EnumValueTypeDefIDOpts contains options for EnumValueTypeDef.ID
+type EnumValueTypeDefIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this EnumValueTypeDef.
-func (r *EnumValueTypeDef) ID(ctx context.Context) (EnumValueTypeDefID, error) {
+func (r *EnumValueTypeDef) ID(ctx context.Context, opts ...EnumValueTypeDefIDOpts) (EnumValueTypeDefID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response EnumValueTypeDefID
 
@@ -5662,12 +5878,24 @@ func (r *Env) Checks(opts ...EnvChecksOpts) *CheckGroup {
 	}
 }
 
+// EnvIDOpts contains options for Env.ID
+type EnvIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Env.
-func (r *Env) ID(ctx context.Context) (EnvID, error) {
+func (r *Env) ID(ctx context.Context, opts ...EnvIDOpts) (EnvID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response EnvID
 
@@ -6693,12 +6921,24 @@ func (r *EnvFile) Get(ctx context.Context, name string, opts ...EnvFileGetOpts) 
 	return response, q.Execute(ctx)
 }
 
+// EnvFileIDOpts contains options for EnvFile.ID
+type EnvFileIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this EnvFile.
-func (r *EnvFile) ID(ctx context.Context) (EnvFileID, error) {
+func (r *EnvFile) ID(ctx context.Context, opts ...EnvFileIDOpts) (EnvFileID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response EnvFileID
 
@@ -6824,12 +7064,24 @@ func (r *EnvVariable) WithGraphQLQuery(q *querybuilder.Selection) *EnvVariable {
 	}
 }
 
+// EnvVariableIDOpts contains options for EnvVariable.ID
+type EnvVariableIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this EnvVariable.
-func (r *EnvVariable) ID(ctx context.Context) (EnvVariableID, error) {
+func (r *EnvVariable) ID(ctx context.Context, opts ...EnvVariableIDOpts) (EnvVariableID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response EnvVariableID
 
@@ -6911,12 +7163,24 @@ func (r *Error) WithGraphQLQuery(q *querybuilder.Selection) *Error {
 	}
 }
 
+// ErrorIDOpts contains options for Error.ID
+type ErrorIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Error.
-func (r *Error) ID(ctx context.Context) (ErrorID, error) {
+func (r *Error) ID(ctx context.Context, opts ...ErrorIDOpts) (ErrorID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response ErrorID
 
@@ -7022,12 +7286,24 @@ func (r *ErrorValue) WithGraphQLQuery(q *querybuilder.Selection) *ErrorValue {
 	}
 }
 
+// ErrorValueIDOpts contains options for ErrorValue.ID
+type ErrorValueIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this ErrorValue.
-func (r *ErrorValue) ID(ctx context.Context) (ErrorValueID, error) {
+func (r *ErrorValue) ID(ctx context.Context, opts ...ErrorValueIDOpts) (ErrorValueID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response ErrorValueID
 
@@ -7132,12 +7408,24 @@ func (r *FieldTypeDef) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// FieldTypeDefIDOpts contains options for FieldTypeDef.ID
+type FieldTypeDefIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this FieldTypeDef.
-func (r *FieldTypeDef) ID(ctx context.Context) (FieldTypeDefID, error) {
+func (r *FieldTypeDef) ID(ctx context.Context, opts ...FieldTypeDefIDOpts) (FieldTypeDefID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response FieldTypeDefID
 
@@ -7353,12 +7641,24 @@ func (r *File) Export(ctx context.Context, path string, opts ...FileExportOpts) 
 	return response, q.Execute(ctx)
 }
 
+// FileIDOpts contains options for File.ID
+type FileIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this File.
-func (r *File) ID(ctx context.Context) (FileID, error) {
+func (r *File) ID(ctx context.Context, opts ...FileIDOpts) (FileID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response FileID
 
@@ -7686,12 +7986,24 @@ func (r *Function) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// FunctionIDOpts contains options for Function.ID
+type FunctionIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Function.
-func (r *Function) ID(ctx context.Context) (FunctionID, error) {
+func (r *Function) ID(ctx context.Context, opts ...FunctionIDOpts) (FunctionID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response FunctionID
 
@@ -8007,12 +8319,24 @@ func (r *FunctionArg) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// FunctionArgIDOpts contains options for FunctionArg.ID
+type FunctionArgIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this FunctionArg.
-func (r *FunctionArg) ID(ctx context.Context) (FunctionArgID, error) {
+func (r *FunctionArg) ID(ctx context.Context, opts ...FunctionArgIDOpts) (FunctionArgID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response FunctionArgID
 
@@ -8106,12 +8430,24 @@ func (r *FunctionCall) WithGraphQLQuery(q *querybuilder.Selection) *FunctionCall
 	}
 }
 
+// FunctionCallIDOpts contains options for FunctionCall.ID
+type FunctionCallIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this FunctionCall.
-func (r *FunctionCall) ID(ctx context.Context) (FunctionCallID, error) {
+func (r *FunctionCall) ID(ctx context.Context, opts ...FunctionCallIDOpts) (FunctionCallID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response FunctionCallID
 
@@ -8256,12 +8592,24 @@ func (r *FunctionCallArgValue) WithGraphQLQuery(q *querybuilder.Selection) *Func
 	}
 }
 
+// FunctionCallArgValueIDOpts contains options for FunctionCallArgValue.ID
+type FunctionCallArgValueIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this FunctionCallArgValue.
-func (r *FunctionCallArgValue) ID(ctx context.Context) (FunctionCallArgValueID, error) {
+func (r *FunctionCallArgValue) ID(ctx context.Context, opts ...FunctionCallArgValueIDOpts) (FunctionCallArgValueID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response FunctionCallArgValueID
 
@@ -8352,12 +8700,24 @@ func (r *GeneratedCode) Code() *Directory {
 	}
 }
 
+// GeneratedCodeIDOpts contains options for GeneratedCode.ID
+type GeneratedCodeIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this GeneratedCode.
-func (r *GeneratedCode) ID(ctx context.Context) (GeneratedCodeID, error) {
+func (r *GeneratedCode) ID(ctx context.Context, opts ...GeneratedCodeIDOpts) (GeneratedCodeID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response GeneratedCodeID
 
@@ -8491,12 +8851,24 @@ func (r *Generator) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// GeneratorIDOpts contains options for Generator.ID
+type GeneratorIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Generator.
-func (r *Generator) ID(ctx context.Context) (GeneratorID, error) {
+func (r *Generator) ID(ctx context.Context, opts ...GeneratorIDOpts) (GeneratorID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response GeneratorID
 
@@ -8633,12 +9005,24 @@ func (r *GeneratorGroup) Changes(opts ...GeneratorGroupChangesOpts) *Changeset {
 	}
 }
 
+// GeneratorGroupIDOpts contains options for GeneratorGroup.ID
+type GeneratorGroupIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this GeneratorGroup.
-func (r *GeneratorGroup) ID(ctx context.Context) (GeneratorGroupID, error) {
+func (r *GeneratorGroup) ID(ctx context.Context, opts ...GeneratorGroupIDOpts) (GeneratorGroupID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response GeneratorGroupID
 
@@ -8775,12 +9159,24 @@ func (r *GitRef) CommonAncestor(other *GitRef) *GitRef {
 	}
 }
 
+// GitRefIDOpts contains options for GitRef.ID
+type GitRefIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this GitRef.
-func (r *GitRef) ID(ctx context.Context) (GitRefID, error) {
+func (r *GitRef) ID(ctx context.Context, opts ...GitRefIDOpts) (GitRefID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response GitRefID
 
@@ -8928,12 +9324,24 @@ func (r *GitRepository) Head() *GitRef {
 	}
 }
 
+// GitRepositoryIDOpts contains options for GitRepository.ID
+type GitRepositoryIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this GitRepository.
-func (r *GitRepository) ID(ctx context.Context) (GitRepositoryID, error) {
+func (r *GitRepository) ID(ctx context.Context, opts ...GitRepositoryIDOpts) (GitRepositoryID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response GitRepositoryID
 
@@ -9054,12 +9462,24 @@ func (r *HTTPState) WithGraphQLQuery(q *querybuilder.Selection) *HTTPState {
 	}
 }
 
+// HTTPStateIDOpts contains options for HTTPState.ID
+type HTTPStateIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this HTTPState.
-func (r *HTTPState) ID(ctx context.Context) (HTTPStateID, error) {
+func (r *HTTPState) ID(ctx context.Context, opts ...HTTPStateIDOpts) (HTTPStateID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response HTTPStateID
 
@@ -9123,12 +9543,24 @@ func (r *HealthcheckConfig) Args(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
+// HealthcheckConfigIDOpts contains options for HealthcheckConfig.ID
+type HealthcheckConfigIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this HealthcheckConfig.
-func (r *HealthcheckConfig) ID(ctx context.Context) (HealthcheckConfigID, error) {
+func (r *HealthcheckConfig) ID(ctx context.Context, opts ...HealthcheckConfigIDOpts) (HealthcheckConfigID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response HealthcheckConfigID
 
@@ -9352,12 +9784,24 @@ func (r *Host) FindUp(ctx context.Context, name string, opts ...HostFindUpOpts) 
 	return response, q.Execute(ctx)
 }
 
+// HostIDOpts contains options for Host.ID
+type HostIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Host.
-func (r *Host) ID(ctx context.Context) (HostID, error) {
+func (r *Host) ID(ctx context.Context, opts ...HostIDOpts) (HostID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response HostID
 
@@ -9513,12 +9957,24 @@ func (r *InputTypeDef) Fields(ctx context.Context) ([]FieldTypeDef, error) {
 	return convert(response), nil
 }
 
+// InputTypeDefIDOpts contains options for InputTypeDef.ID
+type InputTypeDefIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this InputTypeDef.
-func (r *InputTypeDef) ID(ctx context.Context) (InputTypeDefID, error) {
+func (r *InputTypeDef) ID(ctx context.Context, opts ...InputTypeDefIDOpts) (InputTypeDefID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response InputTypeDefID
 
@@ -9628,12 +10084,24 @@ func (r *InterfaceTypeDef) Functions(ctx context.Context) ([]Function, error) {
 	return convert(response), nil
 }
 
+// InterfaceTypeDefIDOpts contains options for InterfaceTypeDef.ID
+type InterfaceTypeDefIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this InterfaceTypeDef.
-func (r *InterfaceTypeDef) ID(ctx context.Context) (InterfaceTypeDefID, error) {
+func (r *InterfaceTypeDef) ID(ctx context.Context, opts ...InterfaceTypeDefIDOpts) (InterfaceTypeDefID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response InterfaceTypeDefID
 
@@ -9852,12 +10320,24 @@ func (r *JSONValue) Fields(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
+// JSONValueIDOpts contains options for JSONValue.ID
+type JSONValueIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this JSONValue.
-func (r *JSONValue) ID(ctx context.Context) (JSONValueID, error) {
+func (r *JSONValue) ID(ctx context.Context, opts ...JSONValueIDOpts) (JSONValueID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response JSONValueID
 
@@ -10037,12 +10517,24 @@ func (r *LLM) HistoryJSON(ctx context.Context) (JSON, error) {
 	return response, q.Execute(ctx)
 }
 
+// LLMIDOpts contains options for LLM.ID
+type LLMIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this LLM.
-func (r *LLM) ID(ctx context.Context) (LLMID, error) {
+func (r *LLM) ID(ctx context.Context, opts ...LLMIDOpts) (LLMID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response LLMID
 
@@ -10325,12 +10817,24 @@ func (r *LLMTokenUsage) CachedTokenWrites(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx)
 }
 
+// LLMTokenUsageIDOpts contains options for LLMTokenUsage.ID
+type LLMTokenUsageIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this LLMTokenUsage.
-func (r *LLMTokenUsage) ID(ctx context.Context) (LLMTokenUsageID, error) {
+func (r *LLMTokenUsage) ID(ctx context.Context, opts ...LLMTokenUsageIDOpts) (LLMTokenUsageID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response LLMTokenUsageID
 
@@ -10416,12 +10920,24 @@ func (r *Label) WithGraphQLQuery(q *querybuilder.Selection) *Label {
 	}
 }
 
+// LabelIDOpts contains options for Label.ID
+type LabelIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Label.
-func (r *Label) ID(ctx context.Context) (LabelID, error) {
+func (r *Label) ID(ctx context.Context, opts ...LabelIDOpts) (LabelID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response LabelID
 
@@ -10504,12 +11020,24 @@ func (r *ListTypeDef) ElementTypeDef() *TypeDef {
 	}
 }
 
+// ListTypeDefIDOpts contains options for ListTypeDef.ID
+type ListTypeDefIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this ListTypeDef.
-func (r *ListTypeDef) ID(ctx context.Context) (ListTypeDefID, error) {
+func (r *ListTypeDef) ID(ctx context.Context, opts ...ListTypeDefIDOpts) (ListTypeDefID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response ListTypeDefID
 
@@ -10733,12 +11261,24 @@ func (r *Module) Generators(opts ...ModuleGeneratorsOpts) *GeneratorGroup {
 	}
 }
 
+// ModuleIDOpts contains options for Module.ID
+type ModuleIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Module.
-func (r *Module) ID(ctx context.Context) (ModuleID, error) {
+func (r *Module) ID(ctx context.Context, opts ...ModuleIDOpts) (ModuleID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response ModuleID
 
@@ -11051,12 +11591,24 @@ func (r *ModuleConfigClient) Generator(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// ModuleConfigClientIDOpts contains options for ModuleConfigClient.ID
+type ModuleConfigClientIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this ModuleConfigClient.
-func (r *ModuleConfigClient) ID(ctx context.Context) (ModuleConfigClientID, error) {
+func (r *ModuleConfigClient) ID(ctx context.Context, opts ...ModuleConfigClientIDOpts) (ModuleConfigClientID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response ModuleConfigClientID
 
@@ -11356,12 +11908,24 @@ func (r *ModuleSource) HTMLURL(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// ModuleSourceIDOpts contains options for ModuleSource.ID
+type ModuleSourceIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this ModuleSource.
-func (r *ModuleSource) ID(ctx context.Context) (ModuleSourceID, error) {
+func (r *ModuleSource) ID(ctx context.Context, opts ...ModuleSourceIDOpts) (ModuleSourceID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response ModuleSourceID
 
@@ -11911,12 +12475,24 @@ func (r *ObjectTypeDef) Functions(ctx context.Context) ([]Function, error) {
 	return convert(response), nil
 }
 
+// ObjectTypeDefIDOpts contains options for ObjectTypeDef.ID
+type ObjectTypeDefIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this ObjectTypeDef.
-func (r *ObjectTypeDef) ID(ctx context.Context) (ObjectTypeDefID, error) {
+func (r *ObjectTypeDef) ID(ctx context.Context, opts ...ObjectTypeDefIDOpts) (ObjectTypeDefID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response ObjectTypeDefID
 
@@ -12029,12 +12605,24 @@ func (r *Port) ExperimentalSkipHealthcheck(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
+// PortIDOpts contains options for Port.ID
+type PortIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Port.
-func (r *Port) ID(ctx context.Context) (PortID, error) {
+func (r *Port) ID(ctx context.Context, opts ...PortIDOpts) (PortID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response PortID
 
@@ -12561,9 +13149,21 @@ func (r *Query) HTTP(url string, opts ...HTTPOpts) *File {
 	}
 }
 
+// IDOpts contains options for Query.ID
+type IDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Query.
-func (r *Query) ID(ctx context.Context) (QueryID, error) {
+func (r *Query) ID(ctx context.Context, opts ...IDOpts) (QueryID, error) {
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response QueryID
 
@@ -13418,12 +14018,24 @@ func (r *RemoteGitMirror) WithGraphQLQuery(q *querybuilder.Selection) *RemoteGit
 	}
 }
 
+// RemoteGitMirrorIDOpts contains options for RemoteGitMirror.ID
+type RemoteGitMirrorIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this RemoteGitMirror.
-func (r *RemoteGitMirror) ID(ctx context.Context) (RemoteGitMirrorID, error) {
+func (r *RemoteGitMirror) ID(ctx context.Context, opts ...RemoteGitMirrorIDOpts) (RemoteGitMirrorID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response RemoteGitMirrorID
 
@@ -13486,12 +14098,24 @@ func (r *SDKConfig) Debug(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
+// SDKConfigIDOpts contains options for SDKConfig.ID
+type SDKConfigIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this SDKConfig.
-func (r *SDKConfig) ID(ctx context.Context) (SDKConfigID, error) {
+func (r *SDKConfig) ID(ctx context.Context, opts ...SDKConfigIDOpts) (SDKConfigID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response SDKConfigID
 
@@ -13568,12 +14192,24 @@ func (r *ScalarTypeDef) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// ScalarTypeDefIDOpts contains options for ScalarTypeDef.ID
+type ScalarTypeDefIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this ScalarTypeDef.
-func (r *ScalarTypeDef) ID(ctx context.Context) (ScalarTypeDefID, error) {
+func (r *ScalarTypeDef) ID(ctx context.Context, opts ...ScalarTypeDefIDOpts) (ScalarTypeDefID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response ScalarTypeDefID
 
@@ -13676,12 +14312,24 @@ func (r *SearchResult) FilePath(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// SearchResultIDOpts contains options for SearchResult.ID
+type SearchResultIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this SearchResult.
-func (r *SearchResult) ID(ctx context.Context) (SearchResultID, error) {
+func (r *SearchResult) ID(ctx context.Context, opts ...SearchResultIDOpts) (SearchResultID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response SearchResultID
 
@@ -13803,12 +14451,24 @@ func (r *SearchSubmatch) End(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx)
 }
 
+// SearchSubmatchIDOpts contains options for SearchSubmatch.ID
+type SearchSubmatchIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this SearchSubmatch.
-func (r *SearchSubmatch) ID(ctx context.Context) (SearchSubmatchID, error) {
+func (r *SearchSubmatch) ID(ctx context.Context, opts ...SearchSubmatchIDOpts) (SearchSubmatchID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response SearchSubmatchID
 
@@ -13885,12 +14545,24 @@ func (r *Secret) WithGraphQLQuery(q *querybuilder.Selection) *Secret {
 	}
 }
 
+// SecretIDOpts contains options for Secret.ID
+type SecretIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Secret.
-func (r *Secret) ID(ctx context.Context) (SecretID, error) {
+func (r *Secret) ID(ctx context.Context, opts ...SecretIDOpts) (SecretID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response SecretID
 
@@ -14039,12 +14711,24 @@ func (r *Service) Hostname(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// ServiceIDOpts contains options for Service.ID
+type ServiceIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Service.
-func (r *Service) ID(ctx context.Context) (ServiceID, error) {
+func (r *Service) ID(ctx context.Context, opts ...ServiceIDOpts) (ServiceID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response ServiceID
 
@@ -14237,12 +14921,24 @@ func (r *Socket) WithGraphQLQuery(q *querybuilder.Selection) *Socket {
 	}
 }
 
+// SocketIDOpts contains options for Socket.ID
+type SocketIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Socket.
-func (r *Socket) ID(ctx context.Context) (SocketID, error) {
+func (r *Socket) ID(ctx context.Context, opts ...SocketIDOpts) (SocketID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response SocketID
 
@@ -14321,12 +15017,24 @@ func (r *SourceMap) Filename(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// SourceMapIDOpts contains options for SourceMap.ID
+type SourceMapIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this SourceMap.
-func (r *SourceMap) ID(ctx context.Context) (SourceMapID, error) {
+func (r *SourceMap) ID(ctx context.Context, opts ...SourceMapIDOpts) (SourceMapID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response SourceMapID
 
@@ -14430,12 +15138,24 @@ func (r *Stat) FileType(ctx context.Context) (FileType, error) {
 	return response, q.Execute(ctx)
 }
 
+// StatIDOpts contains options for Stat.ID
+type StatIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Stat.
-func (r *Stat) ID(ctx context.Context) (StatID, error) {
+func (r *Stat) ID(ctx context.Context, opts ...StatIDOpts) (StatID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response StatID
 
@@ -14523,12 +15243,24 @@ func (r *Terminal) WithGraphQLQuery(q *querybuilder.Selection) *Terminal {
 	}
 }
 
+// TerminalIDOpts contains options for Terminal.ID
+type TerminalIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Terminal.
-func (r *Terminal) ID(ctx context.Context) (TerminalID, error) {
+func (r *Terminal) ID(ctx context.Context, opts ...TerminalIDOpts) (TerminalID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response TerminalID
 
@@ -14656,12 +15388,24 @@ func (r *TypeDef) AsScalar() *ScalarTypeDef {
 	}
 }
 
+// TypeDefIDOpts contains options for TypeDef.ID
+type TypeDefIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this TypeDef.
-func (r *TypeDef) ID(ctx context.Context) (TypeDefID, error) {
+func (r *TypeDef) ID(ctx context.Context, opts ...TypeDefIDOpts) (TypeDefID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response TypeDefID
 
@@ -15048,12 +15792,24 @@ func (r *Up) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// UpIDOpts contains options for Up.ID
+type UpIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Up.
-func (r *Up) ID(ctx context.Context) (UpID, error) {
+func (r *Up) ID(ctx context.Context, opts ...UpIDOpts) (UpID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response UpID
 
@@ -15149,12 +15905,24 @@ func (r *UpGroup) WithGraphQLQuery(q *querybuilder.Selection) *UpGroup {
 	}
 }
 
+// UpGroupIDOpts contains options for UpGroup.ID
+type UpGroupIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this UpGroup.
-func (r *UpGroup) ID(ctx context.Context) (UpGroupID, error) {
+func (r *UpGroup) ID(ctx context.Context, opts ...UpGroupIDOpts) (UpGroupID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response UpGroupID
 
@@ -15433,12 +16201,24 @@ func (r *Workspace) HasConfig(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
+// WorkspaceIDOpts contains options for Workspace.ID
+type WorkspaceIDOpts struct {
+	// Return the canonical recipe-form ID instead of the default runtime handle ID.
+	Recipe bool
+}
+
 // A unique identifier for this Workspace.
-func (r *Workspace) ID(ctx context.Context) (WorkspaceID, error) {
+func (r *Workspace) ID(ctx context.Context, opts ...WorkspaceIDOpts) (WorkspaceID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `recipe` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Recipe) {
+			q = q.Arg("recipe", opts[i].Recipe)
+		}
+	}
 
 	var response WorkspaceID
 

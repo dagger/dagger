@@ -332,9 +332,12 @@ class Client extends Client\AbstractClient implements Client\IdAble
     /**
      * A unique identifier for this Query.
      */
-    public function id(): QueryId
+    public function id(?bool $recipe = false): QueryId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\QueryId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

@@ -158,10 +158,10 @@ defmodule Dagger.Workspace do
   @doc """
   A unique identifier for this Workspace.
   """
-  @spec id(t()) :: {:ok, Dagger.WorkspaceID.t()} | {:error, term()}
-  def id(%__MODULE__{} = workspace) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.WorkspaceID.t()} | {:error, term()}
+  def id(%__MODULE__{} = workspace, recipe) do
     query_builder =
-      workspace.query_builder |> QB.select("id")
+      workspace.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(workspace.client, query_builder)
   end

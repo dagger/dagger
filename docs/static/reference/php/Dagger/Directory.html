@@ -306,7 +306,7 @@
                     <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_id">id</a>()
+                    <a href="#method_id">id</a>(bool|null $recipe = false)
         
                                             <p><p>A unique identifier for this Directory.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -1317,7 +1317,7 @@
                     <h3 id="method_id">
         <div class="location">at line 231</div>
         <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
-    <strong>id</strong>()
+    <strong>id</strong>(bool|null $recipe = false)
         </code>
     </h3>
     <div class="details">    
@@ -1328,6 +1328,16 @@
                             <p><p>A unique identifier for this Directory.</p></p>                        
         </div>
         <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>bool|null</td>
+                <td>$recipe</td>
+                <td></td>
+            </tr>
+            </table>
+
             
                             <h4>Return Value</h4>
 
@@ -1347,7 +1357,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_name">
-        <div class="location">at line 240</div>
+        <div class="location">at line 243</div>
         <code>                    string
     <strong>name</strong>()
         </code>
@@ -1379,7 +1389,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_search">
-        <div class="location">at line 251</div>
+        <div class="location">at line 254</div>
         <code>                    array
     <strong>search</strong>(string $pattern, array|null $paths = null, array|null $globs = null, bool|null $literal = false, bool|null $multiline = false, bool|null $dotall = false, bool|null $insensitive = false, bool|null $skipIgnored = false, bool|null $skipHidden = false, bool|null $filesOnly = false, int|null $limit = null)
         </code>
@@ -1471,7 +1481,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_stat">
-        <div class="location">at line 302</div>
+        <div class="location">at line 305</div>
         <code>                    <a href="../Dagger/Stat.html"><abbr title="Dagger\Stat">Stat</abbr></a>
     <strong>stat</strong>(string $path, bool|null $doNotFollowSymlinks = false)
         </code>
@@ -1518,7 +1528,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sync">
-        <div class="location">at line 315</div>
+        <div class="location">at line 318</div>
         <code>                    <a href="../Dagger/DirectoryId.html"><abbr title="Dagger\DirectoryId">DirectoryId</abbr></a>
     <strong>sync</strong>()
         </code>
@@ -1550,7 +1560,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_terminal">
-        <div class="location">at line 324</div>
+        <div class="location">at line 327</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>terminal</strong>(<abbr title="Dagger\Dagger\ContainerId|Dagger\Container|null">Container|null</abbr> $container = null, array|null $cmd = null, bool|null $experimentalPrivilegedNesting = false, bool|null $insecureRootCapabilities = false)
         </code>
@@ -1607,7 +1617,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withChanges">
-        <div class="location">at line 349</div>
+        <div class="location">at line 352</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>withChanges</strong>(<abbr title="Dagger\ChangesetId|Dagger\Changeset">Changeset</abbr> $changes)
         </code>
@@ -1649,7 +1659,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withDirectory">
-        <div class="location">at line 359</div>
+        <div class="location">at line 362</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>withDirectory</strong>(string $path, <abbr title="Dagger\DirectoryId|Dagger\Directory">Directory</abbr> $source, array|null $exclude = null, array|null $include = null, bool|null $gitignore = false, string|null $owner = &#039;&#039;, int|null $permissions = null)
         </code>
@@ -1721,7 +1731,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withError">
-        <div class="location">at line 392</div>
+        <div class="location">at line 395</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>withError</strong>(string $err)
         </code>
@@ -1763,7 +1773,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withFile">
-        <div class="location">at line 402</div>
+        <div class="location">at line 405</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>withFile</strong>(string $path, <abbr title="Dagger\FileId|Dagger\File">File</abbr> $source, int|null $permissions = null, string|null $owner = &#039;&#039;)
         </code>
@@ -1820,7 +1830,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withFiles">
-        <div class="location">at line 423</div>
+        <div class="location">at line 426</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>withFiles</strong>(string $path, array $sources, int|null $permissions = null)
         </code>
@@ -1872,7 +1882,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withNewDirectory">
-        <div class="location">at line 437</div>
+        <div class="location">at line 440</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>withNewDirectory</strong>(string $path, int|null $permissions = 420)
         </code>
@@ -1919,7 +1929,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withNewFile">
-        <div class="location">at line 450</div>
+        <div class="location">at line 453</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>withNewFile</strong>(string $path, string $contents, int|null $permissions = 420)
         </code>
@@ -1971,7 +1981,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withPatch">
-        <div class="location">at line 464</div>
+        <div class="location">at line 467</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>withPatch</strong>(string $patch)
         </code>
@@ -2013,7 +2023,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withPatchFile">
-        <div class="location">at line 474</div>
+        <div class="location">at line 477</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>withPatchFile</strong>(<abbr title="Dagger\FileId|Dagger\File">File</abbr> $patch)
         </code>
@@ -2055,7 +2065,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withSymlink">
-        <div class="location">at line 484</div>
+        <div class="location">at line 487</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>withSymlink</strong>(string $target, string $linkName)
         </code>
@@ -2102,7 +2112,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withTimestamps">
-        <div class="location">at line 495</div>
+        <div class="location">at line 498</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>withTimestamps</strong>(int $timestamp)
         </code>
@@ -2144,7 +2154,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutDirectory">
-        <div class="location">at line 505</div>
+        <div class="location">at line 508</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>withoutDirectory</strong>(string $path)
         </code>
@@ -2186,7 +2196,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutFile">
-        <div class="location">at line 515</div>
+        <div class="location">at line 518</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>withoutFile</strong>(string $path)
         </code>
@@ -2228,7 +2238,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutFiles">
-        <div class="location">at line 525</div>
+        <div class="location">at line 528</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>withoutFiles</strong>(array $paths)
         </code>

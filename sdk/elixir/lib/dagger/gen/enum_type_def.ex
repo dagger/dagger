@@ -29,10 +29,10 @@ defmodule Dagger.EnumTypeDef do
   @doc """
   A unique identifier for this EnumTypeDef.
   """
-  @spec id(t()) :: {:ok, Dagger.EnumTypeDefID.t()} | {:error, term()}
-  def id(%__MODULE__{} = enum_type_def) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.EnumTypeDefID.t()} | {:error, term()}
+  def id(%__MODULE__{} = enum_type_def, recipe) do
     query_builder =
-      enum_type_def.query_builder |> QB.select("id")
+      enum_type_def.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(enum_type_def.client, query_builder)
   end

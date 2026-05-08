@@ -34,10 +34,10 @@ defmodule Dagger.LLMTokenUsage do
   @doc """
   A unique identifier for this LLMTokenUsage.
   """
-  @spec id(t()) :: {:ok, Dagger.LLMTokenUsageID.t()} | {:error, term()}
-  def id(%__MODULE__{} = llm_token_usage) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.LLMTokenUsageID.t()} | {:error, term()}
+  def id(%__MODULE__{} = llm_token_usage, recipe) do
     query_builder =
-      llm_token_usage.query_builder |> QB.select("id")
+      llm_token_usage.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(llm_token_usage.client, query_builder)
   end

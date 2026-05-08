@@ -18,10 +18,10 @@ defmodule Dagger.UpGroup do
   @doc """
   A unique identifier for this UpGroup.
   """
-  @spec id(t()) :: {:ok, Dagger.UpGroupID.t()} | {:error, term()}
-  def id(%__MODULE__{} = up_group) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.UpGroupID.t()} | {:error, term()}
+  def id(%__MODULE__{} = up_group, recipe) do
     query_builder =
-      up_group.query_builder |> QB.select("id")
+      up_group.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(up_group.client, query_builder)
   end

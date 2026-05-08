@@ -28,9 +28,12 @@ class EngineCache extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this EngineCache.
      */
-    public function id(): EngineCacheId
+    public function id(?bool $recipe = false): EngineCacheId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\EngineCacheId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

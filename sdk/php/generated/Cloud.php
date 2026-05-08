@@ -16,9 +16,12 @@ class Cloud extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Cloud.
      */
-    public function id(): CloudId
+    public function id(?bool $recipe = false): CloudId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\CloudId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

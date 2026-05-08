@@ -49,9 +49,12 @@ class Check extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Check.
      */
-    public function id(): CheckId
+    public function id(?bool $recipe = false): CheckId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\CheckId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

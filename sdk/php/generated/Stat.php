@@ -25,9 +25,12 @@ class Stat extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Stat.
      */
-    public function id(): StatId
+    public function id(?bool $recipe = false): StatId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\StatId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

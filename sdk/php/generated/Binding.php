@@ -310,9 +310,12 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Binding.
      */
-    public function id(): BindingId
+    public function id(?bool $recipe = false): BindingId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\BindingId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

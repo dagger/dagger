@@ -65,10 +65,10 @@ defmodule Dagger.Check do
   @doc """
   A unique identifier for this Check.
   """
-  @spec id(t()) :: {:ok, Dagger.CheckID.t()} | {:error, term()}
-  def id(%__MODULE__{} = check) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.CheckID.t()} | {:error, term()}
+  def id(%__MODULE__{} = check, recipe) do
     query_builder =
-      check.query_builder |> QB.select("id")
+      check.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(check.client, query_builder)
   end

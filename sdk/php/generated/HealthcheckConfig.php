@@ -25,9 +25,12 @@ class HealthcheckConfig extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this HealthcheckConfig.
      */
-    public function id(): HealthcheckConfigId
+    public function id(?bool $recipe = false): HealthcheckConfigId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\HealthcheckConfigId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

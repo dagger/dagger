@@ -34,9 +34,12 @@ class Port extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Port.
      */
-    public function id(): PortId
+    public function id(?bool $recipe = false): PortId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\PortId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

@@ -32,10 +32,10 @@ defmodule Dagger.GeneratedCode do
   @doc """
   A unique identifier for this GeneratedCode.
   """
-  @spec id(t()) :: {:ok, Dagger.GeneratedCodeID.t()} | {:error, term()}
-  def id(%__MODULE__{} = generated_code) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.GeneratedCodeID.t()} | {:error, term()}
+  def id(%__MODULE__{} = generated_code, recipe) do
     query_builder =
-      generated_code.query_builder |> QB.select("id")
+      generated_code.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(generated_code.client, query_builder)
   end

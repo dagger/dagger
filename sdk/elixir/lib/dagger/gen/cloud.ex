@@ -18,10 +18,10 @@ defmodule Dagger.Cloud do
   @doc """
   A unique identifier for this Cloud.
   """
-  @spec id(t()) :: {:ok, Dagger.CloudID.t()} | {:error, term()}
-  def id(%__MODULE__{} = cloud) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.CloudID.t()} | {:error, term()}
+  def id(%__MODULE__{} = cloud, recipe) do
     query_builder =
-      cloud.query_builder |> QB.select("id")
+      cloud.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(cloud.client, query_builder)
   end

@@ -119,7 +119,7 @@ fn render_required_args(_funcs: &CommonFunctions, field: &FullTypeFields) -> Opt
             .iter()
             .filter_map(|a| {
                 a.as_ref().and_then(|s| {
-                    if s.input_value.type_.is_optional() {
+                    if !s.input_value.is_required() {
                         return None;
                     }
 
@@ -195,7 +195,7 @@ fn render_optional_args(_funcs: &CommonFunctions, field: &FullTypeFields) -> Opt
             .iter()
             .filter_map(|a| {
                 a.as_ref().and_then(|s| {
-                    if !s.input_value.type_.is_optional() {
+                    if !s.input_value.is_optional() {
                         return None;
                     }
 
@@ -292,7 +292,7 @@ fn format_function_args(
             .iter()
             .filter_map(|a| {
                 a.as_ref().and_then(|s| {
-                    if s.input_value.type_.is_optional() {
+                    if !s.input_value.is_required() {
                         return None;
                     }
 
@@ -386,7 +386,7 @@ fn format_required_function_args(
             .iter()
             .filter_map(|a| {
                 a.as_ref().and_then(|s| {
-                    if s.input_value.type_.is_optional() {
+                    if !s.input_value.is_required() {
                         return None;
                     }
 
@@ -426,7 +426,7 @@ pub fn format_optional_args(
         .pipe(|t| t.iter().flatten().collect::<Vec<_>>())
         .map(|t| {
             t.into_iter()
-                .filter(|t| t.input_value.type_.is_optional())
+                .filter(|t| t.input_value.is_optional())
                 .sorted_by_key(|val| &val.input_value.name)
                 .collect::<Vec<_>>()
         })

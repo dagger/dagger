@@ -108,10 +108,10 @@ defmodule Dagger.Address do
   @doc """
   A unique identifier for this Address.
   """
-  @spec id(t()) :: {:ok, Dagger.AddressID.t()} | {:error, term()}
-  def id(%__MODULE__{} = address) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.AddressID.t()} | {:error, term()}
+  def id(%__MODULE__{} = address, recipe) do
     query_builder =
-      address.query_builder |> QB.select("id")
+      address.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(address.client, query_builder)
   end

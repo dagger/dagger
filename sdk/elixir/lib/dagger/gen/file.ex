@@ -106,10 +106,10 @@ defmodule Dagger.File do
   @doc """
   A unique identifier for this File.
   """
-  @spec id(t()) :: {:ok, Dagger.FileID.t()} | {:error, term()}
-  def id(%__MODULE__{} = file) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.FileID.t()} | {:error, term()}
+  def id(%__MODULE__{} = file, recipe) do
     query_builder =
-      file.query_builder |> QB.select("id")
+      file.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(file.client, query_builder)
   end

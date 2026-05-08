@@ -113,10 +113,10 @@ defmodule Dagger.JSONValue do
   @doc """
   A unique identifier for this JSONValue.
   """
-  @spec id(t()) :: {:ok, Dagger.JSONValueID.t()} | {:error, term()}
-  def id(%__MODULE__{} = json_value) do
+  @spec id(t(), boolean()) :: {:ok, Dagger.JSONValueID.t()} | {:error, term()}
+  def id(%__MODULE__{} = json_value, recipe) do
     query_builder =
-      json_value.query_builder |> QB.select("id")
+      json_value.query_builder |> QB.select("id") |> QB.put_arg("recipe", recipe)
 
     Client.execute(json_value.client, query_builder)
   end

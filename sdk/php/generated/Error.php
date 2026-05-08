@@ -13,9 +13,12 @@ class Error extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Error.
      */
-    public function id(): ErrorId
+    public function id(?bool $recipe = false): ErrorId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
+        if (null !== $recipe) {
+        $leafQueryBuilder->setArgument('recipe', $recipe);
+        }
         return new \Dagger\ErrorId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
