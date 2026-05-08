@@ -21,7 +21,7 @@ func (CLISuite) TestModuleDevelop(ctx context.Context, t *testctx.T) {
 		base := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
-			With(daggerExec("module", "init", "--source=.", "--sdk=go", "dep")).
+			With(daggerExec("module", "init", "--source=.", "--sdk=go", "dep", ".")).
 			WithNewFile("/work/dep/main.go", `package main
 
 			import "context"
@@ -34,7 +34,7 @@ func (CLISuite) TestModuleDevelop(ctx context.Context, t *testctx.T) {
 			`,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("module", "init", "test", "--source=.")).
+			With(daggerExec("module", "init", "test", "--source=.", ".")).
 			With(daggerExec("module", "install", "./dep"))
 
 		// should be able to invoke dep without name+sdk set yet
@@ -87,7 +87,7 @@ func (CLISuite) TestModuleDevelop(ctx context.Context, t *testctx.T) {
 
 		ctr := goGitBase(t, c).
 			WithWorkdir("/work/dep").
-			With(daggerExec("module", "init", "--source=.", "--sdk=go", "dep")).
+			With(daggerExec("module", "init", "--source=.", "--sdk=go", "dep", ".")).
 			WithNewFile("/work/dep/main.go", `package main
 
 			import "context"
@@ -100,7 +100,7 @@ func (CLISuite) TestModuleDevelop(ctx context.Context, t *testctx.T) {
 			`,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("module", "init", "test", "--source=.")).
+			With(daggerExec("module", "init", "test", "--source=.", ".")).
 			With(daggerExec("module", "install", "./dep")).
 			WithWorkdir("/var").
 			With(daggerExecRaw("develop", "-m", "../work", "--source=../work/some/subdir", "--sdk=go")).
@@ -149,7 +149,7 @@ func (CLISuite) TestModuleDevelop(ctx context.Context, t *testctx.T) {
 		absPath := "/work"
 		ctr := goGitBase(t, c).
 			WithWorkdir(absPath+"/dep").
-			With(daggerExec("module", "init", "--source=.", "--sdk=go", "dep")).
+			With(daggerExec("module", "init", "--source=.", "--sdk=go", "dep", ".")).
 			WithNewFile(absPath+"/dep/main.go", `package main
 
         import "context"
@@ -162,7 +162,7 @@ func (CLISuite) TestModuleDevelop(ctx context.Context, t *testctx.T) {
         `,
 			).
 			WithWorkdir(absPath).
-			With(daggerExec("module", "init", "test", "--source=.")).
+			With(daggerExec("module", "init", "test", "--source=.", ".")).
 			With(daggerExec("module", "install", "./dep")).
 			WithWorkdir("/var").
 			With(daggerExecRaw("develop", "-m", absPath, "--source="+absPath+"/some/subdir", "--sdk=go")).
@@ -193,10 +193,10 @@ func (CLISuite) TestModuleDevelop(ctx context.Context, t *testctx.T) {
 		base := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
-			With(daggerExec("module", "init", "--source=.", "--sdk=go", "dep")).
+			With(daggerExec("module", "init", "--source=.", "--sdk=go", "dep", ".")).
 			WithExec([]string{"rm", "dagger.gen.go"}).
 			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--source=.", "--sdk=go", "test")).
+			With(daggerExec("module", "init", "--source=.", "--sdk=go", "test", ".")).
 			With(daggerExec("module", "install", "--name=cooldep", "./dep")).
 			WithExec([]string{"rm", "dagger.gen.go"})
 		developed := base.With(daggerExecRaw("develop", "--recursive"))
@@ -225,7 +225,7 @@ func (CLISuite) TestModuleDevelopDeterministicCodegen(ctx context.Context, t *te
 		modGen := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=go", "--source=.", "test")).
+			With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
 			WithNewFile("/work/main.go", `package main
 
 type GitRepo struct{}
@@ -268,7 +268,7 @@ type RemoteB struct{}
 		modGen := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
-			With(daggerExec("module", "init", "--sdk=go", "dep")).
+			With(daggerExec("module", "init", "--sdk=go", "dep", ".")).
 			WithNewFile("/work/dep/main.go", `package main
 
 import "context"
@@ -289,7 +289,7 @@ func (m *Dep) Method3(ctx context.Context) string {
 `,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=go", "--source=.", "test")).
+			With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
 			WithNewFile("/work/main.go", `package main
 
 import "context"

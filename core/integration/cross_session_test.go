@@ -32,7 +32,7 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 	t.Run("basic", func(ctx context.Context, t *testctx.T) {
 		callMod := func(c *dagger.Client) (string, error) {
 			return goGitBase(t, c).
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test")).
+				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
 				WithNewFile("main.go", `package main
 
 	import (
@@ -76,7 +76,7 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 				args = append(args, "--s", *s)
 			}
 			return goGitBase(t, c).
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test")).
+				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
 				WithNewFile("main.go", `package main
 
 	import (
@@ -213,7 +213,7 @@ func (*Test) Wrap(dir *dagger.Directory) *Obj {
 		callMod := func(c *dagger.Client, dirPath string, selection ...string) (string, error) {
 			args := append([]string{"wrap", "--dir", dirPath}, selection...)
 			ctr := goGitBase(t, c).
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test")).
+				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
 				WithNewFile("main.go", moduleSrc).
 				WithNewFile("input-a/same.txt", "same-content\n").
 				WithNewFile("input-b/same.txt", "same-content\n").
@@ -252,7 +252,7 @@ func (*Test) Wrap(dir *dagger.Directory) *Obj {
 		callMod := func(c *dagger.Client, t *testctx.T, x string) (string, error) {
 			return goGitBase(t, c).
 				WithWorkdir("/work").
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test")).
+				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
 				WithNewFile("main.go", `package main
 type Test struct {}
 
@@ -283,7 +283,7 @@ func (t *Test) Fn() string {
 		err := os.MkdirAll(depTmpdir1, 0755)
 		require.NoError(t, err)
 
-		initDepCmd := hostDaggerCommand(ctx, t, depTmpdir1, "module", "init", "--source=.", "--sdk=go", "dep")
+		initDepCmd := hostDaggerCommand(ctx, t, depTmpdir1, "module", "init", "--source=.", "--sdk=go", "dep", ".")
 		initDepOutput, err := initDepCmd.CombinedOutput()
 		require.NoError(t, err, string(initDepOutput))
 		err = os.WriteFile(filepath.Join(depTmpdir1, "main.go"), []byte(`package main
@@ -300,7 +300,7 @@ func (*Dep) Fn(rand string) string {
 `), 0644)
 		require.NoError(t, err)
 
-		initCmd := hostDaggerCommand(ctx, t, tmpdir1, "module", "init", "--source=.", "--sdk=go", "test")
+		initCmd := hostDaggerCommand(ctx, t, tmpdir1, "module", "init", "--source=.", "--sdk=go", "test", ".")
 		initOutput, err := initCmd.CombinedOutput()
 		require.NoError(t, err, string(initOutput))
 		installCmd := hostDaggerCommand(ctx, t, tmpdir1, "module", "install", depTmpdir1)
@@ -389,7 +389,7 @@ func (ModuleSuite) TestCrossSessionServices(ctx context.Context, t *testctx.T) {
 		callMod := func(c *dagger.Client, rand string) (string, error) {
 			return goGitBase(t, c).
 				WithWorkdir("/work/servicer").
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "servicer")).
+				With(daggerExec("module", "init", "--sdk=go", "--source=.", "servicer", ".")).
 				WithNewFile("main.go", `package main
 
 	import (
@@ -410,7 +410,7 @@ func (ModuleSuite) TestCrossSessionServices(ctx context.Context, t *testctx.T) {
 	`,
 				).
 				WithWorkdir("/work").
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test")).
+				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
 				WithNewFile("main.go", `package main
 
 	import (
@@ -470,7 +470,7 @@ func (ModuleSuite) TestCrossSessionServices(ctx context.Context, t *testctx.T) {
 func (ModuleSuite) TestCrossSessionContextDirectoryDefaultPath(ctx context.Context, t *testctx.T) {
 	modDir := t.TempDir()
 
-	initCmd := hostDaggerCommand(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test")
+	initCmd := hostDaggerCommand(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test", ".")
 	initOutput, err := initCmd.CombinedOutput()
 	require.NoError(t, err, string(initOutput))
 
@@ -617,7 +617,7 @@ func (SecretSuite) TestCrossSessionGitAuthLeak(ctx context.Context, t *testctx.T
 			// sanity test fail when no auth given
 			c1 := connect(ctx, t)
 			_, err = goGitBase(t, c1).
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test")).
+				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
 				WithEnvVariable("CACHEBUST", identity.NewID()).
 				With(daggerExec("module", "install", testGitModuleRef(testCase, "top-level"))).
 				Sync(ctx)
@@ -628,7 +628,7 @@ func (SecretSuite) TestCrossSessionGitAuthLeak(ctx context.Context, t *testctx.T
 			withRepo, withRepoCleanup := privateRepoSetup(c2, t, testCase)
 			t.Cleanup(withRepoCleanup)
 			_, err = goGitBase(t, c2).
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test")).
+				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
 				WithEnvVariable("CACHEBUST", identity.NewID()).
 				With(withRepo).
 				With(daggerExec("module", "install", testGitModuleRef(testCase, "top-level"))).
@@ -638,7 +638,7 @@ func (SecretSuite) TestCrossSessionGitAuthLeak(ctx context.Context, t *testctx.T
 			// try again with no auth, should fail
 			c3 := connect(ctx, t)
 			_, err = goGitBase(t, c3).
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test")).
+				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
 				WithEnvVariable("CACHEBUST", identity.NewID()).
 				With(daggerExec("module", "install", testGitModuleRef(testCase, "top-level"))).
 				Sync(ctx)
@@ -648,7 +648,7 @@ func (SecretSuite) TestCrossSessionGitAuthLeak(ctx context.Context, t *testctx.T
 			withRepo, withRepoCleanup = privateRepoSetup(c3, t, testCase)
 			t.Cleanup(withRepoCleanup)
 			_, err = goGitBase(t, c3).
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test")).
+				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
 				WithEnvVariable("CACHEBUST", identity.NewID()).
 				With(withRepo).
 				With(daggerExec("module", "install", testGitModuleRef(testCase, "top-level"))).
@@ -705,7 +705,7 @@ func (ModuleSuite) TestCrossSessionSockets(ctx context.Context, t *testctx.T) {
 	err = os.MkdirAll(modTmpdir, 0755)
 	require.NoError(t, err)
 
-	initModCmd := hostDaggerCommand(ctx, t, modTmpdir, "module", "init", "--source=.", "--sdk=go", "test")
+	initModCmd := hostDaggerCommand(ctx, t, modTmpdir, "module", "init", "--source=.", "--sdk=go", "test", ".")
 	initModOutput, err := initModCmd.CombinedOutput()
 	require.NoError(t, err, string(initModOutput))
 
@@ -775,7 +775,7 @@ func (ModuleSuite) TestCrossSessionSecrets(ctx context.Context, t *testctx.T) {
 	t.Run("cached set-secret transfers", func(ctx context.Context, t *testctx.T) {
 		callMod := func(c *dagger.Client) (string, error) {
 			return goGitBase(t, c).
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "secreter")).
+				With(daggerExec("module", "init", "--sdk=go", "--source=.", "secreter", ".")).
 				WithNewFile("main.go", `package main
 
 import (
@@ -823,7 +823,7 @@ func (_ *Secreter) Make() *dagger.Secret {
 		callMod := func(c *dagger.Client, val string) (string, error) {
 			return goGitBase(t, c).
 				WithWorkdir("/work/secreter").
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "secreter")).
+				With(daggerExec("module", "init", "--sdk=go", "--source=.", "secreter", ".")).
 				WithNewFile("main.go", `package main
 
 import (
@@ -838,7 +838,7 @@ func (*Secreter) GiveBack(s *dagger.Secret) *dagger.Secret {
 `,
 				).
 				WithWorkdir("/work").
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "caller")).
+				With(daggerExec("module", "init", "--sdk=go", "--source=.", "caller", ".")).
 				With(daggerExec("module", "install", "./secreter")).
 				WithNewFile("main.go", `package main
 
@@ -874,7 +874,7 @@ func (*Caller) Fn(ctx context.Context) (string, error) {
 
 	t.Run("secret uris", func(ctx context.Context, t *testctx.T) {
 		tmpdir := t.TempDir()
-		initCmd := hostDaggerCommand(ctx, t, tmpdir, "module", "init", "--source=.", "--sdk=go", "test")
+		initCmd := hostDaggerCommand(ctx, t, tmpdir, "module", "init", "--source=.", "--sdk=go", "test", ".")
 		initOutput, err := initCmd.CombinedOutput()
 		require.NoError(t, err, string(initOutput))
 		err = os.WriteFile(filepath.Join(tmpdir, "main.go"), []byte(`package main
@@ -948,7 +948,7 @@ func (*Test) Fn(ctx context.Context, secret *dagger.Secret) (*dagger.Container, 
 		callMod := func(c *dagger.Client, val string) (string, error) {
 			return goGitBase(t, c).
 				WithWorkdir("/work").
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "secreter")).
+				With(daggerExec("module", "init", "--sdk=go", "--source=.", "secreter", ".")).
 				WithNewFile("main.go", `package main
 
 import (
@@ -999,7 +999,7 @@ func (*Secreter) CheckPlaintext(ctx context.Context, s *dagger.Secret, expected 
 		callMod := func(c *dagger.Client, cacheBust string) (string, error) {
 			return goGitBase(t, c).
 				WithWorkdir("/work").
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "secreter")).
+				With(daggerExec("module", "init", "--sdk=go", "--source=.", "secreter", ".")).
 				WithNewFile("main.go", `package main
 
 import (
@@ -1064,7 +1064,7 @@ func (LLMSuite) TestCrossSessionLLM(ctx context.Context, t *testctx.T) {
 func (ModuleSuite) TestCrossSessionContextualDirWithPrivate(ctx context.Context, t *testctx.T) {
 	modDir := t.TempDir()
 
-	initCmd := hostDaggerCommand(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test")
+	initCmd := hostDaggerCommand(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test", ".")
 	initOutput, err := initCmd.CombinedOutput()
 	require.NoError(t, err, string(initOutput))
 
@@ -1146,7 +1146,7 @@ func (o *Obj) Ents(ctx context.Context) ([]string, error) {
 func (ModuleSuite) TestCrossSessionContextualDirChange(ctx context.Context, t *testctx.T) {
 	modDir := t.TempDir()
 
-	initCmd := hostDaggerCommand(ctx, t, modDir, "module", "init", "--source=src", "--sdk=go", "test")
+	initCmd := hostDaggerCommand(ctx, t, modDir, "module", "init", "--source=src", "--sdk=go", "test", ".")
 	initOutput, err := initCmd.CombinedOutput()
 	require.NoError(t, err, string(initOutput))
 
@@ -1221,7 +1221,7 @@ func (o *Obj) Foo(ctx context.Context) (string, error) {
 func (ModuleSuite) TestCrossSessionContextualDirCacheHit(ctx context.Context, t *testctx.T) {
 	modDir := t.TempDir()
 
-	initCmd := hostDaggerCommand(ctx, t, modDir, "module", "init", "--source=src", "--sdk=go", "test")
+	initCmd := hostDaggerCommand(ctx, t, modDir, "module", "init", "--source=src", "--sdk=go", "test", ".")
 	initOutput, err := initCmd.CombinedOutput()
 	require.NoError(t, err, string(initOutput))
 
@@ -1298,7 +1298,7 @@ func (*Test) Rand(
 
 func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *testctx.T) {
 	tmpdir := t.TempDir()
-	initCmd := hostDaggerCommand(ctx, t, tmpdir, "module", "init", "--source=.", "--sdk=go", "test")
+	initCmd := hostDaggerCommand(ctx, t, tmpdir, "module", "init", "--source=.", "--sdk=go", "test", ".")
 	initOutput, err := initCmd.CombinedOutput()
 	require.NoError(t, err, string(initOutput))
 	err = os.WriteFile(filepath.Join(tmpdir, "main.go"), []byte(`package main
@@ -1618,7 +1618,7 @@ func (ModuleSuite) TestCrossSessionDedupeOfNestedExec(ctx context.Context, t *te
 		_, err := goGitBase(t, c).
 			WithWorkdir("/work").
 			WithEnvVariable("CACHEBUSTER", identity.NewID()).
-			With(daggerExec("module", "init", "--source=.", "--sdk=go", "test")).
+			With(daggerExec("module", "init", "--source=.", "--sdk=go", "test", ".")).
 			WithNewFile("main.go", `package main
 
 import (
@@ -1689,7 +1689,7 @@ func (ModuleSuite) TestPrivateGitRepoArgCaching(ctx context.Context, t *testctx.
 
 	modDir := t.TempDir()
 
-	initCmd := hostDaggerCommand(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test")
+	initCmd := hostDaggerCommand(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test", ".")
 	initOutput, err := initCmd.CombinedOutput()
 	require.NoError(t, err, string(initOutput))
 
@@ -1775,7 +1775,7 @@ func (InterfaceSuite) TestCrossSessionInterfaceCaching(ctx context.Context, t *t
 	// Use unique suffix to avoid hitting stale cache from previous test runs
 	uniqueSuffix := identity.NewID()
 
-	initDriveCmd := hostDaggerCommand(ctx, t, driveDir, "module", "init", "--source=.", "--sdk=go", "drive")
+	initDriveCmd := hostDaggerCommand(ctx, t, driveDir, "module", "init", "--source=.", "--sdk=go", "drive", ".")
 	initDriveOutput, err := initDriveCmd.CombinedOutput()
 	require.NoError(t, err, string(initDriveOutput))
 	err = os.WriteFile(filepath.Join(driveDir, "main.go"), []byte(`package main
@@ -1803,7 +1803,7 @@ type Car interface {
 `), 0644)
 	require.NoError(t, err)
 
-	initRollsCmd := hostDaggerCommand(ctx, t, rollsDir, "module", "init", "--source=.", "--sdk=go", "rolls-royce")
+	initRollsCmd := hostDaggerCommand(ctx, t, rollsDir, "module", "init", "--source=.", "--sdk=go", "rolls-royce", ".")
 	initRollsOutput, err := initRollsCmd.CombinedOutput()
 	require.NoError(t, err, string(initRollsOutput))
 
@@ -1825,7 +1825,7 @@ func (r *RollsRoyce) Drive(ctx context.Context) error {
 `), 0644)
 	require.NoError(t, err)
 
-	initCmd := hostDaggerCommand(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test")
+	initCmd := hostDaggerCommand(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test", ".")
 	initOutput, err := initCmd.CombinedOutput()
 	require.NoError(t, err, string(initOutput))
 
@@ -1933,7 +1933,7 @@ func (DockerfileSuite) TestCrossSessionDockerbuildSockets(ctx context.Context, t
 	err = os.MkdirAll(modTmpdir, 0755)
 	require.NoError(t, err)
 
-	initModCmd := hostDaggerCommand(ctx, t, modTmpdir, "module", "init", "--source=.", "--sdk=go", "test")
+	initModCmd := hostDaggerCommand(ctx, t, modTmpdir, "module", "init", "--source=.", "--sdk=go", "test", ".")
 	initModOutput, err := initModCmd.CombinedOutput()
 	require.NoError(t, err, string(initModOutput))
 
