@@ -816,6 +816,11 @@ func (c *Client) setupOTel(ctx context.Context, state *execState) error {
 	// Configure our OpenTelemetry proxy. A lot.
 	otelProto := "http/protobuf"
 	otelEndpoint := "http://" + listener.Addr().String()
+	// Signal-specific exporter selection enables auto-configuring SDKs; endpoint
+	// vars alone are not enough. Preserve an explicit user setting, e.g. "none".
+	if _, ok := state.origEnvMap[engine.OTelTracesExporterEnv]; !ok {
+		state.spec.Process.Env = append(state.spec.Process.Env, engine.OTelTracesExporterEnv+"=otlp")
+	}
 	state.spec.Process.Env = append(state.spec.Process.Env,
 		engine.OTelExporterProtocolEnv+"="+otelProto,
 		engine.OTelExporterEndpointEnv+"="+otelEndpoint,
