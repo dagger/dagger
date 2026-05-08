@@ -234,7 +234,7 @@ func (WorkspaceCompatSuite) TestLegacyToolchainCompat(ctx context.Context, t *te
 
 		base := goGitBase(t, c).
 			WithWorkdir("/work/tool").
-			With(daggerExec("module", "init", "--sdk=go", "--source=.", "probe")).
+			With(daggerExec("module", "init", "--sdk=go", "--source=.", "probe", ".")).
 			WithNewFile("main.go", `package main
 
 type Probe struct {
@@ -371,6 +371,8 @@ type Native {
 // engine infers workspace behavior from a legacy dagger.json.
 func (WorkspaceCompatSuite) TestCompatWarning(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
+	initGitRepo(ctx, t, workdir)
+
 	blueprintDir := filepath.Join(workdir, "blueprint")
 	require.NoError(t, os.MkdirAll(blueprintDir, 0o755))
 
@@ -399,6 +401,21 @@ func (m *Hello) Greet(ctx context.Context) string {
 	require.NoError(t, err, string(out))
 	require.Contains(t, string(out), "No workspace config found, inferring from dagger.json.\nRun 'dagger migrate' when ready.")
 	require.Contains(t, string(out), "hello from blueprint")
+}
+
+func (WorkspaceCompatSuite) TestCompatRequiresWorkspaceRoot(ctx context.Context, t *testctx.T) {
+	workdir := t.TempDir()
+
+	require.NoError(t, os.WriteFile(filepath.Join(workdir, "dagger.json"), []byte(`{
+  "name": "app",
+  "blueprint": {
+    "name": "hello",
+    "source": "./blueprint"
+  }
+}`), 0o644))
+
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "greet")
+	requireErrOut(t, err, "This module's dagger.json uses toolchains or blueprints, which have moved to workspaces.")
 }
 
 // TestLegacyWorkspaceDirectLoadErrors should cover the new hard failures when
