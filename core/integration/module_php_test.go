@@ -29,7 +29,7 @@ func (PHPSuite) TestInit(ctx context.Context, t *testctx.T) {
 
 		out, err := goGitBase(t, c).
 			WithDirectory("/work/sdk/php", c.Host().Directory(sdkSrc)).
-			With(daggerExec("module", "init", "--sdk=./sdk/php", "bare")).
+			With(daggerExec("module", "init", "--sdk=./sdk/php", "bare", ".")).
 			With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).
 			Stdout(ctx)
 
@@ -45,7 +45,7 @@ func (PHPSuite) TestInit(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			With(daggerExec("module", "init", "--sdk=github.com/dagger/dagger/sdk/php", "bare")).
+			With(daggerExec("module", "init", "--sdk=github.com/dagger/dagger/sdk/php", "bare", ".")).
 			With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).
 			Stdout(ctx)
 
@@ -62,7 +62,7 @@ func (PHPSuite) TestInit(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			With(daggerExec("module", "init", "--sdk=php", "bare")).
+			With(daggerExec("module", "init", "--sdk=php", "bare", ".")).
 			With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).
 			Stdout(ctx)
 
@@ -78,7 +78,7 @@ func (PHPSuite) TestInit(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			With(daggerExec("module", "init", "--sdk=php@main", "bare")).
+			With(daggerExec("module", "init", "--sdk=php@main", "bare", ".")).
 			With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).
 			Stdout(ctx)
 

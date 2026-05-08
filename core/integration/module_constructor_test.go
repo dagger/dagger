@@ -274,7 +274,7 @@ export class Test {
 				ctr := c.Container().From(golangImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work/test").
-					With(daggerExec("module", "init", "test", "--sdk="+tc.sdk)).
+					With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, ".")).
 					With(sdkSource(tc.sdk, fmt.Sprintf(tc.source, alpineImage)))
 
 				out, err := ctr.With(daggerCall("alpine-version")).Stdout(ctx)
@@ -339,7 +339,7 @@ export class Test {
 				ctr := c.Container().From(golangImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work/test").
-					With(daggerExec("module", "init", "test", "--sdk="+tc.sdk)).
+					With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, ".")).
 					With(sdkSource(tc.sdk, tc.source))
 
 				_, err := ctr.With(daggerCall("foo")).Stdout(ctx)
@@ -361,7 +361,7 @@ export class Test {
 		ctr := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/test").
-			With(daggerExec("module", "init", "--sdk=python", "test")).
+			With(daggerExec("module", "init", "--sdk=python", "test", ".")).
 			With(sdkSource("python", fmt.Sprintf(`import dagger
 from dagger import dag, object_type, field
 
@@ -396,7 +396,7 @@ class Test:
 		ctr := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/test").
-			With(daggerExec("module", "init", "--sdk=typescript", "test")).
+			With(daggerExec("module", "init", "--sdk=typescript", "test", ".")).
 			With(sdkSource("typescript", fmt.Sprintf(`
 import { dag, File, object, func } from "@dagger.io/dagger"
 
