@@ -17,7 +17,7 @@ func (ModuleSuite) TestNestedClientCreatedByModule(ctx context.Context, t *testc
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("module", "init", "--source=.", "--sdk=go", "test")).
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "test", ".")).
 		WithNewFile("main.go", `package main
 
 import (
@@ -48,7 +48,7 @@ func (m *Test) Str() string {
 `,
 		).
 		WithWorkdir("/work/some/sub/dir").
-		With(daggerExec("module", "init", "--source=.", "--sdk=go", "dep")).
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "dep", ".")).
 		WithWorkdir("/work").
 		With(daggerExec("module", "install", "./some/sub/dir"))
 
