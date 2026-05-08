@@ -109,7 +109,6 @@ func (r *DangRuntime) Call(
 		ClientVersion:     engine.Version,
 		AllowedLLMModules: slices.Clone(clientMetadata.AllowedLLMModules),
 		LockMode:          clientMetadata.LockMode,
-		WorkspaceEnv:      clientMetadata.WorkspaceEnv,
 	}
 
 	query, err := core.CurrentQuery(ctx)
