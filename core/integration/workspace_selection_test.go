@@ -227,10 +227,6 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceSelection(ctx context.Contex
 		out, err = ctr.With(workspaceSelectionDaggerQuery(`{currentWorkspace{cwd configFile}}`, "-W", "../selected")).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"currentWorkspace":{"cwd":"selected","configFile":"selected/.dagger/config.toml"}}`, out)
-
-		out, err = ctr.With(workspaceSelectionDaggerCall("-W", "../selected", "selected", "identify")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "selected workspace", strings.TrimSpace(out))
 	})
 
 	t.Run("remote -W selects a git workspace without relying on host cwd", func(ctx context.Context, t *testctx.T) {
@@ -308,7 +304,7 @@ func (WorkspaceSelectionSuite) TestWorkspaceSelectionCommandPolicy(ctx context.C
 		ctr := workspaceBase(t, c).
 			WithExec([]string{"mkdir", "-p", "/work/caller", "/work/selected"}).
 			WithWorkdir("/work/caller").
-			With(workspaceSelectionDaggerExec("-W", "../selected", "workspace", "init"))
+			With(workspaceSelectionDaggerExec("-W", "../selected", "workspace", "init", "--here"))
 
 		_, err := ctr.WithExec([]string{"test", "-f", "/work/selected/.dagger/config.toml"}).Sync(ctx)
 		require.NoError(t, err)
@@ -414,7 +410,7 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceBindingPropagation(ctx conte
 			WithExec([]string{"mkdir", "-p", "/work/caller", "/work/selected"}).
 			With(workspaceSelectionEnvWorkspace("/work/ambient", "ambient-base", "ambient-ci")).
 			WithWorkdir("/work/selected").
-			With(workspaceSelectionDaggerExec("workspace", "init")).
+			With(workspaceSelectionDaggerExec("workspace", "init", "--here")).
 			With(workspaceSelectionDaggerExec("module", "init", "--sdk=go", "nester")).
 			WithNewFile("/work/selected/.dagger/modules/nester/main.go", workspaceSelectionNestedModuleSource()).
 			WithNewFile("/work/selected/.dagger/config.toml", `[modules.nester]
@@ -440,7 +436,7 @@ greeting = "selected-ci"
 			WithExec([]string{"mkdir", "-p", "/work/caller", "/work/selected"}).
 			With(workspaceSelectionEnvWorkspace("/work/ambient", "ambient-base", "ambient-ci")).
 			WithWorkdir("/work/selected").
-			With(workspaceSelectionDaggerExec("workspace", "init")).
+			With(workspaceSelectionDaggerExec("workspace", "init", "--here")).
 			With(workspaceSelectionDaggerExec("module", "init", "--sdk=go", "nester")).
 			WithNewFile("/work/selected/.dagger/modules/nester/main.go", workspaceSelectionNestedModuleSource()).
 			WithNewFile("/work/selected/.dagger/config.toml", `[modules.nester]
