@@ -356,7 +356,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
-				With(daggerExec("module", "init", "--sdk=go", "test")).
+				With(daggerExec("module", "init", "--sdk=go", "test", ".")).
 				With(sdkSource("go", `package main
 
 import (
@@ -393,7 +393,7 @@ func (m *Test) GetHttp(ctx context.Context) (string, error) {
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
-				With(daggerExec("module", "init", "--sdk=python", "test")).
+				With(daggerExec("module", "init", "--sdk=python", "test", ".")).
 				With(sdkSource("python", `
 import urllib.request
 
@@ -415,7 +415,7 @@ class Test:
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
-				With(daggerExec("module", "init", "--sdk=typescript", "test")).
+				With(daggerExec("module", "init", "--sdk=typescript", "test", ".")).
 				With(sdkSource("typescript", `
 import { object, func } from "@dagger.io/dagger";
 import * as https from "https";
@@ -476,7 +476,7 @@ export class Test {
 	`, alpineImage), 0644)
 			require.NoError(t, err)
 
-			initCmd := hostDaggerCommand(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test")
+			initCmd := hostDaggerCommand(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test", ".")
 			copy(initCmd.Env, os.Environ())
 			initCmd.Env = append(initCmd.Env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+f.engineEndpoint)
 			initOutput, err := initCmd.CombinedOutput()
