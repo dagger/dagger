@@ -193,7 +193,7 @@ entrypoint = true
 
 		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--sdk=go", "dep", ".")
 		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, workdir, "module", "init", "--sdk=go", "app", ".")
+		_, err = hostDaggerExec(ctx, t, workdir, "module", "init", "--sdk=go", "--source=.", "app", ".")
 		require.NoError(t, err)
 
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
