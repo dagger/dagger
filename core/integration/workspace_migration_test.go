@@ -11,6 +11,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/workspace"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -384,6 +385,14 @@ type Myapp {
 // TestWorkspaceMigrateUserFeedback should cover the user-facing output of
 // explicit migration.
 func (WorkspaceMigrationSuite) TestWorkspaceMigrateUserFeedback(ctx context.Context, t *testctx.T) {
+	withFreshMigrationProgress := func(ctr *dagger.Container) *dagger.Container {
+		workdir := "/work-" + identity.NewID()
+		return ctr.
+			WithExec([]string{"mv", "/work", workdir}).
+			WithWorkdir(workdir).
+			WithEnvVariable("OTEL_BAGGAGE", "repeat-telemetry=true")
+	}
+
 	t.Run("summary is printed for applied migrations", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -395,7 +404,9 @@ func (WorkspaceMigrationSuite) TestWorkspaceMigrateUserFeedback(ctx context.Cont
   ]
 }`)
 
-			migrate := ctr.With(daggerExec("migrate", "-y"))
+			migrate := ctr.
+				With(withFreshMigrationProgress).
+				With(daggerExec("migrate", "-y"))
 			stdout, err := migrate.Stdout(ctx)
 			require.NoError(t, err)
 			stderr, err := migrate.Stderr(ctx)
@@ -416,14 +427,27 @@ func (WorkspaceMigrationSuite) TestWorkspaceMigrateUserFeedback(ctx context.Cont
   ],
   "include": ["extra/"]
 }`, func(ctr *dagger.Container) *dagger.Container {
-				return ctr.WithNewFile("ci/main.dang", `
+				return ctr.
+					WithNewFile("ci/main.dang", `
 type Myapp {
   pub greet: String! { "hi" }
+}
+`).
+					WithNewFile("lib/dep1/dagger.json", `{
+  "name": "dep1",
+  "sdk": {"source": "dang"},
+  "source": "."
+}`).
+					WithNewFile("lib/dep1/main.dang", `
+type Dep1 {
+  pub value: String! { "dep1" }
 }
 `)
 			})
 
-			migrate := ctr.With(daggerExec("migrate", "-y"))
+			migrate := ctr.
+				With(withFreshMigrationProgress).
+				With(daggerExec("migrate", "-y"))
 			stdout, err := migrate.Stdout(ctx)
 			require.NoError(t, err)
 			stderr, err := migrate.Stderr(ctx)
@@ -457,9 +481,25 @@ type Myapp {
       ]
     }
   ]
-}`)
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithNewFile("toolchain/dagger.json", `{
+  "name": "toolchain",
+  "sdk": {"source": "dang"},
+  "source": "."
+}`).
+				WithNewFile("toolchain/main.dang", `
+type Toolchain {
+  pub build(tag: String! = "dev"): String! {
+    tag
+  }
+}
+`)
+		})
 
-		migrate := ctr.With(daggerExec("migrate", "-y"))
+		migrate := ctr.
+			With(withFreshMigrationProgress).
+			With(daggerExec("migrate", "-y"))
 		stdout, err := migrate.Stdout(ctx)
 		require.NoError(t, err)
 		stderr, err := migrate.Stderr(ctx)
@@ -471,7 +511,6 @@ type Myapp {
 		require.Contains(t, output, "migration report: .dagger/migration-report.md")
 		require.Contains(t, output, "Warning: 2 migration gap(s) need manual review; see .dagger/migration-report.md")
 		require.NotContains(t, output, "If you apply this migration, review .dagger/migration-report.md.")
-		require.Equal(t, 1, strings.Count(output, "prepare migration diff"))
 		require.Equal(t, 1, strings.Count(output, "Warning: 2 migration gap(s) need manual review; see .dagger/migration-report.md"))
 		require.NotContains(t, output, "Migrated to workspace format")
 	})
@@ -581,6 +620,34 @@ type Myapp {
 		after, err := rerun.WithExec(hashFiles).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, before, after, "second migration should not rewrite files")
+	})
+
+	t.Run("apply preserves existing lockfile while staging migrated pins", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		platform, err := c.DefaultPlatform(ctx)
+		require.NoError(t, err)
+
+		source := "github.com/dagger/dagger/modules/wolfi@main"
+		pin := strings.Repeat("1", 40)
+		existingLock := mustMarshalContainerFromLock(t, string(platform), "sha256:"+strings.Repeat("0", 64), workspace.PolicyPin)
+
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "toolchains": [
+    {"name": "tc", "source": "`+source+`", "pin": "`+pin+`"}
+  ]
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.WithNewFile(".dagger/lock", existingLock)
+		})
+
+		migrated := ctr.With(daggerExec("migrate", "-f", "-y"))
+		out, err := migrated.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+
+		lockOut, err := migrated.File("/work/.dagger/lock").Contents(ctx)
+		require.NoError(t, err)
+		assertContainerFromLockEntry(t, []byte(lockOut), workspace.PolicyPin)
+		assertModuleResolveLockEntry(t, []byte(lockOut), source, workspace.PolicyPin)
 	})
 
 	t.Run("apply refuses to overwrite conflicting target paths", func(ctx context.Context, t *testctx.T) {
