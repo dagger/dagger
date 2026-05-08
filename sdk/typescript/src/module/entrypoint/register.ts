@@ -122,7 +122,7 @@ export class Register {
       mod = mod.withInterface(typeDef)
     })
 
-    return await mod.id()
+    return await mod.id({ recipe: true })
   }
 
   /**

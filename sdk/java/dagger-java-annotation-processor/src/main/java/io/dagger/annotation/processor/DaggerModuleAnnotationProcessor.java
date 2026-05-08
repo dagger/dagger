@@ -444,7 +444,9 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
         rm.addCode(")"); // end of .withEnum(
       }
       rm.addCode(";\n") // end of module instantiation
-          .addStatement("return module.id()");
+          .addStatement(
+              "return module.id(new $T.IdArguments().withRecipe(true))",
+              io.dagger.client.Module.class);
 
       var im =
           MethodSpec.methodBuilder("invoke")

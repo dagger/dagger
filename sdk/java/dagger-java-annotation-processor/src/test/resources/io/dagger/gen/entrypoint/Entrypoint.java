@@ -175,7 +175,7 @@ public class Entrypoint {
             .withEnumValue("INFO",
                 new TypeDef.WithEnumValueArguments().withDescription("Info severity"))
             .withEnumValue("WARN").withEnumValue("ERROR").withEnumValue("FATAL"));
-    return module.id();
+    return module.id(new Module.IdArguments().withRecipe(true));
   }
 
   private JSON invoke(JSON parentJson, String parentName, String fnName,

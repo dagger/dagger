@@ -2177,7 +2177,7 @@ type CoolSdk struct {}
 
 func (m *CoolSdk) ModuleTypes(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
 	mod := modSource.WithSDK("go").AsModule()
-	modID, err := mod.ID(ctx)
+	modID, err := mod.ID(ctx, dagger.ModuleIDOpts{Recipe: true})
 	if err != nil {
 		return nil, err
 	}
@@ -2283,7 +2283,7 @@ func (m *CoolSdk) ModuleTypes(ctx context.Context, modSource *dagger.ModuleSourc
 	mod := dag.Module().WithObject(dag.TypeDef().
 		WithObject("Test").
 		WithFunction(dag.Function("CoolFn", dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true))))
-	modID, err := mod.ID(ctx)
+	modID, err := mod.ID(ctx, dagger.ModuleIDOpts{Recipe: true})
 	if err != nil {
 		return nil, err
 	}

@@ -9,7 +9,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/engineutil"
@@ -425,24 +424,21 @@ func (sdk *goSDK) ModuleTypes(
 		return inst, fmt.Errorf("failed to get type defs json during module sdk codegen: %w", err)
 	}
 
-	modCallID := new(call.ID)
-	if err = json.Unmarshal([]byte(modDefsID), modCallID); err != nil {
-		return inst, fmt.Errorf("failed to decode module call ID from type defs json: %w", err)
+	var modID core.ModuleID
+	if err = json.Unmarshal([]byte(modDefsID), &modID); err != nil {
+		return inst, fmt.Errorf("failed to decode module ID from type defs json: %w", err)
 	}
 
+	modCallID, err := modID.ID()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get module ID from type defs json: %w", err)
+	}
+	if modCallID.IsHandle() {
+		return inst, fmt.Errorf("go generate-typedefs returned handle-form module ID; expected recipe-form ID from id(recipe: true)")
+	}
 	inst, err = dagql.NewID[*core.Module](modCallID).Load(ctx, dag)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load module from type defs json: %w", err)
-	}
-	// generate-typedefs emits a handle-form module ID out of the withExec result.
-	// Retain that loaded module under the producing exec container so it cannot be
-	// pruned while the exec result that created it is still live.
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get engine cache for go type defs dependency: %w", err)
-	}
-	if err := cache.AddExplicitDependency(ctx, ctr, inst, "go_sdk_generate_typedefs"); err != nil {
-		return inst, fmt.Errorf("failed to retain generated module result from go type defs exec: %w", err)
 	}
 
 	return inst, nil

@@ -702,7 +702,7 @@ func (m *Coolsdk) WithDaggerJson(modSource *dagger.ModuleSource) *dagger.ModuleS
 
 func (m *Coolsdk) ModuleTypes(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
 	mod := m.WithDaggerJson(modSource).WithSDK("go").AsModule()
-	modID, err := mod.ID(ctx)
+	modID, err := mod.ID(ctx, dagger.ModuleIDOpts{Recipe: true})
 	if err != nil {
 		return nil, err
 	}
@@ -919,7 +919,7 @@ type Coolsdk struct {}
 
 func (m *Coolsdk) ModuleTypes(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
 	mod := modSource.WithSDK("go").AsModule()
-	modID, err := mod.ID(ctx)
+	modID, err := mod.ID(ctx, dagger.ModuleIDOpts{Recipe: true})
 	if err != nil {
 		return nil, err
 	}
@@ -1120,7 +1120,7 @@ type CoolSdk struct {}
 
 func (m *CoolSdk) ModuleTypes(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
 	mod := modSource.WithSDK("go").AsModule()
-	modID, err := mod.ID(ctx)
+	modID, err := mod.ID(ctx, dagger.ModuleIDOpts{Recipe: true})
 	if err != nil {
 		return nil, err
 	}

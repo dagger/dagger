@@ -53,7 +53,7 @@ async def register_from_metadata(metadata: ModuleMetadata) -> dagger.ModuleID:
         enum_def = _build_enum_typedef(enum_meta)
         mod = mod.with_enum(enum_def)
 
-    return await mod.id()
+    return await mod.id(recipe=True)
 
 
 def _build_object_typedef(obj_meta: ObjectTypeMetadata) -> dagger.TypeDef:
