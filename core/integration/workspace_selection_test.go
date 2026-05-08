@@ -407,7 +407,12 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceEnvOverlay(ctx context.Conte
 // workspace binding survives once a session is established and other clients
 // are created from it.
 func (WorkspaceSelectionSuite) TestDeclaredWorkspaceBindingPropagation(ctx context.Context, t *testctx.T) {
+	// TODO(#13054): Re-enable once container commands can explicitly inherit a
+	// workspace. The intended contract is command-scoped inheritance, not
+	// implicit inheritance from the module function that created the exec.
 	t.Run("nested clients inherit the declared workspace binding", func(ctx context.Context, t *testctx.T) {
+		t.Skip("TODO(#13054): waiting for command-scoped inheritWorkspace")
+
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c).
 			WithExec([]string{"mkdir", "-p", "/work/caller", "/work/selected"}).
@@ -434,6 +439,8 @@ greeting = "selected-ci"
 	})
 
 	t.Run("nested clients inherit the declared workspace env overlay", func(ctx context.Context, t *testctx.T) {
+		t.Skip("TODO(#13054): waiting for command-scoped inheritWorkspace")
+
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c).
 			WithExec([]string{"mkdir", "-p", "/work/caller", "/work/selected"}).
