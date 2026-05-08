@@ -168,52 +168,6 @@ func (srv *Server) inheritWorkspaceBinding(ctx context.Context, client *daggerCl
 			client.workspace = parentWorkspace
 		}
 		client.workspaceMu.Unlock()
-
-		return srv.inheritWorkspaceModules(ctx, client, parentWorkspace)
-	}
-
-	return nil
-}
-
-// inheritWorkspaceModules gives a nested client the modules already loaded for
-// the workspace it inherited. The workspace binding decides which workspace is
-// active; this keeps dagger query/call in the nested client from exposing a
-// different module set based on the nested container's cwd.
-func (srv *Server) inheritWorkspaceModules(ctx context.Context, client *daggerClient, inheritedWorkspace *core.Workspace) error {
-	if client.clientMetadata == nil || !client.clientMetadata.LoadWorkspaceModules {
-		return nil
-	}
-
-	// The nearest parent may not be the one that loaded modules for this workspace.
-	for i := len(client.parents) - 1; i >= 0; i-- {
-		parent := client.parents[i]
-		if parent.clientMetadata == nil || !parent.clientMetadata.LoadWorkspaceModules {
-			continue
-		}
-		if err := srv.ensureWorkspaceLoaded(ctx, parent); err != nil {
-			return err
-		}
-		parent.workspaceMu.Lock()
-		parentWorkspace := parent.workspace
-		parent.workspaceMu.Unlock()
-		if parentWorkspace != inheritedWorkspace {
-			continue
-		}
-
-		if err := srv.ensureModulesLoaded(ctx, parent); err != nil {
-			return err
-		}
-
-		parent.stateMu.Lock()
-		parentServedMods := parent.servedMods
-		parent.stateMu.Unlock()
-		if parentServedMods == nil {
-			continue
-		}
-
-		client.stateMu.Lock()
-		client.servedMods = parentServedMods.WithRoot(client.dagqlRoot)
-		client.stateMu.Unlock()
 		return nil
 	}
 
