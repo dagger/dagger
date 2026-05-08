@@ -157,6 +157,8 @@ type Server struct {
 	secretSalt []byte
 }
 
+var useBboltFreelistMapOnce sync.Once
+
 type NewServerOpts struct {
 	Name           string
 	Config         *config.Config
@@ -536,7 +538,17 @@ func (srv *Server) mkdirBaseDirs() (err error) {
 	return nil
 }
 
+func useBboltFreelistMap() {
+	useBboltFreelistMapOnce.Do(func() {
+		// Some containerd snapshotter constructors open bbolt internally with nil
+		// options, so set the process default before those paths can run.
+		bolt.DefaultOptions.FreelistType = bolt.FreelistMapType
+	})
+}
+
 func (srv *Server) initBoltDBs() (err error) {
+	useBboltFreelistMap()
+
 	defer func() {
 		if panicErr := recover(); panicErr != nil {
 			err = fmt.Errorf("panic while initializing boltdbs: %v", panicErr)
@@ -547,6 +559,7 @@ func (srv *Server) initBoltDBs() (err error) {
 		func(opts *bolt.Options) error {
 			opts.NoSync = true
 			opts.NoFreelistSync = true
+			opts.FreelistType = bolt.FreelistMapType
 			opts.NoGrowSync = true
 			return nil
 		},
@@ -563,6 +576,7 @@ func (srv *Server) initBoltDBs() (err error) {
 	srv.containerdMetaBoltDB, err = bolt.Open(srv.containerdMetaDBPath, 0644, &bolt.Options{
 		NoSync:         true,
 		NoFreelistSync: true,
+		FreelistType:   bolt.FreelistMapType,
 		NoGrowSync:     true,
 	})
 	if err != nil {

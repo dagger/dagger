@@ -31,6 +31,8 @@ func newSnapshotter(
 	cfg bkconfig.OCIConfig,
 	mdStore *storage.MetaStore,
 ) (ctdsnapshot.Snapshotter, string, error) {
+	useBboltFreelistMap()
+
 	var (
 		name    = cfg.Snapshotter
 		address = cfg.ProxySnapshotterPath
