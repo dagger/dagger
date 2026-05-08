@@ -845,7 +845,8 @@
                         <td>
                           <span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span>
                         </td>
-                        <td> Replace "${VAR}" or "$VAR" with the value of other vars </td>
+                        <td> Replace "${VAR}" or "$VAR" with the value of other vars <div class="deprecation-reason"> Variable expansion is now enabled by default </div>
+                        </td>
                       </tr>
                     </tbody>
                   </table>
@@ -1141,7 +1142,9 @@
                         <td>
                           <span class="property-name"><code>keepGitDir</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span>
                         </td>
-                        <td> DEPRECATED: Set to true to keep .git directory. Default = <code>true</code> </td>
+                        <td> DEPRECATED: Set to true to keep .git directory. Default = <code>true</code>
+                          <div class="deprecation-reason"> Set to true to keep .git directory. </div>
+                        </td>
                       </tr>
                       <tr>
                         <td>
@@ -7680,6 +7683,38 @@
                     </tbody>
                   </table>
                 </div>
+                <div class="definition-properties definition-possible-types doc-copy-section">
+                  <h5>Possible Types</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Exportable Types</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Changeset"><code>Changeset</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Container"><code>Container</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Directory"><code>Directory</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-File"><code>File</code></a></p>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </section>
@@ -11029,6 +11064,343 @@
                     </tbody>
                   </table>
                 </div>
+                <div class="definition-properties definition-possible-types doc-copy-section">
+                  <h5>Possible Types</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Node Types</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Address"><code>Address</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Binding"><code>Binding</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-CacheVolume"><code>CacheVolume</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Changeset"><code>Changeset</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Check"><code>Check</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-CheckGroup"><code>CheckGroup</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-ClientFilesyncMirror"><code>ClientFilesyncMirror</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Cloud"><code>Cloud</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Container"><code>Container</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-CurrentModule"><code>CurrentModule</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-DiffStat"><code>DiffStat</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Directory"><code>Directory</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Engine"><code>Engine</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-EngineCache"><code>EngineCache</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-EngineCacheEntry"><code>EngineCacheEntry</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-EngineCacheEntrySet"><code>EngineCacheEntrySet</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-EnumTypeDef"><code>EnumTypeDef</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-EnumValueTypeDef"><code>EnumValueTypeDef</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Env"><code>Env</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-EnvFile"><code>EnvFile</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-EnvVariable"><code>EnvVariable</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Error"><code>Error</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-ErrorValue"><code>ErrorValue</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-FieldTypeDef"><code>FieldTypeDef</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-File"><code>File</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Function"><code>Function</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-FunctionArg"><code>FunctionArg</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-FunctionCall"><code>FunctionCall</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-FunctionCallArgValue"><code>FunctionCallArgValue</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-GeneratedCode"><code>GeneratedCode</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Generator"><code>Generator</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-GeneratorGroup"><code>GeneratorGroup</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-GitRef"><code>GitRef</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-GitRepository"><code>GitRepository</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-HTTPState"><code>HTTPState</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-HealthcheckConfig"><code>HealthcheckConfig</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Host"><code>Host</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-InputTypeDef"><code>InputTypeDef</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-InterfaceTypeDef"><code>InterfaceTypeDef</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-JSONValue"><code>JSONValue</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-LLM"><code>LLM</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-LLMTokenUsage"><code>LLMTokenUsage</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Label"><code>Label</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-ListTypeDef"><code>ListTypeDef</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Module"><code>Module</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-ModuleConfigClient"><code>ModuleConfigClient</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-ModuleSource"><code>ModuleSource</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-ObjectTypeDef"><code>ObjectTypeDef</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Port"><code>Port</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Query"><code>Query</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-RemoteGitMirror"><code>RemoteGitMirror</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-SDKConfig"><code>SDKConfig</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-ScalarTypeDef"><code>ScalarTypeDef</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-SearchResult"><code>SearchResult</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-SearchSubmatch"><code>SearchSubmatch</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Secret"><code>Secret</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Service"><code>Service</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Socket"><code>Socket</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-SourceMap"><code>SourceMap</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Stat"><code>Stat</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Terminal"><code>Terminal</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-TypeDef"><code>TypeDef</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Up"><code>Up</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-UpGroup"><code>UpGroup</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Workspace"><code>Workspace</code></a></p>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </section>
@@ -11243,7 +11615,7 @@
                         <td>
                           <span class="property-name"><code>protocol</code></span> - <span class="property-type"><a href="#definition-NetworkProtocol"><code>NetworkProtocol</code></a></span>
                         </td>
-                        <td> Transport layer protocol to use for traffic. </td>
+                        <td> Transport layer protocol to use for traffic. Default = <code>TCP</code> </td>
                       </tr>
                     </tbody>
                   </table>
@@ -11873,6 +12245,63 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Syncer-sync" href="#Syncer-sync"><code>sync</code></a> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span> </td>
                         <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="definition-properties definition-possible-types doc-copy-section">
+                  <h5>Possible Types</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Syncer Types</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Changeset"><code>Changeset</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Container"><code>Container</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Directory"><code>Directory</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-File"><code>File</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-LLM"><code>LLM</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Module"><code>Module</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-ModuleSource"><code>ModuleSource</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Service"><code>Service</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><a href="#definition-Terminal"><code>Terminal</code></a></p>
                         </td>
                       </tr>
                     </tbody>
