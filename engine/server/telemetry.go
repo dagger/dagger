@@ -89,7 +89,7 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) {
 	eg := new(errgroup.Group)
 	for _, c := range append([]*daggerClient{client}, client.parents...) {
 		eg.Go(func() error {
-			if err := ps.Spans(c).ExportSpans(r.Context(), spans); err != nil {
+			if err := ps.Spans(c, nil).ExportSpans(r.Context(), spans); err != nil {
 				return fmt.Errorf("export to %s: %w", c.clientID, err)
 			}
 			return nil
@@ -133,7 +133,7 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) {
 	eg := new(errgroup.Group)
 	for _, c := range append([]*daggerClient{client}, client.parents...) {
 		eg.Go(func() error {
-			if err := telemetry.ReexportLogsFromPB(r.Context(), ps.Logs(c), &req); err != nil {
+			if err := telemetry.ReexportLogsFromPB(r.Context(), ps.Logs(c, nil), &req); err != nil {
 				return fmt.Errorf("export to %s: %w", c.clientID, err)
 			}
 			return nil
@@ -177,7 +177,7 @@ func (ps *PubSub) MetricsHandler(rw http.ResponseWriter, r *http.Request) {
 	eg := new(errgroup.Group)
 	for _, c := range append([]*daggerClient{client}, client.parents...) {
 		eg.Go(func() error {
-			if err := enginetel.ReexportMetricsFromPB(r.Context(), []sdkmetric.Exporter{ps.Metrics(c)}, &req); err != nil {
+			if err := enginetel.ReexportMetricsFromPB(r.Context(), []sdkmetric.Exporter{ps.Metrics(c, nil)}, &req); err != nil {
 				return fmt.Errorf("export to %s: %w", c.clientID, err)
 			}
 			return nil
@@ -309,12 +309,14 @@ func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request
 type clientSpans struct {
 	*PubSub
 	client *daggerClient
+	exp    sdktrace.SpanExporter
 }
 
-func (ps *PubSub) Spans(client *daggerClient) sdktrace.SpanExporter {
+func (ps *PubSub) Spans(client *daggerClient, exp sdktrace.SpanExporter) sdktrace.SpanExporter {
 	return clientSpans{
 		PubSub: ps,
 		client: client,
+		exp:    exp,
 	}
 }
 
@@ -409,23 +411,29 @@ func (ps clientSpans) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 		}
 	}
 
+	if ps.exp != nil {
+		return ps.exp.ExportSpans(ctx, spans)
+	}
+
 	return nil
 }
 
 func (ps clientSpans) ForceFlush(ctx context.Context) error { return nil }
 func (ps clientSpans) Shutdown(context.Context) error       { return nil }
 
-func (ps *PubSub) Logs(client *daggerClient) interface {
+func (ps *PubSub) Logs(client *daggerClient, exp sdklog.Exporter) interface {
 	sdklog.Exporter
 	sdklog.Processor
 } {
 	return clientLogs{
 		client: client,
+		exp:    exp,
 	}
 }
 
 type clientLogs struct {
 	client *daggerClient
+	exp    sdklog.Exporter
 }
 
 var _ sdklog.Processor = clientLogs{}
@@ -470,6 +478,10 @@ func (ps clientLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 			slog.Warn("failed to insert log record", "error", err)
 			continue
 		}
+	}
+
+	if ps.exp != nil {
+		return ps.exp.Export(ctx, logs)
 	}
 
 	return nil
@@ -538,16 +550,18 @@ func insertLogRecordParam(rec *sdklog.Record) (*clientdb.InsertLogParams, error)
 	}, nil
 }
 
-func (ps *PubSub) Metrics(client *daggerClient) sdkmetric.Exporter {
+func (ps *PubSub) Metrics(client *daggerClient, exp sdkmetric.Exporter) sdkmetric.Exporter {
 	return clientMetrics{
 		PubSub: ps,
 		client: client,
+		exp:    exp,
 	}
 }
 
 type clientMetrics struct {
 	*PubSub
 	client *daggerClient
+	exp    sdkmetric.Exporter
 }
 
 func (ps clientMetrics) Export(ctx context.Context, metrics *metricdata.ResourceMetrics) error {
@@ -576,6 +590,9 @@ func (ps clientMetrics) Export(ctx context.Context, metrics *metricdata.Resource
 	_, err = db.InsertMetric(ctx, metricsPBBytes)
 	if err != nil {
 		return fmt.Errorf("insert metrics: %w", err)
+	}
+	if ps.exp != nil {
+		return ps.exp.Export(ctx, metrics)
 	}
 
 	return nil

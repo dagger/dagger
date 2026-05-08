@@ -1227,8 +1227,12 @@ func (src *ModuleSource) LoadContextDir(
 	//
 	// NOTE: this applies unilaterally, whether the module was loaded from Host,
 	// Git, or a Directory.
-	if envID, ok := EnvIDFromContext(ctx); ok {
-		inst, err = src.loadContextFromEnv(ctx, dag, envID, path, filterInputs)
+	env, ok, envErr := EnvFromContext(ctx)
+	if envErr != nil {
+		return inst, envErr
+	}
+	if ok {
+		inst, err = src.loadContextFromEnv(ctx, dag, env, path, filterInputs)
 	} else {
 		inst, err = src.loadContextFromSource(ctx, dag, path, filterInputs)
 	}
@@ -1268,7 +1272,7 @@ func (src *ModuleSource) LoadContextDir(
 func (src *ModuleSource) loadContextFromEnv(
 	ctx context.Context,
 	dag *dagql.Server,
-	envID *call.ID,
+	env dagql.ObjectResult[*Env],
 	path string,
 	filterInputs []dagql.NamedInput,
 ) (inst dagql.ObjectResult[*Directory], err error) {
@@ -1276,10 +1280,6 @@ func (src *ModuleSource) loadContextFromEnv(
 	// If path is absolute, it's relative to the context directory.
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(src.SourceRootSubpath, path)
-	}
-	envRes, err := dag.Load(ctx, envID)
-	if err != nil {
-		return inst, fmt.Errorf("failed to load current env: %w", err)
 	}
 	sels := []dagql.Selector{
 		{
@@ -1300,7 +1300,7 @@ func (src *ModuleSource) loadContextFromEnv(
 			Args:  filterInputs,
 		})
 	}
-	err = dag.Select(ctx, envRes, &inst, sels...)
+	err = dag.Select(ctx, env, &inst, sels...)
 	if err != nil {
 		return inst, fmt.Errorf("failed to select env directory: %w", err)
 	}

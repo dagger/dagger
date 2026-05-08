@@ -1292,6 +1292,9 @@ type containerExecArgs struct {
 
 	// ExecMD carries internal runtime execution metadata.
 	ExecMD dagql.SerializedString[*engineutil.ExecutionMetadata] `name:"execMD" internal:"true" default:"null"`
+
+	// ModuleContext carries the module whose execution context owns this exec.
+	ModuleContext dagql.Optional[core.ModuleID] `name:"moduleContext" internal:"true"`
 }
 
 func (s *containerSchema) withError(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct{ Err string }) (inst dagql.ObjectResult[*core.Container], rerr error) {
@@ -1318,6 +1321,13 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 	var md *engineutil.ExecutionMetadata
 	if args.ExecMD.Self != nil {
 		md = args.ExecMD.Self
+	}
+	var moduleContext dagql.ObjectResult[*core.Module]
+	if args.ModuleContext.Valid {
+		moduleContext, err = args.ModuleContext.Value.Load(ctx, srv)
+		if err != nil {
+			return inst, fmt.Errorf("load exec module context: %w", err)
+		}
 	}
 
 	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
@@ -1349,7 +1359,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
 		DefaultArgs:        parent.Self().DefaultArgs,
 	}
-	err = ctr.WithExec(ctx, parent, args.ContainerExecOpts, md, false)
+	err = ctr.WithExec(ctx, parent, args.ContainerExecOpts, md, moduleContext, nil, false)
 	if err != nil {
 		return inst, err
 	}

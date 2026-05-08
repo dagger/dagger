@@ -6,10 +6,10 @@ import (
 	fmt "fmt"
 	io "io"
 
-	"github.com/dagger/dagger/internal/buildkit/util/grpcerrors"
 	"github.com/dagger/dagger/util/grpcutil"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
@@ -77,7 +77,7 @@ func (pio *PipeIO) Read(p []byte) (n int, err error) {
 		// The reason for discrepancy is because this is an attempt to simplify the logic using io.Copy, io.Reader
 		// interfaces which mandate io.EOF here.
 		// In the future, terminal session attachable may also get refactored using this simplified logic.
-		if errors.Is(err, context.Canceled) || grpcerrors.Code(err) == codes.Canceled {
+		if errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled {
 			// canceled
 			return 0, io.EOF
 		}
@@ -85,7 +85,7 @@ func (pio *PipeIO) Read(p []byte) (n int, err error) {
 			// stopped
 			return 0, io.EOF
 		}
-		if grpcerrors.Code(err) == codes.Unavailable {
+		if status.Code(err) == codes.Unavailable {
 			// client disconnected (i.e. quitting Dagger out)
 			return 0, io.EOF
 		}

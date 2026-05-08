@@ -14,7 +14,7 @@ import (
 
 // List all core engine tests
 func (dev *EngineDev) Tests(ctx context.Context) (string, error) {
-	return dag.Go(dagger.GoOpts{Source: dev.sourceWithEbpfObjects()}).Tests(ctx)
+	return dag.Go(dagger.GoOpts{Source: dev.Source}).Tests(ctx)
 }
 
 // Run core engine tests
@@ -308,7 +308,7 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 	}
 
 	utilDirPath := "/dagger-dev"
-	tests := dag.Go(dagger.GoOpts{Source: dev.sourceWithEbpfObjects()}).Env().
+	tests := dag.Go(dagger.GoOpts{Source: dev.Source}).Env().
 		WithExec([]string{"go", "install", "github.com/dagger/otel-go/cmd/otelgotest"}).
 		WithMountedDirectory(utilDirPath, testEngineUtils).
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_TAR", filepath.Join(utilDirPath, "engine.tar")).

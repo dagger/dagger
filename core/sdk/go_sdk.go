@@ -13,7 +13,6 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/engineutil"
-	"github.com/dagger/dagger/internal/buildkit/identity"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/mitchellh/mapstructure"
 	"github.com/opencontainers/go-digest"
@@ -273,9 +272,9 @@ func (sdk *goSDK) ModuleTypes(
 	if err != nil {
 		return inst, fmt.Errorf("failed to scope module for go module sdk module types: %w", err)
 	}
-	currentModuleID, err := scopedMod.ID()
+	moduleContextID, err := core.ResultIDInput(scopedMod)
 	if err != nil {
-		return inst, fmt.Errorf("failed to get current module ID for go module sdk module types: %w", err)
+		return inst, fmt.Errorf("failed to get module context ID for go module sdk module types: %w", err)
 	}
 
 	var ctr dagql.ObjectResult[*core.Container]
@@ -298,26 +297,15 @@ func (sdk *goSDK) ModuleTypes(
 	}
 
 	execMD := engineutil.ExecutionMetadata{
-		ClientID: identity.NewID(),
-		Call:     dagql.CurrentCall(ctx),
-		ExecID:   identity.NewID(),
 		Internal: true,
 	}
-	if execMD.Call != nil {
-		callDigest, err := execMD.Call.RecipeDigest(ctx)
+	if curCall := dagql.CurrentCall(ctx); curCall != nil {
+		callDigest, err := curCall.RecipeDigest(ctx)
 		if err != nil {
 			return inst, fmt.Errorf("compute Go SDK exec call digest: %w", err)
 		}
 		execMD.CallDigest = callDigest
 	}
-	if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
-		execMD.LockMode = clientMetadata.LockMode
-	}
-	execMD.EncodedModuleID, err = currentModuleID.Encode()
-	if err != nil {
-		return inst, err
-	}
-
 	err = dag.Select(ctx, ctr, &ctr,
 		dagql.Selector{
 			Field: "withMountedFile",
@@ -394,6 +382,10 @@ func (sdk *goSDK) ModuleTypes(
 				{
 					Name:  "execMD",
 					Value: dagql.NewDigestedSerializedString(&execMD, goSDKExecMDDigest),
+				},
+				{
+					Name:  "moduleContext",
+					Value: dagql.Opt(moduleContextID),
 				},
 			},
 		},
