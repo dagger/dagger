@@ -3057,10 +3057,8 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		return inst, fmt.Errorf("module name must be set")
 	}
 
-	if src.Self().UsesLegacyWorkspaceFields() {
-		return inst, src.Self().DirectLegacyWorkspaceLoadError()
-	}
-
+	// Legacy workspace-only fields are ignored by generic module loading.
+	// User-facing loaders that cannot honor them enforce policy before calling asModule.
 	// Check engine version compatibility
 	engineVersion := src.Self().EngineVersion
 	if !engine.CheckVersionCompatibility(engineVersion, engine.MinimumModuleVersion) {

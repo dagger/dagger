@@ -1456,6 +1456,8 @@ func (srv *Server) resolveModule(
 	}
 	if src.Self().UsesLegacyWorkspaceFields() {
 		switch mod.legacyFieldPolicy {
+		case legacyWorkspaceFieldPolicyDirect:
+			return dagql.ObjectResult[*core.Module]{}, src.Self().DirectLegacyWorkspaceLoadError()
 		case legacyWorkspaceFieldPolicyStripCompatMain:
 			srcCall, err := src.ResultCall()
 			if err != nil {
