@@ -23,9 +23,9 @@ func (ModuleConfigSuite) TestLegacyModuleConfigUpgrade(ctx context.Context, t *t
 	baseWithOldConfig := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/foo").
-		With(daggerExec("module", "init", "--source=.", "--sdk=go", "dep")).
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "dep", ".")).
 		WithWorkdir("/work").
-		With(daggerExec("module", "init", "--source=.", "--sdk=go", "test")).
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "test", ".")).
 		WithNewFile("/work/main.go", `package main
 		type Test struct {}
 
@@ -74,7 +74,7 @@ func (ModuleConfigSuite) TestLegacyModuleConfigPinsAreNormalized(ctx context.Con
 	ctr := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/dep").
-		With(daggerExec("module", "init", "--source=.", "--sdk=go", "test"))
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "test", "."))
 	modCfgContents, err := ctr.
 		File("dagger.json").
 		Contents(ctx)
