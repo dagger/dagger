@@ -131,16 +131,6 @@ func (r *TypescriptSDKDev) Binary() *File { // typescript-sdk-dev (../../../../:
 	}
 }
 
-// Bump the Typescript SDK's engine dependency
-func (r *TypescriptSDKDev) Bump(version string) *Changeset { // typescript-sdk-dev (../../../../:0:0)
-	q := r.query.Select("bump")
-	q = q.Arg("version", version)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
 func (r *TypescriptSDKDev) BunVersion(ctx context.Context) (string, error) { // typescript-sdk-dev (../../../../:0:0)
 	if r.bunVersion != nil {
 		return *r.bunVersion, nil

@@ -123,56 +123,6 @@ type JavaSdkDev {
   }
 
   """
-  Bump the Java SDK's Engine dependency
-  """
-  pub bump(version: String!): Changeset {
-    let v = version.trimPrefix("v")
-    # TODO: handle snapshot versions
-    # if (!v.match(/^[0-9]+\.[0-9]+\.[0-9]+$/)) {
-    #   v = v + "-SNAPSHOT"
-    # }
-    let bumpCtr = devContainer
-      .withExec([
-        "mvn",
-        "versions:set",
-        "-DgenerateBackupPoms=false",
-        "-DnewVersion=" + v,
-      ])
-      .withExec([
-        "mvn",
-        "versions:set-property",
-        "-DgenerateBackupPoms=false",
-        "-Dproperty=daggerengine.version",
-        "-DnewVersion=" + v,
-      ])
-      .withWorkdir("runtime/template")
-      .withExec([
-        "mvn",
-        "versions:set-property",
-        "-DgenerateBackupPoms=false",
-        "-Dproperty=dagger.module.deps",
-        "-DnewVersion=" + v + "-template-module",
-      ])
-
-    let initialState = directory
-    let bumped = directory
-    [
-      sourcePath + "/dagger-codegen-maven-plugin/pom.xml",
-      sourcePath + "/dagger-java-annotation-processor/pom.xml",
-      sourcePath + "/dagger-java-sdk/pom.xml",
-      sourcePath + "/dagger-java-samples/pom.xml",
-      sourcePath + "/pom.xml",
-      sourcePath + "/runtime/template/pom.xml",
-    ].each { pom =>
-      initialState = initialState.withFile(pom, workspace.file(pom))
-      bumped = bumped.withFile(pom, bumpCtr.file(workspacePath + "/" + pom))
-    }
-
-    bumped
-      .changes(initialState)
-  }
-
-  """
   Check dependencies in the Java SDK
   """
   pub checkDeps: Void {

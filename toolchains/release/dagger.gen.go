@@ -57,16 +57,22 @@ func convertSlice[I any, O any](in []I, f func(I) O) []O {
 }
 
 func (r Release) MarshalJSON() ([]byte, error) {
-	var concrete struct{}
+	var concrete struct {
+		TargetVersion string
+	}
+	concrete.TargetVersion = r.TargetVersion
 	return json.Marshal(&concrete)
 }
 
 func (r *Release) UnmarshalJSON(bs []byte) error {
-	var concrete struct{}
+	var concrete struct {
+		TargetVersion string
+	}
 	err := json.Unmarshal(bs, &concrete)
 	if err != nil {
 		return err
 	}
+	r.TargetVersion = concrete.TargetVersion
 	return nil
 }
 
@@ -313,20 +319,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 	switch parentName {
 	case "Release":
 		switch fnName {
-		case "Bump":
+		case "DocsTargetVersion":
 			var parent Release
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var engineVersion string
-			if inputArgs["engineVersion"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["engineVersion"]), &engineVersion)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg engineVersion", err))
-				}
+			return (*Release).DocsTargetVersion(&parent), nil
+		case "ElixirSdkTargetVersion":
+			var parent Release
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return (*Release).Bump(&parent, ctx, engineVersion)
+			return (*Release).ElixirSdkTargetVersion(&parent), nil
 		case "GetMaintainers":
 			var parent Release
 			err = json.Unmarshal(parentJSON, &parent)
@@ -348,6 +354,27 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Release).GetMaintainers(&parent, ctx, githubOrgName, githubToken)
+		case "GoSdkTargetVersion":
+			var parent Release
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Release).GoSdkTargetVersion(&parent), nil
+		case "HelmTargetVersion":
+			var parent Release
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Release).HelmTargetVersion(&parent, ctx)
+		case "JavaSdkTargetVersion":
+			var parent Release
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Release).JavaSdkTargetVersion(&parent, ctx)
 		case "Notify":
 			var parent Release
 			err = json.Unmarshal(parentJSON, &parent)
@@ -390,6 +417,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return nil, (*Release).Notify(&parent, ctx, repository, target, name, discordWebhook, dryRun)
+		case "PhpSdkTargetVersion":
+			var parent Release
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Release).PhpSdkTargetVersion(&parent), nil
 		case "Publish":
 			var parent Release
 			err = json.Unmarshal(parentJSON, &parent)
@@ -551,6 +585,20 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Release).Publish(&parent, ctx, tag, commit, dryRun, registryImage, registryUsername, registryPassword, goreleaserKey, githubToken, githubOrgName, netlifyToken, pypiToken, pypiRepo, npmToken, hexApikey, cargoRegistryToken, awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution, artefactsFqdn, discordWebhook)
+		case "PythonSdkTargetVersion":
+			var parent Release
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Release).PythonSdkTargetVersion(&parent), nil
+		case "RustSdkTargetVersion":
+			var parent Release
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Release).RustSdkTargetVersion(&parent, ctx)
 		case "TestLocalRelease":
 			var parent Release
 			err = json.Unmarshal(parentJSON, &parent)
@@ -558,6 +606,27 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Release).TestLocalRelease(&parent, ctx)
+		case "TypescriptSdkTargetVersion":
+			var parent Release
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Release).TypescriptSdkTargetVersion(&parent), nil
+		case "":
+			var parent Release
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var targetVersion string
+			if inputArgs["targetVersion"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["targetVersion"]), &targetVersion)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg targetVersion", err))
+				}
+			}
+			return New(targetVersion)
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

@@ -4,7 +4,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -17,9 +16,6 @@ const (
 	rustSdkImage       = "rust:1.77-bookworm"
 	rustSdkImageDigest = "sha256:83101f6985c93e1e6501b3375de188ee3d2cbb89968bcc91611591f9f447bd42"
 
-	rustVersionFilePath         = "sdk/rust/crates/dagger-sdk/src/core/version.rs"
-	rustCargoTomlFilePath       = "sdk/rust/Cargo.toml"
-	rustCargoLockFilePath       = "sdk/rust/Cargo.lock"
 	rustGeneratedClientFilePath = "crates/dagger-sdk/src/gen.rs"
 
 	rustSdkCrate     = "dagger-sdk"
@@ -49,7 +45,7 @@ func New(
 		WithEnvVariable("CARGO_HOME", "/root/.cargo").
 		WithMountedCache("/root/.cargo", dag.CacheVolume("rust-cargo-"+rustSdkImage)).
 		WithWorkdir("/src").
-		// FIXME: not all functions need a full engine build (eg. bump). Do this lazily as needed
+		// FIXME: not all functions need a full engine build. Do this lazily as needed.
 		With(func(c *dagger.Container) *dagger.Container {
 			return dag.DaggerEngine().InstallClient(c)
 		})
@@ -269,41 +265,4 @@ func (t *RustSdkDev) releaseContainer(
 	return t.DevContainer(false).
 		WithExec([]string{"cargo", "install", "cargo-edit@" + cargoEditVersion, "--locked"}).
 		WithExec([]string{"cargo", "set-version", "-p", rustSdkCrate, versionFlag})
-}
-
-// Bump the Rust SDK's engine dependency version.
-func (t *RustSdkDev) Bump(ctx context.Context, version string) (*dagger.Changeset, error) {
-	versionStr := `pub const DAGGER_ENGINE_VERSION: &str = "([0-9\.-a-zA-Z]+)";`
-	versionStrf := `pub const DAGGER_ENGINE_VERSION: &str = "%s";`
-	version = strings.TrimPrefix(version, "v")
-
-	versionContents, err := t.Workspace.File(rustVersionFilePath).Contents(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	versionRe, err := regexp.Compile(versionStr)
-	if err != nil {
-		return nil, err
-	}
-
-	versionBumpedContents := versionRe.ReplaceAllString(
-		versionContents,
-		fmt.Sprintf(versionStrf, version),
-	)
-
-	base := t.DevContainer(false).
-		WithExec([]string{
-			"cargo", "install", "cargo-edit@" + cargoEditVersion, "--locked",
-		}).
-		WithExec([]string{
-			"cargo", "set-version", "-p", rustSdkCrate, version,
-		})
-
-	layer := t.Workspace.
-		WithNewFile(rustVersionFilePath, versionBumpedContents).
-		WithFile(rustCargoTomlFilePath, base.File("Cargo.toml")).
-		WithFile(rustCargoLockFilePath, base.File("Cargo.lock"))
-
-	return layer.Changes(t.OriginalWorkspace), nil
 }

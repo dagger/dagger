@@ -10,10 +10,10 @@ import (
 )
 
 // The `RustSdkDevID` scalar type represents an identifier for an object of type RustSdkDev.
-type RustSDKDevID string // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:31:6)
+type RustSDKDevID string // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:27:6)
 
 // Retrieve the binding value, as type RustSdkDev
-func (r *Binding) AsRustSDKDev() *RustSDKDev { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:31:6)
+func (r *Binding) AsRustSDKDev() *RustSDKDev { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:27:6)
 	q := r.query.Select("asRustSdkDev")
 
 	return &RustSDKDev{
@@ -22,7 +22,7 @@ func (r *Binding) AsRustSDKDev() *RustSDKDev { // rust-sdk-dev (../../../../tool
 }
 
 // Create or update a binding of type RustSdkDev in the environment
-func (r *Env) WithRustSDKDevInput(name string, value *RustSDKDev, description string) *Env { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:31:6)
+func (r *Env) WithRustSDKDevInput(name string, value *RustSDKDev, description string) *Env { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:27:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withRustSdkDevInput")
 	q = q.Arg("name", name)
@@ -35,7 +35,7 @@ func (r *Env) WithRustSDKDevInput(name string, value *RustSDKDev, description st
 }
 
 // Declare a desired RustSdkDev output to be assigned in the environment
-func (r *Env) WithRustSDKDevOutput(name string, description string) *Env { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:31:6)
+func (r *Env) WithRustSDKDevOutput(name string, description string) *Env { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:27:6)
 	q := r.query.Select("withRustSdkDevOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -46,7 +46,7 @@ func (r *Env) WithRustSDKDevOutput(name string, description string) *Env { // ru
 }
 
 // Load a RustSdkDev from its ID.
-func (r *Query) LoadRustSDKDevFromID(id RustSDKDevID) *RustSDKDev { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:31:6)
+func (r *Query) LoadRustSDKDevFromID(id RustSDKDevID) *RustSDKDev { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:27:6)
 	q := r.query.Select("loadRustSdkDevFromID")
 	q = q.Arg("id", id)
 
@@ -60,17 +60,17 @@ type RustSDKDevOpts struct {
 	//
 	// A directory with all the files needed to develop the SDK
 	//
-	Workspace *Directory // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:42:2)
+	Workspace *Directory // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:38:2)
 	//
 	// The path of the SDK source in the workspace
 	//
 	//
 	// Default: "sdk/rust"
-	SourcePath string // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:45:2)
+	SourcePath string // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:41:2)
 }
 
 // Develop the Dagger Rust SDK (experimental)
-func (r *Query) RustSDKDev(opts ...RustSDKDevOpts) *RustSDKDev { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:38:1)
+func (r *Query) RustSDKDev(opts ...RustSDKDevOpts) *RustSDKDev { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:34:1)
 	q := r.query.Select("rustSdkDev")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `workspace` optional argument
@@ -89,7 +89,7 @@ func (r *Query) RustSDKDev(opts ...RustSDKDevOpts) *RustSDKDev { // rust-sdk-dev
 }
 
 // Develop the Dagger Rust SDK (experimental)
-type RustSDKDev struct { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:31:6)
+type RustSDKDev struct { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:27:6)
 	query *querybuilder.Selection
 
 	cargoCheck    *Void
@@ -115,7 +115,7 @@ func (r *RustSDKDev) WithGraphQLQuery(q *querybuilder.Selection) *RustSDKDev {
 }
 
 // Regenerate the Rust SDK API client.
-func (r *RustSDKDev) Apiclient() *Changeset { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:148:1)
+func (r *RustSDKDev) Apiclient() *Changeset { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:144:1)
 	q := r.query.Select("apiclient")
 
 	return &Changeset{
@@ -123,7 +123,7 @@ func (r *RustSDKDev) Apiclient() *Changeset { // rust-sdk-dev (../../../../toolc
 	}
 }
 
-func (r *RustSDKDev) BaseContainer() *Container { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:35:2)
+func (r *RustSDKDev) BaseContainer() *Container { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:31:2)
 	q := r.query.Select("baseContainer")
 
 	return &Container{
@@ -131,18 +131,8 @@ func (r *RustSDKDev) BaseContainer() *Container { // rust-sdk-dev (../../../../t
 	}
 }
 
-// Bump the Rust SDK's engine dependency version.
-func (r *RustSDKDev) Bump(version string) *Changeset { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:275:1)
-	q := r.query.Select("bump")
-	q = q.Arg("version", version)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
 // Run cargo check on the Rust SDK
-func (r *RustSDKDev) CargoCheck(ctx context.Context) error { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:127:1)
+func (r *RustSDKDev) CargoCheck(ctx context.Context) error { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:123:1)
 	if r.cargoCheck != nil {
 		return nil
 	}
@@ -152,7 +142,7 @@ func (r *RustSDKDev) CargoCheck(ctx context.Context) error { // rust-sdk-dev (..
 }
 
 // Run cargo fmt on the Rust SDK
-func (r *RustSDKDev) CargoFmt(ctx context.Context) error { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:117:1)
+func (r *RustSDKDev) CargoFmt(ctx context.Context) error { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:113:1)
 	if r.cargoFmt != nil {
 		return nil
 	}
@@ -161,7 +151,7 @@ func (r *RustSDKDev) CargoFmt(ctx context.Context) error { // rust-sdk-dev (../.
 	return q.Execute(ctx)
 }
 
-func (r *RustSDKDev) Changes() *Changeset { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:152:1)
+func (r *RustSDKDev) Changes() *Changeset { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:148:1)
 	q := r.query.Select("changes")
 
 	return &Changeset{
@@ -175,12 +165,12 @@ type RustSDKDevDevContainerOpts struct {
 	// Install workspace dependencies and any tools required
 	// to develop the Rust SDK.
 	//
-	RunInstall bool // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:71:2)
+	RunInstall bool // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:67:2)
 }
 
 // Return the Rust SDK workspace mounted in a dev container,
 // and working directory set to the SDK source.
-func (r *RustSDKDev) DevContainer(opts ...RustSDKDevDevContainerOpts) *Container { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:67:1)
+func (r *RustSDKDev) DevContainer(opts ...RustSDKDevDevContainerOpts) *Container { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:63:1)
 	q := r.query.Select("devContainer")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `runInstall` optional argument
@@ -244,7 +234,7 @@ func (r *RustSDKDev) UnmarshalJSON(bs []byte) error {
 }
 
 // Release the Rust SDK
-func (r *RustSDKDev) Release(ctx context.Context, sourceTag string, cargoRegistryToken *Secret) error { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:244:1)
+func (r *RustSDKDev) Release(ctx context.Context, sourceTag string, cargoRegistryToken *Secret) error { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:240:1)
 	assertNotNil("cargoRegistryToken", cargoRegistryToken)
 	if r.release != nil {
 		return nil
@@ -263,11 +253,11 @@ type RustSDKDevReleaseDryRunOpts struct {
 	//
 	//
 	// Default: "HEAD"
-	SourceTag string // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:181:2)
+	SourceTag string // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:177:2)
 }
 
 // Test the publishing process
-func (r *RustSDKDev) ReleaseDryRun(ctx context.Context, opts ...RustSDKDevReleaseDryRunOpts) error { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:176:1)
+func (r *RustSDKDev) ReleaseDryRun(ctx context.Context, opts ...RustSDKDevReleaseDryRunOpts) error { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:172:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -283,7 +273,7 @@ func (r *RustSDKDev) ReleaseDryRun(ctx context.Context, opts ...RustSDKDevReleas
 }
 
 // Source returns the source directory for the Rust SDK.
-func (r *RustSDKDev) Source() *Directory { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:111:1)
+func (r *RustSDKDev) Source() *Directory { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:107:1)
 	q := r.query.Select("source")
 
 	return &Directory{
@@ -292,7 +282,7 @@ func (r *RustSDKDev) Source() *Directory { // rust-sdk-dev (../../../../toolchai
 }
 
 // Test the Rust SDK
-func (r *RustSDKDev) Test(ctx context.Context) error { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:137:1)
+func (r *RustSDKDev) Test(ctx context.Context) error { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:133:1)
 	if r.test != nil {
 		return nil
 	}
@@ -301,7 +291,7 @@ func (r *RustSDKDev) Test(ctx context.Context) error { // rust-sdk-dev (../../..
 	return q.Execute(ctx)
 }
 
-func (r *RustSDKDev) WithGeneratedClient() *RustSDKDev { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:156:1)
+func (r *RustSDKDev) WithGeneratedClient() *RustSDKDev { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:152:1)
 	q := r.query.Select("withGeneratedClient")
 
 	return &RustSDKDev{

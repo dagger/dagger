@@ -10,10 +10,10 @@ import (
 )
 
 // The `DocsDevID` scalar type represents an identifier for an object of type DocsDev.
-type DocsDevID string // docs-dev (../../../../toolchains/docs-dev/main.go:36:6)
+type DocsDevID string // docs-dev (../../../../toolchains/docs-dev/main.go:35:6)
 
 // Retrieve the binding value, as type DocsDev
-func (r *Binding) AsDocsDev() *DocsDev { // docs-dev (../../../../toolchains/docs-dev/main.go:36:6)
+func (r *Binding) AsDocsDev() *DocsDev { // docs-dev (../../../../toolchains/docs-dev/main.go:35:6)
 	q := r.query.Select("asDocsDev")
 
 	return &DocsDev{
@@ -21,7 +21,7 @@ func (r *Binding) AsDocsDev() *DocsDev { // docs-dev (../../../../toolchains/doc
 	}
 }
 
-type DocsDev struct { // docs-dev (../../../../toolchains/docs-dev/main.go:36:6)
+type DocsDev struct { // docs-dev (../../../../toolchains/docs-dev/main.go:35:6)
 	query *querybuilder.Selection
 
 	deploy  *string
@@ -35,18 +35,8 @@ func (r *DocsDev) WithGraphQLQuery(q *querybuilder.Selection) *DocsDev {
 	}
 }
 
-// Bump the Go SDK's Engine dependency
-func (r *DocsDev) Bump(engineVersion string) *Changeset { // docs-dev (../../../../toolchains/docs-dev/main.go:120:1)
-	q := r.query.Select("bump")
-	q = q.Arg("engineVersion", engineVersion)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
 // Deploys a current build of the docs.
-func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs-dev (../../../../toolchains/docs-dev/main.go:135:1)
+func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs-dev (../../../../toolchains/docs-dev/main.go:120:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.deploy != nil {
 		return *r.deploy, nil
@@ -112,11 +102,11 @@ func (r *DocsDev) UnmarshalJSON(bs []byte) error {
 
 // DocsDevPublishOpts contains options for DocsDev.Publish
 type DocsDevPublishOpts struct {
-	Deployment string // docs-dev (../../../../toolchains/docs-dev/main.go:168:2)
+	Deployment string // docs-dev (../../../../toolchains/docs-dev/main.go:153:2)
 }
 
 // Publish a previous deployment to production - defaults to the latest deployment on the main branch.
-func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsDevPublishOpts) error { // docs-dev (../../../../toolchains/docs-dev/main.go:164:1)
+func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsDevPublishOpts) error { // docs-dev (../../../../toolchains/docs-dev/main.go:149:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.publish != nil {
 		return nil
@@ -138,11 +128,11 @@ type DocsDevReferencesOpts struct {
 	//
 	// Dagger version to generate API docs for
 	//
-	Version string // docs-dev (../../../../toolchains/docs-dev/main.go:75:2)
+	Version string // docs-dev (../../../../toolchains/docs-dev/main.go:74:2)
 }
 
 // Regenerate the API schema and CLI reference docs
-func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset { // docs-dev (../../../../toolchains/docs-dev/main.go:72:1)
+func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset { // docs-dev (../../../../toolchains/docs-dev/main.go:71:1)
 	q := r.query.Select("references")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -157,7 +147,7 @@ func (r *DocsDev) References(opts ...DocsDevReferencesOpts) *Changeset { // docs
 }
 
 // Build the docs server
-func (r *DocsDev) Server() *Container { // docs-dev (../../../../toolchains/docs-dev/main.go:59:1)
+func (r *DocsDev) Server() *Container { // docs-dev (../../../../toolchains/docs-dev/main.go:58:1)
 	q := r.query.Select("server")
 
 	return &Container{
@@ -166,7 +156,7 @@ func (r *DocsDev) Server() *Container { // docs-dev (../../../../toolchains/docs
 }
 
 // Build the docs website
-func (r *DocsDev) Site() *Directory { // docs-dev (../../../../toolchains/docs-dev/main.go:50:1)
+func (r *DocsDev) Site() *Directory { // docs-dev (../../../../toolchains/docs-dev/main.go:49:1)
 	q := r.query.Select("site")
 
 	return &Directory{
@@ -174,7 +164,7 @@ func (r *DocsDev) Site() *Directory { // docs-dev (../../../../toolchains/docs-d
 	}
 }
 
-func (r *DocsDev) Source() *Directory { // docs-dev (../../../../toolchains/docs-dev/main.go:37:2)
+func (r *DocsDev) Source() *Directory { // docs-dev (../../../../toolchains/docs-dev/main.go:36:2)
 	q := r.query.Select("source")
 
 	return &Directory{
@@ -183,7 +173,7 @@ func (r *DocsDev) Source() *Directory { // docs-dev (../../../../toolchains/docs
 }
 
 // Create or update a binding of type DocsDev in the environment
-func (r *Env) WithDocsDevInput(name string, value *DocsDev, description string) *Env { // docs-dev (../../../../toolchains/docs-dev/main.go:36:6)
+func (r *Env) WithDocsDevInput(name string, value *DocsDev, description string) *Env { // docs-dev (../../../../toolchains/docs-dev/main.go:35:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withDocsDevInput")
 	q = q.Arg("name", name)
@@ -196,7 +186,7 @@ func (r *Env) WithDocsDevInput(name string, value *DocsDev, description string) 
 }
 
 // Declare a desired DocsDev output to be assigned in the environment
-func (r *Env) WithDocsDevOutput(name string, description string) *Env { // docs-dev (../../../../toolchains/docs-dev/main.go:36:6)
+func (r *Env) WithDocsDevOutput(name string, description string) *Env { // docs-dev (../../../../toolchains/docs-dev/main.go:35:6)
 	q := r.query.Select("withDocsDevOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -208,13 +198,13 @@ func (r *Env) WithDocsDevOutput(name string, description string) *Env { // docs-
 
 // DocsDevOpts contains options for Query.DocsDev
 type DocsDevOpts struct {
-	Source *Directory // docs-dev (../../../../toolchains/docs-dev/main.go:26:2)
+	Source *Directory // docs-dev (../../../../toolchains/docs-dev/main.go:25:2)
 
-	NginxConfig *File // docs-dev (../../../../toolchains/docs-dev/main.go:28:2)
+	NginxConfig *File // docs-dev (../../../../toolchains/docs-dev/main.go:27:2)
 }
 
 // Dagger docs toolchain
-func (r *Query) DocsDev(opts ...DocsDevOpts) *DocsDev { // docs-dev (../../../../toolchains/docs-dev/main.go:17:1)
+func (r *Query) DocsDev(opts ...DocsDevOpts) *DocsDev { // docs-dev (../../../../toolchains/docs-dev/main.go:16:1)
 	q := r.query.Select("docsDev")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `source` optional argument
@@ -233,7 +223,7 @@ func (r *Query) DocsDev(opts ...DocsDevOpts) *DocsDev { // docs-dev (../../../..
 }
 
 // Load a DocsDev from its ID.
-func (r *Query) LoadDocsDevFromID(id DocsDevID) *DocsDev { // docs-dev (../../../../toolchains/docs-dev/main.go:36:6)
+func (r *Query) LoadDocsDevFromID(id DocsDevID) *DocsDev { // docs-dev (../../../../toolchains/docs-dev/main.go:35:6)
 	q := r.query.Select("loadDocsDevFromID")
 	q = q.Arg("id", id)
 

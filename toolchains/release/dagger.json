@@ -6,8 +6,7 @@
   },
   "include": [
     "../../go.mod",
-    "../../go.sum",
-    "../../util/parallel"
+    "../../go.sum"
   ],
   "dependencies": [
     {
@@ -21,10 +20,6 @@
     {
       "name": "docs-dev",
       "source": "../docs-dev"
-    },
-    {
-      "name": "dotnet-sdk-dev",
-      "source": "../dotnet-sdk-dev"
     },
     {
       "name": "engine-dev",
@@ -57,10 +52,6 @@
     {
       "name": "rust-sdk-dev",
       "source": "../rust-sdk-dev"
-    },
-    {
-      "name": "sdks",
-      "source": "../all-sdks"
     },
     {
       "name": "typescript-sdk-dev",

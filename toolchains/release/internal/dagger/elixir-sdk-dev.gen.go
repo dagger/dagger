@@ -52,16 +52,6 @@ func (r *ElixirSDKDev) BaseImage(ctx context.Context) (string, error) { // elixi
 	return response, q.Execute(ctx)
 }
 
-// Bump the Elixir SDK's Engine dependency
-func (r *ElixirSDKDev) Bump(version string) *Changeset { // elixir-sdk-dev (../../../../:0:0)
-	q := r.query.Select("bump")
-	q = q.Arg("version", version)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
 // Regenerate the Elixir SDK API
 func (r *ElixirSDKDev) ClientLibrary() *Changeset { // elixir-sdk-dev (../../../../:0:0)
 	q := r.query.Select("clientLibrary")

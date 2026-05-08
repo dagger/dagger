@@ -20,6 +20,40 @@ type User struct {
 	Login string `json:"login"`
 }
 
+// TODO: Decouple Changie-specific release-note generation from release publishing.
+//
+// Desired shape:
+//   - Move the generic Changie wrapper out of this repo to github.com/dagger/changie.
+//   - Keep generic Changie behavior thin and explicit:
+//   - batch(version) -> Changeset
+//   - merge() -> Changeset @generate
+//   - do not mark generic batch as @generate; changie batch is a stateful
+//     release-prep transition, not a normal dev-loop generator.
+//   - Move maintainer lookup out of Release.GetMaintainers and into the generic
+//     Changie wrapper, or into a small GitHub helper used by that wrapper.
+//   - Add one release-note @generate function per released component in this
+//     release module, for example:
+//   - EngineReleaseNotes
+//   - GoSdkReleaseNotes
+//   - PythonSdkReleaseNotes
+//   - TypescriptSdkReleaseNotes
+//   - ElixirSdkReleaseNotes
+//   - PhpSdkReleaseNotes
+//   - RustSdkReleaseNotes
+//   - HelmReleaseNotes
+//   - Each release-note generator should use Release.TargetVersion, know its own
+//     Changie config path, no-op if its target .changes/<version>.md file already
+//     exists, and otherwise call changie.batch(version) for that component.
+//   - The release-note generators should set CHANGIE_ENGINE_VERSION and
+//     CHANGIE_MAINTAINERS internally so humans do not have to run
+//     get-maintainers or changie batch manually during release prep.
+//   - Release.Publish should consume already-generated release-note files
+//     directly from workspace paths instead of calling Changelog.LookupEntry.
+//   - RELEASING.md should keep dagger generate as the release-prep entrypoint for
+//     target-version files and per-component release notes, and should no longer
+//     instruct humans to export CHANGIE_MAINTAINERS or run changie batch manually.
+//   - Keep changie merge as-is until we decide whether release should wrap it too.
+//
 // +cache="session"
 func (r *Release) GetMaintainers(
 	ctx context.Context,

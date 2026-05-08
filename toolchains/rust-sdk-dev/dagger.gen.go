@@ -214,20 +214,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*RustSdkDev).APIClient(&parent), nil
-		case "Bump":
-			var parent RustSdkDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var version string
-			if inputArgs["version"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["version"]), &version)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
-				}
-			}
-			return (*RustSdkDev).Bump(&parent, ctx, version)
 		case "CargoCheck":
 			var parent RustSdkDev
 			err = json.Unmarshal(parentJSON, &parent)

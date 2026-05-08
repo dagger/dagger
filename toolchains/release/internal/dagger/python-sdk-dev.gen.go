@@ -149,11 +149,11 @@ type PythonSDKDevBuildOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:283:2)
+	Version string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:271:2)
 }
 
 // Build the Python SDK client library package for distribution
-func (r *PythonSDKDev) Build(opts ...PythonSDKDevBuildOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:280:1)
+func (r *PythonSDKDev) Build(opts ...PythonSDKDevBuildOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:268:1)
 	q := r.query.Select("build")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -163,16 +163,6 @@ func (r *PythonSDKDev) Build(opts ...PythonSDKDevBuildOpts) *Container { // pyth
 	}
 
 	return &Container{
-		query: q,
-	}
-}
-
-// Bump the Python SDK's Engine dependency
-func (r *PythonSDKDev) Bump(version string) *Changeset { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:268:1)
-	q := r.query.Select("bump")
-	q = q.Arg("version", version)
-
-	return &Changeset{
 		query: q,
 	}
 }
@@ -196,7 +186,7 @@ func (r *PythonSDKDev) DevContainer() *Container { // python-sdk-dev (../../../.
 }
 
 // Preview the reference documentation
-func (r *PythonSDKDev) Docs() *PythonSDKDevDocs { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:321:1)
+func (r *PythonSDKDev) Docs() *PythonSDKDevDocs { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:309:1)
 	q := r.query.Select("docs")
 
 	return &PythonSDKDevDocs{
@@ -324,10 +314,10 @@ type PythonSDKDevProvisionOpts struct {
 	//
 	// _EXPERIMENTAL_DAGGER_RUNNER_HOST value
 	//
-	RunnerHost string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:333:2)
+	RunnerHost string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:321:2)
 }
 
-func (r *PythonSDKDev) Provision(cliBin *File, opts ...PythonSDKDevProvisionOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:327:1)
+func (r *PythonSDKDev) Provision(cliBin *File, opts ...PythonSDKDevProvisionOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:315:1)
 	assertNotNil("cliBin", cliBin)
 	q := r.query.Select("provision")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -350,15 +340,15 @@ type PythonSDKDevPublishOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:297:2)
+	Version string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:285:2)
 	//
 	// The URL of the upload endpoint (empty means PyPI)
 	//
-	URL string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:300:2)
+	URL string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:288:2)
 }
 
 // Publish Python SDK client library to PyPI
-func (r *PythonSDKDev) Publish(token *Secret, opts ...PythonSDKDevPublishOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:292:1)
+func (r *PythonSDKDev) Publish(token *Secret, opts ...PythonSDKDevPublishOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:280:1)
 	assertNotNil("token", token)
 	q := r.query.Select("publish")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -496,11 +486,11 @@ type PythonSDKDevTestPublishOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:315:2)
+	Version string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:303:2)
 }
 
 // Test the publishing of the Python SDK client library to TestPyPI
-func (r *PythonSDKDev) TestPublish(token *Secret, opts ...PythonSDKDevTestPublishOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:310:1)
+func (r *PythonSDKDev) TestPublish(token *Secret, opts ...PythonSDKDevTestPublishOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:298:1)
 	assertNotNil("token", token)
 	q := r.query.Select("testPublish")
 	for i := len(opts) - 1; i >= 0; i-- {

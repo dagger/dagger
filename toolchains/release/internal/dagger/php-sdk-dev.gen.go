@@ -10,10 +10,10 @@ import (
 )
 
 // The `PhpSdkDevID` scalar type represents an identifier for an object of type PhpSdkDev.
-type PhpSDKDevID string // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:25:6)
+type PhpSDKDevID string // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:22:6)
 
 // Retrieve the binding value, as type PhpSdkDev
-func (r *Binding) AsPhpSDKDev() *PhpSDKDev { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:25:6)
+func (r *Binding) AsPhpSDKDev() *PhpSDKDev { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:22:6)
 	q := r.query.Select("asPhpSdkDev")
 
 	return &PhpSDKDev{
@@ -22,7 +22,7 @@ func (r *Binding) AsPhpSDKDev() *PhpSDKDev { // php-sdk-dev (../../../../toolcha
 }
 
 // Create or update a binding of type PhpSdkDev in the environment
-func (r *Env) WithPhpSDKDevInput(name string, value *PhpSDKDev, description string) *Env { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:25:6)
+func (r *Env) WithPhpSDKDevInput(name string, value *PhpSDKDev, description string) *Env { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:22:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withPhpSdkDevInput")
 	q = q.Arg("name", name)
@@ -35,7 +35,7 @@ func (r *Env) WithPhpSDKDevInput(name string, value *PhpSDKDev, description stri
 }
 
 // Declare a desired PhpSdkDev output to be assigned in the environment
-func (r *Env) WithPhpSDKDevOutput(name string, description string) *Env { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:25:6)
+func (r *Env) WithPhpSDKDevOutput(name string, description string) *Env { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:22:6)
 	q := r.query.Select("withPhpSdkDevOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -45,7 +45,7 @@ func (r *Env) WithPhpSDKDevOutput(name string, description string) *Env { // php
 	}
 }
 
-type PhpSDKDev struct { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:25:6)
+type PhpSDKDev struct { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:22:6)
 	query *querybuilder.Selection
 
 	id             *PhpSDKDevID
@@ -72,7 +72,7 @@ func (r *PhpSDKDev) WithGraphQLQuery(q *querybuilder.Selection) *PhpSDKDev {
 }
 
 // Regenerate the PHP SDK API
-func (r *PhpSDKDev) API() *Changeset { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:140:1)
+func (r *PhpSDKDev) API() *Changeset { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:137:1)
 	q := r.query.Select("api")
 
 	return &Changeset{
@@ -80,7 +80,7 @@ func (r *PhpSDKDev) API() *Changeset { // php-sdk-dev (../../../../toolchains/ph
 	}
 }
 
-func (r *PhpSDKDev) BaseContainer() *Container { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:53:1)
+func (r *PhpSDKDev) BaseContainer() *Container { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:50:1)
 	q := r.query.Select("baseContainer")
 
 	return &Container{
@@ -88,17 +88,7 @@ func (r *PhpSDKDev) BaseContainer() *Container { // php-sdk-dev (../../../../too
 	}
 }
 
-// Bump the PHP SDK's Engine dependency
-func (r *PhpSDKDev) Bump(version string) *Changeset { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:265:1)
-	q := r.query.Select("bump")
-	q = q.Arg("version", version)
-
-	return &Changeset{
-		query: q,
-	}
-}
-
-func (r *PhpSDKDev) Changes() *Changeset { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:151:1)
+func (r *PhpSDKDev) Changes() *Changeset { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:148:1)
 	q := r.query.Select("changes")
 
 	return &Changeset{
@@ -111,12 +101,12 @@ type PhpSDKDevDevContainerOpts struct {
 	//
 	// Run composer install before returning the container
 	//
-	RunInstall bool // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:81:2)
+	RunInstall bool // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:78:2)
 }
 
 // Returns the PHP SDK workspace mounted in a dev container,
 // and working directory set to the SDK source
-func (r *PhpSDKDev) DevContainer(opts ...PhpSDKDevDevContainerOpts) *Container { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:78:1)
+func (r *PhpSDKDev) DevContainer(opts ...PhpSDKDevDevContainerOpts) *Container { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:75:1)
 	q := r.query.Select("devContainer")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `runInstall` optional argument
@@ -131,7 +121,7 @@ func (r *PhpSDKDev) DevContainer(opts ...PhpSDKDevDevContainerOpts) *Container {
 }
 
 // DoctumConfig returns the doctum configuration file
-func (r *PhpSDKDev) DoctumConfig() *File { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:104:1)
+func (r *PhpSDKDev) DoctumConfig() *File { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:101:1)
 	q := r.query.Select("doctumConfig")
 
 	return &File{
@@ -189,7 +179,7 @@ func (r *PhpSDKDev) UnmarshalJSON(bs []byte) error {
 }
 
 // Lint the PHP code with PHP CodeSniffer (https://github.com/squizlabs/PHP_CodeSniffer)
-func (r *PhpSDKDev) PhpCodeSniffer(ctx context.Context) error { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:110:1)
+func (r *PhpSDKDev) PhpCodeSniffer(ctx context.Context) error { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:107:1)
 	if r.phpCodeSniffer != nil {
 		return nil
 	}
@@ -199,7 +189,7 @@ func (r *PhpSDKDev) PhpCodeSniffer(ctx context.Context) error { // php-sdk-dev (
 }
 
 // Analyze the PHP code with PHPStan (https://phpstan.org)
-func (r *PhpSDKDev) PhpStan(ctx context.Context) error { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:120:1)
+func (r *PhpSDKDev) PhpStan(ctx context.Context) error { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:117:1)
 	if r.phpStan != nil {
 		return nil
 	}
@@ -213,16 +203,16 @@ type PhpSDKDevReleaseOpts struct {
 	//
 	// The source git repository to release
 	//
-	SourceRepo *GitRepository // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:240:2)
+	SourceRepo *GitRepository // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:237:2)
 
 	// Default: "https://github.com/dagger/dagger-php-sdk.git"
-	Dest string // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:247:2)
+	Dest string // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:244:2)
 
-	GithubToken *Secret // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:249:2)
+	GithubToken *Secret // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:246:2)
 }
 
 // Publish the PHP SDK
-func (r *PhpSDKDev) Release(ctx context.Context, sourceTag string, opts ...PhpSDKDevReleaseOpts) error { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:235:1)
+func (r *PhpSDKDev) Release(ctx context.Context, sourceTag string, opts ...PhpSDKDevReleaseOpts) error { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:232:1)
 	if r.release != nil {
 		return nil
 	}
@@ -251,23 +241,23 @@ type PhpSDKDevReleaseDryRunOpts struct {
 	//
 	// Source git repository to fake-release
 	//
-	SourceRepo *GitRepository // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:208:2)
+	SourceRepo *GitRepository // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:205:2)
 	//
 	// Source git tag to fake-release
 	//
 	//
 	// Default: "HEAD"
-	SourceTag string // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:211:2)
+	SourceTag string // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:208:2)
 	//
 	// Target git remote to fake-release *to*
 	//
 	//
 	// Default: "https://github.com/dagger/dagger-php-sdk.git"
-	DestRemote string // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:214:2)
+	DestRemote string // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:211:2)
 }
 
 // Test the publishing process
-func (r *PhpSDKDev) ReleaseDryRun(ctx context.Context, opts ...PhpSDKDevReleaseDryRunOpts) error { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:204:1)
+func (r *PhpSDKDev) ReleaseDryRun(ctx context.Context, opts ...PhpSDKDevReleaseDryRunOpts) error { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:201:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -291,7 +281,7 @@ func (r *PhpSDKDev) ReleaseDryRun(ctx context.Context, opts ...PhpSDKDevReleaseD
 }
 
 // Source returns the source directory for the PHP SDK
-func (r *PhpSDKDev) Source() *Directory { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:99:1)
+func (r *PhpSDKDev) Source() *Directory { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:96:1)
 	q := r.query.Select("source")
 
 	return &Directory{
@@ -300,7 +290,7 @@ func (r *PhpSDKDev) Source() *Directory { // php-sdk-dev (../../../../toolchains
 }
 
 // Test the PHP SDK with PHPUnit (https://phpunit.de/)
-func (r *PhpSDKDev) Test(ctx context.Context) error { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:131:1)
+func (r *PhpSDKDev) Test(ctx context.Context) error { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:128:1)
 	if r.test != nil {
 		return nil
 	}
@@ -310,7 +300,7 @@ func (r *PhpSDKDev) Test(ctx context.Context) error { // php-sdk-dev (../../../.
 }
 
 // Get v1.2.3 from sdk/php/v1.2.3
-func (r *PhpSDKDev) VersionFromTag(ctx context.Context, tag string) (string, error) { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:229:1)
+func (r *PhpSDKDev) VersionFromTag(ctx context.Context, tag string) (string, error) { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:226:1)
 	if r.versionFromTag != nil {
 		return *r.versionFromTag, nil
 	}
@@ -323,7 +313,7 @@ func (r *PhpSDKDev) VersionFromTag(ctx context.Context, tag string) (string, err
 	return response, q.Execute(ctx)
 }
 
-func (r *PhpSDKDev) WithGeneratedClient() *PhpSDKDev { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:155:1)
+func (r *PhpSDKDev) WithGeneratedClient() *PhpSDKDev { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:152:1)
 	q := r.query.Select("withGeneratedClient")
 
 	return &PhpSDKDev{
@@ -334,7 +324,7 @@ func (r *PhpSDKDev) WithGeneratedClient() *PhpSDKDev { // php-sdk-dev (../../../
 // Generate reference docs from the generated client
 // NOTE: it's the caller's responsibility to ensure the generated client is up-to-date
 // (see WithGeneratedClient)
-func (r *PhpSDKDev) WithGeneratedDocs() *PhpSDKDev { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:175:1)
+func (r *PhpSDKDev) WithGeneratedDocs() *PhpSDKDev { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:172:1)
 	q := r.query.Select("withGeneratedDocs")
 
 	return &PhpSDKDev{
@@ -343,7 +333,7 @@ func (r *PhpSDKDev) WithGeneratedDocs() *PhpSDKDev { // php-sdk-dev (../../../..
 }
 
 // Load a PhpSdkDev from its ID.
-func (r *Query) LoadPhpSDKDevFromID(id PhpSDKDevID) *PhpSDKDev { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:25:6)
+func (r *Query) LoadPhpSDKDevFromID(id PhpSDKDevID) *PhpSDKDev { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:22:6)
 	q := r.query.Select("loadPhpSdkDevFromID")
 	q = q.Arg("id", id)
 
@@ -357,23 +347,23 @@ type PhpSDKDevOpts struct {
 	//
 	// A directory with all the files needed to develop the SDK
 	//
-	Workspace *Directory // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:37:2)
+	Workspace *Directory // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:34:2)
 	//
 	// The path of the SDK source in the workspace
 	//
 	//
 	// Default: "sdk/php"
-	SourcePath string // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:40:2)
+	SourcePath string // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:37:2)
 	//
 	// The path of the doctum config in the workspace
 	//
 	//
 	// Default: "docs/doctum-config.php"
-	DoctumConfigPath string // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:43:2)
+	DoctumConfigPath string // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:40:2)
 }
 
 // Develop the Dagger PHP SDK (experimental)
-func (r *Query) PhpSDKDev(opts ...PhpSDKDevOpts) *PhpSDKDev { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:33:1)
+func (r *Query) PhpSDKDev(opts ...PhpSDKDevOpts) *PhpSDKDev { // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:30:1)
 	q := r.query.Select("phpSdkDev")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `workspace` optional argument
