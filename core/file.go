@@ -57,6 +57,7 @@ func (*File) TypeDescription() string {
 
 var _ dagql.OnReleaser = (*File)(nil)
 var _ dagql.HasDependencyResults = (*File)(nil)
+var _ dagql.HasDependencyResultsKinds = (*File)(nil)
 var _ dagql.HasLazyEvaluation = (*File)(nil)
 
 func (file *File) OnRelease(ctx context.Context) error {
@@ -72,24 +73,46 @@ func (file *File) OnRelease(ctx context.Context) error {
 
 func (file *File) AttachDependencyResults(
 	ctx context.Context,
-	_ dagql.AnyResult,
+	self dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
+	depsWithKinds, err := file.AttachDependencyResultsKinds(ctx, self, attach)
+	if err != nil {
+		return nil, err
+	}
+	deps := make([]dagql.AnyResult, 0, len(depsWithKinds))
+	for _, dep := range depsWithKinds {
+		deps = append(deps, dep.Result)
+	}
+	return deps, nil
+}
+
+func (file *File) AttachDependencyResultsKinds(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.DependencyResult, error) {
 	if file == nil {
 		return nil, nil
 	}
-	owned, err := file.Services.AttachDependencyResults("file", attach)
+	serviceDeps, err := file.Services.AttachDependencyResults("file", attach)
 	if err != nil {
 		return nil, err
 	}
 	if file.Lazy == nil {
-		return owned, nil
+		return serviceDeps, nil
 	}
 	lazyDeps, err := file.Lazy.AttachDependencies(ctx, attach)
 	if err != nil {
 		return nil, err
 	}
-	return append(owned, lazyDeps...), nil
+	deps := make([]dagql.DependencyResult, 0, len(serviceDeps)+len(lazyDeps))
+	deps = append(deps, serviceDeps...)
+	for _, dep := range lazyDeps {
+		// Liveness-only — see Directory.AttachDependencyResultsKinds.
+		deps = append(deps, dagql.DependencyResult{Result: dep, Owned: false})
+	}
+	return deps, nil
 }
 
 func (file *File) LazyEvalFunc() dagql.LazyEvalFunc {

@@ -63,6 +63,7 @@ func (*Directory) TypeDescription() string {
 
 var _ dagql.OnReleaser = (*Directory)(nil)
 var _ dagql.HasDependencyResults = (*Directory)(nil)
+var _ dagql.HasDependencyResultsKinds = (*Directory)(nil)
 var _ dagql.HasLazyEvaluation = (*Directory)(nil)
 
 func (dir *Directory) OnRelease(ctx context.Context) error {
@@ -78,24 +79,48 @@ func (dir *Directory) OnRelease(ctx context.Context) error {
 
 func (dir *Directory) AttachDependencyResults(
 	ctx context.Context,
-	_ dagql.AnyResult,
+	self dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
+	depsWithKinds, err := dir.AttachDependencyResultsKinds(ctx, self, attach)
+	if err != nil {
+		return nil, err
+	}
+	deps := make([]dagql.AnyResult, 0, len(depsWithKinds))
+	for _, dep := range depsWithKinds {
+		deps = append(deps, dep.Result)
+	}
+	return deps, nil
+}
+
+func (dir *Directory) AttachDependencyResultsKinds(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.DependencyResult, error) {
 	if dir == nil {
 		return nil, nil
 	}
-	owned, err := dir.Services.AttachDependencyResults("directory", attach)
+	serviceDeps, err := dir.Services.AttachDependencyResults("directory", attach)
 	if err != nil {
 		return nil, err
 	}
 	if dir.Lazy == nil {
-		return owned, nil
+		return serviceDeps, nil
 	}
 	lazyDeps, err := dir.Lazy.AttachDependencies(ctx, attach)
 	if err != nil {
 		return nil, err
 	}
-	return append(owned, lazyDeps...), nil
+	deps := make([]dagql.DependencyResult, 0, len(serviceDeps)+len(lazyDeps))
+	deps = append(deps, serviceDeps...)
+	for _, dep := range lazyDeps {
+		// Liveness-only: receiver/prerequisite chain. Failures attribute to
+		// the parent's own install span via direct lookup, not transitively
+		// onto downstream chained calls.
+		deps = append(deps, dagql.DependencyResult{Result: dep, Owned: false})
+	}
+	return deps, nil
 }
 
 func (dir *Directory) LazyEvalFunc() dagql.LazyEvalFunc {

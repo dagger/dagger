@@ -475,6 +475,17 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 		}
 		if causal && span.IsFailed() {
 			changed = parent.FailedLinks.Add(span) || changed
+			// Propagate error origins across explicit causal links so the
+			// caused-failed span renders the leaf error rather than its own
+			// (possibly cascaded) status description. Self-references are
+			// dropped — renderStepError treats any non-empty ErrorOrigins as
+			// "errored elsewhere, don't repeat".
+			for _, origin := range span.ErrorOrigins.Order {
+				if origin.ID == parent.ID {
+					continue
+				}
+				changed = parent.ErrorOrigins.Add(origin) || changed
+			}
 		}
 		if causal && span.IsCanceled() {
 			changed = parent.CanceledLinks.Add(span) || changed

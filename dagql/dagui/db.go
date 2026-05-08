@@ -674,7 +674,13 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	// Extract error origins from span error descriptions
 	if span.Status.Code == codes.Error {
 		for _, origin := range telemetry.ParseErrorOrigins(span.Status.Description) {
-			linked := db.initSpan(SpanID{SpanID: origin.SpanID()})
+			originID := SpanID{SpanID: origin.SpanID()}
+			if originID == span.ID {
+				// renderStepError early-returns on any non-empty ErrorOrigins,
+				// so a self-origin would suppress the leaf error message.
+				continue
+			}
+			linked := db.initSpan(originID)
 			span.ErrorOrigins.Add(linked)
 		}
 	}

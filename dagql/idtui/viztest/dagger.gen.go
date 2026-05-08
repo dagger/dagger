@@ -76,6 +76,26 @@ func (r *Viztest) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
+func (r ModuleTypeReturn) MarshalJSON() ([]byte, error) {
+	var concrete struct {
+		Container *dagger.Container
+	}
+	concrete.Container = r.Container
+	return json.Marshal(&concrete)
+}
+
+func (r *ModuleTypeReturn) UnmarshalJSON(bs []byte) error {
+	var concrete struct {
+		Container *dagger.Container
+	}
+	err := json.Unmarshal(bs, &concrete)
+	if err != nil {
+		return err
+	}
+	r.Container = concrete.Container
+	return nil
+}
+
 func main() {
 	ctx := context.Background()
 
@@ -521,6 +541,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 			}
 			(*Viztest).ManySpans(&parent, ctx, n, delayMs)
 			return nil, nil
+		case "ModuleTypeReturnFail":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return (*Viztest).ModuleTypeReturnFail(&parent), nil
 		case "NestedCalls":
 			var parent Viztest
 			err = json.Unmarshal(parentJSON, &parent)

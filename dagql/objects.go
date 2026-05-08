@@ -561,6 +561,9 @@ func (r ObjectResult[T]) call(
 	if !ok {
 		return nil, fmt.Errorf("call: %s has no such field: %q", r.class.inner.Type().Name(), fieldName)
 	}
+	if field.Spec.Trivial {
+		ctx = ContextWithTrivialField(ctx)
+	}
 	if field.Spec.BuiltinLoadByIDFunc != nil {
 		return field.Spec.BuiltinLoadByIDFunc(ctx, r, inputArgs)
 	}
@@ -837,6 +840,12 @@ type FieldSpec struct {
 	// Used for entrypoint proxies that delegate to real fields which
 	// emit their own telemetry.
 	NoTelemetry bool
+
+	// Trivial marks fields that only unwrap data from their receiver rather
+	// than performing meaningful work. Used to suppress install-span capture
+	// for synthetic accessors (e.g. auto-generated module object field
+	// accessors) so they don't claim ownership of values they merely return.
+	Trivial bool
 
 	// extend is used during installation to copy the spec of a previous field
 	// with the same name

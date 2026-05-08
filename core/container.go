@@ -983,6 +983,7 @@ func materializeContainerStateFromParent(ctx context.Context, dst *Container, pa
 
 var _ dagql.OnReleaser = (*Container)(nil)
 var _ dagql.HasDependencyResults = (*Container)(nil)
+var _ dagql.HasDependencyResultsKinds = (*Container)(nil)
 var _ dagql.HasLazyEvaluation = (*Container)(nil)
 
 func (container *Container) LazyEvalFunc() dagql.LazyEvalFunc {
@@ -1013,15 +1014,31 @@ func (container *Container) Sync(ctx context.Context) error {
 
 func (container *Container) AttachDependencyResults(
 	ctx context.Context,
-	_ dagql.AnyResult,
+	self dagql.AnyResult,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
 ) ([]dagql.AnyResult, error) {
+	depsWithKinds, err := container.AttachDependencyResultsKinds(ctx, self, attach)
+	if err != nil {
+		return nil, err
+	}
+	deps := make([]dagql.AnyResult, 0, len(depsWithKinds))
+	for _, dep := range depsWithKinds {
+		deps = append(deps, dep.Result)
+	}
+	return deps, nil
+}
+
+func (container *Container) AttachDependencyResultsKinds(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.DependencyResult, error) {
 	if container == nil {
 		return nil, nil
 	}
 
 	lazy := container.Lazy
-	owned := make([]dagql.AnyResult, 0, len(container.Mounts)+len(container.Secrets)+len(container.Sockets)+len(container.Services))
+	owned := make([]dagql.DependencyResult, 0, len(container.Mounts)+len(container.Secrets)+len(container.Sockets)+len(container.Services))
 	for i := range container.Mounts {
 		mnt := &container.Mounts[i]
 		if mnt.CacheSource != nil && mnt.CacheSource.Volume.Self() != nil {
@@ -1034,7 +1051,7 @@ func (container *Container) AttachDependencyResults(
 				return nil, fmt.Errorf("attach container cache mount %q: unexpected result %T", mnt.Target, attached)
 			}
 			mnt.CacheSource.Volume = typed
-			owned = append(owned, typed)
+			owned = append(owned, dagql.DependencyResult{Result: typed, Owned: true})
 		}
 	}
 	for i := range container.Secrets {
@@ -1051,7 +1068,7 @@ func (container *Container) AttachDependencyResults(
 			return nil, fmt.Errorf("attach container secret %q: unexpected result %T", secret.EnvName, attached)
 		}
 		secret.Secret = typed
-		owned = append(owned, typed)
+		owned = append(owned, dagql.DependencyResult{Result: typed, Owned: true})
 	}
 	for i := range container.Sockets {
 		socket := &container.Sockets[i]
@@ -1067,7 +1084,7 @@ func (container *Container) AttachDependencyResults(
 			return nil, fmt.Errorf("attach container socket %q: unexpected result %T", socket.ContainerPath, attached)
 		}
 		socket.Source = typed
-		owned = append(owned, typed)
+		owned = append(owned, dagql.DependencyResult{Result: typed, Owned: true})
 	}
 	serviceDeps, err := container.Services.AttachDependencyResults("container", attach)
 	if err != nil {
@@ -1080,7 +1097,13 @@ func (container *Container) AttachDependencyResults(
 		if err != nil {
 			return nil, err
 		}
-		owned = append(owned, deps...)
+		// Lazy parents are receiver/prerequisite chains, not owned by this
+		// call. Track for liveness/preflight, but don't propagate this
+		// call's install span — failures attribute to the parent's own
+		// install span via direct lookup.
+		for _, dep := range deps {
+			owned = append(owned, dagql.DependencyResult{Result: dep, Owned: false})
+		}
 	}
 
 	return owned, nil

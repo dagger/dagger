@@ -632,8 +632,10 @@ func (idx *TestIndex) updateNodeAggregate(node *TestNode) {
 }
 
 func testSpanHasNode(span *Span) bool {
-	_, _, _, _, ok := testNodeMetadata(span)
-	return ok
+	if span == nil {
+		return false
+	}
+	return span.TestCaseName != "" || span.TestSuiteName != ""
 }
 
 func testNodeMetadata(span *Span) (TestNodeKind, string, string, string, bool) {
