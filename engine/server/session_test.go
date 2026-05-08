@@ -713,6 +713,58 @@ func TestEnsureWorkspaceLoadedKeepsExistingWorkspaceBinding(t *testing.T) {
 	require.Same(t, existing, child.workspace)
 }
 
+func TestEnsureWorkspaceLoadedInheritsParentServedModulesWhenRequested(t *testing.T) {
+	t.Parallel()
+
+	srv := &Server{}
+	bound := &core.Workspace{
+		ClientID: "parent-client",
+	}
+	other := &core.Workspace{
+		ClientID: "other-client",
+	}
+	workspaceServed := core.NewSchemaBuilder(core.NewRoot(srv), nil)
+	moduleServed := core.NewSchemaBuilder(core.NewRoot(srv), nil)
+	otherServed := core.NewSchemaBuilder(core.NewRoot(srv), nil)
+
+	workspaceParent := &daggerClient{
+		clientMetadata: &engine.ClientMetadata{
+			LoadWorkspaceModules: true,
+		},
+		workspace:  bound,
+		servedMods: workspaceServed,
+	}
+	moduleParent := &daggerClient{
+		workspace:  bound,
+		servedMods: moduleServed,
+	}
+	otherWorkspaceParent := &daggerClient{
+		clientMetadata: &engine.ClientMetadata{
+			LoadWorkspaceModules: true,
+		},
+		workspace:           other,
+		servedMods:          otherServed,
+		pendingExtraModules: []engine.ExtraModule{{Ref: "wrong-workspace"}},
+		getClientCaller: func(context.Context, string) (engineutil.SessionCaller, error) {
+			return nil, errors.New("wrong workspace modules loaded")
+		},
+	}
+	child := &daggerClient{
+		clientMetadata: &engine.ClientMetadata{
+			LoadWorkspaceModules: true,
+		},
+		dagqlRoot: core.NewRoot(srv),
+		parents:   []*daggerClient{workspaceParent, otherWorkspaceParent, moduleParent},
+	}
+
+	require.NoError(t, srv.ensureWorkspaceLoaded(context.Background(), child))
+	require.Same(t, bound, child.workspace)
+	require.NotNil(t, child.servedMods)
+	require.NotSame(t, workspaceServed, child.servedMods)
+	require.NotSame(t, moduleServed, child.servedMods)
+	require.NotSame(t, otherServed, child.servedMods)
+}
+
 func TestResolveHostServiceCallerFallsBackToParentForSyntheticNestedClient(t *testing.T) {
 	t.Parallel()
 
@@ -885,6 +937,7 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 			EagerRuntime:          true,
 			LockMode:              string(workspace.LockModeFrozen),
 			Workspace:             stringPtr("github.com/dagger/base@main"),
+			WorkspaceEnv:          stringPtr("parent-ci"),
 			UseRecipeIDsByDefault: true,
 		}
 	}
@@ -909,7 +962,7 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 		require.False(t, md.LoadWorkspaceModules)
 		require.False(t, md.EagerRuntime)
 		require.Nil(t, md.Workspace)
-		require.Nil(t, md.WorkspaceEnv)
+		require.Equal(t, "parent-ci", *md.WorkspaceEnv)
 		require.True(t, md.UseRecipeIDsByDefault)
 
 		base.AllowedLLMModules[0] = "mutated"
@@ -983,7 +1036,7 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 		require.Equal(t, "v-test", md.ClientVersion)
 		require.Equal(t, []string{"child"}, md.AllowedLLMModules)
 		require.Equal(t, string(workspace.LockModeFrozen), md.LockMode)
-		require.Nil(t, md.WorkspaceEnv)
+		require.Equal(t, "parent-ci", *md.WorkspaceEnv)
 		require.True(t, md.UseRecipeIDsByDefault)
 	})
 
