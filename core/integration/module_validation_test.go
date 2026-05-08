@@ -242,7 +242,7 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 					_, err := c.Container().From(golangImage).
 						WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 						WithWorkdir("/work").
-						With(daggerExec("module", "init", "test", "--sdk="+tc.sdk)).
+						With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, ".")).
 						With(sdkSource(tc.sdk, tc.source)).
 						With(daggerQuery(`{fn{id}}`)).
 						Sync(ctx)
@@ -273,7 +273,7 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 					_, err := c.Container().From(golangImage).
 						WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 						WithWorkdir("/work").
-						With(daggerExec("module", "init", "test", "--sdk="+tc.sdk)).
+						With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, ".")).
 						With(sdkSource(tc.sdk, tc.source)).
 						With(daggerQuery(`{id}`)).
 						Sync(ctx)
