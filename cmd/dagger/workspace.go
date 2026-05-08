@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"github.com/juju/ansiterm/tabwriter"
 	"github.com/spf13/cobra"
 
 	"github.com/dagger/dagger/engine/client"
@@ -152,37 +151,9 @@ With two arguments, sets the value at the given key.
 With --env, reads show the effective env-applied view while writes target that
 environment's overlay. Explicit env.* keys always address raw overlay storage.
 
-Local module source values are stored relative to .dagger/config.toml, so they may
-look different from the resolved paths shown by "dagger workspace list".`,
+Local module source values are stored relative to .dagger/config.toml.`,
 	Args: cobra.MaximumNArgs(2),
 	RunE: runWorkspaceConfig,
-}
-
-var workspaceListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List workspace modules",
-	Long: `List all modules defined in the workspace configuration.
-
-Note:
-- Source paths are resolved and shown relative to the workspace root.
-- "dagger workspace config" reads the workspace config view; with --env it shows the effective env-applied view, and explicit env.* keys address raw overlay storage.
-- * means the module is the workspace entrypoint, with all its functions aliased to the root level.`,
-	Args: cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return withEngine(cmd.Context(), client.Params{
-			SkipWorkspaceModules: true,
-		}, func(ctx context.Context, engineClient *client.Client) error {
-			modules, err := engineClient.Dagger().CurrentWorkspace().ModuleList(ctx)
-			if err != nil {
-				return err
-			}
-			moduleViews := make([]workspaceModuleView, len(modules))
-			for i := range modules {
-				moduleViews[i] = sdkWorkspaceModuleView{module: &modules[i]}
-			}
-			return writeWorkspaceModuleList(ctx, cmd.OutOrStdout(), moduleViews)
-		})
-	},
 }
 
 type workspaceInfoView struct {
@@ -191,35 +162,12 @@ type workspaceInfoView struct {
 	ConfigFile string
 }
 
-type sdkWorkspaceModuleView struct {
-	module any
-}
-
-func (v sdkWorkspaceModuleView) Name(ctx context.Context) (string, error) {
-	return v.module.(interface {
-		Name(context.Context) (string, error)
-	}).Name(ctx)
-}
-
-func (v sdkWorkspaceModuleView) Source(ctx context.Context) (string, error) {
-	return v.module.(interface {
-		Source(context.Context) (string, error)
-	}).Source(ctx)
-}
-
-func (v sdkWorkspaceModuleView) Entrypoint(ctx context.Context) (bool, error) {
-	return v.module.(interface {
-		Entrypoint(context.Context) (bool, error)
-	}).Entrypoint(ctx)
-}
-
 func init() {
 	workspaceCmd.AddCommand(workspaceConfigCmd)
 	workspaceCmd.AddCommand(workspaceConfigFileCmd)
 	workspaceCmd.AddCommand(workspaceCwdCmd)
 	workspaceCmd.AddCommand(workspaceInitCmd)
 	workspaceCmd.AddCommand(workspaceInfoCmd)
-	workspaceCmd.AddCommand(workspaceListCmd)
 	workspaceCmd.AddCommand(workspaceRootCmd)
 
 	addWorkspaceHereFlag(workspaceConfigCmd)
@@ -326,53 +274,6 @@ func initWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client,
 
 	_, err = fmt.Fprintln(out, msg)
 	return err
-}
-
-type workspaceModuleView interface {
-	Name(context.Context) (string, error)
-	Source(context.Context) (string, error)
-	Entrypoint(context.Context) (bool, error)
-}
-
-func writeWorkspaceModuleList(ctx context.Context, out io.Writer, modules []workspaceModuleView) error {
-	if _, err := fmt.Fprintln(out, "Source paths below are resolved and shown relative to the workspace root"); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintln(out, `"dagger workspace config" reads the workspace config view; with --env it shows the effective env-applied view, and explicit env.* keys address raw overlay storage`); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintln(out, "* indicates a module is the workspace entrypoint, with all its functions aliased to the root level"); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintln(out); err != nil {
-		return err
-	}
-
-	tw := tabwriter.NewWriter(out, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
-	if _, err := fmt.Fprintln(tw, "Name\tResolved Source"); err != nil {
-		return err
-	}
-	for _, mod := range modules {
-		name, err := mod.Name(ctx)
-		if err != nil {
-			return err
-		}
-		entrypoint, err := mod.Entrypoint(ctx)
-		if err != nil {
-			return err
-		}
-		if entrypoint {
-			name += "*"
-		}
-		source, err := mod.Source(ctx)
-		if err != nil {
-			return err
-		}
-		if _, err := fmt.Fprintf(tw, "%s\t%s\n", name, source); err != nil {
-			return err
-		}
-	}
-	return tw.Flush()
 }
 
 func writeWorkspaceInfo(w io.Writer, info workspaceInfoView) error {
