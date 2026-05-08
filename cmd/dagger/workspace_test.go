@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"strings"
 	"testing"
@@ -58,6 +57,12 @@ func TestWorkspaceCommandGrouping(t *testing.T) {
 	require.Equal(t, workspaceGroup.ID, moduleUpdateCmd.GroupID)
 	require.Equal(t, workspaceGroup.ID, migrateCmd.GroupID)
 	require.Equal(t, workspaceGroup.ID, lockCmd.GroupID)
+}
+
+func TestWorkspaceListCommandRemoved(t *testing.T) {
+	for _, cmd := range workspaceCmd.Commands() {
+		require.NotEqual(t, "list", cmd.Name())
+	}
 }
 
 func TestExecutionCommandGrouping(t *testing.T) {
@@ -257,49 +262,4 @@ func TestWriteWorkspaceInfo(t *testing.T) {
 			out.String(),
 		)
 	})
-}
-
-func TestWriteWorkspaceModuleList(t *testing.T) {
-	var out bytes.Buffer
-
-	err := writeWorkspaceModuleList(context.Background(), &out, []workspaceModuleView{
-		testWorkspaceModuleView{
-			name:       "greeter",
-			entrypoint: true,
-			source:     ".dagger/modules/greeter",
-		},
-		testWorkspaceModuleView{
-			name:   "wolfi",
-			source: "github.com/dagger/dagger/modules/wolfi",
-		},
-	})
-	require.NoError(t, err)
-	require.Equal(t,
-		"Source paths below are resolved and shown relative to the workspace root\n"+
-			"\"dagger workspace config\" reads the workspace config view; with --env it shows the effective env-applied view, and explicit env.* keys address raw overlay storage\n"+
-			"* indicates a module is the workspace entrypoint, with all its functions aliased to the root level\n"+
-			"\n"+
-			"Name       Resolved Source\n"+
-			"greeter*   .dagger/modules/greeter\n"+
-			"wolfi      github.com/dagger/dagger/modules/wolfi\n",
-		out.String(),
-	)
-}
-
-type testWorkspaceModuleView struct {
-	name       string
-	source     string
-	entrypoint bool
-}
-
-func (m testWorkspaceModuleView) Name(context.Context) (string, error) {
-	return m.name, nil
-}
-
-func (m testWorkspaceModuleView) Source(context.Context) (string, error) {
-	return m.source, nil
-}
-
-func (m testWorkspaceModuleView) Entrypoint(context.Context) (bool, error) {
-	return m.entrypoint, nil
 }
