@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -167,6 +169,23 @@ func TestInstallGlobalFlagsWorkspaceSelection(t *testing.T) {
 	require.Equal(t, "w", webFlag.Shorthand)
 }
 
+func TestParseGlobalFlagsAfterDynamicCommand(t *testing.T) {
+	oldWorkdir := workdir
+	oldWorkspaceRef := workspaceRef
+	t.Cleanup(func() {
+		workdir = oldWorkdir
+		workspaceRef = oldWorkspaceRef
+	})
+
+	workdir = "."
+	workspaceRef = ""
+
+	parseGlobalFlags([]string{"call", "--workdir", "/work/shell", "-W", "./ws", "identify"})
+
+	require.Equal(t, "/work/shell", workdir)
+	require.Equal(t, "./ws", workspaceRef)
+}
+
 func TestConfigAliasFlags(t *testing.T) {
 	cmd, _, err := rootCmd.Find([]string{"config"})
 	require.NoError(t, err)
@@ -214,7 +233,7 @@ func TestApplyWorkspaceClientParams(t *testing.T) {
 	workspaceEnv = "ci"
 
 	params := client.Params{}
-	applyWorkspaceClientParams(&params)
+	require.NoError(t, applyWorkspaceClientParams(&params))
 	require.NotNil(t, params.Workspace)
 	require.NotNil(t, params.WorkspaceEnv)
 	require.Equal(t, "github.com/acme/ws", *params.Workspace)
@@ -226,9 +245,51 @@ func TestApplyWorkspaceClientParams(t *testing.T) {
 		Workspace:    &explicitWorkspace,
 		WorkspaceEnv: &explicitEnv,
 	}
-	applyWorkspaceClientParams(&params)
+	require.NoError(t, applyWorkspaceClientParams(&params))
 	require.Equal(t, "github.com/acme/other", *params.Workspace)
 	require.Equal(t, "prod", *params.WorkspaceEnv)
+}
+
+func TestApplyWorkspaceClientParamsResolvesLocalWorkspaceAfterWorkdir(t *testing.T) {
+	oldWorkspaceRef := workspaceRef
+	oldWorkspaceEnv := workspaceEnv
+	t.Cleanup(func() {
+		workspaceRef = oldWorkspaceRef
+		workspaceEnv = oldWorkspaceEnv
+	})
+
+	dir := t.TempDir()
+	shellDir := filepath.Join(dir, "shell")
+	workspaceDir := filepath.Join(shellDir, "ws")
+	require.NoError(t, os.MkdirAll(workspaceDir, 0o755))
+
+	tests := []struct {
+		name string
+		cwd  string
+		ref  string
+	}{
+		{
+			name: "relative subdir",
+			cwd:  shellDir,
+			ref:  "./ws",
+		},
+		{
+			name: "current directory",
+			cwd:  workspaceDir,
+			ref:  ".",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Chdir(tt.cwd)
+			workspaceRef = tt.ref
+			params := client.Params{}
+			require.NoError(t, applyWorkspaceClientParams(&params))
+			require.NotNil(t, params.Workspace)
+			require.Equal(t, workspaceDir, *params.Workspace)
+		})
+	}
 }
 
 func TestWriteWorkspaceInfo(t *testing.T) {
