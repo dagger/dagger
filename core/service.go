@@ -816,7 +816,6 @@ func (svc *Service) startContainer(
 			SessionID:         clientMetadata.SessionID,
 			AllowedLLMModules: slices.Clone(clientMetadata.AllowedLLMModules),
 			LockMode:          clientMetadata.LockMode,
-			WorkspaceEnv:      clientMetadata.WorkspaceEnv,
 		}
 	}
 
