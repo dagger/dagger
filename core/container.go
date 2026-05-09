@@ -1062,6 +1062,22 @@ func (container *Container) AttachDependencyResults(
 		socket.Source = typed
 		owned = append(owned, typed)
 	}
+	for i := range container.Services {
+		binding := &container.Services[i]
+		if binding.Service.Self() == nil {
+			continue
+		}
+		attached, err := attach(binding.Service)
+		if err != nil {
+			return nil, fmt.Errorf("attach container service %q: %w", binding.Hostname, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Service])
+		if !ok {
+			return nil, fmt.Errorf("attach container service %q: unexpected result %T", binding.Hostname, attached)
+		}
+		binding.Service = typed
+		owned = append(owned, typed)
+	}
 
 	if lazy != nil {
 		deps, err := lazy.AttachDependencies(ctx, attach)

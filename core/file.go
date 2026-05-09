@@ -78,14 +78,31 @@ func (file *File) AttachDependencyResults(
 	if file == nil {
 		return nil, nil
 	}
+	owned := make([]dagql.AnyResult, 0, len(file.Services))
+	for i := range file.Services {
+		binding := &file.Services[i]
+		if binding.Service.Self() == nil {
+			continue
+		}
+		attached, err := attach(binding.Service)
+		if err != nil {
+			return nil, fmt.Errorf("attach file service %q: %w", binding.Hostname, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Service])
+		if !ok {
+			return nil, fmt.Errorf("attach file service %q: unexpected result %T", binding.Hostname, attached)
+		}
+		binding.Service = typed
+		owned = append(owned, typed)
+	}
 	if file.Lazy == nil {
-		return nil, nil
+		return owned, nil
 	}
 	lazyDeps, err := file.Lazy.AttachDependencies(ctx, attach)
 	if err != nil {
 		return nil, err
 	}
-	return lazyDeps, nil
+	return append(owned, lazyDeps...), nil
 }
 
 func (file *File) LazyEvalFunc() dagql.LazyEvalFunc {
