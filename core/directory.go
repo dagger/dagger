@@ -85,22 +85,9 @@ func (dir *Directory) AttachDependencyResults(
 	if dir == nil {
 		return nil, nil
 	}
-	owned := make([]dagql.AnyResult, 0, len(dir.Services))
-	for i := range dir.Services {
-		binding := &dir.Services[i]
-		if binding.Service.Self() == nil {
-			continue
-		}
-		attached, err := attach(binding.Service)
-		if err != nil {
-			return nil, fmt.Errorf("attach directory service %q: %w", binding.Hostname, err)
-		}
-		typed, ok := attached.(dagql.ObjectResult[*Service])
-		if !ok {
-			return nil, fmt.Errorf("attach directory service %q: unexpected result %T", binding.Hostname, attached)
-		}
-		binding.Service = typed
-		owned = append(owned, typed)
+	owned, err := dir.Services.AttachDependencyResults("directory", attach)
+	if err != nil {
+		return nil, err
 	}
 	if dir.Lazy == nil {
 		return owned, nil

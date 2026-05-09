@@ -1306,6 +1306,30 @@ type ServiceBinding struct {
 	Aliases  AliasSet
 }
 
+func (bndp ServiceBindings) AttachDependencyResults(
+	owner string,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	owned := make([]dagql.AnyResult, 0, len(bndp))
+	for i := range bndp {
+		binding := &bndp[i]
+		if binding.Service.Self() == nil {
+			continue
+		}
+		attached, err := attach(binding.Service)
+		if err != nil {
+			return nil, fmt.Errorf("attach %s service %q: %w", owner, binding.Hostname, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Service])
+		if !ok {
+			return nil, fmt.Errorf("attach %s service %q: unexpected result %T", owner, binding.Hostname, attached)
+		}
+		binding.Service = typed
+		owned = append(owned, typed)
+	}
+	return owned, nil
+}
+
 type AliasSet []string
 
 func (set AliasSet) String() string {
