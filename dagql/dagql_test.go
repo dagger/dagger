@@ -2461,24 +2461,26 @@ func TestIDRecipeArgSchemaByVersion(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		view       call.View
+		hasRecipe  bool
 		nonNull    bool
 		hasDefault bool
 	}{
 		{
 			name:       "current",
 			view:       "",
+			hasRecipe:  true,
 			nonNull:    true,
 			hasDefault: true,
 		},
 		{
-			name:       "before defaulted args were supported by go codegen",
-			view:       "v0.12.9",
-			nonNull:    false,
-			hasDefault: false,
+			name:      "last released version before handle IDs",
+			view:      "v0.20.8",
+			hasRecipe: false,
 		},
 		{
-			name:       "after defaulted args were supported by go codegen",
-			view:       "v0.13.0",
+			name:       "first version with public recipe arg",
+			view:       "v0.21.0",
+			hasRecipe:  true,
 			nonNull:    true,
 			hasDefault: true,
 		},
@@ -2488,11 +2490,45 @@ func TestIDRecipeArgSchemaByVersion(t *testing.T) {
 			id := query.Fields.ForName("id")
 			require.NotNil(t, id)
 			recipe := id.Arguments.ForName("recipe")
+			if !tc.hasRecipe {
+				assert.Assert(t, recipe == nil)
+				return
+			}
+
 			require.NotNil(t, recipe)
 			assert.Equal(t, tc.nonNull, recipe.Type.NonNull)
 			assert.Equal(t, tc.hasDefault, recipe.DefaultValue != nil)
 		})
 	}
+}
+
+func TestIDResultByVersion(t *testing.T) {
+	cache := newCache(t)
+	ctx := dagql.ContextWithCache(testContext(), cache)
+	srv := newExternalDagqlServerForTest(t, Query{})
+	points.Install[Query](srv)
+
+	var point dagql.ObjectResult[*points.Point]
+	require.NoError(t, srv.Select(ctx, srv.Root(), &point, dagql.Selector{
+		Field: "point",
+		Args: []dagql.NamedInput{
+			{Name: "x", Value: dagql.Int(6)},
+			{Name: "y", Value: dagql.Int(7)},
+		},
+	}))
+
+	var current dagql.ID[*points.Point]
+	require.NoError(t, srv.Select(ctx, point, &current, dagql.Selector{Field: "id"}))
+	currentID := mustID(t, current)
+	assert.Assert(t, currentID.IsHandle())
+
+	var legacy dagql.ID[*points.Point]
+	require.NoError(t, srv.Select(ctx, point, &legacy, dagql.Selector{
+		Field: "id",
+		View:  "v0.20.8",
+	}))
+	legacyID := mustID(t, legacy)
+	assert.Assert(t, !legacyID.IsHandle())
 }
 
 func TestViewsCaching(t *testing.T) {

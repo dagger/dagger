@@ -122,7 +122,11 @@ export class Register {
       mod = mod.withInterface(typeDef)
     })
 
-    return await mod.id({ recipe: true })
+    if (supportsRecipeID(process.env.DAGGER_MODULE_ENGINE_VERSION ?? "")) {
+      const id = mod.id as (opts?: { recipe: boolean }) => Promise<ModuleID>
+      return await id({ recipe: true })
+    }
+    return await mod.id()
   }
 
   /**
@@ -277,6 +281,26 @@ export class Register {
 
     return enumMember[0]
   }
+}
+
+function supportsRecipeID(version: string): boolean {
+  if (version === "" || version === "latest") {
+    return true
+  }
+
+  const match = /^v?(\d+)\.(\d+)\.(\d+)/.exec(version)
+  if (!match) {
+    return false
+  }
+
+  const major = Number(match[1])
+  const minor = Number(match[2])
+  const patch = Number(match[3])
+
+  return (
+    major > 0 ||
+    (major === 0 && (minor > 21 || (minor === 21 && patch >= 0)))
+  )
 }
 
 /**

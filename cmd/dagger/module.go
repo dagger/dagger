@@ -167,6 +167,7 @@ func init() {
 	moduleInitCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate. See https://spdx.org/licenses/")
 	moduleInitCmd.Flags().StringSliceVar(&moduleIncludes, "include", nil, "Paths to include when loading the module. Only needed when extra paths are required to build the module. They are expected to be relative to the directory containing the module's dagger.json file (the module source root).")
 	moduleInitCmd.Flags().StringVar(&initBlueprint, "blueprint", "", "Reference another module as blueprint")
+	moduleInitCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
 	moduleInitCmd.Flags().BoolVar(&selfCalls, "with-self-calls", false, "Enable self-calls capability for the module (experimental)")
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
@@ -331,7 +332,9 @@ dagger init --sdk=go
 				modSrc = modSrc.WithIncludes(moduleIncludes)
 			}
 			// engine version must be set before setting blueprint
-			modSrc = modSrc.WithEngineVersion(modules.EngineVersionLatest)
+			if engineVersion := getCompatVersion(); engineVersion != "" {
+				modSrc = modSrc.WithEngineVersion(engineVersion)
+			}
 			// Install blueprint if specified
 			if initBlueprint != "" {
 				// Validate that we don't have both SDK and blueprint

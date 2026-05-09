@@ -13,17 +13,18 @@ import (
 )
 
 const (
-	ModSourceDirPath      = "/src"
-	RuntimeExecutablePath = "/runtime"
-	GenDir                = "sdk"
-	SDKGenPath            = "src/dagger/client/gen.py"
-	UserGenPath           = "src/dagger_gen.py"
-	SchemaPath            = "/schema.json"
-	VenvPath              = "/opt/venv"
-	ProjectCfg            = "pyproject.toml"
-	PipCompileLock        = "requirements.lock"
-	UvLock                = "uv.lock"
-	MainObjectName        = "Main"
+	ModSourceDirPath       = "/src"
+	RuntimeExecutablePath  = "/runtime"
+	GenDir                 = "sdk"
+	SDKGenPath             = "src/dagger/client/gen.py"
+	UserGenPath            = "src/dagger_gen.py"
+	SchemaPath             = "/schema.json"
+	VenvPath               = "/opt/venv"
+	ProjectCfg             = "pyproject.toml"
+	PipCompileLock         = "requirements.lock"
+	UvLock                 = "uv.lock"
+	MainObjectName         = "Main"
+	ModuleEngineVersionEnv = "DAGGER_MODULE_ENGINE_VERSION"
 )
 
 // UserConfig is the custom user configuration that users can add to their pyproject.toml.
@@ -132,6 +133,9 @@ type PythonSdk struct {
 
 	// Relative path to vendor client library into
 	VendorPath string
+
+	// Engine version configured for the target module.
+	EngineVersion string
 
 	// True if the module is new and we need to create files from the template
 	//
@@ -249,6 +253,11 @@ func (m *PythonSdk) Load(ctx context.Context, modSource *dagger.ModuleSource) (*
 		return nil, fmt.Errorf("runtime module load: %w", err)
 	}
 	m.Debug = debug
+	engineVersion, err := modSource.EngineVersion(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("runtime module load: %w", err)
+	}
+	m.EngineVersion = engineVersion
 
 	if err := m.Discovery.Load(ctx, m); err != nil {
 		return nil, fmt.Errorf("runtime module load: %w", err)
@@ -450,6 +459,7 @@ func (m *PythonSdk) WithSource() *PythonSdk {
 		// It's ok since the previous layer is already dependent on the target
 		// module's sources.
 		WithEnvVariable("DAGGER_MODULE", m.ModName).
+		WithEnvVariable(ModuleEngineVersionEnv, m.EngineVersion).
 		WithEnvVariable("DAGGER_DEFAULT_PYTHON_PACKAGE", m.PackageName).
 		WithEnvVariable("DAGGER_MAIN_OBJECT", m.MainObjectName)
 	return m

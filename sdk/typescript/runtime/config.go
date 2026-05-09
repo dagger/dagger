@@ -83,11 +83,12 @@ type moduleConfig struct {
 	entries          map[string]bool
 
 	// Module config
-	name    string
-	subPath string
-	modPath string
-	sdk     string
-	debug   bool
+	name          string
+	subPath       string
+	modPath       string
+	sdk           string
+	debug         bool
+	engineVersion string
 
 	// Location of the SDK library
 	sdkLibOrigin SDKLibOrigin
@@ -122,6 +123,11 @@ func analyzeModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) (c
 	cfg.modPath, err = modSource.SourceRootSubpath(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not load module config source root subpath: %w", err)
+	}
+
+	cfg.engineVersion, err = modSource.EngineVersion(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not load module config engine version: %w", err)
 	}
 
 	// We retrieve the SDK because if it's set, that means the module is implementing

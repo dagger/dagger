@@ -78,6 +78,14 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 		invalidateSchemaCache: srv.invalidateSchemaCache,
 	}
 	if !opts.NoIDs {
+		recipeIDFunc := func(ctx context.Context, self ObjectResult[T], _ map[string]Input, _ call.View) (AnyResult, error) {
+			selfID, err := self.RecipeID(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return NewResultForCurrentCall(ctx, NewDynamicID[T](selfID, opts.Typed))
+		}
+
 		idFunc := func(ctx context.Context, self ObjectResult[T], args map[string]Input, _ call.View) (AnyResult, error) {
 			var recipe bool
 			switch v := args["recipe"].(type) {
@@ -101,36 +109,34 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 			}
 			return NewResultForCurrentCall(ctx, NewDynamicID[T](selfID, opts.Typed))
 		}
-		idField := func(view ViewFilter, recipeArg InputSpec) Field[T] {
+		idField := func(view ViewFilter, args InputSpecs, fun func(context.Context, ObjectResult[T], map[string]Input, call.View) (AnyResult, error)) Field[T] {
 			return Field[T]{
 				Spec: &FieldSpec{
 					Name:        "id",
 					Description: fmt.Sprintf("A unique identifier for this %s.", class.TypeName()),
 					Type:        ID[T]{inner: opts.Typed},
-					Args:        NewInputSpecs(recipeArg),
+					Args:        args,
 					ViewFilter:  view,
 					DoNotCache:  "IDs describe the current attached result; cache hits could return stale runtime handles for an equivalent object.",
 				},
-				Func: idFunc,
+				Func: fun,
 			}
 		}
 		class.Install(
 			idField(
-				BeforeVersion("v0.13.0"),
-				InputSpec{
-					Name:        "recipe",
-					Description: "Return the canonical recipe-form ID instead of the default runtime handle ID.",
-					Type:        Optional[Boolean]{Value: Boolean(false)},
-				},
+				BeforeVersion("v0.21.0"),
+				InputSpecs{},
+				recipeIDFunc,
 			),
 			idField(
-				AfterVersion("v0.13.0"),
-				InputSpec{
+				AfterVersion("v0.21.0"),
+				NewInputSpecs(InputSpec{
 					Name:        "recipe",
 					Description: "Return the canonical recipe-form ID instead of the default runtime handle ID.",
 					Type:        Boolean(false),
 					Default:     Boolean(false),
-				},
+				}),
+				idFunc,
 			),
 		)
 		class.idable = true

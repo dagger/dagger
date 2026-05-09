@@ -102,6 +102,7 @@ func (n *NodeRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 		// Merge source code directory with current directory
 		WithDirectory(".", n.cfg.wrappedSourceCodeDirectory()).
 		WithMountedFile(entrypointPath, entrypointFile()).
+		WithEnvVariable(moduleEngineVersionEnv, n.cfg.engineVersion).
 		WithEntrypoint([]string{
 			"tsx", "--no-deprecation", "--tsconfig", n.cfg.tsConfigPath(), entrypointPath,
 		})
