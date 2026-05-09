@@ -780,7 +780,14 @@ func opaqueXattr(userxattr bool) string {
 func needsUserXAttr(ctx context.Context, sn Snapshotter, lm leases.Manager) (bool, error) {
 	key := identity.NewID()
 
-	if _, ok := leases.FromContext(ctx); !ok {
+	if leaseID, ok := leases.FromContext(ctx); !ok || leaseID == "" {
+		leaseCtx, err := leaseutil.EnsureLease(ctx)
+		if err != nil {
+			return false, errors.Wrap(err, "failed to ensure lease for checking user xattr")
+		}
+		ctx = leaseCtx
+	}
+	if leaseID, ok := leases.FromContext(ctx); !ok || leaseID == "" {
 		leaseCtx, done, err := leaseutil.WithLease(ctx, lm, leaseutil.MakeTemporary)
 		if err != nil {
 			return false, errors.Wrap(err, "failed to create lease for checking user xattr")

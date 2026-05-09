@@ -7,6 +7,7 @@ import (
 	"github.com/containerd/containerd/v2/core/leases"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/internal/buildkit/client"
+	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -319,8 +320,12 @@ func (cm *snapshotManager) linkContentToContextLease(ctx context.Context, desc o
 	if desc.Digest == "" {
 		return nil
 	}
+	ctx, err := leaseutil.EnsureLease(ctx)
+	if err != nil {
+		return errors.Wrap(err, "ensure lease for content")
+	}
 	leaseID, ok := leases.FromContext(ctx)
-	if !ok {
+	if !ok || leaseID == "" {
 		return nil
 	}
 	if err := cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{

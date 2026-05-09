@@ -98,7 +98,14 @@ func (sn *mergeSnapshotter) Merge(ctx context.Context, key string, diffs []Diff,
 		diffs = diffs[baseIndex:]
 	}
 
-	if _, ok := leases.FromContext(ctx); !ok {
+	if leaseID, ok := leases.FromContext(ctx); !ok || leaseID == "" {
+		leaseCtx, err := leaseutil.EnsureLease(ctx)
+		if err != nil {
+			return errors.Wrap(err, "failed to ensure temporary lease for view mounts during merge")
+		}
+		ctx = leaseCtx
+	}
+	if leaseID, ok := leases.FromContext(ctx); !ok || leaseID == "" {
 		leaseCtx, done, err := leaseutil.WithLease(ctx, sn.lm, leaseutil.MakeTemporary)
 		if err != nil {
 			return errors.Wrap(err, "failed to create temporary lease for view mounts during merge")

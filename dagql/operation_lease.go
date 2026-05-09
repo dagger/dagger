@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/containerd/containerd/v2/core/leases"
+	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 )
 
 type OperationLeaseProvider interface {
@@ -24,14 +25,17 @@ func ContextWithOperationLeaseProvider(ctx context.Context, provider OperationLe
 
 func withoutOperationLease(ctx context.Context) context.Context {
 	leaseID, ok := leases.FromContext(ctx)
-	if !ok || leaseID == "" {
-		return ctx
+	if ok && leaseID != "" {
+		ctx = leases.WithLease(ctx, "")
 	}
-	return leases.WithLease(ctx, "")
+	return leaseutil.WithoutLazyLease(ctx)
 }
 
 func withOperationLease(ctx context.Context) (context.Context, func(context.Context) error, error) {
 	if leaseID, ok := leases.FromContext(ctx); ok && leaseID != "" {
+		return ctx, func(context.Context) error { return nil }, nil
+	}
+	if leaseutil.HasLazyLease(ctx) {
 		return ctx, func(context.Context) error { return nil }, nil
 	}
 	provider, _ := ctx.Value(operationLeaseProviderKey{}).(OperationLeaseProvider)

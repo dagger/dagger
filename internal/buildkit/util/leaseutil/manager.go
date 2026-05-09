@@ -2,6 +2,7 @@ package leaseutil
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -9,6 +10,94 @@ import (
 	"github.com/containerd/containerd/v2/pkg/namespaces"
 	"github.com/pkg/errors"
 )
+
+type lazyLeaseScopeKey struct{}
+type withoutLazyLeaseScope struct{}
+
+type lazyLeaseScope struct {
+	mu       sync.Mutex
+	lm       leases.Manager
+	opts     []leases.Opt
+	lease    *LeaseRef
+	released bool
+}
+
+func WithLazyLease(ctx context.Context, lm leases.Manager, opts ...leases.Opt) (context.Context, func(context.Context) error, error) {
+	if leaseID, ok := leases.FromContext(ctx); ok && leaseID != "" {
+		return ctx, func(context.Context) error { return nil }, nil
+	}
+	if lm == nil {
+		return ctx, func(context.Context) error { return nil }, nil
+	}
+	if lazyLeaseFromContext(ctx) != nil {
+		return ctx, func(context.Context) error { return nil }, nil
+	}
+
+	scope := &lazyLeaseScope{
+		lm:   lm,
+		opts: append([]leases.Opt(nil), opts...),
+	}
+	return context.WithValue(ctx, lazyLeaseScopeKey{}, scope), scope.release, nil
+}
+
+func EnsureLease(ctx context.Context) (context.Context, error) {
+	if leaseID, ok := leases.FromContext(ctx); ok && leaseID != "" {
+		return ctx, nil
+	}
+	scope := lazyLeaseFromContext(ctx)
+	if scope == nil {
+		return ctx, nil
+	}
+	return scope.ensure(ctx)
+}
+
+func HasLazyLease(ctx context.Context) bool {
+	return lazyLeaseFromContext(ctx) != nil
+}
+
+func WithoutLazyLease(ctx context.Context) context.Context {
+	if lazyLeaseFromContext(ctx) == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, lazyLeaseScopeKey{}, withoutLazyLeaseScope{})
+}
+
+func lazyLeaseFromContext(ctx context.Context) *lazyLeaseScope {
+	scope, _ := ctx.Value(lazyLeaseScopeKey{}).(*lazyLeaseScope)
+	return scope
+}
+
+func (s *lazyLeaseScope) ensure(ctx context.Context) (context.Context, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.released {
+		return ctx, fmt.Errorf("operation lease scope already released")
+	}
+	if s.lease != nil {
+		return leases.WithLease(ctx, s.lease.l.ID), nil
+	}
+	lease, leaseCtx, err := NewLease(ctx, s.lm, s.opts...)
+	if err != nil {
+		return ctx, err
+	}
+	s.lease = lease
+	return leaseCtx, nil
+}
+
+func (s *lazyLeaseScope) release(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.released {
+		return nil
+	}
+	s.released = true
+	if s.lease == nil {
+		return nil
+	}
+	return s.lm.Delete(ctx, s.lease.l)
+}
 
 func WithLease(ctx context.Context, ls leases.Manager, opts ...leases.Opt) (context.Context, func(context.Context) error, error) {
 	leaseID, ok := leases.FromContext(ctx)
@@ -64,7 +153,7 @@ func (l *LeaseRef) Adopt(ctx context.Context) error {
 		return l.err
 	}
 	currentID, ok := leases.FromContext(ctx)
-	if !ok {
+	if !ok || currentID == "" {
 		return errors.Errorf("missing lease requirement for adopt")
 	}
 	for _, r := range l.resources {

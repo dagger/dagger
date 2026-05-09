@@ -10,6 +10,7 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/engine/snapshots/fsdiff"
 	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
+	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/locker"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
@@ -86,9 +87,12 @@ func (lm *applySnapshotDiffTestLeaseManager) ListResources(_ context.Context, le
 }
 
 type applySnapshotDiffTestSnapshotter struct {
-	mu         sync.Mutex
-	snapshots  map[string]ctdsnapshots.Info
-	mergeCalls [][]snapshot.Diff
+	mu             sync.Mutex
+	snapshots      map[string]ctdsnapshots.Info
+	prepareLeaseID []string
+	commitLeaseID  []string
+	mergeLeaseID   []string
+	mergeCalls     [][]snapshot.Diff
 }
 
 func newApplySnapshotDiffTestSnapshotter() *applySnapshotDiffTestSnapshotter {
@@ -103,9 +107,11 @@ func (sn *applySnapshotDiffTestSnapshotter) Mounts(context.Context, string) (sna
 	panic("unexpected Mounts call")
 }
 
-func (sn *applySnapshotDiffTestSnapshotter) Prepare(_ context.Context, key, parent string, _ ...ctdsnapshots.Opt) error {
+func (sn *applySnapshotDiffTestSnapshotter) Prepare(ctx context.Context, key, parent string, _ ...ctdsnapshots.Opt) error {
 	sn.mu.Lock()
 	defer sn.mu.Unlock()
+	leaseID, _ := leases.FromContext(ctx)
+	sn.prepareLeaseID = append(sn.prepareLeaseID, leaseID)
 	sn.snapshots[key] = ctdsnapshots.Info{Name: key, Parent: parent}
 	return nil
 }
@@ -135,9 +141,11 @@ func (sn *applySnapshotDiffTestSnapshotter) Usage(context.Context, string) (ctds
 	return ctdsnapshots.Usage{}, nil
 }
 
-func (sn *applySnapshotDiffTestSnapshotter) Commit(_ context.Context, name, key string, _ ...ctdsnapshots.Opt) error {
+func (sn *applySnapshotDiffTestSnapshotter) Commit(ctx context.Context, name, key string, _ ...ctdsnapshots.Opt) error {
 	sn.mu.Lock()
 	defer sn.mu.Unlock()
+	leaseID, _ := leases.FromContext(ctx)
+	sn.commitLeaseID = append(sn.commitLeaseID, leaseID)
 	info, ok := sn.snapshots[key]
 	if !ok {
 		return cerrdefs.ErrNotFound
@@ -161,9 +169,11 @@ func (sn *applySnapshotDiffTestSnapshotter) Walk(context.Context, ctdsnapshots.W
 
 func (sn *applySnapshotDiffTestSnapshotter) Close() error { return nil }
 
-func (sn *applySnapshotDiffTestSnapshotter) Merge(_ context.Context, key string, diffs []snapshot.Diff, _ ...ctdsnapshots.Opt) error {
+func (sn *applySnapshotDiffTestSnapshotter) Merge(ctx context.Context, key string, diffs []snapshot.Diff, _ ...ctdsnapshots.Opt) error {
 	sn.mu.Lock()
 	defer sn.mu.Unlock()
+	leaseID, _ := leases.FromContext(ctx)
+	sn.mergeLeaseID = append(sn.mergeLeaseID, leaseID)
 	sn.mergeCalls = append(sn.mergeCalls, append([]snapshot.Diff(nil), diffs...))
 	sn.snapshots[key] = ctdsnapshots.Info{Name: key}
 	return nil
@@ -206,6 +216,63 @@ func addApplySnapshotDiffTestImmutable(t *testing.T, cm *snapshotManager, snapsh
 		cm:          cm,
 		refMetadata: refMetadata{snapshotID: snapshotID, md: md},
 	}
+}
+
+func TestSnapshotManagerEnsuresLazyLeaseForCreateBoundaries(t *testing.T) {
+	t.Run("new", func(t *testing.T) {
+		cm := newApplySnapshotDiffTestManager(t)
+		lm := cm.LeaseManager.(*applySnapshotDiffTestLeaseManager)
+		ctx, release, err := leaseutil.WithLazyLease(context.Background(), lm)
+		require.NoError(t, err)
+		defer release(context.Background())
+
+		ref, err := cm.New(ctx, nil)
+		require.NoError(t, err)
+		require.NotNil(t, ref)
+		require.NoError(t, ref.Release(context.Background()))
+
+		sn := cm.Snapshotter.(*applySnapshotDiffTestSnapshotter)
+		require.Len(t, sn.prepareLeaseID, 1)
+		require.NotEmpty(t, sn.prepareLeaseID[0])
+	})
+
+	t.Run("merge", func(t *testing.T) {
+		cm := newApplySnapshotDiffTestManager(t)
+		lm := cm.LeaseManager.(*applySnapshotDiffTestLeaseManager)
+		ctx, release, err := leaseutil.WithLazyLease(context.Background(), lm)
+		require.NoError(t, err)
+		defer release(context.Background())
+		lower := addApplySnapshotDiffTestImmutable(t, cm, "lower-snapshot")
+		upper := addApplySnapshotDiffTestImmutable(t, cm, "upper-snapshot")
+
+		ref, err := cm.Merge(ctx, []ImmutableRef{lower, upper})
+		require.NoError(t, err)
+		require.NotNil(t, ref)
+		require.NoError(t, ref.Release(context.Background()))
+
+		sn := cm.Snapshotter.(*applySnapshotDiffTestSnapshotter)
+		require.Len(t, sn.mergeLeaseID, 1)
+		require.NotEmpty(t, sn.mergeLeaseID[0])
+	})
+
+	t.Run("commit", func(t *testing.T) {
+		cm := newApplySnapshotDiffTestManager(t)
+		lm := cm.LeaseManager.(*applySnapshotDiffTestLeaseManager)
+		mut, err := cm.New(context.Background(), nil)
+		require.NoError(t, err)
+		ctx, release, err := leaseutil.WithLazyLease(context.Background(), lm)
+		require.NoError(t, err)
+		defer release(context.Background())
+
+		ref, err := mut.Commit(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, ref)
+		require.NoError(t, ref.Release(context.Background()))
+
+		sn := cm.Snapshotter.(*applySnapshotDiffTestSnapshotter)
+		require.Len(t, sn.commitLeaseID, 1)
+		require.NotEmpty(t, sn.commitLeaseID[0])
+	})
 }
 
 func TestApplySnapshotDiffNilContract(t *testing.T) {

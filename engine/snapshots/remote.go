@@ -17,7 +17,14 @@ func (sr *immutableRef) ExportChain(ctx context.Context, refCfg config.RefConfig
 		return &ExportChain{}, nil
 	}
 
-	if _, ok := leases.FromContext(ctx); !ok {
+	if leaseID, ok := leases.FromContext(ctx); !ok || leaseID == "" {
+		var err error
+		ctx, err = leaseutil.EnsureLease(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if leaseID, ok := leases.FromContext(ctx); !ok || leaseID == "" {
 		leaseCtx, done, err := leaseutil.WithLease(ctx, sr.cm.LeaseManager, leaseutil.MakeTemporary)
 		if err != nil {
 			return nil, err

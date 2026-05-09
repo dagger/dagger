@@ -787,6 +787,11 @@ func (sr *mutableRef) mutableMount(ctx context.Context, readonly bool) (_ snapsh
 }
 
 func (sr *mutableRef) Commit(ctx context.Context) (ImmutableRef, error) {
+	ctx, err := leaseutil.EnsureLease(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "ensure lease for snapshot commit")
+	}
+
 	sr.cm.mu.Lock()
 	defer sr.cm.mu.Unlock()
 

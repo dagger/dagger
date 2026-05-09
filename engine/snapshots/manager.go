@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/locker"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -275,6 +276,10 @@ func (cm *snapshotManager) New(ctx context.Context, s ImmutableRef, opts ...RefO
 	}
 
 	snapshotID := id
+	ctx, err = leaseutil.EnsureLease(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "ensure lease for snapshot prepare")
+	}
 	err = cm.Snapshotter.Prepare(ctx, snapshotID, parentSnapshotID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to prepare %v as %s", parentSnapshotID, snapshotID)
@@ -420,6 +425,10 @@ func (cm *snapshotManager) ApplySnapshotDiff(ctx context.Context, lower, upper I
 		}
 		diffs = append(diffs, diff)
 	}
+	ctx, err := leaseutil.EnsureLease(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "ensure lease for snapshot diff")
+	}
 	if err := cm.Snapshotter.Merge(ctx, snapshotID, diffs); err != nil {
 		return nil, errors.Wrap(err, "failed to apply snapshot diff")
 	}
@@ -479,6 +488,10 @@ func (cm *snapshotManager) Merge(ctx context.Context, parents []ImmutableRef, op
 	diffs := make([]snapshot.Diff, 0, len(normalized))
 	for _, parent := range normalized {
 		diffs = append(diffs, snapshot.Diff{Upper: parent.SnapshotID()})
+	}
+	ctx, err := leaseutil.EnsureLease(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "ensure lease for snapshot merge")
 	}
 	if err := cm.Snapshotter.Merge(ctx, snapshotID, diffs); err != nil {
 		return nil, errors.Wrap(err, "failed to merge snapshots")

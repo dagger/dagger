@@ -112,7 +112,14 @@ func (cm *snapshotManager) ensureExportBlob(
 			return ensureExportBlobResult{}, nil
 		}
 
-		if _, ok := leases.FromContext(ctx); !ok {
+		if leaseID, ok := leases.FromContext(ctx); !ok || leaseID == "" {
+			leaseCtx, err := leaseutil.EnsureLease(ctx)
+			if err != nil {
+				return ensureExportBlobResult{}, err
+			}
+			ctx = leaseCtx
+		}
+		if leaseID, ok := leases.FromContext(ctx); !ok || leaseID == "" {
 			leaseCtx, done, err := leaseutil.WithLease(ctx, cm.LeaseManager, leaseutil.MakeTemporary)
 			if err != nil {
 				return ensureExportBlobResult{}, err
@@ -355,6 +362,10 @@ func ensureCompression(ctx context.Context, ref *immutableRef, comp compression.
 		return err
 	}
 	if l != nil {
+		ctx, err = leaseutil.EnsureLease(ctx)
+		if err != nil {
+			return err
+		}
 		if err := l.Adopt(ctx); err != nil {
 			return err
 		}

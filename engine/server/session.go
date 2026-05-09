@@ -589,7 +589,7 @@ func (srv *Server) initializeDaggerClient(
 		if leaseID, ok := leases.FromContext(ctx); ok && leaseID != "" {
 			return ctx, func(context.Context) error { return nil }, nil
 		}
-		return leaseutil.WithLease(ctx, srv.leaseManager, leaseutil.MakeTemporary)
+		return leaseutil.WithLazyLease(ctx, srv.leaseManager, leaseutil.MakeTemporary)
 	}))
 	// make query available via context to all APIs
 	ctx = core.ContextWithQuery(ctx, client.dagqlRoot)
@@ -1330,7 +1330,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 		if leaseID, ok := leases.FromContext(ctx); ok && leaseID != "" {
 			return ctx, func(context.Context) error { return nil }, nil
 		}
-		return leaseutil.WithLease(ctx, srv.leaseManager, leaseutil.MakeTemporary)
+		return leaseutil.WithLazyLease(ctx, srv.leaseManager, leaseutil.MakeTemporary)
 	}))
 
 	// make query available via context to all APIs
