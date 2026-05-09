@@ -293,6 +293,49 @@ func (DirectorySuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 		_, err := c.Directory().WithDirectory("/", c.Directory()).Sync(ctx)
 		require.NoError(t, err)
 	})
+
+	t.Run("chains preserve layered semantics", func(ctx context.Context, t *testctx.T) {
+		base := c.Directory().
+			WithNewFile("keep.txt", "base").
+			WithNewFile("conflict.txt", "base")
+		srcA := c.Directory().
+			WithNewFile("a.txt", "a").
+			WithNewFile("conflict.txt", "a").
+			WithNewFile("skip.txt", "skip")
+		srcB := c.Directory().
+			WithNewFile("b.txt", "b")
+		srcC := c.Directory().
+			WithNewFile("c.txt", "c").
+			WithNewFile("conflict.txt", "c")
+
+		dir := base.
+			WithDirectory("/", srcA, dagger.DirectoryWithDirectoryOpts{Exclude: []string{"skip.txt"}}).
+			WithDirectory("nested", srcB).
+			WithDirectory("/", srcC)
+
+		contents, err := dir.File("keep.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "base", contents)
+
+		contents, err = dir.File("a.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "a", contents)
+
+		contents, err = dir.File("nested/b.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "b", contents)
+
+		contents, err = dir.File("c.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "c", contents)
+
+		contents, err = dir.File("conflict.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "c", contents)
+
+		_, err = dir.File("skip.txt").Contents(ctx)
+		require.Error(t, err)
+	})
 }
 
 func (DirectorySuite) TestWithDirectoryPermissionsOverride(ctx context.Context, t *testctx.T) {
@@ -314,6 +357,17 @@ func (DirectorySuite) TestWithDirectoryPermissionsOverride(ctx context.Context, 
 	require.Contains(t, stdout, "751 /out/nested")
 	require.Contains(t, stdout, "751 /out/nested/file.txt")
 	require.Contains(t, stdout, "751 /out/root.txt")
+
+	dir = c.Directory().WithDirectory("/", src, dagger.DirectoryWithDirectoryOpts{
+		Permissions: 0o751,
+	})
+
+	ctr = c.Container().From(alpineImage).WithDirectory("/", dir)
+	stdout, err = ctr.WithExec([]string{"sh", "-lc", "stat -c '%a %n' /nested /nested/file.txt /root.txt"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stdout, "751 /nested")
+	require.Contains(t, stdout, "751 /nested/file.txt")
+	require.Contains(t, stdout, "751 /root.txt")
 }
 
 func (DirectorySuite) TestWithDirectoryUnion(ctx context.Context, t *testctx.T) {

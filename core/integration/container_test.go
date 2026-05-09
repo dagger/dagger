@@ -1647,6 +1647,50 @@ func (ContainerSuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "some-content", contents)
+
+	t.Run("chains preserve layered semantics", func(ctx context.Context, t *testctx.T) {
+		srcA := c.Directory().
+			WithNewFile("a.txt", "a").
+			WithNewFile("conflict.txt", "a").
+			WithNewFile("skip.txt", "skip")
+		srcB := c.Directory().
+			WithNewFile("b.txt", "b")
+		srcC := c.Directory().
+			WithNewFile("c.txt", "c").
+			WithNewFile("conflict.txt", "c")
+
+		ctr := c.Container().
+			From(alpineImage).
+			WithDirectory("/work", srcA, dagger.ContainerWithDirectoryOpts{Exclude: []string{"skip.txt"}}).
+			WithDirectory("/work/nested", srcB).
+			WithDirectory("/work", srcC)
+
+		out, err := ctr.WithExec([]string{"sh", "-lc", "cat /work/a.txt /work/nested/b.txt /work/c.txt /work/conflict.txt"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "abcc", out)
+
+		_, err = ctr.WithExec([]string{"cat", "/work/skip.txt"}).Sync(ctx)
+		require.Error(t, err)
+	})
+
+	t.Run("chains into mounted directory", func(ctx context.Context, t *testctx.T) {
+		mount := c.Directory().
+			WithNewFile("base.txt", "base")
+		srcA := c.Directory().
+			WithNewFile("a.txt", "a")
+		srcB := c.Directory().
+			WithNewFile("b.txt", "b")
+
+		ctr := c.Container().
+			From(alpineImage).
+			WithMountedDirectory("/mnt", mount).
+			WithDirectory("/mnt/a", srcA).
+			WithDirectory("/mnt/b", srcB)
+
+		out, err := ctr.WithExec([]string{"sh", "-lc", "cat /mnt/base.txt /mnt/a/a.txt /mnt/b/b.txt"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "baseab", out)
+	})
 }
 
 func (ContainerSuite) TestWithFile(ctx context.Context, t *testctx.T) {
