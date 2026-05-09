@@ -298,8 +298,7 @@ function supportsRecipeID(version: string): boolean {
   const patch = Number(match[3])
 
   return (
-    major > 0 ||
-    (major === 0 && (minor > 21 || (minor === 21 && patch >= 0)))
+    major > 0 || (major === 0 && (minor > 21 || (minor === 21 && patch >= 0)))
   )
 }
 

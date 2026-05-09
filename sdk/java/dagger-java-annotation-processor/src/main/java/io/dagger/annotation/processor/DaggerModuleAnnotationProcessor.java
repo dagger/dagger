@@ -83,6 +83,7 @@ import javax.lang.model.util.Elements;
 @SupportedSourceVersion(SourceVersion.RELEASE_17)
 @AutoService(Processor.class)
 public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
+  private static final String SUPPORTS_RECIPE_ID_ENV = "_DAGGER_JAVA_SDK_SUPPORTS_RECIPE_ID";
 
   private Elements elementUtils;
 
@@ -373,7 +374,7 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     return value;
   }
 
-  static JavaFile generate(ModuleInfo moduleInfo) {
+  static JavaFile generate(ModuleInfo moduleInfo, boolean supportsRecipeID) {
     try {
       var rm =
           MethodSpec.methodBuilder("register")
@@ -443,10 +444,14 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
         }
         rm.addCode(")"); // end of .withEnum(
       }
-      rm.addCode(";\n") // end of module instantiation
-          .addStatement(
-              "return module.id(new $T.IdArguments().withRecipe(true))",
-              io.dagger.client.Module.class);
+      rm.addCode(";\n"); // end of module instantiation
+      if (supportsRecipeID) {
+        rm.addStatement(
+            "return module.id(new $T.IdArguments().withRecipe(true))",
+            io.dagger.client.Module.class);
+      } else {
+        rm.addStatement("return module.id()");
+      }
 
       var im =
           MethodSpec.methodBuilder("invoke")
@@ -780,7 +785,8 @@ public class DaggerModuleAnnotationProcessor extends AbstractProcessor {
     DaggerType.setKnownEnums(moduleInfo.enumInfos().keySet());
 
     try {
-      JavaFile f = generate(moduleInfo);
+      JavaFile f =
+          generate(moduleInfo, Boolean.parseBoolean(System.getenv(SUPPORTS_RECIPE_ID_ENV)));
 
       f.writeTo(processingEnv.getFiler());
     } catch (IOException e) {

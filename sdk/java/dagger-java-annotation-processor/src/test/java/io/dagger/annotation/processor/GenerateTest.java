@@ -11,7 +11,11 @@ import uk.org.webcompere.systemstubs.environment.EnvironmentVariables;
 public class GenerateTest {
   @Test
   public void testAnnotationGeneration() throws Exception {
-    new EnvironmentVariables("_DAGGER_JAVA_SDK_MODULE_NAME", "dagger-java")
+    new EnvironmentVariables(
+            "_DAGGER_JAVA_SDK_MODULE_NAME",
+            "dagger-java",
+            "_DAGGER_JAVA_SDK_SUPPORTS_RECIPE_ID",
+            "true")
         .execute(
             () -> {
               Compilation compilation =

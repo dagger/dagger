@@ -25,6 +25,7 @@ from dagger.mod._analyzer.metadata import (
 logger = logging.getLogger(__name__)
 
 _VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)")
+_RECIPE_ID_MIN_VERSION = (0, 21, 0)
 
 
 async def register_from_metadata(metadata: ModuleMetadata) -> dagger.ModuleID:
@@ -70,10 +71,7 @@ def _supports_recipe_id(version: str) -> bool:
     if not match:
         return False
 
-    major, minor, patch = (int(part) for part in match.groups())
-    return major > 0 or (
-        major == 0 and (minor > 21 or (minor == 21 and patch >= 0))
-    )
+    return tuple(int(part) for part in match.groups()) >= _RECIPE_ID_MIN_VERSION
 
 
 def _build_object_typedef(obj_meta: ObjectTypeMetadata) -> dagger.TypeDef:
