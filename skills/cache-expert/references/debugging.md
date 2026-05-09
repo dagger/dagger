@@ -87,6 +87,45 @@ DO NOT EVER USE broad `./...` WHEN RUNNING TESTS AS YOU WILL ACCIDENTALLY CAPTUR
 
 `./core/integration`, `./dagql/idtui` and `./dagql/idtui/multiprefixw` are integration-style test packages (not quick unit loops). Avoid running them during tight cache-debug cycles unless you explicitly need those integration paths.
 
+## CI Trace Replay
+
+When a failure happens in CI, start from the trace if one is available. The
+user may provide either a raw trace ID or a command copied from the web UI,
+such as:
+
+```bash
+dagger trace <trace-id>
+```
+
+Replay that trace locally with plain progress and capture it to a temp file:
+
+```bash
+dagger --progress=plain trace <trace-id> > /tmp/ci-trace-<trace-id>.log 2>&1
+```
+
+This does not rerun the CI job. It fetches and prints the recorded trace in the
+same style as local `--progress=plain` output, so the rest of this debugging
+guide applies: keep the full output in `/tmp`, inspect it with `rg`, and avoid
+dumping the whole trace into the conversation.
+
+Start with the usual failure scan:
+
+```bash
+rg -n "panic:|fatal error:|SIGSEGV|--- FAIL:|^FAIL\s|Error:|error:" /tmp/ci-trace-<trace-id>.log
+```
+
+Then inspect around the interesting spans:
+
+```bash
+rg -n "TestName|FieldName|module name|command text" /tmp/ci-trace-<trace-id>.log
+sed -n '<start>,<end>p' /tmp/ci-trace-<trace-id>.log
+```
+
+Use the replayed trace to identify the exact failing call, subtest, generated
+command, or engine error. Once the failing surface is clear, decide whether to
+reproduce it locally with a tight `dagger --progress=plain call engine-dev ...`
+command or debug directly from the recorded CI trace.
+
 ## Performance Debugging With Persistent Dev Engine
 
 For most testing/debugging flows, prefer ephemeral engines via:
