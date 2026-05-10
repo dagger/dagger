@@ -70,6 +70,7 @@ func (r PythonSdk) MarshalJSON() ([]byte, error) {
 		ContextDirPath string
 		SubPath        string
 		VendorPath     string
+		EngineVersion  string
 		IsInit         bool
 		Discovery      *Discovery
 	}
@@ -85,6 +86,7 @@ func (r PythonSdk) MarshalJSON() ([]byte, error) {
 	concrete.ContextDirPath = r.ContextDirPath
 	concrete.SubPath = r.SubPath
 	concrete.VendorPath = r.VendorPath
+	concrete.EngineVersion = r.EngineVersion
 	concrete.IsInit = r.IsInit
 	concrete.Discovery = r.Discovery
 	return json.Marshal(&concrete)
@@ -104,6 +106,7 @@ func (r *PythonSdk) UnmarshalJSON(bs []byte) error {
 		ContextDirPath string
 		SubPath        string
 		VendorPath     string
+		EngineVersion  string
 		IsInit         bool
 		Discovery      *Discovery
 	}
@@ -123,6 +126,7 @@ func (r *PythonSdk) UnmarshalJSON(bs []byte) error {
 	r.ContextDirPath = concrete.ContextDirPath
 	r.SubPath = concrete.SubPath
 	r.VendorPath = concrete.VendorPath
+	r.EngineVersion = concrete.EngineVersion
 	r.IsInit = concrete.IsInit
 	r.Discovery = concrete.Discovery
 	return nil
