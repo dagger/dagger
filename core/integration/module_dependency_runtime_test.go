@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -183,49 +184,69 @@ export class Test {
 }
 `
 
-func (ModuleSuite) TestUseLocal(ctx context.Context, t *testctx.T) {
-	type testCase struct {
-		sdk    string
-		source string
-	}
+type localDepTestCase struct {
+	sdk    string
+	source string
+}
 
-	for _, tc := range []testCase{
-		{
-			sdk:    "go",
-			source: useGoOuter,
-		},
-		{
-			sdk:    "python",
-			source: usePythonOuter,
-		},
-		{
-			sdk:    "typescript",
-			source: useTSOuter,
-		},
-	} {
-		t.Run(fmt.Sprintf("%s uses go", tc.sdk), func(ctx context.Context, t *testctx.T) {
+var useLocalDepTestCases = []localDepTestCase{
+	{
+		sdk:    "go",
+		source: useGoOuter,
+	},
+	{
+		sdk:    "python",
+		source: usePythonOuter,
+	},
+	{
+		sdk:    "typescript",
+		source: useTSOuter,
+	},
+}
+
+// TestUseLocalDependencyFromParentModule verifies the core local-dependency
+// contract: a parent module installs a dependency by relative path, then client
+// calls into the parent module can execute parent code that calls the dependency.
+func (ModuleSuite) TestUseLocalDependencyFromParentModule(ctx context.Context, t *testctx.T) {
+	for _, tc := range useLocalDepTestCases {
+		t.Run(fmt.Sprintf("%s parent calls local dependency", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-
-			modGen := goGitBase(t, c).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				WithWorkdir("/work/dep").
-				With(daggerExec("module", "init", "--sdk=go", "dep", ".")).
-				With(sdkSource("go", useInner)).
-				WithWorkdir("/work").
-				With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, "--source=.", ".")).
-				With(sdkSource(tc.sdk, tc.source)).
-				With(daggerExec("module", "install", "./dep"))
+			modGen := testModuleWithLocalDep(t, c, tc.sdk, tc.source)
 
 			out, err := modGen.With(daggerQuery(`{useHello}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"useHello":"hello"}`, out)
+		})
+	}
+}
 
-			// can use direct dependency directly
-			out, err = modGen.With(daggerQuery(`{dep{hello}}`)).Stdout(ctx)
+// TestUseLocalDependencyDirectSchemaAccess documents current schema exposure:
+// a client that loads the parent module can call the direct dependency's root
+// field too. Workspace semantics are expected to change this; failures here are
+// about dependency re-exporting, not parent module use of its dependency.
+func (ModuleSuite) TestUseLocalDependencyDirectSchemaAccess(ctx context.Context, t *testctx.T) {
+	for _, tc := range useLocalDepTestCases {
+		t.Run(fmt.Sprintf("%s schema exposes local dependency", tc.sdk), func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			modGen := testModuleWithLocalDep(t, c, tc.sdk, tc.source)
+
+			out, err := modGen.With(daggerQuery(`{dep{hello}}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"dep":{"hello":"hello"}}`, out)
 		})
 	}
+}
+
+func testModuleWithLocalDep(t *testctx.T, c *dagger.Client, sdk, source string) *dagger.Container {
+	return goGitBase(t, c).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/dep").
+		With(daggerExec("module", "init", "--sdk=go", "dep", ".")).
+		With(sdkSource("go", useInner)).
+		WithWorkdir("/work").
+		With(daggerExec("module", "init", "test", "--sdk="+sdk, "--source=.", ".")).
+		With(sdkSource(sdk, source)).
+		With(daggerExec("module", "install", "./dep"))
 }
 
 func (ModuleSuite) TestCodegenOnDepChange(ctx context.Context, t *testctx.T) {
