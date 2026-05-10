@@ -251,7 +251,10 @@ func testModuleWithLocalDep(t *testctx.T, c *dagger.Client, sdk, source string) 
 		With(daggerExec("module", "install", "./dep"))
 }
 
-func (ModuleSuite) TestCodegenOnDepChange(ctx context.Context, t *testctx.T) {
+// TestDevelopRefreshesParentCodegenAfterLocalDependencyAPIChange verifies that
+// `dagger develop` updates parent SDK codegen after a local dependency makes a
+// breaking API change, so parent code can be updated to call the new API.
+func (ModuleSuite) TestDevelopRefreshesParentCodegenAfterLocalDependencyAPIChange(ctx context.Context, t *testctx.T) {
 	type testCase struct {
 		sdk      string
 		source   string
@@ -279,24 +282,16 @@ func (ModuleSuite) TestCodegenOnDepChange(ctx context.Context, t *testctx.T) {
 			changed:  strings.ReplaceAll(useTSOuter, `.hello()`, `.hellov2()`),
 		},
 	} {
-		t.Run(fmt.Sprintf("%s uses go", tc.sdk), func(ctx context.Context, t *testctx.T) {
+		t.Run(fmt.Sprintf("%s parent codegen observes local dependency API change", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-
-			modGen := goGitBase(t, c).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				WithWorkdir("/work/dep").
-				With(daggerExec("module", "init", "--sdk=go", "dep", ".")).
-				With(sdkSource("go", useInner)).
-				WithWorkdir("/work").
-				With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, "--source=.", ".")).
-				With(sdkSource(tc.sdk, tc.source)).
-				With(daggerExec("module", "install", "./dep"))
+			modGen := testModuleWithLocalDep(t, c, tc.sdk, tc.source)
 
 			out, err := modGen.With(daggerQuery(`{useHello}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"useHello":"hello"}`, out)
 
-			// make back-incompatible change to dep
+			// Rename the dependency function so parent codegen must refresh before
+			// parent source can update from Hello to Hellov2.
 			newInner := strings.ReplaceAll(useInner, `Hello()`, `Hellov2()`)
 			modGen = modGen.
 				WithWorkdir("/work/dep").
