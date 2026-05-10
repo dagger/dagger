@@ -16,12 +16,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func (ModuleSuite) TestConflictingSameNameDeps(ctx context.Context, t *testctx.T) {
-	// A -> B -> Dint
-	// A -> C -> Dstr
-	// where Dint and Dstr are modules with the same name and same object names but conflicting types
-
-	// this test is often slow if you're running locally, skip if -short is specified
+// TestConflictingSameNameTransitiveDeps covers two distinct dependency-graph
+// contracts for A -> B -> Dint and A -> C -> Dstr, where both D modules have
+// the same name and object names but incompatible field types.
+func (ModuleSuite) TestConflictingSameNameTransitiveDeps(ctx context.Context, t *testctx.T) {
+	// This setup is often slow locally; keep the two contracts below in one test
+	// so they share the same dependency graph.
 	if testing.Short() {
 		t.SkipNow()
 	}
@@ -129,17 +129,19 @@ func (m *A) Fn(ctx context.Context) (string, error) {
 `,
 		)
 
-	out, err := ctr.With(daggerQuery(`{fn}`)).Stdout(ctx)
-	require.NoError(t, err)
-	require.JSONEq(t, `{"fn": "foo123"}`, out)
+	t.Run("runtime resolves conflicting transitive deps", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.With(daggerQuery(`{fn}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"fn": "foo123"}`, out)
+	})
 
-	types := currentSchema(ctx, t, ctr).Types
-	require.NotNil(t, types.Get("A"))
-	require.NotNil(t, types.Get("B"))
-	require.NotNil(t, types.Get("C"))
-
-	// verify that no types from transitive deps show up (only direct ones)
-	require.Nil(t, types.Get("D"))
+	t.Run("schema exposes only direct deps", func(ctx context.Context, t *testctx.T) {
+		types := currentSchema(ctx, t, ctr).Types
+		require.NotNil(t, types.Get("A"))
+		require.NotNil(t, types.Get("B"))
+		require.NotNil(t, types.Get("C"))
+		require.Nil(t, types.Get("D"))
+	})
 }
 
 var useInner = `package main
