@@ -1289,3 +1289,33 @@ class Foo:
     fn = metadata.objects["Foo"].functions[0]
     names = [p.python_name for p in fn.parameters]
     assert names == ["x"]
+
+
+# -- Annotated type alias is not followed (DAGGER_PYTHON_SDK_LEGACY escape) -
+
+
+def test_ast_annotated_alias_drops_default_path():
+    """Module-level Annotated aliases lose metadata under AST analysis.
+
+    The runtime-reflection path (gated by DAGGER_PYTHON_SDK_LEGACY) resolves
+    the alias via typing.get_type_hints(..., include_extras=True) and keeps
+    the DefaultPath. The AST parser only inspects the annotation node on the
+    parameter, which is a bare ast.Name, so the metadata is silently dropped.
+    """
+    metadata = _analyze("""
+from typing import Annotated
+import dagger
+from dagger import function, object_type
+
+Source = Annotated[dagger.Directory, dagger.DefaultPath(".")]
+
+@object_type
+class SourceRepro:
+    @function
+    async def grep_dir(self, directory_arg: Source, pattern: str) -> str:
+        return ""
+""", main="SourceRepro")
+    param = metadata.objects["SourceRepro"].functions[0].parameters[0]
+    assert param.python_name == "directory_arg"
+    # Documents the broken behaviour: AST path loses the DefaultPath.
+    assert param.default_path is None
