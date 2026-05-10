@@ -1,8 +1,11 @@
 package core
 
-// Workspace alignment: mostly aligned; coverage targets post-workspace module dependency runtime semantics, but setup still relies on historical module helpers.
-// Scope: Dependency graph resolution, local module deps, codegen refresh after dep changes, dep sync behavior, and multi-dependency local wiring.
-// Intent: Keep module dependency runtime behavior separate from explicit module dependency CLI mutation coverage.
+// These tests cover a module using other modules as dependencies at runtime,
+// after those dependencies are already installed in the module configuration.
+//
+// See also:
+// - module_dependency_cli_test.go: CLI mutations of module dependency entries.
+// - workspace_modules_test.go: workspace-level module installation/configuration.
 
 import (
 	"context"
