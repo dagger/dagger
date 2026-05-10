@@ -324,39 +324,14 @@ func (ModuleSuite) TestCodegenOnDepChange(ctx context.Context, t *testctx.T) {
 	}
 }
 
-func (ModuleSuite) TestSyncDeps(ctx context.Context, t *testctx.T) {
-	// verify that changes to deps result in a develop to the depender module
-	type testCase struct {
-		sdk    string
-		source string
-	}
-
-	for _, tc := range []testCase{
-		{
-			sdk:    "go",
-			source: useGoOuter,
-		},
-		{
-			sdk:    "python",
-			source: usePythonOuter,
-		},
-		{
-			sdk:    "typescript",
-			source: useTSOuter,
-		},
-	} {
-		t.Run(fmt.Sprintf("%s uses go", tc.sdk), func(ctx context.Context, t *testctx.T) {
+// TestDevelopRefreshesLocalDependencyImplementationChanges verifies that
+// `dagger develop` refreshes a parent module after a local dependency changes
+// implementation but keeps the same API shape.
+func (ModuleSuite) TestDevelopRefreshesLocalDependencyImplementationChanges(ctx context.Context, t *testctx.T) {
+	for _, tc := range useLocalDepTestCases {
+		t.Run(fmt.Sprintf("%s parent observes local dependency change", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-
-			modGen := goGitBase(t, c).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				WithWorkdir("/work/dep").
-				With(daggerExec("module", "init", "--sdk=go", "dep", ".")).
-				With(sdkSource("go", useInner)).
-				WithWorkdir("/work").
-				With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, "--source=.", ".")).
-				With(sdkSource(tc.sdk, tc.source)).
-				With(daggerExec("module", "install", "./dep"))
+			modGen := testModuleWithLocalDep(t, c, tc.sdk, tc.source)
 
 			modGen = modGen.With(daggerQuery(`{useHello}`))
 			out, err := modGen.Stdout(ctx)
