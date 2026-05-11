@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: aligned; intentionally compat-focused.
-// Scope: Legacy module-shaped dagger.json forms that are still accepted and normalized as module config.
-// Intent: Keep supported module-config compatibility explicit without mixing it with workspace compat inference.
+// These tests cover old single-module `dagger.json` fields that are still
+// accepted. They verify `dagger develop` normalizes include/exclude,
+// dependencies, source, SDK, engine version, and dependency pins.
+//
+// See also:
+// - module_config_test.go: current module config behavior.
+// - workspace_compat_test.go: legacy workspace inference from `dagger.json`.
 
 import (
 	"context"
@@ -14,9 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// This file owns old module-shaped dagger.json forms that are still accepted
-// and normalized as module config. Legacy workspace inference from dagger.json
-// does not belong here; it belongs in workspace_compat_test.go.
 func (ModuleConfigSuite) TestLegacyModuleConfigUpgrade(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

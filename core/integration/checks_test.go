@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: aligned; this file already matches the workspace-era split.
-// Scope: Check discovery and execution across direct SDK, compat blueprint, and workspace-installed modules.
-// Intent: Keep successor workspace behavior and legacy compat coverage explicit and separate.
+// These tests cover `dagger check`, which discovers and runs module check
+// functions. They verify listing and running checks from SDK modules, legacy
+// compat blueprints, and workspace-installed modules.
+//
+// See also:
+// - generators_test.go: generator discovery and execution.
+// - workspace_modules_test.go: installing modules into workspaces.
 
 import (
 	"context"

@@ -1,8 +1,10 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Cache volumes and cache-key behavior exposed through the core API.
-// Intent: Keep cache semantics stable independently of module and workspace cleanup.
+// These tests cover Dagger cache volumes and API-level cache keys used to reuse
+// filesystem state across container executions.
+//
+// See also:
+// - localcache_test.go: engine-side local cache GC and retention.
 
 import (
 	"context"

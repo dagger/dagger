@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: mostly aligned; coverage targets post-workspace module validation and API-shape semantics, but setup still relies on historical module helpers.
-// Scope: Wrapped object exposure, namespacing, dependency cycle validation, and reserved-word validation across SDKs.
-// Intent: Keep module validation and API-shape rules explicit and separate from the remaining runtime and current-module API coverage in the historical umbrella suite.
+// These tests cover errors raised while turning module source into a Dagger
+// schema. They verify wrapped object exposure, namespacing rules, dependency
+// cycle errors, and reserved-word checks across SDKs.
+//
+// See also:
+// - module_definition_test.go: valid API definitions.
+// - module_runtime_behavior_test.go: behavior after a module loads.
 
 import (
 	"context"

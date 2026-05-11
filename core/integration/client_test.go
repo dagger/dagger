@@ -1,8 +1,11 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Client lifecycle and connection semantics.
-// Intent: Keep engine client setup and teardown behavior stable independently of workspace cleanup.
+// These tests cover `dagger.Connect` clients used by Go callers. They verify
+// connection setup, teardown, and session behavior between a caller and the
+// engine.
+//
+// See also:
+// - suite_test.go: shared connection setup used by integration tests.
 
 import (
 	"context"

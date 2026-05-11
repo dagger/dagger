@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: aligned; this file already matches the workspace-era split.
-// Scope: Explicit module dependency install, uninstall, and update CLI behavior.
-// Intent: Keep module dependency mutations separate from workspace install behavior and legacy command aliases.
+// These tests cover CLI commands that edit dependency entries in a module's
+// config: install, uninstall, and update. They stop at config mutation and do
+// not test calling the dependencies.
+//
+// See also:
+// - module_dependency_runtime_test.go: runtime use after dependencies are installed.
+// - workspace_modules_test.go: workspace-level module installation.
 
 import (
 	"context"
