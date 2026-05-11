@@ -1,8 +1,11 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Client generator output and generated-client dependency behavior.
-// Intent: Keep generated client behavior stable independently of workspace cleanup.
+// These tests cover the client libraries produced by `dagger client`. They
+// verify the files written into a project and the dependencies those generated
+// clients declare.
+//
+// See also:
+// - module_develop_cli_test.go: generated module code from `dagger develop`.
 
 import (
 	"context"

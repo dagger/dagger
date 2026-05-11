@@ -1,8 +1,11 @@
 package core
 
-// Workspace alignment: mostly aligned; command intent is explicit, though the file still uses host-side setup patterns.
-// Scope: Git credential forwarding for module sources and dependency installs.
-// Intent: Keep module auth behavior covered with exact host-side command helpers instead of legacy command rewriting.
+// These tests cover forwarding host Git credentials into operations that fetch
+// module source or install module dependencies from private Git repositories.
+//
+// See also:
+// - module_private_deps_test.go: SSH-backed private dependency access.
+// - git_test.go: auth-independent Git source behavior.
 
 import (
 	"context"

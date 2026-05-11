@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: mostly aligned; coverage targets post-workspace current-module introspection semantics, but setup still relies on historical module helpers.
-// Scope: `dag.CurrentModule()` access to generated context, dependencies, module identity, source, and workdir helpers.
-// Intent: Keep current-module introspection and workdir behavior separate from self-calls and the remaining umbrella runtime coverage.
+// These tests cover `dag.CurrentModule()` calls made from inside module code.
+// They verify access to the generated call context, installed dependencies,
+// module identity, module source, and workdir helpers.
+//
+// See also:
+// - module_self_calls_test.go: modules invoking their own API.
+// - module_runtime_behavior_test.go: general module execution behavior.
 
 import (
 	"context"

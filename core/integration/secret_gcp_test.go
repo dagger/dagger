@@ -1,8 +1,9 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: GCP-backed secret provider integration.
-// Intent: Keep GCP secret integration stable independently of workspace cleanup.
+// These tests cover resolving Dagger secrets from Google Cloud Secret Manager.
+//
+// See also:
+// - secretprovider_test.go: shared secret provider behavior.
 
 import (
 	"context"

@@ -1,8 +1,7 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Registry mirror configuration and registry access behavior.
-// Intent: Keep registry mirror behavior stable independently of workspace cleanup.
+// These tests cover engine registry mirrors used for container image pulls.
+// They verify mirrors served over HTTP and mirrors protected by a custom CA.
 
 import (
 	"context"

@@ -1,8 +1,8 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Changeset creation and mutation semantics exposed by generated modules.
-// Intent: Keep changeset behavior stable without entangling it with workspace cleanup.
+// These tests cover Changeset values produced by comparing directories. They
+// verify added, removed, and modified paths, patch/export output, merging, and
+// use from generated module bindings.
 
 import (
 	"context"
