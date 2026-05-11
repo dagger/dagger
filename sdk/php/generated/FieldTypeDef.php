@@ -13,7 +13,7 @@ namespace Dagger;
  *
  * A field on an object has a static value, as opposed to a function on an object whose value is computed by invoking code (and can accept arguments).
  */
-class FieldTypeDef extends Client\AbstractObject implements Client\IdAble
+class FieldTypeDef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The reason this enum member is deprecated, if any.
@@ -36,10 +36,10 @@ class FieldTypeDef extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this FieldTypeDef.
      */
-    public function id(): FieldTypeDefId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\FieldTypeDefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

@@ -78,43 +78,29 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 			return nil, fmt.Errorf("module object SDK input call frame: %w", err)
 		}
 		return moduleObjectFieldsToSDKInput(ctx, t, parentCall, x.Self().Fields)
-	case dagql.ObjectResult[*InterfaceAnnotatedValue]:
-		parentCall, err := x.ResultCall()
-		if err != nil {
-			return nil, fmt.Errorf("interface SDK input call frame: %w", err)
-		}
-		return moduleObjectFieldsToSDKInput(ctx, t, parentCall, x.Self().Fields)
 	case *ModuleObject:
 		return moduleObjectFieldsToSDKInput(ctx, t, dagql.CurrentCall(ctx), x.Fields)
-	case *InterfaceAnnotatedValue:
-		return moduleObjectFieldsToSDKInput(ctx, t, dagql.CurrentCall(ctx), x.Fields)
-	case DynamicID:
+	case dagql.IDable:
 		dag, err := CurrentDagqlServer(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("current dagql server: %w", err)
 		}
 		id, err := x.ID()
 		if err != nil {
-			return nil, fmt.Errorf("load DynamicID ID: %w", err)
+			return nil, fmt.Errorf("load object ID: %w", err)
 		}
 		if id == nil || id.EngineResultID() == 0 {
-			return nil, fmt.Errorf("load DynamicID: expected attached result ID")
+			return nil, fmt.Errorf("load object ID: expected attached result ID")
 		}
 		val, err := dag.Load(ctx, id)
 		if err != nil {
-			return nil, fmt.Errorf("load DynamicID: %w", err)
+			return nil, fmt.Errorf("load ID: %w", err)
 		}
 		switch x := val.(type) {
 		case dagql.ObjectResult[*ModuleObject]:
 			parentCall, err := x.ResultCall()
 			if err != nil {
 				return nil, fmt.Errorf("loaded module object SDK input call frame: %w", err)
-			}
-			return moduleObjectFieldsToSDKInput(ctx, t, parentCall, x.Self().Fields)
-		case dagql.ObjectResult[*InterfaceAnnotatedValue]:
-			parentCall, err := x.ResultCall()
-			if err != nil {
-				return nil, fmt.Errorf("loaded interface SDK input call frame: %w", err)
 			}
 			return moduleObjectFieldsToSDKInput(ctx, t, parentCall, x.Self().Fields)
 		default:
@@ -321,14 +307,12 @@ func (t *ModuleObjectType) CollectContent(ctx context.Context, value dagql.AnyRe
 	if value == nil {
 		return content.CollectJSONable(nil)
 	}
-	var objFields map[string]any
-	if obj, ok := dagql.UnwrapAs[*ModuleObject](value); ok {
-		objFields = obj.Fields
-	} else if iface, ok := dagql.UnwrapAs[*InterfaceAnnotatedValue](value); ok {
-		objFields = iface.Fields
-	} else {
+
+	obj, ok := dagql.UnwrapAs[*ModuleObject](value)
+	if !ok {
 		return fmt.Errorf("expected *ModuleObject, got %T", value)
 	}
+	objFields := obj.Fields
 	parentCall, err := value.ResultCall()
 	if err != nil {
 		return fmt.Errorf("resolve module object result call: %w", err)

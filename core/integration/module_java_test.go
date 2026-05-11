@@ -20,6 +20,10 @@ func TestJava(t *testing.T) {
 
 func (JavaSuite) TestInit(_ context.Context, t *testctx.T) {
 	t.Run("from upstream", func(ctx context.Context, t *testctx.T) {
+		// TODO: re-enable once upstream has unified ID support; the
+		// published Java SDK can't handle the ID scalar produced by this branch's schema.
+		t.Skip("requires unified ID support in upstream Java SDK")
+
 		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
@@ -35,6 +39,11 @@ func (JavaSuite) TestInit(_ context.Context, t *testctx.T) {
 	})
 
 	t.Run("from alias", func(ctx context.Context, t *testctx.T) {
+		// The alias expands to github.com/dagger/dagger/sdk/java@engine.Tag.
+		// Local dev-engine builds synthesize a pseudo tag that is not a Git ref;
+		// remote/CI builds use a commit SHA and keep this alias coverage active.
+		skipSDKAliasIfDevTag(t, "Java")
+
 		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
@@ -50,6 +59,10 @@ func (JavaSuite) TestInit(_ context.Context, t *testctx.T) {
 	})
 
 	t.Run("from alias with ref", func(ctx context.Context, t *testctx.T) {
+		// TODO: re-enable once main has unified ID support; the @main SDK
+		// can't handle the ID scalar produced by this branch's schema.
+		t.Skip("requires unified ID support on main branch")
+
 		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).

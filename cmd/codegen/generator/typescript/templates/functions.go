@@ -9,6 +9,8 @@ import (
 	"strings"
 	"text/template"
 
+	"golang.org/x/mod/semver"
+
 	"github.com/iancoleman/strcase"
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
@@ -31,15 +33,18 @@ type typescriptTemplateFuncs struct {
 }
 
 func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
-	commonFunc := generator.NewCommonFunctions(funcs.schemaVersion, &FormatTypeFunc{
+	formatTypeFunc := &FormatTypeFunc{
 		formatNameFunc: funcs.formatName,
-	})
+	}
+	commonFunc := generator.NewCommonFunctions(funcs.schemaVersion, formatTypeFunc)
 	return template.FuncMap{
+		"FormatFieldOutputType":     funcs.formatFieldOutputType(commonFunc),
+		"FormatFieldReturnType":     funcs.formatFieldReturnType(commonFunc),
 		"CommentToLines":            funcs.commentToLines,
 		"FormatDeprecation":         funcs.formatDeprecation,
 		"FormatExperimental":        funcs.formatExperimental,
 		"FormatReturnType":          commonFunc.FormatReturnType,
-		"FormatInputType":           commonFunc.FormatInputType,
+		"FormatInputType":           funcs.formatInputType(commonFunc),
 		"FormatOutputType":          commonFunc.FormatOutputType,
 		"FormatEnum":                funcs.formatEnum,
 		"FormatName":                funcs.formatName,
@@ -69,6 +74,7 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"ToUpperCase":               commonFunc.ToUpperCase,
 		"ToSingleType":              funcs.toSingleType,
 		"GetEnumValues":             funcs.getEnumValues,
+		"IsInterface":               funcs.isInterface,
 		"CheckVersionCompatibility": commonFunc.CheckVersionCompatibility,
 		"ModuleRelPath":             funcs.moduleRelPath,
 		"FormatProtected":           funcs.formatProtected,
@@ -76,7 +82,124 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"Dependencies":              funcs.Dependencies,
 		"HasLocalDependencies":      funcs.HasLocalDependencies,
 		"IsBundle":                  funcs.isBundle,
+		"LegacyTypeScriptSDKCompat": funcs.legacyTypeScriptSDKCompat,
+		"LegacyIDableTypes":         funcs.legacyIDableTypes,
+		"LegacyIDName":              funcs.legacyIDName,
+		"LegacyLoadFromIDName":      funcs.legacyLoadFromIDName,
 	}
+}
+
+// legacyTypeScriptSDKCompatCutoverVersion is the first engine version whose
+// TypeScript SDK surface is generated with unified ID-only re-entry and
+// first-class interface client types. The -0 prerelease floor intentionally
+// treats v0.21.0 dev builds as post-cutover while keeping v0.20.x modules in
+// legacy mode.
+const legacyTypeScriptSDKCompatCutoverVersion = "v0.21.0-0"
+
+func (funcs typescriptTemplateFuncs) legacyTypeScriptSDKCompat() bool {
+	if funcs.schemaVersion == "" || !semver.IsValid(funcs.schemaVersion) {
+		return false
+	}
+	return semver.Compare(funcs.schemaVersion, legacyTypeScriptSDKCompatCutoverVersion) < 0
+}
+
+// isInterface checks if the type is a GraphQL interface.
+func (funcs typescriptTemplateFuncs) isInterface(t *introspection.Type) bool {
+	return t.Kind == introspection.TypeKindInterface
+}
+
+// formatInputType returns a function that formats input values. Arguments
+// named id stay on the ID scalar surface in modern mode, and become typed
+// legacy FooID aliases in legacy mode when @expectedType identifies a concrete
+// object/interface.
+func (funcs typescriptTemplateFuncs) formatInputType(
+	commonFunc *generator.CommonFunctions,
+) func(arg introspection.InputValue, scopes ...string) (string, error) {
+	return func(arg introspection.InputValue, scopes ...string) (string, error) {
+		if arg.Name == "id" {
+			if funcs.legacyTypeScriptSDKCompat() {
+				if expectedType := arg.Directives.ExpectedType(); expectedType != "" && expectedType != "Node" && !strings.HasPrefix(expectedType, "_") {
+					representation := funcs.scoped(scopes...) + funcs.legacyIDName(expectedType)
+					if arg.TypeRef != nil && arg.TypeRef.IsList() {
+						representation += "[]"
+					}
+					return representation, nil
+				}
+			}
+			return commonFunc.FormatOutputType(arg.TypeRef, scopes...)
+		}
+		if expectedType := arg.Directives.ExpectedType(); expectedType != "" {
+			representation := funcs.scoped(scopes...) + funcs.formatName(expectedType)
+			if arg.TypeRef != nil && arg.TypeRef.IsList() {
+				representation += "[]"
+			}
+			return representation, nil
+		}
+		return commonFunc.FormatInputType(arg.TypeRef, scopes...)
+	}
+}
+
+// formatFieldOutputType returns the raw response value type for a field. Legacy
+// ID fields use old FooID aliases so generated caches/constructors match the
+// pre-cutover public surface.
+func (funcs typescriptTemplateFuncs) formatFieldOutputType(
+	commonFunc *generator.CommonFunctions,
+) func(field introspection.Field, scopes ...string) (string, error) {
+	return func(field introspection.Field, scopes ...string) (string, error) {
+		if funcs.legacyTypeScriptSDKCompat() && field.TypeRef.IsScalar() {
+			if expectedType := funcs.fieldExpectedIDType(field); expectedType != "" {
+				return funcs.scoped(scopes...) + funcs.legacyIDName(expectedType), nil
+			}
+		}
+		return commonFunc.FormatOutputType(field.TypeRef, scopes...)
+	}
+}
+
+// formatFieldReturnType returns the public method return type for a field. ID
+// fields that are object re-entry points remain converted to their object type;
+// plain ID fields use legacy FooID aliases only in legacy mode.
+func (funcs typescriptTemplateFuncs) formatFieldReturnType(
+	commonFunc *generator.CommonFunctions,
+) func(field introspection.Field, scopes ...string) (string, error) {
+	return func(field introspection.Field, scopes ...string) (string, error) {
+		if commonFunc.ConvertID(field) {
+			return commonFunc.FormatReturnType(field, scopes...)
+		}
+		if funcs.legacyTypeScriptSDKCompat() && field.TypeRef.IsScalar() {
+			if expectedType := funcs.fieldExpectedIDType(field); expectedType != "" {
+				return funcs.scoped(scopes...) + funcs.legacyIDName(expectedType), nil
+			}
+		}
+		return commonFunc.FormatReturnType(field, scopes...)
+	}
+}
+
+func (funcs typescriptTemplateFuncs) scoped(scopes ...string) string {
+	scope := strings.Join(scopes, "")
+	if scope != "" {
+		scope += "."
+	}
+	return scope
+}
+
+func (funcs typescriptTemplateFuncs) fieldExpectedIDType(field introspection.Field) string {
+	if !field.TypeRef.IsScalar() {
+		return ""
+	}
+	ref := field.TypeRef
+	if ref.Kind == introspection.TypeKindNonNull {
+		ref = ref.OfType
+	}
+	if ref.Kind != introspection.TypeKindScalar || ref.Name != "ID" {
+		return ""
+	}
+	if expectedType := field.Directives.ExpectedType(); expectedType != "" && expectedType != "Node" && !strings.HasPrefix(expectedType, "_") {
+		return expectedType
+	}
+	if field.Name == "id" && field.ParentObject != nil && field.ParentObject.Name != "Node" && !strings.HasPrefix(field.ParentObject.Name, "_") {
+		return field.ParentObject.Name
+	}
+	return ""
 }
 
 // pascalCase change a type name into pascalCase
@@ -394,6 +517,44 @@ func (funcs typescriptTemplateFuncs) moduleRelPath(path string) string {
 
 func (funcs typescriptTemplateFuncs) formatProtected(s string) string {
 	return strings.TrimSuffix(s, "_")
+}
+
+func (funcs typescriptTemplateFuncs) legacyIDName(typeName string) string {
+	return typeName + "ID"
+}
+
+func (funcs typescriptTemplateFuncs) legacyLoadFromIDName(typeName string) string {
+	return funcs.formatName("load" + typeName + "FromID")
+}
+
+func (funcs typescriptTemplateFuncs) legacyIDableTypes() []*introspection.Type {
+	if !funcs.legacyTypeScriptSDKCompat() {
+		return nil
+	}
+	schema := generator.GetSchema()
+	if schema == nil {
+		return nil
+	}
+	var types []*introspection.Type
+	for _, t := range schema.Types {
+		if t == nil || t.Name == "Node" || strings.HasPrefix(t.Name, "_") {
+			continue
+		}
+		if t.Kind != introspection.TypeKindObject && t.Kind != introspection.TypeKindInterface {
+			continue
+		}
+		idName := funcs.legacyIDName(t.Name)
+		if schema.Types.Get(idName) != nil {
+			continue
+		}
+		if !slices.ContainsFunc(t.Fields, func(field *introspection.Field) bool {
+			return field.Name == "id" && field.TypeRef != nil && field.TypeRef.IsScalar()
+		}) {
+			continue
+		}
+		types = append(types, t)
+	}
+	return types
 }
 
 func (funcs typescriptTemplateFuncs) isClientOnly() bool {

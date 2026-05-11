@@ -8,12 +8,12 @@ import (
 	"slices"
 	"strings"
 
-	"dagger.io/dagger/querybuilder"
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/dagger/querybuilder"
 
 	"github.com/dagger/dagger/util/parallel"
 	"github.com/iancoleman/strcase"
@@ -584,7 +584,7 @@ func (node *ModTreeNode) buildScaleOutModuleQuery(query *querybuilder.Selection)
 		if err != nil {
 			return nil, fmt.Errorf("encode dir ID: %w", err)
 		}
-		query = query.Select("loadDirectoryFromID").Arg("id", dirIDEnc)
+		query = query.Select("node").Arg("id", dirIDEnc)
 		query = query.Select("asModuleSource").
 			Arg("sourceRootPath", modSrc.DirSrc.OriginalSourceRootSubpath)
 	}
@@ -603,6 +603,7 @@ func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) 
 		return nil, fmt.Errorf("create module dagql server: %w", err)
 	}
 	srv.Around(AroundFunc)
+	InstallCoreSchemaLoaders(srv)
 	// Install default "dependencies" (ie the core)
 	defaultDeps, err := q.DefaultDeps(ctx)
 	if err != nil {

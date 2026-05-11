@@ -18,7 +18,7 @@ defmodule Dagger.Terminal do
   @doc """
   A unique identifier for this Terminal.
   """
-  @spec id(t()) :: {:ok, Dagger.TerminalID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = terminal) do
     query_builder =
       terminal.query_builder |> QB.select("id")
@@ -41,8 +41,9 @@ defmodule Dagger.Terminal do
        %Dagger.Terminal{
          query_builder:
            QB.query()
-           |> QB.select("loadTerminalFromID")
-           |> QB.put_arg("id", id),
+           |> QB.select("node")
+           |> QB.put_arg("id", id)
+           |> QB.inline_fragment("Terminal"),
          client: terminal.client
        }}
     end
@@ -58,6 +59,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.Terminal do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_terminal_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.Terminal{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("Terminal"),
+       client: dag.client
+     }}
   end
 end

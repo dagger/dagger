@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A definition of a value in a custom enum defined in a Module.
  */
-class EnumValueTypeDef extends Client\AbstractObject implements Client\IdAble
+class EnumValueTypeDef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The reason this enum member is deprecated, if any.
@@ -34,10 +34,10 @@ class EnumValueTypeDef extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this EnumValueTypeDef.
      */
-    public function id(): EnumValueTypeDefId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\EnumValueTypeDefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

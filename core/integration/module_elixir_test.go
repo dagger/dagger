@@ -37,6 +37,10 @@ func (ElixirSuite) TestInit(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("from upstream", func(ctx context.Context, t *testctx.T) {
+		// TODO: re-enable once upstream has unified ID support; the
+		// published Elixir SDK can't handle the ID scalar produced by this branch's schema.
+		t.Skip("requires unified ID support in upstream Elixir SDK")
+
 		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
@@ -52,6 +56,11 @@ func (ElixirSuite) TestInit(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("from alias", func(ctx context.Context, t *testctx.T) {
+		// The alias expands to github.com/dagger/dagger/sdk/elixir@engine.Tag.
+		// Local dev-engine builds synthesize a pseudo tag that is not a Git ref;
+		// remote/CI builds use a commit SHA and keep this alias coverage active.
+		skipSDKAliasIfDevTag(t, "Elixir")
+
 		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
@@ -67,6 +76,10 @@ func (ElixirSuite) TestInit(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("from alias with ref", func(ctx context.Context, t *testctx.T) {
+		// TODO: re-enable once main has unified ID support; the @main SDK
+		// can't handle the ID scalar produced by this branch's schema.
+		t.Skip("requires unified ID support on main branch")
+
 		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).

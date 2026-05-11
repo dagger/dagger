@@ -11,14 +11,14 @@ namespace Dagger;
 /**
  * A Unix or TCP/IP socket that can be mounted into a container.
  */
-class Socket extends Client\AbstractObject implements Client\IdAble
+class Socket extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A unique identifier for this Socket.
      */
-    public function id(): SocketId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\SocketId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 }

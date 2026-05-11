@@ -19,7 +19,6 @@ import (
 	"github.com/spf13/pflag"
 
 	"dagger.io/dagger"
-	"dagger.io/dagger/querybuilder"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
@@ -28,6 +27,7 @@ import (
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/dagger/dagger/util/patchpreview"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/dagger/querybuilder"
 )
 
 var (
@@ -836,7 +836,7 @@ func handleResponse(ctx context.Context, dag *dagger.Client, returnType *modType
 func toChangeset(dag *dagger.Client, item any) (*dagger.Changeset, error) {
 	switch v := item.(type) {
 	case string:
-		return dag.LoadChangesetFromID(dagger.ChangesetID(v)), nil
+		return dagger.Ref[*dagger.Changeset](dag, dagger.ID(v)), nil
 	case map[string]interface{}:
 		if id, ok := v["id"]; ok {
 			return toChangeset(dag, id)
@@ -941,7 +941,7 @@ func startInteractivePromptMode(ctx context.Context, dag *dagger.Client, respons
 	}
 
 	// Load the LLM from the ID and assign it as $agent
-	llm := dag.LoadLLMFromID(dagger.LLMID(llmID))
+	llm := dagger.Ref[*dagger.LLM](dag, dagger.ID(llmID))
 	if _, err := handler.llm(ctx); err != nil { // init llmSession
 		return err
 	}

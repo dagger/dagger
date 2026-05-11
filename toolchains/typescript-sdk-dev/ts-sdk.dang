@@ -31,6 +31,17 @@ type TypescriptSdkDev {
   }
 
   """
+  Format the SDK source with prettier via eslint --fix
+  """
+  pub format: Changeset! @generate {
+    nodejsDevContainer
+      .withExec(["yarn", "--cwd", sourcePath, "fmt"])
+      .directory(".")
+      .withoutDirectory(sourcePath + "/node_modules")
+      .changes(workspace)
+  }
+
+  """
   Check the formatting of Typescript docs snippets
   """
   pub lintDocsSnippets(

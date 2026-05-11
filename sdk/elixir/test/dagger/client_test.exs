@@ -17,6 +17,7 @@ defmodule Dagger.ClientTest do
   }
 
   alias Dagger.Core.ExecError
+  alias Dagger.Core.QueryBuilder, as: QB
 
   setup_all do
     dag = Dagger.connect!(connect_timeout: :timer.seconds(60))
@@ -200,10 +201,16 @@ defmodule Dagger.ClientTest do
       |> Directory.file("hello.txt")
       |> File.id()
 
-    assert {:ok, "Hello, world!"} =
-             dag
-             |> Client.load_file_from_id(id)
-             |> File.contents()
+    file = %Dagger.File{
+      query_builder:
+        QB.query()
+        |> QB.select("node")
+        |> QB.put_arg("id", id)
+        |> QB.inline_fragment("File"),
+      client: dag.client
+    }
+
+    assert {:ok, "Hello, world!"} = File.contents(file)
   end
 
   test "load secret", %{dag: dag} do
@@ -212,10 +219,16 @@ defmodule Dagger.ClientTest do
       |> Client.set_secret("foo", "bar")
       |> Secret.id()
 
-    assert {:ok, "bar"} =
-             dag
-             |> Client.load_secret_from_id(id)
-             |> Secret.plaintext()
+    secret = %Dagger.Secret{
+      query_builder:
+        QB.query()
+        |> QB.select("node")
+        |> QB.put_arg("id", id)
+        |> QB.inline_fragment("Secret"),
+      client: dag.client
+    }
+
+    assert {:ok, "bar"} = Secret.plaintext(secret)
   end
 
   test "container sync", %{dag: dag} do

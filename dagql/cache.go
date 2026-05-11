@@ -1283,7 +1283,35 @@ func sharedResultObjectTypeName(res *sharedResult, state sharedResultPayloadStat
 	return ""
 }
 
-func wrapSharedResultWithResolver(res *sharedResult, hitCache bool, resolver TypeResolver) (AnyResult, error) {
+// resolverForSharedResultObject returns a resolver that can instantiate the
+// cached object's concrete type. Dynamic schemas may need to rebuild the server
+// from the result call before dependency-module object types are visible.
+func resolverForSharedResultObject(ctx context.Context, resolver TypeResolver, res *sharedResult, typeName string) (TypeResolver, error) {
+	if resolver == nil || res == nil || typeName == "" {
+		return resolver, nil
+	}
+	if _, ok := resolver.ObjectType(typeName); ok {
+		return resolver, nil
+	}
+	srv, ok := resolver.(*Server)
+	if !ok || srv.resultServerForCall == nil {
+		return resolver, nil
+	}
+	resultCall := res.loadResultCall()
+	if resultCall == nil {
+		return resolver, nil
+	}
+	resolved, err := srv.resultServerForCall(ctx, resultCall)
+	if err != nil {
+		return nil, fmt.Errorf("resolve schema for result %d type %q: %w", res.id, typeName, err)
+	}
+	if resolved == nil {
+		return resolver, nil
+	}
+	return resolved, nil
+}
+
+func wrapSharedResultWithResolver(ctx context.Context, res *sharedResult, hitCache bool, resolver TypeResolver) (AnyResult, error) {
 	ret := Result[Typed]{
 		shared:   res,
 		hitCache: hitCache,
@@ -1311,6 +1339,11 @@ func wrapSharedResultWithResolver(res *sharedResult, hitCache bool, resolver Typ
 	}
 	if resolver == nil {
 		return nil, fmt.Errorf("reconstruct object result %q: missing type resolver", typeName)
+	}
+	var err error
+	resolver, err = resolverForSharedResultObject(ctx, resolver, res, typeName)
+	if err != nil {
+		return nil, err
 	}
 	objType, ok := resolver.ObjectType(typeName)
 	if !ok {
@@ -1866,7 +1899,7 @@ func (r Result[T]) NthValue(ctx context.Context, nth int) (AnyResult, error) {
 			return nil, fmt.Errorf("load %dth value from %T: current dagql cache: %w", nth, self, err)
 		}
 		touchSharedResultLastUsed(childShared, time.Now().UnixNano())
-		retResAny, err := wrapSharedResultWithResolver(childShared, true, srv)
+		retResAny, err := wrapSharedResultWithResolver(ctx, childShared, true, srv)
 		if err != nil {
 			return nil, fmt.Errorf("load %dth value from %T: reconstruct result: %w", nth, self, err)
 		}
@@ -2833,7 +2866,7 @@ func (c *Cache) getOrInitCall(
 		}
 		if shared := val.cacheSharedResult(); shared != nil && shared.id != 0 {
 			touchSharedResultLastUsed(shared, time.Now().UnixNano())
-			normalized, err := wrapSharedResultWithResolver(shared, false, resolver)
+			normalized, err := wrapSharedResultWithResolver(ctx, shared, false, resolver)
 			if err != nil {
 				return nil, fmt.Errorf("normalize do-not-cache attached result: %w", err)
 			}
@@ -2863,7 +2896,7 @@ func (c *Cache) getOrInitCall(
 			return nil, fmt.Errorf("classify do-not-cache result: %w", err)
 		}
 		if detached.isObject {
-			normalized, err := wrapSharedResultWithResolver(detached, false, resolver)
+			normalized, err := wrapSharedResultWithResolver(ctx, detached, false, resolver)
 			if err != nil {
 				return nil, fmt.Errorf("normalize do-not-cache object result: %w", err)
 			}
@@ -3586,7 +3619,7 @@ func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, r
 	var attachedSelf AnyResult = self
 	parentState := parent.loadPayloadState()
 	if parentState.hasValue && parentState.isObject {
-		objSelf, err := wrapSharedResultWithResolver(parent, false, resolver)
+		objSelf, err := wrapSharedResultWithResolver(ctx, parent, false, resolver)
 		if err != nil {
 			return fmt.Errorf("attach dependency results: reconstruct attached self: %w", err)
 		}

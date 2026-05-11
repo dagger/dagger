@@ -90,8 +90,9 @@ defmodule Dagger.ModuleSource do
          %Dagger.ModuleConfigClient{
            query_builder:
              QB.query()
-             |> QB.select("loadModuleConfigClientFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("ModuleConfigClient"),
            client: module_source.client
          }
        end}
@@ -137,8 +138,9 @@ defmodule Dagger.ModuleSource do
          %Dagger.ModuleSource{
            query_builder:
              QB.query()
-             |> QB.select("loadModuleSourceFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("ModuleSource"),
            client: module_source.client
          }
        end}
@@ -234,7 +236,7 @@ defmodule Dagger.ModuleSource do
   @doc """
   A unique identifier for this ModuleSource.
   """
-  @spec id(t()) :: {:ok, Dagger.ModuleSourceID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = module_source) do
     query_builder =
       module_source.query_builder |> QB.select("id")
@@ -389,8 +391,9 @@ defmodule Dagger.ModuleSource do
        %Dagger.ModuleSource{
          query_builder:
            QB.query()
-           |> QB.select("loadModuleSourceFromID")
-           |> QB.put_arg("id", id),
+           |> QB.select("node")
+           |> QB.put_arg("id", id)
+           |> QB.inline_fragment("ModuleSource"),
          client: module_source.client
        }}
     end
@@ -410,8 +413,9 @@ defmodule Dagger.ModuleSource do
          %Dagger.ModuleSource{
            query_builder:
              QB.query()
-             |> QB.select("loadModuleSourceFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("ModuleSource"),
            client: module_source.client
          }
        end}
@@ -479,7 +483,7 @@ defmodule Dagger.ModuleSource do
   @doc """
   Append the provided dependencies to the module source's dependency list.
   """
-  @spec with_dependencies(t(), [Dagger.ModuleSourceID.t()]) :: Dagger.ModuleSource.t()
+  @spec with_dependencies(t(), [String.t()]) :: Dagger.ModuleSource.t()
   def with_dependencies(%__MODULE__{} = module_source, dependencies) do
     query_builder =
       module_source.query_builder
@@ -584,7 +588,7 @@ defmodule Dagger.ModuleSource do
   @doc """
   Add toolchains to the module source.
   """
-  @spec with_toolchains(t(), [Dagger.ModuleSourceID.t()]) :: Dagger.ModuleSource.t()
+  @spec with_toolchains(t(), [String.t()]) :: Dagger.ModuleSource.t()
   def with_toolchains(%__MODULE__{} = module_source, toolchains) do
     query_builder =
       module_source.query_builder
@@ -746,6 +750,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.ModuleSource do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_module_source_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.ModuleSource{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("ModuleSource"),
+       client: dag.client
+     }}
   end
 end

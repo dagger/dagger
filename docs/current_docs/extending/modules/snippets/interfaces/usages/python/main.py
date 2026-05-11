@@ -6,4 +6,4 @@ from dagger import dag
 class Usage:
     @dagger.function
     async def test(self) -> str:
-        return await dag.my_module().foo(dag.example().as_my_module_fooer())
+        return await dag.my_module().foo(dag.example())

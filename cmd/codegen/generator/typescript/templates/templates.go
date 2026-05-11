@@ -18,7 +18,7 @@ func New(
 ) *template.Template {
 	topLevelTemplate := "api"
 	templateDeps := []string{
-		topLevelTemplate, "header", "objects", "object", "method", "method_solve", "call_args", "method_comment", "types", "args", "default",
+		topLevelTemplate, "header", "objects", "object", "interface", "method", "method_solve", "call_args", "method_comment", "types", "args", "default",
 	}
 
 	fileNames := make([]string, 0, len(templateDeps))

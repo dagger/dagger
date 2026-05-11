@@ -122,6 +122,28 @@ public class TypeRef
         return false;
     }
 
+    public bool IsInterface()
+    {
+        var tr = this;
+
+        if (Kind == "NON_NULL")
+        {
+            tr = OfType!;
+        }
+
+        if (tr.Kind == "INTERFACE")
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    public bool IsObjectOrInterface()
+    {
+        return IsObject() || IsInterface();
+    }
+
     public TypeRef GetType_()
     {
         var tr = this;

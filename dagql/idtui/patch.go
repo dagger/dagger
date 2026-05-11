@@ -9,14 +9,16 @@ import (
 )
 
 const previewPatchQuery = `
-query PreviewPatch($changeset: ChangesetID!) {
-	loadChangesetFromID(id: $changeset) {
-		diffStats {
-			path
-			oldPath
-			kind
-			addedLines
-			removedLines
+query PreviewPatch($changeset: ID!) {
+	changeset: node(id: $changeset) {
+		... on Changeset {
+			diffStats {
+				path
+				oldPath
+				kind
+				addedLines
+				removedLines
+			}
 		}
 	}
 }
@@ -29,7 +31,7 @@ func PreviewPatch(ctx context.Context, dag *dagger.Client, changeset *dagger.Cha
 	}
 
 	var res struct {
-		LoadChangesetFromID struct {
+		Changeset struct {
 			DiffStats []struct {
 				Path         string
 				OldPath      *string
@@ -52,7 +54,7 @@ func PreviewPatch(ctx context.Context, dag *dagger.Client, changeset *dagger.Cha
 		return nil, fmt.Errorf("query diff stat: %w", err)
 	}
 
-	diffStat := res.LoadChangesetFromID.DiffStats
+	diffStat := res.Changeset.DiffStats
 	entries := make([]patchpreview.Entry, len(diffStat))
 	for i, s := range diffStat {
 		entries[i] = patchpreview.Entry{Path: s.Path, Kind: s.Kind, Added: s.AddedLines, Removed: s.RemovedLines}

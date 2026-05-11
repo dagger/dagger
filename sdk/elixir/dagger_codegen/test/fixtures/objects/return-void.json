@@ -1,12 +1,16 @@
 {
   "description": "An active function call.",
+  "directives": [],
   "enumValues": [],
   "fields": [
     {
       "args": [
         {
           "defaultValue": null,
+          "deprecationReason": null,
           "description": "JSON serialization of the return value.",
+          "directives": [],
+          "isDeprecated": false,
           "name": "value",
           "type": {
             "kind": "NON_NULL",
@@ -21,6 +25,7 @@
       ],
       "deprecationReason": null,
       "description": "Set the return value of the function call to the provided value.",
+      "directives": [],
       "isDeprecated": false,
       "name": "returnValue",
       "type": {
@@ -31,7 +36,13 @@
     }
   ],
   "inputFields": [],
-  "interfaces": [],
+  "interfaces": [
+    {
+      "kind": "INTERFACE",
+      "name": "Node",
+      "ofType": null
+    }
+  ],
   "kind": "OBJECT",
   "name": "FunctionCall",
   "possibleTypes": []

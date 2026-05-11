@@ -18,7 +18,7 @@ defmodule Dagger.Error do
   @doc """
   A unique identifier for this Error.
   """
-  @spec id(t()) :: {:ok, Dagger.ErrorID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = error) do
     query_builder =
       error.query_builder |> QB.select("id")
@@ -51,8 +51,9 @@ defmodule Dagger.Error do
          %Dagger.ErrorValue{
            query_builder:
              QB.query()
-             |> QB.select("loadErrorValueFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("ErrorValue"),
            client: error.client
          }
        end}
@@ -86,6 +87,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.Error do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_error_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.Error{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("Error"),
+       client: dag.client
+     }}
   end
 end

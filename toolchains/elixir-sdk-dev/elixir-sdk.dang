@@ -17,7 +17,10 @@ type ElixirSdkDev {
   }
 
   pub devContainer: Container! {
-    withBase(source)
+    daggerEngine
+      .installClient(
+        withBase(source),
+      )
   }
 
   """
@@ -58,7 +61,8 @@ type ElixirSdkDev {
   """
   pub sdkTest: Void! @check {
     devContainer
-      .withExec(["mix", "test"], experimentalPrivilegedNesting: true)
+      .withoutFile("dagger.json")
+      .withExec(["mix", "test"])
       .sync
 
     null
@@ -69,10 +73,26 @@ type ElixirSdkDev {
   """
   pub codegenTest: Void! @check {
     withCodegen(devContainer)
+      .withEnvVariable("CI", "true")
       .withExec(["mix", "test"])
       .sync
 
     null
+  }
+
+  """
+  Update codegen test snapshots (auto-accept Mneme changes)
+  """
+  pub updateCodegenTests: Changeset! {
+    let ctr = withCodegen(devContainer)
+    let before = ctr.directory("/").filter(include: ["sdk/elixir/**"])
+    ctr
+      .withEnvVariable("MNEME_ACCEPT", "1")
+      .withExec(["mix", "test"])
+      .withoutDirectory("_build")
+      .directory("/")
+      .filter(include: ["sdk/elixir/**"])
+      .changes(before)
   }
 
   """

@@ -279,6 +279,17 @@ func (fn *Function) FieldSpec(ctx context.Context, mod Mod) (dagql.FieldSpec, er
 			Default:          defaultVal,
 			DeprecatedReason: argSelf.Deprecated,
 		}
+		// Add @expectedType directive for ID-typed arguments (objects and interfaces).
+		// Walk through list wrappers to find the underlying object/interface type.
+		expectedTypeDef := argTypeDef.Self()
+		for expectedTypeDef.Kind == TypeDefKindList && expectedTypeDef.AsList.Valid {
+			expectedTypeDef = expectedTypeDef.AsList.Value.Self().ElementTypeDef.Self()
+		}
+		if expectedTypeDef.Kind == TypeDefKindObject && expectedTypeDef.AsObject.Valid {
+			argSpec.Directives = append(argSpec.Directives, dagql.ExpectedTypeDirective(expectedTypeDef.AsObject.Value.Self().Name))
+		} else if expectedTypeDef.Kind == TypeDefKindInterface && expectedTypeDef.AsInterface.Valid {
+			argSpec.Directives = append(argSpec.Directives, dagql.ExpectedTypeDirective(expectedTypeDef.AsInterface.Value.Self().Name))
+		}
 		if argSelf.SourceMap.Valid && argSelf.SourceMap.Value.Self() != nil {
 			argSpec.Directives = append(argSpec.Directives, argSelf.SourceMap.Value.Self().TypeDirective())
 		}
@@ -728,86 +739,6 @@ func (arg FunctionArg) Directives() []*ast.Directive {
 	return directives
 }
 
-type DynamicID struct {
-	typeName string
-	id       *call.ID
-}
-
-var _ dagql.IDable = DynamicID{}
-
-// ID returns the ID of the value.
-func (d DynamicID) ID() (*call.ID, error) {
-	if d.id == nil {
-		return nil, fmt.Errorf("nil dynamic ID")
-	}
-	return d.id, nil
-}
-
-var _ dagql.ScalarType = DynamicID{}
-
-func (d DynamicID) TypeName() string {
-	return fmt.Sprintf("%sID", d.typeName)
-}
-
-var _ dagql.InputDecoder = DynamicID{}
-
-func (d DynamicID) DecodeInput(val any) (dagql.Input, error) {
-	switch x := val.(type) {
-	case string:
-		var idp call.ID
-		if err := idp.Decode(x); err != nil {
-			return nil, fmt.Errorf("decode %q ID: %w", d.typeName, err)
-		}
-		d.id = &idp
-		return d, nil
-	case *call.ID:
-		if x == nil {
-			return nil, fmt.Errorf("cannot create %q from nil ID", d.TypeName())
-		}
-		d.id = x
-		return d, nil
-	default:
-		return nil, fmt.Errorf("expected string for DynamicID, got %T", val)
-	}
-}
-
-var _ dagql.Input = DynamicID{}
-
-func (d DynamicID) ToLiteral() call.Literal {
-	if d.id == nil {
-		panic("core.DynamicID.ToLiteral: nil ID")
-	}
-	if !d.id.IsHandle() {
-		panic("core.DynamicID.ToLiteral: recipe-form IDs are not valid inputs")
-	}
-	enc, err := d.id.Encode()
-	if err != nil {
-		panic(fmt.Errorf("core.DynamicID.ToLiteral: encode handle ID: %w", err))
-	}
-	return call.NewLiteralString(enc)
-}
-
-func (d DynamicID) Type() *ast.Type {
-	return &ast.Type{
-		NamedType: d.TypeName(),
-		NonNull:   true,
-	}
-}
-
-func (d DynamicID) Decoder() dagql.InputDecoder {
-	return DynamicID{
-		typeName: d.typeName,
-	}
-}
-
-func (d DynamicID) MarshalJSON() ([]byte, error) {
-	enc, err := d.id.Encode()
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(enc)
-}
-
 type TypeDef struct {
 	Name        string      `field:"true" doc:"The canonical non-optional name of the type." doNotCache:"simple field selection"`
 	Kind        TypeDefKind `field:"true" doc:"The kind of type this is (e.g. primitive, list, object)." doNotCache:"simple field selection"`
@@ -1028,7 +959,7 @@ func (typeDef *TypeDef) ToTyped() dagql.Typed {
 	case TypeDefKindObject:
 		typed = &ModuleObject{TypeDef: typeDef.AsObject.Value.Self()}
 	case TypeDefKindInterface:
-		typed = &InterfaceAnnotatedValue{TypeDef: typeDef.AsInterface.Value.Self()}
+		typed = &interfaceTypedMarker{name: typeDef.AsInterface.Value.Self().Name}
 	case TypeDefKindVoid:
 		typed = Void{}
 	case TypeDefKindInput:
@@ -1062,9 +993,9 @@ func (typeDef *TypeDef) ToInput() dagql.Input {
 			Elem: typeDef.AsList.Value.Self().ElementTypeDef.Self().ToInput(),
 		}
 	case TypeDefKindObject:
-		typed = DynamicID{typeName: typeDef.AsObject.Value.Self().Name}
+		typed = dagql.AnyID{}
 	case TypeDefKindInterface:
-		typed = DynamicID{typeName: typeDef.AsInterface.Value.Self().Name}
+		typed = dagql.AnyID{}
 	case TypeDefKindVoid:
 		typed = Void{}
 	default:

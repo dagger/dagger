@@ -70,7 +70,7 @@ describe("TypeScript SDK api", function () {
 
     assert.strictEqual(
       querySanitizer(buildQuery(tree["_ctx"]["_queryTree"])),
-      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["apk","add","curl"]) }} }`,
+      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["apk","add","curl"]) } } }`,
     )
   })
 
@@ -80,27 +80,8 @@ describe("TypeScript SDK api", function () {
 
     assert.strictEqual(
       querySanitizer(buildQuery(pkg["_ctx"]["_queryTree"])),
-      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","foo bar"]) }} }`,
+      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","foo bar"]) } } }`,
     )
-  })
-
-  it("Pass a client with an explicit ID as a parameter", async function () {
-    this.timeout(60000)
-    await connect(async (client: Client) => {
-      const image = await client
-        .loadContainerFromID(
-          await client
-            .container()
-            .from("alpine:3.16.2")
-            .withExec(["apk", "add", "yarn"])
-            .id(),
-        )
-        .withMountedCache("/root/.cache", client.cacheVolume("cache_key"))
-        .withExec(["echo", "foo bar"])
-        .stdout()
-
-      assert.strictEqual(image, `foo bar\n`)
-    })
   })
 
   it("Pass a cache volume with an implicit ID as a parameter", async function () {
@@ -127,7 +108,7 @@ describe("TypeScript SDK api", function () {
 
     assert.strictEqual(
       querySanitizer(buildQuery(pkg["_ctx"]["_queryTree"])),
-      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["apk","add","curl"],experimentalPrivilegedNesting: true) }} }`,
+      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["apk","add","curl"],experimentalPrivilegedNesting: true) } } }`,
     )
   })
 
@@ -136,12 +117,12 @@ describe("TypeScript SDK api", function () {
     const a = image.withExec(["echo", "hello", "world"])
     assert.strictEqual(
       querySanitizer(buildQuery(a["_ctx"]["_queryTree"])),
-      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","hello","world"]) }} }`,
+      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","hello","world"]) } } }`,
     )
     const b = image.withExec(["echo", "foo", "bar"])
     assert.strictEqual(
       querySanitizer(buildQuery(b["_ctx"]["_queryTree"])),
-      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","foo","bar"]) }} }`,
+      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","foo","bar"]) } } }`,
     )
   })
 

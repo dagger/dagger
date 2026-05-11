@@ -81,7 +81,7 @@ type DotnetSdkDev {
       .withFile("Dagger.SDK/introspection.json", daggerEngine.introspectionJson)
       .withExec(["dotnet", "restore"])
       .withExec(["dotnet", "build", "--no-restore"])
-      .withExec(["dotnet", "test", "--no-build"], experimentalPrivilegedNesting: true)
+      .withExec(["dagger", "run", "dotnet", "test", "--no-build"])
       .sync
 
     null

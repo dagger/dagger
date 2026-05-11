@@ -29,7 +29,7 @@ defmodule Dagger.SearchSubmatch do
   @doc """
   A unique identifier for this SearchSubmatch.
   """
-  @spec id(t()) :: {:ok, Dagger.SearchSubmatchID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = search_submatch) do
     query_builder =
       search_submatch.query_builder |> QB.select("id")
@@ -69,6 +69,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.SearchSubmatch do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_search_submatch_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.SearchSubmatch{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("SearchSubmatch"),
+       client: dag.client
+     }}
   end
 end

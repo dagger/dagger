@@ -67,6 +67,7 @@ type ResponseType struct {
 	Interfaces    ResponseSchemaTypes  `json:"interfaces,omitempty"`
 	PossibleTypes ResponseSchemaTypes  `json:"possibleTypes,omitempty"`
 	Directives    []ResponseDirective  `json:"directives"`
+	OfType        *ResponseType        `json:"ofType,omitempty"`
 }
 
 type ResponseSchemaTypes []*ResponseType

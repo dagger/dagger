@@ -823,10 +823,12 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 		aID := newDirWithFile(t, "a-file", "a-content")
 		bID := newDirWithFile(t, "b-file", "b-content")
 
-		diff := `query Diff($id: DirectoryID!, $other: DirectoryID!) {
-			loadDirectoryFromID(id: $id) {
-				diff(other: $other) {
-					entries
+		diff := `query Diff($id: ID!, $other: ID!) {
+			directory: node(id: $id) {
+				... on Directory {
+					diff(other: $other) {
+						entries
+					}
 				}
 			}
 		}`
@@ -836,7 +838,7 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 				Diff struct {
 					Entries []string
 				}
-			} `json:"loadDirectoryFromID"`
+			} `json:"directory"`
 		}](c, t, diff, &testutil.QueryOptions{
 			Variables: map[string]any{
 				"id":    aID,
@@ -852,7 +854,7 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 				Diff struct {
 					Entries []string
 				}
-			} `json:"loadDirectoryFromID"`
+			} `json:"directory"`
 		}](c, t, diff, &testutil.QueryOptions{
 			Variables: map[string]any{
 				"id":    bID,
@@ -1657,7 +1659,7 @@ func (DirectorySuite) TestPatchFileLargerThanMaxFileContentsSize(ctx context.Con
 	patchID, err := patchFile.ID(ctx)
 	require.NoError(t, err)
 
-	loadedPatch := c.LoadFileFromID(patchID)
+	loadedPatch := dagger.Ref[*dagger.File](c, patchID)
 	loadedPatchID, err := loadedPatch.ID(ctx)
 	require.NoError(t, err)
 	require.Equal(t, patchID, loadedPatchID)

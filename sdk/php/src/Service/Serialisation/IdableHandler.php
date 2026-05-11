@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Dagger\Service\Serialisation;
 
 use Dagger\Client;
-use Dagger\Client\AbstractScalar;
 use Dagger\Client\IdAble;
+use Dagger\Id;
 use JMS\Serializer\Context;
 use JMS\Serializer\GraphNavigatorInterface;
 use JMS\Serializer\Handler\SubscribingHandlerInterface;
@@ -66,10 +66,8 @@ final readonly class IdableHandler implements SubscribingHandlerInterface
             IdableSubscriber::ORIGINAL_CLASS_NAME
         ];
 
-        $shortName = (new ReflectionClass($originalClassName))->getShortName();
-        $method = sprintf('load%sFromId', $shortName);
-        $id = sprintf('%sId', $originalClassName);
-
-        return $this->client->$method(new $id($idAble));
+        $result = $this->client->loadObjectFromId($originalClassName, new Id($idAble));
+        assert($result instanceof IdAble);
+        return $result;
     }
 }

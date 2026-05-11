@@ -224,6 +224,15 @@ func (r *ElixirSDKDev) SyncImage() *File { // elixir-sdk-dev (../../../../:0:0)
 	}
 }
 
+// Update codegen test snapshots (auto-accept Mneme changes)
+func (r *ElixirSDKDev) UpdateCodegenTests() *Changeset { // elixir-sdk-dev (../../../../:0:0)
+	q := r.query.Select("updateCodegenTests")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 func (r *ElixirSDKDev) Workspace() *Directory { // elixir-sdk-dev (../../../../:0:0)
 	q := r.query.Select("workspace")
 
