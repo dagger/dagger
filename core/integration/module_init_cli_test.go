@@ -1,8 +1,11 @@
 package core
 
-// Workspace alignment: aligned; this file already matches the workspace-era split.
-// Scope: Explicit module init CLI behavior, including license and Git initialization paths.
-// Intent: Keep module initialization behavior separate from workspace init and legacy aliases.
+// These tests cover `dagger module init`. They verify explicit module creation,
+// license handling, and Git initialization behavior.
+//
+// See also:
+// - workspace_modules_test.go: installing modules into workspaces.
+// - module_develop_cli_test.go: updating generated module code.
 
 import (
 	"context"

@@ -1,8 +1,11 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Telemetry collection, internal vertex filtering, and telemetry export behavior.
-// Intent: Keep telemetry behavior stable independently of workspace cleanup.
+// These tests cover progress telemetry written to a client's log output. They
+// verify that internal BuildKit/DagQL vertices are filtered from user-visible
+// logs.
+//
+// See also:
+// - cloud_test.go: cloud trace and reporting integration.
 
 import (
 	"context"

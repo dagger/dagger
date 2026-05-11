@@ -1,8 +1,13 @@
 package core
 
-// Workspace alignment: mostly aligned; coverage targets post-workspace custom SDK loading and capability behavior, though setup still relies on historical module helpers.
-// Scope: Loading custom SDKs from local or git-backed sources, and validating partial SDK capability support.
-// Intent: Keep custom SDK provider behavior separate from built-in SDK coverage and the remaining module runtime umbrella.
+// These tests cover modules whose `sdk` points to another Dagger module instead
+// of a built-in SDK. They verify local and Git-backed SDK modules, runtime and
+// codegen hooks, and SDK modules that implement only part of the provider API.
+//
+// See also:
+// - module_go_test.go: built-in Go SDK behavior.
+// - module_python_test.go: built-in Python SDK behavior.
+// - module_typescript_test.go: built-in TypeScript SDK behavior.
 
 import (
 	"context"

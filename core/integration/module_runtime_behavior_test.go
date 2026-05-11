@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: mostly aligned; coverage targets post-workspace module runtime semantics, though setup still relies on historical module helpers.
-// Scope: Runtime result semantics and execution behavior inside modules, including nested secrets, services, nil handling, cache control, and float handling.
-// Intent: Keep core module execution behavior separate from path/loading edge cases and the remaining umbrella cleanup work.
+// These tests cover what happens while loaded module functions execute. They
+// verify returned values, nested secret use, services started by module code,
+// nil values, cache-control APIs, and float values.
+//
+// See also:
+// - module_loading_test.go: choosing which module source to load.
+// - module_path_inputs_test.go: file, directory, and Git path arguments.
 
 import (
 	"context"

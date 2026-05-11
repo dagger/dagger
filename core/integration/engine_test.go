@@ -1,8 +1,13 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Engine process lifecycle and integration-level engine behavior.
-// Intent: Keep engine behavior stable independently of workspace cleanup.
+// These tests cover the Dagger engine process and the client/engine contract.
+// They verify signal handling, engine naming, `dagger run`, version
+// compatibility, cancellation, Prometheus metrics, DagQL cache cleanup, and
+// client metadata reuse.
+//
+// See also:
+// - provision_test.go: engine provisioning and driver selection.
+// - engine_persistence_test.go: engine state across restarts.
 
 import (
 	"bytes"

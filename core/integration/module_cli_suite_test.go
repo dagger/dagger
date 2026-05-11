@@ -1,8 +1,7 @@
 package core
 
-// Workspace alignment: aligned; this is a suite-registration file for a multi-file workspace-era suite.
-// Scope: Registers the module CLI suite and keeps shared testctx setup in one place.
-// Intent: Make the suite boundary explicit without hiding behavioral ownership in the registration file.
+// This file registers the module CLI suite and shared setup. Behavior coverage
+// lives in the focused module CLI test files.
 
 import (
 	"testing"

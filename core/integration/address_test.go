@@ -1,8 +1,8 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Core Address value behavior, encoding, and API integration.
-// Intent: Keep address semantics stable without mixing in module or workspace boundary concerns.
+// These tests cover the Address API, which interprets strings as Dagger
+// resources. They verify raw address values and conversion to containers,
+// services, local files/directories, Git refs, and secrets.
 
 import (
 	"context"
