@@ -20,7 +20,6 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	"github.com/dagger/dagger/engine/telemetryattrs"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
@@ -486,13 +485,11 @@ func (svc *Service) startContainer(
 	}
 
 	attrs := []attribute.KeyValue{
-		// Hide the synthetic service exec span from the UI; its logs and
-		// failure status are rolled up onto the installing API span (e.g.
-		// .asService) via UIResumeOutputAttr + the cause link below.
+		// Hide the synthetic service exec span from the UI; its failure
+		// status propagates up to the installing API span (e.g. .asService)
+		// via the cause link below, and its stdio logs are routed there via
+		// DagDigestAttr from executor_spec.
 		attribute.Bool(telemetry.UIPassthroughAttr, true),
-	}
-	if opts.LogTargetCallDigest != "" {
-		attrs = append(attrs, attribute.String(telemetryattrs.UIResumeOutputAttr, opts.LogTargetCallDigest.String()))
 	}
 
 	spanOpts := []trace.SpanStartOption{trace.WithAttributes(attrs...)}

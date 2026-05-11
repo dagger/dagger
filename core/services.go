@@ -188,6 +188,8 @@ type ServiceStartOpts struct {
 	ClientSpecific bool
 	IO             *ServiceIO
 
+	// LogTargetCallDigest is the call digest used to route the service's
+	// stdio logs to the installing API call's row in the UI.
 	LogTargetCallDigest digest.Digest
 
 	// OriginSpanContexts are the install-span contexts of the API calls that
