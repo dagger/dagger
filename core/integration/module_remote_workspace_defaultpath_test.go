@@ -1,5 +1,14 @@
 package core
 
+// These tests cover `+defaultPath` arguments of type Workspace when the module
+// or toolchain is loaded from a remote workspace. They verify that default paths
+// resolve against the loaded remote workspace, not the caller's current local
+// directory.
+//
+// See also:
+// - module_path_inputs_test.go: path input filtering after a module is loaded.
+// - module_loading_test.go: module source resolution and entrypoint selection.
+
 import (
 	"context"
 	"strings"

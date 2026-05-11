@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: mostly aligned; command intent is explicit, though the file still uses host-side interactive setup.
-// Scope: The dagger up development server and interactive module UI behavior.
-// Intent: Keep module development UX covered with exact host-side command helpers instead of legacy command rewriting.
+// These tests cover `dagger call ... up` and `dagger shell ... up` for module
+// functions that return containers or services. They verify endpoint discovery,
+// port mapping, and serving module results for local development.
+//
+// See also:
+// - module_terminal_test.go: terminal attachment during module calls.
+// - module_develop_cli_test.go: code generation and source update flows.
 
 import (
 	"context"

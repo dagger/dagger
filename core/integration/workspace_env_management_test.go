@@ -1,13 +1,12 @@
 package core
 
-// Workspace alignment: this file is the user-facing design spec for env
-// management and env-scoped config semantics.
-// Scope: User-facing workspace environment lifecycle plus `dagger config` read/write behavior when `--env` is selected.
-// Intent: Keep config storage, effective reads, runtime behavior, and CLI management aligned on one env contract.
+// These tests cover named workspace environments and the config values scoped to
+// each environment. They verify how users create, select, read, write, and run
+// with those environment-specific values.
 //
-// This file covers generic config behavior in env scope. Typed module-setting
-// discovery belongs to `dagger settings`; here, module-specific examples use
-// the underlying `[modules.<alias>.settings]` storage model.
+// See also:
+// - workspace_settings_test.go: typed module-setting discovery and UX.
+// - workspace_config_test.go: config behavior outside env selection.
 
 import (
 	"bytes"

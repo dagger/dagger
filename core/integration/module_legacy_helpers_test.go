@@ -1,8 +1,7 @@
 package core
 
-// Workspace alignment: aligned; helper-only file for direct Dagger CLI execution.
-// Scope: Container and host helpers that run the Dagger CLI with the exact arguments provided by the test.
-// Intent: Keep command intent visible at each callsite.
+// This file contains helpers for tests that need to run the Dagger CLI with
+// exact arguments. It is helper-only and should not own behavior coverage.
 
 import (
 	"context"

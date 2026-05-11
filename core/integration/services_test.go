@@ -12,9 +12,12 @@
 
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Service lifecycle, networking, and service consumption behavior.
-// Intent: Keep service behavior stable independently of workspace cleanup.
+// These tests cover Dagger services: starting long-running containers, wiring
+// service endpoints into clients, and reaching services over the network.
+//
+// See also:
+// - container_test.go: core Container behavior.
+// - module_runtime_behavior_test.go: services used from module code.
 
 import (
 	"bytes"

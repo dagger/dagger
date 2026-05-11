@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: mostly aligned; command intent is explicit, though some shell-specific setup still uses historical patterns.
-// Scope: Shell command UX and interactive command execution against modules.
-// Intent: Keep shell behavior covered with exact module/raw helpers instead of legacy command rewriting where command intent matters.
+// These tests cover `dagger shell`, the command interpreter for composing
+// Dagger API calls. They verify module lookup, script mode, state variables,
+// arguments, exports, command errors, and shell builtins.
+//
+// See also:
+// - module_terminal_test.go: terminal attachment during module calls.
+// - module_call_test.go: non-shell module invocation.
 
 import (
 	"context"

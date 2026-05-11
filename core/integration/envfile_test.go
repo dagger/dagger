@@ -1,8 +1,11 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: EnvFile object semantics and namespace behavior.
-// Intent: Keep EnvFile behavior stable independently of workspace cleanup.
+// These tests cover the EnvFile object, which represents dotenv-style key/value
+// files. They verify parsing, mutation, and namespace behavior.
+//
+// See also:
+// - workspace_compat_env_test.go: legacy `.env` module configuration.
+// - workspace_env_management_test.go: named workspace environments.
 
 import (
 	"context"

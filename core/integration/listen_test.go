@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: aligned; this suite owns the workspace-era `dagger listen` command surface.
-// Scope: Host-side `dagger listen` session serving, including base API access without a module and one explicit-workspace module smoke test.
-// Intent: Keep `dagger listen` behavior separate from CWD module nomination and entrypoint arbitration, which belong in module_loading_test.go.
+// These tests cover `dagger listen`, which serves a Dagger session over a local
+// TCP listener. They verify authenticated requests, base API access without a
+// module, and a workspace-backed module smoke test.
+//
+// See also:
+// - module_loading_test.go: current-directory module nomination and entrypoints.
+// - module_nested_cli_test.go: running the CLI inside module-launched containers.
 
 import (
 	"context"

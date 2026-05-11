@@ -1,8 +1,11 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Engine provisioning and driver selection behavior.
-// Intent: Keep provisioning behavior stable independently of workspace cleanup.
+// These tests cover starting Dagger engines through image-based runners. They
+// verify Docker, nerdctl, and Podman drivers, selected engine images, runner
+// config, CA certificates, and garbage collection of provisioned engines.
+//
+// See also:
+// - engine_test.go: engine lifecycle behavior after provisioning.
 
 import (
 	"cmp"

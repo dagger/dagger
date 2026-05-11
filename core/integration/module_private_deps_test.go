@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: mostly aligned; coverage targets post-workspace private dependency access, though setup still relies on historical module helpers.
-// Scope: SSH agent handling and private repository access for module loading and non-Dagger language dependencies.
-// Intent: Keep authenticated/private dependency behavior separate from the remaining runtime, SDK, and client/session coverage in the historical umbrella suite.
+// These tests cover module code and module sources that depend on private Git
+// repositories. They verify SSH agent setup, `SSH_AUTH_SOCK` path handling, and
+// private non-Dagger language dependencies fetched during module execution.
+//
+// See also:
+// - gitcredential_test.go: Git credential forwarding.
+// - module_dependency_runtime_test.go: runtime behavior after dependencies are installed.
 
 import (
 	"context"

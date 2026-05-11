@@ -1,8 +1,10 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: HTTP resource fetching and HTTP directory or file integration.
-// Intent: Keep HTTP behaviors stable independently of workspace cleanup.
+// These tests cover fetching files and directories over HTTP/HTTPS through the
+// Dagger API.
+//
+// See also:
+// - services_test.go: service networking behavior.
 
 import (
 	"context"

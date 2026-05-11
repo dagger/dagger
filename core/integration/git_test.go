@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Git repository integrations, refs, and auth-independent fetch behavior.
-// Intent: Keep Git source behavior stable independently of workspace cleanup.
+// These tests cover the GitRepository API for public or otherwise
+// auth-independent repositories. They verify cloning, refs, commits, trees, and
+// fetched file contents.
+//
+// See also:
+// - gitcredential_test.go: credential forwarding for Git sources.
+// - ref_test.go: module reference resolution for Git-shaped paths.
 
 import (
 	"context"
