@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: aligned; this file already matches the workspace-era split.
-// Scope: Module CLI introspection commands such as functions and load-error reporting.
-// Intent: Keep module inspection behavior explicit without relying on legacy command rewrites.
+// These tests cover CLI commands that inspect a module without calling its
+// functions. They verify function listing and load-error reporting without
+// exercising module mutation commands.
+//
+// See also:
+// - module_call_test.go: invoking module functions.
+// - module_error_test.go: runtime error surfaces from module code.
 
 import (
 	"context"

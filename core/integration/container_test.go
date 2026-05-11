@@ -1,8 +1,11 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Core container object behavior.
-// Intent: Keep container semantics stable independently of module and workspace cleanup.
+// These tests cover the GraphQL Container object: image selection, execs,
+// filesystems, environment, mounts, exports, and other container operations.
+//
+// See also:
+// - services_test.go: service lifecycle around containers.
+// - platform_test.go: platform-aware container execution.
 
 import (
 	"bytes"

@@ -1,8 +1,8 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Shared integration harness, middleware, connection setup, and package-wide test infrastructure.
-// Intent: Keep harness behavior centralized so feature suites can evolve without bespoke setup.
+// This file contains package-wide integration test setup: `TestMain`, shared
+// `testctx` middleware, Dagger client connection helpers, and common assertion
+// helpers.
 
 import (
 	"archive/tar"

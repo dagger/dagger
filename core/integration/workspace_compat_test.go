@@ -1,7 +1,12 @@
 package core
 
-// Scope: Legacy dagger.json shapes that imply a compat workspace, plus compat warnings, migration seams, and direct-load errors.
-// Intent: Own the legacy-to-workspace behavior explicitly.
+// These tests cover legacy `dagger.json` project shapes that are treated as
+// compat workspaces. They verify inference, warnings, migration boundaries, and
+// errors for direct loading.
+//
+// See also:
+// - workspace_migration_test.go: planning and applying workspace migrations.
+// - module_config_compat_test.go: legacy module config shapes, not workspace inference.
 
 import (
 	"context"

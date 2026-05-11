@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: aligned; this file already matches the workspace-era split.
-// Scope: Workspace-facing module install, list, naming, and configured source behavior.
-// Intent: Keep workspace module settings behavior separate from raw module dependency mutation behavior.
+// These tests cover modules registered in a workspace config. They verify
+// `dagger install`, listing, module names, configured sources, and settings for
+// workspace-managed modules.
+//
+// See also:
+// - module_dependency_cli_test.go: raw module dependency mutations.
+// - module_dependency_runtime_test.go: runtime use of already-installed dependencies.
 
 import (
 	"context"

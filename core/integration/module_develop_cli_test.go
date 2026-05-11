@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: aligned; this file already matches the workspace-era split.
-// Scope: Module develop command behavior, codegen determinism, and source editing flows.
-// Intent: Keep the module development command surface explicit and separate from workspace commands.
+// These tests cover `dagger develop`, the command that sets or updates a
+// module's SDK/source and refreshes generated bindings. They verify source path
+// handling, dependency-aware codegen, and deterministic generated output.
+//
+// See also:
+// - module_init_cli_test.go: creating modules.
+// - module_dependency_cli_test.go: editing dependency entries.
 
 import (
 	"context"

@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: mostly aligned; coverage targets post-workspace module reference resolution, but setup still relies on historical module helpers.
-// Scope: Module reference resolution between local, remote, and Git-shaped paths.
-// Intent: Keep module ref semantics stable while helper and command cleanup proceed separately.
+// These tests cover strings that identify module sources, such as local paths,
+// remote refs, and Git-looking paths. They verify how those refs resolve before
+// module loading begins.
+//
+// See also:
+// - git_test.go: Git repository fetch behavior.
+// - module_loading_test.go: source selection after a reference resolves.
 
 import (
 	"context"

@@ -1,7 +1,13 @@
 package core
 
-// Scope: Workspace config read or write behavior, config aliasing, boundary handling, and runtime effects on loaded modules.
-// Intent: Keep current workspace configuration behavior explicit, including [modules.<name>.settings].
+// These tests cover current workspace config in `dagger.json`. They verify
+// reads, writes, command aliases, workspace boundaries, and how
+// `[modules.<name>.settings]` affects loaded modules.
+//
+// See also:
+// - workspace_env_management_test.go: config while an environment is selected.
+// - workspace_settings_test.go: typed setting commands backed by config.
+// - module_config_test.go: module-shaped `dagger.json` config.
 
 import (
 	"context"

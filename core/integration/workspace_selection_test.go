@@ -1,7 +1,13 @@
 package core
 
-// Scope: Explicit workspace selection and binding via --workspace/-W, including declared local or remote refs, --workdir interaction, command policy, metadata-only commands, and explicit env overlays.
-// Intent: Own the declared-workspace contract end to end so contextual inference, compat opt-in, and native loading arbitration can evolve independently.
+// These tests cover explicit workspace selection with `--workspace` or `-W`.
+// They verify local and remote refs, `--workdir`, command policy, metadata-only
+// commands, and explicit environment overlays.
+//
+// See also:
+// - contextual_workspace_test.go: implicit find-up from the current directory.
+// - workspace_compat_test.go: legacy compat workspace inference.
+// - module_loading_test.go: module loading after the workspace is chosen.
 
 import (
 	"context"

@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: mostly aligned; command intent is explicit, though the file still uses host-side interactive setup.
-// Scope: Interactive terminal attachment and TUI behavior for module calls.
-// Intent: Keep module terminal UX covered with exact host-side command helpers instead of legacy command rewriting.
+// These tests cover module functions that return `Container.Terminal`. They
+// verify the host-side interactive session, prompt/output handling, and nested
+// terminal cases driven through the CLI TUI.
+//
+// See also:
+// - module_up_test.go: the module development server UI.
+// - shell_test.go: interactive shell command behavior.
 
 import (
 	"bytes"
