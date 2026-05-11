@@ -653,6 +653,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Viztest).SameDiffClients(&parent, ctx, message)
+		case "ServiceErrorAttribution":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*Viztest).ServiceErrorAttribution(&parent, ctx)
 		case "Spam":
 			var parent Viztest
 			err = json.Unmarshal(parentJSON, &parent)

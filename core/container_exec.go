@@ -36,6 +36,7 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
+	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -320,6 +321,10 @@ func execNetMode(opts ContainerExecOpts) (pb.NetMode, error) {
 type serviceBindingExitError struct {
 	binding ServiceBinding
 	err     error
+	// origin is the install-span context of the API call that returned the
+	// bound service. Embedded in the error message as a traceparent so the
+	// consuming exec span links its failure back to that API call.
+	origin trace.SpanContext
 }
 
 func (e *serviceBindingExitError) Error() string {
@@ -330,10 +335,21 @@ func (e *serviceBindingExitError) Error() string {
 	if name == "" {
 		name = "unknown"
 	}
+	var msg string
 	if e.err == nil {
-		return fmt.Sprintf("bound service %s (%s) exited", name, e.binding.Aliases)
+		msg = fmt.Sprintf("bound service %s (%s) exited", name, e.binding.Aliases)
+	} else {
+		msg = fmt.Sprintf("bound service %s (%s) exited: %v", name, e.binding.Aliases, e.err)
 	}
-	return fmt.Sprintf("bound service %s (%s) exited: %v", name, e.binding.Aliases, e.err)
+	// Append a traceparent so the consuming exec span EndWithCause adds a
+	// LinkPurposeErrorOrigin link to the service's install span. We only do
+	// this if the inner err doesn't already carry origin information (in
+	// which case msg already contains a [traceparent:...] suffix from the
+	// nested error message).
+	if e.origin.IsValid() && len(telemetry.ParseErrorOrigins(msg)) == 0 {
+		msg = telemetry.TrackOrigin(errors.New(msg), e.origin).Error()
+	}
+	return msg
 }
 
 func (e *serviceBindingExitError) Unwrap() error {
@@ -386,6 +402,7 @@ func monitorServiceBindings(
 			svcErr := &serviceBindingExitError{
 				binding: binding,
 				err:     err,
+				origin:  runningSvc.errorOrigin,
 			}
 			select {
 			case serviceErrCh <- svcErr:

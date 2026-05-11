@@ -110,6 +110,7 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 			},
 		},
 		{Function: "use-exec-service"},
+		{Function: "service-error-attribution", Fail: true},
 		{Function: "use-no-exec-service"},
 		{Function: "docker-build", Args: []string{
 			"with-exec", "--args", "echo,hey",

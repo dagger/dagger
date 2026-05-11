@@ -481,6 +481,21 @@ func (c *Cache) collectTransitiveDepsLocked(rootID sharedResultID) map[sharedRes
 	return out
 }
 
+// ResultInstallSpans returns install span contexts recorded for res in the
+// given session — i.e. the API spans whose call returned (or owns) this
+// result. Used to attribute later runtime failures (e.g. a service exiting
+// early) back to the API span that installed the value.
+func (c *Cache) ResultInstallSpans(sessionID string, res AnyResult) []trace.SpanContext {
+	if c == nil || sessionID == "" || res == nil {
+		return nil
+	}
+	shared := res.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		return nil
+	}
+	return c.sessionResultInstallSpanContexts(sessionID, shared.id)
+}
+
 // sessionResultInstallSpanContexts returns the install span contexts for
 // resultID in the given session. Direct map lookup — no graph walk.
 func (c *Cache) sessionResultInstallSpanContexts(sessionID string, resultID sharedResultID) []trace.SpanContext {

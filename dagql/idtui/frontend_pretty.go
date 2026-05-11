@@ -2786,13 +2786,19 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 		}
 	}
 	if len(row.Span.ErrorOrigins.Order) > 0 && (!row.Expanded || !row.HasChildren) {
-		// Filter self-references: a span propagated as its own error origin
-		// should never be rendered as the cause of itself.
+		// Filter self-references and causes already rendered elsewhere in this
+		// trace: a span propagated as its own error origin should never be
+		// rendered as the cause of itself, and a cause already shown as a
+		// primary row doesn't need a redundant "↳ ..." block here.
 		origins := make([]*dagui.Span, 0, len(row.Span.ErrorOrigins.Order))
 		for _, cause := range row.Span.ErrorOrigins.Order {
-			if cause.ID != row.Span.ID {
-				origins = append(origins, cause)
+			if cause.ID == row.Span.ID {
+				continue
 			}
+			if fe.shownErrs[cause.ID] {
+				continue
+			}
+			origins = append(origins, cause)
 		}
 		multi := len(origins) > 1
 		for _, cause := range origins {
