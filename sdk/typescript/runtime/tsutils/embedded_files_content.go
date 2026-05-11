@@ -39,6 +39,7 @@ var StaticBundleTelemetryTS string
 //go:embed template/package.json
 var StaticDefaultPackageJSON string
 
+
 var TemplateIndexTS = func(name string) string {
 	return fmt.Sprintf(`/**
  * A generated module for %s functions
