@@ -572,7 +572,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
         }
 
         @func()
-        version(): string {
+        runtimeVersion(): string {
           const isBunRuntime = typeof Bun === "object";
           const runtime = isBunRuntime ? "bun" : "node";
           let version = "";
@@ -742,9 +742,9 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
       }`,
 		)
 
-		out, err := modGen.With(daggerQuery(`{version}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{runtimeVersion}`)).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"version":"node@20.15.0"}`, out)
+		require.JSONEq(t, `{"runtimeVersion":"node@20.15.0"}`, out)
 	})
 
 	t.Run("should detect a specific pinned node version 22.4.0", func(ctx context.Context, t *testctx.T) {
@@ -755,9 +755,9 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
       }`,
 		)
 
-		out, err := modGen.With(daggerQuery(`{version}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{runtimeVersion}`)).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"version":"node@22.4.0"}`, out)
+		require.JSONEq(t, `{"runtimeVersion":"node@22.4.0"}`, out)
 	})
 
 	t.Run("should detect a specific pinned bun version", func(ctx context.Context, t *testctx.T) {
@@ -773,9 +773,9 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
       }`,
 		)
 
-		out, err := modGen.With(daggerQuery(`{version}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{runtimeVersion}`)).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"version":"bun@1.1.23"}`, out)
+		require.JSONEq(t, `{"runtimeVersion":"bun@1.1.23"}`, out)
 	})
 
 	t.Run("should detect deno.json", func(ctx context.Context, t *testctx.T) {
@@ -818,16 +818,16 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 			@object()
 			export class RuntimeDetection {
 				@func()
-				version(): string {
+				runtimeVersion(): string {
 					const version = Deno.version.deno
 					return "deno" + "@" + version
 				}
 			}
 		`))
 
-		out, err := modGen.With(daggerQuery(`{version}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQuery(`{runtimeVersion}`)).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"version":"deno@2.2.0"}`, out)
+		require.JSONEq(t, `{"runtimeVersion":"deno@2.2.0"}`, out)
 	})
 }
 
