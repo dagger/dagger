@@ -1411,7 +1411,7 @@ export class Test {
 }
 `))
 
-		_, err := modGen.With(daggerQuery(`{str("hello")}`)).Stdout(ctx)
+		_, err := modGen.With(daggerQuery(`{str(s: "hello")}`)).Stdout(ctx)
 		requireErrOut(t, err, "Use of primitive 'String' type detected, please use 'string' instead.")
 	})
 
@@ -1434,7 +1434,7 @@ export class Test {
 }
 `))
 
-		_, err := modGen.With(daggerQuery(`{integer(4)}`)).Stdout(ctx)
+		_, err := modGen.With(daggerQuery(`{integer(n: 4)}`)).Stdout(ctx)
 		requireErrOut(t, err, "Use of primitive 'Number' type detected, please use 'number' instead.")
 	})
 
@@ -1457,7 +1457,7 @@ export class Test {
 }
 `))
 
-		_, err := modGen.With(daggerQuery(`{bool(false)}`)).Stdout(ctx)
+		_, err := modGen.With(daggerQuery(`{bool(b: false)}`)).Stdout(ctx)
 		requireErrOut(t, err, "Use of primitive 'Boolean' type detected, please use 'boolean' instead.")
 	})
 }
