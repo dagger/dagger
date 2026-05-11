@@ -21,7 +21,9 @@ host:
 ```
 
 :::warning
-Podman must be configured for [rootful container execution](https://docs.podman.io/en/stable/markdown/podman-machine-set.1.html#rootful).
+- Podman must be configured for [rootful container execution](https://docs.podman.io/en/stable/markdown/podman-machine-set.1.html#rootful).
+- Podman by default sets a very low (2048) pids limit for the engine container. It's recommended to increas this
+number to avoid issues with Dagger.
 :::
 
 You can install podman using the [official instructions](https://podman.io/getting-started/installation).
