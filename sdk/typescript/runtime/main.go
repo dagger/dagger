@@ -34,7 +34,6 @@ const (
 	schemaPath             = "/schema.json"
 	dependenciesConfigPath = "/dependencies.json"
 	codegenBinPath         = "/codegen"
-	moduleEngineVersionEnv = "DAGGER_MODULE_ENGINE_VERSION"
 )
 
 // ModuleRuntime implements the `ModuleRuntime` method from the SDK module interface.
@@ -88,7 +87,6 @@ func (t *TypescriptSdk) ModuleTypes(
 			cfg.name,
 			modSource.ContextDirectory().Directory(cfg.subPath).Directory("src"),
 			clientBindings,
-			cfg.engineVersion,
 		), nil
 }
 

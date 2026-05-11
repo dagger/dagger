@@ -425,10 +425,11 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 			ExtraModules: []engine.ExtraModule{{
 				Ref: "github.com/dagger/base-extra",
 			}},
-			LoadWorkspaceModules: true,
-			EagerRuntime:         true,
-			LockMode:             string(workspace.LockModeFrozen),
-			Workspace:            stringPtr("github.com/dagger/base@main"),
+			LoadWorkspaceModules:  true,
+			EagerRuntime:          true,
+			LockMode:              string(workspace.LockModeFrozen),
+			Workspace:             stringPtr("github.com/dagger/base@main"),
+			UseRecipeIDsByDefault: true,
 		}
 	}
 
@@ -452,6 +453,7 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 		require.False(t, md.LoadWorkspaceModules)
 		require.False(t, md.EagerRuntime)
 		require.Nil(t, md.Workspace)
+		require.True(t, md.UseRecipeIDsByDefault)
 
 		base.AllowedLLMModules[0] = "mutated"
 		require.Equal(t, []string{"parent"}, md.AllowedLLMModules)
@@ -503,6 +505,7 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 			Ref:        "github.com/dagger/mod",
 			Entrypoint: true,
 		}}, md.ExtraModules)
+		require.True(t, md.UseRecipeIDsByDefault)
 	})
 
 	t.Run("keeps parent lock mode when forwarded metadata omits it", func(t *testing.T) {
@@ -518,6 +521,22 @@ func TestNestedClientMetadataForRequest(t *testing.T) {
 		require.Equal(t, "v-test", md.ClientVersion)
 		require.Equal(t, []string{"child"}, md.AllowedLLMModules)
 		require.Equal(t, string(workspace.LockModeFrozen), md.LockMode)
+		require.True(t, md.UseRecipeIDsByDefault)
+	})
+
+	t.Run("does not accept internal recipe ID default from forwarded metadata", func(t *testing.T) {
+		t.Parallel()
+
+		base := baseMetadata()
+		base.UseRecipeIDsByDefault = false
+		forwarded := engine.ClientMetadata{
+			ClientVersion:         "v-test",
+			UseRecipeIDsByDefault: true,
+		}
+
+		md := nestedClientMetadataForRequest(forwarded.AppendToHTTPHeaders(http.Header{}), base)
+
+		require.False(t, md.UseRecipeIDsByDefault)
 	})
 }
 

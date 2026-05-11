@@ -702,7 +702,7 @@ func (m *Coolsdk) WithDaggerJson(modSource *dagger.ModuleSource) *dagger.ModuleS
 
 func (m *Coolsdk) ModuleTypes(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
 	mod := m.WithDaggerJson(modSource).WithSDK("go").AsModule()
-	modID, err := mod.ID(ctx, dagger.ModuleIDOpts{Recipe: true})
+	modID, err := mod.ID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -919,7 +919,7 @@ type Coolsdk struct {}
 
 func (m *Coolsdk) ModuleTypes(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
 	mod := modSource.WithSDK("go").AsModule()
-	modID, err := mod.ID(ctx, dagger.ModuleIDOpts{Recipe: true})
+	modID, err := mod.ID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1120,7 +1120,7 @@ type CoolSdk struct {}
 
 func (m *CoolSdk) ModuleTypes(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
 	mod := modSource.WithSDK("go").AsModule()
-	modID, err := mod.ID(ctx, dagger.ModuleIDOpts{Recipe: true})
+	modID, err := mod.ID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1214,7 +1214,7 @@ func decodedGitToken(encodedToken string) string {
 	return string(decodedToken)
 }
 
-const vcsTestCaseCommit = "b34b7b3ec64c2e332cebf35423551bdb4f901b23"
+const vcsTestCaseCommit = "d730fb3af8757e1ca293e01aa4fcfd510a6e40e5"
 
 var vcsTestCases = []vcsTestCase{
 	// Test cases for public repositories using Go-style references, without '.git' suffix (optional)

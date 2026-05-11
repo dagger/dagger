@@ -1987,11 +1987,12 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		var nestedClientMetadata *engine.ClientMetadata
 		if opts.ExperimentalPrivilegedNesting {
 			nestedClientMetadata = &engine.ClientMetadata{
-				ClientID:          identity.NewID(),
-				ClientVersion:     engine.Version,
-				SessionID:         clientMetadata.SessionID,
-				AllowedLLMModules: slices.Clone(clientMetadata.AllowedLLMModules),
-				LockMode:          clientMetadata.LockMode,
+				ClientID:              identity.NewID(),
+				ClientVersion:         engine.Version,
+				SessionID:             clientMetadata.SessionID,
+				AllowedLLMModules:     slices.Clone(clientMetadata.AllowedLLMModules),
+				LockMode:              clientMetadata.LockMode,
+				UseRecipeIDsByDefault: execMD != nil && execMD.UseRecipeIDsByDefault,
 			}
 		}
 

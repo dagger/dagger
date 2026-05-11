@@ -7,8 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 
 	_ "embed"
@@ -23,11 +21,8 @@ const (
 	ModDirPath       = "/opt/module"
 	GenPath          = "/dagger-io"
 
-	javaSdkModuleNameEnv       = "_DAGGER_JAVA_SDK_MODULE_NAME"
-	javaSdkSupportsRecipeIDEnv = "_DAGGER_JAVA_SDK_SUPPORTS_RECIPE_ID"
+	javaSdkModuleNameEnv = "_DAGGER_JAVA_SDK_MODULE_NAME"
 )
-
-var versionRE = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)`)
 
 type JavaSdk struct {
 	SDKSourceDir *dagger.Directory
@@ -261,15 +256,10 @@ func (m *JavaSdk) generateCode(
 	if err != nil {
 		return nil, err
 	}
-	supportsRecipeID, err := m.supportsRecipeID(ctx, introspectionJSON)
-	if err != nil {
-		return nil, err
-	}
 	// generate the entrypoint class based on the user module
 	entrypoint := ctr.
 		// set the module name as an environment variable so we ensure constructor is only on main object
 		WithEnvVariable(javaSdkModuleNameEnv, m.moduleConfig.name).
-		WithEnvVariable(javaSdkSupportsRecipeIDEnv, strconv.FormatBool(supportsRecipeID)).
 		// generate the entrypoint
 		WithExec(m.mavenCommand(
 			"mvn",
@@ -316,7 +306,7 @@ func (m *JavaSdk) ModuleRuntime(
 		return nil, err
 	}
 	// Build the executable jar
-	jar, err := m.buildJar(ctx, mvnCtr, introspectionJSON)
+	jar, err := m.buildJar(ctx, mvnCtr)
 	if err != nil {
 		return nil, err
 	}
@@ -337,17 +327,11 @@ func (m *JavaSdk) ModuleRuntime(
 func (m *JavaSdk) buildJar(
 	ctx context.Context,
 	ctr *dagger.Container,
-	introspectionJSON *dagger.File,
 ) (*dagger.File, error) {
-	supportsRecipeID, err := m.supportsRecipeID(ctx, introspectionJSON)
-	if err != nil {
-		return nil, err
-	}
 	return m.finalJar(ctx,
 		ctr.
 			// set the module name as an environment variable so we ensure constructor is only on main object
 			WithEnvVariable(javaSdkModuleNameEnv, m.moduleConfig.name).
-			WithEnvVariable(javaSdkSupportsRecipeIDEnv, strconv.FormatBool(supportsRecipeID)).
 			// build the final jar
 			WithExec(m.mavenCommand(
 				"mvn",
@@ -428,45 +412,6 @@ func (m *JavaSdk) setModuleConfig(ctx context.Context, modSource *dagger.ModuleS
 }
 
 func (m *JavaSdk) getDaggerVersionForModule(ctx context.Context, introspectionJSON *dagger.File) (string, error) {
-	schemaVersion, err := m.schemaVersion(ctx, introspectionJSON)
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprintf(
-		"%s-%s-module",
-		strings.TrimPrefix(schemaVersion, "v"),
-		m.moduleConfig.name,
-	), nil
-}
-
-func (m *JavaSdk) supportsRecipeID(ctx context.Context, introspectionJSON *dagger.File) (bool, error) {
-	schemaVersion, err := m.schemaVersion(ctx, introspectionJSON)
-	if err != nil {
-		return false, err
-	}
-	if schemaVersion == "" || schemaVersion == "latest" {
-		return true, nil
-	}
-	matches := versionRE.FindStringSubmatch(schemaVersion)
-	if matches == nil {
-		return false, nil
-	}
-	major, err := strconv.Atoi(matches[1])
-	if err != nil {
-		return false, err
-	}
-	minor, err := strconv.Atoi(matches[2])
-	if err != nil {
-		return false, err
-	}
-	patch, err := strconv.Atoi(matches[3])
-	if err != nil {
-		return false, err
-	}
-	return major > 0 || (major == 0 && (minor > 21 || (minor == 21 && patch >= 0))), nil
-}
-
-func (m *JavaSdk) schemaVersion(ctx context.Context, introspectionJSON *dagger.File) (string, error) {
 	content, err := introspectionJSON.Contents(ctx)
 	if err != nil {
 		return "", err
@@ -475,7 +420,11 @@ func (m *JavaSdk) schemaVersion(ctx context.Context, introspectionJSON *dagger.F
 	if err = json.Unmarshal([]byte(content), &introspectJSON); err != nil {
 		return "", err
 	}
-	return introspectJSON.SchemaVersion, nil
+	return fmt.Sprintf(
+		"%s-%s-module",
+		strings.TrimPrefix(introspectJSON.SchemaVersion, "v"),
+		m.moduleConfig.name,
+	), nil
 }
 
 type IntrospectJSON struct {

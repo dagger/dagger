@@ -2528,7 +2528,45 @@ func TestIDResultByVersion(t *testing.T) {
 		View:  "v0.20.8",
 	}))
 	legacyID := mustID(t, legacy)
-	assert.Assert(t, !legacyID.IsHandle())
+	assert.Assert(t, legacyID.IsHandle())
+
+	var explicitRecipe dagql.ID[*points.Point]
+	require.NoError(t, srv.Select(ctx, point, &explicitRecipe, dagql.Selector{
+		Field: "id",
+		Args: []dagql.NamedInput{
+			{Name: "recipe", Value: dagql.Boolean(true)},
+		},
+	}))
+	explicitRecipeID := mustID(t, explicitRecipe)
+	assert.Assert(t, !explicitRecipeID.IsHandle())
+
+	recipeDefaultMetadata := testClientMetadata()
+	recipeDefaultMetadata.UseRecipeIDsByDefault = true
+	recipeDefaultCtx := engine.ContextWithClientMetadata(context.Background(), recipeDefaultMetadata)
+	recipeDefaultCtx = dagql.ContextWithCache(recipeDefaultCtx, cache)
+
+	var currentRecipeDefault dagql.ID[*points.Point]
+	require.NoError(t, srv.Select(recipeDefaultCtx, point, &currentRecipeDefault, dagql.Selector{Field: "id"}))
+	currentRecipeDefaultID := mustID(t, currentRecipeDefault)
+	assert.Assert(t, !currentRecipeDefaultID.IsHandle())
+
+	var currentExplicitHandle dagql.ID[*points.Point]
+	require.NoError(t, srv.Select(recipeDefaultCtx, point, &currentExplicitHandle, dagql.Selector{
+		Field: "id",
+		Args: []dagql.NamedInput{
+			{Name: "recipe", Value: dagql.Boolean(false)},
+		},
+	}))
+	currentExplicitHandleID := mustID(t, currentExplicitHandle)
+	assert.Assert(t, currentExplicitHandleID.IsHandle())
+
+	var legacyRecipeDefault dagql.ID[*points.Point]
+	require.NoError(t, srv.Select(recipeDefaultCtx, point, &legacyRecipeDefault, dagql.Selector{
+		Field: "id",
+		View:  "v0.20.8",
+	}))
+	legacyRecipeDefaultID := mustID(t, legacyRecipeDefault)
+	assert.Assert(t, !legacyRecipeDefaultID.IsHandle())
 }
 
 func TestViewsCaching(t *testing.T) {

@@ -81,7 +81,6 @@ func (d *DenoRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 		// Merge source code directory with current directory
 		WithDirectory(".", d.cfg.wrappedSourceCodeDirectory()).
 		WithMountedFile(entrypointPath, entrypointFile()).
-		WithEnvVariable(moduleEngineVersionEnv, d.cfg.engineVersion).
 		WithEntrypoint([]string{
 			"deno", "run", "-q", "-A", entrypointPath,
 		})

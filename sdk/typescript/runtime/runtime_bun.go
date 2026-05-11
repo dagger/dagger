@@ -94,7 +94,6 @@ func (b *BunRuntime) SetupContainer(ctx context.Context) (*dagger.Container, err
 		// Merge source code directory with current directory
 		WithDirectory(".", b.cfg.wrappedSourceCodeDirectory()).
 		WithMountedFile(entrypointPath, entrypointFile()).
-		WithEnvVariable(moduleEngineVersionEnv, b.cfg.engineVersion).
 		WithEntrypoint([]string{
 			"bun", "run", entrypointPath,
 		})

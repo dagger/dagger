@@ -7,8 +7,6 @@ the Dagger engine registration API.
 from __future__ import annotations
 
 import logging
-import os
-import re
 
 import dagger
 from dagger import dag
@@ -23,9 +21,6 @@ from dagger.mod._analyzer.metadata import (
 )
 
 logger = logging.getLogger(__name__)
-
-_VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)")
-_RECIPE_ID_MIN_VERSION = (0, 21, 0)
 
 
 async def register_from_metadata(metadata: ModuleMetadata) -> dagger.ModuleID:
@@ -58,22 +53,7 @@ async def register_from_metadata(metadata: ModuleMetadata) -> dagger.ModuleID:
         enum_def = _build_enum_typedef(enum_meta)
         mod = mod.with_enum(enum_def)
 
-    if _supports_recipe_id(os.environ.get("DAGGER_MODULE_ENGINE_VERSION", "")):
-        return await mod.id(recipe=True)
     return await mod.id()
-
-
-def _supports_recipe_id(version: str) -> bool:
-    if version == "":
-        return False
-    if version == "latest":
-        return True
-
-    match = _VERSION_RE.match(version)
-    if not match:
-        return False
-
-    return tuple(int(part) for part in match.groups()) >= _RECIPE_ID_MIN_VERSION
 
 
 def _build_object_typedef(obj_meta: ObjectTypeMetadata) -> dagger.TypeDef:

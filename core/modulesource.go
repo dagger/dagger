@@ -1102,8 +1102,13 @@ func (src *ModuleSource) SourceImplementationDigest(ctx context.Context) (digest
 		return "", fmt.Errorf("failed to get module source context directory digest: %w", err)
 	}
 
+	// The module engine base version selects the schema view and SDK runtime
+	// behavior. Keep prerelease/build metadata out of this identity so dev
+	// engine rebuilds do not bust implementation-scoped caches.
+	engineVersion := engine.BaseVersion(engine.NormalizeVersion(src.EngineVersion))
 	inputs := []string{
 		moduleSourceHashMix,
+		"engineVersion:" + engineVersion,
 		src.ModuleOriginalName,
 		src.SourceRootSubpath,
 		src.SourceSubpath,

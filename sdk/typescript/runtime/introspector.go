@@ -37,8 +37,6 @@ func (i *Introspector) AsEntrypoint(
 	sourceCode *dagger.Directory,
 
 	clientBindings *dagger.File,
-
-	moduleEngineVersion string,
 ) *dagger.Container {
 	// Synthesize a minimal @dagger.io/dagger package so TS can resolve the bare import.
 	sdkPkg := dag.Directory().
@@ -54,6 +52,5 @@ func (i *Introspector) AsEntrypoint(
 		// Keep the old location too so the CLI arg still points to a file
 		WithMountedDirectory("sdk", sdkPkg).
 		WithEnvVariable("TYPEDEF_OUTPUT_FILE", outputFilePath).
-		WithEnvVariable(moduleEngineVersionEnv, moduleEngineVersion).
 		WithEntrypoint([]string{introspectorBinPath, moduleName, "src", "sdk/client.gen.ts"})
 }

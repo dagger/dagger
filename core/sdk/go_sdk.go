@@ -296,7 +296,8 @@ func (sdk *goSDK) ModuleTypes(
 	}
 
 	execMD := engineutil.ExecutionMetadata{
-		Internal: true,
+		Internal:              true,
+		UseRecipeIDsByDefault: true,
 	}
 	if curCall := dagql.CurrentCall(ctx); curCall != nil {
 		callDigest, err := curCall.RecipeDigest(ctx)
@@ -433,12 +434,18 @@ func (sdk *goSDK) ModuleTypes(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get module ID from type defs json: %w", err)
 	}
-	if modCallID.IsHandle() {
-		return inst, fmt.Errorf("go generate-typedefs returned handle-form module ID; expected recipe-form ID from id(recipe: true)")
-	}
 	inst, err = dagql.NewID[*core.Module](modCallID).Load(ctx, dag)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load module from type defs json: %w", err)
+	}
+	if modCallID.IsHandle() {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get engine cache for go type defs dependency: %w", err)
+		}
+		if err := cache.AddExplicitDependency(ctx, ctr, inst, "go_sdk_generate_typedefs"); err != nil {
+			return inst, fmt.Errorf("failed to retain generated module result from go type defs exec: %w", err)
+		}
 	}
 
 	return inst, nil

@@ -78,21 +78,32 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 		invalidateSchemaCache: srv.invalidateSchemaCache,
 	}
 	if !opts.NoIDs {
-		recipeIDFunc := func(ctx context.Context, self ObjectResult[T], _ map[string]Input, _ call.View) (AnyResult, error) {
-			selfID, err := self.RecipeID(ctx)
-			if err != nil {
-				return nil, err
+		currentCallHasArg := func(ctx context.Context, name string) bool {
+			call := CurrentCall(ctx)
+			if call == nil {
+				return false
 			}
-			return NewResultForCurrentCall(ctx, NewDynamicID[T](selfID, opts.Typed))
+			for _, arg := range call.Args {
+				if arg != nil && arg.Name == name {
+					return true
+				}
+			}
+			return false
+		}
+		recipeIDsByDefault := func(ctx context.Context) bool {
+			clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+			return err == nil && clientMetadata.UseRecipeIDsByDefault
 		}
 
 		idFunc := func(ctx context.Context, self ObjectResult[T], args map[string]Input, _ call.View) (AnyResult, error) {
-			var recipe bool
-			switch v := args["recipe"].(type) {
-			case Boolean:
-				recipe = bool(v)
-			case Optional[Boolean]:
-				recipe = bool(v.GetOr(Boolean(false)))
+			recipe := recipeIDsByDefault(ctx)
+			if currentCallHasArg(ctx, "recipe") {
+				switch v := args["recipe"].(type) {
+				case Boolean:
+					recipe = bool(v)
+				case Optional[Boolean]:
+					recipe = bool(v.GetOr(Boolean(false)))
+				}
 			}
 
 			var (
@@ -126,7 +137,7 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 			idField(
 				BeforeVersion("v0.21.0"),
 				InputSpecs{},
-				recipeIDFunc,
+				idFunc,
 			),
 			idField(
 				AfterVersion("v0.21.0"),
