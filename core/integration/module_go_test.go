@@ -274,8 +274,8 @@ func (m *HasNotMainGo) Hello() string { return "Hello, world!" }
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithExec([]string{"go", "work", "init"}).
-			With(daggerExec("module", "init", "--sdk=go", "--include", "../go.work*,../bar/", "foo", ".")).
-			With(daggerExec("module", "init", "--sdk=go", "--include", "../go.work*,../foo/", "bar", "."))
+			With(daggerExec("module", "init", "--sdk=go", "--include", "../go.work*,../bar/", "foo", "./foo")).
+			With(daggerExec("module", "init", "--sdk=go", "--include", "../go.work*,../foo/", "bar", "./bar"))
 
 		generated, err := modGen.File("go.work").Contents(ctx)
 		require.NoError(t, err)
@@ -562,7 +562,7 @@ func main() {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("module", "init", "foo", "."))
+			With(daggerExec("module", "init", "foo", "./foo"))
 
 		dirEnts, err := modGen.Directory("/work/foo").Entries(ctx)
 		require.NoError(t, err)
@@ -575,7 +575,7 @@ func main() {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("module", "init", "foo", "--sdk=go", "."))
+			With(daggerExec("module", "init", "foo", "--sdk=go", "./foo"))
 
 		dirEnts, err := modGen.Directory("/work/foo").Entries(ctx)
 		require.NoError(t, err)
@@ -588,7 +588,7 @@ func main() {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("module", "init", "foo", "--sdk=go", "--source=foo/bar", "."))
+			With(daggerExec("module", "init", "foo", "--sdk=go", "--source=foo/bar", "./foo"))
 
 		dirEnts, err := modGen.Directory("/work/foo/bar").Entries(ctx)
 		require.NoError(t, err)
@@ -1408,7 +1408,7 @@ func (GoSuite) TestPrivateEnumField(ctx context.Context, t *testctx.T) {
 	ctr := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("module", "init", "--sdk=go", "dep", ".")).
+		With(daggerExec("module", "init", "--sdk=go", "dep", "./dep")).
 		WithNewFile("dep/main.go", `package main
 
 import (
