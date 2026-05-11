@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: mostly aligned; coverage targets post-workspace nested CLI execution from inside module-launched containers, though setup still relies on historical module helpers.
-// Scope: Running the Dagger CLI from inside a module-executed container with privileged nesting enabled.
-// Intent: Keep nested CLI execution separate from host-side `dagger listen` behavior and the remaining module runtime umbrella coverage.
+// These tests cover running the Dagger CLI from inside a container launched by
+// module code. They verify privileged nested execution, not host-side session
+// serving.
+//
+// See also:
+// - listen_test.go: host-side `dagger listen` sessions.
+// - module_runtime_behavior_test.go: general module execution behavior.
 
 import (
 	"context"

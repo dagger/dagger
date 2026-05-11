@@ -1,5 +1,14 @@
 package core
 
+// These tests cover top-level `dagger up`, which starts services declared by a
+// workspace or SDK. They verify direct SDK use, env services, port collisions,
+// service binding, partial startup failures, workspace skip/port config, and
+// toolchain use.
+//
+// See also:
+// - module_up_test.go: module development server and interactive module UI.
+// - services_test.go: core service lifecycle and networking.
+
 import (
 	"context"
 	"fmt"

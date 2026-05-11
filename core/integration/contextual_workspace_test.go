@@ -1,7 +1,12 @@
 package core
 
-// Scope: Context-derived workspace selection and find-up behavior when commands run from nested directories.
-// Intent: Pin down contextual workspace inference separately from compat detection and generic module loading.
+// These tests cover implicit workspace selection from the current directory.
+// They verify find-up behavior when commands run from nested paths.
+//
+// See also:
+// - workspace_selection_test.go: explicit `--workspace` and `-W` selection.
+// - workspace_compat_test.go: legacy compat workspace inference.
+// - module_loading_test.go: module loading after selection.
 
 import (
 	"context"

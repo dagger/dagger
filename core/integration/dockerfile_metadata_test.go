@@ -1,5 +1,12 @@
 package core
 
+// These tests cover Docker image metadata produced by Dockerfile builds. They
+// verify the resulting container config, exported image config, and security
+// policy handling.
+//
+// See also:
+// - dockerfile_test.go: general Dockerfile build behavior.
+
 import (
 	"context"
 	"encoding/json"

@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: mostly aligned; coverage targets post-workspace module constructor semantics, but setup still relies on historical module helpers.
-// Scope: Constructor argument handling, constructor-populated fields, constructor error behavior, and SDK-specific constructor parity.
-// Intent: Keep constructor behavior explicit and isolated from the remaining runtime and validation coverage in the historical umbrella suite.
+// These tests cover `New` constructors in module source. They verify passing
+// constructor arguments, storing constructor values on object fields, reporting
+// constructor errors, and matching behavior across SDKs.
+//
+// See also:
+// - module_definition_test.go: module API definition rules.
+// - module_runtime_behavior_test.go: runtime behavior after construction.
 
 import (
 	"context"

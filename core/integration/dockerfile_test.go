@@ -1,8 +1,6 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Dockerfile build integration.
-// Intent: Keep Dockerfile build behavior stable independently of workspace cleanup.
+// These tests cover building containers from Dockerfiles through the Dagger API.
 
 import (
 	"context"
