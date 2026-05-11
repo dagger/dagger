@@ -1,8 +1,11 @@
 package core
 
-// Workspace alignment: mostly aligned; coverage targets post-workspace module interfaces, but setup still relies on historical module helpers.
-// Scope: Module interface definitions, implementations, and interface-valued APIs across SDKs.
-// Intent: Keep interface semantics stable while command and helper cleanup proceed separately.
+// These tests cover Dagger interfaces declared by modules across SDKs. They
+// verify interface definitions, implementation objects, and module functions
+// that accept or return interface values.
+//
+// See also:
+// - module_type_test.go: concrete custom types in module APIs.
 
 import (
 	"context"

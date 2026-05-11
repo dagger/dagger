@@ -1,8 +1,10 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: CLI exit code behavior and return code propagation.
-// Intent: Keep return-code behavior stable independently of workspace cleanup.
+// These tests cover how the CLI reports process exit codes. They verify large
+// exit codes are normalized the same way a shell observes them.
+//
+// See also:
+// - module_error_test.go: module-specific error surfaces.
 
 import (
 	"context"

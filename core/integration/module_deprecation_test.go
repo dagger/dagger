@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: mostly aligned; coverage targets post-workspace module deprecation semantics, though setup still relies on historical module helpers.
-// Scope: Deprecation metadata exposed through module introspection and validation rules for deprecated arguments.
-// Intent: Keep module deprecation behavior separate from the remaining runtime, SDK, and dependency coverage in the historical umbrella suite.
+// These tests cover `+deprecated` comments and language-native deprecation
+// annotations in module APIs. They verify the metadata exposed by introspection
+// and validation errors for unsupported deprecated arguments.
+//
+// See also:
+// - module_introspection_cli_test.go: CLI inspection of module APIs.
+// - module_definition_test.go: defining module API metadata.
 
 import (
 	"context"

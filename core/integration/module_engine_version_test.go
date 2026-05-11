@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: mostly aligned; coverage targets post-workspace module-owned engine-version behavior, though setup still relies on historical module helpers.
-// Scope: Module-observed schema version and module config mutations that read, preserve, or update `engineVersion`.
-// Intent: Keep module-owned engine-version semantics separate from engine handshake tests, legacy compatibility tests, and the remaining module runtime umbrella coverage.
+// These tests cover the `engineVersion` value stored in module config. They
+// verify the schema version seen by module code and CLI mutations that read,
+// preserve, or update that pinned version.
+//
+// See also:
+// - engine_test.go: engine lifecycle behavior.
+// - module_config_test.go: general module config behavior.
 
 import (
 	"context"

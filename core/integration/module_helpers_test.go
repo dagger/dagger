@@ -1,8 +1,7 @@
 package core
 
-// Workspace alignment: aligned; helper-only file for CLI command helpers, module fixtures, and module introspection helpers.
-// Scope: Raw CLI helpers, module fixtures, and shared module introspection utilities.
-// Intent: Keep test command invocations explicit so callsites show the real `dagger` command shape.
+// This file contains shared module fixtures, CLI helpers, and introspection
+// utilities. It is helper-only and should not own behavior coverage.
 
 import (
 	"bytes"
