@@ -64,7 +64,9 @@ async def register_from_metadata(metadata: ModuleMetadata) -> dagger.ModuleID:
 
 
 def _supports_recipe_id(version: str) -> bool:
-    if version in {"", "latest"}:
+    if version == "":
+        return False
+    if version == "latest":
         return True
 
     match = _VERSION_RE.match(version)

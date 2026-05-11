@@ -284,7 +284,10 @@ export class Register {
 }
 
 function supportsRecipeID(version: string): boolean {
-  if (version === "" || version === "latest") {
+  if (version === "") {
+    return false
+  }
+  if (version === "latest") {
     return true
   }
 
