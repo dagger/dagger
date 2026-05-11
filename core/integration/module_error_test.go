@@ -1,8 +1,11 @@
 package core
 
-// Workspace alignment: mostly aligned; coverage targets post-workspace module error-surface semantics, but setup still relies on historical module helpers.
-// Scope: Execution error translation, unexposed host/engine APIs, and preservation of large exec error output.
-// Intent: Keep module error handling and error-surface behavior separate from the remaining umbrella runtime coverage.
+// These tests cover error surfaces from module code. They verify execution
+// error translation, hidden host/engine APIs, and large exec error output.
+//
+// See also:
+// - module_call_test.go: successful module invocation flows.
+// - module_validation_test.go: load-time validation errors.
 
 import (
 	"context"

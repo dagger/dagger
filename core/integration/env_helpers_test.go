@@ -1,8 +1,7 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Shared nested Dagger and fixture helpers for env-file and legacy .env integration tests.
-// Intent: Keep env-centric setup reusable without blurring ownership of behavioral suites.
+// This file contains shared nested-Dagger and fixture helpers for env-file and
+// legacy `.env` tests. It is helper-only and should not own behavior coverage.
 
 import (
 	"os"

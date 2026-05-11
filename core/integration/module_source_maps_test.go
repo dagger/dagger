@@ -1,8 +1,13 @@
 package core
 
-// Workspace alignment: mostly aligned; coverage targets post-workspace module tooling metadata, though setup still relies on historical module helpers.
-// Scope: Source-location metadata propagated from module source into generated bindings.
-// Intent: Keep source-map coverage separate from engine-version behavior and the remaining module runtime umbrella coverage.
+// These tests cover source-location comments written into generated module
+// bindings. They verify that Go and TypeScript bindings point back to the
+// module source lines that defined objects, fields, functions, args, enums, and
+// interfaces.
+//
+// See also:
+// - module_engine_version_test.go: module tooling metadata tied to engine version.
+// - module_definition_test.go: module API definition behavior.
 
 import (
 	"context"

@@ -1,8 +1,11 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Local directory and local import behavior across sessions.
-// Intent: Keep local import behavior stable independently of workspace cleanup.
+// These tests cover importing host directories into Dagger with local source
+// APIs. They verify content transfer and reuse across Dagger sessions.
+//
+// See also:
+// - host_test.go: host filesystem access.
+// - cross_session_test.go: behavior that survives session boundaries.
 
 import (
 	"context"

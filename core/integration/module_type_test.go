@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: mostly aligned; coverage targets post-workspace module type semantics, but setup still relies on historical module helpers.
-// Scope: Cross-SDK custom types, objects, enums, lists, and type wiring in module APIs.
-// Intent: Keep module type semantics stable while helper and command cleanup proceed separately.
+// These tests cover Dagger types declared by modules across SDKs. They verify
+// object types, enums, lists, and how those values are passed between callers,
+// generated bindings, and module functions.
+//
+// See also:
+// - module_definition_test.go: API definition and schema registration.
+// - module_iface_test.go: interface types and implementations.
 
 import (
 	"context"

@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: aligned; this file already matches the workspace-era split.
-// Scope: Supported module-shaped dagger.json semantics for a single module.
-// Intent: Keep current module config behavior explicit and keep legacy workspace inference out of this file.
+// These tests cover current module-shaped `dagger.json` config for a single
+// module. They verify validation, normalization, dependencies, SDK config, and
+// source/context rules.
+//
+// See also:
+// - module_config_compat_test.go: old module config shapes still accepted.
+// - workspace_compat_test.go: legacy `dagger.json` workspace inference.
 
 import (
 	"bytes"
@@ -20,11 +24,6 @@ import (
 	"github.com/dagger/testctx"
 )
 
-// This file owns supported module-shaped dagger.json semantics for a single
-// module: validation, normalization, dependency metadata, SDK config, and
-// source/context rules. Legacy module-shaped dagger.json compatibility lives in
-// module_config_compat_test.go, while legacy workspace inference from
-// dagger.json lives in workspace_compat_test.go.
 func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 	// Test dagger.json source configs that are part of the current supported
 	// module config surface and aren't inherently covered in other tests.

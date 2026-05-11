@@ -1,8 +1,8 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Docker-in-Docker container behavior and engine integration.
-// Intent: Keep DIND support stable independently of module and workspace cleanup.
+// These tests cover privileged nested Dagger calls from inside a container. They
+// verify that a container can query the current Dagger session over
+// `$DAGGER_SESSION_PORT`.
 
 import (
 	"context"

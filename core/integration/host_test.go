@@ -1,8 +1,10 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Host filesystem access and host-side integration semantics.
-// Intent: Keep host behavior stable independently of module and workspace cleanup.
+// These tests cover the Host API for reading files, directories, sockets, and
+// related metadata from the machine running the Dagger client.
+//
+// See also:
+// - local_test.go: local directory import behavior across sessions.
 
 import (
 	"context"
