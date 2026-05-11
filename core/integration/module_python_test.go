@@ -197,7 +197,7 @@ class HelloWorld:
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			With(daggerExec("module", "init", "--sdk=python", "project2", ".")).
+			With(daggerExec("module", "init", "--sdk=python", "project2", "./project2")).
 			WithExec([]string{"test", "-f", "project2/src/project_2/main.py"}).
 			With(daggerCallAt("project2", "container-echo", "--string-arg", "hello", "stdout")).
 			Stdout(ctx)
