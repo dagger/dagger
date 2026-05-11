@@ -1,8 +1,7 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: JSON scalar and composite value semantics exposed through modules.
-// Intent: Keep JSON value behavior stable independently of workspace cleanup.
+// These tests cover JSON values crossing the module API boundary. They verify
+// scalar, object, and array values passed between callers and module functions.
 
 import (
 	"context"

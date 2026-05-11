@@ -1,8 +1,7 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Unix socket mounting and socket ownership behavior.
-// Intent: Keep socket behavior stable independently of workspace cleanup.
+// These tests cover Unix sockets passed between the host and containers. They
+// verify socket mounts and ownership metadata.
 
 import (
 	"context"

@@ -1,8 +1,11 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Core file object behavior.
-// Intent: Keep file semantics stable independently of module and workspace cleanup.
+// These tests cover the GraphQL File object: creating, reading, mounting,
+// exporting, metadata, and file content operations.
+//
+// See also:
+// - directory_test.go: core Directory object behavior.
+// - ownership_test.go: file and directory ownership propagation.
 
 import (
 	"bytes"

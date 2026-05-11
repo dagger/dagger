@@ -1,8 +1,13 @@
 package core
 
-// Workspace alignment: mostly aligned; command intent is explicit, though the file still uses large historical cross-session fixtures.
-// Scope: Cross-session module caching and reuse behavior.
-// Intent: Keep cross-session module behavior covered with exact module/raw helpers instead of legacy command rewriting.
+// These tests cover values reused after one Dagger session ends and another
+// begins. They verify module function caching, services, context directories,
+// Git auth, sockets, secrets, LLM calls, interfaces, and Dockerfile/Git socket
+// use across session boundaries.
+//
+// See also:
+// - cache_test.go: core cache volume and cache-key behavior.
+// - engine_persistence_test.go: engine state across restarts.
 
 import (
 	"context"

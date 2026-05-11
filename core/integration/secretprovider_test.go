@@ -1,8 +1,11 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Secret provider selection and provider-specific secret resolution behavior.
-// Intent: Keep secret provider behavior stable independently of workspace cleanup.
+// These tests cover external secret providers. They verify provider selection
+// and resolving secrets through provider-specific backends.
+//
+// See also:
+// - secret_test.go: core Secret behavior.
+// - secret_gcp_test.go: GCP-backed secret provider integration.
 
 import (
 	"context"
