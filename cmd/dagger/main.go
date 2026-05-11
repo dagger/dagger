@@ -140,6 +140,7 @@ func init() {
 		queryCmd,
 		runCmd,
 		traceCmd,
+		moduleChecksCmd,
 		lockCmd,
 		configCmd,
 		checksCmd,
