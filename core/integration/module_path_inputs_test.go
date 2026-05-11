@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: mostly aligned; coverage targets post-workspace path-input semantics, but setup still relies on historical module helpers.
-// Scope: `+defaultPath`, `+ignore`, `gitignore`, and explicit path/directory argument filtering across directory, file, and git inputs.
-// Intent: Keep path-input semantics explicit and separate from unrelated module runtime and loading coverage.
+// These tests cover module arguments that receive filesystem or Git content.
+// They verify how `+defaultPath`, `+ignore`, `.gitignore`, and explicit filters
+// shape Directory, File, and GitRepository inputs before module code sees them.
+//
+// See also:
+// - module_runtime_behavior_test.go: general module execution behavior.
+// - module_loading_test.go: selecting module sources and entrypoints.
 
 import (
 	"cmp"

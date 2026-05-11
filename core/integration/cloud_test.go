@@ -1,8 +1,11 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Cloud trace and reporting integration surfaced through the CLI and API.
-// Intent: Keep cloud-facing integration behavior stable without mixing in workspace concerns.
+// These tests cover `dag.Cloud().TraceURL`. They verify the trace URL returned
+// to direct API callers and to module code, including the error when no Dagger
+// Cloud organization is configured.
+//
+// See also:
+// - telemetry_test.go: local telemetry collection and export behavior.
 
 import (
 	"context"

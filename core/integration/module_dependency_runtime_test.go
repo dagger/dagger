@@ -1,7 +1,8 @@
 package core
 
-// These tests cover a module using other modules as dependencies at runtime,
-// after those dependencies are already installed in the module configuration.
+// These tests cover a module calling other installed modules from its own
+// functions. They assume dependency entries already exist in config, then verify
+// runtime calls, schema exposure, and codegen refresh when local deps change.
 //
 // See also:
 // - module_dependency_cli_test.go: CLI mutations of module dependency entries.

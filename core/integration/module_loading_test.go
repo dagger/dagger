@@ -1,7 +1,12 @@
 package core
 
-// Scope: Module source resolution, nomination, precedence, and entrypoint arbitration for native workspace and module sources.
-// Intent: Keep loading behavior separate from compat detection and make source-resolution and arbitration ownership explicit.
+// These tests cover how Dagger chooses which module to load for a command. They
+// verify path/ref resolution, current-directory nomination, precedence between
+// candidates, and entrypoint selection for workspace and standalone modules.
+//
+// See also:
+// - workspace_compat_test.go: legacy compat workspace detection.
+// - workspace_selection_test.go: explicit workspace selection before loading.
 
 import (
 	"context"

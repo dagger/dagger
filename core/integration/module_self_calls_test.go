@@ -1,8 +1,11 @@
 package core
 
-// Workspace alignment: mostly aligned; coverage targets post-workspace module self-call semantics, but setup still relies on historical module helpers.
-// Scope: Module self-invocation through GraphQL self-queries and generated self-call APIs.
-// Intent: Keep self-call behavior separate from current-module introspection and the remaining umbrella runtime coverage.
+// These tests cover a module invoking functions from its own Dagger API. They
+// verify direct GraphQL self-queries and SDK-generated helpers for self-calls.
+//
+// See also:
+// - module_current_module_test.go: `dag.CurrentModule()` introspection.
+// - module_runtime_behavior_test.go: general module execution behavior.
 
 import (
 	"context"
