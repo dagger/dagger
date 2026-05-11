@@ -1107,7 +1107,10 @@ func gitMergeWithPatches(
 			}
 		}
 
-		return os.RemoveAll(filepath.Join(workDir, ".git"))
+		if err := os.RemoveAll(filepath.Join(workDir, ".git")); err != nil {
+			return fmt.Errorf("remove temporary merge git repository: %w", err)
+		}
+		return nil
 	})
 }
 
@@ -1145,12 +1148,28 @@ func gitOctopusMergeWithPatches(
 			return err
 		}
 
-		return os.RemoveAll(filepath.Join(workDir, ".git"))
+		if err := os.RemoveAll(filepath.Join(workDir, ".git")); err != nil {
+			return fmt.Errorf("remove temporary octopus merge git repository: %w", err)
+		}
+		return nil
 	})
 }
 
+var gitEphemeralConfig = []string{
+	// These repositories are disposable. Detached maintenance can outlive the
+	// git command and race with the immediate .git cleanup below.
+	"-c", "maintenance.auto=false",
+	"-c", "maintenance.autoDetach=false",
+	"-c", "gc.auto=0",
+	"-c", "gc.autoDetach=false",
+}
+
 func runGit(ctx context.Context, dir string, args ...string) error {
-	cmd := exec.CommandContext(ctx, "git", args...)
+	gitArgs := make([]string, 0, len(gitEphemeralConfig)+len(args))
+	gitArgs = append(gitArgs, gitEphemeralConfig...)
+	gitArgs = append(gitArgs, args...)
+
+	cmd := exec.CommandContext(ctx, "git", gitArgs...)
 	cmd.Dir = dir
 	cmd.Env = []string{
 		"GIT_CONFIG_NOSYSTEM=1",

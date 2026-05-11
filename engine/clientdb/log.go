@@ -38,10 +38,6 @@ func LogsToPB(dbLog []Log) []*otlplogsv1.ResourceLogs {
 		} else {
 			res = telemetry.ResourceFromPB(sd.ResourceSchemaUrl, &resPb)
 		}
-		if res.SchemaURL() == "" {
-			slog.Error("log has no resource", "log", sd)
-			continue
-		}
 		var scope instrumentation.Scope
 		var scopePb otlpcommonv1.InstrumentationScope
 		if err := protojson.Unmarshal(sd.InstrumentationScope, &scopePb); err != nil {
