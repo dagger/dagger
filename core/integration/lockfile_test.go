@@ -419,13 +419,21 @@ func (LockfileSuite) TestWorkspaceModuleLockUpdate(ctx context.Context, t *testc
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c).
 			With(daggerExec("workspace", "init"))
+		_, err := ctr.Sync(ctx)
+		require.NoError(t, err)
 
-		out, err := ctr.With(daggerExecRaw("update")).Stdout(ctx)
+		ctr = ctr.With(daggerExecRaw("update"))
+		out, err := ctr.Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Updated .dagger/lock", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerExecRaw("update")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "Lockfile already up to date", strings.TrimSpace(out))
 
-		_, err = ctr.File(".dagger/lock").Contents(ctx)
-		require.Error(t, err)
+		lockContents, err := ctr.File(".dagger/lock").Contents(ctx)
+		require.NoError(t, err)
+		require.Empty(t, lockContents)
 	})
 
 	t.Run("lock update refreshes only the selected workspace module entry", func(ctx context.Context, t *testctx.T) {
