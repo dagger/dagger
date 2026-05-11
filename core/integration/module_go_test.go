@@ -1528,7 +1528,7 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 			With(daggerExec("module", "init", "--source=.", "--sdk=go", "container", ".")).
 			WithoutFile("/work/.gitignore"). // Remove .gitignore so we can override files inside internal/dagger without ignoring them.
 			WithNewFile("/work/internal/dagger/more.go", moreContents).
-			With(daggerQuery(`{container{from(address:"` + alpineImage + `"){echo(msg:"echo!"){stdout}}}}`)).
+			With(daggerQueryAt(".", `{container{from(address:"`+alpineImage+`"){echo(msg:"echo!"){stdout}}}}`)).
 			Sync(ctx)
 		require.Error(t, err)
 		require.NoError(t, c.Close())
