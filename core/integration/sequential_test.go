@@ -1,8 +1,8 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Sequential execution and isolation behavior.
-// Intent: Keep sequencing and isolation guarantees stable independently of workspace cleanup.
+// These tests cover cases that cannot safely run in parallel. The current suite
+// verifies that insecure-root network namespace changes do not leak between
+// container execs.
 
 import (
 	"context"

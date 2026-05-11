@@ -1,8 +1,11 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Core secret behavior, secret injection, and secret file or env integration.
-// Intent: Keep secret semantics stable independently of workspace cleanup.
+// These tests cover Dagger Secret values. They verify secret injection,
+// redaction boundaries, and mounting secrets as files or environment variables.
+//
+// See also:
+// - secretprovider_test.go: provider-backed secret resolution.
+// - secret_gcp_test.go: GCP-backed secret provider integration.
 
 import (
 	"bytes"

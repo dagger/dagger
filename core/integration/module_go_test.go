@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: mostly aligned; coverage targets post-workspace modules, but setup still relies on historical module helpers.
-// Scope: Go SDK module initialization, source layout, codegen, and runtime behavior.
-// Intent: Keep Go module behavior stable while helper and command cleanup proceed separately.
+// These tests cover modules authored with the Go SDK. They verify `dagger
+// module init`, expected source layout, generated Go bindings, and executing Go
+// module functions.
+//
+// See also:
+// - module_definition_test.go: SDK-neutral module API definition behavior.
+// - module_type_test.go: cross-SDK custom type behavior.
 
 import (
 	"context"

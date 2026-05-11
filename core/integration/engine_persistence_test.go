@@ -1,5 +1,12 @@
 package core
 
+// These tests cover engine state that must persist across restarts. They verify
+// disk persistence for cached module calls and context inputs.
+//
+// See also:
+// - engine_test.go: engine lifecycle behavior.
+// - cross_session_test.go: behavior across Dagger sessions.
+
 import (
 	"context"
 	"crypto/rand"

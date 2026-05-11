@@ -1,8 +1,10 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Multi-platform execution, emulation, and platform-aware image behavior.
-// Intent: Keep platform behavior stable independently of workspace cleanup.
+// These tests cover container platform selection. They verify linux/amd64 and
+// linux/arm64 execution, emulation, and platform metadata on images.
+//
+// See also:
+// - container_test.go: core Container behavior.
 
 import (
 	"context"

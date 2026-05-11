@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: aligned; this file already matches the workspace-era split.
-// Scope: Workspace lockfile behavior, lock resolution, and config-to-lock interactions.
-// Intent: Keep lockfile coverage owned by workspace behavior rather than by legacy module config or compat detection.
+// These tests cover `dagger.lock`, the workspace lockfile that pins resolved
+// Git refs and workspace module sources. They verify lock resolution and how
+// workspace config changes affect the lockfile.
+//
+// See also:
+// - workspace_config_test.go: workspace config read/write behavior.
+// - workspace_compat_test.go: legacy config shapes before migration.
 
 import (
 	"context"

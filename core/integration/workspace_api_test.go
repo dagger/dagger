@@ -1,8 +1,13 @@
 package core
 
-// Workspace alignment: aligned; this file already matches the workspace-era split.
-// Scope: Workspace object behavior once a workspace has already been injected or selected.
-// Intent: Keep the Workspace API separate from compat inference and loading arbitration.
+// These tests cover the GraphQL Workspace object after a workspace has already
+// been selected or injected into the session. They verify API behavior, not how
+// the workspace was found.
+//
+// See also:
+// - workspace_selection_test.go: explicit workspace selection.
+// - contextual_workspace_test.go: workspace find-up from the current directory.
+// - module_loading_test.go: module source selection and entrypoint arbitration.
 
 import (
 	"context"

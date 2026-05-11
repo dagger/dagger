@@ -1,8 +1,13 @@
 package core
 
-// Workspace alignment: aligned; intentionally legacy-focused.
-// Scope: Frozen legacy compatibility behavior that is intentionally preserved outside the workspace-era model.
-// Intent: Keep explicitly legacy behavior isolated so newer workspace and module suites can evolve without ambiguity.
+// These tests cover compatibility cases pinned to older module `engineVersion`
+// values. They preserve old schema quirks, codegen shapes, terminal handling,
+// enum handling, Git ref handling, and container handling that current tests
+// should not treat as the preferred model.
+//
+// See also:
+// - workspace_compat_test.go: legacy project shapes mapped into workspaces.
+// - module_config_compat_test.go: old module config shapes.
 
 import (
 	"context"
