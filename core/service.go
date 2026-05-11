@@ -383,9 +383,6 @@ func (svc *Service) startContainer(
 		cloned := *execMD
 		execMD = &cloned
 	}
-	if opts.LogTargetCallDigest != "" {
-		execMD.LogTargetCallDigest = opts.LogTargetCallDigest
-	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -582,6 +579,15 @@ func (svc *Service) startContainer(
 	}
 
 	exited := make(chan struct{})
+	// Route the service's stdio logs to the installing API call's row by
+	// passing its span context as the executor cause context. setupOTel uses
+	// that as the active span for SpanStdio, so log records get tied to the
+	// install span ID — the same way a normal withExec's logs are tied to
+	// its dagql call span.
+	logTargetCtx := originCtx
+	if !logTargetCtx.IsValid() {
+		logTargetCtx = span.SpanContext()
+	}
 	runErr := make(chan error)
 	go func() {
 		err := bk.Run(
@@ -598,7 +604,7 @@ func (svc *Service) startContainer(
 				Signal: signal,
 			},
 			started,
-			span.SpanContext(),
+			logTargetCtx,
 			execMD,
 			clientMetadata.SessionID,
 			clientMetadata.ClientID,

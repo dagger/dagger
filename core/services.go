@@ -188,14 +188,11 @@ type ServiceStartOpts struct {
 	ClientSpecific bool
 	IO             *ServiceIO
 
-	// LogTargetCallDigest is the call digest used to route the service's
-	// stdio logs to the installing API call's row in the UI.
-	LogTargetCallDigest digest.Digest
-
 	// OriginSpanContexts are the install-span contexts of the API calls that
 	// returned/own the Service value. When the service exits with an error,
 	// these are linked as causal origins so the UI attributes the failure
-	// back to the API span that created the service.
+	// back to the API span that created the service. The first valid one
+	// also routes the service's stdio logs to its row.
 	OriginSpanContexts []trace.SpanContext
 }
 
@@ -306,13 +303,6 @@ func (ss *Services) startResultWithOpts(
 	serviceDig, err := svc.ContentPreferredDigest(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("service digest: %w", err)
-	}
-	if opts.LogTargetCallDigest == "" {
-		callDig, err := svc.RecipeDigest(ctx)
-		if err != nil {
-			return nil, nil, fmt.Errorf("service recipe digest: %w", err)
-		}
-		opts.LogTargetCallDigest = callDig
 	}
 	if len(opts.OriginSpanContexts) == 0 {
 		opts.OriginSpanContexts = lookupServiceOriginSpanContexts(ctx, svc)
