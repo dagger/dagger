@@ -273,6 +273,31 @@ func (io *ServiceIO) Close() error {
 	return errors.Join(errs...)
 }
 
+// firstValidSpanContext returns the first IsValid() context from spans, or a
+// zero SpanContext if none are valid.
+func firstValidSpanContext(spans []trace.SpanContext) trace.SpanContext {
+	for _, s := range spans {
+		if s.IsValid() {
+			return s
+		}
+	}
+	return trace.SpanContext{}
+}
+
+// trackOriginIfMissing stamps the given origin onto err's message (as
+// [traceparent:...]) unless err is nil or already carries an origin. The
+// receiving span's EndWithCause will then add the origin as an error-origin
+// link.
+func trackOriginIfMissing(err error, origin trace.SpanContext) error {
+	if err == nil || !origin.IsValid() {
+		return err
+	}
+	if len(telemetry.ParseErrorOrigins(err.Error())) > 0 {
+		return err
+	}
+	return telemetry.TrackOrigin(err, origin)
+}
+
 func (svc *Service) Start(
 	ctx context.Context,
 	running *RunningService,
@@ -460,9 +485,30 @@ func (svc *Service) startContainer(
 		meta.Env = addDefaultEnvvar(meta.Env, "TERM", "xterm")
 	}
 
-	attrs := []attribute.KeyValue{}
+	attrs := []attribute.KeyValue{
+		// Hide the synthetic service exec span from the UI; its logs and
+		// failure status are rolled up onto the installing API span (e.g.
+		// .asService) via UIResumeOutputAttr + the cause link below.
+		attribute.Bool(telemetry.UIPassthroughAttr, true),
+	}
 	if opts.LogTargetCallDigest != "" {
 		attrs = append(attrs, attribute.String(telemetryattrs.UIResumeOutputAttr, opts.LogTargetCallDigest.String()))
+	}
+
+	spanOpts := []trace.SpanStartOption{trace.WithAttributes(attrs...)}
+	// Cause-link the service exec span to the API spans that installed the
+	// Service value. If this service exits with an error, dagui will then
+	// surface the failure on the installing API span (e.g. .asService).
+	for _, originCtx := range opts.OriginSpanContexts {
+		if !originCtx.IsValid() {
+			continue
+		}
+		spanOpts = append(spanOpts, trace.WithLinks(trace.Link{
+			SpanContext: originCtx,
+			Attributes: []attribute.KeyValue{
+				attribute.String(telemetry.LinkPurposeAttr, telemetry.LinkPurposeCause),
+			},
+		}))
 	}
 
 	ctx, span := Tracer(ctx).Start(
@@ -470,8 +516,17 @@ func (svc *Service) startContainer(
 		ctx,
 		// Match naming scheme of normal exec span.
 		fmt.Sprintf("exec %s", strings.Join(svc.Args, " ")),
-		trace.WithAttributes(attrs...),
+		spanOpts...,
 	)
+	// Pick a single install-span context as the canonical "error origin" for
+	// the running service so binding-exit errors can carry a traceparent
+	// pointing at it. Fall back to the service span itself when no install
+	// span is known (e.g. for direct startResult calls outside a dagql call).
+	originCtx := firstValidSpanContext(opts.OriginSpanContexts)
+	if !originCtx.IsValid() {
+		originCtx = span.SpanContext()
+	}
+	running.errorOrigin = originCtx
 	defer func() {
 		if rerr != nil {
 			// NB: this is intentionally conditional; we only complete if there was
@@ -605,7 +660,7 @@ func (svc *Service) startContainer(
 			close(exited)
 		}()
 
-		exitErr = <-runErr
+		exitErr = trackOriginIfMissing(<-runErr, originCtx)
 		slog.Info("service exited", "err", exitErr)
 
 		// show the exit status; doing so won't fail anything, and is

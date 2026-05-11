@@ -443,6 +443,26 @@ func (v *Viztest) UseExecService(ctx context.Context) error {
 	return err
 }
 
+// ServiceErrorAttribution binds a container to a service that logs and then
+// exits non-zero, exercising service-exit failure attribution back to the
+// .asService call that returned it.
+// +cache="session"
+func (*Viztest) ServiceErrorAttribution(ctx context.Context) error {
+	crashy := dag.Container().
+		From("alpine").
+		AsService(dagger.ContainerAsServiceOpts{
+			Args: []string{"sh", "-c", "echo service is starting; sleep 1; echo service is crashing >&2; exit 42"},
+		})
+
+	_, err := dag.Container().
+		From("alpine").
+		WithServiceBinding("crashy", crashy).
+		WithEnvVariable("NOW", time.Now().String()).
+		WithExec([]string{"sh", "-c", "echo client is waiting; sleep 10; echo should not happen"}).
+		Sync(ctx)
+	return err
+}
+
 // +cache="session"
 func (*Viztest) NoExecService() *dagger.Service {
 	return dag.Container().
