@@ -6,6 +6,7 @@ import (
 	"gotest.tools/v3/assert"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 )
 
 func TestCollectedContentCollectUnknownAnyResult(t *testing.T) {
@@ -16,7 +17,20 @@ func TestCollectedContentCollectUnknownAnyResult(t *testing.T) {
 	assert.NilError(t, err)
 	ctx = dagql.ContextWithCache(ctx, cacheIface)
 	sc := cacheIface
-	dag := newCoreDagqlServerForTest(t, &Query{})
+	root := &Query{}
+	testSrv := &moduleObjectTestServer{
+		mockServer: &mockServer{},
+		cache:      sc,
+		root:       root,
+	}
+	root.Server = testSrv
+	dag := newCoreDagqlServerForTest(t, root)
+	testSrv.dag = dag
+	ctx = ContextWithQuery(ctx, root)
+	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+		ClientID:  "collect-unknown-client",
+		SessionID: "test-session",
+	})
 
 	resCall := &dagql.ResultCall{
 		Kind:        dagql.ResultCallKindSynthetic,
@@ -27,10 +41,7 @@ func TestCollectedContentCollectUnknownAnyResult(t *testing.T) {
 	assert.NilError(t, err)
 	res, err := sc.AttachResult(ctx, "test-session", dag, detached)
 	assert.NilError(t, err)
-	recipeID, err := res.RecipeID(ctx)
-	assert.NilError(t, err)
-
 	content := NewCollectedContent()
-	assert.NilError(t, content.CollectUnknown(ctx, recipeID))
+	assert.NilError(t, content.CollectUnknown(ctx, res))
 	assert.Assert(t, content.Digest() != "")
 }

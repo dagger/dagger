@@ -1827,3 +1827,47 @@ func main() {
 		})
 	}
 }
+
+func (GitSuite) TestCaching(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("same commit should cache", func(ctx context.Context, t *testctx.T) {
+		dir1 := c.Git("https://github.com/dagger/dagger").Commit("7bed576fbc61fff0015f5bf9c85f17c43102a4a3").Tree()
+		s1, err := c.Container().
+			From(alpineImage).
+			WithDirectory("/src", dir1).
+			WithExec([]string{"sh", "-c", "head -c 102 /dev/urandom | base64 -w0"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+
+		dir2 := c.Git("https://github.com/dagger/dagger").Commit("7bed576fbc61fff0015f5bf9c85f17c43102a4a3").Tree()
+		s2, err := c.Container().
+			From(alpineImage).
+			WithDirectory("/src", dir2).
+			WithExec([]string{"sh", "-c", "head -c 102 /dev/urandom | base64 -w0"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+
+		require.Equal(t, s1, s2)
+	})
+
+	t.Run("different commit should bust", func(ctx context.Context, t *testctx.T) {
+		dir1 := c.Git("https://github.com/dagger/dagger").Commit("7bed576fbc61fff0015f5bf9c85f17c43102a4a3").Tree()
+		s1, err := c.Container().
+			From(alpineImage).
+			WithDirectory("/src", dir1).
+			WithExec([]string{"sh", "-c", "head -c 102 /dev/urandom | base64 -w0"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+
+		dir2 := c.Git("https://github.com/dagger/dagger").Commit("36a3929f291bc03e2f48fd2687e5538a063c63ea").Tree()
+		s2, err := c.Container().
+			From(alpineImage).
+			WithDirectory("/src", dir2).
+			WithExec([]string{"sh", "-c", "head -c 102 /dev/urandom | base64 -w0"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+
+		require.NotEqual(t, s1, s2)
+	})
+}

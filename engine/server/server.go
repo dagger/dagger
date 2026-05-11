@@ -35,7 +35,6 @@ import (
 	apitypes "github.com/dagger/dagger/internal/buildkit/api/types"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	bksession "github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/archutil"
 	"github.com/dagger/dagger/internal/buildkit/util/disk"
@@ -87,12 +86,10 @@ type Server struct {
 	// buildkit+containerd entities/DBs
 	//
 
-	worker                *engineutil.Worker
+	engineUtilOpts        *engineutil.Opts
 	workerCache           bkcache.SnapshotManager
 	workerGCPolicies      []dagql.CachePrunePolicy
 	workerDefaultGCPolicy *dagql.CachePrunePolicy
-
-	bkSessionManager *bksession.Manager
 
 	containerdMetaBoltDB *bolt.DB
 	containerdMetaDB     *ctdmetadata.DB
@@ -161,6 +158,8 @@ type Server struct {
 
 	sshfsMgr *sshfsManager
 }
+
+var configureBboltDefaultsOnce sync.Once
 
 type NewServerOpts struct {
 	Name           string
@@ -279,11 +278,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 
 	srv.leaseManager = leaseutil.WithNamespace(ctdmetadata.NewLeaseManager(srv.containerdMetaDB), "dagger")
-
-	srv.bkSessionManager, err = bksession.NewManager()
-	if err != nil {
-		return nil, err
-	}
 
 	srv.contentStore = containerdsnapshot.NewContentStore(srv.containerdMetaDB.ContentStore(), "dagger")
 
@@ -409,22 +403,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	)
 
 	workerGCPolicies := getDagqlGCPolicy(*cfg, ociCfg.GCConfig, srv.rootDir)
-	workerOpt := engineutil.WorkerOpt{
-		ID:               rand.Text(),
-		Labels:           baseLabels,
-		Platforms:        srv.enabledPlatforms,
-		GCPolicy:         buildkitPruneInfosFromDagqlPolicies(workerGCPolicies),
-		NetworkProviders: srv.networkProviders,
-		Snapshotter:      workerSnapshotter,
-		ContentStore:     srv.contentStore,
-		Applier:          winlayers.NewFileSystemApplierWithWindows(srv.contentStore, apply.NewFileSystemApplier(srv.contentStore)),
-		Differ:           winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
-		ImageStore:       nil, // explicitly, because that's what upstream does too
-		RegistryHosts:    srv.registryHosts,
-		IdentityMapping:  nil, // no idmapping
-		LeaseManager:     srv.leaseManager,
-		Root:             srv.rootDir,
-	}
 
 	srv.workerCache, err = bkcache.NewSnapshotManager(bkcache.SnapshotManagerOpt{
 		Snapshotter:   workerSnapshotter,
@@ -465,14 +443,19 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, fmt.Errorf("failed to create clean mount namespace: %w", err)
 	}
 
-	srv.worker, err = engineutil.NewWorker(&engineutil.NewWorkerOpts{
-		WorkerOpt:        workerOpt,
-		WorkerRoot:       srv.workerRootDir,
+	srv.engineUtilOpts, err = engineutil.NewOpts(engineutil.Opts{
+		ID:               rand.Text(),
+		Labels:           baseLabels,
+		Platforms:        srv.enabledPlatforms,
+		NetworkProviders: srv.networkProviders,
+		Snapshotter:      workerSnapshotter,
+		ContentStore:     srv.contentStore,
+		Applier:          winlayers.NewFileSystemApplierWithWindows(srv.contentStore, apply.NewFileSystemApplier(srv.contentStore)),
+		Differ:           winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
+		IdentityMapping:  nil, // no idmapping
 		ExecutorRoot:     srv.executorRootDir,
 		TelemetryPubSub:  srv.telemetryPubSub,
-		BKSessionManager: srv.bkSessionManager,
 		SessionHandler:   srv,
-		DagqlServer:      srv,
 
 		Runc:                srv.runc,
 		DefaultCgroupParent: srv.cgroupParent,
@@ -481,13 +464,12 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		ApparmorProfile:     srv.apparmorProfile,
 		SELinux:             srv.selinux,
 		Entitlements:        srv.entitlements,
-		WorkerCache:         srv.workerCache,
 
 		HostMntNS:  hostMntNS,
 		CleanMntNS: srv.cleanMntNS,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create worker: %w", err)
+		return nil, fmt.Errorf("failed to initialize engine util opts: %w", err)
 	}
 
 	//
@@ -559,7 +541,18 @@ func (srv *Server) mkdirBaseDirs() (err error) {
 	return nil
 }
 
+func configureBboltDefaults() {
+	configureBboltDefaultsOnce.Do(func() {
+		// Some containerd snapshotter constructors open bbolt internally with nil
+		// options, so set the process default before those paths can run.
+		bolt.DefaultOptions.FreelistType = bolt.FreelistMapType
+		bolt.DefaultOptions.NoStatistics = true
+	})
+}
+
 func (srv *Server) initBoltDBs() (err error) {
+	configureBboltDefaults()
+
 	defer func() {
 		if panicErr := recover(); panicErr != nil {
 			err = fmt.Errorf("panic while initializing boltdbs: %v", panicErr)
@@ -570,6 +563,8 @@ func (srv *Server) initBoltDBs() (err error) {
 		func(opts *bolt.Options) error {
 			opts.NoSync = true
 			opts.NoFreelistSync = true
+			opts.FreelistType = bolt.FreelistMapType
+			opts.NoStatistics = true
 			opts.NoGrowSync = true
 			return nil
 		},
@@ -586,6 +581,8 @@ func (srv *Server) initBoltDBs() (err error) {
 	srv.containerdMetaBoltDB, err = bolt.Open(srv.containerdMetaDBPath, 0644, &bolt.Options{
 		NoSync:         true,
 		NoFreelistSync: true,
+		FreelistType:   bolt.FreelistMapType,
+		NoStatistics:   true,
 		NoGrowSync:     true,
 	})
 	if err != nil {
@@ -695,7 +692,7 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 	// DB-close path. When GracefulStop is fixed, it should return those earlier
 	// errors instead of deleting this assignment.
 	//nolint:ineffassign,staticcheck // FIXME: see comment above
-	err = errors.Join(err, srv.worker.Close())
+	err = errors.Join(err, srv.engineUtilOpts.Close())
 
 	// Shutdown the global namespace worker pool
 	engineutil.ShutdownGlobalNamespaceWorkerPool()
@@ -774,8 +771,8 @@ func (srv *Server) Info(context.Context, *controlapi.InfoRequest) (*controlapi.I
 func (srv *Server) ListWorkers(context.Context, *controlapi.ListWorkersRequest) (*controlapi.ListWorkersResponse, error) {
 	resp := &controlapi.ListWorkersResponse{
 		Record: []*apitypes.WorkerRecord{{
-			ID:        srv.worker.ID(),
-			Labels:    srv.worker.Labels(),
+			ID:        srv.engineUtilOpts.ID,
+			Labels:    srv.engineUtilOpts.Labels,
 			Platforms: pb.PlatformsFromSpec(srv.enabledPlatforms),
 		}},
 	}

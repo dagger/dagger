@@ -874,6 +874,7 @@ type persistedModulePayload struct {
 	WorkspaceConfig               map[string]any `json:"workspaceConfig,omitempty"`
 	DefaultsFromDotEnv            bool           `json:"defaultsFromDotEnv,omitempty"`
 	DisableDefaultFunctionCaching bool           `json:"disableDefaultFunctionCaching,omitempty"`
+	AsModuleVariantDigest         string         `json:"asModuleVariantDigest,omitempty"`
 }
 
 func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
@@ -951,6 +952,7 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 	persisted.WorkspaceConfig = mod.WorkspaceConfig
 	persisted.DefaultsFromDotEnv = mod.DefaultsFromDotEnv
 	persisted.DisableDefaultFunctionCaching = mod.DisableDefaultFunctionCaching
+	persisted.AsModuleVariantDigest = mod.AsModuleVariantDigest
 
 	jsonBytes, err := json.Marshal(persisted)
 	if err != nil {
@@ -1034,6 +1036,7 @@ func (*Module) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 		WorkspaceConfig:               persisted.WorkspaceConfig,
 		DefaultsFromDotEnv:            persisted.DefaultsFromDotEnv,
 		DisableDefaultFunctionCaching: persisted.DisableDefaultFunctionCaching,
+		AsModuleVariantDigest:         persisted.AsModuleVariantDigest,
 	}
 	if mod.SDKConfig == nil {
 		mod.SDKConfig = &SDKConfig{}

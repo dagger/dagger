@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -15,6 +16,26 @@ import (
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/vektah/gqlparser/v2/ast"
 )
+
+// introspectionDefaultToJSON converts a GraphQL default-value literal (as
+// returned by GraphQL introspection) into a JSON-encoded value suitable for
+// FunctionArg.DefaultValue. Most GraphQL literals (strings, numbers, booleans)
+// are already valid JSON, but enum literals are bare identifiers (e.g. RED)
+// and lists/objects can contain enums, so a typed dagql.Input — when
+// available — is the only reliable way to re-encode them.
+func introspectionDefaultToJSON(literal *string, argSpec dagql.InputSpec) (core.JSON, error) {
+	if literal == nil {
+		return nil, nil
+	}
+	if argSpec.Default != nil {
+		encoded, err := json.Marshal(argSpec.Default)
+		if err != nil {
+			return nil, fmt.Errorf("marshal default %q: %w", *literal, err)
+		}
+		return core.JSON(encoded), nil
+	}
+	return core.JSON(*literal), nil
+}
 
 type moduleSchema struct{}
 
@@ -252,6 +273,7 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 			Doc(`Return all checks defined by the module`).
 			Args(
 				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
+				dagql.Arg("noGenerate").Doc("When true, only return annotated check functions; exclude generate-as-checks"),
 			),
 
 		dagql.NodeFunc("check", s.moduleCheck).
@@ -2466,9 +2488,11 @@ func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectRe
 				defaultPath    string
 				defaultAddress string
 				ignore         []string
+				resolvedSpec   dagql.InputSpec
 			)
 			if fieldSpec, ok := queryObjType.FieldSpec(introspectionField.Name, dag.View); ok {
 				if argSpec, ok := fieldSpec.Args.Input(introspectionArg.Name, dag.View); ok {
+					resolvedSpec = argSpec
 					for _, directive := range argSpec.Directives {
 						switch directive.Name {
 						case "defaultPath":
@@ -2491,9 +2515,9 @@ func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectRe
 					}
 				}
 			}
-			var defaultValue core.JSON
-			if introspectionArg.DefaultValue != nil {
-				defaultValue = core.JSON(*introspectionArg.DefaultValue)
+			defaultValue, err := introspectionDefaultToJSON(introspectionArg.DefaultValue, resolvedSpec)
+			if err != nil {
+				return dagql.ObjectResult[*core.TypeDef]{}, fmt.Errorf("convert default value for arg %q: %w", introspectionArg.Name, err)
 			}
 			var fnArg dagql.ObjectResult[*core.FunctionArg]
 			if err := dag.Select(ctx, dag.Root(), &fnArg, dagql.Selector{
@@ -2595,7 +2619,8 @@ func (s *moduleSchema) moduleChecks(
 	ctx context.Context,
 	mod dagql.ObjectResult[*core.Module],
 	args struct {
-		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+		Include    dagql.Optional[dagql.ArrayInput[dagql.String]]
+		NoGenerate dagql.Optional[dagql.Boolean]
 	},
 ) (*core.CheckGroup, error) {
 	var include []string
@@ -2604,7 +2629,7 @@ func (s *moduleSchema) moduleChecks(
 			include = append(include, pattern.String())
 		}
 	}
-	return core.NewCheckGroup(ctx, mod, include)
+	return core.NewCheckGroup(ctx, mod, include, args.NoGenerate.GetOr(false).Bool())
 }
 
 func (s *moduleSchema) moduleCheck(
@@ -2614,7 +2639,7 @@ func (s *moduleSchema) moduleCheck(
 		Name string
 	},
 ) (*core.Check, error) {
-	checkGroup, err := core.NewCheckGroup(ctx, mod, []string{args.Name})
+	checkGroup, err := core.NewCheckGroup(ctx, mod, []string{args.Name}, false)
 	if err != nil {
 		return nil, err
 	}
@@ -2990,7 +3015,11 @@ func (s *moduleSchema) moduleImplementationScoped(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get source implementation digest for module: %w", err)
 	}
-	scopedDigest := hashutil.HashStrings("Module._implementationScoped", sourceDigest.String())
+	scopedDigestInputs := []string{"Module._implementationScoped", sourceDigest.String()}
+	if parentMod.Self().AsModuleVariantDigest != "" {
+		scopedDigestInputs = append(scopedDigestInputs, parentMod.Self().AsModuleVariantDigest)
+	}
+	scopedDigest := hashutil.HashStrings(scopedDigestInputs...)
 	dag, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)

@@ -40,12 +40,14 @@ defmodule Dagger.Env do
   >
   > "Checks API is highly experimental and may be removed or replaced entirely."
   """
-  @spec checks(t(), [{:include, [String.t()]}]) :: Dagger.CheckGroup.t()
+  @spec checks(t(), [{:include, [String.t()]}, {:no_generate, boolean() | nil}]) ::
+          Dagger.CheckGroup.t()
   def checks(%__MODULE__{} = env, optional_args \\ []) do
     query_builder =
       env.query_builder
       |> QB.select("checks")
       |> QB.maybe_put_arg("include", optional_args[:include])
+      |> QB.maybe_put_arg("noGenerate", optional_args[:no_generate])
 
     %Dagger.CheckGroup{
       query_builder: query_builder,

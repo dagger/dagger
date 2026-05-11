@@ -20,8 +20,9 @@ import (
 )
 
 var (
-	checksListMode bool
-	checksFailFast bool
+	checksListMode   bool
+	checksFailFast   bool
+	checksNoGenerate bool
 )
 
 //go:embed checks.graphql
@@ -30,6 +31,7 @@ var loadChecksQuery string
 func init() {
 	checksCmd.Flags().BoolVarP(&checksListMode, "list", "l", false, "List available checks")
 	checksCmd.Flags().BoolVar(&checksFailFast, "failfast", false, "Cancel remaining checks on first failure")
+	checksCmd.Flags().BoolVar(&checksNoGenerate, "no-generate", false, "Only run annotated check functions, skip generate-as-checks")
 }
 
 var checksCmd = &cobra.Command{
@@ -56,12 +58,10 @@ Examples:
 			func(ctx context.Context, engineClient *client.Client) error {
 				dag := engineClient.Dagger()
 				ws := dag.CurrentWorkspace()
-				var checks *dagger.CheckGroup
-				if len(args) > 0 {
-					checks = ws.Checks(dagger.WorkspaceChecksOpts{Include: args})
-				} else {
-					checks = ws.Checks()
-				}
+				checks := ws.Checks(dagger.WorkspaceChecksOpts{
+					Include:    args,
+					NoGenerate: checksNoGenerate,
+				})
 				if checksListMode {
 					return listChecks(ctx, dag, checks, cmd)
 				}
@@ -121,6 +121,7 @@ func loadGroupListDetails(
 type groupListItem struct {
 	Name        string
 	Description string
+	CheckType   string
 }
 
 func loadCheckGroupInfo(ctx context.Context, dag *dagger.Client, checkgroup *dagger.CheckGroup) (*CheckGroupInfo, error) {
@@ -136,6 +137,7 @@ func loadCheckGroupInfo(ctx context.Context, dag *dagger.Client, checkgroup *dag
 		info.Checks = append(info.Checks, &CheckInfo{
 			Name:        cliName(item.Name),
 			Description: item.Description,
+			Type:        item.CheckType,
 		})
 	}
 	return info, nil
@@ -148,6 +150,7 @@ type CheckGroupInfo struct {
 type CheckInfo struct {
 	Name        string
 	Description string
+	Type        string
 }
 
 // 'dagger checks -l'
@@ -156,17 +159,39 @@ func listChecks(ctx context.Context, dag *dagger.Client, checkgroup *dagger.Chec
 	if err != nil {
 		return err
 	}
+
+	// Partition into checks and generators
+	var checks, generators []*CheckInfo
+	for _, c := range info.Checks {
+		if c.Type == "generate" {
+			generators = append(generators, c)
+		} else {
+			checks = append(checks, c)
+		}
+	}
+
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
 	fmt.Fprintf(tw, "%s\t%s\n",
 		termenv.String("Name").Bold(),
 		termenv.String("Description").Bold(),
 	)
-	for _, check := range info.Checks {
+	for _, check := range checks {
 		firstLine := check.Description
 		if idx := strings.Index(check.Description, "\n"); idx != -1 {
 			firstLine = check.Description[:idx]
 		}
 		fmt.Fprintf(tw, "%s\t%s\n", check.Name, firstLine)
+	}
+	if len(generators) > 0 {
+		fmt.Fprintf(tw, "\t\n")
+		fmt.Fprintf(tw, "%s\t\n", termenv.String("Generators").Bold())
+		for _, gen := range generators {
+			firstLine := gen.Description
+			if idx := strings.Index(gen.Description, "\n"); idx != -1 {
+				firstLine = gen.Description[:idx]
+			}
+			fmt.Fprintf(tw, "%s\t%s\n", gen.Name, firstLine)
+		}
 	}
 	return tw.Flush()
 }

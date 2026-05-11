@@ -8,8 +8,8 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/auth"
+	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
@@ -45,10 +45,11 @@ func testResultCall(field string, typ dagql.Typed, receiver *dagql.ResultCall) *
 type mockServer struct {
 	moduleSource   *ModuleSource
 	functionCall   *FunctionCall
+	env            dagql.ObjectResult[*Env]
 	clientMetadata *engine.ClientMetadata
 }
 
-func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engineutil.ExecutionMetadata) {
+func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult) {
 }
 
 func (ms *mockServer) ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error {
@@ -101,11 +102,8 @@ func (ms *mockServer) CurrentFunctionCall(context.Context) (*FunctionCall, error
 	return ms.functionCall, nil
 }
 
-func (ms *mockServer) CurrentEnv(context.Context) (*call.ID, error) {
-	if ms.functionCall == nil {
-		return nil, nil
-	}
-	return ms.functionCall.EnvID, nil
+func (ms *mockServer) CurrentEnv(context.Context) (dagql.ObjectResult[*Env], error) {
+	return ms.env, nil
 }
 
 func (ms *mockServer) CurrentServedDeps(context.Context) (*SchemaBuilder, error) {
@@ -129,6 +127,14 @@ func (ms *mockServer) CurrentWorkspace(context.Context) (*Workspace, error) {
 
 func (ms *mockServer) SpecificClientAttachableConn(context.Context, string) (*grpc.ClientConn, error) {
 	return nil, nil
+}
+
+func (ms *mockServer) CurrentWorkspaceLock(context.Context) (*workspacepkg.Lock, bool, error) {
+	return nil, false, nil
+}
+
+func (ms *mockServer) SetCurrentWorkspaceLookup(context.Context, string, string, []any, workspacepkg.LookupResult) error {
+	return nil
 }
 
 func (ms *mockServer) NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error) {

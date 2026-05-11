@@ -13,7 +13,6 @@ import (
 	"github.com/containerd/containerd/v2/pkg/epoch"
 	"github.com/containerd/containerd/v2/plugins/services/content/contentserver"
 	"github.com/dagger/dagger/engine/client/imageload"
-	"github.com/dagger/dagger/internal/buildkit/session"
 	grpc "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -22,7 +21,11 @@ import (
 	"github.com/containerd/errdefs/pkg/errgrpc"
 )
 
-func NewImageLoaderAttachable(loader *imageload.Loader) (session.Attachable, error) {
+type Attachable interface {
+	Register(*grpc.Server)
+}
+
+func NewImageLoaderAttachable(loader *imageload.Loader) (Attachable, error) {
 	if loader == nil {
 		return nil, errors.New("cannot attach nil loader")
 	}

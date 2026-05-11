@@ -57,7 +57,7 @@ func (lm *localMounter) Mount() (string, error) {
 
 	lm.overlayIncompatDirs = fsdiff.VolatileIncompatDirs(lm.mounts)
 
-	dest, err := os.MkdirTemp("", "buildkit-mount")
+	dest, err := os.MkdirTemp("", "dagger-mount")
 	if err != nil {
 		return "", errors.Wrap(err, "failed to create temp dir")
 	}

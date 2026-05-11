@@ -7,12 +7,12 @@ import (
 	"io"
 	"os"
 
-	"github.com/dagger/dagger/internal/buildkit/util/grpcerrors"
 	"github.com/dagger/dagger/util/grpcutil"
 	"github.com/mattn/go-isatty"
 	"golang.org/x/term"
 	"google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
@@ -70,7 +70,7 @@ func (s TerminalAttachable) session(srv Terminal_SessionServer, stdin io.Reader,
 	for {
 		req, err := srv.Recv()
 		if err != nil {
-			if errors.Is(err, context.Canceled) || grpcerrors.Code(err) == codes.Canceled {
+			if errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled {
 				// canceled
 				return nil
 			}
@@ -80,7 +80,7 @@ func (s TerminalAttachable) session(srv Terminal_SessionServer, stdin io.Reader,
 				return nil
 			}
 
-			if grpcerrors.Code(err) == codes.Unavailable {
+			if status.Code(err) == codes.Unavailable {
 				// client disconnected (i.e. quitting Dagger out)
 				return nil
 			}

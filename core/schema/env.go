@@ -82,6 +82,7 @@ func (s environmentSchema) Install(srv *dagql.Server) {
 			Doc("Return all checks defined by the installed modules").
 			Args(
 				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
+				dagql.Arg("noGenerate").Doc("When true, only return annotated check functions; exclude generate-as-checks"),
 			),
 		dagql.Func("check", s.envCheck).
 			Experimental("Checks API is highly experimental and may be removed or replaced entirely.").
@@ -153,16 +154,12 @@ func (s environmentSchema) environment(ctx context.Context, parent *core.Query, 
 }
 
 func (s environmentSchema) currentEnvironment(ctx context.Context, parent *core.Query, args struct{}) (res dagql.ObjectResult[*core.Env], _ error) {
-	envID, err := parent.CurrentEnv(ctx)
+	currentEnv, err := parent.CurrentEnv(ctx)
 	if err != nil {
 		return res, err
 	}
-	if envID != nil {
-		dag, err := core.CurrentDagqlServer(ctx)
-		if err != nil {
-			return res, err
-		}
-		return dagql.NewID[*core.Env](envID).Load(ctx, dag)
+	if currentEnv.Self() != nil {
+		return currentEnv, nil
 	}
 	query, err := core.CurrentQuery(ctx)
 	if err != nil {
@@ -355,7 +352,8 @@ func (s environmentSchema) bindingIsNull(ctx context.Context, b *core.Binding, a
 }
 
 func (s environmentSchema) envChecks(ctx context.Context, env *core.Env, args struct {
-	Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+	Include    dagql.Optional[dagql.ArrayInput[dagql.String]]
+	NoGenerate dagql.Optional[dagql.Boolean]
 }) (*core.CheckGroup, error) {
 	var include []string
 	if args.Include.Valid {
@@ -363,7 +361,7 @@ func (s environmentSchema) envChecks(ctx context.Context, env *core.Env, args st
 			include = append(include, pattern.String())
 		}
 	}
-	return env.Checks(ctx, include)
+	return env.Checks(ctx, include, args.NoGenerate.GetOr(false).Bool())
 }
 
 func (s environmentSchema) envCheck(ctx context.Context, env *core.Env, args struct {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client/pathutil"
@@ -58,6 +59,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Return all checks from modules loaded in the workspace.").
 			Args(
 				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
+				dagql.Arg("noGenerate").Doc("When true, only return annotated check functions; exclude generate-as-checks"),
 			),
 		dagql.Func("generators", s.generators).
 			Doc("Return all generators from modules loaded in the workspace.").
@@ -69,6 +71,10 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("include").Doc("Only include services matching the specified patterns"),
 			),
+		dagql.NodeFunc("update", s.update).
+			Doc("Refresh workspace-managed state and return the resulting changeset.",
+				"Currently this refreshes existing lockfile entries only.").
+			Experimental("Experimental workspace update API currently refreshes existing lockfile entries only."),
 	}.Install(srv)
 }
 
@@ -208,6 +214,9 @@ type workspaceFileArgs struct {
 	Path string
 }
 
+type workspaceUpdateArgs struct {
+}
+
 func (s *workspaceSchema) file(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
@@ -238,6 +247,92 @@ func (s *workspaceSchema) file(
 	}
 
 	return inst, nil
+}
+
+func (s *workspaceSchema) update(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceUpdateArgs,
+) (*core.Changeset, error) {
+	ws := parent.Self()
+	if ws.HostPath() == "" {
+		return nil, fmt.Errorf("workspace update is local-only")
+	}
+
+	workspaceCtx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return nil, fmt.Errorf("workspace client context: %w", err)
+	}
+
+	query, err := core.CurrentQuery(workspaceCtx)
+	if err != nil {
+		return nil, err
+	}
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get engine client: %w", err)
+	}
+
+	lock, exists, err := readWorkspaceLockState(workspaceCtx, bk, ws)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		// create a new empty lockfile, so we can still create a file rather than return an error
+		lock = workspace.NewLock()
+	}
+
+	if err := core.UpdateWorkspaceLock(workspaceCtx, query, lock); err != nil {
+		return nil, fmt.Errorf("update workspace lock: %w", err)
+	}
+
+	lockBytes, err := lock.Marshal()
+	if err != nil {
+		return nil, fmt.Errorf("marshal workspace lock: %w", err)
+	}
+
+	baseDir, err := s.resolveRootfs(ctx, ws, resolveWorkspacePath(".", ws.Path), core.CopyFilter{}, false)
+	if err != nil {
+		return nil, err
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var updatedDir dagql.ObjectResult[*core.Directory]
+	if err := srv.Select(ctx, baseDir, &updatedDir,
+		dagql.Selector{
+			Field: "withNewFile",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.NewString(path.Join(workspace.LockDirName, workspace.LockFileName))},
+				{Name: "contents", Value: dagql.String(lockBytes)},
+				{Name: "permissions", Value: dagql.Int(0o644)},
+			},
+		},
+	); err != nil {
+		return nil, fmt.Errorf("workspace update lockfile: %w", err)
+	}
+
+	baseDirID, err := baseDir.ID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get baseDir ID: %w", err)
+	}
+
+	var changes dagql.ObjectResult[*core.Changeset]
+	if err := srv.Select(ctx, updatedDir, &changes,
+		dagql.Selector{
+			Field: "changes",
+			Args: []dagql.NamedInput{
+				{Name: "from", Value: dagql.NewID[*core.Directory](baseDirID)},
+			},
+		},
+	); err != nil {
+		return nil, fmt.Errorf("workspace update changeset: %w", err)
+	}
+
+	return changes.Self(), nil
 }
 
 // resolveWorkspacePath resolves a workspace API path into a boundary-relative path:
@@ -341,12 +436,12 @@ func (s *workspaceSchema) findUp(
 	return none, nil
 }
 
-//nolint:dupl // same collect-filter-exclude pattern as services(), different types
 func (s *workspaceSchema) checks(
 	ctx context.Context,
 	parent *core.Workspace,
 	args struct {
-		Include dagql.Optional[dagql.ArrayInput[dagql.String]]
+		Include    dagql.Optional[dagql.ArrayInput[dagql.String]]
+		NoGenerate dagql.Optional[dagql.Boolean]
 	},
 ) (*core.CheckGroup, error) {
 	include := workspaceIncludePatterns(args.Include)
@@ -356,6 +451,7 @@ func (s *workspaceSchema) checks(
 		return nil, err
 	}
 
+	noGenerate := args.NoGenerate.GetOr(false).Bool()
 	mods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err
@@ -369,7 +465,7 @@ func (s *workspaceSchema) checks(
 
 	var allChecks []*core.Check
 	for _, mod := range mods {
-		checkGroup, err := core.NewCheckGroup(ctx, mod, nil)
+		checkGroup, err := core.NewCheckGroup(ctx, mod, nil, noGenerate)
 		if err != nil {
 			return nil, fmt.Errorf("checks from module %q: %w", mod.Self().Name(), err)
 		}
@@ -546,7 +642,6 @@ func (s *workspaceSchema) generators(
 	return &core.GeneratorGroup{Generators: allGenerators}, nil
 }
 
-//nolint:dupl // same collect-filter-exclude pattern as checks(), different types
 func (s *workspaceSchema) services(
 	ctx context.Context,
 	parent *core.Workspace,

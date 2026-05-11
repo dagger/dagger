@@ -2031,6 +2031,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Check::checkType",
+			"p": "Dagger/Check.html#method_checkType",
+			"d": "<p>The type of check: 'check' for annotated checks, 'generate' for generate-as-checks</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Check::completed",
 			"p": "Dagger/Check.html#method_completed",
 			"d": "<p>Whether the check completed</p>"
@@ -6618,6 +6624,12 @@
 			"n": "Dagger\\Workspace::services",
 			"p": "Dagger/Workspace.html#method_services",
 			"d": "<p>Return all services from modules loaded in the workspace.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Workspace::update",
+			"p": "Dagger/Workspace.html#method_update",
+			"d": "<p>Refresh workspace-managed state and return the resulting changeset.</p>"
 		},
 		{
 			"t": "M",

@@ -25,11 +25,14 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     /**
      * Return all checks from modules loaded in the workspace.
      */
-    public function checks(?array $include = null): CheckGroup
+    public function checks(?array $include = null, ?bool $noGenerate = null): CheckGroup
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('checks');
         if (null !== $include) {
         $innerQueryBuilder->setArgument('include', $include);
+        }
+        if (null !== $noGenerate) {
+        $innerQueryBuilder->setArgument('noGenerate', $noGenerate);
         }
         return new \Dagger\CheckGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -166,5 +169,16 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder->setArgument('include', $include);
         }
         return new \Dagger\UpGroup($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Refresh workspace-managed state and return the resulting changeset.
+     *
+     * Currently this refreshes existing lockfile entries only.
+     */
+    public function update(): Changeset
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('update');
+        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

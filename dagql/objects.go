@@ -93,8 +93,7 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 							Internal:    true,
 						},
 					),
-					// TODO: ?
-					DoNotCache: "cause",
+					DoNotCache: "IDs describe the current attached result; cache hits could return stale runtime handles for an equivalent object.",
 				},
 				Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, _ call.View) (AnyResult, error) {
 					recipe, _ := args["recipe"].(Boolean)

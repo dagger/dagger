@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
@@ -15,6 +16,7 @@ import (
 	"github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/dagger/dagger/util/cleanups"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/muesli/termenv"
 	"go.opentelemetry.io/otel"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -127,6 +129,12 @@ func withEngine(
 		params.Interactive = interactive
 		params.InteractiveCommand = interactiveCommandParsed
 
+		effectiveLockMode, err := resolveLockMode(params.LockMode, lockMode)
+		if err != nil {
+			return cleanup.Run, err
+		}
+		params.LockMode = effectiveLockMode
+
 		if hasTTY {
 			params.PromptHandler = Frontend
 		}
@@ -150,6 +158,22 @@ func withEngine(
 	})
 }
 
+func resolveLockMode(paramLockMode, globalLockMode string) (string, error) {
+	effective := paramLockMode
+	if effective == "" {
+		effective = globalLockMode
+	}
+	if effective == "" {
+		return "", nil
+	}
+
+	mode, err := workspace.ParseLockMode(effective)
+	if err != nil {
+		return "", err
+	}
+	return string(mode), nil
+}
+
 func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
 	// Setup telemetry config
 	telemetryCfg := telemetry.Config{
@@ -166,6 +190,15 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
 		telemetryCfg.LiveMetricExporters = append(telemetryCfg.LiveMetricExporters, metrics)
 	}
 	ctx = telemetry.Init(ctx, telemetryCfg)
+	// telemetry.Init extracts inherited OTel baggage from the environment.
+	// Re-apply explicit local process settings afterward so a nested Dagger
+	// command's own NO_COLOR/debug request wins over parent baggage.
+	if termenv.EnvNoColor() {
+		ctx = slog.ContextWithColorMode(ctx, true)
+	}
+	if debugFlag {
+		ctx = slog.ContextWithDebugMode(ctx, true)
+	}
 
 	// Set the full command string as the name of the root span.
 	//

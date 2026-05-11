@@ -707,6 +707,9 @@ func startVaultDevServer(ctx context.Context, t *testctx.T, c *dagger.Client, bi
 		WithEnvVariable("VAULT_DEV_ROOT_TOKEN_ID", "myroot").
 		WithEnvVariable("VAULT_DEV_LISTEN_ADDRESS", "0.0.0.0:8200").
 		WithEnvVariable("SKIP_SETCAP", "1").
+		// Image EXPOSE metadata is introspection-only; services need an explicit
+		// exposed port to get Dagger's port healthcheck.
+		WithExposedPort(8200).
 		AsService(dagger.ContainerAsServiceOpts{
 			Args: []string{"vault", "server", "-dev"},
 		}).Start(ctx)

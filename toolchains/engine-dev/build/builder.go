@@ -196,7 +196,7 @@ func (build *Builder) CodegenBinary() *dagger.File {
 }
 
 func (build *Builder) engineBinary(race bool) *dagger.File {
-	return build.binaryWithSource("./cmd/engine", true, race, build.source.With(EbpfGenerate))
+	return build.binaryWithSource("./cmd/engine", true, race, build.source)
 }
 
 func (build *Builder) dnsnameBinary() *dagger.File {
@@ -244,21 +244,6 @@ func (build *Builder) goWithSource(source *dagger.Directory, version bool, race 
 			"dfparents",         // to support COPY/ADD --parents
 		},
 	})
-}
-
-func EbpfGenerate(src *dagger.Directory) *dagger.Directory {
-	return dag.
-		Go(dagger.GoOpts{
-			Source: src,
-			ExtraPackages: []string{
-				"clang",
-				"lld",
-				"libbpf-dev",
-			},
-		}).
-		Env().
-		WithExec([]string{"go", "generate", "./engine/ebpf/..."}).
-		Directory(".")
 }
 
 func (build *Builder) runcBin() *dagger.File {

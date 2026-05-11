@@ -1725,7 +1725,7 @@ func (r Result[T]) RecipeID(ctx context.Context) (*call.ID, error) {
 	if err != nil {
 		return nil, err
 	}
-	return call.recipeID(c)
+	return call.recipeID(ctx, c)
 }
 
 func (r Result[T]) RecipeDigest(ctx context.Context) (digest.Digest, error) {
@@ -3171,6 +3171,8 @@ func (c *Cache) wait(
 		delete(c.ongoingCalls, oc.callConcurrencyKeys)
 		c.callsMu.Unlock()
 	})
+	// TODO there's a race condition here: thread one enters the .Do() above but hasn't finished calling initCompletedResult(....), the second thread will skip over the Do(),
+	// then check the err below before it's actually written to
 	if oc.initCompletedResultErr != nil {
 		c.callsMu.Lock()
 		oc.waiters--

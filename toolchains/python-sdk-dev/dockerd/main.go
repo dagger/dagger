@@ -48,7 +48,7 @@ func (t *Dockerd) Service(
 			"/var/lib/docker",
 			dag.CacheVolume(dockerVersion+"-docker-lib"),
 			dagger.ContainerWithMountedCacheOpts{
-				Sharing: dagger.CacheSharingModePrivate,
+				Sharing: dagger.CacheSharingModeLocked,
 			}).
 		WithExposedPort(port).
 		WithExec([]string{

@@ -156,7 +156,7 @@
                     <a href="../Dagger/CheckGroup.html"><abbr title="Dagger\CheckGroup">CheckGroup</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_checks">checks</a>(array|null $include = null)
+                    <a href="#method_checks">checks</a>(array|null $include = null, bool|null $noGenerate = null)
         
                                             <p><p>Return all checks defined by the module</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -522,7 +522,7 @@
                     <h3 id="method_checks">
         <div class="location">at line 29</div>
         <code>                    <a href="../Dagger/CheckGroup.html"><abbr title="Dagger\CheckGroup">CheckGroup</abbr></a>
-    <strong>checks</strong>(array|null $include = null)
+    <strong>checks</strong>(array|null $include = null, bool|null $noGenerate = null)
         </code>
     </h3>
     <div class="details">    
@@ -539,6 +539,11 @@
                     <tr>
                 <td>array|null</td>
                 <td>$include</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>bool|null</td>
+                <td>$noGenerate</td>
                 <td></td>
             </tr>
             </table>
@@ -562,7 +567,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_dependencies">
-        <div class="location">at line 41</div>
+        <div class="location">at line 44</div>
         <code>                    array
     <strong>dependencies</strong>()
         </code>
@@ -594,7 +599,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_description">
-        <div class="location">at line 50</div>
+        <div class="location">at line 53</div>
         <code>                    string
     <strong>description</strong>()
         </code>
@@ -626,7 +631,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_enums">
-        <div class="location">at line 59</div>
+        <div class="location">at line 62</div>
         <code>                    array
     <strong>enums</strong>()
         </code>
@@ -658,7 +663,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_generatedContextDirectory">
-        <div class="location">at line 68</div>
+        <div class="location">at line 71</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>generatedContextDirectory</strong>()
         </code>
@@ -690,7 +695,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_generator">
-        <div class="location">at line 77</div>
+        <div class="location">at line 80</div>
         <code>                    <a href="../Dagger/Generator.html"><abbr title="Dagger\Generator">Generator</abbr></a>
     <strong>generator</strong>(string $name)
         </code>
@@ -732,7 +737,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_generators">
-        <div class="location">at line 87</div>
+        <div class="location">at line 90</div>
         <code>                    <a href="../Dagger/GeneratorGroup.html"><abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr></a>
     <strong>generators</strong>(array|null $include = null)
         </code>
@@ -774,7 +779,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 99</div>
+        <div class="location">at line 102</div>
         <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
     <strong>id</strong>()
         </code>
@@ -806,7 +811,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_interfaces">
-        <div class="location">at line 108</div>
+        <div class="location">at line 111</div>
         <code>                    array
     <strong>interfaces</strong>()
         </code>
@@ -838,7 +843,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_introspectionSchemaJSON">
-        <div class="location">at line 121</div>
+        <div class="location">at line 124</div>
         <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
     <strong>introspectionSchemaJSON</strong>()
         </code>
@@ -871,7 +876,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_name">
-        <div class="location">at line 130</div>
+        <div class="location">at line 133</div>
         <code>                    string
     <strong>name</strong>()
         </code>
@@ -903,7 +908,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_objects">
-        <div class="location">at line 139</div>
+        <div class="location">at line 142</div>
         <code>                    array
     <strong>objects</strong>()
         </code>
@@ -935,7 +940,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_runtime">
-        <div class="location">at line 148</div>
+        <div class="location">at line 151</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>runtime</strong>()
         </code>
@@ -967,7 +972,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sdk">
-        <div class="location">at line 157</div>
+        <div class="location">at line 160</div>
         <code>                    <a href="../Dagger/SDKConfig.html"><abbr title="Dagger\SDKConfig">SDKConfig</abbr></a>
     <strong>sdk</strong>()
         </code>
@@ -999,7 +1004,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_serve">
-        <div class="location">at line 168</div>
+        <div class="location">at line 171</div>
         <code>                    void
     <strong>serve</strong>(bool|null $includeDependencies = null, bool|null $entrypoint = null)
         </code>
@@ -1046,7 +1051,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_services">
-        <div class="location">at line 183</div>
+        <div class="location">at line 186</div>
         <code>                    <a href="../Dagger/UpGroup.html"><abbr title="Dagger\UpGroup">UpGroup</abbr></a>
     <strong>services</strong>(array|null $include = null)
         </code>
@@ -1088,7 +1093,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_source">
-        <div class="location">at line 195</div>
+        <div class="location">at line 198</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>source</strong>()
         </code>
@@ -1120,7 +1125,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sync">
-        <div class="location">at line 204</div>
+        <div class="location">at line 207</div>
         <code>                    <a href="../Dagger/ModuleId.html"><abbr title="Dagger\ModuleId">ModuleId</abbr></a>
     <strong>sync</strong>()
         </code>
@@ -1152,7 +1157,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_userDefaults">
-        <div class="location">at line 213</div>
+        <div class="location">at line 216</div>
         <code>                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
     <strong>userDefaults</strong>()
         </code>
@@ -1184,7 +1189,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withDescription">
-        <div class="location">at line 222</div>
+        <div class="location">at line 225</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>withDescription</strong>(string $description)
         </code>
@@ -1226,7 +1231,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withEnum">
-        <div class="location">at line 232</div>
+        <div class="location">at line 235</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>withEnum</strong>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $enum)
         </code>
@@ -1268,7 +1273,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withInterface">
-        <div class="location">at line 242</div>
+        <div class="location">at line 245</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>withInterface</strong>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $iface)
         </code>
@@ -1310,7 +1315,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withObject">
-        <div class="location">at line 252</div>
+        <div class="location">at line 255</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>withObject</strong>(<abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $object)
         </code>

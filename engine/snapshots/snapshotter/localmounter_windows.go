@@ -28,7 +28,7 @@ func (lm *localMounter) Mount() (string, error) {
 	}
 
 	m := lm.mounts[0]
-	dir, err := os.MkdirTemp("", "buildkit-mount")
+	dir, err := os.MkdirTemp("", "dagger-mount")
 	if err != nil {
 		return "", errors.Wrap(err, "failed to create temp dir")
 	}

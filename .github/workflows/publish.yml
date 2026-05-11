@@ -16,10 +16,14 @@ on:
       # ...or when we are
       - .github/workflows/publish.yml
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   publish:
     if: ${{ github.repository == 'dagger/dagger' && github.event_name == 'push' }}
-    runs-on: dagger-g3-v0-20-6-16c-st
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: "Publish"
@@ -90,7 +94,7 @@ jobs:
   dagger-io-bump-dagger:
     needs: publish
     if: github.ref_name != 'main'
-    runs-on: dagger-g3-v0-20-6-4c
+    runs-on: ubuntu-latest
     steps:
       # Configure credentials to clone dagger modules
       - uses: de-vri-es/setup-git-credentials@v2

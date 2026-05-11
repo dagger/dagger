@@ -17,6 +17,10 @@ type Check struct {
 	Passed    bool         `field:"true" doc:"Whether the check passed"`
 
 	Error dagql.Nullable[dagql.ObjectResult[*Error]] `field:"true" doc:"If the check failed, this is the error"`
+
+	// IsGenerate indicates this check was derived from a +generate function.
+	// When true, the check passes if the generator produces an empty changeset.
+	IsGenerate bool
 }
 
 type CheckGroup struct {
@@ -24,7 +28,7 @@ type CheckGroup struct {
 	Checks []*Check     `json:"checks"`
 }
 
-func NewCheckGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include []string) (*CheckGroup, error) {
+func NewCheckGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include []string, noGenerate bool) (*CheckGroup, error) {
 	rootNode, err := NewModTree(ctx, mod)
 	if err != nil {
 		return nil, err
@@ -39,6 +43,25 @@ func NewCheckGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include
 	for _, checkNode := range checkNodes {
 		checks = append(checks, &Check{Node: checkNode})
 	}
+
+	if !noGenerate {
+		genNodes, err := rootNode.RollupGenerator(ctx, include, nil)
+		if err != nil {
+			return nil, err
+		}
+		// Build a set of existing check paths to avoid duplicates when a
+		// function is annotated with both +check and +generate.
+		checkPaths := make(map[string]struct{}, len(checks))
+		for _, c := range checks {
+			checkPaths[c.Name()] = struct{}{}
+		}
+		for _, genNode := range genNodes {
+			if _, exists := checkPaths[genNode.PathString()]; !exists {
+				checks = append(checks, &Check{Node: genNode, IsGenerate: true})
+			}
+		}
+	}
+
 	return &CheckGroup{
 		Node:   rootNode,
 		Checks: checks,
@@ -66,7 +89,12 @@ func (r *CheckGroup) Run(ctx context.Context, failFast bool) (*CheckGroup, error
 		check.Completed = false
 		check.Passed = false
 		jobs = jobs.WithJob(check.Name(), func(ctx context.Context) error {
-			err := check.Node.RunCheck(ctx, nil, nil)
+			var err error
+			if check.IsGenerate {
+				err = check.Node.RunGeneratorAsCheck(ctx, nil, nil)
+			} else {
+				err = check.Node.RunCheck(ctx, nil, nil)
+			}
 			check.Completed = true
 			if err != nil {
 				check.Passed = false
@@ -89,11 +117,12 @@ func (r *CheckGroup) Run(ctx context.Context, failFast bool) (*CheckGroup, error
 }
 
 func (r *CheckGroup) Report(ctx context.Context) (dagql.ObjectResult[*File], error) {
-	headers := []string{"check", "description", "success"}
+	headers := []string{"check", "type", "description", "success"}
 	rows := [][]string{}
 	for _, check := range r.Checks {
 		rows = append(rows, []string{
 			check.Name(),
+			check.CheckType(),
 			check.Description(),
 			check.ResultEmoji(),
 		})
@@ -179,6 +208,13 @@ func (c *Check) Name() string {
 	return c.Node.PathString()
 }
 
+func (c *Check) CheckType() string {
+	if c.IsGenerate {
+		return "generate"
+	}
+	return "check"
+}
+
 func (c *Check) Clone() *Check {
 	cp := *c
 	cp.Node = c.Node.Clone()
@@ -188,7 +224,12 @@ func (c *Check) Clone() *Check {
 func (c *Check) Run(ctx context.Context) (*Check, error) {
 	c = c.Clone()
 
-	err := c.Node.RunCheck(ctx, nil, nil)
+	var err error
+	if c.IsGenerate {
+		err = c.Node.RunGeneratorAsCheck(ctx, nil, nil)
+	} else {
+		err = c.Node.RunCheck(ctx, nil, nil)
+	}
 	c.Completed = true
 	if err != nil {
 		c.Passed = false

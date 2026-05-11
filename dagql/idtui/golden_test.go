@@ -34,22 +34,21 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/util/scrub"
+	"github.com/dagger/otel-go/oteltestctx"
 	"github.com/dagger/testctx"
-	"github.com/dagger/testctx/oteltest"
 )
 
 func TestMain(m *testing.M) {
-	os.Exit(oteltest.Main(m))
+	os.Exit(oteltestctx.Main(m))
 }
 
 func Middleware() []testctx.Middleware[*testing.T] {
 	return []testctx.Middleware[*testing.T]{
-		oteltest.WithTracing(
-			oteltest.TraceConfig[*testing.T]{
+		oteltestctx.WithTracing(
+			oteltestctx.TraceConfig[*testing.T]{
 				StartOptions: testutil.SpanOpts[*testing.T],
 			},
 		),
-		oteltest.WithLogging[*testing.T](),
 	}
 }
 
@@ -165,12 +164,9 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Function: "fail-multi", Fail: true},
 		{Name: "fail-multi-noexpand", Function: "fail-multi", Fail: true, NoExpand: true},
 
-		// FIXME: these constantly fail in CI/Dagger, but not against a local
-		// engine. spent a day investigating, don't have a good explanation. it
-		// fails because despite the warmup running to completion, the test gets a
-		// cache miss.
-		{Function: "cached-execs", Flaky: "nested Dagger causes cache misses"},
-		{Function: "use-cached-exec-service", Flaky: "nested Dagger causes cache misses"},
+		// Used to be marked as flaky
+		{Function: "cached-execs"},
+		{Function: "use-cached-exec-service"},
 
 		// Python SDK tests
 		{Module: "./viztest/python", Function: "pending", Fail: true, RevealNoisySpans: true},

@@ -154,7 +154,9 @@ type ModuleRuntime interface {
 		ctx context.Context,
 		execMD *engineutil.ExecutionMetadata,
 		fnCall *FunctionCall,
-	) (outputBytes []byte, clientID string, err error)
+		moduleContext dagql.ObjectResult[*Module],
+		envContext dagql.ObjectResult[*Env],
+	) (outputBytes []byte, err error)
 }
 
 /*
@@ -173,12 +175,14 @@ func (r *ContainerRuntime) Call(
 	ctx context.Context,
 	execMD *engineutil.ExecutionMetadata,
 	fnCall *FunctionCall,
-) ([]byte, string, error) {
+	moduleContext dagql.ObjectResult[*Module],
+	envContext dagql.ObjectResult[*Env],
+) ([]byte, error) {
 	hideCtx := dagql.WithSkip(ctx)
 
 	srv, err := CurrentDagqlServer(hideCtx)
 	if err != nil {
-		return nil, "", fmt.Errorf("current dagql server: %w", err)
+		return nil, fmt.Errorf("current dagql server: %w", err)
 	}
 
 	// Desugar to the canonical server for core API plumbing so that
@@ -192,12 +196,12 @@ func (r *ContainerRuntime) Call(
 		},
 	)
 	if err != nil {
-		return nil, "", fmt.Errorf("create mod metadata directory: %w", err)
+		return nil, fmt.Errorf("create mod metadata directory: %w", err)
 	}
 
 	metaDirID, err := metaDir.ID()
 	if err != nil {
-		return nil, "", fmt.Errorf("get mod metadata directory ID: %w", err)
+		return nil, fmt.Errorf("get mod metadata directory ID: %w", err)
 	}
 
 	var ctr dagql.ObjectResult[*Container]
@@ -211,20 +215,20 @@ func (r *ContainerRuntime) Call(
 		},
 	)
 	if err != nil {
-		return nil, "", fmt.Errorf("mount function metadir: %w", err)
+		return nil, fmt.Errorf("mount function metadir: %w", err)
 	}
 
 	clonedFS, err := CloneContainerDirectoryAccessor(hideCtx, ctr.Self().FS)
 	if err != nil {
-		return nil, "", fmt.Errorf("clone exec rootfs: %w", err)
+		return nil, fmt.Errorf("clone exec rootfs: %w", err)
 	}
 	clonedMounts, err := CloneContainerMounts(hideCtx, ctr.Self().Mounts)
 	if err != nil {
-		return nil, "", fmt.Errorf("clone exec mounts: %w", err)
+		return nil, fmt.Errorf("clone exec mounts: %w", err)
 	}
 	clonedMeta, err := CloneContainerMetaSnapshot(hideCtx, ctr.Self().MetaSnapshot)
 	if err != nil {
-		return nil, "", fmt.Errorf("clone exec meta snapshot: %w", err)
+		return nil, fmt.Errorf("clone exec meta snapshot: %w", err)
 	}
 	execCtr := &Container{
 		FS:                 clonedFS,
@@ -254,22 +258,26 @@ func (r *ContainerRuntime) Call(
 		Args:                          []string{},
 		UseEntrypoint:                 true,
 		ExperimentalPrivilegedNesting: true,
-	}, execMD, true)
+	}, execMD, moduleContext, fnCall, true)
 	if err != nil {
-		return nil, "", fmt.Errorf("exec function: %w", err)
+		return nil, fmt.Errorf("exec function: %w", err)
 	}
 
-	err = execCtr.Sync(ctx)
+	syncCtx := ctx
+	if envContext.Self() != nil {
+		syncCtx = EnvToContext(syncCtx, envContext)
+	}
+	err = execCtr.Sync(syncCtx)
 	if err != nil {
 		var modExecErr *ModuleExecError
 		if errors.As(err, &modExecErr) {
 			srv, srvErr := CurrentDagqlServer(ctx)
 			if srvErr != nil {
-				return nil, "", fmt.Errorf("load error instance: %w", srvErr)
+				return nil, fmt.Errorf("load error instance: %w", srvErr)
 			}
 			errInst, loadErr := modExecErr.ErrorID.Load(ctx, srv)
 			if loadErr != nil {
-				return nil, "", fmt.Errorf("load error instance: %w", loadErr)
+				return nil, fmt.Errorf("load error instance: %w", loadErr)
 			}
 			dagErr := errInst.Self().Clone()
 
@@ -303,19 +311,19 @@ func (r *ContainerRuntime) Call(
 					for _, key := range carrier.Keys() {
 						valJSON, marshalErr := json.Marshal(carrier.Get(key))
 						if marshalErr != nil {
-							return nil, "", fmt.Errorf("marshal error extension %q: %w", key, marshalErr)
+							return nil, fmt.Errorf("marshal error extension %q: %w", key, marshalErr)
 						}
 						dagErr = dagErr.WithValue(key, JSON(valJSON))
 					}
 				}
 			}
 
-			return nil, "", dagErr
+			return nil, dagErr
 		}
 		if fnCall.Name == "" {
-			return nil, "", fmt.Errorf("call constructor: %w", err)
+			return nil, fmt.Errorf("call constructor: %w", err)
 		}
-		return nil, "", fmt.Errorf("call function %q: %w", fnCall.Name, err)
+		return nil, fmt.Errorf("call function %q: %w", fnCall.Name, err)
 	}
 
 	var outputDir *Directory
@@ -324,42 +332,42 @@ func (r *ContainerRuntime) Call(
 			continue
 		}
 		if ctrMount.DirectorySource == nil {
-			return nil, "", fmt.Errorf("function output directory mount %s is missing directory source", modMetaDirPath)
+			return nil, fmt.Errorf("function output directory mount %s is missing directory source", modMetaDirPath)
 		}
 		mountedDir, ok := ctrMount.DirectorySource.Peek()
 		if !ok || mountedDir == nil {
-			return nil, "", fmt.Errorf("function output directory mount %s is missing materialized directory", modMetaDirPath)
+			return nil, fmt.Errorf("function output directory mount %s is missing materialized directory", modMetaDirPath)
 		}
 		outputDir = mountedDir
 		break
 	}
 	if outputDir == nil {
-		return nil, "", fmt.Errorf("function output directory mount %s not found", modMetaDirPath)
+		return nil, fmt.Errorf("function output directory mount %s not found", modMetaDirPath)
 	}
 
 	snapshot, _ := outputDir.Snapshot.Peek()
 	if snapshot == nil {
-		return nil, "", fmt.Errorf("function output snapshot is nil")
+		return nil, fmt.Errorf("function output snapshot is nil")
 	}
 	outputDirPath, _ := outputDir.Dir.Peek()
 
 	root, _, release, err := MountRefCloser(ctx, snapshot, mountRefAsReadOnly)
 	if err != nil {
-		return nil, "", fmt.Errorf("mount function output snapshot: %w", err)
+		return nil, fmt.Errorf("mount function output snapshot: %w", err)
 	}
 	defer release()
 
 	outputPath, err := containerdfs.RootPath(root, path.Join(outputDirPath, modMetaOutputPath))
 	if err != nil {
-		return nil, "", fmt.Errorf("resolve function output file path: %w", err)
+		return nil, fmt.Errorf("resolve function output file path: %w", err)
 	}
 
 	outputBytes, err := os.ReadFile(outputPath)
 	if err != nil {
-		return nil, "", fmt.Errorf("read function output file: %w", err)
+		return nil, fmt.Errorf("read function output file: %w", err)
 	}
 
-	return outputBytes, execMD.ClientID, nil
+	return outputBytes, nil
 }
 
 /*

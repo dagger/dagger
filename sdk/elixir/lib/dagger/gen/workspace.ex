@@ -29,12 +29,14 @@ defmodule Dagger.Workspace do
   @doc """
   Return all checks from modules loaded in the workspace.
   """
-  @spec checks(t(), [{:include, [String.t()]}]) :: Dagger.CheckGroup.t()
+  @spec checks(t(), [{:include, [String.t()]}, {:no_generate, boolean() | nil}]) ::
+          Dagger.CheckGroup.t()
   def checks(%__MODULE__{} = workspace, optional_args \\ []) do
     query_builder =
       workspace.query_builder
       |> QB.select("checks")
       |> QB.maybe_put_arg("include", optional_args[:include])
+      |> QB.maybe_put_arg("noGenerate", optional_args[:no_generate])
 
     %Dagger.CheckGroup{
       query_builder: query_builder,
@@ -197,6 +199,26 @@ defmodule Dagger.Workspace do
       |> QB.maybe_put_arg("include", optional_args[:include])
 
     %Dagger.UpGroup{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
+  Refresh workspace-managed state and return the resulting changeset.
+
+  Currently this refreshes existing lockfile entries only.
+
+  > #### Experimental {: .warning}
+  >
+  > "Experimental workspace update API currently refreshes existing lockfile entries only."
+  """
+  @spec update(t()) :: Dagger.Changeset.t()
+  def update(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("update")
+
+    %Dagger.Changeset{
       query_builder: query_builder,
       client: workspace.client
     }

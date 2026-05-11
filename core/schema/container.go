@@ -21,9 +21,11 @@ import (
 	telemetry "github.com/dagger/otel-go"
 	"github.com/distribution/reference"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
@@ -934,6 +936,8 @@ type containerFromArgs struct {
 	Address string
 }
 
+const lockContainerFromOperation = "container.from"
+
 // if the image ref has a digest, then it's immutable and we don't need to scope it to the session. If it's just a tag, then
 // we scope to the session so that resolution of a tag->digest is cached within the session but not across.
 var fromSessionScopeInput = dagql.ImplicitInput{
@@ -1072,19 +1076,78 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		return inst, nil
 	}
 
-	// Doesn't have a digest, resolve that now and re-call this field using the canonical
-	// digested ref instead. This ensures the ID returned here is always stable w/ the
-	// digested image ref.
-	_, digest, _, err := rslvr.ResolveImageConfig(ctx, refName.String(), serverresolver.ResolveImageConfigOpts{
-		Platform:    ptr(platform.Spec()),
-		ResolveMode: serverresolver.ResolveModeDefault,
-	})
+	lockMode, err := currentLookupLockMode(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to resolve image %q (platform: %q): %w", refName.String(), platform.Format(), err)
+		return inst, fmt.Errorf("container.from lock mode: %w", err)
 	}
-	refName, err = reference.WithDigest(refName, digest)
+
+	var lookupLock *workspaceLookupLock
+	var rawLock *workspace.Lock
+	if lockMode != workspace.LockModeDisabled {
+		lookupLock, err = loadWorkspaceLookupLock(ctx, query)
+		if err != nil {
+			return inst, fmt.Errorf("container.from lockfile: %w", err)
+		}
+		if lookupLock == nil {
+			return inst, fmt.Errorf("experimental lockfile support is local-only")
+		}
+		rawLock = lookupLock.lock
+	}
+
+	lockInputs := []any{refName.String(), platform.Format()}
+	lockResolution, err := resolveLookupFromLock(
+		lockMode,
+		rawLock,
+		lockContainerFromOperation,
+		lockInputs,
+		workspace.PolicyPin,
+	)
 	if err != nil {
-		return inst, fmt.Errorf("failed to set digest on image %s: %w", refName.String(), err)
+		return inst, fmt.Errorf("container.from lock resolution: %w", err)
+	}
+
+	if lockResolution.Pin != "" {
+		resolvedDigest, err := digest.Parse(lockResolution.Pin)
+		if err != nil {
+			return inst, fmt.Errorf("invalid lock digest %q for image %q: %w", lockResolution.Pin, refName.String(), err)
+		}
+		refName, err = reference.WithDigest(refName, resolvedDigest)
+		if err != nil {
+			return inst, fmt.Errorf("failed to apply lock digest on image %s: %w", refName.String(), err)
+		}
+	} else {
+		// Doesn't have a digest, resolve that now and re-call this field using the canonical
+		// digested ref instead. This ensures the ID returned here is always stable w/ the
+		// digested image ref.
+		rslvr, err := query.RegistryResolver(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get registry resolver: %w", err)
+		}
+		_, resolvedDigest, _, err := rslvr.ResolveImageConfig(ctx, refName.String(), serverresolver.ResolveImageConfigOpts{
+			Platform:    ptr(platform.Spec()),
+			ResolveMode: serverresolver.ResolveModeDefault,
+		})
+		if err != nil {
+			return inst, fmt.Errorf("failed to resolve image %q (platform: %q): %w", refName.String(), platform.Format(), err)
+		}
+		refName, err = reference.WithDigest(refName, resolvedDigest)
+		if err != nil {
+			return inst, fmt.Errorf("failed to set digest on image %s: %w", refName.String(), err)
+		}
+
+		if lockResolution.ShouldWrite && lookupLock != nil {
+			if err := lookupLock.SetLookup(
+				lockCoreNamespace,
+				lockContainerFromOperation,
+				lockInputs,
+				workspace.LookupResult{
+					Value:  resolvedDigest.String(),
+					Policy: lockResolution.Policy,
+				},
+			); err != nil {
+				return inst, fmt.Errorf("set lock entry for container.from: %w", err)
+			}
+		}
 	}
 
 	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("from %s", refName),
@@ -1249,6 +1312,9 @@ type containerExecArgs struct {
 
 	// ExecMD carries internal runtime execution metadata.
 	ExecMD dagql.SerializedString[*engineutil.ExecutionMetadata] `name:"execMD" internal:"true" default:"null"`
+
+	// ModuleContext carries the module whose execution context owns this exec.
+	ModuleContext dagql.Optional[core.ModuleID] `name:"moduleContext" internal:"true"`
 }
 
 func (s *containerSchema) withError(ctx context.Context, parent dagql.ObjectResult[*core.Container], args struct{ Err string }) (inst dagql.ObjectResult[*core.Container], rerr error) {
@@ -1275,6 +1341,13 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 	var md *engineutil.ExecutionMetadata
 	if args.ExecMD.Self != nil {
 		md = args.ExecMD.Self
+	}
+	var moduleContext dagql.ObjectResult[*core.Module]
+	if args.ModuleContext.Valid {
+		moduleContext, err = args.ModuleContext.Value.Load(ctx, srv)
+		if err != nil {
+			return inst, fmt.Errorf("load exec module context: %w", err)
+		}
 	}
 
 	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
@@ -1306,7 +1379,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
 		DefaultArgs:        parent.Self().DefaultArgs,
 	}
-	err = ctr.WithExec(ctx, parent, args.ContainerExecOpts, md, false)
+	err = ctr.WithExec(ctx, parent, args.ContainerExecOpts, md, moduleContext, nil, false)
 	if err != nil {
 		return inst, err
 	}

@@ -1,0 +1,11 @@
+kind: Added
+body: |
+  Automatically expose a `check` for each `generate` function.
+
+  The `check` has the same name than the `generate` function. This allows to know if `generate` must be re-run or not.
+  A `--no-generate` flag can be passed to `dagger check` command to list/run functions marked as check, ignoring the generated ones.
+  The toolchain customisation field `ignoreChecks` let the possibility to not create a `check` for a specific `generate` function.
+time: 2026-04-16T17:34:59.743549238+02:00
+custom:
+    Author: eunomie
+    PR: "12923"

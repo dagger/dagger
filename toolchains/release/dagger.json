@@ -39,10 +39,6 @@
       "source": "../go-sdk-dev"
     },
     {
-      "name": "helm-dev",
-      "source": "../helm-dev"
-    },
-    {
       "name": "notify",
       "source": "../engine-dev/notify"
     },
@@ -73,6 +69,10 @@
     {
       "name": "version",
       "source": "../../version"
+    },
+    {
+      "name": "wolfi",
+      "source": "../../modules/wolfi"
     }
   ],
   "codegen": {

@@ -118,30 +118,123 @@ func (node *ModTreeNode) Run(
 }
 
 func (node *ModTreeNode) RunCheck(ctx context.Context, include, exclude []string) error {
-	return node.Run(ctx,
+	return node.runAsCheck(ctx,
 		func(n *ModTreeNode) bool { return n.IsCheck },
+		func(n *ModTreeNode, ctx context.Context) (bool, error) {
+			return node.tryRunCheckScaleOut(ctx)
+		},
+		func(n *ModTreeNode, ctx context.Context) error {
+			return n.runCheckLocally(ctx)
+		},
+		include, exclude)
+}
+
+func (node *ModTreeNode) RunGeneratorAsCheck(ctx context.Context, include, exclude []string) error {
+	return node.runAsCheck(ctx,
+		func(n *ModTreeNode) bool { return n.IsGenerator },
+		func(n *ModTreeNode, ctx context.Context) (bool, error) {
+			return n.tryRunGeneratorAsCheckScaleOut(ctx)
+		},
+		func(n *ModTreeNode, ctx context.Context) error {
+			return n.runGeneratorAsCheckLocally(ctx)
+		},
+		include, exclude)
+}
+
+// runAsCheck runs a leaf node as a check, with telemetry span and optional scale-out.
+func (node *ModTreeNode) runAsCheck(
+	ctx context.Context,
+	isLeaf func(*ModTreeNode) bool,
+	tryScaleOut func(*ModTreeNode, context.Context) (bool, error),
+	runLocally func(*ModTreeNode, context.Context) error,
+	include, exclude []string,
+) error {
+	return node.Run(ctx,
+		isLeaf,
 		func(ctx context.Context, n *ModTreeNode, clientMD *engine.ClientMetadata) (rerr error) {
 			// Try scale-out if enabled (will be false for scaled-out sessions)
 			if clientMD != nil && clientMD.EnableCloudScaleOut {
-				if ok, err := node.tryRunCheckScaleOut(ctx); ok {
+				if ok, err := tryScaleOut(n, ctx); ok {
 					return err
 				}
 			}
-			ctx, span := Tracer(ctx).Start(ctx, node.PathString(),
+			ctx, span := Tracer(ctx).Start(ctx, n.PathString(),
 				telemetry.Reveal(),
 				trace.WithAttributes(
 					attribute.Bool(telemetry.UIRollUpLogsAttr, true),
 					attribute.Bool(telemetry.UIRollUpSpansAttr, true),
-					attribute.String(telemetry.CheckNameAttr, node.PathString()),
+					attribute.String(telemetry.CheckNameAttr, n.PathString()),
 				),
 			)
 			defer func() {
 				span.SetAttributes(attribute.Bool(telemetry.CheckPassedAttr, rerr == nil))
 				telemetry.EndWithCause(span, &rerr)
 			}()
-			return n.runCheckLocally(ctx)
+			return runLocally(n, ctx)
 		},
 		include, exclude)
+}
+
+func (node *ModTreeNode) runGeneratorAsCheckLocally(ctx context.Context) error {
+	cs, err := node.runGeneratorLocally(ctx)
+	if err != nil {
+		return err
+	}
+	if cs == nil {
+		return nil
+	}
+	empty, err := cs.IsEmpty(ctx)
+	if err != nil {
+		return err
+	}
+	if !empty {
+		return fmt.Errorf("generate function %s produced changes; run 'dagger generate %s' to apply",
+			node.PathString(), node.PathString())
+	}
+	return nil
+}
+
+func (node *ModTreeNode) tryRunGeneratorAsCheckScaleOut(ctx context.Context) (_ bool, rerr error) {
+	q, err := CurrentQuery(ctx)
+	if err != nil {
+		return true, err
+	}
+
+	cloudClient, useCloud, err := q.CloudEngineClient(ctx,
+		node.RootAddress(),
+		node.PathString(),
+		nil,
+	)
+	if err != nil {
+		return true, fmt.Errorf("engine-to-engine connect: %w", err)
+	}
+	if !useCloud {
+		return false, nil
+	}
+	defer func() {
+		rerr = errors.Join(rerr, cloudClient.Close())
+	}()
+
+	query, err := node.buildScaleOutModuleQuery(cloudClient.Dagger().QueryBuilder())
+	if err != nil {
+		return true, err
+	}
+
+	query = query.Select("generator").Arg("name", node.PathString())
+	query = query.Select("run")
+	query = query.Select("isEmpty")
+
+	var empty bool
+	if err := query.Bind(&empty).Execute(ctx); err != nil {
+		return true, err
+	}
+
+	if !empty {
+		return true, fmt.Errorf("generate function %s produced changes; run 'dagger generate %s' to apply",
+			node.PathString(), node.PathString())
+	}
+
+	return true, nil
 }
 
 func (node *ModTreeNode) runCheckLocally(ctx context.Context) error {

@@ -1283,6 +1283,7 @@ func (r *Changeset) WithChangesets(changes []*Changeset, opts ...ChangesetWithCh
 type Check struct {
 	query *querybuilder.Selection
 
+	checkType   *string
 	completed   *bool
 	description *string
 	id          *CheckID
@@ -1303,6 +1304,19 @@ func (r *Check) WithGraphQLQuery(q *querybuilder.Selection) *Check {
 	return &Check{
 		query: q,
 	}
+}
+
+// The type of check: 'check' for annotated checks, 'generate' for generate-as-checks
+func (r *Check) CheckType(ctx context.Context) (string, error) {
+	if r.checkType != nil {
+		return *r.checkType, nil
+	}
+	q := r.query.Select("checkType")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Whether the check completed
@@ -5694,6 +5708,8 @@ func (r *Env) Check(name string) *Check {
 type EnvChecksOpts struct {
 	// Only include checks matching the specified patterns
 	Include []string
+	// When true, only return annotated check functions; exclude generate-as-checks
+	NoGenerate bool
 }
 
 // Return all checks defined by the installed modules
@@ -5705,6 +5721,10 @@ func (r *Env) Checks(opts ...EnvChecksOpts) *CheckGroup {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `noGenerate` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoGenerate) {
+			q = q.Arg("noGenerate", opts[i].NoGenerate)
 		}
 	}
 
@@ -10660,6 +10680,8 @@ func (r *Module) Check(name string) *Check {
 type ModuleChecksOpts struct {
 	// Only include checks matching the specified patterns
 	Include []string
+	// When true, only return annotated check functions; exclude generate-as-checks
+	NoGenerate bool
 }
 
 // Return all checks defined by the module
@@ -10671,6 +10693,10 @@ func (r *Module) Checks(opts ...ModuleChecksOpts) *CheckGroup {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `noGenerate` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoGenerate) {
+			q = q.Arg("noGenerate", opts[i].NoGenerate)
 		}
 	}
 
@@ -15430,6 +15456,8 @@ func (r *Workspace) Address(ctx context.Context) (string, error) {
 type WorkspaceChecksOpts struct {
 	// Only include checks matching the specified patterns
 	Include []string
+	// When true, only return annotated check functions; exclude generate-as-checks
+	NoGenerate bool
 }
 
 // Return all checks from modules loaded in the workspace.
@@ -15439,6 +15467,10 @@ func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
 		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+		}
+		// `noGenerate` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NoGenerate) {
+			q = q.Arg("noGenerate", opts[i].NoGenerate)
 		}
 	}
 
@@ -15672,6 +15704,19 @@ func (r *Workspace) Services(opts ...WorkspaceServicesOpts) *UpGroup {
 	}
 
 	return &UpGroup{
+		query: q,
+	}
+}
+
+// Refresh workspace-managed state and return the resulting changeset.
+//
+// Currently this refreshes existing lockfile entries only.
+//
+// Experimental: Experimental workspace update API currently refreshes existing lockfile entries only.
+func (r *Workspace) Update() *Changeset {
+	q := r.query.Select("update")
+
+	return &Changeset{
 		query: q,
 	}
 }
