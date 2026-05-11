@@ -1,8 +1,11 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: File and directory ownership propagation across core filesystem operations.
-// Intent: Keep ownership semantics stable independently of module and workspace cleanup.
+// These tests cover Unix ownership metadata on files and directories. They
+// verify uid/gid propagation across Dagger filesystem operations.
+//
+// See also:
+// - file_test.go: core File behavior.
+// - directory_test.go: core Directory behavior.
 
 import (
 	"context"

@@ -1,8 +1,10 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Local cache GC, retention, and engine-side local cache configuration.
-// Intent: Keep local cache behavior stable independently of workspace cleanup.
+// These tests cover the engine's on-disk local cache. They verify garbage
+// collection, retention policy, and local cache configuration.
+//
+// See also:
+// - cache_test.go: cache volumes and cache keys exposed through the API.
 
 import (
 	"context"

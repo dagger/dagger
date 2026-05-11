@@ -1,8 +1,11 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Core directory object behavior.
-// Intent: Keep directory semantics stable independently of module and workspace cleanup.
+// These tests cover the GraphQL Directory object: creating, reading, filtering,
+// mounting, exporting, and comparing directory contents.
+//
+// See also:
+// - file_test.go: core File object behavior.
+// - ownership_test.go: file and directory ownership propagation.
 
 import (
 	"context"

@@ -1,8 +1,13 @@
 package core
 
-// Workspace alignment: mostly aligned; coverage targets post-workspace module definition semantics, but setup still relies on historical module helpers.
-// Scope: SDK selection, module and object descriptions, field visibility, optional/default schema registration, codegen handling of optionals, and global dag references in module source.
-// Intent: Keep core module authoring semantics stable while the historical umbrella suite is peeled into narrower module-owned files.
+// These tests cover how authored module source becomes a Dagger API. They
+// verify SDK selection, schema descriptions, field visibility, optional/default
+// argument registration, generated bindings for optionals, and global `dag`
+// references in module code.
+//
+// See also:
+// - module_validation_test.go: invalid API shapes and reserved names.
+// - module_type_test.go: custom types exposed by module APIs.
 
 import (
 	"context"
