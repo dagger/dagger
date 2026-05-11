@@ -378,7 +378,6 @@ func (svc *Service) startContainer(
 	cleanup.Add("detach deps", cleanups.Infallible(detachDeps))
 
 	propagateDependencyExits := len(runningDeps) > 0 &&
-		!opts.DisableDependencyPropagation &&
 		running.Key.Kind != ServiceRuntimeInteractive &&
 		(opts.IO == nil || !opts.IO.Interactive)
 	var dependencyErrCh <-chan error
@@ -683,6 +682,33 @@ func (svc *Service) startContainer(
 		return depErr
 	}
 
+	// If a dependency exits while exit propagation is suppressed (e.g. during a
+	// service terminal), remember it and stop this service when suppression lifts.
+	var pendingDependencyErr error
+	var havePendingDependencyErr bool
+	deferDependencyExitIfSuppressed := func(depErr error) bool {
+		if !running.isDependencyExitPropagationSuppressed() {
+			return false
+		}
+		pendingDependencyErr = depErr
+		havePendingDependencyErr = true
+		return true
+	}
+
+	propagateDependencyExitAfterSuppression := func(depErr error, haveDepErr bool, depErrCh <-chan error) {
+		if !haveDepErr {
+			var ok bool
+			depErr, ok = <-depErrCh
+			if !ok {
+				return
+			}
+		}
+		if err := running.waitDependencyExitPropagationUnsuppressed(context.Background()); err != nil {
+			return
+		}
+		_ = stopDueToDependencyExit(depErr)
+	}
+
 	execSvc := func(ctx context.Context, cmd []string, env []string, sio *ServiceIO) error {
 		meta := *meta
 		meta.Args = cmd
@@ -725,21 +751,16 @@ func (svc *Service) startContainer(
 			running.Wait = waitSvc
 			running.Exec = execSvc
 			running.ContainerID = svcID
-			if dependencyErrCh != nil {
-				go func() {
-					depErr, ok := <-dependencyErrCh
-					if !ok {
-						return
-					}
-					if err := running.waitDependencyPropagationUnsuppressed(context.Background()); err != nil {
-						return
-					}
-					_ = stopDueToDependencyExit(depErr)
-				}()
+			if havePendingDependencyErr || dependencyErrCh != nil {
+				go propagateDependencyExitAfterSuppression(pendingDependencyErr, havePendingDependencyErr, dependencyErrCh)
 			}
 			return nil
 		case depErr, ok := <-dependencyErrCh:
 			if !ok {
+				dependencyErrCh = nil
+				continue
+			}
+			if deferDependencyExitIfSuppressed(depErr) {
 				dependencyErrCh = nil
 				continue
 			}
