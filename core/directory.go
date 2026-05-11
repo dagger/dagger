@@ -1896,7 +1896,6 @@ func (dir *Directory) WithDirectory(
 	})
 }
 
-//nolint:gocyclo
 func (dir *Directory) evaluateWithDirectoryChain(
 	ctx context.Context,
 	base dagql.ObjectResult[*Directory],
@@ -1923,7 +1922,6 @@ func (dir *Directory) evaluateWithDirectoryChain(
 	return dir.evaluateWithDirectoryChainFromMaterializedBase(ctx, baseDir, ops)
 }
 
-//nolint:gocyclo
 func (dir *Directory) evaluateWithDirectoryChainFromMaterializedBase(
 	ctx context.Context,
 	baseDir *Directory,
