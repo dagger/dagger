@@ -1,5 +1,9 @@
 package core
 
+// These tests cover `dagger mcp`, the Model Context Protocol server exposed by
+// the CLI over stdio. They verify which module and core methods are available
+// with and without `--env-privileged`.
+
 import (
 	"context"
 	"encoding/json"

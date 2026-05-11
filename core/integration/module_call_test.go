@@ -1,8 +1,12 @@
 package core
 
-// Workspace alignment: mostly aligned; coverage targets post-workspace module invocation, but setup still relies on historical module helpers.
-// Scope: Module function calling, help, argument passing, return values, and invocation UX.
-// Intent: Keep module call semantics stable while the underlying helper conventions are cleaned up incrementally.
+// These tests cover `dagger call` and related CLI paths for invoking module
+// functions. They verify help text, argument parsing, return-value rendering,
+// and command UX.
+//
+// See also:
+// - module_introspection_cli_test.go: inspecting callable functions.
+// - module_error_test.go: errors returned by module calls.
 
 import (
 	"context"

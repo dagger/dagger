@@ -1,8 +1,10 @@
 package core
 
-// Workspace alignment: not workspace-sensitive; no cleanup needed for the workspace branch.
-// Scope: Container system CA certificate propagation and trust behavior.
-// Intent: Keep TLS trust behavior stable independently of module or workspace concerns.
+// These tests cover custom CA certificates made available to containers and
+// network clients so TLS connections trust expected certificate authorities.
+//
+// See also:
+// - http_test.go: HTTP and HTTPS resource fetching.
 
 import (
 	"context"

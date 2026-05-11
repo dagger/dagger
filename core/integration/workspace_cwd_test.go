@@ -1,5 +1,12 @@
 package core
 
+// These tests cover workspace root and current working directory values exposed
+// through the Workspace API.
+//
+// See also:
+// - contextual_workspace_test.go: find-up behavior from nested directories.
+// - workspace_api_test.go: Workspace API behavior after selection.
+
 import (
 	"context"
 	"os"

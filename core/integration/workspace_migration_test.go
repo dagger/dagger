@@ -1,7 +1,10 @@
 package core
 
-// Scope: Workspace migration planning and apply behavior for legacy projects.
-// Intent: Keep migration behavior isolated from compat detection.
+// These tests cover workspace migration for legacy projects. They verify both
+// dry-run planning and applying the generated changes.
+//
+// See also:
+// - workspace_compat_test.go: detecting and running legacy compat workspaces.
 
 import (
 	"context"
