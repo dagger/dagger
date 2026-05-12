@@ -64,13 +64,26 @@ type TestView struct {
 	MaxHeight int
 	ScopeName string
 
+	// ListOnly forces passive embedded rendering: no selected row and no detail
+	// pane, even if focus were accidentally routed to this component.
+	ListOnly bool
+
 	OnFocusSpan func(*dagui.Span)
+
+	// focused is true only while Tuist has keyboard focus on this view. The
+	// selected-row/detail UI is rendered only in that state; embedded test views
+	// remain passive and list-only.
+	focused bool
 
 	focusedRow           string
 	expandedPassedGroups map[string]bool
 }
 
-var _ tuist.Component = (*TestView)(nil)
+var (
+	_ tuist.Component  = (*TestView)(nil)
+	_ tuist.Focusable  = (*TestView)(nil)
+	_ tuist.Dismounter = (*TestView)(nil)
+)
 
 func (tv *TestView) Name() string {
 	if tv.ScopeName != "" {
@@ -86,9 +99,27 @@ func (tv *TestView) currentView() *dagui.TestView {
 	return tv.View()
 }
 
+func (tv *TestView) SetFocused(_ tuist.Context, focused bool) {
+	if tv.focused != focused {
+		tv.focused = focused
+		tv.Update()
+	}
+}
+
+func (tv *TestView) OnDismount() {
+	tv.focused = false
+}
+
 func (tv *TestView) Render(ctx tuist.Context) {
 	view := tv.currentView()
-	rows, selectedIdx := tv.ensureFocusedTest(view)
+	interactive := tv.focused && !tv.ListOnly
+	rows := tv.flattenTestRows(view)
+	selectedIdx := -1
+	if interactive {
+		rows, selectedIdx = tv.ensureFocusedTest(view)
+	} else if len(rows) == 0 {
+		tv.focusedRow = ""
+	}
 
 	width := max(ctx.Width, 1)
 	leftWidth := width / 3
@@ -125,6 +156,11 @@ func (tv *TestView) Render(ctx tuist.Context) {
 
 	if len(rows) == 0 {
 		ctx.Line(out.String("No tests discovered yet").Foreground(termenv.ANSIBrightBlack).String())
+		return
+	}
+
+	if !interactive {
+		ctx.Lines(tv.renderSidebarLines(out, view, rows, -1, width, viewportHeight)...)
 		return
 	}
 
@@ -485,6 +521,7 @@ func (fe *frontendPretty) toggleTestsMode() {
 	fe.testsReturnSpan = fe.FocusedSpan
 	fe.testsMode = true
 	tv.ensureFocusedTest(tv.currentView())
+	fe.applyTuistFocus()
 	if fe.keymapBar != nil {
 		fe.keymapBar.Update()
 	}
@@ -530,6 +567,7 @@ func (fe *frontendPretty) inlineTestView(root dagui.SpanID) *TestView {
 	tv := fe.testViews[root]
 	if tv == nil {
 		tv = fe.newTestView(root, "")
+		tv.ListOnly = true
 		fe.testViews[root] = tv
 	}
 	return tv
@@ -669,7 +707,7 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 	r.indentFunc = s.indentFunc(prefixOut)
 	r.fancyIndent(prefixOut, row, false, false)
 	pipe := prefixOut.String(VertBoldBar).Foreground(restrainedStatusColor(row.Span))
-	if row.Span.ID == s.fe.FocusedSpan && !s.fe.editlineFocused {
+	if s.focused {
 		pipe = hl(pipe)
 	}
 	fmt.Fprint(prefixOut, pipe.String())

@@ -275,6 +275,7 @@ type SpanTreeView struct {
 
 var _ tuist.Component = (*SpanTreeView)(nil)
 var _ tuist.Focusable = (*SpanTreeView)(nil)
+var _ tuist.Dismounter = (*SpanTreeView)(nil)
 
 // SetFocused is called by tuist when this component gains or loses focus.
 // This is O(1) — only the old and new focused components are notified.
@@ -283,6 +284,10 @@ func (s *SpanTreeView) SetFocused(_ tuist.Context, focused bool) {
 		s.focused = focused
 		s.Update()
 	}
+}
+
+func (s *SpanTreeView) OnDismount() {
+	s.focused = false
 }
 
 // Render produces the lines for this span tree node and its children.
@@ -303,6 +308,7 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 		maxLiteralWidth = ctx.Width / 2
 	}
 	r := newRenderer(s.fe.db, maxLiteralWidth, s.frontendOpts(), s.finalRender)
+	visualFocused := s.focused && !s.finalRender
 
 	s.selfLineCount = 0
 
@@ -313,7 +319,7 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 	titleBuf := new(strings.Builder)
 	titleOut := NewOutput(titleBuf, termenv.WithProfile(s.fe.profile))
 	r.indentFunc = s.indentFunc(titleOut)
-	s.fe.renderStep(ctx, titleOut, r, row, "", s)
+	s.fe.renderStep(ctx, titleOut, r, row, "", s, visualFocused)
 	titleText := titleBuf.String()
 	if titleText != "" {
 		titleLines := strings.Split(strings.TrimSuffix(titleText, "\n"), "\n")
@@ -345,7 +351,7 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 	restBuf := new(strings.Builder)
 	restOut := NewOutput(restBuf, termenv.WithProfile(s.fe.profile))
 	r.indentFunc = s.indentFunc(restOut)
-	s.fe.renderRowContentRest(ctx, restOut, r, row, "", s)
+	s.fe.renderRowContentRest(ctx, restOut, r, row, "", s, visualFocused)
 	restText := restBuf.String()
 	if restText != "" {
 		restLines := strings.Split(strings.TrimSuffix(restText, "\n"), "\n")
@@ -1447,7 +1453,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		fe.renderStep(ctx, zoomOut, r, &dagui.TraceRow{
 			Span:     fe.rowsView.Zoomed,
 			Expanded: true,
-		}, "", fe)
+		}, "", fe, false)
 		linesFromView(ctx, zoomBuf.String())
 		progPrefix = "  "
 	}
@@ -1583,11 +1589,16 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	fe.applyTuistFocus()
 }
 
-// applyTuistFocus sets tuist keyboard focus to the SpanTreeView for the
-// currently focused span (or to fe itself when no span is focused).
-// Skipped when editline or search has focus.
+// applyTuistFocus sets tuist keyboard focus to the active view: the fullscreen
+// test view in tests mode, the SpanTreeView for the selected span in trace mode,
+// or fe itself when no span is selected. Skipped when editline or search has
+// focus.
 func (fe *frontendPretty) applyTuistFocus() {
 	if fe.editlineFocused || fe.searchActive {
+		return
+	}
+	if fe.testsMode && fe.fullscreenTests != nil {
+		fe.tui.SetFocus(fe.fullscreenTests)
 		return
 	}
 	if fe.FocusedSpan.IsValid() {
@@ -1991,21 +2002,21 @@ func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 	var newSpan dagui.SpanID
 	if row == nil {
 		fe.FocusedSpan = dagui.SpanID{}
-		if !fe.editlineFocused && !fe.searchActive {
+		if !fe.editlineFocused && !fe.searchActive && !fe.testsMode {
 			fe.tui.SetFocus(fe)
 		}
 	} else {
 		newSpan = row.Span.ID
 		fe.FocusedSpan = newSpan
-		if !fe.editlineFocused && !fe.searchActive {
+		if !fe.editlineFocused && !fe.searchActive && !fe.testsMode {
 			if sr, ok := fe.spanTrees[newSpan]; ok {
 				fe.tui.SetFocus(sr)
 			}
 		}
 	}
-	// Invalidate the render caches of old and new SpanTreeViews when
-	// focus moves. Their Render methods read fe.FocusedSpan to decide
-	// highlighting, so stale caches show the wrong focus indicator.
+	// Invalidate the render caches of old and new SpanTreeViews when the
+	// selected span changes. Tuist SetFocus handles visual focus invalidation;
+	// this covers any remaining selected-span-dependent rendering.
 	if oldSpan != newSpan {
 		if st, ok := fe.spanTrees[oldSpan]; ok {
 			st.Update()
@@ -2813,13 +2824,12 @@ func (fe *frontendPretty) syncAfterExpandToggle(id dagui.SpanID) {
 // and debug output. Split out so SpanTreeView.Render can apply search
 // highlighting to the title separately from the log content (which handles
 // its own highlighting via Vterm.SearchQuery).
-func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, statusHost statusIconHost) {
+func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, statusHost statusIconHost, focused bool) {
 	span := row.Span
-	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused
 
 	if span.Message == "" && // messages are displayed in renderStep
 		(row.Expanded || row.Span.LLMTool != "") {
-		fe.renderStepLogs(out, r, row, prefix, isFocused)
+		fe.renderStepLogs(out, r, row, prefix, focused)
 	} else if (row.Span.RollUpLogs || fe.shell != nil) && row.Depth == 0 && !row.Expanded && !fe.shouldRenderInlineTests(row) {
 		// in shell mode, we print top-level command logs unindented, like shells
 		// usually does
@@ -2830,7 +2840,7 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 				fe.renderLogs(out, r, &unindent, logs, logs.UsedHeight(), prefix, false)
 			} else if row.Span.RollUpLogs && row.IsRunningOrChildRunning {
 				// Only show rolled-up logs while the span is running.
-				fe.renderStepLogs(out, r, row, prefix, isFocused)
+				fe.renderStepLogs(out, r, row, prefix, focused)
 			}
 		}
 	}
@@ -3003,7 +3013,7 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 		noColorOut := termenv.NewOutput(context, termenv.WithProfile(termenv.Ascii))
 		fmt.Fprint(noColorOut, VertBoldDash3+" ")
 		for _, p := range parents {
-			fe.renderStepTitle(ctx, noColorOut, r, p, prefix+indent, statusHost, true)
+			fe.renderStepTitle(ctx, noColorOut, r, p, prefix+indent, statusHost, false, true)
 			fmt.Fprintf(noColorOut, " › ")
 		}
 		fmt.Fprint(out, out.String(context.String()).Foreground(termenv.ANSIBrightBlack).Faint())
@@ -3013,7 +3023,7 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 	if !fe.finalRender {
 		fmt.Fprint(out, "  ")
 	}
-	fe.renderStepTitle(ctx, out, r, rootCauseRow, prefix+indent, statusHost, false)
+	fe.renderStepTitle(ctx, out, r, rootCauseRow, prefix+indent, statusHost, false, false)
 	fmt.Fprintln(out)
 	if logs := fe.logs.Logs[rootCauseRow.Span.ID]; logs != nil {
 		if row.Depth == 0 && fe.finalRender {
@@ -3119,11 +3129,10 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagu
 	}
 }
 
-func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, statusHost statusIconHost, abridged bool) error {
+func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, statusHost statusIconHost, focused bool, abridged bool) error {
 	span := row.Span
 	chained := row.Chained
 	depth := row.Depth
-	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused && fe.formWrap == nil
 
 	if !abridged && row.Span.LLMRole == "" {
 		fe.renderStatusIcon(ctx, out, row, statusHost)
@@ -3141,7 +3150,7 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 		// NOTE: arguably this should be opt-in, but it's not clear how the
 		// span name relates to the message in all cases; is it the
 		// subject? or author? better to be explicit with attributes.
-		if fe.renderStepLogs(out, r, row, prefix, isFocused) {
+		if fe.renderStepLogs(out, r, row, prefix, focused) {
 			if span.LLMRole == telemetry.LLMRoleUser {
 				// Bail early if we printed a user message span; these don't have any
 				// further information to show. Duration is always 0, metrics are empty,
@@ -3150,7 +3159,7 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 			}
 			r.fancyIndent(out, row, false, false)
 			bar := out.String(VertBoldBar).Foreground(restrainedStatusColor(span))
-			if isFocused {
+			if focused {
 				bar = hl(bar)
 			}
 			fmt.Fprint(out, bar)
@@ -3217,10 +3226,7 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 	return nil
 }
 
-func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, statusHost statusIconHost) error {
-	span := row.Span
-	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused && fe.formWrap == nil
-
+func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, statusHost statusIconHost, focused bool) error {
 	fmt.Fprint(out, prefix)
 	r.fancyIndent(out, row, false, true)
 
@@ -3233,11 +3239,11 @@ func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *rende
 		}
 		fmt.Fprint(out, " ")
 	} else if !fe.finalRender {
-		fe.renderToggler(out, row, isFocused)
+		fe.renderToggler(out, row, focused)
 		fmt.Fprint(out, " ")
 	}
 
-	if err := fe.renderStepTitle(ctx, out, r, row, prefix, statusHost, false); err != nil {
+	if err := fe.renderStepTitle(ctx, out, r, row, prefix, statusHost, focused, false); err != nil {
 		return err
 	}
 
