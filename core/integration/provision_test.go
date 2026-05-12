@@ -257,6 +257,19 @@ type containerSetupOpts struct {
 	middleware func(*dagger.Container) *dagger.Container
 }
 
+const dockerdKernelCompatEntrypoint = `#!/bin/sh
+set -eu
+
+# docker:20.10-dind and docker:23.0-dind default to legacy xtables.
+if [ "${1:-}" = "dockerd" ] && [ ! -e /proc/net/ip_tables_names ] && [ -e /sbin/xtables-nft-multi ]; then
+	for name in iptables iptables-save iptables-restore ip6tables ip6tables-save ip6tables-restore; do
+		ln -sf xtables-nft-multi "/sbin/$name"
+	done
+fi
+
+exec /usr/local/bin/dockerd-entrypoint.sh "$@"
+`
+
 func dockerSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts containerSetupOpts) *dagger.Container {
 	middleware := opts.middleware
 	if middleware == nil {
@@ -274,6 +287,9 @@ func dockerSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts con
 
 	port := 4000
 	dockerd := dag.Container().From("docker:"+dockerdTag).
+		WithNewFile("/usr/local/bin/dagger-dockerd-entrypoint.sh", dockerdKernelCompatEntrypoint, dagger.ContainerWithNewFileOpts{
+			Permissions: 0o755,
+		}).
 		With(middleware).
 		WithMountedCache("/var/lib/docker", dag.CacheVolume(opts.name+"-"+opts.version+"-docker-lib"), dagger.ContainerWithMountedCacheOpts{
 			Sharing: dagger.CacheSharingModePrivate,
@@ -282,6 +298,7 @@ func dockerSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts con
 		AsService(
 			dagger.ContainerAsServiceOpts{
 				Args: []string{
+					"/usr/local/bin/dagger-dockerd-entrypoint.sh",
 					"dockerd",
 					"--host=tcp://0.0.0.0:" + strconv.Itoa(port),
 					"--tls=false",
