@@ -890,7 +890,11 @@ func moduleResolveClientContainer(
 	devEngine := devEngineContainerAsService(devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
 		return ctr.WithServiceBinding(host, gitSvc)
 	}))
-	return engineClientContainer(ctx, t, c, devEngine).WithWorkdir("/work")
+	return engineClientContainer(ctx, t, c, devEngine).WithWorkdir("/work").
+		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"git", "init"}).
+		WithExec([]string{"dagger", "workspace", "init"})
+
 }
 
 func moduleResolveServiceHost(t *testctx.T, rawURL string) string {
