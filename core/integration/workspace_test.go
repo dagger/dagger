@@ -97,6 +97,8 @@ func initDangBlueprint(name, source string) dagger.WithContainerFunc {
 func initHostDangBlueprint(ctx context.Context, t testing.TB, workdir, name, source string) {
 	t.Helper()
 
+	initGitRepo(ctx, t, workdir)
+
 	_, err := hostDaggerExec(ctx, t, workdir, "workspace", "init")
 	require.NoError(t, err)
 
