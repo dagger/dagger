@@ -2708,6 +2708,7 @@ func (fe *frontendPretty) openOrGoIn() {
 	}
 	fe.setExpanded(fe.FocusedSpan, true)
 	fe.syncAfterExpandToggle(fe.FocusedSpan)
+	fe.recalculateViewLocked()
 }
 
 func (fe *frontendPretty) goErrorOrigin() {
