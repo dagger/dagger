@@ -195,6 +195,28 @@ type Myapp {
 		assertModuleResolveLockEntry(t, []byte(lockOut), source, workspace.PolicyFloat)
 	})
 
+	t.Run("toolchains are marked with legacy default path", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		toolchainSrc := filepath.Join("testdata", "modules", "go", "defaults")
+
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "toolchains": [
+    {"name": "defaults", "source": "./toolchain"}
+  ]
+}`, func(ctr *dagger.Container) *dagger.Container {
+			return ctr.WithDirectory("toolchain", c.Host().Directory(toolchainSrc))
+		}).With(daggerExec("migrate", "-y"))
+
+		configOut, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, configOut, strings.Join([]string{
+			"[modules.defaults]",
+			`source = "../toolchain"`,
+			"legacy-default-path = true",
+		}, "\n"))
+	})
+
 	t.Run("local migrated modules include commented setting hints", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		toolchainSrc := filepath.Join("testdata", "modules", "go", "defaults")
