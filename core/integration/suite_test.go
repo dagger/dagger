@@ -267,6 +267,12 @@ func daggerCliBase(t testing.TB, c *dagger.Client) *dagger.Container {
 		WithWorkdir("/work")
 }
 
+func daggerCliGitBase(t testing.TB, c *dagger.Client) *dagger.Container {
+	return daggerCliBase(t, c).
+		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"git", "init"})
+}
+
 const testCLIBinPath = "/bin/dagger"
 
 func skipSDKAliasIfDevTag(t *testctx.T, sdkName string) {

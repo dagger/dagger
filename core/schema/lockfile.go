@@ -58,6 +58,7 @@ func currentLookupLockMode(ctx context.Context) (workspace.LockMode, error) {
 	if err != nil {
 		return "", fmt.Errorf("client metadata: %w", err)
 	}
+	fmt.Printf("ACB clientMetadata lockmode is %v\n", clientMetadata.LockMode) // this is pinned
 	return workspace.ResolveLockMode(clientMetadata.LockMode)
 }
 
@@ -87,6 +88,7 @@ func lookupLockForMode(
 		if lockMode == workspace.LockModeFrozen {
 			return "", nil, fmt.Errorf("%s lockfile: no writable workspace lockfile is available", operation)
 		}
+		fmt.Printf("ACB got lockMode %s; however nil lookupLock found\n", lockMode)
 		return workspace.LockModeDisabled, nil, nil
 	}
 	return lockMode, lookupLock, nil
