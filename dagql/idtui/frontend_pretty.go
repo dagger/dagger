@@ -151,10 +151,10 @@ type frontendPretty struct {
 	spawned bool
 
 	// per-span tree components for incremental rendering
-	spanTrees           map[dagui.SpanID]*SpanTreeView
-	topTrees            []*SpanTreeView // top-level tree views, ordered
-	renderVersion       uint64          // bumped on global render config changes (verbosity, zoom)
-	lastRenderedVersion uint64          // renderVersion at last Render, for detecting changes
+	spanTrees      map[dagui.SpanID]*SpanTreeView
+	topTrees       []*SpanTreeView // top-level tree views, ordered
+	statusSpinners map[dagui.SpanID]*tuist.Spinner
+	renderVersion  uint64 // bumped on global render config changes (verbosity, zoom)
 
 	// viewDirty is set when DB data changes (ExportSpans, LogExport) and
 	// cleared by recalculateViewLocked in Render. This coalesces multiple
@@ -226,10 +226,11 @@ type SpanTreeView struct {
 	spanID dagui.SpanID
 	scope  *spanTreeScope
 
-	// finalRender is synced from frontendPretty before rendering. Render reads
-	// this instead of relying on hidden frontend state so Tuist knows when this
-	// component's cached output is invalid.
-	finalRender bool
+	// finalRender and renderVersion are synced from frontendPretty before
+	// rendering. Render reads these instead of relying on hidden frontend state
+	// so Tuist knows when this component's cached output is invalid.
+	finalRender   bool
+	renderVersion uint64
 
 	// parent points to the parent SpanTreeView (nil for top-level nodes).
 	parent *SpanTreeView
@@ -246,10 +247,10 @@ type SpanTreeView struct {
 	// childMap indexes children by span ID for reuse across renders.
 	childMap map[dagui.SpanID]*SpanTreeView
 
-	// spinner is non-nil when the span is running. Rendered as a child
-	// component (via statusIcon → RenderChildInline) so tuist manages
-	// its lifecycle (mount starts the tick goroutine, dismount stops it).
-	spinner *tuist.Spinner
+	// statusSpinners are inline spinner components owned by this rendered
+	// occurrence of a span tree. They are keyed by the status span ID because a
+	// row can also summarize running effect spans in its title.
+	statusSpinners map[dagui.SpanID]*tuist.Spinner
 
 	// childrenGapPrefix is the prefix for gap lines between this node's
 	// children. It shows all ancestor bars + this node's own bar column.
@@ -285,8 +286,8 @@ func (s *SpanTreeView) SetFocused(_ tuist.Context, focused bool) {
 }
 
 // Render produces the lines for this span tree node and its children.
-// Prefix, child, focus, and spinner state is synced by the owning tree
-// renderer before RenderChild reaches this component.
+// Prefix, child, and focus state is synced by the owning tree renderer before
+// RenderChild reaches this component.
 func (s *SpanTreeView) Render(ctx tuist.Context) {
 	rows := s.rows()
 	if rows == nil {
@@ -312,7 +313,7 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 	titleBuf := new(strings.Builder)
 	titleOut := NewOutput(titleBuf, termenv.WithProfile(s.fe.profile))
 	r.indentFunc = s.indentFunc(titleOut)
-	s.fe.renderStep(ctx, titleOut, r, row, "")
+	s.fe.renderStep(ctx, titleOut, r, row, "", s)
 	titleText := titleBuf.String()
 	if titleText != "" {
 		titleLines := strings.Split(strings.TrimSuffix(titleText, "\n"), "\n")
@@ -344,7 +345,7 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 	restBuf := new(strings.Builder)
 	restOut := NewOutput(restBuf, termenv.WithProfile(s.fe.profile))
 	r.indentFunc = s.indentFunc(restOut)
-	s.fe.renderRowContentRest(ctx, restOut, r, row, "")
+	s.fe.renderRowContentRest(ctx, restOut, r, row, "", s)
 	restText := restBuf.String()
 	if restText != "" {
 		restLines := strings.Split(strings.TrimSuffix(restText, "\n"), "\n")
@@ -425,7 +426,11 @@ func (s *SpanTreeView) indentFunc(out TermOutput) func(TermOutput, *dagui.TraceR
 
 // computeChildPrefix computes the prefix for a child at the given position.
 func (s *SpanTreeView) computeChildPrefix(out TermOutput, hasNext bool) treePrefix {
-	row := s.fe.rows.BySpan[s.spanID]
+	rows := s.rows()
+	if rows == nil {
+		return treePrefix{}
+	}
+	row := rows.BySpan[s.spanID]
 	if row == nil {
 		return treePrefix{}
 	}
@@ -454,39 +459,72 @@ func (s *SpanTreeView) computeChildPrefix(out TermOutput, hasNext bool) treePref
 	}
 }
 
-// getOrCreateSpanTree returns the SpanTreeView for the given span ID,
+// getOrCreateSpanTree returns the main SpanTreeView for the given span ID,
 // creating one if it doesn't exist.
 func (fe *frontendPretty) getOrCreateSpanTree(spanID dagui.SpanID) *SpanTreeView {
-	if fe.spanTrees == nil {
+	return fe.getOrCreateSpanTreeInScope(spanID, nil)
+}
+
+// getOrCreateSpanTreeInScope returns the SpanTreeView for the given span ID in
+// the given scope. Each scope owns its own component instances; a Tuist
+// component must never be rendered in multiple places at once.
+func (fe *frontendPretty) getOrCreateSpanTreeInScope(spanID dagui.SpanID, scope *spanTreeScope) *SpanTreeView {
+	spanTrees := fe.spanTrees
+	if scope != nil {
+		if scope.spanTrees == nil {
+			scope.spanTrees = make(map[dagui.SpanID]*SpanTreeView)
+		}
+		spanTrees = scope.spanTrees
+	} else if spanTrees == nil {
 		fe.spanTrees = make(map[dagui.SpanID]*SpanTreeView)
+		spanTrees = fe.spanTrees
 	}
-	st, ok := fe.spanTrees[spanID]
+
+	st, ok := spanTrees[spanID]
 	if !ok {
 		st = &SpanTreeView{
 			fe:     fe,
 			spanID: spanID,
+			scope:  scope,
 		}
-		fe.spanTrees[spanID] = st
+		spanTrees[spanID] = st
 	}
-	fe.syncSpinnerTree(st)
 	return st
 }
 
-// syncSpinnerTree sets or clears the spinner on a SpanTreeView based on
-// whether the span is currently running. The spinner lifecycle is
-// managed by RenderChildInline in SpanTreeView.Render via statusIcon —
-// tuist auto-mounts it and auto-dismounts when the SpanTreeView stops
-// rendering it.
-func (fe *frontendPretty) syncSpinnerTree(st *SpanTreeView) {
-	tree := fe.rowsView.BySpan[st.spanID]
-	running := tree != nil && tree.Span.IsRunningOrEffectsRunning()
-	if running && st.spinner == nil {
-		sp := tuist.NewSpinner()
-		sp.Epoch = fe.spinnerEpoch
-		st.spinner = sp
-	} else if !running && st.spinner != nil {
-		st.spinner = nil
+type statusIconHost interface {
+	RenderChildInline(tuist.Context, tuist.Component) string
+	spinnerForStatus(dagui.SpanID) *tuist.Spinner
+}
+
+func (fe *frontendPretty) newStatusSpinner() *tuist.Spinner {
+	sp := tuist.NewSpinner()
+	sp.Epoch = fe.spinnerEpoch
+	return sp
+}
+
+func (fe *frontendPretty) spinnerForStatus(spanID dagui.SpanID) *tuist.Spinner {
+	if fe.statusSpinners == nil {
+		fe.statusSpinners = make(map[dagui.SpanID]*tuist.Spinner)
 	}
+	sp, ok := fe.statusSpinners[spanID]
+	if !ok {
+		sp = fe.newStatusSpinner()
+		fe.statusSpinners[spanID] = sp
+	}
+	return sp
+}
+
+func (s *SpanTreeView) spinnerForStatus(spanID dagui.SpanID) *tuist.Spinner {
+	if s.statusSpinners == nil {
+		s.statusSpinners = make(map[dagui.SpanID]*tuist.Spinner)
+	}
+	sp, ok := s.statusSpinners[spanID]
+	if !ok {
+		sp = s.fe.newStatusSpinner()
+		s.statusSpinners[spanID] = sp
+	}
+	return sp
 }
 
 func (fe *frontendPretty) SetClient(client *dagger.Client) {
@@ -1409,7 +1447,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		fe.renderStep(ctx, zoomOut, r, &dagui.TraceRow{
 			Span:     fe.rowsView.Zoomed,
 			Expanded: true,
-		}, "")
+		}, "", fe)
 		linesFromView(ctx, zoomBuf.String())
 		progPrefix = "  "
 	}
@@ -1574,15 +1612,6 @@ func (fe *frontendPretty) syncSpanTreeState() {
 		fe.spanTrees = make(map[dagui.SpanID]*SpanTreeView)
 	}
 
-	// When global config changes (verbosity, zoom, etc.), mark all
-	// existing trees dirty so they re-render with the new settings.
-	if fe.renderVersion != fe.lastRenderedVersion {
-		fe.lastRenderedVersion = fe.renderVersion
-		for _, st := range fe.spanTrees {
-			st.Update()
-		}
-	}
-
 	// Determine the zoom prefix for top-level trees.
 	var zoomPrefix string
 	if fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
@@ -1613,8 +1642,8 @@ func (fe *frontendPretty) syncSpanTreeState() {
 }
 
 // syncTreeNode recursively syncs a SpanTreeView and its children with
-// the current trace data. Updates prefix, render mode, spinner, and children.
-// Calls Update() on any SpanTreeView whose visible state changed.
+// the current trace data. Updates prefix, render mode, and children. Calls
+// Update() on any SpanTreeView whose visible state changed.
 func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 	fe.syncTreeNodeInScope(st, newPrefix, nil)
 }
@@ -1634,14 +1663,15 @@ func (fe *frontendPretty) syncTreeNodeInScope(st *SpanTreeView, newPrefix treePr
 		changed = true
 	}
 
-	// Sync render mode
+	// Sync render mode and global render config version.
 	if st.finalRender != fe.finalRender {
 		st.finalRender = fe.finalRender
 		changed = true
 	}
-
-	// Sync spinner: mount when running, dismount when done
-	fe.syncSpinnerTree(st)
+	if st.renderVersion != fe.renderVersion {
+		st.renderVersion = fe.renderVersion
+		changed = true
+	}
 
 	if changed {
 		st.Update()
@@ -1653,6 +1683,9 @@ func (fe *frontendPretty) syncTreeNodeInScope(st *SpanTreeView, newPrefix treePr
 	if scope != nil {
 		rowsView = scope.rowsView
 		opts = scope.opts
+		if scope.spanTrees == nil {
+			scope.spanTrees = make(map[dagui.SpanID]*SpanTreeView)
+		}
 		spanTrees = scope.spanTrees
 	}
 
@@ -2780,7 +2813,7 @@ func (fe *frontendPretty) syncAfterExpandToggle(id dagui.SpanID) {
 // and debug output. Split out so SpanTreeView.Render can apply search
 // highlighting to the title separately from the log content (which handles
 // its own highlighting via Vterm.SearchQuery).
-func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
+func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, statusHost statusIconHost) {
 	span := row.Span
 	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused
 
@@ -2825,7 +2858,7 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 				fmt.Fprint(&gapBuf, prefix)
 				fmt.Fprintln(out, strings.TrimRight(gapBuf.String(), " "))
 			}
-			fe.renderErrorCause(ctx, out, r, row, prefix, cause)
+			fe.renderErrorCause(ctx, out, r, row, prefix, cause, statusHost)
 		}
 		if len(origins) == 0 {
 			fe.renderStepError(out, r, row, prefix)
@@ -2891,7 +2924,7 @@ func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui
 	return false
 }
 
-func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, rootCause *dagui.Span) {
+func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, rootCause *dagui.Span, statusHost statusIconHost) {
 	rootCauseTree := fe.rowsView.BySpan[rootCause.ID]
 	if rootCauseTree == nil {
 		// error origin has no tree, likely due to internal/hidden spans
@@ -2970,7 +3003,7 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 		noColorOut := termenv.NewOutput(context, termenv.WithProfile(termenv.Ascii))
 		fmt.Fprint(noColorOut, VertBoldDash3+" ")
 		for _, p := range parents {
-			fe.renderStepTitle(ctx, noColorOut, r, p, prefix+indent, true)
+			fe.renderStepTitle(ctx, noColorOut, r, p, prefix+indent, statusHost, true)
 			fmt.Fprintf(noColorOut, " › ")
 		}
 		fmt.Fprint(out, out.String(context.String()).Foreground(termenv.ANSIBrightBlack).Faint())
@@ -2980,7 +3013,7 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 	if !fe.finalRender {
 		fmt.Fprint(out, "  ")
 	}
-	fe.renderStepTitle(ctx, out, r, rootCauseRow, prefix+indent, false)
+	fe.renderStepTitle(ctx, out, r, rootCauseRow, prefix+indent, statusHost, false)
 	fmt.Fprintln(out)
 	if logs := fe.logs.Logs[rootCauseRow.Span.ID]; logs != nil {
 		if row.Depth == 0 && fe.finalRender {
@@ -3086,14 +3119,14 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagu
 	}
 }
 
-func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, abridged bool) error {
+func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, statusHost statusIconHost, abridged bool) error {
 	span := row.Span
 	chained := row.Chained
 	depth := row.Depth
 	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused && fe.formWrap == nil
 
 	if !abridged && row.Span.LLMRole == "" {
-		fe.renderStatusIcon(ctx, out, row)
+		fe.renderStatusIcon(ctx, out, row, statusHost)
 		fmt.Fprint(out, " ")
 	}
 
@@ -3160,7 +3193,7 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 				// Don't show spans which are aggressively hidden.
 				continue
 			}
-			icon, isInteresting := fe.statusIcon(ctx, effect)
+			icon, isInteresting := fe.statusIcon(ctx, statusHost, effect)
 			if !isInteresting {
 				// summarize boring statuses, rather than showing them in full
 				summary[icon]++
@@ -3184,7 +3217,7 @@ func (fe *frontendPretty) renderStepTitle(ctx tuist.Context, out TermOutput, r *
 	return nil
 }
 
-func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) error {
+func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, statusHost statusIconHost) error {
 	span := row.Span
 	isFocused := span.ID == fe.FocusedSpan && !fe.editlineFocused && fe.formWrap == nil
 
@@ -3204,7 +3237,7 @@ func (fe *frontendPretty) renderStep(ctx tuist.Context, out TermOutput, r *rende
 		fmt.Fprint(out, " ")
 	}
 
-	if err := fe.renderStepTitle(ctx, out, r, row, prefix, false); err != nil {
+	if err := fe.renderStepTitle(ctx, out, r, row, prefix, statusHost, false); err != nil {
 		return err
 	}
 
@@ -3338,12 +3371,12 @@ func (fe *frontendPretty) renderRollUpDots(out TermOutput, span *dagui.Span, row
 
 // statusIcon returns an icon indicating the span's status, and a bool
 // indicating whether it's interesting enough to reveal at a summary level.
-func (fe *frontendPretty) statusIcon(ctx tuist.Context, span *dagui.Span) (string, bool) {
+func (fe *frontendPretty) statusIcon(ctx tuist.Context, host statusIconHost, span *dagui.Span) (string, bool) {
 	if span.IsRunningOrEffectsRunning() {
-		if sr, ok := fe.spanTrees[span.ID]; ok && sr.spinner != nil {
-			return sr.RenderChildInline(ctx, sr.spinner), true
+		if host == nil {
+			return DotHalf, true
 		}
-		return "?", true
+		return host.RenderChildInline(ctx, host.spinnerForStatus(span.ID)), true
 	} else if span.IsCached() {
 		return IconCached, false
 	} else if span.IsCanceled() {
@@ -3377,9 +3410,9 @@ func (fe *frontendPretty) renderToggler(out TermOutput, row *dagui.TraceRow, isF
 	fmt.Fprint(out, icon.String())
 }
 
-func (fe *frontendPretty) renderStatusIcon(ctx tuist.Context, out TermOutput, row *dagui.TraceRow) {
+func (fe *frontendPretty) renderStatusIcon(ctx tuist.Context, out TermOutput, row *dagui.TraceRow, host statusIconHost) {
 	// Then render the status icon (without focus highlighting)
-	icon, _ := fe.statusIcon(ctx, row.Span)
+	icon, _ := fe.statusIcon(ctx, host, row.Span)
 	statusIcon := out.String(icon).Foreground(statusColor(row.Span))
 	fmt.Fprint(out, statusIcon.String())
 }
