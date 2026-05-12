@@ -69,7 +69,7 @@
     {
       "name": "golang",
       "source": "github.com/dagger/go@main",
-      "pin": "4985ec6b9752e9deac3d37276c0f8a33ceba30bf",
+      "pin": "67c922bfb837ab071c99d60d92602f5e63413f8a",
       "customizations": [
         {
           "argument": "selectModule",
