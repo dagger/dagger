@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/dagger/dagger/core"
@@ -211,8 +212,8 @@ func TestResolveWorkspacePath(t *testing.T) {
 	})
 
 	t.Run("relative path cannot escape workspace root", func(t *testing.T) {
-		_, err := resolveWorkspacePath("../..", "services/payment")
-		require.ErrorContains(t, err, "escapes workspace root")
+		got, err := resolveWorkspacePath("../../..", "services/payment")
+		require.ErrorContains(t, err, "escapes workspace root", fmt.Sprintf("got %q instead of an error", got))
 	})
 }
 
