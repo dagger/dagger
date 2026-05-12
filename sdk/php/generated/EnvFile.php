@@ -48,12 +48,9 @@ class EnvFile extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this EnvFile.
      */
-    public function id(?bool $recipe = false): EnvFileId
+    public function id(): EnvFileId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\EnvFileId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

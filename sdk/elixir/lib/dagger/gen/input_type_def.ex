@@ -43,12 +43,10 @@ defmodule Dagger.InputTypeDef do
   @doc """
   A unique identifier for this InputTypeDef.
   """
-  @spec id(t(), [{:recipe, boolean()}]) :: {:ok, Dagger.InputTypeDefID.t()} | {:error, term()}
-  def id(%__MODULE__{} = input_type_def, optional_args \\ []) do
+  @spec id(t()) :: {:ok, Dagger.InputTypeDefID.t()} | {:error, term()}
+  def id(%__MODULE__{} = input_type_def) do
     query_builder =
-      input_type_def.query_builder
-      |> QB.select("id")
-      |> QB.maybe_put_arg("recipe", optional_args[:recipe])
+      input_type_def.query_builder |> QB.select("id")
 
     Client.execute(input_type_def.client, query_builder)
   end

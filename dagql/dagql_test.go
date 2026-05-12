@@ -2455,54 +2455,23 @@ func TestViews(t *testing.T) {
 	})
 }
 
-func TestIDRecipeArgSchemaByVersion(t *testing.T) {
+func TestIDRecipeArgIsInternal(t *testing.T) {
 	srv := newExternalDagqlServerForTest(t, Query{})
 
-	for _, tc := range []struct {
-		name       string
-		view       call.View
-		hasRecipe  bool
-		nonNull    bool
-		hasDefault bool
-	}{
-		{
-			name:       "current",
-			view:       "",
-			hasRecipe:  true,
-			nonNull:    true,
-			hasDefault: true,
-		},
-		{
-			name:      "last released version before handle IDs",
-			view:      "v0.20.8",
-			hasRecipe: false,
-		},
-		{
-			name:       "first version with public recipe arg",
-			view:       "v0.21.0",
-			hasRecipe:  true,
-			nonNull:    true,
-			hasDefault: true,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			query := srv.SchemaForView(tc.view).Types["Query"]
-			id := query.Fields.ForName("id")
-			require.NotNil(t, id)
-			recipe := id.Arguments.ForName("recipe")
-			if !tc.hasRecipe {
-				assert.Assert(t, recipe == nil)
-				return
-			}
+	query := srv.SchemaForView("").Types["Query"]
+	id := query.Fields.ForName("id")
+	require.NotNil(t, id)
+	recipe := id.Arguments.ForName("recipe")
+	require.NotNil(t, recipe)
+	assert.Assert(t, recipe.Directives.ForName("internal") != nil)
 
-			require.NotNil(t, recipe)
-			assert.Equal(t, tc.nonNull, recipe.Type.NonNull)
-			assert.Equal(t, tc.hasDefault, recipe.DefaultValue != nil)
-		})
-	}
+	gql := newTestClient(srv)
+	reqFail(t, gql, `query {
+		id(recipe: true)
+	}`, "cannot use internal argument")
 }
 
-func TestIDResultByVersion(t *testing.T) {
+func TestIDRecipeDefault(t *testing.T) {
 	cache := newCache(t)
 	ctx := dagql.ContextWithCache(testContext(), cache)
 	srv := newExternalDagqlServerForTest(t, Query{})

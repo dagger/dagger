@@ -36,12 +36,9 @@ class FieldTypeDef extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this FieldTypeDef.
      */
-    public function id(?bool $recipe = false): FieldTypeDefId
+    public function id(): FieldTypeDefId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\FieldTypeDefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

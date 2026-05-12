@@ -35,12 +35,9 @@ class GitRef extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this GitRef.
      */
-    public function id(?bool $recipe = false): GitRefId
+    public function id(): GitRefId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\GitRefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

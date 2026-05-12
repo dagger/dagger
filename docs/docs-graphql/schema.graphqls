@@ -63,12 +63,7 @@ type Address {
   gitRepository: GitRepository!
 
   """A unique identifier for this Address."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): AddressID!
+  id: AddressID!
 
   """Load a secret from the address."""
   secret: Secret!
@@ -186,12 +181,7 @@ type Binding {
   digest: String!
 
   """A unique identifier for this Binding."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): BindingID!
+  id: BindingID!
 
   """Returns true if the binding is null"""
   isNull: Boolean!
@@ -234,12 +224,7 @@ enum CacheSharingMode {
 """A directory whose contents persist across runs."""
 type CacheVolume {
   """A unique identifier for this CacheVolume."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): CacheVolumeID!
+  id: CacheVolumeID!
 }
 
 """
@@ -275,12 +260,7 @@ type Changeset {
   ): String!
 
   """A unique identifier for this Changeset."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): ChangesetID!
+  id: ChangesetID!
 
   """Returns true if the changeset is empty (i.e. there are no changes)."""
   isEmpty: Boolean!
@@ -392,12 +372,7 @@ type Check {
   error: Error
 
   """A unique identifier for this Check."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): CheckID!
+  id: CheckID!
 
   """Return the fully qualified name of the check"""
   name: String!
@@ -420,12 +395,7 @@ type Check {
 
 type CheckGroup {
   """A unique identifier for this CheckGroup."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): CheckGroupID!
+  id: CheckGroupID!
 
   """Return a list of individual checks and their details"""
   list: [Check!]!
@@ -453,12 +423,7 @@ scalar CheckID
 """An internal persistent filesync mirror."""
 type ClientFilesyncMirror {
   """A unique identifier for this ClientFilesyncMirror."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): ClientFilesyncMirrorID!
+  id: ClientFilesyncMirrorID!
 }
 
 """
@@ -469,12 +434,7 @@ scalar ClientFilesyncMirrorID
 """Dagger Cloud configuration and state"""
 type Cloud {
   """A unique identifier for this Cloud."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): CloudID!
+  id: CloudID!
 
   """The trace URL for the current session"""
   traceURL: String!
@@ -757,12 +717,7 @@ type Container {
   ): Container!
 
   """A unique identifier for this Container."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): ContainerID!
+  id: ContainerID!
 
   """
   The unique image reference which can only be retrieved immediately after the 'Container.From' call.
@@ -1732,12 +1687,7 @@ type CurrentModule {
   ): GeneratorGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
   """A unique identifier for this CurrentModule."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): CurrentModuleID!
+  id: CurrentModuleID!
 
   """The name of the module being executed in"""
   name: String!
@@ -1792,12 +1742,7 @@ type DiffStat {
   addedLines: Int!
 
   """A unique identifier for this DiffStat."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): DiffStatID!
+  id: DiffStatID!
 
   """Type of change."""
   kind: DiffStatKind!
@@ -2028,12 +1973,7 @@ type Directory {
   ): [String!]!
 
   """A unique identifier for this Directory."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): DirectoryID!
+  id: DirectoryID!
 
   """Returns the name of the directory."""
   name: String!
@@ -2300,12 +2240,7 @@ type Engine {
   clients: [String!]!
 
   """A unique identifier for this Engine."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): EngineID!
+  id: EngineID!
 
   """The local engine cache state tracked by dagql"""
   localCache: EngineCache!
@@ -2320,12 +2255,7 @@ type EngineCache {
   entrySet(key: String = ""): EngineCacheEntrySet!
 
   """A unique identifier for this EngineCache."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): EngineCacheID!
+  id: EngineCacheID!
 
   """The maximum bytes to keep in the cache without pruning."""
   maxUsedSpace: Int!
@@ -2385,12 +2315,7 @@ type EngineCacheEntry {
   diskSpaceBytes: Int!
 
   """A unique identifier for this EngineCacheEntry."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): EngineCacheEntryID!
+  id: EngineCacheEntryID!
 
   """The most recent time the cache entry was used, in Unix nanoseconds."""
   mostRecentUseTimeUnixNano: Int!
@@ -2418,12 +2343,7 @@ type EngineCacheEntrySet {
   entryCount: Int!
 
   """A unique identifier for this EngineCacheEntrySet."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): EngineCacheEntrySetID!
+  id: EngineCacheEntrySetID!
 }
 
 """
@@ -2447,12 +2367,7 @@ type EnumTypeDef {
   description: String!
 
   """A unique identifier for this EnumTypeDef."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): EnumTypeDefID!
+  id: EnumTypeDefID!
 
   """The members of the enum."""
   members: [EnumValueTypeDef!]!
@@ -2486,12 +2401,7 @@ type EnumValueTypeDef {
   description: String!
 
   """A unique identifier for this EnumValueTypeDef."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): EnumValueTypeDefID!
+  id: EnumValueTypeDefID!
 
   """The name of the enum member."""
   name: String!
@@ -2529,12 +2439,7 @@ type Env {
   ): CheckGroup! @experimental(reason: "Checks API is highly experimental and may be removed or replaced entirely.")
 
   """A unique identifier for this Env."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): EnvID!
+  id: EnvID!
 
   """Retrieves an input binding by name"""
   input(name: String!): Binding!
@@ -3277,12 +3182,7 @@ type EnvFile {
   ): String!
 
   """A unique identifier for this EnvFile."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): EnvFileID!
+  id: EnvFileID!
 
   """
   Filters variables by prefix and removes the pref from keys. Variables without
@@ -3332,12 +3232,7 @@ scalar EnvID
 """An environment variable name and value."""
 type EnvVariable {
   """A unique identifier for this EnvVariable."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): EnvVariableID!
+  id: EnvVariableID!
 
   """The environment variable name."""
   name: String!
@@ -3353,12 +3248,7 @@ scalar EnvVariableID
 
 type Error {
   """A unique identifier for this Error."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): ErrorID!
+  id: ErrorID!
 
   """A description of the error."""
   message: String!
@@ -3383,12 +3273,7 @@ scalar ErrorID
 
 type ErrorValue {
   """A unique identifier for this ErrorValue."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): ErrorValueID!
+  id: ErrorValueID!
 
   """The name of the value."""
   name: String!
@@ -3428,12 +3313,7 @@ type FieldTypeDef {
   description: String!
 
   """A unique identifier for this FieldTypeDef."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): FieldTypeDefID!
+  id: FieldTypeDefID!
 
   """The name of the field in lowerCamelCase format."""
   name: String!
@@ -3505,12 +3385,7 @@ type File {
   ): String!
 
   """A unique identifier for this File."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): FileID!
+  id: FileID!
 
   """Retrieves the name of the file."""
   name: String!
@@ -3653,12 +3528,7 @@ type Function {
   description: String!
 
   """A unique identifier for this Function."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): FunctionID!
+  id: FunctionID!
 
   """The name of the function."""
   name: String!
@@ -3778,12 +3648,7 @@ type FunctionArg {
   description: String!
 
   """A unique identifier for this FunctionArg."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): FunctionArgID!
+  id: FunctionArgID!
 
   """
   Only applies to arguments of type Directory. The ignore patterns are applied
@@ -3817,12 +3682,7 @@ enum FunctionCachePolicy {
 """An active function call."""
 type FunctionCall {
   """A unique identifier for this FunctionCall."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): FunctionCallID!
+  id: FunctionCallID!
 
   """The argument values the function is being invoked with."""
   inputArgs: [FunctionCallArgValue!]!
@@ -3858,12 +3718,7 @@ type FunctionCall {
 """A value passed as a named argument to a function call."""
 type FunctionCallArgValue {
   """A unique identifier for this FunctionCallArgValue."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): FunctionCallArgValueID!
+  id: FunctionCallArgValueID!
 
   """The name of the argument."""
   name: String!
@@ -3893,12 +3748,7 @@ type GeneratedCode {
   code: Directory!
 
   """A unique identifier for this GeneratedCode."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): GeneratedCodeID!
+  id: GeneratedCodeID!
 
   """
   List of paths to mark generated in version control (i.e. .gitattributes).
@@ -3931,12 +3781,7 @@ type Generator {
   description: String!
 
   """A unique identifier for this Generator."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): GeneratorID!
+  id: GeneratorID!
 
   """Whether changeset from the last generator run is empty or not"""
   isEmpty: Boolean!
@@ -3970,12 +3815,7 @@ type GeneratorGroup {
   ): Changeset!
 
   """A unique identifier for this GeneratorGroup."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): GeneratorGroupID!
+  id: GeneratorGroupID!
 
   """Whether the generated changeset from the last run is empty or not"""
   isEmpty: Boolean!
@@ -4009,12 +3849,7 @@ type GitRef {
   ): GitRef!
 
   """A unique identifier for this GitRef."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): GitRefID!
+  id: GitRefID!
 
   """The resolved ref name at this ref."""
   ref: String!
@@ -4063,12 +3898,7 @@ type GitRepository {
   head: GitRef!
 
   """A unique identifier for this GitRepository."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): GitRepositoryID!
+  id: GitRepositoryID!
 
   """Returns details for the latest semver tag."""
   latestVersion: GitRef!
@@ -4108,12 +3938,7 @@ scalar GitRepositoryID
 """An internal persistent HTTP state."""
 type HTTPState {
   """A unique identifier for this HTTPState."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): HTTPStateID!
+  id: HTTPStateID!
 }
 
 """
@@ -4127,12 +3952,7 @@ type HealthcheckConfig {
   args: [String!]!
 
   """A unique identifier for this HealthcheckConfig."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): HealthcheckConfigID!
+  id: HealthcheckConfigID!
 
   """Interval between running healthcheck. Example:30s"""
   interval: String!
@@ -4216,12 +4036,7 @@ type Host {
   ): String
 
   """A unique identifier for this Host."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): HostID!
+  id: HostID!
 
   """
   Creates a service that forwards traffic to a specified address via the host.
@@ -4309,12 +4124,7 @@ type InputTypeDef {
   fields: [FieldTypeDef!]!
 
   """A unique identifier for this InputTypeDef."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): InputTypeDefID!
+  id: InputTypeDefID!
 
   """The name of the input object."""
   name: String!
@@ -4334,12 +4144,7 @@ type InterfaceTypeDef {
   functions: [Function!]!
 
   """A unique identifier for this InterfaceTypeDef."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): InterfaceTypeDefID!
+  id: InterfaceTypeDefID!
 
   """The name of the interface."""
   name: String!
@@ -4393,12 +4198,7 @@ type JSONValue {
   fields: [String!]!
 
   """A unique identifier for this JSONValue."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): JSONValueID!
+  id: JSONValueID!
 
   """Encode a boolean to json"""
   newBoolean(
@@ -4461,12 +4261,7 @@ type LLM {
   historyJSON: JSON!
 
   """A unique identifier for this LLM."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): LLMID!
+  id: LLMID!
 
   """return the last llm reply from the history"""
   lastReply: String!
@@ -4573,12 +4368,7 @@ type LLMTokenUsage {
   cachedTokenWrites: Int!
 
   """A unique identifier for this LLMTokenUsage."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): LLMTokenUsageID!
+  id: LLMTokenUsageID!
 
   inputTokens: Int!
 
@@ -4595,12 +4385,7 @@ scalar LLMTokenUsageID
 """A simple key value object that represents a label."""
 type Label {
   """A unique identifier for this Label."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): LabelID!
+  id: LabelID!
 
   """The label name."""
   name: String!
@@ -4620,12 +4405,7 @@ type ListTypeDef {
   elementTypeDef: TypeDef!
 
   """A unique identifier for this ListTypeDef."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): ListTypeDefID!
+  id: ListTypeDefID!
 }
 
 """
@@ -4683,12 +4463,7 @@ type Module {
   ): GeneratorGroup! @experimental(reason: "This API is highly experimental and may be removed or replaced entirely.")
 
   """A unique identifier for this Module."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): ModuleID!
+  id: ModuleID!
 
   """Interfaces served by this module."""
   interfaces: [TypeDef!]!
@@ -4775,12 +4550,7 @@ type ModuleConfigClient {
   generator: String!
 
   """A unique identifier for this ModuleConfigClient."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): ModuleConfigClientID!
+  id: ModuleConfigClientID!
 }
 
 """
@@ -4869,12 +4639,7 @@ type ModuleSource {
   htmlURL: String!
 
   """A unique identifier for this ModuleSource."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): ModuleSourceID!
+  id: ModuleSourceID!
 
   """
   The introspection schema JSON file for this module source.
@@ -5110,12 +4875,7 @@ type ObjectTypeDef {
   functions: [Function!]!
 
   """A unique identifier for this ObjectTypeDef."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): ObjectTypeDefID!
+  id: ObjectTypeDefID!
 
   """The name of the object."""
   name: String!
@@ -5159,12 +4919,7 @@ type Port {
   experimentalSkipHealthcheck: Boolean!
 
   """A unique identifier for this Port."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): PortID!
+  id: PortID!
 
   """The port number."""
   port: Int!
@@ -5406,12 +5161,7 @@ type Query {
   ): File!
 
   """A unique identifier for this Query."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): QueryID!
+  id: QueryID!
 
   """Initialize a JSON value"""
   json: JSONValue!
@@ -5711,12 +5461,7 @@ scalar QueryID
 """An internal persistent bare git mirror."""
 type RemoteGitMirror {
   """A unique identifier for this RemoteGitMirror."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): RemoteGitMirrorID!
+  id: RemoteGitMirrorID!
 }
 
 """
@@ -5744,12 +5489,7 @@ type SDKConfig {
   debug: Boolean!
 
   """A unique identifier for this SDKConfig."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): SDKConfigID!
+  id: SDKConfigID!
 
   """
   Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
@@ -5768,12 +5508,7 @@ type ScalarTypeDef {
   description: String!
 
   """A unique identifier for this ScalarTypeDef."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): ScalarTypeDefID!
+  id: ScalarTypeDefID!
 
   """The name of the scalar."""
   name: String!
@@ -5797,12 +5532,7 @@ type SearchResult {
   filePath: String!
 
   """A unique identifier for this SearchResult."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): SearchResultID!
+  id: SearchResultID!
 
   """The first line that matched."""
   lineNumber: Int!
@@ -5824,12 +5554,7 @@ type SearchSubmatch {
   end: Int!
 
   """A unique identifier for this SearchSubmatch."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): SearchSubmatchID!
+  id: SearchSubmatchID!
 
   """The match's start offset within the matched lines."""
   start: Int!
@@ -5848,12 +5573,7 @@ A reference to a secret value, which can be handled more safely than the value i
 """
 type Secret {
   """A unique identifier for this Secret."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): SecretID!
+  id: SecretID!
 
   """The name of this secret."""
   name: String!
@@ -5893,12 +5613,7 @@ type Service {
   hostname: String!
 
   """A unique identifier for this Service."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): ServiceID!
+  id: ServiceID!
 
   """Retrieves the list of ports provided by the service."""
   ports: [Port!]!
@@ -5953,12 +5668,7 @@ scalar ServiceID
 """A Unix or TCP/IP socket that can be mounted into a container."""
 type Socket {
   """A unique identifier for this Socket."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): SocketID!
+  id: SocketID!
 }
 
 """
@@ -5975,12 +5685,7 @@ type SourceMap {
   filename: String!
 
   """A unique identifier for this SourceMap."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): SourceMapID!
+  id: SourceMapID!
 
   """The line number within the filename."""
   line: Int!
@@ -6005,12 +5710,7 @@ type Stat {
   fileType: FileType
 
   """A unique identifier for this Stat."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): StatID!
+  id: StatID!
 
   """file name"""
   name: String!
@@ -6030,12 +5730,7 @@ scalar StatID
 """An interactive terminal that clients can connect to."""
 type Terminal {
   """A unique identifier for this Terminal."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): TerminalID!
+  id: TerminalID!
 
   """
   Forces evaluation of the pipeline in the engine.
@@ -6083,12 +5778,7 @@ type TypeDef {
   asScalar: ScalarTypeDef
 
   """A unique identifier for this TypeDef."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): TypeDefID!
+  id: TypeDefID!
 
   """The kind of type this is (e.g. primitive, list, object)."""
   kind: TypeDefKind!
@@ -6338,12 +6028,7 @@ type Up {
   description: String!
 
   """A unique identifier for this Up."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): UpID!
+  id: UpID!
 
   """Return the fully qualified name of the service"""
   name: String!
@@ -6360,12 +6045,7 @@ type Up {
 
 type UpGroup {
   """A unique identifier for this UpGroup."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): UpGroupID!
+  id: UpGroupID!
 
   """Return a list of individual services and their details"""
   list: [Up!]!
@@ -6486,12 +6166,7 @@ type Workspace {
   hasConfig: Boolean!
 
   """A unique identifier for this Workspace."""
-  id(
-    """
-    Return the canonical recipe-form ID instead of the default runtime handle ID.
-    """
-    recipe: Boolean! = false
-  ): WorkspaceID!
+  id: WorkspaceID!
 
   """Whether .dagger/config.toml exists."""
   initialized: Boolean!

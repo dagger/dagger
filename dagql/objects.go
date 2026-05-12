@@ -120,36 +120,22 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 			}
 			return NewResultForCurrentCall(ctx, NewDynamicID[T](selfID, opts.Typed))
 		}
-		idField := func(view ViewFilter, args InputSpecs, fun func(context.Context, ObjectResult[T], map[string]Input, call.View) (AnyResult, error)) Field[T] {
-			return Field[T]{
-				Spec: &FieldSpec{
-					Name:        "id",
-					Description: fmt.Sprintf("A unique identifier for this %s.", class.TypeName()),
-					Type:        ID[T]{inner: opts.Typed},
-					Args:        args,
-					ViewFilter:  view,
-					DoNotCache:  "IDs describe the current attached result; cache hits could return stale runtime handles for an equivalent object.",
-				},
-				Func: fun,
-			}
-		}
-		class.Install(
-			idField(
-				BeforeVersion("v0.21.0"),
-				InputSpecs{},
-				idFunc,
-			),
-			idField(
-				AfterVersion("v0.21.0"),
-				NewInputSpecs(InputSpec{
+		class.Install(Field[T]{
+			Spec: &FieldSpec{
+				Name:        "id",
+				Description: fmt.Sprintf("A unique identifier for this %s.", class.TypeName()),
+				Type:        ID[T]{inner: opts.Typed},
+				Args: NewInputSpecs(InputSpec{
 					Name:        "recipe",
 					Description: "Return the canonical recipe-form ID instead of the default runtime handle ID.",
 					Type:        Boolean(false),
 					Default:     Boolean(false),
+					Internal:    true,
 				}),
-				idFunc,
-			),
-		)
+				DoNotCache: "IDs describe the current attached result; cache hits could return stale runtime handles for an equivalent object.",
+			},
+			Func: idFunc,
+		})
 		class.idable = true
 	}
 	return class

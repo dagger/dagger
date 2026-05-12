@@ -286,12 +286,9 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Container.
      */
-    public function id(?bool $recipe = false): ContainerId
+    public function id(): ContainerId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\ContainerId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

@@ -2327,12 +2327,6 @@ pub struct AddressFileOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub no_cache: Option<bool>,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct AddressIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl Address {
     /// Load a container from the address.
     pub fn container(&self) -> Container {
@@ -2438,24 +2432,8 @@ impl Address {
         }
     }
     /// A unique identifier for this Address.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<AddressId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Address.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: AddressIdOpts) -> Result<AddressId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Load a secret from the address.
@@ -2496,12 +2474,6 @@ pub struct Binding {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct BindingIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
 }
 impl Binding {
     /// Retrieve the binding value, as type Address
@@ -2785,24 +2757,8 @@ impl Binding {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this Binding.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<BindingId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Binding.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: BindingIdOpts) -> Result<BindingId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Returns true if the binding is null
@@ -2827,32 +2783,10 @@ pub struct CacheVolume {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct CacheVolumeIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl CacheVolume {
     /// A unique identifier for this CacheVolume.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<CacheVolumeId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this CacheVolume.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: CacheVolumeIdOpts) -> Result<CacheVolumeId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -2861,12 +2795,6 @@ pub struct Changeset {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct ChangesetIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ChangesetWithChangesetOpts {
@@ -2933,24 +2861,8 @@ impl Changeset {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this Changeset.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<ChangesetId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Changeset.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: ChangesetIdOpts) -> Result<ChangesetId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Returns true if the changeset is empty (i.e. there are no changes).
@@ -3081,12 +2993,6 @@ pub struct Check {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct CheckIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl Check {
     /// The type of check: 'check' for annotated checks, 'generate' for generate-as-checks
     pub async fn check_type(&self) -> Result<String, DaggerError> {
@@ -3113,24 +3019,8 @@ impl Check {
         }
     }
     /// A unique identifier for this Check.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<CheckId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Check.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: CheckIdOpts) -> Result<CheckId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Return the fully qualified name of the check
@@ -3179,12 +3069,6 @@ pub struct CheckGroup {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct CheckGroupIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct CheckGroupRunOpts {
     /// If true, stop running checks as soon as any check fails.
     #[builder(setter(into, strip_option), default)]
@@ -3192,24 +3076,8 @@ pub struct CheckGroupRunOpts {
 }
 impl CheckGroup {
     /// A unique identifier for this CheckGroup.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<CheckGroupId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this CheckGroup.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: CheckGroupIdOpts) -> Result<CheckGroupId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Return a list of individual checks and their details
@@ -3266,35 +3134,10 @@ pub struct ClientFilesyncMirror {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct ClientFilesyncMirrorIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl ClientFilesyncMirror {
     /// A unique identifier for this ClientFilesyncMirror.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<ClientFilesyncMirrorId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this ClientFilesyncMirror.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(
-        &self,
-        opts: ClientFilesyncMirrorIdOpts,
-    ) -> Result<ClientFilesyncMirrorId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -3304,32 +3147,10 @@ pub struct Cloud {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct CloudIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl Cloud {
     /// A unique identifier for this Cloud.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<CloudId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Cloud.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: CloudIdOpts) -> Result<CloudId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The trace URL for the current session
@@ -3435,12 +3256,6 @@ pub struct ContainerFileOpts {
     /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct ContainerIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerImportOpts<'a> {
@@ -4174,24 +3989,8 @@ impl Container {
         }
     }
     /// A unique identifier for this Container.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<ContainerId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Container.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: ContainerIdOpts) -> Result<ContainerId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The unique image reference which can only be retrieved immediately after the 'Container.From' call.
@@ -6050,12 +5849,6 @@ pub struct CurrentModuleGeneratorsOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct CurrentModuleIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct CurrentModuleWorkdirOpts<'a> {
     /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
     #[builder(setter(into, strip_option), default)]
@@ -6116,24 +5909,8 @@ impl CurrentModule {
         }
     }
     /// A unique identifier for this CurrentModule.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<CurrentModuleId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this CurrentModule.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: CurrentModuleIdOpts) -> Result<CurrentModuleId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The name of the module being executed in
@@ -6214,12 +5991,6 @@ pub struct DiffStat {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct DiffStatIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl DiffStat {
     /// Number of added lines for this path.
     pub async fn added_lines(&self) -> Result<isize, DaggerError> {
@@ -6227,24 +5998,8 @@ impl DiffStat {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this DiffStat.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<DiffStatId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this DiffStat.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: DiffStatIdOpts) -> Result<DiffStatId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Type of change.
@@ -6348,12 +6103,6 @@ pub struct DirectoryFilterOpts<'a> {
     /// If set, only paths matching one of these glob patterns is included in the new snapshot. Example: (e.g., ["app/", "package.*"]).
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct DirectoryIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectorySearchOpts<'a> {
@@ -6814,24 +6563,8 @@ impl Directory {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this Directory.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<DirectoryId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Directory.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: DirectoryIdOpts) -> Result<DirectoryId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Returns the name of the directory.
@@ -7388,12 +7121,6 @@ pub struct Engine {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct EngineIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl Engine {
     /// The list of connected client IDs
     pub async fn clients(&self) -> Result<Vec<String>, DaggerError> {
@@ -7401,24 +7128,8 @@ impl Engine {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this Engine.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<EngineId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Engine.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: EngineIdOpts) -> Result<EngineId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The local engine cache state tracked by dagql
@@ -7446,12 +7157,6 @@ pub struct EngineCache {
 pub struct EngineCacheEntrySetOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub key: Option<&'a str>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct EngineCacheIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct EngineCachePruneOpts<'a> {
@@ -7502,24 +7207,8 @@ impl EngineCache {
         }
     }
     /// A unique identifier for this EngineCache.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<EngineCacheId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this EngineCache.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: EngineCacheIdOpts) -> Result<EngineCacheId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The maximum bytes to keep in the cache without pruning.
@@ -7585,12 +7274,6 @@ pub struct EngineCacheEntry {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct EngineCacheEntryIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl EngineCacheEntry {
     /// Whether the cache entry is actively being used.
     pub async fn actively_used(&self) -> Result<bool, DaggerError> {
@@ -7613,27 +7296,8 @@ impl EngineCacheEntry {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this EngineCacheEntry.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<EngineCacheEntryId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this EngineCacheEntry.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(
-        &self,
-        opts: EngineCacheEntryIdOpts,
-    ) -> Result<EngineCacheEntryId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The most recent time the cache entry was used, in Unix nanoseconds.
@@ -7652,12 +7316,6 @@ pub struct EngineCacheEntrySet {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct EngineCacheEntrySetIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
 }
 impl EngineCacheEntrySet {
     /// The total disk space used by the cache entries in this set.
@@ -7680,27 +7338,8 @@ impl EngineCacheEntrySet {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this EngineCacheEntrySet.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<EngineCacheEntrySetId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this EngineCacheEntrySet.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(
-        &self,
-        opts: EngineCacheEntrySetIdOpts,
-    ) -> Result<EngineCacheEntrySetId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -7710,12 +7349,6 @@ pub struct EnumTypeDef {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct EnumTypeDefIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl EnumTypeDef {
     /// A doc string for the enum, if any.
     pub async fn description(&self) -> Result<String, DaggerError> {
@@ -7723,24 +7356,8 @@ impl EnumTypeDef {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this EnumTypeDef.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<EnumTypeDefId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this EnumTypeDef.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: EnumTypeDefIdOpts) -> Result<EnumTypeDefId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The members of the enum.
@@ -7787,12 +7404,6 @@ pub struct EnumValueTypeDef {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct EnumValueTypeDefIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl EnumValueTypeDef {
     /// The reason this enum member is deprecated, if any.
     pub async fn deprecated(&self) -> Result<String, DaggerError> {
@@ -7805,27 +7416,8 @@ impl EnumValueTypeDef {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this EnumValueTypeDef.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<EnumValueTypeDefId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this EnumValueTypeDef.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(
-        &self,
-        opts: EnumValueTypeDefIdOpts,
-    ) -> Result<EnumValueTypeDefId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The name of the enum member.
@@ -7862,12 +7454,6 @@ pub struct EnvChecksOpts<'a> {
     /// When true, only return annotated check functions; exclude generate-as-checks
     #[builder(setter(into, strip_option), default)]
     pub no_generate: Option<bool>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct EnvIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct EnvServicesOpts<'a> {
@@ -7923,24 +7509,8 @@ impl Env {
         }
     }
     /// A unique identifier for this Env.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<EnvId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Env.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: EnvIdOpts) -> Result<EnvId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Retrieves an input binding by name
@@ -9602,12 +9172,6 @@ pub struct EnvFileGetOpts {
     pub raw: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct EnvFileIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct EnvFileVariablesOpts {
     /// Return values exactly as written to the file. No quote removal or variable expansion
     #[builder(setter(into, strip_option), default)]
@@ -9663,24 +9227,8 @@ impl EnvFile {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this EnvFile.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<EnvFileId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this EnvFile.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: EnvFileIdOpts) -> Result<EnvFileId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Filters variables by prefix and removes the pref from keys. Variables without the prefix are excluded. For example, with the prefix "MY_APP_" and variables: MY_APP_TOKEN=topsecret MY_APP_NAME=hello FOO=bar the resulting environment will contain: TOKEN=topsecret NAME=hello
@@ -9763,32 +9311,10 @@ pub struct EnvVariable {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct EnvVariableIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl EnvVariable {
     /// A unique identifier for this EnvVariable.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<EnvVariableId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this EnvVariable.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: EnvVariableIdOpts) -> Result<EnvVariableId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The environment variable name.
@@ -9808,32 +9334,10 @@ pub struct Error {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct ErrorIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl Error {
     /// A unique identifier for this Error.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<ErrorId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Error.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: ErrorIdOpts) -> Result<ErrorId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// A description of the error.
@@ -9873,32 +9377,10 @@ pub struct ErrorValue {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct ErrorValueIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl ErrorValue {
     /// A unique identifier for this ErrorValue.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<ErrorValueId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this ErrorValue.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: ErrorValueIdOpts) -> Result<ErrorValueId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The name of the value.
@@ -9918,12 +9400,6 @@ pub struct FieldTypeDef {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct FieldTypeDefIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl FieldTypeDef {
     /// The reason this enum member is deprecated, if any.
     pub async fn deprecated(&self) -> Result<String, DaggerError> {
@@ -9936,24 +9412,8 @@ impl FieldTypeDef {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this FieldTypeDef.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<FieldTypeDefId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this FieldTypeDef.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: FieldTypeDefIdOpts) -> Result<FieldTypeDefId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The name of the field in lowerCamelCase format.
@@ -10012,12 +9472,6 @@ pub struct FileExportOpts {
     /// If allowParentDirPath is true, the path argument can be a directory path, in which case the file will be created in that directory.
     #[builder(setter(into, strip_option), default)]
     pub allow_parent_dir_path: Option<bool>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct FileIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct FileSearchOpts<'a> {
@@ -10191,24 +9645,8 @@ impl File {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this File.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<FileId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this File.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: FileIdOpts) -> Result<FileId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Retrieves the name of the file.
@@ -10392,12 +9830,6 @@ pub struct Function {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct FunctionIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct FunctionWithArgOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub default_address: Option<&'a str>,
@@ -10453,24 +9885,8 @@ impl Function {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this Function.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<FunctionId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Function.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: FunctionIdOpts) -> Result<FunctionId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The name of the function.
@@ -10707,12 +10123,6 @@ pub struct FunctionArg {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct FunctionArgIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl FunctionArg {
     /// Only applies to arguments of type Container. If the argument is not set, load it from the given address (e.g. alpine:latest)
     pub async fn default_address(&self) -> Result<String, DaggerError> {
@@ -10740,24 +10150,8 @@ impl FunctionArg {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this FunctionArg.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<FunctionArgId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this FunctionArg.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: FunctionArgIdOpts) -> Result<FunctionArgId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner.
@@ -10795,32 +10189,10 @@ pub struct FunctionCall {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct FunctionCallIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl FunctionCall {
     /// A unique identifier for this FunctionCall.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<FunctionCallId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this FunctionCall.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: FunctionCallIdOpts) -> Result<FunctionCallId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The argument values the function is being invoked with.
@@ -10880,35 +10252,10 @@ pub struct FunctionCallArgValue {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct FunctionCallArgValueIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl FunctionCallArgValue {
     /// A unique identifier for this FunctionCallArgValue.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<FunctionCallArgValueId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this FunctionCallArgValue.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(
-        &self,
-        opts: FunctionCallArgValueIdOpts,
-    ) -> Result<FunctionCallArgValueId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The name of the argument.
@@ -10928,12 +10275,6 @@ pub struct GeneratedCode {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct GeneratedCodeIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl GeneratedCode {
     /// The directory containing the generated code.
     pub fn code(&self) -> Directory {
@@ -10945,24 +10286,8 @@ impl GeneratedCode {
         }
     }
     /// A unique identifier for this GeneratedCode.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<GeneratedCodeId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this GeneratedCode.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: GeneratedCodeIdOpts) -> Result<GeneratedCodeId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// List of paths to mark generated in version control (i.e. .gitattributes).
@@ -11008,12 +10333,6 @@ pub struct Generator {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct GeneratorIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl Generator {
     /// The generated changeset from the last run
     pub fn changes(&self) -> Changeset {
@@ -11035,24 +10354,8 @@ impl Generator {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this Generator.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<GeneratorId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Generator.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: GeneratorIdOpts) -> Result<GeneratorId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Whether changeset from the last generator run is empty or not
@@ -11101,12 +10404,6 @@ pub struct GeneratorGroupChangesOpts {
     #[builder(setter(into, strip_option), default)]
     pub on_conflict: Option<ChangesetsMergeConflict>,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct GeneratorGroupIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl GeneratorGroup {
     /// The combined changes from the last run of the generators
     /// If any conflict occurs, for instance if the same file is modified by multiple generators, or if a file is both modified and deleted, an error is raised and the merge of the changesets will failed.
@@ -11142,27 +10439,8 @@ impl GeneratorGroup {
         }
     }
     /// A unique identifier for this GeneratorGroup.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<GeneratorGroupId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this GeneratorGroup.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(
-        &self,
-        opts: GeneratorGroupIdOpts,
-    ) -> Result<GeneratorGroupId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Whether the generated changeset from the last run is empty or not
@@ -11194,12 +10472,6 @@ pub struct GitRef {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct GitRefIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct GitRefTreeOpts {
@@ -11240,24 +10512,8 @@ impl GitRef {
         }
     }
     /// A unique identifier for this GitRef.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<GitRefId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this GitRef.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: GitRefIdOpts) -> Result<GitRefId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The resolved ref name at this ref.
@@ -11312,12 +10568,6 @@ pub struct GitRepositoryBranchesOpts<'a> {
     /// Glob patterns (e.g., "refs/tags/v*").
     #[builder(setter(into, strip_option), default)]
     pub patterns: Option<Vec<&'a str>>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct GitRepositoryIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct GitRepositoryTagsOpts<'a> {
@@ -11388,24 +10638,8 @@ impl GitRepository {
         }
     }
     /// A unique identifier for this GitRepository.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<GitRepositoryId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this GitRepository.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: GitRepositoryIdOpts) -> Result<GitRepositoryId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Returns details for the latest semver tag.
@@ -11490,32 +10724,10 @@ pub struct HttpState {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct HttpStateIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl HttpState {
     /// A unique identifier for this HTTPState.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<HttpStateId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this HTTPState.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: HttpStateIdOpts) -> Result<HttpStateId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -11525,12 +10737,6 @@ pub struct HealthcheckConfig {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct HealthcheckConfigIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl HealthcheckConfig {
     /// Healthcheck command arguments.
     pub async fn args(&self) -> Result<Vec<String>, DaggerError> {
@@ -11538,27 +10744,8 @@ impl HealthcheckConfig {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this HealthcheckConfig.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<HealthcheckConfigId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this HealthcheckConfig.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(
-        &self,
-        opts: HealthcheckConfigIdOpts,
-    ) -> Result<HealthcheckConfigId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Interval between running healthcheck. Example:30s
@@ -11623,12 +10810,6 @@ pub struct HostFileOpts {
 pub struct HostFindUpOpts {
     #[builder(setter(into, strip_option), default)]
     pub no_cache: Option<bool>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct HostIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct HostServiceOpts<'a> {
@@ -11773,24 +10954,8 @@ impl Host {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this Host.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<HostId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Host.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: HostIdOpts) -> Result<HostId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Creates a service that forwards traffic to a specified address via the host.
@@ -11903,12 +11068,6 @@ pub struct InputTypeDef {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct InputTypeDefIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl InputTypeDef {
     /// Static fields defined on this input object, if any.
     pub fn fields(&self) -> Vec<FieldTypeDef> {
@@ -11920,24 +11079,8 @@ impl InputTypeDef {
         }]
     }
     /// A unique identifier for this InputTypeDef.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<InputTypeDefId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this InputTypeDef.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: InputTypeDefIdOpts) -> Result<InputTypeDefId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The name of the input object.
@@ -11951,12 +11094,6 @@ pub struct InterfaceTypeDef {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct InterfaceTypeDefIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
 }
 impl InterfaceTypeDef {
     /// The doc string for the interface, if any.
@@ -11974,27 +11111,8 @@ impl InterfaceTypeDef {
         }]
     }
     /// A unique identifier for this InterfaceTypeDef.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<InterfaceTypeDefId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this InterfaceTypeDef.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(
-        &self,
-        opts: InterfaceTypeDefIdOpts,
-    ) -> Result<InterfaceTypeDefId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The name of the interface.
@@ -12031,12 +11149,6 @@ pub struct JsonValueContentsOpts<'a> {
     /// Pretty-print
     #[builder(setter(into, strip_option), default)]
     pub pretty: Option<bool>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct JsonValueIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
 }
 impl JsonValue {
     /// Decode an array from json
@@ -12113,24 +11225,8 @@ impl JsonValue {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this JSONValue.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<JsonValueId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this JSONValue.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: JsonValueIdOpts) -> Result<JsonValueId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Encode a boolean to json
@@ -12225,12 +11321,6 @@ pub struct Llm {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct LlmIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl Llm {
     /// create a branch in the LLM's history
     pub fn attempt(&self, number: isize) -> Llm {
@@ -12277,24 +11367,8 @@ impl Llm {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this LLM.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<Llmid, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this LLM.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: LlmIdOpts) -> Result<Llmid, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// return the last llm reply from the history
@@ -12510,12 +11584,6 @@ pub struct LlmTokenUsage {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct LlmTokenUsageIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl LlmTokenUsage {
     pub async fn cached_token_reads(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("cachedTokenReads");
@@ -12526,24 +11594,8 @@ impl LlmTokenUsage {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this LLMTokenUsage.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<LlmTokenUsageId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this LLMTokenUsage.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: LlmTokenUsageIdOpts) -> Result<LlmTokenUsageId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     pub async fn input_tokens(&self) -> Result<isize, DaggerError> {
@@ -12565,32 +11617,10 @@ pub struct Label {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct LabelIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl Label {
     /// A unique identifier for this Label.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<LabelId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Label.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: LabelIdOpts) -> Result<LabelId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The label name.
@@ -12610,12 +11640,6 @@ pub struct ListTypeDef {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct ListTypeDefIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl ListTypeDef {
     /// The type of the elements in the list.
     pub fn element_type_def(&self) -> TypeDef {
@@ -12627,24 +11651,8 @@ impl ListTypeDef {
         }
     }
     /// A unique identifier for this ListTypeDef.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<ListTypeDefId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this ListTypeDef.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: ListTypeDefIdOpts) -> Result<ListTypeDefId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -12668,12 +11676,6 @@ pub struct ModuleGeneratorsOpts<'a> {
     /// Only include generators matching the specified patterns
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct ModuleIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ModuleServeOpts {
@@ -12813,24 +11815,8 @@ impl Module {
         }
     }
     /// A unique identifier for this Module.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<ModuleId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Module.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: ModuleIdOpts) -> Result<ModuleId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Interfaces served by this module.
@@ -13032,12 +12018,6 @@ pub struct ModuleConfigClient {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct ModuleConfigClientIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl ModuleConfigClient {
     /// The directory the client is generated in.
     pub async fn directory(&self) -> Result<String, DaggerError> {
@@ -13050,27 +12030,8 @@ impl ModuleConfigClient {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this ModuleConfigClient.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<ModuleConfigClientId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this ModuleConfigClient.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(
-        &self,
-        opts: ModuleConfigClientIdOpts,
-    ) -> Result<ModuleConfigClientId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -13079,12 +12040,6 @@ pub struct ModuleSource {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct ModuleSourceIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
 }
 impl ModuleSource {
     /// Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
@@ -13205,24 +12160,8 @@ impl ModuleSource {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this ModuleSource.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<ModuleSourceId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this ModuleSource.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: ModuleSourceIdOpts) -> Result<ModuleSourceId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The introspection schema JSON file for this module source.
@@ -13635,12 +12574,6 @@ pub struct ObjectTypeDef {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct ObjectTypeDefIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl ObjectTypeDef {
     /// The function used to construct new instances of this object, if any.
     pub fn constructor(&self) -> Function {
@@ -13680,24 +12613,8 @@ impl ObjectTypeDef {
         }]
     }
     /// A unique identifier for this ObjectTypeDef.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<ObjectTypeDefId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this ObjectTypeDef.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: ObjectTypeDefIdOpts) -> Result<ObjectTypeDefId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The name of the object.
@@ -13726,12 +12643,6 @@ pub struct Port {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct PortIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl Port {
     /// The port description.
     pub async fn description(&self) -> Result<String, DaggerError> {
@@ -13744,24 +12655,8 @@ impl Port {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this Port.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<PortId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Port.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: PortIdOpts) -> Result<PortId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The port number.
@@ -13873,12 +12768,6 @@ pub struct QueryHttpOpts<'a> {
     /// Permissions to set on the file.
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct QueryIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryLlmOpts<'a> {
@@ -14382,24 +13271,8 @@ impl Query {
         }
     }
     /// A unique identifier for this Query.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<QueryId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Query.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: QueryIdOpts) -> Result<QueryId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Initialize a JSON value
@@ -15660,35 +14533,10 @@ pub struct RemoteGitMirror {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct RemoteGitMirrorIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl RemoteGitMirror {
     /// A unique identifier for this RemoteGitMirror.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<RemoteGitMirrorId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this RemoteGitMirror.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(
-        &self,
-        opts: RemoteGitMirrorIdOpts,
-    ) -> Result<RemoteGitMirrorId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -15698,12 +14546,6 @@ pub struct SdkConfig {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct SdkConfigIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl SdkConfig {
     /// Whether to start the SDK runtime in debug mode with an interactive terminal.
     pub async fn debug(&self) -> Result<bool, DaggerError> {
@@ -15711,24 +14553,8 @@ impl SdkConfig {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this SDKConfig.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<SdkConfigId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this SDKConfig.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: SdkConfigIdOpts) -> Result<SdkConfigId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Source of the SDK. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation.
@@ -15743,12 +14569,6 @@ pub struct ScalarTypeDef {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct ScalarTypeDefIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl ScalarTypeDef {
     /// A doc string for the scalar, if any.
     pub async fn description(&self) -> Result<String, DaggerError> {
@@ -15756,24 +14576,8 @@ impl ScalarTypeDef {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this ScalarTypeDef.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<ScalarTypeDefId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this ScalarTypeDef.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: ScalarTypeDefIdOpts) -> Result<ScalarTypeDefId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The name of the scalar.
@@ -15793,12 +14597,6 @@ pub struct SearchResult {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct SearchResultIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl SearchResult {
     /// The byte offset of this line within the file.
     pub async fn absolute_offset(&self) -> Result<isize, DaggerError> {
@@ -15811,24 +14609,8 @@ impl SearchResult {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this SearchResult.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<SearchResultId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this SearchResult.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: SearchResultIdOpts) -> Result<SearchResultId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The first line that matched.
@@ -15857,12 +14639,6 @@ pub struct SearchSubmatch {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct SearchSubmatchIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl SearchSubmatch {
     /// The match's end offset within the matched lines.
     pub async fn end(&self) -> Result<isize, DaggerError> {
@@ -15870,27 +14646,8 @@ impl SearchSubmatch {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this SearchSubmatch.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<SearchSubmatchId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this SearchSubmatch.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(
-        &self,
-        opts: SearchSubmatchIdOpts,
-    ) -> Result<SearchSubmatchId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The match's start offset within the matched lines.
@@ -15910,32 +14667,10 @@ pub struct Secret {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct SecretIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl Secret {
     /// A unique identifier for this Secret.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<SecretId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Secret.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: SecretIdOpts) -> Result<SecretId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The name of this secret.
@@ -15968,12 +14703,6 @@ pub struct ServiceEndpointOpts<'a> {
     /// Return a URL with the given scheme, eg. http for http://
     #[builder(setter(into, strip_option), default)]
     pub scheme: Option<&'a str>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct ServiceIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ServiceStopOpts {
@@ -16034,24 +14763,8 @@ impl Service {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this Service.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<ServiceId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Service.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: ServiceIdOpts) -> Result<ServiceId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Retrieves the list of ports provided by the service.
@@ -16167,32 +14880,10 @@ pub struct Socket {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct SocketIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl Socket {
     /// A unique identifier for this Socket.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<SocketId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Socket.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: SocketIdOpts) -> Result<SocketId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -16201,12 +14892,6 @@ pub struct SourceMap {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct SourceMapIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
 }
 impl SourceMap {
     /// The column number within the line.
@@ -16220,24 +14905,8 @@ impl SourceMap {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this SourceMap.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<SourceMapId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this SourceMap.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: SourceMapIdOpts) -> Result<SourceMapId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The line number within the filename.
@@ -16262,12 +14931,6 @@ pub struct Stat {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct StatIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl Stat {
     /// file type
     pub async fn file_type(&self) -> Result<FileType, DaggerError> {
@@ -16275,24 +14938,8 @@ impl Stat {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this Stat.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<StatId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Stat.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: StatIdOpts) -> Result<StatId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// file name
@@ -16317,32 +14964,10 @@ pub struct Terminal {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct TerminalIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl Terminal {
     /// A unique identifier for this Terminal.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<TerminalId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Terminal.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: TerminalIdOpts) -> Result<TerminalId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Forces evaluation of the pipeline in the engine.
@@ -16357,12 +14982,6 @@ pub struct TypeDef {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct TypeDefIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct TypeDefWithEnumOpts<'a> {
@@ -16489,24 +15108,8 @@ impl TypeDef {
         }
     }
     /// A unique identifier for this TypeDef.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<TypeDefId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this TypeDef.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: TypeDefIdOpts) -> Result<TypeDefId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// The kind of type this is (e.g. primitive, list, object).
@@ -16906,12 +15509,6 @@ pub struct Up {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct UpIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl Up {
     /// The description of the service
     pub async fn description(&self) -> Result<String, DaggerError> {
@@ -16919,24 +15516,8 @@ impl Up {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this Up.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<UpId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Up.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: UpIdOpts) -> Result<UpId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Return the fully qualified name of the service
@@ -16974,32 +15555,10 @@ pub struct UpGroup {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct UpGroupIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
-}
 impl UpGroup {
     /// A unique identifier for this UpGroup.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<UpGroupId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this UpGroup.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: UpGroupIdOpts) -> Result<UpGroupId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Return a list of individual services and their details
@@ -17059,12 +15618,6 @@ pub struct WorkspaceGeneratorsOpts<'a> {
     /// Only include generators matching the specified patterns
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceIdOpts {
-    /// Return the canonical recipe-form ID instead of the default runtime handle ID.
-    #[builder(setter(into, strip_option), default)]
-    pub recipe: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceServicesOpts<'a> {
@@ -17250,24 +15803,8 @@ impl Workspace {
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this Workspace.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn id(&self) -> Result<WorkspaceId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this Workspace.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn id_opts(&self, opts: WorkspaceIdOpts) -> Result<WorkspaceId, DaggerError> {
-        let mut query = self.selection.select("id");
-        if let Some(recipe) = opts.recipe {
-            query = query.arg("recipe", recipe);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Whether .dagger/config.toml exists.

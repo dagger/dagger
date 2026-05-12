@@ -7,7 +7,7 @@ defmodule Dagger.Codegen.Introspection.Types.InputValue do
   ]
 
   def is_optional?(%__MODULE__{} = input_value) do
-    input_value.type.kind != "NON_NULL" or not is_nil(input_value.default_value)
+    input_value.type.kind != "NON_NULL"
   end
 
   def from_map(%{

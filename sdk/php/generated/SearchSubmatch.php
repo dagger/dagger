@@ -22,12 +22,9 @@ class SearchSubmatch extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this SearchSubmatch.
      */
-    public function id(?bool $recipe = false): SearchSubmatchId
+    public function id(): SearchSubmatchId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\SearchSubmatchId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

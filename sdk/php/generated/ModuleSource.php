@@ -161,12 +161,9 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this ModuleSource.
      */
-    public function id(?bool $recipe = false): ModuleSourceId
+    public function id(): ModuleSourceId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\ModuleSourceId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

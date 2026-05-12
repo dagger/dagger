@@ -58,10 +58,10 @@ defmodule Dagger.Env do
   @doc """
   A unique identifier for this Env.
   """
-  @spec id(t(), [{:recipe, boolean()}]) :: {:ok, Dagger.EnvID.t()} | {:error, term()}
-  def id(%__MODULE__{} = env, optional_args \\ []) do
+  @spec id(t()) :: {:ok, Dagger.EnvID.t()} | {:error, term()}
+  def id(%__MODULE__{} = env) do
     query_builder =
-      env.query_builder |> QB.select("id") |> QB.maybe_put_arg("recipe", optional_args[:recipe])
+      env.query_builder |> QB.select("id")
 
     Client.execute(env.client, query_builder)
   end

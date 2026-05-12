@@ -234,12 +234,10 @@ defmodule Dagger.ModuleSource do
   @doc """
   A unique identifier for this ModuleSource.
   """
-  @spec id(t(), [{:recipe, boolean()}]) :: {:ok, Dagger.ModuleSourceID.t()} | {:error, term()}
-  def id(%__MODULE__{} = module_source, optional_args \\ []) do
+  @spec id(t()) :: {:ok, Dagger.ModuleSourceID.t()} | {:error, term()}
+  def id(%__MODULE__{} = module_source) do
     query_builder =
-      module_source.query_builder
-      |> QB.select("id")
-      |> QB.maybe_put_arg("recipe", optional_args[:recipe])
+      module_source.query_builder |> QB.select("id")
 
     Client.execute(module_source.client, query_builder)
   end

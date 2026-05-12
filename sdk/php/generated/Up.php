@@ -22,12 +22,9 @@ class Up extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Up.
      */
-    public function id(?bool $recipe = false): UpId
+    public function id(): UpId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\UpId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

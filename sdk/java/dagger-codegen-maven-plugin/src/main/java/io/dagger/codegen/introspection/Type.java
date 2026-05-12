@@ -69,8 +69,7 @@ public class Type {
   private static boolean filterIDField(Field f) {
     return "id".equals(f.getName())
         && f.getTypeRef().isScalar()
-        && f.getTypeRef().getTypeName().equals(f.getParentObject().getName() + "ID")
-        && f.getRequiredArgs().isEmpty();
+        && f.getTypeRef().getTypeName().equals(f.getParentObject().getName() + "ID");
   }
 
   boolean providesId() {

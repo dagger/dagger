@@ -45,12 +45,9 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Function.
      */
-    public function id(?bool $recipe = false): FunctionId
+    public function id(): FunctionId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\FunctionId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

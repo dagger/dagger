@@ -22,12 +22,9 @@ class DiffStat extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this DiffStat.
      */
-    public function id(?bool $recipe = false): DiffStatId
+    public function id(): DiffStatId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\DiffStatId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

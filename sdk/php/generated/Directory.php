@@ -228,12 +228,9 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Directory.
      */
-    public function id(?bool $recipe = false): DirectoryId
+    public function id(): DirectoryId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\DirectoryId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

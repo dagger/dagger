@@ -29,12 +29,9 @@ class PhpSdk extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this PhpSdk.
      */
-    public function id(?bool $recipe = false): PhpSdkId
+    public function id(): PhpSdkId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\PhpSdkId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

@@ -87,12 +87,9 @@ class File extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this File.
      */
-    public function id(?bool $recipe = false): FileId
+    public function id(): FileId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\FileId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

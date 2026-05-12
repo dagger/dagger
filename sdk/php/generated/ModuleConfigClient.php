@@ -34,12 +34,9 @@ class ModuleConfigClient extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this ModuleConfigClient.
      */
-    public function id(?bool $recipe = false): ModuleConfigClientId
+    public function id(): ModuleConfigClientId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\ModuleConfigClientId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 }

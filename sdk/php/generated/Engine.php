@@ -25,12 +25,9 @@ class Engine extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Engine.
      */
-    public function id(?bool $recipe = false): EngineId
+    public function id(): EngineId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\EngineId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

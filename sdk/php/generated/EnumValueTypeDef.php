@@ -34,12 +34,9 @@ class EnumValueTypeDef extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this EnumValueTypeDef.
      */
-    public function id(?bool $recipe = false): EnumValueTypeDefId
+    public function id(): EnumValueTypeDefId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\EnumValueTypeDefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

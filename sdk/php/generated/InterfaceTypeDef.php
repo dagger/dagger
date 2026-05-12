@@ -34,12 +34,9 @@ class InterfaceTypeDef extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this InterfaceTypeDef.
      */
-    public function id(?bool $recipe = false): InterfaceTypeDefId
+    public function id(): InterfaceTypeDefId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\InterfaceTypeDefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

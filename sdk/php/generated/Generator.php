@@ -40,12 +40,9 @@ class Generator extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Generator.
      */
-    public function id(?bool $recipe = false): GeneratorId
+    public function id(): GeneratorId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\GeneratorId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

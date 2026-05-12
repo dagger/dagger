@@ -460,12 +460,10 @@ defmodule Dagger.Binding do
   @doc """
   A unique identifier for this Binding.
   """
-  @spec id(t(), [{:recipe, boolean()}]) :: {:ok, Dagger.BindingID.t()} | {:error, term()}
-  def id(%__MODULE__{} = binding, optional_args \\ []) do
+  @spec id(t()) :: {:ok, Dagger.BindingID.t()} | {:error, term()}
+  def id(%__MODULE__{} = binding) do
     query_builder =
-      binding.query_builder
-      |> QB.select("id")
-      |> QB.maybe_put_arg("recipe", optional_args[:recipe])
+      binding.query_builder |> QB.select("id")
 
     Client.execute(binding.client, query_builder)
   end

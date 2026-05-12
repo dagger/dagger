@@ -13,12 +13,9 @@ class CheckGroup extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this CheckGroup.
      */
-    public function id(?bool $recipe = false): CheckGroupId
+    public function id(): CheckGroupId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\CheckGroupId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

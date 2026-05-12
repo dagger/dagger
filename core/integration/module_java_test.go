@@ -28,7 +28,6 @@ func (JavaSuite) TestInit(_ context.Context, t *testctx.T) {
 			With(daggerExec(
 				"init",
 				"--name=bare",
-				"--compat=v0.20.8",
 				"--sdk=github.com/dagger/dagger/sdk/java"))
 
 		out, err := modGen.
@@ -47,7 +46,6 @@ func (JavaSuite) TestInit(_ context.Context, t *testctx.T) {
 			With(daggerExec(
 				"init",
 				"--name=bare",
-				"--compat=v0.20.8",
 				"--sdk=java"))
 
 		out, err := modGen.
@@ -66,7 +64,6 @@ func (JavaSuite) TestInit(_ context.Context, t *testctx.T) {
 			With(daggerExec(
 				"init",
 				"--name=bare",
-				"--compat=v0.20.8",
 				"--sdk=java@main"))
 
 		out, err := modGen.

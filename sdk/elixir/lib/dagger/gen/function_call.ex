@@ -18,12 +18,10 @@ defmodule Dagger.FunctionCall do
   @doc """
   A unique identifier for this FunctionCall.
   """
-  @spec id(t(), [{:recipe, boolean()}]) :: {:ok, Dagger.FunctionCallID.t()} | {:error, term()}
-  def id(%__MODULE__{} = function_call, optional_args \\ []) do
+  @spec id(t()) :: {:ok, Dagger.FunctionCallID.t()} | {:error, term()}
+  def id(%__MODULE__{} = function_call) do
     query_builder =
-      function_call.query_builder
-      |> QB.select("id")
-      |> QB.maybe_put_arg("recipe", optional_args[:recipe])
+      function_call.query_builder |> QB.select("id")
 
     Client.execute(function_call.client, query_builder)
   end

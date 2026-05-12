@@ -16,12 +16,9 @@ class RemoteGitMirror extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this RemoteGitMirror.
      */
-    public function id(?bool $recipe = false): RemoteGitMirrorId
+    public function id(): RemoteGitMirrorId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\RemoteGitMirrorId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 }

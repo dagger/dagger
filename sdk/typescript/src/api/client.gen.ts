@@ -17,13 +17,6 @@ class BaseClient {
   constructor(protected _ctx: Context = new Context()) {}
 }
 
-export type AddressIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 export type AddressDirectoryOpts = {
   exclude?: string[]
   include?: string[]
@@ -42,13 +35,6 @@ export type AddressFileOpts = {
  * The `AddressID` scalar type represents an identifier for an object of type Address.
  */
 export type AddressID = string & { __AddressID: never }
-
-export type BindingIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
 
 /**
  * The `BindingID` scalar type represents an identifier for an object of type Binding.
@@ -120,24 +106,10 @@ function CacheSharingModeNameToValue(name: string): CacheSharingMode {
       return name as CacheSharingMode
   }
 }
-export type CacheVolumeIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
  */
 export type CacheVolumeID = string & { __CacheVolumeID: never }
-
-export type ChangesetIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
 
 export type ChangesetWithChangesetOpts = {
   /**
@@ -281,20 +253,6 @@ function ChangesetsMergeConflictNameToValue(
       return name as ChangesetsMergeConflict
   }
 }
-export type CheckIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
-export type CheckGroupIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 export type CheckGroupRunOpts = {
   /**
    * If true, stop running checks as soon as any check fails.
@@ -312,13 +270,6 @@ export type CheckGroupID = string & { __CheckGroupID: never }
  */
 export type CheckID = string & { __CheckID: never }
 
-export type ClientFilesyncMirrorIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `ClientFilesyncMirrorID` scalar type represents an identifier for an object of type ClientFilesyncMirror.
  */
@@ -326,24 +277,10 @@ export type ClientFilesyncMirrorID = string & {
   __ClientFilesyncMirrorID: never
 }
 
-export type CloudIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `CloudID` scalar type represents an identifier for an object of type Cloud.
  */
 export type CloudID = string & { __CloudID: never }
-
-export type ContainerIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
 
 export type ContainerAsServiceOpts = {
   /**
@@ -993,13 +930,6 @@ export type ContainerWithoutUnixSocketOpts = {
  */
 export type ContainerID = string & { __ContainerID: never }
 
-export type CurrentModuleIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 export type CurrentModuleGeneratorsOpts = {
   /**
    * Only include generators matching the specified patterns
@@ -1028,13 +958,6 @@ export type CurrentModuleWorkdirOpts = {
  * The `CurrentModuleID` scalar type represents an identifier for an object of type CurrentModule.
  */
 export type CurrentModuleID = string & { __CurrentModuleID: never }
-
-export type DiffStatIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
 
 /**
  * The `DiffStatID` scalar type represents an identifier for an object of type DiffStat.
@@ -1103,13 +1026,6 @@ function DiffStatKindNameToValue(name: string): DiffStatKind {
       return name as DiffStatKind
   }
 }
-export type DirectoryIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 export type DirectoryAsModuleOpts = {
   /**
    * An optional subpath of the directory which contains the module's configuration file.
@@ -1375,20 +1291,6 @@ export type DirectoryWithNewFileOpts = {
  */
 export type DirectoryID = string & { __DirectoryID: never }
 
-export type EngineIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
-export type EngineCacheIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 export type EngineCacheEntrySetOpts = {
   key?: string
 }
@@ -1420,24 +1322,10 @@ export type EngineCachePruneOpts = {
   targetSpace?: string
 }
 
-export type EngineCacheEntryIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `EngineCacheEntryID` scalar type represents an identifier for an object of type EngineCacheEntry.
  */
 export type EngineCacheEntryID = string & { __EngineCacheEntryID: never }
-
-export type EngineCacheEntrySetIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
 
 /**
  * The `EngineCacheEntrySetID` scalar type represents an identifier for an object of type EngineCacheEntrySet.
@@ -1454,36 +1342,15 @@ export type EngineCacheID = string & { __EngineCacheID: never }
  */
 export type EngineID = string & { __EngineID: never }
 
-export type EnumTypeDefIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `EnumTypeDefID` scalar type represents an identifier for an object of type EnumTypeDef.
  */
 export type EnumTypeDefID = string & { __EnumTypeDefID: never }
 
-export type EnumValueTypeDefIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `EnumValueTypeDefID` scalar type represents an identifier for an object of type EnumValueTypeDef.
  */
 export type EnumValueTypeDefID = string & { __EnumValueTypeDefID: never }
-
-export type EnvIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
 
 export type EnvChecksOpts = {
   /**
@@ -1502,13 +1369,6 @@ export type EnvServicesOpts = {
    * Only include services matching the specified patterns
    */
   include?: string[]
-}
-
-export type EnvFileIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
 }
 
 export type EnvFileGetOpts = {
@@ -1535,36 +1395,15 @@ export type EnvFileID = string & { __EnvFileID: never }
  */
 export type EnvID = string & { __EnvID: never }
 
-export type EnvVariableIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `EnvVariableID` scalar type represents an identifier for an object of type EnvVariable.
  */
 export type EnvVariableID = string & { __EnvVariableID: never }
 
-export type ErrorIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `ErrorID` scalar type represents an identifier for an object of type Error.
  */
 export type ErrorID = string & { __ErrorID: never }
-
-export type ErrorValueIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
 
 /**
  * The `ErrorValueID` scalar type represents an identifier for an object of type ErrorValue.
@@ -1624,24 +1463,10 @@ function ExistsTypeNameToValue(name: string): ExistsType {
       return name as ExistsType
   }
 }
-export type FieldTypeDefIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `FieldTypeDefID` scalar type represents an identifier for an object of type FieldTypeDef.
  */
 export type FieldTypeDefID = string & { __FieldTypeDefID: never }
-
-export type FileIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
 
 export type FileAsEnvFileOpts = {
   /**
@@ -1816,13 +1641,6 @@ function FileTypeNameToValue(name: string): FileType {
       return name as FileType
   }
 }
-export type FunctionIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 export type FunctionWithArgOpts = {
   /**
    * A doc string for the argument, if any
@@ -1868,13 +1686,6 @@ export type FunctionWithDeprecatedOpts = {
    * Reason or migration path describing the deprecation.
    */
   reason?: string
-}
-
-export type FunctionArgIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
 }
 
 /**
@@ -1924,20 +1735,6 @@ function FunctionCachePolicyNameToValue(name: string): FunctionCachePolicy {
       return name as FunctionCachePolicy
   }
 }
-export type FunctionCallIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
-export type FunctionCallArgValueIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `FunctionCallArgValueID` scalar type represents an identifier for an object of type FunctionCallArgValue.
  */
@@ -1955,31 +1752,10 @@ export type FunctionCallID = string & { __FunctionCallID: never }
  */
 export type FunctionID = string & { __FunctionID: never }
 
-export type GeneratedCodeIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `GeneratedCodeID` scalar type represents an identifier for an object of type GeneratedCode.
  */
 export type GeneratedCodeID = string & { __GeneratedCodeID: never }
-
-export type GeneratorIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
-export type GeneratorGroupIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
 
 export type GeneratorGroupChangesOpts = {
   /**
@@ -1997,13 +1773,6 @@ export type GeneratorGroupID = string & { __GeneratorGroupID: never }
  * The `GeneratorID` scalar type represents an identifier for an object of type Generator.
  */
 export type GeneratorID = string & { __GeneratorID: never }
-
-export type GitRefIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
 
 export type GitRefTreeOpts = {
   /**
@@ -2027,13 +1796,6 @@ export type GitRefTreeOpts = {
  */
 export type GitRefID = string & { __GitRefID: never }
 
-export type GitRepositoryIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 export type GitRepositoryBranchesOpts = {
   /**
    * Glob patterns (e.g., "refs/tags/v*").
@@ -2053,36 +1815,15 @@ export type GitRepositoryTagsOpts = {
  */
 export type GitRepositoryID = string & { __GitRepositoryID: never }
 
-export type HTTPStateIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `HTTPStateID` scalar type represents an identifier for an object of type HTTPState.
  */
 export type HTTPStateID = string & { __HTTPStateID: never }
 
-export type HealthcheckConfigIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `HealthcheckConfigID` scalar type represents an identifier for an object of type HealthcheckConfig.
  */
 export type HealthcheckConfigID = string & { __HealthcheckConfigID: never }
-
-export type HostIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
 
 export type HostDirectoryOpts = {
   /**
@@ -2238,24 +1979,10 @@ function ImageMediaTypesNameToValue(name: string): ImageMediaTypes {
       return name as ImageMediaTypes
   }
 }
-export type InputTypeDefIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `InputTypeDefID` scalar type represents an identifier for an object of type InputTypeDef.
  */
 export type InputTypeDefID = string & { __InputTypeDefID: never }
-
-export type InterfaceTypeDefIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
 
 /**
  * The `InterfaceTypeDefID` scalar type represents an identifier for an object of type InterfaceTypeDef.
@@ -2266,13 +1993,6 @@ export type InterfaceTypeDefID = string & { __InterfaceTypeDefID: never }
  * An arbitrary JSON-encoded value.
  */
 export type JSON = string & { __JSON: never }
-
-export type JSONValueIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
 
 export type JSONValueContentsOpts = {
   /**
@@ -2291,60 +2011,25 @@ export type JSONValueContentsOpts = {
  */
 export type JSONValueID = string & { __JSONValueID: never }
 
-export type LLMIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `LLMID` scalar type represents an identifier for an object of type LLM.
  */
 export type LLMID = string & { __LLMID: never }
-
-export type LLMTokenUsageIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
 
 /**
  * The `LLMTokenUsageID` scalar type represents an identifier for an object of type LLMTokenUsage.
  */
 export type LLMTokenUsageID = string & { __LLMTokenUsageID: never }
 
-export type LabelIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `LabelID` scalar type represents an identifier for an object of type Label.
  */
 export type LabelID = string & { __LabelID: never }
 
-export type ListTypeDefIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `ListTypeDefID` scalar type represents an identifier for an object of type ListTypeDef.
  */
 export type ListTypeDefID = string & { __ListTypeDefID: never }
-
-export type ModuleIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
 
 export type ModuleChecksOpts = {
   /**
@@ -2384,13 +2069,6 @@ export type ModuleServicesOpts = {
   include?: string[]
 }
 
-export type ModuleConfigClientIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `ModuleConfigClientID` scalar type represents an identifier for an object of type ModuleConfigClient.
  */
@@ -2400,13 +2078,6 @@ export type ModuleConfigClientID = string & { __ModuleConfigClientID: never }
  * The `ModuleID` scalar type represents an identifier for an object of type Module.
  */
 export type ModuleID = string & { __ModuleID: never }
-
-export type ModuleSourceIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
 
 /**
  * Experimental features of a module
@@ -2534,13 +2205,6 @@ function NetworkProtocolNameToValue(name: string): NetworkProtocol {
       return name as NetworkProtocol
   }
 }
-export type ObjectTypeDefIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `ObjectTypeDefID` scalar type represents an identifier for an object of type ObjectTypeDef.
  */
@@ -2565,13 +2229,6 @@ export type PipelineLabel = {
  */
 export type Platform = string & { __Platform: never }
 
-export type PortIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 export type PortForward = {
   /**
    * Destination port for traffic.
@@ -2593,13 +2250,6 @@ export type PortForward = {
  * The `PortID` scalar type represents an identifier for an object of type Port.
  */
 export type PortID = string & { __PortID: never }
-
-export type ClientIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
 
 export type ClientCacheVolumeOpts = {
   /**
@@ -2787,13 +2437,6 @@ export type ClientSecretOpts = {
  */
 export type QueryID = string & { __QueryID: never }
 
-export type RemoteGitMirrorIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `RemoteGitMirrorID` scalar type represents an identifier for an object of type RemoteGitMirror.
  */
@@ -2852,72 +2495,30 @@ function ReturnTypeNameToValue(name: string): ReturnType {
       return name as ReturnType
   }
 }
-export type SDKConfigIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
  */
 export type SDKConfigID = string & { __SDKConfigID: never }
-
-export type ScalarTypeDefIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
 
 /**
  * The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
  */
 export type ScalarTypeDefID = string & { __ScalarTypeDefID: never }
 
-export type SearchResultIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `SearchResultID` scalar type represents an identifier for an object of type SearchResult.
  */
 export type SearchResultID = string & { __SearchResultID: never }
-
-export type SearchSubmatchIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
 
 /**
  * The `SearchSubmatchID` scalar type represents an identifier for an object of type SearchSubmatch.
  */
 export type SearchSubmatchID = string & { __SearchSubmatchID: never }
 
-export type SecretIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `SecretID` scalar type represents an identifier for an object of type Secret.
  */
 export type SecretID = string & { __SecretID: never }
-
-export type ServiceIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
 
 export type ServiceEndpointOpts = {
   /**
@@ -2961,60 +2562,25 @@ export type ServiceUpOpts = {
  */
 export type ServiceID = string & { __ServiceID: never }
 
-export type SocketIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `SocketID` scalar type represents an identifier for an object of type Socket.
  */
 export type SocketID = string & { __SocketID: never }
-
-export type SourceMapIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
 
 /**
  * The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
  */
 export type SourceMapID = string & { __SourceMapID: never }
 
-export type StatIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `StatID` scalar type represents an identifier for an object of type Stat.
  */
 export type StatID = string & { __StatID: never }
 
-export type TerminalIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `TerminalID` scalar type represents an identifier for an object of type Terminal.
  */
 export type TerminalID = string & { __TerminalID: never }
-
-export type TypeDefIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
 
 export type TypeDefWithEnumOpts = {
   /**
@@ -3304,20 +2870,6 @@ function TypeDefKindNameToValue(name: string): TypeDefKind {
       return name as TypeDefKind
   }
 }
-export type UpIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
-export type UpGroupIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
-
 /**
  * The `UpGroupID` scalar type represents an identifier for an object of type UpGroup.
  */
@@ -3334,13 +2886,6 @@ export type UpID = string & { __UpID: never }
  * A Null Void is used as a placeholder for resolvers that do not return anything.
  */
 export type Void = string & { __Void: never }
-
-export type WorkspaceIdOpts = {
-  /**
-   * Return the canonical recipe-form ID instead of the default runtime handle ID.
-   */
-  recipe: boolean
-}
 
 export type WorkspaceChecksOpts = {
   /**
@@ -3436,14 +2981,13 @@ export class Address extends BaseClient {
 
   /**
    * A unique identifier for this Address.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: AddressIdOpts): Promise<AddressID> => {
+  id = async (): Promise<AddressID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<AddressID> = await ctx.execute()
 
@@ -3562,14 +3106,13 @@ export class Binding extends BaseClient {
 
   /**
    * A unique identifier for this Binding.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: BindingIdOpts): Promise<BindingID> => {
+  id = async (): Promise<BindingID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<BindingID> = await ctx.execute()
 
@@ -3909,14 +3452,13 @@ export class CacheVolume extends BaseClient {
 
   /**
    * A unique identifier for this CacheVolume.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: CacheVolumeIdOpts): Promise<CacheVolumeID> => {
+  id = async (): Promise<CacheVolumeID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<CacheVolumeID> = await ctx.execute()
 
@@ -3953,14 +3495,13 @@ export class Changeset extends BaseClient {
 
   /**
    * A unique identifier for this Changeset.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: ChangesetIdOpts): Promise<ChangesetID> => {
+  id = async (): Promise<ChangesetID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<ChangesetID> = await ctx.execute()
 
@@ -4188,14 +3729,13 @@ export class Check extends BaseClient {
 
   /**
    * A unique identifier for this Check.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: CheckIdOpts): Promise<CheckID> => {
+  id = async (): Promise<CheckID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<CheckID> = await ctx.execute()
 
@@ -4351,14 +3891,13 @@ export class CheckGroup extends BaseClient {
 
   /**
    * A unique identifier for this CheckGroup.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: CheckGroupIdOpts): Promise<CheckGroupID> => {
+  id = async (): Promise<CheckGroupID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<CheckGroupID> = await ctx.execute()
 
@@ -4424,16 +3963,13 @@ export class ClientFilesyncMirror extends BaseClient {
 
   /**
    * A unique identifier for this ClientFilesyncMirror.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (
-    opts?: ClientFilesyncMirrorIdOpts,
-  ): Promise<ClientFilesyncMirrorID> => {
+  id = async (): Promise<ClientFilesyncMirrorID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<ClientFilesyncMirrorID> = await ctx.execute()
 
@@ -4460,14 +3996,13 @@ export class Cloud extends BaseClient {
 
   /**
    * A unique identifier for this Cloud.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: CloudIdOpts): Promise<CloudID> => {
+  id = async (): Promise<CloudID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<CloudID> = await ctx.execute()
 
@@ -4558,14 +4093,13 @@ export class Container extends BaseClient {
 
   /**
    * A unique identifier for this Container.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: ContainerIdOpts): Promise<ContainerID> => {
+  id = async (): Promise<ContainerID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<ContainerID> = await ctx.execute()
 
@@ -5846,14 +5380,13 @@ export class CurrentModule extends BaseClient {
 
   /**
    * A unique identifier for this CurrentModule.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: CurrentModuleIdOpts): Promise<CurrentModuleID> => {
+  id = async (): Promise<CurrentModuleID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<CurrentModuleID> = await ctx.execute()
 
@@ -5970,14 +5503,13 @@ export class DiffStat extends BaseClient {
 
   /**
    * A unique identifier for this DiffStat.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: DiffStatIdOpts): Promise<DiffStatID> => {
+  id = async (): Promise<DiffStatID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<DiffStatID> = await ctx.execute()
 
@@ -6098,14 +5630,13 @@ export class Directory extends BaseClient {
 
   /**
    * A unique identifier for this Directory.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: DirectoryIdOpts): Promise<DirectoryID> => {
+  id = async (): Promise<DirectoryID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<DirectoryID> = await ctx.execute()
 
@@ -6612,14 +6143,13 @@ export class Engine extends BaseClient {
 
   /**
    * A unique identifier for this Engine.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: EngineIdOpts): Promise<EngineID> => {
+  id = async (): Promise<EngineID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<EngineID> = await ctx.execute()
 
@@ -6696,14 +6226,13 @@ export class EngineCache extends BaseClient {
 
   /**
    * A unique identifier for this EngineCache.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: EngineCacheIdOpts): Promise<EngineCacheID> => {
+  id = async (): Promise<EngineCacheID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<EngineCacheID> = await ctx.execute()
 
@@ -6835,14 +6364,13 @@ export class EngineCacheEntry extends BaseClient {
 
   /**
    * A unique identifier for this EngineCacheEntry.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: EngineCacheEntryIdOpts): Promise<EngineCacheEntryID> => {
+  id = async (): Promise<EngineCacheEntryID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<EngineCacheEntryID> = await ctx.execute()
 
@@ -6966,16 +6494,13 @@ export class EngineCacheEntrySet extends BaseClient {
 
   /**
    * A unique identifier for this EngineCacheEntrySet.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (
-    opts?: EngineCacheEntrySetIdOpts,
-  ): Promise<EngineCacheEntrySetID> => {
+  id = async (): Promise<EngineCacheEntrySetID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<EngineCacheEntrySetID> = await ctx.execute()
 
@@ -7059,14 +6584,13 @@ export class EnumTypeDef extends BaseClient {
 
   /**
    * A unique identifier for this EnumTypeDef.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: EnumTypeDefIdOpts): Promise<EnumTypeDefID> => {
+  id = async (): Promise<EnumTypeDefID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<EnumTypeDefID> = await ctx.execute()
 
@@ -7194,14 +6718,13 @@ export class EnumValueTypeDef extends BaseClient {
 
   /**
    * A unique identifier for this EnumValueTypeDef.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: EnumValueTypeDefIdOpts): Promise<EnumValueTypeDefID> => {
+  id = async (): Promise<EnumValueTypeDefID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<EnumValueTypeDefID> = await ctx.execute()
 
@@ -7291,14 +6814,13 @@ export class Env extends BaseClient {
 
   /**
    * A unique identifier for this Env.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: EnvIdOpts): Promise<EnvID> => {
+  id = async (): Promise<EnvID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<EnvID> = await ctx.execute()
 
@@ -8327,14 +7849,13 @@ export class EnvFile extends BaseClient {
 
   /**
    * A unique identifier for this EnvFile.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: EnvFileIdOpts): Promise<EnvFileID> => {
+  id = async (): Promise<EnvFileID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<EnvFileID> = await ctx.execute()
 
@@ -8464,14 +7985,13 @@ export class EnvVariable extends BaseClient {
 
   /**
    * A unique identifier for this EnvVariable.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: EnvVariableIdOpts): Promise<EnvVariableID> => {
+  id = async (): Promise<EnvVariableID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<EnvVariableID> = await ctx.execute()
 
@@ -8525,14 +8045,13 @@ export class Error extends BaseClient {
 
   /**
    * A unique identifier for this Error.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: ErrorIdOpts): Promise<ErrorID> => {
+  id = async (): Promise<ErrorID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<ErrorID> = await ctx.execute()
 
@@ -8614,14 +8133,13 @@ export class ErrorValue extends BaseClient {
 
   /**
    * A unique identifier for this ErrorValue.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: ErrorValueIdOpts): Promise<ErrorValueID> => {
+  id = async (): Promise<ErrorValueID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<ErrorValueID> = await ctx.execute()
 
@@ -8690,14 +8208,13 @@ export class FieldTypeDef extends BaseClient {
 
   /**
    * A unique identifier for this FieldTypeDef.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: FieldTypeDefIdOpts): Promise<FieldTypeDefID> => {
+  id = async (): Promise<FieldTypeDefID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<FieldTypeDefID> = await ctx.execute()
 
@@ -8804,14 +8321,13 @@ export class File extends BaseClient {
 
   /**
    * A unique identifier for this File.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: FileIdOpts): Promise<FileID> => {
+  id = async (): Promise<FileID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<FileID> = await ctx.execute()
 
@@ -9070,14 +8586,13 @@ export class Function_ extends BaseClient {
 
   /**
    * A unique identifier for this Function.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: FunctionIdOpts): Promise<FunctionID> => {
+  id = async (): Promise<FunctionID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<FunctionID> = await ctx.execute()
 
@@ -9319,14 +8834,13 @@ export class FunctionArg extends BaseClient {
 
   /**
    * A unique identifier for this FunctionArg.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: FunctionArgIdOpts): Promise<FunctionArgID> => {
+  id = async (): Promise<FunctionArgID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<FunctionArgID> = await ctx.execute()
 
@@ -9486,14 +9000,13 @@ export class FunctionCall extends BaseClient {
 
   /**
    * A unique identifier for this FunctionCall.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: FunctionCallIdOpts): Promise<FunctionCallID> => {
+  id = async (): Promise<FunctionCallID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<FunctionCallID> = await ctx.execute()
 
@@ -9617,16 +9130,13 @@ export class FunctionCallArgValue extends BaseClient {
 
   /**
    * A unique identifier for this FunctionCallArgValue.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (
-    opts?: FunctionCallArgValueIdOpts,
-  ): Promise<FunctionCallArgValueID> => {
+  id = async (): Promise<FunctionCallArgValueID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<FunctionCallArgValueID> = await ctx.execute()
 
@@ -9681,14 +9191,13 @@ export class GeneratedCode extends BaseClient {
 
   /**
    * A unique identifier for this GeneratedCode.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: GeneratedCodeIdOpts): Promise<GeneratedCodeID> => {
+  id = async (): Promise<GeneratedCodeID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<GeneratedCodeID> = await ctx.execute()
 
@@ -9780,14 +9289,13 @@ export class Generator extends BaseClient {
 
   /**
    * A unique identifier for this Generator.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: GeneratorIdOpts): Promise<GeneratorID> => {
+  id = async (): Promise<GeneratorID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<GeneratorID> = await ctx.execute()
 
@@ -9915,14 +9423,13 @@ export class GeneratorGroup extends BaseClient {
 
   /**
    * A unique identifier for this GeneratorGroup.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: GeneratorGroupIdOpts): Promise<GeneratorGroupID> => {
+  id = async (): Promise<GeneratorGroupID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<GeneratorGroupID> = await ctx.execute()
 
@@ -10018,14 +9525,13 @@ export class GitRef extends BaseClient {
 
   /**
    * A unique identifier for this GitRef.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: GitRefIdOpts): Promise<GitRefID> => {
+  id = async (): Promise<GitRefID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<GitRefID> = await ctx.execute()
 
@@ -10111,14 +9617,13 @@ export class GitRepository extends BaseClient {
 
   /**
    * A unique identifier for this GitRepository.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: GitRepositoryIdOpts): Promise<GitRepositoryID> => {
+  id = async (): Promise<GitRepositoryID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<GitRepositoryID> = await ctx.execute()
 
@@ -10242,14 +9747,13 @@ export class HTTPState extends BaseClient {
 
   /**
    * A unique identifier for this HTTPState.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: HTTPStateIdOpts): Promise<HTTPStateID> => {
+  id = async (): Promise<HTTPStateID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<HTTPStateID> = await ctx.execute()
 
@@ -10295,14 +9799,13 @@ export class HealthcheckConfig extends BaseClient {
 
   /**
    * A unique identifier for this HealthcheckConfig.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: HealthcheckConfigIdOpts): Promise<HealthcheckConfigID> => {
+  id = async (): Promise<HealthcheckConfigID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<HealthcheckConfigID> = await ctx.execute()
 
@@ -10430,14 +9933,13 @@ export class Host extends BaseClient {
 
   /**
    * A unique identifier for this Host.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: HostIdOpts): Promise<HostID> => {
+  id = async (): Promise<HostID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<HostID> = await ctx.execute()
 
@@ -10557,14 +10059,13 @@ export class InputTypeDef extends BaseClient {
 
   /**
    * A unique identifier for this InputTypeDef.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: InputTypeDefIdOpts): Promise<InputTypeDefID> => {
+  id = async (): Promise<InputTypeDefID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<InputTypeDefID> = await ctx.execute()
 
@@ -10633,14 +10134,13 @@ export class InterfaceTypeDef extends BaseClient {
 
   /**
    * A unique identifier for this InterfaceTypeDef.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: InterfaceTypeDefIdOpts): Promise<InterfaceTypeDefID> => {
+  id = async (): Promise<InterfaceTypeDefID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<InterfaceTypeDefID> = await ctx.execute()
 
@@ -10745,14 +10245,13 @@ export class JSONValue extends BaseClient {
 
   /**
    * A unique identifier for this JSONValue.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: JSONValueIdOpts): Promise<JSONValueID> => {
+  id = async (): Promise<JSONValueID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<JSONValueID> = await ctx.execute()
 
@@ -10953,14 +10452,13 @@ export class LLM extends BaseClient {
 
   /**
    * A unique identifier for this LLM.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: LLMIdOpts): Promise<LLMID> => {
+  id = async (): Promise<LLMID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<LLMID> = await ctx.execute()
 
@@ -11275,14 +10773,13 @@ export class LLMTokenUsage extends BaseClient {
 
   /**
    * A unique identifier for this LLMTokenUsage.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: LLMTokenUsageIdOpts): Promise<LLMTokenUsageID> => {
+  id = async (): Promise<LLMTokenUsageID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<LLMTokenUsageID> = await ctx.execute()
 
@@ -11366,14 +10863,13 @@ export class Label extends BaseClient {
 
   /**
    * A unique identifier for this Label.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: LabelIdOpts): Promise<LabelID> => {
+  id = async (): Promise<LabelID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<LabelID> = await ctx.execute()
 
@@ -11428,14 +10924,13 @@ export class ListTypeDef extends BaseClient {
 
   /**
    * A unique identifier for this ListTypeDef.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: ListTypeDefIdOpts): Promise<ListTypeDefID> => {
+  id = async (): Promise<ListTypeDefID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<ListTypeDefID> = await ctx.execute()
 
@@ -11483,14 +10978,13 @@ export class Module_ extends BaseClient {
 
   /**
    * A unique identifier for this Module.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: ModuleIdOpts): Promise<ModuleID> => {
+  id = async (): Promise<ModuleID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<ModuleID> = await ctx.execute()
 
@@ -11789,16 +11283,13 @@ export class ModuleConfigClient extends BaseClient {
 
   /**
    * A unique identifier for this ModuleConfigClient.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (
-    opts?: ModuleConfigClientIdOpts,
-  ): Promise<ModuleConfigClientID> => {
+  id = async (): Promise<ModuleConfigClientID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<ModuleConfigClientID> = await ctx.execute()
 
@@ -11913,14 +11404,13 @@ export class ModuleSource extends BaseClient {
 
   /**
    * A unique identifier for this ModuleSource.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: ModuleSourceIdOpts): Promise<ModuleSourceID> => {
+  id = async (): Promise<ModuleSourceID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<ModuleSourceID> = await ctx.execute()
 
@@ -12552,14 +12042,13 @@ export class ObjectTypeDef extends BaseClient {
 
   /**
    * A unique identifier for this ObjectTypeDef.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: ObjectTypeDefIdOpts): Promise<ObjectTypeDefID> => {
+  id = async (): Promise<ObjectTypeDefID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<ObjectTypeDefID> = await ctx.execute()
 
@@ -12707,14 +12196,13 @@ export class Port extends BaseClient {
 
   /**
    * A unique identifier for this Port.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: PortIdOpts): Promise<PortID> => {
+  id = async (): Promise<PortID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<PortID> = await ctx.execute()
 
@@ -12815,10 +12303,9 @@ export class Client extends BaseClient {
 
   /**
    * A unique identifier for this Query.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: ClientIdOpts): Promise<QueryID> => {
-    const ctx = this._ctx.select("id", { ...opts })
+  id = async (): Promise<QueryID> => {
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<QueryID> = await ctx.execute()
 
@@ -13739,14 +13226,13 @@ export class RemoteGitMirror extends BaseClient {
 
   /**
    * A unique identifier for this RemoteGitMirror.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: RemoteGitMirrorIdOpts): Promise<RemoteGitMirrorID> => {
+  id = async (): Promise<RemoteGitMirrorID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<RemoteGitMirrorID> = await ctx.execute()
 
@@ -13780,14 +13266,13 @@ export class SDKConfig extends BaseClient {
 
   /**
    * A unique identifier for this SDKConfig.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: SDKConfigIdOpts): Promise<SDKConfigID> => {
+  id = async (): Promise<SDKConfigID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<SDKConfigID> = await ctx.execute()
 
@@ -13854,14 +13339,13 @@ export class ScalarTypeDef extends BaseClient {
 
   /**
    * A unique identifier for this ScalarTypeDef.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: ScalarTypeDefIdOpts): Promise<ScalarTypeDefID> => {
+  id = async (): Promise<ScalarTypeDefID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<ScalarTypeDefID> = await ctx.execute()
 
@@ -13943,14 +13427,13 @@ export class SearchResult extends BaseClient {
 
   /**
    * A unique identifier for this SearchResult.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: SearchResultIdOpts): Promise<SearchResultID> => {
+  id = async (): Promise<SearchResultID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<SearchResultID> = await ctx.execute()
 
@@ -14061,14 +13544,13 @@ export class SearchSubmatch extends BaseClient {
 
   /**
    * A unique identifier for this SearchSubmatch.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: SearchSubmatchIdOpts): Promise<SearchSubmatchID> => {
+  id = async (): Promise<SearchSubmatchID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<SearchSubmatchID> = await ctx.execute()
 
@@ -14150,14 +13632,13 @@ export class Secret extends BaseClient {
 
   /**
    * A unique identifier for this Secret.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: SecretIdOpts): Promise<SecretID> => {
+  id = async (): Promise<SecretID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<SecretID> = await ctx.execute()
 
@@ -14248,14 +13729,13 @@ export class Service extends BaseClient {
 
   /**
    * A unique identifier for this Service.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: ServiceIdOpts): Promise<ServiceID> => {
+  id = async (): Promise<ServiceID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<ServiceID> = await ctx.execute()
 
@@ -14406,14 +13886,13 @@ export class Socket extends BaseClient {
 
   /**
    * A unique identifier for this Socket.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: SocketIdOpts): Promise<SocketID> => {
+  id = async (): Promise<SocketID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<SocketID> = await ctx.execute()
 
@@ -14456,14 +13935,13 @@ export class SourceMap extends BaseClient {
 
   /**
    * A unique identifier for this SourceMap.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: SourceMapIdOpts): Promise<SourceMapID> => {
+  id = async (): Promise<SourceMapID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<SourceMapID> = await ctx.execute()
 
@@ -14578,14 +14056,13 @@ export class Stat extends BaseClient {
 
   /**
    * A unique identifier for this Stat.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: StatIdOpts): Promise<StatID> => {
+  id = async (): Promise<StatID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<StatID> = await ctx.execute()
 
@@ -14672,14 +14149,13 @@ export class Terminal extends BaseClient {
 
   /**
    * A unique identifier for this Terminal.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: TerminalIdOpts): Promise<TerminalID> => {
+  id = async (): Promise<TerminalID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<TerminalID> = await ctx.execute()
 
@@ -14729,14 +14205,13 @@ export class TypeDef extends BaseClient {
 
   /**
    * A unique identifier for this TypeDef.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: TypeDefIdOpts): Promise<TypeDefID> => {
+  id = async (): Promise<TypeDefID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<TypeDefID> = await ctx.execute()
 
@@ -15002,14 +14477,13 @@ export class Up extends BaseClient {
 
   /**
    * A unique identifier for this Up.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: UpIdOpts): Promise<UpID> => {
+  id = async (): Promise<UpID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<UpID> = await ctx.execute()
 
@@ -15097,14 +14571,13 @@ export class UpGroup extends BaseClient {
 
   /**
    * A unique identifier for this UpGroup.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: UpGroupIdOpts): Promise<UpGroupID> => {
+  id = async (): Promise<UpGroupID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<UpGroupID> = await ctx.execute()
 
@@ -15185,14 +14658,13 @@ export class Workspace extends BaseClient {
 
   /**
    * A unique identifier for this Workspace.
-   * @param opts.recipe Return the canonical recipe-form ID instead of the default runtime handle ID.
    */
-  id = async (opts?: WorkspaceIdOpts): Promise<WorkspaceID> => {
+  id = async (): Promise<WorkspaceID> => {
     if (this._id) {
       return this._id
     }
 
-    const ctx = this._ctx.select("id", { ...opts })
+    const ctx = this._ctx.select("id")
 
     const response: Awaited<WorkspaceID> = await ctx.execute()
 

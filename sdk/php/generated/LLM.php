@@ -69,12 +69,9 @@ class LLM extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this LLM.
      */
-    public function id(?bool $recipe = false): LLMId
+    public function id(): LLMId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\LLMId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

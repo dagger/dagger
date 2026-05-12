@@ -51,12 +51,10 @@ defmodule Dagger.InterfaceTypeDef do
   @doc """
   A unique identifier for this InterfaceTypeDef.
   """
-  @spec id(t(), [{:recipe, boolean()}]) :: {:ok, Dagger.InterfaceTypeDefID.t()} | {:error, term()}
-  def id(%__MODULE__{} = interface_type_def, optional_args \\ []) do
+  @spec id(t()) :: {:ok, Dagger.InterfaceTypeDefID.t()} | {:error, term()}
+  def id(%__MODULE__{} = interface_type_def) do
     query_builder =
-      interface_type_def.query_builder
-      |> QB.select("id")
-      |> QB.maybe_put_arg("recipe", optional_args[:recipe])
+      interface_type_def.query_builder |> QB.select("id")
 
     Client.execute(interface_type_def.client, query_builder)
   end

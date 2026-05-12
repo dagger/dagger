@@ -16,12 +16,9 @@ class ClientFilesyncMirror extends Client\AbstractObject implements Client\IdAbl
     /**
      * A unique identifier for this ClientFilesyncMirror.
      */
-    public function id(?bool $recipe = false): ClientFilesyncMirrorId
+    public function id(): ClientFilesyncMirrorId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\ClientFilesyncMirrorId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 }

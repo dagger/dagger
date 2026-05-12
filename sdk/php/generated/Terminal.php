@@ -16,12 +16,9 @@ class Terminal extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Terminal.
      */
-    public function id(?bool $recipe = false): TerminalId
+    public function id(): TerminalId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\TerminalId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

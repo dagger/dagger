@@ -84,19 +84,19 @@ public class Field {
   }
 
   boolean hasOptionalArgs() {
-    return getArgs().stream().anyMatch(InputObject::isOptional);
+    return getArgs().stream().filter(arg -> arg.getType().isOptional()).count() > 0;
   }
 
   /** Returns the list of optional argument of this field */
   List<InputObject> getOptionalArgs() {
     if (optionalArgs == null) {
-      optionalArgs = args.stream().filter(InputObject::isOptional).toList();
+      optionalArgs = args.stream().filter(arg -> arg.getType().isOptional()).toList();
     }
     return optionalArgs;
   }
 
   List<InputObject> getRequiredArgs() {
-    return args.stream().filter(InputObject::isRequired).toList();
+    return args.stream().filter(arg -> !arg.getType().isOptional()).toList();
   }
 
   @Override

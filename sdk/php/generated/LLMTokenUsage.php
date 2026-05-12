@@ -25,12 +25,9 @@ class LLMTokenUsage extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this LLMTokenUsage.
      */
-    public function id(?bool $recipe = false): LLMTokenUsageId
+    public function id(): LLMTokenUsageId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\LLMTokenUsageId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

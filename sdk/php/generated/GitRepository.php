@@ -57,12 +57,9 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this GitRepository.
      */
-    public function id(?bool $recipe = false): GitRepositoryId
+    public function id(): GitRepositoryId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\GitRepositoryId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

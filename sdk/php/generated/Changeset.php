@@ -71,12 +71,9 @@ class Changeset extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Changeset.
      */
-    public function id(?bool $recipe = false): ChangesetId
+    public function id(): ChangesetId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\ChangesetId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

@@ -54,12 +54,10 @@ defmodule Dagger.Generator do
   @doc """
   A unique identifier for this Generator.
   """
-  @spec id(t(), [{:recipe, boolean()}]) :: {:ok, Dagger.GeneratorID.t()} | {:error, term()}
-  def id(%__MODULE__{} = generator, optional_args \\ []) do
+  @spec id(t()) :: {:ok, Dagger.GeneratorID.t()} | {:error, term()}
+  def id(%__MODULE__{} = generator) do
     query_builder =
-      generator.query_builder
-      |> QB.select("id")
-      |> QB.maybe_put_arg("recipe", optional_args[:recipe])
+      generator.query_builder |> QB.select("id")
 
     Client.execute(generator.client, query_builder)
   end

@@ -31,12 +31,9 @@ class SearchResult extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this SearchResult.
      */
-    public function id(?bool $recipe = false): SearchResultId
+    public function id(): SearchResultId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\SearchResultId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 

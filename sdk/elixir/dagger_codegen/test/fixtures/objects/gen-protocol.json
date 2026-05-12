@@ -88,22 +88,7 @@
       }
     },
     {
-      "args": [
-        {
-          "defaultValue": "false",
-          "description": "If true, return a recipe-based ID instead of a handle-based ID.",
-          "name": "recipe",
-          "type": {
-            "kind": "NON_NULL",
-            "name": null,
-            "ofType": {
-              "kind": "SCALAR",
-              "name": "Boolean",
-              "ofType": null
-            }
-          }
-        }
-      ],
+      "args": [],
       "deprecationReason": null,
       "description": "A unique identifier for this Module.",
       "directives": [],

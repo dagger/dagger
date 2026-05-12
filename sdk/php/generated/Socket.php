@@ -16,12 +16,9 @@ class Socket extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Socket.
      */
-    public function id(?bool $recipe = false): SocketId
+    public function id(): SocketId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        if (null !== $recipe) {
-        $leafQueryBuilder->setArgument('recipe', $recipe);
-        }
         return new \Dagger\SocketId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 }

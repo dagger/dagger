@@ -45,7 +45,6 @@ func (ElixirSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerExec(
 				"init",
 				"--name=bare",
-				"--compat=v0.20.8",
 				"--sdk=github.com/dagger/dagger/sdk/elixir"))
 
 		out, err := modGen.
@@ -64,7 +63,6 @@ func (ElixirSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerExec(
 				"init",
 				"--name=bare",
-				"--compat=v0.20.8",
 				"--sdk=elixir"))
 
 		out, err := modGen.
@@ -83,7 +81,6 @@ func (ElixirSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerExec(
 				"init",
 				"--name=bare",
-				"--compat=v0.20.8",
 				"--sdk=elixir@main"))
 
 		out, err := modGen.
