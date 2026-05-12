@@ -702,6 +702,9 @@ func (v *TestSpanChildrenView) UpdateAll() {
 	if v.container != nil {
 		v.container.Update()
 	}
+	for _, st := range v.scope.spanTrees {
+		st.Update()
+	}
 }
 
 func (fe *frontendPretty) testSpanChildrenView(span *dagui.Span) tuist.Component {
@@ -717,6 +720,9 @@ func (fe *frontendPretty) testSpanChildrenView(span *dagui.Span) tuist.Component
 			fe:        fe,
 			rootID:    span.ID,
 			container: &tuist.Container{},
+			scope: spanTreeScope{
+				spanTrees: make(map[dagui.SpanID]*SpanTreeView),
+			},
 		}
 		fe.testSpanChildren[span.ID] = view
 	}
@@ -739,11 +745,13 @@ func (v *TestSpanChildrenView) Render(ctx tuist.Context) {
 	v.scope.rowsView = rowsView
 	v.scope.rows = rowsView.Rows(opts)
 	v.scope.opts = opts
-	v.scope.spanTrees = v.fe.spanTrees
+	if v.scope.spanTrees == nil {
+		v.scope.spanTrees = make(map[dagui.SpanID]*SpanTreeView)
+	}
 
 	children := make([]tuist.Component, 0, len(rowsView.Body))
 	for i, tree := range rowsView.Body {
-		st := v.fe.getOrCreateSpanTree(tree.Span.ID)
+		st := v.fe.getOrCreateSpanTreeInScope(tree.Span.ID, &v.scope)
 		st.parent = nil
 		st.indexInParent = i
 		v.fe.syncTreeNodeInScope(st, treePrefix{}, &v.scope)
