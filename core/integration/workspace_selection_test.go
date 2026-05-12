@@ -250,11 +250,9 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceSelection(ctx context.Contex
 		require.NoError(t, err)
 		require.Equal(t, "remote workspace", strings.TrimSpace(out))
 
-		out, err = ctr.With(workspaceSelectionDaggerExec("-W", remoteRef, "workspace", "info")).Stdout(ctx)
+		out, err = ctr.With(workspaceSelectionDaggerQuery(`{currentWorkspace{address cwd configFile}}`, "-W", remoteRef)).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "Address: "+remoteRef)
-		require.Contains(t, out, "Cwd:     .")
-		require.Contains(t, out, "Config:  .dagger/config.toml")
+		require.JSONEq(t, `{"currentWorkspace":{"address":"`+remoteRef+`","cwd":".","configFile":".dagger/config.toml"}}`, out)
 	})
 
 	t.Run("relative -W is resolved after --workdir changes cwd", func(ctx context.Context, t *testctx.T) {
@@ -336,36 +334,32 @@ func (WorkspaceSelectionSuite) TestWorkspaceSelectionCommandPolicy(ctx context.C
 	})
 }
 
-// TestSelectedWorkspaceMetadataCommands should own commands whose purpose is to
-// inspect the selected workspace rather than to run one of its modules.
-func (WorkspaceSelectionSuite) TestSelectedWorkspaceMetadataCommands(ctx context.Context, t *testctx.T) {
-	t.Run("workspace info reports the selected local workspace", func(ctx context.Context, t *testctx.T) {
+// TestSelectedWorkspaceMetadataQueries covers selected workspace metadata
+// without loading workspace modules.
+func (WorkspaceSelectionSuite) TestSelectedWorkspaceMetadataQueries(ctx context.Context, t *testctx.T) {
+	t.Run("current workspace query reports the selected local workspace", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c).
 			With(workspaceSelectionSimpleWorkspace("/work/caller", "caller", "Caller", "caller workspace")).
 			With(workspaceSelectionSimpleWorkspace("/work/selected", "selected", "Selected", "selected workspace")).
 			WithWorkdir("/work/caller")
 
-		out, err := ctr.With(workspaceSelectionDaggerExec("-W", "../selected", "workspace", "info")).Stdout(ctx)
+		out, err := ctr.With(workspaceSelectionDaggerQuery(`{currentWorkspace{address cwd configFile}}`, "-W", "../selected")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "Address: file:///work/selected")
-		require.Contains(t, out, "Cwd:     selected")
-		require.Contains(t, out, "Config:  selected/.dagger/config.toml")
+		require.JSONEq(t, `{"currentWorkspace":{"address":"file:///work/selected","cwd":"selected","configFile":"selected/.dagger/config.toml"}}`, out)
 	})
 
-	t.Run("workspace info reports the selected remote workspace", func(ctx context.Context, t *testctx.T) {
+	t.Run("current workspace query reports the selected remote workspace", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, workspaceSelectionSimpleWorkspaceDir(c, "remote", "Remote", "remote workspace"))
 
 		out, err := c.Container().From(alpineImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/empty").
-			With(workspaceSelectionDaggerExec("-W", remoteRef, "workspace", "info")).
+			With(workspaceSelectionDaggerQuery(`{currentWorkspace{address cwd configFile}}`, "-W", remoteRef)).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "Address: "+remoteRef)
-		require.Contains(t, out, "Cwd:     .")
-		require.Contains(t, out, "Config:  .dagger/config.toml")
+		require.JSONEq(t, `{"currentWorkspace":{"address":"`+remoteRef+`","cwd":".","configFile":".dagger/config.toml"}}`, out)
 	})
 
 }
