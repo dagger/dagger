@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/muesli/termenv"
 	"github.com/vito/tuist"
@@ -59,6 +60,8 @@ type TestView struct {
 	Logs         map[dagui.SpanID]*Vterm
 	SpanChildren func(*dagui.Span) tuist.Component
 
+	sidebar *testSidebarView
+
 	// MaxHeight caps the rendered height. A zero value means fullscreen mode:
 	// use the terminal height, leaving room for the keymap sibling.
 	MaxHeight int
@@ -83,6 +86,30 @@ var (
 	_ tuist.Component  = (*TestView)(nil)
 	_ tuist.Focusable  = (*TestView)(nil)
 	_ tuist.Dismounter = (*TestView)(nil)
+)
+
+const testSidebarIndent = 2
+
+var testSidebarRowBG termenv.Color = termenv.ANSIBrightBlack
+
+type testSidebarView struct {
+	tuist.Compo
+
+	tv          *TestView
+	view        *dagui.TestView
+	rows        []testSidebarRow
+	selectedIdx int
+
+	rowByLine  map[int]int
+	inputSig   string
+	hovered    bool
+	hoveredIdx int
+}
+
+var (
+	_ tuist.Component    = (*testSidebarView)(nil)
+	_ tuist.MouseEnabled = (*testSidebarView)(nil)
+	_ tuist.Hoverable    = (*testSidebarView)(nil)
 )
 
 func (tv *TestView) Name() string {
@@ -165,7 +192,7 @@ func (tv *TestView) Render(ctx tuist.Context) {
 	}
 
 	selected := rows[selectedIdx]
-	left := tv.renderSidebarLines(out, view, rows, selectedIdx, leftWidth, viewportHeight)
+	left := tv.renderInteractiveSidebar(ctx.Resize(leftWidth, viewportHeight), view, rows, selectedIdx)
 	right := tv.renderDetailLines(ctx, out, selected, rightWidth, viewportHeight)
 	border := out.String(VertBar).Foreground(termenv.ANSIBrightBlack).Faint().String()
 
@@ -179,6 +206,128 @@ func (tv *TestView) Render(ctx tuist.Context) {
 		}
 		ctx.Line(padANSI(l, leftWidth) + " " + border + " " + r)
 	}
+}
+
+func (tv *TestView) renderInteractiveSidebar(ctx tuist.Context, view *dagui.TestView, rows []testSidebarRow, selectedIdx int) []string {
+	if tv.sidebar == nil {
+		tv.sidebar = &testSidebarView{tv: tv, hoveredIdx: -1}
+	}
+	tv.sidebar.setInputs(view, rows, selectedIdx, ctx.Height)
+	return tv.RenderChildResult(ctx, tv.sidebar).Lines
+}
+
+func (s *testSidebarView) setInputs(view *dagui.TestView, rows []testSidebarRow, selectedIdx, height int) {
+	s.view = view
+	s.rows = rows
+	s.selectedIdx = selectedIdx
+	sig := testSidebarInputSignature(view, rows, selectedIdx, height)
+	if sig != s.inputSig {
+		s.inputSig = sig
+		s.Update()
+	}
+}
+
+func testSidebarInputSignature(view *dagui.TestView, rows []testSidebarRow, selectedIdx, height int) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "h=%d selected=%d", height, selectedIdx)
+	if view != nil {
+		fmt.Fprintf(&b, " total=%d/%d/%d/%d", view.Counts.Failing, view.Counts.Running, view.Counts.Passing, view.Counts.Skipped)
+	}
+	for _, row := range rows {
+		fmt.Fprintf(&b, "|%s d=%d e=%t c=%d/%d/%d/%d", row.id(), row.depth, row.expanded, row.counts.Failing, row.counts.Running, row.counts.Passing, row.counts.Skipped)
+		if row.node != nil {
+			fmt.Fprintf(&b, " k=%d cat=%d name=%s n=%d/%d/%d/%d", row.node.Kind, row.node.Category, testNodeDisplayName(row.node), row.node.Counts.Failing, row.node.Counts.Running, row.node.Counts.Passing, row.node.Counts.Skipped)
+		}
+	}
+	return b.String()
+}
+
+func (s *testSidebarView) Render(ctx tuist.Context) {
+	if s.tv == nil {
+		return
+	}
+
+	outBuf := new(strings.Builder)
+	out := NewOutput(outBuf, termenv.WithProfile(s.tv.Profile))
+	hoveredIdx := -1
+	if s.hovered {
+		hoveredIdx = s.hoveredIdx
+	}
+	lines, rowByLine := s.tv.renderSidebarLinesWithHover(out, s.view, s.rows, s.selectedIdx, hoveredIdx, ctx.Width, ctx.Height)
+	s.rowByLine = rowByLine
+	for i := range lines {
+		lines[i] = padANSI(lines[i], ctx.Width)
+	}
+	ctx.Lines(lines...)
+}
+
+func (s *testSidebarView) HandleMouse(_ tuist.Context, ev tuist.MouseEvent) bool {
+	if s.tv == nil || !s.tv.focused || s.tv.ListOnly {
+		return false
+	}
+
+	switch ev.MouseEvent.(type) {
+	case uv.MouseMotionEvent:
+		idx := s.rowIndexAt(ev.Row)
+		if s.hoveredIdx != idx {
+			s.hoveredIdx = idx
+			s.Update()
+		}
+		return true
+
+	case uv.MouseClickEvent:
+		if ev.Mouse().Button != uv.MouseLeft {
+			return true
+		}
+		idx := s.rowIndexAt(ev.Row)
+		if idx < 0 || idx >= len(s.rows) {
+			return true
+		}
+		row := s.rows[idx]
+		s.tv.focusSidebarRow(row)
+		if row.kind == testSidebarPassedGroup {
+			if s.tv.expandedPassedGroups == nil {
+				s.tv.expandedPassedGroups = make(map[string]bool)
+			}
+			s.tv.expandedPassedGroups[row.key] = !row.expanded
+		}
+		s.tv.Update()
+		s.Update()
+		return true
+
+	case uv.MouseWheelEvent:
+		switch ev.Mouse().Button {
+		case uv.MouseWheelUp:
+			s.tv.GoUp()
+		case uv.MouseWheelDown:
+			s.tv.GoDown()
+		}
+		return true
+	}
+
+	return false
+}
+
+func (s *testSidebarView) SetHovered(_ tuist.Context, hovered bool) {
+	if s.hovered == hovered {
+		return
+	}
+	s.hovered = hovered
+	if !hovered {
+		s.hoveredIdx = -1
+	}
+	s.Update()
+}
+
+func (s *testSidebarView) rowIndexAt(line int) int {
+	if s.rowByLine == nil {
+		return -1
+	}
+	idx, ok := s.rowByLine[line]
+	if !ok {
+		return -1
+	}
+	return idx
 }
 
 func (tv *TestView) FocusedNode() *dagui.TestNode {
@@ -271,7 +420,13 @@ func (tv *TestView) focusSidebarRow(row testSidebarRow) {
 }
 
 func (tv *TestView) renderSidebarLines(out *termenv.Output, view *dagui.TestView, rows []testSidebarRow, selectedIdx, width, height int) []string {
+	lines, _ := tv.renderSidebarLinesWithHover(out, view, rows, selectedIdx, -1, width, height)
+	return lines
+}
+
+func (tv *TestView) renderSidebarLinesWithHover(out *termenv.Output, view *dagui.TestView, rows []testSidebarRow, selectedIdx, hoveredIdx, width, height int) ([]string, map[int]int) {
 	var lines []string
+	rowByLine := make(map[int]int)
 	title := "Tests"
 	if tv.ScopeName != "" {
 		title += " · " + tv.ScopeName
@@ -284,7 +439,7 @@ func (tv *TestView) renderSidebarLines(out *termenv.Output, view *dagui.TestView
 
 	listHeight := max(height-len(lines), 0)
 	if listHeight == 0 || len(rows) == 0 {
-		return cropLines(lines, height)
+		return cropLines(lines, height), rowByLine
 	}
 
 	start := 0
@@ -334,7 +489,8 @@ func (tv *TestView) renderSidebarLines(out *termenv.Output, view *dagui.TestView
 		lines = append(lines, out.String(fmt.Sprintf("… %d above", start)).Foreground(termenv.ANSIBrightBlack).Faint().String())
 	}
 	for i := start; i < end && len(lines) < height; i++ {
-		lines = append(lines, tv.renderSidebarRow(out, rows[i], i == selectedIdx, width))
+		rowByLine[len(lines)] = i
+		lines = append(lines, tv.renderSidebarRow(out, rows[i], i == selectedIdx, i == hoveredIdx, width))
 	}
 	if bottomMarker && len(lines) < height {
 		hiddenTests := countSidebarTests(rows[end:])
@@ -344,53 +500,137 @@ func (tv *TestView) renderSidebarLines(out *termenv.Output, view *dagui.TestView
 		}
 		lines = append(lines, out.String(clipPlain(label, width)).Foreground(termenv.ANSIBrightBlack).Faint().String())
 	}
-	return cropLines(lines, height)
+	return cropLines(lines, height), rowByLine
 }
 
-func (tv *TestView) renderSidebarRow(out *termenv.Output, row testSidebarRow, selected bool, width int) string {
+func (tv *TestView) renderSidebarRow(out *termenv.Output, row testSidebarRow, selected, hovered bool, width int) string {
 	if row.kind == testSidebarPassedGroup {
-		return tv.renderPassedGroupSidebarRow(out, row, selected, width)
+		return tv.renderPassedGroupSidebarRow(out, row, selected, hovered, width)
+	}
+	if selected || hovered {
+		return tv.renderHighlightedSidebarRow(out, row, selected, width)
 	}
 	node := row.node
 	color := testCategoryColor(node.Category)
 	selector := " "
-	if selected {
-		selector = out.String(CaretRightFilled).Foreground(termenv.ANSIWhite).Bold().String()
-	}
 	iconStyle := out.String(testCategoryIcon(node.Category)).Foreground(color)
-	nameStyle := out.String(clipPlain(testNodeDisplayName(node), max(width-8-row.depth*2, 1))).Foreground(testNodeNameColor(node))
-	if selected {
-		iconStyle = hl(iconStyle)
-		nameStyle = hl(nameStyle).Bold()
-	}
-	indent := strings.Repeat("  ", row.depth)
+	indent := testSidebarIndentString(row.depth)
 	count := ""
+	countWidth := 0
 	if node.Kind != dagui.TestNodeCase || len(node.Children) > 0 {
 		count = out.String(fmt.Sprintf(" %d", node.Counts.Total())).Foreground(termenv.ANSIBrightBlack).Faint().String()
+		countWidth = lipgloss.Width(fmt.Sprintf(" %d", node.Counts.Total()))
 	}
+	nameWidth := max(width-4-lipgloss.Width(indent)-countWidth, 1)
+	nameStyle := out.String(clipPlain(testNodeDisplayName(node), nameWidth)).Foreground(testNodeNameColor(node))
 	return selector + " " + iconStyle.String() + " " + indent + nameStyle.String() + count
 }
 
-func (tv *TestView) renderPassedGroupSidebarRow(out *termenv.Output, row testSidebarRow, selected bool, width int) string {
-	selector := " "
-	if selected {
-		selector = out.String(CaretRightFilled).Foreground(termenv.ANSIWhite).Bold().String()
+func (tv *TestView) renderPassedGroupSidebarRow(out *termenv.Output, row testSidebarRow, selected, hovered bool, width int) string {
+	if selected || hovered {
+		return tv.renderHighlightedPassedGroupSidebarRow(out, row, selected, width)
 	}
+	selector := " "
 	caret := CaretRightFilled
 	if row.expanded {
 		caret = CaretDownFilled
 	}
 	caretStyle := out.String(caret).Foreground(termenv.ANSIBrightBlack)
 	iconStyle := out.String(IconSuccess).Foreground(termenv.ANSIGreen)
+	indent := testSidebarIndentString(row.depth)
 	label := fmt.Sprintf("%d passed", row.counts.Total())
-	labelStyle := out.String(clipPlain(label, max(width-9-row.depth*2, 1))).Foreground(termenv.ANSIGreen)
-	if selected {
-		caretStyle = hl(caretStyle)
-		iconStyle = hl(iconStyle)
-		labelStyle = hl(labelStyle).Bold()
-	}
-	indent := strings.Repeat("  ", row.depth)
+	labelStyle := out.String(clipPlain(label, max(width-6-lipgloss.Width(indent), 1))).Foreground(termenv.ANSIGreen)
 	return selector + " " + caretStyle.String() + " " + iconStyle.String() + " " + indent + labelStyle.String()
+}
+
+func (tv *TestView) renderHighlightedSidebarRow(out *termenv.Output, row testSidebarRow, selected bool, width int) string {
+	node := row.node
+	if node == nil {
+		return sidebarSelectedSegment(out, strings.Repeat(" ", max(width, 0)), nil, false, false)
+	}
+	selector := " "
+	if selected {
+		selector = CaretRightFilled
+	}
+	icon := testCategoryIcon(node.Category)
+	indent := testSidebarIndentString(row.depth)
+	count := ""
+	if node.Kind != dagui.TestNodeCase || len(node.Children) > 0 {
+		count = fmt.Sprintf(" %d", node.Counts.Total())
+	}
+	nameWidth := max(width-4-lipgloss.Width(indent)-lipgloss.Width(count), 1)
+	name := clipPlain(testNodeDisplayName(node), nameWidth)
+
+	var b strings.Builder
+	b.WriteString(sidebarSelectedSegment(out, selector, termenv.ANSIWhite, selected, false))
+	b.WriteString(sidebarSelectedSegment(out, " ", nil, false, false))
+	b.WriteString(sidebarSelectedSegment(out, icon, highlightedTestCategoryColor(node.Category), false, false))
+	b.WriteString(sidebarSelectedSegment(out, " "+indent, nil, false, false))
+	b.WriteString(sidebarSelectedSegment(out, name, termenv.ANSIWhite, selected, false))
+	if count != "" {
+		b.WriteString(sidebarSelectedSegment(out, count, termenv.ANSIWhite, false, true))
+	}
+	visible := selector + " " + icon + " " + indent + name + count
+	if pad := width - lipgloss.Width(visible); pad > 0 {
+		b.WriteString(sidebarSelectedSegment(out, strings.Repeat(" ", pad), nil, false, false))
+	}
+	return b.String()
+}
+
+func (tv *TestView) renderHighlightedPassedGroupSidebarRow(out *termenv.Output, row testSidebarRow, selected bool, width int) string {
+	selector := " "
+	if selected {
+		selector = CaretRightFilled
+	}
+	caret := CaretRightFilled
+	if row.expanded {
+		caret = CaretDownFilled
+	}
+	icon := IconSuccess
+	indent := testSidebarIndentString(row.depth)
+	label := clipPlain(fmt.Sprintf("%d passed", row.counts.Total()), max(width-6-lipgloss.Width(indent), 1))
+
+	var b strings.Builder
+	b.WriteString(sidebarSelectedSegment(out, selector, termenv.ANSIWhite, selected, false))
+	b.WriteString(sidebarSelectedSegment(out, " ", nil, false, false))
+	b.WriteString(sidebarSelectedSegment(out, caret, termenv.ANSIWhite, false, false))
+	b.WriteString(sidebarSelectedSegment(out, " ", nil, false, false))
+	b.WriteString(sidebarSelectedSegment(out, icon, termenv.ANSIGreen, false, false))
+	b.WriteString(sidebarSelectedSegment(out, " "+indent, nil, false, false))
+	b.WriteString(sidebarSelectedSegment(out, label, termenv.ANSIGreen, selected, false))
+	visible := selector + " " + caret + " " + icon + " " + indent + label
+	if pad := width - lipgloss.Width(visible); pad > 0 {
+		b.WriteString(sidebarSelectedSegment(out, strings.Repeat(" ", pad), nil, false, false))
+	}
+	return b.String()
+}
+
+func highlightedTestCategoryColor(category dagui.TestCategory) termenv.Color {
+	if category == dagui.TestCategorySkipped {
+		return termenv.ANSIWhite
+	}
+	return testCategoryColor(category)
+}
+
+func sidebarSelectedSegment(out *termenv.Output, text string, fg termenv.Color, bold, faint bool) string {
+	st := out.String(text).Background(testSidebarRowBG)
+	if fg != nil {
+		st = st.Foreground(fg)
+	}
+	if bold {
+		st = st.Bold()
+	}
+	if faint {
+		st = st.Faint()
+	}
+	return st.String()
+}
+
+func testSidebarIndentString(depth int) string {
+	if depth <= 0 {
+		return ""
+	}
+	return strings.Repeat(" ", depth*testSidebarIndent)
 }
 
 func countSidebarTests(rows []testSidebarRow) int {
