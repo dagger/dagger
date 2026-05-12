@@ -1606,13 +1606,11 @@ func isSameModuleReference(a *core.ModuleSource, b *core.ModuleSource) bool {
 func (srv *Server) CurrentWorkspaceLock(ctx context.Context) (*workspace.Lock, bool, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
-		fmt.Printf("ACB CurrentWorkspaceLock here0\n")
 		return nil, false, err
 	}
 
 	ws, key, lockPath, ok, err := srv.currentWorkspaceLockBinding(client)
 	if err != nil || !ok {
-		fmt.Printf("ACB CurrentWorkspaceLock here1 ok=%v, err=%v\n", ok, err) // ok=false, err=nil
 		return nil, ok, err
 	}
 
@@ -1622,7 +1620,6 @@ func (srv *Server) CurrentWorkspaceLock(ctx context.Context) (*workspace.Lock, b
 	if state, ok := sess.lockFiles[key]; ok && state.loaded {
 		cloned, err := state.lock.Clone()
 		sess.lockFileMu.RUnlock()
-		fmt.Printf("ACB CurrentWorkspaceLock here2\n")
 		return cloned, true, err
 	}
 	sess.lockFileMu.RUnlock()
@@ -1632,15 +1629,12 @@ func (srv *Server) CurrentWorkspaceLock(ctx context.Context) (*workspace.Lock, b
 
 	state, err := srv.loadWorkspaceLockStateLocked(ctx, client, ws, key, lockPath)
 	if err != nil {
-		fmt.Printf("ACB CurrentWorkspaceLock here3\n")
 		return nil, false, err
 	}
 	cloned, err := state.lock.Clone()
 	if err != nil {
-		fmt.Printf("ACB CurrentWorkspaceLock here4\n")
 		return nil, false, err
 	}
-	fmt.Printf("ACB CurrentWorkspaceLock here5\n")
 	return cloned, true, nil
 }
 
@@ -1684,9 +1678,6 @@ func (srv *Server) SetCurrentWorkspaceLookup(
 
 func (srv *Server) currentWorkspaceLockBinding(client *daggerClient) (*core.Workspace, workspaceLockKey, string, bool, error) {
 	ws := client.workspace
-	//fmt.Printf("ACB ws=%v\n", ws) // ws is nil here!
-	//fmt.Printf("ACB hp=%s\n", ws.HostPath())
-	//fmt.Printf("ACB lf=%s\n", ws.LockFile)
 	if ws == nil || ws.HostPath() == "" || ws.LockFile == "" {
 		return nil, workspaceLockKey{}, "", false, nil
 	}
