@@ -15,9 +15,6 @@ type Config struct {
 	// IntrospectionJSON is an optional pre-computed introspection json string.
 	IntrospectionJSON string
 
-	// TypeDefsPath is the path of the file to write the typedefs module id.
-	TypeDefsPath string
-
 	// A dagger client connected to the engine running the codegen.
 	// This may be nil if the codegen is run outside of a dagger context and should
 	// only be set if introspectionJSON or moduleSourceID are set.
@@ -62,6 +59,11 @@ type ModuleGeneratorConfig struct {
 
 	// If set, use `@dagger.io/dagger` with the given version and use it in the generated client.
 	LibVersion string
+
+	// SelfCalls requests that the module's own declared types be merged
+	// into the generated bindings so module code can call itself.
+	// Requires the SELF_CALLS experimental feature on the module source.
+	SelfCalls bool
 }
 
 type ModuleSourceDependency struct {

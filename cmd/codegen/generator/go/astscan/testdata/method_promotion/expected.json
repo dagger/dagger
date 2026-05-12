@@ -1,0 +1,29 @@
+{
+  "name": "aliases",
+  "objects": [
+    {
+      "name": "Aliases",
+      "functions": [
+        {
+          "name": "fn",
+          "args": [
+            {
+              "name": "name",
+              "type": {
+                "kind": "NON_NULL",
+                "ofType": {
+                  "kind": "SCALAR",
+                  "name": "String"
+                }
+              }
+            }
+          ],
+          "returnType": {
+            "kind": "OBJECT",
+            "name": "Container"
+          }
+        }
+      ]
+    }
+  ]
+}

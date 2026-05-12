@@ -1,0 +1,26 @@
+{
+  "name": "echo",
+  "objects": [
+    {
+      "name": "Echo",
+      "functions": [
+        {
+          "name": "fire",
+          "description": "Fire does a thing and returns nothing but an error.",
+          "returnType": {
+            "kind": "NON_NULL",
+            "ofType": { "kind": "SCALAR", "name": "Void" }
+          }
+        },
+        {
+          "name": "emit",
+          "description": "Emit does a thing with no return at all.",
+          "returnType": {
+            "kind": "NON_NULL",
+            "ofType": { "kind": "SCALAR", "name": "Void" }
+          }
+        }
+      ]
+    }
+  ]
+}

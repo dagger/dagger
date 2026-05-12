@@ -14,7 +14,9 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/generator/go/astscan"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
+	"github.com/dagger/dagger/cmd/codegen/schematool"
 	"github.com/dschmidt/go-layerfs"
 	"github.com/iancoleman/strcase"
 	"github.com/psanford/memfs"
@@ -52,6 +54,49 @@ func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.
 	pkgInfo, partial, err := g.bootstrapMod(mfs, genSt, false)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap package: %w", err)
+	}
+
+	// Phase 1 (AST scan) + Phase 2 (schema merge): pull the module's
+	// declared types from its Go source and fold them into the
+	// introspection schema so both codegen passes see the self types.
+	// Running before any generateCode call means pass-0's dagger.gen.go
+	// already contains the merged types; pass-1's packages.Load then
+	// succeeds against that gen file.
+	//
+	// Gated on SelfCalls because the scan output is only consumed by
+	// Merge — and because non-self-calls modules can legitimately
+	// declare methods whose signatures aren't expressible in the
+	// Dagger schema (e.g. the Python SDK's Go runtime has
+	// `MarshalJSON() []byte` to satisfy json.Marshaler). The
+	// go/types-based resolver follows aliases and unknown-import
+	// stubs the way the Go compiler does, but it can't make a
+	// stdlib-interface method into a Dagger schema function. Running
+	// the scan when its output will be discarded would just surface
+	// such errors for no reason.
+	//
+	// When no user source exists yet (brand-new `dagger init`), Scan
+	// returns an empty ModuleTypes and Merge is a no-op.
+	if moduleConfig.SelfCalls {
+		userSourceDir := filepath.Join(g.Config.OutputDir, outDir)
+		if _, statErr := os.Stat(userSourceDir); statErr == nil {
+			modTypes, err := astscan.Scan(userSourceDir, moduleConfig.ModuleName, schema)
+			if err != nil {
+				return nil, fmt.Errorf("astscan: %w", err)
+			}
+			if modTypes != nil &&
+				(len(modTypes.Objects)+len(modTypes.Interfaces)+len(modTypes.Enums) > 0) {
+				if err := schematool.Merge(schema, modTypes); err != nil {
+					return nil, fmt.Errorf("schematool merge: %w", err)
+				}
+				// Re-link ParentObject pointers on the freshly-merged
+				// Field entries; templates dereference them and
+				// schematool can't set the backpointer itself (it's
+				// json:"-").
+				generator.SetSchemaParents(schema)
+			}
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return nil, fmt.Errorf("stat user source dir: %w", statErr)
+		}
 	}
 
 	genSt.Overlay = layerfs.New(layers...)
