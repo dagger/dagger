@@ -668,6 +668,41 @@ defmodule Dagger.Env do
   end
 
   @doc """
+  Create or update a binding of type GitCommit in the environment
+  """
+  @spec with_git_commit_input(t(), String.t(), Dagger.GitCommit.t(), String.t()) :: Dagger.Env.t()
+  def with_git_commit_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withGitCommitInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired GitCommit output to be assigned in the environment
+  """
+  @spec with_git_commit_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_git_commit_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withGitCommitOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
   Create or update a binding of type GitRef in the environment
   """
   @spec with_git_ref_input(t(), String.t(), Dagger.GitRef.t(), String.t()) :: Dagger.Env.t()

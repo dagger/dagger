@@ -137,7 +137,9 @@
 <abbr title="Dagger\Binding">Binding</abbr>::asGenerator</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>Retrieve the binding value, as type Generator</p></dd><dt><a href="Dagger/Binding.html#method_asGeneratorGroup">
 <abbr title="Dagger\Binding">Binding</abbr>::asGeneratorGroup</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
-                    <dd><p>Retrieve the binding value, as type GeneratorGroup</p></dd><dt><a href="Dagger/Binding.html#method_asGitRef">
+                    <dd><p>Retrieve the binding value, as type GeneratorGroup</p></dd><dt><a href="Dagger/Binding.html#method_asGitCommit">
+<abbr title="Dagger\Binding">Binding</abbr>::asGitCommit</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
+                    <dd><p>Retrieve the binding value, as type GitCommit</p></dd><dt><a href="Dagger/Binding.html#method_asGitRef">
 <abbr title="Dagger\Binding">Binding</abbr>::asGitRef</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>Retrieve the binding value, as type GitRef</p></dd><dt><a href="Dagger/Binding.html#method_asGitRepository">
 <abbr title="Dagger\Binding">Binding</abbr>::asGitRepository</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
@@ -210,7 +212,15 @@
 <abbr title="Dagger\File">File</abbr>::asJSON</a>() &mdash; <em>Method in class <a href="Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></em></dt>
                     <dd><p>Parse the file contents as JSON.</p></dd><dt><a href="Dagger/Function_.html#method_args">
 <abbr title="Dagger\Function_">Function_</abbr>::args</a>() &mdash; <em>Method in class <a href="Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a></em></dt>
-                    <dd><p>Arguments accepted by the function, if any.</p></dd><dt><a href="Dagger/HealthcheckConfig.html#method_args">
+                    <dd><p>Arguments accepted by the function, if any.</p></dd><dt><a href="Dagger/GitCommit.html#method_ancestorReleaseTag">
+<abbr title="Dagger\GitCommit">GitCommit</abbr>::ancestorReleaseTag</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
+                    <dd><p>The latest semver release tag reachable from this commit.</p></dd><dt><a href="Dagger/GitCommit.html#method_authorEmail">
+<abbr title="Dagger\GitCommit">GitCommit</abbr>::authorEmail</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
+                    <dd><p>Git author email.</p></dd><dt><a href="Dagger/GitCommit.html#method_authorName">
+<abbr title="Dagger\GitCommit">GitCommit</abbr>::authorName</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
+                    <dd><p>Git author name.</p></dd><dt><a href="Dagger/GitCommit.html#method_authoredDate">
+<abbr title="Dagger\GitCommit">GitCommit</abbr>::authoredDate</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
+                    <dd><p>Git author date, in RFC3339 format.</p></dd><dt><a href="Dagger/HealthcheckConfig.html#method_args">
 <abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr>::args</a>() &mdash; <em>Method in class <a href="Dagger/HealthcheckConfig.html"><abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr></a></em></dt>
                     <dd><p>Healthcheck command arguments.</p></dd><dt><a href="Dagger/JsonValue.html#method_asArray">
 <abbr title="Dagger\JsonValue">JsonValue</abbr>::asArray</a>() &mdash; <em>Method in class <a href="Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></em></dt>
@@ -343,9 +353,17 @@
 <abbr title="Dagger\Generator">Generator</abbr>::completed</a>() &mdash; <em>Method in class <a href="Dagger/Generator.html"><abbr title="Dagger\Generator">Generator</abbr></a></em></dt>
                     <dd><p>Whether the generator complete</p></dd><dt><a href="Dagger/GeneratorGroup.html#method_changes">
 <abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr>::changes</a>() &mdash; <em>Method in class <a href="Dagger/GeneratorGroup.html"><abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr></a></em></dt>
-                    <dd><p>The combined changes from the last run of the generators</p></dd><dt><a href="Dagger/GitRef.html#method_commit">
+                    <dd><p>The combined changes from the last run of the generators</p></dd><dt><a href="Dagger/GitCommit.html#method_committedDate">
+<abbr title="Dagger\GitCommit">GitCommit</abbr>::committedDate</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
+                    <dd><p>Git committer date, in RFC3339 format.</p></dd><dt><a href="Dagger/GitCommit.html#method_committerEmail">
+<abbr title="Dagger\GitCommit">GitCommit</abbr>::committerEmail</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
+                    <dd><p>Git committer email.</p></dd><dt><a href="Dagger/GitCommit.html#method_committerName">
+<abbr title="Dagger\GitCommit">GitCommit</abbr>::committerName</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
+                    <dd><p>Git committer name.</p></dd><dt><a href="Dagger/GitRef.html#method_commit">
 <abbr title="Dagger\GitRef">GitRef</abbr>::commit</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
-                    <dd><p>The resolved commit id at this ref.</p></dd><dt><a href="Dagger/GitRef.html#method_commonAncestor">
+                    <dd><p>The resolved commit id at this ref.</p></dd><dt><a href="Dagger/GitRef.html#method_commitSHA">
+<abbr title="Dagger\GitRef">GitRef</abbr>::commitSHA</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
+                    <dd><p>The resolved commit SHA at this ref.</p></dd><dt><a href="Dagger/GitRef.html#method_commonAncestor">
 <abbr title="Dagger\GitRef">GitRef</abbr>::commonAncestor</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
                     <dd><p>Find the best common ancestor between this ref and another ref.</p></dd><dt><a href="Dagger/GitRepository.html#method_commit">
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::commit</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
@@ -660,7 +678,9 @@
                     <dd></dd><dt><a href="Dagger/GeneratorGroup.html"><abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd></dd><dt><a href="Dagger/GeneratorGroupId.html"><abbr title="Dagger\GeneratorGroupId">GeneratorGroupId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The <code>GeneratorGroupID</code> scalar type represents an identifier for an object of type GeneratorGroup.</p></dd><dt><a href="Dagger/GeneratorId.html"><abbr title="Dagger\GeneratorId">GeneratorId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>The <code>GeneratorID</code> scalar type represents an identifier for an object of type Generator.</p></dd><dt><a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>The <code>GeneratorID</code> scalar type represents an identifier for an object of type Generator.</p></dd><dt><a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>An immutable git commit.</p></dd><dt><a href="Dagger/GitCommitId.html"><abbr title="Dagger\GitCommitId">GitCommitId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>The <code>GitCommitID</code> scalar type represents an identifier for an object of type GitCommit.</p></dd><dt><a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A git ref (tag, branch, or commit).</p></dd><dt><a href="Dagger/GitRefId.html"><abbr title="Dagger\GitRefId">GitRefId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The <code>GitRefID</code> scalar type represents an identifier for an object of type GitRef.</p></dd><dt><a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A git repository.</p></dd><dt><a href="Dagger/GitRepositoryId.html"><abbr title="Dagger\GitRepositoryId">GitRepositoryId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
@@ -800,7 +820,9 @@
 <abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/GeneratorGroup.html"><abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr></a></em></dt>
                     <dd><p>A unique identifier for this GeneratorGroup.</p></dd><dt><a href="Dagger/GeneratorGroup.html#method_isEmpty">
 <abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr>::isEmpty</a>() &mdash; <em>Method in class <a href="Dagger/GeneratorGroup.html"><abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr></a></em></dt>
-                    <dd><p>Whether the generated changeset from the last run is empty or not</p></dd><dt><a href="Dagger/GitRef.html#method_id">
+                    <dd><p>Whether the generated changeset from the last run is empty or not</p></dd><dt><a href="Dagger/GitCommit.html#method_id">
+<abbr title="Dagger\GitCommit">GitCommit</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this GitCommit.</p></dd><dt><a href="Dagger/GitRef.html#method_id">
 <abbr title="Dagger\GitRef">GitRef</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
                     <dd><p>A unique identifier for this GitRef.</p></dd><dt><a href="Dagger/GitRepository.html#method_id">
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
@@ -969,7 +991,9 @@
 <abbr title="Dagger\Client">Client</abbr>::loadGeneratorFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a Generator from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadGeneratorGroupFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadGeneratorGroupFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Load a GeneratorGroup from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadGitRefFromID">
+                    <dd><p>Load a GeneratorGroup from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadGitCommitFromID">
+<abbr title="Dagger\Client">Client</abbr>::loadGitCommitFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>Load a GitCommit from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadGitRefFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadGitRefFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a GitRef from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadGitRepositoryFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadGitRepositoryFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -1090,7 +1114,13 @@
 <abbr title="Dagger\EnumTypeDef">EnumTypeDef</abbr>::members</a>() &mdash; <em>Method in class <a href="Dagger/EnumTypeDef.html"><abbr title="Dagger\EnumTypeDef">EnumTypeDef</abbr></a></em></dt>
                     <dd><p>The members of the enum.</p></dd><dt><a href="Dagger/Error.html#method_message">
 <abbr title="Dagger\Error">Error</abbr>::message</a>() &mdash; <em>Method in class <a href="Dagger/Error.html"><abbr title="Dagger\Error">Error</abbr></a></em></dt>
-                    <dd><p>A description of the error.</p></dd><dt><a href="Dagger/LLM.html#method_model">
+                    <dd><p>A description of the error.</p></dd><dt><a href="Dagger/GitCommit.html#method_message">
+<abbr title="Dagger\GitCommit">GitCommit</abbr>::message</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
+                    <dd><p>Full commit message.</p></dd><dt><a href="Dagger/GitCommit.html#method_messageBody">
+<abbr title="Dagger\GitCommit">GitCommit</abbr>::messageBody</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
+                    <dd><p>Commit message body, excluding the headline.</p></dd><dt><a href="Dagger/GitCommit.html#method_messageHeadline">
+<abbr title="Dagger\GitCommit">GitCommit</abbr>::messageHeadline</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
+                    <dd><p>First line of the commit message.</p></dd><dt><a href="Dagger/LLM.html#method_model">
 <abbr title="Dagger\LLM">LLM</abbr>::model</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>return the model used by the llm</p></dd><dt><a href="Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A Dagger module.</p></dd><dt><a href="Dagger/ModuleConfigClient.html"><abbr title="Dagger\ModuleConfigClient">ModuleConfigClient</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
@@ -1147,7 +1177,9 @@
 <abbr title="Dagger\Function_">Function_</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a></em></dt>
                     <dd><p>The name of the function.</p></dd><dt><a href="Dagger/Generator.html#method_name">
 <abbr title="Dagger\Generator">Generator</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Generator.html"><abbr title="Dagger\Generator">Generator</abbr></a></em></dt>
-                    <dd><p>Return the fully qualified name of the generator</p></dd><dt><a href="Dagger/InputTypeDef.html#method_name">
+                    <dd><p>Return the fully qualified name of the generator</p></dd><dt><a href="Dagger/GitRef.html#method_name">
+<abbr title="Dagger\GitRef">GitRef</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
+                    <dd><p>The resolved name of this ref.</p></dd><dt><a href="Dagger/InputTypeDef.html#method_name">
 <abbr title="Dagger\InputTypeDef">InputTypeDef</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/InputTypeDef.html"><abbr title="Dagger\InputTypeDef">InputTypeDef</abbr></a></em></dt>
                     <dd><p>The name of the input object.</p></dd><dt><a href="Dagger/InterfaceTypeDef.html#method_name">
 <abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/InterfaceTypeDef.html"><abbr title="Dagger\InterfaceTypeDef">InterfaceTypeDef</abbr></a></em></dt>
@@ -1217,7 +1249,9 @@
 <abbr title="Dagger\FunctionCall">FunctionCall</abbr>::parentName</a>() &mdash; <em>Method in class <a href="Dagger/FunctionCall.html"><abbr title="Dagger\FunctionCall">FunctionCall</abbr></a></em></dt>
                     <dd><p>The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module.</p></dd><dt><a href="Dagger/Generator.html#method_path">
 <abbr title="Dagger\Generator">Generator</abbr>::path</a>() &mdash; <em>Method in class <a href="Dagger/Generator.html"><abbr title="Dagger\Generator">Generator</abbr></a></em></dt>
-                    <dd><p>The path of the generator within its module</p></dd><dt><a href="Dagger/LLM.html#method_provider">
+                    <dd><p>The path of the generator within its module</p></dd><dt><a href="Dagger/GitCommit.html#method_parentShas">
+<abbr title="Dagger\GitCommit">GitCommit</abbr>::parentShas</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
+                    <dd><p>Parent commit SHAs.</p></dd><dt><a href="Dagger/LLM.html#method_provider">
 <abbr title="Dagger\LLM">LLM</abbr>::provider</a>() &mdash; <em>Method in class <a href="Dagger/LLM.html"><abbr title="Dagger\LLM">LLM</abbr></a></em></dt>
                     <dd><p>return the provider used by the llm</p></dd><dt><a href="Dagger/ModuleSource.html#method_pin">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::pin</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -1283,7 +1317,9 @@
 <abbr title="Dagger\Generator">Generator</abbr>::run</a>() &mdash; <em>Method in class <a href="Dagger/Generator.html"><abbr title="Dagger\Generator">Generator</abbr></a></em></dt>
                     <dd><p>Execute the generator</p></dd><dt><a href="Dagger/GeneratorGroup.html#method_run">
 <abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr>::run</a>() &mdash; <em>Method in class <a href="Dagger/GeneratorGroup.html"><abbr title="Dagger\GeneratorGroup">GeneratorGroup</abbr></a></em></dt>
-                    <dd><p>Execute all selected generators</p></dd><dt><a href="Dagger/GitRef.html#method_ref">
+                    <dd><p>Execute all selected generators</p></dd><dt><a href="Dagger/GitCommit.html#method_releaseTag">
+<abbr title="Dagger\GitCommit">GitCommit</abbr>::releaseTag</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
+                    <dd><p>The latest semver release tag that points directly at this commit.</p></dd><dt><a href="Dagger/GitRef.html#method_ref">
 <abbr title="Dagger\GitRef">GitRef</abbr>::ref</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
                     <dd><p>The resolved ref name at this ref.</p></dd><dt><a href="Dagger/GitRepository.html#method_ref">
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::ref</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
@@ -1358,7 +1394,11 @@
 <abbr title="Dagger\Function_">Function_</abbr>::sourceMap</a>() &mdash; <em>Method in class <a href="Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a></em></dt>
                     <dd><p>The location of this function declaration.</p></dd><dt><a href="Dagger/Function_.html#method_sourceModuleName">
 <abbr title="Dagger\Function_">Function_</abbr>::sourceModuleName</a>() &mdash; <em>Method in class <a href="Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a></em></dt>
-                    <dd><p>If this function is provided by a module, the name of the module. Unset otherwise.</p></dd><dt><a href="Dagger/HealthcheckConfig.html#method_shell">
+                    <dd><p>If this function is provided by a module, the name of the module. Unset otherwise.</p></dd><dt><a href="Dagger/GitCommit.html#method_sha">
+<abbr title="Dagger\GitCommit">GitCommit</abbr>::sha</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
+                    <dd><p>The full commit SHA.</p></dd><dt><a href="Dagger/GitCommit.html#method_shortSha">
+<abbr title="Dagger\GitCommit">GitCommit</abbr>::shortSha</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
+                    <dd><p>The abbreviated commit SHA.</p></dd><dt><a href="Dagger/HealthcheckConfig.html#method_shell">
 <abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr>::shell</a>() &mdash; <em>Method in class <a href="Dagger/HealthcheckConfig.html"><abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr></a></em></dt>
                     <dd><p>Healthcheck command is a shell command.</p></dd><dt><a href="Dagger/HealthcheckConfig.html#method_startInterval">
 <abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr>::startInterval</a>() &mdash; <em>Method in class <a href="Dagger/HealthcheckConfig.html"><abbr title="Dagger\HealthcheckConfig">HealthcheckConfig</abbr></a></em></dt>
@@ -1453,7 +1493,11 @@
 <abbr title="Dagger\FieldTypeDef">FieldTypeDef</abbr>::typeDef</a>() &mdash; <em>Method in class <a href="Dagger/FieldTypeDef.html"><abbr title="Dagger\FieldTypeDef">FieldTypeDef</abbr></a></em></dt>
                     <dd><p>The type of the field.</p></dd><dt><a href="Dagger/FunctionArg.html#method_typeDef">
 <abbr title="Dagger\FunctionArg">FunctionArg</abbr>::typeDef</a>() &mdash; <em>Method in class <a href="Dagger/FunctionArg.html"><abbr title="Dagger\FunctionArg">FunctionArg</abbr></a></em></dt>
-                    <dd><p>The type of the argument.</p></dd><dt><a href="Dagger/GitRef.html#method_tree">
+                    <dd><p>The type of the argument.</p></dd><dt><a href="Dagger/GitCommit.html#method_tree">
+<abbr title="Dagger\GitCommit">GitCommit</abbr>::tree</a>() &mdash; <em>Method in class <a href="Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></em></dt>
+                    <dd><p>The filesystem tree at this commit.</p></dd><dt><a href="Dagger/GitRef.html#method_targetCommit">
+<abbr title="Dagger\GitRef">GitRef</abbr>::targetCommit</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
+                    <dd><p>The commit this ref resolves to.</p></dd><dt><a href="Dagger/GitRef.html#method_tree">
 <abbr title="Dagger\GitRef">GitRef</abbr>::tree</a>() &mdash; <em>Method in class <a href="Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></em></dt>
                     <dd><p>The filesystem tree at this ref.</p></dd><dt><a href="Dagger/GitRepository.html#method_tag">
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::tag</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
@@ -1720,7 +1764,11 @@
 <abbr title="Dagger\Env">Env</abbr>::withGeneratorInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Create or update a binding of type Generator in the environment</p></dd><dt><a href="Dagger/Env.html#method_withGeneratorOutput">
 <abbr title="Dagger\Env">Env</abbr>::withGeneratorOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
-                    <dd><p>Declare a desired Generator output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withGitRefInput">
+                    <dd><p>Declare a desired Generator output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withGitCommitInput">
+<abbr title="Dagger\Env">Env</abbr>::withGitCommitInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Create or update a binding of type GitCommit in the environment</p></dd><dt><a href="Dagger/Env.html#method_withGitCommitOutput">
+<abbr title="Dagger\Env">Env</abbr>::withGitCommitOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Declare a desired GitCommit output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withGitRefInput">
 <abbr title="Dagger\Env">Env</abbr>::withGitRefInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Create or update a binding of type GitRef in the environment</p></dd><dt><a href="Dagger/Env.html#method_withGitRefOutput">
 <abbr title="Dagger\Env">Env</abbr>::withGitRefOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>

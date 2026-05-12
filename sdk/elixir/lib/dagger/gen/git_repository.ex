@@ -45,12 +45,12 @@ defmodule Dagger.GitRepository do
   @doc """
   Returns details of a commit.
   """
-  @spec commit(t(), String.t()) :: Dagger.GitRef.t()
+  @spec commit(t(), String.t()) :: Dagger.GitCommit.t()
   def commit(%__MODULE__{} = git_repository, id) do
     query_builder =
       git_repository.query_builder |> QB.select("commit") |> QB.put_arg("id", id)
 
-    %Dagger.GitRef{
+    %Dagger.GitCommit{
       query_builder: query_builder,
       client: git_repository.client
     }

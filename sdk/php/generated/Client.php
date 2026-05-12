@@ -685,6 +685,16 @@ class Client extends Client\AbstractClient implements Client\IdAble
     }
 
     /**
+     * Load a GitCommit from its ID.
+     */
+    public function loadGitCommitFromID(GitCommitId|GitCommit $id): GitCommit
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadGitCommitFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\GitCommit($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a GitRef from its ID.
      */
     public function loadGitRefFromID(GitRefId|GitRef $id): GitRef

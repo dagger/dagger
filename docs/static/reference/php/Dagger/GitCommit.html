@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="robots" content="index, follow, all" />
-    <title>Dagger\GitRef | API</title>
+    <title>Dagger\GitCommit | API</title>
 
             <link rel="stylesheet" type="text/css" href="../css/bootstrap.min.css">
         <link rel="stylesheet" type="text/css" href="../css/bootstrap-theme.min.css">
@@ -19,7 +19,7 @@
 
     </head>
 
-    <body id="class" data-name="class:Dagger_GitRef" data-root-path="../" data-search-index-url="../doctum-search.json">
+    <body id="class" data-name="class:Dagger_GitCommit" data-root-path="../" data-search-index-url="../doctum-search.json">
             <div id="content">
         <div id="left-column">
                 <div id="control-panel">
@@ -75,18 +75,18 @@
                         <div class="namespace-breadcrumbs">
             <ol class="breadcrumb">
                 <li><span class="label label-default">class</span></li>
-                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>GitRef</li>
+                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>GitCommit</li>
             </ol>
         </div>
                 <div id="page-content">
     <div class="page-header">
-        <h1>GitRef    
+        <h1>GitCommit    
             </h1>
     </div>
 
     
     <p>        class
-    <strong>GitRef</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
+    <strong>GitCommit</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
 </p>
 
         
@@ -94,7 +94,7 @@
         
 
             <div class="description">
-            <p><p>A git ref (tag, branch, or commit).</p></p>                    </div>
+            <p><p>An immutable git commit.</p></p>                    </div>
             
         
     
@@ -143,32 +143,72 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_commit">commit</a>()
-        
-                                            <p><p>The resolved commit id at this ref.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_commitSHA">commitSHA</a>()
-        
-                                            <p><p>The resolved commit SHA at this ref.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
                     <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_commonAncestor">commonAncestor</a>(<abbr title="Dagger\GitRefId|Dagger\GitRef">GitRef</abbr> $other)
+                    <a href="#method_ancestorReleaseTag">ancestorReleaseTag</a>(bool|null $includePreRelease = false)
         
-                                            <p><p>Find the best common ancestor between this ref and another ref.</p></p>                </div>
+                                            <p><p>The latest semver release tag reachable from this commit.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_authorEmail">authorEmail</a>()
+        
+                                            <p><p>Git author email.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_authorName">authorName</a>()
+        
+                                            <p><p>Git author name.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_authoredDate">authoredDate</a>()
+        
+                                            <p><p>Git author date, in RFC3339 format.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_committedDate">committedDate</a>()
+        
+                                            <p><p>Git committer date, in RFC3339 format.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_committerEmail">committerEmail</a>()
+        
+                                            <p><p>Git committer email.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_committerName">committerName</a>()
+        
+                                            <p><p>Git committer name.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -178,7 +218,7 @@
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
         
-                                            <p><p>A unique identifier for this GitRef.</p></p>                </div>
+                                            <p><p>A unique identifier for this GitCommit.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -186,9 +226,9 @@
                     string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_name">name</a>()
+                    <a href="#method_message">message</a>()
         
-                                            <p><p>The resolved name of this ref.</p></p>                </div>
+                                            <p><p>Full commit message.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -196,19 +236,59 @@
                     string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_ref">ref</a>()
+                    <a href="#method_messageBody">messageBody</a>()
         
-                                            <p><p>The resolved ref name at this ref.</p></p>                </div>
+                                            <p><p>Commit message body, excluding the headline.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a>
+                    string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_targetCommit">targetCommit</a>()
+                    <a href="#method_messageHeadline">messageHeadline</a>()
         
-                                            <p><p>The commit this ref resolves to.</p></p>                </div>
+                                            <p><p>First line of the commit message.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    array
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_parentShas">parentShas</a>()
+        
+                                            <p><p>Parent commit SHAs.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_releaseTag">releaseTag</a>(bool|null $includePreRelease = false)
+        
+                                            <p><p>The latest semver release tag that points directly at this commit.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_sha">sha</a>()
+        
+                                            <p><p>The full commit SHA.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_shortSha">shortSha</a>()
+        
+                                            <p><p>The abbreviated commit SHA.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -216,9 +296,9 @@
                     <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_tree">tree</a>(bool|null $discardGitDir = false, int|null $depth = 1, bool|null $includeTags = false)
+                    <a href="#method_tree">tree</a>(bool|null $discardGitDir = false, int|null $depth = 1, bool|null $includeTags = false, string|null $sshKnownHosts = null, <abbr title="Dagger\Dagger\SocketId|Dagger\Socket|null">Socket|null</abbr> $sshAuthSocket = null)
         
-                                            <p><p>The filesystem tree at this ref.</p></p>                </div>
+                                            <p><p>The filesystem tree at this commit.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -317,74 +397,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_commit">
+                    <h3 id="method_ancestorReleaseTag">
         <div class="location">at line 19</div>
-        <code>                    string
-    <strong>commit</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>The resolved commit id at this ref.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_commitSHA">
-        <div class="location">at line 28</div>
-        <code>                    string
-    <strong>commitSHA</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>The resolved commit SHA at this ref.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_commonAncestor">
-        <div class="location">at line 37</div>
         <code>                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
-    <strong>commonAncestor</strong>(<abbr title="Dagger\GitRefId|Dagger\GitRef">GitRef</abbr> $other)
+    <strong>ancestorReleaseTag</strong>(bool|null $includePreRelease = false)
         </code>
     </h3>
     <div class="details">    
@@ -392,15 +408,15 @@
             
 
         <div class="method-description">
-                            <p><p>Find the best common ancestor between this ref and another ref.</p></p>                        
+                            <p><p>The latest semver release tag reachable from this commit.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
 
                     <table class="table table-condensed">
                     <tr>
-                <td><abbr title="Dagger\GitRefId|Dagger\GitRef">GitRef</abbr></td>
-                <td>$other</td>
+                <td>bool|null</td>
+                <td>$includePreRelease</td>
                 <td></td>
             </tr>
             </table>
@@ -423,8 +439,200 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_authorEmail">
+        <div class="location">at line 31</div>
+        <code>                    string
+    <strong>authorEmail</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Git author email.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_authorName">
+        <div class="location">at line 40</div>
+        <code>                    string
+    <strong>authorName</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Git author name.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_authoredDate">
+        <div class="location">at line 49</div>
+        <code>                    string
+    <strong>authoredDate</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Git author date, in RFC3339 format.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_committedDate">
+        <div class="location">at line 58</div>
+        <code>                    string
+    <strong>committedDate</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Git committer date, in RFC3339 format.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_committerEmail">
+        <div class="location">at line 67</div>
+        <code>                    string
+    <strong>committerEmail</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Git committer email.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_committerName">
+        <div class="location">at line 76</div>
+        <code>                    string
+    <strong>committerName</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Git committer name.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 47</div>
+        <div class="location">at line 85</div>
         <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
     <strong>id</strong>()
         </code>
@@ -434,7 +642,7 @@
             
 
         <div class="method-description">
-                            <p><p>A unique identifier for this GitRef.</p></p>                        
+                            <p><p>A unique identifier for this GitCommit.</p></p>                        
         </div>
         <div class="tags">
             
@@ -455,10 +663,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_name">
-        <div class="location">at line 56</div>
+                    <h3 id="method_message">
+        <div class="location">at line 94</div>
         <code>                    string
-    <strong>name</strong>()
+    <strong>message</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -466,7 +674,7 @@
             
 
         <div class="method-description">
-                            <p><p>The resolved name of this ref.</p></p>                        
+                            <p><p>Full commit message.</p></p>                        
         </div>
         <div class="tags">
             
@@ -487,10 +695,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_ref">
-        <div class="location">at line 65</div>
+                    <h3 id="method_messageBody">
+        <div class="location">at line 103</div>
         <code>                    string
-    <strong>ref</strong>()
+    <strong>messageBody</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -498,7 +706,7 @@
             
 
         <div class="method-description">
-                            <p><p>The resolved ref name at this ref.</p></p>                        
+                            <p><p>Commit message body, excluding the headline.</p></p>                        
         </div>
         <div class="tags">
             
@@ -519,10 +727,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_targetCommit">
-        <div class="location">at line 74</div>
-        <code>                    <a href="../Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a>
-    <strong>targetCommit</strong>()
+                    <h3 id="method_messageHeadline">
+        <div class="location">at line 112</div>
+        <code>                    string
+    <strong>messageHeadline</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -530,7 +738,7 @@
             
 
         <div class="method-description">
-                            <p><p>The commit this ref resolves to.</p></p>                        
+                            <p><p>First line of the commit message.</p></p>                        
         </div>
         <div class="tags">
             
@@ -538,7 +746,145 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/GitCommit.html"><abbr title="Dagger\GitCommit">GitCommit</abbr></a></td>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_parentShas">
+        <div class="location">at line 121</div>
+        <code>                    array
+    <strong>parentShas</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Parent commit SHAs.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>array</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_releaseTag">
+        <div class="location">at line 130</div>
+        <code>                    <a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a>
+    <strong>releaseTag</strong>(bool|null $includePreRelease = false)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The latest semver release tag that points directly at this commit.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>bool|null</td>
+                <td>$includePreRelease</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/GitRef.html"><abbr title="Dagger\GitRef">GitRef</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_sha">
+        <div class="location">at line 142</div>
+        <code>                    string
+    <strong>sha</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The full commit SHA.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_shortSha">
+        <div class="location">at line 151</div>
+        <code>                    string
+    <strong>shortSha</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The abbreviated commit SHA.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
             <td></td>
         </tr>
     </table>
@@ -552,9 +898,9 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_tree">
-        <div class="location">at line 83</div>
+        <div class="location">at line 160</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
-    <strong>tree</strong>(bool|null $discardGitDir = false, int|null $depth = 1, bool|null $includeTags = false)
+    <strong>tree</strong>(bool|null $discardGitDir = false, int|null $depth = 1, bool|null $includeTags = false, string|null $sshKnownHosts = null, <abbr title="Dagger\Dagger\SocketId|Dagger\Socket|null">Socket|null</abbr> $sshAuthSocket = null)
         </code>
     </h3>
     <div class="details">    
@@ -562,7 +908,7 @@
             
 
         <div class="method-description">
-                            <p><p>The filesystem tree at this ref.</p></p>                        
+                            <p><p>The filesystem tree at this commit.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -581,6 +927,16 @@
                     <tr>
                 <td>bool|null</td>
                 <td>$includeTags</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string|null</td>
+                <td>$sshKnownHosts</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><abbr title="Dagger\Dagger\SocketId|Dagger\Socket|null">Socket|null</abbr></td>
+                <td>$sshAuthSocket</td>
                 <td></td>
             </tr>
             </table>

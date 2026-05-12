@@ -38,11 +38,11 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble
     /**
      * Returns details of a commit.
      */
-    public function commit(string $id): GitRef
+    public function commit(string $id): GitCommit
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('commit');
         $innerQueryBuilder->setArgument('id', $id);
-        return new \Dagger\GitRef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\GitCommit($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
