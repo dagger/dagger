@@ -20,39 +20,6 @@ var workspaceCmd = &cobra.Command{
 	GroupID: workspaceGroup.ID,
 }
 
-var workspaceInfoCmd = &cobra.Command{
-	Use:   "info",
-	Short: "Show workspace information",
-	Args:  cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return withEngine(cmd.Context(), client.Params{
-			// This command only needs workspace metadata, not workspace modules.
-			SkipWorkspaceModules: true,
-		}, func(ctx context.Context, engineClient *client.Client) error {
-			ws := engineClient.Dagger().CurrentWorkspace()
-
-			address, err := ws.Address(ctx)
-			if err != nil {
-				return fmt.Errorf("load workspace address: %w", err)
-			}
-			cwd, err := ws.Cwd(ctx)
-			if err != nil {
-				return fmt.Errorf("load workspace cwd: %w", err)
-			}
-			configFile, err := ws.ConfigFile(ctx)
-			if err != nil {
-				return fmt.Errorf("load workspace config file: %w", err)
-			}
-
-			return writeWorkspaceInfo(cmd.OutOrStdout(), workspaceInfoView{
-				Address:    address,
-				Cwd:        cwd,
-				ConfigFile: configFile,
-			})
-		})
-	},
-}
-
 var workspaceRootCmd = &cobra.Command{
 	Use:   "root",
 	Short: "Print the workspace root",
@@ -156,18 +123,11 @@ Local module source values are stored relative to .dagger/config.toml.`,
 	RunE: runWorkspaceConfig,
 }
 
-type workspaceInfoView struct {
-	Address    string
-	Cwd        string
-	ConfigFile string
-}
-
 func init() {
 	workspaceCmd.AddCommand(workspaceConfigCmd)
 	workspaceCmd.AddCommand(workspaceConfigFileCmd)
 	workspaceCmd.AddCommand(workspaceCwdCmd)
 	workspaceCmd.AddCommand(workspaceInitCmd)
-	workspaceCmd.AddCommand(workspaceInfoCmd)
 	workspaceCmd.AddCommand(workspaceRootCmd)
 
 	addWorkspaceHereFlag(workspaceConfigCmd)
@@ -273,21 +233,6 @@ func initWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client,
 	}
 
 	_, err = fmt.Fprintln(out, msg)
-	return err
-}
-
-func writeWorkspaceInfo(w io.Writer, info workspaceInfoView) error {
-	configFile := info.ConfigFile
-	if configFile == "" {
-		configFile = "none"
-	}
-
-	_, err := fmt.Fprintf(w,
-		"Address: %s\nCwd:     %s\nConfig:  %s\n",
-		info.Address,
-		info.Cwd,
-		configFile,
-	)
 	return err
 }
 
