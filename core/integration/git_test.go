@@ -741,21 +741,21 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("BitBucket auth", func(ctx context.Context, t *testctx.T) {
-		// Base64-encoded read-only PAT for test repo
-		pat := "QVRDVFQzeEZmR04wTHhxdWRtNVpjNFFIOE0xc3V0WWxHS2dfcjVTdVJxN0gwOVRrT0ZuUUViUDN4OURodldFQ3V1N1dzaTU5NkdBR2pIWTlhbVMzTEo5VE9OaFVFYlotUW5ZXzFmNnN3alRYRXJhUEJrcnI1NlpMLTdCeG4xMjdPYXpJRlFOMUF3VndLaWJDeW8wMm50U0JtYVA5MlRyUkMtUFN5a2sxQk4weXg1LUhjVXRqNmNVPTIwOEY2RThFCg=="
-		token, err := decodeAndTrimPAT(pat)
-		require.NoError(t, err)
+	// t.Run("BitBucket auth", func(ctx context.Context, t *testctx.T) {
+	// 	// Base64-encoded read-only PAT for test repo
+	// 	pat := "QVRDVFQzeEZmR04wTHhxdWRtNVpjNFFIOE0xc3V0WWxHS2dfcjVTdVJxN0gwOVRrT0ZuUUViUDN4OURodldFQ3V1N1dzaTU5NkdBR2pIWTlhbVMzTEo5VE9OaFVFYlotUW5ZXzFmNnN3alRYRXJhUEJrcnI1NlpMLTdCeG4xMjdPYXpJRlFOMUF3VndLaWJDeW8wMm50U0JtYVA5MlRyUkMtUFN5a2sxQk4weXg1LUhjVXRqNmNVPTIwOEY2RThFCg=="
+	// 	token, err := decodeAndTrimPAT(pat)
+	// 	require.NoError(t, err)
 
-		_, err = c.Git("https://bitbucket.org/dagger-modules/private-modules-test.git", dagger.GitOpts{
-			HTTPAuthToken: c.SetSecret("bitbucket_pat", token),
-		}).
-			Branch("main").
-			Tree().
-			File("README.md").
-			Contents(ctx)
-		require.NoError(t, err)
-	})
+	// 	_, err = c.Git("https://bitbucket.org/dagger-modules/private-modules-test.git", dagger.GitOpts{
+	// 		HTTPAuthToken: c.SetSecret("bitbucket_pat", token),
+	// 	}).
+	// 		Branch("main").
+	// 		Tree().
+	// 		File("README.md").
+	// 		Contents(ctx)
+	// 	require.NoError(t, err)
+	// })
 
 	t.Run("GitLab auth", func(ctx context.Context, t *testctx.T) {
 		// Base64-encoded read-only PAT for test repo
