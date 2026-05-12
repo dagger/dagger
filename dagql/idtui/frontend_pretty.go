@@ -176,6 +176,11 @@ type frontendPretty struct {
 	fullscreenTests  *TestView
 	testViews        map[dagui.SpanID]*TestView
 	testSpanChildren map[dagui.SpanID]*TestSpanChildrenView
+
+	// fullscreen log pager state
+	logPager       *LogPagerView
+	logPagerReturn func()
+	logSearchInput *tuist.TextInput
 }
 
 // Verify interface compliance at compile time.
@@ -1120,6 +1125,7 @@ func (fe prettySpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.R
 		for _, id := range spanIDs {
 			if fe.logs.flushResolvedLogsForSpan(id) {
 				fe.updateSpanTreesForLogs(id)
+				fe.updateLogPagerForLogs(id)
 			}
 			if sr, ok := fe.spanTrees[id]; ok {
 				sr.Update()
@@ -1181,12 +1187,17 @@ func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) er
 	logsCopy := make([]sdklog.Record, len(logs))
 	copy(logsCopy, logs)
 	fe.dispatch(func() {
+		logSpanIDs := make(map[dagui.SpanID]struct{})
 		for _, log := range logsCopy {
 			spanID := fe.db.LogTargetSpanID(log)
+			logSpanIDs[spanID] = struct{}{}
 			fe.updateSpanTreesForLogs(spanID)
 		}
 		fe.db.LogExporter().Export(context.Background(), logsCopy)
 		fe.logs.Export(context.Background(), logsCopy)
+		for spanID := range logSpanIDs {
+			fe.updateLogPagerForLogs(spanID)
+		}
 		fe.updateTestViews()
 		fe.Update()
 	})
@@ -1299,13 +1310,45 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		}
 		noExitHelp = out.String(noExitHelp).Foreground(color).String()
 	}
+	if fe.logSearchInput != nil {
+		return []key.Binding{
+			key.NewBinding(key.WithKeys("enter"),
+				key.WithHelp("enter", "search")),
+			key.NewBinding(key.WithKeys("esc"),
+				key.WithHelp("esc", "cancel")),
+		}
+	}
+	if fe.logPager != nil {
+		return []key.Binding{
+			key.NewBinding(key.WithKeys("↑↓", "up", "down", "j", "k"),
+				key.WithHelp("↑↓", "scroll")),
+			key.NewBinding(key.WithKeys("pgup", "pgdown", "space"),
+				key.WithHelp("pgup", "page")),
+			key.NewBinding(key.WithKeys("home"),
+				key.WithHelp("home", "top")),
+			key.NewBinding(key.WithKeys("end"),
+				key.WithHelp("end", "bottom")),
+			key.NewBinding(key.WithKeys("/"),
+				key.WithHelp("/", "search")),
+			key.NewBinding(key.WithKeys("n"),
+				key.WithHelp("n", "next"),
+				KeyEnabled(fe.logPager.SearchQuery != "")),
+			key.NewBinding(key.WithKeys("N"),
+				key.WithHelp("N", "prev"),
+				KeyEnabled(fe.logPager.SearchQuery != "")),
+			key.NewBinding(key.WithKeys("esc"),
+				key.WithHelp("esc", "back")),
+			key.NewBinding(key.WithKeys("q", "ctrl+c"),
+				key.WithHelp("q", quitMsg)),
+		}
+	}
 	var focused *dagui.Span
 	if fe.testsMode {
-		enterHelp := "trace"
+		enterHelp := "detail"
 		enterEnabled := false
 		if fe.fullscreenTests != nil {
-			focused = fe.fullscreenTests.FocusedSpan()
-			enterEnabled = focused != nil
+			focused = fe.currentLogSpan()
+			enterEnabled = fe.fullscreenTests.FocusedNodeCanFocusDetail()
 			if expanded, isGroup := fe.fullscreenTests.FocusedPassedGroupExpanded(); isGroup {
 				enterEnabled = true
 				enterHelp = "expand"
@@ -1314,6 +1357,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 				}
 			}
 		}
+		logSpan := fe.currentLogSpan()
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("T"),
 				key.WithHelp("T", "trace")),
@@ -1329,6 +1373,9 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 			key.NewBinding(key.WithKeys("t"),
 				key.WithHelp("t", "start terminal"),
 				KeyEnabled(focused != nil && fe.terminalCallback(focused) != nil)),
+			key.NewBinding(key.WithKeys("L"),
+				key.WithHelp("L", "logs"),
+				KeyEnabled(fe.spanHasLogs(logSpan))),
 			key.NewBinding(key.WithKeys("esc"),
 				key.WithHelp("esc", "trace")),
 			key.NewBinding(key.WithKeys("q", "ctrl+c"),
@@ -1369,6 +1416,10 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		key.NewBinding(key.WithKeys("t"),
 			key.WithHelp("t", "start terminal"),
 			KeyEnabled(focused != nil && fe.terminalCallback(focused) != nil),
+		),
+		key.NewBinding(key.WithKeys("L"),
+			key.WithHelp("L", "logs"),
+			KeyEnabled(fe.spanHasLogs(focused)),
 		),
 		key.NewBinding(key.WithKeys("/"),
 			key.WithHelp("/", "search")),
@@ -1437,6 +1488,12 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 		// Final render: just emit progress rows, no chrome or truncation.
 		progressLines := fe.renderProgressLines(r, ctx, 0)
 		ctx.Lines(progressLines...)
+		return
+	}
+
+	if fe.logPager != nil {
+		fe.logPager.RefreshSearch()
+		fe.renderLogPager(ctx)
 		return
 	}
 
@@ -1594,7 +1651,11 @@ func (fe *frontendPretty) recalculateViewLocked() {
 // or fe itself when no span is selected. Skipped when editline or search has
 // focus.
 func (fe *frontendPretty) applyTuistFocus() {
-	if fe.editlineFocused || fe.searchActive {
+	if fe.editlineFocused || fe.searchActive || fe.logSearchInput != nil {
+		return
+	}
+	if fe.logPager != nil {
+		fe.tui.SetFocus(fe.logPager)
 		return
 	}
 	if fe.testsMode && fe.fullscreenTests != nil {
@@ -2126,6 +2187,40 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 	lastKey := fe.pressedKey
 	fe.recordKeyPress(keyStr)
 
+	if fe.logPager != nil {
+		switch keyStr {
+		case "q", "ctrl+c":
+			if fe.shell != nil {
+				if fe.shellInterrupt != nil {
+					fe.shellInterrupt(errors.New("interrupted"))
+				}
+			} else {
+				fe.quitAction(ErrInterrupted)
+			}
+		case "esc":
+			fe.closeLogPager()
+		case "down", "j":
+			fe.logPager.ScrollBy(1)
+		case "up", "k":
+			fe.logPager.ScrollBy(-1)
+		case "pgdown", "ctrl+f", "space":
+			fe.logPager.ScrollPage(1)
+		case "pgup", "ctrl+b":
+			fe.logPager.ScrollPage(-1)
+		case "home", "g":
+			fe.logPager.ScrollToTop()
+		case "end", "G":
+			fe.logPager.ScrollToBottom()
+		case "/":
+			fe.enterLogPagerSearchMode()
+		case "n":
+			fe.logPager.SearchNext()
+		case "N":
+			fe.logPager.SearchPrev()
+		}
+		return
+	}
+
 	if fe.testsMode {
 		switch keyStr {
 		case "q", "ctrl+c":
@@ -2136,8 +2231,10 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 			} else {
 				fe.quitAction(ErrInterrupted)
 			}
-		case "T", "esc", "left", "h":
+		case "T", "esc":
 			fe.closeTestsMode()
+		case "left", "h":
+			fe.testFocusLeft()
 		case "down", "j":
 			fe.goTestDown()
 		case "up", "k":
@@ -2147,13 +2244,13 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 		case "end", "G", "space":
 			fe.goTestEnd()
 		case "enter", "right", "l":
-			fe.openFocusedTestTrace()
+			fe.focusFocusedTestDetail()
+		case "L":
+			fe.openFocusedLogs()
 		case "t":
-			if fe.fullscreenTests != nil {
-				if span := fe.fullscreenTests.FocusedSpan(); span != nil {
-					fe.FocusedSpan = span.ID
-					fe.terminal()
-				}
+			if span := fe.currentLogSpan(); span != nil {
+				fe.FocusedSpan = span.ID
+				fe.terminal()
 			}
 		}
 		return
@@ -2261,6 +2358,9 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 		return
 	case "t":
 		fe.terminal()
+		return
+	case "L":
+		fe.openFocusedLogs()
 		return
 	case "/":
 		fe.enterSearchMode()
