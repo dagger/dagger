@@ -16,9 +16,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// workspaceBase returns a container with git, the dagger CLI, and an
-// initialized git repo at /work — the starting point for workspace tests.
-func workspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
+// gitRepoBase returns a container with git, the dagger CLI, and an
+// initialized git repo at /work
+func gitRepoBase(t testing.TB, c *dagger.Client) *dagger.Container {
 	t.Helper()
 	return c.Container().From(golangImage).
 		WithExec([]string{"apk", "add", "git"}).
@@ -27,6 +27,12 @@ func workspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		WithExec([]string{"git", "init"})
+}
+
+// workspaceBase returns a gitRepoBase container, with a pre-initialized workspace
+func workspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
+	t.Helper()
+	return gitRepoBase(t, c).With(daggerExec("workspace", "init"))
 }
 
 // legacyWorkspaceBase creates a native git repo rooted at /work but seeds it

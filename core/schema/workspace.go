@@ -376,11 +376,12 @@ func (s *workspaceSchema) update(
 	args workspaceUpdateArgs,
 ) (*core.Changeset, error) {
 	ws := parent.Self()
+	fmt.Printf("ACB ws host is %s\n", ws.HostPath())
 	if ws.HostPath() == "" {
 		return nil, fmt.Errorf("workspace update is local-only")
 	}
 	if ws.ConfigFile == "" {
-		return core.NewEmptyChangeset(ctx)
+		return nil, fmt.Errorf("no workspace detected")
 	}
 
 	workspaceCtx, err := s.withWorkspaceClientContext(ctx, ws)
