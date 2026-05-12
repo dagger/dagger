@@ -60,6 +60,7 @@ func Detect(
 		return nil, fmt.Errorf("workspace detection: %w", err)
 	}
 	if !hasGit {
+		fmt.Printf("ACB no .git found\n")
 		return nil, nil
 	}
 
