@@ -61,9 +61,10 @@ func TestWorkspaceCommandGrouping(t *testing.T) {
 	require.Equal(t, workspaceGroup.ID, lockCmd.GroupID)
 }
 
-func TestWorkspaceListCommandRemoved(t *testing.T) {
+func TestRemovedWorkspaceCommands(t *testing.T) {
 	for _, cmd := range workspaceCmd.Commands() {
 		require.NotEqual(t, "list", cmd.Name())
+		require.NotEqual(t, "info", cmd.Name())
 	}
 }
 
@@ -290,37 +291,4 @@ func TestApplyWorkspaceClientParamsResolvesLocalWorkspaceAfterWorkdir(t *testing
 			require.Equal(t, workspaceDir, *params.Workspace)
 		})
 	}
-}
-
-func TestWriteWorkspaceInfo(t *testing.T) {
-	t.Run("prints config path when present", func(t *testing.T) {
-		var out bytes.Buffer
-		err := writeWorkspaceInfo(&out, workspaceInfoView{
-			Address:    "github.com/acme/ws/toolchains/changelog@main",
-			Cwd:        "toolchains/changelog",
-			ConfigFile: ".dagger/config.toml",
-		})
-		require.NoError(t, err)
-		require.Equal(t,
-			"Address: github.com/acme/ws/toolchains/changelog@main\n"+
-				"Cwd:     toolchains/changelog\n"+
-				"Config:  .dagger/config.toml\n",
-			out.String(),
-		)
-	})
-
-	t.Run("prints none when config path is empty", func(t *testing.T) {
-		var out bytes.Buffer
-		err := writeWorkspaceInfo(&out, workspaceInfoView{
-			Address: "github.com/acme/ws",
-			Cwd:     ".",
-		})
-		require.NoError(t, err)
-		require.Equal(t,
-			"Address: github.com/acme/ws\n"+
-				"Cwd:     .\n"+
-				"Config:  none\n",
-			out.String(),
-		)
-	})
 }
