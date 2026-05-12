@@ -14,9 +14,17 @@ import (
 
 type testSidebarRowKind uint8
 
+type testFocusArea uint8
+
 const (
 	testSidebarNode testSidebarRowKind = iota
 	testSidebarPassedGroup
+)
+
+const (
+	testFocusSidebar testFocusArea = iota
+	testFocusChildren
+	testFocusLogs
 )
 
 type testSidebarRow struct {
@@ -73,10 +81,20 @@ type TestView struct {
 
 	OnFocusSpan func(*dagui.Span)
 
-	// focused is true only while Tuist has keyboard focus on this view. The
-	// selected-row/detail UI is rendered only in that state; embedded test views
-	// remain passive and list-only.
+	// ForceInteractive keeps fullscreen tests interactive while Tuist focus is on
+	// a descendant in the detail pane. Embedded test views remain passive through
+	// ListOnly.
+	ForceInteractive bool
+
+	// focused is true only while Tuist has keyboard focus directly on this view.
+	// Fullscreen tests also render interactively via ForceInteractive while a
+	// child detail component has focus.
 	focused bool
+
+	focusArea       testFocusArea
+	focusedChildren *TestSpanChildrenView
+	focusedLogSpan  dagui.SpanID
+	logHandle       *LogFocusHandle
 
 	focusedRow           string
 	expandedPassedGroups map[string]bool
@@ -139,7 +157,7 @@ func (tv *TestView) OnDismount() {
 
 func (tv *TestView) Render(ctx tuist.Context) {
 	view := tv.currentView()
-	interactive := tv.focused && !tv.ListOnly
+	interactive := !tv.ListOnly && (tv.focused || tv.ForceInteractive)
 	rows := tv.flattenTestRows(view)
 	selectedIdx := -1
 	if interactive {
@@ -261,8 +279,8 @@ func (s *testSidebarView) Render(ctx tuist.Context) {
 	ctx.Lines(lines...)
 }
 
-func (s *testSidebarView) HandleMouse(_ tuist.Context, ev tuist.MouseEvent) bool {
-	if s.tv == nil || !s.tv.focused || s.tv.ListOnly {
+func (s *testSidebarView) HandleMouse(ctx tuist.Context, ev tuist.MouseEvent) bool {
+	if s.tv == nil || (!s.tv.focused && !s.tv.ForceInteractive) || s.tv.ListOnly {
 		return false
 	}
 
@@ -284,7 +302,11 @@ func (s *testSidebarView) HandleMouse(_ tuist.Context, ev tuist.MouseEvent) bool
 			return true
 		}
 		row := s.rows[idx]
+		s.tv.focusArea = testFocusSidebar
+		s.tv.focusedChildren = nil
+		s.tv.focusedLogSpan = dagui.SpanID{}
 		s.tv.focusSidebarRow(row)
+		ctx.SetFocus(s.tv)
 		if row.kind == testSidebarPassedGroup {
 			if s.tv.expandedPassedGroups == nil {
 				s.tv.expandedPassedGroups = make(map[string]bool)
@@ -417,6 +439,152 @@ func (tv *TestView) focusSidebarRow(row testSidebarRow) {
 	if row.kind == testSidebarNode && tv.OnFocusSpan != nil {
 		tv.OnFocusSpan(testTUISpan(row.node))
 	}
+}
+
+func (tv *TestView) focusSidebar(fe *frontendPretty) {
+	tv.focusArea = testFocusSidebar
+	tv.focusedChildren = nil
+	tv.focusedLogSpan = dagui.SpanID{}
+	if span := tv.FocusedSpan(); span != nil && tv.OnFocusSpan != nil {
+		tv.OnFocusSpan(span)
+	}
+	if fe != nil && fe.tui != nil {
+		fe.tui.SetFocus(tv)
+	}
+	tv.Update()
+}
+
+func (tv *TestView) FocusedNodeCanFocusDetail() bool {
+	if tv.focusArea != testFocusSidebar {
+		return tv.focusArea == testFocusChildren
+	}
+	rows, idx := tv.ensureFocusedTest(tv.currentView())
+	if idx < 0 || idx >= len(rows) || rows[idx].kind != testSidebarNode {
+		return false
+	}
+	node := rows[idx].node
+	if node == nil || node.Kind == dagui.TestNodeVirtualSuite || node.Span == nil {
+		return false
+	}
+	return len(node.Span.ChildSpans.Order) > 0 || tv.spanHasLogs(node.Span)
+}
+
+func (tv *TestView) CurrentActionSpan() *dagui.Span {
+	switch tv.focusArea {
+	case testFocusChildren:
+		if tv.focusedChildren != nil {
+			if span := tv.focusedChildren.FocusedSpan(); span != nil {
+				return span
+			}
+		}
+	case testFocusLogs:
+		if tv.focusedLogSpan.IsValid() && tv.Logs != nil {
+			if logs := tv.Logs[tv.focusedLogSpan]; logs != nil && logs.UsedHeight() > 0 {
+				if view := tv.currentView(); view != nil {
+					if node := view.BySpan[tv.focusedLogSpan]; node != nil && node.Span != nil {
+						return node.Span
+					}
+				}
+			}
+		}
+	}
+	node := tv.FocusedNode()
+	if node == nil || node.Kind == dagui.TestNodeVirtualSuite {
+		return nil
+	}
+	return node.Span
+}
+
+func (tv *TestView) makeReturnFocus(fe *frontendPretty) func() {
+	area := tv.focusArea
+	rowID := tv.focusedRow
+	children := tv.focusedChildren
+	var childSpan dagui.SpanID
+	if children != nil {
+		childSpan = children.focusedSpan
+	}
+	logSpan := tv.focusedLogSpan
+	return func() {
+		tv.focusedRow = rowID
+		switch area {
+		case testFocusChildren:
+			if children != nil && childSpan.IsValid() && children.FocusSpan(fe, childSpan) {
+				tv.focusArea = testFocusChildren
+				tv.focusedChildren = children
+				tv.Update()
+				return
+			}
+		case testFocusLogs:
+			if span := tv.spanByID(logSpan); span != nil && tv.focusSelectedLogHandle(fe, span) {
+				return
+			}
+		}
+		tv.focusSidebar(fe)
+	}
+}
+
+func (tv *TestView) spanByID(id dagui.SpanID) *dagui.Span {
+	if !id.IsValid() {
+		return nil
+	}
+	view := tv.currentView()
+	if view == nil {
+		return nil
+	}
+	if node := view.BySpan[id]; node != nil {
+		return node.Span
+	}
+	return nil
+}
+
+func (tv *TestView) spanHasLogs(span *dagui.Span) bool {
+	if span == nil || tv.Logs == nil {
+		return false
+	}
+	logs := tv.Logs[span.ID]
+	return logs != nil && logs.UsedHeight() > 0
+}
+
+func (tv *TestView) logHandleFor(span *dagui.Span, logs *Vterm, title string) *LogFocusHandle {
+	if span == nil || logs == nil || logs.UsedHeight() == 0 {
+		return nil
+	}
+	if tv.logHandle == nil {
+		tv.logHandle = &LogFocusHandle{Profile: tv.Profile}
+	}
+	tv.logHandle.SetInputs(span, logs, title)
+	return tv.logHandle
+}
+
+func (tv *TestView) focusSelectedLogHandle(fe *frontendPretty, span *dagui.Span) bool {
+	if !tv.spanHasLogs(span) {
+		return false
+	}
+	logs := tv.Logs[span.ID]
+	handle := tv.logHandleFor(span, logs, span.Name)
+	if handle == nil {
+		return false
+	}
+	tv.focusArea = testFocusLogs
+	tv.focusedChildren = nil
+	tv.focusedLogSpan = span.ID
+	if tv.OnFocusSpan != nil {
+		tv.OnFocusSpan(span)
+	}
+	if fe != nil && fe.tui != nil {
+		fe.tui.SetFocus(handle)
+	}
+	tv.Update()
+	return true
+}
+
+func (tv *TestView) childViewForSpan(span *dagui.Span) *TestSpanChildrenView {
+	if span == nil || tv.SpanChildren == nil {
+		return nil
+	}
+	child := tv.SpanChildren(span)
+	view, _ := child.(*TestSpanChildrenView)
+	return view
 }
 
 func (tv *TestView) renderSidebarLines(out *termenv.Output, view *dagui.TestView, rows []testSidebarRow, selectedIdx, width, height int) []string {
@@ -698,6 +866,10 @@ func (tv *TestView) renderDetailLines(ctx tuist.Context, out *termenv.Output, ro
 		lines = append(lines, out.String("No logs for selected test span.").Foreground(termenv.ANSIBrightBlack).Faint().String())
 		return cropLines(lines, height)
 	}
+	if handle := tv.logHandleFor(span, logs, testNodeDisplayName(node)); handle != nil {
+		result := tv.RenderChildResult(ctx.Resize(width, 1), handle)
+		lines = append(lines, result.Lines...)
+	}
 	logs.SetWidth(width)
 	logs.SetHeight(max(height-len(lines), 1))
 	view := strings.TrimSuffix(logs.View(), "\n")
@@ -792,6 +964,8 @@ func (fe *frontendPretty) focusedCheckWithTests() *dagui.Span {
 
 func (fe *frontendPretty) newFullscreenTestView(root dagui.SpanID, scopeName string) *TestView {
 	tv := fe.newTestView(root, scopeName)
+	tv.ForceInteractive = true
+	tv.focusArea = testFocusSidebar
 	tv.OnFocusSpan = func(span *dagui.Span) {
 		if span != nil {
 			fe.FocusedSpan = span.ID
@@ -865,56 +1039,104 @@ func (fe *frontendPretty) closeTestsMode() {
 }
 
 func (fe *frontendPretty) goTestStart() {
-	if fe.fullscreenTests != nil {
-		fe.fullscreenTests.GoStart()
-		fe.Update()
+	if fe.fullscreenTests == nil {
+		return
 	}
+	if fe.fullscreenTests.focusArea == testFocusChildren && fe.fullscreenTests.focusedChildren != nil {
+		fe.fullscreenTests.focusedChildren.GoStart(fe)
+	} else if fe.fullscreenTests.focusArea == testFocusSidebar {
+		fe.fullscreenTests.GoStart()
+	}
+	fe.Update()
 }
 
 func (fe *frontendPretty) goTestEnd() {
-	if fe.fullscreenTests != nil {
-		fe.fullscreenTests.GoEnd()
-		fe.Update()
+	if fe.fullscreenTests == nil {
+		return
 	}
+	if fe.fullscreenTests.focusArea == testFocusChildren && fe.fullscreenTests.focusedChildren != nil {
+		fe.fullscreenTests.focusedChildren.GoEnd(fe)
+	} else if fe.fullscreenTests.focusArea == testFocusSidebar {
+		fe.fullscreenTests.GoEnd()
+	}
+	fe.Update()
 }
 
 func (fe *frontendPretty) goTestUp() {
-	if fe.fullscreenTests != nil {
-		fe.fullscreenTests.GoUp()
-		fe.Update()
+	if fe.fullscreenTests == nil {
+		return
 	}
+	if fe.fullscreenTests.focusArea == testFocusChildren && fe.fullscreenTests.focusedChildren != nil {
+		fe.fullscreenTests.focusedChildren.GoUp(fe)
+	} else if fe.fullscreenTests.focusArea == testFocusSidebar {
+		fe.fullscreenTests.GoUp()
+	}
+	fe.Update()
 }
 
 func (fe *frontendPretty) goTestDown() {
-	if fe.fullscreenTests != nil {
+	if fe.fullscreenTests == nil {
+		return
+	}
+	if fe.fullscreenTests.focusArea == testFocusChildren && fe.fullscreenTests.focusedChildren != nil {
+		fe.fullscreenTests.focusedChildren.GoDown(fe)
+	} else if fe.fullscreenTests.focusArea == testFocusSidebar {
 		fe.fullscreenTests.GoDown()
-		fe.Update()
+	}
+	fe.Update()
+}
+
+func (fe *frontendPretty) testFocusLeft() {
+	if fe.fullscreenTests == nil {
+		return
+	}
+	switch fe.fullscreenTests.focusArea {
+	case testFocusChildren:
+		if fe.fullscreenTests.focusedChildren != nil && fe.fullscreenTests.focusedChildren.CloseOrGoOut(fe) {
+			fe.Update()
+			return
+		}
+		fe.fullscreenTests.focusSidebar(fe)
+	case testFocusLogs:
+		fe.fullscreenTests.focusSidebar(fe)
+	default:
+		fe.closeTestsMode()
 	}
 }
 
-func (fe *frontendPretty) openFocusedTestTrace() {
+func (fe *frontendPretty) focusFocusedTestDetail() {
 	if fe.fullscreenTests == nil {
+		return
+	}
+	switch fe.fullscreenTests.focusArea {
+	case testFocusChildren:
+		if fe.fullscreenTests.focusedChildren != nil {
+			fe.fullscreenTests.focusedChildren.OpenOrGoIn(fe)
+			fe.Update()
+		}
+		return
+	case testFocusLogs:
 		return
 	}
 	if fe.fullscreenTests.ToggleFocusedGroup() {
 		fe.Update()
 		return
 	}
-	span := fe.fullscreenTests.FocusedSpan()
-	if span == nil {
+	node := fe.fullscreenTests.FocusedNode()
+	if node == nil || node.Kind == dagui.TestNodeVirtualSuite || node.Span == nil {
 		return
 	}
-	fe.testsMode = false
-	fe.fullscreenTests = nil
-	fe.testsReturnSpan = dagui.SpanID{}
-	fe.ZoomedSpan = span.ID
-	fe.FocusedSpan = span.ID
-	fe.renderVersion++
-	fe.recalculateViewLocked()
-	if fe.keymapBar != nil {
-		fe.keymapBar.Update()
+	span := node.Span
+	if childView := fe.fullscreenTests.childViewForSpan(span); childView != nil && childView.FocusFirst(fe) {
+		fe.fullscreenTests.focusArea = testFocusChildren
+		fe.fullscreenTests.focusedChildren = childView
+		fe.fullscreenTests.focusedLogSpan = dagui.SpanID{}
+		fe.fullscreenTests.Update()
+		return
 	}
-	fe.Update()
+	if fe.fullscreenTests.focusSelectedLogHandle(fe, span) {
+		fe.Update()
+	}
 }
 
 func (fe *frontendPretty) renderTestsView(ctx tuist.Context) {
@@ -969,8 +1191,9 @@ type TestSpanChildrenView struct {
 	fe     *frontendPretty
 	rootID dagui.SpanID
 
-	scope     spanTreeScope
-	container *tuist.Container
+	scope       spanTreeScope
+	container   *tuist.Container
+	focusedSpan dagui.SpanID
 }
 
 var _ tuist.Component = (*TestSpanChildrenView)(nil)
@@ -1008,16 +1231,25 @@ func (fe *frontendPretty) testSpanChildrenView(span *dagui.Span) tuist.Component
 }
 
 func (v *TestSpanChildrenView) Render(ctx tuist.Context) {
+	if !v.sync() {
+		return
+	}
+	v.RenderChild(ctx, v.container)
+}
+
+func (v *TestSpanChildrenView) sync() bool {
 	root := v.fe.db.Spans.Map[v.rootID]
 	if root == nil {
-		return
+		v.clearChildren()
+		return false
 	}
 
 	opts := v.fe.FrontendOpts
 	opts.ZoomedSpan = root.ID
 	rowsView := v.fe.db.RowsView(opts)
 	if len(rowsView.Body) == 0 {
-		return
+		v.clearChildren()
+		return false
 	}
 
 	v.scope.rowsView = rowsView
@@ -1040,7 +1272,148 @@ func (v *TestSpanChildrenView) Render(ctx tuist.Context) {
 		v.container.Children = children
 		v.container.Update()
 	}
-	v.RenderChild(ctx, v.container)
+	if v.focusedSpan.IsValid() && v.scope.rows.BySpan[v.focusedSpan] == nil {
+		v.focusedSpan = dagui.SpanID{}
+	}
+	return len(children) > 0
+}
+
+func (v *TestSpanChildrenView) clearChildren() {
+	v.scope.rowsView = nil
+	v.scope.rows = nil
+	v.focusedSpan = dagui.SpanID{}
+	if v.container != nil && len(v.container.Children) > 0 {
+		v.container.Children = nil
+		v.container.Update()
+	}
+}
+
+func (v *TestSpanChildrenView) FocusedSpan() *dagui.Span {
+	if v == nil || !v.focusedSpan.IsValid() {
+		return nil
+	}
+	return v.fe.db.Spans.Map[v.focusedSpan]
+}
+
+func (v *TestSpanChildrenView) FocusFirst(fe *frontendPretty) bool {
+	if v == nil || !v.sync() || v.scope.rows == nil || len(v.scope.rows.Order) == 0 {
+		return false
+	}
+	return v.FocusSpan(fe, v.scope.rows.Order[0].Span.ID)
+}
+
+func (v *TestSpanChildrenView) FocusSpan(fe *frontendPretty, id dagui.SpanID) bool {
+	if v == nil || !id.IsValid() || !v.sync() || v.scope.rows == nil {
+		return false
+	}
+	row := v.scope.rows.BySpan[id]
+	if row == nil {
+		return false
+	}
+	st := v.scope.spanTrees[id]
+	if st == nil {
+		return false
+	}
+	if fe == nil {
+		fe = v.fe
+	}
+	v.focusedSpan = id
+	fe.FocusedSpan = id
+	if fe.tui != nil {
+		fe.tui.SetFocus(st)
+	}
+	st.Update()
+	v.Update()
+	return true
+}
+
+func (v *TestSpanChildrenView) GoStart(fe *frontendPretty) bool {
+	if v == nil || !v.sync() || v.scope.rows == nil || len(v.scope.rows.Order) == 0 {
+		return false
+	}
+	return v.FocusSpan(fe, v.scope.rows.Order[0].Span.ID)
+}
+
+func (v *TestSpanChildrenView) GoEnd(fe *frontendPretty) bool {
+	if v == nil || !v.sync() || v.scope.rows == nil || len(v.scope.rows.Order) == 0 {
+		return false
+	}
+	return v.FocusSpan(fe, v.scope.rows.Order[len(v.scope.rows.Order)-1].Span.ID)
+}
+
+func (v *TestSpanChildrenView) GoUp(fe *frontendPretty) bool {
+	if v == nil || !v.sync() || v.scope.rows == nil {
+		return false
+	}
+	idx := v.focusedIndex()
+	if idx <= 0 {
+		return false
+	}
+	return v.FocusSpan(fe, v.scope.rows.Order[idx-1].Span.ID)
+}
+
+func (v *TestSpanChildrenView) GoDown(fe *frontendPretty) bool {
+	if v == nil || !v.sync() || v.scope.rows == nil {
+		return false
+	}
+	idx := v.focusedIndex()
+	if idx < 0 || idx+1 >= len(v.scope.rows.Order) {
+		return false
+	}
+	return v.FocusSpan(fe, v.scope.rows.Order[idx+1].Span.ID)
+}
+
+func (v *TestSpanChildrenView) focusedIndex() int {
+	if v == nil || v.scope.rows == nil || !v.focusedSpan.IsValid() {
+		return -1
+	}
+	if row := v.scope.rows.BySpan[v.focusedSpan]; row != nil {
+		return row.Index
+	}
+	return -1
+}
+
+func (v *TestSpanChildrenView) CloseOrGoOut(fe *frontendPretty) bool {
+	if v == nil || !v.sync() || v.scope.rows == nil || !v.focusedSpan.IsValid() {
+		return false
+	}
+	row := v.scope.rows.BySpan[v.focusedSpan]
+	if row == nil {
+		return false
+	}
+	tree := v.scope.rowsView.BySpan[v.focusedSpan]
+	if tree != nil && tree.IsExpanded(v.scope.opts) {
+		fe.setExpanded(v.focusedSpan, false)
+		v.sync()
+		v.FocusSpan(fe, row.Span.ID)
+		return true
+	}
+	if row.Parent != nil {
+		return v.FocusSpan(fe, row.Parent.Span.ID)
+	}
+	return false
+}
+
+func (v *TestSpanChildrenView) OpenOrGoIn(fe *frontendPretty) bool {
+	if v == nil || !v.sync() || v.scope.rows == nil || !v.focusedSpan.IsValid() {
+		return false
+	}
+	row := v.scope.rows.BySpan[v.focusedSpan]
+	if row == nil {
+		return false
+	}
+	tree := v.scope.rowsView.BySpan[v.focusedSpan]
+	if tree != nil && tree.IsExpanded(v.scope.opts) {
+		idx := row.Index + 1
+		if idx < len(v.scope.rows.Order) && v.scope.rows.Order[idx].Depth > row.Depth {
+			return v.FocusSpan(fe, v.scope.rows.Order[idx].Span.ID)
+		}
+		return true
+	}
+	fe.setExpanded(v.focusedSpan, true)
+	v.sync()
+	v.FocusSpan(fe, row.Span.ID)
+	return true
 }
 
 func sameComponents(a, b []tuist.Component) bool {
