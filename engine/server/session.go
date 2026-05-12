@@ -678,7 +678,7 @@ func (srv *Server) initializeDaggerClient(
 	}
 
 	// configure OTel providers that export to SQLite
-	client.spanExporter = srv.telemetryPubSub.Spans(client, cloudSpans)
+	client.spanExporter = srv.telemetryPubSub.Spans(client)
 	tracerOpts := []sdktrace.TracerProviderOption{
 		// save to our own client's DB
 		sdktrace.WithSpanProcessor(telemetry.NewLiveSpanProcessor(
@@ -686,16 +686,28 @@ func (srv *Server) initializeDaggerClient(
 		)),
 	}
 
-	logs := srv.telemetryPubSub.Logs(client, cloudLogs)
+	if cloudSpans != nil {
+		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(telemetry.NewLiveSpanProcessor(
+			cloudSpans,
+		)))
+	}
+
+	logs := srv.telemetryPubSub.Logs(client)
 	client.logExporter = logs
 	loggerOpts := []sdklog.LoggerProviderOption{
 		sdklog.WithResource(telemetry.Resource),
 		sdklog.WithProcessor(logs),
 	}
 
+	if cloudLogs != nil {
+		loggerOpts = append(loggerOpts, sdklog.WithProcessor(
+			sdklog.NewBatchProcessor(cloudLogs, sdklog.WithExportInterval(telemetry.NearlyImmediate)),
+		))
+	}
+
 	const metricReaderInterval = 5 * time.Second
 
-	client.metricExporter = srv.telemetryPubSub.Metrics(client, cloudMetrics)
+	client.metricExporter = srv.telemetryPubSub.Metrics(client)
 	meterOpts := []sdkmetric.Option{
 		sdkmetric.WithResource(telemetry.Resource),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(
@@ -704,22 +716,31 @@ func (srv *Server) initializeDaggerClient(
 		)),
 	}
 
+	if cloudMetrics != nil {
+		meterOpts = append(meterOpts, sdkmetric.WithReader(
+			sdkmetric.NewPeriodicReader(
+				cloudMetrics,
+				sdkmetric.WithInterval(metricReaderInterval),
+			)),
+		)
+	}
+
 	// export to parent client DBs too
 	for _, parent := range client.parents {
 		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(
 			telemetry.NewLiveSpanProcessor(
-				srv.telemetryPubSub.Spans(parent, cloudSpans),
+				srv.telemetryPubSub.Spans(parent),
 			),
 		))
 		loggerOpts = append(loggerOpts, sdklog.WithProcessor(
-			clientLogs{client: parent, exp: cloudLogs},
+			clientLogs{client: parent},
 		))
 		meterOpts = append(meterOpts, sdkmetric.WithReader(
 			sdkmetric.NewPeriodicReader(
-				srv.telemetryPubSub.Metrics(parent, cloudMetrics),
+				srv.telemetryPubSub.Metrics(parent),
 				sdkmetric.WithInterval(metricReaderInterval),
-			),
-		))
+			)),
+		)
 	}
 	client.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
 	client.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)

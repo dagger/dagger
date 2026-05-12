@@ -45,7 +45,7 @@ type TestSplit {
   Test Telemetry
   """
   pub testTelemetry: Void @check {
-    testSpecific(["TestTelemetry/TestGolden/hello-world"], pkg: "./dagql/idtui")
+    testSpecific(["TestTelemetry"], pkg: "./dagql/idtui")
   }
 
   """

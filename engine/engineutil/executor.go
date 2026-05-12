@@ -71,17 +71,9 @@ type ExecutionMetadata struct {
 	// If true, skip injecting dagger-init into the container.
 	NoInit bool
 
-	// list of remote modules allowed to access LLM APIs
-	// any value of "all" bypasses restrictions, a nil slice imposes them
-	AllowedLLMModules []string
-
-	// CredentialsPath is the path to the dagger config file on the client host.
-	// Forwarded so nested clients (e.g. Dang SDK) can resolve LLM config.
+	// Forwarded so the engine can emit telemetry to Cloud and refresh the user's token as needed.
+	// When the token is refreshed, the old one becomes invalid, so the credentials file must be updated.
 	CredentialsPath string
-
-	// If set (typically via "_EXPERIMENTAL_DAGGER_VERSION" env var), this forces the client
-	// to be at the specified version. Currently only used for integ testing.
-	ClientVersionOverride string
 }
 
 func (c *Client) Run(
