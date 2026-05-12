@@ -240,13 +240,6 @@ func (LockfileSuite) TestLockUpdateRefreshesExistingEntry(ctx context.Context, t
 	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "lock", "update")
 	require.NoError(t, err)
 
-	// this is coming back as a "Lockfile already up to date" because there is no workspace
-
-	//t.Logf("sleeping in %s\n", workdir)
-	//time.Sleep(time.Minute * 10)
-
-	// require.Equal(t, "wee", string(out))
-
 	lockBytes, err := os.ReadFile(lockPath)
 	require.NoError(t, err)
 	require.NotEqual(t, originalLock, string(lockBytes))
