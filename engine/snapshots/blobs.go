@@ -17,13 +17,12 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/dagger/dagger/internal/buildkit/util/converter"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/internal/buildkit/util/winlayers"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )
 
-var g flightcontrol.Group[*leaseutil.LeaseRef]
+var g flightcontrol.Group[*LeaseRef]
 var gEnsureExportBlob flightcontrol.Group[ensureExportBlobResult]
 
 var ErrNoBlobs = errors.Errorf("no blobs for snapshot")
@@ -113,14 +112,14 @@ func (cm *snapshotManager) ensureExportBlob(
 		}
 
 		if leaseID, ok := leases.FromContext(ctx); !ok || leaseID == "" {
-			leaseCtx, err := leaseutil.EnsureLease(ctx)
+			leaseCtx, err := EnsureLease(ctx)
 			if err != nil {
 				return ensureExportBlobResult{}, err
 			}
 			ctx = leaseCtx
 		}
 		if leaseID, ok := leases.FromContext(ctx); !ok || leaseID == "" {
-			leaseCtx, done, err := leaseutil.WithLease(ctx, cm.LeaseManager, leaseutil.MakeTemporary)
+			leaseCtx, done, err := WithLease(ctx, cm.LeaseManager, MakeTemporary)
 			if err != nil {
 				return ensureExportBlobResult{}, err
 			}
@@ -307,13 +306,13 @@ func isTypeWindows(sr *immutableRef) bool {
 
 // ensureCompression ensures the specified ref has the blob of the specified compression Type.
 func ensureCompression(ctx context.Context, ref *immutableRef, comp compression.Config) error {
-	l, err := g.Do(ctx, fmt.Sprintf("ensureComp-%s-%s", ref.ID(), comp.Type), func(ctx context.Context) (_ *leaseutil.LeaseRef, err error) {
+	l, err := g.Do(ctx, fmt.Sprintf("ensureComp-%s-%s", ref.ID(), comp.Type), func(ctx context.Context) (_ *LeaseRef, err error) {
 		desc, err := ref.ociDesc(ctx, true)
 		if err != nil {
 			return nil, err
 		}
 
-		l, ctx, err := leaseutil.NewLease(ctx, ref.cm.LeaseManager, leaseutil.MakeTemporary)
+		l, ctx, err := NewLease(ctx, ref.cm.LeaseManager, MakeTemporary)
 		if err != nil {
 			return nil, err
 		}
@@ -362,7 +361,7 @@ func ensureCompression(ctx context.Context, ref *immutableRef, comp compression.
 		return err
 	}
 	if l != nil {
-		ctx, err = leaseutil.EnsureLease(ctx)
+		ctx, err = EnsureLease(ctx)
 		if err != nil {
 			return err
 		}

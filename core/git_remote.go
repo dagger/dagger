@@ -20,7 +20,6 @@ import (
 
 	ctdmount "github.com/containerd/containerd/v2/core/mount"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	"github.com/dagger/dagger/util/cleanups"
@@ -517,7 +516,7 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(string)
 		return err
 	}
 
-	lm := snapshot.LocalMounter(mount)
+	lm := bkcache.LocalMounter(mount)
 	dir, err := lm.Mount()
 	if err != nil {
 		return err

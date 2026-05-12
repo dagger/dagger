@@ -6,9 +6,9 @@ import (
 
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/core/snapshots"
+	bksnapshots "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/sys/userns"
 	"github.com/pkg/errors"
 )
@@ -130,7 +130,7 @@ func (sn *mergeSnapshotter) Merge(ctx context.Context, key string, diffs []Diff,
 		diffs = diffs[baseIndex:]
 	}
 
-	ctx, done, err := leaseutil.WithLease(ctx, sn.lm, leaseutil.MakeTemporary)
+	ctx, done, err := bksnapshots.WithLease(ctx, sn.lm, bksnapshots.MakeTemporary)
 	if err != nil {
 		return errors.Wrap(err, "failed to create temporary lease for view mounts during merge")
 	}

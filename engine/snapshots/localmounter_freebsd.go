@@ -1,4 +1,4 @@
-package snapshotter
+package snapshots
 
 import (
 	"os"

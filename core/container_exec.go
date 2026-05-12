@@ -22,7 +22,6 @@ import (
 	containerdfs "github.com/containerd/continuity/fs"
 
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
@@ -857,7 +856,7 @@ type execTmpFS struct {
 	opt *pb.TmpfsOpt
 }
 
-func (tmpfs *execTmpFS) Mount(_ context.Context, readonly bool) (snapshot.Mountable, error) {
+func (tmpfs *execTmpFS) Mount(_ context.Context, readonly bool) (bkcache.MountableRef, error) {
 	return &execTmpFSMount{
 		readonly: readonly,
 		opt:      tmpfs.opt,
@@ -912,7 +911,7 @@ type execSecretMount struct {
 	data []byte
 }
 
-func (secret *execSecretMount) Mount(_ context.Context, _ bool) (snapshot.Mountable, error) {
+func (secret *execSecretMount) Mount(_ context.Context, _ bool) (bkcache.MountableRef, error) {
 	return &execSecretMountInstance{
 		secret: secret,
 	}, nil
@@ -1007,7 +1006,7 @@ type execSSHMount struct {
 	mode   fs.FileMode
 }
 
-func (ssh *execSSHMount) Mount(ctx context.Context, _ bool) (snapshot.Mountable, error) {
+func (ssh *execSSHMount) Mount(ctx context.Context, _ bool) (bkcache.MountableRef, error) {
 	sock, cleanup, err := ssh.socket.Self().MountSSHAgent(ctx)
 	if err != nil {
 		return nil, err

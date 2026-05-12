@@ -2,11 +2,11 @@ package ctrns
 
 import (
 	"github.com/containerd/containerd/v2/core/leases"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
+	snapshots "github.com/dagger/dagger/engine/snapshots"
 )
 
-type LeasesManagerNamespace = leaseutil.Manager
+type LeasesManagerNamespace = snapshots.LeaseManager
 
 func LeasesWithNamespace(leases leases.Manager, ns string) leases.Manager {
-	return leaseutil.WithNamespace(leases, ns)
+	return snapshots.NewLeaseManager(leases, ns)
 }

@@ -9,8 +9,6 @@ import (
 	ctdsnapshots "github.com/containerd/containerd/v2/core/snapshots"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/engine/snapshots/fsdiff"
-	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/locker"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
@@ -92,7 +90,7 @@ type applySnapshotDiffTestSnapshotter struct {
 	prepareLeaseID []string
 	commitLeaseID  []string
 	mergeLeaseID   []string
-	mergeCalls     [][]snapshot.Diff
+	mergeCalls     [][]Diff
 }
 
 func newApplySnapshotDiffTestSnapshotter() *applySnapshotDiffTestSnapshotter {
@@ -103,7 +101,7 @@ func newApplySnapshotDiffTestSnapshotter() *applySnapshotDiffTestSnapshotter {
 
 func (sn *applySnapshotDiffTestSnapshotter) Name() string { return "test" }
 
-func (sn *applySnapshotDiffTestSnapshotter) Mounts(context.Context, string) (snapshot.Mountable, error) {
+func (sn *applySnapshotDiffTestSnapshotter) Mounts(context.Context, string) (MountableRef, error) {
 	panic("unexpected Mounts call")
 }
 
@@ -116,7 +114,7 @@ func (sn *applySnapshotDiffTestSnapshotter) Prepare(ctx context.Context, key, pa
 	return nil
 }
 
-func (sn *applySnapshotDiffTestSnapshotter) View(context.Context, string, string, ...ctdsnapshots.Opt) (snapshot.Mountable, error) {
+func (sn *applySnapshotDiffTestSnapshotter) View(context.Context, string, string, ...ctdsnapshots.Opt) (MountableRef, error) {
 	panic("unexpected View call")
 }
 
@@ -169,12 +167,12 @@ func (sn *applySnapshotDiffTestSnapshotter) Walk(context.Context, ctdsnapshots.W
 
 func (sn *applySnapshotDiffTestSnapshotter) Close() error { return nil }
 
-func (sn *applySnapshotDiffTestSnapshotter) Merge(ctx context.Context, key string, diffs []snapshot.Diff, _ ...ctdsnapshots.Opt) error {
+func (sn *applySnapshotDiffTestSnapshotter) Merge(ctx context.Context, key string, diffs []Diff, _ ...ctdsnapshots.Opt) error {
 	sn.mu.Lock()
 	defer sn.mu.Unlock()
 	leaseID, _ := leases.FromContext(ctx)
 	sn.mergeLeaseID = append(sn.mergeLeaseID, leaseID)
-	sn.mergeCalls = append(sn.mergeCalls, append([]snapshot.Diff(nil), diffs...))
+	sn.mergeCalls = append(sn.mergeCalls, append([]Diff(nil), diffs...))
 	sn.snapshots[key] = ctdsnapshots.Info{Name: key}
 	return nil
 }
@@ -222,7 +220,7 @@ func TestSnapshotManagerEnsuresLazyLeaseForCreateBoundaries(t *testing.T) {
 	t.Run("new", func(t *testing.T) {
 		cm := newApplySnapshotDiffTestManager(t)
 		lm := cm.LeaseManager.(*applySnapshotDiffTestLeaseManager)
-		ctx, release, err := leaseutil.WithLazyLease(context.Background(), lm)
+		ctx, release, err := WithLazyLease(context.Background(), lm)
 		require.NoError(t, err)
 		defer release(context.Background())
 
@@ -239,7 +237,7 @@ func TestSnapshotManagerEnsuresLazyLeaseForCreateBoundaries(t *testing.T) {
 	t.Run("merge", func(t *testing.T) {
 		cm := newApplySnapshotDiffTestManager(t)
 		lm := cm.LeaseManager.(*applySnapshotDiffTestLeaseManager)
-		ctx, release, err := leaseutil.WithLazyLease(context.Background(), lm)
+		ctx, release, err := WithLazyLease(context.Background(), lm)
 		require.NoError(t, err)
 		defer release(context.Background())
 		lower := addApplySnapshotDiffTestImmutable(t, cm, "lower-snapshot")
@@ -260,7 +258,7 @@ func TestSnapshotManagerEnsuresLazyLeaseForCreateBoundaries(t *testing.T) {
 		lm := cm.LeaseManager.(*applySnapshotDiffTestLeaseManager)
 		mut, err := cm.New(context.Background(), nil)
 		require.NoError(t, err)
-		ctx, release, err := leaseutil.WithLazyLease(context.Background(), lm)
+		ctx, release, err := WithLazyLease(context.Background(), lm)
 		require.NoError(t, err)
 		defer release(context.Background())
 
@@ -317,7 +315,7 @@ func TestApplySnapshotDiffNilContract(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, ref)
 		require.Len(t, cm.Snapshotter.(*applySnapshotDiffTestSnapshotter).mergeCalls, 1)
-		require.Equal(t, []snapshot.Diff{{
+		require.Equal(t, []Diff{{
 			Lower:      "lower-snapshot",
 			Upper:      "upper-snapshot",
 			Comparison: fsdiff.CompareContentOnMetadataMatch,
@@ -369,7 +367,7 @@ func TestMergeContract(t *testing.T) {
 		require.NotEqual(t, lower.SnapshotID(), ref.SnapshotID())
 		require.NotEqual(t, upper.SnapshotID(), ref.SnapshotID())
 		require.Len(t, cm.Snapshotter.(*applySnapshotDiffTestSnapshotter).mergeCalls, 1)
-		require.Equal(t, []snapshot.Diff{
+		require.Equal(t, []Diff{
 			{Upper: "lower-snapshot"},
 			{Upper: "upper-snapshot"},
 		}, cm.Snapshotter.(*applySnapshotDiffTestSnapshotter).mergeCalls[0])

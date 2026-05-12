@@ -13,7 +13,7 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/engine/engineutil"
-	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/util/archutil"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	copy "github.com/dagger/dagger/internal/fsutil/copy"
@@ -36,7 +36,7 @@ type emulator struct {
 	path string
 }
 
-func (e *emulator) Mount(ctx context.Context, readonly bool) (snapshot.Mountable, error) {
+func (e *emulator) Mount(ctx context.Context, readonly bool) (bkcache.MountableRef, error) {
 	return &staticEmulatorMount{path: e.path}, nil
 }
 

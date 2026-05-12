@@ -17,7 +17,6 @@ import (
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/moby/locker"
 	"github.com/stretchr/testify/require"
@@ -158,11 +157,11 @@ func (ms *mockServer) RegistryResolver(context.Context) (*serverresolver.Resolve
 
 func (ms *mockServer) Services(context.Context) (*Services, error) { return nil, nil }
 
-func (ms *mockServer) Platform() Platform               { return Platform{} }
-func (ms *mockServer) OCIStore() content.Store          { return nil }
-func (ms *mockServer) BuiltinOCIStore() content.Store   { return nil }
-func (ms *mockServer) DNS() *oci.DNSConfig              { return nil }
-func (ms *mockServer) LeaseManager() *leaseutil.Manager { return nil }
+func (ms *mockServer) Platform() Platform                  { return Platform{} }
+func (ms *mockServer) OCIStore() content.Store             { return nil }
+func (ms *mockServer) BuiltinOCIStore() content.Store      { return nil }
+func (ms *mockServer) DNS() *oci.DNSConfig                 { return nil }
+func (ms *mockServer) LeaseManager() *bkcache.LeaseManager { return nil }
 func (ms *mockServer) EngineLocalCacheEntries(context.Context) (*EngineCacheEntrySet, error) {
 	return nil, nil
 }

@@ -17,7 +17,6 @@ import (
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/locker"
 	"google.golang.org/grpc"
 )
@@ -113,7 +112,7 @@ func (s *currentTypeDefsTestServer) BuiltinOCIStore() content.Store { return nil
 
 func (s *currentTypeDefsTestServer) DNS() *oci.DNSConfig { return nil }
 
-func (s *currentTypeDefsTestServer) LeaseManager() *leaseutil.Manager { return nil }
+func (s *currentTypeDefsTestServer) LeaseManager() *bkcache.LeaseManager { return nil }
 
 func (s *currentTypeDefsTestServer) EngineLocalCacheEntries(context.Context) (*core.EngineCacheEntrySet, error) {
 	return nil, nil

@@ -1,4 +1,4 @@
-package snapshotter
+package snapshots
 
 import (
 	"context"
@@ -7,13 +7,13 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/executor"
 )
 
-type Mountable = executor.MountableRef
+type MountableRef = executor.MountableRef
 
 type Snapshotter interface {
 	Name() string
-	Mounts(ctx context.Context, key string) (Mountable, error)
+	Mounts(ctx context.Context, key string) (MountableRef, error)
 	Prepare(ctx context.Context, key, parent string, opts ...snapshots.Opt) error
-	View(ctx context.Context, key, parent string, opts ...snapshots.Opt) (Mountable, error)
+	View(ctx context.Context, key, parent string, opts ...snapshots.Opt) (MountableRef, error)
 
 	Stat(ctx context.Context, key string) (snapshots.Info, error)
 	Update(ctx context.Context, info snapshots.Info, fieldpaths ...string) (snapshots.Info, error)

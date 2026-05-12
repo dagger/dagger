@@ -24,8 +24,8 @@ import (
 	"github.com/dagger/dagger/dagql"
 	imageexport "github.com/dagger/dagger/engine/engineutil/imageexport"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
-	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
@@ -60,7 +60,7 @@ type Opts struct {
 	Labels           map[string]string
 	Platforms        []ocispecs.Platform
 	NetworkProviders map[pb.NetMode]network.Provider
-	Snapshotter      snapshot.Snapshotter
+	Snapshotter      bkcache.Snapshotter
 	ContentStore     *containerdsnapshot.Store
 	Applier          diff.Applier
 	Differ           diff.Comparer

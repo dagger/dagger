@@ -7,7 +7,7 @@ import (
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
 	cerrdefs "github.com/containerd/errdefs"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
+	bksnapshots "github.com/dagger/dagger/engine/snapshots"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -61,7 +61,7 @@ func (c *Store) ListStatuses(ctx context.Context, filters ...string) ([]content.
 
 func (c *Store) Abort(ctx context.Context, ref string) error {
 	var err error
-	ctx, err = leaseutil.EnsureLease(ctx)
+	ctx, err = bksnapshots.EnsureLease(ctx)
 	if err != nil {
 		return err
 	}
@@ -76,7 +76,7 @@ func (c *Store) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (content
 
 func (c *Store) Writer(ctx context.Context, opts ...content.WriterOpt) (content.Writer, error) {
 	var err error
-	ctx, err = leaseutil.EnsureLease(ctx)
+	ctx, err = bksnapshots.EnsureLease(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +107,7 @@ func (w *nsWriter) Commit(ctx context.Context, size int64, expected digest.Diges
 	if w.leaseID != "" {
 		ctx = leases.WithLease(ctx, w.leaseID)
 	} else {
-		ctx, err = leaseutil.EnsureLease(ctx)
+		ctx, err = bksnapshots.EnsureLease(ctx)
 		if err != nil {
 			return err
 		}

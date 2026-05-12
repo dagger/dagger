@@ -14,7 +14,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
+	snapshots "github.com/dagger/dagger/engine/snapshots"
 	telemetry "github.com/dagger/otel-go"
 	set "github.com/hashicorp/go-set/v3"
 	"github.com/opencontainers/go-digest"
@@ -42,7 +42,7 @@ type cacheTestLeaseProvider struct {
 }
 
 func (p *cacheTestLeaseProvider) WithOperationLease(ctx context.Context) (context.Context, func(context.Context) error, error) {
-	return leaseutil.WithLazyLease(ctx, p, func(l *leases.Lease) error {
+	return snapshots.WithLazyLease(ctx, p, func(l *leases.Lease) error {
 		l.ID = fmt.Sprintf("shared-%d", p.nextLeaseID.Add(1))
 		return nil
 	})
@@ -783,7 +783,7 @@ func TestCacheEvaluate(t *testing.T) {
 				Value: 1,
 				lazyEval: func(ctx context.Context) error {
 					var err error
-					ctx, err = leaseutil.EnsureLease(ctx)
+					ctx, err = snapshots.EnsureLease(ctx)
 					if err != nil {
 						return err
 					}
@@ -1353,7 +1353,7 @@ func TestCacheContextCancel(t *testing.T) {
 				ConcurrencyKey: "shared-lease",
 			}, func(ctx context.Context) (AnyResult, error) {
 				var err error
-				ctx, err = leaseutil.EnsureLease(ctx)
+				ctx, err = snapshots.EnsureLease(ctx)
 				if err != nil {
 					return nil, err
 				}
@@ -1370,7 +1370,7 @@ func TestCacheContextCancel(t *testing.T) {
 					Int: NewInt(1),
 					onAttach: func(ctx context.Context) error {
 						var err error
-						ctx, err = leaseutil.EnsureLease(ctx)
+						ctx, err = snapshots.EnsureLease(ctx)
 						if err != nil {
 							return err
 						}

@@ -1,4 +1,4 @@
-package snapshotter
+package snapshots
 
 import (
 	"sync"
@@ -13,7 +13,7 @@ type Mounter interface {
 
 type LocalMounterOpt func(*localMounter)
 
-func LocalMounter(mountable Mountable, opts ...LocalMounterOpt) Mounter {
+func LocalMounter(mountable MountableRef, opts ...LocalMounterOpt) Mounter {
 	lm := &localMounter{mountable: mountable}
 	for _, opt := range opts {
 		opt(lm)
@@ -32,7 +32,7 @@ func LocalMounterWithMounts(mounts []mount.Mount, opts ...LocalMounterOpt) Mount
 type localMounter struct {
 	mu                  sync.Mutex
 	mounts              []mount.Mount
-	mountable           Mountable
+	mountable           MountableRef
 	target              string
 	release             func() error
 	forceRemount        bool

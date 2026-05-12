@@ -9,7 +9,6 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/locker"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -130,7 +129,7 @@ type Server interface {
 	DNS() *oci.DNSConfig
 
 	// The lease manager for the engine as a whole
-	LeaseManager() *leaseutil.Manager
+	LeaseManager() *bkcache.LeaseManager
 
 	// Return all the cache entries in the local cache. No support for filtering yet.
 	EngineLocalCacheEntries(context.Context) (*EngineCacheEntrySet, error)
