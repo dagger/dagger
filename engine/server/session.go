@@ -1904,34 +1904,29 @@ func (srv *Server) SpecificClientMetadata(ctx context.Context, clientID string) 
 	return clientMD.clientMetadata, nil
 }
 
-func (srv *Server) SpecificClientAttachableConn(ctx context.Context, clientID string) (*grpc.ClientConn, error) {
-	client, err := srv.clientFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	caller, err := client.getClientCaller(ctx, clientID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get session attachable caller for client %q: %w", clientID, err)
-	}
-	if caller == nil {
-		return nil, fmt.Errorf("session attachable caller for client %q was nil", clientID)
-	}
-	conn := caller.Conn()
-	if conn == nil {
-		return nil, fmt.Errorf("session attachable conn for client %q was nil", clientID)
-	}
-	return conn, nil
-}
-
-func (srv *Server) SpecificClientAttachableConnIfAvailable(ctx context.Context, clientID string) (*grpc.ClientConn, bool, error) {
+func (srv *Server) SpecificClientAttachableConn(ctx context.Context, clientID string, opts core.SpecificClientAttachableConnOpts) (*grpc.ClientConn, bool, error) {
 	client, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return nil, false, err
 	}
-	caller, ok := client.daggerSession.attachables.Lookup(clientID)
-	if !ok {
-		return nil, false, nil
+
+	var caller engineutil.SessionCaller
+	if opts.IfAvailable {
+		var ok bool
+		caller, ok = client.daggerSession.attachables.Lookup(clientID)
+		if !ok {
+			return nil, false, nil
+		}
+	} else {
+		caller, err = client.getClientCaller(ctx, clientID)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to get session attachable caller for client %q: %w", clientID, err)
+		}
+		if caller == nil {
+			return nil, false, fmt.Errorf("session attachable caller for client %q was nil", clientID)
+		}
 	}
+
 	conn := caller.Conn()
 	if conn == nil {
 		return nil, false, fmt.Errorf("session attachable conn for client %q was nil", clientID)

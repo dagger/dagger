@@ -39,6 +39,12 @@ var (
 	ErrNoCurrentWorkspace = fmt.Errorf("no current workspace")
 )
 
+type SpecificClientAttachableConnOpts struct {
+	// IfAvailable returns ok=false instead of waiting when the client currently
+	// has no active session attachables.
+	IfAvailable bool
+}
+
 // APIs from the server+session+client that are needed by core APIs
 type Server interface {
 	// Handle an HTTP request from a nested Dagger client.
@@ -101,12 +107,9 @@ type Server interface {
 	MuxEndpoint(context.Context, string, http.Handler) error
 
 	// The session attachables connection for a specific client ID within the
-	// same session as the current client.
-	SpecificClientAttachableConn(context.Context, string) (*grpc.ClientConn, error)
-
-	// The active session attachables connection for a specific client ID within
-	// the same session as the current client, without waiting for it to appear.
-	SpecificClientAttachableConnIfAvailable(context.Context, string) (*grpc.ClientConn, bool, error)
+	// same session as the current client. Returns ok=false only when
+	// opts.IfAvailable is set and the client has no active session attachables.
+	SpecificClientAttachableConn(context.Context, string, SpecificClientAttachableConnOpts) (*grpc.ClientConn, bool, error)
 
 	// The auth provider for the current client
 	Auth(context.Context) (*auth.RegistryAuthProvider, error)

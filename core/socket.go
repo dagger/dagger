@@ -165,6 +165,9 @@ func (socket *Socket) ForwardAgentClient(ctx context.Context) (sshforward.SSH_Fo
 	if err != nil {
 		return nil, fmt.Errorf("resolve session socket %q: current dagql cache: %w", socket.Handle, err)
 	}
+	// Session-wide in-flight dedupe can make this call run under a client whose
+	// attachables disconnect before other waiters finish. Try each same-session
+	// binding so another live client can still provide the socket.
 	candidates, err := cache.ResolveSessionResourceCandidates(ctx, clientMetadata.SessionID, clientMetadata.ClientID, socket.Handle)
 	if err != nil {
 		return nil, err
@@ -206,7 +209,7 @@ func (socket *Socket) forwardAgentClient(ctx context.Context) (sshforward.SSH_Fo
 	if err != nil {
 		return nil, err
 	}
-	conn, err := query.SpecificClientAttachableConn(ctx, socket.SourceClientID)
+	conn, _, err := query.SpecificClientAttachableConn(ctx, socket.SourceClientID, SpecificClientAttachableConnOpts{})
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +237,9 @@ func (socket *Socket) forwardAgentClientFromSessionResourceCandidate(ctx context
 	if err != nil {
 		return nil, false, err
 	}
-	conn, ok, err := query.SpecificClientAttachableConnIfAvailable(ctx, socket.SourceClientID)
+	conn, ok, err := query.SpecificClientAttachableConn(ctx, socket.SourceClientID, SpecificClientAttachableConnOpts{
+		IfAvailable: true,
+	})
 	if err != nil {
 		return nil, false, err
 	}
@@ -246,7 +251,9 @@ func (socket *Socket) forwardAgentClientFromSessionResourceCandidate(ctx context
 	outgoingMD.Set(engine.SocketURLEncodedKey, socket.URLVal)
 	stream, err := sshforward.NewSSHClient(conn).ForwardAgent(metadata.NewOutgoingContext(ctx, outgoingMD))
 	if err != nil {
-		_, active, lookupErr := query.SpecificClientAttachableConnIfAvailable(ctx, socket.SourceClientID)
+		_, active, lookupErr := query.SpecificClientAttachableConn(ctx, socket.SourceClientID, SpecificClientAttachableConnOpts{
+			IfAvailable: true,
+		})
 		if lookupErr != nil {
 			return nil, false, lookupErr
 		}

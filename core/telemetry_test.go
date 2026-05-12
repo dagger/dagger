@@ -125,12 +125,11 @@ func (ms *mockServer) CurrentWorkspace(context.Context) (*Workspace, error) {
 	return nil, nil
 }
 
-func (ms *mockServer) SpecificClientAttachableConn(context.Context, string) (*grpc.ClientConn, error) {
-	return nil, nil
-}
-
-func (ms *mockServer) SpecificClientAttachableConnIfAvailable(_ context.Context, clientID string) (*grpc.ClientConn, bool, error) {
+func (ms *mockServer) SpecificClientAttachableConn(_ context.Context, clientID string, opts SpecificClientAttachableConnOpts) (*grpc.ClientConn, bool, error) {
 	conn := ms.attachables[clientID]
+	if conn == nil && !opts.IfAvailable {
+		return nil, false, nil
+	}
 	return conn, conn != nil, nil
 }
 

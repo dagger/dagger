@@ -149,6 +149,9 @@ func (secret *Secret) Plaintext(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve session secret %q: current dagql cache: %w", secret.Handle, err)
 	}
+	// Session-wide in-flight dedupe can make this call run under a client whose
+	// attachables disconnect before other waiters finish. Try each same-session
+	// binding so another live client can still provide the secret.
 	candidates, err := cache.ResolveSessionResourceCandidates(ctx, clientMetadata.SessionID, clientMetadata.ClientID, secret.Handle)
 	if err != nil {
 		return nil, err
@@ -190,7 +193,7 @@ func (secret *Secret) plaintext(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := query.SpecificClientAttachableConn(ctx, secret.SourceClientID)
+	conn, _, err := query.SpecificClientAttachableConn(ctx, secret.SourceClientID, SpecificClientAttachableConnOpts{})
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +220,9 @@ func (secret *Secret) plaintextFromSessionResourceCandidate(ctx context.Context)
 	if err != nil {
 		return nil, false, err
 	}
-	conn, ok, err := query.SpecificClientAttachableConnIfAvailable(ctx, secret.SourceClientID)
+	conn, ok, err := query.SpecificClientAttachableConn(ctx, secret.SourceClientID, SpecificClientAttachableConnOpts{
+		IfAvailable: true,
+	})
 	if err != nil {
 		return nil, false, err
 	}
@@ -228,7 +233,9 @@ func (secret *Secret) plaintextFromSessionResourceCandidate(ctx context.Context)
 		ID: secret.URIVal,
 	})
 	if err != nil {
-		_, active, lookupErr := query.SpecificClientAttachableConnIfAvailable(ctx, secret.SourceClientID)
+		_, active, lookupErr := query.SpecificClientAttachableConn(ctx, secret.SourceClientID, SpecificClientAttachableConnOpts{
+			IfAvailable: true,
+		})
 		if lookupErr != nil {
 			return nil, false, lookupErr
 		}
