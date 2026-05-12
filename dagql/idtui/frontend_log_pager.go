@@ -483,7 +483,7 @@ func (fe *frontendPretty) confirmLogPagerSearch(query string) {
 
 func (fe *frontendPretty) interceptLogPagerSearchKey(_ tuist.Context, ev uv.KeyPressEvent) bool {
 	keyStr := uv.Key(ev).String()
-	if keyStr == "esc" {
+	if isEscapeKey(keyStr) {
 		fe.exitLogPagerSearchMode()
 		fe.Update()
 		return true

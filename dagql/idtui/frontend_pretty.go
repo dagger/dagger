@@ -1285,7 +1285,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 
 	if fe.editlineFocused {
 		bnds := []key.Binding{
-			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "nav mode")),
+			key.NewBinding(key.WithKeys("esc", "alt+esc"), key.WithHelp("esc", "nav mode")),
 		}
 		if fe.shell != nil {
 			bnds = append(bnds, fe.shell.KeyBindings(out)...)
@@ -1314,7 +1314,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("enter"),
 				key.WithHelp("enter", "search")),
-			key.NewBinding(key.WithKeys("esc"),
+			key.NewBinding(key.WithKeys("esc", "alt+esc"),
 				key.WithHelp("esc", "cancel")),
 		}
 	}
@@ -1336,7 +1336,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 			key.NewBinding(key.WithKeys("N"),
 				key.WithHelp("N", "prev"),
 				KeyEnabled(fe.logPager.SearchQuery != "")),
-			key.NewBinding(key.WithKeys("esc"),
+			key.NewBinding(key.WithKeys("esc", "alt+esc"),
 				key.WithHelp("esc", "back")),
 			key.NewBinding(key.WithKeys("q", "ctrl+c"),
 				key.WithHelp("q", quitMsg)),
@@ -1376,7 +1376,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 			key.NewBinding(key.WithKeys("L"),
 				key.WithHelp("L", "logs"),
 				KeyEnabled(fe.spanHasLogs(logSpan))),
-			key.NewBinding(key.WithKeys("esc"),
+			key.NewBinding(key.WithKeys("esc", "alt+esc"),
 				key.WithHelp("esc", "trace")),
 			key.NewBinding(key.WithKeys("q", "ctrl+c"),
 				key.WithHelp("q", quitMsg)),
@@ -1407,7 +1407,7 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 			key.WithHelp("E", noExitHelp)),
 		key.NewBinding(key.WithKeys("q", "ctrl+c"),
 			key.WithHelp("q", quitMsg)),
-		key.NewBinding(key.WithKeys("esc"),
+		key.NewBinding(key.WithKeys("esc", "alt+esc"),
 			key.WithHelp("esc", fe.escHelp()),
 			KeyEnabled(fe.searchQuery != "" || (fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan))),
 		key.NewBinding(key.WithKeys("r"),
@@ -1450,6 +1450,10 @@ func KeyEnabled(enabled bool) key.BindingOpt {
 	return func(b *key.Binding) {
 		b.SetEnabled(enabled)
 	}
+}
+
+func isEscapeKey(keyStr string) bool {
+	return keyStr == "esc" || keyStr == "alt+esc"
 }
 
 // ---------- tuist.Component -------------------------------------------------
@@ -2142,7 +2146,7 @@ func (fe *frontendPretty) interceptEditlineKey(ctx tuist.Context, ev uv.KeyPress
 		fe.tui.RequestRender(true)
 		fe.syncPrompt()
 		return true
-	case "esc":
+	case "esc", "alt+esc":
 		fe.enterNavMode(false)
 		fe.syncPrompt()
 		return true
@@ -2197,7 +2201,7 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 			} else {
 				fe.quitAction(ErrInterrupted)
 			}
-		case "esc":
+		case "esc", "alt+esc":
 			fe.closeLogPager()
 		case "down", "j":
 			fe.logPager.ScrollBy(1)
@@ -2231,7 +2235,7 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 			} else {
 				fe.quitAction(ErrInterrupted)
 			}
-		case "T", "esc":
+		case "T", "esc", "alt+esc":
 			fe.closeTestsMode()
 		case "left", "h":
 			fe.testFocusLeft()
@@ -2295,7 +2299,7 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 	case "r":
 		fe.goErrorOrigin()
 		return
-	case "esc":
+	case "esc", "alt+esc":
 		if fe.searchQuery != "" {
 			fe.clearSearch()
 			fe.renderVersion++
@@ -2530,7 +2534,7 @@ func (fe *frontendPretty) confirmSearch(query string) {
 func (fe *frontendPretty) interceptSearchKey(_ tuist.Context, ev uv.KeyPressEvent) bool {
 	k := uv.Key(ev)
 	keyStr := k.String()
-	if keyStr == "esc" {
+	if isEscapeKey(keyStr) {
 		fe.exitSearchMode()
 		fe.Update()
 		return true
