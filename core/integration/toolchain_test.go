@@ -862,7 +862,6 @@ func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *test
 
 		// Try to list toolchains
 		out, err := modGen.With(daggerExec("toolchain", "list")).Stdout(ctx)
-
 		if err != nil {
 			// If this fails, it might be because the source doesn't exist at v0.19.9
 			// or because symbolic deduplication is still blocking it
@@ -912,12 +911,12 @@ func (ToolchainSuite) TestToolchainUninstall(ctx context.Context, t *testctx.T) 
 
 		daggerjson, err := ctr.File("dagger.json").Contents(ctx)
 		require.NoError(t, err)
-		require.Contains(t, string(daggerjson), "helm")
+		require.Contains(t, daggerjson, "helm")
 
 		daggerjson, err = ctr.With(daggerExec("toolchain", "uninstall", "helm")).
 			File("dagger.json").Contents(ctx)
 		require.NoError(t, err)
-		require.NotContains(t, string(daggerjson), "helm")
+		require.NotContains(t, daggerjson, "helm")
 	})
 
 	t.Run("uninstall toolchain after local path is deleted", func(ctx context.Context, t *testctx.T) {
@@ -941,7 +940,7 @@ func (ToolchainSuite) TestToolchainUninstall(ctx context.Context, t *testctx.T) 
 
 		daggerjson, err := ctr.File("dagger.json").Contents(ctx)
 		require.NoError(t, err)
-		require.NotContains(t, string(daggerjson), "helm")
+		require.NotContains(t, daggerjson, "helm")
 	})
 
 	t.Run("uninstall stale local toolchain preserves other toolchain", func(ctx context.Context, t *testctx.T) {
@@ -966,8 +965,8 @@ func (ToolchainSuite) TestToolchainUninstall(ctx context.Context, t *testctx.T) 
 
 		daggerjson, err := ctr.File("dagger.json").Contents(ctx)
 		require.NoError(t, err)
-		require.NotContains(t, string(daggerjson), "helm")
-		require.Contains(t, string(daggerjson), "myblueprint-ts")
+		require.NotContains(t, daggerjson, "helm")
+		require.Contains(t, daggerjson, "myblueprint-ts")
 	})
 }
 
