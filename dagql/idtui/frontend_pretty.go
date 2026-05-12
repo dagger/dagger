@@ -226,6 +226,11 @@ type SpanTreeView struct {
 	spanID dagui.SpanID
 	scope  *spanTreeScope
 
+	// finalRender is synced from frontendPretty before rendering. Render reads
+	// this instead of relying on hidden frontend state so Tuist knows when this
+	// component's cached output is invalid.
+	finalRender bool
+
 	// parent points to the parent SpanTreeView (nil for top-level nodes).
 	parent *SpanTreeView
 	// indexInParent is this node's position in parent.children (or in
@@ -296,7 +301,7 @@ func (s *SpanTreeView) Render(ctx tuist.Context) {
 	if s.scope != nil && ctx.Width > 0 {
 		maxLiteralWidth = ctx.Width / 2
 	}
-	r := newRenderer(s.fe.db, maxLiteralWidth, s.frontendOpts(), s.fe.finalRender)
+	r := newRenderer(s.fe.db, maxLiteralWidth, s.frontendOpts(), s.finalRender)
 
 	s.selfLineCount = 0
 
@@ -997,8 +1002,12 @@ func (fe *frontendPretty) doQuit() {
 // final output after the TUI has exited.
 func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	// Hint for future rendering that this is the final, non-interactive render
-	// (so don't show key hints etc.)
-	fe.finalRender = true
+	// (so don't show key hints etc.). syncSpanTreeState copies this into each
+	// SpanTreeView and marks any changed tree dirty.
+	if !fe.finalRender {
+		fe.finalRender = true
+		fe.Update()
+	}
 
 	// Unfocus for the final render.
 	fe.focus(nil)
@@ -1604,7 +1613,7 @@ func (fe *frontendPretty) syncSpanTreeState() {
 }
 
 // syncTreeNode recursively syncs a SpanTreeView and its children with
-// the current trace data. Updates prefix, focus, spinner, and children.
+// the current trace data. Updates prefix, render mode, spinner, and children.
 // Calls Update() on any SpanTreeView whose visible state changed.
 func (fe *frontendPretty) syncTreeNode(st *SpanTreeView, newPrefix treePrefix) {
 	fe.syncTreeNodeInScope(st, newPrefix, nil)
@@ -1622,6 +1631,12 @@ func (fe *frontendPretty) syncTreeNodeInScope(st *SpanTreeView, newPrefix treePr
 	// Sync prefix
 	if st.prefix != newPrefix {
 		st.prefix = newPrefix
+		changed = true
+	}
+
+	// Sync render mode
+	if st.finalRender != fe.finalRender {
+		st.finalRender = fe.finalRender
 		changed = true
 	}
 
