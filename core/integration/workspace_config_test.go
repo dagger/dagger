@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"testing"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/workspace"
@@ -31,12 +32,23 @@ const currentWorkspaceConfigQuery = `{
 }
 `
 
-func initGitRepo(ctx context.Context, t *testctx.T, workdir string) {
+func initGitRepo(ctx context.Context, t testing.TB, workdir string) {
 	t.Helper()
 
-	initCmd := exec.CommandContext(ctx, "git", "init", workdir)
-	output, err := initCmd.CombinedOutput()
-	require.NoError(t, err, string(output))
+	gitCmd := exec.CommandContext(ctx, "git", "init", workdir)
+	gitOutput, err := gitCmd.CombinedOutput()
+	require.NoError(t, err, string(gitOutput))
+
+	gitCmd = exec.Command("git", "config", "user.email", "dagger@example.com")
+	gitCmd.Dir = workdir
+	gitOutput, err = gitCmd.CombinedOutput()
+	require.NoError(t, err, string(gitOutput))
+
+	gitCmd = exec.Command("git", "config", "user.name", "Dagger Tests")
+	gitCmd.Dir = workdir
+	gitOutput, err = gitCmd.CombinedOutput()
+	require.NoError(t, err, string(gitOutput))
+
 }
 
 func writeWorkspaceConfigFile(t *testctx.T, workdir, configTOML string) {
