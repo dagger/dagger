@@ -818,7 +818,10 @@ func (s *moduleSourceSchema) loadBlueprintModule(
 				toolchainJobs = toolchainJobs.WithJob(pcfg.Name, func(ctx context.Context) error {
 					toolchain, err := core.ResolveDepToSource(ctx, bk, dag, src, pcfg.Source, pcfg.Pin, pcfg.Name)
 					if err != nil {
-						return fmt.Errorf("failed to resolve toolchain to source: %w", err)
+						// don't let a stale toolchain (e.g. deleted local path) block the rest
+						// of the module load; leave a zero entry so uninstall can still work.
+						slog.Warn("failed to resolve toolchain, skipping", "name", pcfg.Name, "source", pcfg.Source, "error", err)
+						return nil
 					}
 					src.Toolchains[i] = toolchain
 					return nil
@@ -1792,31 +1795,39 @@ func (s *moduleSourceSchema) moduleSourceRemoveItems(
 	var filteredConfigItems []*modules.ModuleConfigDependency
 
 	for i, existingItem := range accessor.getItems(parentSrc) {
-		existingName := existingItem.Self().ModuleName
+		// a toolchain whose local path was deleted resolves to a zero value,
+		// so Self() will be nil. fall back to the config entry's name so
+		// "dagger toolchain uninstall <name>" can still match.
+		var existingName string
 		var existingSymbolic, existingVersion string
 
-		switch existingItem.Self().Kind {
-		case core.ModuleSourceKindLocal:
-			if parentSrc.Kind != core.ModuleSourceKindLocal {
-				return nil, fmt.Errorf("cannot remove local %s from non-local module source kind %s", accessor.typ, parentSrc.Kind)
-			}
-			parentSrcRoot := filepath.Join(parentSrc.Local.ContextDirectoryPath, parentSrc.SourceRootSubpath)
-			itemSrcRoot := filepath.Join(parentSrc.Local.ContextDirectoryPath, existingItem.Self().SourceRootSubpath)
-			var err error
-			existingSymbolic, err = pathutil.LexicalRelativePath(parentSrcRoot, itemSrcRoot)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get relative path: %w", err)
-			}
+		if existingItem.Self() != nil {
+			existingName = existingItem.Self().ModuleName
+			switch existingItem.Self().Kind {
+			case core.ModuleSourceKindLocal:
+				if parentSrc.Kind != core.ModuleSourceKindLocal {
+					return nil, fmt.Errorf("cannot remove local %s from non-local module source kind %s", accessor.typ, parentSrc.Kind)
+				}
+				parentSrcRoot := filepath.Join(parentSrc.Local.ContextDirectoryPath, parentSrc.SourceRootSubpath)
+				itemSrcRoot := filepath.Join(parentSrc.Local.ContextDirectoryPath, existingItem.Self().SourceRootSubpath)
+				var err error
+				existingSymbolic, err = pathutil.LexicalRelativePath(parentSrcRoot, itemSrcRoot)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get relative path: %w", err)
+				}
 
-		case core.ModuleSourceKindGit:
-			existingSymbolic = existingItem.Self().Git.CloneRef
-			if existingItem.Self().SourceRootSubpath != "" {
-				existingSymbolic += "/" + strings.TrimPrefix(existingItem.Self().SourceRootSubpath, "/")
-			}
-			existingVersion = existingItem.Self().Git.Version
+			case core.ModuleSourceKindGit:
+				existingSymbolic = existingItem.Self().Git.CloneRef
+				if existingItem.Self().SourceRootSubpath != "" {
+					existingSymbolic += "/" + strings.TrimPrefix(existingItem.Self().SourceRootSubpath, "/")
+				}
+				existingVersion = existingItem.Self().Git.Version
 
-		default:
-			return nil, fmt.Errorf("unhandled %s kind: %s", accessor.typ, existingItem.Self().Kind)
+			default:
+				return nil, fmt.Errorf("unhandled %s kind: %s", accessor.typ, existingItem.Self().Kind)
+			}
+		} else if accessor.typ == core.ModuleRelationTypeToolchain {
+			existingName = parentSrc.ConfigToolchains[i].Name
 		}
 
 		keep := true
