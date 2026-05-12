@@ -966,7 +966,6 @@ var fromSessionScopeInput = dagql.ImplicitInput{
 }
 
 func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerFromArgs) (inst dagql.ObjectResult[*core.Container], _ error) {
-	fmt.Printf("ACB container.from %+v\n", args)
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dagql server: %w", err)
@@ -989,7 +988,6 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	refName = reference.TagNameOnly(refName)
 
 	if refName, isCanonical := refName.(reference.Canonical); isCanonical {
-		fmt.Printf("ACB %s is canonical\n", refName)
 		clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
 		if err != nil {
 			return inst, err
@@ -1078,7 +1076,6 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	if lockMode != workspace.LockModeDisabled {
 		rawLock = lookupLock.lock
 	}
-	fmt.Printf("ACB address=%v lockmode=%v, lookupLock=%v\n", args.Address, lockMode, lookupLock)
 
 	lockInputs := []any{refName.String(), platform.Format()}
 	lockResolution, err := resolveLookupFromLock(
@@ -1093,7 +1090,6 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 	}
 
 	if lockResolution.Pin != "" {
-		fmt.Printf("ACB with lockResolution.Pin %s\n", lockResolution.Pin)
 		resolvedDigest, err := digest.Parse(lockResolution.Pin)
 		if err != nil {
 			return inst, fmt.Errorf("invalid lock digest %q for image %q: %w", lockResolution.Pin, refName.String(), err)
@@ -1121,8 +1117,6 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		if err != nil {
 			return inst, fmt.Errorf("failed to set digest on image %s: %w", refName.String(), err)
 		}
-
-		fmt.Printf("ACB resolved to %s, shouldWrite=%v lookupLock=%v\n", resolvedDigest, lockResolution.ShouldWrite, lookupLock)
 
 		if lockResolution.ShouldWrite && lookupLock != nil {
 			if err := lookupLock.SetLookup(
