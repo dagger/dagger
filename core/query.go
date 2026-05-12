@@ -16,7 +16,6 @@ import (
 	"github.com/dagger/dagger/auth"
 	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
@@ -322,58 +321,6 @@ func (q *Query) ModDepsForCall(ctx context.Context, rootCall *dagql.ResultCall) 
 		return appendModule(modInst)
 	}); err != nil {
 		return nil, err
-	}
-	return deps, nil
-}
-
-// ModDepsForID loads the module dependencies referenced by the given recipe ID.
-func (q *Query) ModDepsForID(ctx context.Context, id *call.ID) (*SchemaBuilder, error) {
-	defaultDeps, err := q.DefaultDeps(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("default deps: %w", err)
-	}
-	if id == nil {
-		return defaultDeps, nil
-	}
-	if id.IsHandle() {
-		return nil, fmt.Errorf("expected recipe-form ID")
-	}
-
-	dag, err := CurrentDagqlServer(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("bootstrap schema: %w", err)
-	}
-
-	deps := defaultDeps
-	seenModuleResultIDs := map[uint64]struct{}{}
-	for _, mod := range id.Modules() {
-		modID := mod.ID()
-		if modID == nil {
-			continue
-		}
-		res, err := dag.Load(ctx, modID)
-		if err != nil {
-			return nil, fmt.Errorf("load module %q: %w", mod.Name(), err)
-		}
-		modInst, ok := res.(dagql.ObjectResult[*Module])
-		if !ok {
-			return nil, fmt.Errorf("module %q is %T, not module result", mod.Name(), res)
-		}
-		if modInst.Self() == nil || !modInst.Self().Source.Valid {
-			continue
-		}
-		instID, err := modInst.ID()
-		if err != nil {
-			return nil, fmt.Errorf("module %q handle ID: %w", modInst.Self().Name(), err)
-		}
-		if instID == nil || instID.EngineResultID() == 0 {
-			return nil, fmt.Errorf("module %q is not attached", modInst.Self().Name())
-		}
-		if _, seen := seenModuleResultIDs[instID.EngineResultID()]; seen {
-			continue
-		}
-		seenModuleResultIDs[instID.EngineResultID()] = struct{}{}
-		deps = deps.Append(NewUserMod(modInst))
 	}
 	return deps, nil
 }
