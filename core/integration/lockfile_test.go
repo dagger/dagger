@@ -444,7 +444,7 @@ func (LockfileSuite) TestWorkspaceUpdateNestedQuery(ctx context.Context, t *test
 	c := connect(ctx, t)
 
 	staleLock := mustMarshalContainerFromLock(t, lockTestPlatform(ctx, t), "sha256:"+strings.Repeat("1", 64), workspace.PolicyFloat)
-	updated := workspaceBase(t, c).
+	updated := nativeWorkspaceBase(t, c).
 		WithNewFile(".dagger/lock", staleLock).
 		WithNewFile("update.graphql", workspaceUpdateExportQuery).
 		With(daggerExec("--silent", "query", "--doc", "update.graphql"))
@@ -461,7 +461,7 @@ func (LockfileSuite) TestWorkspaceUpdateNestedQuery(ctx context.Context, t *test
 func (LockfileSuite) TestWorkspaceModuleLockUpdate(ctx context.Context, t *testctx.T) {
 	t.Run("top-level update is a no-op with empty workspace config", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		ctr := workspaceBase(t, c)
+		ctr := nativeWorkspaceBase(t, c)
 
 		ctr = ctr.With(daggerExecRaw("update"))
 		out, err := ctr.Stdout(ctx)
