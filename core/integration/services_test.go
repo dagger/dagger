@@ -2572,7 +2572,7 @@ cd repo
 	if [ ! -d .git ]; then
 		git init
 		git branch -m %s
-		git add * || true
+		git add -A
 		git commit -m "init"
 	fi
 cd ..
