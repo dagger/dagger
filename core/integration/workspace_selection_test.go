@@ -11,6 +11,8 @@ package core
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -144,6 +146,62 @@ type Greeter {
 `)
 	}
 }
+
+const workspaceSelectionFilesConfig = `[modules.files]
+source = "modules/files"
+entrypoint = true
+`
+
+const workspaceSelectionFilesModuleSource = `package main
+
+import (
+	"context"
+
+	"dagger/files/internal/dagger"
+)
+
+type Files struct{}
+
+func (m *Files) ReadWorkspaceArg(ctx context.Context, workspace *dagger.Workspace) (string, error) {
+	return workspace.File("marker.txt").Contents(ctx)
+}
+
+func (m *Files) ReadCurrentWorkspace(ctx context.Context) (string, error) {
+	return dag.CurrentWorkspace().File("marker.txt").Contents(ctx)
+}
+
+func (m *Files) ChangeWorkspaceArg(workspace *dagger.Workspace) *dagger.Changeset {
+	before := workspace.Directory(".")
+	after := before.WithNewFile("workspace-arg.txt", "changed through workspace arg")
+	return after.Changes(before)
+}
+
+func (m *Files) ChangeCurrentWorkspace() *dagger.Changeset {
+	before := dag.CurrentWorkspace().Directory(".")
+	after := before.WithNewFile("current-workspace.txt", "changed through current workspace")
+	return after.Changes(before)
+}
+
+func (m *Files) ChangeStandalone() *dagger.Changeset {
+	before := dag.Directory()
+	after := before.WithNewFile("standalone.txt", "changed without workspace")
+	return after.Changes(before)
+}
+
+func (m *Files) ReturnedDirectory() *dagger.Directory {
+	return dag.Directory().WithNewFile("returned-dir.txt", "returned directory")
+}
+
+func (m *Files) ReturnedFile() *dagger.File {
+	return dag.Directory().WithNewFile("returned-file.txt", "returned file").File("returned-file.txt")
+}
+
+func (m *Files) ReturnedContainer() *dagger.Container {
+	return dag.Container().
+		From("` + alpineImage + `").
+		WithExec([]string{"sh", "-c", "printf 'returned container' > /returned-container.txt"})
+}
+`
 
 func workspaceSelectionRemoteRef(ctx context.Context, t *testctx.T, c *dagger.Client, content *dagger.Directory) string {
 	t.Helper()
@@ -362,6 +420,320 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceMetadataQueries(ctx context.
 		require.JSONEq(t, `{"currentWorkspace":{"address":"`+remoteRef+`","cwd":".","configFile":".dagger/config.toml"}}`, out)
 	})
 
+}
+
+// TestSelectedWorkspaceFileIO documents the host I/O boundary for -W.
+// Workspace reads follow the selected workspace. Host writes are CLI writes:
+// relative paths use the CLI cwd, and absolute paths use the exact host path.
+func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, t *testctx.T) {
+	writeFilesWorkspace := func(t *testctx.T, dir, marker string) {
+		t.Helper()
+
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "marker.txt"), []byte(marker), 0o644))
+		writeWorkspaceConfigFile(t, dir, workspaceSelectionFilesConfig)
+		moduleDir := filepath.Join(dir, ".dagger", "modules", "files")
+		require.NoError(t, os.MkdirAll(moduleDir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(moduleDir, "dagger.json"), []byte(`{"name":"files","sdk":{"source":"go"}}`), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(moduleDir, "main.go"), []byte(workspaceSelectionFilesModuleSource), 0o644))
+	}
+
+	newLocalFixture := func(ctx context.Context, t *testctx.T) (string, string) {
+		t.Helper()
+
+		rootDir := t.TempDir()
+		initGitRepo(ctx, t, rootDir)
+
+		callerDir := filepath.Join(rootDir, "caller")
+		selectedDir := filepath.Join(rootDir, "selected")
+		require.NoError(t, os.MkdirAll(callerDir, 0o755))
+		require.NoError(t, os.MkdirAll(selectedDir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(callerDir, "marker.txt"), []byte("caller marker"), 0o644))
+		writeFilesWorkspace(t, selectedDir, "selected marker")
+		return callerDir, selectedDir
+	}
+
+	newRemoteWorkspace := func(ctx context.Context, t *testctx.T) string {
+		t.Helper()
+
+		c := connect(ctx, t)
+		moduleDir := ".dagger/modules/files"
+		return workspaceSelectionRemoteRef(ctx, t, c, c.Directory().
+			WithNewFile("marker.txt", "remote marker").
+			WithNewFile(".dagger/config.toml", workspaceSelectionFilesConfig).
+			WithNewFile(moduleDir+"/dagger.json", `{"name":"files","sdk":{"source":"go"}}`).
+			WithNewFile(moduleDir+"/main.go", workspaceSelectionFilesModuleSource))
+	}
+
+	newStandaloneFixture := func(ctx context.Context, t *testctx.T) string {
+		t.Helper()
+
+		workdir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(workdir, "marker.txt"), []byte("cwd marker"), 0o644))
+
+		_, err := hostDaggerExec(ctx, t, workdir, "module", "init", "--sdk=go", "--source=.", "files", ".")
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(workdir, "main.go"), []byte(workspaceSelectionFilesModuleSource), 0o644))
+
+		_, err = os.Stat(filepath.Join(workdir, ".git"))
+		require.ErrorIs(t, err, os.ErrNotExist)
+		return workdir
+	}
+
+	requireFileContents := func(t *testctx.T, path, contents string) {
+		t.Helper()
+
+		got, err := os.ReadFile(path)
+		require.NoError(t, err, path)
+		require.Equal(t, contents, string(got), path)
+	}
+
+	requireNoPath := func(t *testctx.T, path string) {
+		t.Helper()
+
+		_, err := os.Stat(path)
+		require.ErrorIs(t, err, os.ErrNotExist, path)
+	}
+
+	requireNonEmptyFile := func(t *testctx.T, path string) {
+		t.Helper()
+
+		info, err := os.Stat(path)
+		require.NoError(t, err, path)
+		require.Greater(t, info.Size(), int64(0), path)
+	}
+
+	daggerCallArgs := func(selection []string, autoApply bool, callArgs ...string) []string {
+		args := []string{"--silent"}
+		if autoApply {
+			args = append(args, "-y")
+		}
+		args = append(args, "call")
+		args = append(args, selection...)
+		return append(args, callArgs...)
+	}
+
+	assertWorkspaceReads := func(ctx context.Context, t *testctx.T, workdir string, selection []string, want string) {
+		t.Helper()
+
+		out, err := hostDaggerExec(ctx, t, workdir, daggerCallArgs(selection, false, "read-workspace-arg")...)
+		require.NoError(t, err)
+		require.Equal(t, want, strings.TrimSpace(string(out)))
+
+		out, err = hostDaggerExec(ctx, t, workdir, daggerCallArgs(selection, false, "read-current-workspace")...)
+		require.NoError(t, err)
+		require.Equal(t, want, strings.TrimSpace(string(out)))
+	}
+
+	assertNoWorkspaceReads := func(ctx context.Context, t *testctx.T, workdir string, selection []string) {
+		t.Helper()
+
+		out, err := hostDaggerExec(ctx, t, workdir, daggerCallArgs(selection, false, "read-workspace-arg")...)
+		require.Error(t, err)
+		require.Contains(t, strings.ToLower(string(out)+err.Error()), "workspace")
+
+		out, err = hostDaggerExec(ctx, t, workdir, daggerCallArgs(selection, false, "read-current-workspace")...)
+		require.Error(t, err)
+		require.Contains(t, strings.ToLower(string(out)+err.Error()), "workspace")
+	}
+
+	assertWorkspaceChangesetsUseCWD := func(ctx context.Context, t *testctx.T, workdir string, selection []string, noWriteDir string) {
+		t.Helper()
+
+		writes := []struct {
+			name     string
+			args     []string
+			hostFile string
+			want     string
+		}{
+			{
+				name:     "Changeset from Workspace argument",
+				args:     []string{"change-workspace-arg"},
+				hostFile: "workspace-arg.txt",
+				want:     "changed through workspace arg",
+			},
+			{
+				name:     "Changeset from dag.CurrentWorkspace",
+				args:     []string{"change-current-workspace"},
+				hostFile: "current-workspace.txt",
+				want:     "changed through current workspace",
+			},
+		}
+
+		for _, write := range writes {
+			_, err := hostDaggerExec(ctx, t, workdir, daggerCallArgs(selection, true, write.args...)...)
+			require.NoError(t, err, write.name)
+			requireFileContents(t, filepath.Join(workdir, write.hostFile), write.want)
+			if noWriteDir != "" {
+				requireNoPath(t, filepath.Join(noWriteDir, write.hostFile))
+			}
+		}
+	}
+
+	assertHostWritesUseCWD := func(ctx context.Context, t *testctx.T, workdir string, selection []string, noWriteDir string) {
+		t.Helper()
+
+		writes := []struct {
+			name       string
+			args       []string
+			autoApply  bool
+			exportPath string
+			hostFile   string
+			want       string
+		}{
+			{
+				name:      "standalone Changeset",
+				autoApply: true,
+				args:      []string{"change-standalone"},
+				hostFile:  "standalone.txt",
+				want:      "changed without workspace",
+			},
+			{
+				name:       "returned Directory export",
+				args:       []string{"returned-directory", "export", "--path"},
+				exportPath: "./returned-directory",
+				hostFile:   filepath.Join("returned-directory", "returned-dir.txt"),
+				want:       "returned directory",
+			},
+			{
+				name:       "returned File export",
+				args:       []string{"returned-file", "export", "--path"},
+				exportPath: "./returned-file.txt",
+				hostFile:   "returned-file.txt",
+				want:       "returned file",
+			},
+			{
+				name:       "returned Container rootfs Directory export",
+				args:       []string{"returned-container", "rootfs", "export", "--path"},
+				exportPath: "./returned-container-rootfs",
+				hostFile:   filepath.Join("returned-container-rootfs", "returned-container.txt"),
+				want:       "returned container",
+			},
+		}
+
+		for _, write := range writes {
+			callArgs := append([]string{}, write.args...)
+			if write.exportPath != "" {
+				callArgs = append(callArgs, write.exportPath)
+			}
+
+			_, err := hostDaggerExec(ctx, t, workdir, daggerCallArgs(selection, write.autoApply, callArgs...)...)
+			require.NoError(t, err, write.name)
+			requireFileContents(t, filepath.Join(workdir, write.hostFile), write.want)
+			if noWriteDir != "" {
+				requireNoPath(t, filepath.Join(noWriteDir, write.hostFile))
+			}
+		}
+	}
+
+	assertAbsoluteExportsUseExplicitPath := func(ctx context.Context, t *testctx.T, workdir string, selection []string, noWriteDir string) {
+		t.Helper()
+
+		exports := []struct {
+			name        string
+			args        []string
+			destRelPath string
+			hostFile    string
+			want        string
+			nonEmpty    bool
+		}{
+			{
+				name:        "Changeset export",
+				args:        []string{"change-standalone", "export", "--path"},
+				destRelPath: "absolute-changeset",
+				hostFile:    filepath.Join("absolute-changeset", "standalone.txt"),
+				want:        "changed without workspace",
+			},
+			{
+				name:        "Directory export",
+				args:        []string{"returned-directory", "export", "--path"},
+				destRelPath: "absolute-directory",
+				hostFile:    filepath.Join("absolute-directory", "returned-dir.txt"),
+				want:        "returned directory",
+			},
+			{
+				name:        "File export",
+				args:        []string{"returned-file", "export", "--path"},
+				destRelPath: "absolute-file.txt",
+				hostFile:    "absolute-file.txt",
+				want:        "returned file",
+			},
+			{
+				name:        "Container rootfs Directory export",
+				args:        []string{"returned-container", "rootfs", "export", "--path"},
+				destRelPath: "absolute-container-rootfs",
+				hostFile:    filepath.Join("absolute-container-rootfs", "returned-container.txt"),
+				want:        "returned container",
+			},
+			{
+				name:        "Container export",
+				args:        []string{"returned-container", "export", "--path"},
+				destRelPath: "absolute-container.tar",
+				hostFile:    "absolute-container.tar",
+				nonEmpty:    true,
+			},
+		}
+
+		for _, export := range exports {
+			absoluteDestPath := filepath.Join(workdir, export.destRelPath)
+			require.True(t, filepath.IsAbs(absoluteDestPath), absoluteDestPath)
+
+			callArgs := append([]string{}, export.args...)
+			callArgs = append(callArgs, absoluteDestPath)
+			_, err := hostDaggerExec(ctx, t, workdir, daggerCallArgs(selection, false, callArgs...)...)
+			require.NoError(t, err, export.name)
+			if export.nonEmpty {
+				requireNonEmptyFile(t, filepath.Join(workdir, export.hostFile))
+			} else {
+				requireFileContents(t, filepath.Join(workdir, export.hostFile), export.want)
+			}
+			if noWriteDir != "" {
+				requireNoPath(t, filepath.Join(noWriteDir, export.hostFile))
+			}
+		}
+	}
+
+	t.Run("local selected workspace is also the CLI cwd", func(ctx context.Context, t *testctx.T) {
+		callerDir, selectedDir := newLocalFixture(ctx, t)
+		selection := []string{"-W", "."}
+
+		assertWorkspaceReads(ctx, t, selectedDir, selection, "selected marker")
+		assertWorkspaceChangesetsUseCWD(ctx, t, selectedDir, selection, callerDir)
+		assertHostWritesUseCWD(ctx, t, selectedDir, selection, callerDir)
+		assertAbsoluteExportsUseExplicitPath(ctx, t, selectedDir, selection, callerDir)
+	})
+
+	t.Run("local selected workspace differs from the CLI cwd", func(ctx context.Context, t *testctx.T) {
+		callerDir, selectedDir := newLocalFixture(ctx, t)
+		selection := []string{"-W", "../selected"}
+
+		assertWorkspaceReads(ctx, t, callerDir, selection, "selected marker")
+		assertWorkspaceChangesetsUseCWD(ctx, t, callerDir, selection, selectedDir)
+		assertHostWritesUseCWD(ctx, t, callerDir, selection, selectedDir)
+		assertAbsoluteExportsUseExplicitPath(ctx, t, callerDir, selection, selectedDir)
+	})
+
+	t.Run("selected workspace is remote", func(ctx context.Context, t *testctx.T) {
+		remoteRef := newRemoteWorkspace(ctx, t)
+		callerDir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(callerDir, "marker.txt"), []byte("caller marker"), 0o644))
+		selection := []string{"-W", remoteRef}
+
+		assertWorkspaceReads(ctx, t, callerDir, selection, "remote marker")
+		assertWorkspaceChangesetsUseCWD(ctx, t, callerDir, selection, "")
+		assertHostWritesUseCWD(ctx, t, callerDir, selection, "")
+		assertAbsoluteExportsUseExplicitPath(ctx, t, callerDir, selection, "")
+	})
+
+	t.Run("no workspace keeps host writes on the CLI cwd", func(ctx context.Context, t *testctx.T) {
+		workdir := newStandaloneFixture(ctx, t)
+		selection := []string{"-m", "."}
+
+		// No git root means no workspace. Select the standalone module with
+		// -m . so the assertions stay about host I/O, not module discovery.
+		assertNoWorkspaceReads(ctx, t, workdir, selection)
+		assertHostWritesUseCWD(ctx, t, workdir, selection, "")
+		assertAbsoluteExportsUseExplicitPath(ctx, t, workdir, selection, "")
+	})
 }
 
 // TestSelectedWorkspaceEnvOverlay should cover the end-to-end interaction
