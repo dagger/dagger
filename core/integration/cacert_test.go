@@ -385,7 +385,7 @@ func (m *Test) GetHttp(ctx context.Context) (string, error) {
 	return string(bs), nil
 }
 `)).
-				With(daggerCall("get-http")).
+				With(daggerCallAt(".", "get-http")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hello", strings.TrimSpace(out))
@@ -407,7 +407,7 @@ class Test:
     def get_http(self) -> str:
             return urllib.request.urlopen("https://server").read().decode("utf-8")
 `)).
-				With(daggerCall("get-http")).
+				With(daggerCallAt(".", "get-http")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hello", strings.TrimSpace(out))
@@ -448,7 +448,7 @@ export class Test {
     }
 }
 `)).
-				With(daggerCall("get-http")).
+				With(daggerCallAt(".", "get-http")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hello", strings.TrimSpace(out))
@@ -485,7 +485,7 @@ export class Test {
 			require.NoError(t, err, initOutput)
 
 			// cache the module load itself so there's less to wait for in the shell invocation below
-			functionsCmd := hostDaggerCommand(ctx, t, modDir, "functions")
+			functionsCmd := hostDaggerCommand(ctx, t, modDir, "functions", "-m", ".")
 			copy(functionsCmd.Env, os.Environ())
 			functionsCmd.Env = append(functionsCmd.Env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+f.engineEndpoint)
 			functionsOutput, err := functionsCmd.CombinedOutput()
@@ -504,7 +504,7 @@ export class Test {
 			err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 			require.NoError(t, err)
 
-			cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "terminal")
+			cmd := hostDaggerCommand(ctx, t, modDir, "call", "-m", ".", "ctr", "terminal")
 			copy(cmd.Env, os.Environ())
 			cmd.Env = append(cmd.Env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+f.engineEndpoint)
 			cmd.Stdin = tty
