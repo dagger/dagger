@@ -282,7 +282,7 @@ func withModInitAt(dir, sdk, contents string, extra ...string) dagger.WithContai
 
 func currentSchema(ctx context.Context, t *testctx.T, ctr *dagger.Container) *introspection.Schema {
 	t.Helper()
-	out, err := ctr.With(daggerQuery(introspection.Query)).Stdout(ctx)
+	out, err := ctr.With(daggerQueryAt(".", introspection.Query)).Stdout(ctx)
 	require.NoError(t, err)
 	var schemaResp introspection.Response
 	err = json.Unmarshal([]byte(out), &schemaResp)
@@ -290,7 +290,7 @@ func currentSchema(ctx context.Context, t *testctx.T, ctr *dagger.Container) *in
 	return schemaResp.Schema
 }
 
-var moduleIntrospection = daggerQuery(`
+var moduleIntrospection = daggerQueryAt(".", `
 query { host { directory(path: ".") { asModule {
     description
     objects {
