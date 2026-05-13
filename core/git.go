@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/dagql"
 )
@@ -501,6 +502,20 @@ func doGitCheckout(
 		if err := os.RemoveAll(checkoutDirGit); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("failed to remove .git: %w", err)
 		}
+	}
+
+	checkoutDir, err := checkoutGit.WorkTree(ctx)
+	if err != nil {
+		return fmt.Errorf("could not find worktree: %w", err)
+	}
+	epoch := []unix.Timespec{{}, {}}
+	if err := filepath.WalkDir(checkoutDir, func(path string, _ os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		return unix.UtimesNanoAt(unix.AT_FDCWD, path, epoch, unix.AT_SYMLINK_NOFOLLOW)
+	}); err != nil {
+		return fmt.Errorf("failed to normalize checkout timestamps: %w", err)
 	}
 
 	return nil
