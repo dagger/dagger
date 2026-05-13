@@ -188,8 +188,9 @@ func (tv *TestView) Render(ctx tuist.Context) {
 		if tv.MaxHeight > 0 {
 			viewportHeight = tv.MaxHeight
 		} else {
-			// Leave room for the keymap sibling and a small visual gap.
-			viewportHeight = max(ctx.ScreenHeight()-2, 1)
+			// Leave room for the keymap sibling. Filling the rest of the
+			// screen keeps Tuist's mouse coordinates aligned with rows.
+			viewportHeight = max(ctx.ScreenHeight()-1, 1)
 		}
 	} else if tv.MaxHeight > 0 {
 		viewportHeight = min(viewportHeight, tv.MaxHeight)
