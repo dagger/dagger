@@ -102,8 +102,8 @@ func initDangBlueprint(name, source string) dagger.WithContainerFunc {
 }
 
 // initHostDangBlueprint creates a minimal explicit workspace on the host with a
-// single Dang entrypoint module. Host-side command tests can use this to avoid
-// implicit CWD-module behavior and exercise ambient workspace loading directly.
+// single Dang entrypoint module. Host-side command tests can use this to
+// exercise ambient workspace loading directly.
 func initHostDangBlueprint(ctx context.Context, t testing.TB, workdir, name, source string) {
 	t.Helper()
 
