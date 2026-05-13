@@ -43,7 +43,7 @@ func (InterfaceSuite) TestIfaceBasic(ctx context.Context, t *testctx.T) {
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithMountedDirectory("/work", c.Host().Directory(tc.path)).
 				WithWorkdir("/work").
-				With(daggerCall("test")).
+				With(daggerCallAt(".", "test")).
 				Sync(ctx)
 			require.NoError(t, err)
 		})
@@ -71,7 +71,7 @@ func (m *Test) Fn() BadIface {
 }
 	`,
 			).
-			With(daggerFunctions()).
+			With(daggerFunctions("-m", ".")).
 			Sync(ctx)
 		require.Error(t, err)
 		require.NoError(t, c.Close())
@@ -108,7 +108,7 @@ type DanglingIface interface {
 	require.NoError(t, err)
 
 	out, err := modGen.
-		With(daggerQuery(`{hello}`)).
+		With(daggerQueryAt(".", `{hello}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"hello":"hello"}`, out)
@@ -224,7 +224,7 @@ class Test:
 					With(daggerCallAt("mallard", "quack")).
 					With(withModInit(rtc.sdk, rtc.testSource)).
 					With(daggerExec("module", "install", "./mallard")).
-					With(daggerCall("get-duck", "quack")).
+					With(daggerCallAt(".", "get-duck", "quack")).
 					Stdout(ctx)
 
 				require.NoError(t, err)
