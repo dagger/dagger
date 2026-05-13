@@ -22,7 +22,6 @@ import (
 More distros to handle:
 * Arch Linux
 * OpenSUSE/sles
-* NiXOS
 * BusyBox
 * Wolfi
 */
@@ -161,6 +160,127 @@ func (d *rhelLike) detect() (bool, error) {
 			[]byte("fedora"),
 		},
 	)
+}
+
+/*
+nixosLike handles NixOS and Nix-built distroless images. The bundle (typically
+/etc/ssl/certs/ca-certificates.crt, or whatever path the image declares via
+$SSL_CERT_FILE) is usually a symlink into a read-only /nix/store target, so
+commonInstaller's append path can't write through it. We replace the symlink
+with a regular file containing the target's content for the duration of the
+exec, then restore the symlink on uninstall.
+*/
+type nixosLike struct {
+	*commonInstaller
+	origSymlinkTarget string // empty if Install didn't replace a symlink
+}
+
+func (d *nixosLike) initialize(ctrFS *containerfs.ContainerFS) error {
+	// Prefer the path the image declares via SSL_CERT_FILE (Nix-built images
+	// commonly point this at a /nix/store-backed bundle). Fall back to the
+	// Debian/Alpine canonical path. Deliberately do NOT call EvaluateSymlinks
+	// here — we want the immediate path so the symlink swap and the subsequent
+	// append target the same location.
+	bundlePath := "/etc/ssl/certs/ca-certificates.crt"
+	if v, ok := ctrFS.EnvVar("SSL_CERT_FILE"); ok && filepath.IsAbs(v) {
+		bundlePath = v
+	}
+
+	d.commonInstaller = &commonInstaller{
+		ctrFS:           ctrFS,
+		bundlePath:      bundlePath,
+		customCACertDir: "/usr/local/share/ca-certificates",
+		// Most Nix-distroless images don't ship update-ca-certificates, so
+		// commonInstaller's no-update-cmd fallback path is the one that
+		// actually runs. If the binary is present, the cmd path works too.
+		updateCmd: []string{"update-ca-certificates"},
+	}
+
+	return nil
+}
+
+func (d *nixosLike) detect() (bool, error) {
+	if exists, err := d.ctrFS.AnyPathExists([]string{"/etc/NIXOS"}); err != nil {
+		return false, err
+	} else if exists {
+		return true, nil
+	}
+
+	return d.ctrFS.OSReleaseFileContains(
+		[][]byte{[]byte("nixos")},
+		[][]byte{[]byte("nixos")},
+	)
+}
+
+func (d *nixosLike) Install(ctx context.Context) (rerr error) {
+	defer func() {
+		if rerr == nil || d.origSymlinkTarget == "" {
+			return
+		}
+		// commonInstaller.Install failed after we swapped the symlink — restore it.
+		target := d.origSymlinkTarget
+		d.origSymlinkTarget = ""
+		if err := d.ctrFS.Remove(d.bundlePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			rerr = errors.Join(rerr, fmt.Errorf("failed to remove materialized bundle: %w", err))
+		}
+		if err := d.ctrFS.Symlink(target, d.bundlePath); err != nil {
+			rerr = errors.Join(rerr, fmt.Errorf("failed to restore symlink %s -> %s: %w", d.bundlePath, target, err))
+		}
+	}()
+
+	info, err := d.ctrFS.Lstat(d.bundlePath)
+	switch {
+	case err == nil && info.Mode()&os.ModeSymlink != 0:
+		target, err := d.ctrFS.Readlink(d.bundlePath)
+		if err != nil {
+			return fmt.Errorf("failed to readlink %s: %w", d.bundlePath, err)
+		}
+		// Resolve the target through ContainerFS rather than passing the
+		// symlink path to ReadFile. ctrFS.ReadFile(d.bundlePath) would call
+		// os.ReadFile, which lets the kernel follow the symlink in the
+		// engine's namespace — absolute targets like /nix/store/... then
+		// resolve against the engine's "/" instead of the container rootfs.
+		targetPath := target
+		if !filepath.IsAbs(targetPath) {
+			targetPath = filepath.Join(filepath.Dir(d.bundlePath), targetPath)
+		}
+		content, err := d.ctrFS.ReadFile(targetPath)
+		if err != nil {
+			return fmt.Errorf("failed to read symlink target %s for %s: %w", targetPath, d.bundlePath, err)
+		}
+		if err := d.ctrFS.Remove(d.bundlePath); err != nil {
+			return fmt.Errorf("failed to remove symlink %s: %w", d.bundlePath, err)
+		}
+		if err := d.ctrFS.WriteFile(d.bundlePath, content, 0o644); err != nil {
+			return fmt.Errorf("failed to materialize %s: %w", d.bundlePath, err)
+		}
+		d.origSymlinkTarget = target
+	case errors.Is(err, os.ErrNotExist):
+		// No bundle yet — commonInstaller will create one.
+	case err != nil:
+		return fmt.Errorf("failed to lstat %s: %w", d.bundlePath, err)
+	}
+	return d.commonInstaller.Install(ctx)
+}
+
+func (d *nixosLike) Uninstall(ctx context.Context) error {
+	// Run commonInstaller's uninstall regardless of whether we swapped the
+	// symlink. Capture its error and keep going — the symlink restore below
+	// is the only thing that frees up the materialized bundle (which may still
+	// contain the cert if commonInstaller.Uninstall failed).
+	rerr := d.commonInstaller.Uninstall(ctx)
+	if d.origSymlinkTarget == "" {
+		return rerr
+	}
+	target := d.origSymlinkTarget
+	d.origSymlinkTarget = ""
+	if err := d.ctrFS.Remove(d.bundlePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		rerr = errors.Join(rerr, fmt.Errorf("failed to remove materialized bundle %s: %w", d.bundlePath, err))
+	}
+	if err := d.ctrFS.Symlink(target, d.bundlePath); err != nil {
+		rerr = errors.Join(rerr, fmt.Errorf("failed to restore symlink %s -> %s: %w", d.bundlePath, target, err))
+	}
+	return rerr
 }
 
 // so far, the existing installers follow a common enough pattern that we can
