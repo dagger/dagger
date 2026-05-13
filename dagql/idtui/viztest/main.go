@@ -129,6 +129,37 @@ func (*Viztest) FailMulti(ctx context.Context) (rerr error) {
 	)
 }
 
+const testSummarySuite = "viztest summary"
+
+// TestSummary emits a deterministic OpenTelemetry test summary.
+// +cache="never"
+// +check
+func (*Viztest) TestSummary(ctx context.Context) error {
+	ctx, suite := Tracer().Start(ctx, "viztest summary suite",
+		trace.WithAttributes(
+			attribute.String("test.suite.name", testSummarySuite),
+			attribute.String("test.suite.run.status", "success"),
+		))
+	defer suite.End()
+
+	emitTestSummaryCase(ctx, "passing test 01", "pass")
+	emitTestSummaryCase(ctx, "passing test 02", "pass")
+	for i := 1; i <= 8; i++ {
+		emitTestSummaryCase(ctx, fmt.Sprintf("skipped test %02d", i), "skipped")
+	}
+	return nil
+}
+
+func emitTestSummaryCase(ctx context.Context, name, status string) {
+	_, span := Tracer().Start(ctx, name,
+		trace.WithAttributes(
+			attribute.String("test.case.name", testSummarySuite+"/"+name),
+			attribute.String("test.suite.name", testSummarySuite),
+			attribute.String("test.case.result.status", status),
+		))
+	span.End()
+}
+
 // +cache="session"
 func (*Viztest) LogStdout() {
 	fmt.Println("Hello, world!")

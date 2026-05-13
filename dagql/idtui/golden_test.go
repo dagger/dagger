@@ -169,6 +169,8 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Function: "call-bubbling-dep", Fail: true},
 		{Function: "fail-multi", Fail: true},
 		{Name: "fail-multi-noexpand", Function: "fail-multi", Fail: true, NoExpand: true},
+		{Name: "test-summary-check", Function: "test-summary", Check: true, NoExpand: true},
+		{Name: "test-summary-call", Function: "test-summary", NoExpand: true},
 
 		// Used to be marked as flaky
 		{Function: "cached-execs"},
@@ -315,6 +317,7 @@ type Example struct {
 	Module   string
 	Function string
 	Args     []string
+	Check    bool
 	// verbosities 3 and higher do not work well with golden, they're not very deterministic atm
 	Verbosity int
 	Fail      bool
@@ -343,7 +346,15 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		daggerBin = bin
 	}
 
-	daggerArgs := []string{"--progress=report", "-v", "call", "-m", ex.Module, ex.Function}
+	var daggerArgs []string
+	if ex.Check {
+		daggerArgs = []string{"--progress=report", "-v", "--workdir", ex.Module, "check"}
+		if ex.Function != "" {
+			daggerArgs = append(daggerArgs, ex.Function)
+		}
+	} else {
+		daggerArgs = []string{"--progress=report", "-v", "call", "-m", ex.Module, ex.Function}
+	}
 	daggerArgs = append(daggerArgs, ex.Args...)
 
 	if ex.Verbosity > 0 {

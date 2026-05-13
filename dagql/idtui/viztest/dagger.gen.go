@@ -718,6 +718,13 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*Viztest).Terminal(&parent), nil
+		case "TestSummary":
+			var parent Viztest
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			return nil, (*Viztest).TestSummary(&parent, ctx)
 		case "TraceFunctionCalls":
 			var parent Viztest
 			err = json.Unmarshal(parentJSON, &parent)

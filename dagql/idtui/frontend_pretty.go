@@ -1074,7 +1074,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
-	if fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil {
+	if fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil || fe.db.HasTests() {
 		for _, line := range fe.tui.RenderLines() {
 			fmt.Fprintln(w, line)
 		}
@@ -1495,9 +1495,15 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	r := newRenderer(fe.db, fe.contentWidth/2, fe.FrontendOpts, fe.finalRender)
 
 	if fe.finalRender {
-		// Final render: just emit progress rows, no chrome or truncation.
+		// Final render: emit progress rows and any unscoped tests, no chrome or truncation.
 		progressLines := fe.renderProgressLines(r, ctx, 0)
 		ctx.Lines(progressLines...)
+		if testLines := fe.renderFinalGlobalTests(ctx); len(testLines) > 0 {
+			if len(progressLines) > 0 {
+				ctx.Line("")
+			}
+			ctx.Lines(testLines...)
+		}
 		return
 	}
 
@@ -1899,6 +1905,10 @@ func (fe *frontendPretty) renderProgressLines(r *renderer, ctx tuist.Context, ch
 	focusLine := -1
 	if fe.FocusedSpan.IsValid() {
 		focusLine = fe.findFocusLine(topGapCounts)
+	}
+
+	if fe.finalRender {
+		return allLines
 	}
 
 	// Crop the bottom so the focused span stays within the visible
