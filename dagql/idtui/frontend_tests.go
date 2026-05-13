@@ -712,60 +712,121 @@ func (tv *TestView) renderTestSummaryLines(out *termenv.Output, view *dagui.Test
 		titleLine += " " + renderTestCountsSummary(out, view.Counts, max(width-lipgloss.Width(prefix)-lipgloss.Width(title)-2, 1))
 	}
 	lines := []string{clipANSI(titleLine, width)}
-	if view != nil {
-		tv.appendTestSummaryNodes(&lines, out, view.Roots, 0, width)
+	if view == nil {
+		return cropLines(lines, height)
+	}
+	entries := collectTestSummaryEntries(view)
+	if len(entries.failing) > 0 || len(entries.running) > 0 || len(entries.skipped) > 0 || view.Counts.Passing > 0 {
+		lines = append(lines, "")
+	}
+	for _, entry := range entries.failing {
+		lines = append(lines, renderTestSummaryEntry(out, entry, tv.SummaryIndent, width))
+	}
+	for _, entry := range entries.running {
+		lines = append(lines, renderTestSummaryEntry(out, entry, tv.SummaryIndent, width))
+	}
+	for _, entry := range entries.skipped {
+		lines = append(lines, renderTestSummaryEntry(out, entry, tv.SummaryIndent, width))
+	}
+	if view.Counts.Passing > 0 {
+		lines = append(lines, renderTestSummaryPassedGroup(out, view.Counts.Passing, tv.SummaryIndent, width))
 	}
 	return cropLines(lines, height)
 }
 
-func (tv *TestView) appendTestSummaryNodes(lines *[]string, out *termenv.Output, nodes []*dagui.TestNode, depth, width int) {
-	partition := dagui.PartitionTests(nodes)
-	groups := [][]*dagui.TestNode{
-		partition.Failing,
-		partition.Running,
-		partition.Suites,
-		partition.Mixed,
-		partition.Skipped,
-	}
-	for _, group := range groups {
-		for _, node := range group {
-			*lines = append(*lines, renderTestSummaryNode(out, node, tv.SummaryIndent, depth, width))
-			tv.appendTestSummaryNodes(lines, out, node.Children, depth+1, width)
-		}
-	}
-	if len(partition.Passing) > 0 {
-		var counts dagui.TestCounts
-		for _, node := range partition.Passing {
-			counts.Failing += node.Counts.Failing
-			counts.Running += node.Counts.Running
-			counts.Passing += node.Counts.Passing
-			counts.Skipped += node.Counts.Skipped
-		}
-		*lines = append(*lines, renderTestSummaryPassedGroup(out, counts, tv.SummaryIndent, depth, width))
-	}
+type testSummaryEntry struct {
+	category dagui.TestCategory
+	label    string
 }
 
-func renderTestSummaryNode(out *termenv.Output, node *dagui.TestNode, summaryIndent, depth, width int) string {
+type testSummaryEntries struct {
+	failing []testSummaryEntry
+	running []testSummaryEntry
+	skipped []testSummaryEntry
+}
+
+func collectTestSummaryEntries(view *dagui.TestView) testSummaryEntries {
+	var entries testSummaryEntries
+	var walk func(*dagui.TestNode)
+	walk = func(node *dagui.TestNode) {
+		if node == nil {
+			return
+		}
+		if node.Kind == dagui.TestNodeCase {
+			entry := testSummaryEntry{category: node.SelfCategory, label: testSummaryCaseLabel(node)}
+			switch node.SelfCategory {
+			case dagui.TestCategoryFailing:
+				entries.failing = append(entries.failing, entry)
+			case dagui.TestCategoryRunning:
+				entries.running = append(entries.running, entry)
+			case dagui.TestCategorySkipped:
+				entries.skipped = append(entries.skipped, entry)
+			}
+		} else if node.Counts.Total() == 0 && node.Category != dagui.TestCategoryPassing {
+			entry := testSummaryEntry{category: node.Category, label: testNodeDisplayName(node)}
+			switch node.Category {
+			case dagui.TestCategoryFailing, dagui.TestCategoryMixed:
+				entries.failing = append(entries.failing, entry)
+			case dagui.TestCategoryRunning:
+				entries.running = append(entries.running, entry)
+			case dagui.TestCategorySkipped:
+				entries.skipped = append(entries.skipped, entry)
+			}
+		}
+		for _, child := range node.Children {
+			walk(child)
+		}
+	}
+	for _, root := range view.Roots {
+		walk(root)
+	}
+	return entries
+}
+
+func testSummaryCaseLabel(node *dagui.TestNode) string {
 	if node == nil {
 		return ""
 	}
-	indent := testSummaryIndent(summaryIndent, depth)
-	icon := out.String(testCategoryIcon(node.Category)).Foreground(testCategoryColor(node.Category)).String()
-	nameWidth := max(width-lipgloss.Width(indent)-lipgloss.Width(icon)-1, 1)
-	name := out.String(clipPlain(testNodeDisplayName(node), nameWidth))
-	if node.Kind != dagui.TestNodeSuite && node.Kind != dagui.TestNodeVirtualSuite {
-		name = name.Foreground(testNodeNameColor(node))
+	caseName := node.FullName
+	if caseName == "" {
+		caseName = node.Name
 	}
-	return clipANSI(indent+icon+" "+name.String(), width)
+	suiteName := ""
+	if node.Span != nil {
+		suiteName = node.Span.TestSuiteName
+	}
+	if suiteName == "" {
+		for parent := node.Parent; parent != nil; parent = parent.Parent {
+			if parent.Kind == dagui.TestNodeSuite || parent.Kind == dagui.TestNodeVirtualSuite {
+				suiteName = parent.FullName
+				if suiteName == "" {
+					suiteName = parent.Name
+				}
+				break
+			}
+		}
+	}
+	if suiteName == "" {
+		return caseName
+	}
+	if strings.HasPrefix(caseName, suiteName+"/") {
+		caseName = strings.TrimPrefix(caseName, suiteName+"/")
+	}
+	return suiteName + " › " + caseName
 }
 
-func renderTestSummaryPassedGroup(out *termenv.Output, counts dagui.TestCounts, summaryIndent, depth, width int) string {
-	indent := testSummaryIndent(summaryIndent, depth)
+func renderTestSummaryEntry(out *termenv.Output, entry testSummaryEntry, summaryIndent, width int) string {
+	indent := strings.Repeat(" ", max(summaryIndent, 0)+2)
+	icon := out.String(testCategoryIcon(entry.category)).Foreground(testCategoryColor(entry.category)).String()
+	labelWidth := max(width-lipgloss.Width(indent)-lipgloss.Width(icon)-1, 1)
+	label := out.String(clipPlain(entry.label, labelWidth)).String()
+	return clipANSI(indent+icon+" "+label, width)
+}
+
+func renderTestSummaryPassedGroup(out *termenv.Output, passing, summaryIndent, width int) string {
+	indent := strings.Repeat(" ", max(summaryIndent, 0)+2)
+	counts := dagui.TestCounts{Passing: passing}
 	return clipANSI(indent+renderTestCountsSummary(out, counts, max(width-lipgloss.Width(indent), 1)), width)
-}
-
-func testSummaryIndent(summaryIndent, depth int) string {
-	return strings.Repeat(" ", max(summaryIndent, 0)+2+max(depth, 0)*2)
 }
 
 func renderTestCountsSummary(out *termenv.Output, counts dagui.TestCounts, width int) string {
@@ -776,10 +837,10 @@ func renderTestCountsSummary(out *termenv.Output, counts dagui.TestCounts, width
 		}
 		parts = append(parts, out.String(fmt.Sprintf("%s %d %s", icon, count, label)).Foreground(color).String())
 	}
-	add(counts.Passing, IconSuccess, termenv.ANSIGreen, "passed")
-	add(counts.Running, DotHalf, termenv.ANSIYellow, "running")
 	add(counts.Failing, IconFailure, termenv.ANSIRed, "failed")
+	add(counts.Running, DotHalf, termenv.ANSIYellow, "running")
 	add(counts.Skipped, IconSkipped, termenv.ANSIBrightBlack, "skipped")
+	add(counts.Passing, IconSuccess, termenv.ANSIGreen, "passed")
 	if len(parts) == 0 {
 		parts = append(parts, out.String("0 tests").Foreground(termenv.ANSIBrightBlack).Faint().String())
 	}
