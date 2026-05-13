@@ -596,6 +596,9 @@ func (tv *TestView) renderSidebarLines(out *termenv.Output, view *dagui.TestView
 func (tv *TestView) renderSidebarLinesWithHover(out *termenv.Output, view *dagui.TestView, rows []testSidebarRow, selectedIdx, hoveredIdx, width, height int) ([]string, map[int]int) {
 	var lines []string
 	rowByLine := make(map[int]int)
+	if tv.ListOnly {
+		return tv.renderTestSummaryLines(out, view, width, height), rowByLine
+	}
 	title := "Tests"
 	if tv.ScopeName != "" {
 		title += " · " + tv.ScopeName
@@ -693,6 +696,91 @@ func (tv *TestView) renderSidebarRow(out *termenv.Output, row testSidebarRow, se
 	nameWidth := max(width-4-lipgloss.Width(indent)-countWidth, 1)
 	nameStyle := out.String(clipPlain(testNodeDisplayName(node), nameWidth)).Foreground(testNodeNameColor(node))
 	return selector + " " + iconStyle.String() + " " + indent + nameStyle.String() + count
+}
+
+func (tv *TestView) renderTestSummaryLines(out *termenv.Output, view *dagui.TestView, width, height int) []string {
+	title := "Tests"
+	if tv.ScopeName != "" {
+		title += " · " + tv.ScopeName
+	}
+	prefix := "  "
+	titleLine := prefix + out.String(title+":").Bold().String()
+	if view != nil {
+		titleLine += " " + renderTestCountsSummary(out, view.Counts, max(width-lipgloss.Width(prefix)-lipgloss.Width(title)-2, 1))
+	}
+	lines := []string{clipANSI(titleLine, width)}
+	if view != nil {
+		tv.appendTestSummaryNodes(&lines, out, view.Roots, 0, width)
+	}
+	return cropLines(lines, height)
+}
+
+func (tv *TestView) appendTestSummaryNodes(lines *[]string, out *termenv.Output, nodes []*dagui.TestNode, depth, width int) {
+	partition := dagui.PartitionTests(nodes)
+	groups := [][]*dagui.TestNode{
+		partition.Failing,
+		partition.Running,
+		partition.Suites,
+		partition.Mixed,
+		partition.Skipped,
+	}
+	for _, group := range groups {
+		for _, node := range group {
+			*lines = append(*lines, renderTestSummaryNode(out, node, depth, width))
+			tv.appendTestSummaryNodes(lines, out, node.Children, depth+1, width)
+		}
+	}
+	if len(partition.Passing) > 0 {
+		var counts dagui.TestCounts
+		for _, node := range partition.Passing {
+			counts.Failing += node.Counts.Failing
+			counts.Running += node.Counts.Running
+			counts.Passing += node.Counts.Passing
+			counts.Skipped += node.Counts.Skipped
+		}
+		*lines = append(*lines, renderTestSummaryPassedGroup(out, counts, depth, width))
+	}
+}
+
+func renderTestSummaryNode(out *termenv.Output, node *dagui.TestNode, depth, width int) string {
+	if node == nil {
+		return ""
+	}
+	indent := testSummaryIndent(depth)
+	icon := out.String(testCategoryIcon(node.Category)).Foreground(testCategoryColor(node.Category)).String()
+	nameWidth := max(width-lipgloss.Width(indent)-lipgloss.Width(icon)-1, 1)
+	name := out.String(clipPlain(testNodeDisplayName(node), nameWidth))
+	if node.Kind != dagui.TestNodeSuite && node.Kind != dagui.TestNodeVirtualSuite {
+		name = name.Foreground(testNodeNameColor(node))
+	}
+	return clipANSI(indent+icon+" "+name.String(), width)
+}
+
+func renderTestSummaryPassedGroup(out *termenv.Output, counts dagui.TestCounts, depth, width int) string {
+	indent := testSummaryIndent(depth)
+	return clipANSI(indent+renderTestCountsSummary(out, counts, max(width-lipgloss.Width(indent), 1)), width)
+}
+
+func testSummaryIndent(depth int) string {
+	return strings.Repeat(" ", 4+max(depth, 0)*2)
+}
+
+func renderTestCountsSummary(out *termenv.Output, counts dagui.TestCounts, width int) string {
+	var parts []string
+	add := func(count int, icon string, color termenv.Color, label string) {
+		if count == 0 {
+			return
+		}
+		parts = append(parts, out.String(fmt.Sprintf("%s %d %s", icon, count, label)).Foreground(color).String())
+	}
+	add(counts.Passing, IconSuccess, termenv.ANSIGreen, "passed")
+	add(counts.Running, DotHalf, termenv.ANSIYellow, "running")
+	add(counts.Failing, IconFailure, termenv.ANSIRed, "failed")
+	add(counts.Skipped, IconSkipped, termenv.ANSIBrightBlack, "skipped")
+	if len(parts) == 0 {
+		parts = append(parts, out.String("0 tests").Foreground(termenv.ANSIBrightBlack).Faint().String())
+	}
+	return clipANSI(strings.Join(parts, " "), width)
 }
 
 func (tv *TestView) renderPassedGroupSidebarRow(out *termenv.Output, row testSidebarRow, selected, hovered bool, width int) string {
@@ -1174,17 +1262,20 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		tv.Update()
 	}
 
-	prefixBuf := new(strings.Builder)
-	prefixOut := NewOutput(prefixBuf, termenv.WithProfile(s.fe.profile))
-	r.indentFunc = s.indentFunc(prefixOut)
-	r.fancyIndent(prefixOut, row, false, false)
-	pipe := prefixOut.String(VertBoldBar).Foreground(restrainedStatusColor(row.Span))
-	if s.focused && !s.fe.finalRender {
-		pipe = hl(pipe)
+	var prefix string
+	if !s.fe.finalRender {
+		prefixBuf := new(strings.Builder)
+		prefixOut := NewOutput(prefixBuf, termenv.WithProfile(s.fe.profile))
+		r.indentFunc = s.indentFunc(prefixOut)
+		r.fancyIndent(prefixOut, row, false, false)
+		pipe := prefixOut.String(VertBoldBar).Foreground(restrainedStatusColor(row.Span))
+		if s.focused {
+			pipe = hl(pipe)
+		}
+		fmt.Fprint(prefixOut, pipe.String())
+		fmt.Fprint(prefixOut, " ")
+		prefix = prefixBuf.String()
 	}
-	fmt.Fprint(prefixOut, pipe.String())
-	fmt.Fprint(prefixOut, " ")
-	prefix := prefixBuf.String()
 
 	ctxWidth := ctx.Width
 	if s.fe.finalRender && ctxWidth <= 0 {
@@ -1195,9 +1286,12 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		width = max(width, finalRenderTestsWidth)
 	}
 	result := s.RenderChildResult(ctx.Resize(width, limit), tv)
-	lines := make([]string, len(result.Lines))
-	for i, line := range result.Lines {
-		lines[i] = prefix + line
+	lines := make([]string, 0, len(result.Lines)+1)
+	if s.fe.finalRender {
+		lines = append(lines, "")
+	}
+	for _, line := range result.Lines {
+		lines = append(lines, prefix+line)
 	}
 	return lines
 }
