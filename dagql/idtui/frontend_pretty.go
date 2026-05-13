@@ -1035,6 +1035,12 @@ func (fe *frontendPretty) handleEOF() {
 }
 
 func (fe *frontendPretty) doQuit() {
+	// Mark the frontend dirty so the final live frame observes fe.quitting and
+	// renders blank instead of reusing cached progress rows. Without this, the
+	// TUI can leave stale live output above the final render when NoExit exits
+	// via q after the run has already completed.
+	fe.Update()
+
 	// Remove the keymap bar so it doesn't appear in the final frame.
 	if fe.keymapBar != nil {
 		fe.tui.RemoveChild(fe.keymapBar)
