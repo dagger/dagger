@@ -338,8 +338,8 @@ func (srv *Server) detectAndLoadWorkspace(
 	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client, statFS, readFile, cwd, resolveLocalRef, workspaceAddress, isLocal, dagql.ObjectResult[*core.Directory]{})
 }
 
-// pendingModule represents a module to be loaded from compat parsing,
-// -m flags, or the implicit CWD module.
+// pendingModule represents a module to be loaded from workspace discovery,
+// compat parsing, or -m flags.
 type legacyWorkspaceFieldPolicy uint8
 
 const (
@@ -411,35 +411,10 @@ type moduleLoadKind string
 
 const (
 	moduleLoadKindAmbient moduleLoadKind = "ambient"
-	moduleLoadKindCWD     moduleLoadKind = "cwd"
 	moduleLoadKindExtra   moduleLoadKind = "extra"
 )
 
 const maxParallelModuleResolves = 8
-
-// cwdModuleName reads the module name from the dagger.json in moduleDir.
-func cwdModuleName(ctx context.Context, readFile func(context.Context, string) ([]byte, error), moduleDir string) string {
-	data, err := readFile(ctx, filepath.Join(moduleDir, workspace.ModuleConfigFileName))
-	if err != nil {
-		return ""
-	}
-	var cfg struct {
-		Name string `json:"name"`
-	}
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return ""
-	}
-	return cfg.Name
-}
-
-func pendingCWDModule(ctx context.Context, readFile func(context.Context, string) ([]byte, error), moduleDir, ref string) pendingModule {
-	return pendingModule{
-		Kind:       moduleLoadKindCWD,
-		Ref:        ref,
-		Name:       cwdModuleName(ctx, readFile, moduleDir),
-		Entrypoint: true,
-	}
-}
 
 func loadWorkspaceConfig(
 	ctx context.Context,
@@ -570,31 +545,6 @@ func legacyCallerModuleDir(isLocal bool, moduleDir string) string {
 	return moduleDir
 }
 
-func hasPendingExtraModules(client *daggerClient) bool {
-	return len(client.pendingExtraModules) > 0
-}
-
-func suppressPendingCWDModules(mods []pendingModule) []pendingModule {
-	if len(mods) == 0 {
-		return nil
-	}
-	filtered := mods[:0]
-	for _, mod := range mods {
-		if mod.Kind == moduleLoadKindCWD {
-			continue
-		}
-		filtered = append(filtered, mod)
-	}
-	return filtered
-}
-
-func suppressCWDModuleForCompatWorkspace(compatWorkspace *workspace.CompatWorkspace, moduleDir string) bool {
-	if compatWorkspace == nil || compatWorkspace.ProjectRoot == "" || moduleDir == "" {
-		return false
-	}
-	return filepath.Clean(compatWorkspace.ProjectRoot) == filepath.Clean(moduleDir)
-}
-
 // detectAndLoadWorkspaceWithRootfs is the unified core of workspace discovery
 // and module gathering.
 //
@@ -648,17 +598,6 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	if ws == nil {
 		client.workspace = nil
 		client.pendingModules = nil
-		if loadModules {
-			moduleDir, hasModuleConfig, err := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
-			if err != nil {
-				return fmt.Errorf("finding cwd module: %w", err)
-			}
-			if hasModuleConfig && !hasPendingExtraModules(client) {
-				client.pendingModules = []pendingModule{
-					pendingCWDModule(ctx, readFile, moduleDir, moduleDir),
-				}
-			}
-		}
 		return nil
 	}
 
@@ -777,15 +716,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		}
 	}
 
-	// (2) CWD module fallback (nearest dagger.json by find-up from the caller).
-	// A selected workspace config owns module loading completely; the cwd module
-	// is only inferred when no workspace config is selected.
-	if wsConfig == nil && hasModuleConfig && !hasPendingExtraModules(client) && !suppressCWDModuleForCompatWorkspace(compatWorkspace, moduleDir) {
-		rel, _ := filepath.Rel(ws.Root, moduleDir)
-		pending = append(pending, pendingCWDModule(ctx, readFile, moduleDir, resolveLocalRef(ws, rel)))
-	}
-
-	// (3) Extra modules from -m flag are stored separately in
+	// (2) Extra modules from -m flag are stored separately in
 	//     client.pendingExtraModules (already populated from clientMD).
 	//     They go through the same loadModule chokepoint in ensureModulesLoaded.
 
@@ -888,8 +819,8 @@ func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, cloneRef
 	return tree, nil
 }
 
-// ensureModulesLoaded loads all pending modules (from compat parsing,
-// the implicit CWD module, and -m flags). Called from serveQuery after
+// ensureModulesLoaded loads all pending modules (from workspace discovery,
+// compat parsing, and -m flags). Called from serveQuery after
 // ensureWorkspaceLoaded. Uses a mutex+flag instead of sync.Once so that
 // transient failures (e.g. session not yet registered) can be retried.
 func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient) error {
@@ -1269,8 +1200,6 @@ func entrypointTierPriority(kind moduleLoadKind) int {
 	switch kind {
 	case moduleLoadKindExtra:
 		return 3
-	case moduleLoadKindCWD:
-		return 2
 	case moduleLoadKindAmbient:
 		return 1
 	default:
@@ -1359,7 +1288,6 @@ func arbitrateResolvedModuleLoads(
 
 	candidatesByTier := map[moduleLoadKind][]int{
 		moduleLoadKindAmbient: nil,
-		moduleLoadKindCWD:     nil,
 		moduleLoadKindExtra:   nil,
 	}
 	for i := range loads {
@@ -1369,14 +1297,14 @@ func arbitrateResolvedModuleLoads(
 		candidatesByTier[loads[i].mod.Kind] = append(candidatesByTier[loads[i].mod.Kind], i)
 	}
 
-	for _, kind := range []moduleLoadKind{moduleLoadKindAmbient, moduleLoadKindCWD, moduleLoadKindExtra} {
+	for _, kind := range []moduleLoadKind{moduleLoadKindAmbient, moduleLoadKindExtra} {
 		if len(candidatesByTier[kind]) > 1 {
 			return entrypointConflictError(kind, candidatesByTier[kind], loads)
 		}
 	}
 
 	winner := -1
-	for _, kind := range []moduleLoadKind{moduleLoadKindExtra, moduleLoadKindCWD, moduleLoadKindAmbient} {
+	for _, kind := range []moduleLoadKind{moduleLoadKindExtra, moduleLoadKindAmbient} {
 		if len(candidatesByTier[kind]) == 1 {
 			winner = candidatesByTier[kind][0]
 			break
@@ -1400,8 +1328,6 @@ func entrypointConflictError(kind moduleLoadKind, indexes []int, loads []moduleL
 		return fmt.Errorf("invalid workspace configuration: multiple distinct ambient entrypoint modules: %s", strings.Join(names, ", "))
 	case moduleLoadKindExtra:
 		return fmt.Errorf("invalid extra-module request: multiple distinct extra-module entrypoints: %s", strings.Join(names, ", "))
-	case moduleLoadKindCWD:
-		return fmt.Errorf("internal error: multiple distinct cwd entrypoint modules: %s", strings.Join(names, ", "))
 	default:
 		return fmt.Errorf("multiple distinct entrypoint modules: %s", strings.Join(names, ", "))
 	}
@@ -1419,8 +1345,7 @@ func resolvedModuleLoadIdentity(mod dagql.ObjectResult[*core.Module]) string {
 }
 
 // resolveModule resolves a module through the dagql pipeline.
-// Handles all module sources uniformly: legacy compat modules,
-// implicit CWD modules, and -m flag modules.
+// Handles all module sources uniformly: legacy compat modules and -m flag modules.
 //
 // Legacy settings (LegacyDefaultPath, ArgCustomizations, WorkspaceConfig, etc.)
 // are passed as internal args to asModule so they are applied BEFORE the module
