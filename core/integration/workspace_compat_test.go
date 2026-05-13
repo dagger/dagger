@@ -332,7 +332,13 @@ func (WorkspaceCompatSuite) TestCompatDetection(ctx context.Context, t *testctx.
 		c := connect(ctx, t)
 		ctr := legacySDKOnlyDangSource(t, c, "hello from root source")
 
-		out, err := ctr.With(compatDaggerCall("greet")).CombinedOutput(ctx)
+		out, err := ctr.With(compatDaggerExecFail("call", "greet")).CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, `unknown command "greet" for "dagger call"`)
+		require.NotContains(t, out, "hello from root source")
+		require.NotContains(t, out, "inferring from dagger.json")
+
+		out, err = ctr.With(compatDaggerExec("call", "-m", ".", "greet")).CombinedOutput(ctx)
 		require.NoError(t, err, out)
 		require.Contains(t, out, "hello from root source")
 		require.NotContains(t, out, "inferring from dagger.json")
@@ -419,7 +425,10 @@ func (WorkspaceCompatSuite) TestCompatRequiresWorkspaceRoot(ctx context.Context,
   }
 }`), 0o644))
 
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "greet")
+	// With no detected workspace root this cannot become an ambient compat
+	// workspace. Load it explicitly to verify legacy workspace fields are still
+	// rejected as generic module fields.
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "functions", "-m", ".")
 	requireErrOut(t, err, "This module's dagger.json uses toolchains or blueprints, which have moved to workspaces.")
 }
 
