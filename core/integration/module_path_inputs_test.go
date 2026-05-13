@@ -962,6 +962,88 @@ func (m *Test) GetRelDepSource(ctx context.Context, src *dagger.Directory) (*dag
 	})
 }
 
+func (ModuleSuite) TestDefaultPathAndIgnoreUseRemoteModuleSource(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	remoteModule := c.Directory().
+		WithNewFile("source.txt", "module source").
+		WithNewFile("filtered/keep.txt", "module keep").
+		WithNewFile("filtered/drop.txt", "module drop").
+		WithNewFile("dagger.json", `{"name":"reader","sdk":{"source":"go"}}`).
+		WithNewFile("main.go", `package main
+
+import (
+	"context"
+
+	"dagger/reader/internal/dagger"
+)
+
+type Reader struct{}
+
+// ReadDefaultFile proves a File +defaultPath is resolved from this module source.
+func (m *Reader) ReadDefaultFile(
+	ctx context.Context,
+
+	// +defaultPath="/source.txt"
+	source *dagger.File,
+) (string, error) {
+	return source.Contents(ctx)
+}
+
+// ReadDefaultDirectoryFile proves a Directory +defaultPath is resolved from this module source.
+func (m *Reader) ReadDefaultDirectoryFile(
+	ctx context.Context,
+
+	// +defaultPath="/filtered"
+	filtered *dagger.Directory,
+) (string, error) {
+	return filtered.File("keep.txt").Contents(ctx)
+}
+
+// ListIgnoredDefaultDirectory proves +ignore applies to the defaultPath directory from this module source.
+func (m *Reader) ListIgnoredDefaultDirectory(
+	ctx context.Context,
+
+	// +defaultPath="/filtered"
+	// +ignore=["drop.txt"]
+	filtered *dagger.Directory,
+) ([]string, error) {
+	return filtered.Entries(ctx)
+}
+`)
+
+	gitSrv, _ := gitSmartHTTPServiceDirAuth(ctx, t, c, "", makeGitDir(c, remoteModule, "main"), "", nil)
+	gitSrv, err := gitSrv.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = gitSrv.Stop(ctx) })
+
+	hostname, err := gitSrv.Hostname(ctx)
+	require.NoError(t, err)
+	remoteRef := "http://" + resolveServiceIP(ctx, t, c, hostname) + "/repo.git@main"
+
+	ctr := workspaceBase(t, c).
+		WithNewFile("source.txt", "workspace source should not be read").
+		WithNewFile("filtered/keep.txt", "workspace keep should not be read").
+		WithNewFile("filtered/drop.txt", "workspace drop should not be read").
+		WithNewFile("filtered/workspace-only.txt", "workspace-only should not be listed").
+		WithNewFile(".dagger/config.toml", `[modules.reader]
+source = "`+remoteRef+`"
+entrypoint = true
+`)
+
+	out, err := ctr.With(daggerCall("read-default-file")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "module source", out)
+
+	out, err = ctr.With(daggerCall("read-default-directory-file")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "module keep", out)
+
+	out, err = ctr.With(daggerCall("list-ignored-default-directory")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "keep.txt\n", out)
+}
+
 func (ModuleSuite) TestContextDirectoryGit(ctx context.Context, t *testctx.T) {
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		for _, mod := range []string{"context-dir", "context-dir-user"} {
