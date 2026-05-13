@@ -1,8 +1,8 @@
 package core
 
 // These tests cover how Dagger chooses which module to load for a command. They
-// verify path/ref resolution, current-directory nomination, precedence between
-// candidates, and entrypoint selection for workspace and standalone modules.
+// verify path/ref resolution, precedence between candidates, and entrypoint
+// selection for workspace and standalone modules.
 //
 // See also:
 // - workspace_compat_test.go: legacy compat workspace detection.
@@ -391,10 +391,10 @@ type Beta {
 }
 
 // TestModuleLoadingPrecedence should cover the explicit runtime precedence
-// rules after dedupe: configured workspaces own module loading, unconfigured
-// workspaces may fall back to CWD modules, and extra modules win when present.
+// rules after dedupe: configured workspaces own module loading and extra
+// modules win when present.
 func (ModuleLoadingSuite) TestModuleLoadingPrecedence(ctx context.Context, t *testctx.T) {
-	t.Run("configured workspace ignores cwd module", func(ctx context.Context, t *testctx.T) {
+	t.Run("configured workspace ignores cwd dagger.json", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c).
 			WithNewFile(".dagger/config.toml", `[modules.ambient]
@@ -414,18 +414,18 @@ entrypoint = true
 		require.Contains(t, out, "nested")
 	})
 
-	t.Run("cwd module is fallback without workspace config", func(ctx context.Context, t *testctx.T) {
+	t.Run("unconfigured workspace does not infer module from cwd", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c).
 			With(moduleLoadingDangModule("nested", "nested", "Nested", "build", "cwd build")).
 			WithWorkdir("/work/nested")
 
-		out, err := ctr.With(moduleLoadingDaggerCall("build")).Stdout(ctx)
+		out, err := ctr.With(moduleLoadingDaggerCallFail("build")).CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "cwd build", strings.TrimSpace(out))
+		require.Contains(t, out, "build")
 	})
 
-	t.Run("extra module suppresses cwd module", func(ctx context.Context, t *testctx.T) {
+	t.Run("extra module loads without inferring cwd dagger.json", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c).
 			With(moduleLoadingDangModule("nested", "nested", "Nested", "build", "cwd build")).
@@ -458,7 +458,7 @@ type Ambient {
 		require.Equal(t, "extra build", strings.TrimSpace(out))
 	})
 
-	t.Run("no module mode suppresses ambient and cwd module loading", func(ctx context.Context, t *testctx.T) {
+	t.Run("no module mode suppresses ambient module loading", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c).
 			With(initDangBlueprint("ambient", `
