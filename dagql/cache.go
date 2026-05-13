@@ -2943,14 +2943,34 @@ func (c *Cache) getOrInitCall(
 		callKey:        callKey,
 		concurrencyKey: req.ConcurrencyKey,
 	}
+	debugModuleLoadCache := shouldLogModuleLoadCache(req)
 
 	hitRes, hit, err := c.lookupCacheForRequest(ctx, sessionID, resolver, req, callDigest, requestSelf, requestInputs, requestInputRefs)
 	if err != nil {
+		if debugModuleLoadCache {
+			c.logModuleLoadCacheEvent(ctx, "lookup_error", req, callKey, nil,
+				"error", err.Error(),
+				"request_self_digest", requestSelf.String(),
+				"request_input_count", len(requestInputs),
+			)
+		}
 		return nil, err
 	}
 	if hit {
+		if debugModuleLoadCache {
+			c.logModuleLoadCacheEvent(ctx, "lookup_hit", req, callKey, hitRes,
+				"request_self_digest", requestSelf.String(),
+				"request_input_count", len(requestInputs),
+			)
+		}
 		c.captureSessionLazySpanContext(ctx, sessionID, hitRes)
 		return hitRes, nil
+	}
+	if debugModuleLoadCache {
+		c.logModuleLoadCacheEvent(ctx, "lookup_miss", req, callKey, nil,
+			"request_self_digest", requestSelf.String(),
+			"request_input_count", len(requestInputs),
+		)
 	}
 
 	c.callsMu.Lock()
@@ -2965,7 +2985,13 @@ func (c *Cache) getOrInitCall(
 			}
 			// already an ongoing call
 			oc.waiters++
+			waiters := oc.waiters
 			c.callsMu.Unlock()
+			if debugModuleLoadCache {
+				c.logModuleLoadCacheEvent(ctx, "inflight_wait", req, callKey, nil,
+					"waiters", waiters,
+				)
+			}
 			return c.wait(ctx, sessionID, resolver, oc, req)
 		}
 	}
@@ -3014,6 +3040,12 @@ func (c *Cache) getOrInitCall(
 	}()
 
 	c.callsMu.Unlock()
+	if debugModuleLoadCache {
+		c.logModuleLoadCacheEvent(ctx, "inflight_start", req, callKey, nil,
+			"persistable", req.IsPersistable,
+			"ttl_seconds", req.TTL,
+		)
+	}
 	return c.wait(ctx, sessionID, resolver, oc, req)
 }
 
@@ -3157,6 +3189,7 @@ func (c *Cache) wait(
 	oc *ongoingCall,
 	req *CallRequest,
 ) (AnyResult, error) {
+	debugModuleLoadCache := shouldLogModuleLoadCache(req)
 	var (
 		completionErr error
 		canceledErr   error
@@ -3194,6 +3227,11 @@ func (c *Cache) wait(
 				return nil, errors.Join(canceledErr, relErr)
 			}
 		}
+		if debugModuleLoadCache {
+			c.logModuleLoadCacheEvent(ctx, "wait_canceled", req, oc.callConcurrencyKeys.callKey, nil,
+				"error", errorStringForLog(canceledErr),
+			)
+		}
 		return nil, canceledErr
 	}
 
@@ -3206,6 +3244,11 @@ func (c *Cache) wait(
 			oc.cancel(completionErr)
 		}
 		c.callsMu.Unlock()
+		if debugModuleLoadCache {
+			c.logModuleLoadCacheEvent(ctx, "wait_error", req, oc.callConcurrencyKeys.callKey, nil,
+				"error", completionErr.Error(),
+			)
+		}
 		return nil, completionErr
 	}
 
@@ -3235,6 +3278,11 @@ func (c *Cache) wait(
 				return nil, relErr
 			}
 		}
+		if debugModuleLoadCache {
+			c.logModuleLoadCacheEvent(ctx, "init_result_error", req, oc.callConcurrencyKeys.callKey, nil,
+				"error", oc.initCompletedResultErr.Error(),
+			)
+		}
 		return nil, oc.initCompletedResultErr
 	}
 	if oc.res == nil {
@@ -3251,6 +3299,9 @@ func (c *Cache) wait(
 			if relErr := errors.Join(decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases)); relErr != nil {
 				return nil, relErr
 			}
+		}
+		if debugModuleLoadCache {
+			c.logModuleLoadCacheEvent(ctx, "wait_missing_result", req, oc.callConcurrencyKeys.callKey, nil)
 		}
 		return nil, fmt.Errorf("cache wait completed without initialized result")
 	}
@@ -3280,9 +3331,96 @@ func (c *Cache) wait(
 
 	retResAny, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
 	if err != nil {
+		if debugModuleLoadCache {
+			c.logModuleLoadCacheEvent(ctx, "wait_return_error", req, oc.callConcurrencyKeys.callKey, retRes,
+				"error", err.Error(),
+			)
+		}
 		return nil, fmt.Errorf("wait: normalize returned result: %w", err)
 	}
+	if debugModuleLoadCache {
+		c.logModuleLoadCacheEvent(ctx, "wait_return", req, oc.callConcurrencyKeys.callKey, retResAny,
+			"last_waiter", lastWaiter,
+		)
+	}
 	return retResAny, nil
+}
+
+const moduleLoadCacheDebugEnv = "_DAGGER_DEBUG_MODULE_LOAD"
+
+var moduleLoadCacheDebugEnabled = os.Getenv(moduleLoadCacheDebugEnv) != ""
+
+func shouldLogModuleLoadCache(req *CallRequest) bool {
+	if !moduleLoadCacheDebugEnabled || req == nil || req.ResultCall == nil {
+		return false
+	}
+	resultType := resultCallTypeNameForLog(req.ResultCall.Type)
+	switch req.Field {
+	case "_implementationScoped":
+		return resultType == "Module" || resultType == "ModuleSource"
+	case "asModule":
+		return resultType == "Module"
+	case "withDescription", "withObject":
+		return resultType == "Module"
+	case "withExec":
+		return resultType == "Container"
+	case "contents", "digest":
+		return resultType == "String"
+	default:
+		return false
+	}
+}
+
+func (c *Cache) logModuleLoadCacheEvent(ctx context.Context, event string, req *CallRequest, callKey string, res AnyResult, attrs ...any) {
+	if req == nil || req.ResultCall == nil {
+		return
+	}
+	base := []any{
+		"event", event,
+		"field", req.Field,
+		"result_type", resultCallTypeNameForLog(req.ResultCall.Type),
+		"call_digest", callKey,
+		"concurrency_key", req.ConcurrencyKey,
+		"receiver_result_id", resultCallReceiverIDForLog(req.ResultCall),
+		"returned_shared_result_id", resultSharedIDForLog(res),
+	}
+	base = append(base, attrs...)
+	slog.InfoContext(ctx, "dagql module load cache", base...)
+}
+
+func resultCallTypeNameForLog(typ *ResultCallType) string {
+	if typ == nil {
+		return ""
+	}
+	if typ.NamedType != "" {
+		return typ.NamedType
+	}
+	return resultCallTypeNameForLog(typ.Elem)
+}
+
+func resultCallReceiverIDForLog(frame *ResultCall) uint64 {
+	if frame == nil || frame.Receiver == nil {
+		return 0
+	}
+	return frame.Receiver.ResultID
+}
+
+func resultSharedIDForLog(res AnyResult) uint64 {
+	if res == nil {
+		return 0
+	}
+	shared := res.cacheSharedResult()
+	if shared == nil {
+		return 0
+	}
+	return uint64(shared.id)
+}
+
+func errorStringForLog(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
