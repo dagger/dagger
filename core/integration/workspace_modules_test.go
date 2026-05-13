@@ -529,7 +529,7 @@ type HelloWorld {
 		require.Equal(t, "hello, world!", out)
 	})
 
-	t.Run("configured workspace ignores cwd module", func(ctx context.Context, t *testctx.T) {
+	t.Run("configured workspace ignores cwd dagger.json", func(ctx context.Context, t *testctx.T) {
 		ctr := workspaceBase(t, c).
 			With(initDangBlueprint("configured", `
 type Configured {
@@ -542,7 +542,7 @@ type Configured {
 			WithNewFile("modules/cwd/main.dang", `
 type Cwd {
   pub greet: String! {
-    "hello from cwd module"
+    "hello from cwd dagger json"
   }
 }
 `)
@@ -555,23 +555,27 @@ type Cwd {
 		require.Equal(t, "hello from configured workspace", strings.TrimSpace(out))
 	})
 
-	t.Run("cwd module remains fallback without workspace config", func(ctx context.Context, t *testctx.T) {
+	t.Run("unconfigured workspace does not infer module from cwd", func(ctx context.Context, t *testctx.T) {
 		ctr := workspaceBase(t, c).
 			WithNewFile("modules/cwd/dagger.json", `{"name":"cwd","sdk":{"source":"dang"}}`).
 			WithNewFile("modules/cwd/main.dang", `
 type Cwd {
   pub greet: String! {
-    "hello from cwd module"
+    "hello from cwd dagger json"
   }
 }
 `)
 
 		out, err := ctr.
 			WithWorkdir("/work/modules/cwd").
-			With(daggerCall("greet")).
-			Stdout(ctx)
+			WithExec([]string{"dagger", "call", "greet"}, dagger.ContainerWithExecOpts{
+				UseEntrypoint:                 true,
+				ExperimentalPrivilegedNesting: true,
+				Expect:                        dagger.ReturnTypeFailure,
+			}).
+			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "hello from cwd module", strings.TrimSpace(out))
+		require.Contains(t, out, "greet")
 	})
 }
 
