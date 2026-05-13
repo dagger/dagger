@@ -97,7 +97,7 @@ func TestFilterPendingWorkspaceModulesForRootFields(t *testing.T) {
 	mods := []pendingModule{
 		{Kind: moduleLoadKindAmbient, Name: "foo", Entrypoint: false},
 		{Kind: moduleLoadKindAmbient, Name: "bar-baz", Entrypoint: true},
-		{Kind: moduleLoadKindCWD, Name: "local", Entrypoint: true},
+		{Kind: moduleLoadKindAmbient, Name: "local", Entrypoint: true},
 	}
 
 	t.Run("constructor match loads only matching module", func(t *testing.T) {
@@ -354,7 +354,7 @@ source = "modules/local"
 	require.False(t, client.pendingModules[1].Entrypoint)
 }
 
-func TestDetectAndLoadWorkspaceLoadsCWDModuleWithoutConfig(t *testing.T) {
+func TestDetectAndLoadWorkspaceDoesNotInferModuleFromCWDWithoutConfig(t *testing.T) {
 	t.Parallel()
 
 	existingFiles := map[string]bool{
@@ -403,15 +403,10 @@ func TestDetectAndLoadWorkspaceLoadsCWDModuleWithoutConfig(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Empty(t, client.workspace.ConfigFile)
-
-	require.Len(t, client.pendingModules, 1)
-	require.Equal(t, moduleLoadKindCWD, client.pendingModules[0].Kind)
-	require.Equal(t, "mymod", client.pendingModules[0].Name)
-	require.Equal(t, "/repo/mymod", client.pendingModules[0].Ref)
-	require.True(t, client.pendingModules[0].Entrypoint)
+	require.Empty(t, client.pendingModules)
 }
 
-func TestDetectAndLoadWorkspaceLoadsCWDModuleWithoutWorkspace(t *testing.T) {
+func TestDetectAndLoadWorkspaceDoesNotInferModuleFromCWDWithoutWorkspace(t *testing.T) {
 	t.Parallel()
 
 	existingFiles := map[string]bool{
@@ -459,12 +454,7 @@ func TestDetectAndLoadWorkspaceLoadsCWDModuleWithoutWorkspace(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Nil(t, client.workspace)
-
-	require.Len(t, client.pendingModules, 1)
-	require.Equal(t, moduleLoadKindCWD, client.pendingModules[0].Kind)
-	require.Equal(t, "mymod", client.pendingModules[0].Name)
-	require.Equal(t, "/tmp/mymod", client.pendingModules[0].Ref)
-	require.True(t, client.pendingModules[0].Entrypoint)
+	require.Empty(t, client.pendingModules)
 }
 
 func TestRemoteWorkspaceCwdUsesDetectionStart(t *testing.T) {
@@ -523,7 +513,7 @@ func TestRemoteWorkspaceCwdUsesDetectionStart(t *testing.T) {
 	require.Equal(t, filepath.Join(".dagger", workspace.ConfigFileName), client.workspace.ConfigFile)
 }
 
-func TestRemoteWorkspaceLoadsCWDModuleFromDetectionStart(t *testing.T) {
+func TestRemoteWorkspaceDoesNotInferModuleFromCWD(t *testing.T) {
 	t.Parallel()
 
 	existingFiles := map[string]bool{
@@ -577,12 +567,7 @@ func TestRemoteWorkspaceLoadsCWDModuleFromDetectionStart(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join("subdir", "child"), client.workspace.Cwd)
-
-	require.Len(t, client.pendingModules, 1)
-	require.Equal(t, moduleLoadKindCWD, client.pendingModules[0].Kind)
-	require.Equal(t, "remote-mod", client.pendingModules[0].Name)
-	require.Equal(t, core.GitRefString("github.com/acme/repo", "subdir", "main"), client.pendingModules[0].Ref)
-	require.True(t, client.pendingModules[0].Entrypoint)
+	require.Empty(t, client.pendingModules)
 }
 
 func TestDetectAndLoadWorkspaceDoesNotLoadModulesByDefault(t *testing.T) {
@@ -1161,24 +1146,6 @@ func TestDedupeResolvedModuleLoads(t *testing.T) {
 func TestArbitrateResolvedModuleLoads(t *testing.T) {
 	t.Parallel()
 
-	t.Run("cwd beats ambient", func(t *testing.T) {
-		t.Parallel()
-
-		loads := []moduleLoadRequest{
-			{mod: pendingModule{Kind: moduleLoadKindAmbient, Ref: "github.com/acme/app", Name: "app", Entrypoint: true}},
-			{mod: pendingModule{Kind: moduleLoadKindCWD, Ref: "github.com/acme/local", Name: "local", Entrypoint: true}},
-		}
-		resolved := []resolvedModuleLoad{
-			{primary: sessionTestModuleResult(t, "app"), primaryEntrypoint: true},
-			{primary: sessionTestModuleResult(t, "local"), primaryEntrypoint: true},
-		}
-
-		err := arbitrateResolvedModuleLoads(loads, resolved)
-		require.NoError(t, err)
-		require.False(t, resolved[0].primaryEntrypoint)
-		require.True(t, resolved[1].primaryEntrypoint)
-	})
-
 	t.Run("extra beats ambient", func(t *testing.T) {
 		t.Parallel()
 
@@ -1227,56 +1194,6 @@ func TestArbitrateResolvedModuleLoads(t *testing.T) {
 
 		err := arbitrateResolvedModuleLoads(loads, resolved)
 		require.EqualError(t, err, "invalid extra-module request: multiple distinct extra-module entrypoints: extra1, extra2")
-	})
-}
-
-func TestSuppressPendingCWDModules(t *testing.T) {
-	t.Parallel()
-
-	mods := []pendingModule{
-		{
-			Kind: moduleLoadKindAmbient,
-			Ref:  "github.com/acme/app",
-		},
-		{
-			Kind: moduleLoadKindCWD,
-			Ref:  "github.com/acme/local",
-		},
-		{
-			Kind: moduleLoadKindExtra,
-			Ref:  "github.com/acme/extra",
-		},
-	}
-
-	filtered := suppressPendingCWDModules(mods)
-	require.Len(t, filtered, 2)
-	require.Equal(t, moduleLoadKindAmbient, filtered[0].Kind)
-	require.Equal(t, moduleLoadKindExtra, filtered[1].Kind)
-}
-
-func TestSuppressCWDModuleForCompatWorkspace(t *testing.T) {
-	t.Parallel()
-
-	t.Run("suppresses cwd module at compat root", func(t *testing.T) {
-		t.Parallel()
-
-		require.True(t, suppressCWDModuleForCompatWorkspace(&workspace.CompatWorkspace{
-			ProjectRoot: "/repo",
-		}, "/repo"))
-	})
-
-	t.Run("does not suppress nested cwd module", func(t *testing.T) {
-		t.Parallel()
-
-		require.False(t, suppressCWDModuleForCompatWorkspace(&workspace.CompatWorkspace{
-			ProjectRoot: "/repo",
-		}, "/repo/modules/foo"))
-	})
-
-	t.Run("does not suppress without compat workspace", func(t *testing.T) {
-		t.Parallel()
-
-		require.False(t, suppressCWDModuleForCompatWorkspace(nil, "/repo"))
 	})
 }
 
