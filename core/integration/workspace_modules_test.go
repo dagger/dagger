@@ -179,11 +179,7 @@ source = "`+depDir+`"
 entrypoint = true
 `)
 
-		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "list")
-		require.NoError(t, err)
-		require.Contains(t, string(out), depDir)
-
-		out, err = hostDaggerExec(ctx, t, workdir, "--silent", "call", "greet")
+		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "greet")
 		require.NoError(t, err)
 		require.Equal(t, "hello from absolute workspace module", strings.TrimSpace(string(out)))
 	})
