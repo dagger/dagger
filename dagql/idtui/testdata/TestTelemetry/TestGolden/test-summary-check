@@ -2,14 +2,14 @@ Expected stderr:
 
 ✔ viztest:test-summary X.Xs ⡀⡄⡆⡇⣇⣧⣷⣿ OK
 
-  Tests: ✔ 2 passed ∅ 8 skipped
-    ◉ viztest summary suite
-      ∅ skipped test 01
-      ∅ skipped test 02
-      ∅ skipped test 03
-      ∅ skipped test 04
-      ∅ skipped test 05
-      ∅ skipped test 06
-      ∅ skipped test 07
-      ∅ skipped test 08
-      ✔ 2 passed
+  Tests: ∅ 8 skipped ✔ 2 passed
+
+    ∅ viztest summary › skipped test 01
+    ∅ viztest summary › skipped test 02
+    ∅ viztest summary › skipped test 03
+    ∅ viztest summary › skipped test 04
+    ∅ viztest summary › skipped test 05
+    ∅ viztest summary › skipped test 06
+    ∅ viztest summary › skipped test 07
+    ∅ viztest summary › skipped test 08
+    ✔ 2 passed
