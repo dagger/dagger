@@ -52,6 +52,8 @@ type RemoteGitRepository struct {
 
 var _ GitRepositoryBackend = (*RemoteGitRepository)(nil)
 
+const remoteGitLockPrefix = "git-remote::"
+
 type RemoteGitRef struct {
 	*gitutil.Ref
 	repo *RemoteGitRepository
@@ -499,8 +501,8 @@ func (repo *RemoteGitRepository) initRemote(ctx context.Context, fn func(string)
 		return err
 	}
 	locker := query.Locker()
-	locker.Lock(indexGitRemote + repo.URL.Remote())
-	defer locker.Unlock(indexGitRemote + repo.URL.Remote())
+	locker.Lock(remoteGitLockPrefix + repo.URL.Remote())
+	defer locker.Unlock(remoteGitLockPrefix + repo.URL.Remote())
 
 	if repo.Mirror.Self() == nil {
 		return fmt.Errorf("remote git mirror is nil for %s", repo.URL.Remote())
@@ -557,42 +559,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 	if err != nil {
 		return nil, err
 	}
-	curCall := dagql.CurrentCall(ctx)
-	if curCall == nil {
-		return nil, fmt.Errorf("current call is nil")
-	}
-
-	inputs := []string{
-		ref.Name,
-		ref.SHA,
-		ref.repo.URL.Remote(),
-		fmt.Sprintf("discard git: %t", discardGitDir),
-		fmt.Sprintf("depth: %d", depth),
-		fmt.Sprintf("tags: %t", includeTags),
-	}
-	cacheKey := hashutil.HashStrings(inputs...).String()
 	cache := query.SnapshotManager()
-	locker := query.Locker()
-	locker.Lock(indexGitSnapshot + cacheKey)
-	defer locker.Unlock(indexGitSnapshot + cacheKey)
-	sis, err := searchGitSnapshot(ctx, cache, cacheKey)
-	if err != nil {
-		return nil, fmt.Errorf("search git snapshot %s: %w", cacheKey, err)
-	}
-	if len(sis) > 0 {
-		snap, err := cache.GetBySnapshotID(ctx, sis[0].SnapshotID(), bkcache.NoUpdateLastUsed)
-		if err != nil {
-			return nil, err
-		}
-		dir := &Directory{
-			Platform: query.Platform(),
-			Dir:      new(LazyAccessor[string, *Directory]),
-			Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
-		}
-		dir.Dir.setValue("/")
-		dir.Snapshot.setValue(snap)
-		return dir, nil
-	}
 
 	var checkoutRef bkcache.MutableRef
 	defer func() {
@@ -643,14 +610,6 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 			snap.Release(context.WithoutCancel(ctx))
 		}
 	}()
-	mdRef, ok := any(snap).(bkcache.RefMetadata)
-	if !ok {
-		return nil, fmt.Errorf("git checkout cache metadata: unexpected ref type %T", snap)
-	}
-	md := cacheRefMetadata{mdRef}
-	if err := md.setGitSnapshot(cacheKey); err != nil {
-		return nil, err
-	}
 	dir := &Directory{
 		Platform: query.Platform(),
 		Dir:      new(LazyAccessor[string, *Directory]),
