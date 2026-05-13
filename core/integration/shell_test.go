@@ -635,7 +635,7 @@ type Foo struct{
 	t.Run("main object", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		out, err := modInit(t, c, "go", test).
-			With(daggerExec("module", "init", "--sdk=go", "--source=foo", "foo", ".")).
+			With(daggerExec("module", "init", "--sdk=go", "foo", "./foo")).
 			With(sdkSourceAt("foo", "go", foo)).
 			With(daggerShell("foo")).
 			Stdout(ctx)
@@ -646,7 +646,7 @@ type Foo struct{
 	t.Run("stateful", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		out, err := modInit(t, c, "go", test).
-			With(daggerExec("module", "init", "--sdk=go", "--source=foo", "foo", ".")).
+			With(daggerExec("module", "init", "--sdk=go", "foo", "./foo")).
 			With(sdkSourceAt("foo", "go", foo)).
 			With(daggerShell(".cd foo; bar")).
 			Stdout(ctx)
@@ -657,7 +657,7 @@ type Foo struct{
 	t.Run("stateless", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		modGen := modInit(t, c, "go", test).
-			With(daggerExec("module", "init", "--sdk=go", "--source=foo", "foo", ".")).
+			With(daggerExec("module", "init", "--sdk=go", "foo", "./foo")).
 			With(sdkSourceAt("foo", "go", foo))
 
 		out, err := modGen.
@@ -1168,8 +1168,8 @@ func (ShellSuite) TestInstall(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	_, err := modInit(t, c, "go", "").
-		With(daggerExec("module", "init", "--sdk=go", "dep", ".")).
-		With(daggerShell(".install dep")).
+		With(daggerExec("module", "init", "--sdk=go", "dep", "./dep")).
+		With(daggerShell(".install ./dep")).
 		WithExec([]string{"grep", "dep", ".dagger/config.toml"}).
 		Sync(ctx)
 
