@@ -83,11 +83,6 @@ func (fe *frontendDots) Run(ctx context.Context, opts dagui.FrontendOpts, f func
 	fe.opts = opts
 	return fe.reporter.Run(ctx, opts, func(ctx context.Context) (cleanups.CleanupF, error) {
 		cleanup, err := f(ctx)
-		fmt.Fprintln(fe.out)
-		fmt.Fprintln(fe.out)
-		if p := fe.telemetryError.Load(); p != nil {
-			handleTelemetryErrorOutput(fe.out, fe.out, *p)
-		}
 		return cleanup, err
 	})
 }
@@ -220,6 +215,11 @@ func (e *dotsSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.Rea
 }
 
 func (e *dotsSpanExporter) Shutdown(ctx context.Context) error {
+	fmt.Fprintln(e.out)
+	fmt.Fprintln(e.out)
+	if p := e.telemetryError.Load(); p != nil {
+		handleTelemetryErrorOutput(e.out, e.out, *p)
+	}
 	return nil
 }
 
