@@ -52,16 +52,17 @@ func (CLISuite) TestModuleDevelop(ctx context.Context, t *testctx.T) {
 				sourceDir, err := filepath.Rel(wd, "/work/cool/subdir")
 				require.NoError(t, err)
 
+				// develop runs codegen, so the implementation has to exist first.
+				// The module is named "test", so the Go root object is Test.
 				ctr := base.
 					WithWorkdir(wd).
-					With(daggerExecRaw("develop", "--sdk", "go", "--source", sourceDir)).
 					WithNewFile("/work/cool/subdir/main.go", `package main
 
 					import "context"
 
-					type Work struct {}
+					type Test struct {}
 
-					func (m *Work) Fn(ctx context.Context) (string, error) {
+					func (m *Test) Fn(ctx context.Context) (string, error) {
 						depStr, err := dag.Dep().Fn(ctx)
 						if err != nil {
 							return "", err
@@ -69,10 +70,12 @@ func (CLISuite) TestModuleDevelop(ctx context.Context, t *testctx.T) {
 						return "hi from work " + depStr, nil
 					}
 					`,
-					)
+					).
+					With(daggerExecRaw("develop", "--sdk", "go", "--source", sourceDir))
 
-				// should be able to invoke it directly now
-				out, err := ctr.With(daggerCall("fn")).Stdout(ctx)
+				// CWD module loading is gone; users explicitly load the local
+				// module with -m . and Dagger finds up to /work/dagger.json.
+				out, err := ctr.With(daggerCallAt(".", "fn")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "hi from work hi from dep", strings.TrimSpace(out))
 
@@ -106,15 +109,13 @@ func (CLISuite) TestModuleDevelop(ctx context.Context, t *testctx.T) {
 			WithWorkdir("/work").
 			With(daggerExec("module", "init", "test", "--source=.", ".")).
 			With(daggerExec("module", "install", "./dep")).
-			WithWorkdir("/var").
-			With(daggerExecRaw("develop", "-m", "../work", "--source=../work/some/subdir", "--sdk=go")).
 			WithNewFile("/work/some/subdir/main.go", `package main
 
 			import "context"
 
-			type Work struct {}
+			type Test struct {}
 
-			func (m *Work) Fn(ctx context.Context) (string, error) {
+			func (m *Test) Fn(ctx context.Context) (string, error) {
 				depStr, err := dag.Dep().Fn(ctx)
 				if err != nil {
 					return "", err
@@ -122,7 +123,9 @@ func (CLISuite) TestModuleDevelop(ctx context.Context, t *testctx.T) {
 				return "hi from work " + depStr, nil
 			}
 			`,
-			)
+			).
+			WithWorkdir("/var").
+			With(daggerExecRaw("develop", "-m", "../work", "--source=../work/some/subdir", "--sdk=go"))
 
 		out, err := ctr.With(daggerCallAt("../work", "fn")).Stdout(ctx)
 		require.NoError(t, err)
@@ -168,15 +171,13 @@ func (CLISuite) TestModuleDevelop(ctx context.Context, t *testctx.T) {
 			WithWorkdir(absPath).
 			With(daggerExec("module", "init", "test", "--source=.", ".")).
 			With(daggerExec("module", "install", "./dep")).
-			WithWorkdir("/var").
-			With(daggerExecRaw("develop", "-m", absPath, "--source="+absPath+"/some/subdir", "--sdk=go")).
 			WithNewFile(absPath+"/some/subdir/main.go", `package main
 
         import "context"
 
-        type Work struct {}
+        type Test struct {}
 
-        func (m *Work) Fn(ctx context.Context) (string, error) {
+        func (m *Test) Fn(ctx context.Context) (string, error) {
             depStr, err := dag.Dep().Fn(ctx)
             if err != nil {
                 return "", err
@@ -184,7 +185,9 @@ func (CLISuite) TestModuleDevelop(ctx context.Context, t *testctx.T) {
             return "hi from work " + depStr, nil
         }
         `,
-			)
+			).
+			WithWorkdir("/var").
+			With(daggerExecRaw("develop", "-m", absPath, "--source="+absPath+"/some/subdir", "--sdk=go"))
 
 		out, err := ctr.With(daggerCallAt(absPath, "fn")).Stdout(ctx)
 		require.NoError(t, err)
