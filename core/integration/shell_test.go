@@ -34,8 +34,16 @@ func TestShell(t *testing.T) {
 }
 
 func daggerShell(script string) dagger.WithContainerFunc {
+	return daggerShellAt("", script)
+}
+
+func daggerShellAt(modPath, script string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec([]string{"dagger"}, dagger.ContainerWithExecOpts{
+		execArgs := []string{"dagger"}
+		if modPath != "" {
+			execArgs = append(execArgs, "-m", modPath)
+		}
+		return c.WithExec(execArgs, dagger.ContainerWithExecOpts{
 			Stdin:                         script,
 			ExperimentalPrivilegedNesting: true,
 		})
