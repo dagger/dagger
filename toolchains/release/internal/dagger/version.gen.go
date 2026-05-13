@@ -213,7 +213,7 @@ func (r *Version) ImageTag(ctx context.Context) (string, error) { // version (..
 }
 
 // NextReleaseVersion returns the next release version from .changes/.next
-func (r *Version) NextReleaseVersion(ctx context.Context) (string, error) { // version (../../../../version/main.go:268:1)
+func (r *Version) NextReleaseVersion(ctx context.Context) (string, error) { // version (../../../../version/main.go:269:1)
 	if r.nextReleaseVersion != nil {
 		return *r.nextReleaseVersion, nil
 	}
