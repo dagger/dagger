@@ -887,7 +887,7 @@ cd dep
 dagger module init --sdk=python dep . >/dev/null
 
 cd /tmp/main
-dagger install ./dep >/dev/null
+dagger module install ./dep >/dev/null
 
 # Load module + dependency schema a few times to exercise cache lifecycle.
 for i in $(seq 1 4); do
