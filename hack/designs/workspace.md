@@ -225,16 +225,6 @@ dagger call ci test      # calls the 'ci' module's constructor, then 'test'
 
 `config.*` values are injected as constructor argument defaults.
 
-#### CWD Module
-
-After workspace detection, the engine separately detects the **CWD module** — the nearest `dagger.json` found by walking up from the caller's working directory.
-
-The CWD module is a permanent convenience, not a migration-specific behavior. It is detected separately from workspace context.
-
-If the CWD module is distinct from modules already loaded by the workspace, it is loaded as an additional module and becomes the active entrypoint for the invocation. If it refers to a module already loaded, nothing extra happens — see [Deduplication](#deduplication).
-
-If explicit extra modules (`-m`) are present, the CWD module is suppressed entirely.
-
 #### Extra Modules (`-m`)
 
 The `-m` flag bypasses workspace module loading and loads an explicit module instead:
@@ -247,7 +237,6 @@ dagger call -m github.com/foo/bar build
 When `-m` is used:
 
 - Workspace modules from `config.toml` are skipped
-- The CWD module is suppressed
 - The specified module is loaded with its functions promoted to the Query root
 - Workspace detection still runs (the engine still knows the workspace root)
 
@@ -261,7 +250,7 @@ Why `-m` exists:
 
 #### Deduplication
 
-Multiple loading paths can nominate the same module (workspace config, CWD module, `-m`). The engine deduplicates by resolved source identity:
+Multiple loading paths can nominate the same module (workspace config and `-m`). The engine deduplicates by resolved source identity:
 
 - Local modules: absolute source root + source subpath
 - Git modules: clone ref + source subpath (plus pin, if present)
@@ -289,8 +278,7 @@ entrypoint = true
 At most one module can be the active entrypoint. After deduplication, entrypoint arbitration runs with this precedence:
 
 1. Extra modules (`-m`)
-2. CWD module
-3. Ambient workspace modules
+2. Ambient workspace modules
 
 Cross-tier conflicts are resolved by precedence. Same-tier conflicts are errors. In particular:
 
@@ -335,8 +323,6 @@ Inside the compat workspace:
 
 - If a legacy `blueprint` exists, the blueprint module is the compat entrypoint.
 - Otherwise, the projected main module is the compat entrypoint.
-
-If there is also a distinct CWD module (see [CWD Module](#cwd-module)), the CWD module wins as the active entrypoint for the invocation. The compat workspace remains the ambient workspace context. If explicit extra modules (`-m`) are present, the CWD module is suppressed instead.
 
 #### Migration Equivalence
 

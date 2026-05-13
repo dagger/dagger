@@ -271,13 +271,13 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceSelection(ctx context.Contex
 		require.JSONEq(t, `{"currentWorkspace":{"cwd":"shell/ws","configFile":"shell/ws/.dagger/config.toml"}}`, out)
 	})
 
-	t.Run("declared workspace wins over ambient workspace and cwd module nomination", func(ctx context.Context, t *testctx.T) {
+	t.Run("declared workspace wins over ambient workspace and cwd dagger.json", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c).
 			With(workspaceSelectionSimpleWorkspace("/work/caller", "caller", "Caller", "ambient workspace")).
 			With(workspaceSelectionSimpleWorkspace("/work/selected", "selected", "Selected", "declared workspace")).
 			WithNewFile("/work/caller/nested/dagger.json", `{"name":"nested","sdk":{"source":"dang"}}`).
-			WithNewFile("/work/caller/nested/main.dang", workspaceSelectionDangSource("Nested", "identify", "cwd module")).
+			WithNewFile("/work/caller/nested/main.dang", workspaceSelectionDangSource("Nested", "identify", "cwd dagger.json")).
 			WithWorkdir("/work/caller/nested")
 
 		out, err := ctr.With(workspaceSelectionDaggerCall("-W", "../../selected", "identify")).Stdout(ctx)
