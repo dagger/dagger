@@ -498,6 +498,12 @@ func doGitCheckout(
 		}
 	}
 
+	if !discardGitDir {
+		if _, err := checkoutGit.Run(ctx, "read-tree", "HEAD"); err != nil {
+			return fmt.Errorf("failed to normalize git index: %w", err)
+		}
+	}
+
 	if discardGitDir {
 		if err := os.RemoveAll(checkoutDirGit); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("failed to remove .git: %w", err)
