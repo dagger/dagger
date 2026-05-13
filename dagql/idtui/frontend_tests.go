@@ -1147,8 +1147,14 @@ func (fe *frontendPretty) renderTestsView(ctx tuist.Context) {
 	fe.RenderChild(ctx, fe.fullscreenTests)
 }
 
+// finalRenderTestsWidth is used when report mode has no live terminal width.
+const finalRenderTestsWidth = 80
+
 func (fe *frontendPretty) shouldRenderInlineTests(row *dagui.TraceRow) bool {
-	if fe.finalRender || row == nil || row.Span == nil || row.Expanded || row.Span.CheckName == "" {
+	if row == nil || row.Span == nil || row.Span.CheckName == "" {
+		return false
+	}
+	if row.Expanded && !fe.finalRender {
 		return false
 	}
 	return fe.db.TestViewForSpan(row.Span).HasTests()
@@ -1160,6 +1166,9 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 	}
 	tv := s.fe.inlineTestView(row.Span.ID)
 	limit := max(s.fe.window.Height/3, 6)
+	if s.fe.finalRender {
+		limit = finalTestViewHeight(tv)
+	}
 	if tv.MaxHeight != limit {
 		tv.MaxHeight = limit
 		tv.Update()
@@ -1170,20 +1179,92 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 	r.indentFunc = s.indentFunc(prefixOut)
 	r.fancyIndent(prefixOut, row, false, false)
 	pipe := prefixOut.String(VertBoldBar).Foreground(restrainedStatusColor(row.Span))
-	if s.focused {
+	if s.focused && !s.fe.finalRender {
 		pipe = hl(pipe)
 	}
 	fmt.Fprint(prefixOut, pipe.String())
 	fmt.Fprint(prefixOut, " ")
 	prefix := prefixBuf.String()
 
-	width := max(ctx.Width-lipgloss.Width(prefix), 1)
+	ctxWidth := ctx.Width
+	if s.fe.finalRender && ctxWidth <= 0 {
+		ctxWidth = finalRenderTestsWidth + lipgloss.Width(prefix)
+	}
+	width := max(ctxWidth-lipgloss.Width(prefix), 1)
+	if s.fe.finalRender {
+		width = max(width, finalRenderTestsWidth)
+	}
 	result := s.RenderChildResult(ctx.Resize(width, limit), tv)
 	lines := make([]string, len(result.Lines))
 	for i, line := range result.Lines {
 		lines[i] = prefix + line
 	}
 	return lines
+}
+
+func (fe *frontendPretty) renderFinalGlobalTests(ctx tuist.Context) []string {
+	if fe.db == nil {
+		return nil
+	}
+	view := fe.db.TestView()
+	if !view.HasTests() || finalTestViewAllCasesUnderChecks(view) {
+		return nil
+	}
+	tv := fe.inlineTestView(dagui.SpanID{})
+	limit := finalTestViewHeight(tv)
+	if tv.MaxHeight != limit {
+		tv.MaxHeight = limit
+		tv.Update()
+	}
+	width := ctx.Width
+	if width <= 0 {
+		width = finalRenderTestsWidth
+	}
+	width = max(width, finalRenderTestsWidth)
+	return fe.RenderChildResult(ctx.Resize(width, limit), tv).Lines
+}
+
+func finalTestViewHeight(tv *TestView) int {
+	if tv == nil {
+		return 1
+	}
+	return max(len(tv.flattenTestRows(tv.currentView()))+2, 1)
+}
+
+func finalTestViewAllCasesUnderChecks(view *dagui.TestView) bool {
+	if view == nil {
+		return false
+	}
+	seenCase := false
+	allUnderChecks := true
+	var walk func(*dagui.TestNode)
+	walk = func(node *dagui.TestNode) {
+		if node == nil {
+			return
+		}
+		if node.Kind == dagui.TestNodeCase {
+			seenCase = true
+			if !testSpanUnderCheck(node.Span) {
+				allUnderChecks = false
+			}
+		}
+		for _, child := range node.Children {
+			walk(child)
+		}
+	}
+	for _, root := range view.Roots {
+		walk(root)
+	}
+	return seenCase && allUnderChecks
+}
+
+func testSpanUnderCheck(span *dagui.Span) bool {
+	for cur := span; cur != nil; cur = cur.ParentSpan {
+		if cur.CheckName != "" {
+			return true
+		}
+	}
+	return false
 }
 
 type TestSpanChildrenView struct {

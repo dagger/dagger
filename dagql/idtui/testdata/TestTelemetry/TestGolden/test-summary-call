@@ -1,0 +1,23 @@
+Expected stderr:
+
+✔ connect X.Xs
+✔ load workspace: . X.Xs
+✔ parsing command line arguments X.Xs
+
+$ viztest: Viztest! X.Xs CACHED
+✔ .testSummary: Void X.Xs
+
+Tests 10
+────────────────────────────────────────────────────────────────────────────────
+  ◉ viztest summary suite 10
+  ▶ ✔   2 passed
+  ∅   skipped test 01
+  ∅   skipped test 02
+  ∅   skipped test 03
+  ∅   skipped test 04
+  ∅   skipped test 05
+  ∅   skipped test 06
+  ∅   skipped test 07
+  ∅   skipped test 08
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1
