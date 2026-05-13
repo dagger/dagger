@@ -1862,11 +1862,11 @@ func (m *Test) DriveRollsRoyce(ctx context.Context) error {
 `), 0644)
 	require.NoError(t, err)
 
-	callCmd1 := hostDaggerCommandRaw(ctx, t, modDir, "call", "drive-rolls-royce")
+	callCmd1 := hostDaggerCommandRaw(ctx, t, modDir, "call", "-m", ".", "drive-rolls-royce")
 	callOutput1, err := callCmd1.CombinedOutput()
 	require.NoError(t, err, string(callOutput1))
 
-	callCmd2 := hostDaggerCommandRaw(ctx, t, modDir, "call", "drive-rolls-royce")
+	callCmd2 := hostDaggerCommandRaw(ctx, t, modDir, "call", "-m", ".", "drive-rolls-royce")
 	callOutput2, err := callCmd2.CombinedOutput()
 	require.NoError(t, err, string(callOutput2))
 }
