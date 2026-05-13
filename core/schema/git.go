@@ -848,9 +848,11 @@ func (s *gitSchema) ref(ctx context.Context, parent dagql.ObjectResult[*core.Git
 		args.LockOperation = lockGitRefOperation
 		args.LockPolicy = string(workspace.PolicyFloat)
 		args.LockName = args.Name
-		if strings.HasPrefix(args.Name, "refs/") {
-			args.LockedName = args.Name
+		ref, err := repo.Remote.Lookup(args.Name)
+		if err != nil {
+			return inst, err
 		}
+		args.LockedName = ref.Name
 	}
 	if args.LockOperation != "" {
 		if _, ok := repo.Backend.(*core.RemoteGitRepository); !ok {
