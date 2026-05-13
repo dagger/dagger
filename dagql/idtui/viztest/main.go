@@ -147,16 +147,21 @@ func (*Viztest) TestSummary(ctx context.Context) error {
 	for i := 1; i <= 8; i++ {
 		emitTestSummaryCase(ctx, fmt.Sprintf("skipped test %02d", i), "skipped")
 	}
+	emitTestSummaryCase(ctx, "failed test 01", "fail")
 	return nil
 }
 
 func emitTestSummaryCase(ctx context.Context, name, status string) {
-	_, span := Tracer().Start(ctx, name,
+	ctx, span := Tracer().Start(ctx, name,
 		trace.WithAttributes(
 			attribute.String("test.case.name", testSummarySuite+"/"+name),
 			attribute.String("test.suite.name", testSummarySuite),
 			attribute.String("test.case.result.status", status),
 		))
+	stdio := telemetry.SpanStdio(ctx, "")
+	fmt.Fprintf(stdio.Stdout, "%s log line 1\n", name)
+	fmt.Fprintf(stdio.Stdout, "%s log line 2\n", name)
+	stdio.Close()
 	span.End()
 }
 

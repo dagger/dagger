@@ -81,6 +81,8 @@ type TestView struct {
 	// SummaryIndent is used by ListOnly test summaries. Final output keeps a
 	// small left margin; inline live output relies on the trace pipe prefix.
 	SummaryIndent int
+	// SummaryLogLines caps inline logs per failing/skipped summary entry.
+	SummaryLogLines int
 
 	OnFocusSpan func(*dagui.Span)
 
@@ -720,13 +722,13 @@ func (tv *TestView) renderTestSummaryLines(out *termenv.Output, view *dagui.Test
 		lines = append(lines, "")
 	}
 	for _, entry := range entries.failing {
-		lines = append(lines, renderTestSummaryEntry(out, entry, tv.SummaryIndent, width))
+		lines = append(lines, tv.renderTestSummaryEntry(out, entry, width)...)
 	}
 	for _, entry := range entries.running {
-		lines = append(lines, renderTestSummaryEntry(out, entry, tv.SummaryIndent, width))
+		lines = append(lines, tv.renderTestSummaryEntry(out, entry, width)...)
 	}
 	for _, entry := range entries.skipped {
-		lines = append(lines, renderTestSummaryEntry(out, entry, tv.SummaryIndent, width))
+		lines = append(lines, tv.renderTestSummaryEntry(out, entry, width)...)
 	}
 	if view.Counts.Passing > 0 {
 		lines = append(lines, renderTestSummaryPassedGroup(out, view.Counts.Passing, tv.SummaryIndent, width))
@@ -737,6 +739,7 @@ func (tv *TestView) renderTestSummaryLines(out *termenv.Output, view *dagui.Test
 type testSummaryEntry struct {
 	category dagui.TestCategory
 	label    string
+	span     *dagui.Span
 }
 
 type testSummaryEntries struct {
@@ -753,7 +756,7 @@ func collectTestSummaryEntries(view *dagui.TestView) testSummaryEntries {
 			return
 		}
 		if node.Kind == dagui.TestNodeCase {
-			entry := testSummaryEntry{category: node.SelfCategory, label: testSummaryCaseLabel(node)}
+			entry := testSummaryEntry{category: node.SelfCategory, label: testSummaryCaseLabel(node), span: node.Span}
 			switch node.SelfCategory {
 			case dagui.TestCategoryFailing:
 				entries.failing = append(entries.failing, entry)
@@ -763,7 +766,7 @@ func collectTestSummaryEntries(view *dagui.TestView) testSummaryEntries {
 				entries.skipped = append(entries.skipped, entry)
 			}
 		} else if node.Counts.Total() == 0 && node.Category != dagui.TestCategoryPassing {
-			entry := testSummaryEntry{category: node.Category, label: testNodeDisplayName(node)}
+			entry := testSummaryEntry{category: node.Category, label: testNodeDisplayName(node), span: testTUISpan(node)}
 			switch node.Category {
 			case dagui.TestCategoryFailing, dagui.TestCategoryMixed:
 				entries.failing = append(entries.failing, entry)
@@ -815,12 +818,56 @@ func testSummaryCaseLabel(node *dagui.TestNode) string {
 	return suiteName + " › " + caseName
 }
 
-func renderTestSummaryEntry(out *termenv.Output, entry testSummaryEntry, summaryIndent, width int) string {
-	indent := strings.Repeat(" ", max(summaryIndent, 0)+2)
+func (tv *TestView) renderTestSummaryEntry(out *termenv.Output, entry testSummaryEntry, width int) []string {
+	indent := strings.Repeat(" ", max(tv.SummaryIndent, 0)+2)
 	icon := out.String(testCategoryIcon(entry.category)).Foreground(testCategoryColor(entry.category)).String()
 	labelWidth := max(width-lipgloss.Width(indent)-lipgloss.Width(icon)-1, 1)
 	label := out.String(clipPlain(entry.label, labelWidth)).String()
-	return clipANSI(indent+icon+" "+label, width)
+	lines := []string{clipANSI(indent+icon+" "+label, width)}
+	lines = append(lines, tv.renderTestSummaryLogs(out, entry, width)...)
+	return lines
+}
+
+func (tv *TestView) renderTestSummaryLogs(out *termenv.Output, entry testSummaryEntry, width int) []string {
+	if entry.span == nil || tv.Logs == nil || tv.SummaryLogLines == 0 {
+		return nil
+	}
+	if entry.category != dagui.TestCategoryFailing && entry.category != dagui.TestCategorySkipped {
+		return nil
+	}
+	logs := tv.Logs[entry.span.ID]
+	if logs == nil || logs.UsedHeight() == 0 {
+		return nil
+	}
+	limit := tv.SummaryLogLines
+	if limit < 0 || limit > logs.UsedHeight() {
+		limit = logs.UsedHeight()
+	}
+	indent := strings.Repeat(" ", max(tv.SummaryIndent, 0)+2)
+	pipe := out.String(VertBoldBar).Foreground(testCategoryColor(entry.category)).String()
+	logPrefix := indent + pipe + " "
+	var buf strings.Builder
+	if err := logs.Print(&buf); err != nil {
+		return nil
+	}
+	rawLines := strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
+	if len(rawLines) > limit {
+		rawLines = rawLines[len(rawLines)-limit:]
+	}
+	lines := make([]string, 0, len(rawLines)+1)
+	for _, line := range rawLines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		lines = append(lines, clipANSI(logPrefix+clipPlain(line, max(width-lipgloss.Width(logPrefix), 1)), width))
+	}
+	if len(lines) == 0 {
+		return nil
+	}
+	if logs.UsedHeight() > limit {
+		lines = append(lines, clipANSI(logPrefix+out.String(fmt.Sprintf("... %d more log lines ...", logs.UsedHeight()-limit)).Foreground(termenv.ANSIBrightBlack).Faint().String(), width))
+	}
+	return lines
 }
 
 func renderTestSummaryPassedGroup(out *termenv.Output, passing, summaryIndent, width int) string {
@@ -1325,6 +1372,14 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		tv.SummaryIndent = summaryIndent
 		tv.Update()
 	}
+	summaryLogLines := -1
+	if !s.fe.finalRender {
+		summaryLogLines = 8
+	}
+	if tv.SummaryLogLines != summaryLogLines {
+		tv.SummaryLogLines = summaryLogLines
+		tv.Update()
+	}
 	limit := max(s.fe.window.Height/3, 6)
 	if s.fe.finalRender {
 		limit = finalTestViewHeight(tv)
@@ -1383,6 +1438,10 @@ func (fe *frontendPretty) renderFinalGlobalTests(ctx tuist.Context) []string {
 		tv.SummaryIndent = 2
 		tv.Update()
 	}
+	if tv.SummaryLogLines != -1 {
+		tv.SummaryLogLines = -1
+		tv.Update()
+	}
 	limit := finalTestViewHeight(tv)
 	if tv.MaxHeight != limit {
 		tv.MaxHeight = limit
@@ -1397,10 +1456,7 @@ func (fe *frontendPretty) renderFinalGlobalTests(ctx tuist.Context) []string {
 }
 
 func finalTestViewHeight(tv *TestView) int {
-	if tv == nil {
-		return 1
-	}
-	return max(len(tv.flattenTestRows(tv.currentView()))+2, 1)
+	return 10000
 }
 
 func finalTestViewAllCasesUnderChecks(view *dagui.TestView) bool {
