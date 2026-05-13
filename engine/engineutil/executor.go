@@ -74,6 +74,14 @@ type ExecutionMetadata struct {
 
 	// If true, skip injecting dagger-init into the container.
 	NoInit bool
+
+	HostMounts []HostMount
+}
+
+type HostMount struct {
+	Source string
+	Target string
+	RW     bool
 }
 
 func (c *Client) Run(
@@ -118,6 +126,7 @@ func (c *Client) Run(
 	return c.run(ctx, state,
 		c.setupNetwork,
 		c.injectInit,
+		c.setupHostMounts,
 		c.generateBaseSpec,
 		c.filterEnvs,
 		c.setupRootfs,
