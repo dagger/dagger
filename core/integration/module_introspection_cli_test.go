@@ -189,16 +189,16 @@ func (CLISuite) TestModuleLoadErrors(ctx context.Context, t *testctx.T) {
 		modGen := goGitBase(t, c).
 			WithNewFile("dagger.json", `{"name": "broke", "engineVersion": "v100.0.0", "sdk": 666}`)
 
-		_, err := modGen.With(daggerQuery(`{version}`)).Stdout(ctx)
-		requireErrOut(t, err, `failed to check if module exists`)
+		_, err := modGen.With(daggerFunctions("-m", ".")).Stdout(ctx)
+		requireErrOut(t, err, `module requires dagger v100.0.0`)
 	})
 
 	t.Run("fallback context dir", func(ctx context.Context, t *testctx.T) {
 		modGen := daggerCliBase(t, c).
 			WithNewFile("dagger.json", `{"name": "broke", "engineVersion": "v100.0.0", "sdk": 666}`)
 
-		_, err := modGen.With(daggerQuery(`{version}`)).Stdout(ctx)
-		requireErrOut(t, err, `failed to check if module exists`)
+		_, err := modGen.With(daggerFunctions("-m", ".")).Stdout(ctx)
+		requireErrOut(t, err, `module requires dagger v100.0.0`)
 	})
 }
 
