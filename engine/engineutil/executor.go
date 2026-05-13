@@ -46,6 +46,10 @@ type ExecutionMetadata struct {
 	// Used when executing the module runtime itself.
 	Internal bool
 
+	// UseRecipeIDsByDefault configures nested clients started by this exec to
+	// resolve id() as recipe-form IDs unless explicitly requested otherwise.
+	UseRecipeIDsByDefault bool
+
 	CallDigest digest.Digest
 
 	// If set, stdout/stderr emitted by this execution should be associated

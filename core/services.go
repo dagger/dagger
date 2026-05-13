@@ -89,6 +89,10 @@ type RunningService struct {
 
 	workspaceMu sync.Mutex
 
+	dependencyExitPropagationMu         sync.Mutex
+	dependencyExitPropagationSuppressed int
+	dependencyExitPropagationChanged    chan struct{}
+
 	manager *Services
 
 	releaseOnce sync.Once
@@ -174,8 +178,9 @@ type Startable interface {
 }
 
 type ServiceStartOpts struct {
-	ClientSpecific      bool
-	IO                  *ServiceIO
+	ClientSpecific bool
+	IO             *ServiceIO
+
 	LogTargetCallDigest digest.Digest
 }
 
@@ -214,12 +219,23 @@ func (ss *Services) StartWithOpts(
 	svc Startable,
 	opts ServiceStartOpts,
 ) (*RunningService, error) {
+	running, _, err := ss.startWithOpts(ctx, dig, svc, opts, false)
+	return running, err
+}
+
+func (ss *Services) startWithOpts(
+	ctx context.Context,
+	dig digest.Digest,
+	svc Startable,
+	opts ServiceStartOpts,
+	suppressDependencyExitPropagation bool,
+) (_ *RunningService, release func(), _ error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if dig == "" {
-		return nil, fmt.Errorf("service digest is empty")
+		return nil, nil, fmt.Errorf("service digest is empty")
 	}
 	key := ServiceKey{
 		Digest:    dig,
@@ -230,8 +246,7 @@ func (ss *Services) StartWithOpts(
 		key.ClientID = clientMetadata.ClientID
 	}
 
-	running, _, err := ss.startWithKey(ctx, key, svc, opts)
-	return running, err
+	return ss.startWithKey(ctx, key, svc, opts, suppressDependencyExitPropagation)
 }
 
 func (ss *Services) StartResultWithIO(
@@ -251,21 +266,40 @@ func (ss *Services) StartResultWithOpts(
 	svc dagql.ObjectResult[*Service],
 	opts ServiceStartOpts,
 ) (*RunningService, error) {
+	running, _, err := ss.startResultWithOpts(ctx, svc, opts, false)
+	return running, err
+}
+
+// StartResultWithDependencyExitPropagationSuppressed starts a shared service while
+// deferring dependency-exit propagation until the returned release is called.
+func (ss *Services) StartResultWithDependencyExitPropagationSuppressed(
+	ctx context.Context,
+	svc dagql.ObjectResult[*Service],
+) (_ *RunningService, release func(), _ error) {
+	return ss.startResultWithOpts(ctx, svc, ServiceStartOpts{}, true)
+}
+
+func (ss *Services) startResultWithOpts(
+	ctx context.Context,
+	svc dagql.ObjectResult[*Service],
+	opts ServiceStartOpts,
+	suppressDependencyExitPropagation bool,
+) (_ *RunningService, release func(), _ error) {
 	if svc.Self() == nil {
-		return nil, fmt.Errorf("service result is nil")
+		return nil, nil, fmt.Errorf("service result is nil")
 	}
 	serviceDig, err := svc.ContentPreferredDigest(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("service digest: %w", err)
+		return nil, nil, fmt.Errorf("service digest: %w", err)
 	}
 	if opts.LogTargetCallDigest == "" {
 		callDig, err := svc.RecipeDigest(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("service recipe digest: %w", err)
+			return nil, nil, fmt.Errorf("service recipe digest: %w", err)
 		}
 		opts.LogTargetCallDigest = callDig
 	}
-	return ss.StartWithOpts(ctx, serviceDig, svc.Self(), opts)
+	return ss.startWithOpts(ctx, serviceDig, svc.Self(), opts, suppressDependencyExitPropagation)
 }
 
 func (ss *Services) StartInteractive(
@@ -291,7 +325,7 @@ func (ss *Services) StartInteractive(
 	return ss.startWithKey(ctx, key, svc, ServiceStartOpts{
 		ClientSpecific: true,
 		IO:             sio,
-	})
+	}, false)
 }
 
 // StartBindings starts each of the bound services in parallel and returns a
@@ -471,6 +505,71 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) {
 	go ss.stopGraceful(context.WithoutCancel(ctx), running, TerminateGracePeriod)
 }
 
+func (svc *RunningService) suppressDependencyExitPropagation() func() {
+	if svc == nil {
+		return func() {}
+	}
+
+	svc.dependencyExitPropagationMu.Lock()
+	svc.dependencyExitPropagationSuppressed++
+	if svc.dependencyExitPropagationChanged == nil {
+		svc.dependencyExitPropagationChanged = make(chan struct{})
+	}
+	svc.dependencyExitPropagationMu.Unlock()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			svc.dependencyExitPropagationMu.Lock()
+			defer svc.dependencyExitPropagationMu.Unlock()
+			if svc.dependencyExitPropagationSuppressed > 0 {
+				svc.dependencyExitPropagationSuppressed--
+			}
+			if svc.dependencyExitPropagationChanged == nil {
+				svc.dependencyExitPropagationChanged = make(chan struct{})
+			}
+			close(svc.dependencyExitPropagationChanged)
+			svc.dependencyExitPropagationChanged = make(chan struct{})
+		})
+	}
+}
+
+func (svc *RunningService) isDependencyExitPropagationSuppressed() bool {
+	if svc == nil {
+		return false
+	}
+
+	svc.dependencyExitPropagationMu.Lock()
+	defer svc.dependencyExitPropagationMu.Unlock()
+	return svc.dependencyExitPropagationSuppressed > 0
+}
+
+func (svc *RunningService) waitDependencyExitPropagationUnsuppressed(ctx context.Context) error {
+	if svc == nil {
+		return nil
+	}
+
+	for {
+		svc.dependencyExitPropagationMu.Lock()
+		suppressed := svc.dependencyExitPropagationSuppressed > 0
+		if svc.dependencyExitPropagationChanged == nil {
+			svc.dependencyExitPropagationChanged = make(chan struct{})
+		}
+		changed := svc.dependencyExitPropagationChanged
+		svc.dependencyExitPropagationMu.Unlock()
+
+		if !suppressed {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		case <-changed:
+		}
+	}
+}
+
 func (svc *RunningService) TrackRef(ref bkcache.Ref) {
 	if ref == nil {
 		return
@@ -574,7 +673,24 @@ func (ss *Services) startWithKey(
 	key ServiceKey,
 	svc Startable,
 	opts ServiceStartOpts,
+	suppressDependencyExitPropagation bool,
 ) (_ *RunningService, release func(), err error) {
+	var suppressedRunning *RunningService
+	resumeDependencyExitPropagation := func() {}
+	suppress := func(running *RunningService) {
+		if !suppressDependencyExitPropagation || running == nil || suppressedRunning == running {
+			return
+		}
+		resumeDependencyExitPropagation()
+		suppressedRunning = running
+		resumeDependencyExitPropagation = running.suppressDependencyExitPropagation()
+	}
+	releaseSuppression := func() {
+		resumeDependencyExitPropagation()
+		resumeDependencyExitPropagation = func() {}
+		suppressedRunning = nil
+	}
+
 	for {
 		ss.l.Lock()
 		starting, isStarting := ss.starting[key]
@@ -583,17 +699,26 @@ func (ss *Services) startWithKey(
 		switch {
 		case isRunning && isStopping:
 			ss.l.Unlock()
+			if suppressedRunning == running {
+				releaseSuppression()
+			}
 			if running.Wait != nil {
 				_ = running.Wait(ctx)
 			}
 		case isRunning:
 			ss.bindings[key]++
+			suppress(running)
 			ss.l.Unlock()
-			return running, func() { ss.Detach(ctx, running) }, nil
+			return running, func() {
+				releaseSuppression()
+				ss.Detach(ctx, running)
+			}, nil
 		case isStarting:
+			suppress(starting.running)
 			ss.l.Unlock()
 			select {
 			case <-ctx.Done():
+				releaseSuppression()
 				return nil, nil, context.Cause(ctx)
 			case <-starting.done:
 			}
@@ -602,6 +727,7 @@ func (ss *Services) startWithKey(
 				Key:     key,
 				manager: ss,
 			}
+			suppress(running)
 			svcCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
 			start := &startingService{
 				running: running,
@@ -616,6 +742,7 @@ func (ss *Services) startWithKey(
 
 			if err := svc.Start(svcCtx, running, key.Digest, opts); err != nil {
 				start.err = err
+				releaseSuppression()
 				_ = running.releaseTrackedRefsOnce(context.WithoutCancel(ctx))
 				ss.l.Lock()
 				delete(ss.starting, key)
@@ -626,6 +753,7 @@ func (ss *Services) startWithKey(
 			if running.Wait == nil {
 				err := fmt.Errorf("service %s started without Wait callback", network.HostHash(key.Digest))
 				start.err = err
+				releaseSuppression()
 				_ = running.stopFromManager(context.WithoutCancel(ctx), true)
 				ss.l.Lock()
 				delete(ss.starting, key)
@@ -638,6 +766,7 @@ func (ss *Services) startWithKey(
 			delete(ss.starting, key)
 			if context.Cause(svcCtx) != nil {
 				ss.l.Unlock()
+				releaseSuppression()
 				_ = running.stopFromManager(context.WithoutCancel(ctx), true)
 				return nil, nil, context.Cause(svcCtx)
 			}
@@ -653,7 +782,10 @@ func (ss *Services) startWithKey(
 				ss.handleExit(running, running.Wait(context.Background()))
 			}()
 
-			return running, func() { ss.Detach(ctx, running) }, nil
+			return running, func() {
+				releaseSuppression()
+				ss.Detach(ctx, running)
+			}, nil
 		}
 	}
 }

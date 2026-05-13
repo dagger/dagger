@@ -85,14 +85,18 @@ func (dir *Directory) AttachDependencyResults(
 	if dir == nil {
 		return nil, nil
 	}
+	owned, err := dir.Services.AttachDependencyResults("directory", attach)
+	if err != nil {
+		return nil, err
+	}
 	if dir.Lazy == nil {
-		return nil, nil
+		return owned, nil
 	}
 	lazyDeps, err := dir.Lazy.AttachDependencies(ctx, attach)
 	if err != nil {
 		return nil, err
 	}
-	return lazyDeps, nil
+	return append(owned, lazyDeps...), nil
 }
 
 func (dir *Directory) LazyEvalFunc() dagql.LazyEvalFunc {

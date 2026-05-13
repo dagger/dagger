@@ -29,58 +29,114 @@ from dagger.mod._analyzer.visitors.annotations import unwrap_annotated
 
 logger = logging.getLogger(__name__)
 
-# Known Dagger types from the API
-DAGGER_OBJECT_TYPES = {
-    "Container",
-    "Directory",
-    "File",
-    "Secret",
-    "Service",
-    "CacheVolume",
-    "Socket",
-    "ModuleSource",
-    "Module",
-    "GitRepository",
-    "GitRef",
-    "Terminal",
-    "Host",
-    "Client",
-}
+# Hardcoded fallbacks used when the dagger package can't be imported at
+# analysis time (stub-only environment, broken install, …). These are
+# only the types the analyzer originally recognised — the live ``dagger``
+# package is queried first via ``_load_known_dagger_types`` to pick up
+# anything added after this list was last touched (e.g. ``Changeset``,
+# ``Binding``, ``LLM``, …).
+_FALLBACK_DAGGER_OBJECT_TYPES = frozenset(
+    {
+        "Container",
+        "Directory",
+        "File",
+        "Secret",
+        "Service",
+        "CacheVolume",
+        "Socket",
+        "ModuleSource",
+        "Module",
+        "GitRepository",
+        "GitRef",
+        "Terminal",
+        "Host",
+        "Client",
+    }
+)
+_FALLBACK_DAGGER_SCALAR_TYPES = frozenset(
+    {
+        "Platform",
+        "JSON",
+        "ContainerID",
+        "DirectoryID",
+        "FileID",
+        "SecretID",
+        "ServiceID",
+        "CacheVolumeID",
+        "SocketID",
+        "ModuleSourceID",
+        "ModuleID",
+        "GitRepositoryID",
+        "GitRefID",
+        "TerminalID",
+    }
+)
+_FALLBACK_DAGGER_ENUM_TYPES = frozenset(
+    {
+        "CacheSharingMode",
+        "ChangesetMergeConflict",
+        "ChangesetsMergeConflict",
+        "ExistsType",
+        "FileType",
+        "FunctionCachePolicy",
+        "ImageLayerCompression",
+        "ImageMediaTypes",
+        "ModuleSourceExperimentalFeature",
+        "ModuleSourceKind",
+        "NetworkProtocol",
+        "ReturnType",
+        "TypeDefKind",
+    }
+)
 
-# Dagger scalar types
-DAGGER_SCALAR_TYPES = {
-    "Platform",
-    "JSON",
-    "ContainerID",
-    "DirectoryID",
-    "FileID",
-    "SecretID",
-    "ServiceID",
-    "CacheVolumeID",
-    "SocketID",
-    "ModuleSourceID",
-    "ModuleID",
-    "GitRepositoryID",
-    "GitRefID",
-    "TerminalID",
-}
 
-# Dagger enum types from the API
-DAGGER_ENUM_TYPES = {
-    "CacheSharingMode",
-    "ChangesetMergeConflict",
-    "ChangesetsMergeConflict",
-    "ExistsType",
-    "FileType",
-    "FunctionCachePolicy",
-    "ImageLayerCompression",
-    "ImageMediaTypes",
-    "ModuleSourceExperimentalFeature",
-    "ModuleSourceKind",
-    "NetworkProtocol",
-    "ReturnType",
-    "TypeDefKind",
-}
+def _load_known_dagger_types() -> tuple[set[str], set[str], set[str]]:
+    """Discover known dagger types from the live ``dagger`` package.
+
+    Returns ``(objects, scalars, enums)`` populated by reflecting on
+    the actually-installed dagger module so newly added types
+    (``Changeset``, ``Binding``, ``LLM``, …) don't trigger spurious
+    "unresolved type" warnings.
+
+    Falls back to the hardcoded sets if dagger can't be imported, so
+    the analyzer still has *some* knowledge of the common types in a
+    stub-only environment.
+    """
+    try:
+        import dagger as dagger_pkg
+        from dagger.client import base as dagger_base
+    except Exception:  # noqa: BLE001 — partial install, etc.
+        return (
+            set(_FALLBACK_DAGGER_OBJECT_TYPES),
+            set(_FALLBACK_DAGGER_SCALAR_TYPES),
+            set(_FALLBACK_DAGGER_ENUM_TYPES),
+        )
+
+    objects: set[str] = set(_FALLBACK_DAGGER_OBJECT_TYPES)
+    scalars: set[str] = set(_FALLBACK_DAGGER_SCALAR_TYPES)
+    enums: set[str] = set(_FALLBACK_DAGGER_ENUM_TYPES)
+
+    object_base = getattr(dagger_base, "Type", None)
+    scalar_base = getattr(dagger_base, "Scalar", None)
+    enum_base = getattr(dagger_base, "Enum", None)
+
+    for name in dir(dagger_pkg):
+        if name.startswith("_"):
+            continue
+        attr = getattr(dagger_pkg, name, None)
+        if not isinstance(attr, type):
+            continue
+        if scalar_base is not None and issubclass(attr, scalar_base):
+            scalars.add(name)
+        elif enum_base is not None and issubclass(attr, enum_base):
+            enums.add(name)
+        elif object_base is not None and issubclass(attr, object_base):
+            objects.add(name)
+
+    return objects, scalars, enums
+
+
+DAGGER_OBJECT_TYPES, DAGGER_SCALAR_TYPES, DAGGER_ENUM_TYPES = _load_known_dagger_types()
 
 # Primitive type mapping
 PRIMITIVE_TYPES = {
@@ -376,6 +432,27 @@ class TypeResolver:
         ):
             return self._resolve_ast(slice_val.elts[0], location)
 
+        # Reject types Dagger does not support outright. Falling through to
+        # ``eval_annotation`` would silently produce a TypeDef with a
+        # nonsense name that the engine can't honor.
+        if base_name == "Literal":
+            msg = (
+                "Literal[...] is not a Dagger type. Use a string parameter "
+                "or define an enum with @dagger.enum_type."
+            )
+            raise TypeResolutionError(
+                msg, annotation=ast.unparse(node), location=location
+            )
+        if base_name in ("dict", "Dict", "Mapping", "MutableMapping"):
+            msg = (
+                f"{base_name}[...] is not a Dagger type. Map types are not "
+                "supported in the Dagger API; use a dedicated object_type "
+                "or pass a list of pairs."
+            )
+            raise TypeResolutionError(
+                msg, annotation=ast.unparse(node), location=location
+            )
+
         # Unknown generic - try to evaluate
         try:
             evaled = self.namespace.eval_annotation(node, location=location)
@@ -527,6 +604,16 @@ class TypeResolver:
         # Handle stub types
         if is_stub_type(t):
             return ResolvedType(kind="object", name=t.__name__)
+
+        # Reject TypeVar usage in annotations — Dagger has no generics, and
+        # silently treating ``T`` as an opaque object produces broken
+        # TypeDefs the engine rejects at runtime.
+        if isinstance(t, typing.TypeVar):
+            msg = (
+                f"TypeVar {t.__name__!r} is not a Dagger type. The Dagger "
+                "API does not support generics; declare a concrete type."
+            )
+            raise TypeResolutionError(msg, location=location)
 
         # Handle primitives
         if t in (str, int, float, bool, bytes):

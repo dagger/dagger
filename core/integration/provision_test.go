@@ -69,8 +69,10 @@ func (ProvisionSuite) TestImageDriver(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 				version := "v0.16.1"
 				dockerc := tc.provision(ctx, t, c, containerSetupOpts{name: t.Name()}).
-					WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
-					WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", tc.driver+"://registry.dagger.io/engine:"+version)
+					WithMountedFile("/bin/dagger", daggerCliFile(t, c))
+				dockerc, engineRef, err := loadKernelCompatEngine(ctx, c, dockerc, tc.name, version)
+				require.NoError(t, err)
+				dockerc = dockerc.WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", tc.driver+"://"+engineRef)
 				require.Equal(t, version, detectEngineVersion(ctx, t, dockerc))
 			})
 
@@ -192,13 +194,17 @@ func (ProvisionSuite) TestImageDriverGarbageCollectEngines(ctx context.Context, 
 				require.Len(t, dockerPs(ctx, t, dockerc, tc.name), 0)
 
 				version := "v0.16.1"
-				first := dockerc.WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", tc.driver+"://registry.dagger.io/engine:"+version)
+				dockerc, engineRef, err := loadKernelCompatEngine(ctx, c, dockerc, tc.name, version)
+				require.NoError(t, err)
+				first := dockerc.WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", tc.driver+"://"+engineRef)
 				require.Equal(t, version, detectEngineVersion(ctx, t, first))
 
 				require.Len(t, dockerPs(ctx, t, dockerc, tc.name), 1)
 
 				version = "v0.16.0"
-				second := dockerc.WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", tc.driver+"://registry.dagger.io/engine:"+version)
+				dockerc, engineRef, err = loadKernelCompatEngine(ctx, c, dockerc, tc.name, version)
+				require.NoError(t, err)
+				second := dockerc.WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", tc.driver+"://"+engineRef)
 				require.Equal(t, version, detectEngineVersion(ctx, t, second))
 
 				require.Len(t, dockerPs(ctx, t, dockerc, tc.name), 1)
@@ -218,13 +224,17 @@ func (ProvisionSuite) TestImageDriverGarbageCollectEngines(ctx context.Context, 
 				require.Len(t, dockerPs(ctx, t, dockerc, tc.name), 0)
 
 				version := "v0.16.1"
-				first := dockerc.WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", tc.driver+"://registry.dagger.io/engine:"+version)
+				dockerc, engineRef, err := loadKernelCompatEngine(ctx, c, dockerc, tc.name, version)
+				require.NoError(t, err)
+				first := dockerc.WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", tc.driver+"://"+engineRef)
 				require.Equal(t, version, detectEngineVersion(ctx, t, first))
 
 				require.Len(t, dockerPs(ctx, t, dockerc, tc.name), 1)
 
 				version = "v0.16.0"
-				second := dockerc.WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", tc.driver+"://registry.dagger.io/engine:"+version)
+				dockerc, engineRef, err = loadKernelCompatEngine(ctx, c, dockerc, tc.name, version)
+				require.NoError(t, err)
+				second := dockerc.WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", tc.driver+"://"+engineRef)
 				require.Equal(t, version, detectEngineVersion(ctx, t, second))
 
 				require.Len(t, dockerPs(ctx, t, dockerc, tc.name), 2)
@@ -257,6 +267,81 @@ type containerSetupOpts struct {
 	middleware func(*dagger.Container) *dagger.Container
 }
 
+const dockerdKernelCompatEntrypoint = `#!/bin/sh
+set -eu
+
+# docker:20.10-dind and docker:23.0-dind default to legacy xtables.
+if [ "${1:-}" = "dockerd" ] && [ ! -e /proc/net/ip_tables_names ] && [ -e /sbin/xtables-nft-multi ]; then
+	for name in iptables iptables-save iptables-restore ip6tables ip6tables-save ip6tables-restore; do
+		ln -sf xtables-nft-multi "/sbin/$name"
+	done
+fi
+
+exec /usr/local/bin/dockerd-entrypoint.sh "$@"
+`
+
+const engineKernelCompatEntrypoint = `#!/bin/sh
+set -eu
+
+# Older engine images write a CNI bridge config without ipMasqBackend. On kernels
+# without legacy xtables, force the same nft backend that current engines detect.
+if [ ! -e /proc/net/ip_tables_names ] && [ -e /sbin/xtables-nft-multi ]; then
+	for name in iptables iptables-save iptables-restore ip6tables ip6tables-save ip6tables-restore; do
+		ln -sf xtables-nft-multi "/sbin/$name"
+		ln -sf /sbin/xtables-nft-multi "/usr/sbin/$name"
+	done
+
+	cat >/etc/dagger/dagger-nft-cni.conflist <<'EOF'
+{
+  "cniVersion": "0.4.0",
+  "name": "dagger",
+  "plugins": [
+    {
+      "type": "bridge",
+      "bridge": "dagger0",
+      "isDefaultGateway": true,
+      "ipMasq": true,
+      "ipMasqBackend": "nftables",
+      "hairpinMode": true,
+      "ipam": {
+        "type": "host-local",
+        "ranges": [
+          [
+            {
+              "subnet": "10.87.0.0/16"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "type": "firewall"
+    },
+    {
+      "type": "dnsname",
+      "domainName": "dagger.local",
+      "pidfile": "/var/run/containers/cni/dnsname/dagger/pidfile",
+      "hosts": "/var/run/containers/cni/dnsname/dagger/addnhosts",
+      "lockfile": "/var/run/containers/cni/dnsname/dagger/lock",
+      "capabilities": {
+        "aliases": true
+      }
+    }
+  ]
+}
+EOF
+
+	cat >/etc/dagger/engine.toml <<'EOF'
+[worker.oci]
+  cniConfigPath = "/etc/dagger/dagger-nft-cni.conflist"
+  cniBinaryPath = "/opt/cni/bin"
+  cniPoolSize = 16
+EOF
+fi
+
+exec /usr/local/bin/dagger-entrypoint.sh "$@"
+`
+
 func dockerSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts containerSetupOpts) *dagger.Container {
 	middleware := opts.middleware
 	if middleware == nil {
@@ -274,6 +359,9 @@ func dockerSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts con
 
 	port := 4000
 	dockerd := dag.Container().From("docker:"+dockerdTag).
+		WithNewFile("/usr/local/bin/dagger-dockerd-entrypoint.sh", dockerdKernelCompatEntrypoint, dagger.ContainerWithNewFileOpts{
+			Permissions: 0o755,
+		}).
 		With(middleware).
 		WithMountedCache("/var/lib/docker", dag.CacheVolume(opts.name+"-"+opts.version+"-docker-lib"), dagger.ContainerWithMountedCacheOpts{
 			Sharing: dagger.CacheSharingModePrivate,
@@ -282,6 +370,7 @@ func dockerSetup(ctx context.Context, t *testctx.T, dag *dagger.Client, opts con
 		AsService(
 			dagger.ContainerAsServiceOpts{
 				Args: []string{
+					"/usr/local/bin/dagger-dockerd-entrypoint.sh",
 					"dockerd",
 					"--host=tcp://0.0.0.0:" + strconv.Itoa(port),
 					"--tls=false",
@@ -438,8 +527,33 @@ func doLoadEngine(ctx context.Context, dag *dagger.Client, ctr *dagger.Container
 	} else {
 		tarPath = "./bin/engine.tar"
 	}
+	return loadEngineTar(ctx, ctr, cli, engineTag, dag.Host().File(tarPath))
+}
+
+func loadKernelCompatEngine(ctx context.Context, dag *dagger.Client, ctr *dagger.Container, cli string, version string) (*dagger.Container, string, error) {
+	engineTag := "registry.dagger.io/engine:" + version
+	compatTag := engineTag + "-kernel-compat"
+	engineTar := dag.Container().
+		From(engineTag).
+		WithNewFile("/usr/local/bin/dagger-engine-kernel-compat-entrypoint.sh", engineKernelCompatEntrypoint, dagger.ContainerWithNewFileOpts{
+			Permissions: 0o755,
+		}).
+		WithEntrypoint([]string{"/usr/local/bin/dagger-engine-kernel-compat-entrypoint.sh"}).
+		AsTarball(dagger.ContainerAsTarballOpts{
+			ForcedCompression: dagger.ImageLayerCompressionGzip,
+			MediaTypes:        dagger.ImageMediaTypesDockerMediaTypes,
+		})
+
+	ctr, err := loadEngineTar(ctx, ctr, cli, compatTag, engineTar)
+	if err != nil {
+		return nil, "", err
+	}
+	return ctr, compatTag, nil
+}
+
+func loadEngineTar(ctx context.Context, ctr *dagger.Container, cli string, engineTag string, engineTar *dagger.File) (*dagger.Container, error) {
 	out, err := ctr.
-		WithMountedFile("engine.tar", dag.Host().File(tarPath)).
+		WithMountedFile("engine.tar", engineTar).
 		WithEnvVariable("CACHEBUSTER", rand.Text()).
 		WithExec([]string{cli, "image", "load", "-i", "engine.tar"}).
 		Stdout(ctx)

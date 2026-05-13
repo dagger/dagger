@@ -207,13 +207,13 @@ func (r *Go) Cgo(ctx context.Context) (bool, error) { // go (../../../../toolcha
 
 // GoCheckTidyOpts contains options for Go.CheckTidy
 type GoCheckTidyOpts struct {
-	Include []string // go (../../../../toolchains/go/main.go:561:2)
+	Include []string // go (../../../../toolchains/go/main.go:655:2)
 
-	Exclude []string // go (../../../../toolchains/go/main.go:562:2)
+	Exclude []string // go (../../../../toolchains/go/main.go:656:2)
 }
 
 // Check if 'go mod tidy' is up-to-date
-func (r *Go) CheckTidy(ctx context.Context, opts ...GoCheckTidyOpts) error { // go (../../../../toolchains/go/main.go:559:1)
+func (r *Go) CheckTidy(ctx context.Context, opts ...GoCheckTidyOpts) error { // go (../../../../toolchains/go/main.go:653:1)
 	if r.checkTidy != nil {
 		return nil
 	}
@@ -283,7 +283,7 @@ func (r *Go) Experiment(ctx context.Context) ([]string, error) { // go (../../..
 	return response, q.Execute(ctx)
 }
 
-func (r *Go) GenerateDaggerRuntime(start string) *Go { // go (../../../../toolchains/go/main.go:686:1)
+func (r *Go) GenerateDaggerRuntime(start string) *Go { // go (../../../../toolchains/go/main.go:578:1)
 	q := r.query.Select("generateDaggerRuntime")
 	q = q.Arg("start", start)
 
@@ -384,13 +384,13 @@ func (r *Go) Limit(ctx context.Context) (int, error) { // go (../../../../toolch
 
 // GoLintOpts contains options for Go.Lint
 type GoLintOpts struct {
-	Include []string // go (../../../../toolchains/go/main.go:631:2)
+	Include []string // go (../../../../toolchains/go/main.go:725:2)
 
-	Exclude []string // go (../../../../toolchains/go/main.go:632:2)
+	Exclude []string // go (../../../../toolchains/go/main.go:726:2)
 }
 
 // Lint the project
-func (r *Go) Lint(ctx context.Context, opts ...GoLintOpts) error { // go (../../../../toolchains/go/main.go:629:1)
+func (r *Go) Lint(ctx context.Context, opts ...GoLintOpts) error { // go (../../../../toolchains/go/main.go:723:1)
 	if r.lint != nil {
 		return nil
 	}
@@ -409,7 +409,7 @@ func (r *Go) Lint(ctx context.Context, opts ...GoLintOpts) error { // go (../../
 	return q.Execute(ctx)
 }
 
-func (r *Go) LintModule(ctx context.Context, module string) error { // go (../../../../toolchains/go/main.go:657:1)
+func (r *Go) LintModule(ctx context.Context, module string) error { // go (../../../../toolchains/go/main.go:751:1)
 	if r.lintModule != nil {
 		return nil
 	}
@@ -738,10 +738,10 @@ type GoOpts struct {
 	//
 	ExtraPackages []string // go (../../../../toolchains/go/main.go:73:2)
 	//
-	// max number of parallel jobs to run for tidy/check tidy/lint
+	// max number of parallel jobs to run for tidy/check tidy/lint/runtime generation
 	//
 	//
-	// Default: 3
+	// Default: 10
 	Limit int // go (../../../../toolchains/go/main.go:77:2)
 }
 
