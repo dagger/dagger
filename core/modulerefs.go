@@ -63,8 +63,13 @@ func ParseRefString(
 	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("parseRefString: %s", refString), telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
 
-	if refPin == "" {
-		entry, err := DefaultBuiltinModuleCatalog().Lookup(refString)
+	builtinName, isBuiltinRef := strings.CutPrefix(refString, "builtin:")
+	if isBuiltinRef || refPin == "" {
+		lookupName := refString
+		if isBuiltinRef {
+			lookupName = builtinName
+		}
+		entry, err := DefaultBuiltinModuleCatalog().Lookup(lookupName)
 		switch {
 		case err == nil:
 			return &ParsedRefString{

@@ -587,6 +587,12 @@ func (node *ModTreeNode) buildScaleOutModuleQuery(query *querybuilder.Selection)
 		query = query.Select("loadDirectoryFromID").Arg("id", dirIDEnc)
 		query = query.Select("asModuleSource").
 			Arg("sourceRootPath", modSrc.DirSrc.OriginalSourceRootSubpath)
+	case ModuleSourceKindBuiltin:
+		if modSrc.Builtin == nil {
+			return nil, fmt.Errorf("builtin module source metadata is missing")
+		}
+		query = query.Select("builtinModuleSource").
+			Arg("name", modSrc.Builtin.Name)
 	}
 	return query.Select("asModule"), nil
 }

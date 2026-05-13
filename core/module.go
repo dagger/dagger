@@ -2163,22 +2163,9 @@ func (mod *userMod) ResultCallModule(ctx context.Context) (*dagql.ResultCallModu
 	}
 
 	src := self.Source.Value.Self()
-	var ref, pin string
-	switch src.Kind {
-	case ModuleSourceKindLocal:
-		ref = filepath.Join(src.Local.ContextDirectoryPath, src.SourceRootSubpath)
-	case ModuleSourceKindGit:
-		ref = src.Git.CloneRef
-		if src.SourceRootSubpath != "" {
-			ref += "/" + strings.TrimPrefix(src.SourceRootSubpath, "/")
-		}
-		if src.Git.Version != "" {
-			ref += "@" + src.Git.Version
-		}
-		pin = src.Git.Commit
-	case ModuleSourceKindDir:
-	default:
-		return nil, fmt.Errorf("module provenance: unexpected module source kind %q", src.Kind)
+	ref, pin, err := resultCallModuleRefAndPin(src)
+	if err != nil {
+		return nil, err
 	}
 
 	return &dagql.ResultCallModule{
@@ -2187,6 +2174,28 @@ func (mod *userMod) ResultCallModule(ctx context.Context) (*dagql.ResultCallModu
 		Ref:       ref,
 		Pin:       pin,
 	}, nil
+}
+
+func resultCallModuleRefAndPin(src *ModuleSource) (string, string, error) {
+	switch src.Kind {
+	case ModuleSourceKindLocal:
+		return filepath.Join(src.Local.ContextDirectoryPath, src.SourceRootSubpath), "", nil
+	case ModuleSourceKindGit:
+		ref := src.Git.CloneRef
+		if src.SourceRootSubpath != "" {
+			ref += "/" + strings.TrimPrefix(src.SourceRootSubpath, "/")
+		}
+		if src.Git.Version != "" {
+			ref += "@" + src.Git.Version
+		}
+		return ref, src.Git.Commit, nil
+	case ModuleSourceKindDir:
+		return "", "", nil
+	case ModuleSourceKindBuiltin:
+		return src.AsString(), src.Pin(), nil
+	default:
+		return "", "", fmt.Errorf("module provenance: unexpected module source kind %q", src.Kind)
+	}
 }
 
 func (mod *userMod) ModuleResult() dagql.ObjectResult[*Module] {

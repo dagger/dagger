@@ -78,3 +78,32 @@ func TestBuiltinModuleSourceAsString(t *testing.T) {
 
 	require.Equal(t, "builtin:python", src.AsString())
 }
+
+func TestBuiltinModuleSourcePin(t *testing.T) {
+	dgst := digest.FromString("python-runtime")
+	src := &ModuleSource{
+		Kind: ModuleSourceKindBuiltin,
+		Builtin: &BuiltinModuleSource{
+			Name:           "python-runtime",
+			ManifestDigest: dgst,
+		},
+	}
+
+	require.Equal(t, dgst.String(), src.Pin())
+}
+
+func TestBuiltinModuleResultCallIdentity(t *testing.T) {
+	dgst := digest.FromString("python-runtime")
+	src := &ModuleSource{
+		Kind: ModuleSourceKindBuiltin,
+		Builtin: &BuiltinModuleSource{
+			Name:           "python-runtime",
+			ManifestDigest: dgst,
+		},
+	}
+
+	ref, pin, err := resultCallModuleRefAndPin(src)
+	require.NoError(t, err)
+	require.Equal(t, "builtin:python-runtime", ref)
+	require.Equal(t, dgst.String(), pin)
+}

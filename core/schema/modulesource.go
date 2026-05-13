@@ -1736,6 +1736,9 @@ func (s *moduleSourceSchema) validateAndCollectRelatedModules(
 			case core.ModuleSourceKindGit:
 				allRelatedModules = append(allRelatedModules, newRelatedModule)
 
+			case core.ModuleSourceKindBuiltin:
+				allRelatedModules = append(allRelatedModules, newRelatedModule)
+
 			default:
 				return nil, fmt.Errorf("unhandled module source kind: %s", newRelatedModule.Self().Kind)
 			}
@@ -1746,6 +1749,9 @@ func (s *moduleSourceSchema) validateAndCollectRelatedModules(
 				return nil, fmt.Errorf("cannot add local module source as %s of git module source", accessor.typ)
 
 			case core.ModuleSourceKindGit:
+				allRelatedModules = append(allRelatedModules, newRelatedModule)
+
+			case core.ModuleSourceKindBuiltin:
 				allRelatedModules = append(allRelatedModules, newRelatedModule)
 
 			default:
@@ -1787,6 +1793,8 @@ func (s *moduleSourceSchema) deduplicateAndSortItems(
 					symbolicItemStr += "@" + item.Self().Git.Commit
 				}
 			}
+		case core.ModuleSourceKindBuiltin:
+			symbolicItemStr = item.Self().AsString()
 		}
 
 		if _, isDuplicateSymbolic := symbolicItems[symbolicItemStr]; isDuplicateSymbolic {
@@ -1891,6 +1899,63 @@ func (s *moduleSourceSchema) moduleSourceUpdateItems(
 				}
 			}
 			continue
+		}
+
+		if existingItem.Self().Kind == core.ModuleSourceKindBuiltin {
+			existingName := existingItem.Self().ModuleName
+			existingSymbolic := existingItem.Self().AsString()
+			existingBuiltinName := ""
+			if existingItem.Self().Builtin != nil {
+				existingBuiltinName = existingItem.Self().Builtin.Name
+			}
+			if existingSymbolic == "" || existingBuiltinName == "" {
+				return nil, fmt.Errorf("builtin %s metadata is missing", accessor.typ)
+			}
+
+			matched := false
+			for updateReq := range updateReqs {
+				if updateReq.symbolic != existingName && updateReq.symbolic != existingSymbolic && updateReq.symbolic != existingBuiltinName {
+					continue
+				}
+				if updateReq.version != "" {
+					return nil, fmt.Errorf("cannot update builtin %s %q to version %q", accessor.typ, existingSymbolic, updateReq.version)
+				}
+				matched = true
+				delete(updateReqs, updateReq)
+
+				var updatedItem dagql.ObjectResult[*core.ModuleSource]
+				err := dag.Select(ctx, dag.Root(), &updatedItem,
+					dagql.Selector{
+						Field: "moduleSource",
+						Args: []dagql.NamedInput{
+							{Name: "refString", Value: dagql.String(existingSymbolic)},
+						},
+					},
+				)
+				if err != nil {
+					return nil, fmt.Errorf("failed to load updated %s: %w", accessor.typ, err)
+				}
+
+				updatedItemID, err := updatedItem.ID()
+				if err != nil {
+					return nil, fmt.Errorf("failed to get updated %s ID: %w", accessor.typ, err)
+				}
+				newUpdatedArgs = append(newUpdatedArgs, dagql.NewID[*core.ModuleSource](updatedItemID))
+				break
+			}
+
+			if !matched {
+				existingItemID, err := existingItem.ID()
+				if err != nil {
+					return nil, fmt.Errorf("failed to get existing %s ID: %w", accessor.typ, err)
+				}
+				newUpdatedArgs = append(newUpdatedArgs, dagql.NewID[*core.ModuleSource](existingItemID))
+			}
+			continue
+		}
+
+		if existingItem.Self().Kind != core.ModuleSourceKindGit {
+			return nil, fmt.Errorf("unhandled %s kind: %s", accessor.typ, existingItem.Self().Kind)
 		}
 
 		existingName := existingItem.Self().ModuleName
@@ -2001,6 +2066,12 @@ func (s *moduleSourceSchema) moduleSourceRemoveItems(
 			}
 			existingVersion = existingItem.Self().Git.Version
 
+		case core.ModuleSourceKindBuiltin:
+			if existingItem.Self().Builtin == nil {
+				return nil, fmt.Errorf("builtin %s metadata is missing", accessor.typ)
+			}
+			existingSymbolic = existingItem.Self().Builtin.Name
+
 		default:
 			return nil, fmt.Errorf("unhandled %s kind: %s", accessor.typ, existingItem.Self().Kind)
 		}
@@ -2010,7 +2081,7 @@ func (s *moduleSourceSchema) moduleSourceRemoveItems(
 			argSymbolic, argVersion, _ := strings.Cut(removeArg, "@")
 			argSymbolic = filepath.Clean(argSymbolic)
 
-			if argSymbolic != existingName && argSymbolic != existingSymbolic {
+			if argSymbolic != existingName && argSymbolic != existingSymbolic && argSymbolic != existingItem.Self().AsString() {
 				continue
 			}
 			keep = false
@@ -2478,8 +2549,19 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 				depCfg.Source = depSrc.Self().AsString()
 				depCfg.Pin = depSrc.Self().Git.Commit
 
+			case core.ModuleSourceKindBuiltin:
+				// parent=local, dep=builtin
+				source, err := builtinModuleConfigSource(depSrc.Self())
+				if err != nil {
+					return nil, err
+				}
+				depCfg.Source = source
+
 			default:
-				return nil, fmt.Errorf("unhandled module source kind: %s", src.Kind.HumanString())
+				return nil, fmt.Errorf("parent module source kind %s cannot have dependency of kind %s",
+					src.Kind.HumanString(),
+					depSrc.Self().Kind.HumanString(),
+				)
 			}
 
 		case core.ModuleSourceKindGit:
@@ -2504,14 +2586,25 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 					depCfg.Pin = depSrc.Self().Git.Commit
 				}
 
+			case core.ModuleSourceKindBuiltin:
+				// parent=git, dep=builtin
+				source, err := builtinModuleConfigSource(depSrc.Self())
+				if err != nil {
+					return nil, err
+				}
+				depCfg.Source = source
+
 			default:
-				return nil, fmt.Errorf("unhandled module source kind: %s", src.Kind.HumanString())
+				return nil, fmt.Errorf("parent module source kind %s cannot have dependency of kind %s",
+					src.Kind.HumanString(),
+					depSrc.Self().Kind.HumanString(),
+				)
 			}
 
-		case core.ModuleSourceKindDir:
+		case core.ModuleSourceKindDir, core.ModuleSourceKindBuiltin:
 			switch depSrc.Self().Kind {
 			case core.ModuleSourceKindDir:
-				// parent=dir, dep=dir
+				// parent=dir/builtin, dep=dir
 				// This is a bit subtle, but we can assume that any dependencies of kind dir were sourced from the same
 				// context directory as the parent. This is because module sources of type dir only load dependencies
 				// from a pre-existing dagger.json; they cannot *currently* have more deps added via the withDependencies
@@ -2529,6 +2622,14 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 				depCfg.Source = depSrc.Self().AsString()
 				depCfg.Pin = depSrc.Self().Git.Commit
 
+			case core.ModuleSourceKindBuiltin:
+				// parent=dir/builtin, dep=builtin
+				source, err := builtinModuleConfigSource(depSrc.Self())
+				if err != nil {
+					return nil, err
+				}
+				depCfg.Source = source
+
 			default:
 				// Local not supported since there's nothing we could plausibly put in the dagger.json for
 				// a Dir-kind module source to depend on a Local-kind module source
@@ -2544,6 +2645,13 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 	}
 
 	return modCfg, nil
+}
+
+func builtinModuleConfigSource(src *core.ModuleSource) (string, error) {
+	if src.Builtin == nil || src.Builtin.Name == "" {
+		return "", fmt.Errorf("builtin module source metadata is missing")
+	}
+	return src.Builtin.Name, nil
 }
 
 func isSelfCallsEnabled(src dagql.ObjectResult[*core.ModuleSource]) bool {

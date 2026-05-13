@@ -932,6 +932,11 @@ func (src *ModuleSource) Pin() string {
 		return ""
 	case ModuleSourceKindGit:
 		return src.Git.Commit
+	case ModuleSourceKindBuiltin:
+		if src.Builtin == nil {
+			return ""
+		}
+		return src.Builtin.ManifestDigest.String()
 	default:
 		return ""
 	}
@@ -2161,6 +2166,13 @@ func (fs ModuleSourceStatFS) Stat(ctx context.Context, path string) (string, *St
 	case ModuleSourceKindDir:
 		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
 		return CallDirStat(ctx, fs.src.ContextDirectory, path)
+	case ModuleSourceKindBuiltin:
+		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
+		contextDir := fs.src.ContextDirectory
+		if fs.src.Builtin != nil && fs.src.Builtin.OriginalRootfs.Self() != nil {
+			contextDir = fs.src.Builtin.OriginalRootfs
+		}
+		return CallDirStat(ctx, contextDir, path)
 	default:
 		return "", nil, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
 	}
@@ -2181,6 +2193,13 @@ func (fs ModuleSourceStatFS) Exists(ctx context.Context, path string) (string, b
 	case ModuleSourceKindDir:
 		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
 		return CallDirExists(ctx, fs.src.ContextDirectory, path)
+	case ModuleSourceKindBuiltin:
+		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
+		contextDir := fs.src.ContextDirectory
+		if fs.src.Builtin != nil && fs.src.Builtin.OriginalRootfs.Self() != nil {
+			contextDir = fs.src.Builtin.OriginalRootfs
+		}
+		return CallDirExists(ctx, contextDir, path)
 	default:
 		return "", false, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
 	}

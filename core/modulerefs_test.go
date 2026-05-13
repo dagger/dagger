@@ -46,6 +46,20 @@ func TestParseRefStringBuiltin(t *testing.T) {
 	require.Equal(t, "python-runtime", parsed.Builtin.Name)
 }
 
+func TestParseRefStringBuiltinPrefix(t *testing.T) {
+	t.Setenv(distconsts.PythonSDKManifestDigestEnvName, "sha256:1111111111111111111111111111111111111111111111111111111111111111")
+
+	parsed, err := ParseRefString(
+		context.Background(),
+		neverExistsFS{},
+		"builtin:python-runtime",
+		"",
+	)
+	require.NoError(t, err)
+	require.Equal(t, ModuleSourceKindBuiltin, parsed.Kind)
+	require.Equal(t, "python-runtime", parsed.Builtin.Name)
+}
+
 // Test ParseRefString using an interface to control Host side effect
 func TestParseRefString(t *testing.T) {
 	ctx := context.Background()
