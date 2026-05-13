@@ -78,6 +78,9 @@ type TestView struct {
 	// ListOnly forces passive embedded rendering: no selected row and no detail
 	// pane, even if focus were accidentally routed to this component.
 	ListOnly bool
+	// SummaryIndent is used by ListOnly test summaries. Final output keeps a
+	// small left margin; inline live output relies on the trace pipe prefix.
+	SummaryIndent int
 
 	OnFocusSpan func(*dagui.Span)
 
@@ -703,7 +706,7 @@ func (tv *TestView) renderTestSummaryLines(out *termenv.Output, view *dagui.Test
 	if tv.ScopeName != "" {
 		title += " · " + tv.ScopeName
 	}
-	prefix := "  "
+	prefix := strings.Repeat(" ", max(tv.SummaryIndent, 0))
 	titleLine := prefix + out.String(title+":").Bold().String()
 	if view != nil {
 		titleLine += " " + renderTestCountsSummary(out, view.Counts, max(width-lipgloss.Width(prefix)-lipgloss.Width(title)-2, 1))
@@ -726,7 +729,7 @@ func (tv *TestView) appendTestSummaryNodes(lines *[]string, out *termenv.Output,
 	}
 	for _, group := range groups {
 		for _, node := range group {
-			*lines = append(*lines, renderTestSummaryNode(out, node, depth, width))
+			*lines = append(*lines, renderTestSummaryNode(out, node, tv.SummaryIndent, depth, width))
 			tv.appendTestSummaryNodes(lines, out, node.Children, depth+1, width)
 		}
 	}
@@ -738,15 +741,15 @@ func (tv *TestView) appendTestSummaryNodes(lines *[]string, out *termenv.Output,
 			counts.Passing += node.Counts.Passing
 			counts.Skipped += node.Counts.Skipped
 		}
-		*lines = append(*lines, renderTestSummaryPassedGroup(out, counts, depth, width))
+		*lines = append(*lines, renderTestSummaryPassedGroup(out, counts, tv.SummaryIndent, depth, width))
 	}
 }
 
-func renderTestSummaryNode(out *termenv.Output, node *dagui.TestNode, depth, width int) string {
+func renderTestSummaryNode(out *termenv.Output, node *dagui.TestNode, summaryIndent, depth, width int) string {
 	if node == nil {
 		return ""
 	}
-	indent := testSummaryIndent(depth)
+	indent := testSummaryIndent(summaryIndent, depth)
 	icon := out.String(testCategoryIcon(node.Category)).Foreground(testCategoryColor(node.Category)).String()
 	nameWidth := max(width-lipgloss.Width(indent)-lipgloss.Width(icon)-1, 1)
 	name := out.String(clipPlain(testNodeDisplayName(node), nameWidth))
@@ -756,13 +759,13 @@ func renderTestSummaryNode(out *termenv.Output, node *dagui.TestNode, depth, wid
 	return clipANSI(indent+icon+" "+name.String(), width)
 }
 
-func renderTestSummaryPassedGroup(out *termenv.Output, counts dagui.TestCounts, depth, width int) string {
-	indent := testSummaryIndent(depth)
+func renderTestSummaryPassedGroup(out *termenv.Output, counts dagui.TestCounts, summaryIndent, depth, width int) string {
+	indent := testSummaryIndent(summaryIndent, depth)
 	return clipANSI(indent+renderTestCountsSummary(out, counts, max(width-lipgloss.Width(indent), 1)), width)
 }
 
-func testSummaryIndent(depth int) string {
-	return strings.Repeat(" ", 4+max(depth, 0)*2)
+func testSummaryIndent(summaryIndent, depth int) string {
+	return strings.Repeat(" ", max(summaryIndent, 0)+2+max(depth, 0)*2)
 }
 
 func renderTestCountsSummary(out *termenv.Output, counts dagui.TestCounts, width int) string {
@@ -1253,6 +1256,14 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		return nil
 	}
 	tv := s.fe.inlineTestView(row.Span.ID)
+	summaryIndent := 0
+	if s.fe.finalRender {
+		summaryIndent = 2
+	}
+	if tv.SummaryIndent != summaryIndent {
+		tv.SummaryIndent = summaryIndent
+		tv.Update()
+	}
 	limit := max(s.fe.window.Height/3, 6)
 	if s.fe.finalRender {
 		limit = finalTestViewHeight(tv)
@@ -1289,6 +1300,8 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 	lines := make([]string, 0, len(result.Lines)+1)
 	if s.fe.finalRender {
 		lines = append(lines, "")
+	} else if prefix != "" {
+		lines = append(lines, strings.TrimRight(prefix, " "))
 	}
 	for _, line := range result.Lines {
 		lines = append(lines, prefix+line)
@@ -1305,6 +1318,10 @@ func (fe *frontendPretty) renderFinalGlobalTests(ctx tuist.Context) []string {
 		return nil
 	}
 	tv := fe.inlineTestView(dagui.SpanID{})
+	if tv.SummaryIndent != 2 {
+		tv.SummaryIndent = 2
+		tv.Update()
+	}
 	limit := finalTestViewHeight(tv)
 	if tv.MaxHeight != limit {
 		tv.MaxHeight = limit
