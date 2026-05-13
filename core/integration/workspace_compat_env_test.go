@@ -17,12 +17,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func daggerCallCmd(modPath string, args ...string) []string {
+	cmd := []string{"dagger", "call"}
+	if modPath != "" {
+		cmd = append(cmd, "-m", modPath)
+	}
+	return append(cmd, args...)
+}
+
 func (WorkspaceCompatSuite) TestRemoteFile(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	output, err := nestedDaggerContainer(t, c, "go", "defaults").
 		WithWorkdir("defaults").
 		WithNewFile(".env", `DEFAULTS_FILE=https://github.com/dagger/dagger#main:cmd/dagger/main.go`).
-		WithExec([]string{"dagger", "call", "file", "contents"}, nestedExec).
+		WithExec(daggerCallCmd(".", "file", "contents"), nestedExec).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, output, "package main")
@@ -34,7 +42,7 @@ func (WorkspaceCompatSuite) TestLocalFile(ctx context.Context, t *testctx.T) {
 		WithNewFile("hello.txt", "well hello!").
 		WithWorkdir("defaults").
 		WithNewFile(".env", `DEFAULTS_FILE=../hello.txt`).
-		WithExec([]string{"dagger", "call", "file", "contents"}, nestedExec).
+		WithExec(daggerCallCmd(".", "file", "contents"), nestedExec).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "well hello!", output)
@@ -46,7 +54,7 @@ func (WorkspaceCompatSuite) TestLocalDirectory(ctx context.Context, t *testctx.T
 		WithDirectory("data", dag.Directory().WithNewFile("hello.txt", "well hello!")).
 		WithWorkdir("defaults").
 		WithNewFile(".env", `DEFAULTS_DIR=../data`).
-		WithExec([]string{"dagger", "call", "dir", "file", "--path=hello.txt", "contents"}, nestedExec).
+		WithExec(daggerCallCmd(".", "dir", "file", "--path=hello.txt", "contents"), nestedExec).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "well hello!", output)
@@ -57,7 +65,7 @@ func (WorkspaceCompatSuite) TestRemoteDirectory(ctx context.Context, t *testctx.
 	output, err := nestedDaggerContainer(t, c, "go", "defaults").
 		WithWorkdir("defaults").
 		WithNewFile(".env", `DIR=https://github.com/dagger/dagger#main:cmd/dagger`).
-		WithExec([]string{"dagger", "call", "dir", "file", "--path=main.go", "contents"}, nestedExec).
+		WithExec(daggerCallCmd(".", "dir", "file", "--path=main.go", "contents"), nestedExec).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, output, "package main")
@@ -241,7 +249,7 @@ class Test:
 		WithEnvVariable("MY_SECRET", "hello-from-env")
 
 	out, err := base.
-		With(daggerCall("check")).
+		With(daggerCallAt(".", "check")).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "secret is None", out)
@@ -250,7 +258,7 @@ class Test:
 	// (`secretWithDefault`), not snake_case env-style names.
 	out, err = base.
 		WithNewFile(".env", "secretWithDefault=env://MY_SECRET").
-		With(daggerCall("check")).
+		With(daggerCallAt(".", "check")).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "secret is: hello-from-env", out)
@@ -298,7 +306,7 @@ func (WorkspaceCompatSuite) TestSystemVariables(ctx context.Context, t *testctx.
 		WithWorkdir("defaults").
 		WithNewFile(".env", `GREETING="${SYSTEM_GREETING}"`).
 		WithEnvVariable("SYSTEM_GREETING", "live long and prosper").
-		WithExec([]string{"dagger", "call", "message"}, nestedExec).
+		WithExec(daggerCallCmd(".", "message"), nestedExec).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "live long and prosper, world!", output)
@@ -310,7 +318,7 @@ func (WorkspaceCompatSuite) TestRequiredDirectory(ctx context.Context, t *testct
 		WithWorkdir("defaults").
 		WithNewFile("/foo/dir/hello.txt", "").
 		WithNewFile(".env", `LS_DIR=/foo/dir`).
-		WithExec([]string{"dagger", "call", "ls"}, nestedExec).
+		WithExec(daggerCallCmd(".", "ls"), nestedExec).
 		Stdout(ctx)
 	require.NoError(t, err, "user default should successfully apply to required argument")
 	require.Equal(t, "hello.txt\n", output, "user default should successfully apply to required argument")
@@ -321,7 +329,7 @@ func (WorkspaceCompatSuite) TestRequiredString(ctx context.Context, t *testctx.T
 	output, err := nestedDaggerContainer(t, c, "go", "defaults").
 		WithNewFile(".env", `DEFAULTS_CAPITALIZE_S=hello world`).
 		WithWorkdir("defaults").
-		WithExec([]string{"dagger", "call", "capitalize"}, nestedExec).
+		WithExec(daggerCallCmd(".", "capitalize"), nestedExec).
 		Stdout(ctx)
 	require.NoError(t, err, "user default should successfully apply to required argument")
 	require.Equal(t, "HELLO WORLD", output, "user default should successfully apply to required argument")
@@ -356,11 +364,11 @@ ECHO_snakeCase=function-snake
 ECHO_httpUrl=function-url
 `)
 
-		out, err := ctr.With(daggerCall("constructor-values")).Stdout(ctx)
+		out, err := ctr.With(daggerCallAt(".", "constructor-values")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "constructor-simple|constructor-url", out)
 
-		out, err = ctr.With(daggerCall("echo")).Stdout(ctx)
+		out, err = ctr.With(daggerCallAt(".", "echo")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "function-snake|function-url", out)
 	})
@@ -370,7 +378,7 @@ ECHO_httpUrl=function-url
 			WithNewFile(".env", `simple_value=constructor-simple
 http_url=constructor-url
 `).
-			WithExec([]string{"dagger", "call", "constructor-values"}, dagger.ContainerWithExecOpts{
+			WithExec(daggerCallCmd(".", "constructor-values"), dagger.ContainerWithExecOpts{
 				Expect:                        dagger.ReturnTypeFailure,
 				ExperimentalPrivilegedNesting: true,
 			}).
@@ -384,7 +392,7 @@ httpUrl=constructor-url
 ECHO_snake_case=function-snake
 ECHO_http_url=function-url
 `).
-			WithExec([]string{"dagger", "call", "echo"}, dagger.ContainerWithExecOpts{
+			WithExec(daggerCallCmd(".", "echo"), dagger.ContainerWithExecOpts{
 				Expect:                        dagger.ReturnTypeFailure,
 				ExperimentalPrivilegedNesting: true,
 			}).
@@ -400,7 +408,7 @@ func (WorkspaceCompatSuite) TestDependencies(ctx context.Context, t *testctx.T) 
 	output, err := nestedDaggerContainer(t, c, "go", "defaults").
 		WithNewFile(".env", `FOOBAR_EXCLAIM_COUNT=4`).
 		WithWorkdir("defaults").
-		WithExec([]string{"dagger", "call", "message"}, nestedExec).
+		WithExec(daggerCallCmd(".", "message"), nestedExec).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "hello, world!!!!", output, "User defaults should apply to nested dependencies")
@@ -415,7 +423,7 @@ func (WorkspaceCompatSuite) TestOptionalDirectoryWithIgnore(ctx context.Context,
 		WithDirectory("/foo/mydocs", docs).
 		WithWorkdir("defaults").
 		WithNewFile(".env", `docs=/foo/mydocs`).
-		WithExec([]string{"dagger", "call", "docs", "entries"}, nestedExec).
+		WithExec(daggerCallCmd(".", "docs", "entries"), nestedExec).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "README.md\n", output)
@@ -429,7 +437,7 @@ func (WorkspaceCompatSuite) TestRequiredDirectoryWithIgnore(ctx context.Context,
 	controlOutput, err := nestedDaggerContainer(t, c, "go", "defaults").
 		WithDirectory("/foo/mydocs", docs).
 		WithWorkdir("defaults").
-		WithExec([]string{"dagger", "call", "ls-text", "--dir=/foo/mydocs"}, nestedExec).
+		WithExec(daggerCallCmd(".", "ls-text", "--dir=/foo/mydocs"), nestedExec).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "README.md\n", controlOutput, "control - if this fails, something else is wrong")
@@ -437,7 +445,7 @@ func (WorkspaceCompatSuite) TestRequiredDirectoryWithIgnore(ctx context.Context,
 		WithDirectory("/foo/mydocs", docs).
 		WithWorkdir("defaults").
 		WithNewFile(".env", `lsText_dir=/foo/mydocs`).
-		WithExec([]string{"dagger", "call", "ls-text"}, nestedExec).
+		WithExec(daggerCallCmd(".", "ls-text"), nestedExec).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "README.md\n", output)
@@ -456,31 +464,36 @@ func (WorkspaceCompatSuite) TestModuleWithDash(ctx context.Context, t *testctx.T
 		WithVariable("MESSAGE_NAME", "bob").
 		AsFile()
 	for _, tc := range []struct {
-		name string
-		ctr  *dagger.Container
+		name    string
+		ctr     *dagger.Container
+		modPath string
 	}{
 		{
 			"inner .env",
 			base.WithWorkdir("defaults/super-dash-dash").WithFile(".env", innerEnv),
+			".",
 		},
 		{
 			"outer .env inner workdir",
 			base.WithFile(".env", outerEnv).WithWorkdir("defaults/super-dash-dash"),
+			".",
 		},
 		{
 			"outer .env outer workdir",
 			base.WithFile(".env", outerEnv).WithEnvVariable("DAGGER_MODULE", "./defaults/super-dash-dash"),
+			"",
 		},
 		{
 			"inner .env with prefix",
 			// Use the outer env (which has prefix) as inner env. It should work.
 			base.WithWorkdir("defaults/super-dash-dash").WithFile(".env", outerEnv),
+			".",
 		},
 	} {
 		tc := tc
 		t.Run(tc.name+" introspect", func(ctx context.Context, t *testctx.T) {
 			out, err := tc.ctr.
-				WithExec([]string{"dagger", "call", "--help"}, nestedExec).
+				WithExec(daggerCallCmd(tc.modPath, "--help"), nestedExec).
 				Stdout(ctx)
 			out = trimDaggerFunctionUsageText(out)
 			require.NoError(t, err)
@@ -488,7 +501,7 @@ func (WorkspaceCompatSuite) TestModuleWithDash(ctx context.Context, t *testctx.T
 		})
 		t.Run(tc.name+" call", func(ctx context.Context, t *testctx.T) {
 			out, err := tc.ctr.
-				WithExec([]string{"dagger", "call", "message"}, nestedExec).
+				WithExec(daggerCallCmd(tc.modPath, "message"), nestedExec).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "yay, bob!", out)
@@ -514,31 +527,36 @@ func (WorkspaceCompatSuite) TestConstructorOptional(ctx context.Context, t *test
 		WithVariable("password", "env://PASSWORD").
 		AsFile()
 	for _, tc := range []struct {
-		name string
-		ctr  *dagger.Container
+		name    string
+		ctr     *dagger.Container
+		modPath string
 	}{
 		{
 			"inner .env",
 			base.WithWorkdir("defaults").WithFile(".env", innerEnv),
+			".",
 		},
 		{
 			"outer .env inner workdir",
 			base.WithFile(".env", outerEnv).WithWorkdir("defaults"),
+			".",
 		},
 		{
 			"outer .env outer workdir",
 			base.WithFile(".env", outerEnv).WithEnvVariable("DAGGER_MODULE", "./defaults"),
+			"",
 		},
 		{
 			"inner .env with prefix",
 			// Use the outer env (which has prefix) as inner env. It should work.
 			base.WithWorkdir("defaults").WithFile(".env", outerEnv),
+			".",
 		},
 	} {
 		tc := tc
 		t.Run(tc.name+" introspect", func(ctx context.Context, t *testctx.T) {
 			out, err := tc.ctr.
-				WithExec([]string{"dagger", "call", "--help"}, nestedExec).
+				WithExec(daggerCallCmd(tc.modPath, "--help"), nestedExec).
 				Stdout(ctx)
 			out = trimDaggerFunctionUsageText(out)
 			require.NoError(t, err)
@@ -550,25 +568,25 @@ func (WorkspaceCompatSuite) TestConstructorOptional(ctx context.Context, t *test
 		t.Run(tc.name+" call", func(ctx context.Context, t *testctx.T) {
 			// Test that 'greeting' is used
 			out, err := tc.ctr.
-				WithExec([]string{"dagger", "call", "message"}, nestedExec).
+				WithExec(daggerCallCmd(tc.modPath, "message"), nestedExec).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "yay, world!", out)
 			// Test that 'file' is used
 			out, err = tc.ctr.
-				WithExec([]string{"dagger", "call", "file", "contents"}, nestedExec).
+				WithExec(daggerCallCmd(tc.modPath, "file", "contents"), nestedExec).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hello there!", out)
 			// Test that 'dir' is used
 			out, err = tc.ctr.
-				WithExec([]string{"dagger", "call", "dir", "entries"}, nestedExec).
+				WithExec(daggerCallCmd(tc.modPath, "dir", "entries"), nestedExec).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hello.txt\n", out)
 			// Test that 'password' is used
 			out, err = tc.ctr.
-				WithExec([]string{"dagger", "call", "password", "plaintext"}, nestedExec).
+				WithExec(daggerCallCmd(tc.modPath, "password", "plaintext"), nestedExec).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "topsecret", out)
@@ -599,26 +617,30 @@ func (WorkspaceCompatSuite) TestConstructorRequired(ctx context.Context, t *test
 		WithVariable("service", "tcp://www:80").
 		AsFile()
 	for _, tc := range []struct {
-		name string
-		ctr  *dagger.Container
+		name    string
+		ctr     *dagger.Container
+		modPath string
 	}{
 		{
 			"inner .env",
 			base.WithWorkdir("defaults/superconstructor").WithFile(".env", innerEnv),
+			".",
 		},
 		{
 			"outer .env inner workdir",
 			base.WithFile(".env", outerEnv).WithWorkdir("defaults/superconstructor"),
+			".",
 		},
 		{
 			"outer .env outer workdir",
 			base.WithFile(".env", outerEnv).WithEnvVariable("DAGGER_MODULE", "./defaults/superconstructor"),
+			"",
 		},
 	} {
 		tc := tc
 		t.Run(tc.name+" introspect", func(ctx context.Context, t *testctx.T) {
 			out, err := tc.ctr.
-				WithExec([]string{"dagger", "call", "--help"}, nestedExec).
+				WithExec(daggerCallCmd(tc.modPath, "--help"), nestedExec).
 				Stdout(ctx)
 			out = trimDaggerFunctionUsageText(out)
 			require.NoError(t, err)
@@ -633,22 +655,22 @@ func (WorkspaceCompatSuite) TestConstructorRequired(ctx context.Context, t *test
 		})
 		t.Run(tc.name+" call", func(ctx context.Context, t *testctx.T) {
 			out, err := tc.ctr.
-				WithExec([]string{"dagger", "call", "greeting"}, nestedExec).
+				WithExec(daggerCallCmd(tc.modPath, "greeting"), nestedExec).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "yay", out, "user default should be applied")
 			out, err = tc.ctr.
-				WithExec([]string{"dagger", "call", "count"}, nestedExec).
+				WithExec(daggerCallCmd(tc.modPath, "count"), nestedExec).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "42", out, "user default should be applied")
 			out, err = tc.ctr.
-				WithExec([]string{"dagger", "call", "file", "contents"}, nestedExec).
+				WithExec(daggerCallCmd(tc.modPath, "file", "contents"), nestedExec).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hello there!", out, "user default should be applied")
 			out, err = tc.ctr.
-				WithExec([]string{"dagger", "call", "dir", "entries"}, nestedExec).
+				WithExec(daggerCallCmd(tc.modPath, "dir", "entries"), nestedExec).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hello.txt\n", out, "user default should be applied")
@@ -675,7 +697,7 @@ func (WorkspaceCompatSuite) TestCompatEnvPrefixLookupPolicy(ctx context.Context,
 MESSAGE_NAME=inner-name
 `,
 			workdir: "defaults",
-			command: []string{"dagger", "call", "message"},
+			command: daggerCallCmd(".", "message"),
 			stdout:  "inner, inner-name!",
 		},
 		{
@@ -696,7 +718,7 @@ DEFAULTS_MESSAGE_NAME=outer-name
 DEFAULTS_MESSAGE_NAME=inner-prefixed-name
 `,
 			workdir: "defaults",
-			command: []string{"dagger", "call", "message"},
+			command: daggerCallCmd(".", "message"),
 			stdout:  "inner-prefixed, inner-prefixed-name!",
 		},
 		{
@@ -784,9 +806,9 @@ func (WorkspaceCompatSuite) TestSimple(ctx context.Context, t *testctx.T) {
 			`
 GREETING=salut
 MESSAGE_NAME=monde
-`,
+			`,
 			"./defaults",
-			[]string{"dagger", "call", "message"},
+			daggerCallCmd(".", "message"),
 			dagger.ReturnTypeSuccess,
 			"salut, monde!",
 			nil,
@@ -796,9 +818,9 @@ MESSAGE_NAME=monde
 			"./defaults/.env",
 			`
 LIST=1,2,3
-`,
+			`,
 			"./defaults",
-			[]string{"dagger", "call", "list-string"},
+			daggerCallCmd(".", "list-string"),
 			dagger.ReturnTypeSuccess,
 			"1\n2\n3\n",
 			nil,
@@ -808,9 +830,9 @@ LIST=1,2,3
 			"./defaults/.env",
 			`
 SECRETS=env://FOO,env://BAR,env://BAZ
-`,
+			`,
 			"./defaults",
-			[]string{"dagger", "call", "list-secrets"},
+			daggerCallCmd(".", "list-secrets"),
 			dagger.ReturnTypeSuccess,
 			"1\n2\n3\n",
 			func(c *dagger.Container) *dagger.Container {
@@ -825,9 +847,9 @@ SECRETS=env://FOO,env://BAR,env://BAZ
 			"./defaults/.env",
 			`
 GREETING="one,two"
-`,
+			`,
 			"./defaults",
-			[]string{"dagger", "call", "message"},
+			daggerCallCmd(".", "message"),
 			dagger.ReturnTypeSuccess,
 			"one,two, world!",
 			nil,
@@ -838,9 +860,9 @@ GREETING="one,two"
 			`
 DEFAULTS_GREETING=bonjour
 DEFAULTS_MESSAGE_NAME=monde
-`,
+			`,
 			"./defaults",
-			[]string{"dagger", "call", "message"},
+			daggerCallCmd(".", "message"),
 			dagger.ReturnTypeSuccess,
 			"bonjour, monde!",
 			nil,
