@@ -29,10 +29,20 @@ func gitRepoBase(t testing.TB, c *dagger.Client) *dagger.Container {
 		WithExec([]string{"git", "init"})
 }
 
-// workspaceBase returns a gitRepoBase container, with a pre-initialized workspace
+// workspaceBase returns a git-backed /work with the CLI installed, but no native
+// .dagger/config.toml. A git root enables workspace/lockfile detection; a
+// native config opts into native workspace behavior and suppresses legacy
+// dagger.json compat inference, so tests should add it explicitly when needed.
 func workspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
 	t.Helper()
-	return gitRepoBase(t, c).With(daggerExec("workspace", "init"))
+	return gitRepoBase(t, c)
+}
+
+// nativeWorkspaceBase adds the native workspace state created by
+// `dagger workspace init`: a .dagger/config.toml inside the git root.
+func nativeWorkspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
+	t.Helper()
+	return workspaceBase(t, c).With(daggerExec("workspace", "init"))
 }
 
 // legacyWorkspaceBase creates a native git repo rooted at /work but seeds it
