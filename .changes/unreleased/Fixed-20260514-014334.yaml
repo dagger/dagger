@@ -1,0 +1,6 @@
+kind: Fixed
+body: Allow local toolchains to be uninstalled after their source path is deleted.
+time: 2026-05-14T01:43:34.466428992Z
+custom:
+    Author: paulvinueza30
+    PR: "13143"
