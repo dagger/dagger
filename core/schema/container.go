@@ -27,6 +27,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
@@ -147,10 +148,10 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				`Should default to "/".`),
 
 		dagql.NodeFunc("envVariables", s.envVariables).
-			Doc(`Retrieves the list of environment variables passed to commands.`),
+			Doc(`Retrieves the list of persistent environment variables configured on the container.`),
 
 		dagql.NodeFunc("envVariable", s.envVariable).
-			Doc(`Retrieves the value of the specified environment variable.`).
+			Doc(`Retrieves the value of the specified persistent environment variable.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the environment variable to retrieve (e.g., "PATH").`),
 			),
@@ -228,6 +229,14 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("secret").Doc(`Identifier of the secret value.`),
 			),
 
+		dagql.NodeFunc("withVolatileVariable", s.withVolatileVariable).
+			Doc(`Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.`,
+				`This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.`).
+			Args(
+				dagql.Arg("name").Doc(`Name of the volatile variable (e.g., "CI_RUN_ID").`),
+				dagql.Arg("value").Doc(`Value of the volatile variable.`),
+			),
+
 		dagql.NodeFunc("withoutEnvVariable", s.withoutEnvVariable).
 			Doc(`Retrieves this container minus the given environment variable.`).
 			Args(
@@ -238,6 +247,12 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			Doc(`Retrieves this container minus the given environment variable containing the secret.`).
 			Args(
 				dagql.Arg("name").Doc(`The name of the environment variable (e.g., "HOST").`),
+			),
+
+		dagql.NodeFunc("withoutVolatileVariable", s.withoutVolatileVariable).
+			Doc(`Retrieves this container minus the given volatile environment variable.`).
+			Args(
+				dagql.Arg("name").Doc(`The name of the volatile environment variable (e.g., "CI_RUN_ID").`),
 			),
 
 		dagql.NodeFunc("withLabel", s.withLabel).
@@ -570,7 +585,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("err").Doc(`Message of the error to raise. If empty, the error will be ignored.`),
 			),
 
-		dagql.NodeFunc("withExec", s.withExec).
+		dagql.NodeFuncWithDynamicInputs("withExec", s.withExec, s.withExecCacheKey).
 			IsPersistable().
 			View(AllVersion).
 			Doc(`Execute a command in the container, and return a new snapshot of the container state after execution.`).
@@ -1011,6 +1026,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 			Services:           slices.Clone(parent.Self().Services),
 			DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
 			SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+			VolatileEnv:        slices.Clone(parent.Self().VolatileEnv),
 			DefaultArgs:        parent.Self().DefaultArgs,
 		}
 
@@ -1253,6 +1269,7 @@ func (s *containerSchema) withRootfs(ctx context.Context, parent dagql.ObjectRes
 		Services:           slices.Clone(parent.Self().Services),
 		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
 		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		VolatileEnv:        slices.Clone(parent.Self().VolatileEnv),
 		DefaultArgs:        parent.Self().DefaultArgs,
 		Lazy: &core.ContainerWithRootFSLazy{
 			LazyState: core.NewLazyState(),
@@ -1368,6 +1385,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 		Services:           slices.Clone(parent.Self().Services),
 		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
 		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		VolatileEnv:        slices.Clone(parent.Self().VolatileEnv),
 		DefaultArgs:        parent.Self().DefaultArgs,
 	}
 	err = ctr.WithExec(ctx, parent, args.ContainerExecOpts, md, moduleContext, nil, false)
@@ -1375,6 +1393,195 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 		return inst, err
 	}
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
+}
+
+const volatileExecExtraDigestLabel = "container.withExec.volatileEnv"
+
+func (s *containerSchema) withExecCacheKey(ctx context.Context, parent dagql.ObjectResult[*core.Container], _ containerExecArgs, req *dagql.CallRequest) error {
+	parentID, err := parent.RecipeID(ctx)
+	if err != nil {
+		return fmt.Errorf("volatile exec cache key: parent recipe ID: %w", err)
+	}
+	if !hasVolatileVariableMutations(parentID) {
+		return nil
+	}
+
+	parentDigest, volatileEnv, err := normalizedVolatileParentDigest(parentID)
+	if err != nil {
+		return fmt.Errorf("volatile exec cache key: normalize parent: %w", err)
+	}
+
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return err
+	}
+	reqID, err := cache.RecipeIDForCall(ctx, req.ResultCall)
+	if err != nil {
+		return fmt.Errorf("volatile exec cache key: request recipe ID: %w", err)
+	}
+	execDigest, err := reqID.DigestWithReceiverDigest(parentDigest)
+	if err != nil {
+		return fmt.Errorf("volatile exec cache key: digest exec: %w", err)
+	}
+
+	extraDigest := execDigest
+	if len(volatileEnv) > 0 {
+		inputs := []string{execDigest.String()}
+		core.WalkEnv(volatileEnv, func(name, _, _ string) {
+			inputs = append(inputs, name)
+		})
+		extraDigest = hashutil.HashStrings(inputs...)
+	}
+	req.ExtraDigests = append(req.ExtraDigests, call.ExtraDigest{
+		Digest: extraDigest,
+		Label:  volatileExecExtraDigestLabel,
+	})
+
+	currentVolatileEnv := slices.Clone(parent.Self().VolatileEnv)
+	requestCall, err := req.ToResultCall()
+	if err != nil {
+		return err
+	}
+	req.CacheHitTransform = func(ctx context.Context, hit dagql.AnyResult) (dagql.AnyResult, error) {
+		ctr, ok := hit.(dagql.ObjectResult[*core.Container])
+		if !ok || ctr.Self() == nil {
+			return hit, nil
+		}
+		rebased, err := cloneContainerForVolatileExecCacheHit(ctx, ctr, currentVolatileEnv)
+		if err != nil {
+			return nil, err
+		}
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return dagql.NewObjectResultForCall(rebased, srv, requestCall)
+	}
+	return nil
+}
+
+func hasVolatileVariableMutations(id *call.ID) bool {
+	for cur := id; cur != nil; cur = cur.Receiver() {
+		switch cur.Field() {
+		case "withVolatileVariable", "withoutVolatileVariable":
+			return true
+		}
+	}
+	return false
+}
+
+func normalizedVolatileParentDigest(id *call.ID) (digest.Digest, []string, error) {
+	if id == nil {
+		return "", nil, nil
+	}
+
+	receiverDigest, volatileEnv, err := normalizedVolatileParentDigest(id.Receiver())
+	if err != nil {
+		return "", nil, err
+	}
+
+	switch id.Field() {
+	case "withVolatileVariable":
+		name, err := callStringArg(id, "name")
+		if err != nil {
+			return "", nil, err
+		}
+		return receiverDigest, core.AddEnv(volatileEnv, name, ""), nil
+	case "withoutVolatileVariable":
+		name, err := callStringArg(id, "name")
+		if err != nil {
+			return "", nil, err
+		}
+		return receiverDigest, withoutEnvName(volatileEnv, name), nil
+	default:
+		dig, err := id.DigestWithReceiverDigest(receiverDigest)
+		if err != nil {
+			return "", nil, err
+		}
+		return dig, volatileEnv, nil
+	}
+}
+
+func withoutEnvName(env []string, name string) []string {
+	newEnv := []string{}
+	core.WalkEnv(env, func(k, _, entry string) {
+		if !shell.EqualEnvKeys(k, name) {
+			newEnv = append(newEnv, entry)
+		}
+	})
+	return newEnv
+}
+
+func callStringArg(id *call.ID, name string) (string, error) {
+	arg := id.Arg(name)
+	if arg == nil {
+		return "", fmt.Errorf("call %q missing string arg %q", id.Field(), name)
+	}
+	lit, ok := arg.Value().(*call.LiteralString)
+	if !ok {
+		return "", fmt.Errorf("call %q arg %q: expected string, got %T", id.Field(), name, arg.Value())
+	}
+	return lit.Value(), nil
+}
+
+func cloneContainerForVolatileExecCacheHit(
+	ctx context.Context,
+	hit dagql.ObjectResult[*core.Container],
+	volatileEnv []string,
+) (*core.Container, error) {
+	src := hit.Self()
+	if src == nil {
+		return nil, fmt.Errorf("volatile exec cache hit: nil container")
+	}
+	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, src.FS)
+	if err != nil {
+		return nil, err
+	}
+	clonedMounts, err := core.CloneContainerMounts(ctx, src.Mounts)
+	if err != nil {
+		return nil, err
+	}
+	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, src.MetaSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	defaultTerminalCmd := src.DefaultTerminalCmd
+	defaultTerminalCmd.Args = slices.Clone(defaultTerminalCmd.Args)
+
+	ctr := &core.Container{
+		FS:                 clonedFS,
+		MetaSnapshot:       clonedMeta,
+		Config:             core.CloneContainerImageConfig(src.Config),
+		EnabledGPUs:        slices.Clone(src.EnabledGPUs),
+		Mounts:             clonedMounts,
+		Platform:           src.Platform,
+		Annotations:        slices.Clone(src.Annotations),
+		Secrets:            slices.Clone(src.Secrets),
+		VolatileEnv:        slices.Clone(volatileEnv),
+		Sockets:            slices.Clone(src.Sockets),
+		ImageRef:           src.ImageRef,
+		Ports:              slices.Clone(src.Ports),
+		Services:           slices.Clone(src.Services),
+		DefaultTerminalCmd: defaultTerminalCmd,
+		SystemEnvNames:     slices.Clone(src.SystemEnvNames),
+		DefaultArgs:        src.DefaultArgs,
+	}
+	if src.Lazy == nil {
+		return ctr, nil
+	}
+	lazy, ok := src.Lazy.(*core.ContainerExecLazy)
+	if !ok {
+		return nil, fmt.Errorf("volatile exec cache hit: expected container exec lazy, got %T", src.Lazy)
+	}
+	if lazy.State == nil {
+		return nil, fmt.Errorf("volatile exec cache hit: nil exec lazy state")
+	}
+	ctr.Lazy = &core.ContainerVolatileExecCacheHitLazy{
+		LazyState:   core.NewLazyState(),
+		Parent:      hit,
+		VolatileEnv: slices.Clone(volatileEnv),
+	}
+	return ctr, nil
 }
 
 func (s *containerSchema) stdout(ctx context.Context, parent dagql.ObjectResult[*core.Container], _ struct{}) (string, error) {
@@ -1530,6 +1737,7 @@ func (s *containerSchema) withSymlink(ctx context.Context, parent dagql.ObjectRe
 		Services:           slices.Clone(parent.Self().Services),
 		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
 		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		VolatileEnv:        slices.Clone(parent.Self().VolatileEnv),
 		DefaultArgs:        parent.Self().DefaultArgs,
 		Lazy: &core.ContainerWithSymlinkLazy{
 			LazyState: core.NewLazyState(),
@@ -1930,6 +2138,11 @@ type containerWithSystemEnvArgs struct {
 	Name string
 }
 
+type containerWithVolatileVariableArgs struct {
+	Name  string
+	Value string
+}
+
 func (s *containerSchema) withSystemEnvVariable(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithSystemEnvArgs) (*core.Container, error) {
 	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
@@ -1941,6 +2154,23 @@ func (s *containerSchema) withSystemEnvVariable(ctx context.Context, parent dagq
 			LazyState: core.NewLazyState(),
 			Parent:    parent,
 			Name:      args.Name,
+		}
+	}
+	return ctr, nil
+}
+
+func (s *containerSchema) withVolatileVariable(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithVolatileVariableArgs) (*core.Container, error) {
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	ctr.WithVolatileVariable(args.Name, args.Value)
+	if parent.Self().Lazy != nil {
+		ctr.Lazy = &core.ContainerWithVolatileVariableLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Name:      args.Name,
+			Value:     args.Value,
 		}
 	}
 	return ctr, nil
@@ -2022,6 +2252,22 @@ func (s *containerSchema) withoutEnvVariable(ctx context.Context, parent dagql.O
 	}
 	if parent.Self().Lazy != nil {
 		ctr.Lazy = &core.ContainerWithoutEnvVariableLazy{
+			LazyState: core.NewLazyState(),
+			Parent:    parent,
+			Name:      args.Name,
+		}
+	}
+	return ctr, nil
+}
+
+func (s *containerSchema) withoutVolatileVariable(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithoutVariableArgs) (*core.Container, error) {
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	ctr.WithoutVolatileVariable(args.Name)
+	if parent.Self().Lazy != nil {
+		ctr.Lazy = &core.ContainerWithoutVolatileVariableLazy{
 			LazyState: core.NewLazyState(),
 			Parent:    parent,
 			Name:      args.Name,
@@ -2181,6 +2427,7 @@ func (s *containerSchema) withMountedDirectory(ctx context.Context, parent dagql
 		Services:           slices.Clone(parent.Self().Services),
 		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
 		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		VolatileEnv:        slices.Clone(parent.Self().VolatileEnv),
 		DefaultArgs:        parent.Self().DefaultArgs,
 		Lazy: &core.ContainerWithMountedDirectoryLazy{
 			LazyState: core.NewLazyState(),
@@ -2939,6 +3186,7 @@ func cloneContainerForSchemaChild(ctx context.Context, parent dagql.ObjectResult
 		Services:           slices.Clone(parent.Self().Services),
 		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
 		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
+		VolatileEnv:        slices.Clone(parent.Self().VolatileEnv),
 		DefaultArgs:        parent.Self().DefaultArgs,
 	}
 	return ctr, nil
@@ -2958,12 +3206,20 @@ func expandEnvVar(ctx context.Context, parent *core.Container, input string, exp
 	for _, secret := range parent.Secrets {
 		secretEnvs = append(secretEnvs, secret.EnvName)
 	}
+	volatileEnvs := []string{}
+	core.WalkEnv(parent.VolatileEnv, func(name, _, _ string) {
+		volatileEnvs = append(volatileEnvs, name)
+	})
 
 	var secretEnvFoundError error
 	expanded := os.Expand(input, func(k string) string {
 		// set error if its a secret env variable
 		if slices.Contains(secretEnvs, k) {
 			secretEnvFoundError = fmt.Errorf("expand cannot be used with secret env variable %q", k)
+			return ""
+		}
+		if slices.Contains(volatileEnvs, k) {
+			secretEnvFoundError = fmt.Errorf("expand cannot be used with volatile env variable %q", k)
 			return ""
 		}
 
