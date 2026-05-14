@@ -144,7 +144,7 @@ func (*Viztest) TestSummary(ctx context.Context) error {
 
 	emitTestSummaryCase(ctx, "passing test 01", "pass")
 	emitTestSummaryCase(ctx, "passing test 02", "pass")
-	for i := 1; i <= 8; i++ {
+	for i := 1; i <= 2; i++ {
 		emitTestSummaryCase(ctx, fmt.Sprintf("skipped test %02d", i), "skipped")
 	}
 	emitTestSummaryCase(ctx, "failed test 01", "fail")
