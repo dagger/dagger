@@ -826,9 +826,6 @@ func (tv *TestView) renderTestSummaryLogs(out *termenv.Output, entry testSummary
 	if limit < 0 || limit > logs.UsedHeight() {
 		limit = logs.UsedHeight()
 	}
-	indent := strings.Repeat(" ", max(tv.SummaryIndent, 0)+2)
-	pipe := out.String(VertBoldBar).Foreground(testCategoryColor(entry.category)).String()
-	logPrefix := indent + pipe + " "
 	var buf strings.Builder
 	if err := logs.Print(&buf); err != nil {
 		return nil
@@ -842,13 +839,34 @@ func (tv *TestView) renderTestSummaryLogs(out *termenv.Output, entry testSummary
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		lines = append(lines, clipANSI(logPrefix+clipPlain(line, max(width-lipgloss.Width(logPrefix), 1)), width))
+		lines = append(lines, tv.renderTestSummaryDetail(out, entry, width, line, nil)...)
 	}
 	if len(lines) == 0 {
 		return nil
 	}
 	if logs.UsedHeight() > limit {
-		lines = append(lines, clipANSI(logPrefix+out.String(fmt.Sprintf("... %d more log lines ...", logs.UsedHeight()-limit)).Foreground(termenv.ANSIBrightBlack).Faint().String(), width))
+		lines = append(lines, tv.renderTestSummaryDetail(out, entry, width, fmt.Sprintf("... %d more log lines ...", logs.UsedHeight()-limit), termenv.ANSIBrightBlack)...)
+	}
+	return lines
+}
+
+func (tv *TestView) renderTestSummaryDetail(out *termenv.Output, entry testSummaryEntry, width int, text string, color termenv.Color) []string {
+	indent := strings.Repeat(" ", max(tv.SummaryIndent, 0)+2)
+	pipe := out.String(VertBoldBar).Foreground(testCategoryColor(entry.category)).String()
+	prefix := indent + pipe + " "
+	textWidth := max(width-lipgloss.Width(prefix), 1)
+	var lines []string
+	for _, rawLine := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
+		if strings.TrimSpace(rawLine) == "" {
+			continue
+		}
+		var rendered string
+		if color == nil {
+			rendered = clipPlain(rawLine, textWidth)
+		} else {
+			rendered = out.String(clipPlain(rawLine, textWidth)).Foreground(color).String()
+		}
+		lines = append(lines, clipANSI(prefix+rendered, width))
 	}
 	return lines
 }
@@ -859,7 +877,7 @@ func renderTestSummaryPassedGroup(out *termenv.Output, passing, summaryIndent, w
 	return clipANSI(indent+renderTestCountsSummary(out, counts, max(width-lipgloss.Width(indent), 1)), width)
 }
 
-func renderTestCountsSummary(out *termenv.Output, counts dagui.TestCounts, width int) string {
+func renderTestCountsSummary(out TermOutput, counts dagui.TestCounts, width int) string {
 	var parts []string
 	add := func(count int, icon string, color termenv.Color, label string) {
 		if count == 0 {

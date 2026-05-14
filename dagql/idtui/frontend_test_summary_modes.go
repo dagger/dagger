@@ -119,7 +119,7 @@ func renderTextTestSummaryLines(view *dagui.TestView, logs map[dagui.SpanID]*Vte
 	return lines
 }
 
-func renderLogsTestSummaryLines(out *termenv.Output, view *dagui.TestView, logs map[dagui.SpanID]*Vterm, width, logLimit int) []string {
+func renderLogsTestSummaryLines(out TermOutput, view *dagui.TestView, logs map[dagui.SpanID]*Vterm, width, logLimit int) []string {
 	if view == nil || !view.HasTests() {
 		return nil
 	}
@@ -150,7 +150,7 @@ func renderLogsTestSummaryLines(out *termenv.Output, view *dagui.TestView, logs 
 	return lines
 }
 
-func renderLogsTestSummaryEntry(out *termenv.Output, entry testSummaryEntry, width int) string {
+func renderLogsTestSummaryEntry(out TermOutput, entry testSummaryEntry, width int) string {
 	caret := out.String(CaretDownFilled).Foreground(testCategoryColor(entry.category)).String()
 	icon := out.String(testCategoryIcon(entry.category)).Foreground(testCategoryColor(entry.category)).String()
 	prefix := caret + " " + icon + " "
