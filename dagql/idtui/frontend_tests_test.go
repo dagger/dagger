@@ -107,7 +107,7 @@ func TestTestViewPrettyReportSummary(t *testing.T) {
 	failing := &dagui.TestNode{
 		ID:           "failing",
 		Kind:         dagui.TestNodeCase,
-		Name:         "failing",
+		Name:         "failing with a long name that should not clip",
 		Span:         failSpan,
 		Parent:       suite,
 		SelfCategory: dagui.TestCategoryFailing,
@@ -132,7 +132,7 @@ func TestTestViewPrettyReportSummary(t *testing.T) {
 		Category: dagui.TestCategorySkipped,
 	}
 	failLogs := NewVterm(termenv.Ascii)
-	_, _ = failLogs.Write([]byte("boom\nmore\n"))
+	_, _ = failLogs.Write([]byte("boom with a long line that should not wrap or clip\nmore\n"))
 	skipLogs := NewVterm(termenv.Ascii)
 	_, _ = skipLogs.Write([]byte("skip reason\n"))
 	view := &dagui.TestView{
@@ -154,11 +154,11 @@ func TestTestViewPrettyReportSummary(t *testing.T) {
 
 	var buf strings.Builder
 	out := NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
-	got := strings.Join(tv.renderTestSummaryLines(out, view, 80, 80), "\n")
+	got := strings.Join(tv.renderTestSummaryLines(out, view, 20, 80), "\n")
 	want := strings.Join([]string{
 		"  TESTS",
-		"    ✘ suite › failing FAIL",
-		"          boom",
+		"    ✘ suite › failing with a long name that should not clip FAIL",
+		"          boom with a long line that should not wrap or clip",
 		"          more",
 		"",
 		"    ∅ suite › skipped SKIP",
