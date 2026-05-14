@@ -92,7 +92,12 @@ func (fe *frontendLogs) renderFinalTests() bool {
 	if !view.HasTests() {
 		return false
 	}
-	for _, line := range renderLogsTestSummaryLines(fe.out, view, fe.logs.testLogs, 80, testSummaryExcerptLogLines) {
+	tv := &TestView{
+		Profile:         fe.profile,
+		Logs:            fe.logs.testLogs,
+		SummaryLogLines: -1,
+	}
+	for _, line := range tv.renderTestSummaryLines(fe.out, view, 80, finalTestViewHeight(tv)) {
 		fmt.Fprintln(fe.out, line)
 	}
 	return true

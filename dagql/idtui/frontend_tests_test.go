@@ -146,7 +146,6 @@ func TestTestViewPrettyReportSummary(t *testing.T) {
 	tv := &TestView{
 		SummaryIndent:   2,
 		SummaryLogLines: -1,
-		SummaryReport:   true,
 		Logs: map[dagui.SpanID]*Vterm{
 			failSpan.ID: failLogs,
 			skipSpan.ID: skipLogs,
