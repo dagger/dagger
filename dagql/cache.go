@@ -3675,7 +3675,7 @@ func (c *Cache) lookupCacheForDigests(
 	nowUnix := now.Unix()
 	match := c.lookupMatchForDigestsLocked(recipeDigest, extraDigests, nowUnix)
 	c.traceLookupAttempt(ctx, recipeDigest.String(), "", nil, false)
-	hitRes := c.selectLookupCandidateForSessionLocked(sessionID, match.candidates)
+	hitRes := c.selectLookupCandidateForSessionAndRecipeLocked(sessionID, match.candidates, recipeDigest)
 	if hitRes == nil {
 		c.traceLookupMissNoMatch(ctx, recipeDigest.String(), false, -1, "", 0)
 		c.egraphMu.Unlock()
