@@ -114,7 +114,7 @@ func (CLISuite) TestModuleInit(ctx context.Context, t *testctx.T) {
 			func (m *B) Fn() string { return "yo" }
 			`,
 			).
-			With(daggerCall("fn"))
+			With(daggerCallAt(".", "fn"))
 		out, err := ctr.Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "yo", strings.TrimSpace(out))
@@ -268,7 +268,7 @@ func (CLISuite) TestModuleInitGit(ctx context.Context, t *testctx.T) {
 				With(daggerExec("module", "init", "bare", "--sdk="+tc.sdk, "."))
 
 			out, err := modGen.
-				With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
+				With(daggerQueryAt(".", `{containerEcho(stringArg:"hello"){stdout}}`)).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"containerEcho":{"stdout":"hello\n"}}`, out)
