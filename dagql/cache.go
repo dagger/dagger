@@ -85,10 +85,20 @@ type persistedEdge struct {
 	unpruneable       bool
 }
 
-const cachePersistenceSchemaVersion = "16"
+const cachePersistenceSchemaVersion = "17"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrPersistStateNotReady = errors.New("persist state not ready")
+var ErrCacheValidationFailed = errors.New("cache validation failed")
+
+type runtimeResultDependency struct {
+	ResultID      uint64                     `json:"resultID,omitempty"`
+	Frame         *ResultCall                `json:"frame,omitempty"`
+	Digest        digest.Digest              `json:"digest,omitempty"`
+	FreshnessDeps runtimeResultDependencySet `json:"-"`
+}
+
+type runtimeResultDependencySet []runtimeResultDependency
 
 type CachePersistenceResetReason string
 
@@ -244,6 +254,32 @@ func (c *Cache) trackSessionResult(ctx context.Context, sessionID string, res An
 	}
 }
 
+func (c *Cache) rollbackTrackedHit(
+	ctx context.Context,
+	sessionID string,
+	hitShared *sharedResult,
+	alreadyTracked bool,
+	err error,
+) error {
+	if alreadyTracked {
+		return err
+	}
+
+	c.egraphMu.Lock()
+	c.sessionMu.Lock()
+	if resultIDs := c.sessionResultIDsBySession[sessionID]; resultIDs != nil {
+		delete(resultIDs, hitShared.id)
+		if len(resultIDs) == 0 {
+			delete(c.sessionResultIDsBySession, sessionID)
+		}
+	}
+	c.sessionMu.Unlock()
+	queue, decErr := c.decrementIncomingOwnershipLocked(ctx, hitShared, nil)
+	collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
+	c.egraphMu.Unlock()
+	return errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
+}
+
 func (c *Cache) recomputeRequiredSessionResourcesLocked(res *sharedResult) error {
 	if res == nil {
 		return nil
@@ -274,6 +310,101 @@ func (c *Cache) recomputeRequiredSessionResourcesLocked(res *sharedResult) error
 	}
 	res.requiredSessionResources = reqs
 	return nil
+}
+
+func (c *Cache) recordRuntimeResultDependency(ctx context.Context, req *CallRequest, res AnyResult, freshnessDeps runtimeResultDependencySet) {
+	if c == nil || req == nil || req.ResultCall == nil || res == nil {
+		return
+	}
+	shared := res.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		return
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil || clientMetadata.RuntimeCallDigest == "" {
+		return
+	}
+	if clientMetadata.SessionID == "" {
+		return
+	}
+	requestDigest, err := req.deriveRecipeDigest(c)
+	if err == nil && requestDigest == clientMetadata.RuntimeCallDigest {
+		return
+	}
+	resultFrame, err := res.ResultCall()
+	if err != nil || resultFrame == nil {
+		return
+	}
+	observedDigest, err := resultFrame.deriveContentPreferredDigest(c)
+	if err != nil || observedDigest == "" {
+		return
+	}
+	depFrame := req.ResultCall.clone()
+	depRecipeDigest, err := depFrame.deriveRecipeDigest(c)
+	if err != nil || depRecipeDigest == "" {
+		return
+	}
+	dep := runtimeResultDependency{
+		ResultID:      uint64(shared.id),
+		Frame:         depFrame,
+		Digest:        observedDigest,
+		FreshnessDeps: cloneRuntimeResultDependencySet(freshnessDeps),
+	}
+	parentKey := runtimeDependencyKey(clientMetadata.SessionID, clientMetadata.RuntimeCallDigest)
+	c.runtimeDepsMu.Lock()
+	if c.runtimeDepsByCallDigest == nil {
+		c.runtimeDepsByCallDigest = make(map[string]map[string]runtimeResultDependency)
+	}
+	if c.runtimeDepsByCallDigest[parentKey] == nil {
+		c.runtimeDepsByCallDigest[parentKey] = make(map[string]runtimeResultDependency)
+	}
+	c.runtimeDepsByCallDigest[parentKey][depRecipeDigest.String()] = dep
+	c.runtimeDepsMu.Unlock()
+}
+
+func (c *Cache) drainRuntimeResultDependencies(sessionID string, parentDigest digest.Digest) runtimeResultDependencySet {
+	if c == nil || sessionID == "" || parentDigest == "" {
+		return nil
+	}
+	parentKey := runtimeDependencyKey(sessionID, parentDigest)
+	c.runtimeDepsMu.Lock()
+	deps := c.runtimeDepsByCallDigest[parentKey]
+	delete(c.runtimeDepsByCallDigest, parentKey)
+	c.runtimeDepsMu.Unlock()
+	if len(deps) == 0 {
+		return nil
+	}
+	depKeys := make([]string, 0, len(deps))
+	for depKey := range deps {
+		depKeys = append(depKeys, depKey)
+	}
+	slices.Sort(depKeys)
+	out := make(runtimeResultDependencySet, 0, len(depKeys))
+	for _, depKey := range depKeys {
+		out = append(out, deps[depKey])
+	}
+	return out
+}
+
+func (c *Cache) discardRuntimeResultDependencies(req *CallRequest, sessionID string) {
+	if c == nil || req == nil || req.ResultCall == nil {
+		return
+	}
+	if sessionID == "" {
+		return
+	}
+	parentDigest, err := req.deriveRecipeDigest(c)
+	if err != nil || parentDigest == "" {
+		return
+	}
+	parentKey := runtimeDependencyKey(sessionID, parentDigest)
+	c.runtimeDepsMu.Lock()
+	delete(c.runtimeDepsByCallDigest, parentKey)
+	c.runtimeDepsMu.Unlock()
+}
+
+func runtimeDependencyKey(sessionID string, parentDigest digest.Digest) string {
+	return sessionID + "\x00" + parentDigest.String()
 }
 
 func (c *Cache) BindSessionResource(_ context.Context, sessionID string, clientID string, handle SessionResourceHandle, value any) error {
@@ -1240,6 +1371,13 @@ type Cache struct {
 	ongoingArbitraryCalls   map[string]*sharedArbitraryResult
 	completedArbitraryCalls map[string]*sharedArbitraryResult
 
+	// runtimeDepsByCallDigest records exact cache results selected by a nested
+	// module runtime while executing the module function identified by the key.
+	// The parent function result retains the observed call/digest dependency
+	// set on the e-graph association it publishes.
+	runtimeDepsMu           sync.Mutex
+	runtimeDepsByCallDigest map[string]map[string]runtimeResultDependency
+
 	sessionResultIDsBySession         map[string]map[sharedResultID]struct{}
 	sessionArbitraryCallKeysBySession map[string]map[string]struct{}
 	sessionLazySpansBySession         map[string]map[sharedResultID]trace.SpanContext
@@ -1683,7 +1821,8 @@ type ongoingCall struct {
 	releaseSharedWorkLeaseFn   func(context.Context) error
 	releaseSharedWorkLeaseOnce sync.Once
 
-	res *sharedResult
+	res         *sharedResult
+	runtimeDeps runtimeResultDependencySet
 }
 
 func (oc *ongoingCall) releaseSharedWorkLease(ctx context.Context) error {
@@ -1735,7 +1874,7 @@ func (c *Cache) canonicalEquivalentSharedResultLocked(sessionID string, res *sha
 	if candidates.Empty() {
 		return res
 	}
-	if canonical := c.selectLookupCandidateForSessionLocked(sessionID, candidates); canonical != nil {
+	if canonical := c.selectLookupCandidateForSessionLocked(sessionID, candidates, nil); canonical != nil {
 		return canonical
 	}
 	return res
@@ -1893,7 +2032,7 @@ func (c *Cache) attachResult(ctx context.Context, sessionID string, resolver Typ
 		requestInputs = append(requestInputs, dig)
 	}
 
-	hitRes, hit, err := c.lookupCacheForRequest(ctx, sessionID, resolver, req, callDigest, requestSelf, requestInputs, requestInputRefs)
+	hitRes, _, hit, err := c.lookupCacheForRequest(ctx, sessionID, resolver, req, callDigest, requestSelf, requestInputs, requestInputRefs)
 	if err != nil {
 		return nil, fmt.Errorf("attach dependency result: %w", err)
 	}
@@ -2151,6 +2290,51 @@ func (r Result[T]) ContentPreferredDigest(ctx context.Context) (digest.Digest, e
 		return "", err
 	}
 	return call.deriveContentPreferredDigest(c)
+}
+
+func ContentPreferredDigestForID(ctx context.Context, input IDType) (digest.Digest, error) {
+	if input == nil {
+		return "", fmt.Errorf("content-preferred digest for ID: nil input")
+	}
+	id, err := input.ID()
+	if err != nil {
+		return "", fmt.Errorf("content-preferred digest for ID: %w", err)
+	}
+	if id == nil {
+		return "", fmt.Errorf("content-preferred digest for ID: nil ID")
+	}
+	if !id.IsHandle() {
+		if contentDigest := id.ContentDigest(); contentDigest != "" {
+			return contentDigest, nil
+		}
+		return id.Digest(), nil
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return "", fmt.Errorf("content-preferred digest for ID %q: current client metadata: %w", idInputDebugString(id), err)
+	}
+	if clientMetadata.SessionID == "" {
+		return "", fmt.Errorf("content-preferred digest for ID %q: empty session ID", idInputDebugString(id))
+	}
+	cache, err := EngineCache(ctx)
+	if err != nil {
+		return "", fmt.Errorf("content-preferred digest for ID %q: current dagql cache: %w", idInputDebugString(id), err)
+	}
+	shared, _, _, err := cache.sharedResultByResultID(
+		ctx,
+		clientMetadata.SessionID,
+		sharedResultID(id.EngineResultID()),
+		sharedResultLookupCanonicalEquivalent,
+	)
+	if err != nil {
+		return "", fmt.Errorf("content-preferred digest for ID %q: %w", idInputDebugString(id), err)
+	}
+	frame := shared.loadResultCall()
+	if frame == nil {
+		return "", fmt.Errorf("content-preferred digest for ID %q: missing result call frame", idInputDebugString(id))
+	}
+	return frame.deriveContentPreferredDigest(cache)
 }
 
 func (r Result[T]) ResultCall() (*ResultCall, error) {
@@ -3472,6 +3656,7 @@ func (c *Cache) getOrInitCall(
 			}
 			c.trackSessionResult(ctx, sessionID, normalized, false)
 			c.captureSessionResultInstallSpan(ctx, sessionID, normalized)
+			c.recordRuntimeResultDependency(ctx, req, normalized, nil)
 			return normalized, nil
 		}
 		if lazyEval := lazyEvalFuncOfResult(val); lazyEval != nil {
@@ -3531,13 +3716,14 @@ func (c *Cache) getOrInitCall(
 		concurrencyKey: req.ConcurrencyKey,
 	}
 
-	hitRes, hit, err := c.lookupCacheForRequest(ctx, sessionID, resolver, req, callDigest, requestSelf, requestInputs, requestInputRefs)
+	hitRes, matchedRuntimeDeps, hit, err := c.lookupCacheForRequest(ctx, sessionID, resolver, req, callDigest, requestSelf, requestInputs, requestInputRefs)
 	if err != nil {
 		return nil, err
 	}
 	if hit {
 		c.captureSessionLazySpanContext(ctx, sessionID, hitRes)
 		c.captureSessionResultInstallSpan(ctx, sessionID, hitRes)
+		c.recordRuntimeResultDependency(ctx, req, hitRes, matchedRuntimeDeps)
 		return hitRes, nil
 	}
 
@@ -3597,6 +3783,7 @@ func (c *Cache) getOrInitCall(
 		noWaiters := oc.waiters == 0
 		c.callsMu.Unlock()
 		if err != nil || noWaiters {
+			c.discardRuntimeResultDependencies(req, sessionID)
 			_ = oc.releaseSharedWorkLease(context.WithoutCancel(oc.sharedWorkCtx))
 		}
 	}()
@@ -3638,7 +3825,7 @@ func (c *Cache) lookupCallRequest(
 		requestInputs = append(requestInputs, dig)
 	}
 
-	hitRes, hit, err := c.lookupCacheForRequest(ctx, sessionID, resolver, req, callDigest, requestSelf, requestInputs, requestInputRefs)
+	hitRes, _, hit, err := c.lookupCacheForRequest(ctx, sessionID, resolver, req, callDigest, requestSelf, requestInputs, requestInputRefs)
 	if err != nil {
 		return nil, false, err
 	}
@@ -3665,77 +3852,64 @@ func (c *Cache) lookupCacheForDigests(
 		return nil, false, nil
 	}
 
-	c.egraphMu.Lock()
-	now := time.Now()
-	nowUnix := now.Unix()
-	match := c.lookupMatchForDigestsLocked(recipeDigest, extraDigests, nowUnix)
-	c.traceLookupAttempt(ctx, recipeDigest.String(), "", nil, false)
-	hitRes := c.selectLookupCandidateForSessionLocked(sessionID, match.candidates)
-	if hitRes == nil {
-		c.traceLookupMissNoMatch(ctx, recipeDigest.String(), false, -1, "", 0)
-		c.egraphMu.Unlock()
-		return nil, false, nil
-	}
-
-	hitRes.expiresAtUnix = mergeSharedResultExpiryUnix(
-		hitRes.expiresAtUnix,
-		candidateSharedResultExpiryUnix(nowUnix, 0),
-	)
-	touchSharedResultLastUsed(hitRes, now.UnixNano())
-	retRes := Result[Typed]{
-		shared:   hitRes,
-		hitCache: true,
-	}
-	c.traceLookupHit(ctx, recipeDigest.String(), hitRes, match.termDigest)
-	hitShared := retRes.cacheSharedResult()
-	if hitShared == nil || hitShared.id == 0 {
-		c.egraphMu.Unlock()
-		return nil, false, fmt.Errorf("lookup cache for digests: hit missing shared result ID")
-	}
-
-	trackedCount := 0
-	alreadyTracked := false
-	c.sessionMu.Lock()
-	if c.sessionResultIDsBySession == nil {
-		c.sessionResultIDsBySession = make(map[string]map[sharedResultID]struct{})
-	}
-	if c.sessionResultIDsBySession[sessionID] == nil {
-		c.sessionResultIDsBySession[sessionID] = make(map[sharedResultID]struct{})
-	}
-	if _, found := c.sessionResultIDsBySession[sessionID][hitShared.id]; found {
-		alreadyTracked = true
-	} else {
-		c.sessionResultIDsBySession[sessionID][hitShared.id] = struct{}{}
-		c.incrementIncomingOwnershipLocked(ctx, hitShared)
-	}
-	trackedCount = len(c.sessionResultIDsBySession[sessionID])
-	c.sessionMu.Unlock()
-	c.egraphMu.Unlock()
-
-	loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
-	if err != nil {
+	skipped := map[sharedResultID]struct{}{}
+	for {
 		c.egraphMu.Lock()
+		now := time.Now()
+		nowUnix := now.Unix()
+		match := c.lookupMatchForDigestsLocked(recipeDigest, extraDigests, nowUnix)
+		c.traceLookupAttempt(ctx, recipeDigest.String(), "", nil, false)
+		hitRes := c.selectLookupCandidateForSessionLocked(sessionID, match.candidates, skipped)
+		if hitRes == nil {
+			c.traceLookupMissNoMatch(ctx, recipeDigest.String(), false, -1, "", 0)
+			c.egraphMu.Unlock()
+			return nil, false, nil
+		}
+
+		hitRes.expiresAtUnix = mergeSharedResultExpiryUnix(
+			hitRes.expiresAtUnix,
+			candidateSharedResultExpiryUnix(nowUnix, 0),
+		)
+		touchSharedResultLastUsed(hitRes, now.UnixNano())
+		retRes := Result[Typed]{
+			shared:   hitRes,
+			hitCache: true,
+		}
+		c.traceLookupHit(ctx, recipeDigest.String(), hitRes, match.termDigest)
+		hitShared := retRes.cacheSharedResult()
+		if hitShared == nil || hitShared.id == 0 {
+			c.egraphMu.Unlock()
+			return nil, false, fmt.Errorf("lookup cache for digests: hit missing shared result ID")
+		}
+
+		trackedCount := 0
+		alreadyTracked := false
 		c.sessionMu.Lock()
-		if resultIDs := c.sessionResultIDsBySession[sessionID]; resultIDs != nil {
-			delete(resultIDs, hitShared.id)
-			if len(resultIDs) == 0 {
-				delete(c.sessionResultIDsBySession, sessionID)
-			}
+		if c.sessionResultIDsBySession == nil {
+			c.sessionResultIDsBySession = make(map[string]map[sharedResultID]struct{})
 		}
+		if c.sessionResultIDsBySession[sessionID] == nil {
+			c.sessionResultIDsBySession[sessionID] = make(map[sharedResultID]struct{})
+		}
+		if _, found := c.sessionResultIDsBySession[sessionID][hitShared.id]; found {
+			alreadyTracked = true
+		} else {
+			c.sessionResultIDsBySession[sessionID][hitShared.id] = struct{}{}
+			c.incrementIncomingOwnershipLocked(ctx, hitShared)
+		}
+		trackedCount = len(c.sessionResultIDsBySession[sessionID])
 		c.sessionMu.Unlock()
-		queue := []*sharedResult(nil)
-		var decErr error
-		if !alreadyTracked {
-			queue, decErr = c.decrementIncomingOwnershipLocked(ctx, hitShared, nil)
-		}
-		collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
 		c.egraphMu.Unlock()
-		return nil, false, errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
+
+		loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
+		if err != nil {
+			return nil, false, c.rollbackTrackedHit(ctx, sessionID, hitShared, alreadyTracked, err)
+		}
+		if c.traceEnabled() {
+			c.traceSessionResultTracked(ctx, sessionID, loadedHit, true, trackedCount)
+		}
+		return loadedHit, true, nil
 	}
-	if c.traceEnabled() {
-		c.traceSessionResultTracked(ctx, sessionID, loadedHit, true, trackedCount)
-	}
-	return loadedHit, true, nil
 }
 
 func (c *Cache) wait(
@@ -3770,6 +3944,7 @@ func (c *Cache) wait(
 		if lastWaiter {
 			delete(c.ongoingCalls, oc.callConcurrencyKeys)
 			oc.cancel(canceledErr)
+			c.discardRuntimeResultDependencies(req, sessionID)
 		}
 		c.callsMu.Unlock()
 		if releaseHandoff && oc.res != nil {
@@ -3786,6 +3961,7 @@ func (c *Cache) wait(
 	}
 
 	if completionErr != nil {
+		c.discardRuntimeResultDependencies(req, sessionID)
 		c.callsMu.Lock()
 		oc.waiters--
 		lastWaiter := oc.waiters == 0
@@ -3809,6 +3985,7 @@ func (c *Cache) wait(
 	// TODO there's a race condition here: thread one enters the .Do() above but hasn't finished calling initCompletedResult(....), the second thread will skip over the Do(),
 	// then check the err below before it's actually written to
 	if oc.initCompletedResultErr != nil {
+		c.discardRuntimeResultDependencies(req, sessionID)
 		c.callsMu.Lock()
 		oc.waiters--
 		lastWaiter := oc.waiters == 0
@@ -3871,6 +4048,7 @@ func (c *Cache) wait(
 	if err != nil {
 		return nil, fmt.Errorf("wait: normalize returned result: %w", err)
 	}
+	c.recordRuntimeResultDependency(ctx, req, retResAny, oc.runtimeDeps)
 	return retResAny, nil
 }
 
@@ -4007,6 +4185,9 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		}
 		requestInputs = append(requestInputs, dig)
 	}
+	allRuntimeDeps := c.drainRuntimeResultDependencies(sessionID, requestDigest)
+	runtimeDeps := c.liveRuntimeDependencies(allRuntimeDeps)
+	oc.runtimeDeps = cloneRuntimeResultDependencySet(runtimeDeps)
 	var responseDigest digest.Digest
 	if resultCall := oc.res.loadResultCall(); resultCall != nil {
 		responseDigest, err = resultCall.deriveRecipeDigest(c)
@@ -4149,6 +4330,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		resultTermRefs,
 		hasResultTerm,
 		oc.res,
+		runtimeDeps,
 	)
 	if indexErr != nil {
 		c.egraphMu.Unlock()
@@ -4171,6 +4353,26 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		c.rememberDependencyEdgeLocked(oc.res, depRes)
 		c.incrementIncomingOwnershipLocked(ctx, depRes)
 		c.traceResultCallDepAdded(ctx, oc.res.id, depID, dep.path)
+	}
+	for _, runtimeDep := range allRuntimeDeps {
+		depID := sharedResultID(runtimeDep.ResultID)
+		if depID == oc.res.id {
+			continue
+		}
+		depRes := c.resultsByID[depID]
+		if depRes == nil {
+			c.egraphMu.Unlock()
+			return fmt.Errorf("retain runtime dep result %d: missing cached result", depID)
+		}
+		if oc.res.deps == nil {
+			oc.res.deps = make(map[sharedResultID]struct{})
+		}
+		if _, alreadyHeld := oc.res.deps[depID]; alreadyHeld {
+			continue
+		}
+		oc.res.deps[depID] = struct{}{}
+		c.incrementIncomingOwnershipLocked(ctx, depRes)
+		c.traceExplicitDepAdded(ctx, oc.res.id, depID, "module_runtime_call")
 	}
 	if err := c.recomputeRequiredSessionResourcesLocked(oc.res); err != nil {
 		c.egraphMu.Unlock()

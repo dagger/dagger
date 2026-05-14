@@ -2038,6 +2038,9 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 				LockMode:              clientMetadata.LockMode,
 				UseRecipeIDsByDefault: execMD != nil && execMD.UseRecipeIDsByDefault,
 			}
+			if execMD != nil {
+				nestedClientMetadata.RuntimeCallDigest = execMD.CallDigest
+			}
 		}
 
 		procInfo := executor.ProcessInfo{Meta: meta}

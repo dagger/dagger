@@ -3636,6 +3636,52 @@ func TestCacheDoNotCacheNormalizesNestedHitMetadata(t *testing.T) {
 	assert.Equal(t, 1, c.Size())
 }
 
+func TestRuntimeDependencyFreshnessPropagatesThroughScalarNestedCall(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+
+	liveFileFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(&ast.Type{NamedType: "File", NonNull: true}),
+		Field: "file",
+		Receiver: &ResultCallRef{Call: &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType(&ast.Type{NamedType: "Host", NonNull: true}),
+			Field: "host",
+		}},
+		Args: []*ResultCallArg{{
+			Name: "noCache",
+			Value: &ResultCallLiteral{
+				Kind:      ResultCallLiteralKindBool,
+				BoolValue: true,
+			},
+		}},
+	}
+	liveFileDep := runtimeResultDependency{
+		ResultID: 12,
+		Frame:    liveFileFrame,
+		Digest:   digest.FromString("runtime-transitive-live-file"),
+	}
+	scalarDep := runtimeResultDependency{
+		ResultID: 34,
+		Frame:    cacheTestIntCall("runtime-transitive-scalar"),
+		Digest:   digest.FromString("runtime-transitive-scalar"),
+		FreshnessDeps: runtimeResultDependencySet{
+			liveFileDep,
+		},
+	}
+
+	live := c.liveRuntimeDependencies(runtimeResultDependencySet{scalarDep})
+	assert.Equal(t, 1, len(live))
+	assert.Equal(t, liveFileDep.ResultID, live[0].ResultID)
+	assert.Equal(t, liveFileDep.Digest.String(), live[0].Digest.String())
+	assert.Assert(t, live[0].Frame != nil)
+	assert.Equal(t, "file", live[0].Frame.Field)
+}
+
 func TestCacheDoNotCachePreservesAttachedReturnedObject(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
