@@ -818,10 +818,13 @@ func (s *moduleSourceSchema) loadBlueprintModule(
 				toolchainJobs = toolchainJobs.WithJob(pcfg.Name, func(ctx context.Context) error {
 					toolchain, err := core.ResolveDepToSource(ctx, bk, dag, src, pcfg.Source, pcfg.Pin, pcfg.Name)
 					if err != nil {
-						// don't let a stale toolchain (e.g. deleted local path) block the rest
-						// of the module load; leave a zero entry so uninstall can still work.
-						slog.Warn("failed to resolve toolchain, skipping", "name", pcfg.Name, "source", pcfg.Source, "error", err)
-						return nil
+						if core.FastModuleSourceKindCheck(pcfg.Source, pcfg.Pin) == core.ModuleSourceKindLocal && errors.Is(err, os.ErrNotExist) {
+							// Don't let a stale local toolchain path block uninstall; leave a
+							// zero entry so "dagger toolchain uninstall <name>" can still match.
+							slog.Warn("failed to resolve stale local toolchain, skipping", "name", pcfg.Name, "source", pcfg.Source, "error", err)
+							return nil
+						}
+						return fmt.Errorf("failed to resolve toolchain to source: %w", err)
 					}
 					src.Toolchains[i] = toolchain
 					return nil
@@ -1800,9 +1803,11 @@ func (s *moduleSourceSchema) moduleSourceRemoveItems(
 		// "dagger toolchain uninstall <name>" can still match.
 		var existingName string
 		var existingSymbolic, existingVersion string
+		var existingSourceRootSubpath string
 
 		if existingItem.Self() != nil {
 			existingName = existingItem.Self().ModuleName
+			existingSourceRootSubpath = existingItem.Self().SourceRootSubpath
 			switch existingItem.Self().Kind {
 			case core.ModuleSourceKindLocal:
 				if parentSrc.Kind != core.ModuleSourceKindLocal {
@@ -1863,7 +1868,7 @@ func (s *moduleSourceSchema) moduleSourceRemoveItems(
 				reqModVersion := parsedGitRef.ModVersion
 				if !strings.HasPrefix(reqModVersion, parsedGitRef.RepoRootSubdir) {
 					reqModVersion, _ = strings.CutPrefix(reqModVersion, parsedGitRef.RepoRootSubdir+"/")
-					existingVersion, _ = strings.CutPrefix(existingVersion, existingItem.Self().SourceRootSubpath+"/")
+					existingVersion, _ = strings.CutPrefix(existingVersion, existingSourceRootSubpath+"/")
 				}
 				return nil, fmt.Errorf(
 					"version %q was requested to be uninstalled but the %s %q was installed with %q. Try re-running without specifying the version number",
