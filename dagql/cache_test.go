@@ -588,6 +588,206 @@ func cacheTestObjectResultWithValue(
 	return res
 }
 
+const cacheTestVolatileValueSentinel = "dagql.cache-test.volatile-value"
+
+func cacheTestVolatileSessionResourceHandle(slot string) SessionResourceHandle {
+	return SessionResourceHandle(digest.FromString("cache-test volatile session resource: " + slot).String())
+}
+
+func cacheTestSessionResourceLeaf(ctx context.Context, handle SessionResourceHandle) (Result[String], error) {
+	leaf, err := NewResultForCall(NewString("volatile"), &ResultCall{
+		Kind:        ResultCallKindSynthetic,
+		Type:        NewResultCallType(NewString("").Type()),
+		SyntheticOp: "cache-test.volatile-session-resource",
+		Args: []*ResultCallArg{{
+			Name: "handle",
+			Value: &ResultCallLiteral{
+				Kind:        ResultCallLiteralKindString,
+				StringValue: string(handle),
+			},
+		}},
+	})
+	if err != nil {
+		return Result[String]{}, err
+	}
+	leaf, err = leaf.WithContentDigest(ctx, digest.Digest(handle))
+	if err != nil {
+		return Result[String]{}, err
+	}
+	return leaf.WithSessionResourceHandle(ctx, handle)
+}
+
+func cacheTestStringResultCallArg(t *testing.T, frame *ResultCall, name string) string {
+	t.Helper()
+	for _, arg := range frame.Args {
+		if arg == nil || arg.Name != name {
+			continue
+		}
+		assert.Assert(t, arg.Value != nil, "expected arg %q to have a value", name)
+		assert.Equal(t, ResultCallLiteralKindString, arg.Value.Kind)
+		return arg.Value.StringValue
+	}
+	t.Fatalf("expected result call arg %q", name)
+	return ""
+}
+
+func cacheTestSessionResourceSetContains(handles *set.TreeSet[SessionResourceHandle], handle SessionResourceHandle) bool {
+	if handles == nil {
+		return false
+	}
+	for candidate := range handles.Items() {
+		if candidate == handle {
+			return true
+		}
+	}
+	return false
+}
+
+func TestCacheVolatileSessionResourceInvariants(t *testing.T) {
+	t.Parallel()
+
+	baseCtx := cacheTestContext(t.Context())
+	cacheIface, err := NewCache(baseCtx, "", nil, nil)
+	assert.NilError(t, err)
+	c := cacheIface
+	ctx := ContextWithCache(baseCtx, c)
+	srv := cacheTestServer(t)
+
+	type volatileArgs struct {
+		Slot  String `name:"slot"`
+		Value String `name:"value"`
+	}
+
+	var calls atomic.Int32
+	Fields[cacheTestQuery]{
+		NodeFuncWithDynamicInputs(
+			"volatileSessionParent",
+			func(ctx context.Context, _ ObjectResult[cacheTestQuery], args volatileArgs) (Result[*cacheTestObject], error) {
+				if got := string(args.Value); got != cacheTestVolatileValueSentinel {
+					return Result[*cacheTestObject]{}, fmt.Errorf("resolver saw unrewritten volatile value %q", got)
+				}
+				leaf, err := cacheTestSessionResourceLeaf(ctx, cacheTestVolatileSessionResourceHandle(string(args.Slot)))
+				if err != nil {
+					return Result[*cacheTestObject]{}, err
+				}
+				return NewResultForCurrentCall(ctx, &cacheTestObject{
+					Value:             int(calls.Add(1)),
+					dependencyResults: []AnyResult{leaf},
+				})
+			},
+			func(ctx context.Context, _ ObjectResult[cacheTestQuery], args volatileArgs, req *CallRequest) error {
+				cache, err := EngineCache(ctx)
+				if err != nil {
+					return err
+				}
+				clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+				if err != nil {
+					return err
+				}
+				handle := cacheTestVolatileSessionResourceHandle(string(args.Slot))
+				if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, clientMetadata.ClientID, handle, string(args.Value)); err != nil {
+					return err
+				}
+				return req.SetArgInput(ctx, "value", NewString(cacheTestVolatileValueSentinel), false)
+			},
+		),
+	}.Install(srv)
+
+	const slot = "CI_JOB_ID"
+	handle := cacheTestVolatileSessionResourceHandle(slot)
+	selectVolatile := func(ctx context.Context, value string) ObjectResult[*cacheTestObject] {
+		t.Helper()
+		var res ObjectResult[*cacheTestObject]
+		err := srv.Select(ctx, srv.Root(), &res, Selector{
+			Field: "volatileSessionParent",
+			Args: []NamedInput{
+				{Name: "slot", Value: NewString(slot)},
+				{Name: "value", Value: NewString(value)},
+			},
+		})
+		assert.NilError(t, err)
+		return res
+	}
+
+	first := selectVolatile(ctx, "first")
+	assert.Assert(t, !first.HitCache())
+	assert.Equal(t, 1, first.Self().Value)
+	assert.Equal(t, int32(1), calls.Load())
+
+	firstCall, err := first.ResultCall()
+	assert.NilError(t, err)
+	assert.Equal(t, slot, cacheTestStringResultCallArg(t, firstCall, "slot"))
+	assert.Equal(t, cacheTestVolatileValueSentinel, cacheTestStringResultCallArg(t, firstCall, "value"))
+
+	firstShared := first.cacheSharedResult()
+	assert.Assert(t, firstShared != nil)
+	assert.Assert(t, firstShared.id != 0)
+	c.egraphMu.Lock()
+	parentRequiresHandle := cacheTestSessionResourceSetContains(firstShared.requiredSessionResources, handle)
+	var leafShared *sharedResult
+	for depID := range firstShared.deps {
+		dep := c.resultsByID[depID]
+		if dep != nil && dep.sessionResourceHandle == handle {
+			leafShared = dep
+			break
+		}
+	}
+	leafRequiresHandle := leafShared != nil && cacheTestSessionResourceSetContains(leafShared.requiredSessionResources, handle)
+	leafHandle := SessionResourceHandle("")
+	if leafShared != nil {
+		leafHandle = leafShared.sessionResourceHandle
+	}
+	c.egraphMu.Unlock()
+	assert.Assert(t, parentRequiresHandle)
+	assert.Assert(t, leafShared != nil, "expected volatile session resource leaf dependency")
+	assert.Equal(t, handle, leafHandle)
+	assert.Assert(t, leafRequiresHandle)
+
+	second := selectVolatile(ctx, "second")
+	assert.Assert(t, second.HitCache())
+	assert.Equal(t, firstShared.id, second.cacheSharedResult().id)
+	assert.Equal(t, 1, second.Self().Value)
+	assert.Equal(t, int32(1), calls.Load())
+	resolved, err := c.ResolveSessionResource(ctx, "test-session", "dagql-test-client", handle)
+	assert.NilError(t, err)
+	assert.Equal(t, "second", resolved)
+
+	boundCtx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+		ClientID:  "volatile-bound-client",
+		SessionID: "volatile-bound-session",
+	})
+	boundCtx = ContextWithCache(boundCtx, c)
+	extraHandle := cacheTestVolatileSessionResourceHandle("EXTRA_VOLATILE")
+	assert.NilError(t, c.BindSessionResource(boundCtx, "volatile-bound-session", "volatile-bound-client", handle, "bound"))
+	assert.NilError(t, c.BindSessionResource(boundCtx, "volatile-bound-session", "volatile-bound-client", extraHandle, "extra"))
+	boundHit, hit, err := c.lookupCallRequest(boundCtx, "volatile-bound-session", srv, &CallRequest{ResultCall: firstCall.clone()})
+	assert.NilError(t, err)
+	assert.Assert(t, hit)
+	assert.Assert(t, boundHit.HitCache())
+	assert.Equal(t, firstShared.id, boundHit.cacheSharedResult().id)
+
+	unboundCtx := engine.ContextWithClientMetadata(t.Context(), &engine.ClientMetadata{
+		ClientID:  "volatile-unbound-client",
+		SessionID: "volatile-unbound-session",
+	})
+	unboundCtx = ContextWithCache(unboundCtx, c)
+	var unboundInitCalls int
+	unbound, err := c.GetOrInitCall(unboundCtx, "volatile-unbound-session", srv, &CallRequest{ResultCall: firstCall.clone()}, func(ctx context.Context) (AnyResult, error) {
+		unboundInitCalls++
+		return NewObjectResultForCurrentCall(ctx, srv, &cacheTestObject{Value: 99})
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, unboundInitCalls)
+	assert.Assert(t, !unbound.HitCache())
+	unboundObj, ok := unbound.(ObjectResult[*cacheTestObject])
+	assert.Assert(t, ok, "expected unbound miss to return cacheTestObject, got %T", unbound)
+	assert.Equal(t, 99, unboundObj.Self().Value)
+
+	assert.NilError(t, c.ReleaseSession(ctx, "test-session"))
+	assert.NilError(t, c.ReleaseSession(boundCtx, "volatile-bound-session"))
+	assert.NilError(t, c.ReleaseSession(unboundCtx, "volatile-unbound-session"))
+}
+
 func TestCacheConcurrent(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())
