@@ -14,6 +14,7 @@ import (
 
 	controlapi "github.com/dagger/dagger/internal/buildkit/api/services/control"
 	"github.com/dagger/dagger/internal/cloud/auth"
+	"github.com/opencontainers/go-digest"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -138,6 +139,11 @@ type ClientMetadata struct {
 	// request explicitly passes a recipe argument. This is engine-internal
 	// nested-client state and must not be forwarded through client headers.
 	UseRecipeIDsByDefault bool `json:"-"`
+
+	// RuntimeCallDigest identifies the module-function call currently being
+	// executed by an engine-owned nested client. It is engine-internal state and
+	// must not be forwarded through client headers.
+	RuntimeCallDigest digest.Digest `json:"-"`
 }
 
 type clientMetadataCtxKey struct{}

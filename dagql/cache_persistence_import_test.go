@@ -182,6 +182,87 @@ func TestCachePersistenceImportRoundTripAcrossRestart(t *testing.T) {
 	cacheTestReleaseSession(t, cB, ctx)
 }
 
+func TestCachePersistenceImportRoundTripResultTermRuntimeDeps(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+
+	cacheA, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	cA := cacheA
+
+	key := cacheTestIntCall("persist-import-runtime-deps")
+	resA, err := cA.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+		ResultCall:    key,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(key, 456), nil
+	})
+	assert.NilError(t, err)
+	sharedA := resA.cacheSharedResult()
+	assert.Assert(t, sharedA != nil)
+
+	requestSelf, requestInputRefs, err := key.selfDigestAndInputRefs(cA)
+	assert.NilError(t, err)
+	assert.Equal(t, 0, len(requestInputRefs))
+	depSet := runtimeResultDependencySet{{
+		ResultID: uint64(sharedA.id),
+		Frame:    cacheTestIntCall("persist-import-runtime-dep"),
+		Digest:   digest.FromString("persist-import-runtime-dep-content"),
+	}}
+
+	cA.egraphMu.Lock()
+	termDigest := calcEgraphTermDigest(requestSelf, nil)
+	var termID egraphTermID
+	if termSet := cA.egraphTermsByTermDigest[termDigest]; termSet != nil {
+		for candidateID := range termSet.Items() {
+			if _, ok := cA.termResults[candidateID][sharedA.id]; ok {
+				termID = candidateID
+				break
+			}
+		}
+	}
+	assert.Assert(t, termID != 0)
+	assoc := cA.termResults[termID][sharedA.id]
+	assoc.runtimeDepSets = []runtimeResultDependencySet{cloneRuntimeResultDependencySet(depSet)}
+	cA.termResults[termID][sharedA.id] = assoc
+	cA.egraphMu.Unlock()
+
+	cacheTestReleaseSession(t, cA, ctx)
+	assert.NilError(t, cA.persistCurrentState(ctx))
+	assert.NilError(t, cA.Close(context.Background()))
+
+	cacheB, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	cB := cacheB
+	defer func() {
+		assert.NilError(t, cB.Close(context.Background()))
+	}()
+
+	cB.egraphMu.RLock()
+	termDigest = calcEgraphTermDigest(requestSelf, nil)
+	var importedAssoc egraphResultTermAssoc
+	if termSet := cB.egraphTermsByTermDigest[termDigest]; termSet != nil {
+		for candidateID := range termSet.Items() {
+			assoc, ok := cB.termResults[candidateID][sharedA.id]
+			if ok {
+				importedAssoc = assoc
+				break
+			}
+		}
+	}
+	cB.egraphMu.RUnlock()
+
+	assert.Equal(t, 1, len(importedAssoc.runtimeDepSets))
+	assert.Equal(t, 1, len(importedAssoc.runtimeDepSets[0]))
+	importedDep := importedAssoc.runtimeDepSets[0][0]
+	assert.Equal(t, uint64(sharedA.id), importedDep.ResultID)
+	assert.Equal(t, depSet[0].Digest.String(), importedDep.Digest.String())
+	assert.Assert(t, importedDep.Frame != nil)
+	assert.Equal(t, depSet[0].Frame.Field, importedDep.Frame.Field)
+}
+
 func TestCachePersistenceImportRoundTripObjectResult(t *testing.T) {
 	t.Parallel()
 

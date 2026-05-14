@@ -85,7 +85,7 @@ func (r *DangRuntime) AsContainer() (dagql.ObjectResult[*core.Container], bool) 
 
 func (r *DangRuntime) Call(
 	ctx context.Context,
-	_ *engineutil.ExecutionMetadata,
+	execMD *engineutil.ExecutionMetadata,
 	fnCall *core.FunctionCall,
 	moduleContext dagql.ObjectResult[*core.Module],
 	envContext dagql.ObjectResult[*core.Env],
@@ -109,6 +109,9 @@ func (r *DangRuntime) Call(
 		ClientVersion:     engine.Version,
 		AllowedLLMModules: slices.Clone(clientMetadata.AllowedLLMModules),
 		LockMode:          clientMetadata.LockMode,
+	}
+	if execMD != nil {
+		nestedClientMetadata.RuntimeCallDigest = execMD.CallDigest
 	}
 
 	query, err := core.CurrentQuery(ctx)
