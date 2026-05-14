@@ -32,12 +32,13 @@ import (
 // Server represents a GraphQL server whose schema is dynamically modified at
 // runtime.
 type Server struct {
-	root       AnyObjectResult
-	telemetry  AroundFunc
-	objects    map[string]ObjectType
-	scalars    map[string]ScalarType
-	typeDefs   map[string]TypeDef
-	directives map[string]DirectiveSpec
+	root        AnyObjectResult
+	telemetry   AroundFunc
+	objects     map[string]ObjectType
+	scalars     map[string]ScalarType
+	scalarViews map[string]ViewFilter
+	typeDefs    map[string]TypeDef
+	directives  map[string]DirectiveSpec
 
 	schemas       map[call.View]*ast.Schema
 	schemaDigests map[call.View]digest.Digest
@@ -124,6 +125,7 @@ func newBlankServer() *Server {
 	return &Server{
 		objects:       map[string]ObjectType{},
 		scalars:       map[string]ScalarType{},
+		scalarViews:   map[string]ViewFilter{},
 		typeDefs:      map[string]TypeDef{},
 		directives:    map[string]DirectiveSpec{},
 		installLock:   &sync.RWMutex{},
@@ -147,6 +149,9 @@ func (s *Server) Fork(_ context.Context, root Typed) (*Server, error) {
 
 	for name, scalar := range s.scalars {
 		out.scalars[name] = scalar
+	}
+	for name, view := range s.scalarViews {
+		out.scalarViews[name] = view
 	}
 	for name, typeDef := range s.typeDefs {
 		out.typeDefs[name] = typeDef
@@ -295,13 +300,21 @@ func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) O
 	s.invalidateSchemaCache()
 
 	s.objects[class.TypeName()] = class
+	var objectView ViewFilter
+	if viewFiltered, ok := class.(interface{ ViewFilter() ViewFilter }); ok {
+		objectView = viewFiltered.ViewFilter()
+	}
 	if idType, hasID := class.IDType(); hasID {
 		s.scalars[idType.TypeName()] = idType
+		if objectView != nil {
+			s.scalarViews[idType.TypeName()] = objectView
+		}
 
 		spec := FieldSpec{
 			Name:        fmt.Sprintf("load%sFromID", class.TypeName()),
 			Description: fmt.Sprintf("Load a %s from its ID.", class.TypeName()),
 			Type:        class.Typed(),
+			ViewFilter:  objectView,
 			Args: NewInputSpecs(
 				InputSpec{
 					Name: "id",
@@ -443,19 +456,31 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 		}
 		sortutil.RangeSorted(s.objects, func(_ string, t ObjectType) {
 			def := definition(ast.Object, t, view)
+			if def == nil {
+				return
+			}
 			if def.Name == queryType {
 				schema.Query = def
 			}
 			schema.AddTypes(def)
 			schema.AddPossibleType(def.Name, def)
 		})
-		sortutil.RangeSorted(s.scalars, func(_ string, t ScalarType) {
+		sortutil.RangeSorted(s.scalars, func(name string, t ScalarType) {
+			if scalarView := s.scalarViews[name]; scalarView != nil && !scalarView.Contains(view) {
+				return
+			}
 			def := definition(ast.Scalar, t, view)
+			if def == nil {
+				return
+			}
 			schema.AddTypes(def)
 			schema.AddPossibleType(def.Name, def)
 		})
 		sortutil.RangeSorted(s.typeDefs, func(_ string, t TypeDef) {
 			def := t.TypeDefinition(view)
+			if def == nil {
+				return
+			}
 			schema.AddTypes(def)
 			schema.AddPossibleType(def.Name, def)
 		})

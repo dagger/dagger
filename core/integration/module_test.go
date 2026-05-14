@@ -1916,6 +1916,58 @@ func (ModuleSuite) TestCurrentModuleAPI(ctx context.Context, t *testctx.T) {
 		require.Contains(t, out, "dagger.gen.go")
 	})
 
+	t.Run("generatedContextDirectory honors module engine version", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modSrc := c.Directory().
+			WithNewFile("dagger.json", `{"name":"test","sdk":"go","source":".","engineVersion":"v0.20.6"}`).
+			WithNewFile("main.go", `package main
+
+type Test struct{}
+`)
+
+		generated, err := modSrc.AsModuleSource().
+			GeneratedContextDirectory().
+			File("internal/dagger/dagger.gen.go").
+			Contents(ctx)
+		require.NoError(t, err)
+
+		for _, symbol := range []string{
+			"Checksum string",
+			"type CacheVolumeOpts struct",
+			"AsHTTPState",
+			"WithHTTPStateInput",
+			"WithHTTPStateOutput",
+			"HTTPStateID",
+			"type HTTPState struct",
+			"RemoteGitMirrorID",
+			"type RemoteGitMirror struct",
+			"ClientFilesyncMirrorID",
+			"type ClientFilesyncMirror struct",
+			"CheckType",
+			"NoGenerate bool",
+			"func (r *Workspace) Update",
+		} {
+			require.NotContains(t, generated, symbol)
+		}
+
+		assertNoOpt := func(typeName, fieldName string) {
+			t.Helper()
+
+			start := strings.Index(generated, "type "+typeName+" struct {")
+			require.NotEqual(t, -1, start)
+
+			end := strings.Index(generated[start:], "\n}\n")
+			require.NotEqual(t, -1, end)
+
+			require.NotContains(t, generated[start:start+end], fieldName)
+		}
+
+		assertNoOpt("ContainerWithDirectoryOpts", "Permissions int")
+		assertNoOpt("ContainerWithMountedDirectoryOpts", "ReadOnly bool")
+		assertNoOpt("DirectoryWithDirectoryOpts", "Permissions int")
+	})
+
 	t.Run("dependencies", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 

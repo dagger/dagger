@@ -561,6 +561,10 @@ export type ContainerWithDirectoryOpts = {
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
+
+  /**
+   * Permission given to the copied directory and contents (e.g., 0755).
+   */
   permissions?: number
 }
 
@@ -4727,6 +4731,7 @@ export class Container extends BaseClient {
    *
    * If the group is omitted, it defaults to the same as the user.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * @param opts.permissions Permission given to the copied directory and contents (e.g., 0755).
    */
   withDirectory = (
     path: string,

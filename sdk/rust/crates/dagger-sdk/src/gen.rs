@@ -3354,6 +3354,7 @@ pub struct ContainerWithDirectoryOpts<'a> {
     /// If the group is omitted, it defaults to the same as the user.
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
+    /// Permission given to the copied directory and contents (e.g., 0755).
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
 }
