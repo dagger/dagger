@@ -867,7 +867,8 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 	// this is a regression test for: https://github.com/dagger/dagger/pull/7328
 	t.Run("equivalent", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		a := c.Git("github.com/dagger/dagger").Ref("main").Tree()
+		// This diff checks source content equivalence; .git checkout metadata is not stable enough for it.
+		a := c.Git("github.com/dagger/dagger").Ref("main").Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
 		b := c.Directory().WithDirectory("", a)
 		ents, err := a.Diff(b).Entries(ctx)
 		require.NoError(t, err)
