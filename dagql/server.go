@@ -310,6 +310,9 @@ func (s *Server) InstallObject(class ObjectType, directives ...*ast.Directive) O
 			),
 			Directives: directives,
 		}
+		if viewFilter := viewFilterForType(class); viewFilter != nil {
+			spec.ViewFilter = viewFilter
+		}
 
 		s.Root().ObjectType().ExtendLoadByID(
 			spec,
@@ -442,6 +445,9 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 			PossibleTypes: make(map[string][]*ast.Definition),
 		}
 		sortutil.RangeSorted(s.objects, func(_ string, t ObjectType) {
+			if !typeVisibleInView(t, view) {
+				return
+			}
 			def := definition(ast.Object, t, view)
 			if def.Name == queryType {
 				schema.Query = def
@@ -450,6 +456,9 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 			schema.AddPossibleType(def.Name, def)
 		})
 		sortutil.RangeSorted(s.scalars, func(_ string, t ScalarType) {
+			if !typeVisibleInView(t, view) {
+				return
+			}
 			def := definition(ast.Scalar, t, view)
 			schema.AddTypes(def)
 			schema.AddPossibleType(def.Name, def)
@@ -470,6 +479,22 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 	})
 
 	return s.schemas[view]
+}
+
+type viewFilteredType interface {
+	ViewFilter() ViewFilter
+}
+
+func viewFilterForType(t Type) ViewFilter {
+	if viewFiltered, ok := t.(viewFilteredType); ok {
+		return viewFiltered.ViewFilter()
+	}
+	return nil
+}
+
+func typeVisibleInView(t Type, view call.View) bool {
+	viewFilter := viewFilterForType(t)
+	return viewFilter == nil || viewFilter.Contains(view)
 }
 
 // SchemaDigest returns the digest of the current schema.

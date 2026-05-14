@@ -845,10 +845,15 @@ func (s *Scalar[T]) UnmarshalJSON(p []byte) error {
 type ID[T Typed] struct {
 	id    *call.ID
 	inner T
+	view  ViewFilter
 
 	// The inner type sourceMap directive so additional type
 	// registered by the engine can store also store its origin.
 	sourceMap *ast.Directive
+}
+
+func (i ID[T]) ViewFilter() ViewFilter {
+	return i.view
 }
 
 func NewID[T Typed](id *call.ID) ID[T] {
