@@ -107,6 +107,50 @@ func TestImplicitInputsAffectDigest(t *testing.T) {
 	}
 }
 
+func TestDigestWithReceiverDigest(t *testing.T) {
+	typ := &ast.Type{
+		NamedType: "String",
+		NonNull:   true,
+	}
+	receiverA := New().Append(
+		typ,
+		"receiver",
+		WithArgs(NewArgument("value", NewLiteralString("a"), false)),
+	)
+	receiverB := New().Append(
+		typ,
+		"receiver",
+		WithArgs(NewArgument("value", NewLiteralString("b"), false)),
+	)
+
+	childOpts := func() []IDOpt {
+		return []IDOpt{
+			WithArgs(NewArgument("arg", NewLiteralString("same"), false)),
+			WithImplicitInputs(NewArgument("implicit", NewLiteralString("input"), false)),
+			WithNth(2),
+			WithView(View("test")),
+		}
+	}
+	childA := receiverA.Append(typ, "child", childOpts()...)
+	childB := receiverB.Append(typ, "child", childOpts()...)
+
+	normalDigest, err := childA.DigestWithReceiverDigest(receiverA.Digest())
+	if err != nil {
+		t.Fatalf("digest with original receiver: %v", err)
+	}
+	if normalDigest != childA.Digest() {
+		t.Fatalf("digest with original receiver mismatch: got %s, want %s", normalDigest, childA.Digest())
+	}
+
+	overrideDigest, err := childA.DigestWithReceiverDigest(receiverB.Digest())
+	if err != nil {
+		t.Fatalf("digest with override receiver: %v", err)
+	}
+	if overrideDigest != childB.Digest() {
+		t.Fatalf("digest with override receiver mismatch: got %s, want %s", overrideDigest, childB.Digest())
+	}
+}
+
 func TestImplicitInputsRoundTrip(t *testing.T) {
 	orig := New().Append(
 		&ast.Type{

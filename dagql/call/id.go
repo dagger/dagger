@@ -210,6 +210,23 @@ func (id *ID) Digest() digest.Digest {
 	return digest.Digest(id.pb.Digest)
 }
 
+// DigestWithReceiverDigest returns the recipe digest this call would have if
+// its immediate receiver had the given recipe digest.
+//
+// Only this call's receiver edge is overridden. Any IDs referenced by args,
+// implicit inputs, or module identity keep their own recipe digests.
+func (id *ID) DigestWithReceiverDigest(receiverDigest digest.Digest) (digest.Digest, error) {
+	if id == nil {
+		return "", nil
+	}
+	id.mustBeRecipe("DigestWithReceiverDigest")
+	dig, err := id.calcDigestWithReceiverDigest(receiverDigest)
+	if err != nil {
+		return "", err
+	}
+	return digest.Digest(dig), nil
+}
+
 func (id *ID) ContentDigest() digest.Digest {
 	id.mustBeRecipe("ContentDigest")
 	if id == nil {
@@ -824,13 +841,26 @@ func (id *ID) calcDigest() (string, error) {
 		return "", nil
 	}
 
+	var receiverDigest digest.Digest
+	if id.receiver != nil {
+		receiverDigest = id.receiver.Digest()
+	}
+	return id.calcDigestWithReceiverDigest(receiverDigest)
+}
+
+func (id *ID) calcDigestWithReceiverDigest(receiverDigest digest.Digest) (string, error) {
+	id.mustBeRecipe("calcDigestWithReceiverDigest")
+	if id == nil {
+		return "", nil
+	}
+
 	var err error
 
 	h := hashutil.NewHasher()
 
 	// ReceiverDigest (recipe identity only)
 	if id.receiver != nil {
-		h = h.WithString(id.receiver.Digest().String())
+		h = h.WithString(receiverDigest.String())
 	}
 	h = h.WithDelim()
 
