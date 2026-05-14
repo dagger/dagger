@@ -101,12 +101,24 @@ type ContainerExecLazy struct {
 }
 
 type persistedContainerExecLazy struct {
-	ParentResultID        uint64                        `json:"parentResultID"`
-	ModuleContextResultID uint64                        `json:"moduleContextResultID,omitempty"`
-	Opts                  ContainerExecOpts             `json:"opts"`
-	ExecMD                *engineutil.ExecutionMetadata `json:"execMD,omitempty"`
-	FunctionCall          *FunctionCall                 `json:"functionCall,omitempty"`
-	ExtractModuleError    bool                          `json:"extractModuleError,omitempty"`
+	ParentResultID                  uint64                        `json:"parentResultID"`
+	ModuleContextResultID           uint64                        `json:"moduleContextResultID,omitempty"`
+	Opts                            ContainerExecOpts             `json:"opts"`
+	ExecMD                          *engineutil.ExecutionMetadata `json:"execMD,omitempty"`
+	FunctionCall                    *FunctionCall                 `json:"functionCall,omitempty"`
+	ExtractModuleError              bool                          `json:"extractModuleError,omitempty"`
+	VolatileCacheHitParentResultID  uint64                        `json:"volatileCacheHitParentResultID,omitempty"`
+	VolatileCacheHitVolatileEnv     []string                      `json:"volatileCacheHitVolatileEnv,omitempty"`
+}
+
+// ContainerVolatileExecCacheHitLazy materializes from a broad volatile exec
+// cache hit, then restores the request-local volatile environment for
+// descendants of the returned container.
+type ContainerVolatileExecCacheHitLazy struct {
+	LazyState
+
+	Parent      dagql.ObjectResult[*Container]
+	VolatileEnv []string
 }
 
 func (lazy *ContainerExecLazy) Evaluate(ctx context.Context, ctr *Container) error {
@@ -165,6 +177,46 @@ func (lazy *ContainerExecLazy) EncodePersisted(ctx context.Context, cache dagql.
 		ExecMD:                lazy.State.ExecMD,
 		FunctionCall:          lazy.State.FunctionCall,
 		ExtractModuleError:    lazy.State.ExtractModuleError,
+	})
+}
+
+func (lazy *ContainerVolatileExecCacheHitLazy) Evaluate(ctx context.Context, container *Container) error {
+	if lazy == nil {
+		return nil
+	}
+	return lazy.LazyState.Evaluate(ctx, "Container.withExec.cacheHit", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		container.VolatileEnv = slices.Clone(lazy.VolatileEnv)
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerVolatileExecCacheHitLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	if lazy == nil {
+		return nil, nil
+	}
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container volatile exec cache hit parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerVolatileExecCacheHitLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	if lazy == nil {
+		return nil, fmt.Errorf("encode persisted container volatile exec cache hit lazy: nil lazy")
+	}
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container volatile exec cache hit parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerExecLazy{
+		VolatileCacheHitParentResultID: parentID,
+		VolatileCacheHitVolatileEnv:    slices.Clone(lazy.VolatileEnv),
 	})
 }
 
@@ -261,7 +313,7 @@ func (container *Container) execMeta(
 	return &execMD, nil
 }
 
-func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts) (*executor.Meta, error) {
+func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts, includeVolatileEnv bool) (*executor.Meta, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get current query: %w", err)
@@ -296,6 +348,9 @@ func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts
 	}
 
 	metaSpec.Env = addDefaultEnvvar(metaSpec.Env, "PATH", utilsystem.DefaultPathEnv(platform.OS))
+	if includeVolatileEnv {
+		metaSpec.Env = mergeEnv(metaSpec.Env, container.VolatileEnv)
+	}
 
 	if opts.Expect != ReturnSuccess {
 		metaSpec.ValidExitCodes = opts.Expect.ReturnCodes()
@@ -1179,7 +1234,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 
 		cache := query.SnapshotManager()
 
-		metaSpec, err := container.metaSpec(ctx, opts)
+		metaSpec, err := container.metaSpec(ctx, opts, true)
 		if err != nil {
 			return err
 		}
@@ -2097,6 +2152,18 @@ func decodePersistedContainerExecLazy(
 	var persisted persistedContainerExecLazy
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return fmt.Errorf("decode persisted container withExec lazy payload: %w", err)
+	}
+	if persisted.VolatileCacheHitParentResultID != 0 {
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.VolatileCacheHitParentResultID, "container volatile exec cache hit parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerVolatileExecCacheHitLazy{
+			LazyState:   NewLazyState(),
+			Parent:      parent,
+			VolatileEnv: slices.Clone(persisted.VolatileCacheHitVolatileEnv),
+		}
+		return nil
 	}
 	parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container exec parent")
 	if err != nil {

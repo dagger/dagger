@@ -85,6 +85,9 @@ type Container struct {
 	// Secrets to expose to the container.
 	Secrets []ContainerSecret
 
+	// Volatile env vars exposed to future execs but not persisted in image config.
+	VolatileEnv []string
+
 	// Sockets to expose to the container.
 	Sockets []ContainerSocket
 
@@ -177,7 +180,20 @@ type ContainerWithSystemEnvVariableLazy struct {
 	Name   string
 }
 
+type ContainerWithVolatileVariableLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Name   string
+	Value  string
+}
+
 type ContainerWithoutEnvVariableLazy struct {
+	LazyState
+	Parent dagql.ObjectResult[*Container]
+	Name   string
+}
+
+type ContainerWithoutVolatileVariableLazy struct {
 	LazyState
 	Parent dagql.ObjectResult[*Container]
 	Name   string
@@ -502,6 +518,7 @@ type persistedContainerPayload struct {
 	Ports              []Port                              `json:"ports,omitempty"`
 	DefaultTerminalCmd DefaultTerminalCmdOpts              `json:"defaultTerminalCmd"`
 	SystemEnvNames     []string                            `json:"systemEnvNames,omitempty"`
+	VolatileEnv        []string                            `json:"volatileEnv,omitempty"`
 	DefaultArgs        bool                                `json:"defaultArgs,omitempty"`
 	LazyJSON           json.RawMessage                     `json:"lazyJSON,omitempty"`
 }
@@ -567,7 +584,18 @@ type persistedContainerWithSystemEnvVariableLazy struct {
 	Name           string `json:"name"`
 }
 
+type persistedContainerWithVolatileVariableLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Name           string `json:"name"`
+	Value          string `json:"value"`
+}
+
 type persistedContainerWithoutEnvVariableLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Name           string `json:"name"`
+}
+
+type persistedContainerWithoutVolatileVariableLazy struct {
 	ParentResultID uint64 `json:"parentResultID"`
 	Name           string `json:"name"`
 }
@@ -964,6 +992,7 @@ func materializeContainerStateFromParent(ctx context.Context, dst *Container, pa
 	dst.Platform = parent.Self().Platform
 	dst.Annotations = slices.Clone(parent.Self().Annotations)
 	dst.Secrets = slices.Clone(parent.Self().Secrets)
+	dst.VolatileEnv = slices.Clone(parent.Self().VolatileEnv)
 	dst.Sockets = slices.Clone(parent.Self().Sockets)
 	dst.ImageRef = parent.Self().ImageRef
 	dst.Ports = slices.Clone(parent.Self().Ports)
@@ -1367,6 +1396,7 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 		Ports:              slices.Clone(container.Ports),
 		DefaultTerminalCmd: container.DefaultTerminalCmd,
 		SystemEnvNames:     slices.Clone(container.SystemEnvNames),
+		VolatileEnv:        slices.Clone(container.VolatileEnv),
 		DefaultArgs:        container.DefaultArgs,
 	}
 	if container.Lazy != nil {
@@ -1586,6 +1616,7 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 		Ports:              slices.Clone(persisted.Ports),
 		DefaultTerminalCmd: persisted.DefaultTerminalCmd,
 		SystemEnvNames:     slices.Clone(persisted.SystemEnvNames),
+		VolatileEnv:        slices.Clone(persisted.VolatileEnv),
 		DefaultArgs:        persisted.DefaultArgs,
 	}
 	if persisted.Form != persistedContainerFormLazy {
@@ -1799,11 +1830,19 @@ func expandContainerInput(container *Container, input string, expand bool) (stri
 	for _, secret := range container.Secrets {
 		secretEnvs = append(secretEnvs, secret.EnvName)
 	}
+	volatileEnvs := []string{}
+	WalkEnv(container.VolatileEnv, func(name, _, _ string) {
+		volatileEnvs = append(volatileEnvs, name)
+	})
 
 	var secretEnvFoundError error
 	expanded := os.Expand(input, func(k string) string {
 		if slices.Contains(secretEnvs, k) {
 			secretEnvFoundError = fmt.Errorf("expand cannot be used with secret env variable %q", k)
+			return ""
+		}
+		if slices.Contains(volatileEnvs, k) {
+			secretEnvFoundError = fmt.Errorf("expand cannot be used with volatile env variable %q", k)
 			return ""
 		}
 
@@ -2274,6 +2313,38 @@ func (lazy *ContainerWithSystemEnvVariableLazy) EncodePersisted(ctx context.Cont
 	})
 }
 
+func (lazy *ContainerWithVolatileVariableLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withVolatileVariable", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		container.WithVolatileVariable(lazy.Name, lazy.Value)
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithVolatileVariableLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withVolatileVariable parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithVolatileVariableLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withVolatileVariable parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithVolatileVariableLazy{
+		ParentResultID: parentID,
+		Name:           lazy.Name,
+		Value:          lazy.Value,
+	})
+}
+
 func (lazy *ContainerWithoutEnvVariableLazy) Evaluate(ctx context.Context, container *Container) error {
 	return lazy.LazyState.Evaluate(ctx, "Container.withoutEnvVariable", func(ctx context.Context) error {
 		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
@@ -2294,6 +2365,37 @@ func (lazy *ContainerWithoutEnvVariableLazy) Evaluate(ctx context.Context, conta
 		}
 		container.Lazy = nil
 		return nil
+	})
+}
+
+func (lazy *ContainerWithoutVolatileVariableLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withoutVolatileVariable", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		container.WithoutVolatileVariable(lazy.Name)
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithoutVolatileVariableLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withoutVolatileVariable parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerWithoutVolatileVariableLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withoutVolatileVariable parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithoutVolatileVariableLazy{
+		ParentResultID: parentID,
+		Name:           lazy.Name,
 	})
 }
 
@@ -4014,6 +4116,22 @@ func decodePersistedContainerLazy(
 			Name:      persisted.Name,
 		}
 		return nil
+	case "withVolatileVariable":
+		var persisted persistedContainerWithVolatileVariableLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withVolatileVariable lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withVolatileVariable parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithVolatileVariableLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Name:      persisted.Name,
+			Value:     persisted.Value,
+		}
+		return nil
 	case "withoutEnvVariable":
 		var persisted persistedContainerWithoutEnvVariableLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
@@ -4024,6 +4142,21 @@ func decodePersistedContainerLazy(
 			return err
 		}
 		container.Lazy = &ContainerWithoutEnvVariableLazy{
+			LazyState: NewLazyState(),
+			Parent:    parent,
+			Name:      persisted.Name,
+		}
+		return nil
+	case "withoutVolatileVariable":
+		var persisted persistedContainerWithoutVolatileVariableLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withoutVolatileVariable lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withoutVolatileVariable parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithoutVolatileVariableLazy{
 			LazyState: NewLazyState(),
 			Parent:    parent,
 			Name:      persisted.Name,
@@ -5483,6 +5616,32 @@ func (container *Container) WithSecretVariable(
 	container.ImageRef = ""
 
 	return container, nil
+}
+
+// mutates container caller must have handled cloning or creating a new child.
+func (container *Container) WithVolatileVariable(name string, value string) *Container {
+	container.VolatileEnv = AddEnv(container.VolatileEnv, name, value)
+
+	// set image ref to empty string
+	container.ImageRef = ""
+
+	return container
+}
+
+// mutates container caller must have handled cloning or creating a new child.
+func (container *Container) WithoutVolatileVariable(name string) *Container {
+	newEnv := []string{}
+	WalkEnv(container.VolatileEnv, func(k, _, env string) {
+		if !shell.EqualEnvKeys(k, name) {
+			newEnv = append(newEnv, env)
+		}
+	})
+	container.VolatileEnv = newEnv
+
+	// set image ref to empty string
+	container.ImageRef = ""
+
+	return container
 }
 
 // mutates container caller must have handled cloning or creating a new child.
