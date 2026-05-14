@@ -31,6 +31,7 @@ type Vterm struct {
 	markdownBuf *bytes.Buffer
 	// Regular terminal buffer
 	viewBuf     *bytes.Buffer
+	rawBuf      *bytes.Buffer
 	needsRedraw bool
 
 	// Search highlight state. When SearchQuery is non-empty, matching
@@ -48,6 +49,7 @@ func NewVterm(profile termenv.Profile) *Vterm {
 		Profile:     profile,
 		vt:          midterm.NewAutoResizingTerminal(),
 		viewBuf:     new(bytes.Buffer),
+		rawBuf:      new(bytes.Buffer),
 		markdownBuf: new(bytes.Buffer),
 		mu:          new(sync.Mutex),
 	}
@@ -65,6 +67,7 @@ func (term *Vterm) WriteMarkdown(p []byte) (int, error) {
 	if err != nil {
 		return n, err
 	}
+	_, _ = term.rawBuf.Write(p)
 
 	term.needsRedraw = true
 	return n, nil
@@ -83,6 +86,7 @@ func (term *Vterm) Write(p []byte) (int, error) {
 	if err != nil {
 		return n, err
 	}
+	_, _ = term.rawBuf.Write(p)
 
 	if atBottom {
 		term.Offset = max(0, term.vt.UsedHeight()-term.Height)
@@ -488,4 +492,13 @@ func (term *Vterm) Print(w io.Writer) error {
 	}
 
 	return nil
+}
+
+// PrintRaw prints the bytes written to the log terminal without applying any
+// terminal wrapping or markdown rendering.
+func (term *Vterm) PrintRaw(w io.Writer) error {
+	term.mu.Lock()
+	defer term.mu.Unlock()
+	_, err := w.Write(term.rawBuf.Bytes())
+	return err
 }
