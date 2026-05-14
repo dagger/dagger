@@ -1390,7 +1390,7 @@ func (TypescriptSuite) TestModuleSubPathLoading(ctx context.Context, t *testctx.
 			With(daggerExec("module", "init", "--sdk=typescript", "test", ".")).
 			WithWorkdir("/work")
 
-		_, err := modGen.With(daggerQueryAt(".", `{host{directory(path: "."){asModule(sourceRootPath: "./sub"){id}}}}`)).Stdout(ctx)
+		_, err := modGen.With(daggerQuery(`{host{directory(path: "."){asModule(sourceRootPath: "./sub"){id}}}}`)).Stdout(ctx)
 		require.NoError(t, err)
 	})
 }
