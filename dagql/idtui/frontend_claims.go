@@ -7,11 +7,13 @@ import (
 
 type renderClaims struct {
 	errors map[dagui.SpanID]struct{}
+	logs   map[dagui.SpanID]struct{}
 }
 
 func newRenderClaims() *renderClaims {
 	return &renderClaims{
 		errors: make(map[dagui.SpanID]struct{}),
+		logs:   make(map[dagui.SpanID]struct{}),
 	}
 }
 
@@ -37,15 +39,47 @@ func (claims *renderClaims) hasError(id dagui.SpanID) bool {
 	return ok
 }
 
-func (claims *renderClaims) claimTestReport(span *dagui.Span) {
-	if claims == nil || span == nil {
+func (claims *renderClaims) claimLog(span *dagui.Span) {
+	if span == nil {
 		return
 	}
-	for _, origin := range span.ErrorOrigins.Order {
-		if origin == nil || origin.ID == span.ID {
-			continue
+	claims.claimLogID(span.ID)
+}
+
+func (claims *renderClaims) claimLogID(id dagui.SpanID) {
+	if claims == nil || !id.IsValid() {
+		return
+	}
+	claims.logs[id] = struct{}{}
+}
+
+func (claims *renderClaims) hasLog(id dagui.SpanID) bool {
+	if claims == nil || !id.IsValid() {
+		return false
+	}
+	_, ok := claims.logs[id]
+	return ok
+}
+
+func (claims *renderClaims) claimTestReport(span *dagui.Span, view *dagui.TestView) {
+	if claims == nil {
+		return
+	}
+	if span != nil {
+		for _, origin := range span.ErrorOrigins.Order {
+			if origin == nil || origin.ID == span.ID {
+				continue
+			}
+			claims.claimError(origin)
+			claims.claimLog(origin)
 		}
-		claims.claimError(origin)
+	}
+	entries := collectTestSummaryEntries(view)
+	for _, entry := range entries.failing {
+		claims.claimLog(entry.span)
+	}
+	for _, entry := range entries.skipped {
+		claims.claimLog(entry.span)
 	}
 }
 

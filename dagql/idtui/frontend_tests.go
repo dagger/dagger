@@ -1381,7 +1381,7 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		if len(lines) == 0 {
 			return nil
 		}
-		s.fe.claims.claimTestReport(row.Span)
+		s.fe.claims.claimTestReport(row.Span, view)
 		return append([]string{""}, lines...)
 	}
 	tv := s.fe.inlineTestView(row.Span.ID)
@@ -1431,6 +1431,9 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		width = max(width, finalRenderTestsWidth)
 	}
 	result := s.RenderChildResult(ctx.Resize(width, limit), tv)
+	if len(result.Lines) > 0 {
+		s.fe.claims.claimTestReport(row.Span, tv.currentView())
+	}
 	lines := make([]string, 0, len(result.Lines)+1)
 	if s.fe.finalRender {
 		lines = append(lines, "")
