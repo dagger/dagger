@@ -17,7 +17,7 @@ class EnumVisitor extends AbstractVisitor
 
         $enumClass = new EnumType(Helpers::formatPhpClassName($type->name));
         $enumClass->setType('string');
-        $enumClass->addComment($type->description);
+        $enumClass->addComment($type->description ?? '');
 
         foreach ($type->getValues() as $value) {
             $enumClass
