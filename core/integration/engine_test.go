@@ -564,10 +564,10 @@ func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
 
 			if tc.errs == nil {
 				clientCtr = clientCtr.
-					WithExec([]string{"sh", "-c", "dagger query --doc /query.graphql"})
+					WithExec([]string{"sh", "-c", "dagger query -m . --doc /query.graphql"})
 			} else {
 				clientCtr = clientCtr.
-					WithExec([]string{"sh", "-c", "! dagger query --doc /query.graphql"})
+					WithExec([]string{"sh", "-c", "! dagger query -m . --doc /query.graphql"})
 			}
 
 			stderr, err := clientCtr.Stderr(ctx)
@@ -592,7 +592,7 @@ func (EngineSuite) TestModuleVersionCompatInvalid(ctx context.Context, t *testct
 		With(daggerExec("module", "init", "--sdk=go", "bare", ".")).
 		WithNewFile("dagger.json", `{ "name": "bare", "engineVersion": "v100.0.0", "sdk": 123 }`)
 	_, err := modGen.
-		With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
+		With(daggerQueryAt(".", `{containerEcho(stringArg:"hello"){stdout}}`)).
 		Stdout(ctx)
 	require.Error(t, err)
 	requireErrOut(t, err, `module requires dagger v100.0.0, but you have`)
