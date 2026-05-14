@@ -756,7 +756,7 @@ func collectTestSummaryEntries(view *dagui.TestView) testSummaryEntries {
 			return
 		}
 		if node.Kind == dagui.TestNodeCase {
-			entry := testSummaryEntry{category: node.SelfCategory, label: testSummaryCaseLabel(node), span: node.Span}
+			entry := testSummaryEntry{category: node.SelfCategory, label: testSummarySpanHierarchyLabel(node), span: node.Span}
 			switch node.SelfCategory {
 			case dagui.TestCategoryFailing:
 				entries.failing = append(entries.failing, entry)
@@ -766,7 +766,7 @@ func collectTestSummaryEntries(view *dagui.TestView) testSummaryEntries {
 				entries.skipped = append(entries.skipped, entry)
 			}
 		} else if node.Counts.Total() == 0 && node.Category != dagui.TestCategoryPassing {
-			entry := testSummaryEntry{category: node.Category, label: testNodeDisplayName(node), span: testTUISpan(node)}
+			entry := testSummaryEntry{category: node.Category, label: testSummarySpanHierarchyLabel(node), span: testTUISpan(node)}
 			switch node.Category {
 			case dagui.TestCategoryFailing, dagui.TestCategoryMixed:
 				entries.failing = append(entries.failing, entry)
@@ -786,36 +786,19 @@ func collectTestSummaryEntries(view *dagui.TestView) testSummaryEntries {
 	return entries
 }
 
-func testSummaryCaseLabel(node *dagui.TestNode) string {
-	if node == nil {
-		return ""
-	}
-	caseName := node.FullName
-	if caseName == "" {
-		caseName = node.Name
-	}
-	suiteName := ""
-	if node.Span != nil {
-		suiteName = node.Span.TestSuiteName
-	}
-	if suiteName == "" {
-		for parent := node.Parent; parent != nil; parent = parent.Parent {
-			if parent.Kind == dagui.TestNodeSuite || parent.Kind == dagui.TestNodeVirtualSuite {
-				suiteName = parent.FullName
-				if suiteName == "" {
-					suiteName = parent.Name
-				}
-				break
-			}
+func testSummarySpanHierarchyLabel(node *dagui.TestNode) string {
+	var parts []string
+	for current := node; current != nil; current = current.Parent {
+		if current.Kind == dagui.TestNodeVirtualSuite {
+			continue
 		}
+		name := testNodeDisplayName(current)
+		if name == "" {
+			continue
+		}
+		parts = append([]string{name}, parts...)
 	}
-	if suiteName == "" {
-		return caseName
-	}
-	if strings.HasPrefix(caseName, suiteName+"/") {
-		caseName = strings.TrimPrefix(caseName, suiteName+"/")
-	}
-	return suiteName + " › " + caseName
+	return strings.Join(parts, " › ")
 }
 
 func (tv *TestView) renderTestSummaryEntry(out *termenv.Output, entry testSummaryEntry, width int) []string {
