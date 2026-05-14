@@ -38,8 +38,9 @@ type frontendPlain struct {
 	telemetryError atomic.Pointer[error]
 
 	// db stores info about all the spans
-	db   *dagui.DB
-	data map[dagui.SpanID]*spanData
+	db       *dagui.DB
+	data     map[dagui.SpanID]*spanData
+	testLogs map[dagui.SpanID]*Vterm
 
 	// idx is an incrementing counter to assign human-readable names to spans
 	idx uint
@@ -115,8 +116,9 @@ type logLine struct {
 func NewPlain(w io.Writer) Frontend {
 	db := dagui.NewDB()
 	return &frontendPlain{
-		db:   db,
-		data: make(map[dagui.SpanID]*spanData),
+		db:       db,
+		data:     make(map[dagui.SpanID]*spanData),
+		testLogs: make(map[dagui.SpanID]*Vterm),
 
 		profile:        ColorProfile(),
 		output:         NewOutput(w),
@@ -352,6 +354,8 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 }
 
 func (fe *frontendPlain) appendLogs(spanID dagui.SpanID, records []sdklog.Record) {
+	appendTestSummaryLogRecords(fe.testLogs, fe.profile, spanID, records)
+
 	spanDt, ok := fe.data[spanID]
 	if !ok {
 		spanDt = &spanData{}
@@ -443,6 +447,9 @@ func (fe *frontendPlain) finalRender() {
 		// if we rendered anything, leave a newline
 		fmt.Fprintln(stderr)
 	}
+	if !fe.Silent && fe.renderFinalTests() {
+		fmt.Fprintln(stderr)
+	}
 
 	var telemetryErr error
 	if p := fe.telemetryError.Load(); p != nil {
@@ -454,6 +461,17 @@ func (fe *frontendPlain) finalRender() {
 		fmt.Fprintln(stderr, "\n"+fe.msgPreFinalRender.String()+"\n")
 	}
 	renderPrimaryOutput(stderr, fe.db)
+}
+
+func (fe *frontendPlain) renderFinalTests() bool {
+	view := fe.db.TestView()
+	if !view.HasTests() {
+		return false
+	}
+	for _, line := range renderPlainTestSummaryLines(view, fe.testLogs, -1) {
+		fmt.Fprintln(fe.output, line)
+	}
+	return true
 }
 
 func (fe *frontendPlain) renderProgress() {
