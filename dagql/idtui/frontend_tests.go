@@ -1524,7 +1524,7 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		tv.Update()
 	}
 	limit := max(s.fe.window.Height/3, 6)
-	if s.fe.finalRender {
+	if summaryReport || s.fe.finalRender {
 		limit = finalTestViewHeight(tv)
 	}
 	if tv.MaxHeight != limit {
