@@ -2,33 +2,33 @@ Expected stderr:
 
 ✔ viztest:test-summary X.Xs ⡀⡄⡆⡇⣇⣧⣷⣿ OK
 
-  Tests: ✘ 1 failed ∅ 8 skipped ✔ 2 passed
+  Tests · viztest:test-summary: 1 failed, 8 skipped, 2 passed
 
-    ✘ viztest summary suite › failed test 01
-    ┃ failed test 01 log line 1
-    ┃ failed test 01 log line 2
-    ∅ viztest summary suite › skipped test 01
-    ┃ skipped test 01 log line 1
-    ┃ skipped test 01 log line 2
-    ∅ viztest summary suite › skipped test 02
-    ┃ skipped test 02 log line 1
-    ┃ skipped test 02 log line 2
-    ∅ viztest summary suite › skipped test 03
-    ┃ skipped test 03 log line 1
-    ┃ skipped test 03 log line 2
-    ∅ viztest summary suite › skipped test 04
-    ┃ skipped test 04 log line 1
-    ┃ skipped test 04 log line 2
-    ∅ viztest summary suite › skipped test 05
-    ┃ skipped test 05 log line 1
-    ┃ skipped test 05 log line 2
-    ∅ viztest summary suite › skipped test 06
-    ┃ skipped test 06 log line 1
-    ┃ skipped test 06 log line 2
-    ∅ viztest summary suite › skipped test 07
-    ┃ skipped test 07 log line 1
-    ┃ skipped test 07 log line 2
-    ∅ viztest summary suite › skipped test 08
-    ┃ skipped test 08 log line 1
-    ┃ skipped test 08 log line 2
-    ✔ 2 passed
+    FAIL viztest summary suite > failed test 01
+      | failed test 01 log line 1
+      | failed test 01 log line 2
+    SKIP viztest summary suite > skipped test 01
+      | skipped test 01 log line 1
+      | skipped test 01 log line 2
+    SKIP viztest summary suite > skipped test 02
+      | skipped test 02 log line 1
+      | skipped test 02 log line 2
+    SKIP viztest summary suite > skipped test 03
+      | skipped test 03 log line 1
+      | skipped test 03 log line 2
+    SKIP viztest summary suite > skipped test 04
+      | skipped test 04 log line 1
+      | skipped test 04 log line 2
+    SKIP viztest summary suite > skipped test 05
+      | skipped test 05 log line 1
+      | skipped test 05 log line 2
+    SKIP viztest summary suite > skipped test 06
+      | skipped test 06 log line 1
+      | skipped test 06 log line 2
+    SKIP viztest summary suite > skipped test 07
+      | skipped test 07 log line 1
+      | skipped test 07 log line 2
+    SKIP viztest summary suite > skipped test 08
+      | skipped test 08 log line 1
+      | skipped test 08 log line 2
+    PASS 2 passed
