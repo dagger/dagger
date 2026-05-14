@@ -536,6 +536,8 @@ main()
 				moduleSrc := c.Container().From(tc.baseImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work").
+					WithExec([]string{"apk", "add", "git"}).
+					WithExec([]string{"git", "init"}).
 					WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 					With(nonNestedDevEngine(c)).
 					With(tc.setup).
@@ -801,6 +803,8 @@ main()
 				moduleSrc := c.Container().From(tc.baseImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work").
+					WithExec([]string{"apk", "add", "git"}).
+					WithExec([]string{"git", "init"}).
 					WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 					With(nonNestedDevEngine(c)).
 					With(tc.setup).
@@ -1836,6 +1840,8 @@ func (ClientGeneratorTest) TestConstructorArgs(ctx context.Context, t *testctx.T
 	moduleSrc := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
+		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"git", "init"}).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 		With(nonNestedDevEngine(c)).
 		With(daggerNonNestedExec("module", "init", "--sdk=go", "test", ".")).
