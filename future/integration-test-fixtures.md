@@ -1,0 +1,210 @@
+# Future Integration Test Fixtures
+
+author: shykes
+created: 2026-05-14
+after: `future/module-test-cleanup.md`
+
+## Context
+
+This cleanup should happen after the test disposition work in
+`future/module-test-cleanup.md`.
+
+That earlier cleanup decides which tests leave core entirely:
+
+- delete tests that only cover the old module-management CLI surface
+- move module-authoring behavior to SDK-as-module repos
+- keep core behavior tests in core
+
+Only after that pass should this fixture cleanup begin. The goal here is to
+convert the remaining core integration tests so they no longer create Dagger
+modules dynamically as test setup.
+
+## Goal
+
+Make core integration tests fixture-based:
+
+- no setup helper should call `dagger module init`
+- no setup helper should call `dagger develop`
+- no setup helper should call `dagger module install`
+- no setup helper should synthesize a module by hand unless the synthetic files
+  are a checked-in fixture
+
+Tests should mount or copy prebuilt fixture modules from
+`core/integration/testdata` and then exercise the behavior under test.
+
+## Why
+
+1. Removed module-management commands
+
+   Dynamic module creation makes the core test suite depend on commands that
+   are being removed from the CLI. It also makes test setup inconsistent: some
+   tests already use checked-in fixtures, while others build equivalent modules
+   on the fly.
+
+2. Avoid an unnecessary setup refactor
+
+   Module execution is expected to stop running codegen. If tests keep
+   dynamically creating modules, every setup path would need to be refactored
+   to run codegen explicitly before the module can execute. That refactor would
+   only preserve a setup style we want to remove anyway. Fixture-based tests
+   avoid the throwaway work: codegen for fixture modules can be managed like
+   codegen elsewhere in the repo, with generated files checked in or refreshed
+   by the normal repo codegen process.
+
+3. Faster e2e tests
+
+   Running and re-running module setup has runtime cost. Reusing checked-in
+   fixtures avoids repeated scaffold, dependency, and generation work during
+   integration tests. Any reduction in e2e test time is valuable.
+
+After this cleanup, test failures should point at the behavior under test, not
+at module scaffolding setup.
+
+## Non-Goals
+
+Do not delete behavior coverage merely because it currently uses dynamic module
+setup. If the behavior belongs in core, keep it and convert the setup.
+
+Do not recreate SDK authoring workflows in core fixtures. SDK authoring
+behavior belongs in SDK-as-module repos after `future/module-test-cleanup.md`.
+
+Do not introduce a generic string-templating module factory that recreates
+`module init` under another name. Prefer explicit, checked-in fixtures.
+
+## Existing Fixture Shape
+
+The repository already has fixture modules under:
+
+- `core/integration/testdata/modules`
+- `core/integration/testdata/checks`
+- `core/integration/testdata/generators`
+- `core/integration/testdata/services`
+- `core/integration/testdata/sdks`
+- `core/integration/testdata/test-blueprint`
+
+New fixtures should generally extend this tree instead of creating a separate
+fixture root.
+
+Recommended layout for new module fixtures:
+
+```text
+core/integration/testdata/modules/<sdk>/<fixture-name>/
+  dagger.json
+  <sdk-owned source files>
+  generated files, if the test needs checked-in generated output
+```
+
+Use more specific roots such as `services`, `checks`, or `generators` when the
+fixture is tied to that feature area rather than to a generic SDK module.
+
+## Helper Migration
+
+Replace dynamic setup helpers with fixture-mount helpers.
+
+Current dynamic helpers to remove or shrink:
+
+| Helper | Current problem | Future replacement |
+|---|---|---|
+| `modInit` | runs `dagger module init` | mount a fixture module |
+| `withModInit` | runs `dagger module init` | mount/write from fixture |
+| `withModInitAt` | runs `dagger module init` at a path | mount fixture at target path |
+| `daggerInitPython` | runs `dagger module init --sdk=python` | mount Python fixture |
+| `daggerInitPythonAt` | runs Python init at a path | mount Python fixture at target path |
+| ad hoc `With(daggerExec("module", "init", ...))` | dynamic module setup | add/mount fixture |
+| ad hoc `With(daggerExec("module", "install", ...))` | dynamic dep setup | predeclare fixture dependency config |
+
+Add small fixture helpers that make test intent explicit. Examples:
+
+```go
+func withModuleFixture(t testing.TB, c *dagger.Client, dst, fixture string) dagger.WithContainerFunc
+func moduleFixture(t testing.TB, c *dagger.Client, fixture string) *dagger.Container
+func withWorkspaceFixture(t testing.TB, c *dagger.Client, dst, fixture string) dagger.WithContainerFunc
+```
+
+The helper names can differ, but they should make these choices obvious:
+
+- source fixture path
+- destination path in the test container
+- whether the fixture is a standalone module or a workspace
+- whether generated files are included
+
+## Fixture Rules
+
+Fixtures should be stable, readable, and minimal.
+
+- Keep one fixture per behavior shape, not one fixture per test when a fixture
+  can be safely shared.
+- Keep fixtures small enough that the behavior under test is obvious.
+- Prefer committed `dagger.json` and dependency config over mutating config in
+  setup.
+- Keep generated files only when the test needs generated files as input.
+- If a test verifies regeneration or codegen diffs, that behavior probably
+  belongs in an SDK-as-module repo, not core.
+- Avoid tests that modify a shared fixture in place. Mount the fixture into the
+  container and mutate the container copy.
+- Use descriptive fixture names such as `go/local-dep-parent`,
+  `python/pip-lock`, or `typescript/other-module-types`.
+
+## Migration Order
+
+1. Finish `future/module-test-cleanup.md`.
+2. Inventory all remaining dynamic module setup calls:
+   - `daggerExec("module", "init", ...)`
+   - `daggerExec("develop", ...)`
+   - `daggerExec("module", "install", ...)`
+   - `daggerExecRaw("uninstall", ...)`
+   - `modInit`
+   - `withModInit`
+   - `withModInitAt`
+   - `daggerInitPython`
+   - `daggerInitPythonAt`
+3. Group usages by behavior area: runtime, schema, workspace, cache,
+   cross-session, services, legacy, shell, client generation.
+4. For each group, decide whether an existing fixture already covers the setup.
+5. Add missing fixtures under `core/integration/testdata`.
+6. Replace dynamic setup calls with fixture helpers.
+7. Delete or shrink dynamic setup helpers once no tests depend on them.
+8. Run targeted integration packages after each group, then run the broader
+   suite.
+
+## Keep In Core
+
+The following categories should stay in core and use fixtures:
+
+- engine and `ModuleSource` semantics
+- SDK-neutral schema behavior
+- runtime behavior
+- local dependency runtime behavior
+- workspace selection and workspace loading behavior
+- cache and cross-session behavior
+- services, secrets, and networking behavior
+- shell behavior that is not about removed module-management commands
+- legacy compatibility behavior
+
+## Move Out Instead
+
+If a test is mainly about authoring or maintaining a module, move or adapt it
+out of core instead of fixture-converting it here.
+
+Examples:
+
+- creating a new SDK module
+- generating SDK code
+- refreshing generated bindings
+- adding, removing, or updating module dependencies as an authoring operation
+- SDK-specific package manager detection
+- SDK-specific bootstrap templates
+
+For Go, move these to `github.com/shykes/dagger-go-sdk`. For other SDKs, move
+them to the corresponding SDK-as-module repo when it exists.
+
+## Done Criteria
+
+This cleanup is complete when:
+
+- no remaining core integration setup calls removed module-management commands
+- dynamic module setup helpers are gone or no longer call removed commands
+- remaining core tests use checked-in fixtures for modules and workspaces
+- SDK authoring tests are moved out of core or explicitly waived
+- deleted command-surface tests are tracked by `future/module-test-cleanup.md`
+- the relevant core integration test suites pass with fixture-based setup
