@@ -95,7 +95,7 @@ func (m *OtherObj) FnE() *dagger.Container {
 		)
 
 	t.Run("top-level", func(ctx context.Context, t *testctx.T) {
-		out, err := ctr.With(daggerFunctions()).Stdout(ctx)
+		out, err := ctr.With(daggerFunctions("-m", ".")).Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(out, "\n")
 		require.Contains(t, lines, "fn-a   doc for FnA")
@@ -104,11 +104,10 @@ func (m *OtherObj) FnE() *dagger.Container {
 		require.Contains(t, lines, "prim   doc for Prim")
 	})
 
-	t.Run("top-level from subdir", func(ctx context.Context, t *testctx.T) {
-		// find-up should kick in
+	t.Run("top-level from subdir with explicit module", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.
 			WithWorkdir("/work/some/subdir").
-			With(daggerFunctions()).
+			With(daggerFunctions("-m", "../..")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(out, "\n")
@@ -118,8 +117,17 @@ func (m *OtherObj) FnE() *dagger.Container {
 		require.Contains(t, lines, "prim   doc for Prim")
 	})
 
+	t.Run("plain module is not loaded from subdir", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.
+			WithWorkdir("/work/some/subdir").
+			With(daggerFunctions()).
+			Stderr(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "No functions found.")
+	})
+
 	t.Run("return core object", func(ctx context.Context, t *testctx.T) {
-		out, err := ctr.With(daggerFunctions("fn-a")).Stdout(ctx)
+		out, err := ctr.With(daggerFunctions("-m", ".", "fn-a")).Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(out, "\n")
 		// just verify some of the container funcs are there, too many to be exhaustive
@@ -128,12 +136,12 @@ func (m *OtherObj) FnE() *dagger.Container {
 	})
 
 	t.Run("return primitive", func(ctx context.Context, t *testctx.T) {
-		_, err := ctr.With(daggerFunctions("prim")).Stdout(ctx)
+		_, err := ctr.With(daggerFunctions("-m", ".", "prim")).Stdout(ctx)
 		requireErrOut(t, err, `function "prim" returns type "STRING_KIND" with no further functions available`)
 	})
 
 	t.Run("alt casing", func(ctx context.Context, t *testctx.T) {
-		out, err := ctr.With(daggerFunctions("fnA")).Stdout(ctx)
+		out, err := ctr.With(daggerFunctions("-m", ".", "fnA")).Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(out, "\n")
 		// just verify some of the container funcs are there, too many to be exhaustive
@@ -142,14 +150,14 @@ func (m *OtherObj) FnE() *dagger.Container {
 	})
 
 	t.Run("return user interface", func(ctx context.Context, t *testctx.T) {
-		out, err := ctr.With(daggerFunctions("fn-b")).Stdout(ctx)
+		out, err := ctr.With(daggerFunctions("-m", ".", "fn-b")).Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(out, "\n")
 		require.Contains(t, lines, "quack   quack that thang")
 	})
 
 	t.Run("return user object", func(ctx context.Context, t *testctx.T) {
-		out, err := ctr.With(daggerFunctions("fn-c")).Stdout(ctx)
+		out, err := ctr.With(daggerFunctions("-m", ".", "fn-c")).Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(out, "\n")
 		// just verify some of the container funcs are there, too many to be exhaustive
@@ -161,7 +169,7 @@ func (m *OtherObj) FnE() *dagger.Container {
 	})
 
 	t.Run("return user object nested", func(ctx context.Context, t *testctx.T) {
-		out, err := ctr.With(daggerFunctions("fn-c", "field-d")).Stdout(ctx)
+		out, err := ctr.With(daggerFunctions("-m", ".", "fn-c", "field-d")).Stdout(ctx)
 		require.NoError(t, err)
 		lines := strings.Split(out, "\n")
 		// just verify some of the container funcs are there, too many to be exhaustive
@@ -236,7 +244,7 @@ func (m *Hello) Hello() string {
 	require.NotContains(t, daggerJSON, `"sdk"`)
 
 	t.Run("functions with no SDK show just the headers", func(ctx context.Context, t *testctx.T) {
-		out, err := testCtr.With(daggerFunctions()).Stdout(ctx)
+		out, err := testCtr.With(daggerFunctions("-m", ".")).Stdout(ctx)
 		require.NoError(t, err)
 
 		lines := strings.Split(strings.TrimSpace(out), "\n")
@@ -254,7 +262,7 @@ func (m *Hello) Hello() string {
 	})
 
 	t.Run("call a module without sdk", func(ctx context.Context, t *testctx.T) {
-		_, err := testCtr.WithWorkdir("/work/test/nosdk").With(daggerCall()).Stdout(ctx)
+		_, err := testCtr.WithWorkdir("/work/test/nosdk").With(daggerCallAt(".")).Stdout(ctx)
 		require.NoError(t, err)
 	})
 }
