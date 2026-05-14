@@ -51,70 +51,70 @@ func (ModuleSuite) TestDaggerUp(ctx context.Context, t *testctx.T) {
 			name:         "container native",
 			endpointFn:   daggerUpAndGetEndpoint,
 			trafficPort:  "23100",
-			daggerArgs:   []string{"call", "ctr", "up"},
+			daggerArgs:   []string{"call", "-m", ".", "ctr", "up"},
 			cachedModDir: modDirForAsContainerTests,
 		},
 		{
 			name:         "container random",
 			endpointFn:   daggerUpAndGetEndpointFromLogs,
 			trafficPort:  "",
-			daggerArgs:   []string{"call", "ctr", "up", "--random"},
+			daggerArgs:   []string{"call", "-m", ".", "ctr", "up", "--random"},
 			cachedModDir: modDirForAsContainerTests,
 		},
 		{
 			name:         "container port map",
 			endpointFn:   daggerUpAndGetEndpoint,
 			trafficPort:  "23101",
-			daggerArgs:   []string{"call", "ctr", "up", "--ports", fmt.Sprintf("23101:%s", defaultTrafficPortForContainerTests)},
+			daggerArgs:   []string{"call", "-m", ".", "ctr", "up", "--ports", fmt.Sprintf("23101:%s", defaultTrafficPortForContainerTests)},
 			cachedModDir: modDirForAsContainerTests,
 		},
 		{
 			name:         "container port map with same front+back",
 			endpointFn:   daggerUpAndGetEndpoint,
 			trafficPort:  "23102",
-			daggerArgs:   []string{"call", "--port", "23102", "ctr", "up", "--ports", "23102:23102"},
+			daggerArgs:   []string{"call", "-m", ".", "--port", "23102", "ctr", "up", "--ports", "23102:23102"},
 			cachedModDir: modDirForAsContainerTests,
 		},
 		{
 			name:         "container port map with explicit args",
 			endpointFn:   daggerUpAndGetEndpoint,
 			trafficPort:  "23103",
-			daggerArgs:   []string{"call", "ctr", "without-exposed-port", "--port", defaultTrafficPortForContainerTests, "with-exposed-port", "--port", "23103", "up", "--args", "python,-m,http.server,23103", "--ports", "23103:23103"},
+			daggerArgs:   []string{"call", "-m", ".", "ctr", "without-exposed-port", "--port", defaultTrafficPortForContainerTests, "with-exposed-port", "--port", "23103", "up", "--args", "python,-m,http.server,23103", "--ports", "23103:23103"},
 			cachedModDir: modDirForAsContainerTests,
 		},
 		{
 			name:         "shell container port map",
 			endpointFn:   daggerUpAndGetEndpoint,
 			trafficPort:  "23104",
-			daggerArgs:   []string{"shell", "-c", fmt.Sprintf("ctr | up --ports 23104:%s", defaultTrafficPortForContainerTests)},
+			daggerArgs:   []string{"shell", "-m", ".", "-c", fmt.Sprintf("ctr | up --ports 23104:%s", defaultTrafficPortForContainerTests)},
 			cachedModDir: modDirForAsContainerTests,
 		},
 		{
 			name:         "service native",
 			endpointFn:   daggerUpAndGetEndpoint,
 			trafficPort:  "23200",
-			daggerArgs:   []string{"call", "ctr", "as-service", "up"},
+			daggerArgs:   []string{"call", "-m", ".", "ctr", "as-service", "up"},
 			cachedModDir: modDirForAsServiceTests,
 		},
 		{
 			name:         "service random",
 			endpointFn:   daggerUpAndGetEndpointFromLogs,
 			trafficPort:  "",
-			daggerArgs:   []string{"call", "ctr", "as-service", "up", "--random"},
+			daggerArgs:   []string{"call", "-m", ".", "ctr", "as-service", "up", "--random"},
 			cachedModDir: modDirForAsServiceTests,
 		},
 		{
 			name:         "service port map",
 			endpointFn:   daggerUpAndGetEndpoint,
 			trafficPort:  "23201",
-			daggerArgs:   []string{"call", "ctr", "as-service", "up", "--ports", fmt.Sprintf("23201:%s", defaultTrafficPortForServiceTests)},
+			daggerArgs:   []string{"call", "-m", ".", "ctr", "as-service", "up", "--ports", fmt.Sprintf("23201:%s", defaultTrafficPortForServiceTests)},
 			cachedModDir: modDirForAsServiceTests,
 		},
 		{
 			name:         "service port map with same front+back",
 			endpointFn:   daggerUpAndGetEndpoint,
 			trafficPort:  "23202",
-			daggerArgs:   []string{"call", "--port", "23202", "ctr", "as-service", "up", "--ports", "23202:23202"},
+			daggerArgs:   []string{"call", "-m", ".", "--port", "23202", "ctr", "as-service", "up", "--ports", "23202:23202"},
 			cachedModDir: modDirForAsServiceTests,
 		},
 	}
@@ -233,7 +233,7 @@ func daggerUpInitModFn(ctx context.Context, t *testctx.T, defaultPort string) st
 	require.NoError(t, err)
 
 	// cache the module load itself so there's less to wait for below
-	_, err = hostDaggerExecRaw(ctx, t, modDir, "functions")
+	_, err = hostDaggerExecRaw(ctx, t, modDir, "functions", "-m", ".")
 	require.NoError(t, err)
 
 	return modDir

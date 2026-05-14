@@ -134,7 +134,7 @@ func (m *A) Fn(ctx context.Context) (string, error) {
 		)
 
 	t.Run("runtime resolves conflicting transitive deps", func(ctx context.Context, t *testctx.T) {
-		out, err := ctr.With(daggerQuery(`{fn}`)).Stdout(ctx)
+		out, err := ctr.With(daggerQueryAt(".", `{fn}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"fn": "foo123"}`, out)
 	})
@@ -219,7 +219,7 @@ func (ModuleSuite) TestUseLocalDependencyFromParentModule(ctx context.Context, t
 			c := connect(ctx, t)
 			modGen := testModuleWithLocalDep(t, c, tc.sdk, tc.source)
 
-			out, err := modGen.With(daggerQuery(`{useHello}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQueryAt(".", `{useHello}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"useHello":"hello"}`, out)
 		})
@@ -236,7 +236,7 @@ func (ModuleSuite) TestUseLocalDependencyDirectSchemaAccess(ctx context.Context,
 			c := connect(ctx, t)
 			modGen := testModuleWithLocalDep(t, c, tc.sdk, tc.source)
 
-			out, err := modGen.With(daggerQuery(`{dep{hello}}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQueryAt(".", `{dep{hello}}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"dep":{"hello":"hello"}}`, out)
 		})
@@ -290,7 +290,7 @@ func (ModuleSuite) TestDevelopRefreshesParentCodegenAfterLocalDependencyAPIChang
 			c := connect(ctx, t)
 			modGen := testModuleWithLocalDep(t, c, tc.sdk, tc.source)
 
-			out, err := modGen.With(daggerQuery(`{useHello}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQueryAt(".", `{useHello}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"useHello":"hello"}`, out)
 
@@ -316,7 +316,7 @@ func (ModuleSuite) TestDevelopRefreshesParentCodegenAfterLocalDependencyAPIChang
 
 			modGen = modGen.With(sdkSource(tc.sdk, tc.changed))
 
-			out, err = modGen.With(daggerQuery(`{useHello}`)).Stdout(ctx)
+			out, err = modGen.With(daggerQueryAt(".", `{useHello}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"useHello":"hello"}`, out)
 		})
@@ -332,7 +332,7 @@ func (ModuleSuite) TestDevelopRefreshesLocalDependencyImplementationChanges(ctx 
 			c := connect(ctx, t)
 			modGen := testModuleWithLocalDep(t, c, tc.sdk, tc.source)
 
-			modGen = modGen.With(daggerQuery(`{useHello}`))
+			modGen = modGen.With(daggerQueryAt(".", `{useHello}`))
 			out, err := modGen.Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"useHello":"hello"}`, out)
@@ -344,7 +344,7 @@ func (ModuleSuite) TestDevelopRefreshesLocalDependencyImplementationChanges(ctx 
 				WithWorkdir("/work").
 				With(daggerExec("develop"))
 
-			out, err = modGen.With(daggerQuery(`{useHello}`)).Stdout(ctx)
+			out, err = modGen.With(daggerQueryAt(".", `{useHello}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"useHello":"goodbye"}`, out)
 		})
@@ -440,7 +440,7 @@ export class Test {
 				With(sdkSource(tc.sdk, tc.source)).
 				WithEnvVariable("BUST", identity.NewID()) // NB(vito): hmm...
 
-			out, err := modGen.With(daggerQuery(`{names}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQueryAt(".", `{names}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"names":["foo", "bar"]}`, out)
 		})

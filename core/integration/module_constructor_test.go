@@ -167,39 +167,39 @@ export class Test {
 				c := connect(ctx, t)
 				ctr := modInit(t, c, tc.sdk, tc.source)
 
-				out, err := ctr.With(daggerCall("--foo=abc", "--baz=x,y,z", "--dir=.", "foo")).Stdout(ctx)
+				out, err := ctr.With(daggerCallAt(".", "--foo=abc", "--baz=x,y,z", "--dir=.", "foo")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, strings.TrimSpace(out), "abc")
 
-				out, err = ctr.With(daggerCall("--foo=abc", "--baz=x,y,z", "--dir=.", "gimme-foo")).Stdout(ctx)
+				out, err = ctr.With(daggerCallAt(".", "--foo=abc", "--baz=x,y,z", "--dir=.", "gimme-foo")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, strings.TrimSpace(out), "abc")
 
-				out, err = ctr.With(daggerCall("--foo=abc", "--baz=x,y,z", "--dir=.", "bar")).Stdout(ctx)
+				out, err = ctr.With(daggerCallAt(".", "--foo=abc", "--baz=x,y,z", "--dir=.", "bar")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, strings.TrimSpace(out), "42")
 
-				out, err = ctr.With(daggerCall("--foo=abc", "--baz=x,y,z", "--dir=.", "gimme-bar")).Stdout(ctx)
+				out, err = ctr.With(daggerCallAt(".", "--foo=abc", "--baz=x,y,z", "--dir=.", "gimme-bar")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, strings.TrimSpace(out), "42")
 
-				out, err = ctr.With(daggerCall("--foo=abc", "--bar=123", "--baz=x,y,z", "--dir=.", "bar")).Stdout(ctx)
+				out, err = ctr.With(daggerCallAt(".", "--foo=abc", "--bar=123", "--baz=x,y,z", "--dir=.", "bar")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, strings.TrimSpace(out), "123")
 
-				out, err = ctr.With(daggerCall("--foo=abc", "--bar=123", "--baz=x,y,z", "--dir=.", "gimme-bar")).Stdout(ctx)
+				out, err = ctr.With(daggerCallAt(".", "--foo=abc", "--bar=123", "--baz=x,y,z", "--dir=.", "gimme-bar")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, strings.TrimSpace(out), "123")
 
-				out, err = ctr.With(daggerCall("--foo=abc", "--bar=123", "--baz=x,y,z", "--dir=.", "baz")).Stdout(ctx)
+				out, err = ctr.With(daggerCallAt(".", "--foo=abc", "--bar=123", "--baz=x,y,z", "--dir=.", "baz")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, strings.TrimSpace(out), "x\ny\nz")
 
-				out, err = ctr.With(daggerCall("--foo=abc", "--bar=123", "--baz=x,y,z", "--dir=.", "gimme-baz")).Stdout(ctx)
+				out, err = ctr.With(daggerCallAt(".", "--foo=abc", "--bar=123", "--baz=x,y,z", "--dir=.", "gimme-baz")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, strings.TrimSpace(out), "x\ny\nz")
 
-				out, err = ctr.With(daggerCall("--foo=abc", "--bar=123", "--baz=x,y,z", "--dir=.", "gimme-dir-ents")).Stdout(ctx)
+				out, err = ctr.With(daggerCallAt(".", "--foo=abc", "--bar=123", "--baz=x,y,z", "--dir=.", "gimme-dir-ents")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Contains(t, strings.TrimSpace(out), "dagger.json")
 			})
@@ -281,7 +281,7 @@ export class Test {
 					With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, ".")).
 					With(sdkSource(tc.sdk, fmt.Sprintf(tc.source, alpineImage)))
 
-				out, err := ctr.With(daggerCall("alpine-version")).Stdout(ctx)
+				out, err := ctr.With(daggerCallAt(".", "alpine-version")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, distconsts.AlpineVersion, strings.TrimSpace(out))
 			})
@@ -346,7 +346,7 @@ export class Test {
 					With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, ".")).
 					With(sdkSource(tc.sdk, tc.source))
 
-				_, err := ctr.With(daggerCall("foo")).Stdout(ctx)
+				_, err := ctr.With(daggerCallAt(".", "foo")).Stdout(ctx)
 				require.Error(t, err)
 
 				require.NoError(t, c.Close())
@@ -380,15 +380,15 @@ class Test:
 `, content),
 			))
 
-		out, err := ctr.With(daggerCall("foo", "contents")).Stdout(ctx)
+		out, err := ctr.With(daggerCallAt(".", "foo", "contents")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, content, strings.TrimSpace(out))
 
-		out, err = ctr.With(daggerCall("--foo=dagger.json", "foo", "contents")).Stdout(ctx)
+		out, err = ctr.With(daggerCallAt(".", "--foo=dagger.json", "foo", "contents")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, `"source": "python"`)
 
-		_, err = ctr.With(daggerCall("bar")).Sync(ctx)
+		_, err = ctr.With(daggerCallAt(".", "bar")).Sync(ctx)
 		require.NoError(t, err)
 	})
 
@@ -422,15 +422,15 @@ export class Test {
 `, content),
 			))
 
-		out, err := ctr.With(daggerCall("foo", "contents")).Stdout(ctx)
+		out, err := ctr.With(daggerCallAt(".", "foo", "contents")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, content, strings.TrimSpace(out))
 
-		out, err = ctr.With(daggerCall("--foo=dagger.json", "foo", "contents")).Stdout(ctx)
+		out, err = ctr.With(daggerCallAt(".", "--foo=dagger.json", "foo", "contents")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, `"source": "typescript"`)
 
-		_, err = ctr.With(daggerCall("bar")).Sync(ctx)
+		_, err = ctr.With(daggerCallAt(".", "bar")).Sync(ctx)
 		require.NoError(t, err)
 	})
 }

@@ -113,7 +113,7 @@ export class Test {
 			id := identity.NewID()
 
 			out, err := modInit(t, c, tc.sdk, tc.source).
-				With(daggerQuery(
+				With(daggerQueryAt(".",
 					fmt.Sprintf(`{container{echo(msg:%q){unwrap{stdout}}}}`, id),
 				)).
 				Stdout(ctx)
@@ -138,7 +138,7 @@ func (ModuleSuite) TestNamespacing(ctx context.Context, t *testctx.T) {
 		WithWorkdir("/work")
 
 	out, err := ctr.
-		With(daggerQuery(`{fn(s:"yo")}`)).
+		With(daggerQueryAt(".", `{fn(s:"yo")}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"fn":["*dagger.Sub1Obj made 1:yo", "*dagger.Sub2Obj made 2:yo"]}`, out)
@@ -221,7 +221,7 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 					c := connect(ctx, t)
 
 					out, err := modInit(t, c, tc.sdk, tc.source).
-						With(daggerQuery(`{fn(id:"YES!!!!")}`)).
+						With(daggerQueryAt(".", `{fn(id:"YES!!!!")}`)).
 						Stdout(ctx)
 					require.NoError(t, err)
 					require.JSONEq(t, `{"fn":"YES!!!!"}`, out)
@@ -248,7 +248,7 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 						WithWorkdir("/work").
 						With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, ".")).
 						With(sdkSource(tc.sdk, tc.source)).
-						With(daggerQuery(`{fn{id}}`)).
+						With(daggerQueryAt(".", `{fn{id}}`)).
 						Sync(ctx)
 
 					requireErrOut(t, err, "cannot define field with reserved name \"id\"")
@@ -279,7 +279,7 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 						WithWorkdir("/work").
 						With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, ".")).
 						With(sdkSource(tc.sdk, tc.source)).
-						With(daggerQuery(`{id}`)).
+						With(daggerQueryAt(".", `{id}`)).
 						Sync(ctx)
 
 					requireErrOut(t, err, "cannot define function with reserved name \"id\"")

@@ -96,12 +96,12 @@ func (t *Toplevel) TryArg(ctx context.Context) error {
 			)
 
 		t.Run("can pass secrets", func(ctx context.Context, t *testctx.T) {
-			_, err := ctr.With(daggerQuery(`{tryArg}`)).Stdout(ctx)
+			_, err := ctr.With(daggerQueryAt(".", `{tryArg}`)).Stdout(ctx)
 			require.NoError(t, err)
 		})
 
 		t.Run("can return secrets", func(ctx context.Context, t *testctx.T) {
-			_, err := ctr.With(daggerQuery(`{tryReturn}`)).Stdout(ctx)
+			_, err := ctr.With(daggerQueryAt(".", `{tryReturn}`)).Stdout(ctx)
 			require.NoError(t, err)
 		})
 	})
@@ -147,12 +147,12 @@ func (t *Test) Evaluated(ctx context.Context, src *dagger.Directory) error {
 `)
 
 		_, err := ctr.
-			With(daggerCall("ctr", "--src", "/input", "stdout")).
+			With(daggerCallAt(".", "ctr", "--src", "/input", "stdout")).
 			Sync(ctx)
 		require.NoError(t, err)
 
 		_, err = ctr.
-			With(daggerCall("evaluated", "--src", "/input")).
+			With(daggerCallAt(".", "evaluated", "--src", "/input")).
 			Sync(ctx)
 		require.NoError(t, err)
 	})
@@ -217,13 +217,13 @@ func (t *Test) GetCensored(ctx context.Context) (string, error) {
 `,
 				)
 
-			encodedOut, err := ctr.With(daggerCall("get-encoded")).Stdout(ctx)
+			encodedOut, err := ctr.With(daggerCallAt(".", "get-encoded")).Stdout(ctx)
 			require.NoError(t, err)
 			decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encodedOut))
 			require.NoError(t, err)
 			require.Equal(t, "shhh\n", string(decoded))
 
-			censoredOut, err := ctr.With(daggerCall("get-censored")).Stdout(ctx)
+			censoredOut, err := ctr.With(daggerCallAt(".", "get-censored")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "***\n", censoredOut)
 		})
@@ -281,13 +281,13 @@ func (t *Test) GetCensored(ctx context.Context) (string, error) {
 `,
 				)
 
-			encodedOut, err := ctr.With(daggerCall("get-encoded")).Stdout(ctx)
+			encodedOut, err := ctr.With(daggerCallAt(".", "get-encoded")).Stdout(ctx)
 			require.NoError(t, err)
 			decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encodedOut))
 			require.NoError(t, err)
 			require.Equal(t, "shhh\n", string(decoded))
 
-			censoredOut, err := ctr.With(daggerCall("get-censored")).Stdout(ctx)
+			censoredOut, err := ctr.With(daggerCallAt(".", "get-censored")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "***\n", censoredOut)
 		})
@@ -349,7 +349,7 @@ func (m *Test) Test(ctx context.Context) (string, error) {
 `,
 				)
 
-			out, err := ctr.With(daggerCall("test")).Stdout(ctx)
+			out, err := ctr.With(daggerCallAt(".", "test")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "HELLO FROM FOO", out)
 		})
@@ -413,7 +413,7 @@ func (m *Test) Test(ctx context.Context) (string, error) {
 `,
 				)
 
-			out, err := ctr.With(daggerCall("test")).Stdout(ctx)
+			out, err := ctr.With(daggerCallAt(".", "test")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "HELLO FROM FOO", out)
 		})
@@ -501,7 +501,7 @@ func (m *Mymodule) Issue(ctx context.Context) error {
 }
 `)
 
-			_, err := ctr.With(daggerCall("issue")).Sync(ctx)
+			_, err := ctr.With(daggerCallAt(".", "issue")).Sync(ctx)
 			require.NoError(t, err)
 		})
 
@@ -571,7 +571,7 @@ func (m *Test) impl(ctx context.Context, name string) (string, error) {
 `,
 				)
 
-			out, err := ctr.With(daggerQuery("{foo,bar}")).Stdout(ctx)
+			out, err := ctr.With(daggerQueryAt(".", "{foo,bar}")).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"foo": "FOO\nHELLO FROM MOUNT", "bar": "BAR\nHELLO FROM MOUNT"}`, out)
 		})
@@ -611,7 +611,7 @@ func (t *Test) FnB(ctx context.Context) (string, error) {
 `,
 			)
 
-		encodedOut, err := ctr.With(daggerCall("fn-a", "fn-b")).Stdout(ctx)
+		encodedOut, err := ctr.With(daggerCallAt(".", "fn-a", "fn-b")).Stdout(ctx)
 		require.NoError(t, err)
 		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encodedOut))
 		require.NoError(t, err)
@@ -653,7 +653,7 @@ func (t *Test) FnB(ctx context.Context) (string, error) {
 `,
 			)
 
-		encodedOut, err := ctr.With(daggerCall("fn-a", "fn-b")).Stdout(ctx)
+		encodedOut, err := ctr.With(daggerCallAt(".", "fn-a", "fn-b")).Stdout(ctx)
 		require.NoError(t, err)
 		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encodedOut))
 		require.NoError(t, err)
@@ -695,7 +695,7 @@ func (t *Test) GetEncoded(ctx context.Context) (string, error) {
 `,
 			)
 
-		encodedOut, err := ctr.With(daggerCall("get-encoded")).Stdout(ctx)
+		encodedOut, err := ctr.With(daggerCallAt(".", "get-encoded")).Stdout(ctx)
 		require.NoError(t, err)
 		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encodedOut))
 		require.NoError(t, err)
@@ -775,7 +775,7 @@ func (t *Toplevel) Attempt(ctx context.Context) error {
 `,
 			)
 
-		_, err := ctr.With(daggerQuery(`{attempt}`)).Stdout(ctx)
+		_, err := ctr.With(daggerQueryAt(".", `{attempt}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.NoError(t, c.Close())
 	})
@@ -847,7 +847,7 @@ func (t *Toplevel) Attempt(ctx context.Context, uniq string) error {
 `,
 			)
 
-		_, err := ctr.With(daggerQuery(`{attempt(uniq: %q)}`, identity.NewID())).Stdout(ctx)
+		_, err := ctr.With(daggerQueryAt(".", `{attempt(uniq: %q)}`, identity.NewID())).Stdout(ctx)
 		require.NoError(t, err)
 		require.NoError(t, c.Close())
 	})
@@ -931,12 +931,12 @@ func diffSecret(ctx context.Context, first, second *dagger.Secret) error {
 			)
 
 		t.Run("internal secrets cache", func(ctx context.Context, t *testctx.T) {
-			_, err := ctr.With(daggerQuery(`{attemptInternal}`)).Stdout(ctx)
+			_, err := ctr.With(daggerQueryAt(".", `{attemptInternal}`)).Stdout(ctx)
 			require.NoError(t, err)
 		})
 
 		t.Run("external secrets cache", func(ctx context.Context, t *testctx.T) {
-			_, err := ctr.With(daggerQuery(`{attemptExternal}`)).Stdout(ctx)
+			_, err := ctr.With(daggerQueryAt(".", `{attemptExternal}`)).Stdout(ctx)
 			require.NoError(t, err)
 		})
 	})
@@ -969,7 +969,7 @@ class Obj:
 `)).
 			With(daggerInitPython()).
 			WithEnvVariable("TOP_SECRET", "omg").
-			With(daggerCall("getobj", "--top-secret", "env://TOP_SECRET", "get-secret")).
+			With(daggerCallAt(".", "getobj", "--top-secret", "env://TOP_SECRET", "get-secret")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -1037,7 +1037,7 @@ func (ModuleSuite) TestStartServices(ctx context.Context, t *testctx.T) {
 	}
 	`, alpineImage),
 			).
-			With(daggerCall("fn-a", "fn-b")).
+			With(daggerCallAt(".", "fn-a", "fn-b")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hey there", strings.TrimSpace(out))
@@ -1082,7 +1082,7 @@ func (m *Test) Fn(ctx context.Context) *dagger.Container {
 }
 	`, alpineImage),
 			).
-			With(daggerCall("fn", "stdout")).
+			With(daggerCallAt(".", "fn", "stdout")).
 			Sync(ctx)
 		require.NoError(t, err)
 	})
@@ -1115,7 +1115,7 @@ func (m *Test) Hello() string {
 }
 
 `)).
-		With(daggerCall("hello")).
+		With(daggerCallAt(".", "hello")).
 		Sync(ctx)
 	require.NoError(t, err)
 }
@@ -1141,7 +1141,7 @@ type Test struct {
 }
 
 `)).
-			With(daggerQuery("{a,b}")).
+			With(daggerQueryAt(".", "{a,b}")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -1170,7 +1170,7 @@ func New() *Test {
 	return &Test{}
 }
 `)).
-			With(daggerQuery("{a,b}")).
+			With(daggerQueryAt(".", "{a,b}")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -1273,19 +1273,19 @@ class Test:
 				With(daggerExec("module", "install", "./dep"))
 
 			t.Run("float64", func(ctx context.Context, t *testctx.T) {
-				out, err := modGen.With(daggerCall("test", "--n=3.14")).Stdout(ctx)
+				out, err := modGen.With(daggerCallAt(".", "test", "--n=3.14")).Stdout(ctx)
 				require.NoError(t, err)
 				require.JSONEq(t, `3.14`, out)
 			})
 
 			t.Run("float32", func(ctx context.Context, t *testctx.T) {
-				out, err := modGen.With(daggerCall("test-float-32", "--n=1.73424")).Stdout(ctx)
+				out, err := modGen.With(daggerCallAt(".", "test-float-32", "--n=1.73424")).Stdout(ctx)
 				require.NoError(t, err)
 				require.JSONEq(t, `1.73424`, out)
 			})
 
 			t.Run("call dep with float64 to float32 conversion", func(ctx context.Context, t *testctx.T) {
-				out, err := modGen.With(daggerCall("dep", "--n=232.3454")).Stdout(ctx)
+				out, err := modGen.With(daggerCallAt(".", "dep", "--n=232.3454")).Stdout(ctx)
 				require.NoError(t, err)
 				require.JSONEq(t, `232.3454`, out)
 			})
@@ -1329,15 +1329,15 @@ func (m *Test) ObjsWithNothing() ([]*Test, error) {
 `,
 		)
 
-	out, err := modGen.With(daggerQuery(`{nothing{entries}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQueryAt(".", `{nothing{entries}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"nothing":null}`, out)
 
-	out, err = modGen.With(daggerQuery(`{listWithNothing{entries}}`)).Stdout(ctx)
+	out, err = modGen.With(daggerQueryAt(".", `{listWithNothing{entries}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"listWithNothing":[null]}`, out)
 
-	out, err = modGen.With(daggerQuery(`{objsWithNothing{dirs{entries}}}`)).Stdout(ctx)
+	out, err = modGen.With(daggerQueryAt(".", `{objsWithNothing{dirs{entries}}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"objsWithNothing":[null,{"dirs":[null]}]}`, out)
 }
@@ -1447,7 +1447,7 @@ export class Test {
 
 				out1, err := modGen1.
 					WithEnvVariable("CACHE_BUST", rand.Text()).
-					With(daggerCall("test-always-cache")).Stdout(ctx)
+					With(daggerCallAt(".", "test-always-cache")).Stdout(ctx)
 				require.NoError(t, err)
 				require.NoError(t, c1.Close())
 
@@ -1456,7 +1456,7 @@ export class Test {
 
 				out2, err := modGen2.
 					WithEnvVariable("CACHE_BUST", rand.Text()).
-					With(daggerCall("test-always-cache")).Stdout(ctx)
+					With(daggerCallAt(".", "test-always-cache")).Stdout(ctx)
 				require.NoError(t, err)
 
 				require.Equal(t, out1, out2, "outputs should be equal since the result is always cached")
@@ -1468,11 +1468,11 @@ export class Test {
 
 				out1a, err := modGen1.
 					WithEnvVariable("CACHE_BUST", rand.Text()).
-					With(daggerCall("test-cache-per-session")).Stdout(ctx)
+					With(daggerCallAt(".", "test-cache-per-session")).Stdout(ctx)
 				require.NoError(t, err)
 				out1b, err := modGen1.
 					WithEnvVariable("CACHE_BUST", rand.Text()).
-					With(daggerCall("test-cache-per-session")).Stdout(ctx)
+					With(daggerCallAt(".", "test-cache-per-session")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, out1a, out1b, "outputs should be equal since they are from the same session")
 				require.NoError(t, c1.Close())
@@ -1482,11 +1482,11 @@ export class Test {
 
 				out2a, err := modGen2.
 					WithEnvVariable("CACHE_BUST", rand.Text()).
-					With(daggerCall("test-cache-per-session")).Stdout(ctx)
+					With(daggerCallAt(".", "test-cache-per-session")).Stdout(ctx)
 				require.NoError(t, err)
 				out2b, err := modGen2.
 					WithEnvVariable("CACHE_BUST", rand.Text()).
-					With(daggerCall("test-cache-per-session")).Stdout(ctx)
+					With(daggerCallAt(".", "test-cache-per-session")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, out2a, out2b, "outputs should be equal since they are from the same session")
 
@@ -1499,11 +1499,11 @@ export class Test {
 
 				out1a, err := modGen1.
 					WithEnvVariable("CACHE_BUST", rand.Text()).
-					With(daggerCall("test-never-cache")).Stdout(ctx)
+					With(daggerCallAt(".", "test-never-cache")).Stdout(ctx)
 				require.NoError(t, err)
 				out1b, err := modGen1.
 					WithEnvVariable("CACHE_BUST", rand.Text()).
-					With(daggerCall("test-never-cache")).Stdout(ctx)
+					With(daggerCallAt(".", "test-never-cache")).Stdout(ctx)
 				require.NoError(t, err)
 				require.NotEqual(t, out1a, out1b, "outputs should not be equal since they are never cached")
 				require.NoError(t, c1.Close())
@@ -1513,11 +1513,11 @@ export class Test {
 
 				out2a, err := modGen2.
 					WithEnvVariable("CACHE_BUST", rand.Text()).
-					With(daggerCall("test-never-cache")).Stdout(ctx)
+					With(daggerCallAt(".", "test-never-cache")).Stdout(ctx)
 				require.NoError(t, err)
 				out2b, err := modGen2.
 					WithEnvVariable("CACHE_BUST", rand.Text()).
-					With(daggerCall("test-never-cache")).Stdout(ctx)
+					With(daggerCallAt(".", "test-never-cache")).Stdout(ctx)
 				require.NoError(t, err)
 				require.NotEqual(t, out2a, out2b, "outputs should not be equal since they are never cached")
 
@@ -1530,7 +1530,7 @@ export class Test {
 
 				out1, err := modGen1.
 					WithEnvVariable("CACHE_BUST", rand.Text()).
-					With(daggerCall("test-ttl")).Stdout(ctx)
+					With(daggerCallAt(".", "test-ttl")).Stdout(ctx)
 				require.NoError(t, err)
 				require.NoError(t, c1.Close())
 
@@ -1539,7 +1539,7 @@ export class Test {
 
 				out2, err := modGen2.
 					WithEnvVariable("CACHE_BUST", rand.Text()).
-					With(daggerCall("test-ttl")).Stdout(ctx)
+					With(daggerCallAt(".", "test-ttl")).Stdout(ctx)
 				require.NoError(t, err)
 				require.NoError(t, c2.Close())
 
@@ -1551,7 +1551,7 @@ export class Test {
 
 				out3, err := modGen3.
 					WithEnvVariable("CACHE_BUST", rand.Text()).
-					With(daggerCall("test-ttl")).Stdout(ctx)
+					With(daggerCallAt(".", "test-ttl")).Stdout(ctx)
 				require.NoError(t, err)
 				require.NotEqual(t, out1, out3, "outputs should not be equal since the cache ttl has expired")
 			})
@@ -1583,11 +1583,11 @@ func (m *Test) TestSetSecret() *dagger.Container {
 
 		out1a, err := modGen1.
 			WithEnvVariable("CACHE_BUST", rand.Text()).
-			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+			With(daggerCallAt(".", "test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
 		require.NoError(t, err)
 		out1b, err := modGen1.
 			WithEnvVariable("CACHE_BUST", rand.Text()).
-			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+			With(daggerCallAt(".", "test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, out1a, out1b)
 		require.NoError(t, c1.Close())
@@ -1597,11 +1597,11 @@ func (m *Test) TestSetSecret() *dagger.Container {
 
 		out2a, err := modGen2.
 			WithEnvVariable("CACHE_BUST", rand.Text()).
-			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+			With(daggerCallAt(".", "test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
 		require.NoError(t, err)
 		out2b, err := modGen2.
 			WithEnvVariable("CACHE_BUST", rand.Text()).
-			With(daggerCall("test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
+			With(daggerCallAt(".", "test-set-secret", "with-exec", "--args", `sh,-c,echo $TOP_SECRET | rev`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, out2a, out2b)
 
@@ -1677,14 +1677,14 @@ func (m *Depdep) TestFile(
 		t.Run("dir", func(ctx context.Context, t *testctx.T) {
 			c1 := connect(ctx, t)
 			out1, err := getModGen(c1).
-				With(daggerCall("call-dep", "--cache-bust", rand.Text(), "file", "--path", "rand.txt", "contents")).
+				With(daggerCallAt(".", "call-dep", "--cache-bust", rand.Text(), "file", "--path", "rand.txt", "contents")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.NoError(t, c1.Close())
 
 			c2 := connect(ctx, t)
 			out2, err := getModGen(c2).
-				With(daggerCall("call-dep", "--cache-bust", rand.Text(), "file", "--path", "rand.txt", "contents")).
+				With(daggerCallAt(".", "call-dep", "--cache-bust", rand.Text(), "file", "--path", "rand.txt", "contents")).
 				Stdout(ctx)
 			require.NoError(t, err)
 
@@ -1694,14 +1694,14 @@ func (m *Depdep) TestFile(
 		t.Run("file", func(ctx context.Context, t *testctx.T) {
 			c1 := connect(ctx, t)
 			out1, err := getModGen(c1).
-				With(daggerCall("call-dep-file", "--cache-bust", rand.Text(), "file", "--path", "rand.txt", "contents")).
+				With(daggerCallAt(".", "call-dep-file", "--cache-bust", rand.Text(), "file", "--path", "rand.txt", "contents")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.NoError(t, c1.Close())
 
 			c2 := connect(ctx, t)
 			out2, err := getModGen(c2).
-				With(daggerCall("call-dep-file", "--cache-bust", rand.Text(), "file", "--path", "rand.txt", "contents")).
+				With(daggerCallAt(".", "call-dep-file", "--cache-bust", rand.Text(), "file", "--path", "rand.txt", "contents")).
 				Stdout(ctx)
 			require.NoError(t, err)
 
@@ -1786,13 +1786,13 @@ func (m *Test) Fn(
 		require.NoError(t, os.MkdirAll(filepath.Join(modDir, "config"), 0o755))
 		require.NoError(t, os.WriteFile(filepath.Join(modDir, "config", "config.local.js"), []byte("1"), 0o644))
 
-		callCmd := hostDaggerCommand(ctx, t, modDir, "call", "fn")
+		callCmd := hostDaggerCommand(ctx, t, modDir, "call", "-m", ".", "fn")
 		callOutput, err := callCmd.CombinedOutput()
 		require.NoError(t, err, string(callOutput))
 
 		require.NoError(t, os.WriteFile(filepath.Join(modDir, "config", "config.local.js"), []byte("2"), 0o644))
 
-		callCmd = hostDaggerCommand(ctx, t, modDir, "call", "fn")
+		callCmd = hostDaggerCommand(ctx, t, modDir, "call", "-m", ".", "fn")
 		callOutput, err = callCmd.CombinedOutput()
 		require.NoError(t, err, string(callOutput))
 	})

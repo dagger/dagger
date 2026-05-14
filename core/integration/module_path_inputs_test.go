@@ -565,25 +565,25 @@ export class Test {
 					WithWorkdir("/work")
 
 				t.Run("absolute and relative root context dir", func(ctx context.Context, t *testctx.T) {
-					out, err := modGen.With(daggerCall("dirs")).Stdout(ctx)
+					out, err := modGen.With(daggerCallAt(".", "dirs")).Stdout(ctx)
 					require.NoError(t, err)
 					require.Equal(t, ".git/\nLICENSE\nbackend/\ndagger/\ndagger.json\nfrontend/\n.git/\nLICENSE\nbackend/\ndagger/\ndagger.json\nfrontend/\n", out)
 				})
 
 				t.Run("absolute context dir subpath", func(ctx context.Context, t *testctx.T) {
-					out, err := modGen.With(daggerCall("root-dir-path")).Stdout(ctx)
+					out, err := modGen.With(daggerCallAt(".", "root-dir-path")).Stdout(ctx)
 					require.NoError(t, err)
 					require.Equal(t, "foo.txt\nbar.txt\nsub.txt\n", out)
 				})
 
 				t.Run("relative context dir subpath", func(ctx context.Context, t *testctx.T) {
-					out, err := modGen.With(daggerCall("relative-dir-path")).Stdout(ctx)
+					out, err := modGen.With(daggerCallAt(".", "relative-dir-path")).Stdout(ctx)
 					require.NoError(t, err)
 					require.Equal(t, "sub.txt\nfoo.txt\n", out)
 				})
 
 				t.Run("files", func(ctx context.Context, t *testctx.T) {
-					out, err := modGen.With(daggerCall("files")).Stdout(ctx)
+					out, err := modGen.With(daggerCallAt(".", "files")).Stdout(ctx)
 					require.NoError(t, err)
 					require.Equal(t, "LICENSE\ndagger.json\n", out)
 				})
@@ -730,28 +730,28 @@ export class Test {
 					WithWorkdir("/work")
 
 				t.Run("too high relative context dir path", func(ctx context.Context, t *testctx.T) {
-					out, err := modGen.With(daggerCall("too-high-relative-dir-path")).Stdout(ctx)
+					out, err := modGen.With(daggerCallAt(".", "too-high-relative-dir-path")).Stdout(ctx)
 					require.Empty(t, out)
 					require.Error(t, err)
 					requireErrOut(t, err, `path should be relative to the context directory`)
 				})
 
 				t.Run("too high relative context file path", func(ctx context.Context, t *testctx.T) {
-					out, err := modGen.With(daggerCall("too-high-relative-file-path")).Stdout(ctx)
+					out, err := modGen.With(daggerCallAt(".", "too-high-relative-file-path")).Stdout(ctx)
 					require.Empty(t, out)
 					require.Error(t, err)
 					requireErrOut(t, err, `path should be relative to the context directory`)
 				})
 
 				t.Run("non existing dir path", func(ctx context.Context, t *testctx.T) {
-					out, err := modGen.With(daggerCall("non-existing-path")).Stdout(ctx)
+					out, err := modGen.With(daggerCallAt(".", "non-existing-path")).Stdout(ctx)
 					require.Empty(t, out)
 					require.Error(t, err)
 					requireErrOut(t, err, "no such file or directory")
 				})
 
 				t.Run("non existing file", func(ctx context.Context, t *testctx.T) {
-					out, err := modGen.With(daggerCall("non-existing-file")).Stdout(ctx)
+					out, err := modGen.With(daggerCallAt(".", "non-existing-file")).Stdout(ctx)
 					require.Empty(t, out)
 					require.Error(t, err)
 					requireErrOut(t, err, "no such file or directory")
@@ -794,11 +794,11 @@ func (m *Dep) GetRelSource(
 			).
 			WithNewFile("yo", "yo")
 
-		out, err := ctr.With(daggerCall("get-source", "entries")).Stdout(ctx)
+		out, err := ctr.With(daggerCallAt(".", "get-source", "entries")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "yo\n", out)
 
-		out, err = ctr.With(daggerCall("get-rel-source", "entries")).Stdout(ctx)
+		out, err = ctr.With(daggerCallAt(".", "get-rel-source", "entries")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "yo\n", out)
 
@@ -824,11 +824,11 @@ func (m *Test) GetRelDepSource() *dagger.Directory {
 `,
 			)
 
-		out, err = ctr.With(daggerCall("get-dep-source", "entries")).Stdout(ctx)
+		out, err = ctr.With(daggerCallAt(".", "get-dep-source", "entries")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "yo\n", out)
 
-		out, err = ctr.With(daggerCall("get-rel-dep-source", "entries")).Stdout(ctx)
+		out, err = ctr.With(daggerCallAt(".", "get-rel-dep-source", "entries")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "yo\n", out)
 
@@ -952,11 +952,11 @@ func (m *Test) GetRelDepSource(ctx context.Context, src *dagger.Directory) (*dag
 			`,
 			)
 
-		out, err := ctr.With(daggerCall("get-dep-source", "--src", ".", "entries")).Stdout(ctx)
+		out, err := ctr.With(daggerCallAt(".", "get-dep-source", "--src", ".", "entries")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "yo\n", out)
 
-		out, err = ctr.With(daggerCall("get-rel-dep-source", "--src", ".", "entries")).Stdout(ctx)
+		out, err = ctr.With(daggerCallAt(".", "get-rel-dep-source", "--src", ".", "entries")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "yo\n", out)
 	})
@@ -1340,32 +1340,32 @@ public class Test {
 			headCommit = strings.TrimSpace(headCommit)
 
 			t.Run("repo local", func(ctx context.Context, t *testctx.T) {
-				out, err := modGen.With(daggerCall("test-repo-local")).Stdout(ctx)
+				out, err := modGen.With(daggerCallAt(".", "test-repo-local")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "refs/heads/master@"+headCommit, out)
 			})
 
 			t.Run("repo local absolute", func(ctx context.Context, t *testctx.T) {
-				out, err := modGen.With(daggerCall("test-repo-local-abs")).Stdout(ctx)
+				out, err := modGen.With(daggerCallAt(".", "test-repo-local-abs")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "refs/heads/master@"+headCommit, out)
 			})
 
 			t.Run("repo remote", func(ctx context.Context, t *testctx.T) {
-				out, err := modGen.With(daggerCall("test-repo-remote")).Stdout(ctx)
+				out, err := modGen.With(daggerCallAt(".", "test-repo-remote")).Stdout(ctx)
 				require.NoError(t, err)
 				// dagger/dagger v0.18.2 => 0b46ea3c49b5d67509f67747742e5d8b24be9ef7
 				require.Equal(t, "refs/tags/v0.18.2@0b46ea3c49b5d67509f67747742e5d8b24be9ef7", out)
 			})
 
 			t.Run("ref local", func(ctx context.Context, t *testctx.T) {
-				out, err := modGen.With(daggerCall("test-ref-local")).Stdout(ctx)
+				out, err := modGen.With(daggerCallAt(".", "test-ref-local")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "refs/heads/master@"+headCommit, out)
 			})
 
 			t.Run("ref remote", func(ctx context.Context, t *testctx.T) {
-				out, err := modGen.With(daggerCall("test-ref-remote")).Stdout(ctx)
+				out, err := modGen.With(daggerCallAt(".", "test-ref-remote")).Stdout(ctx)
 				require.NoError(t, err)
 				// dagger/dagger v0.18.3 => 6f7af26f18061c6f575eda774f44aa7d314af4ce
 				require.Equal(t, "refs/tags/v0.18.3@6f7af26f18061c6f575eda774f44aa7d314af4ce", out)
@@ -1484,26 +1484,26 @@ func (ModuleSuite) TestContextGitRemoteDep(ctx context.Context, t *testctx.T) {
 				WithExec([]string{"sh", "-c", `git init && git add . && git commit -m "initial commit"`})
 
 			t.Run("repo local", func(ctx context.Context, t *testctx.T) {
-				out, err := modGen.With(daggerCall("test-repo-local")).Stdout(ctx)
+				out, err := modGen.With(daggerCallAt(".", "test-repo-local")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, fullref+"@"+commit, out)
 			})
 
 			t.Run("ref local", func(ctx context.Context, t *testctx.T) {
-				out, err := modGen.With(daggerCall("test-ref-local")).Stdout(ctx)
+				out, err := modGen.With(daggerCallAt(".", "test-ref-local")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, fullref+"@"+commit, out)
 			})
 
 			t.Run("ref remote", func(ctx context.Context, t *testctx.T) {
-				out, err := modGen.With(daggerCall("test-ref-remote")).Stdout(ctx)
+				out, err := modGen.With(daggerCallAt(".", "test-ref-remote")).Stdout(ctx)
 				require.NoError(t, err)
 				// dagger/dagger v0.18.3 => 6f7af26f18061c6f575eda774f44aa7d314af4ce
 				require.Equal(t, "refs/tags/v0.18.3@6f7af26f18061c6f575eda774f44aa7d314af4ce", out)
 			})
 
 			t.Run("repo remote", func(ctx context.Context, t *testctx.T) {
-				out, err := modGen.With(daggerCall("test-repo-remote")).Stdout(ctx)
+				out, err := modGen.With(daggerCallAt(".", "test-repo-remote")).Stdout(ctx)
 				require.NoError(t, err)
 				// dagger/dagger v0.18.2 => 0b46ea3c49b5d67509f67747742e5d8b24be9ef7
 				require.Equal(t, "refs/tags/v0.18.2@0b46ea3c49b5d67509f67747742e5d8b24be9ef7", out)
@@ -1560,7 +1560,7 @@ func (ModuleSuite) TestContextGitRemoteDepNamedPin(ctx context.Context, t *testc
 		`)).
 		WithExec([]string{"sh", "-c", `git init && git add . && git commit -m "initial commit"`})
 
-	out, err := modGen.With(daggerCall("test-ref-local")).Stdout(ctx)
+	out, err := modGen.With(daggerCallAt(".", "test-ref-local")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, fullref+"@"+commit, out)
 }
@@ -1591,15 +1591,15 @@ func (m *Test) IsDirty(
 		With(gitUserConfig).
 		WithExec([]string{"sh", "-c", `git init && git add . && git commit -m "initial commit"`})
 
-	out, err := modGen.With(daggerCall("is-dirty")).Stdout(ctx)
+	out, err := modGen.With(daggerCallAt(".", "is-dirty")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "false", out)
 
-	out, err = modGen.WithNewFile("newfile.txt", "some new content").With(daggerCall("is-dirty")).Stdout(ctx)
+	out, err = modGen.WithNewFile("newfile.txt", "some new content").With(daggerCallAt(".", "is-dirty")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "true", out)
 
-	out, err = modGen.WithoutFile("somefile.txt").With(daggerCall("is-dirty")).Stdout(ctx)
+	out, err = modGen.WithoutFile("somefile.txt").With(daggerCallAt(".", "is-dirty")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "true", out)
 }
@@ -1703,13 +1703,13 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 
 	t.Run("ignore with context directory", func(ctx context.Context, t *testctx.T) {
 		t.Run("ignore all", func(ctx context.Context, t *testctx.T) {
-			out, err := modGen.With(daggerCall("ignore-all", "entries")).Stdout(ctx)
+			out, err := modGen.With(daggerCallAt(".", "ignore-all", "entries")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "", strings.TrimSpace(out))
 		})
 
 		t.Run("ignore all then reverse ignore all", func(ctx context.Context, t *testctx.T) {
-			out, err := modGen.With(daggerCall("ignore-then-reverse-ignore", "entries")).Stdout(ctx)
+			out, err := modGen.With(daggerCallAt(".", "ignore-then-reverse-ignore", "entries")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, strings.Join([]string{
 				".gitattributes",
@@ -1723,7 +1723,7 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 		})
 
 		t.Run("ignore all then reverse ignore then exclude files", func(ctx context.Context, t *testctx.T) {
-			out, err := modGen.With(daggerCall("ignore-then-reverse-ignore-then-exclude-git-files", "entries")).Stdout(ctx)
+			out, err := modGen.With(daggerCallAt(".", "ignore-then-reverse-ignore-then-exclude-git-files", "entries")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, strings.Join([]string{
 				"dagger.gen.go",
@@ -1735,7 +1735,7 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 		})
 
 		t.Run("ignore all then exclude files then reverse ignore", func(ctx context.Context, t *testctx.T) {
-			out, err := modGen.With(daggerCall("ignore-then-exclude-files-then-reverse-ignore", "entries")).Stdout(ctx)
+			out, err := modGen.With(daggerCallAt(".", "ignore-then-exclude-files-then-reverse-ignore", "entries")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, strings.Join([]string{
 				".gitattributes",
@@ -1749,7 +1749,7 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 		})
 
 		t.Run("ignore dir", func(ctx context.Context, t *testctx.T) {
-			out, err := modGen.With(daggerCall("ignore-dir", "entries")).Stdout(ctx)
+			out, err := modGen.With(daggerCallAt(".", "ignore-dir", "entries")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, strings.Join([]string{
 				".gitattributes",
@@ -1762,13 +1762,13 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 		})
 
 		t.Run("ignore everything but main.go", func(ctx context.Context, t *testctx.T) {
-			out, err := modGen.With(daggerCall("ignore-everything-but-main-go", "entries")).Stdout(ctx)
+			out, err := modGen.With(daggerCallAt(".", "ignore-everything-but-main-go", "entries")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "main.go", strings.TrimSpace(out))
 		})
 
 		t.Run("no ignore", func(ctx context.Context, t *testctx.T) {
-			out, err := modGen.With(daggerCall("no-ignore", "entries")).Stdout(ctx)
+			out, err := modGen.With(daggerCallAt(".", "no-ignore", "entries")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, strings.Join([]string{
 				".gitattributes",
@@ -1782,7 +1782,7 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 		})
 
 		t.Run("ignore every go files except main.go", func(ctx context.Context, t *testctx.T) {
-			out, err := modGen.With(daggerCall("ignore-every-go-file-except-main-go", "entries")).Stdout(ctx)
+			out, err := modGen.With(daggerCallAt(".", "ignore-every-go-file-except-main-go", "entries")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, strings.Join([]string{
 				".gitattributes",
@@ -1794,7 +1794,7 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 			}, "\n"), strings.TrimSpace(out))
 
 			// Verify the directories exist but files are correctly ignored (including the .gitiginore exclusion)
-			out, err = modGen.With(daggerCall("ignore-every-go-file-except-main-go", "directory", "--path", "internal", "entries")).Stdout(ctx)
+			out, err = modGen.With(daggerCallAt(".", "ignore-every-go-file-except-main-go", "directory", "--path", "internal", "entries")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, strings.Join([]string{
 				"dagger/",
@@ -1803,7 +1803,7 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 		})
 
 		t.Run("ignore dir but keep file in subdir", func(ctx context.Context, t *testctx.T) {
-			out, err := modGen.With(daggerCall("ignore-dir-but-keep-file-in-subdir", "directory", "--path", "internal/foo", "entries")).Stdout(ctx)
+			out, err := modGen.With(daggerCallAt(".", "ignore-dir-but-keep-file-in-subdir", "directory", "--path", "internal/foo", "entries")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "bar.go", strings.TrimSpace(out))
 		})
@@ -1813,13 +1813,13 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 	// ignore is correctly applied.
 	t.Run("ignore with argument directory", func(ctx context.Context, t *testctx.T) {
 		t.Run("ignore all", func(ctx context.Context, t *testctx.T) {
-			out, err := modGen.With(daggerCall("ignore-all", "--dir", ".", "entries")).Stdout(ctx)
+			out, err := modGen.With(daggerCallAt(".", "ignore-all", "--dir", ".", "entries")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "", strings.TrimSpace(out))
 		})
 
 		t.Run("ignore all then reverse ignore all with different dir than the one set in context", func(ctx context.Context, t *testctx.T) {
-			out, err := modGen.With(daggerCall("ignore-then-reverse-ignore", "--dir", "/work", "entries")).Stdout(ctx)
+			out, err := modGen.With(daggerCallAt(".", "ignore-then-reverse-ignore", "--dir", "/work", "entries")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, strings.Join([]string{
 				".git/",
@@ -1926,7 +1926,7 @@ func (t *TestMod) Test(
 }`,
 					))
 
-				out, err := modGen.With(daggerCall("test", "--dir", "./input", "entries")).Stdout(ctx)
+				out, err := modGen.With(daggerCallAt(".", "test", "--dir", "./input", "entries")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "bar.txt\n", out)
 			})
@@ -1973,35 +1973,35 @@ func (t *Test) GetFileContext(
 		`))
 
 	t.Run("gitignore applies to loaded module", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerCall("get-file", "--filename", "backend/foo.txt")).Stdout(ctx)
+		out, err := modGen.With(daggerCallAt(".", "get-file", "--filename", "backend/foo.txt")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "foo", out)
 
-		_, err = modGen.With(daggerCall("get-file", "--filename", "frontend/bar.txt")).Stdout(ctx)
+		_, err = modGen.With(daggerCallAt(".", "get-file", "--filename", "frontend/bar.txt")).Stdout(ctx)
 		require.Error(t, err)
 		requireErrOut(t, err, "no such file or directory")
 	})
 
 	t.Run("gitignore doesn't apply to manual args", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerCall("get-file-at", "--dir", "./backend", "--filename", "foo.txt")).Stdout(ctx)
+		out, err := modGen.With(daggerCallAt(".", "get-file-at", "--dir", "./backend", "--filename", "foo.txt")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "foo", out)
 
 		// NOTE: we disabled this in dagger/dagger#11017
 		// args passed via function arguments do not automatically have gitignore applied
-		out, err = modGen.With(daggerCall("get-file-at", "--dir", "./frontend", "--filename", "bar.txt")).Stdout(ctx)
+		out, err = modGen.With(daggerCallAt(".", "get-file-at", "--dir", "./frontend", "--filename", "bar.txt")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "bar", out)
 	})
 
 	t.Run("gitignore doesn't apply to context directory", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerCall("get-file-context", "--filename", "backend/foo.txt")).Stdout(ctx)
+		out, err := modGen.With(daggerCallAt(".", "get-file-context", "--filename", "backend/foo.txt")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "foo", out)
 
 		// NOTE: we disabled this in dagger/dagger#11017
 		// context arguments do not automatically have gitignore applied
-		out, err = modGen.With(daggerCall("get-file-context", "--filename", "frontend/bar.txt")).Stdout(ctx)
+		out, err = modGen.With(daggerCallAt(".", "get-file-context", "--filename", "frontend/bar.txt")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "bar", out)
 	})
@@ -2172,13 +2172,13 @@ func (z *Test) Fn(
 
 	rand1 := rand.Text()
 	ctr1 := getCtr(c1, rand1)
-	out, err := ctr1.With(daggerCall("fn", "--rand", rand1)).Stdout(ctx)
+	out, err := ctr1.With(daggerCallAt(".", "fn", "--rand", rand1)).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "woo", out)
 
 	rand2 := rand.Text()
 	ctr2 := getCtr(c2, rand2)
-	out, err = ctr2.With(daggerCall("fn", "--rand", rand2)).Stdout(ctx)
+	out, err = ctr2.With(daggerCallAt(".", "fn", "--rand", rand2)).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "woo", out)
 }

@@ -53,7 +53,7 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 	`,
 				).
 				WithEnvVariable("CACHEBUSTER", identity.NewID()).
-				With(daggerCall("fn")).
+				With(daggerCallAt(".", "fn")).
 				Stdout(ctx)
 		}
 
@@ -111,7 +111,7 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 	`,
 				).
 				WithEnvVariable("CACHEBUSTER", identity.NewID()).
-				With(daggerCall(args...)).
+				With(daggerCallAt(".", args...)).
 				Stdout(ctx)
 		}
 
@@ -223,7 +223,7 @@ func (*Test) Wrap(dir *dagger.Directory) *Obj {
 				WithNewFile("input-a/same.txt", "same-content\n").
 				WithNewFile("input-b/same.txt", "same-content\n").
 				WithEnvVariable("CACHEBUSTER", identity.NewID()).
-				With(daggerCall(args...))
+				With(daggerCallAt(".", args...))
 			stdout, err := ctr.Stdout(ctx)
 			if err == nil {
 				return stdout, nil
@@ -266,7 +266,7 @@ func (t *Test) Fn() string {
 }
 `).
 				WithEnvVariable("CACHEBUSTER", identity.NewID()).
-				With(daggerCall("fn")).
+				With(daggerCallAt(".", "fn")).
 				Stdout(ctx)
 		}
 
@@ -436,7 +436,7 @@ func (ModuleSuite) TestCrossSessionServices(ctx context.Context, t *testctx.T) {
 	`,
 				).
 				With(daggerExec("module", "install", "/work/servicer")).
-				With(daggerCall("fn", "--rand", rand)).
+				With(daggerCallAt(".", "fn", "--rand", rand)).
 				Stdout(ctx)
 		}
 
@@ -798,7 +798,7 @@ func (_ *Secreter) Make() *dagger.Secret {
 `,
 				).
 				WithEnvVariable("CACHEBUSTER", identity.NewID()).
-				With(daggerCall("make", "plaintext")).
+				With(daggerCallAt(".", "make", "plaintext")).
 				Stdout(ctx)
 		}
 
@@ -858,7 +858,7 @@ func (*Caller) Fn(ctx context.Context) (string, error) {
 }
 `,
 				).
-				With(daggerCall("fn")).
+				With(daggerCallAt(".", "fn")).
 				Stdout(ctx)
 		}
 
@@ -978,7 +978,7 @@ func (*Secreter) CheckPlaintext(ctx context.Context, s *dagger.Secret, expected 
 `,
 				).
 				WithEnvVariable("DASECRET", val).
-				With(daggerCall(
+				With(daggerCallAt(".",
 					"check-plaintext",
 					"--s", "env://DASECRET",
 					"--expected", val,
@@ -1026,7 +1026,7 @@ func (*Secreter) Fn(cacheBust string, tokenPlaintext string) *dagger.Container {
 }
 `,
 				).
-				With(daggerCall(
+				With(daggerCallAt(".",
 					"fn",
 					"--cache-bust", cacheBust,
 					"--token-plaintext", authTokenTestCase.token(),
@@ -1464,7 +1464,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 				WithMountedDirectory("/src", c1.Host().Directory(tmpdir)).
 				WithWorkdir("/src").
 				WithEnvVariable("FOO", "1").
-				With(daggerCall("fn-2", "--secret", "env://FOO", "stdout")).
+				With(daggerCallAt(".", "fn-2", "--secret", "env://FOO", "stdout")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			outDecoded, err := base64.StdEncoding.DecodeString(out)
@@ -1476,7 +1476,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 				WithMountedDirectory("/src", c2.Host().Directory(tmpdir)).
 				WithWorkdir("/src").
 				WithEnvVariable("FOO", "2").
-				With(daggerCall("fn-2", "--secret", "env://FOO", "stdout")).
+				With(daggerCallAt(".", "fn-2", "--secret", "env://FOO", "stdout")).
 				Stdout(ctx)
 			require.NoError(t, err, out)
 			outDecoded, err := base64.StdEncoding.DecodeString(out)
@@ -1497,7 +1497,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 					WithMountedDirectory("/src", c1.Host().Directory(tmpdir)).
 					WithWorkdir("/src").
 					WithEnvVariable("FOO", plaintext).
-					With(daggerCall("fn-2", "--secret", "env://FOO?cacheKey="+cacheKey, "stdout")).
+					With(daggerCallAt(".", "fn-2", "--secret", "env://FOO?cacheKey="+cacheKey, "stdout")).
 					Stdout(ctx)
 				require.NoError(t, err)
 				outDecoded, err := base64.StdEncoding.DecodeString(out)
@@ -1509,7 +1509,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 					WithMountedDirectory("/src", c2.Host().Directory(tmpdir)).
 					WithWorkdir("/src").
 					WithEnvVariable("FOO", identity.NewID()).
-					With(daggerCall("fn-2", "--secret", "env://FOO?cacheKey="+cacheKey, "stdout")).
+					With(daggerCallAt(".", "fn-2", "--secret", "env://FOO?cacheKey="+cacheKey, "stdout")).
 					Stdout(ctx)
 				require.NoError(t, err, out)
 				outDecoded, err := base64.StdEncoding.DecodeString(out)
@@ -1531,7 +1531,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 					WithMountedDirectory("/src", c1.Host().Directory(tmpdir)).
 					WithWorkdir("/src").
 					WithNewFile("/foo.txt", plaintext).
-					With(daggerCall("fn-2", "--secret", "file:///foo.txt?cacheKey="+cacheKey, "stdout")).
+					With(daggerCallAt(".", "fn-2", "--secret", "file:///foo.txt?cacheKey="+cacheKey, "stdout")).
 					Stdout(ctx)
 				require.NoError(t, err, out)
 				outDecoded, err := base64.StdEncoding.DecodeString(out)
@@ -1543,7 +1543,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 					WithMountedDirectory("/src", c2.Host().Directory(tmpdir)).
 					WithWorkdir("/src").
 					WithNewFile("/bar.txt", identity.NewID()).
-					With(daggerCall("fn-2", "--secret", "file:///bar.txt?cacheKey="+cacheKey, "stdout")).
+					With(daggerCallAt(".", "fn-2", "--secret", "file:///bar.txt?cacheKey="+cacheKey, "stdout")).
 					Stdout(ctx)
 				require.NoError(t, err, out)
 				outDecoded, err := base64.StdEncoding.DecodeString(out)
@@ -1563,7 +1563,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 				out, err := goGitBase(t, c1).
 					WithMountedDirectory("/src", c1.Host().Directory(tmpdir)).
 					WithWorkdir("/src").
-					With(daggerCall("fn-2", "--secret", "cmd://"+secretCommand+"?cacheKey="+cacheKey, "stdout")).
+					With(daggerCallAt(".", "fn-2", "--secret", "cmd://"+secretCommand+"?cacheKey="+cacheKey, "stdout")).
 					Stdout(ctx)
 				require.NoError(t, err, out)
 				outDecoded, err := base64.StdEncoding.DecodeString(out)
@@ -1575,7 +1575,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 				out, err := goGitBase(t, c2).
 					WithMountedDirectory("/src", c2.Host().Directory(tmpdir)).
 					WithWorkdir("/src").
-					With(daggerCall("fn-2", "--secret", "cmd://"+secretCommand+"?cacheKey="+cacheKey, "stdout")).
+					With(daggerCallAt(".", "fn-2", "--secret", "cmd://"+secretCommand+"?cacheKey="+cacheKey, "stdout")).
 					Stdout(ctx)
 				require.NoError(t, err, out)
 				outDecoded, err := base64.StdEncoding.DecodeString(out)
@@ -1594,7 +1594,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 				WithMountedDirectory("/src", c1.Host().Directory(tmpdir)).
 				WithWorkdir("/src").
 				WithEnvVariable("FOO", "1").
-				With(daggerCall("fn-2", "--secret", "env://FOO?cacheKey="+identity.NewID(), "stdout")).
+				With(daggerCallAt(".", "fn-2", "--secret", "env://FOO?cacheKey="+identity.NewID(), "stdout")).
 				Stdout(ctx)
 			require.NoError(t, err, out)
 			outDecoded, err := base64.StdEncoding.DecodeString(out)
@@ -1606,7 +1606,7 @@ func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
 				WithMountedDirectory("/src", c2.Host().Directory(tmpdir)).
 				WithWorkdir("/src").
 				WithEnvVariable("FOO", "2").
-				With(daggerCall("fn-2", "--secret", "env://FOO?cacheKey="+identity.NewID(), "stdout")).
+				With(daggerCallAt(".", "fn-2", "--secret", "env://FOO?cacheKey="+identity.NewID(), "stdout")).
 				Stdout(ctx)
 			require.NoError(t, err, out)
 			outDecoded, err := base64.StdEncoding.DecodeString(out)
@@ -1653,7 +1653,7 @@ func (Test) Fn(ctx context.Context) error {
 }
 	`,
 			).
-			With(daggerCall("fn")).
+			With(daggerCallAt(".", "fn")).
 			Sync(ctx)
 		return err
 	}

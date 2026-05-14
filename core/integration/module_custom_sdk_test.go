@@ -78,7 +78,7 @@ func (m *Test) Fn() string {
 			)
 
 		out, err := ctr.
-			With(daggerCall("fn")).
+			With(daggerCallAt(".", "fn")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -109,7 +109,7 @@ func (m *Test) Fn() string {
 				)
 
 			out, err := ctr.
-				With(daggerCall("fn")).
+				With(daggerCallAt(".", "fn")).
 				Stdout(ctx)
 
 			require.NoError(t, err)
@@ -178,7 +178,7 @@ type Test struct {}
 			)
 
 		out, err := ctr.
-			With(daggerFunctions()).
+			With(daggerFunctionsAt(".")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, `cool-fn`)
@@ -206,13 +206,13 @@ func (ModuleSuite) TestUnbundleSDK(ctx context.Context, t *testctx.T) {
 		})
 
 		t.Run("explicit error on dagger call", func(ctx context.Context, t *testctx.T) {
-			_, err := ctr.With(daggerExec("call", "foo")).Sync(ctx)
+			_, err := ctr.With(daggerExec("call", "-m", ".", "foo")).Sync(ctx)
 
 			requireErrOut(t, err, `"./sdk" SDK does not support defining and executing functions`)
 		})
 
 		t.Run("explicit error on dagger functions", func(ctx context.Context, t *testctx.T) {
-			_, err := ctr.With(daggerFunctions()).Sync(ctx)
+			_, err := ctr.With(daggerFunctionsAt(".")).Sync(ctx)
 
 			requireErrOut(t, err, `"./sdk" SDK does not support defining and executing functions`)
 		})
@@ -234,14 +234,14 @@ func (ModuleSuite) TestUnbundleSDK(ctx context.Context, t *testctx.T) {
 		})
 
 		t.Run("can run dagger functions", func(ctx context.Context, t *testctx.T) {
-			out, err := ctr.With(daggerFunctions()).Stdout(ctx)
+			out, err := ctr.With(daggerFunctionsAt(".")).Stdout(ctx)
 
 			require.NoError(t, err)
 			require.Contains(t, out, "hello-world")
 		})
 
 		t.Run("can run dagger call", func(ctx context.Context, t *testctx.T) {
-			out, err := ctr.With(daggerCall("hello-world")).Stdout(ctx)
+			out, err := ctr.With(daggerCallAt(".", "hello-world")).Stdout(ctx)
 
 			require.NoError(t, err)
 			require.Contains(t, out, "Hello world")

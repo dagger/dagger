@@ -79,8 +79,16 @@ func daggerCallAt(modPath string, args ...string) dagger.WithContainerFunc {
 }
 
 func daggerFunctions(args ...string) dagger.WithContainerFunc {
+	return daggerFunctionsAt("", args...)
+}
+
+func daggerFunctionsAt(modPath string, args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "functions"}, args...), dagger.ContainerWithExecOpts{
+		execArgs := []string{"dagger", "functions"}
+		if modPath != "" {
+			execArgs = append(execArgs, "-m", modPath)
+		}
+		return c.WithExec(append(execArgs, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
