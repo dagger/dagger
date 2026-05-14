@@ -56,7 +56,7 @@ var (
 
 	workdir string
 
-	silent, _                = strconv.ParseBool(os.Getenv("DAGGER_SILENT"))
+	silent                   bool
 	verbose                  int
 	quiet, _                 = strconv.Atoi(os.Getenv("DAGGER_QUIET"))
 	reveal                   = os.Getenv("DAGGER_REVEAL") != ""
