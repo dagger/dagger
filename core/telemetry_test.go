@@ -8,8 +8,8 @@ import (
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/dagger/dagger/auth"
+	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
@@ -17,7 +17,6 @@ import (
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/moby/locker"
 	"github.com/stretchr/testify/require"
@@ -45,10 +44,11 @@ func testResultCall(field string, typ dagql.Typed, receiver *dagql.ResultCall) *
 type mockServer struct {
 	moduleSource   *ModuleSource
 	functionCall   *FunctionCall
+	env            dagql.ObjectResult[*Env]
 	clientMetadata *engine.ClientMetadata
 }
 
-func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engineutil.ExecutionMetadata) {
+func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult) {
 }
 
 func (ms *mockServer) ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error {
@@ -101,11 +101,8 @@ func (ms *mockServer) CurrentFunctionCall(context.Context) (*FunctionCall, error
 	return ms.functionCall, nil
 }
 
-func (ms *mockServer) CurrentEnv(context.Context) (*call.ID, error) {
-	if ms.functionCall == nil {
-		return nil, nil
-	}
-	return ms.functionCall.EnvID, nil
+func (ms *mockServer) CurrentEnv(context.Context) (dagql.ObjectResult[*Env], error) {
+	return ms.env, nil
 }
 
 func (ms *mockServer) CurrentServedDeps(context.Context) (*SchemaBuilder, error) {
@@ -131,6 +128,14 @@ func (ms *mockServer) SpecificClientAttachableConn(context.Context, string) (*gr
 	return nil, nil
 }
 
+func (ms *mockServer) CurrentWorkspaceLock(context.Context) (*workspacepkg.Lock, bool, error) {
+	return nil, false, nil
+}
+
+func (ms *mockServer) SetCurrentWorkspaceLookup(context.Context, string, string, []any, workspacepkg.LookupResult) error {
+	return nil
+}
+
 func (ms *mockServer) NonModuleParentClientMetadata(context.Context) (*engine.ClientMetadata, error) {
 	return nil, nil
 }
@@ -152,11 +157,11 @@ func (ms *mockServer) RegistryResolver(context.Context) (*serverresolver.Resolve
 
 func (ms *mockServer) Services(context.Context) (*Services, error) { return nil, nil }
 
-func (ms *mockServer) Platform() Platform               { return Platform{} }
-func (ms *mockServer) OCIStore() content.Store          { return nil }
-func (ms *mockServer) BuiltinOCIStore() content.Store   { return nil }
-func (ms *mockServer) DNS() *oci.DNSConfig              { return nil }
-func (ms *mockServer) LeaseManager() *leaseutil.Manager { return nil }
+func (ms *mockServer) Platform() Platform                  { return Platform{} }
+func (ms *mockServer) OCIStore() content.Store             { return nil }
+func (ms *mockServer) BuiltinOCIStore() content.Store      { return nil }
+func (ms *mockServer) DNS() *oci.DNSConfig                 { return nil }
+func (ms *mockServer) LeaseManager() *bkcache.LeaseManager { return nil }
 func (ms *mockServer) EngineLocalCacheEntries(context.Context) (*EngineCacheEntrySet, error) {
 	return nil, nil
 }

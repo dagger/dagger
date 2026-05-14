@@ -9,12 +9,12 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
-	"github.com/dagger/dagger/engine/snapshots/snapshotter"
+	bksnapshots "github.com/dagger/dagger/engine/snapshots"
 	"github.com/moby/sys/userns"
 	"github.com/pkg/errors"
 )
 
-func NewSnapshotter(name string, sn snapshots.Snapshotter, ns string) snapshotter.Snapshotter {
+func NewSnapshotter(name string, sn snapshots.Snapshotter, ns string) bksnapshots.Snapshotter {
 	return &fromContainerd{name: name, Snapshotter: &nsSnapshotter{ns: ns, Snapshotter: sn}}
 }
 
@@ -76,7 +76,7 @@ func (s *fromContainerd) Name() string {
 	return s.name
 }
 
-func (s *fromContainerd) Mounts(ctx context.Context, key string) (snapshotter.Mountable, error) {
+func (s *fromContainerd) Mounts(ctx context.Context, key string) (bksnapshots.MountableRef, error) {
 	mounts, err := s.Snapshotter.Mounts(ctx, key)
 	if err != nil {
 		return nil, err
@@ -89,7 +89,7 @@ func (s *fromContainerd) Prepare(ctx context.Context, key, parent string, opts .
 	return err
 }
 
-func (s *fromContainerd) View(ctx context.Context, key, parent string, opts ...snapshots.Opt) (snapshotter.Mountable, error) {
+func (s *fromContainerd) View(ctx context.Context, key, parent string, opts ...snapshots.Opt) (bksnapshots.MountableRef, error) {
 	mounts, err := s.Snapshotter.View(ctx, key, parent, opts...)
 	if err != nil {
 		return nil, err
@@ -106,7 +106,7 @@ func (s *fromContainerd) Commit(ctx context.Context, name, key string, opts ...s
 	return s.Snapshotter.Commit(ctx, name, key, opts...)
 }
 
-func NewContainerdSnapshotter(s snapshotter.Snapshotter) (snapshots.Snapshotter, func() error) {
+func NewContainerdSnapshotter(s bksnapshots.Snapshotter) (snapshots.Snapshotter, func() error) {
 	cs := &containerdSnapshotter{Snapshotter: s}
 	return cs, cs.release
 }
@@ -114,7 +114,7 @@ func NewContainerdSnapshotter(s snapshotter.Snapshotter) (snapshots.Snapshotter,
 type containerdSnapshotter struct {
 	mu        sync.Mutex
 	releasers []func() error
-	snapshotter.Snapshotter
+	bksnapshots.Snapshotter
 }
 
 func (cs *containerdSnapshotter) release() error {
@@ -129,7 +129,7 @@ func (cs *containerdSnapshotter) release() error {
 	return err
 }
 
-func (cs *containerdSnapshotter) returnMounts(mf snapshotter.Mountable) ([]mount.Mount, error) {
+func (cs *containerdSnapshotter) returnMounts(mf bksnapshots.MountableRef) ([]mount.Mount, error) {
 	mounts, release, err := mf.Mount()
 	if err != nil {
 		return nil, err

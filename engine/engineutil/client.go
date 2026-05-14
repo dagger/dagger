@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"os"
 	"sync"
 
 	contentapi "github.com/containerd/containerd/api/services/content/v1"
@@ -14,13 +16,24 @@ import (
 	containerd "github.com/containerd/containerd/v2/client"
 	"github.com/containerd/containerd/v2/core/content"
 	contentproxy "github.com/containerd/containerd/v2/core/content/proxy"
+	"github.com/containerd/containerd/v2/core/diff"
 	"github.com/containerd/containerd/v2/core/images"
 	"github.com/containerd/containerd/v2/core/leases"
 	leasesproxy "github.com/containerd/containerd/v2/core/leases/proxy"
+	runc "github.com/containerd/go-runc"
+	"github.com/dagger/dagger/dagql"
+	imageexport "github.com/dagger/dagger/engine/engineutil/imageexport"
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
+	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
+	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
-	bksession "github.com/dagger/dagger/internal/buildkit/session"
-	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	"github.com/dagger/dagger/internal/buildkit/solver/pb"
+	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
+	"github.com/dagger/dagger/internal/buildkit/util/network"
+	"github.com/docker/docker/pkg/idtools"
+	"github.com/hashicorp/go-multierror"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -32,19 +45,54 @@ import (
 	"github.com/dagger/dagger/engine/session/prompt"
 	"github.com/dagger/dagger/engine/session/store"
 	"github.com/dagger/dagger/engine/session/terminal"
+	"github.com/dagger/dagger/engine/slog"
 )
 
-// Opts for a Client that are shared across all instances for a given DaggerServer
+type SessionCaller interface {
+	Conn() *grpc.ClientConn
+	Supports(method string) bool
+}
+
+// Opts combines server-scoped runtime dependencies with per-client session plumbing.
+// Server-scoped fields are initialized once with NewOpts and shallow-copied for each client.
 type Opts struct {
-	Worker              *Worker
-	SessionManager      *bksession.Manager
-	Dialer              *net.Dialer
-	GetClientCaller     func(string) (bksession.Caller, error)
-	GetMainClientCaller func() (bksession.Caller, error)
-	GetRegistryResolver func(context.Context) (*serverresolver.Resolver, error)
+	ID               string
+	Labels           map[string]string
+	Platforms        []ocispecs.Platform
+	NetworkProviders map[pb.NetMode]network.Provider
+	Snapshotter      bkcache.Snapshotter
+	ContentStore     *containerdsnapshot.Store
+	Applier          diff.Applier
+	Differ           diff.Comparer
+	IdentityMapping  *idtools.IdentityMapping
+
+	ExecutorRoot    string
+	TelemetryPubSub http.Handler
+	SessionHandler  sessionHandler
+
+	Runc                *runc.Runc
+	DefaultCgroupParent string
+	ProcessMode         oci.ProcessMode
+	DNSConfig           *oci.DNSConfig
+	ApparmorProfile     string
+	SELinux             bool
+	Entitlements        entitlements.Set
+
+	HostMntNS  *os.File
+	CleanMntNS *os.File
+
+	Dialer               *net.Dialer
+	GetClientCaller      func(context.Context, string) (SessionCaller, error)
+	GetHostServiceCaller func(context.Context, string) (SessionCaller, error)
+	GetMainClientCaller  func(context.Context) (SessionCaller, error)
+	GetRegistryResolver  func(context.Context) (*serverresolver.Resolver, error)
 
 	Interactive        bool
 	InteractiveCommand []string
+
+	imageExportWriter *imageexport.Writer
+	running           map[string]*execState
+	runningMu         *sync.RWMutex
 }
 
 // Client is dagger's internal engine utility client
@@ -56,7 +104,50 @@ type Client struct {
 	closeMu  sync.RWMutex
 }
 
+type sessionHandler interface {
+	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult)
+}
+
+func NewOpts(opts Opts) (*Opts, error) {
+	imageWriter, err := imageexport.NewWriter(imageexport.WriterOpt{
+		Snapshotter:  opts.Snapshotter,
+		ContentStore: opts.ContentStore,
+		Applier:      opts.Applier,
+		Differ:       opts.Differ,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create image writer: %w", err)
+	}
+
+	opts.imageExportWriter = imageWriter
+	opts.running = make(map[string]*execState)
+	opts.runningMu = &sync.RWMutex{}
+	return &opts, nil
+}
+
 func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
+	if opts.imageExportWriter == nil {
+		imageWriter, err := imageexport.NewWriter(imageexport.WriterOpt{
+			Snapshotter:  opts.Snapshotter,
+			ContentStore: opts.ContentStore,
+			Applier:      opts.Applier,
+			Differ:       opts.Differ,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("create image writer: %w", err)
+		}
+		opts.imageExportWriter = imageWriter
+	}
+	if opts.running == nil {
+		opts.running = make(map[string]*execState)
+	}
+	if opts.runningMu == nil {
+		opts.runningMu = &sync.RWMutex{}
+	}
+	if opts.GetHostServiceCaller == nil {
+		opts.GetHostServiceCaller = opts.GetClientCaller
+	}
+
 	// override the outer cancel, we will manage cancellation ourselves here
 	ctx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
 	client := &Client{
@@ -66,6 +157,19 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 	}
 
 	return client, nil
+}
+
+func (opts *Opts) Close() error {
+	if opts == nil {
+		return nil
+	}
+	var rerr error
+	for _, provider := range opts.NetworkProviders {
+		if err := provider.Close(); err != nil {
+			rerr = multierror.Append(rerr, err)
+		}
+	}
+	return rerr
 }
 
 func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, context.CancelCauseFunc, error) {
@@ -88,7 +192,7 @@ func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, co
 }
 
 func (c *Client) NewNetworkNamespace(ctx context.Context, hostname string) (Namespaced, error) {
-	return c.Worker.newNetNS(ctx, hostname)
+	return c.newNetNS(ctx, hostname)
 }
 
 func RunInNetNS[T any](
@@ -105,9 +209,9 @@ func RunInNetNS[T any](
 		return zero, errors.New("namespace is nil")
 	}
 
-	c.Worker.mu.RLock()
-	runState, ok := c.Worker.running[ns.NamespaceID()]
-	c.Worker.mu.RUnlock()
+	c.runningMu.RLock()
+	runState, ok := c.running[ns.NamespaceID()]
+	c.runningMu.RUnlock()
 	if !ok {
 		return zero, fmt.Errorf("namespace for %s not found in running state", ns.NamespaceID())
 	}
@@ -115,23 +219,23 @@ func RunInNetNS[T any](
 	return runInNetNS(ctx, runState, fn)
 }
 
-func (c *Client) GetSessionCaller(ctx context.Context, wait bool) (_ bksession.Caller, rerr error) {
+func (c *Client) GetSessionCaller(ctx context.Context) (_ SessionCaller, rerr error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	bklog.G(ctx).Tracef("getting session for %q", clientMetadata.ClientID)
+	slog.TraceContext(ctx, "getting session", "clientID", clientMetadata.ClientID)
 	defer func() {
-		bklog.G(ctx).WithError(rerr).Tracef("got session for %q", clientMetadata.ClientID)
+		slog.TraceContext(ctx, "got session", "clientID", clientMetadata.ClientID, "err", rerr)
 	}()
 
-	caller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, !wait)
+	caller, err := c.GetClientCaller(ctx, clientMetadata.ClientID)
 	if err != nil {
 		return nil, err
 	}
 	if caller == nil {
-		return nil, fmt.Errorf("session for %q not found", clientMetadata.ClientID)
+		return nil, fmt.Errorf("session attachables for client %q not found", clientMetadata.ClientID)
 	}
 	return caller, nil
 }
@@ -145,7 +249,7 @@ func (c *Client) ListenHostToContainer(
 		return nil, nil, err
 	}
 
-	clientCaller, err := c.GetSessionCaller(ctx, false)
+	clientCaller, err := c.GetSessionCaller(ctx)
 	if err != nil {
 		err = fmt.Errorf("failed to get requester session: %w", err)
 		cancel(fmt.Errorf("listen host to container error: %w", err))
@@ -191,7 +295,7 @@ func (c *Client) ListenHostToContainer(
 		for {
 			res, err := listener.Recv()
 			if err != nil {
-				bklog.G(ctx).Warnf("listener recv err: %s", err)
+				slog.WarnContext(ctx, "listener recv err", "err", err)
 				return
 			}
 
@@ -207,7 +311,7 @@ func (c *Client) ListenHostToContainer(
 			if !found {
 				conn, err = c.Dialer.Dial(proto, upstream)
 				if err != nil {
-					bklog.G(ctx).Warnf("failed to dial %s %s: %s", proto, upstream, err)
+					slog.WarnContext(ctx, "failed to dial", "proto", proto, "upstream", upstream, "err", err)
 					sendL.Lock()
 					err = listener.Send(&h2c.ListenRequest{
 						ConnId: connID,
@@ -287,7 +391,7 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 	if err != nil {
 		return nil, err
 	}
-	caller, err := c.GetClientCaller(md.ClientID)
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
 	}
@@ -313,7 +417,7 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 
 func (c *Client) PromptAllowLLM(ctx context.Context, moduleRepoURL string) error {
 	// the flag hasn't allowed this LLM call, so prompt the user
-	caller, err := c.GetMainClientCaller()
+	caller, err := c.GetMainClientCaller(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get main client caller to prompt for allow llm: %w", err)
 	}
@@ -335,7 +439,7 @@ func (c *Client) PromptAllowLLM(ctx context.Context, moduleRepoURL string) error
 }
 
 func (c *Client) PromptHumanHelp(ctx context.Context, title, question string) (string, error) {
-	caller, err := c.GetMainClientCaller()
+	caller, err := c.GetMainClientCaller(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get main client caller to prompt user for human help: %w", err)
 	}
@@ -356,7 +460,7 @@ func (c *Client) GetGitConfig(ctx context.Context) ([]*git.GitConfigEntry, error
 	if err != nil {
 		return nil, err
 	}
-	caller, err := c.GetClientCaller(md.ClientID)
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client caller for %q: %w", md.ClientID, err)
 	}
@@ -396,7 +500,7 @@ type TerminalClient struct {
 func (c *Client) OpenTerminal(
 	ctx context.Context,
 ) (*TerminalClient, error) {
-	caller, err := c.GetMainClientCaller()
+	caller, err := c.GetMainClientCaller(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get main client caller: %w", err)
 	}
@@ -476,7 +580,7 @@ func (c *Client) OpenTerminal(
 			res, err := term.Recv()
 			if err != nil {
 				if !errors.Is(err, io.EOF) {
-					bklog.G(ctx).Warnf("terminal recv err: %v", err)
+					slog.WarnContext(ctx, "terminal recv err", "err", err)
 					errCh <- err
 				}
 				return
@@ -485,7 +589,7 @@ func (c *Client) OpenTerminal(
 			case *terminal.SessionResponse_Stdin:
 				_, err := stdinW.Write(msg.Stdin)
 				if err != nil {
-					bklog.G(ctx).Warnf("failed to write stdin: %v", err)
+					slog.WarnContext(ctx, "failed to write stdin", "err", err)
 					errCh <- err
 					return
 				}
@@ -525,7 +629,7 @@ func (c *Client) OpenTerminal(
 func (c *Client) OpenPipe(
 	ctx context.Context,
 ) (io.ReadWriteCloser, error) {
-	caller, err := c.GetMainClientCaller()
+	caller, err := c.GetMainClientCaller(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get main client caller: %w", err)
 	}
@@ -547,7 +651,7 @@ func (c *Client) WriteImage(
 	if err != nil {
 		return nil, err
 	}
-	caller, err := c.GetClientCaller(md.ClientID)
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client caller: %w", err)
 	}
@@ -589,7 +693,7 @@ func (c *Client) ReadImage(
 	if err != nil {
 		return nil, err
 	}
-	caller, err := c.GetClientCaller(md.ClientID)
+	caller, err := c.GetHostServiceCaller(ctx, md.ClientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client caller: %w", err)
 	}
@@ -620,7 +724,7 @@ func (c *Client) ReadImage(
 	return nil, fmt.Errorf("client has no supported api for loading image")
 }
 
-func callerSupports(caller bksession.Caller, desc *grpc.ServiceDesc) bool {
+func callerSupports(caller SessionCaller, desc *grpc.ServiceDesc) bool {
 	for _, method := range desc.Methods {
 		if !caller.Supports(fmt.Sprintf("/%s/%s", desc.ServiceName, method.MethodName)) {
 			return false

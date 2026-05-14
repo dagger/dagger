@@ -9,13 +9,12 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/locker"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/auth"
+	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	engineclient "github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/clientdb"
@@ -35,12 +34,15 @@ type Query struct {
 	ConstructorArgs map[string]dagql.Input
 }
 
-var ErrNoCurrentModule = fmt.Errorf("no current module")
+var (
+	ErrNoCurrentModule    = fmt.Errorf("no current module")
+	ErrNoCurrentWorkspace = fmt.Errorf("no current workspace")
+)
 
 // APIs from the server+session+client that are needed by core APIs
 type Server interface {
 	// Handle an HTTP request from a nested Dagger client.
-	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engineutil.ExecutionMetadata)
+	ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult)
 
 	// Stitch in the given module to the list being served to the current client
 	ServeModule(ctx context.Context, mod dagql.ObjectResult[*Module], includeDependencies bool, entrypoint bool) error
@@ -54,8 +56,8 @@ type Server interface {
 	// If the current client is coming from a function, return the function call metadata
 	CurrentFunctionCall(context.Context) (*FunctionCall, error)
 
-	// If the current client is bound to an environment, return its ID.
-	CurrentEnv(context.Context) (*call.ID, error)
+	// If the current client is bound to an environment, return that environment.
+	CurrentEnv(context.Context) (dagql.ObjectResult[*Env], error)
 
 	// Return the modules being served to the current client
 	CurrentServedDeps(context.Context) (*SchemaBuilder, error)
@@ -74,6 +76,13 @@ type Server interface {
 
 	// The cached workspace result from ensureWorkspaceLoaded.
 	CurrentWorkspace(context.Context) (*Workspace, error)
+
+	// A snapshot of the current workspace lockfile for ambient live locking.
+	// Returns ok=false when lock-backed workspace access is unavailable.
+	CurrentWorkspaceLock(context.Context) (*workspacepkg.Lock, bool, error)
+
+	// Stage a lockfile lookup result for the current workspace's live lock state.
+	SetCurrentWorkspaceLookup(context.Context, string, string, []any, workspacepkg.LookupResult) error
 
 	// The Client metadata of a specific client ID within the same session as the
 	// current client.
@@ -120,7 +129,7 @@ type Server interface {
 	DNS() *oci.DNSConfig
 
 	// The lease manager for the engine as a whole
-	LeaseManager() *leaseutil.Manager
+	LeaseManager() *bkcache.LeaseManager
 
 	// Return all the cache entries in the local cache. No support for filtering yet.
 	EngineLocalCacheEntries(context.Context) (*EngineCacheEntrySet, error)

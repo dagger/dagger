@@ -353,6 +353,8 @@ func (m *CoreMod) buildTypeDefs(ctx context.Context, dag *dagql.Server) (dagql.O
 				return nil, err
 			}
 
+			objType, _ := dag.ObjectType(introspectionType.Name)
+
 			isIdable := false
 			for _, introspectionField := range introspectionType.Fields {
 				if introspectionField.Name == "id" {
@@ -410,9 +412,17 @@ func (m *CoreMod) buildTypeDefs(ctx context.Context, dag *dagql.Server) (dagql.O
 					if err != nil {
 						return nil, err
 					}
-					var defaultValue core.JSON
-					if introspectionArg.DefaultValue != nil {
-						defaultValue = core.JSON(*introspectionArg.DefaultValue)
+					var resolvedSpec dagql.InputSpec
+					if objType != nil {
+						if fieldSpec, ok := objType.FieldSpec(introspectionField.Name, dag.View); ok {
+							if argSpec, ok := fieldSpec.Args.Input(introspectionArg.Name, dag.View); ok {
+								resolvedSpec = argSpec
+							}
+						}
+					}
+					defaultValue, err := introspectionDefaultToJSON(introspectionArg.DefaultValue, resolvedSpec)
+					if err != nil {
+						return nil, fmt.Errorf("convert default value for arg %q: %w", introspectionArg.Name, err)
 					}
 					var fnArg dagql.ObjectResult[*core.FunctionArg]
 					if err := dag.Select(ctx, dag.Root(), &fnArg, dagql.Selector{

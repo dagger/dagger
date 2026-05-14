@@ -21,7 +21,6 @@ import (
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcontenthash "github.com/dagger/dagger/engine/contenthash"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	"github.com/dagger/dagger/util/patternmatcher"
@@ -85,14 +84,18 @@ func (dir *Directory) AttachDependencyResults(
 	if dir == nil {
 		return nil, nil
 	}
+	owned, err := dir.Services.AttachDependencyResults("directory", attach)
+	if err != nil {
+		return nil, err
+	}
 	if dir.Lazy == nil {
-		return nil, nil
+		return owned, nil
 	}
 	lazyDeps, err := dir.Lazy.AttachDependencies(ctx, attach)
 	if err != nil {
 		return nil, err
 	}
-	return lazyDeps, nil
+	return append(owned, lazyDeps...), nil
 }
 
 func (dir *Directory) LazyEvalFunc() dagql.LazyEvalFunc {
@@ -1934,7 +1937,7 @@ func (dir *Directory) WithDirectory(
 				return fmt.Errorf("no mounts returned for source directory")
 			}
 			srcMnt := ms[0]
-			lm := snapshot.LocalMounterWithMounts(ms)
+			lm := bkcache.LocalMounterWithMounts(ms)
 			mntedSrcPath, err := lm.Mount()
 			if err != nil {
 				return fmt.Errorf("failed to mount source directory: %w", err)
@@ -2165,7 +2168,7 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 				return fmt.Errorf("no mounts returned for source directory")
 			}
 			srcMnt := ms[0]
-			lm := snapshot.LocalMounterWithMounts(ms)
+			lm := bkcache.LocalMounterWithMounts(ms)
 			mntedSrcPath, err := lm.Mount()
 			if err != nil {
 				return fmt.Errorf("failed to mount source directory: %w", err)

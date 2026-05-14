@@ -375,13 +375,11 @@ func (*Service) Terminal(
 	if err != nil {
 		return err
 	}
-	detach, runnings, err := svcs.StartBindings(ctx, ServiceBindings{{Service: svc}})
+	running, release, err := svcs.StartResultWithDependencyExitPropagationSuppressed(ctx, svc)
 	if err != nil {
 		return err
 	}
-	defer detach()
-
-	running := runnings[0]
+	defer release()
 	if running.Exec == nil {
 		return fmt.Errorf("service %s does not support terminal", svcID.Path())
 	}

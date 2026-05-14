@@ -20,11 +20,10 @@ const defaultDockerDomain = "docker.io"
 // RegistryAuthProvider is a custom auth provider for image's registry
 // authentication from dynamic user provided secrets.
 // Adapted from: https://github.com/dagger/dagger/blob/v0.2.36/solver/registryauth.go
-// and merge with Buildkit DockerAuthProvider from
+// and merged with the Docker auth provider from
 // https://github.com/dagger/dagger/internal/buildkit/blob/master/session/auth/authprovider/authprovider.go#L42
 //
-// RegistryAuthProvider implements session.Attachable to be used by Buildkit as
-// credential provider.
+// RegistryAuthProvider registers as a credential provider.
 // It also implements auth.AuthServer to merge dockerAuthProvider capabilities
 // with in memory storage.
 type RegistryAuthProvider struct {

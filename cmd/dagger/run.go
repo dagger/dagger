@@ -280,7 +280,7 @@ func setupTelemetryProxy(ctx context.Context) ([]string, error) {
 		_ = server.Shutdown(shutdownCtx)
 	}()
 
-	return []string{
+	otelEnv := []string{
 		engine.OTelExporterProtocolEnv + "=" + otelProto,
 		engine.OTelExporterEndpointEnv + "=" + otelEndpoint,
 		engine.OTelTracesProtocolEnv + "=" + otelProto,
@@ -293,5 +293,11 @@ func setupTelemetryProxy(ctx context.Context) ([]string, error) {
 		engine.OTelLogsEndpointEnv + "=" + otelEndpoint + "/v1/logs",
 		engine.OTelMetricsProtocolEnv + "=" + otelProto,
 		engine.OTelMetricsEndpointEnv + "=" + otelEndpoint + "/v1/metrics",
-	}, nil
+	}
+	// Signal-specific exporter selection enables auto-configuring SDKs; endpoint
+	// vars alone are not enough. Preserve an explicit user setting, e.g. "none".
+	if _, ok := os.LookupEnv(engine.OTelTracesExporterEnv); !ok {
+		otelEnv = append(otelEnv, engine.OTelTracesExporterEnv+"=otlp")
+	}
+	return otelEnv, nil
 }

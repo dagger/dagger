@@ -78,14 +78,18 @@ func (file *File) AttachDependencyResults(
 	if file == nil {
 		return nil, nil
 	}
+	owned, err := file.Services.AttachDependencyResults("file", attach)
+	if err != nil {
+		return nil, err
+	}
 	if file.Lazy == nil {
-		return nil, nil
+		return owned, nil
 	}
 	lazyDeps, err := file.Lazy.AttachDependencies(ctx, attach)
 	if err != nil {
 		return nil, err
 	}
-	return lazyDeps, nil
+	return append(owned, lazyDeps...), nil
 }
 
 func (file *File) LazyEvalFunc() dagql.LazyEvalFunc {

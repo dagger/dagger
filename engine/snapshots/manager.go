@@ -11,7 +11,6 @@ import (
 	"github.com/containerd/containerd/v2/pkg/labels"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/engine/snapshots/fsdiff"
-	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
@@ -28,7 +27,7 @@ var (
 )
 
 type SnapshotManagerOpt struct {
-	Snapshotter   snapshot.Snapshotter
+	Snapshotter   Snapshotter
 	ContentStore  content.Store
 	LeaseManager  leases.Manager
 	Applier       diff.Applier
@@ -76,7 +75,7 @@ type SnapshotManager interface {
 type snapshotManager struct {
 	records       map[string]*cacheRecord
 	mu            sync.Mutex
-	Snapshotter   snapshot.MergeSnapshotter
+	Snapshotter   MergeSnapshotter
 	ContentStore  content.Store
 	LeaseManager  leases.Manager
 	Applier       diff.Applier
@@ -94,7 +93,7 @@ type snapshotManager struct {
 
 func NewSnapshotManager(opt SnapshotManagerOpt) (SnapshotManager, error) {
 	cm := &snapshotManager{
-		Snapshotter:            snapshot.NewMergeSnapshotter(context.TODO(), opt.Snapshotter, opt.LeaseManager),
+		Snapshotter:            NewMergeSnapshotter(context.TODO(), opt.Snapshotter, opt.LeaseManager),
 		ContentStore:           opt.ContentStore,
 		LeaseManager:           opt.LeaseManager,
 		Applier:                opt.Applier,
@@ -275,6 +274,10 @@ func (cm *snapshotManager) New(ctx context.Context, s ImmutableRef, opts ...RefO
 	}
 
 	snapshotID := id
+	ctx, err = EnsureLease(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "ensure lease for snapshot prepare")
+	}
 	err = cm.Snapshotter.Prepare(ctx, snapshotID, parentSnapshotID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to prepare %v as %s", parentSnapshotID, snapshotID)
@@ -409,9 +412,9 @@ func (cm *snapshotManager) ApplySnapshotDiff(ctx context.Context, lower, upper I
 	id := identity.NewID()
 	snapshotID := id
 
-	var diffs []snapshot.Diff
+	var diffs []Diff
 	if upper == nil || lower.SnapshotID() != upper.SnapshotID() {
-		diff := snapshot.Diff{
+		diff := Diff{
 			Lower:      lower.SnapshotID(),
 			Comparison: fsdiff.CompareContentOnMetadataMatch,
 		}
@@ -419,6 +422,10 @@ func (cm *snapshotManager) ApplySnapshotDiff(ctx context.Context, lower, upper I
 			diff.Upper = upper.SnapshotID()
 		}
 		diffs = append(diffs, diff)
+	}
+	ctx, err := EnsureLease(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "ensure lease for snapshot diff")
 	}
 	if err := cm.Snapshotter.Merge(ctx, snapshotID, diffs); err != nil {
 		return nil, errors.Wrap(err, "failed to apply snapshot diff")
@@ -476,9 +483,13 @@ func (cm *snapshotManager) Merge(ctx context.Context, parents []ImmutableRef, op
 	id := identity.NewID()
 	snapshotID := id
 
-	diffs := make([]snapshot.Diff, 0, len(normalized))
+	diffs := make([]Diff, 0, len(normalized))
 	for _, parent := range normalized {
-		diffs = append(diffs, snapshot.Diff{Upper: parent.SnapshotID()})
+		diffs = append(diffs, Diff{Upper: parent.SnapshotID()})
+	}
+	ctx, err := EnsureLease(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "ensure lease for snapshot merge")
 	}
 	if err := cm.Snapshotter.Merge(ctx, snapshotID, diffs); err != nil {
 		return nil, errors.Wrap(err, "failed to merge snapshots")

@@ -6559,6 +6559,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::update",
+			"p": "Dagger/Workspace.html#method_update",
+			"d": "<p>Refresh workspace-managed state and return the resulting changeset.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client\\IdAble::id",
 			"p": "Dagger/Client/IdAble.html#method_id",
 			"d": null

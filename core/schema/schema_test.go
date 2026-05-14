@@ -11,10 +11,6 @@ import (
 	"github.com/dagger/dagger/engine"
 )
 
-type currentTypeDefsTestServer struct {
-	deps *core.SchemaBuilder
-}
-
 func TestCoreModTypeDefs(t *testing.T) {
 	ctx := context.Background()
 	baseCache, err := dagql.NewCache(ctx, "", nil, nil)

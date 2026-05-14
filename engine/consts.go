@@ -47,6 +47,7 @@ const (
 
 const (
 	OTelTraceParentEnv      = "TRACEPARENT"
+	OTelTracesExporterEnv   = "OTEL_TRACES_EXPORTER"
 	OTelExporterProtocolEnv = "OTEL_EXPORTER_OTLP_PROTOCOL"
 	OTelExporterEndpointEnv = "OTEL_EXPORTER_OTLP_ENDPOINT"
 	OTelTracesProtocolEnv   = "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL"

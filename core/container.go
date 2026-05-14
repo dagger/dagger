@@ -1014,7 +1014,7 @@ func (container *Container) AttachDependencyResults(
 	}
 
 	lazy := container.Lazy
-	owned := make([]dagql.AnyResult, 0, len(container.Mounts)+len(container.Secrets)+len(container.Sockets))
+	owned := make([]dagql.AnyResult, 0, len(container.Mounts)+len(container.Secrets)+len(container.Sockets)+len(container.Services))
 	for i := range container.Mounts {
 		mnt := &container.Mounts[i]
 		if mnt.CacheSource != nil && mnt.CacheSource.Volume.Self() != nil {
@@ -1062,6 +1062,11 @@ func (container *Container) AttachDependencyResults(
 		socket.Source = typed
 		owned = append(owned, typed)
 	}
+	serviceDeps, err := container.Services.AttachDependencyResults("container", attach)
+	if err != nil {
+		return nil, err
+	}
+	owned = append(owned, serviceDeps...)
 
 	if lazy != nil {
 		deps, err := lazy.AttachDependencies(ctx, attach)

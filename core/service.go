@@ -56,6 +56,9 @@ type Service struct {
 	InsecureRootCapabilities      bool
 	NoInit                        bool
 	ExecMD                        *engineutil.ExecutionMetadata
+	ModuleContext                 dagql.ObjectResult[*Module]
+	FunctionCall                  *FunctionCall
+	EnvContext                    dagql.ObjectResult[*Env]
 	ExecMeta                      *executor.Meta
 
 	// TunnelUpstream is the service that this service is tunnelling to.
@@ -348,7 +351,7 @@ func (svc *Service) startContainer(
 		execMD, err = ctr.execMeta(ctx, ContainerExecOpts{
 			ExperimentalPrivilegedNesting: svc.ExperimentalPrivilegedNesting,
 			NoInit:                        svc.NoInit,
-		}, nil)
+		}, nil, svc.ModuleContext)
 		if err != nil {
 			return err
 		}
@@ -368,11 +371,21 @@ func (svc *Service) startContainer(
 	if err != nil {
 		return err
 	}
-	detachDeps, _, err := svcs.StartBindings(ctx, ctr.Services)
+	detachDeps, runningDeps, err := svcs.StartBindings(ctx, ctr.Services)
 	if err != nil {
 		return fmt.Errorf("start dependent services: %w", err)
 	}
 	cleanup.Add("detach deps", cleanups.Infallible(detachDeps))
+
+	propagateDependencyExits := len(runningDeps) > 0 &&
+		running.Key.Kind != ServiceRuntimeInteractive &&
+		(opts.IO == nil || !opts.IO.Interactive)
+	var dependencyErrCh <-chan error
+	if propagateDependencyExits {
+		var stopDependencyMonitors func()
+		dependencyErrCh, stopDependencyMonitors = monitorServiceBindings(ctx, ctr.Services, runningDeps, nil)
+		cleanup.Add("stop dependent service monitors", cleanups.Infallible(stopDependencyMonitors))
+	}
 
 	var domain string
 	if mod, err := query.ModuleParent(ctx); err == nil && svc.CustomHostname != "" {
@@ -505,18 +518,43 @@ func (svc *Service) startContainer(
 	}
 	meta.Env = append(meta.Env, secretEnv...)
 
-	worker := bk.Worker.ExecWorker(span.SpanContext(), *execMD)
+	var nestedClientMetadata *engine.ClientMetadata
+	if svc.ExperimentalPrivilegedNesting {
+		nestedClientMetadata = &engine.ClientMetadata{
+			ClientID:          identity.NewID(),
+			ClientVersion:     engine.Version,
+			SessionID:         clientMetadata.SessionID,
+			AllowedLLMModules: slices.Clone(clientMetadata.AllowedLLMModules),
+			LockMode:          clientMetadata.LockMode,
+		}
+	}
+
 	exited := make(chan struct{})
 	runErr := make(chan error)
 	go func() {
-		_, err := worker.Run(ctx, svcID, p.Root, p.Mounts, executor.ProcessInfo{
-			Meta:   *meta,
-			Stdin:  stdinReader,
-			Stdout: stdoutWriters,
-			Stderr: stderrWriters,
-			Resize: resize,
-			Signal: signal,
-		}, started)
+		err := bk.Run(
+			ctx,
+			svcID,
+			p.Root,
+			p.Mounts,
+			executor.ProcessInfo{
+				Meta:   *meta,
+				Stdin:  stdinReader,
+				Stdout: stdoutWriters,
+				Stderr: stderrWriters,
+				Resize: resize,
+				Signal: signal,
+			},
+			started,
+			span.SpanContext(),
+			execMD,
+			clientMetadata.SessionID,
+			clientMetadata.ClientID,
+			nestedClientMetadata,
+			svc.ModuleContext,
+			svc.FunctionCall,
+			svc.EnvContext,
+		)
 		runErr <- err
 	}()
 	select {
@@ -528,7 +566,7 @@ func (svc *Service) startContainer(
 	checked := make(chan error, 1)
 
 	if ctr.Config.Healthcheck != nil {
-		dockerHealthcheck, err := newDockerHealthcheck(worker, svcID, ctr, span.SpanContext())
+		dockerHealthcheck, err := newDockerHealthcheck(bk, svcID, ctr, span.SpanContext())
 		if err != nil {
 			return fmt.Errorf("failed to setup docker healthcheck: %w", err)
 		}
@@ -542,6 +580,23 @@ func (svc *Service) startContainer(
 	}
 
 	var stopped atomic.Bool
+	var serviceErrMu sync.Mutex
+	var serviceErr error
+	setServiceErr := func(err error) {
+		if err == nil {
+			return
+		}
+		serviceErrMu.Lock()
+		defer serviceErrMu.Unlock()
+		if serviceErr == nil {
+			serviceErr = err
+		}
+	}
+	getServiceErr := func() error {
+		serviceErrMu.Lock()
+		defer serviceErrMu.Unlock()
+		return serviceErr
+	}
 
 	var exitErr error
 	go func() {
@@ -558,7 +613,9 @@ func (svc *Service) startContainer(
 		var telemetryErr error
 		defer telemetry.EndWithCause(span, &telemetryErr)
 		defer func() {
-			if !stopped.Load() {
+			if err := getServiceErr(); err != nil {
+				telemetryErr = err
+			} else if !stopped.Load() {
 				// we only care about the exit result (likely 137) if we weren't stopped
 				telemetryErr = exitErr
 			}
@@ -587,6 +644,9 @@ func (svc *Service) startContainer(
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-exited:
+			if err := getServiceErr(); err != nil {
+				return err
+			}
 			return exitErr
 		}
 	}
@@ -611,6 +671,44 @@ func (svc *Service) startContainer(
 		}
 	}
 
+	stopDueToDependencyExit := func(depErr error) error {
+		if depErr == nil {
+			depErr = fmt.Errorf("dependent service exited")
+		}
+		setServiceErr(depErr)
+		if err := stopSvc(context.Background(), true); err != nil {
+			return errors.Join(depErr, err)
+		}
+		return depErr
+	}
+
+	// If a dependency exits while exit propagation is suppressed (e.g. during a
+	// service terminal), remember it and stop this service when suppression lifts.
+	var pendingDependencyErr error
+	var havePendingDependencyErr bool
+	deferDependencyExitIfSuppressed := func(depErr error) bool {
+		if !running.isDependencyExitPropagationSuppressed() {
+			return false
+		}
+		pendingDependencyErr = depErr
+		havePendingDependencyErr = true
+		return true
+	}
+
+	propagateDependencyExitAfterSuppression := func(depErr error, haveDepErr bool, depErrCh <-chan error) {
+		if !haveDepErr {
+			var ok bool
+			depErr, ok = <-depErrCh
+			if !ok {
+				return
+			}
+		}
+		if err := running.waitDependencyExitPropagationUnsuppressed(context.Background()); err != nil {
+			return
+		}
+		_ = stopDueToDependencyExit(depErr)
+	}
+
 	execSvc := func(ctx context.Context, cmd []string, env []string, sio *ServiceIO) error {
 		meta := *meta
 		meta.Args = cmd
@@ -630,7 +728,7 @@ func (svc *Service) startContainer(
 			stderrWriter = sio.Stderr
 			resizeCh = convertResizeChannel(ctx, sio.ResizeCh)
 		}
-		err = worker.Exec(ctx, svcID, executor.ProcessInfo{
+		err = bk.Exec(ctx, svcID, executor.ProcessInfo{
 			Meta:   meta,
 			Stdin:  stdinReader,
 			Stdout: stdoutWriter,
@@ -640,35 +738,50 @@ func (svc *Service) startContainer(
 		return err
 	}
 
-	select {
-	case err := <-checked:
-		if err != nil {
-			return fmt.Errorf("health check errored: %w", err)
-		}
-
-		running.Host = fullHost
-		running.Ports = ctr.Ports
-		running.Stop = stopSvc
-		running.Wait = waitSvc
-		running.Exec = execSvc
-		running.ContainerID = svcID
-		return nil
-	case <-exited:
-		if exitErr != nil {
-			var gwErr *gwpb.ExitError
-			if errors.As(exitErr, &gwErr) {
-				// Create ExecError with available service information
-				return &ExecError{
-					Err:      telemetry.TrackOrigin(gwErr, span.SpanContext()),
-					Cmd:      meta.Args,
-					ExitCode: int(gwErr.ExitCode),
-					Stdout:   stdoutBuf.String(),
-					Stderr:   stderrBuf.String(),
-				}
+	for {
+		select {
+		case err := <-checked:
+			if err != nil {
+				return fmt.Errorf("health check errored: %w", err)
 			}
-			return exitErr
+
+			running.Host = fullHost
+			running.Ports = ctr.Ports
+			running.Stop = stopSvc
+			running.Wait = waitSvc
+			running.Exec = execSvc
+			running.ContainerID = svcID
+			if havePendingDependencyErr || dependencyErrCh != nil {
+				go propagateDependencyExitAfterSuppression(pendingDependencyErr, havePendingDependencyErr, dependencyErrCh)
+			}
+			return nil
+		case depErr, ok := <-dependencyErrCh:
+			if !ok {
+				dependencyErrCh = nil
+				continue
+			}
+			if deferDependencyExitIfSuppressed(depErr) {
+				dependencyErrCh = nil
+				continue
+			}
+			return stopDueToDependencyExit(depErr)
+		case <-exited:
+			if exitErr != nil {
+				var gwErr *gwpb.ExitError
+				if errors.As(exitErr, &gwErr) {
+					// Create ExecError with available service information
+					return &ExecError{
+						Err:      telemetry.TrackOrigin(gwErr, span.SpanContext()),
+						Cmd:      meta.Args,
+						ExitCode: int(gwErr.ExitCode),
+						Stdout:   stdoutBuf.String(),
+						Stderr:   stderrBuf.String(),
+					}
+				}
+				return exitErr
+			}
+			return fmt.Errorf("service exited before healthcheck")
 		}
-		return fmt.Errorf("service exited before healthcheck")
 	}
 }
 
@@ -1078,7 +1191,7 @@ func (svc *Service) runAndSnapshotChanges(
 		return res, false, err
 	}
 
-	usage, err := bk.Worker.Snapshotter.Usage(ctx, mutableRef.SnapshotID())
+	usage, err := bk.Snapshotter.Usage(ctx, mutableRef.SnapshotID())
 	if err != nil {
 		return res, false, fmt.Errorf("failed to check for changes: %w", err)
 	}
@@ -1191,6 +1304,30 @@ type ServiceBinding struct {
 	Service  dagql.ObjectResult[*Service]
 	Hostname string
 	Aliases  AliasSet
+}
+
+func (bndp ServiceBindings) AttachDependencyResults(
+	owner string,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	owned := make([]dagql.AnyResult, 0, len(bndp))
+	for i := range bndp {
+		binding := &bndp[i]
+		if binding.Service.Self() == nil {
+			continue
+		}
+		attached, err := attach(binding.Service)
+		if err != nil {
+			return nil, fmt.Errorf("attach %s service %q: %w", owner, binding.Hostname, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Service])
+		if !ok {
+			return nil, fmt.Errorf("attach %s service %q: unexpected result %T", owner, binding.Hostname, attached)
+		}
+		binding.Service = typed
+		owned = append(owned, typed)
+	}
+	return owned, nil
 }
 
 type AliasSet []string

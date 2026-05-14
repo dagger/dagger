@@ -9,8 +9,8 @@ import (
 	"github.com/containerd/containerd/v2/core/images"
 	"github.com/containerd/containerd/v2/core/leases"
 	cerrdefs "github.com/containerd/errdefs"
+	cache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -113,7 +113,7 @@ func exportToImageStore(
 	img *ExportedImage,
 	nameCanonical bool,
 ) error {
-	leaseCtx, done, err := leaseutil.WithLease(ctx, deps.LeaseManager, leaseutil.MakeTemporary)
+	leaseCtx, done, err := cache.WithLease(ctx, deps.LeaseManager, cache.MakeTemporary)
 	if err != nil {
 		return err
 	}
