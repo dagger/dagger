@@ -89,8 +89,6 @@ type NetworkConfig struct {
 	CNIConfigPath string `toml:"cniConfigPath"`
 	CNIBinaryPath string `toml:"cniBinaryPath"`
 	CNIPoolSize   int    `toml:"cniPoolSize"`
-	BridgeName    string `toml:"bridgeName"`
-	BridgeSubnet  string `toml:"bridgeSubnet"`
 }
 
 type OCIConfig struct {
