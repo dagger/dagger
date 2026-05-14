@@ -139,7 +139,7 @@ func (m *Test) TestAlwaysCache() string {
 		modA := modInit(t, engineClientA, "go", moduleSrc)
 		outA, err := modA.
 			WithEnvVariable("CACHE_BUST", identity.NewID()).
-			With(daggerCall("test-always-cache")).
+			With(daggerCallAt(".", "test-always-cache")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
@@ -153,7 +153,7 @@ func (m *Test) TestAlwaysCache() string {
 		modB := modInit(t, engineClientB, "go", moduleSrc)
 		outB, err := modB.
 			WithEnvVariable("CACHE_BUST", identity.NewID()).
-			With(daggerCall("test-always-cache")).
+			With(daggerCallAt(".", "test-always-cache")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, outA, outB, "always-cached function result should survive engine restart")
@@ -239,7 +239,7 @@ func (m *Test) ContextGitRef(
 				"context-git-repository",
 				"context-git-ref",
 			} {
-				out, err := mod.With(daggerCall(fn)).Stdout(ctx)
+				out, err := mod.With(daggerCallAt(".", fn)).Stdout(ctx)
 				require.NoError(t, err)
 				outputs[fn] = out
 			}
