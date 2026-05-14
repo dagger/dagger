@@ -3349,10 +3349,8 @@ func (lazy *ContainerWithDirectoryLazy) Evaluate(ctx context.Context, container 
 		if err := materializeContainerStateFromParent(ctx, container, base); err != nil {
 			return err
 		}
-		for _, op := range ops {
-			if _, err := container.withDirectoryFromCurrentState(ctx, base, op.Path, op.Source, op.Filter, op.Owner); err != nil {
-				return err
-			}
+		if _, err := container.withDirectoryChainFromCurrentState(ctx, base, ops); err != nil {
+			return err
 		}
 		container.Lazy = nil
 		return nil
@@ -4967,6 +4965,30 @@ func (container *Container) WithRootFS(ctx context.Context, dir dagql.ObjectResu
 	return container, nil
 }
 
+func (container *Container) ensureRootFS(ctx context.Context) error {
+	if container.FS == nil {
+		container.FS = new(LazyAccessor[*Directory, *Container])
+	}
+	if _, ok := container.FS.Peek(); ok {
+		return nil
+	}
+
+	scratchDir, scratchSnapshot, err := loadCanonicalScratchDirectory(ctx)
+	if err != nil {
+		return err
+	}
+	rootfs := &Directory{
+		Platform: container.Platform,
+		Services: slices.Clone(container.Services),
+		Dir:      new(LazyAccessor[string, *Directory]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+	}
+	rootfs.Dir.setValue(scratchDir)
+	rootfs.Snapshot.setValue(scratchSnapshot)
+	container.FS.setValue(rootfs)
+	return nil
+}
+
 // mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithDirectory(
 	ctx context.Context,
@@ -5001,23 +5023,8 @@ func (container *Container) WithDirectory(
 	}
 
 	if mnt == nil {
-		if container.FS == nil {
-			container.FS = new(LazyAccessor[*Directory, *Container])
-		}
-		if _, ok := container.FS.Peek(); !ok {
-			scratchDir, scratchSnapshot, err := loadCanonicalScratchDirectory(ctx)
-			if err != nil {
-				return nil, err
-			}
-			rootfs := &Directory{
-				Platform: container.Platform,
-				Services: slices.Clone(container.Services),
-				Dir:      new(LazyAccessor[string, *Directory]),
-				Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
-			}
-			rootfs.Dir.setValue(scratchDir)
-			rootfs.Snapshot.setValue(scratchSnapshot)
-			container.FS.setValue(rootfs)
+		if err := container.ensureRootFS(ctx); err != nil {
+			return nil, err
 		}
 	}
 
@@ -5033,6 +5040,114 @@ func (container *Container) WithDirectory(
 		return nil, err
 	}
 	container.ImageRef = ""
+	return container, nil
+}
+
+// mutates container caller must have handled cloning or creating a new child.
+func (container *Container) withDirectoryChainFromCurrentState(
+	ctx context.Context,
+	parentForOwnership dagql.ObjectResult[*Container],
+	ops []containerWithDirectoryOp,
+) (*Container, error) {
+	type batch struct {
+		target *LazyAccessor[*Directory, *Container]
+		path   string
+		ops    []directoryWithDirectoryOp
+	}
+
+	var current batch
+	flush := func() error {
+		if len(current.ops) == 0 {
+			return nil
+		}
+
+		targetParent, err := materializedTargetParentDirectoryForContainerPath(ctx, container, current.path)
+		if err != nil {
+			return err
+		}
+		if targetParentRef, ok := targetParent.Snapshot.Peek(); ok && targetParentRef != nil {
+			defer targetParentRef.Release(context.WithoutCancel(ctx))
+		}
+		dir, err := bareDirectoryForContainerPath(container, current.path)
+		if err != nil {
+			return err
+		}
+		if err := dir.evaluateWithDirectoryChainFromMaterializedBase(ctx, targetParent, current.ops); err != nil {
+			return err
+		}
+
+		current = batch{}
+		container.ImageRef = ""
+		return nil
+	}
+
+	for _, op := range ops {
+		mnt, mntSubpath, err := locatePath(container, op.Path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to locate path %s: %w", op.Path, err)
+		}
+
+		if mnt != nil && mnt.FileSource != nil && (mntSubpath == "/" || mntSubpath == "" || mntSubpath == ".") {
+			if err := flush(); err != nil {
+				return nil, err
+			}
+			if _, err := container.withDirectoryFromCurrentState(ctx, parentForOwnership, op.Path, op.Source, op.Filter, op.Owner); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		var target *LazyAccessor[*Directory, *Container]
+		switch {
+		case mnt == nil:
+			if err := container.ensureRootFS(ctx); err != nil {
+				return nil, err
+			}
+			target = container.FS
+		case mnt.DirectorySource != nil:
+			target = mnt.DirectorySource
+		default:
+			if err := flush(); err != nil {
+				return nil, err
+			}
+			if _, err := container.withDirectoryFromCurrentState(ctx, parentForOwnership, op.Path, op.Source, op.Filter, op.Owner); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		resolvedOwner := op.Owner
+		if op.Owner != "" {
+			if containerWithDirectoryOwnerRequiresParentFS(op.Owner) {
+				return nil, fmt.Errorf("container withDirectory chain replay requires numeric owner, got %q", op.Owner)
+			}
+			ownership, err := container.ownership(ctx, parentForOwnership, op.Owner)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve ownership for %s: %w", op.Owner, err)
+			}
+			resolvedOwner = strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID)
+		}
+
+		if len(current.ops) != 0 && current.target != target {
+			if err := flush(); err != nil {
+				return nil, err
+			}
+		}
+		if len(current.ops) == 0 {
+			current.target = target
+			current.path = op.Path
+		}
+		current.ops = append(current.ops, directoryWithDirectoryOp{
+			DestDir: mntSubpath,
+			Source:  op.Source,
+			Filter:  op.Filter,
+			Owner:   resolvedOwner,
+		})
+	}
+
+	if err := flush(); err != nil {
+		return nil, err
+	}
 	return container, nil
 }
 
@@ -5071,23 +5186,8 @@ func (container *Container) withDirectoryFromCurrentState(
 	}
 
 	if mnt == nil {
-		if container.FS == nil {
-			container.FS = new(LazyAccessor[*Directory, *Container])
-		}
-		if _, ok := container.FS.Peek(); !ok {
-			scratchDir, scratchSnapshot, err := loadCanonicalScratchDirectory(ctx)
-			if err != nil {
-				return nil, err
-			}
-			rootfs := &Directory{
-				Platform: container.Platform,
-				Services: slices.Clone(container.Services),
-				Dir:      new(LazyAccessor[string, *Directory]),
-				Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
-			}
-			rootfs.Dir.setValue(scratchDir)
-			rootfs.Snapshot.setValue(scratchSnapshot)
-			container.FS.setValue(rootfs)
+		if err := container.ensureRootFS(ctx); err != nil {
+			return nil, err
 		}
 	}
 
