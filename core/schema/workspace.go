@@ -151,9 +151,12 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Return all checks from modules loaded in the workspace.").
 			Args(
 				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
-				dagql.Arg("skip").Doc("Skip checks matching the specified patterns"),
-				dagql.Arg("noGenerate").Doc("When true, only return annotated check functions; exclude generate-as-checks"),
-				dagql.Arg("onlyGenerate").Doc("When true, only return generate-as-checks; exclude annotated check functions"),
+				dagql.Arg("skip").Doc("Skip checks matching the specified patterns").
+					View(AfterVersion("v1.0.0-0")),
+				dagql.Arg("noGenerate").Doc("When true, only return annotated check functions; exclude generate-as-checks").
+					View(AfterVersion("v0.21.7")),
+				dagql.Arg("onlyGenerate").Doc("When true, only return generate-as-checks; exclude annotated check functions").
+					View(AfterVersion("v0.21.7")),
 			),
 		dagql.Func("generators", s.generators).
 			Doc("Return all generators from modules loaded in the workspace.").
@@ -166,6 +169,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("include").Doc("Only include services matching the specified patterns"),
 			),
 		dagql.NodeFunc("update", s.update).
+			View(AfterVersion("v0.21.7")).
 			Doc("Refresh workspace-managed state and return the resulting changeset.",
 				"Currently this refreshes existing lockfile entries only.").
 			Experimental("Experimental workspace update API currently refreshes existing lockfile entries only."),

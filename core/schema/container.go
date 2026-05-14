@@ -376,7 +376,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("owner").Doc(`A user:group to set for the mounted directory and its contents.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 					`If the group is omitted, it defaults to the same as the user.`),
-				dagql.Arg("readOnly").Doc(`Mount the directory read-only.`),
+				dagql.Arg("readOnly").Doc(`Mount the directory read-only.`).
+					View(AfterVersion("v0.21.7")),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
@@ -560,6 +561,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`If the group is omitted, it defaults to the same as the user.`),
 				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
+				dagql.Arg("permissions").View(AfterVersion("v0.21.7")),
 			),
 
 		dagql.NodeFunc("withoutDirectory", s.withoutDirectory).

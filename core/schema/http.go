@@ -25,11 +25,13 @@ func (s *httpSchema) Install(srv *dagql.Server) {
 				dagql.Arg("url").Doc(`HTTP url to get the content from (e.g., "https://docs.dagger.io").`),
 				dagql.Arg("name").Doc(`File name to use for the file. Defaults to the last part of the URL.`),
 				dagql.Arg("permissions").Doc(`Permissions to set on the file.`),
-				dagql.Arg("checksum").Doc(`Expected digest of the downloaded content (e.g., "sha256:...").`),
+				dagql.Arg("checksum").Doc(`Expected digest of the downloaded content (e.g., "sha256:...").`).
+					View(AfterVersion("v0.21.7")),
 				dagql.Arg("authHeader").Doc(`Secret used to populate the Authorization HTTP header`),
 				dagql.Arg("experimentalServiceHost").Doc(`A service which must be started before the URL is fetched.`),
 			),
 		dagql.NodeFunc("_httpState", s.httpState).
+			View(AfterVersion("v0.21.7")).
 			IsPersistable().
 			Doc(`(Internal-only) Returns a persistent HTTP state object.`).
 			Args(
@@ -37,8 +39,10 @@ func (s *httpSchema) Install(srv *dagql.Server) {
 			),
 	}.Install(srv)
 
+	srv.InstallObject(dagql.NewClass[*core.HTTPState](srv).View(AfterVersion("v0.21.7")))
 	dagql.Fields[*core.HTTPState]{
 		dagql.NodeFunc("_resolve", s.httpStateResolve).
+			View(AfterVersion("v0.21.7")).
 			IsPersistable().
 			WithInput(dagql.PerSessionInput).
 			Doc(`(Internal-only) Resolve the HTTP state once per session and return the resulting file.`).

@@ -27,6 +27,7 @@ type Class[T Typed] struct {
 	idable  bool
 	fields  map[string][]*Field[T]
 	fieldsL *sync.RWMutex
+	view    ViewFilter
 
 	// interfaces records the interfaces this class implements.
 	// Uses a map (reference type) so it's shared across value copies of Class.
@@ -86,6 +87,9 @@ type ClassOpts[T Typed] struct {
 	// The inner type sourceMap directive so additional type
 	// registered by the engine can store also store its origin.
 	SourceMap *ast.Directive
+
+	// View limits the object type and its generated ID/load fields to a schema view.
+	View ViewFilter
 }
 
 // NewClass returns a new empty class for a given type.
@@ -104,6 +108,10 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 		if o.SourceMap != nil {
 			opts.SourceMap = o.SourceMap
 		}
+
+		if o.View != nil {
+			opts.View = o.View
+		}
 	}
 
 	class := Class[T]{
@@ -112,6 +120,7 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 		fieldsL:    new(sync.RWMutex),
 		interfaces: map[string]*Interface{},
 		sourceMap:  opts.SourceMap,
+		view:       opts.View,
 
 		invalidateSchemaCache: srv.invalidateSchemaCache,
 	}
@@ -185,10 +194,19 @@ func (class Class[T]) Typed() Typed {
 
 func (class Class[T]) IDType() (IDType, bool) {
 	if class.idable {
-		return ID[T]{inner: class.inner, sourceMap: class.sourceMap}, true
+		return ID[T]{inner: class.inner, sourceMap: class.sourceMap, view: class.view}, true
 	} else {
 		return nil, false
 	}
+}
+
+func (class Class[T]) View(view ViewFilter) Class[T] {
+	class.view = view
+	return class
+}
+
+func (class Class[T]) ViewFilter() ViewFilter {
+	return class.view
 }
 
 func (class Class[T]) Field(name string, view call.View) (Field[T], bool) {
