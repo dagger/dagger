@@ -7,6 +7,7 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/muesli/termenv"
 	"github.com/vito/tuist"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func testSidebarCase(id, name string, category dagui.TestCategory) *dagui.TestNode {
@@ -85,6 +86,93 @@ func TestTestViewDetailDoesNotRenderSubtestsAsChildren(t *testing.T) {
 	joined := strings.Join(lines, "\n")
 	if strings.Contains(joined, "Children") || strings.Contains(joined, "child") {
 		t.Fatalf("expected detail pane not to render test subtests as child spans, got:\n%s", joined)
+	}
+}
+
+func TestTestViewPrettyReportSummary(t *testing.T) {
+	spanID := func(id byte) dagui.SpanID {
+		return dagui.SpanID{SpanID: trace.SpanID{id}}
+	}
+	suiteSpan := &dagui.Span{SpanSnapshot: dagui.SpanSnapshot{ID: spanID(1), Name: "suite"}}
+	failSpan := &dagui.Span{SpanSnapshot: dagui.SpanSnapshot{ID: spanID(2), Name: "failing"}}
+	skipSpan := &dagui.Span{SpanSnapshot: dagui.SpanSnapshot{ID: spanID(3), Name: "skipped"}}
+	suite := &dagui.TestNode{
+		ID:       "suite",
+		Kind:     dagui.TestNodeSuite,
+		Name:     "suite",
+		Span:     suiteSpan,
+		Category: dagui.TestCategoryFailing,
+		Counts:   dagui.TestCounts{Failing: 1, Skipped: 1},
+	}
+	failing := &dagui.TestNode{
+		ID:           "failing",
+		Kind:         dagui.TestNodeCase,
+		Name:         "failing",
+		Span:         failSpan,
+		Parent:       suite,
+		SelfCategory: dagui.TestCategoryFailing,
+		Category:     dagui.TestCategoryFailing,
+		Counts:       dagui.TestCounts{Failing: 1},
+	}
+	skipped := &dagui.TestNode{
+		ID:           "skipped",
+		Kind:         dagui.TestNodeCase,
+		Name:         "skipped",
+		Span:         skipSpan,
+		Parent:       suite,
+		SelfCategory: dagui.TestCategorySkipped,
+		Category:     dagui.TestCategorySkipped,
+		Counts:       dagui.TestCounts{Skipped: 1},
+	}
+	suite.Children = []*dagui.TestNode{failing, skipped}
+	empty := &dagui.TestNode{
+		ID:       "empty",
+		Kind:     dagui.TestNodeSuite,
+		Name:     "empty",
+		Category: dagui.TestCategorySkipped,
+	}
+	failLogs := NewVterm(termenv.Ascii)
+	_, _ = failLogs.Write([]byte("boom\nmore\n"))
+	skipLogs := NewVterm(termenv.Ascii)
+	_, _ = skipLogs.Write([]byte("skip reason\n"))
+	view := &dagui.TestView{
+		Roots: []*dagui.TestNode{suite, empty},
+		Counts: dagui.TestCounts{
+			Failing: 1,
+			Skipped: 1,
+			Passing: 2,
+		},
+	}
+	tv := &TestView{
+		SummaryIndent:   2,
+		SummaryLogLines: -1,
+		SummaryReport:   true,
+		Logs: map[dagui.SpanID]*Vterm{
+			failSpan.ID: failLogs,
+			skipSpan.ID: skipLogs,
+		},
+	}
+
+	var buf strings.Builder
+	out := NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+	got := strings.Join(tv.renderTestSummaryLines(out, view, 80, 80), "\n")
+	want := strings.Join([]string{
+		"  TESTS",
+		"    ✘ suite › failing FAIL",
+		"          boom",
+		"          more",
+		"",
+		"    ∅ suite › skipped SKIP",
+		"          skip reason",
+		"",
+		"    ∅ empty NO TESTS",
+		"",
+		"    ✘ 1 failed",
+		"    ∅ 1 skipped",
+		"    ✔ 2 passed",
+	}, "\n")
+	if got != want {
+		t.Fatalf("unexpected pretty report summary:\n%s", got)
 	}
 }
 
