@@ -1470,6 +1470,7 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	if !fe.finalRender && (fe.backgrounded || fe.quitting) {
 		return
 	}
+	fe.claims = newRenderClaims()
 
 	// Coalesce deferred view updates. Multiple ExportSpans batches may
 	// have set viewDirty since the last frame — recalculate once now.
@@ -1574,7 +1575,7 @@ func linesFromView(ctx tuist.Context, view string) {
 // renderLogsLines returns the zoomed span's log output as lines.
 func (fe *frontendPretty) renderLogsLines(prefix string) []string {
 	logs := fe.logs.Logs[fe.ZoomedSpan]
-	if logs == nil || logs.UsedHeight() == 0 || fe.hasShownRootError() {
+	if logs == nil || logs.UsedHeight() == 0 || fe.claims.hasLog(fe.ZoomedSpan) || fe.hasShownRootError() {
 		return nil
 	}
 	logs.SetHeight(fe.window.Height / 3)
@@ -3045,6 +3046,9 @@ func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix s
 const llmLogsLastLines = 8
 
 func (fe *frontendPretty) renderStepLogs(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string, focused bool) bool {
+	if fe.claims.hasLog(row.Span.ID) {
+		return false
+	}
 	limit := fe.window.Height / 3
 	if row.Span.LLMTool != "" && !row.Expanded {
 		limit = llmLogsLastLines
@@ -3146,7 +3150,7 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 	}
 	fe.renderStepTitle(ctx, out, r, rootCauseRow, prefix+indent, statusHost, false, false)
 	fmt.Fprintln(out)
-	if logs := fe.logs.Logs[rootCauseRow.Span.ID]; logs != nil {
+	if logs := fe.logs.Logs[rootCauseRow.Span.ID]; logs != nil && !fe.claims.hasLog(rootCauseRow.Span.ID) {
 		if row.Depth == 0 && fe.finalRender {
 			logs.SetPrefix("")
 		} else {
