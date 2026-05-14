@@ -1364,6 +1364,14 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 	if !s.fe.shouldRenderInlineTests(row) {
 		return nil
 	}
+	if s.fe.reportOnly && s.fe.finalRender {
+		view := s.fe.db.TestViewForSpan(row.Span)
+		lines := renderReportTestSummaryLines(view, s.fe.logs.Logs, reportTestSummaryScope(row.Span), 2, -1)
+		if len(lines) == 0 {
+			return nil
+		}
+		return append([]string{""}, lines...)
+	}
 	tv := s.fe.inlineTestView(row.Span.ID)
 	summaryIndent := 0
 	if s.fe.finalRender {
@@ -1434,6 +1442,9 @@ func (fe *frontendPretty) renderFinalGlobalTests(ctx tuist.Context) []string {
 	if !view.HasTests() || finalTestViewAllCasesUnderChecks(view) {
 		return nil
 	}
+	if fe.reportOnly {
+		return renderReportTestSummaryLines(view, fe.logs.Logs, "", 0, -1)
+	}
 	tv := fe.inlineTestView(dagui.SpanID{})
 	if tv.SummaryIndent != 2 {
 		tv.SummaryIndent = 2
@@ -1458,6 +1469,16 @@ func (fe *frontendPretty) renderFinalGlobalTests(ctx tuist.Context) []string {
 
 func finalTestViewHeight(tv *TestView) int {
 	return 10000
+}
+
+func reportTestSummaryScope(span *dagui.Span) string {
+	if span == nil {
+		return ""
+	}
+	if span.CheckName != "" {
+		return span.CheckName
+	}
+	return span.Name
 }
 
 func finalTestViewAllCasesUnderChecks(view *dagui.TestView) bool {
