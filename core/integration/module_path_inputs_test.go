@@ -1042,6 +1042,54 @@ entrypoint = true
 	out, err = ctr.With(daggerCall("list-ignored-default-directory")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "keep.txt\n", out)
+
+	t.Run("direct remote module from empty cwd", func(ctx context.Context, t *testctx.T) {
+		emptyCtr := c.Container().From(alpineImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/empty")
+
+		out, err := emptyCtr.With(daggerCallAt(remoteRef, "read-default-file")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "module source", out)
+
+		out, err = emptyCtr.With(daggerCallAt(remoteRef, "read-default-directory-file")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "module keep", out)
+
+		out, err = emptyCtr.With(daggerCallAt(remoteRef, "list-ignored-default-directory")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "keep.txt\n", out)
+	})
+
+	t.Run("direct remote module from conflicting workspace cwd", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.With(daggerCallAt(remoteRef, "read-default-file")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "module source", out)
+
+		out, err = ctr.With(daggerCallAt(remoteRef, "read-default-directory-file")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "module keep", out)
+
+		out, err = ctr.With(daggerCallAt(remoteRef, "list-ignored-default-directory")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "keep.txt\n", out)
+	})
+}
+
+func resolveServiceIP(ctx context.Context, t *testctx.T, c *dagger.Client, hostname string) string {
+	t.Helper()
+
+	// The vcs URL parser (engine/vcs/vcs.go) requires at least one dot in the
+	// host component. Auto-generated service hostnames are dot-less, but they
+	// are registered in the session DNS via search-domain expansion. Resolve
+	// them to an IP so the URL is both parser-compatible and reachable.
+	getentOut, err := c.Container().From(alpineImage).
+		WithExec([]string{"getent", "hosts", hostname}).
+		Stdout(ctx)
+	require.NoError(t, err, "could not resolve git service hostname %q", hostname)
+	fields := strings.Fields(getentOut)
+	require.NotEmpty(t, fields, "unexpected getent output: %q", getentOut)
+	return fields[0]
 }
 
 func (ModuleSuite) TestContextDirectoryGit(ctx context.Context, t *testctx.T) {
