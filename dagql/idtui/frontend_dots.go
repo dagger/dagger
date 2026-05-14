@@ -5,6 +5,7 @@ package idtui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -71,6 +72,7 @@ func NewDots(output io.Writer) Frontend {
 		out:         out,
 		prefixW:     multiprefixw.New(out),
 		pendingLogs: make(map[dagui.SpanID][]sdklog.Record),
+		testLogs:    make(map[dagui.SpanID]*Vterm),
 	}
 	return fe
 }
@@ -81,10 +83,51 @@ func (fe *frontendDots) SetSidebarContent(SidebarSection) {}
 
 func (fe *frontendDots) Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) (cleanups.CleanupF, error)) error {
 	fe.opts = opts
-	return fe.reporter.Run(ctx, opts, func(ctx context.Context) (cleanups.CleanupF, error) {
-		cleanup, err := f(ctx)
-		return cleanup, err
-	})
+	fe.reporter.FrontendOpts = opts
+	cleanup, runErr := f(ctx)
+	if cleanup != nil {
+		runErr = errors.Join(runErr, cleanup())
+	}
+
+	fe.mu.Lock()
+	if !opts.Silent {
+		fmt.Fprintln(fe.out)
+		fmt.Fprintln(fe.out)
+		if fe.renderFinalTests() {
+			fmt.Fprintln(fe.out)
+		}
+	}
+	var telemetryErr error
+	if p := fe.telemetryError.Load(); p != nil {
+		telemetryErr = *p
+	}
+	handleTelemetryErrorOutput(fe.out, fe.out, telemetryErr)
+	if fe.reporter.msgPreFinalRender.Len() > 0 {
+		fmt.Fprintln(fe.out, fe.reporter.msgPreFinalRender.String())
+	}
+	if writeErr := renderPrimaryOutput(fe.out, fe.db); writeErr != nil {
+		runErr = errors.Join(runErr, writeErr)
+	}
+	fe.mu.Unlock()
+
+	fe.db.WriteDot(opts.DotOutputFilePath, opts.DotFocusField, opts.DotShowInternal)
+	return normalizeFrontendExit(runErr, fe.db)
+}
+
+func (fe *frontendDots) renderFinalTests() bool {
+	view := fe.db.TestView()
+	if !view.HasTests() {
+		return false
+	}
+	tv := &TestView{
+		Profile:         fe.profile,
+		Logs:            fe.logs.testLogs,
+		SummaryLogLines: -1,
+	}
+	for _, line := range tv.renderTestSummaryLines(fe.out, view, 80, finalTestViewHeight(tv)) {
+		fmt.Fprintln(fe.out, line)
+	}
+	return true
 }
 
 func (fe *frontendDots) Opts() *dagui.FrontendOpts {
@@ -215,11 +258,6 @@ func (e *dotsSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.Rea
 }
 
 func (e *dotsSpanExporter) Shutdown(ctx context.Context) error {
-	fmt.Fprintln(e.out)
-	fmt.Fprintln(e.out)
-	if p := e.telemetryError.Load(); p != nil {
-		handleTelemetryErrorOutput(e.out, e.out, *p)
-	}
 	return nil
 }
 

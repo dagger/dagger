@@ -703,7 +703,7 @@ func (tv *TestView) renderSidebarRow(out *termenv.Output, row testSidebarRow, se
 	return selector + " " + iconStyle.String() + " " + indent + nameStyle.String() + count
 }
 
-func (tv *TestView) renderTestSummaryLines(out *termenv.Output, view *dagui.TestView, width, height int) []string {
+func (tv *TestView) renderTestSummaryLines(out TermOutput, view *dagui.TestView, width, height int) []string {
 	title := "Tests"
 	if tv.ScopeName != "" {
 		title += " · " + tv.ScopeName
@@ -801,7 +801,7 @@ func testSummarySpanHierarchyLabel(node *dagui.TestNode) string {
 	return strings.Join(parts, " › ")
 }
 
-func (tv *TestView) renderTestSummaryEntry(out *termenv.Output, entry testSummaryEntry, width int) []string {
+func (tv *TestView) renderTestSummaryEntry(out TermOutput, entry testSummaryEntry, width int) []string {
 	indent := strings.Repeat(" ", max(tv.SummaryIndent, 0)+2)
 	icon := out.String(testCategoryIcon(entry.category)).Foreground(testCategoryColor(entry.category)).String()
 	labelWidth := max(width-lipgloss.Width(indent)-lipgloss.Width(icon)-1, 1)
@@ -811,7 +811,7 @@ func (tv *TestView) renderTestSummaryEntry(out *termenv.Output, entry testSummar
 	return lines
 }
 
-func (tv *TestView) renderTestSummaryLogs(out *termenv.Output, entry testSummaryEntry, width int) []string {
+func (tv *TestView) renderTestSummaryLogs(out TermOutput, entry testSummaryEntry, width int) []string {
 	if entry.span == nil || tv.Logs == nil || tv.SummaryLogLines == 0 {
 		return nil
 	}
@@ -850,7 +850,7 @@ func (tv *TestView) renderTestSummaryLogs(out *termenv.Output, entry testSummary
 	return lines
 }
 
-func (tv *TestView) renderTestSummaryDetail(out *termenv.Output, entry testSummaryEntry, width int, text string, color termenv.Color) []string {
+func (tv *TestView) renderTestSummaryDetail(out TermOutput, entry testSummaryEntry, width int, text string, color termenv.Color) []string {
 	indent := strings.Repeat(" ", max(tv.SummaryIndent, 0)+2)
 	pipe := out.String(VertBoldBar).Foreground(testCategoryColor(entry.category)).String()
 	prefix := indent + pipe + " "
@@ -871,7 +871,7 @@ func (tv *TestView) renderTestSummaryDetail(out *termenv.Output, entry testSumma
 	return lines
 }
 
-func renderTestSummaryPassedGroup(out *termenv.Output, passing, summaryIndent, width int) string {
+func renderTestSummaryPassedGroup(out TermOutput, passing, summaryIndent, width int) string {
 	indent := strings.Repeat(" ", max(summaryIndent, 0)+2)
 	counts := dagui.TestCounts{Passing: passing}
 	return clipANSI(indent+renderTestCountsSummary(out, counts, max(width-lipgloss.Width(indent), 1)), width)
