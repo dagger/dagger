@@ -1,5 +1,12 @@
 package core
 
+// These tests cover `dag.Cloud().TraceURL`. They verify the trace URL returned
+// to direct API callers and to module code, including the error when no Dagger
+// Cloud organization is configured.
+//
+// See also:
+// - telemetry_test.go: local telemetry collection and export behavior.
+
 import (
 	"context"
 	"testing"

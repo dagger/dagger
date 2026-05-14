@@ -1,5 +1,12 @@
 package core
 
+// These tests cover the EnvFile object, which represents dotenv-style key/value
+// files. They verify parsing, mutation, and namespace behavior.
+//
+// See also:
+// - workspace_compat_env_test.go: legacy `.env` module configuration.
+// - workspace_env_management_test.go: named workspace environments.
+
 import (
 	"context"
 	"encoding/base64"
@@ -485,7 +492,7 @@ func (EnvFileSuite) TestCachingWithIndirectVar(ctx context.Context, t *testctx.T
 func (EnvFileSuite) TestSecretFile(ctx context.Context, t *testctx.T) {
 	modDir := t.TempDir()
 
-	initCmd := hostDaggerCommand(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+	initCmd := hostDaggerCommand(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test", ".")
 	initOutput, err := initCmd.CombinedOutput()
 	require.NoError(t, err, string(initOutput))
 
@@ -505,7 +512,7 @@ func (m *Test) Foo(ctx context.Context) (string, error) {
 	depDir := filepath.Join(modDir, "dep")
 	require.NoError(t, os.Mkdir(depDir, 0755))
 
-	initDepCmd := hostDaggerCommand(ctx, t, depDir, "init", "--source=.", "--name=dep", "--sdk=go")
+	initDepCmd := hostDaggerCommand(ctx, t, depDir, "module", "init", "--source=.", "--sdk=go", "dep", ".")
 	initDepOutput, err := initDepCmd.CombinedOutput()
 	require.NoError(t, err, string(initDepOutput))
 
@@ -533,7 +540,7 @@ func (m *Dep) Bar(
 `), 0644)
 	require.NoError(t, err)
 
-	installCmd := hostDaggerCommand(ctx, t, modDir, "install", depDir)
+	installCmd := hostDaggerCommand(ctx, t, modDir, "module", "install", depDir)
 	installOutput, err := installCmd.CombinedOutput()
 	require.NoError(t, err, string(installOutput))
 
@@ -548,12 +555,8 @@ func (m *Dep) Bar(
 	callCmd := hostDaggerCommand(ctx, t, modDir, "call", "-s", "foo")
 	callOutput, err := callCmd.CombinedOutput()
 	require.NoError(t, err, string(callOutput))
-	// the CLI spams "user default: ..." messages despite -s, get the last line only
-	lastLine := callOutput
-	if idx := strings.LastIndex(string(callOutput), "\n"); idx != -1 {
-		lastLine = callOutput[idx+1:]
-	}
-	decodeOutput, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(lastLine)))
+	require.NotContains(t, string(callOutput), "user default:")
+	decodeOutput, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(callOutput)))
 	require.NoError(t, err, string(callOutput))
 	require.Equal(t, "doodoo", string(decodeOutput))
 }

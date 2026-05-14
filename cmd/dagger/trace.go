@@ -22,7 +22,8 @@ var traceCmd = &cobra.Command{
 	Hidden: true,
 	Args:   cobra.ExactArgs(1),
 	Annotations: map[string]string{
-		"experimental": "true",
+		"experimental":       "true",
+		showFinalProgressKey: "true",
 	},
 	Aliases: []string{"t"},
 	Short:   "View a Dagger trace from Dagger Cloud.",

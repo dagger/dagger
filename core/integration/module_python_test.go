@@ -1,5 +1,13 @@
 package core
 
+// These tests cover modules authored with the Python SDK. They verify `dagger
+// module init`, generated Python bindings, and executing Python module
+// functions.
+//
+// See also:
+// - module_definition_test.go: SDK-neutral module API definition behavior.
+// - module_type_test.go: cross-SDK custom type behavior.
+
 import (
 	"context"
 	"fmt"
@@ -28,7 +36,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 
 		out, err := daggerCliBase(t, c).
 			With(daggerInitPython()).
-			With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).
+			With(daggerCallAt(".", "container-echo", "--string-arg", "hello", "stdout")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -51,9 +59,9 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			With(daggerExec("init", "--source=.")).
+			With(daggerExec("module", "init", "test", "--source=.", ".")).
 			With(daggerExec("develop", "--sdk=python", "--source=.")).
-			With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).
+			With(daggerCallAt(".", "container-echo", "--string-arg", "hello", "stdout")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -64,7 +72,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		_, err := daggerCliBase(t, c).
-			With(daggerExec("init", "--source=.")).
+			With(daggerExec("module", "init", "test", "--source=.", ".")).
 			With(pyprojectExtra(nil, "")).
 			With(daggerExec("develop", "--sdk=python", "--source=.")).
 			Sync(ctx)
@@ -76,7 +84,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			With(daggerInitPython("--name=hello-world")).
+			With(daggerInitPython("hello-world")).
 			With(fileContents("src/hello_world/__init__.py", `
                 from dagger import field, function, object_type
 
@@ -88,7 +96,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
                     def message(self) -> str:
                         return f"Hello, {self.my_name}!"
             `)).
-			With(daggerQuery(`{with(myName: "Monde"){message}}`)).
+			With(daggerQueryAt(".", `{with(myName: "Monde"){message}}`)).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -112,7 +120,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
                     def message(self) -> str:
                         return f"Hello, {self.my_name}!"
             `).
-			With(daggerExec("init", "--name=bare", "--sdk=python"))
+			With(daggerExec("module", "init", "--sdk=python", "bare", "."))
 
 		daggerDirEnts, err := modGen.Directory("/work/.dagger").Entries(ctx)
 		require.NoError(t, err)
@@ -120,7 +128,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 
 		out, err := modGen.
 			WithWorkdir("/work").
-			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
+			With(daggerQueryAt(".", `{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"containerEcho":{"stdout":"hello\n"}}`, out)
@@ -133,7 +141,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithExec([]string{"mkdir", "-p", ".git"}).
-			With(daggerExec("init", "--name=bare", "--sdk=python"))
+			With(daggerExec("module", "init", "--sdk=python", "bare", "."))
 
 		daggerDirEnts, err := modGen.Directory("/work").Entries(ctx)
 		require.NoError(t, err)
@@ -141,7 +149,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 
 		out, err := modGen.
 			WithWorkdir("/work").
-			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
+			With(daggerQueryAt(".", `{containerEcho(stringArg:"hello"){stdout}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"containerEcho":{"stdout":"hello\n"}}`, out)
@@ -182,9 +190,9 @@ class HelloWorld:
         return f"Hello, {self.my_name}!"
 `,
 			).
-			With(daggerExec("init", "--name=hello-world", "--sdk=python", "--source=."))
+			With(daggerExec("module", "init", "--sdk=python", "--source=.", "hello-world", "."))
 
-		out, err := modGen.With(daggerQuery(`{message}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQueryAt(".", `{message}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"message":"Hello, World!"}`, out)
 	})
@@ -193,7 +201,7 @@ class HelloWorld:
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			With(daggerExec("init", "--sdk=python", "project2")).
+			With(daggerExec("module", "init", "--sdk=python", "project2", "./project2")).
 			WithExec([]string{"test", "-f", "project2/src/project_2/main.py"}).
 			With(daggerCallAt("project2", "container-echo", "--string-arg", "hello", "stdout")).
 			Stdout(ctx)
@@ -239,9 +247,9 @@ class Test:
         return f"Hello, {self.my_name}!"
 `,
 			).
-			With(daggerExec("init", "--name=test", "--sdk=python", "--source=."))
+			With(daggerExec("module", "init", "--sdk=python", "--source=.", "test", "."))
 
-		out, err := modGen.With(daggerQuery(`{message}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQueryAt(".", `{message}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"message":"Hello, World!"}`, out)
 	})
@@ -286,9 +294,9 @@ class Test:
         return f"Hello, {self.my_name}!"
 `,
 			).
-			With(daggerExec("init", "--name=test", "--sdk=python", "--source=."))
+			With(daggerExec("module", "init", "--sdk=python", "--source=.", "test", "."))
 
-		out, err := modGen.With(daggerQuery(`{message}`)).Stdout(ctx)
+		out, err := modGen.With(daggerQueryAt(".", `{message}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"message":"Hello, World!"}`, out)
 	})
@@ -582,7 +590,7 @@ class Test:
 				}).
 				With(daggerInitPython()).
 				WithExec([]string{"sh", "-c", "grep dagger-io $TEST_LOCK_FILE"}).
-				With(daggerCall("whoami")).
+				With(daggerCallAt(".", "whoami")).
 				Stdout(ctx)
 
 			require.NoError(t, err)
@@ -621,7 +629,7 @@ class Test:
 			With(pyprojectExtra(nil, `requires-python = ">=3.11"`)).
 			With(source).
 			With(daggerInitPython()).
-			With(daggerCall("relaxed")).
+			With(daggerCallAt(".", "relaxed")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -636,7 +644,7 @@ class Test:
 			With(pyprojectExtra(nil, `requires-python = "== 3.11.6"`)).
 			With(source).
 			With(daggerInitPython()).
-			With(daggerCall("pinned")).
+			With(daggerCallAt(".", "pinned")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -651,7 +659,7 @@ class Test:
 			With(pyprojectExtra(nil, `requires-python = ">=3.10"`)).
 			With(fileContents(".python-version", "3.11")).
 			With(daggerInitPython()).
-			With(daggerCall("relaxed")).
+			With(daggerCallAt(".", "relaxed")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -665,7 +673,7 @@ class Test:
 			With(fileContents(".python-version", "3.13.1")).
 			With(source).
 			With(daggerInitPython()).
-			With(daggerCall("pinned")).
+			With(daggerCallAt(".", "pinned")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -680,7 +688,7 @@ class Test:
 			With(fileContents(".python-version", "3.11")).
 			With(source).
 			With(daggerInitPython()).
-			With(daggerCall("relaxed")).
+			With(daggerCallAt(".", "relaxed")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -702,7 +710,7 @@ class Test:
             `)).
 			With(source).
 			With(daggerInitPython()).
-			With(daggerCall("pinned")).
+			With(daggerCallAt(".", "pinned")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -715,7 +723,7 @@ class Test:
 		out, err := daggerCliBase(t, c).
 			With(source).
 			With(daggerInitPython()).
-			With(daggerCall("relaxed")).
+			With(daggerCallAt(".", "relaxed")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -744,7 +752,7 @@ func (PythonSuite) TestAltRuntime(ctx context.Context, t *testctx.T) {
 		out, err := base.
 			WithMountedDirectory("/work/git-dep", c.Host().Directory(moduleSrcPath)).
 			WithWorkdir("/work/git-dep").
-			With(daggerCall("hello")).
+			With(daggerCallAt(".", "hello")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -772,10 +780,10 @@ class Test:
         return f"{v.major}.{v.minor}"
 `,
 			)).
-			With(daggerExec("init", "--sdk=../extended", "--name=test", "--source=.")).
+			With(daggerExec("module", "init", "--sdk=../extended", "--source=.", "test", ".")).
 			// use-uv = false should be ignored
 			WithExec([]string{"test", "-f", "uv.lock"}).
-			With(daggerCall("version")).
+			With(daggerCallAt(".", "version")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -802,7 +810,7 @@ func (PythonSuite) TestUv(ctx context.Context, t *testctx.T) {
 
 		// Should still work with pip though
 		out, err := ctr.
-			With(daggerCall("container-echo", "--string-arg=hello", "stdout")).
+			With(daggerCallAt(".", "container-echo", "--string-arg=hello", "stdout")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -823,7 +831,7 @@ func (PythonSuite) TestUv(ctx context.Context, t *testctx.T) {
                 use-uv = false
             `)).
 			With(daggerInitPython()).
-			With(daggerCall("container-echo", "--string-arg=hello", "stdout")).
+			With(daggerCallAt(".", "container-echo", "--string-arg=hello", "stdout")).
 			Stdout(ctx)
 
 		t.Logf("out: %s", out)
@@ -863,7 +871,7 @@ class Test:
             `)).
 			With(source).
 			With(daggerInitPython()).
-			With(daggerCall("version")).
+			With(daggerCallAt(".", "version")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -904,7 +912,7 @@ class Test:
                     url = "https://pypi.org/simple"
                 `)).
 				With(daggerInitPython()).
-				With(daggerCall("urls")).
+				With(daggerCallAt(".", "urls")).
 				Stdout(ctx)
 
 			require.NoError(t, err)
@@ -917,7 +925,7 @@ class Test:
 			out, err := daggerCliBase(t, c).
 				With(source).
 				With(daggerInitPython()).
-				With(daggerCall("urls", "--json")).
+				With(daggerCallAt(".", "urls", "--json")).
 				Stdout(ctx)
 
 			require.NoError(t, err)
@@ -948,7 +956,7 @@ func (PythonSuite) TestPipLock(ctx context.Context, t *testctx.T) {
 
 		out, err := daggerCliBase(t, c).
 			With(pipLockMod(t, c, nil)).
-			With(daggerCall()).
+			With(daggerCallAt(".")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -962,7 +970,7 @@ func (PythonSuite) TestPipLock(ctx context.Context, t *testctx.T) {
 			With(pipLockMod(t, c, nil)).
 			With(daggerExec("develop")).
 			WithExec([]string{"test", "!", "-f", "uv.lock"}).
-			With(daggerCall()).
+			With(daggerCallAt(".")).
 			Sync(ctx)
 
 		require.NoError(t, err)
@@ -999,7 +1007,7 @@ func (PythonSuite) TestPipLock(ctx context.Context, t *testctx.T) {
 		out, err := daggerCliBase(t, c).
 			With(pipLockMod(t, c, nil)).
 			With(daggerExec("develop")).
-			With(daggerCall("versions", "--names=platformdirs")).
+			With(daggerCallAt(".", "versions", "--names=platformdirs")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -1016,7 +1024,7 @@ func (PythonSuite) TestPipLock(ctx context.Context, t *testctx.T) {
 			WithExec([]string{"sh", "-c", `echo 'dependencies = ["packaging<24.0"]' >> pyproject.toml`}).
 			With(daggerExec("develop")).
 			WithExec([]string{"grep", "packaging==23.2", "requirements.lock"}).
-			With(daggerCall("versions", "--names=platformdirs,packaging")).
+			With(daggerCallAt(".", "versions", "--names=platformdirs,packaging")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -1152,7 +1160,7 @@ func (PythonSuite) TestSignatures(ctx context.Context, t *testctx.T) {
 		},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			out, err := modGen.With(daggerQuery(tc.query)).Stdout(ctx)
+			out, err := modGen.With(daggerQueryAt(".", tc.query)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, tc.expected, out)
 		})
@@ -1181,7 +1189,7 @@ func (PythonSuite) TestSignaturesBuiltinTypes(ctx context.Context, t *testctx.T)
                 return "" if dir is None else await dir.file("foo").contents()
     `)
 
-	out, err := modGen.With(daggerQuery(`{directory{withNewFile(path: "foo", contents: "bar"){id}}}`)).Stdout(ctx)
+	out, err := modGen.With(daggerQueryAt(".", `{directory{withNewFile(path: "foo", contents: "bar"){id}}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	dirID := gjson.Get(out, "directory.withNewFile.id").String()
 
@@ -1212,7 +1220,7 @@ func (PythonSuite) TestSignaturesBuiltinTypes(ctx context.Context, t *testctx.T)
 		},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			out, err := modGen.With(daggerQuery(tc.query)).Stdout(ctx)
+			out, err := modGen.With(daggerQueryAt(".", tc.query)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, tc.expected, out)
 		})
@@ -1356,7 +1364,7 @@ func (PythonSuite) TestDocs(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "https://example.org", obj.Get("constructor.args.#(name=orgUrl).defaultValue.@fromstr").String())
 
 		// Sanity check
-		out, err := modGen.With(daggerCall("urls", "--json")).Stdout(ctx)
+		out, err := modGen.With(daggerCallAt(".", "urls", "--json")).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `["https://example.com", "https://example.org"]`, out)
 	})
@@ -1380,7 +1388,7 @@ func (PythonSuite) TestDocs(ctx context.Context, t *testctx.T) {
                     ...
         `)
 
-		_, err := modGen.With(daggerCall("--help")).Sync(ctx)
+		_, err := modGen.With(daggerCallAt(".", "--help")).Sync(ctx)
 		requireErrOut(t, err, "InitVar[typing.Annotated[str, Doc('A URL')]]")
 	})
 
@@ -1615,11 +1623,11 @@ class Test:
     def echo(self, msg: str) -> str:
         return msg
 `)
-		out, err := modGen.With(daggerCall("hello")).Stdout(ctx)
+		out, err := modGen.With(daggerCallAt(".", "hello")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "aliased:world", out)
 
-		out, err = modGen.With(daggerCall("echo", "--msg=hi")).Stdout(ctx)
+		out, err = modGen.With(daggerCallAt(".", "echo", "--msg=hi")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hi", out)
 	})
@@ -1650,12 +1658,12 @@ class Test(Base):
         return msg.lower()
 `)
 		// Inherited from Base.
-		out, err := modGen.With(daggerCall("shout", "--msg=hello")).Stdout(ctx)
+		out, err := modGen.With(daggerCallAt(".", "shout", "--msg=hello")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "HELLO", out)
 
 		// Defined on Test.
-		out, err = modGen.With(daggerCall("whisper", "--msg=Loud")).Stdout(ctx)
+		out, err = modGen.With(daggerCallAt(".", "whisper", "--msg=Loud")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "loud", out)
 	})
@@ -1676,7 +1684,7 @@ class Test:
     def shout(msg: str) -> str:
         return msg.upper()
 `)
-		out, err := modGen.With(daggerCall("shout", "--msg=hi")).Stdout(ctx)
+		out, err := modGen.With(daggerCallAt(".", "shout", "--msg=hi")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "HI", out)
 	})
@@ -1699,7 +1707,7 @@ class Test:
     def hello(self, msg: str = DEFAULT) -> str:
         return msg
 `)
-		out, err := modGen.With(daggerCall("hello")).Stdout(ctx)
+		out, err := modGen.With(daggerCallAt(".", "hello")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "fallback", out)
 	})
@@ -1728,7 +1736,7 @@ class Test:
     def name_of(self, p: Priority) -> str:
         return p.name
 `)
-		out, err := modGen.With(daggerCall("name-of", "--p=HIGH")).Stdout(ctx)
+		out, err := modGen.With(daggerCallAt(".", "name-of", "--p=HIGH")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "HIGH", out)
 	})
@@ -1756,7 +1764,7 @@ class Test:
     def hello(self, name: str = DEFAULT_NAME) -> str:
         return name
 `))
-		out, err := modGen.With(daggerCall("hello")).Stdout(ctx)
+		out, err := modGen.With(daggerCallAt(".", "hello")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "from-helpers", out)
 	})
@@ -1782,7 +1790,7 @@ class Test:
     def env(self, kind: Literal["dev", "prod"]) -> str:
         return kind
 `)
-		_, err := modGen.With(daggerCall("env", "--kind=dev")).Stdout(ctx)
+		_, err := modGen.With(daggerCallAt(".", "env", "--kind=dev")).Stdout(ctx)
 		require.Error(t, err)
 	})
 }
@@ -1802,11 +1810,11 @@ func (PythonSuite) TestNameConflicts(ctx context.Context, t *testctx.T) {
                 return import_
         `)
 
-	out, err := modGen.With(daggerCall("--from=foo", "from")).Stdout(ctx)
+	out, err := modGen.With(daggerCallAt(".", "--from=foo", "from")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "foo", out)
 
-	out, err = modGen.With(daggerCall("pass", "--import=bar")).Stdout(ctx)
+	out, err = modGen.With(daggerCallAt(".", "pass", "--import=bar")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "bar", out)
 }
@@ -1853,7 +1861,7 @@ func (PythonSuite) TestReturnSelf(ctx context.Context, t *testctx.T) {
                 self.message = "bar"
                 return self
         `).
-		With(daggerQuery(`{foo{message}}`)).
+		With(daggerQueryAt(".", `{foo{message}}`)).
 		Stdout(ctx)
 
 	require.NoError(t, err)
@@ -1865,7 +1873,7 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
 
 	ctr := goGitBase(t, c).
 		WithWorkdir("/work/dep").
-		With(daggerInitPython("--name=dep")).
+		With(daggerInitPython("dep")).
 		With(fileContents("src/dep/__init__.py", `
             import dagger
 
@@ -1881,7 +1889,7 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
         `)).
 		WithWorkdir("/work/test").
 		With(daggerInitPython()).
-		With(daggerExec("install", "../dep"))
+		With(daggerExec("module", "install", "../dep"))
 
 	t.Run("return as other module object", func(ctx context.Context, t *testctx.T) {
 		t.Run("direct", func(ctx context.Context, t *testctx.T) {
@@ -1895,7 +1903,7 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
                         def fn(self) -> dagger.DepObj:
                             ...
                 `)).
-				With(daggerFunctions()).
+				With(daggerFunctions("-m", ".")).
 				Sync(ctx)
 			requireErrOut(t, err, fmt.Sprintf(
 				"object %q function %q cannot return external type from dependency module %q",
@@ -1914,7 +1922,7 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
                         def fn(self) -> list[dagger.DepObj]:
                             ...
                 `)).
-				With(daggerFunctions()).
+				With(daggerFunctions("-m", ".")).
 				Sync(ctx)
 			requireErrOut(t, err, fmt.Sprintf(
 				"object %q function %q cannot return external type from dependency module %q",
@@ -1934,7 +1942,7 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
                     def fn(self, obj: dagger.DepObj):
                         ...
                 `)).
-				With(daggerFunctions()).
+				With(daggerFunctions("-m", ".")).
 				Sync(ctx)
 			requireErrOut(t, err, fmt.Sprintf(
 				"object %q function %q arg %q cannot reference external type from dependency module %q",
@@ -1952,7 +1960,7 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
                     def fn(self, obj: list[dagger.DepObj]):
                         ...
                 `)).
-				With(daggerFunctions()).
+				With(daggerFunctions("-m", ".")).
 				Sync(ctx)
 			requireErrOut(t, err, fmt.Sprintf(
 				"object %q function %q arg %q cannot reference external type from dependency module %q",
@@ -1977,7 +1985,7 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
                         def fn(self) -> Obj:
                             ...
                 `)).
-				With(daggerFunctions()).
+				With(daggerFunctions("-m", ".")).
 				Sync(ctx)
 			requireErrOut(t, err, fmt.Sprintf(
 				"object %q field %q cannot reference external type from dependency module %q",
@@ -2000,7 +2008,7 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
                         def fn(self) -> list[Obj]:
                             ...
                 `)).
-				With(daggerFunctions()).
+				With(daggerFunctions("-m", ".")).
 				Sync(ctx)
 			requireErrOut(t, err, fmt.Sprintf(
 				"object %q field %q cannot reference external type from dependency module %q",
@@ -2025,7 +2033,7 @@ func (PythonSuite) TestIgnoreConstructorArg(ctx context.Context, t *testctx.T) {
                 dagger.Ignore([".venv"]),
             ] = dagger.field()
         `).
-		With(daggerCall("source", "entries", "--json")).
+		With(daggerCallAt(".", "source", "entries", "--json")).
 		Stdout(ctx)
 
 	require.NoError(t, err)
@@ -2036,7 +2044,7 @@ func (PythonSuite) TestErrors(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctr := goGitBase(t, c).
 		WithWorkdir("/work/dep").
-		With(daggerInitPython("--name=dep")).
+		With(daggerInitPython("dep")).
 		With(fileContents("src/dep/__init__.py", fmt.Sprintf(`
             import dagger
             from dagger import dag
@@ -2054,7 +2062,7 @@ func (PythonSuite) TestErrors(ctx context.Context, t *testctx.T) {
         `, alpineImage))).
 		WithWorkdir("/work/test").
 		With(daggerInitPython()).
-		With(daggerExec("install", "../dep")).
+		With(daggerExec("module", "install", "../dep")).
 		With(pythonSource(`
 			import dagger
 			from dagger import dag
@@ -2089,23 +2097,23 @@ func (PythonSuite) TestErrors(ctx context.Context, t *testctx.T) {
 		`))
 
 	t.Run("error extensions", func(ctx context.Context, t *testctx.T) {
-		out, err := ctr.With(daggerCall("error-extensions")).Stdout(ctx)
+		out, err := ctr.With(daggerCallAt(".", "error-extensions")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "error: oh noes", out)
 	})
 
 	t.Run("sync calls async", func(ctx context.Context, t *testctx.T) {
-		_, err := ctr.With(daggerCall("coro")).Sync(ctx)
+		_, err := ctr.With(daggerCallAt(".", "coro")).Sync(ctx)
 		requireErrOut(t, err, "Did you forget to add 'async'")
 	})
 
 	t.Run("async without await", func(ctx context.Context, t *testctx.T) {
-		_, err := ctr.With(daggerCall("nowait")).Sync(ctx)
+		_, err := ctr.With(daggerCallAt(".", "nowait")).Sync(ctx)
 		requireErrOut(t, err, "Did you forget to add an 'await'")
 	})
 
 	t.Run("unhandled", func(ctx context.Context, t *testctx.T) {
-		_, err := ctr.With(daggerCall("unhandled")).Sync(ctx)
+		_, err := ctr.With(daggerCallAt(".", "unhandled")).Sync(ctx)
 		var exerr *dagger.ExecError
 		require.ErrorAs(t, err, &exerr)
 		require.Contains(t, exerr.Stderr, "Unhandled exception while executing function")
@@ -2151,14 +2159,14 @@ version = "0.0.0"
 }
 
 func daggerInitPythonAt(modPath string, args ...string) dagger.WithContainerFunc {
-	execArgs := append([]string{"init", "--sdk=python"}, args...)
+	execArgs := append([]string{"module", "init", "--sdk=python"}, args...)
 	if len(args) == 0 {
-		execArgs = append(execArgs, "--name=test")
+		execArgs = append(execArgs, "test")
 	}
 	if modPath != "" {
 		execArgs = append(execArgs, "--source="+modPath, modPath)
 	} else {
-		execArgs = append(execArgs, "--source=.")
+		execArgs = append(execArgs, "--source=.", ".")
 	}
 	return daggerExec(execArgs...)
 }
@@ -2193,12 +2201,12 @@ class Test:
         return await ctr.with_exec(["cat", "/etc/alpine-release"]).stdout()
 `)
 
-	out, err := modGen.With(daggerCall("version")).Stdout(ctx)
+	out, err := modGen.With(daggerCallAt(".", "version")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "3.19") // Alpine version contains "3.19.0"
 
 	// Test that we can override the default via constructor
-	out2, err := modGen.With(daggerCall("version", "--ctr=alpine:3.18")).Stdout(ctx)
+	out2, err := modGen.With(daggerCallAt(".", "version", "--ctr=alpine:3.18")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out2, "3.18")
 }
@@ -2231,19 +2239,19 @@ class Test:
 `)
 
 	t.Run("default value applied at call time", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerCall("pick")).Stdout(ctx)
+		out, err := modGen.With(daggerCallAt(".", "pick")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "RED", out)
 	})
 
 	t.Run("explicit value overrides default", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerCall("pick", "--color", "BLUE")).Stdout(ctx)
+		out, err := modGen.With(daggerCallAt(".", "pick", "--color", "BLUE")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "BLUE", out)
 	})
 
 	t.Run("default shown in --help output", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerCall("pick", "--help")).Stdout(ctx)
+		out, err := modGen.With(daggerCallAt(".", "pick", "--help")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "default RED",
 			"--help should display the enum default value")

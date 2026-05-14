@@ -1,5 +1,12 @@
 package core
 
+// These tests cover the client libraries produced by `dagger client`. They
+// verify the files written into a project and the dependencies those generated
+// clients declare.
+//
+// See also:
+// - module_develop_cli_test.go: generated module code from `dagger develop`.
+
 import (
 	"context"
 	"encoding/json"
@@ -220,7 +227,7 @@ main()
 					WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 					With(nonNestedDevEngine(c)).
 					With(daggerNonNestedExec("init")).
-					With(daggerNonNestedExec("install", "github.com/shykes/hello@2d789671a44c4d559be506a9bc4b71b0ba6e23c9")).
+					With(daggerNonNestedExec("module", "install", "github.com/shykes/hello@2d789671a44c4d559be506a9bc4b71b0ba6e23c9")).
 					With(tc.setup).
 					With(daggerClientInstall(tc.generator))
 
@@ -346,7 +353,7 @@ main()
 				moduleSrc := c.Container().From(tc.baseImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work/dep").
-					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+					With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
 					With(sdkSource("go", `package main
 
 		type Test struct{}
@@ -359,7 +366,7 @@ main()
 					WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 					With(nonNestedDevEngine(c)).
 					With(daggerNonNestedExec("init")).
-					With(daggerNonNestedExec("install", "./dep")).
+					With(daggerNonNestedExec("module", "install", "./dep")).
 					With(tc.setup).
 					With(daggerClientInstall(tc.generator))
 
@@ -405,7 +412,7 @@ main()
 				callCmd:   []string{"go", "run", "main.go"},
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
-						With(daggerExec("init", "--name=test", "--sdk=go", "--source=.dagger")).
+						With(daggerExec("module", "init", "--sdk=go", "--source=.dagger", "test", ".")).
 						WithNewFile(".dagger/main.go", `package main
 
 import "context"
@@ -476,7 +483,7 @@ func main() {
 				generator: "typescript",
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
-						With(daggerExec("init", "--name=test", "--sdk=typescript", "--source=.dagger")).
+						With(daggerExec("module", "init", "--sdk=typescript", "--source=.dagger", "test", ".")).
 						WithNewFile(".dagger/src/index.ts", `import { dag, object, func } from '@dagger.io/dagger'
 
 @object()
@@ -542,7 +549,7 @@ main()
 				moduleSrc = moduleSrc.With(tc.postSetup)
 
 				t.Run(fmt.Sprintf("dagger run %s", strings.Join(tc.callCmd, " ")), func(ctx context.Context, t *testctx.T) {
-					out, err := moduleSrc.With(tc.runSetup).With(daggerNonNestedRunWithWorkspaceModules(tc.callCmd...)).
+					out, err := moduleSrc.With(tc.runSetup).With(daggerNonNestedExec(append([]string{"run", "--load-workspace-modules"}, tc.callCmd...)...)).
 						Stdout(ctx)
 
 					require.NoError(t, err)
@@ -644,7 +651,7 @@ main()
 					WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 					With(nonNestedDevEngine(c)).
 					With(daggerNonNestedExec("init")).
-					With(daggerNonNestedExec("install", "github.com/shykes/hello@2d789671a44c4d559be506a9bc4b71b0ba6e23c9")).
+					With(daggerNonNestedExec("module", "install", "github.com/shykes/hello@2d789671a44c4d559be506a9bc4b71b0ba6e23c9")).
 					With(tc.setup).
 					With(daggerClientInstall(tc.generator))
 
@@ -704,7 +711,7 @@ main()
 				callCmd:   []string{"go", "run", "main.go"},
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
-						With(daggerNonNestedExec("init", "--name=test", "--sdk=go", "--source=.dagger")).
+						With(daggerNonNestedExec("module", "init", "--sdk=go", "--source=.dagger", "test", ".")).
 						WithNewFile(".dagger/main.go", `package main
 
 			type Test struct{}
@@ -749,7 +756,7 @@ main()
 				generator: "typescript",
 				setup: func(ctr *dagger.Container) *dagger.Container {
 					return ctr.
-						With(daggerNonNestedExec("init", "--name=test", "--sdk=typescript", "--source=.dagger")).
+						With(daggerNonNestedExec("module", "init", "--sdk=typescript", "--source=.dagger", "test", ".")).
 						WithNewFile(".dagger/src/index.ts", `import { object, func } from '@dagger.io/dagger'
 
 @object()
@@ -825,7 +832,7 @@ main()
 				}
 
 				out, err := regeneratedSrc.
-					With(daggerNonNestedRunWithWorkspaceModules(tc.callCmd...)).
+					With(daggerNonNestedExec(append([]string{"run", "--load-workspace-modules"}, tc.callCmd...)...)).
 					Stdout(ctx)
 
 				require.NoError(t, err)
@@ -1235,7 +1242,7 @@ export class GeneratorModule {
 			moduleSrc := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work/generator").
-				With(daggerExec("init", "--name=generator-module", fmt.Sprintf("--sdk=%s", tc.generatorSDK), "--source=.")).
+				With(daggerExec("module", "init", "generator-module", fmt.Sprintf("--sdk=%s", tc.generatorSDK), "--source=.", ".")).
 				With(sdkSource(tc.generatorSDK, tc.generatorSource)).
 				WithWorkdir("/work").
 				With(daggerExec("init")).
@@ -1408,7 +1415,7 @@ func (ClientGeneratorTest) TestGlobalClient(ctx context.Context, t *testctx.T) {
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 			With(nonNestedDevEngine(c)).
 			With(daggerNonNestedExec("init")).
-			With(daggerNonNestedExec("install", "github.com/shykes/hello@2d789671a44c4d559be506a9bc4b71b0ba6e23c9")).
+			With(daggerNonNestedExec("module", "install", "github.com/shykes/hello@2d789671a44c4d559be506a9bc4b71b0ba6e23c9")).
 			With(withGoSetup(`package main
 import (
   "context"
@@ -1496,7 +1503,7 @@ func main() {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 		With(nonNestedDevEngine(c)).
 		With(daggerNonNestedExec("init")).
-		With(daggerNonNestedExec("install", "github.com/shykes/hello@2d789671a44c4d559be506a9bc4b71b0ba6e23c9")).
+		With(daggerNonNestedExec("module", "install", "github.com/shykes/hello@2d789671a44c4d559be506a9bc4b71b0ba6e23c9")).
 		WithExec([]string{"go", "mod", "init", "test.com/test"}).
 		// We cannot directly import both clients because path will not be
 		// recognized during post client operation like go mod tidy.
@@ -1823,7 +1830,7 @@ func (ClientGeneratorTest) TestConstructorArgs(ctx context.Context, t *testctx.T
 		WithWorkdir("/work").
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 		With(nonNestedDevEngine(c)).
-		With(daggerNonNestedExec("init", "--source=.", "--name=test", "--sdk=go")).
+		With(daggerNonNestedExec("module", "init", "--source=.", "--sdk=go", "test", ".")).
 		WithNewFile("main.go", `package main
 
 type Test struct {
@@ -1875,7 +1882,7 @@ func main() {
 		With(addSDKReplaceToClient(defaultGenDir)).
 		WithExec([]string{"go", "mod", "tidy"})
 
-	out, err := moduleSrc.With(daggerNonNestedRunWithWorkspaceModules("go", "run", "./cmd/main.go")).Stdout(ctx)
+	out, err := moduleSrc.With(daggerNonNestedExec("run", "--load-workspace-modules", "go", "run", "./cmd/main.go")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "result: hi, world!")
 }
@@ -1893,7 +1900,7 @@ func (ClientGeneratorTest) TestMissmatchDependencyVersion(ctx context.Context, t
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 		With(nonNestedDevEngine(c)).
 		With(daggerNonNestedExec("init")).
-		With(daggerNonNestedExec("install", "github.com/dagger/dagger-test-modules@v1.2.3")).
+		With(daggerNonNestedExec("module", "install", "github.com/dagger/dagger-test-modules@v1.2.3")).
 		With(withGoSetup(`package main
 
 		import (
@@ -1945,7 +1952,7 @@ func (ClientGeneratorTest) TestNoGoProjectSetup(ctx context.Context, t *testctx.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 			With(nonNestedDevEngine(c)).
 			WithExec([]string{"go", "mod", "init", "test"}).
-			With(daggerNonNestedExec("init", "--name=test")).
+			With(daggerNonNestedExec("module", "init", "test", ".")).
 			With(daggerClientInstall("go"))
 
 		// Verify that we generated the go.mod and the library in the default location
@@ -1991,7 +1998,7 @@ func main() {
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 			With(nonNestedDevEngine(c)).
 			WithExec([]string{"go", "mod", "init", "test.com/test"}).
-			With(daggerNonNestedExec("init", "--name=test")).
+			With(daggerNonNestedExec("module", "init", "test", ".")).
 			With(daggerClientInstall("go")).
 			WithNewFile("main.go", `package main
 import (
@@ -2183,7 +2190,7 @@ func (ClientGeneratorTest) TestSeparateGoMod(ctx context.Context, t *testctx.T) 
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 		With(nonNestedDevEngine(c)).
 		WithExec([]string{"go", "mod", "init", "example.com/myapp"}).
-		With(daggerNonNestedExec("init", "--name=mytest")).
+		With(daggerNonNestedExec("module", "init", "mytest", ".")).
 		With(daggerClientInstall("go"))
 
 	// Verify client has its own go.mod with correct module name
@@ -2211,7 +2218,7 @@ func (ClientGeneratorTest) TestClientParity(ctx context.Context, t *testctx.T) {
 		WithWorkdir("/work").
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 		With(nonNestedDevEngine(c)).
-		With(daggerNonNestedExec("init", "--name=test", "--sdk=go")).
+		With(daggerNonNestedExec("module", "init", "--sdk=go", "test", ".")).
 		With(daggerClientInstall("go"))
 
 	// Verify generated client has GraphQLClient, QueryBuilder, and Do methods

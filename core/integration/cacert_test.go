@@ -1,5 +1,11 @@
 package core
 
+// These tests cover custom CA certificates made available to containers and
+// network clients so TLS connections trust expected certificate authorities.
+//
+// See also:
+// - http_test.go: HTTP and HTTPS resource fetching.
+
 import (
 	"context"
 	"fmt"
@@ -352,7 +358,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
-				With(daggerExec("init", "--name=test", "--sdk=go")).
+				With(daggerExec("module", "init", "--sdk=go", "test", ".")).
 				With(sdkSource("go", `package main
 
 import (
@@ -379,7 +385,7 @@ func (m *Test) GetHttp(ctx context.Context) (string, error) {
 	return string(bs), nil
 }
 `)).
-				With(daggerCall("get-http")).
+				With(daggerCallAt(".", "get-http")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hello", strings.TrimSpace(out))
@@ -389,7 +395,7 @@ func (m *Test) GetHttp(ctx context.Context) (string, error) {
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
-				With(daggerExec("init", "--name=test", "--sdk=python")).
+				With(daggerExec("module", "init", "--sdk=python", "test", ".")).
 				With(sdkSource("python", `
 import urllib.request
 
@@ -401,7 +407,7 @@ class Test:
     def get_http(self) -> str:
             return urllib.request.urlopen("https://server").read().decode("utf-8")
 `)).
-				With(daggerCall("get-http")).
+				With(daggerCallAt(".", "get-http")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hello", strings.TrimSpace(out))
@@ -411,7 +417,7 @@ class Test:
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
-				With(daggerExec("init", "--name=test", "--sdk=typescript")).
+				With(daggerExec("module", "init", "--sdk=typescript", "test", ".")).
 				With(sdkSource("typescript", `
 import { object, func } from "@dagger.io/dagger";
 import * as https from "https";
@@ -442,7 +448,7 @@ export class Test {
     }
 }
 `)).
-				With(daggerCall("get-http")).
+				With(daggerCallAt(".", "get-http")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hello", strings.TrimSpace(out))
@@ -472,14 +478,14 @@ export class Test {
 	`, alpineImage), 0644)
 			require.NoError(t, err)
 
-			initCmd := hostDaggerCommand(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+			initCmd := hostDaggerCommand(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test", ".")
 			copy(initCmd.Env, os.Environ())
 			initCmd.Env = append(initCmd.Env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+f.engineEndpoint)
 			initOutput, err := initCmd.CombinedOutput()
 			require.NoError(t, err, initOutput)
 
 			// cache the module load itself so there's less to wait for in the shell invocation below
-			functionsCmd := hostDaggerCommand(ctx, t, modDir, "functions")
+			functionsCmd := hostDaggerCommand(ctx, t, modDir, "functions", "-m", ".")
 			copy(functionsCmd.Env, os.Environ())
 			functionsCmd.Env = append(functionsCmd.Env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+f.engineEndpoint)
 			functionsOutput, err := functionsCmd.CombinedOutput()
@@ -498,7 +504,7 @@ export class Test {
 			err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 			require.NoError(t, err)
 
-			cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "terminal")
+			cmd := hostDaggerCommand(ctx, t, modDir, "call", "-m", ".", "ctr", "terminal")
 			copy(cmd.Env, os.Environ())
 			cmd.Env = append(cmd.Env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+f.engineEndpoint)
 			cmd.Stdin = tty

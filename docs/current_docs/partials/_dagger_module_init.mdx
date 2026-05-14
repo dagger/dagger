@@ -1,4 +1,4 @@
-A new Dagger module is initialized by calling `dagger init`. This creates a new `dagger.json` configuration file in the current working directory, together with sample Dagger Function source code. The configuration file will default the name of the module to the current directory name, unless an alternative is specified with the `--name` argument.
+A new Dagger module is initialized by calling `dagger module init NAME [PATH]`. This creates a new `dagger.json` configuration file, together with sample Dagger Function source code. If `PATH` is omitted, the module is created in `.dagger/modules/NAME` and added to the workspace configuration. If `PATH` is provided, the module is created at that path as a standalone module.
 
 Once a module is initialized, `dagger develop --sdk=...` sets up or updates all the resources needed to develop the module locally. By default, the module source code will be stored in the current working directory, unless an alternative is specified with the `--source` argument.
 
@@ -13,7 +13,6 @@ The default template from `dagger develop` creates the following structure:
 
 ```
 .
-├── LICENSE
 ├── dagger.gen.go
 ├── go.mod
 ├── go.sum
@@ -35,14 +34,12 @@ In this structure:
     - `querybuilder` has utilities for building GraphQL queries (used internally by the `dagger` package).
     - `telemetry` has utilities for sending Dagger Engine telemetry.
 
-For examples of modules written in Go, see [Daggerverse Modules in Go](https://daggerverse.dev/search?sdk=go).
 
 </TabItem>
 <TabItem value="python" label="Python">
 
 ```
 .
-├── LICENSE
 ├── pyproject.toml
 ├── uv.lock
 ├── sdk
@@ -65,14 +62,12 @@ In this structure:
 Placing the source code under a `src` directory follows a common Python convention. To know more, see [src layout vs flat layout](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/).
 :::
 
-For examples of modules written in Python, see [Daggerverse Modules in Python](https://daggerverse.dev/search?sdk=python).
 
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
 ```
 .
-├── LICENSE
 ├── package.json
 ├── sdk
 ├── src
@@ -88,7 +83,7 @@ In this structure:
 - `src/` is where your Dagger module code goes. It contains sample code to help you get started.
 - `sdk/` contains the bundled TypeScript SDK.
 
-For examples of modules written in Typescript, see [Daggerverse Modules in Typescript](https://daggerverse.dev/search?sdk=typescript
+
 </TabItem>
 <TabItem value="php" label="PHP">
 
@@ -97,7 +92,6 @@ For examples of modules written in Typescript, see [Daggerverse Modules in Types
 ├── composer.json
 ├── composer.lock
 ├── dagger.json
-├── LICENSE
 ├── README.md
 ├── sdk
 ├── src
@@ -112,7 +106,6 @@ In this structure:
 - `src/` is where your Dagger module code goes. It contains sample code to help you get started.
 - `sdk/` contains the PHP SDK.
 
-For examples of modules written in PHP, see [Daggerverse Modules in PHP](https://daggerverse.dev/search?sdk=php).
 
 </TabItem>
 <TabItem value="java" label="Java">

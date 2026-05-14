@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/juju/ansiterm/tabwriter"
@@ -35,7 +36,6 @@ func init() {
 }
 
 var checksCmd = &cobra.Command{
-	Hidden:  true,
 	Aliases: []string{"checks"},
 	Use:     "check [options] [pattern...]",
 	Short:   "Check the state of your project by running tests, linters, etc.",
@@ -45,8 +45,10 @@ Examples:
   dagger check                    # Run all checks
   dagger check -l                 # List all available checks
   dagger check go:lint            # Run the go:lint check and any subchecks
+  dagger -W github.com/acme/ws check go:lint  # Run check(s) against explicit workspace
 `,
-	Args: cobra.ArbitraryArgs,
+	GroupID: execGroup.ID,
+	Args:    cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		params := client.Params{
 			EnableCloudScaleOut:  enableScaleOut,
@@ -160,37 +162,44 @@ func listChecks(ctx context.Context, dag *dagger.Client, checkgroup *dagger.Chec
 		return err
 	}
 
-	// Partition into checks and generators
-	var checks, generators []*CheckInfo
-	for _, c := range info.Checks {
+	return writeCheckList(cmd.OutOrStdout(), info.Checks)
+}
+
+func writeCheckList(w io.Writer, checks []*CheckInfo) error {
+	showType := false
+	for _, c := range checks {
 		if c.Type == "generate" {
-			generators = append(generators, c)
-		} else {
-			checks = append(checks, c)
+			showType = true
+			break
 		}
 	}
 
-	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
-	fmt.Fprintf(tw, "%s\t%s\n",
-		termenv.String("Name").Bold(),
-		termenv.String("Description").Bold(),
-	)
+	tw := tabwriter.NewWriter(w, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
+	if showType {
+		fmt.Fprintf(tw, "%s\t%s\t%s\n",
+			termenv.String("Name").Bold(),
+			termenv.String("Type").Bold(),
+			termenv.String("Description").Bold(),
+		)
+	} else {
+		fmt.Fprintf(tw, "%s\t%s\n",
+			termenv.String("Name").Bold(),
+			termenv.String("Description").Bold(),
+		)
+	}
 	for _, check := range checks {
 		firstLine := check.Description
 		if idx := strings.Index(check.Description, "\n"); idx != -1 {
 			firstLine = check.Description[:idx]
 		}
-		fmt.Fprintf(tw, "%s\t%s\n", check.Name, firstLine)
-	}
-	if len(generators) > 0 {
-		fmt.Fprintf(tw, "\t\n")
-		fmt.Fprintf(tw, "%s\t\n", termenv.String("Generators").Bold())
-		for _, gen := range generators {
-			firstLine := gen.Description
-			if idx := strings.Index(gen.Description, "\n"); idx != -1 {
-				firstLine = gen.Description[:idx]
+		if showType {
+			checkType := check.Type
+			if checkType == "" {
+				checkType = "check"
 			}
-			fmt.Fprintf(tw, "%s\t%s\n", gen.Name, firstLine)
+			fmt.Fprintf(tw, "%s\t%s\t%s\n", check.Name, checkType, firstLine)
+		} else {
+			fmt.Fprintf(tw, "%s\t%s\n", check.Name, firstLine)
 		}
 	}
 	return tw.Flush()

@@ -1,5 +1,9 @@
 package core
 
+// These tests cover Changeset values produced by comparing directories. They
+// verify added, removed, and modified paths, patch/export output, merging, and
+// use from generated module bindings.
+
 import (
 	"context"
 	"fmt"
@@ -781,7 +785,7 @@ func (s ChangesetSuite) TestExport(ctx context.Context, t *testctx.T) {
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "test", ".")).
 		WithNewFile("main.go", `package main
 
 import (

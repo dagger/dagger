@@ -1,5 +1,14 @@
 package core
 
+// These tests cover the Dagger engine process and the client/engine contract.
+// They verify signal handling, engine naming, `dagger run`, version
+// compatibility, cancellation, Prometheus metrics, DagQL cache cleanup, and
+// client metadata reuse.
+//
+// See also:
+// - provision_test.go: engine provisioning and driver selection.
+// - engine_persistence_test.go: engine state across restarts.
+
 import (
 	"bytes"
 	"context"
@@ -537,7 +546,7 @@ func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
 				// set version to empty, this makes it the latest, we don't want to
 				// test client compat (that's the previous tests)
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "").
-				With(daggerExec("init", "--name=bare", "--sdk=go"))
+				With(daggerExec("module", "init", "--sdk=go", "bare", "."))
 
 			clientCtr = clientCtr.
 				WithNewFile("/work/dagger.json", `{"name": "bare", "sdk": "go", "engineVersion": "`+tc.moduleVersion+`"}`).
@@ -570,7 +579,7 @@ func (EngineSuite) TestModuleVersionCompatInvalid(ctx context.Context, t *testct
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--name=bare", "--sdk=go")).
+		With(daggerExec("module", "init", "--sdk=go", "bare", ".")).
 		WithNewFile("dagger.json", `{ "name": "bare", "engineVersion": "v100.0.0", "sdk": 123 }`)
 	_, err := modGen.
 		With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
@@ -871,14 +880,14 @@ rm -rf /tmp/main
 mkdir -p /tmp/main
 cd /tmp/main
 
-dagger init --name main --sdk=go >/dev/null
+dagger module init --sdk=go main . >/dev/null
 
 mkdir -p dep
 cd dep
-dagger init --name dep --sdk=python >/dev/null
+dagger module init --sdk=python dep . >/dev/null
 
 cd /tmp/main
-dagger install ./dep >/dev/null
+dagger module install ./dep >/dev/null
 
 # Load module + dependency schema a few times to exercise cache lifecycle.
 for i in $(seq 1 4); do

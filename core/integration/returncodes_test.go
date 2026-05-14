@@ -1,5 +1,11 @@
 package core
 
+// These tests cover how the CLI reports process exit codes. They verify large
+// exit codes are normalized the same way a shell observes them.
+//
+// See also:
+// - module_error_test.go: module-specific error surfaces.
+
 import (
 	"context"
 	"testing"

@@ -1,5 +1,12 @@
 package core
 
+// These tests cover modules written in Dang that install other local modules as
+// dependencies. They verify a Dang module calling Go, Python, TypeScript, and
+// Dang child modules.
+//
+// See also:
+// - module_dependency_runtime_test.go: runtime use of installed module dependencies.
+
 import (
 	"context"
 
@@ -73,10 +80,10 @@ type Test {
   }
 }
 `)).
-		With(daggerExec("install", "./gochild")).
-		With(daggerExec("install", "./pychild")).
-		With(daggerExec("install", "./tschild")).
-		With(daggerExec("install", "./dangchild"))
+		With(daggerExec("module", "install", "./gochild")).
+		With(daggerExec("module", "install", "./pychild")).
+		With(daggerExec("module", "install", "./tschild")).
+		With(daggerExec("module", "install", "./dangchild"))
 
 	for _, tc := range []struct {
 		name string

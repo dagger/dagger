@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
@@ -60,6 +59,37 @@ func currentLookupLockMode(ctx context.Context) (workspace.LockMode, error) {
 		return "", fmt.Errorf("client metadata: %w", err)
 	}
 	return workspace.ResolveLockMode(clientMetadata.LockMode)
+}
+
+// lookupLockForMode is the policy boundary between ordinary lookups and
+// workspace lockfiles. Default/live/pinned lookups use a writable local
+// workspace lock binding when one exists; without one they resolve live and
+// skip lock writes. Frozen mode is different: it is an explicit request to
+// enforce a lockfile, so absence of a writable workspace lock is an error.
+func lookupLockForMode(
+	ctx context.Context,
+	query *core.Query,
+	operation string,
+) (workspace.LockMode, *workspaceLookupLock, error) {
+	lockMode, err := currentLookupLockMode(ctx)
+	if err != nil {
+		return "", nil, fmt.Errorf("%s lock mode: %w", operation, err)
+	}
+	if lockMode == workspace.LockModeDisabled {
+		return lockMode, nil, nil
+	}
+
+	lookupLock, err := loadWorkspaceLookupLock(ctx, query)
+	if err != nil {
+		return "", nil, fmt.Errorf("%s lockfile: %w", operation, err)
+	}
+	if lookupLock == nil {
+		if lockMode == workspace.LockModeFrozen {
+			return "", nil, fmt.Errorf("%s lockfile: no writable workspace lockfile is available", operation)
+		}
+		return workspace.LockModeDisabled, nil, nil
+	}
+	return lockMode, lookupLock, nil
 }
 
 type lookupLockResolution struct {
@@ -125,13 +155,10 @@ func resolveLookupFromLock(
 }
 
 func lockHostPath(ws *core.Workspace) (string, error) {
-	if ws == nil {
-		return "", fmt.Errorf("workspace is required")
+	if ws.LockFile == "" {
+		return "", fmt.Errorf("workspace lockfile is not selected")
 	}
-	if ws.HostPath() == "" {
-		return "", fmt.Errorf("workspace has no host path")
-	}
-	return filepath.Join(ws.HostPath(), ws.Path, workspace.LockDirName, workspace.LockFileName), nil
+	return workspaceHostPath(ws, ws.LockFile)
 }
 
 func readWorkspaceLock(ctx context.Context, bk interface {
@@ -166,4 +193,56 @@ func readWorkspaceLockState(ctx context.Context, bk interface {
 
 func isWorkspaceLockNotFound(err error) bool {
 	return errors.Is(err, os.ErrNotExist) || status.Code(err) == codes.NotFound
+}
+
+func resolveModuleSourceLookupResult(
+	ctx context.Context,
+	query *core.Query,
+	source string,
+	policy workspace.LockPolicy,
+) (workspace.LookupResult, error) {
+	ctx = lookupRefreshContext(ctx)
+
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return workspace.LookupResult{}, fmt.Errorf("engine client: %w", err)
+	}
+
+	parsedRef, err := core.ParseRefString(ctx, core.NewCallerStatFS(bk), source, "")
+	if err != nil {
+		return workspace.LookupResult{}, fmt.Errorf("parse module source %q: %w", source, err)
+	}
+	if parsedRef.Kind != core.ModuleSourceKindGit {
+		return workspace.LookupResult{}, fmt.Errorf("module source %q is not a git source", source)
+	}
+
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return workspace.LookupResult{}, fmt.Errorf("query server: %w", err)
+	}
+
+	gitRef, err := parsedRef.Git.GitRef(ctx, dag, "")
+	if err != nil {
+		return workspace.LookupResult{}, fmt.Errorf("resolve module source %q: %w", source, err)
+	}
+
+	if policy == "" {
+		policy = moduleResolveLockPolicy(gitRef.Self().Ref)
+	}
+
+	return workspace.LookupResult{
+		Value:  gitRef.Self().Ref.SHA,
+		Policy: policy,
+	}, nil
+}
+
+func lookupRefreshContext(ctx context.Context) context.Context {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return ctx
+	}
+
+	refreshed := *clientMetadata
+	refreshed.LockMode = string(workspace.LockModeDisabled)
+	return engine.ContextWithClientMetadata(ctx, &refreshed)
 }

@@ -22,7 +22,10 @@ import (
 )
 
 type currentTypeDefsTestServer struct {
-	deps *core.SchemaBuilder
+	deps             *core.SchemaBuilder
+	workspaceLock    *workspace.Lock
+	workspaceLockOK  bool
+	workspaceLockErr error
 }
 
 func (s *currentTypeDefsTestServer) ServeModule(context.Context, dagql.ObjectResult[*core.Module], bool, bool) error {
@@ -149,7 +152,7 @@ func (s *currentTypeDefsTestServer) CloudEngineClient(context.Context, string, s
 func (s *currentTypeDefsTestServer) CleanMountNS() *os.File { return nil }
 
 func (s *currentTypeDefsTestServer) CurrentWorkspaceLock(context.Context) (*workspace.Lock, bool, error) {
-	return nil, false, nil
+	return s.workspaceLock, s.workspaceLockOK, s.workspaceLockErr
 }
 
 func (s *currentTypeDefsTestServer) SetCurrentWorkspaceLookup(context.Context, string, string, []any, workspace.LookupResult) error {

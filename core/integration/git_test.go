@@ -1,5 +1,13 @@
 package core
 
+// These tests cover the GitRepository API for public or otherwise
+// auth-independent repositories. They verify cloning, refs, commits, trees, and
+// fetched file contents.
+//
+// See also:
+// - gitcredential_test.go: credential forwarding for Git sources.
+// - ref_test.go: module reference resolution for Git-shaped paths.
+
 import (
 	"context"
 	"encoding/base64"

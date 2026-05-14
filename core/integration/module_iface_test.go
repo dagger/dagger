@@ -1,5 +1,12 @@
 package core
 
+// These tests cover Dagger interfaces declared by modules across SDKs. They
+// verify interface definitions, implementation objects, and module functions
+// that accept or return interface values.
+//
+// See also:
+// - module_type_test.go: concrete custom types in module APIs.
+
 import (
 	"context"
 	"fmt"
@@ -36,7 +43,7 @@ func (InterfaceSuite) TestIfaceBasic(ctx context.Context, t *testctx.T) {
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithMountedDirectory("/work", c.Host().Directory(tc.path)).
 				WithWorkdir("/work").
-				With(daggerCall("test")).
+				With(daggerCallAt(".", "test")).
 				Sync(ctx)
 			require.NoError(t, err)
 		})
@@ -51,7 +58,7 @@ func (InterfaceSuite) TestIfaceGoSadPaths(ctx context.Context, t *testctx.T) {
 		_, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			With(daggerExec("module", "init", "--source=.", "--sdk=go", "test", ".")).
 			WithNewFile("main.go", `package main
 type Test struct {}
 
@@ -64,7 +71,7 @@ func (m *Test) Fn() BadIface {
 }
 	`,
 			).
-			With(daggerFunctions()).
+			With(daggerFunctions("-m", ".")).
 			Sync(ctx)
 		require.Error(t, err)
 		require.NoError(t, c.Close())
@@ -78,7 +85,7 @@ func (InterfaceSuite) TestIfaceGoDanglingInterface(ctx context.Context, t *testc
 	modGen, err := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "test", ".")).
 		WithNewFile("main.go", `package main
 type Test struct {}
 
@@ -101,7 +108,7 @@ type DanglingIface interface {
 	require.NoError(t, err)
 
 	out, err := modGen.
-		With(daggerQuery(`{hello}`)).
+		With(daggerQueryAt(".", `{hello}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"hello":"hello"}`, out)
@@ -216,8 +223,8 @@ class Test:
 					With(withModInitAt("mallard", tc.sdk, tc.depSource)).
 					With(daggerCallAt("mallard", "quack")).
 					With(withModInit(rtc.sdk, rtc.testSource)).
-					With(daggerExec("install", "./mallard")).
-					With(daggerCall("get-duck", "quack")).
+					With(daggerExec("module", "install", "./mallard")).
+					With(daggerCallAt(".", "get-duck", "quack")).
 					Stdout(ctx)
 
 				require.NoError(t, err)

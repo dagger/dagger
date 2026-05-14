@@ -1,5 +1,9 @@
 package core
 
+// These tests cover privileged nested Dagger calls from inside a container. They
+// verify that a container can query the current Dagger session over
+// `$DAGGER_SESSION_PORT`.
+
 import (
 	"context"
 

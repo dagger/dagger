@@ -1,5 +1,12 @@
 package core
 
+// These tests cover external secret providers. They verify provider selection
+// and resolving secrets through provider-specific backends.
+//
+// See also:
+// - secret_test.go: core Secret behavior.
+// - secret_gcp_test.go: GCP-backed secret provider integration.
+
 import (
 	"context"
 	_ "embed"
@@ -341,7 +348,7 @@ func (SecretProvider) TestVaultTTL(ctx context.Context, t *testctx.T) {
 	verifySecretFromVault := func(ctx context.Context, base *dagger.Container, secretURL string, tcname string) (string, error) {
 		return base.
 			WithWorkdir("/work").
-			With(daggerExec("init", "--sdk=go", "--name=foo", "--source=.")).
+			With(daggerExec("module", "init", "--sdk=go", "--source=.", "foo", ".")).
 			WithNewFile("main.go", `package main
 
 import (

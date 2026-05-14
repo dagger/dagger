@@ -1,5 +1,12 @@
 package core
 
+// These tests cover forwarding host Git credentials into operations that fetch
+// module source or install module dependencies from private Git repositories.
+//
+// See also:
+// - module_private_deps_test.go: SSH-backed private dependency access.
+// - git_test.go: auth-independent Git source behavior.
+
 import (
 	"context"
 	"encoding/base64"
@@ -41,7 +48,7 @@ func (GitCredentialSuite) TestGitCredentialErrors(ctx context.Context, t *testct
 
 	// Wrapper to execute dagger commands running on host with custom env vars
 	execWithEnv := func(ctx context.Context, t *testctx.T, workDir string, env []string, args ...string) ([]byte, error) {
-		cmd := hostDaggerCommand(ctx, t, workDir, args...)
+		cmd := hostDaggerCommandRaw(ctx, t, workDir, args...)
 
 		// Start with the full environment
 		currentEnv := os.Environ()
@@ -160,7 +167,7 @@ func (m *Dep) ListFiles(ctx context.Context, dir *dagger.Directory) ([]string, e
 		require.NoError(t, err)
 
 		// Initialize the dependent module
-		_, err = hostDaggerExec(ctx, t, depModDir, "init", "--source=.", "--name=dep", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, depModDir, "module", "init", "--source=.", "--sdk=go", "dep", ".")
 		require.NoError(t, err)
 
 		// Write the main module's code with matching return type
@@ -180,11 +187,11 @@ func (m *Test) Fn(ctx context.Context, dir *dagger.Directory) ([]string, error) 
 		require.NoError(t, err)
 
 		// Initialize the main module
-		_, err = hostDaggerExec(ctx, t, rootDir, "init", "--source=.", "--name=test", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, rootDir, "module", "init", "--source=.", "--sdk=go", "test", ".")
 		require.NoError(t, err)
 
 		// Install the dependent module using relative path
-		_, err = hostDaggerExec(ctx, t, rootDir, "install", "./dep")
+		_, err = hostDaggerExec(ctx, t, rootDir, "module", "install", "./dep")
 		require.NoError(t, err)
 
 		// Execute the module with a private Git repository directory

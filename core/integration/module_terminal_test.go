@@ -1,5 +1,13 @@
 package core
 
+// These tests cover module functions that return `Container.Terminal`. They
+// verify the host-side interactive session, prompt/output handling, and nested
+// terminal cases driven through the CLI TUI.
+//
+// See also:
+// - module_up_test.go: the module development server UI.
+// - shell_test.go: interactive shell command behavior.
+
 import (
 	"bytes"
 	"context"
@@ -52,11 +60,11 @@ type Test struct {
 `, alpineImage), 0644)
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test", ".")
 		require.NoError(t, err)
 
 		// cache the module load itself so there's less to wait for in the shell invocation below
-		_, err = hostDaggerExec(ctx, t, modDir, "functions")
+		_, err = hostDaggerExecRaw(ctx, t, modDir, "functions")
 		require.NoError(t, err)
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
@@ -72,7 +80,7 @@ type Test struct {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "terminal")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "call", "ctr", "terminal")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -219,11 +227,11 @@ type Test struct {
 	`, alpineImage), 0644)
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test", ".")
 		require.NoError(t, err)
 
 		// cache the module load itself so there's less to wait for in the shell invocation below
-		_, err = hostDaggerExec(ctx, t, modDir, "functions")
+		_, err = hostDaggerExecRaw(ctx, t, modDir, "functions")
 		require.NoError(t, err)
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
@@ -239,7 +247,7 @@ type Test struct {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "terminal")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "call", "ctr", "terminal")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -335,11 +343,11 @@ type Test struct {
 	`, alpineImage), 0644)
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test", ".")
 		require.NoError(t, err)
 
 		// cache the module load itself so there's less to wait for in the shell invocation below
-		_, err = hostDaggerExec(ctx, t, modDir, "functions")
+		_, err = hostDaggerExecRaw(ctx, t, modDir, "functions")
 		require.NoError(t, err)
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
@@ -355,7 +363,7 @@ type Test struct {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "call", "debug")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "call", "debug")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -420,11 +428,11 @@ type Test struct {
 	`, alpineImage), 0644)
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test", ".")
 		require.NoError(t, err)
 
 		// cache the returned container so there's less to wait for in the shell invocation below
-		_, err = hostDaggerExec(ctx, t, modDir, "call", "ctr", "sync")
+		_, err = hostDaggerExecRaw(ctx, t, modDir, "call", "ctr", "sync")
 		require.NoError(t, err)
 
 		console, err := newTUIConsole(t, 60*time.Second)
@@ -436,7 +444,7 @@ type Test struct {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 5, Cols: 22})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "terminal", "--cmd=python")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "call", "ctr", "terminal", "--cmd=python")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -493,11 +501,11 @@ type Test struct {
 	 `), 0644)
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test", ".")
 		require.NoError(t, err)
 
 		// cache the module load itself so there's less to wait for in the shell invocation below
-		_, err = hostDaggerExec(ctx, t, modDir, "functions")
+		_, err = hostDaggerExecRaw(ctx, t, modDir, "functions")
 		require.NoError(t, err)
 
 		thisRepoPath, err := filepath.Abs("../..")
@@ -544,7 +552,7 @@ type Test struct {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 41})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "call", "--nested-src", nestedSrcDir, "ctr", "terminal", "--experimental-privileged-nesting")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "call", "--nested-src", nestedSrcDir, "ctr", "terminal", "--experimental-privileged-nesting")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -583,11 +591,11 @@ type Test struct {
 `), 0644)
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test", ".")
 		require.NoError(t, err)
 
 		// cache the module load itself so there's less to wait for in the shell invocation below
-		_, err = hostDaggerExec(ctx, t, modDir, "functions")
+		_, err = hostDaggerExecRaw(ctx, t, modDir, "functions")
 		require.NoError(t, err)
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
@@ -603,7 +611,7 @@ type Test struct {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "call", "dir", "terminal")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "call", "dir", "terminal")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -664,11 +672,11 @@ type Test struct {
 	`, alpineImage), 0644)
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test", ".")
 		require.NoError(t, err)
 
 		// cache the module load itself so there's less to wait for in the shell invocation below
-		_, err = hostDaggerExec(ctx, t, modDir, "functions")
+		_, err = hostDaggerExecRaw(ctx, t, modDir, "functions")
 		require.NoError(t, err)
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
@@ -684,7 +692,7 @@ type Test struct {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "--interactive", "call", "ctr")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "--interactive", "call", "ctr")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -749,7 +757,7 @@ type Test struct {
 		tty = console.Tty()
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
-		cmd = hostDaggerCommand(ctx, t, modDir, "--interactive", "--interactive-command", "/bin/noexist", "call", "ctr")
+		cmd = hostDaggerCommandRaw(ctx, t, modDir, "--interactive", "--interactive-command", "/bin/noexist", "call", "ctr")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty

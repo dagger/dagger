@@ -1,5 +1,11 @@
 package core
 
+// These tests cover Dagger cache volumes and API-level cache keys used to reuse
+// filesystem state across container executions.
+//
+// See also:
+// - localcache_test.go: engine-side local cache GC and retention.
+
 import (
 	"context"
 	"fmt"
@@ -194,10 +200,10 @@ func (b *Bar) GetCacheVolumeId(ctx context.Context) (string, error) {
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/bar").
-		With(daggerExec("init", "--name=bar", "--source=.", "--sdk=go")).
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "bar", ".")).
 		WithNewFile("main.go", barTmpl).
 		WithWorkdir("/work/foo").
-		With(daggerExec("init", "--name=foo", "--source=.", "--sdk=go")).
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "foo", ".")).
 		WithNewFile("main.go", fooTmpl)
 
 	fooID, err := ctr.
@@ -234,7 +240,7 @@ func (CacheSuite) TestCacheIdSameAcrossSession(ctx context.Context, t *testctx.T
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, session1)).
 		WithWorkdir("/work/foo").
-		With(daggerExec("init", "--name=foo", "--source=.", "--sdk=go")).
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "foo", ".")).
 		WithNewFile("main.go", fooTmpl)
 
 	fooID, err := ctr1.
@@ -248,7 +254,7 @@ func (CacheSuite) TestCacheIdSameAcrossSession(ctx context.Context, t *testctx.T
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, session2)).
 		WithWorkdir("/work/foo").
-		With(daggerExec("init", "--name=foo", "--source=.", "--sdk=go")).
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "foo", ".")).
 		WithNewFile("main.go", fooTmpl)
 
 	fooID2, err := ctr2.
@@ -309,12 +315,12 @@ func (f *Bar) Fetch(ctx context.Context, vol *dagger.CacheVolume) (string, error
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, session)).
 		WithWorkdir("/work/bar").
-		With(daggerExec("init", "--name=bar", "--source=.", "--sdk=go")).
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "bar", ".")).
 		WithNewFile("main.go", barTmpl).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--name=foo", "--source=.", "--sdk=go")).
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "foo", ".")).
 		WithNewFile("main.go", fooTmpl).
-		With(daggerExec("use", "./bar"))
+		With(daggerExec("module", "install", "./bar"))
 
 	inpContent := "some-foo-bar-content"
 	_, err := ctr.
@@ -366,7 +372,7 @@ func (CacheSuite) TestCacheNotImpactedByChangeInModuleSource(ctx context.Context
 		From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, session)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--name=foo", "--source=.", "--sdk=go"))
+		With(daggerExec("module", "init", "--source=.", "--sdk=go", "foo", "."))
 
 	fooID, err := ctr.
 		WithWorkdir("/work").

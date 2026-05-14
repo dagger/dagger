@@ -1,5 +1,12 @@
 package core
 
+// These tests cover `dagger.Connect` clients used by Go callers. They verify
+// connection setup, teardown, and session behavior between a caller and the
+// engine.
+//
+// See also:
+// - suite_test.go: shared connection setup used by integration tests.
+
 import (
 	"context"
 	"fmt"
@@ -139,7 +146,7 @@ func (ClientSuite) TestClientStableID(ctx context.Context, t *testctx.T) {
 		WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
 		WithUser("auser").
 		WithWorkdir("/work").
-		WithExec([]string{"dagger", "init", "--sdk=go"}).
+		WithExec([]string{"dagger", "module", "init", "test", "--sdk=go", "."}).
 		File("/home/auser/.local/state/dagger/stable_client_id").
 		Contents(ctx)
 	require.NoError(t, err)

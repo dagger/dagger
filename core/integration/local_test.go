@@ -1,5 +1,12 @@
 package core
 
+// These tests cover importing host directories into Dagger with local source
+// APIs. They verify content transfer and reuse across Dagger sessions.
+//
+// See also:
+// - host_test.go: host filesystem access.
+// - cross_session_test.go: behavior that survives session boundaries.
+
 import (
 	"context"
 	"os"

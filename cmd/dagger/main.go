@@ -54,7 +54,9 @@ var (
 		Title: "Execution Commands",
 	}
 
-	workdir string
+	workdir      string
+	workspaceRef string
+	workspaceEnv string
 
 	silent                   bool
 	verbose                  int
@@ -142,16 +144,20 @@ func init() {
 		traceCmd,
 		lockCmd,
 		configCmd,
+		envCmd,
+		settingsCmd,
 		checksCmd,
 		upCmd,
 		generateCmd,
-		moduleInitCmd,
+		initCmd,
+		workspaceCmd,
+		migrateCmd,
+		moduleCmd,
 		moduleDepInstallCmd,
 		moduleUnInstallCmd,
 		moduleUpdateCmd,
 		moduleDevelopCmd,
 		modulePublishCmd,
-		toolchainCmd,
 		funcListCmd,
 		callCoreCmd.Command(),
 		callModCmd.Command(),
@@ -162,6 +168,7 @@ func init() {
 		mcpCmd,
 	)
 
+	rootCmd.AddGroup(workspaceGroup)
 	rootCmd.AddGroup(moduleGroup)
 	rootCmd.AddGroup(execGroup)
 
@@ -193,6 +200,7 @@ var rootCmd = &cobra.Command{
 		// if we got this far, CLI parsing worked just fine; no
 		// need to show usage for runtime errors
 		cmd.SilenceUsage = true
+		applyCommandProgressDefaults(cmd)
 
 		if cpuprofile != "" {
 			profF, err := os.Create(cpuprofile)
@@ -225,14 +233,9 @@ var rootCmd = &cobra.Command{
 				return fmt.Errorf("start pprof: %w", err)
 			}
 		}
-		normalized, err := NormalizeWorkdir(workdir)
-		if err != nil {
+		if err := validateWorkspaceFlagPolicy(cmd, args); err != nil {
 			return err
 		}
-		if err := os.Chdir(normalized); err != nil {
-			return fmt.Errorf("change workdir: %w", err)
-		}
-		workdir = normalized
 
 		labels := enginetel.LoadDefaultLabels(workdir, engine.Version)
 		t := analytics.New(analytics.DefaultConfig(labels))
@@ -334,13 +337,15 @@ func checkCloudToken(ctx context.Context, w io.Writer) error {
 }
 
 func installGlobalFlags(flags *pflag.FlagSet) {
-	flags.StringVar(&workdir, "workdir", ".", "Set the working directory")
+	flags.StringVar(&workdir, "workdir", ".", "Change the working directory before running the command")
+	flags.StringVarP(&workspaceRef, "workspace", "W", "", "Select the workspace location to load from (local path or git ref)")
+	flags.StringVar(&workspaceEnv, "env", "", "Apply the named workspace environment overlay")
 	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
 	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
 	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
 	flags.BoolVarP(&debugFlag, "debug", "d", debugFlag, "Show debug logs and full verbosity")
 	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty, dots, logs)")
-	flags.StringVar(&lockMode, "lock", "", "Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.")
+	flags.StringVar(&lockMode, "lock", "", "Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.")
 	flags.BoolVarP(&interactive, "interactive", "i", false, "Spawn a terminal on container exec failure")
 	flags.StringVar(&interactiveCommand, "interactive-command", "/bin/sh", "Change the default command for interactive mode")
 	flags.BoolVarP(&web, "web", "w", false, "Open trace URL in a web browser")
@@ -361,10 +366,10 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.Lookup("scale-out").Hidden = true
 
 	for _, fl := range []string{
-		"workdir",
 		"dot-output",
 		"dot-focus-field",
 		"dot-show-internal",
+		"workdir",
 	} {
 		if err := flags.MarkHidden(fl); err != nil {
 			fmt.Fprintln(stdout, "Error hiding flag: "+fl, err)
@@ -382,15 +387,92 @@ func disableFlagsInUseLine(cmd *cobra.Command) {
 	}
 }
 
-func parseGlobalFlags() {
+func parseGlobalFlags(args []string) {
 	flags := pflag.NewFlagSet("global", pflag.ContinueOnError)
 	flags.Usage = func() {}
 	flags.ParseErrorsAllowlist.UnknownFlags = true
 	installGlobalFlags(flags)
-	if err := flags.Parse(os.Args[1:]); err != nil && !errors.Is(err, pflag.ErrHelp) {
+	if err := flags.Parse(args); err != nil && !errors.Is(err, pflag.ErrHelp) {
 		fmt.Fprintln(stderr, err)
 		os.Exit(1)
 	}
+}
+
+func setWorkspaceFlagPolicy(cmd *cobra.Command, policy string) {
+	if cmd.Annotations == nil {
+		cmd.Annotations = map[string]string{}
+	}
+	cmd.Annotations[workspaceFlagPolicyAnnotation] = policy
+}
+
+func validateWorkspaceFlagPolicy(cmd *cobra.Command, args []string) error {
+	if workspaceRef == "" {
+		return nil
+	}
+
+	switch workspaceFlagPolicy(cmd, args) {
+	case workspaceFlagPolicyDisallow:
+		return fmt.Errorf("--workspace is not supported for %q", cmd.CommandPath())
+	case workspaceFlagPolicyLocalOnly:
+		if isObviouslyRemoteWorkspaceRef(workspaceRef) {
+			return fmt.Errorf("--workspace must be a local path for %q", cmd.CommandPath())
+		}
+	}
+
+	return nil
+}
+
+func workspaceFlagPolicy(cmd *cobra.Command, args []string) string {
+	if isWorkspaceConfigCommand(cmd) && len(args) == 2 {
+		return workspaceFlagPolicyLocalOnly
+	}
+	if isWorkspaceSettingsWriteCommand(cmd, args) {
+		return workspaceFlagPolicyLocalOnly
+	}
+
+	for c := cmd; c != nil; c = c.Parent() {
+		if policy := c.Annotations[workspaceFlagPolicyAnnotation]; policy != "" {
+			return policy
+		}
+	}
+
+	return ""
+}
+
+func isWorkspaceConfigCommand(cmd *cobra.Command) bool {
+	switch commandName(cmd) {
+	case "config", "workspace config":
+		return true
+	default:
+		return false
+	}
+}
+
+func isWorkspaceSettingsWriteCommand(cmd *cobra.Command, args []string) bool {
+	return commandName(cmd) == "settings" && len(args) == 3
+}
+
+func isObviouslyRemoteWorkspaceRef(ref string) bool {
+	if ref == "" {
+		return false
+	}
+	if strings.HasPrefix(ref, "./") || strings.HasPrefix(ref, "../") || strings.HasPrefix(ref, "/") {
+		return false
+	}
+	if strings.Contains(ref, "://") || strings.HasPrefix(ref, "git@") {
+		return true
+	}
+
+	if abs, err := pathutil.Abs(ref); err == nil {
+		if _, err := os.Stat(abs); err == nil {
+			return false
+		} else if !os.IsNotExist(err) {
+			return false
+		}
+	}
+
+	head, _, hasSlash := strings.Cut(ref, "/")
+	return hasSlash && strings.Contains(head, ".")
 }
 
 func Tracer() trace.Tracer {
@@ -423,15 +505,54 @@ const InstrumentationLibrary = "dagger.io/cli"
 
 var opts dagui.FrontendOpts
 
+const (
+	workspaceFlagPolicyAnnotation = "workspaceFlagPolicy"
+	workspaceFlagPolicyDisallow   = "disallow"
+	workspaceFlagPolicyLocalOnly  = "local-only"
+
+	showFinalProgressKey = "showFinalProgress"
+)
+
+func commandShowsFinalProgress(cmd *cobra.Command) bool {
+	for c := cmd; c != nil; c = c.Parent() {
+		if c.Annotations[showFinalProgressKey] == "true" {
+			return true
+		}
+	}
+	return false
+}
+
+func applyCommandProgressDefaults(cmd *cobra.Command) {
+	verbosity := dagui.HideCompletedVerbosity
+	if commandShowsFinalProgress(cmd) {
+		verbosity = dagui.ShowCompletedVerbosity
+	}
+	verbosity += verbose
+	verbosity -= quiet
+	opts.Verbosity = verbosity
+}
+
 func main() {
-	parseGlobalFlags()
-	opts.Verbosity += dagui.ShowCompletedVerbosity // keep progress by default
-	opts.Verbosity += verbose                      // raise verbosity with -v
-	opts.Verbosity -= quiet                        // lower verbosity with -q
-	opts.Silent = silent                           // show no progress
-	opts.Debug = debugFlag                         // show everything
-	opts.RevealNoisySpans = reveal                 // disable 'reveal: true' mechanic (for tests)
-	opts.ExpandCompleted = expandCompleted         // leave things expanded as they complete
+	installGlobalFlags(rootCmd.PersistentFlags())
+
+	// Some global flags affect how the client connects, so read them before
+	// Cobra executes the command tree. Cobra still does the normal parse later.
+	parseGlobalFlags(os.Args[1:])
+	resolvedWorkdir, err := NormalizeWorkdir(workdir)
+	if err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+		os.Exit(1)
+	}
+	if err := os.Chdir(resolvedWorkdir); err != nil {
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), fmt.Errorf("change workdir: %w", err))
+		os.Exit(1)
+	}
+	workdir = resolvedWorkdir
+
+	opts.Silent = silent                   // show no progress
+	opts.Debug = debugFlag                 // show everything
+	opts.RevealNoisySpans = reveal         // disable 'reveal: true' mechanic (for tests)
+	opts.ExpandCompleted = expandCompleted // leave things expanded as they complete
 	opts.OpenWeb = web
 	opts.NoExit = noExit
 	opts.DotOutputFilePath = dotOutputFilePath
@@ -480,8 +601,6 @@ func main() {
 		os.Exit(1)
 	}
 	interactiveCommandParsed = parsedCommand
-
-	installGlobalFlags(rootCmd.PersistentFlags())
 
 	ctx := context.Background()
 	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())

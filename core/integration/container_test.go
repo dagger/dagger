@@ -1,5 +1,12 @@
 package core
 
+// These tests cover the GraphQL Container object: image selection, execs,
+// filesystems, environment, mounts, exports, and other container operations.
+//
+// See also:
+// - services_test.go: service lifecycle around containers.
+// - platform_test.go: platform-aware container execution.
+
 import (
 	"bytes"
 	"context"
@@ -5324,7 +5331,7 @@ func (ContainerSuite) TestSaveInNested(ctx context.Context, t *testctx.T) {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:dev")
 
 	out, err := dockerc.WithWorkdir("/src/test").
-		WithExec([]string{"dagger", "init", "--sdk=go"}).
+		WithExec([]string{"dagger", "module", "init", "test", "--sdk=go", "."}).
 		WithNewFile("main.go", `package main
 
 import "context"
@@ -5339,7 +5346,7 @@ func (m *Test) Try(ctx context.Context) error {
 }
 
 		`).
-		WithExec([]string{"dagger", "call", "try"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeFailure}).
+		WithExec([]string{"dagger", "call", "-m", ".", "try"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeFailure}).
 		Stderr(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "client has no supported api for loading image")

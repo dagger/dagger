@@ -1,5 +1,12 @@
 package core
 
+// These tests cover modules authored with the PHP SDK. They verify `dagger
+// module init`, generated PHP bindings, and executing PHP module functions.
+//
+// See also:
+// - module_definition_test.go: SDK-neutral module API definition behavior.
+// - module_type_test.go: cross-SDK custom type behavior.
+
 import (
 	"context"
 	"path/filepath"
@@ -25,11 +32,8 @@ func (PHPSuite) TestInit(ctx context.Context, t *testctx.T) {
 
 		out, err := goGitBase(t, c).
 			WithDirectory("/work/sdk/php", c.Host().Directory(sdkSrc)).
-			With(daggerExec(
-				"init",
-				"--name=bare",
-				"--sdk=./sdk/php")).
-			With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).
+			With(daggerExec("module", "init", "--sdk=./sdk/php", "bare", ".")).
+			With(daggerCallAt(".", "container-echo", "--string-arg", "hello", "stdout")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -40,11 +44,8 @@ func (PHPSuite) TestInit(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			With(daggerExec(
-				"init",
-				"--name=bare",
-				"--sdk=github.com/dagger/dagger/sdk/php")).
-			With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).
+			With(daggerExec("module", "init", "--sdk=github.com/dagger/dagger/sdk/php", "bare", ".")).
+			With(daggerCallAt(".", "container-echo", "--string-arg", "hello", "stdout")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -55,11 +56,8 @@ func (PHPSuite) TestInit(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			With(daggerExec(
-				"init",
-				"--name=bare",
-				"--sdk=php")).
-			With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).
+			With(daggerExec("module", "init", "--sdk=php", "bare", ".")).
+			With(daggerCallAt(".", "container-echo", "--string-arg", "hello", "stdout")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -70,11 +68,8 @@ func (PHPSuite) TestInit(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			With(daggerExec(
-				"init",
-				"--name=bare",
-				"--sdk=php@main")).
-			With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).
+			With(daggerExec("module", "init", "--sdk=php@main", "bare", ".")).
+			With(daggerCallAt(".", "container-echo", "--string-arg", "hello", "stdout")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -87,7 +82,7 @@ func (PHPSuite) TestDefaultValue(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := phpModule(t, c, "defaults").
-			With(daggerCall("echo", "--value=hello")).
+			With(daggerCallAt(".", "echo", "--value=hello")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -98,7 +93,7 @@ func (PHPSuite) TestDefaultValue(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := phpModule(t, c, "defaults").
-			With(daggerCall("echo")).
+			With(daggerCallAt(".", "echo")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -112,7 +107,7 @@ func (PHPSuite) TestScalarKind(ctx context.Context, t *testctx.T) {
 
 	t.Run("bool func", func(ctx context.Context, t *testctx.T) {
 		out, err := module.
-			With(daggerCall("opposite-bool", "--arg=true")).
+			With(daggerCallAt(".", "opposite-bool", "--arg=true")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "false", out)
@@ -120,7 +115,7 @@ func (PHPSuite) TestScalarKind(ctx context.Context, t *testctx.T) {
 
 	t.Run("bool field", func(ctx context.Context, t *testctx.T) {
 		out, err := module.
-			With(daggerCall("bool-field")).
+			With(daggerCallAt(".", "bool-field")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "true", out)
@@ -128,7 +123,7 @@ func (PHPSuite) TestScalarKind(ctx context.Context, t *testctx.T) {
 
 	t.Run("set fields then get bool field", func(ctx context.Context, t *testctx.T) {
 		out, err := module.
-			With(daggerCall("set-fields", "bool-field")).
+			With(daggerCallAt(".", "set-fields", "bool-field")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "false", out)
@@ -136,7 +131,7 @@ func (PHPSuite) TestScalarKind(ctx context.Context, t *testctx.T) {
 
 	t.Run("float func", func(ctx context.Context, t *testctx.T) {
 		out, err := module.
-			With(daggerCall("half-float", "--arg=3.14")).
+			With(daggerCallAt(".", "half-float", "--arg=3.14")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "1.57", out)
@@ -144,7 +139,7 @@ func (PHPSuite) TestScalarKind(ctx context.Context, t *testctx.T) {
 
 	t.Run("float field", func(ctx context.Context, t *testctx.T) {
 		out, err := module.
-			With(daggerCall("float-field")).
+			With(daggerCallAt(".", "float-field")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "3.14", out)
@@ -152,7 +147,7 @@ func (PHPSuite) TestScalarKind(ctx context.Context, t *testctx.T) {
 
 	t.Run("set fields, then get float field", func(ctx context.Context, t *testctx.T) {
 		out, err := module.
-			With(daggerCall("set-fields", "float-field")).
+			With(daggerCallAt(".", "set-fields", "float-field")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "1.618", out)
@@ -160,7 +155,7 @@ func (PHPSuite) TestScalarKind(ctx context.Context, t *testctx.T) {
 
 	t.Run("int func", func(ctx context.Context, t *testctx.T) {
 		out, err := module.
-			With(daggerCall("double-int", "--arg=418")).
+			With(daggerCallAt(".", "double-int", "--arg=418")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "836", out)
@@ -168,7 +163,7 @@ func (PHPSuite) TestScalarKind(ctx context.Context, t *testctx.T) {
 
 	t.Run("int field", func(ctx context.Context, t *testctx.T) {
 		out, err := module.
-			With(daggerCall("int-field")).
+			With(daggerCallAt(".", "int-field")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "1", out)
@@ -176,7 +171,7 @@ func (PHPSuite) TestScalarKind(ctx context.Context, t *testctx.T) {
 
 	t.Run("set fields then get int field", func(ctx context.Context, t *testctx.T) {
 		out, err := module.
-			With(daggerCall("set-fields", "int-field")).
+			With(daggerCallAt(".", "set-fields", "int-field")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "2", out)
@@ -184,7 +179,7 @@ func (PHPSuite) TestScalarKind(ctx context.Context, t *testctx.T) {
 
 	t.Run("string func", func(ctx context.Context, t *testctx.T) {
 		out, err := module.
-			With(daggerCall("capitalize-string", "--arg=hello, func!")).
+			With(daggerCallAt(".", "capitalize-string", "--arg=hello, func!")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "Hello, Func!", out)
@@ -192,7 +187,7 @@ func (PHPSuite) TestScalarKind(ctx context.Context, t *testctx.T) {
 
 	t.Run("string field", func(ctx context.Context, t *testctx.T) {
 		out, err := module.
-			With(daggerCall("string-field")).
+			With(daggerCallAt(".", "string-field")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "Hello, field!", out)
@@ -200,7 +195,7 @@ func (PHPSuite) TestScalarKind(ctx context.Context, t *testctx.T) {
 
 	t.Run("set fields then get string field", func(ctx context.Context, t *testctx.T) {
 		out, err := module.
-			With(daggerCall("set-fields", "string-field")).
+			With(daggerCallAt(".", "set-fields", "string-field")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "HOWDY, FIELD!", out)
@@ -213,7 +208,7 @@ func (PHPSuite) TestListKind(ctx context.Context, t *testctx.T) {
 
 	t.Run("list of bools", func(ctx context.Context, t *testctx.T) {
 		out, err := module.
-			With(daggerCall("opposite-bools", "--arg=true,false,true")).
+			With(daggerCallAt(".", "opposite-bools", "--arg=true,false,true")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "false\ntrue\nfalse\n", out)
@@ -221,7 +216,7 @@ func (PHPSuite) TestListKind(ctx context.Context, t *testctx.T) {
 
 	t.Run("list of floats", func(ctx context.Context, t *testctx.T) {
 		out, err := module.
-			With(daggerCall("half-floats", "--arg=3.7,8.87,9.81")).
+			With(daggerCallAt(".", "half-floats", "--arg=3.7,8.87,9.81")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "1.85\n4.435\n4.905\n", out)
@@ -229,7 +224,7 @@ func (PHPSuite) TestListKind(ctx context.Context, t *testctx.T) {
 
 	t.Run("list of integers", func(ctx context.Context, t *testctx.T) {
 		out, err := module.
-			With(daggerCall("double-ints", "--arg=1,3,7")).
+			With(daggerCallAt(".", "double-ints", "--arg=1,3,7")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "2\n6\n14\n", out)
@@ -237,7 +232,7 @@ func (PHPSuite) TestListKind(ctx context.Context, t *testctx.T) {
 
 	t.Run("list of strings", func(ctx context.Context, t *testctx.T) {
 		out, err := module.
-			With(daggerCall(
+			With(daggerCallAt(".",
 				"capitalize-strings",
 				"--arg=hello,world!,howdy,planet!")).
 			Stdout(ctx)
@@ -251,13 +246,13 @@ func (PHPSuite) TestVoidKind(ctx context.Context, t *testctx.T) {
 	module := phpModule(t, c, "void-kind")
 
 	t.Run("void", func(ctx context.Context, t *testctx.T) {
-		out, err := module.With(daggerCall("get-void")).Stdout(ctx)
+		out, err := module.With(daggerCallAt(".", "get-void")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "", out)
 	})
 
 	t.Run("null", func(ctx context.Context, t *testctx.T) {
-		out, err := module.With(daggerCall("give-and-get-null")).Stdout(ctx)
+		out, err := module.With(daggerCallAt(".", "give-and-get-null")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "", out)
 	})
@@ -270,7 +265,7 @@ func (PHPSuite) TestObjectKind(ctx context.Context, t *testctx.T) {
 
 		out, err := module.
 			WithNewFile("/foo", "hello, world!").
-			With(daggerCall("capitalize-contents", "--arg=/foo", "contents")).
+			With(daggerCallAt(".", "capitalize-contents", "--arg=/foo", "contents")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -283,7 +278,7 @@ func (PHPSuite) TestObjectKind(ctx context.Context, t *testctx.T) {
 
 		out, err := module.
 			WithNewFile("/foo/bar", "Hello, World!").
-			With(daggerCall("with-baz", "--arg=/foo", "entries")).
+			With(daggerCallAt(".", "with-baz", "--arg=/foo", "entries")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -297,7 +292,7 @@ func (PHPSuite) TestConstructor(_ context.Context, t *testctx.T) {
 		module := phpModule(t, c, "constructor/value-set")
 
 		out, err := module.
-			With(daggerCall("--arg=foo", "get-constructor-arg")).
+			With(daggerCallAt(".", "--arg=foo", "get-constructor-arg")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "foo", out)
@@ -308,7 +303,7 @@ func (PHPSuite) TestConstructor(_ context.Context, t *testctx.T) {
 		module := phpModule(t, c, "constructor/value-manipulated")
 
 		out, err := module.
-			With(daggerCall("--arg=true", "get-constructor-arg")).
+			With(daggerCallAt(".", "--arg=true", "get-constructor-arg")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "false", out)

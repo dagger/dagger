@@ -1,11 +1,20 @@
 package core
 
+// These tests cover `dagger.lock`, the workspace lockfile that pins resolved
+// Git refs and workspace module sources. They verify lock resolution and how
+// workspace config changes affect the lockfile.
+//
+// See also:
+// - workspace_config_test.go: workspace config read/write behavior.
+// - workspace_compat_test.go: legacy config shapes before migration.
+
 import (
 	"context"
 	"errors"
 	"fmt"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -84,6 +93,8 @@ const workspaceUpdateExportQuery = `{
 
 func (LockfileSuite) TestFromLockfileDisabledIgnoresEntry(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
 	queryPath := writeContainerFromQuery(t, workdir)
 	lockPath, originalLock := writeContainerFromLock(t, workdir, lockTestPlatform(ctx, t), "not-a-digest", workspace.PolicyPin)
 
@@ -97,6 +108,8 @@ func (LockfileSuite) TestFromLockfileDisabledIgnoresEntry(ctx context.Context, t
 
 func (LockfileSuite) TestFromLockfileLiveRefreshesEntry(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
 	queryPath := writeContainerFromQuery(t, workdir)
 	lockPath, originalLock := writeContainerFromLock(t, workdir, lockTestPlatform(ctx, t), "not-a-digest", workspace.PolicyPin)
 
@@ -111,6 +124,8 @@ func (LockfileSuite) TestFromLockfileLiveRefreshesEntry(ctx context.Context, t *
 
 func (LockfileSuite) TestFromLockfilePinnedUsesPinEntry(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
 	queryPath := writeContainerFromQuery(t, workdir)
 
 	_, _ = writeContainerFromLock(t, workdir, lockTestPlatform(ctx, t), "not-a-digest", workspace.PolicyPin)
@@ -120,12 +135,22 @@ func (LockfileSuite) TestFromLockfilePinnedUsesPinEntry(ctx context.Context, t *
 	require.ErrorContains(t, err, `invalid lock digest "not-a-digest"`)
 }
 
+func hostGitInit(t *testctx.T, dir string) {
+	gitCmd := exec.Command("git", "init")
+	gitCmd.Dir = dir
+	out, err := gitCmd.CombinedOutput()
+	require.NoError(t, err, out)
+
+}
+
 func (LockfileSuite) TestFromLockfilePinnedRefreshesFloatEntry(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
 	queryPath := writeContainerFromQuery(t, workdir)
 	lockPath, originalLock := writeContainerFromLock(t, workdir, lockTestPlatform(ctx, t), "not-a-digest", workspace.PolicyFloat)
 
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=pinned", "query", "--doc", queryPath)
+	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=pinned", "query", "--doc", queryPath) // TODO why is TestLockfile/TestFromLockfilePinnedRefreshesFloatEntry getting a nil lockfile?
 	require.NoError(t, err)
 
 	lockBytes, err := os.ReadFile(lockPath)
@@ -136,6 +161,8 @@ func (LockfileSuite) TestFromLockfilePinnedRefreshesFloatEntry(ctx context.Conte
 
 func (LockfileSuite) TestFromLockfileFrozenUsesFloatEntry(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
 	queryPath := writeContainerFromQuery(t, workdir)
 
 	_, _ = writeContainerFromLock(t, workdir, lockTestPlatform(ctx, t), "not-a-digest", workspace.PolicyFloat)
@@ -147,6 +174,8 @@ func (LockfileSuite) TestFromLockfileFrozenUsesFloatEntry(ctx context.Context, t
 
 func (LockfileSuite) TestFromLockfileFrozenRequiresEntry(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
 	queryPath := writeContainerFromQuery(t, workdir)
 
 	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=frozen", "query", "--doc", queryPath)
@@ -160,6 +189,8 @@ func (LockfileSuite) TestFromLockfileFrozenRequiresEntry(ctx context.Context, t 
 
 func (LockfileSuite) TestGitBranchPinnedRefreshesFloatEntry(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
 	queryPath := writeQueryDoc(t, workdir, "git-branch.graphql", gitBranchCommitQuery)
 	lockPath, originalLock := writeGitRefLock(t, workdir, "git.branch", lockTestGitBranchName, lockTestGitBranchCommit, workspace.PolicyFloat)
 
@@ -175,6 +206,8 @@ func (LockfileSuite) TestGitBranchPinnedRefreshesFloatEntry(ctx context.Context,
 
 func (LockfileSuite) TestGitBranchFrozenUsesFloatEntry(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
 	queryPath := writeQueryDoc(t, workdir, "git-branch.graphql", gitBranchCommitQuery)
 
 	_, _ = writeGitRefLock(t, workdir, "git.branch", lockTestGitBranchName, lockTestGitBranchCommit, workspace.PolicyFloat)
@@ -186,6 +219,8 @@ func (LockfileSuite) TestGitBranchFrozenUsesFloatEntry(ctx context.Context, t *t
 
 func (LockfileSuite) TestLockUpdateCreatesNewFile(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
 	lockPath := filepath.Join(workdir, ".dagger", "lock")
 
 	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "lock", "update")
@@ -198,6 +233,8 @@ func (LockfileSuite) TestLockUpdateCreatesNewFile(ctx context.Context, t *testct
 
 func (LockfileSuite) TestLockUpdateRefreshesExistingEntry(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
 	lockPath, originalLock := writeContainerFromLock(t, workdir, lockTestPlatform(ctx, t), "sha256:"+strings.Repeat("0", 64), workspace.PolicyPin)
 
 	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "lock", "update")
@@ -211,10 +248,13 @@ func (LockfileSuite) TestLockUpdateRefreshesExistingEntry(ctx context.Context, t
 
 func (LockfileSuite) TestLockUpdateRefreshesExistingGitEntry(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
 	lockPath, originalLock := writeGitRefLock(t, workdir, "git.branch", lockTestGitBranchName, lockTestGitBranchCommit, workspace.PolicyFloat)
 
-	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "lock", "update")
+	out, err := hostDaggerExec(ctx, t, workdir, "--silent", "lock", "update")
 	require.NoError(t, err)
+	require.Equal(t, "Updated .dagger/lock", strings.TrimSpace(string(out)))
 
 	lockBytes, err := os.ReadFile(lockPath)
 	require.NoError(t, err)
@@ -225,6 +265,8 @@ func (LockfileSuite) TestLockUpdateRefreshesExistingGitEntry(ctx context.Context
 
 func (LockfileSuite) TestLiveDiscoversQueryEntries(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
 	queryPath := writeContainerFromQuery(t, workdir)
 
 	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=live", "query", "--doc", queryPath)
@@ -238,6 +280,8 @@ func (LockfileSuite) TestLiveDiscoversQueryEntries(ctx context.Context, t *testc
 
 func (LockfileSuite) TestLiveDiscoversGitEntries(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
 	queryPath := writeQueryDoc(t, workdir, "git.graphql", gitBranchAndTagCommitQuery)
 
 	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "--lock=live", "query", "--doc", queryPath)
@@ -253,13 +297,12 @@ func (LockfileSuite) TestLiveDiscoversGitEntries(ctx context.Context, t *testctx
 func (LockfileSuite) TestLiveNestedQuery(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	updated := daggerCliBase(t, c).
+	updated := workspaceBase(t, c).
 		WithNewFile("query.graphql", containerFromQuery).
 		With(daggerExec("--silent", "--lock=live", "query", "--doc", "query.graphql"))
 
-	s, err := updated.Stdout(ctx)
+	_, err := updated.Stdout(ctx)
 	require.NoError(t, err)
-	t.Logf("%s", s)
 
 	lockContents, err := updated.File("/work/.dagger/lock").Contents(ctx)
 	require.NoError(t, err)
@@ -269,7 +312,7 @@ func (LockfileSuite) TestLiveNestedQuery(ctx context.Context, t *testctx.T) {
 func (LockfileSuite) TestLiveModuleCall(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	base := workspaceBase(t, c).
+	base := gitRepoBase(t, c).
 		With(initStandaloneDangModule("lockmod", `
 type Lockmod {
   pub release: String! {
@@ -357,6 +400,8 @@ func (LockfileSuite) TestLockUpdateRefreshesExistingModuleResolveEntry(ctx conte
 
 func (LockfileSuite) TestWorkspaceUpdate(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
 	lockPath, originalLock := writeContainerFromLock(t, workdir, lockTestPlatform(ctx, t), "sha256:"+strings.Repeat("0", 64), workspace.PolicyFloat)
 	updateQueryPath := writeQueryDoc(t, workdir, "update.graphql", workspaceUpdateQuery)
 	updateExportQueryPath := writeQueryDoc(t, workdir, "update-export.graphql", workspaceUpdateExportQuery)
@@ -380,6 +425,8 @@ func (LockfileSuite) TestWorkspaceUpdate(ctx context.Context, t *testctx.T) {
 
 func (LockfileSuite) TestWorkspaceUpdateCreatesLockfile(ctx context.Context, t *testctx.T) {
 	workdir := t.TempDir()
+	hostGitInit(t, workdir)
+	writeEmptyWorkspaceConfig(t, workdir)
 	updateQueryPath := writeQueryDoc(t, workdir, "update.graphql", `{
   currentWorkspace {
     update {
@@ -397,7 +444,7 @@ func (LockfileSuite) TestWorkspaceUpdateNestedQuery(ctx context.Context, t *test
 	c := connect(ctx, t)
 
 	staleLock := mustMarshalContainerFromLock(t, lockTestPlatform(ctx, t), "sha256:"+strings.Repeat("1", 64), workspace.PolicyFloat)
-	updated := daggerCliBase(t, c).
+	updated := nativeWorkspaceBase(t, c).
 		WithNewFile(".dagger/lock", staleLock).
 		WithNewFile("update.graphql", workspaceUpdateExportQuery).
 		With(daggerExec("--silent", "query", "--doc", "update.graphql"))
@@ -409,6 +456,172 @@ func (LockfileSuite) TestWorkspaceUpdateNestedQuery(ctx context.Context, t *test
 	require.NoError(t, err)
 	require.NotEqual(t, staleLock, lockContents)
 	assertContainerFromLockEntry(t, []byte(lockContents), workspace.PolicyFloat)
+}
+
+func (LockfileSuite) TestWorkspaceModuleLockUpdate(ctx context.Context, t *testctx.T) {
+	t.Run("top-level update is a no-op with empty workspace config", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := nativeWorkspaceBase(t, c)
+
+		ctr = ctr.With(daggerExecRaw("update"))
+		out, err := ctr.Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Updated .dagger/lock", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerExecRaw("update")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Lockfile already up to date", strings.TrimSpace(out))
+
+		lockContents, err := ctr.File(".dagger/lock").Contents(ctx)
+		require.NoError(t, err)
+		require.Empty(t, lockContents)
+	})
+
+	t.Run("lock update refreshes only the selected workspace module entry", func(ctx context.Context, t *testctx.T) {
+		const (
+			wolfiSource = "github.com/dagger/dagger/modules/wolfi@main"
+			ghaSource   = "github.com/dagger/dagger/modules/gha@main"
+			wolfiPin    = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+			ghaPin      = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+		)
+
+		lock := workspace.NewLock()
+		require.NoError(t, lock.SetModuleResolve(wolfiSource, workspace.LookupResult{
+			Value:  wolfiPin,
+			Policy: workspace.PolicyFloat,
+		}))
+		require.NoError(t, lock.SetModuleResolve(ghaSource, workspace.LookupResult{
+			Value:  ghaPin,
+			Policy: workspace.PolicyFloat,
+		}))
+		lockBytes, err := lock.Marshal()
+		require.NoError(t, err)
+
+		configTOML := `[modules.wolfi]
+source = "` + wolfiSource + `"
+
+[modules.gha]
+source = "` + ghaSource + `"
+`
+
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
+			WithNewFile(".dagger/config.toml", configTOML).
+			WithNewFile(".dagger/lock", string(lockBytes))
+
+		updated := ctr.With(daggerExec("lock", "update", "wolfi"))
+		out, err := updated.Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Updated .dagger/lock", strings.TrimSpace(out))
+
+		upToDate := updated.With(daggerExec("lock", "update", "wolfi"))
+		out, err = upToDate.Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Lockfile already up to date", strings.TrimSpace(out))
+
+		lockOut, err := upToDate.File(".dagger/lock").Contents(ctx)
+		require.NoError(t, err)
+
+		wolfiEntry := requireWorkspaceModuleResolveLockEntry(t, []byte(lockOut), wolfiSource)
+		require.NotEqual(t, wolfiPin, wolfiEntry.Value)
+		require.Equal(t, workspace.PolicyFloat, wolfiEntry.Policy)
+
+		ghaEntry := requireWorkspaceModuleResolveLockEntry(t, []byte(lockOut), ghaSource)
+		require.Equal(t, ghaPin, ghaEntry.Value)
+		require.Equal(t, workspace.PolicyFloat, ghaEntry.Policy)
+	})
+
+	t.Run("explicit local modules error", func(ctx context.Context, t *testctx.T) {
+		configTOML := `[modules.counter]
+source = "../counter"
+`
+
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
+			WithExec([]string{"mkdir", "-p", "counter"}).
+			WithWorkdir("counter").
+			With(initStandaloneDangModule("counter", `
+type Counter {
+  pub value: String! {
+    "ok"
+  }
+}
+`)).
+			WithWorkdir("..").
+			WithNewFile(".dagger/config.toml", configTOML)
+
+		_, err := ctr.With(daggerExec("lock", "update", "counter")).Stdout(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, `module "counter" source "../counter" is not a git module`)
+	})
+
+	t.Run("unknown modules error", func(ctx context.Context, t *testctx.T) {
+		configTOML := `[modules.wolfi]
+source = "github.com/dagger/dagger/modules/wolfi@main"
+`
+
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
+			WithNewFile(".dagger/config.toml", configTOML)
+
+		_, err := ctr.With(daggerExec("lock", "update", "missing")).Stdout(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "workspace module(s) not found: missing")
+	})
+
+	t.Run("top-level update refreshes the selected workspace module lock entry", func(ctx context.Context, t *testctx.T) {
+		const (
+			wolfiSource = "github.com/dagger/dagger/modules/wolfi@main"
+			ghaSource   = "github.com/dagger/dagger/modules/gha@main"
+			wolfiPin    = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+			ghaPin      = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+		)
+
+		lock := workspace.NewLock()
+		require.NoError(t, lock.SetModuleResolve(wolfiSource, workspace.LookupResult{
+			Value:  wolfiPin,
+			Policy: workspace.PolicyFloat,
+		}))
+		require.NoError(t, lock.SetModuleResolve(ghaSource, workspace.LookupResult{
+			Value:  ghaPin,
+			Policy: workspace.PolicyFloat,
+		}))
+		lockBytes, err := lock.Marshal()
+		require.NoError(t, err)
+
+		configTOML := `[modules.wolfi]
+source = "` + wolfiSource + `"
+
+[modules.gha]
+source = "` + ghaSource + `"
+`
+
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
+			WithNewFile(".dagger/config.toml", configTOML).
+			WithNewFile(".dagger/lock", string(lockBytes))
+
+		updated := ctr.With(daggerExecRaw("update", "wolfi"))
+		out, err := updated.Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Updated .dagger/lock", strings.TrimSpace(out))
+
+		upToDate := updated.With(daggerExecRaw("update", "wolfi"))
+		out, err = upToDate.Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Lockfile already up to date", strings.TrimSpace(out))
+
+		lockOut, err := upToDate.File(".dagger/lock").Contents(ctx)
+		require.NoError(t, err)
+
+		wolfiEntry := requireWorkspaceModuleResolveLockEntry(t, []byte(lockOut), wolfiSource)
+		require.NotEqual(t, wolfiPin, wolfiEntry.Value)
+		require.Equal(t, workspace.PolicyFloat, wolfiEntry.Policy)
+
+		ghaEntry := requireWorkspaceModuleResolveLockEntry(t, []byte(lockOut), ghaSource)
+		require.Equal(t, ghaPin, ghaEntry.Value)
+		require.Equal(t, workspace.PolicyFloat, ghaEntry.Policy)
+	})
 }
 
 func writeContainerFromQuery(t *testctx.T, workdir string) string {
@@ -431,7 +644,21 @@ func writeContainerFromLock(t *testctx.T, workdir, platform, digest string, poli
 
 	lockContents := mustMarshalContainerFromLock(t, platform, digest, policy)
 	require.NoError(t, os.WriteFile(lockPath, []byte(lockContents), 0o600))
+
+	// a valid workspace must contain a config.toml file
+	configPath := filepath.Join(workdir, ".dagger", "config.toml")
+	require.NoError(t, os.WriteFile(configPath, []byte{}, 0o600))
+
 	return lockPath, lockContents
+}
+
+func writeEmptyWorkspaceConfig(t *testctx.T, workdir string) {
+	t.Helper()
+
+	// a valid workspace must contain a config.toml file
+	configPath := filepath.Join(workdir, ".dagger", "config.toml")
+	require.NoError(t, os.MkdirAll(filepath.Dir(configPath), 0o755))
+	require.NoError(t, os.WriteFile(configPath, []byte{}, 0o600))
 }
 
 func writeGitRefLock(t *testctx.T, workdir, operation, name, commit string, policy workspace.LockPolicy) (string, string) {
@@ -577,6 +804,18 @@ func assertModuleResolveLockEntry(t *testctx.T, lockBytes []byte, source string,
 	require.True(t, found, "expected modules.resolve entry in lockfile")
 }
 
+func requireWorkspaceModuleResolveLockEntry(t *testctx.T, lockBytes []byte, source string) workspace.LookupResult {
+	t.Helper()
+
+	lock, err := workspace.ParseLock(lockBytes)
+	require.NoError(t, err)
+
+	entry, ok, err := lock.GetModuleResolve(source)
+	require.NoError(t, err)
+	require.True(t, ok)
+	return entry
+}
+
 func equalLockInputs(actual, expected []any) bool {
 	if len(actual) != len(expected) {
 		return false
@@ -644,7 +883,11 @@ func moduleResolveClientContainer(
 	devEngine := devEngineContainerAsService(devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
 		return ctr.WithServiceBinding(host, gitSvc)
 	}))
-	return engineClientContainer(ctx, t, c, devEngine).WithWorkdir("/work")
+	return engineClientContainer(ctx, t, c, devEngine).WithWorkdir("/work").
+		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"git", "init"}).
+		WithExec([]string{"dagger", "workspace", "init"})
+
 }
 
 func moduleResolveServiceHost(t *testctx.T, rawURL string) string {

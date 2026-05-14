@@ -1,5 +1,9 @@
 package core
 
+// This file contains package-wide integration test setup: `TestMain`, shared
+// `testctx` middleware, Dagger client connection helpers, and common assertion
+// helpers.
+
 import (
 	"archive/tar"
 	"bytes"
@@ -260,6 +264,12 @@ func daggerCliBase(t testing.TB, c *dagger.Client) *dagger.Container {
 	return c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work")
+}
+
+func daggerCliGitBase(t testing.TB, c *dagger.Client) *dagger.Container {
+	return daggerCliBase(t, c).
+		WithExec([]string{"apk", "add", "git"}).
+		WithExec([]string{"git", "init"})
 }
 
 const testCLIBinPath = "/bin/dagger"

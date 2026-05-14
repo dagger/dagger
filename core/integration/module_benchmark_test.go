@@ -1,5 +1,8 @@
 package core
 
+// These benchmarks measure module performance for large APIs, dependency
+// graphs, and generated code. They are benchmarks, not behavior ownership.
+
 import (
 	"context"
 	"fmt"
@@ -45,7 +48,7 @@ func (ModuleSuite) BenchmarkLotsOfFunctions(ctx context.Context, b *testctx.B) {
 				WithMountedFile(testCLIBinPath, daggerCliFile(b, c)).
 				WithWorkdir("/work").
 				WithNewFile("/work/main.go", mainSrc).
-				With(daggerExec("init", "--source=.", "--name=potatoSack", "--sdk=go"))
+				With(daggerExec("module", "init", "--source=.", "--sdk=go", "potatoSack", "."))
 
 			var eg errgroup.Group
 			for i := range funcCount {
@@ -86,7 +89,7 @@ class PotatoSack:
 			WithMountedFile(testCLIBinPath, daggerCliFile(b, c)).
 			WithWorkdir("/work").
 			With(fileContents("src/potato_sack/__init__.py", mainSrc)).
-			With(daggerExec("init", "--source=.", "--name=potatoSack", "--sdk=python"))
+			With(daggerExec("module", "init", "--source=.", "--sdk=python", "potatoSack", "."))
 
 		var eg errgroup.Group
 		for i := range funcCount {
@@ -131,7 +134,7 @@ export class PotatoSack {
 			WithMountedFile(testCLIBinPath, daggerCliFile(b, c)).
 			WithWorkdir("/work").
 			With(sdkSource("typescript", mainSrc)).
-			With(daggerExec("init", "--name=potatoSack", "--sdk=typescript", "--source=."))
+			With(daggerExec("module", "init", "--sdk=typescript", "--source=.", "potatoSack", "."))
 
 		var eg errgroup.Group
 		for i := range funcCount {
@@ -254,7 +257,7 @@ func (ModuleSuite) BenchmarkLargeObjectFieldVal(ctx context.Context, b *testctx.
 		_, err := goGitBase(b, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(b, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test", "--sdk=go")).
+			With(daggerExec("module", "init", "--sdk=go", "test", ".")).
 			With(sdkSource("go", `package main
 
 import "strings"
@@ -290,7 +293,7 @@ func (ModuleSuite) BenchmarkCallSameModuleInParallel(ctx context.Context, b *tes
 		ctr := goGitBase(b, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(b, c)).
 			WithWorkdir("/work/dep").
-			With(daggerExec("init", "--name=dep", "--sdk=go")).
+			With(daggerExec("module", "init", "--sdk=go", "dep", ".")).
 			With(sdkSource("go", `package main
 
 import (
@@ -305,7 +308,7 @@ func (m *Dep) DepFn(s *dagger.Secret) string {
 }
 `)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+			With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
 			With(sdkSource("go", `package main
 
 import (
@@ -334,7 +337,7 @@ func (m *Test) Fn(ctx context.Context) ([]string, error) {
 	return results, nil
 }
 `)).
-			With(daggerExec("install", "./dep")).
+			With(daggerExec("module", "install", "./dep")).
 			With(daggerCall("fn"))
 
 		out, err := ctr.Stdout(ctx)
