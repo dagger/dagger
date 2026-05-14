@@ -1381,7 +1381,7 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		if len(lines) == 0 {
 			return nil
 		}
-		s.fe.markTestErrorOriginsShown(row.Span)
+		s.fe.claims.claimTestReport(row.Span)
 		return append([]string{""}, lines...)
 	}
 	tv := s.fe.inlineTestView(row.Span.ID)
@@ -1479,18 +1479,6 @@ func (fe *frontendPretty) renderFinalGlobalTests(ctx tuist.Context) []string {
 
 func finalTestViewHeight(tv *TestView) int {
 	return 10000
-}
-
-func (fe *frontendPretty) markTestErrorOriginsShown(span *dagui.Span) {
-	if span == nil {
-		return
-	}
-	for _, origin := range span.ErrorOrigins.Order {
-		if origin.ID == span.ID {
-			continue
-		}
-		fe.shownErrs[origin.ID] = true
-	}
 }
 
 func finalTestViewAllCasesUnderChecks(view *dagui.TestView) bool {

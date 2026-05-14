@@ -129,10 +129,10 @@ type frontendPretty struct {
 	profile      termenv.Profile
 	window       windowSize // terminal dimensions
 	contentWidth int
-	browserBuf   *strings.Builder      // logs if browser fails
-	finalRender  bool                  // whether we're doing the final render
-	shownErrs    map[dagui.SpanID]bool // which errors we've rendered
-	stdin        io.Reader             // used by backgroundMsg for running terminal
+	browserBuf   *strings.Builder // logs if browser fails
+	finalRender  bool             // whether we're doing the final render
+	claims       *renderClaims
+	stdin        io.Reader // used by backgroundMsg for running terminal
 	writer       io.Writer
 
 	// notification bubbles (single overlay with a Container of bubbles)
@@ -586,7 +586,7 @@ func NewWithDB(w io.Writer, db *dagui.DB) *frontendPretty {
 		browserBuf:    new(strings.Builder),
 		notifications: make(map[string]*NotificationBubble),
 		writer:        w,
-		shownErrs:     map[dagui.SpanID]bool{},
+		claims:        newRenderClaims(),
 	}
 	tui.AddChild(fe)
 	return fe
@@ -1068,6 +1068,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	fe.focus(nil)
 
 	// Render the full trace.
+	fe.claims = newRenderClaims()
 	fe.ZoomedSpan = fe.db.PrimarySpan
 	fe.viewDirty = false
 	fe.recalculateViewLocked()
@@ -2974,7 +2975,7 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 			if cause.ID == row.Span.ID {
 				continue
 			}
-			if fe.shownErrs[cause.ID] {
+			if fe.claims.hasError(cause.ID) {
 				continue
 			}
 			origins = append(origins, cause)
@@ -3161,26 +3162,11 @@ func (fe *frontendPretty) renderErrorCause(ctx tuist.Context, out TermOutput, r 
 	}
 	fe.renderStepError(out, r, rootCauseRow, indentBuf.String())
 
-	fe.shownErrs[rootCause.ID] = true
+	fe.claims.claimError(rootCause)
 }
 
 func (fe *frontendPretty) hasShownRootError() bool {
-	if fe.err == nil {
-		return false
-	}
-	origins := telemetry.ParseErrorOrigins(fe.err.Error())
-	if len(origins) == 0 {
-		return false
-	}
-	for _, origin := range origins {
-		if !origin.IsValid() {
-			return false
-		}
-		if !fe.shownErrs[dagui.SpanID{SpanID: origin.SpanID()}] {
-			return false
-		}
-	}
-	return true
+	return fe.claims.hasRootError(fe.err)
 }
 
 func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagui.TraceRow, prefix string) {
@@ -3189,7 +3175,7 @@ func (fe *frontendPretty) renderStepError(out TermOutput, r *renderer, row *dagu
 		// links to its origin instead
 		return
 	}
-	fe.shownErrs[row.Span.ID] = true
+	fe.claims.claimError(row.Span)
 	errorCounts := map[string]int{}
 	for _, span := range row.Span.Errors().Order {
 		errText := span.Status.Description
