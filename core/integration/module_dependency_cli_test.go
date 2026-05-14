@@ -56,7 +56,7 @@ func (CLISuite) TestModuleDependencyInstall(ctx context.Context, t *testctx.T) {
 
 		// try invoking it from a few different paths, just for more corner case coverage
 		t.Run("from src dir", func(ctx context.Context, t *testctx.T) {
-			out, err := base.WithWorkdir("test").With(daggerCall("fn")).Stdout(ctx)
+			out, err := base.WithWorkdir("test").With(daggerCallAt(".", "fn")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hi dep", strings.TrimSpace(out))
 		})
@@ -86,7 +86,7 @@ func (CLISuite) TestModuleDependencyInstall(ctx context.Context, t *testctx.T) {
 		})
 
 		t.Run("from src dir with absolute path", func(ctx context.Context, t *testctx.T) {
-			out, err := base.WithWorkdir("/work/test").With(daggerCall("fn")).Stdout(ctx)
+			out, err := base.WithWorkdir("/work/test").With(daggerCallAt(".", "fn")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hi dep", strings.TrimSpace(out))
 		})
@@ -242,17 +242,17 @@ func (m *Dep) Fn(ctx context.Context) string {
 			out, err := base.
 				WithWorkdir("/work/test").
 				With(daggerExec("module", "install", "../subdir/dep")).
-				With(daggerCall("fn")).
+				With(daggerCallAt(".", "fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hi dep", strings.TrimSpace(out))
 		})
 
-		t.Run("from src subdir with findup", func(ctx context.Context, t *testctx.T) {
+		t.Run("install from src subdir with module find-up", func(ctx context.Context, t *testctx.T) {
 			out, err := base.
 				WithWorkdir("/work/test/some/other/dir").
 				With(daggerExec("module", "install", "../../../../subdir/dep")).
-				With(daggerCall("fn")).
+				With(daggerCallAt("../../..", "fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hi dep", strings.TrimSpace(out))
@@ -263,7 +263,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 				WithWorkdir("/").
 				With(daggerExec("module", "install", "-m=./work/test", "./work/subdir/dep")).
 				WithWorkdir("/work/test").
-				With(daggerCall("fn")).
+				With(daggerCallAt(".", "fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hi dep", strings.TrimSpace(out))
@@ -274,7 +274,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 				WithWorkdir("/work/subdir/dep").
 				With(daggerExec("module", "install", "-m=../../test", ".")).
 				WithWorkdir("/work/test").
-				With(daggerCall("fn")).
+				With(daggerCallAt(".", "fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hi dep", strings.TrimSpace(out))
@@ -285,7 +285,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 				WithWorkdir("/var").
 				With(daggerExec("module", "install", "-m=../work/test", "../work/subdir/dep")).
 				WithWorkdir("/work/test").
-				With(daggerCall("fn")).
+				With(daggerCallAt(".", "fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hi dep", strings.TrimSpace(out))
@@ -295,7 +295,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 			out, err := base.
 				WithWorkdir("/work/test").
 				With(daggerExec("module", "install", "/work/subdir/dep")).
-				With(daggerCall("fn")).
+				With(daggerCallAt(".", "fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hi dep", strings.TrimSpace(out))
@@ -306,7 +306,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 				WithWorkdir("/").
 				With(daggerExec("module", "install", "-m=/work/test", "/work/subdir/dep")).
 				WithWorkdir("/work/test").
-				With(daggerCall("fn")).
+				With(daggerCallAt(".", "fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hi dep", strings.TrimSpace(out))
@@ -317,7 +317,7 @@ func (m *Dep) Fn(ctx context.Context) string {
 				WithWorkdir("/var").
 				With(daggerExec("module", "install", "-m=/work/test", "/work/subdir/dep")).
 				WithWorkdir("/work/test").
-				With(daggerCall("fn")).
+				With(daggerCallAt(".", "fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hi dep", strings.TrimSpace(out))
@@ -406,7 +406,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 }
 `,
 					).
-					With(daggerCall("fn")).
+					With(daggerCallAt(".", "fn")).
 					Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "hi from top level hi from dep hi from dep2", strings.TrimSpace(out))
