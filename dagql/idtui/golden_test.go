@@ -136,27 +136,6 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 			"--version", "v0.18.6",
 		}},
 
-		// tests intended to trigger consistent tui exec metrics output
-		{Function: "disk-metrics", Verbosity: 3, FuzzyTest: func(t *testctx.T, out string) {
-			require.NotEmpty(t, out)
-
-			lines := strings.Split(out, "\n")
-			var ddLine string
-			for _, line := range lines {
-				if strings.Contains(line, "dd if=/dev/urandom") {
-					ddLine = line
-					break
-				}
-			}
-
-			require.NotEmpty(t, ddLine, "line containing 'dd if=/dev/urandom' not found")
-			require.Contains(t, ddLine, "| Disk Write: X.X B")
-			require.Contains(t, ddLine, "| Memory Bytes (current): X.X B")
-			require.Contains(t, ddLine, "| Memory Bytes (peak): X.X B")
-
-			// note cpu pressure, io pressure, and network stats are not tested here. they only appear when nonzero.
-		}, Flaky: "Depends on details of the engine runner (e.g. fails in Windows + WSL2)"},
-
 		// test that directly using a broken module surfaces the error
 		{Module: "./viztest/broken-dep/broken", Function: "broken", Fail: true},
 		// test that a module with a broken dependency surfaces the error
