@@ -111,11 +111,11 @@ func renderTextTestSummaryLines(view *dagui.TestView, logs map[dagui.SpanID]*Vte
 		}
 	}
 	appendEntryGroup(entries.failing)
-	appendEntryGroup(entries.running)
 	appendEntryGroup(entries.skipped)
 	if view.Counts.Passing > 0 {
 		lines = append(lines, entryIndent+fmt.Sprintf("PASS %d passed", view.Counts.Passing))
 	}
+	appendEntryGroup(entries.running)
 	return lines
 }
 
@@ -141,12 +141,12 @@ func renderLogsTestSummaryLines(out TermOutput, view *dagui.TestView, logs map[d
 		}
 	}
 	appendEntryGroup(entries.failing)
-	appendEntryGroup(entries.running)
 	appendEntryGroup(entries.skipped)
 	if view.Counts.Passing > 0 {
 		counts := dagui.TestCounts{Passing: view.Counts.Passing}
 		lines = append(lines, clipANSI(renderTestCountsSummary(out, counts, width), width))
 	}
+	appendEntryGroup(entries.running)
 	return lines
 }
 

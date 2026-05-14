@@ -729,14 +729,14 @@ func (tv *TestView) renderTestSummaryLines(out TermOutput, view *dagui.TestView,
 	for _, entry := range entries.failing {
 		lines = append(lines, tv.renderTestSummaryEntry(out, entry, width)...)
 	}
-	for _, entry := range entries.running {
-		lines = append(lines, tv.renderTestSummaryEntry(out, entry, width)...)
-	}
 	for _, entry := range entries.skipped {
 		lines = append(lines, tv.renderTestSummaryEntry(out, entry, width)...)
 	}
 	if view.Counts.Passing > 0 {
 		lines = append(lines, renderTestSummaryPassedGroup(out, view.Counts.Passing, tv.SummaryIndent, width))
+	}
+	for _, entry := range entries.running {
+		lines = append(lines, tv.renderTestSummaryEntry(out, entry, width)...)
 	}
 	return cropLines(lines, height)
 }
@@ -759,10 +759,10 @@ func (tv *TestView) renderTestSummaryReportLines(out TermOutput, view *dagui.Tes
 	for _, entry := range entries.failing {
 		appendEntry(entry)
 	}
-	for _, entry := range entries.running {
+	for _, entry := range entries.skipped {
 		appendEntry(entry)
 	}
-	for _, entry := range entries.skipped {
+	for _, entry := range entries.running {
 		appendEntry(entry)
 	}
 	if counts := renderTestSummaryReportCounts(out, view.Counts, tv.SummaryIndent, width); len(counts) > 0 {
