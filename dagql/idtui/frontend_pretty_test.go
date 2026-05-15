@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/dagql/dagui"
+	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -33,6 +34,123 @@ func TestSortErrorOriginsUsesCurrentSpanData(t *testing.T) {
 	if origins[0] != first || origins[1] != second {
 		t.Fatalf("origins sorted by path tie-breaker = %q, %q; want first, second", origins[0].Name, origins[1].Name)
 	}
+}
+
+func TestRenderShowsLiveGlobalTestsForPlainCall(t *testing.T) {
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	testID := prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID:        rootID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "plain dagger call",
+			StartTime: start,
+			EndTime:   start.Add(2 * time.Second),
+			Final:     true,
+		},
+		{
+			ID:           testID,
+			TraceID:      prettyTestTraceID(),
+			Name:         "unit failure",
+			StartTime:    start.Add(time.Second),
+			EndTime:      start.Add(2 * time.Second),
+			ParentID:     rootID,
+			TestCaseName: "unit failure",
+			TestStatus:   dagui.TestStatusFailure,
+			Final:        true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := NewWithDB(io.Discard, db)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.recalculateViewLocked()
+
+	got := strings.Join(fe.tui.RenderLines(), "\n")
+	if !strings.Contains(got, "TESTS") || !strings.Contains(got, "unit failure") || !strings.Contains(got, "FAIL") {
+		t.Fatalf("live render did not include global test report:\n%s", got)
+	}
+}
+
+func TestLiveGlobalTestsSkipCheckScopedTests(t *testing.T) {
+	db := dagui.NewDB()
+	checkID := prettyTestSpanID(1)
+	testID := prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID:        checkID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "check unit",
+			StartTime: start,
+			EndTime:   start.Add(2 * time.Second),
+			CheckName: "unit",
+			Final:     true,
+		},
+		{
+			ID:           testID,
+			TraceID:      prettyTestTraceID(),
+			Name:         "unit failure",
+			StartTime:    start.Add(time.Second),
+			EndTime:      start.Add(2 * time.Second),
+			ParentID:     checkID,
+			TestCaseName: "unit failure",
+			TestStatus:   dagui.TestStatusFailure,
+			Final:        true,
+		},
+	})
+	db.SetPrimarySpan(checkID)
+
+	fe := NewWithDB(io.Discard, db)
+	if lines := fe.renderLiveGlobalTests(tuist.Context{Width: 80}); len(lines) != 0 {
+		t.Fatalf("expected no global live report for check-scoped tests, got:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
+func TestLiveGlobalTestsSkipCheckScopedNoTestSuites(t *testing.T) {
+	db := dagui.NewDB()
+	checkID := prettyTestSpanID(1)
+	suiteID := prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID:        checkID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "check unit",
+			StartTime: start,
+			EndTime:   start.Add(2 * time.Second),
+			CheckName: "unit",
+			Final:     true,
+		},
+		{
+			ID:            suiteID,
+			TraceID:       prettyTestTraceID(),
+			Name:          "empty suite",
+			StartTime:     start.Add(time.Second),
+			EndTime:       start.Add(2 * time.Second),
+			ParentID:      checkID,
+			TestSuiteName: "empty suite",
+			TestStatus:    dagui.TestStatusSkipped,
+			Final:         true,
+		},
+	})
+	db.SetPrimarySpan(checkID)
+
+	fe := NewWithDB(io.Discard, db)
+	if lines := fe.renderLiveGlobalTests(tuist.Context{Width: 80}); len(lines) != 0 {
+		t.Fatalf("expected no global live report for check-scoped no-test suite, got:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
+func prettyTestSpanID(id byte) dagui.SpanID {
+	return dagui.SpanID{SpanID: trace.SpanID{id}}
+}
+
+func prettyTestTraceID() dagui.TraceID {
+	return dagui.TraceID{TraceID: trace.TraceID{1}}
 }
 
 func TestDoQuitInvalidatesCachedRender(t *testing.T) {

@@ -1481,12 +1481,45 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 	return lines
 }
 
+func (fe *frontendPretty) renderLiveGlobalTests(ctx tuist.Context) []string {
+	if fe.db == nil {
+		return nil
+	}
+	view := fe.db.TestView()
+	if !view.HasTests() || testViewAllReportEntriesUnderChecks(view) {
+		return nil
+	}
+	tv := fe.inlineTestView(dagui.SpanID{})
+	if tv.SummaryIndent != 2 {
+		tv.SummaryIndent = 2
+		tv.Update()
+	}
+	if tv.SummaryLogLines != 8 {
+		tv.SummaryLogLines = 8
+		tv.Update()
+	}
+	limit := liveTestViewHeight(ctx)
+	if tv.MaxHeight != limit {
+		tv.MaxHeight = limit
+		tv.Update()
+	}
+	width := ctx.Width
+	if width <= 0 {
+		width = finalRenderTestsWidth
+	}
+	lines := fe.RenderChildResult(ctx.Resize(max(width, 1), limit), tv).Lines
+	if len(lines) > 0 {
+		fe.claims.claimTestReport(nil, view)
+	}
+	return lines
+}
+
 func (fe *frontendPretty) renderFinalGlobalTests(ctx tuist.Context) []string {
 	if fe.db == nil {
 		return nil
 	}
 	view := fe.db.TestView()
-	if !view.HasTests() || finalTestViewAllCasesUnderChecks(view) {
+	if !view.HasTests() || testViewAllReportEntriesUnderChecks(view) {
 		return nil
 	}
 	tv := fe.inlineTestView(dagui.SpanID{})
@@ -1515,24 +1548,38 @@ func (fe *frontendPretty) renderFinalGlobalTests(ctx tuist.Context) []string {
 	return fe.RenderChildResult(ctx.Resize(width, limit), tv).Lines
 }
 
+func liveTestViewHeight(ctx tuist.Context) int {
+	height := ctx.ScreenHeight()
+	if height <= 0 {
+		return 12
+	}
+	return max(height/3, 4)
+}
+
 func finalTestViewHeight(tv *TestView) int {
 	return 10000
 }
 
-func finalTestViewAllCasesUnderChecks(view *dagui.TestView) bool {
+func testViewAllReportEntriesUnderChecks(view *dagui.TestView) bool {
 	if view == nil {
 		return false
 	}
-	seenCase := false
+	seenEntry := false
 	allUnderChecks := true
 	var walk func(*dagui.TestNode)
 	walk = func(node *dagui.TestNode) {
 		if node == nil {
 			return
 		}
-		if node.Kind == dagui.TestNodeCase {
-			seenCase = true
+		switch {
+		case node.Kind == dagui.TestNodeCase:
+			seenEntry = true
 			if !testSpanUnderCheck(node.Span) {
+				allUnderChecks = false
+			}
+		case node.Counts.Total() == 0 && node.Category != dagui.TestCategoryPassing:
+			seenEntry = true
+			if !testSpanUnderCheck(testTUISpan(node)) {
 				allUnderChecks = false
 			}
 		}
@@ -1543,7 +1590,7 @@ func finalTestViewAllCasesUnderChecks(view *dagui.TestView) bool {
 	for _, root := range view.Roots {
 		walk(root)
 	}
-	return seenCase && allUnderChecks
+	return seenEntry && allUnderChecks
 }
 
 func testSpanUnderCheck(span *dagui.Span) bool {
