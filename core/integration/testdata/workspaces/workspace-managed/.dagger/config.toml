@@ -1,0 +1,13 @@
+[modules.objects]
+source = "modules/objects"
+
+[modules.hello-world]
+source = "modules/hello-world"
+entrypoint = false
+
+[modules.greeter]
+source = "modules/hello-world"
+
+[modules.configured]
+source = "modules/configured"
+entrypoint = true

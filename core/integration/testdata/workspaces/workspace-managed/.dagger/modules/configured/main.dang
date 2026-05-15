@@ -1,0 +1,5 @@
+type Configured {
+  pub greet: String! {
+    "hello from configured workspace"
+  }
+}

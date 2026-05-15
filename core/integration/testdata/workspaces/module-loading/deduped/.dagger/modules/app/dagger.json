@@ -1,0 +1,6 @@
+{
+  "name": "app",
+  "sdk": {
+    "source": "dang"
+  }
+}
