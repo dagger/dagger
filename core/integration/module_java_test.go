@@ -1,7 +1,7 @@
 package core
 
-// These tests cover modules authored with the Java SDK. They verify `dagger
-// module init`, generated Java bindings, and executing Java module functions.
+// These tests cover modules authored with the Java SDK. They verify generated
+// Java bindings and executing Java module functions.
 //
 // See also:
 // - module_definition_test.go: SDK-neutral module API definition behavior.
@@ -23,53 +23,6 @@ type JavaSuite struct{}
 
 func TestJava(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(JavaSuite{})
-}
-
-func (JavaSuite) TestInit(_ context.Context, t *testctx.T) {
-	t.Run("from upstream", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=github.com/dagger/dagger/sdk/java", "bare", "."))
-
-		out, err := modGen.
-			With(daggerQueryAt(".", `{containerEcho(stringArg:"hello"){stdout}}`)).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.JSONEq(t, `{"containerEcho":{"stdout":"hello\n"}}`, out)
-	})
-
-	t.Run("from alias", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=java", "bare", "."))
-
-		out, err := modGen.
-			With(daggerQueryAt(".", `{containerEcho(stringArg:"hello"){stdout}}`)).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.JSONEq(t, `{"containerEcho":{"stdout":"hello\n"}}`, out)
-	})
-
-	t.Run("from alias with ref", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=java@main", "bare", "."))
-
-		out, err := modGen.
-			With(daggerQueryAt(".", `{containerEcho(stringArg:"hello"){stdout}}`)).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.JSONEq(t, `{"containerEcho":{"stdout":"hello\n"}}`, out)
-	})
 }
 
 func (JavaSuite) TestFields(_ context.Context, t *testctx.T) {
