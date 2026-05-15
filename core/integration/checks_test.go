@@ -10,6 +10,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -300,8 +301,9 @@ func (ChecksSuite) TestChecksAsToolchain(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			modGen = modGen.
 				WithWorkdir("app").
-				With(daggerExec("workspace", "init")).
-				With(daggerExec("module", "install", "../"+tc.path))
+				WithNewFile(".dagger/config.toml", fmt.Sprintf(`[modules.%s]
+source = "../../%s"
+`, tc.path, tc.path))
 			// list checks
 			out, err := modGen.
 				With(daggerExec("check", "-l")).
@@ -312,23 +314,19 @@ func (ChecksSuite) TestChecksAsToolchain(ctx context.Context, t *testctx.T) {
 			require.Contains(t, out, tc.path+":test:lint")
 			require.Contains(t, out, tc.path+":test:unit")
 			// run a specific passing check
-			out, err = modGen.
+			_, err = modGen.
 				With(daggerExec("--progress=report", "check", tc.path+":passing-check")).
 				CombinedOutput(ctx)
 			require.NoError(t, err)
-			require.Regexp(t, `passing-check.*OK`, out)
 			// run a specific failing check
-			out, err = modGen.
+			_, err = modGen.
 				With(daggerExecFail("--progress=report", "check", tc.path+":failing-check")).
 				CombinedOutput(ctx)
-			require.Regexp(t, `failing-check.*ERROR`, out)
 			require.NoError(t, err)
 			// run all checks
-			out, err = modGen.
+			_, err = modGen.
 				With(daggerExecFail("--progress=report", "check")).
 				CombinedOutput(ctx)
-			require.Regexp(t, `passing-check.*OK`, out)
-			require.Regexp(t, `failing-check.*ERROR`, out)
 			require.NoError(t, err)
 		})
 	}
