@@ -7,8 +7,10 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/generator/go/templates"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
@@ -31,9 +33,16 @@ func (g *GoGenerator) GenerateTypeDefs(ctx context.Context, schema *introspectio
 	outDir := filepath.Clean(moduleConfig.ModuleSourcePath)
 
 	mfs := memfs.New()
-	var overlay fs.FS = layerfs.New(
-		mfs,
-	)
+	overlayLayers := []fs.FS{mfs}
+	// When no LibVersion was passed (offline mode, gated by DAGGER_GO_SDK_OFFLINE
+	// on the engine), use the embedded querybuilder so codegen doesn't fetch
+	// dagger.io/dagger.
+	if moduleConfig.LibVersion == "" {
+		overlayLayers = append(overlayLayers,
+			&MountedFS{FS: dagger.QueryBuilder, Name: filepath.Join(outDir, "internal")},
+		)
+	}
+	var overlay fs.FS = layerfs.New(overlayLayers...)
 
 	res := &generator.GeneratedState{
 		Overlay: overlay,
@@ -42,6 +51,10 @@ func (g *GoGenerator) GenerateTypeDefs(ctx context.Context, schema *introspectio
 	pkgInfo, partial, err := g.bootstrapMod(mfs, res, true)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap package: %w", err)
+	}
+
+	if moduleConfig.LibVersion == "" {
+		pkgInfo.UtilityPkgImport = path.Join(pkgInfo.PackageImport, "internal")
 	}
 
 	if outDir != "." {
