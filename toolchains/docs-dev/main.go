@@ -67,6 +67,12 @@ func (d DocsDev) Server() *dagger.Container {
 		WithExposedPort(8000)
 }
 
+// Starts the docs server
+// +up
+func (d DocsDev) Up() *dagger.Service {
+	return d.Server().AsService()
+}
+
 // Regenerate the API schema and CLI reference docs
 // +generate
 func (d DocsDev) References(
