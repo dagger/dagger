@@ -50,8 +50,8 @@ Completed in this branch:
 
 Still remaining:
 
-- move or waive SDK-owned authoring coverage listed under **Move Or Adapt Out Of
-  Core**
+- move or waive SDK-owned authoring coverage listed in
+  `future/sdk-tests.md`
 - delete remaining command-surface integration tests that still invoke removed
   commands
 - convert core tests that still use removed commands as setup to checked-in
@@ -87,8 +87,8 @@ SDK-as-module repo. Only then remove the old command-shaped test.
 
 ## Recommended Order
 
-1. Move or consciously waive the coverage listed under **Move Or Adapt Out Of
-   Core**. Go-specific authoring coverage should move first because
+1. Move or consciously waive the coverage listed in `future/sdk-tests.md`.
+   Go-specific authoring coverage should move first because
    `github.com/shykes/dagger-go-sdk` already exists.
 2. Delete the remaining pure CLI-surface rows listed under **Delete From Core**.
    Avoid deleting whole parent tests when they contain mixed behavior.
@@ -119,45 +119,11 @@ the corresponding commands are removed.
 
 ## Move Or Adapt Out Of Core
 
-These rows test module-authoring behavior. Move the behavior to SDK-as-module
-repos instead of converting these tests to core fixtures. Remove the core tests
-after equivalent coverage is moved or after deciding the coverage is no longer
-needed.
+The detailed SDK handoff inventory now lives in `future/sdk-tests.md`.
 
-For Go, the target repo is `github.com/shykes/dagger-go-sdk`. For other SDKs,
-the target is the corresponding future SDK module repo.
-
-| Test name | Test file | Ultra-TLDR | Move/adapt target |
-|---|---|---|---|
-| `CLISuite.TestModuleInit / SDK bootstrap and layout` | `core/integration/module_init_cli_test.go:23` | init-created SDK file layout | SDK module init coverage |
-| `CLISuite.TestModuleInitGit` | `core/integration/module_init_cli_test.go:223` | gitignore/gitattributes for generated SDK files | SDK module bootstrap coverage |
-| `CLISuite.TestModuleDevelop / SDK/source authoring` | `core/integration/module_develop_cli_test.go:21` | set/update SDK and source path | SDK module config/generate coverage |
-| `CLISuite.TestModuleDevelop / recursive generation` | `core/integration/module_develop_cli_test.go:180` | regenerate parent and local deps | SDK module `generateAll` coverage |
-| `GoSuite.TestInit` | `core/integration/module_go_test.go:29` | Go init/generate/bootstrap behavior | `dagger-go-sdk` |
-| `CLISuite.TestModuleDevelopDeterministicCodegen` | `core/integration/module_develop_cli_test.go:225` | deterministic Go codegen | `dagger-go-sdk` generate determinism |
-| `CLISuite.TestModuleDependencyInstall` | `core/integration/module_dependency_cli_test.go:27` | dep add refs/pins/errors | SDK-module deps API |
-| `CLISuite.TestModuleDependencyInstallOrder` | `core/integration/module_dependency_cli_test.go:460` | dependency ordering | SDK-module deps API |
-| `CLISuite.TestModuleDependencyUninstall` | `core/integration/module_dependency_cli_test.go:516` | dependency removal | SDK-module deps API |
-| `CLISuite.TestModuleDependencyUpdate` | `core/integration/module_dependency_cli_test.go:735` | dependency update refs/pins | SDK-module deps API |
-| `ModuleSuite.TestModuleDevelopVersion` | `core/integration/module_engine_version_test.go:194` | engine-version mutation | SDK-module engine API |
-| `WorkspaceModulesSuite.TestWorkspaceModuleInit` | `core/integration/workspace_modules_test.go:300` | workspace module creation | SDK-module init API |
-| `WorkspaceModulesSuite.TestModuleScopedDependencyCommands` | `core/integration/workspace_modules_test.go:430` | module deps do not mutate workspace config | SDK-module deps API |
-| `WorkspaceModulesSuite.TestWorkspaceModuleMutation / local dependency updates are rejected when unsupported` | `core/integration/workspace_modules_test.go:273` | local dep update rejection | SDK-module deps API |
-| `ModuleSuite.TestNestedClientCreatedByModule` | `core/integration/module_nested_cli_test.go:18` | nested recursive generation | `dagger-go-sdk` nested/generateAll coverage |
-| `ModuleSuite.TestDevelopRefreshesParentCodegenAfterLocalDependencyAPIChange` | `core/integration/module_dependency_runtime_test.go:261` | local dep API refresh | `dagger-go-sdk` generate/deps coverage |
-| `ModuleSuite.TestDevelopRefreshesLocalDependencyImplementationChanges` | `core/integration/module_dependency_runtime_test.go:329` | local dep impl refresh | `dagger-go-sdk` generate/deps coverage |
-| `ModuleConfigSuite.TestDepPinsStayPinned` | `core/integration/module_config_test.go:1460` | pins stay pinned across generation | SDK-module deps/generate coverage |
-| `ModuleConfigSuite.TestConfigs / Allows $schema keyword` | `core/integration/module_config_test.go:217` | generation preserves `$schema` | SDK-module generate coverage |
-| `ModuleConfigSuite.TestDaggerGitWithSources / develop half` | `core/integration/module_config_test.go:1365` | git source layouts with generation | SDK-module generate coverage |
-| `PythonSuite.TestInit` | `core/integration/module_python_test.go:33` | Python init/bootstrap behavior | Future Python SDK module |
-| `PythonSuite.TestPipLock / init-develop subtests` | `core/integration/module_python_test.go:953` | Python lockfile behavior | Future Python SDK module |
-| `TypescriptSuite.TestInit` | `core/integration/module_typescript_test.go:30` | TS init/bootstrap behavior | Future TypeScript SDK module |
-| `TypescriptSuite.TestPackageManagerDetection` | `core/integration/module_typescript_test.go:900` | TS package manager detection | Future TypeScript SDK module |
-| `TypescriptSuite.TestBundleLocalMigration` | `core/integration/module_typescript_test.go:2024` | TS SDK bundle migration | Future TypeScript SDK module |
-| `JavaSuite.TestInit` | `core/integration/module_java_test.go:28` | Java SDK alias/ref init | Future Java SDK module |
-| `PHPSuite.TestInit` | `core/integration/module_php_test.go:26` | PHP SDK alias/ref init | Future PHP SDK module |
-| `ElixirSuite.TestInit` | `core/integration/module_elixir_test.go:27` | Elixir SDK alias/ref init | Future Elixir SDK module |
-| `ClientGeneratorTest.TestPersistence / develop regeneration` | `core/integration/client_generator_test.go:576` | clients regenerated by develop | Client generator replacement, if kept |
+Those rows test module-authoring behavior. Move or consciously waive that
+behavior in SDK-as-module repos instead of converting the old command-shaped
+core tests to fixtures.
 
 ## Keep Or Convert In Core
 
