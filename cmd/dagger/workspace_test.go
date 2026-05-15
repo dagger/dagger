@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,16 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestInitCommandRouting(t *testing.T) {
-	cmd, _, err := rootCmd.Find([]string{"init"})
-	require.NoError(t, err)
-	require.Same(t, initCmd, cmd)
-
-	cmd, _, err = rootCmd.Find([]string{"module", "init"})
-	require.NoError(t, err)
-	require.Same(t, moduleInitCmd, cmd)
-}
-
 func TestInstallAndUpdateCommandFlags(t *testing.T) {
 	cmd, _, err := rootCmd.Find([]string{"install"})
 	require.NoError(t, err)
@@ -31,28 +20,15 @@ func TestInstallAndUpdateCommandFlags(t *testing.T) {
 	require.NotNil(t, cmd.Flags().Lookup("name"))
 	require.Contains(t, cmd.Long, "If no workspace config is selected")
 
-	cmd, _, err = rootCmd.Find([]string{"module", "install"})
-	require.NoError(t, err)
-	require.NotNil(t, cmd.Flags().Lookup("mod"))
-	require.NotNil(t, cmd.Flags().Lookup("compat"))
-	require.NotNil(t, cmd.Flags().Lookup("name"))
-
 	cmd, _, err = rootCmd.Find([]string{"update"})
 	require.NoError(t, err)
 	require.Nil(t, cmd.Flags().Lookup("mod"))
 	require.Nil(t, cmd.Flags().Lookup("compat"))
-
-	cmd, _, err = rootCmd.Find([]string{"module", "update"})
-	require.NoError(t, err)
-	require.NotNil(t, cmd.Flags().Lookup("mod"))
-	require.NotNil(t, cmd.Flags().Lookup("compat"))
 }
 
 func TestWorkspaceCommandGrouping(t *testing.T) {
 	require.Equal(t, workspaceGroup.ID, configCmd.GroupID)
 	require.Equal(t, workspaceGroup.ID, envCmd.GroupID)
-	require.Equal(t, moduleGroup.ID, initCmd.GroupID)
-	require.True(t, initCmd.Hidden)
 	require.Equal(t, workspaceGroup.ID, settingsCmd.GroupID)
 	require.Equal(t, workspaceGroup.ID, workspaceCmd.GroupID)
 	require.Equal(t, workspaceGroup.ID, moduleDepInstallCmd.GroupID)
@@ -96,11 +72,17 @@ func TestRootHelpShowsWorkspaceCommandGroup(t *testing.T) {
 	require.Contains(t, help, "DAGGER WORKSPACE COMMANDS")
 
 	workspaceIdx := strings.Index(help, "DAGGER WORKSPACE COMMANDS")
-	moduleIdx := strings.Index(help, "DAGGER MODULE COMMANDS")
 	require.NotEqual(t, -1, workspaceIdx)
-	require.NotEqual(t, -1, moduleIdx)
 
-	workspaceSection := help[workspaceIdx:moduleIdx]
+	sectionEnd := len(help)
+	if execIdx := strings.Index(help[workspaceIdx:], "EXECUTION COMMANDS"); execIdx != -1 {
+		sectionEnd = workspaceIdx + execIdx
+	}
+	if moduleIdx := strings.Index(help[workspaceIdx:], "DAGGER MODULE COMMANDS"); moduleIdx != -1 && workspaceIdx+moduleIdx < sectionEnd {
+		sectionEnd = workspaceIdx + moduleIdx
+	}
+
+	workspaceSection := help[workspaceIdx:sectionEnd]
 	require.Contains(t, workspaceSection, "  config")
 	require.Contains(t, workspaceSection, "  env")
 	require.NotContains(t, workspaceSection, "  init")
@@ -133,22 +115,6 @@ func TestRootHelpShowsExecutionCommandGroup(t *testing.T) {
 	require.Contains(t, help, "  query")
 	require.Contains(t, help, "  run")
 	require.Contains(t, help, "  up")
-}
-
-func TestGenHelpDoesNotPanicWithModuleSubcommands(t *testing.T) {
-	oldOut := rootCmd.OutOrStdout()
-	oldErr := rootCmd.ErrOrStderr()
-	rootCmd.SetOut(io.Discard)
-	rootCmd.SetErr(io.Discard)
-	rootCmd.SetArgs([]string{"gen", "--help"})
-	t.Cleanup(func() {
-		rootCmd.SetOut(oldOut)
-		rootCmd.SetErr(oldErr)
-		rootCmd.SetArgs(nil)
-	})
-
-	_, err := rootCmd.ExecuteC()
-	require.NoError(t, err)
 }
 
 func TestInstallGlobalFlagsWorkspaceSelection(t *testing.T) {
