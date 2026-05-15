@@ -405,6 +405,7 @@ class GeneratedFunction:
     params: tuple[GeneratedParam, ...]
     return_annotation: str
     body: str
+    method_kind: str = "instance"  # "instance" | "staticmethod" | "classmethod"
 
 
 def _function_name_strategy() -> st.SearchStrategy[str]:
@@ -426,6 +427,9 @@ def function_strategy(  # type: ignore[no-untyped-def]
     aliases: tuple[_AliasLeaf, ...] = (),
 ) -> GeneratedFunction:
     name = draw(_function_name_strategy())
+    method_kind = draw(
+        st.sampled_from(["instance", "instance", "staticmethod", "classmethod"])
+    )
     param_count = draw(st.integers(min_value=0, max_value=3))
     params: list[GeneratedParam] = []
     used_names: set[str] = set()
@@ -466,6 +470,7 @@ def function_strategy(  # type: ignore[no-untyped-def]
         params=tuple(params),
         return_annotation=return_type.source,
         body="        ...",
+        method_kind=method_kind,
     )
 
 
@@ -655,10 +660,18 @@ def _render_module(mod: GeneratedModule) -> str:  # noqa: C901, PLR0912
                 param_strs.append(f"{p.name}: {p.annotation}")
             else:
                 param_strs.append(f"{p.name}: {p.annotation} = {p.default_expr}")
-        params_rendered = ", ".join(["self", *param_strs])
+        if fn.method_kind == "staticmethod":
+            decorator_lines = ["    @staticmethod", "    @dagger.function"]
+            params_rendered = ", ".join(param_strs)
+        elif fn.method_kind == "classmethod":
+            decorator_lines = ["    @classmethod", "    @dagger.function"]
+            params_rendered = ", ".join(["cls", *param_strs])
+        else:
+            decorator_lines = ["    @dagger.function"]
+            params_rendered = ", ".join(["self", *param_strs])
         lines.extend(
             [
-                "    @dagger.function",
+                *decorator_lines,
                 f"    def {fn.name}({params_rendered}) -> {fn.return_annotation}:",
                 fn.body,
                 "",
