@@ -81,15 +81,19 @@ type persistedEdge struct {
 	unpruneable       bool
 }
 
-const cachePersistenceSchemaVersion = "14"
+const cachePersistenceSchemaVersion = "15"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrPersistStateNotReady = errors.New("persist state not ready")
 var ErrCacheValidationFailed = errors.New("cache validation failed")
 
 type runtimeResultDependency struct {
-	ResultID      uint64                     `json:"resultID,omitempty"`
-	Frame         *ResultCall                `json:"frame,omitempty"`
+	ResultID uint64      `json:"resultID,omitempty"`
+	Frame    *ResultCall `json:"frame,omitempty"`
+	// FrameDigest is the recipe digest for Frame. Runtime dependency equality
+	// must be a pure comparison because egraph indexing compares dependency
+	// sets while holding egraph locks.
+	FrameDigest   digest.Digest              `json:"frameDigest,omitempty"`
 	Digest        digest.Digest              `json:"digest,omitempty"`
 	FreshnessDeps runtimeResultDependencySet `json:"-"`
 }
@@ -331,6 +335,7 @@ func (c *Cache) recordRuntimeResultDependency(ctx context.Context, req *CallRequ
 	dep := runtimeResultDependency{
 		ResultID:      uint64(shared.id),
 		Frame:         depFrame,
+		FrameDigest:   depRecipeDigest,
 		Digest:        observedDigest,
 		FreshnessDeps: cloneRuntimeResultDependencySet(freshnessDeps),
 	}
@@ -3264,64 +3269,61 @@ func (c *Cache) lookupCacheForDigests(
 		return nil, false, nil
 	}
 
-	skipped := map[sharedResultID]struct{}{}
-	for {
-		c.egraphMu.Lock()
-		now := time.Now()
-		nowUnix := now.Unix()
-		match := c.lookupMatchForDigestsLocked(recipeDigest, extraDigests, nowUnix)
-		c.traceLookupAttempt(ctx, recipeDigest.String(), "", nil, false)
-		hitRes := c.selectLookupCandidateForSessionLocked(sessionID, match.candidates, skipped)
-		if hitRes == nil {
-			c.traceLookupMissNoMatch(ctx, recipeDigest.String(), false, -1, "", 0)
-			c.egraphMu.Unlock()
-			return nil, false, nil
-		}
-
-		hitRes.expiresAtUnix = mergeSharedResultExpiryUnix(
-			hitRes.expiresAtUnix,
-			candidateSharedResultExpiryUnix(nowUnix, 0),
-		)
-		touchSharedResultLastUsed(hitRes, now.UnixNano())
-		retRes := Result[Typed]{
-			shared:   hitRes,
-			hitCache: true,
-		}
-		c.traceLookupHit(ctx, recipeDigest.String(), hitRes, match.termDigest)
-		hitShared := retRes.cacheSharedResult()
-		if hitShared == nil || hitShared.id == 0 {
-			c.egraphMu.Unlock()
-			return nil, false, fmt.Errorf("lookup cache for digests: hit missing shared result ID")
-		}
-
-		trackedCount := 0
-		alreadyTracked := false
-		c.sessionMu.Lock()
-		if c.sessionResultIDsBySession == nil {
-			c.sessionResultIDsBySession = make(map[string]map[sharedResultID]struct{})
-		}
-		if c.sessionResultIDsBySession[sessionID] == nil {
-			c.sessionResultIDsBySession[sessionID] = make(map[sharedResultID]struct{})
-		}
-		if _, found := c.sessionResultIDsBySession[sessionID][hitShared.id]; found {
-			alreadyTracked = true
-		} else {
-			c.sessionResultIDsBySession[sessionID][hitShared.id] = struct{}{}
-			c.incrementIncomingOwnershipLocked(ctx, hitShared)
-		}
-		trackedCount = len(c.sessionResultIDsBySession[sessionID])
-		c.sessionMu.Unlock()
+	c.egraphMu.Lock()
+	now := time.Now()
+	nowUnix := now.Unix()
+	match := c.lookupMatchForDigestsLocked(recipeDigest, extraDigests, nowUnix)
+	c.traceLookupAttempt(ctx, recipeDigest.String(), "", nil, false)
+	hitRes := c.selectLookupCandidateForSessionLocked(sessionID, match.candidates, nil)
+	if hitRes == nil {
+		c.traceLookupMissNoMatch(ctx, recipeDigest.String(), false, -1, "", 0)
 		c.egraphMu.Unlock()
-
-		loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
-		if err != nil {
-			return nil, false, c.rollbackTrackedHit(ctx, sessionID, hitShared, alreadyTracked, err)
-		}
-		if c.traceEnabled() {
-			c.traceSessionResultTracked(ctx, sessionID, loadedHit, true, trackedCount)
-		}
-		return loadedHit, true, nil
+		return nil, false, nil
 	}
+
+	hitRes.expiresAtUnix = mergeSharedResultExpiryUnix(
+		hitRes.expiresAtUnix,
+		candidateSharedResultExpiryUnix(nowUnix, 0),
+	)
+	touchSharedResultLastUsed(hitRes, now.UnixNano())
+	retRes := Result[Typed]{
+		shared:   hitRes,
+		hitCache: true,
+	}
+	c.traceLookupHit(ctx, recipeDigest.String(), hitRes, match.termDigest)
+	hitShared := retRes.cacheSharedResult()
+	if hitShared == nil || hitShared.id == 0 {
+		c.egraphMu.Unlock()
+		return nil, false, fmt.Errorf("lookup cache for digests: hit missing shared result ID")
+	}
+
+	trackedCount := 0
+	alreadyTracked := false
+	c.sessionMu.Lock()
+	if c.sessionResultIDsBySession == nil {
+		c.sessionResultIDsBySession = make(map[string]map[sharedResultID]struct{})
+	}
+	if c.sessionResultIDsBySession[sessionID] == nil {
+		c.sessionResultIDsBySession[sessionID] = make(map[sharedResultID]struct{})
+	}
+	if _, found := c.sessionResultIDsBySession[sessionID][hitShared.id]; found {
+		alreadyTracked = true
+	} else {
+		c.sessionResultIDsBySession[sessionID][hitShared.id] = struct{}{}
+		c.incrementIncomingOwnershipLocked(ctx, hitShared)
+	}
+	trackedCount = len(c.sessionResultIDsBySession[sessionID])
+	c.sessionMu.Unlock()
+	c.egraphMu.Unlock()
+
+	loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
+	if err != nil {
+		return nil, false, c.rollbackTrackedHit(ctx, sessionID, hitShared, alreadyTracked, err)
+	}
+	if c.traceEnabled() {
+		c.traceSessionResultTracked(ctx, sessionID, loadedHit, true, trackedCount)
+	}
+	return loadedHit, true, nil
 }
 
 func (c *Cache) wait(
@@ -3593,7 +3595,10 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		requestInputs = append(requestInputs, dig)
 	}
 	allRuntimeDeps := c.drainRuntimeResultDependencies(sessionID, requestDigest)
-	runtimeDeps := c.liveRuntimeDependencies(allRuntimeDeps)
+	runtimeDeps, err := c.liveRuntimeDependencies(allRuntimeDeps)
+	if err != nil {
+		return fmt.Errorf("normalize runtime dependencies: %w", err)
+	}
 	oc.runtimeDeps = cloneRuntimeResultDependencySet(runtimeDeps)
 	var responseDigest digest.Digest
 	if resultCall := oc.res.loadResultCall(); resultCall != nil {
@@ -3607,116 +3612,126 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		path     string
 	}
 	var resultCallDeps []resultCallDep
-	if !resWasCacheBacked {
-		if resultCall := oc.res.loadResultCall(); resultCall != nil {
-			seenResults := map[sharedResultID]struct{}{}
-			seenCalls := map[*ResultCall]struct{}{}
+	if !resWasCacheBacked || len(runtimeDeps) > 0 {
+		seenResults := map[sharedResultID]struct{}{}
+		seenCalls := map[*ResultCall]struct{}{}
 
-			var joinPath func(string, string) string
-			var walkFrame func(string, *ResultCall) error
-			var walkRef func(string, *ResultCallRef) error
-			var walkLiteral func(string, *ResultCallLiteral) error
+		var joinPath func(string, string) string
+		var walkFrame func(string, *ResultCall) error
+		var walkRef func(string, *ResultCallRef) error
+		var walkLiteral func(string, *ResultCallLiteral) error
 
-			joinPath = func(prefix string, segment string) string {
-				switch {
-				case prefix == "":
-					return segment
-				case segment == "":
-					return prefix
-				default:
-					return prefix + "." + segment
-				}
+		joinPath = func(prefix string, segment string) string {
+			switch {
+			case prefix == "":
+				return segment
+			case segment == "":
+				return prefix
+			default:
+				return prefix + "." + segment
 			}
+		}
 
-			walkRef = func(path string, ref *ResultCallRef) error {
-				if ref == nil {
-					return nil
-				}
-				if ref.Call != nil {
-					return walkFrame(path, ref.Call)
-				}
-				if ref.ResultID == 0 {
-					return nil
-				}
-				resultID := sharedResultID(ref.ResultID)
-				if resultID == oc.res.id {
-					return nil
-				}
-				if _, seen := seenResults[resultID]; seen {
-					return nil
-				}
-				seenResults[resultID] = struct{}{}
-				resultCallDeps = append(resultCallDeps, resultCallDep{
-					resultID: resultID,
-					path:     path,
-				})
+		walkRef = func(path string, ref *ResultCallRef) error {
+			if ref == nil {
 				return nil
 			}
-
-			walkLiteral = func(path string, lit *ResultCallLiteral) error {
-				if lit == nil {
-					return nil
-				}
-				switch lit.Kind {
-				case ResultCallLiteralKindResultRef:
-					return walkRef(path, lit.ResultRef)
-				case ResultCallLiteralKindList:
-					for i, item := range lit.ListItems {
-						if err := walkLiteral(fmt.Sprintf("%s[%d]", path, i), item); err != nil {
-							return err
-						}
-					}
-				case ResultCallLiteralKindObject:
-					for _, field := range lit.ObjectFields {
-						if field == nil {
-							continue
-						}
-						if err := walkLiteral(joinPath(path, field.Name), field.Value); err != nil {
-							return err
-						}
-					}
-				}
+			if ref.Call != nil {
+				return walkFrame(path, ref.Call)
+			}
+			if ref.ResultID == 0 {
 				return nil
 			}
+			resultID := sharedResultID(ref.ResultID)
+			if resultID == oc.res.id {
+				return nil
+			}
+			if _, seen := seenResults[resultID]; seen {
+				return nil
+			}
+			seenResults[resultID] = struct{}{}
+			resultCallDeps = append(resultCallDeps, resultCallDep{
+				resultID: resultID,
+				path:     path,
+			})
+			return nil
+		}
 
-			walkFrame = func(path string, frame *ResultCall) error {
-				if frame == nil {
-					return nil
-				}
-				if _, seen := seenCalls[frame]; seen {
-					return nil
-				}
-				seenCalls[frame] = struct{}{}
-
-				if err := walkRef(joinPath(path, "receiver"), frame.Receiver); err != nil {
-					return fmt.Errorf("receiver: %w", err)
-				}
-				if frame.Module != nil {
-					if err := walkRef(joinPath(path, "module"), frame.Module.ResultRef); err != nil {
-						return fmt.Errorf("module: %w", err)
+		walkLiteral = func(path string, lit *ResultCallLiteral) error {
+			if lit == nil {
+				return nil
+			}
+			switch lit.Kind {
+			case ResultCallLiteralKindResultRef:
+				return walkRef(path, lit.ResultRef)
+			case ResultCallLiteralKindList:
+				for i, item := range lit.ListItems {
+					if err := walkLiteral(fmt.Sprintf("%s[%d]", path, i), item); err != nil {
+						return err
 					}
 				}
-				for _, arg := range frame.Args {
-					if arg == nil {
+			case ResultCallLiteralKindObject:
+				for _, field := range lit.ObjectFields {
+					if field == nil {
 						continue
 					}
-					if err := walkLiteral(joinPath(path, "arg:"+arg.Name), arg.Value); err != nil {
-						return fmt.Errorf("arg %q: %w", arg.Name, err)
+					if err := walkLiteral(joinPath(path, field.Name), field.Value); err != nil {
+						return err
 					}
 				}
-				for _, input := range frame.ImplicitInputs {
-					if input == nil {
-						continue
-					}
-					if err := walkLiteral(joinPath(path, "implicit_input:"+input.Name), input.Value); err != nil {
-						return fmt.Errorf("implicit input %q: %w", input.Name, err)
-					}
-				}
+			}
+			return nil
+		}
+
+		walkFrame = func(path string, frame *ResultCall) error {
+			if frame == nil {
 				return nil
 			}
+			if _, seen := seenCalls[frame]; seen {
+				return nil
+			}
+			seenCalls[frame] = struct{}{}
 
-			if err := walkFrame("", resultCall); err != nil {
-				return fmt.Errorf("collect result call dependencies: %w", err)
+			if err := walkRef(joinPath(path, "receiver"), frame.Receiver); err != nil {
+				return fmt.Errorf("receiver: %w", err)
+			}
+			if frame.Module != nil {
+				if err := walkRef(joinPath(path, "module"), frame.Module.ResultRef); err != nil {
+					return fmt.Errorf("module: %w", err)
+				}
+			}
+			for _, arg := range frame.Args {
+				if arg == nil {
+					continue
+				}
+				if err := walkLiteral(joinPath(path, "arg:"+arg.Name), arg.Value); err != nil {
+					return fmt.Errorf("arg %q: %w", arg.Name, err)
+				}
+			}
+			for _, input := range frame.ImplicitInputs {
+				if input == nil {
+					continue
+				}
+				if err := walkLiteral(joinPath(path, "implicit_input:"+input.Name), input.Value); err != nil {
+					return fmt.Errorf("implicit input %q: %w", input.Name, err)
+				}
+			}
+			return nil
+		}
+
+		if !resWasCacheBacked {
+			if resultCall := oc.res.loadResultCall(); resultCall != nil {
+				if err := walkFrame("", resultCall); err != nil {
+					return fmt.Errorf("collect result call dependencies: %w", err)
+				}
+			}
+		}
+		for _, runtimeDep := range runtimeDeps {
+			if runtimeDep.Frame == nil {
+				continue
+			}
+			if err := walkFrame(fmt.Sprintf("runtime:%d", runtimeDep.ResultID), runtimeDep.Frame); err != nil {
+				return fmt.Errorf("collect runtime dependency frame refs for result %d: %w", runtimeDep.ResultID, err)
 			}
 		}
 	}
@@ -3759,26 +3774,6 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 		oc.res.deps[depID] = struct{}{}
 		c.incrementIncomingOwnershipLocked(ctx, depRes)
 		c.traceResultCallDepAdded(ctx, oc.res.id, depID, dep.path)
-	}
-	for _, runtimeDep := range allRuntimeDeps {
-		depID := sharedResultID(runtimeDep.ResultID)
-		if depID == oc.res.id {
-			continue
-		}
-		depRes := c.resultsByID[depID]
-		if depRes == nil {
-			c.egraphMu.Unlock()
-			return fmt.Errorf("retain runtime dep result %d: missing cached result", depID)
-		}
-		if oc.res.deps == nil {
-			oc.res.deps = make(map[sharedResultID]struct{})
-		}
-		if _, alreadyHeld := oc.res.deps[depID]; alreadyHeld {
-			continue
-		}
-		oc.res.deps[depID] = struct{}{}
-		c.incrementIncomingOwnershipLocked(ctx, depRes)
-		c.traceExplicitDepAdded(ctx, oc.res.id, depID, "module_runtime_call")
 	}
 	if err := c.recomputeRequiredSessionResourcesLocked(oc.res); err != nil {
 		c.egraphMu.Unlock()

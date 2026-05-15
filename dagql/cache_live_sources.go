@@ -10,49 +10,63 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-func (c *Cache) liveRuntimeDependencies(deps runtimeResultDependencySet) runtimeResultDependencySet {
+func (c *Cache) liveRuntimeDependencies(deps runtimeResultDependencySet) (runtimeResultDependencySet, error) {
 	if len(deps) == 0 {
-		return nil
+		return nil, nil
 	}
 	live := make(runtimeResultDependencySet, 0, len(deps))
 	seen := make(map[string]struct{}, len(deps))
-	appendLive := func(dep runtimeResultDependency) {
+	appendLive := func(dep runtimeResultDependency) error {
 		if dep.Frame == nil || dep.Digest == "" {
-			return
+			return nil
 		}
-		key := runtimeResultDependencyValidationKey(c, dep)
+		frameDigest := dep.FrameDigest
+		if frameDigest == "" {
+			dig, err := dep.Frame.deriveRecipeDigest(c)
+			if err != nil {
+				return fmt.Errorf("derive runtime dependency frame digest for result %d: %w", dep.ResultID, err)
+			}
+			frameDigest = dig
+		}
+		if frameDigest == "" {
+			return fmt.Errorf("runtime dependency for result %d has empty frame digest", dep.ResultID)
+		}
+		key := runtimeResultDependencyValidationKey(runtimeResultDependency{
+			FrameDigest: frameDigest,
+			Digest:      dep.Digest,
+		})
 		if _, ok := seen[key]; ok {
-			return
+			return nil
 		}
 		seen[key] = struct{}{}
 		live = append(live, runtimeResultDependency{
-			ResultID: dep.ResultID,
-			Frame:    dep.Frame.clone(),
-			Digest:   dep.Digest,
+			ResultID:    dep.ResultID,
+			Frame:       dep.Frame.clone(),
+			FrameDigest: frameDigest,
+			Digest:      dep.Digest,
 		})
+		return nil
 	}
 	for _, dep := range deps {
 		if c.resultCallRequiresLiveSourceValidation(dep.Frame) {
-			appendLive(dep)
+			if err := appendLive(dep); err != nil {
+				return nil, err
+			}
 		}
 		for _, freshnessDep := range dep.FreshnessDeps {
-			appendLive(freshnessDep)
+			if err := appendLive(freshnessDep); err != nil {
+				return nil, err
+			}
 		}
 	}
 	slices.SortFunc(live, func(a, b runtimeResultDependency) int {
-		return cmp.Compare(runtimeResultDependencyValidationKey(c, a), runtimeResultDependencyValidationKey(c, b))
+		return cmp.Compare(runtimeResultDependencyValidationKey(a), runtimeResultDependencyValidationKey(b))
 	})
-	return live
+	return live, nil
 }
 
-func runtimeResultDependencyValidationKey(c *Cache, dep runtimeResultDependency) string {
-	frameDigest := ""
-	if dep.Frame != nil {
-		if dig, err := dep.Frame.deriveRecipeDigest(c); err == nil {
-			frameDigest = dig.String()
-		}
-	}
-	return fmt.Sprintf("%s\x00%d\x00%s", frameDigest, dep.ResultID, dep.Digest)
+func runtimeResultDependencyValidationKey(dep runtimeResultDependency) string {
+	return fmt.Sprintf("%s\x00%s", dep.FrameDigest, dep.Digest)
 }
 
 func (c *Cache) resultCallRequiresLiveSourceValidation(frame *ResultCall) bool {
@@ -231,7 +245,7 @@ func (c *Cache) validateRuntimeDependencySet(ctx context.Context, deps runtimeRe
 		}
 		current, err := c.refreshRuntimeDependencyDigest(ctx, dep)
 		if err != nil {
-			return fmt.Errorf("%w: refresh runtime dependency result %d: %v", ErrCacheValidationFailed, dep.ResultID, err)
+			return fmt.Errorf("%w: refresh runtime dependency result %d: %w", ErrCacheValidationFailed, dep.ResultID, err)
 		}
 		if current != dep.Digest {
 			return fmt.Errorf("%w: runtime dependency result %d expected %s got %s", ErrCacheValidationFailed, dep.ResultID, dep.Digest, current)
