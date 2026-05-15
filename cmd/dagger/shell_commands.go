@@ -574,7 +574,6 @@ Without arguments, the current working directory is replaced by the initial cont
 		cobraToShellCommand(loginCmd),
 		cobraToShellCommand(logoutCmd),
 		cobraToShellCommand(moduleDepInstallCmd),
-		cobraToShellCommand(moduleUnInstallCmd),
 		cobraToShellCommand(moduleUpdateCmd),
 	)
 
