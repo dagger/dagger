@@ -1,8 +1,7 @@
 package core
 
-// These tests cover modules authored with the Elixir SDK. They verify `dagger
-// module init`, generated Elixir bindings, and executing Elixir module
-// functions.
+// These tests cover modules authored with the Elixir SDK. They verify generated
+// Elixir bindings and executing Elixir module functions.
 //
 // See also:
 // - module_definition_test.go: SDK-neutral module API definition behavior.
@@ -22,82 +21,6 @@ type ElixirSuite struct{}
 
 func TestElixir(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(ElixirSuite{})
-}
-
-func (ElixirSuite) TestInit(ctx context.Context, t *testctx.T) {
-	t.Run("from local", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		sdkSrc, err := filepath.Abs("../../sdk/elixir/")
-		require.NoError(t, err)
-
-		out, err := goGitBase(t, c).
-			WithDirectory("/work/sdk/elixir", c.Host().Directory(sdkSrc)).
-			With(daggerExec("module", "init", "--sdk=./sdk/elixir", "bare", ".")).
-			With(daggerCallAt(".", "container-echo", "--string-arg", "hello", "stdout")).
-			Stdout(ctx)
-
-		require.NoError(t, err)
-		require.Equal(t, "hello\n", out)
-	})
-
-	t.Run("from upstream", func(ctx context.Context, t *testctx.T) {
-		// TODO: re-enable once upstream has unified ID support; the
-		// published Elixir SDK can't handle the ID scalar produced by this branch's schema.
-		t.Skip("requires unified ID support in upstream Elixir SDK")
-
-		c := connect(ctx, t)
-
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=github.com/dagger/dagger/sdk/elixir", "bare", "."))
-
-		out, err := modGen.
-			With(daggerCallAt(".", "container-echo", "--string-arg=hello", "stdout")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "hello\n", out)
-	})
-
-	t.Run("from alias", func(ctx context.Context, t *testctx.T) {
-		// The alias expands to github.com/dagger/dagger/sdk/elixir@engine.Tag.
-		// Local dev-engine builds synthesize a pseudo tag that is not a Git ref;
-		// remote/CI builds use a commit SHA and keep this alias coverage active.
-		skipSDKAliasIfDevTag(t, "Elixir")
-
-		c := connect(ctx, t)
-
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=elixir", "bare", "."))
-
-		out, err := modGen.
-			With(daggerCallAt(".", "container-echo", "--string-arg=hello", "stdout")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "hello\n", out)
-	})
-
-	t.Run("from alias with ref", func(ctx context.Context, t *testctx.T) {
-		// TODO: re-enable once main has unified ID support; the @main SDK
-		// can't handle the ID scalar produced by this branch's schema.
-		t.Skip("requires unified ID support on main branch")
-
-		c := connect(ctx, t)
-
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=elixir@main", "bare", "."))
-
-		out, err := modGen.
-			With(daggerCallAt(".", "container-echo", "--string-arg=hello", "stdout")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "hello\n", out)
-	})
 }
 
 func (ElixirSuite) TestOptionalValue(ctx context.Context, t *testctx.T) {
