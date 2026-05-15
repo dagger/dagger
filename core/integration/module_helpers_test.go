@@ -318,42 +318,6 @@ func sdkCodegenFile(t *testctx.T, sdk string) string {
 	}
 }
 
-func modInit(t *testctx.T, c *dagger.Client, sdk, contents string, extra ...string) *dagger.Container {
-	t.Helper()
-	return goGitBase(t, c).
-		With(func(ctr *dagger.Container) *dagger.Container {
-			if sdk == "java" {
-				sdkSrc, err := filepath.Abs("../../sdk/java")
-				require.NoError(t, err)
-				ctr = ctr.WithMountedDirectory("sdk/java", c.Host().Directory(sdkSrc))
-				sdk = "./sdk/java"
-			}
-			return ctr
-		}).
-		With(withModInit(sdk, contents, extra...))
-}
-
-func withModInit(sdk, contents string, extra ...string) dagger.WithContainerFunc {
-	return withModInitAt(".", sdk, contents, extra...)
-}
-
-func withModInitAt(dir, sdk, contents string, extra ...string) dagger.WithContainerFunc {
-	return func(ctr *dagger.Container) *dagger.Container {
-		name := filepath.Base(dir)
-		if name == "." {
-			name = "test"
-		}
-		args := []string{"module", "init", name, "--sdk=" + sdk, "--source=" + dir}
-		args = append(args, extra...)
-		args = append(args, dir)
-		ctr = ctr.With(daggerExec(args...))
-		if contents != "" {
-			return ctr.With(sdkSourceAt(dir, sdk, contents))
-		}
-		return ctr
-	}
-}
-
 func currentSchema(ctx context.Context, t *testctx.T, ctr *dagger.Container) *introspection.Schema {
 	t.Helper()
 	out, err := ctr.With(daggerQueryAt(".", introspection.Query)).Stdout(ctx)
