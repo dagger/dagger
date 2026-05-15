@@ -1,0 +1,5 @@
+type Alpha {
+  pub run: String! {
+    "alpha"
+  }
+}

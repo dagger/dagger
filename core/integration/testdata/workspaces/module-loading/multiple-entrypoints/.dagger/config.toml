@@ -1,0 +1,7 @@
+[modules.alpha]
+source = "modules/alpha"
+entrypoint = true
+
+[modules.beta]
+source = "modules/beta"
+entrypoint = true

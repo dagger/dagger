@@ -1,0 +1,7 @@
+[modules.first]
+source = "modules/app"
+entrypoint = true
+
+[modules.second]
+source = "modules/app"
+entrypoint = true

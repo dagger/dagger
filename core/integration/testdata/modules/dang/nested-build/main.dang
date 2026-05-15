@@ -1,0 +1,5 @@
+type Nested {
+  pub build: String! {
+    "cwd build"
+  }
+}

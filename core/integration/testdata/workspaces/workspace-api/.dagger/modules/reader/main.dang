@@ -1,0 +1,12 @@
+type Reader {
+  pub content: String!
+
+  new(ws: Workspace!) {
+    self.content = ws.file("data.txt").contents
+    self
+  }
+
+  pub read: String! {
+    content
+  }
+}

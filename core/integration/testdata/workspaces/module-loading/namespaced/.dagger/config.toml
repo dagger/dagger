@@ -1,0 +1,5 @@
+[modules.build]
+source = "modules/build"
+
+[modules.lint]
+source = "modules/lint"
