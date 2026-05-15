@@ -1,0 +1,13 @@
+{
+  "name": "c",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "d",
+      "source": "../dstr"
+    }
+  ]
+}
