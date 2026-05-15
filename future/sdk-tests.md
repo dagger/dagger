@@ -2,8 +2,8 @@
 
 author: shykes
 created: 2026-05-15
-status: planned
-related: future/module-test-cleanup.md
+status: core tests removed; SDK ports planned
+related: future/integration-test-fixtures.md
 source commit: 200e400d5a1463e78b1d52001394d77f743c290a
 
 ## Purpose
@@ -11,10 +11,9 @@ source commit: 200e400d5a1463e78b1d52001394d77f743c290a
 This is the handoff inventory for integration tests that should leave
 `core/integration` and be re-created in SDK-as-module repos.
 
-The tests listed here are allowed to be removed from core after this document is
-committed. Their source can be recovered from the source commit above. When
-porting them, preserve the behavior under test, not the old `dagger module *` or
-`dagger develop` command syntax.
+The tests listed here have been removed from core. Their source can be recovered
+from the source commit above. When porting them, preserve the behavior under
+test, not the old `dagger module *` or `dagger develop` command syntax.
 
 For Go, the first target repo is `github.com/shykes/dagger-go-sdk`. For other
 SDKs, use the corresponding future SDK module repo.
@@ -78,11 +77,10 @@ Rows use short commit `200e400d5`; the full source commit is in the header.
 | `ElixirSuite.TestInit` | `200e400d5:core/integration/module_elixir_test.go:27` | Elixir SDK alias/ref init | Future Elixir SDK module |
 | `ClientGeneratorTest.TestPersistence / develop regeneration` | `200e400d5:core/integration/client_generator_test.go:576` | clients survive regeneration | Client generator module, if kept |
 
-## Deletion Rule
+## Deletion Status
 
-After this file is committed, remove these core tests instead of preserving them
-with fixture conversion. The recovery contract is the source commit above plus
-this table.
+These core tests were removed instead of being preserved with fixture
+conversion. The recovery contract is the source commit above plus this table.
 
 If implementation finds that a row is also the only remaining regression test
 for a core API, add replacement core coverage first, then remove the old

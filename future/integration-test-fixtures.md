@@ -3,28 +3,19 @@
 author: shykes
 created: 2026-05-14
 updated: 2026-05-15
-after: `future/module-test-cleanup.md`
-status: blocked on remaining SDK moves/deletions
+after: SDK-specific tests removed from core
 
 ## Context
 
-This cleanup should happen after the test disposition work in
-`future/module-test-cleanup.md`.
+This cleanup should happen after the module-management command removal and
+SDK-specific test deletion in this branch.
 
 As of 2026-05-15, the module-management CLI implementation has been removed and
-some replacement core coverage has been added. This fixture cleanup is still not
-ready to start globally: remaining command-surface tests must be deleted, and
-SDK-owned authoring coverage must be moved or waived first.
+replacement core coverage has been added. SDK-specific authoring tests have been
+removed from core and archived in `future/sdk-tests.md`.
 
-That earlier cleanup decides which tests leave core entirely:
-
-- delete tests that only cover the old module-management CLI surface
-- move module-authoring behavior to SDK-as-module repos
-- keep core behavior tests in core
-
-Only after that pass should this fixture cleanup begin. The goal here is to
-convert the remaining core integration tests so they no longer create Dagger
-modules dynamically as test setup.
+The goal here is to convert the remaining core integration tests so they no
+longer create Dagger modules dynamically as test setup.
 
 ## Goal
 
@@ -75,7 +66,7 @@ Do not delete behavior coverage merely because it currently uses dynamic module
 setup. If the behavior belongs in core, keep it and convert the setup.
 
 Do not recreate SDK authoring workflows in core fixtures. SDK authoring
-behavior belongs in SDK-as-module repos after `future/module-test-cleanup.md`.
+behavior belongs in SDK-as-module repos; see `future/sdk-tests.md`.
 
 Do not introduce a generic string-templating module factory that recreates
 `module init` under another name. Prefer explicit, checked-in fixtures.
@@ -156,9 +147,7 @@ Fixtures should be stable, readable, and minimal.
 
 ## Migration Order
 
-1. Finish the remaining parts of `future/module-test-cleanup.md`: move or waive
-   SDK-owned coverage, then delete remaining command-surface tests.
-2. Inventory all remaining dynamic module setup calls:
+1. Inventory all remaining dynamic module setup calls:
    - `daggerExec("module", "init", ...)`
    - `daggerExec("develop", ...)`
    - `daggerExec("module", "install", ...)`
@@ -169,14 +158,32 @@ Fixtures should be stable, readable, and minimal.
    - `withModInitAt`
    - `daggerInitPython`
    - `daggerInitPythonAt`
-3. Group usages by behavior area: runtime, schema, workspace, cache,
+2. Group usages by behavior area: runtime, schema, workspace, cache,
    cross-session, services, legacy, shell, client generation.
-4. For each group, decide whether an existing fixture already covers the setup.
-5. Add missing fixtures under `core/integration/testdata`.
-6. Replace dynamic setup calls with fixture helpers.
-7. Delete or shrink dynamic setup helpers once no tests depend on them.
-8. Run targeted integration packages after each group, then run the broader
+3. For each group, decide whether an existing fixture already covers the setup.
+4. Add missing fixtures under `core/integration/testdata`.
+5. Replace dynamic setup calls with fixture helpers.
+6. Delete or shrink dynamic setup helpers once no tests depend on them.
+7. Run targeted integration packages after each group, then run the broader
    suite.
+
+The implementer should refresh the inventory at the start of the work. This doc
+intentionally does not carry a full call-site audit.
+
+Useful starting commands:
+
+```bash
+rg -n \
+  -e 'daggerExec(Raw)?\([^)]*"module",\s*"(init|install|update)"' \
+  -e 'daggerExec(Raw)?\([^)]*"(develop|uninstall)"' \
+  -e '\b(modInit|withModInit|withModInitAt|daggerInitPython|daggerInitPythonAt)\b' \
+  core/integration
+rg -c \
+  -e 'daggerExec(Raw)?\([^)]*"module",\s*"(init|install|update)"' \
+  -e 'daggerExec(Raw)?\([^)]*"(develop|uninstall)"' \
+  -e '\b(modInit|withModInit|withModInitAt|daggerInitPython|daggerInitPythonAt)\b' \
+  core/integration
+```
 
 ## Keep In Core
 
@@ -209,6 +216,19 @@ Examples:
 For Go, move these to `github.com/shykes/dagger-go-sdk`. For other SDKs, move
 them to the corresponding SDK-as-module repo when it exists.
 
+## Verification
+
+`core/integration` is not run directly with native `go test`. Use the Dagger
+test harness:
+
+```bash
+dagger call engine-dev test --pkg=./core/integration --run='<target>' --test-verbose
+```
+
+Prefer targeted runs while converting each group. The development branch may
+have unrelated failures, so compare failures against the touched test area
+before treating them as fixture-conversion regressions.
+
 ## Done Criteria
 
 This cleanup is complete when:
@@ -216,7 +236,4 @@ This cleanup is complete when:
 - no remaining core integration setup calls removed module-management commands
 - dynamic module setup helpers are gone or no longer call removed commands
 - remaining core tests use checked-in fixtures for modules and workspaces
-- SDK authoring tests are moved out of core or explicitly waived
-- deleted command-surface tests are tracked as done in
-  `future/module-test-cleanup.md`
 - the relevant core integration test suites pass with fixture-based setup
