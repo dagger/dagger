@@ -1,0 +1,14 @@
+{
+  "name": "test",
+  "engineVersion": "v0.20.6",
+  "sdk": {
+    "source": "go",
+    "experimental": {
+      "SELF_CALLS": true
+    }
+  },
+  "codegen": {
+    "automaticGitignore": false
+  },
+  "disableDefaultFunctionCaching": true
+}
