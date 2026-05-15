@@ -228,24 +228,7 @@ DEFAULTS_MESSAGE_NAME=planete-outer
 // schema default (for example Python's "= None") was treated as explicit input.
 func (WorkspaceCompatSuite) TestObjectDefaultOverride(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	base := daggerCliBase(t, c).
-		WithExec([]string{"apk", "add", "git"}).
-		WithExec([]string{"git", "init"}).
-		With(daggerInitPython()).
-		WithNewFile("src/test/main.py", `import dagger
-from dagger import dag, function, object_type
-
-@object_type
-class Test:
-    secret_with_default: dagger.Secret | None = None
-
-    @function
-    async def check(self) -> str:
-        if self.secret_with_default is None:
-            return "secret is None"
-        val = await self.secret_with_default.plaintext()
-        return f"secret is: {val}"
-`).
+	base := moduleFixture(t, c, "python/object-default-override").
 		WithEnvVariable("MY_SECRET", "hello-from-env")
 
 	out, err := base.
@@ -337,25 +320,7 @@ func (WorkspaceCompatSuite) TestRequiredString(ctx context.Context, t *testctx.T
 
 func (WorkspaceCompatSuite) TestArgName(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	base := daggerCliBase(t, c).
-		WithExec([]string{"apk", "add", "git"}).
-		WithExec([]string{"git", "init"}).
-		With(daggerInitPython()).
-		WithNewFile("src/test/main.py", `from dagger import function, object_type
-
-@object_type
-class Test:
-    simple_value: str
-    http_url: str
-
-    @function
-    def constructor_values(self) -> str:
-        return f"{self.simple_value}|{self.http_url}"
-
-    @function
-    def echo(self, snake_case: str, http_url: str) -> str:
-        return f"{snake_case}|{http_url}"
-`)
+	base := moduleFixture(t, c, "python/arg-name-defaults")
 
 	t.Run("constructor and function args use GraphQL names", func(ctx context.Context, t *testctx.T) {
 		ctr := base.WithNewFile(".env", `simpleValue=constructor-simple
