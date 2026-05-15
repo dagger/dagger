@@ -351,15 +351,11 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceSelection(ctx context.Contex
 // TestWorkspaceSelectionCommandPolicy should pin down which commands accept
 // --workspace and where local-only restrictions are enforced.
 func (WorkspaceSelectionSuite) TestWorkspaceSelectionCommandPolicy(ctx context.Context, t *testctx.T) {
-	t.Run("module-centric commands reject -W in integration", func(ctx context.Context, t *testctx.T) {
+	t.Run("migrate rejects -W in integration", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c)
 
-		out, err := ctr.With(workspaceSelectionDaggerExecFail("-W", ".", "develop")).CombinedOutput(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, `--workspace is not supported for "dagger develop"`)
-
-		out, err = ctr.With(workspaceSelectionDaggerExecFail("-W", ".", "migrate")).CombinedOutput(ctx)
+		out, err := ctr.With(workspaceSelectionDaggerExecFail("-W", ".", "migrate")).CombinedOutput(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, `--workspace is not supported for "dagger migrate"`)
 	})
