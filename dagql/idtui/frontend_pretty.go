@@ -1387,8 +1387,10 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 				KeyEnabled(fe.spanHasLogs(logSpan))),
 			key.NewBinding(key.WithKeys("esc", "alt+esc"),
 				key.WithHelp("esc", "trace")),
-			key.NewBinding(key.WithKeys("q", "ctrl+c"),
-				key.WithHelp("q", quitMsg)),
+			key.NewBinding(key.WithKeys("q"),
+				key.WithHelp("q", "trace")),
+			key.NewBinding(key.WithKeys("ctrl+c"),
+				key.WithHelp("ctrl+c", quitMsg)),
 		}
 	}
 	if fe.FocusedSpan.IsValid() {
@@ -2257,7 +2259,9 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 
 	if fe.testsMode {
 		switch keyStr {
-		case "q", "ctrl+c":
+		case "q", "T", "esc", "alt+esc":
+			fe.closeTestsMode()
+		case "ctrl+c":
 			if fe.shell != nil {
 				if fe.shellInterrupt != nil {
 					fe.shellInterrupt(errors.New("interrupted"))
@@ -2265,8 +2269,6 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 			} else {
 				fe.quitAction(ErrInterrupted)
 			}
-		case "T", "esc", "alt+esc":
-			fe.closeTestsMode()
 		case "left", "h":
 			fe.testFocusLeft()
 		case "down", "j":
