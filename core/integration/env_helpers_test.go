@@ -6,12 +6,10 @@ package core
 import (
 	"os"
 	"path"
-	"path/filepath"
 	"strings"
 
 	"dagger.io/dagger"
 	"github.com/dagger/testctx"
-	"github.com/stretchr/testify/require"
 )
 
 var nestedExec = dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}
@@ -31,9 +29,7 @@ func nestedDaggerContainer(t *testctx.T, c *dagger.Client, modLang, modName stri
 }
 
 func testModule(t *testctx.T, lang, name string) string {
-	modulePath, err := filepath.Abs(path.Join("testdata", "modules", lang, name))
-	require.NoError(t, err)
-	return modulePath
+	return testDataPath(t, "modules", lang, name)
 }
 
 func tempDirWithEnvFile(t *testctx.T, environ ...string) string {
