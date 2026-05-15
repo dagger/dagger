@@ -489,6 +489,15 @@ class _RenderedAlias:
 
 
 @dataclasses.dataclass(frozen=True)
+class _GeneratedField:
+    """A class-level ``dagger.field(default=...)`` declaration on Foo."""
+
+    name: str
+    annotation: str
+    default_expr: str
+
+
+@dataclasses.dataclass(frozen=True)
 class GeneratedModule:
     """Everything needed to render a complete module source string."""
 
@@ -499,6 +508,7 @@ class GeneratedModule:
     foo_inherits_helper: bool
     functions: tuple[GeneratedFunction, ...]
     dagger_alias: str | None = None
+    fields: tuple[_GeneratedField, ...] = ()
 
 
 def _alias_name_strategy(prefix: str = "Alias") -> st.SearchStrategy[str]:
@@ -517,7 +527,7 @@ def _alias_target(draw) -> GeneratedType:  # type: ignore[no-untyped-def]
 
 
 @st.composite
-def module_strategy(  # type: ignore[no-untyped-def]
+def module_strategy(  # type: ignore[no-untyped-def]  # noqa: PLR0915
     draw, *, max_functions: int = 4
 ) -> str:
     """Strategy that produces a complete Dagger module source string."""
@@ -591,6 +601,30 @@ def module_strategy(  # type: ignore[no-untyped-def]
 
     dagger_alias = draw(st.sampled_from([None, None, "dgr", "dgmod"]))
 
+    field_count = draw(st.integers(min_value=0, max_value=2))
+    fields: list[_GeneratedField] = []
+    used_field_names = {dagger_alias or "dagger", *used_fn_names}
+    field_attempts = 0
+    while len(fields) < field_count and field_attempts < 20:
+        fname = draw(param_name_strategy())
+        field_attempts += 1
+        if fname in used_field_names:
+            continue
+        used_field_names.add(fname)
+        base = draw(
+            st.sampled_from(
+                [b for b in _PRIMITIVE_BASES if b.default_strategy is not None]
+            )
+        )
+        default = draw(base.default_strategy)
+        fields.append(
+            _GeneratedField(
+                name=fname,
+                annotation=base.annotation,
+                default_expr=default,
+            )
+        )
+
     return _render_module(
         GeneratedModule(
             use_future_annotations=use_future_annotations,
@@ -600,6 +634,7 @@ def module_strategy(  # type: ignore[no-untyped-def]
             foo_inherits_helper=foo_inherits_helper,
             functions=tuple(fns),
             dagger_alias=dagger_alias,
+            fields=tuple(fields),
         )
     )
 
@@ -658,8 +693,20 @@ def _render_module(mod: GeneratedModule) -> str:  # noqa: C901, PLR0912
     base_clause = "(Helper)" if mod.foo_inherits_helper else ""
     lines.append(f"class Foo{base_clause}:")
 
-    if not mod.functions:
+    lines.extend(
+        (
+            f"    {field.name}: {field.annotation} = "
+            f"{dpkg}.field(default={field.default_expr})"
+        )
+        for field in mod.fields
+    )
+    if mod.fields:
+        lines.append("")
+
+    if not mod.functions and not mod.fields:
         lines.append("    pass")
+        return "\n".join(lines) + "\n"
+    if not mod.functions:
         return "\n".join(lines) + "\n"
 
     for fn in mod.functions:
