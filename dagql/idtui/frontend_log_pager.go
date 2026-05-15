@@ -4,90 +4,20 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/muesli/termenv"
 	"github.com/vito/tuist"
 )
 
-// LogFocusHandle is a small focusable affordance for a span's logs. It keeps
-// log focus/zoom discoverable without embedding a full pager inline.
-type LogFocusHandle struct {
-	tuist.Compo
-
-	Profile termenv.Profile
-
-	spanID dagui.SpanID
-	title  string
-	logs   *Vterm
-
-	focused  bool
-	inputSig string
-}
-
-var (
-	_ tuist.Component  = (*LogFocusHandle)(nil)
-	_ tuist.Focusable  = (*LogFocusHandle)(nil)
-	_ tuist.Dismounter = (*LogFocusHandle)(nil)
-)
-
-func (h *LogFocusHandle) Name() string {
-	if h.title != "" {
-		return "LogFocusHandle(" + h.title + ")"
-	}
-	return "LogFocusHandle"
-}
-
-func (h *LogFocusHandle) SetInputs(span *dagui.Span, logs *Vterm, title string) {
-	var spanID dagui.SpanID
-	if span != nil {
-		spanID = span.ID
-	}
-	sig := title + "|" + spanID.String()
-	if logs != nil {
-		sig += fmt.Sprintf("|%d", logs.UsedHeight())
-	}
-	if h.spanID == spanID && h.title == title && h.logs == logs && h.inputSig == sig {
-		return
-	}
-	h.spanID = spanID
-	h.title = title
-	h.logs = logs
-	h.inputSig = sig
-	h.Update()
-}
-
-func (h *LogFocusHandle) SetFocused(_ tuist.Context, focused bool) {
-	if h.focused != focused {
-		h.focused = focused
-		h.Update()
-	}
-}
-
-func (h *LogFocusHandle) OnDismount() {
-	h.focused = false
-}
-
-func (h *LogFocusHandle) Render(ctx tuist.Context) {
-	outBuf := new(strings.Builder)
-	out := NewOutput(outBuf, termenv.WithProfile(h.Profile))
-
-	width := max(ctx.Width, 1)
-	fmt.Fprint(out, renderLogSectionHeader(out, width, true, h.focused))
-	ctx.Line(outBuf.String())
-}
-
-func renderLogSectionHeader(out TermOutput, width int, hint, focused bool) string {
-	plain := "LOGS"
-	if hint {
-		plain += "  L inspect"
-	}
-	if focused {
-		return out.String(padANSI(clipPlain(plain, width), width)).Foreground(termenv.ANSIWhite).Background(testSidebarRowBG).Bold().String()
-	}
+func renderLogSectionHeader(out TermOutput, width int, hint bool) string {
 	heading := out.String("LOGS").Bold().String()
 	if hint {
-		heading += "  " + renderInspectKeyHint(out, "L")
+		heading += " " + renderInspectKeyHint(out, "L")
+	}
+	if fill := width - lipgloss.Width(heading) - 1; fill > 0 {
+		heading += " " + out.String(strings.Repeat(HorizBar, fill)).Foreground(termenv.ANSIBrightBlack).Faint().String()
 	}
 	return clipTestSummaryLine(heading, width)
 }
@@ -373,12 +303,6 @@ func (fe *frontendPretty) openFocusedLogs() {
 				titleIcon = testCategoryIcon(category)
 			}
 		}
-	}
-	if fe.testsMode && fe.fullscreenTests != nil && fe.fullscreenTests.focusArea == testFocusSidebar {
-		// Treat L from the tests sidebar as an explicit move to the reusable log
-		// handle before opening the pager, so popping the pager restores that
-		// immediate state.
-		fe.fullscreenTests.focusSelectedLogHandle(fe, span)
 	}
 	fe.openLogPager(span, title, titleIcon, fe.makeLogPagerReturnFocus())
 }

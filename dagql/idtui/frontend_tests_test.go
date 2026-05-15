@@ -141,8 +141,12 @@ func TestTestViewDetailLogSectionUsesCompactHeader(t *testing.T) {
 	lines := tv.renderDetailLines(tuist.Context{}, out, testSidebarRow{kind: testSidebarNode, node: node}, 80, 80)
 	joined := strings.Join(lines, "\n")
 	plain := stripANSITest(joined)
-	if !strings.Contains(plain, "LOGS  L inspect") {
-		t.Fatalf("expected compact logs heading, got:\n%s", joined)
+	plainLines := strings.Split(plain, "\n")
+	if len(plainLines) < 3 || !strings.HasPrefix(strings.TrimRight(plainLines[2], " "), "LOGS L inspect") {
+		t.Fatalf("expected logs splitter immediately after title, got:\n%s", joined)
+	}
+	if !strings.Contains(plainLines[2], HorizBar) {
+		t.Fatalf("expected logs splitter to fill with horizontal bar, got %q", plainLines[2])
 	}
 	for _, noise := range []string{"failing · 1 tests", "Logs · pkg.TestThing", "press L to open"} {
 		if strings.Contains(plain, noise) {
@@ -158,6 +162,74 @@ var ansiRETest = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func stripANSITest(s string) string {
 	return ansiRETest.ReplaceAllString(s, "")
+}
+
+func TestTestViewDetailLogsAreNotFocusable(t *testing.T) {
+	spanID := dagui.SpanID{SpanID: trace.SpanID{1}}
+	span := &dagui.Span{SpanSnapshot: dagui.SpanSnapshot{ID: spanID, Name: "span operation name"}}
+	node := &dagui.TestNode{
+		ID:       "test",
+		Kind:     dagui.TestNodeCase,
+		Name:     "span operation name",
+		FullName: "pkg.TestThing",
+		Span:     span,
+		Category: dagui.TestCategoryFailing,
+		Counts:   dagui.TestCounts{Failing: 1},
+	}
+	view := &dagui.TestView{Roots: []*dagui.TestNode{node}, Counts: dagui.TestCounts{Failing: 1}}
+	logs := NewVterm(termenv.Ascii)
+	logs.SetWidth(80)
+	_, _ = logs.Write([]byte("boom\n"))
+	tv := &TestView{
+		View: func() *dagui.TestView { return view },
+		Logs: map[dagui.SpanID]*Vterm{spanID: logs},
+	}
+	tv.ensureFocusedTest(view)
+
+	if tv.FocusedNodeCanFocusDetail() {
+		t.Fatal("expected logs-only detail not to be focusable")
+	}
+}
+
+func TestSpanChildrenCropKeepsFocusedLineVisible(t *testing.T) {
+	spanA := dagui.SpanID{SpanID: trace.SpanID{1}}
+	spanB := dagui.SpanID{SpanID: trace.SpanID{2}}
+	a := &SpanTreeView{spanID: spanA, selfLineCount: 5}
+	b := &SpanTreeView{spanID: spanB, selfLineCount: 1}
+	v := &TestSpanChildrenView{
+		focusedSpan: spanB,
+		container:   &tuist.Container{Children: []tuist.Component{a, b}},
+		scope: spanTreeScope{spanTrees: map[dagui.SpanID]*SpanTreeView{
+			spanA: a,
+			spanB: b,
+		}},
+	}
+	lines := []string{"0", "1", "2", "3", "4", "5", "6", "7"}
+
+	got := v.cropRenderedLines(lines, 3)
+	if strings.Join(got, "") != "456" {
+		t.Fatalf("cropped lines = %#v, want focused line visible", got)
+	}
+}
+
+func TestAllocateDetailSectionHeights(t *testing.T) {
+	for _, tc := range []struct {
+		name                string
+		childNeed, logNeed  int
+		height              int
+		wantChild, wantLogs int
+	}{
+		{name: "both capped", childNeed: 100, logNeed: 100, height: 10, wantChild: 5, wantLogs: 5},
+		{name: "logs grow", childNeed: 2, logNeed: 100, height: 10, wantChild: 2, wantLogs: 8},
+		{name: "children grow", childNeed: 100, logNeed: 2, height: 10, wantChild: 8, wantLogs: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gotChild, gotLogs := allocateDetailSectionHeights(tc.childNeed, tc.logNeed, tc.height)
+			if gotChild != tc.wantChild || gotLogs != tc.wantLogs {
+				t.Fatalf("got %d/%d, want %d/%d", gotChild, gotLogs, tc.wantChild, tc.wantLogs)
+			}
+		})
+	}
 }
 
 func TestLogPagerTitleUsesLogsHeadingAndTestName(t *testing.T) {

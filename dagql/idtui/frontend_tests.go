@@ -24,7 +24,6 @@ const (
 const (
 	testFocusSidebar testFocusArea = iota
 	testFocusChildren
-	testFocusLogs
 )
 
 type testSidebarRow struct {
@@ -101,8 +100,6 @@ type TestView struct {
 
 	focusArea       testFocusArea
 	focusedChildren *TestSpanChildrenView
-	focusedLogSpan  dagui.SpanID
-	logHandle       *LogFocusHandle
 
 	focusedRow           string
 	expandedPassedGroups map[string]bool
@@ -313,7 +310,6 @@ func (s *testSidebarView) HandleMouse(ctx tuist.Context, ev tuist.MouseEvent) bo
 		row := s.rows[idx]
 		s.tv.focusArea = testFocusSidebar
 		s.tv.focusedChildren = nil
-		s.tv.focusedLogSpan = dagui.SpanID{}
 		s.tv.focusSidebarRow(row)
 		ctx.SetFocus(s.tv)
 		if row.kind == testSidebarPassedGroup {
@@ -453,7 +449,6 @@ func (tv *TestView) focusSidebarRow(row testSidebarRow) {
 func (tv *TestView) focusSidebar(fe *frontendPretty) {
 	tv.focusArea = testFocusSidebar
 	tv.focusedChildren = nil
-	tv.focusedLogSpan = dagui.SpanID{}
 	if span := tv.FocusedSpan(); span != nil && tv.OnFocusSpan != nil {
 		tv.OnFocusSpan(span)
 	}
@@ -475,26 +470,13 @@ func (tv *TestView) FocusedNodeCanFocusDetail() bool {
 	if node == nil || node.Kind == dagui.TestNodeVirtualSuite || node.Span == nil {
 		return false
 	}
-	return len(node.Span.ChildSpans.Order) > 0 || tv.spanHasLogs(node.Span)
+	return node.Span.ChildSpans != nil && len(node.Span.ChildSpans.Order) > 0
 }
 
 func (tv *TestView) CurrentActionSpan() *dagui.Span {
-	switch tv.focusArea {
-	case testFocusChildren:
-		if tv.focusedChildren != nil {
-			if span := tv.focusedChildren.FocusedSpan(); span != nil {
-				return span
-			}
-		}
-	case testFocusLogs:
-		if tv.focusedLogSpan.IsValid() && tv.Logs != nil {
-			if logs := tv.Logs[tv.focusedLogSpan]; logs != nil && logs.UsedHeight() > 0 {
-				if view := tv.currentView(); view != nil {
-					if node := view.BySpan[tv.focusedLogSpan]; node != nil && node.Span != nil {
-						return node.Span
-					}
-				}
-			}
+	if tv.focusArea == testFocusChildren && tv.focusedChildren != nil {
+		if span := tv.focusedChildren.FocusedSpan(); span != nil {
+			return span
 		}
 	}
 	node := tv.FocusedNode()
@@ -505,20 +487,9 @@ func (tv *TestView) CurrentActionSpan() *dagui.Span {
 }
 
 func (tv *TestView) CurrentActionTitle() (string, dagui.TestCategory, bool) {
-	switch tv.focusArea {
-	case testFocusChildren:
-		if tv.focusedChildren != nil {
-			if span := tv.focusedChildren.FocusedSpan(); span != nil {
-				return span.Name, dagui.TestCategoryPassing, false
-			}
-		}
-	case testFocusLogs:
-		if tv.focusedLogSpan.IsValid() {
-			if view := tv.currentView(); view != nil {
-				if node := view.BySpan[tv.focusedLogSpan]; node != nil {
-					return testNodeTitleName(node), node.Category, true
-				}
-			}
+	if tv.focusArea == testFocusChildren && tv.focusedChildren != nil {
+		if span := tv.focusedChildren.FocusedSpan(); span != nil {
+			return span.Name, dagui.TestCategoryPassing, false
 		}
 	}
 	node := tv.FocusedNode()
@@ -536,38 +507,18 @@ func (tv *TestView) makeReturnFocus(fe *frontendPretty) func() {
 	if children != nil {
 		childSpan = children.focusedSpan
 	}
-	logSpan := tv.focusedLogSpan
 	return func() {
 		tv.focusedRow = rowID
-		switch area {
-		case testFocusChildren:
+		if area == testFocusChildren {
 			if children != nil && childSpan.IsValid() && children.FocusSpan(fe, childSpan) {
 				tv.focusArea = testFocusChildren
 				tv.focusedChildren = children
 				tv.Update()
 				return
 			}
-		case testFocusLogs:
-			if span := tv.spanByID(logSpan); span != nil && tv.focusSelectedLogHandle(fe, span) {
-				return
-			}
 		}
 		tv.focusSidebar(fe)
 	}
-}
-
-func (tv *TestView) spanByID(id dagui.SpanID) *dagui.Span {
-	if !id.IsValid() {
-		return nil
-	}
-	view := tv.currentView()
-	if view == nil {
-		return nil
-	}
-	if node := view.BySpan[id]; node != nil {
-		return node.Span
-	}
-	return nil
 }
 
 func (tv *TestView) spanHasLogs(span *dagui.Span) bool {
@@ -576,45 +527,6 @@ func (tv *TestView) spanHasLogs(span *dagui.Span) bool {
 	}
 	logs := tv.Logs[span.ID]
 	return logs != nil && logs.UsedHeight() > 0
-}
-
-func (tv *TestView) logHandleFor(span *dagui.Span, logs *Vterm, title string) *LogFocusHandle {
-	if span == nil || logs == nil || logs.UsedHeight() == 0 {
-		return nil
-	}
-	if tv.logHandle == nil {
-		tv.logHandle = &LogFocusHandle{Profile: tv.Profile}
-	}
-	tv.logHandle.SetInputs(span, logs, title)
-	return tv.logHandle
-}
-
-func (tv *TestView) focusSelectedLogHandle(fe *frontendPretty, span *dagui.Span) bool {
-	if !tv.spanHasLogs(span) {
-		return false
-	}
-	logs := tv.Logs[span.ID]
-	title := span.Name
-	if view := tv.currentView(); view != nil {
-		if node := view.BySpan[span.ID]; node != nil {
-			title = testNodeTitleName(node)
-		}
-	}
-	handle := tv.logHandleFor(span, logs, title)
-	if handle == nil {
-		return false
-	}
-	tv.focusArea = testFocusLogs
-	tv.focusedChildren = nil
-	tv.focusedLogSpan = span.ID
-	if tv.OnFocusSpan != nil {
-		tv.OnFocusSpan(span)
-	}
-	if fe != nil && fe.tui != nil {
-		fe.tui.SetFocus(handle)
-	}
-	tv.Update()
-	return true
 }
 
 func (tv *TestView) childViewForSpan(span *dagui.Span) *TestSpanChildrenView {
@@ -798,7 +710,7 @@ func (tv *TestView) renderTestSummaryLines(out TermOutput, view *dagui.TestView,
 func (tv *TestView) renderTestSummaryHeader(out TermOutput, prefix string, width int) string {
 	heading := prefix + out.String("TESTS").Bold().String()
 	if tv.ShowTestViewerHint && !tv.testSummaryFinal() {
-		heading += "  " + renderTestViewerHint(out)
+		heading += " " + renderTestViewerHint(out)
 	}
 	return clipTestSummaryLine(heading, width)
 }
@@ -1135,43 +1047,105 @@ func (tv *TestView) renderDetailLines(ctx tuist.Context, out *termenv.Output, ro
 		lines = append(lines, out.String("no backing span").Foreground(termenv.ANSIBrightBlack).Faint().String())
 	}
 
+	contentHeight := max(height-len(lines), 0)
+	if contentHeight == 0 {
+		return cropLines(lines, height)
+	}
+
+	var childLines []string
+	var childView *TestSpanChildrenView
 	if span != nil && tv.SpanChildren != nil {
-		if childSpans := tv.SpanChildren(span); childSpans != nil {
-			childHeight := max(height-len(lines)-2, 1)
-			result := tv.RenderChildResult(ctx.Resize(width, childHeight), childSpans)
+		if view := tv.childViewForSpan(span); view != nil {
+			result := tv.RenderChildResult(ctx.Resize(width, contentHeight), view)
 			if len(result.Lines) > 0 {
-				lines = append(lines, "")
-				lines = append(lines, out.String("Children").Foreground(termenv.ANSIBrightBlack).Bold().String())
-				lines = append(lines, result.Lines...)
+				childLines = result.Lines
+				childView = view
 			}
 		}
 	}
 
-	lines = append(lines, "")
+	logNeed := tv.detailLogLineCount(span)
+	childHeight, logHeight := allocateDetailSectionHeights(len(childLines), logNeed, contentHeight)
+	if childHeight > 0 && len(childLines) > 0 {
+		if childView != nil {
+			childLines = childView.cropRenderedLines(childLines, childHeight)
+		} else {
+			childLines = cropLines(childLines, childHeight)
+		}
+		lines = append(lines, childLines...)
+	}
+	if logHeight > 0 {
+		logLines := tv.renderDetailLogLines(out, span, width, logHeight)
+		lines = append(lines, cropLines(logLines, logHeight)...)
+	}
+	return cropLines(lines, height)
+}
+
+func (tv *TestView) detailLogLineCount(span *dagui.Span) int {
 	if span == nil {
-		lines = append(lines, renderLogSectionHeader(out, width, false, false))
-		lines = append(lines, out.String("No direct logs for a virtual suite.").Foreground(termenv.ANSIBrightBlack).Faint().String())
-		return cropLines(lines, height)
+		return 2
 	}
 	logs := tv.Logs[span.ID]
 	if logs == nil || logs.UsedHeight() == 0 {
-		lines = append(lines, renderLogSectionHeader(out, width, false, false))
-		lines = append(lines, out.String("No logs for selected test span.").Foreground(termenv.ANSIBrightBlack).Faint().String())
-		return cropLines(lines, height)
+		return 2
 	}
-	if handle := tv.logHandleFor(span, logs, testNodeTitleName(node)); handle != nil {
-		result := tv.RenderChildResult(ctx.Resize(width, 1), handle)
-		lines = append(lines, result.Lines...)
+	return logs.UsedHeight() + 1
+}
+
+func (tv *TestView) renderDetailLogLines(out *termenv.Output, span *dagui.Span, width, height int) []string {
+	if height <= 0 {
+		return nil
 	}
+	if span == nil {
+		return []string{
+			renderLogSectionHeader(out, width, false),
+			out.String("No direct logs for a virtual suite.").Foreground(termenv.ANSIBrightBlack).Faint().String(),
+		}
+	}
+	logs := tv.Logs[span.ID]
+	if logs == nil || logs.UsedHeight() == 0 {
+		return []string{
+			renderLogSectionHeader(out, width, false),
+			out.String("No logs for selected test span.").Foreground(termenv.ANSIBrightBlack).Faint().String(),
+		}
+	}
+	lines := []string{renderLogSectionHeader(out, width, true)}
 	logs.SetWidth(width)
 	logs.SetHeight(max(height-len(lines), 1))
 	view := strings.TrimSuffix(logs.View(), "\n")
 	if view == "" {
 		lines = append(lines, out.String("No logs for selected test span.").Foreground(termenv.ANSIBrightBlack).Faint().String())
-		return cropLines(lines, height)
+		return lines
 	}
 	lines = append(lines, strings.Split(view, "\n")...)
-	return cropLines(lines, height)
+	return lines
+}
+
+func allocateDetailSectionHeights(childNeed, logNeed, height int) (int, int) {
+	if height <= 0 {
+		return 0, 0
+	}
+	if childNeed == 0 {
+		return 0, min(logNeed, height)
+	}
+	if logNeed == 0 {
+		return min(childNeed, height), 0
+	}
+	childMax := max((height+1)/2, 1)
+	logMax := max(height/2, 1)
+	childHeight := min(childNeed, childMax)
+	logHeight := min(logNeed, logMax)
+	remaining := height - childHeight - logHeight
+	if remaining > 0 && childNeed > childHeight {
+		grow := min(remaining, childNeed-childHeight)
+		childHeight += grow
+		remaining -= grow
+	}
+	if remaining > 0 && logNeed > logHeight {
+		grow := min(remaining, logNeed-logHeight)
+		logHeight += grow
+	}
+	return childHeight, logHeight
 }
 
 func (tv *TestView) renderPassedGroupDetailLines(out *termenv.Output, row testSidebarRow, width, height int) []string {
@@ -1368,8 +1342,6 @@ func (fe *frontendPretty) testFocusLeft() {
 			return
 		}
 		fe.fullscreenTests.focusSidebar(fe)
-	case testFocusLogs:
-		fe.fullscreenTests.focusSidebar(fe)
 	default:
 		fe.closeTestsMode()
 	}
@@ -1386,8 +1358,6 @@ func (fe *frontendPretty) focusFocusedTestDetail() {
 			fe.Update()
 		}
 		return
-	case testFocusLogs:
-		return
 	}
 	if fe.fullscreenTests.ToggleFocusedGroup() {
 		fe.Update()
@@ -1401,12 +1371,7 @@ func (fe *frontendPretty) focusFocusedTestDetail() {
 	if childView := fe.fullscreenTests.childViewForSpan(span); childView != nil && childView.FocusFirst(fe) {
 		fe.fullscreenTests.focusArea = testFocusChildren
 		fe.fullscreenTests.focusedChildren = childView
-		fe.fullscreenTests.focusedLogSpan = dagui.SpanID{}
 		fe.fullscreenTests.Update()
-		return
-	}
-	if fe.fullscreenTests.focusSelectedLogHandle(fe, span) {
-		fe.Update()
 	}
 }
 
@@ -1832,6 +1797,79 @@ func (v *TestSpanChildrenView) focusedIndex() int {
 		return row.Index
 	}
 	return -1
+}
+
+func (v *TestSpanChildrenView) cropRenderedLines(lines []string, height int) []string {
+	if height <= 0 {
+		return nil
+	}
+	if len(lines) <= height {
+		return lines
+	}
+	focusLine := v.findFocusLine()
+	if focusLine < 0 {
+		return cropLines(lines, height)
+	}
+	focusHeight := 1
+	if focused := v.scope.spanTrees[v.focusedSpan]; focused != nil {
+		focusHeight = max(focused.selfLineCount, 1)
+	}
+	end := cropEnd(len(lines), height, focusLine, focusHeight)
+	start := max(end-height, 0)
+	return lines[start:end]
+}
+
+func (v *TestSpanChildrenView) findFocusLine() int {
+	if v == nil || !v.focusedSpan.IsValid() || v.container == nil {
+		return -1
+	}
+	focused := v.scope.spanTrees[v.focusedSpan]
+	if focused == nil {
+		return -1
+	}
+
+	var path []*SpanTreeView
+	for cur := focused; cur != nil; cur = cur.parent {
+		path = append(path, cur)
+	}
+	if len(path) == 0 {
+		return -1
+	}
+	root := path[len(path)-1]
+	offset := 0
+	foundRoot := false
+	for _, child := range v.container.Children {
+		tree, ok := child.(*SpanTreeView)
+		if !ok || tree == nil {
+			continue
+		}
+		if tree == root {
+			foundRoot = true
+			break
+		}
+		offset += tree.totalLineCount()
+	}
+	if !foundRoot {
+		return -1
+	}
+
+	for i := len(path) - 1; i >= 0; i-- {
+		node := path[i]
+		if i >= len(path)-1 {
+			continue
+		}
+		parent := path[i+1]
+		offset += parent.selfLineCount
+		idx := node.indexInParent
+		if len(parent.childGapCounts) != len(parent.children) || len(parent.childLineCounts) != len(parent.children) || idx >= len(parent.children) {
+			return -1
+		}
+		for sibling := range idx {
+			offset += parent.childGapCounts[sibling] + parent.childLineCounts[sibling]
+		}
+		offset += parent.childGapCounts[idx]
+	}
+	return offset
 }
 
 func (v *TestSpanChildrenView) CloseOrGoOut(fe *frontendPretty) bool {
