@@ -116,86 +116,7 @@ func (ModuleSuite) TestSecretNested(ctx context.Context, t *testctx.T) {
 
 		t.Run("double nested and called repeatedly", func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-			ctr := c.Container().From(golangImage).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
-
-			ctr = ctr.
-				WithWorkdir("/work/keychain/generator").
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "generator-module", ".")).
-				WithNewFile("main.go", `package main
-
-import (
-    "context"
-    "dagger/generator-module/internal/dagger"
-)
-
-type GeneratorModule struct {
-    // +private
-    Password *dagger.Secret
-}
-
-func New() *GeneratorModule {
-    return &GeneratorModule{
-        Password: dag.SetSecret("pass", "admin"),
-    }
-}
-
-func (m *GeneratorModule) Gen(ctx context.Context, name string) error {
-    _, err := m.Password.Plaintext(ctx)
-    return err
-}
-`)
-
-			ctr = ctr.
-				WithWorkdir("/work/keychain").
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "keychain", ".")).
-				With(daggerExec("module", "install", "./generator")).
-				WithNewFile("main.go", `package main
-
-import (
-    "context"
-)
-
-type Keychain struct{}
-
-func (m *Keychain) Get(ctx context.Context, name string) error {
-    return dag.GeneratorModule().Gen(ctx, name)
-}
-`)
-
-			ctr = ctr.
-				WithWorkdir("/work").
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "mymodule", ".")).
-				With(daggerExec("module", "install", "./keychain")).
-				WithNewFile("main.go", `package main
-
-import (
-    "context"
-    "fmt"
-)
-
-type Mymodule struct{}
-
-func (m *Mymodule) Issue(ctx context.Context) error {
-    kc := dag.Keychain()
-
-    err := kc.Get(ctx, "a")
-    if err != nil {
-        return fmt.Errorf("first get: %w", err)
-    }
-
-    err = kc.Get(ctx, "a")
-    if err != nil {
-        return fmt.Errorf("second get, same args: %w", err)
-    }
-
-    err = kc.Get(ctx, "b")
-    if err != nil {
-        return fmt.Errorf("third get: %w", err)
-    }
-    return nil
-}
-`)
+			ctr := moduleFixture(t, c, "go/runtime-secret-double-nested")
 
 			_, err := ctr.With(daggerCall("issue")).Sync(ctx)
 			require.NoError(t, err)
@@ -203,69 +124,7 @@ func (m *Mymodule) Issue(ctx context.Context) error {
 
 		t.Run("cached", func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-			ctr := c.Container().From(golangImage).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
-
-			ctr = ctr.
-				WithWorkdir("/work/dep").
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "dep", ".")).
-				WithNewFile("main.go", `package main
-
-import (
-	"dagger/dep/internal/dagger"
-)
-
-type Dep struct {}
-
-type SecretMount struct {
-	Secret *dagger.Secret
-	Path string
-}
-
-func (m *Dep) SecretMount(path string) *SecretMount {
-	return &SecretMount{
-		Secret: dag.SetSecret("foo", "hello from mount"),
-		Path:   path,
-	}
-}
-
-func (m *SecretMount) Mount(ctr *dagger.Container) *dagger.Container {
-	return ctr.WithMountedSecret(m.Path, m.Secret)
-}
-`,
-				)
-
-			ctr = ctr.
-				WithWorkdir("/work").
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
-				With(daggerExec("module", "install", "./dep")).
-				WithNewFile("main.go", `package main
-
-import (
-	"context"
-  "fmt"
-)
-
-type Test struct {}
-
-func (m *Test) Foo(ctx context.Context) (string, error) {
-  return m.impl(ctx, "foo")
-}
-
-func (m *Test) Bar(ctx context.Context) (string, error) {
-  return m.impl(ctx, "bar")
-}
-
-func (m *Test) impl(ctx context.Context, name string) (string, error) {
-	mount := dag.Dep().SecretMount("/mnt/secret")
-	return dag.Container().
-		From("alpine").
-		With(mount.Mount).
-		WithExec([]string{"sh", "-c", fmt.Sprintf("(echo %s && cat /mnt/secret) | tr [a-z] [A-Z]", name)}).
-		Stdout(ctx)
-}
-`,
-				)
+			ctr := moduleFixture(t, c, "go/runtime-secret-cached")
 
 			out, err := ctr.With(daggerQuery("{foo,bar}")).Stdout(ctx)
 			require.NoError(t, err)
@@ -275,37 +134,7 @@ func (m *Test) impl(ctx context.Context, name string) (string, error) {
 
 	t.Run("parent fields", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		ctr := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
-
-		ctr = ctr.
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"dagger/test/internal/dagger"
-)
-
-type Test struct {
-	Ctr *dagger.Container
-}
-
-func (t *Test) FnA() *Test {
-	secret := dag.SetSecret("FOO", "omg")
-	t.Ctr = dag.Container().From("`+alpineImage+`").
-		WithSecretVariable("SECRET", secret)
-	return t
-}
-
-func (t *Test) FnB(ctx context.Context) (string, error) {
-	return t.Ctr.
-		WithExec([]string{"sh", "-c", "echo $SECRET | base64"}).
-		Stdout(ctx)
-}
-`,
-			)
+		ctr := moduleFixture(t, c, "go/runtime-parent-field")
 
 		encodedOut, err := ctr.With(daggerCall("fn-a", "fn-b")).Stdout(ctx)
 		require.NoError(t, err)
@@ -316,38 +145,7 @@ func (t *Test) FnB(ctx context.Context) (string, error) {
 
 	t.Run("private parent fields", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		ctr := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
-
-		ctr = ctr.
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"dagger/test/internal/dagger"
-)
-
-type Test struct {
-	// +private
-	Ctr *dagger.Container
-}
-
-func (t *Test) FnA() *Test {
-	secret := dag.SetSecret("FOO", "omg")
-	t.Ctr = dag.Container().From("`+alpineImage+`").
-		WithSecretVariable("SECRET", secret)
-	return t
-}
-
-func (t *Test) FnB(ctx context.Context) (string, error) {
-	return t.Ctr.
-		WithExec([]string{"sh", "-c", "echo $SECRET | base64"}).
-		Stdout(ctx)
-}
-`,
-			)
+		ctr := moduleFixture(t, c, "go/runtime-parent-field-private")
 
 		encodedOut, err := ctr.With(daggerCall("fn-a", "fn-b")).Stdout(ctx)
 		require.NoError(t, err)
@@ -358,38 +156,7 @@ func (t *Test) FnB(ctx context.Context) (string, error) {
 
 	t.Run("parent field set in constructor", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		ctr := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
-
-		ctr = ctr.
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"dagger/test/internal/dagger"
-)
-
-type Test struct {
-	Ctr *dagger.Container
-}
-
-func New() *Test {
-	t := &Test{}
-	secret := dag.SetSecret("FOO", "omfg")
-	t.Ctr = dag.Container().From("`+alpineImage+`").
-		WithSecretVariable("SECRET", secret)
-	return t
-}
-
-func (t *Test) GetEncoded(ctx context.Context) (string, error) {
-	return t.Ctr.
-		WithExec([]string{"sh", "-c", "echo $SECRET | base64"}).
-		Stdout(ctx)
-}
-`,
-			)
+		ctr := moduleFixture(t, c, "go/runtime-parent-field-constructor")
 
 		encodedOut, err := ctr.With(daggerCall("get-encoded")).Stdout(ctx)
 		require.NoError(t, err)
