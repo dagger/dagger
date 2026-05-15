@@ -1,0 +1,9 @@
+type Test {
+  pub test: String! {
+    "test-result"
+  }
+
+  pub other: String! {
+    "other-result"
+  }
+}

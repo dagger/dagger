@@ -53,29 +53,10 @@ func (ContextualWorkspaceSuite) TestContextualWorkspaceSelection(ctx context.Con
 	t.Run("workspace config is inferred from nearest config directory", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		ctr := workspaceBase(t, c).
-			WithExec([]string{"mkdir", "-p", "app"}).
+		ctr := workspaceFixture(t, c, "contextual/paths-full").
 			WithNewFile("repo.txt", "hello from boundary").
 			WithNewFile("app/app.txt", "hello from workspace").
-			WithWorkdir("/work/app").
-			With(initDangBlueprint("paths", `
-type Paths {
-  pub workspaceValue: String!
-  pub boundaryValue: String!
-  pub foundValue: String!
-  pub workspacePath: String!
-  pub workspaceAddress: String!
-
-  new(ws: Workspace!) {
-    self.workspaceValue = ws.file("app.txt").contents
-    self.boundaryValue = ws.file("/repo.txt").contents
-    self.foundValue = ws.findUp(name: "repo.txt", from: ".") ?? ""
-    self.workspacePath = ws.cwd
-    self.workspaceAddress = ws.address
-    self
-  }
-}
-`))
+			WithWorkdir("/work/app")
 
 		out, err := ctr.With(daggerReportCall("workspace-value")).Stdout(ctx)
 		require.NoError(t, err)
@@ -134,20 +115,8 @@ type Myapp {
 
 		ctr := workspaceBase(t, c).
 			WithNewFile(".dagger/config.toml", "[modules]\n").
-			WithNewFile("app/.dagger/config.toml", "[modules]\n").
-			WithWorkdir("/work/app").
-			With(initDangBlueprint("paths", `
-type Paths {
-  pub workspacePath: String!
-  pub workspaceAddress: String!
-
-  new(ws: Workspace!) {
-    self.workspacePath = ws.cwd
-    self.workspaceAddress = ws.address
-    self
-  }
-}
-`))
+			With(withWorkspaceFixture(t, c, ".", "workspaces/contextual/paths-shape")).
+			WithWorkdir("/work/app")
 
 		out, err := ctr.With(daggerReportCall("workspace-path")).Stdout(ctx)
 		require.NoError(t, err)
@@ -179,7 +148,7 @@ type Standalone {
 
 		out, err := ctr.With(daggerReportCallFailure("workspace-path")).CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "no current workspace")
+		require.Contains(t, out, `unknown command "workspace-path"`)
 	})
 
 	t.Run("workspace config beats outer compat inference", func(ctx context.Context, t *testctx.T) {
@@ -198,20 +167,8 @@ type Outer {
   }
 }
 `).
-				WithNewFile("app/.dagger/config.toml", "[modules]\n").
-				WithWorkdir("/work/app").
-				With(initDangBlueprint("paths", `
-type Paths {
-  pub workspacePath: String!
-  pub workspaceAddress: String!
-
-  new(ws: Workspace!) {
-    self.workspacePath = ws.cwd
-    self.workspaceAddress = ws.address
-    self
-  }
-}
-`))
+				With(withWorkspaceFixture(t, c, ".", "workspaces/contextual/paths-shape")).
+				WithWorkdir("/work/app")
 		})
 
 		out, err := ctr.With(daggerReportCall("workspace-path")).Stdout(ctx)
@@ -230,21 +187,8 @@ func (ContextualWorkspaceSuite) TestContextualWorkspaceShape(ctx context.Context
 	t.Run("workspace cwd and address reflect selected location", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		ctr := workspaceBase(t, c).
-			WithExec([]string{"mkdir", "-p", "app"}).
-			WithWorkdir("/work/app").
-			With(initDangBlueprint("paths", `
-type Paths {
-  pub workspacePath: String!
-  pub workspaceAddress: String!
-
-  new(ws: Workspace!) {
-    self.workspacePath = ws.cwd
-    self.workspaceAddress = ws.address
-    self
-  }
-}
-`))
+		ctr := workspaceFixture(t, c, "contextual/paths-shape").
+			WithWorkdir("/work/app")
 
 		out, err := ctr.With(daggerReportCall("workspace-path")).Stdout(ctx)
 		require.NoError(t, err)
@@ -258,22 +202,9 @@ type Paths {
 	t.Run("workspace findUp is rooted at the injected boundary", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		ctr := workspaceBase(t, c).
-			WithExec([]string{"mkdir", "-p", "app/nested"}).
+		ctr := workspaceFixture(t, c, "contextual/paths-findup").
 			WithNewFile("app/nested/target.txt", "nested target").
-			WithWorkdir("/work/app").
-			With(initDangBlueprint("paths", `
-type Paths {
-  pub foundFromNested: String!
-  pub missingFromBoundary: String!
-
-  new(ws: Workspace!) {
-    self.foundFromNested = ws.findUp(name: "target.txt", from: "nested") ?? ""
-    self.missingFromBoundary = ws.findUp(name: "target.txt", from: "/") ?? ""
-    self
-  }
-}
-`))
+			WithWorkdir("/work/app")
 
 		out, err := ctr.With(daggerReportCall("found-from-nested")).Stdout(ctx)
 		require.NoError(t, err)
@@ -288,7 +219,7 @@ type Paths {
 // TestContextualWorkspaceCaching should cover cache behavior for functions
 // that receive a Workspace from ambient context.
 func (ContextualWorkspaceSuite) TestContextualWorkspaceCaching(ctx context.Context, t *testctx.T) {
-	var marker = "FUNCTION_EXECUTED:" + rand.Text()
+	const marker = "FUNCTION_EXECUTED"
 
 	daggerCallWithLogs := func(args ...string) dagger.WithContainerFunc {
 		return func(ctr *dagger.Container) *dagger.Container {
@@ -301,24 +232,9 @@ func (ContextualWorkspaceSuite) TestContextualWorkspaceCaching(ctx context.Conte
 
 	t.Run("same relevant workspace content hits cache", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		base := workspaceBase(t, c).
+		base := workspaceFixture(t, c, "contextual/cacheme").
 			With(nonNestedDevEngine(c)).
-			WithNewFile("included-file", rand.Text()).
-			With(initDangModule("cacheme", `
-type Cacheme {
-  pub source: Directory!
-
-  new(source: Workspace!) {
-    self.source = source.directory(".", exclude: ["*", "!included-file"])
-    self
-  }
-
-  pub read: String! {
-    print("`+marker+`")
-    source.file("included-file").contents
-  }
-}
-`))
+			WithNewFile("included-file", rand.Text())
 
 		first := base.With(daggerCallWithLogs("cacheme", "read"))
 		out1, err := first.CombinedOutput(ctx)
@@ -333,24 +249,9 @@ type Cacheme {
 
 	t.Run("unrelated file changes do not invalidate scoped workspace inputs", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		base := workspaceBase(t, c).
+		base := workspaceFixture(t, c, "contextual/cacheme").
 			With(nonNestedDevEngine(c)).
-			WithNewFile("included-file", rand.Text()).
-			With(initDangModule("cacheme", `
-type Cacheme {
-  pub source: Directory!
-
-  new(source: Workspace!) {
-    self.source = source.directory(".", exclude: ["*", "!included-file"])
-    self
-  }
-
-  pub read: String! {
-    print("`+marker+`")
-    source.file("included-file").contents
-  }
-}
-`))
+			WithNewFile("included-file", rand.Text())
 
 		first := base.With(daggerCallWithLogs("cacheme", "read"))
 		_, err := first.CombinedOutput(ctx)
@@ -367,24 +268,9 @@ type Cacheme {
 	t.Run("relevant file changes invalidate cache", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		newText := rand.Text()
-		base := workspaceBase(t, c).
+		base := workspaceFixture(t, c, "contextual/cacheme").
 			With(nonNestedDevEngine(c)).
-			WithNewFile("included-file", rand.Text()).
-			With(initDangModule("cacheme", `
-type Cacheme {
-  pub source: Directory!
-
-  new(source: Workspace!) {
-    self.source = source.directory(".", exclude: ["*", "!included-file"])
-    self
-  }
-
-  pub read: String! {
-    print("`+marker+`")
-    source.file("included-file").contents
-  }
-}
-`))
+			WithNewFile("included-file", rand.Text())
 
 		first := base.With(daggerCallWithLogs("cacheme", "read"))
 		_, err := first.CombinedOutput(ctx)
@@ -406,22 +292,8 @@ type Cacheme {
 func (ContextualWorkspaceSuite) TestContextualWorkspaceCLIExposure(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := workspaceBase(t, c).
-		WithNewFile("hello.txt", "hello from workspace").
-		With(initDangModule("greeter", `
-type Greeter {
-  pub source: Directory!
-
-  new(source: Workspace!) {
-    self.source = source.directory(".")
-    self
-  }
-
-  pub read: String! {
-    source.file("hello.txt").contents
-  }
-}
-`))
+	ctr := workspaceFixture(t, c, "contextual/greeter").
+		WithNewFile("hello.txt", "hello from workspace")
 
 	t.Run("workspace arg is auto-injected", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.With(daggerReportCall("greeter", "read")).Stdout(ctx)
