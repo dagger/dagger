@@ -2,7 +2,7 @@
 
 author: shykes
 created: 2026-05-15
-after: `future/module-test-cleanup.md`
+after: module-management command removal lands
 status: future task
 
 ## Context

@@ -6,7 +6,6 @@ package core
 //
 // See also:
 // - module_terminal_test.go: terminal attachment during module calls.
-// - module_develop_cli_test.go: code generation and source update flows.
 
 import (
 	"context"
