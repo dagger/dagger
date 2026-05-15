@@ -312,14 +312,7 @@ func (LockfileSuite) TestLiveNestedQuery(ctx context.Context, t *testctx.T) {
 func (LockfileSuite) TestLiveModuleCall(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	base := gitRepoBase(t, c).
-		With(initStandaloneDangModule("lockmod", `
-type Lockmod {
-  pub release: String! {
-    Dagger.container.from("alpine:latest").file("/etc/alpine-release").contents
-  }
-}
-`))
+	base := moduleEntrypointFixture(t, c, "lockmod", "dang/lockmod")
 
 	updated := base.With(daggerExec("--silent", "--lock=live", "call", "release"))
 	out, err := updated.Stdout(ctx)
@@ -538,16 +531,7 @@ source = "../counter"
 
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c).
-			WithExec([]string{"mkdir", "-p", "counter"}).
-			WithWorkdir("counter").
-			With(initStandaloneDangModule("counter", `
-type Counter {
-  pub value: String! {
-    "ok"
-  }
-}
-`)).
-			WithWorkdir("..").
+			With(withModuleFixture(t, c, "counter", "dang/counter")).
 			WithNewFile(".dagger/config.toml", configTOML)
 
 		_, err := ctr.With(daggerExec("lock", "update", "counter")).Stdout(ctx)

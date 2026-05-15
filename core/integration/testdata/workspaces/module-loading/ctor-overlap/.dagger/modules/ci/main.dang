@@ -1,0 +1,12 @@
+type Ci {
+  pub prefix: String!
+
+  new(prefix: String! = "ctor") {
+    self.prefix = prefix
+    self
+  }
+
+  pub echo(prefix: String! = "method"): String! {
+    self.prefix + ":" + prefix
+  }
+}
