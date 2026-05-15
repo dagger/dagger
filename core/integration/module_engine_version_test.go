@@ -62,36 +62,7 @@ func (ModuleSuite) TestModuleSchemaVersion(ctx context.Context, t *testctx.T) {
 	t.Run("module", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		work := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=go", "--source=.", "foo", ".")).
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.11.0"}`).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"github.com/Khan/genqlient/graphql"
-)
-
-type Foo struct {}
-
-func (m *Foo) GetVersion(ctx context.Context) (string, error) {
-	return schemaVersion(ctx)
-}
-
-func schemaVersion(ctx context.Context) (string, error) {
-	resp := &graphql.Response{}
-	err := dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
-		Query: "{__schemaVersion}",
-	}, resp)
-	if err != nil {
-		return "", err
-	}
-	return resp.Data.(map[string]any)["__schemaVersion"].(string), nil
-}
-`,
-			)
+		work := moduleEntrypointFixture(t, c, "foo", "go/schema-version-module")
 		out, err := work.
 			With(daggerQuery("{getVersion}")).
 			Stdout(ctx)
@@ -108,73 +79,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 	t.Run("module deps", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		work := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work/dep").
-			With(daggerExec("module", "init", "--sdk=go", "--source=.", "dep", ".")).
-			WithNewFile("dagger.json", `{"name": "dep", "sdk": "go", "source": ".", "engineVersion": "v0.11.0"}`).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"github.com/Khan/genqlient/graphql"
-)
-
-type Dep struct {}
-
-func (m *Dep) GetVersion(ctx context.Context) (string, error) {
-	return schemaVersion(ctx)
-}
-
-func schemaVersion(ctx context.Context) (string, error) {
-	resp := &graphql.Response{}
-	err := dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
-		Query: "{__schemaVersion}",
-	}, resp)
-	if err != nil {
-		return "", err
-	}
-	return resp.Data.(map[string]any)["__schemaVersion"].(string), nil
-}
-`,
-			).
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=go", "--source=.", "foo", ".")).
-			With(daggerExec("module", "install", "./dep")).
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.10.0", "dependencies": [{"name": "dep", "source": "dep"}]}`).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"github.com/Khan/genqlient/graphql"
-)
-
-type Foo struct {}
-
-func (m *Foo) GetVersion(ctx context.Context) (string, error) {
-	myVersion, err := schemaVersion(ctx)
-	if err != nil {
-		return "", err
-	}
-	depVersion, err := dag.Dep().GetVersion(ctx)
-	if err != nil {
-		return "", err
-	}
-	return myVersion + " " + depVersion, nil
-}
-
-func schemaVersion(ctx context.Context) (string, error) {
-	resp := &graphql.Response{}
-	err := dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
-		Query: "{__schemaVersion}",
-	}, resp)
-	if err != nil {
-		return "", err
-	}
-	return resp.Data.(map[string]any)["__schemaVersion"].(string), nil
-}
-`,
-			)
+		work := moduleEntrypointFixture(t, c, "foo", "go/schema-version-parent-dep")
 
 		out, err := work.
 			With(daggerQuery("{getVersion}")).

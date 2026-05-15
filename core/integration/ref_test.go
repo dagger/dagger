@@ -26,20 +26,7 @@ func (ModuleSuite) TestRefIntegration(ctx context.Context, t *testctx.T) {
 	t.Run("local module with same format as remote: github.com/dagger/dagger", func(ctx context.Context, t *testctx.T) {
 		out, err := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work/github.com/dagger/dagger").
-			WithExec([]string{"pwd"}).
-			With(daggerExec("module", "init", "--source=.", "--sdk=go", "dep", ".")).
-			WithNewFile("/work/github.com/dagger/dagger/main.go", `package main
-
-				import "context"
-
-				type Dep struct {}
-
-				func (m *Dep) GetSource(ctx context.Context) string {
-					return "hello"
-				}
-				`,
-			).
+			With(withModuleFixture(t, c, "/work/github.com/dagger/dagger", "go/ref-local-remote-format")).
 			WithWorkdir("/work").
 			With(daggerCallAt("github.com/dagger/dagger", "get-source")).
 			Stdout(ctx)
