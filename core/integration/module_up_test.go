@@ -13,7 +13,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"regexp"
 	"testing"
 	"time"
@@ -195,44 +194,11 @@ func daggerUpAndGetEndpointFromLogs(ctx context.Context, t *testctx.T, modDir st
 
 // create a dagger module for DaggerUp test
 func daggerUpInitModFn(ctx context.Context, t *testctx.T, defaultPort string) string {
-	mainGoTmpl := `package main
-	import (
-		"strconv"
-		"dagger/test/internal/dagger"
-	)
-
-	func New(
-		// +optional
-		// +default=%s
-		port int,
-	) *Test {
-		return &Test{
-			Ctr: dag.Container().
-				From("python").
-				WithMountedDirectory(
-					"/srv/www",
-					dag.Directory().WithNewFile("index.html", "hey there"),
-				).
-				WithWorkdir("/srv/www").
-				WithExposedPort(port).
-				WithDefaultArgs([]string{"python", "-m", "http.server", strconv.Itoa(port)}),
-		}
-	}
-
-	type Test struct {
-		Ctr *dagger.Container
-	}
-	`
-
 	modDir := t.TempDir()
-	err := os.WriteFile(filepath.Join(modDir, "main.go"), fmt.Appendf(nil, mainGoTmpl, defaultPort), 0o644)
-	require.NoError(t, err)
-
-	_, err = hostDaggerExec(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test", ".")
-	require.NoError(t, err)
+	copyTestdataFixture(ctx, t, modDir, "modules", "go", "module-up-"+defaultPort)
 
 	// cache the module load itself so there's less to wait for below
-	_, err = hostDaggerExecRaw(ctx, t, modDir, "functions")
+	_, err := hostDaggerExecRaw(ctx, t, modDir, "functions")
 	require.NoError(t, err)
 
 	return modDir
