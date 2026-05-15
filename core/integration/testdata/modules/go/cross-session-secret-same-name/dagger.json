@@ -1,0 +1,13 @@
+{
+  "name": "caller",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "secreter",
+      "source": "secreter"
+    }
+  ]
+}
