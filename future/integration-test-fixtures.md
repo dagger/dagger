@@ -34,19 +34,19 @@ Tests should mount or copy prebuilt fixture modules from
 
 ## Handoff Status
 
-As of 2026-05-15, this migration is in progress on branch `workspace`.
+As of 2026-05-15, the fixture conversion pass is complete on branch
+`workspace`.
 
 Last code checkpoint:
 
-- `4bfa384bb test: convert small host cli fixtures`
+- latest local conversion commits on branch `workspace`
 
 Current strategy:
 
-- Finish the fixture conversion pass first.
-- Do not spend time on slow live integration runs until the conversion
-  inventory is clean.
+- Run targeted live Dagger integration tests with the harness described in
+  [Verification](#verification).
 - Keep committing small behavior groups.
-- For each conversion group, run `gofmt` and the cheap compile check:
+- For any follow-up conversion or fix, run `gofmt` and the cheap compile check:
 
   ```bash
   go test ./core/integration -run '^$'
@@ -57,20 +57,14 @@ Current strategy:
 
 Validation so far:
 
-- Every committed conversion batch through `4bfa384bb` was formatted.
-- `go test ./core/integration -run '^$'` passed after the committed batches.
-- The uncommitted `module_runtime_behavior_test.go` fixture conversion was
-  formatted and `go test ./core/integration -run '^$'` passed.
-- The uncommitted `module_terminal_test.go` fixture conversion was formatted
-  and `go test ./core/integration -run '^$'` passed.
-- The envfile, git credential, workspace selection, and module deprecation
-  fixture conversions were formatted and
-  `go test ./core/integration -run '^$'` passed.
-- The one-hit host/CLI fixture conversions in `module_up_test.go`,
-  `workspace_compat_test.go`, `container_test.go`, `client_test.go`, and
-  `cacert_test.go` were formatted and `go test ./core/integration -run '^$'`
-  passed.
-- Slow live integration runs were paused after the conversion-first direction.
+- Every committed conversion batch was formatted.
+- `go test ./core/integration -run '^$'` passed after the final conversion
+  batches.
+- `git diff --check` passed after the final conversion batches.
+- The conservative fixture-migration scanner returns no hits for module
+  management commands or the removed dynamic init helpers.
+- Slow live integration runs were paused during the conversion-first pass and
+  are the next verification step.
 
 Shared fixture helpers already added in `core/integration/module_helpers_test.go`:
 
@@ -109,19 +103,19 @@ Committed conversion areas so far:
 - shell fixtures
 - runtime secret and runtime parent-field fixtures
 - module Python, TypeScript, and client generator fixtures
-- module runtime behavior fixtures, uncommitted
-- module call, path input, config, and type fixtures, uncommitted
+- module runtime behavior fixtures
+- module call, path input, config, and type fixtures
 - module up, CA cert terminal, container save nested, client stable ID, and
   workspace compat blueprint fixtures
 - envfile, git credential, workspace selection, and module deprecation fixtures
-- module terminal fixtures, uncommitted
+- module terminal fixtures
+- legacy module fixture setup
+- obsolete dynamic module init helpers removed
 
-Current broad inventory from the worktree after the uncommitted large module
-runtime/schema and small host/CLI fixture conversions:
+Current broad inventory:
 
 ```text
-core/integration/module_helpers_test.go:5
-core/integration/legacy_test.go:35
+no hits
 ```
 
 The broad inventory is intentionally conservative. Inspect each hit before
@@ -130,12 +124,9 @@ core instead of becoming a fixture.
 
 Recommended next order:
 
-1. Convert or move the smaller host-CLI one-offs:
-
-   - `legacy_test.go`
-
-2. Delete or shrink the dynamic helpers in `module_helpers_test.go` once no
-   tests depend on them.
+1. Run targeted live Dagger integration tests for the highest-risk converted
+   areas: module call/path/config/type/runtime behavior, terminal, and legacy.
+2. Investigate and fix any live-test failures against the fixture modules.
 
 ## Why
 
