@@ -1,0 +1,5 @@
+type Counter {
+  pub value: String! {
+    "ok"
+  }
+}

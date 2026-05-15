@@ -1,0 +1,5 @@
+type App {
+  pub message: String! {
+    "deduped app"
+  }
+}

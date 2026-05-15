@@ -32,22 +32,8 @@ func (WorkspaceAPISuite) TestWorkspaceFileAndDirectory(ctx context.Context, t *t
 	t.Run("file reads workspace content", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		ctr := workspaceBase(t, c).
-			WithNewFile("data.txt", "file content here").
-			With(initDangModule("reader", `
-type Reader {
-  pub content: String!
-
-  new(ws: Workspace!) {
-    self.content = ws.file("data.txt").contents
-    self
-  }
-
-  pub read: String! {
-    content
-  }
-}
-`))
+		ctr := workspaceFixture(t, c, "workspace-api").
+			WithNewFile("data.txt", "file content here")
 
 		out, err := ctr.With(daggerCall("reader", "read")).Stdout(ctx)
 		require.NoError(t, err)
@@ -58,51 +44,23 @@ type Reader {
 		c := connect(ctx, t)
 
 		t.Run("directory entries", func(ctx context.Context, t *testctx.T) {
-			ctr := workspaceBase(t, c).
+			ctr := workspaceFixture(t, c, "workspace-api").
 				WithNewFile("a.txt", "aaa").
 				WithNewFile("b.txt", "bbb").
-				WithNewFile("sub/c.txt", "ccc").
-				With(initDangModule("lister", `
-type Lister {
-  pub source: Directory!
-
-  new(source: Workspace!) {
-    self.source = source.directory(".")
-    self
-  }
-
-  pub ls: [String!] {
-    source.entries
-  }
-}
-`))
+				WithNewFile("sub/c.txt", "ccc")
 
 			out, err := ctr.With(daggerCall("lister", "ls")).Stdout(ctx)
 			require.NoError(t, err)
 			entries := strings.TrimSpace(out)
 			require.Contains(t, entries, "a.txt")
 			require.Contains(t, entries, "b.txt")
-			require.Contains(t, entries, "sub/")
+			require.Contains(t, entries, "sub")
 		})
 
 		t.Run("subdirectory", func(ctx context.Context, t *testctx.T) {
-			ctr := workspaceBase(t, c).
+			ctr := workspaceFixture(t, c, "workspace-api").
 				WithNewFile("sub/foo.txt", "foo").
-				WithNewFile("sub/bar.txt", "bar").
-				With(initDangModule("subdir", `
-type Subdir {
-  pub source: Directory!
-
-  new(source: Workspace!) {
-    self.source = source.directory("sub")
-    self
-  }
-
-  pub ls: [String!] {
-    source.entries
-  }
-}
-`))
+				WithNewFile("sub/bar.txt", "bar")
 
 			out, err := ctr.With(daggerCall("subdir", "ls")).Stdout(ctx)
 			require.NoError(t, err)
@@ -117,23 +75,9 @@ type Subdir {
 		c := connect(ctx, t)
 
 		t.Run("exclude patterns", func(ctx context.Context, t *testctx.T) {
-			ctr := workspaceBase(t, c).
+			ctr := workspaceFixture(t, c, "workspace-api").
 				WithNewFile("keep.txt", "keep me").
-				WithNewFile("drop.log", "drop me").
-				With(initDangModule("filtered", `
-type Filtered {
-  pub source: Directory!
-
-  new(source: Workspace!) {
-    self.source = source.directory(".", exclude: ["*.log"])
-    self
-  }
-
-  pub ls: [String!] {
-    source.entries
-  }
-}
-`))
+				WithNewFile("drop.log", "drop me")
 
 			out, err := ctr.With(daggerCall("filtered", "ls")).Stdout(ctx)
 			require.NoError(t, err)
@@ -143,7 +87,7 @@ type Filtered {
 		})
 
 		t.Run("gitignore filters", func(ctx context.Context, t *testctx.T) {
-			base := workspaceBase(t, c).
+			base := workspaceFixture(t, c, "workspace-api").
 				WithNewFile(".gitignore", "*.log\nbuild/\n").
 				WithNewFile("keep.txt", "kept").
 				WithNewFile("drop.log", "dropped").
@@ -154,44 +98,18 @@ type Filtered {
 				WithExec([]string{"git", "commit", "-m", "init"})
 
 			t.Run("root directory respects gitignore", func(ctx context.Context, t *testctx.T) {
-				ctr := base.With(initDangModule("gi-root", `
-type GiRoot {
-  pub source: Directory!
-
-  new(source: Workspace!) {
-    self.source = source.directory(".", gitignore: true)
-    self
-  }
-
-  pub ls: [String!] {
-    source.entries
-  }
-}
-`))
+				ctr := base
 				out, err := ctr.With(daggerCall("gi-root", "ls")).Stdout(ctx)
 				require.NoError(t, err)
 				entries := strings.TrimSpace(out)
 				require.Contains(t, entries, "keep.txt")
-				require.Contains(t, entries, "src/")
+				require.Contains(t, entries, "src")
 				require.NotContains(t, entries, "drop.log")
-				require.NotContains(t, entries, "build/")
+				require.NotContains(t, entries, "build")
 			})
 
 			t.Run("subdirectory respects gitignore", func(ctx context.Context, t *testctx.T) {
-				ctr := base.With(initDangModule("gi-sub", `
-type GiSub {
-  pub source: Directory!
-
-  new(source: Workspace!) {
-    self.source = source.directory("src", gitignore: true)
-    self
-  }
-
-  pub ls: [String!] {
-    source.entries
-  }
-}
-`))
+				ctr := base
 				out, err := ctr.With(daggerCall("gi-sub", "ls")).Stdout(ctx)
 				require.NoError(t, err)
 				entries := strings.TrimSpace(out)
@@ -200,26 +118,13 @@ type GiSub {
 			})
 
 			t.Run("without gitignore includes all files", func(ctx context.Context, t *testctx.T) {
-				ctr := base.With(initDangModule("gi-off", `
-type GiOff {
-  pub source: Directory!
-
-  new(source: Workspace!) {
-    self.source = source.directory(".")
-    self
-  }
-
-  pub ls: [String!] {
-    source.entries
-  }
-}
-`))
+				ctr := base
 				out, err := ctr.With(daggerCall("gi-off", "ls")).Stdout(ctx)
 				require.NoError(t, err)
 				entries := strings.TrimSpace(out)
 				require.Contains(t, entries, "keep.txt")
 				require.Contains(t, entries, "drop.log")
-				require.Contains(t, entries, "build/")
+				require.Contains(t, entries, "build")
 			})
 		})
 	})
@@ -230,44 +135,18 @@ type GiOff {
 func (WorkspaceAPISuite) TestWorkspacePathSafety(ctx context.Context, t *testctx.T) {
 	t.Run("parent-directory traversal is rejected", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		base := workspaceBase(t, c).
+		base := workspaceFixture(t, c, "workspace-api").
 			WithNewFile("legit.txt", "legit")
 
 		t.Run("directory traversal", func(ctx context.Context, t *testctx.T) {
-			ctr := base.With(initDangModule("escape-dir", `
-type EscapeDir {
-  pub source: Directory!
-
-  new(source: Workspace!) {
-    self.source = source.directory("../..")
-    self
-  }
-
-  pub ls: [String!] {
-    source.entries
-  }
-}
-`))
+			ctr := base
 			_, err := ctr.With(daggerCall("escape-dir", "ls")).Stdout(ctx)
 			require.Error(t, err)
 			requireErrOut(t, err, "escapes workspace root")
 		})
 
 		t.Run("file traversal", func(ctx context.Context, t *testctx.T) {
-			ctr := base.With(initDangModule("escape-file", `
-type EscapeFile {
-  pub content: String!
-
-  new(source: Workspace!) {
-    self.content = source.file("../../etc/hostname").contents
-    self
-  }
-
-  pub read: String! {
-    content
-  }
-}
-`))
+			ctr := base
 			_, err := ctr.With(daggerCall("escape-file", "read")).Stdout(ctx)
 			require.Error(t, err)
 			requireErrOut(t, err, "escapes workspace root")
@@ -276,25 +155,11 @@ type EscapeFile {
 
 	t.Run("absolute paths resolve from the workspace boundary", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		base := workspaceBase(t, c).
+		base := workspaceFixture(t, c, "workspace-api").
 			WithNewFile("legit.txt", "legit")
 
 		ctr := base.
-			WithNewFile("sub/inner.txt", "inner").
-			With(initDangModule("abs-rel", `
-type AbsRel {
-  pub source: Directory!
-
-  new(source: Workspace!) {
-    self.source = source.directory("/sub")
-    self
-  }
-
-  pub ls: [String!] {
-    source.entries
-  }
-}
-`))
+			WithNewFile("sub/inner.txt", "inner")
 		out, err := ctr.With(daggerCall("abs-rel", "ls")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "inner.txt")
@@ -305,24 +170,14 @@ type AbsRel {
 func (WorkspaceAPISuite) TestWorkspaceFindUp(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	base := workspaceBase(t, c).
+	base := workspaceFixture(t, c, "workspace-api").
 		WithNewFile("root.txt", "at root").
 		WithNewFile("a/target.txt", "in a").
 		WithNewFile("a/b/other.txt", "in a/b").
 		WithExec([]string{"mkdir", "-p", "a/b/c"}).
 		WithNewFile("a/b/c/leaf.txt", "leaf").
 		WithExec([]string{"mkdir", "-p", "a/somedir"}).
-		WithNewFile("a/somedir/hi.txt", "hi").
-		With(initDangModule("finder", `
-type Finder {
-  pub result: String!
-
-  new(ws: Workspace!, name: String!, from: String!) {
-    self.result = ws.findUp(name: name, from: from) ?? ""
-    self
-  }
-}
-`))
+		WithNewFile("a/somedir/hi.txt", "hi")
 
 	t.Run("find file in start directory", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerCall("finder", "--name=other.txt", "--from=a/b", "result")).Stdout(ctx)
