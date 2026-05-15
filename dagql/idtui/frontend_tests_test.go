@@ -175,6 +175,23 @@ func TestTestViewPrettyReportSummary(t *testing.T) {
 	}
 }
 
+func TestTestViewInspectorHeaderUsesReportCounts(t *testing.T) {
+	view := &dagui.TestView{Counts: dagui.TestCounts{
+		Failing: 1,
+		Skipped: 2,
+		Passing: 3,
+		Running: 4,
+	}}
+
+	var buf strings.Builder
+	out := NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+	got := renderTestInspectorHeader(out, view, 80)
+	want := "TESTS  ✘ 1 failed  ∅ 2 skipped  ✔ 3 passed  ◐ 4 running"
+	if got != want {
+		t.Fatalf("inspector header = %q, want %q", got, want)
+	}
+}
+
 func TestTestViewSidebarCutoffShowsMoreTests(t *testing.T) {
 	var roots []*dagui.TestNode
 	for i := range 10 {

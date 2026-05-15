@@ -83,6 +83,9 @@ type TestView struct {
 	SummaryIndent int
 	// SummaryLogLines caps inline logs per failing/skipped summary entry.
 	SummaryLogLines int
+	// ShowTestViewerHint renders the pretty-live "T inspect" affordance next to
+	// the TESTS summary heading. Final/non-pretty reports leave it disabled.
+	ShowTestViewerHint bool
 
 	OnFocusSpan func(*dagui.Span)
 
@@ -604,14 +607,7 @@ func (tv *TestView) renderSidebarLinesWithHover(out *termenv.Output, view *dagui
 	if tv.ListOnly {
 		return tv.renderTestSummaryLines(out, view, width, height), rowByLine
 	}
-	title := "Tests"
-	if tv.ScopeName != "" {
-		title += " · " + tv.ScopeName
-	}
-	if view != nil {
-		title = fmt.Sprintf("%s %d", title, view.Counts.Total())
-	}
-	lines = append(lines, out.String(clipPlain(title, width)).Bold().String())
+	lines = append(lines, renderTestInspectorHeader(out, view, width))
 	lines = append(lines, out.String(strings.Repeat(HorizBar, max(width, 0))).Foreground(termenv.ANSIBrightBlack).Faint().String())
 
 	listHeight := max(height-len(lines), 0)
@@ -680,6 +676,36 @@ func (tv *TestView) renderSidebarLinesWithHover(out *termenv.Output, view *dagui
 	return cropLines(lines, height), rowByLine
 }
 
+func renderTestInspectorHeader(out TermOutput, view *dagui.TestView, width int) string {
+	heading := out.String("TESTS").Bold().String()
+	if view == nil {
+		return clipTestSummaryLine(heading, width)
+	}
+	for _, part := range renderTestCountParts(out, view.Counts) {
+		candidate := heading + "  " + part
+		if width > 0 && lipgloss.Width(candidate) > width {
+			break
+		}
+		heading = candidate
+	}
+	return clipTestSummaryLine(heading, width)
+}
+
+func renderTestCountParts(out TermOutput, counts dagui.TestCounts) []string {
+	var parts []string
+	add := func(count int, icon string, color termenv.Color, label string) {
+		if count == 0 {
+			return
+		}
+		parts = append(parts, out.String(fmt.Sprintf("%s %d %s", icon, count, label)).Foreground(color).String())
+	}
+	add(counts.Failing, IconFailure, termenv.ANSIRed, "failed")
+	add(counts.Skipped, IconSkipped, termenv.ANSIBrightBlack, "skipped")
+	add(counts.Passing, IconSuccess, termenv.ANSIGreen, "passed")
+	add(counts.Running, DotHalf, termenv.ANSIYellow, "running")
+	return parts
+}
+
 func (tv *TestView) renderSidebarRow(out *termenv.Output, row testSidebarRow, selected, hovered bool, width int) string {
 	if row.kind == testSidebarPassedGroup {
 		return tv.renderPassedGroupSidebarRow(out, row, selected, hovered, width)
@@ -708,7 +734,7 @@ func (tv *TestView) renderTestSummaryLines(out TermOutput, view *dagui.TestView,
 		width = 0
 	}
 	prefix := strings.Repeat(" ", max(tv.SummaryIndent, 0))
-	lines := []string{clipTestSummaryLine(prefix+out.String("TESTS").Bold().String(), width)}
+	lines := []string{tv.renderTestSummaryHeader(out, prefix, width)}
 	if view == nil {
 		return cropLines(lines, height)
 	}
@@ -737,6 +763,19 @@ func (tv *TestView) renderTestSummaryLines(out TermOutput, view *dagui.TestView,
 		lines = append(lines, counts...)
 	}
 	return cropLines(lines, height)
+}
+
+func (tv *TestView) renderTestSummaryHeader(out TermOutput, prefix string, width int) string {
+	heading := prefix + out.String("TESTS").Bold().String()
+	if tv.ShowTestViewerHint && !tv.testSummaryFinal() {
+		heading += "  " + renderTestViewerHint(out)
+	}
+	return clipTestSummaryLine(heading, width)
+}
+
+func renderTestViewerHint(out TermOutput) string {
+	return out.String("T").Foreground(termenv.ANSIBrightBlack).Bold().String() +
+		out.String(" inspect").Foreground(termenv.ANSIBrightBlack).String()
 }
 
 func (tv *TestView) renderTestSummaryEntry(out TermOutput, entry testSummaryEntry, width int) []string {
@@ -817,17 +856,9 @@ func (tv *TestView) renderTestSummaryLogs(out TermOutput, entry testSummaryEntry
 func renderTestSummaryCounts(out TermOutput, counts dagui.TestCounts, summaryIndent, width int) []string {
 	indent := strings.Repeat(" ", max(summaryIndent, 0)+2)
 	var lines []string
-	add := func(count int, icon string, color termenv.Color, label string) {
-		if count == 0 {
-			return
-		}
-		line := indent + out.String(fmt.Sprintf("%s %d %s", icon, count, label)).Foreground(color).String()
-		lines = append(lines, clipTestSummaryLine(line, width))
+	for _, part := range renderTestCountParts(out, counts) {
+		lines = append(lines, clipTestSummaryLine(indent+part, width))
 	}
-	add(counts.Failing, IconFailure, termenv.ANSIRed, "failed")
-	add(counts.Skipped, IconSkipped, termenv.ANSIBrightBlack, "skipped")
-	add(counts.Passing, IconSuccess, termenv.ANSIGreen, "passed")
-	add(counts.Running, DotHalf, termenv.ANSIYellow, "running")
 	if len(lines) == 0 {
 		lines = append(lines, clipTestSummaryLine(indent+out.String("0 tests").Foreground(termenv.ANSIBrightBlack).Faint().String(), width))
 	}
@@ -1433,6 +1464,11 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		tv.SummaryLogLines = summaryLogLines
 		tv.Update()
 	}
+	showHint := !s.fe.finalRender
+	if tv.ShowTestViewerHint != showHint {
+		tv.ShowTestViewerHint = showHint
+		tv.Update()
+	}
 	limit := finalTestViewHeight(tv)
 	if tv.MaxHeight != limit {
 		tv.MaxHeight = limit
@@ -1495,6 +1531,10 @@ func (fe *frontendPretty) renderLiveGlobalTests(ctx tuist.Context) []string {
 		tv.SummaryLogLines = 8
 		tv.Update()
 	}
+	if !tv.ShowTestViewerHint {
+		tv.ShowTestViewerHint = true
+		tv.Update()
+	}
 	limit := liveTestViewHeight(ctx)
 	if tv.MaxHeight != limit {
 		tv.MaxHeight = limit
@@ -1526,6 +1566,10 @@ func (fe *frontendPretty) renderFinalGlobalTests(ctx tuist.Context) []string {
 	}
 	if tv.SummaryLogLines != -1 {
 		tv.SummaryLogLines = -1
+		tv.Update()
+	}
+	if tv.ShowTestViewerHint {
+		tv.ShowTestViewerHint = false
 		tv.Update()
 	}
 	limit := finalTestViewHeight(tv)
