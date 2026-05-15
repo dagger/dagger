@@ -1,0 +1,8 @@
+{
+  "name": "mod-b",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "source": "."
+}

@@ -1,0 +1,13 @@
+{
+  "name": "test",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "dep",
+      "source": "github.com/dagger/dagger-test-modules/contextual-git-bug@d730fb3af8757e1ca293e01aa4fcfd510a6e40e5"
+    }
+  ]
+}
