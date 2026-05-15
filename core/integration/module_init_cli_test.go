@@ -1,7 +1,7 @@
 package core
 
-// These tests cover `dagger module init`. They verify explicit module creation,
-// license handling, and Git initialization behavior.
+// These tests cover `dagger module init`. They verify explicit module creation
+// and Git initialization behavior.
 //
 // See also:
 // - workspace_modules_test.go: installing modules into workspaces.
@@ -149,74 +149,6 @@ func (CLISuite) TestModuleInit(ctx context.Context, t *testctx.T) {
 		_, err := ctr.Stdout(ctx)
 		require.Error(t, err)
 		requireErrOut(t, err, "source subpath \"../..\" escapes source root")
-	})
-}
-
-func (CLISuite) TestModuleInitLicense(ctx context.Context, t *testctx.T) {
-	t.Run("does not create LICENSE file on init with sdk", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=go", "licensed-to-ill", "."))
-
-		files, err := modGen.Directory(".").Entries(ctx)
-		require.NoError(t, err)
-		require.NotContains(t, files, "LICENSE")
-	})
-
-	t.Run("license=false is a no-op", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=go", "--license=false", "empty-license", "."))
-
-		files, err := modGen.Directory(".").Entries(ctx)
-		require.NoError(t, err)
-		require.NotContains(t, files, "LICENSE")
-	})
-
-	t.Run("license=true fails with deprecation error", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=go", "--license=true", "no-license", "."))
-
-		_, err := modGen.Stdout(ctx)
-		require.Error(t, err)
-		requireErrOut(t, err, "--license is deprecated and no longer generates a LICENSE file; create one manually")
-	})
-
-	t.Run("license values other than false also fail with deprecation error", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=go", "--license=MIT", "no-license", "."))
-
-		_, err := modGen.Stdout(ctx)
-		require.Error(t, err)
-		requireErrOut(t, err, "--license is deprecated and no longer generates a LICENSE file; create one manually")
-	})
-
-	t.Run("does not create LICENSE file on develop with sdk", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--source=.", "no-license", ".")).
-			With(daggerExecRaw("develop", "--sdk=go"))
-
-		files, err := modGen.Directory(".").Entries(ctx)
-		require.NoError(t, err)
-		require.NotContains(t, files, "LICENSE")
 	})
 }
 

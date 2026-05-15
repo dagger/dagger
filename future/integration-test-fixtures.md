@@ -1,13 +1,20 @@
-# Future Integration Test Fixtures
+# Convert all integration tests to use fixtures
 
 author: shykes
 created: 2026-05-14
+updated: 2026-05-15
 after: `future/module-test-cleanup.md`
+status: blocked on remaining SDK moves/deletions
 
 ## Context
 
 This cleanup should happen after the test disposition work in
 `future/module-test-cleanup.md`.
+
+As of 2026-05-15, the module-management CLI implementation has been removed and
+some replacement core coverage has been added. This fixture cleanup is still not
+ready to start globally: remaining command-surface tests must be deleted, and
+SDK-owned authoring coverage must be moved or waived first.
 
 That earlier cleanup decides which tests leave core entirely:
 
@@ -26,6 +33,8 @@ Make core integration tests fixture-based:
 - no setup helper should call `dagger module init`
 - no setup helper should call `dagger develop`
 - no setup helper should call `dagger module install`
+- no setup helper should call `dagger module update`
+- no setup helper should call root module-dependency alias `dagger uninstall`
 - no setup helper should synthesize a module by hand unless the synthetic files
   are a checked-in fixture
 
@@ -147,11 +156,13 @@ Fixtures should be stable, readable, and minimal.
 
 ## Migration Order
 
-1. Finish `future/module-test-cleanup.md`.
+1. Finish the remaining parts of `future/module-test-cleanup.md`: move or waive
+   SDK-owned coverage, then delete remaining command-surface tests.
 2. Inventory all remaining dynamic module setup calls:
    - `daggerExec("module", "init", ...)`
    - `daggerExec("develop", ...)`
    - `daggerExec("module", "install", ...)`
+   - `daggerExec("module", "update", ...)`
    - `daggerExecRaw("uninstall", ...)`
    - `modInit`
    - `withModInit`
@@ -206,5 +217,6 @@ This cleanup is complete when:
 - dynamic module setup helpers are gone or no longer call removed commands
 - remaining core tests use checked-in fixtures for modules and workspaces
 - SDK authoring tests are moved out of core or explicitly waived
-- deleted command-surface tests are tracked by `future/module-test-cleanup.md`
+- deleted command-surface tests are tracked as done in
+  `future/module-test-cleanup.md`
 - the relevant core integration test suites pass with fixture-based setup
