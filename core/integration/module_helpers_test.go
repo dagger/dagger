@@ -19,6 +19,7 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/core/modules"
+	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -116,14 +117,41 @@ func moduleFixture(t testing.TB, c *dagger.Client, fixture string) *dagger.Conta
 		With(withModuleFixture(t, c, ".", fixture))
 }
 
+func moduleEntrypointFixture(t testing.TB, c *dagger.Client, name, fixture string) *dagger.Container {
+	t.Helper()
+	return goGitBase(t, c).
+		With(withModuleEntrypointFixture(t, c, ".", name, fixture))
+}
+
 func withModuleFixture(t testing.TB, c *dagger.Client, dst, fixture string) dagger.WithContainerFunc {
 	t.Helper()
 	return withTestdataFixture(t, c, dst, "modules", fixture)
 }
 
+func withModuleEntrypointFixture(t testing.TB, c *dagger.Client, dst, name, fixture string) dagger.WithContainerFunc {
+	t.Helper()
+	moduleDir := fixtureJoin(dst, ".dagger/modules/"+name)
+	configPath := fixtureJoin(dst, ".dagger/config.toml")
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.
+			With(withModuleFixture(t, c, moduleDir, fixture)).
+			WithNewFile(configPath, fmt.Sprintf(`[modules.%s]
+source = "modules/%s"
+entrypoint = true
+`, name, name))
+	}
+}
+
 func withWorkspaceFixture(t testing.TB, c *dagger.Client, dst, fixture string) dagger.WithContainerFunc {
 	t.Helper()
 	return withTestdataFixture(t, c, dst, fixture)
+}
+
+func fixtureJoin(dst, elem string) string {
+	if dst == "" || dst == "." {
+		return elem
+	}
+	return strings.TrimRight(dst, "/") + "/" + elem
 }
 
 func withTestdataFixture(t testing.TB, c *dagger.Client, dst string, elems ...string) dagger.WithContainerFunc {
@@ -140,6 +168,12 @@ func withTestdataFile(t testing.TB, c *dagger.Client, dst string, elems ...strin
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.WithFile(dst, c.Host().Directory(filepath.Dir(fixturePath)).File(filepath.Base(fixturePath)))
 	}
+}
+
+func copyTestdataFixture(ctx context.Context, t testing.TB, dst string, elems ...string) {
+	t.Helper()
+	err := fscopy.Copy(ctx, testDataPath(t, elems...), "/", dst, "/")
+	require.NoError(t, err)
 }
 
 func privateRepoSetup(c *dagger.Client, t *testctx.T, tc vcsTestCase) (dagger.WithContainerFunc, func()) {

@@ -1,0 +1,17 @@
+type Dirs {
+  pub directory: Directory! {
+    Dagger.directory.withNewFile("hello.txt", "hello from dirs")
+  }
+
+  pub file: File! {
+    Dagger.file("greeting.txt", "hi")
+  }
+
+  pub container: Container! {
+    Dagger.container.from("alpine:3.20")
+  }
+
+  pub greet: String! {
+    "greetings!"
+  }
+}
