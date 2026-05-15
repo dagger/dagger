@@ -1091,14 +1091,11 @@ func (tv *TestView) renderDetailLines(ctx tuist.Context, out *termenv.Output, ro
 		duration = " " + out.String(dagui.FormatDuration(testSpanDuration(representative))).Foreground(termenv.ANSIBrightBlack).Faint().String()
 	}
 	icon := out.String(testCategoryIcon(node.Category)).Foreground(color).String()
-	name := out.String(clipPlain(testNodeDisplayName(node), max(width-lipgloss.Width(icon)-lipgloss.Width(duration)-1, 1))).Foreground(termenv.ANSIWhite).Bold().String()
+	name := out.String(clipPlain(testNodeTitleName(node), max(width-lipgloss.Width(icon)-lipgloss.Width(duration)-1, 1))).Foreground(termenv.ANSIWhite).Bold().String()
 	lines = append(lines, clipANSI(icon+" "+name+duration, width))
 	lines = append(lines, out.String(strings.Repeat(HorizBar, max(width, 0))).Foreground(termenv.ANSIBrightBlack).Faint().String())
 
 	lines = append(lines, tv.renderSummaryLine(out, node, width))
-	if node.FullName != "" && node.FullName != node.Name {
-		lines = append(lines, out.String(clipPlain(node.FullName, width)).Foreground(termenv.ANSIBrightBlack).Faint().String())
-	}
 	if node.Kind == dagui.TestNodeVirtualSuite {
 		lines = append(lines, out.String(clipPlain("virtual suite · no backing span", width)).Foreground(termenv.ANSIBrightBlack).Faint().String())
 	} else if span == nil {
@@ -1130,7 +1127,7 @@ func (tv *TestView) renderDetailLines(ctx tuist.Context, out *termenv.Output, ro
 		lines = append(lines, out.String("No logs for selected test span.").Foreground(termenv.ANSIBrightBlack).Faint().String())
 		return cropLines(lines, height)
 	}
-	if handle := tv.logHandleFor(span, logs, testNodeDisplayName(node)); handle != nil {
+	if handle := tv.logHandleFor(span, logs, testNodeTitleName(node)); handle != nil {
 		result := tv.RenderChildResult(ctx.Resize(width, 1), handle)
 		lines = append(lines, result.Lines...)
 	}
@@ -1949,6 +1946,16 @@ func testNodeDisplayName(node *dagui.TestNode) string {
 		return node.Name
 	}
 	return node.FullName
+}
+
+func testNodeTitleName(node *dagui.TestNode) string {
+	if node == nil {
+		return ""
+	}
+	if node.FullName != "" {
+		return node.FullName
+	}
+	return testNodeDisplayName(node)
 }
 
 func testCategoryIcon(category dagui.TestCategory) string {
