@@ -491,61 +491,11 @@ func (EnvFileSuite) TestCachingWithIndirectVar(ctx context.Context, t *testctx.T
 
 func (EnvFileSuite) TestSecretFile(ctx context.Context, t *testctx.T) {
 	modDir := t.TempDir()
-
-	initCmd := hostDaggerCommand(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test", ".")
-	initOutput, err := initCmd.CombinedOutput()
-	require.NoError(t, err, string(initOutput))
-
-	err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
-import (
-	"context"
-)
-
-type Test struct {}
-
-func (m *Test) Foo(ctx context.Context) (string, error) {
-	return dag.Dep().Bar(ctx)
-}
-`), 0644)
-	require.NoError(t, err)
-
+	copyTestdataFixture(ctx, t, modDir, "modules", "go", "envfile-secret-file")
 	depDir := filepath.Join(modDir, "dep")
-	require.NoError(t, os.Mkdir(depDir, 0755))
-
-	initDepCmd := hostDaggerCommand(ctx, t, depDir, "module", "init", "--source=.", "--sdk=go", "dep", ".")
-	initDepOutput, err := initDepCmd.CombinedOutput()
-	require.NoError(t, err, string(initDepOutput))
-
-	err = os.WriteFile(filepath.Join(depDir, "main.go"), []byte(`package main
-import (
-	"context"
-	"encoding/base64"
-
-	"dagger/dep/internal/dagger"
-)
-
-type Dep struct {}
-
-func (m *Dep) Bar(
-	ctx context.Context, 
-	// +optional
-	s *dagger.Secret,
-) (string, error) {
-	pt, err := s.Plaintext(ctx)
-	if err != nil {
-		return "", err
-	}
-	return base64.StdEncoding.EncodeToString([]byte(pt)), nil
-}
-`), 0644)
-	require.NoError(t, err)
-
-	installCmd := hostDaggerCommand(ctx, t, modDir, "module", "install", depDir)
-	installOutput, err := installCmd.CombinedOutput()
-	require.NoError(t, err, string(installOutput))
 
 	secretFile := filepath.Join(depDir, "topsecret.txt")
-	err = os.WriteFile(secretFile, []byte(`doodoo`), 0644)
+	err := os.WriteFile(secretFile, []byte(`doodoo`), 0644)
 	require.NoError(t, err)
 
 	envFile := filepath.Join(depDir, ".env")
