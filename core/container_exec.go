@@ -101,14 +101,14 @@ type ContainerExecLazy struct {
 }
 
 type persistedContainerExecLazy struct {
-	ParentResultID                  uint64                        `json:"parentResultID"`
-	ModuleContextResultID           uint64                        `json:"moduleContextResultID,omitempty"`
-	Opts                            ContainerExecOpts             `json:"opts"`
-	ExecMD                          *engineutil.ExecutionMetadata `json:"execMD,omitempty"`
-	FunctionCall                    *FunctionCall                 `json:"functionCall,omitempty"`
-	ExtractModuleError              bool                          `json:"extractModuleError,omitempty"`
-	VolatileCacheHitParentResultID  uint64                        `json:"volatileCacheHitParentResultID,omitempty"`
-	VolatileCacheHitVolatileEnv     []string                      `json:"volatileCacheHitVolatileEnv,omitempty"`
+	ParentResultID                 uint64                        `json:"parentResultID"`
+	ModuleContextResultID          uint64                        `json:"moduleContextResultID,omitempty"`
+	Opts                           ContainerExecOpts             `json:"opts"`
+	ExecMD                         *engineutil.ExecutionMetadata `json:"execMD,omitempty"`
+	FunctionCall                   *FunctionCall                 `json:"functionCall,omitempty"`
+	ExtractModuleError             bool                          `json:"extractModuleError,omitempty"`
+	VolatileCacheHitParentResultID uint64                        `json:"volatileCacheHitParentResultID,omitempty"`
+	VolatileCacheHitVolatileEnv    []string                      `json:"volatileCacheHitVolatileEnv,omitempty"`
 }
 
 // ContainerVolatileExecCacheHitLazy materializes from a broad volatile exec

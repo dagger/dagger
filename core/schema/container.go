@@ -1347,35 +1347,9 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 		}
 	}
 
-	clonedFS, err := core.CloneContainerDirectoryAccessor(ctx, parent.Self().FS)
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
 		return inst, err
-	}
-	clonedMounts, err := core.CloneContainerMounts(ctx, parent.Self().Mounts)
-	if err != nil {
-		return inst, err
-	}
-	clonedMeta, err := core.CloneContainerMetaSnapshot(ctx, parent.Self().MetaSnapshot)
-	if err != nil {
-		return inst, err
-	}
-	ctr := &core.Container{
-		FS:                 clonedFS,
-		MetaSnapshot:       clonedMeta,
-		Config:             core.CloneContainerImageConfig(parent.Self().Config),
-		EnabledGPUs:        slices.Clone(parent.Self().EnabledGPUs),
-		Mounts:             clonedMounts,
-		Platform:           parent.Self().Platform,
-		Annotations:        slices.Clone(parent.Self().Annotations),
-		Secrets:            slices.Clone(parent.Self().Secrets),
-		Sockets:            slices.Clone(parent.Self().Sockets),
-		ImageRef:           parent.Self().ImageRef,
-		Ports:              slices.Clone(parent.Self().Ports),
-		Services:           slices.Clone(parent.Self().Services),
-		DefaultTerminalCmd: parent.Self().DefaultTerminalCmd,
-		SystemEnvNames:     slices.Clone(parent.Self().SystemEnvNames),
-		VolatileEnv:        slices.Clone(parent.Self().VolatileEnv),
-		DefaultArgs:        parent.Self().DefaultArgs,
 	}
 	err = ctr.WithExec(ctx, parent, args.ContainerExecOpts, md, moduleContext, nil, false)
 	if err != nil {
