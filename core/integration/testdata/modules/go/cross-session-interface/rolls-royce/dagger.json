@@ -1,0 +1,7 @@
+{
+  "name": "rolls-royce",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  }
+}
