@@ -211,10 +211,14 @@ func TestCachePersistenceImportRoundTripResultTermRuntimeDeps(t *testing.T) {
 	requestSelf, requestInputRefs, err := key.selfDigestAndInputRefs(cA)
 	assert.NilError(t, err)
 	assert.Equal(t, 0, len(requestInputRefs))
+	depFrame := cacheTestIntCall("persist-import-runtime-dep")
+	depFrameDigest, err := depFrame.deriveRecipeDigest(cA)
+	assert.NilError(t, err)
 	depSet := runtimeResultDependencySet{{
-		ResultID: uint64(sharedA.id),
-		Frame:    cacheTestIntCall("persist-import-runtime-dep"),
-		Digest:   digest.FromString("persist-import-runtime-dep-content"),
+		ResultID:    uint64(sharedA.id),
+		Frame:       depFrame,
+		FrameDigest: depFrameDigest,
+		Digest:      digest.FromString("persist-import-runtime-dep-content"),
 	}}
 
 	cA.egraphMu.Lock()
@@ -263,6 +267,7 @@ func TestCachePersistenceImportRoundTripResultTermRuntimeDeps(t *testing.T) {
 	assert.Equal(t, 1, len(importedAssoc.runtimeDepSets[0]))
 	importedDep := importedAssoc.runtimeDepSets[0][0]
 	assert.Equal(t, uint64(sharedA.id), importedDep.ResultID)
+	assert.Equal(t, depSet[0].FrameDigest.String(), importedDep.FrameDigest.String())
 	assert.Equal(t, depSet[0].Digest.String(), importedDep.Digest.String())
 	assert.Assert(t, importedDep.Frame != nil)
 	assert.Equal(t, depSet[0].Frame.Field, importedDep.Frame.Field)

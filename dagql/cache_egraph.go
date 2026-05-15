@@ -81,9 +81,10 @@ func cloneRuntimeResultDependencySet(deps runtimeResultDependencySet) runtimeRes
 	cp := make(runtimeResultDependencySet, 0, len(deps))
 	for _, dep := range deps {
 		cp = append(cp, runtimeResultDependency{
-			ResultID: dep.ResultID,
-			Frame:    dep.Frame.clone(),
-			Digest:   dep.Digest,
+			ResultID:    dep.ResultID,
+			Frame:       dep.Frame.clone(),
+			FrameDigest: dep.FrameDigest,
+			Digest:      dep.Digest,
 		})
 	}
 	return cp
@@ -100,12 +101,12 @@ func cloneRuntimeResultDependencySets(depSets []runtimeResultDependencySet) []ru
 	return cp
 }
 
-func sameRuntimeResultDependencySet(c *Cache, a, b runtimeResultDependencySet) bool {
+func sameRuntimeResultDependencySet(a, b runtimeResultDependencySet) bool {
 	if len(a) != len(b) {
 		return false
 	}
 	for i := range a {
-		if runtimeResultDependencyValidationKey(c, a[i]) != runtimeResultDependencyValidationKey(c, b[i]) {
+		if runtimeResultDependencyValidationKey(a[i]) != runtimeResultDependencyValidationKey(b[i]) {
 			return false
 		}
 	}
@@ -887,11 +888,10 @@ func (c *Cache) lookupCacheForRequestLocked(
 	requestDigest digest.Digest,
 	requestSelf digest.Digest,
 	requestInputs []digest.Digest,
-	requestInputRefs []ResultCallStructuralInputRef,
 	skip map[sharedResultID]struct{},
-) (AnyResult, []runtimeResultDependencySet, bool, error) {
+) (AnyResult, []runtimeResultDependencySet, bool) {
 	if req == nil || req.ResultCall == nil {
-		return nil, nil, false, nil
+		return nil, nil, false
 	}
 	now := time.Now()
 	nowUnix := now.Unix()
@@ -901,7 +901,7 @@ func (c *Cache) lookupCacheForRequestLocked(
 
 	if hitRes == nil {
 		c.traceLookupMissNoMatch(ctx, requestDigest.String(), match.primaryLookupPossible, match.missingInputIndex, match.termDigest, match.termSetSize)
-		return nil, nil, false, nil
+		return nil, nil, false
 	}
 	runtimeDepSets := c.runtimeDepSetsForRequestAssociationLocked(hitRes.id, requestSelf, requestInputs)
 
@@ -910,7 +910,7 @@ func (c *Cache) lookupCacheForRequestLocked(
 		hitCache: true,
 	}
 	c.traceLookupHit(ctx, requestDigest.String(), hitRes, match.termDigest)
-	return retRes, runtimeDepSets, true, nil
+	return retRes, runtimeDepSets, true
 }
 
 func (c *Cache) lookupCacheForRequest(
@@ -936,10 +936,10 @@ func (c *Cache) lookupCacheForRequest(
 	skipped := map[sharedResultID]struct{}{}
 	for {
 		c.egraphMu.Lock()
-		retRes, runtimeDepSets, hit, err := c.lookupCacheForRequestLocked(ctx, sessionID, req, requestDigest, requestSelf, requestInputs, requestInputRefs, skipped)
-		if err != nil || !hit {
+		retRes, runtimeDepSets, hit := c.lookupCacheForRequestLocked(ctx, sessionID, req, requestDigest, requestSelf, requestInputs, skipped)
+		if !hit {
 			c.egraphMu.Unlock()
-			return retRes, nil, hit, err
+			return retRes, nil, hit, nil
 		}
 
 		hitShared := retRes.cacheSharedResult()
@@ -1326,7 +1326,7 @@ func (c *Cache) associateResultWithTermLocked(
 		if len(runtimeDeps) > 0 {
 			seen := false
 			for _, existing := range assoc.runtimeDepSets {
-				if sameRuntimeResultDependencySet(c, existing, runtimeDeps) {
+				if sameRuntimeResultDependencySet(existing, runtimeDeps) {
 					seen = true
 					break
 				}

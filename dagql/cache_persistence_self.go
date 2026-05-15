@@ -106,11 +106,11 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 	if _, ok := res.(AnyObjectResult); ok {
 		isObject = true
 	}
-	if shared := res.cacheSharedResult(); shared != nil && shared.isObject {
+	if shared := res.cacheSharedResult(); shared != nil && shared.loadPayloadState().isObject {
 		isObject = true
 	}
 
-	if isObject {
+	encodeObject := func() (PersistedResultEncoding, error) {
 		encoder, ok := res.Unwrap().(PersistedObject)
 		if !ok {
 			return PersistedResultEncoding{}, fmt.Errorf("encode persisted object payload: type %q does not implement persisted object encoding", res.Type().Name())
@@ -131,22 +131,12 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 			SnapshotLinks: objectEncoding.SnapshotLinks,
 		}, nil
 	}
-	if encoder, ok := res.Unwrap().(PersistedObject); ok {
-		objectEncoding, err := encoder.EncodePersistedObject(ctx, cache)
-		if err != nil {
-			return PersistedResultEncoding{}, fmt.Errorf("encode persisted object payload: %w", err)
-		}
-		return PersistedResultEncoding{
-			Envelope: PersistedResultEnvelope{
-				Version:               2,
-				Kind:                  persistedResultKindObject,
-				TypeName:              res.Type().Name(),
-				ResultID:              resultID,
-				SessionResourceHandle: sessionResourceHandle,
-				ObjectJSON:            objectEncoding.JSON,
-			},
-			SnapshotLinks: objectEncoding.SnapshotLinks,
-		}, nil
+
+	if isObject {
+		return encodeObject()
+	}
+	if _, ok := res.Unwrap().(PersistedObject); ok {
+		return encodeObject()
 	}
 
 	if enumerable, ok := res.Unwrap().(Enumerable); ok {
