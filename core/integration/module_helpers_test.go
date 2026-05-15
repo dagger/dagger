@@ -134,6 +134,14 @@ func withTestdataFixture(t testing.TB, c *dagger.Client, dst string, elems ...st
 	}
 }
 
+func withTestdataFile(t testing.TB, c *dagger.Client, dst string, elems ...string) dagger.WithContainerFunc {
+	t.Helper()
+	fixturePath := testDataPath(t, elems...)
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithFile(dst, c.Host().Directory(filepath.Dir(fixturePath)).File(filepath.Base(fixturePath)))
+	}
+}
+
 func privateRepoSetup(c *dagger.Client, t *testctx.T, tc vcsTestCase) (dagger.WithContainerFunc, func()) {
 	var socket *dagger.Socket
 	cleanup := func() {}
