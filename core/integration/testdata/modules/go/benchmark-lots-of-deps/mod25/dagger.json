@@ -1,0 +1,33 @@
+{
+  "name": "mod25",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "mod15",
+      "source": "../mod15"
+    },
+    {
+      "name": "mod16",
+      "source": "../mod16"
+    },
+    {
+      "name": "mod17",
+      "source": "../mod17"
+    },
+    {
+      "name": "mod18",
+      "source": "../mod18"
+    },
+    {
+      "name": "mod19",
+      "source": "../mod19"
+    },
+    {
+      "name": "mod20",
+      "source": "../mod20"
+    }
+  ]
+}
