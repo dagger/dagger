@@ -1,0 +1,7 @@
+{
+  "name": "alias",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "typescript"
+  }
+}
