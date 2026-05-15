@@ -1,0 +1,13 @@
+{
+  "name": "b",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "d",
+      "source": "../dint"
+    }
+  ]
+}
