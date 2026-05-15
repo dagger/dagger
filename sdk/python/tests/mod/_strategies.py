@@ -268,8 +268,11 @@ def _type_leaf(  # type: ignore[no-untyped-def]
     aliases: tuple[_AliasLeaf, ...] = (),
 ) -> GeneratedType:
     if aliases and draw(st.booleans()):
-        quote = allow_forward_ref and draw(st.booleans())
-        return _alias_as_leaf(draw(st.sampled_from(aliases)), quote=quote)
+        # Keep aliases bare inside larger expressions. Python 3.10's
+        # get_type_hints leaves nested strings in PEP 585 generics unresolved
+        # (e.g. list["Alias"]), while newer Pythons resolve them. Whole-string
+        # annotations still cover quoted aliases in a version-stable way.
+        return _alias_as_leaf(draw(st.sampled_from(aliases)))
     if depth > 0 and draw(st.booleans()):
         return _self_type()
     if allow_forward_ref and depth > 0 and draw(st.booleans()):
@@ -674,9 +677,7 @@ def module_strategy(  # type: ignore[no-untyped-def]  # noqa: C901, PLR0915
             )
         )
         c_value = draw(c_base.default_strategy)
-        constants.append(
-            _RenderedConstant(name=cname, value_expr=c_value, base=c_base)
-        )
+        constants.append(_RenderedConstant(name=cname, value_expr=c_value, base=c_base))
 
     n = draw(st.integers(min_value=1, max_value=max_functions))
     fns: list[GeneratedFunction] = []
