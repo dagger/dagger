@@ -127,6 +127,25 @@ class GeneratedType:
 _FORWARD_REF_NAMES = {"Foo"}  # the always-defined class in render_module
 
 
+@dataclasses.dataclass(frozen=True)
+class _AliasLeaf:
+    """A module-level alias that ``_type_expr`` may pick as a leaf."""
+
+    name: str
+    base: _BaseType
+    is_list: bool
+
+
+def _alias_as_leaf(alias: _AliasLeaf, *, quote: bool = False) -> GeneratedType:
+    return GeneratedType(
+        source=f'"{alias.name}"' if quote else alias.name,
+        base=alias.base,
+        is_optional=False,
+        is_list=alias.is_list,
+        has_annotated_outer=False,
+    )
+
+
 def _base_as_type(base: _BaseType) -> GeneratedType:
     return GeneratedType(
         source=base.annotation,
@@ -213,7 +232,10 @@ def _type_leaf(  # type: ignore[no-untyped-def]
     *,
     depth: int,
     allow_forward_ref: bool,
+    aliases: tuple[_AliasLeaf, ...] = (),
 ) -> GeneratedType:
+    if aliases and draw(st.booleans()):
+        return _alias_as_leaf(draw(st.sampled_from(aliases)))
     if allow_forward_ref and depth > 0 and draw(st.booleans()):
         return _forward_ref_type(draw(st.sampled_from(sorted(_FORWARD_REF_NAMES))))
     return _base_as_type(draw(base_type_strategy))
@@ -226,6 +248,7 @@ def _type_expr(  # type: ignore[no-untyped-def]
     depth: int = 0,
     max_depth: int = 3,
     allow_forward_ref: bool = True,
+    aliases: tuple[_AliasLeaf, ...] = (),
 ) -> GeneratedType:
     """Generate a (possibly wrapped) type expression.
 
@@ -239,6 +262,7 @@ def _type_expr(  # type: ignore[no-untyped-def]
             _type_leaf(
                 depth=depth,
                 allow_forward_ref=allow_forward_ref,
+                aliases=aliases,
             )
         )
 
@@ -249,6 +273,7 @@ def _type_expr(  # type: ignore[no-untyped-def]
             _type_leaf(
                 depth=depth,
                 allow_forward_ref=allow_forward_ref,
+                aliases=aliases,
             )
         )
 
@@ -258,6 +283,7 @@ def _type_expr(  # type: ignore[no-untyped-def]
                 depth=depth + 1,
                 max_depth=max_depth,
                 allow_forward_ref=allow_forward_ref,
+                aliases=aliases,
             )
         )
         return _optional_type(inner)
@@ -271,6 +297,7 @@ def _type_expr(  # type: ignore[no-untyped-def]
                 depth=depth + 1,
                 max_depth=max_depth,
                 allow_forward_ref=False,
+                aliases=aliases,
             )
         )
         return _pipe_none_type(inner)
@@ -281,6 +308,7 @@ def _type_expr(  # type: ignore[no-untyped-def]
                 depth=depth + 1,
                 max_depth=max_depth,
                 allow_forward_ref=allow_forward_ref,
+                aliases=aliases,
             )
         )
         return _list_type(inner)
@@ -291,6 +319,7 @@ def _type_expr(  # type: ignore[no-untyped-def]
             depth=depth + 1,
             max_depth=max_depth,
             allow_forward_ref=allow_forward_ref,
+            aliases=aliases,
         )
     )
     metas = draw(_annotated_meta_list(inner.base))
@@ -321,11 +350,19 @@ def param_name_strategy() -> st.SearchStrategy[str]:
 
 @st.composite
 def param_strategy(  # type: ignore[no-untyped-def]
-    draw, *, max_depth: int = 3, allow_forward_ref: bool = True
+    draw,
+    *,
+    max_depth: int = 3,
+    allow_forward_ref: bool = True,
+    aliases: tuple[_AliasLeaf, ...] = (),
 ) -> GeneratedParam:
     """Generate a single function parameter."""
     type_expr = draw(
-        _type_expr(max_depth=max_depth, allow_forward_ref=allow_forward_ref)
+        _type_expr(
+            max_depth=max_depth,
+            allow_forward_ref=allow_forward_ref,
+            aliases=aliases,
+        )
     )
 
     # Default expression — must be compatible with the (innermost) base.
@@ -371,7 +408,10 @@ def _function_name_strategy() -> st.SearchStrategy[str]:
 
 @st.composite
 def function_strategy(  # type: ignore[no-untyped-def]
-    draw, *, allow_forward_ref: bool = True
+    draw,
+    *,
+    allow_forward_ref: bool = True,
+    aliases: tuple[_AliasLeaf, ...] = (),
 ) -> GeneratedFunction:
     name = draw(_function_name_strategy())
     param_count = draw(st.integers(min_value=0, max_value=3))
@@ -379,7 +419,12 @@ def function_strategy(  # type: ignore[no-untyped-def]
     used_names: set[str] = set()
     attempts = 0
     while len(params) < param_count and attempts < 20:
-        p = draw(param_strategy(allow_forward_ref=allow_forward_ref))
+        p = draw(
+            param_strategy(
+                allow_forward_ref=allow_forward_ref,
+                aliases=aliases,
+            )
+        )
         if p.name not in used_names:
             params.append(p)
             used_names.add(p.name)
@@ -387,7 +432,13 @@ def function_strategy(  # type: ignore[no-untyped-def]
     # Required params must come before defaulted ones (Python rule).
     params.sort(key=lambda p: p.default_expr is not None)
 
-    return_type = draw(_type_expr(max_depth=2, allow_forward_ref=allow_forward_ref))
+    return_type = draw(
+        _type_expr(
+            max_depth=2,
+            allow_forward_ref=allow_forward_ref,
+            aliases=aliases,
+        )
+    )
     # Avoid bytes return — rendering ``return b""`` everywhere is awkward.
     if return_type.base.annotation == "bytes":
         return_type = GeneratedType(
@@ -412,11 +463,20 @@ def function_strategy(  # type: ignore[no-untyped-def]
 
 
 @dataclasses.dataclass(frozen=True)
+class _RenderedAlias:
+    """A module-level alias as it should appear in source."""
+
+    name: str
+    target_source: str
+    explicit_typealias: bool
+
+
+@dataclasses.dataclass(frozen=True)
 class GeneratedModule:
     """Everything needed to render a complete module source string."""
 
     use_future_annotations: bool
-    aliases: tuple[tuple[str, str], ...]  # (alias_name, alias_target_source)
+    aliases: tuple[_RenderedAlias, ...]
     pep695_aliases: tuple[tuple[str, str], ...]  # 3.12+ ``type X = …``
     has_helper_class: bool
     foo_inherits_helper: bool
@@ -430,10 +490,12 @@ def _alias_name_strategy(prefix: str = "Alias") -> st.SearchStrategy[str]:
 
 
 @st.composite
-def _alias_target(draw) -> str:  # type: ignore[no-untyped-def]
-    """Generate a type expression suitable as the RHS of an alias."""
+def _alias_target(draw) -> GeneratedType:  # type: ignore[no-untyped-def]
+    """Generate a type expression suitable as the right-hand side of an alias."""
     expr = draw(_type_expr(max_depth=2, allow_forward_ref=False))
-    return expr.source
+    while expr.has_annotated_outer:
+        expr = draw(_type_expr(max_depth=2, allow_forward_ref=False))
+    return expr
 
 
 @st.composite
@@ -450,16 +512,30 @@ def module_strategy(  # type: ignore[no-untyped-def]
     # keep the property test on legal-Python territory.
     allow_forward_ref = use_future_annotations
 
-    # Module-level type aliases — ``Source = Annotated[…]``.
+    # Module-level type aliases — both implicit (``X = T``) and
+    # explicit PEP 613 (``X: TypeAlias = T``). Each alias is also
+    # exposed as an ``_AliasLeaf`` that ``_type_expr`` can pick.
     alias_count = draw(st.integers(min_value=0, max_value=2))
-    aliases: list[tuple[str, str]] = []
+    aliases: list[_RenderedAlias] = []
+    alias_leaves: list[_AliasLeaf] = []
     used_alias_names: set[str] = set()
     while len(aliases) < alias_count:
         name = draw(_alias_name_strategy())
         if name in used_alias_names:
             continue
         used_alias_names.add(name)
-        aliases.append((name, draw(_alias_target())))
+        target = draw(_alias_target())
+        explicit = draw(st.booleans())
+        aliases.append(
+            _RenderedAlias(
+                name=name,
+                target_source=target.source,
+                explicit_typealias=explicit,
+            )
+        )
+        alias_leaves.append(
+            _AliasLeaf(name=name, base=target.base, is_list=target.is_list)
+        )
 
     # PEP 695 ``type X = …`` aliases — only when the runtime can parse them.
     pep695_aliases: list[tuple[str, str]] = []
@@ -470,7 +546,11 @@ def module_strategy(  # type: ignore[no-untyped-def]
             if name in used_alias_names:
                 continue
             used_alias_names.add(name)
-            pep695_aliases.append((name, draw(_alias_target())))
+            target = draw(_alias_target())
+            pep695_aliases.append((name, target.source))
+            alias_leaves.append(
+                _AliasLeaf(name=name, base=target.base, is_list=target.is_list)
+            )
 
     has_helper_class = draw(st.booleans())
     foo_inherits_helper = has_helper_class and draw(st.booleans())
@@ -480,7 +560,12 @@ def module_strategy(  # type: ignore[no-untyped-def]
     used_fn_names: set[str] = set()
     attempts = 0
     while len(fns) < n and attempts < 30:
-        f = draw(function_strategy(allow_forward_ref=allow_forward_ref))
+        f = draw(
+            function_strategy(
+                allow_forward_ref=allow_forward_ref,
+                aliases=tuple(alias_leaves),
+            )
+        )
         if f.name not in used_fn_names:
             fns.append(f)
             used_fn_names.add(f.name)
@@ -503,7 +588,7 @@ def module_strategy(  # type: ignore[no-untyped-def]
 # ---------------------------------------------------------------------------
 
 
-def _render_module(mod: GeneratedModule) -> str:  # noqa: C901 — straight rendering
+def _render_module(mod: GeneratedModule) -> str:  # noqa: C901, PLR0912
     lines: list[str] = []
     if mod.use_future_annotations:
         lines.append("from __future__ import annotations")
@@ -511,13 +596,16 @@ def _render_module(mod: GeneratedModule) -> str:  # noqa: C901 — straight rend
     lines.extend(
         [
             "import dagger",
-            "from typing import Annotated, Optional",
+            "from typing import Annotated, Optional, TypeAlias",
             "from dagger import DefaultPath, Deprecated, Doc, Ignore, Name",
             "",
         ]
     )
-    for name, target in mod.aliases:
-        lines.append(f"{name} = {target}")
+    for alias in mod.aliases:
+        if alias.explicit_typealias:
+            lines.append(f"{alias.name}: TypeAlias = {alias.target_source}")
+        else:
+            lines.append(f"{alias.name} = {alias.target_source}")
     if mod.aliases:
         lines.append("")
     for name, target in mod.pep695_aliases:
