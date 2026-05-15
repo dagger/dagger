@@ -83,17 +83,32 @@ base_type_strategy = st.sampled_from(ALL_BASES)
 # ---------------------------------------------------------------------------
 
 
-def _doc_meta() -> st.SearchStrategy[str]:
-    return st.text(min_size=1, max_size=20, alphabet="abcdefghijk ").map(
-        lambda s: f"Doc({s!r})"
-    )
+def _metadata_text(
+    *,
+    max_size: int,
+    alphabet: str,
+    extra_values: tuple[str, ...] = (),
+) -> st.SearchStrategy[str]:
+    generated = st.text(min_size=1, max_size=max_size, alphabet=alphabet)
+    if not extra_values:
+        return generated
+    return st.one_of(generated, st.sampled_from(extra_values))
 
 
-def _name_meta() -> st.SearchStrategy[str]:
-    alphabet = "abcdefghijkl"
-    return st.text(min_size=1, max_size=8, alphabet=alphabet).map(
-        lambda s: f"Name({s!r})"
-    )
+def _doc_meta(extra_values: tuple[str, ...] = ()) -> st.SearchStrategy[str]:
+    return _metadata_text(
+        max_size=20,
+        alphabet="abcdefghijk ",
+        extra_values=extra_values,
+    ).map(lambda s: f"Doc({s!r})")
+
+
+def _name_meta(extra_values: tuple[str, ...] = ()) -> st.SearchStrategy[str]:
+    return _metadata_text(
+        max_size=8,
+        alphabet="abcdefghijkl",
+        extra_values=extra_values,
+    ).map(lambda s: f"Name({s!r})")
 
 
 def _default_path_meta() -> st.SearchStrategy[str]:
@@ -144,6 +159,11 @@ def _alias_as_leaf(alias: _AliasLeaf, *, quote: bool = False) -> GeneratedType:
         is_list=alias.is_list,
         has_annotated_outer=False,
     )
+
+
+def _quote_whole_annotation(type_expr: GeneratedType) -> GeneratedType:
+    """Render the whole annotation as a forward-reference string."""
+    return dataclasses.replace(type_expr, source=repr(type_expr.source))
 
 
 def _base_as_type(base: _BaseType) -> GeneratedType:
@@ -218,10 +238,13 @@ def _annotated_type(inner: GeneratedType, metadata: str) -> GeneratedType:
 
 @st.composite
 def _annotated_meta_list(  # type: ignore[no-untyped-def]
-    draw, base: _BaseType, max_items: int = 2
+    draw,
+    base: _BaseType,
+    max_items: int = 2,
+    extra_strings: tuple[str, ...] = (),
 ) -> str:
     """Generate one or more metadata expressions for ``Annotated[…]``."""
-    options = [_doc_meta(), _name_meta()]
+    options = [_doc_meta(extra_strings), _name_meta(extra_strings)]
     if base.accepts_default_path:
         options.append(_default_path_meta())
     if base.accepts_ignore:
@@ -245,7 +268,8 @@ def _type_leaf(  # type: ignore[no-untyped-def]
     aliases: tuple[_AliasLeaf, ...] = (),
 ) -> GeneratedType:
     if aliases and draw(st.booleans()):
-        return _alias_as_leaf(draw(st.sampled_from(aliases)))
+        quote = allow_forward_ref and draw(st.booleans())
+        return _alias_as_leaf(draw(st.sampled_from(aliases)), quote=quote)
     if depth > 0 and draw(st.booleans()):
         return _self_type()
     if allow_forward_ref and depth > 0 and draw(st.booleans()):
@@ -255,6 +279,29 @@ def _type_leaf(  # type: ignore[no-untyped-def]
 
 @st.composite
 def _type_expr(  # type: ignore[no-untyped-def]
+    draw,
+    *,
+    max_depth: int = 3,
+    allow_forward_ref: bool = True,
+    allow_whole_string: bool = False,
+    aliases: tuple[_AliasLeaf, ...] = (),
+) -> GeneratedType:
+    """Generate a type expression, optionally quoted as one string."""
+    expr = draw(
+        _type_expr_unquoted(
+            depth=0,
+            max_depth=max_depth,
+            allow_forward_ref=allow_forward_ref,
+            aliases=aliases,
+        )
+    )
+    if allow_whole_string and draw(st.booleans()):
+        return _quote_whole_annotation(expr)
+    return expr
+
+
+@st.composite
+def _type_expr_unquoted(  # type: ignore[no-untyped-def]
     draw,
     *,
     depth: int = 0,
@@ -291,7 +338,7 @@ def _type_expr(  # type: ignore[no-untyped-def]
 
     if wrapper == "optional":
         inner = draw(
-            _type_expr(
+            _type_expr_unquoted(
                 depth=depth + 1,
                 max_depth=max_depth,
                 allow_forward_ref=allow_forward_ref,
@@ -305,7 +352,7 @@ def _type_expr(  # type: ignore[no-untyped-def]
         # annotations because typing won't accept a bare string literal
         # as an operand of ``|``. Force the inner to be a real type.
         inner = draw(
-            _type_expr(
+            _type_expr_unquoted(
                 depth=depth + 1,
                 max_depth=max_depth,
                 allow_forward_ref=False,
@@ -316,7 +363,7 @@ def _type_expr(  # type: ignore[no-untyped-def]
 
     if wrapper == "list":
         inner = draw(
-            _type_expr(
+            _type_expr_unquoted(
                 depth=depth + 1,
                 max_depth=max_depth,
                 allow_forward_ref=allow_forward_ref,
@@ -327,14 +374,19 @@ def _type_expr(  # type: ignore[no-untyped-def]
 
     # Annotated wrapper — last branch.
     inner = draw(
-        _type_expr(
+        _type_expr_unquoted(
             depth=depth + 1,
             max_depth=max_depth,
             allow_forward_ref=allow_forward_ref,
             aliases=aliases,
         )
     )
-    metas = draw(_annotated_meta_list(inner.base))
+    metas = draw(
+        _annotated_meta_list(
+            inner.base,
+            extra_strings=tuple(alias.name for alias in aliases),
+        )
+    )
     return _annotated_type(inner, metas)
 
 
@@ -374,6 +426,7 @@ def param_strategy(  # type: ignore[no-untyped-def]
         _type_expr(
             max_depth=max_depth,
             allow_forward_ref=allow_forward_ref,
+            allow_whole_string=bool(aliases),
             aliases=aliases,
         )
     )
@@ -461,6 +514,7 @@ def function_strategy(  # type: ignore[no-untyped-def]
         _type_expr(
             max_depth=2,
             allow_forward_ref=allow_forward_ref,
+            allow_whole_string=bool(aliases),
             aliases=aliases,
         )
     )
