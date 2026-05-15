@@ -80,32 +80,7 @@ func legacyDefaultPathFixture(t testing.TB, c *dagger.Client, workspaceMarker, t
 
 	return goGitBase(t, c).
 		WithNewFile("/work/workspace-marker.txt", workspaceMarker).
-		WithExec([]string{"mkdir", "-p", "/work/tool"}).
-		WithWorkdir("/work/tool").
-		With(daggerExec("module", "init", "--sdk=go", "--source=.", "reader", ".")).
+		With(withModuleFixture(t, c, "/work/tool", "go/legacy-default-path-reader")).
 		WithNewFile("/work/tool/workspace-marker.txt", toolMarker).
-		WithNewFile("/work/tool/main.go", `package main
-
-import (
-	"context"
-
-	"dagger/reader/internal/dagger"
-)
-
-type Reader struct {
-	Source *dagger.Directory
-}
-
-func New(
-	// +defaultPath="/"
-	source *dagger.Directory,
-) *Reader {
-	return &Reader{Source: source}
-}
-
-func (m *Reader) Read(ctx context.Context) (string, error) {
-	return m.Source.File("workspace-marker.txt").Contents(ctx)
-}
-`).
 		WithWorkdir("/work")
 }
