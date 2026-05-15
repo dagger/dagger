@@ -14,7 +14,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"os"
@@ -36,22 +35,7 @@ import (
 func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testctx.T) {
 	t.Run("basic", func(ctx context.Context, t *testctx.T) {
 		callMod := func(c *dagger.Client) (string, error) {
-			return goGitBase(t, c).
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
-				WithNewFile("main.go", `package main
-
-	import (
-		"strconv"
-		"time"
-	)
-
-	type Test struct {}
-
-	func (*Test) Fn() string {
-		return strconv.Itoa(int(time.Now().UnixNano()))
-	}
-	`,
-				).
+			return moduleFixture(t, c, "go/cross-session-function-basic").
 				WithEnvVariable("CACHEBUSTER", identity.NewID()).
 				With(daggerCall("fn")).
 				Stdout(ctx)
@@ -80,36 +64,7 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 			if s != nil {
 				args = append(args, "--s", *s)
 			}
-			return goGitBase(t, c).
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
-				WithNewFile("main.go", `package main
-
-	import (
-		"strconv"
-		"time"
-	)
-
-	type Test struct {
-		ArbitraryString string
-	}
-
-	func New(
-		// +optional
-		parentArg string,
-	) Test {
-		return Test{ArbitraryString: parentArg}
-	}
-
-	func (*Test) Fn(
-		// +optional
-		i int,
-		// +optional
-		s string,
-	) string {
-		return strconv.Itoa(int(time.Now().UnixNano()))
-	}
-	`,
-				).
+			return moduleFixture(t, c, "go/cross-session-function-args").
 				WithEnvVariable("CACHEBUSTER", identity.NewID()).
 				With(daggerCall(args...)).
 				Stdout(ctx)
@@ -191,142 +146,35 @@ func (ModuleSuite) TestCrossSessionFunctionCaching(ctx context.Context, t *testc
 
 	t.Run("module object field id rebinds on function-cache hit", func(ctx context.Context, t *testctx.T) {
 		t.Skip("caller-specific ID rebinding is intentionally removed for now")
-
-		moduleSrc := `package main
-
-import (
-	"crypto/rand"
-
-	"dagger/test/internal/dagger"
-)
-
-type Test struct{}
-
-type Obj struct {
-	Dir *dagger.Directory
-	Token string
-}
-
-func (*Test) Wrap(dir *dagger.Directory) *Obj {
-	return &Obj{
-		Dir: dir,
-		Token: rand.Text(),
-	}
-}
-`
-
-		callMod := func(c *dagger.Client, dirPath string, selection ...string) (string, error) {
-			args := append([]string{"wrap", "--dir", dirPath}, selection...)
-			ctr := goGitBase(t, c).
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
-				WithNewFile("main.go", moduleSrc).
-				WithNewFile("input-a/same.txt", "same-content\n").
-				WithNewFile("input-b/same.txt", "same-content\n").
-				WithEnvVariable("CACHEBUSTER", identity.NewID()).
-				With(daggerCall(args...))
-			stdout, err := ctr.Stdout(ctx)
-			if err == nil {
-				return stdout, nil
-			}
-			var execErr *dagger.ExecError
-			if errors.As(err, &execErr) {
-				return "", fmt.Errorf("%w\nstdout: %s\nstderr: %s", err, execErr.Stdout, execErr.Stderr)
-			}
-			return "", err
-		}
-
-		c1 := connect(ctx, t)
-		tokenA, err := callMod(c1, "./input-a", "token")
-		require.NoError(t, err)
-		dirIDA, err := callMod(c1, "./input-a", "dir", "sync")
-		require.NoError(t, err)
-
-		c2 := connect(ctx, t)
-		tokenB, err := callMod(c2, "./input-b", "token")
-		require.NoError(t, err)
-		require.Equal(t, tokenA, tokenB, "module object function result should hit cache for equivalent directory input")
-
-		dirIDB, err := callMod(c2, "./input-b", "dir", "sync")
-		require.NoError(t, err)
-		require.NotEqual(t, dirIDA, dirIDB, "module object field should present the current caller's directory ID, not leak the earlier caller's path")
 	})
 
 	t.Run("same schema but different implementations", func(ctx context.Context, t *testctx.T) {
 		// right now calls are cached by module source digest via the `asModule` custom cache key plus
 		// the fact that IDs include the module ResultID, verify that behavior works as expected
-		callMod := func(c *dagger.Client, t *testctx.T, x string) (string, error) {
-			return goGitBase(t, c).
-				WithWorkdir("/work").
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
-				WithNewFile("main.go", `package main
-type Test struct {}
-
-func (t *Test) Fn() string {
-	return "`+x+`"
-}
-`).
+		callMod := func(c *dagger.Client, fixture string) (string, error) {
+			return moduleFixture(t, c, fixture).
 				WithEnvVariable("CACHEBUSTER", identity.NewID()).
 				With(daggerCall("fn")).
 				Stdout(ctx)
 		}
 
 		c1 := connect(ctx, t)
-		out1, err := callMod(c1, t, "1")
+		out1, err := callMod(c1, "go/cross-session-impl-one")
 		require.NoError(t, err)
 		require.Equal(t, "1", out1)
 
 		c2 := connect(ctx, t)
-		out2, err := callMod(c2, t, "2")
+		out2, err := callMod(c2, "go/cross-session-impl-two")
 		require.NoError(t, err)
 		require.Equal(t, "2", out2)
 	})
 
 	t.Run("same source different clients and first disconnects", func(ctx context.Context, t *testctx.T) {
 		tmpdir1 := t.TempDir()
-
-		depTmpdir1 := filepath.Join(tmpdir1, "dep")
-		err := os.MkdirAll(depTmpdir1, 0755)
-		require.NoError(t, err)
-
-		initDepCmd := hostDaggerCommand(ctx, t, depTmpdir1, "module", "init", "--source=.", "--sdk=go", "dep", ".")
-		initDepOutput, err := initDepCmd.CombinedOutput()
-		require.NoError(t, err, string(initDepOutput))
-		err = os.WriteFile(filepath.Join(depTmpdir1, "main.go"), []byte(`package main
-import (
-	"strconv"
-	"time"
-)
-
-type Dep struct {}
-
-func (*Dep) Fn(rand string) string {
-	return strconv.Itoa(int(time.Now().UnixNano()))
-}
-`), 0644)
-		require.NoError(t, err)
-
-		initCmd := hostDaggerCommand(ctx, t, tmpdir1, "module", "init", "--source=.", "--sdk=go", "test", ".")
-		initOutput, err := initCmd.CombinedOutput()
-		require.NoError(t, err, string(initOutput))
-		installCmd := hostDaggerCommand(ctx, t, tmpdir1, "module", "install", depTmpdir1)
-		installOutput, err := installCmd.CombinedOutput()
-		require.NoError(t, err, string(installOutput))
-
-		err = os.WriteFile(filepath.Join(tmpdir1, "main.go"), []byte(`package main
-import (
-	"context"
-)
-
-type Test struct {}
-
-func (*Test) Fn(ctx context.Context, rand string) (string, error) {
-	return dag.Dep().Fn(ctx, rand)
-}
-`), 0644)
-		require.NoError(t, err)
+		copyTestdataFixture(ctx, t, tmpdir1, "modules", "go", "cross-session-same-source")
 
 		tmpdir2 := t.TempDir()
-		err = fscopy.Copy(ctx, tmpdir1, "/", tmpdir2, "/")
+		err := fscopy.Copy(ctx, tmpdir1, "/", tmpdir2, "/")
 		require.NoError(t, err)
 
 		c1 := connect(ctx, t)
@@ -392,50 +240,7 @@ func ptr[T any](v T) *T {
 func (ModuleSuite) TestCrossSessionServices(ctx context.Context, t *testctx.T) {
 	t.Run("basic", func(ctx context.Context, t *testctx.T) {
 		callMod := func(c *dagger.Client, rand string) (string, error) {
-			return goGitBase(t, c).
-				WithWorkdir("/work/servicer").
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "servicer", ".")).
-				WithNewFile("main.go", `package main
-
-	import (
-		"dagger/servicer/internal/dagger"
-	)
-
-	type Servicer struct {}
-
-	func (*Servicer) EchoSvc() *dagger.Service {
-		return dag.Container().
-			From("alpine:3.20").
-			WithExec([]string{"apk", "add", "socat"}).
-			WithExposedPort(1234).
-			// echo server, writes what it reads
-			WithDefaultArgs([]string{"socat", "tcp-l:1234,fork", "exec:/bin/cat"}).
-			AsService()
-	}
-	`,
-				).
-				WithWorkdir("/work").
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
-				WithNewFile("main.go", `package main
-
-	import (
-		"context"
-	)
-
-	type Test struct {}
-
-	func (*Test) Fn(ctx context.Context, rand string) (string, error) {
-		return dag.Container().
-			From("alpine:3.20").
-			WithExec([]string{"apk", "add", "netcat-openbsd"}).
-			WithServiceBinding("echoer", dag.Servicer().EchoSvc()).
-			WithEnvVariable("CACHEBUSTER", rand).
-			WithExec([]string{"sh", "-c", "echo -n $CACHEBUSTER | nc -N echoer 1234"}).
-			Stdout(ctx)
-	}
-	`,
-				).
-				With(daggerExec("module", "install", "/work/servicer")).
+			return moduleFixture(t, c, "go/cross-session-services").
 				With(daggerCall("fn", "--rand", rand)).
 				Stdout(ctx)
 		}
@@ -474,32 +279,7 @@ func (ModuleSuite) TestCrossSessionServices(ctx context.Context, t *testctx.T) {
 // client's in-memory module/context lookup state.
 func (ModuleSuite) TestCrossSessionContextDirectoryDefaultPath(ctx context.Context, t *testctx.T) {
 	modDir := t.TempDir()
-
-	initCmd := hostDaggerCommand(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test", ".")
-	initOutput, err := initCmd.CombinedOutput()
-	require.NoError(t, err, string(initOutput))
-
-	require.NoError(t, os.WriteFile(filepath.Join(modDir, "foo.txt"), []byte("foo"), 0o644))
-	err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
-
-import (
-	"context"
-
-	"dagger/test/internal/dagger"
-)
-
-type Test struct{}
-
-func (*Test) Entries(
-	ctx context.Context,
-	cacheBust string,
-	// +defaultPath="/"
-	dir *dagger.Directory,
-) ([]string, error) {
-	return dir.Entries(ctx)
-}
-`), 0o644)
-	require.NoError(t, err)
+	copyTestdataFixture(ctx, t, modDir, "modules", "go", "cross-session-context-directory-default")
 
 	callEntries := func(c *dagger.Client, cacheBust string) []string {
 		mod, err := c.ModuleSource(modDir).AsModule().Sync(ctx)
@@ -707,35 +487,7 @@ func (ModuleSuite) TestCrossSessionSockets(ctx context.Context, t *testctx.T) {
 	}()
 
 	modTmpdir := filepath.Join(tmp, "mod")
-	err = os.MkdirAll(modTmpdir, 0755)
-	require.NoError(t, err)
-
-	initModCmd := hostDaggerCommand(ctx, t, modTmpdir, "module", "init", "--source=.", "--sdk=go", "test", ".")
-	initModOutput, err := initModCmd.CombinedOutput()
-	require.NoError(t, err, string(initModOutput))
-
-	err = os.WriteFile(filepath.Join(modTmpdir, "main.go"), []byte(`package main
-import (
-	"context"
-	"strconv"
-	"time"
-
-	"dagger/test/internal/dagger"
-)
-
-type Test struct {}
-
-func (*Test) Fn(ctx context.Context, sock *dagger.Socket, msg string) (string, error) {
-		return dag.Container().
-			From("alpine:3.20").
-			WithExec([]string{"apk", "add", "netcat-openbsd"}).
-			WithEnvVariable("BUSTA", strconv.Itoa(int(time.Now().UnixNano()))).
-			WithUnixSocket("/foo.sock", sock).
-			WithExec([]string{"sh", "-c", "echo -n "+msg+" | nc -N -U /foo.sock"}).
-			Stdout(ctx)
-}
-`), 0644)
-	require.NoError(t, err)
+	copyTestdataFixture(ctx, t, modTmpdir, "modules", "go", "cross-session-socket")
 
 	c1 := connect(ctx, t)
 	err = c1.ModuleSource(modTmpdir).AsModule().Serve(ctx)
