@@ -1,0 +1,13 @@
+type Test {
+  pub containerEcho(stringArg: String! = "Hello Self Calls"): Container! {
+    Dagger.container.from("alpine:latest").withExec(["echo", stringArg])
+  }
+
+  pub print(stringArg: String!): String! {
+    test.containerEcho(stringArg: stringArg).stdout
+  }
+
+  pub printDefault: String! {
+    test.containerEcho.stdout
+  }
+}
