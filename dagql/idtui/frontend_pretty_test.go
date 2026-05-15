@@ -80,7 +80,7 @@ func TestRenderShowsLiveGlobalTestsForPlainCall(t *testing.T) {
 	if !ok {
 		t.Fatalf("live render did not include TESTS line:\n%s", got)
 	}
-	if testsLine != "TESTS  T inspect" {
+	if testsLine != "TESTS T inspect" {
 		t.Fatalf("global live TESTS line = %q, want hint with no indentation", testsLine)
 	}
 }
@@ -175,7 +175,7 @@ func TestLiveInlineCheckTestsIndentedUnderTrace(t *testing.T) {
 	if idx < 2 || testsLine[idx-2:idx] != "  " || !strings.Contains(testsLine[:idx], VertBoldBar) {
 		t.Fatalf("inline TESTS line = %q, want trace pipe plus two-space test indent", testsLine)
 	}
-	if !strings.Contains(testsLine[idx:], "TESTS  T inspect") {
+	if !strings.Contains(testsLine[idx:], "TESTS T inspect") {
 		t.Fatalf("inline TESTS line = %q, want test viewer hint", testsLine)
 	}
 }
