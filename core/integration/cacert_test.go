@@ -355,36 +355,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 		}},
 
 		caCertsTest{"go module", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
-			out, err := c.Container().From(golangImage).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				WithWorkdir("/work").
-				With(daggerExec("module", "init", "--sdk=go", "test", ".")).
-				With(sdkSource("go", `package main
-
-import (
-	"context"
-	"fmt"
-	"io"
-	"net/http"
-)
-
-type Test struct {}
-
-func (m *Test) GetHttp(ctx context.Context) (string, error) {
-	resp, err := http.Get("https://server")
-	if err != nil {
-		return "", err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-	bs, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-	return string(bs), nil
-}
-`)).
+			out, err := moduleFixture(t, c, "go/https-client").
 				With(daggerCallAt(".", "get-http")).
 				Stdout(ctx)
 			require.NoError(t, err)
@@ -392,21 +363,7 @@ func (m *Test) GetHttp(ctx context.Context) (string, error) {
 		}},
 
 		caCertsTest{"python module", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
-			out, err := c.Container().From(golangImage).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				WithWorkdir("/work").
-				With(daggerExec("module", "init", "--sdk=python", "test", ".")).
-				With(sdkSource("python", `
-import urllib.request
-
-import dagger
-
-@dagger.object_type
-class Test:
-    @dagger.function
-    def get_http(self) -> str:
-            return urllib.request.urlopen("https://server").read().decode("utf-8")
-`)).
+			out, err := moduleFixture(t, c, "python/https-client").
 				With(daggerCallAt(".", "get-http")).
 				Stdout(ctx)
 			require.NoError(t, err)
@@ -414,40 +371,7 @@ class Test:
 		}},
 
 		caCertsTest{"typescript module", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
-			out, err := c.Container().From(golangImage).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				WithWorkdir("/work").
-				With(daggerExec("module", "init", "--sdk=typescript", "test", ".")).
-				With(sdkSource("typescript", `
-import { object, func } from "@dagger.io/dagger";
-import * as https from "https";
-
-@object()
-export class Test {
-	@func()
-    async getHttp(): Promise<string> {
-        const url = "https://server";
-				// thanks chatGPT for this, sorry to anyone else if this is awful
-        return new Promise((resolve, reject) => {
-            https.get(url, (res) => {
-                let data = '';
-                res.on('data', (chunk) => {
-                    data += chunk;
-                });
-                res.on('end', () => {
-                    if (res.statusCode === 200) {
-                        resolve(data);
-                    } else {
-                        reject("Request failed with status code " + res.statusCode);
-                    }
-                });
-            }).on('error', (err) => {
-                reject("Error: " + err.message);
-            });
-        });
-    }
-}
-`)).
+			out, err := moduleFixture(t, c, "typescript/https-client").
 				With(daggerCallAt(".", "get-http")).
 				Stdout(ctx)
 			require.NoError(t, err)
