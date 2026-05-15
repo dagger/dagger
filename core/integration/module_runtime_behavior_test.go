@@ -12,7 +12,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -168,75 +167,7 @@ func (ModuleSuite) TestSecretNested(ctx context.Context, t *testctx.T) {
 	t.Run("duplicate secret names", func(ctx context.Context, t *testctx.T) {
 		var logs safeBuffer
 		c := connect(ctx, t, dagger.WithLogOutput(io.MultiWriter(os.Stderr, &logs)))
-
-		ctr := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
-
-		ctr = ctr.
-			WithWorkdir("/toplevel/maker").
-			With(daggerExec("module", "init", "--sdk=go", "--source=.", "maker", ".")).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"dagger/maker/internal/dagger"
-)
-
-type Maker struct {}
-
-func (_ *Maker) MakeSecret(ctx context.Context) (*dagger.Secret, error) {
-	secret := dag.SetSecret("FOO", "inner")
-	_, err := secret.ID(ctx)  // force the secret into the store
-	if err != nil {
-		return nil, err
-	}
-	return secret, nil
-}
-`,
-			)
-
-		ctr = ctr.
-			WithWorkdir("/toplevel").
-			With(daggerExec("module", "init", "--sdk=go", "--source=.", "toplevel", ".")).
-			With(daggerExec("module", "install", "./maker")).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"fmt"
-)
-
-type Toplevel struct {}
-
-func (t *Toplevel) Attempt(ctx context.Context) error {
-	secret := dag.SetSecret("FOO", "outer")
-	_, err := secret.ID(ctx)  // force the secret into the store
-	if err != nil {
-		return err
-	}
-
-	secret2 := dag.Maker().MakeSecret()
-
-	plaintext, err := secret.Plaintext(ctx)
-	if err != nil {
-		return err
-	}
-	if plaintext != "outer" {
-		return fmt.Errorf("expected \"outer\", but got %q", plaintext)
-	}
-
-	plaintext, err = secret2.Plaintext(ctx)
-	if err != nil {
-		return err
-	}
-	if plaintext != "inner" {
-		return fmt.Errorf("expected \"inner\", but got %q", plaintext)
-	}
-
-	return nil
-}
-`,
-			)
+		ctr := moduleFixture(t, c, "go/runtime-secret-duplicate-names")
 
 		_, err := ctr.With(daggerQuery(`{attempt}`)).Stdout(ctx)
 		require.NoError(t, err)
@@ -246,69 +177,7 @@ func (t *Toplevel) Attempt(ctx context.Context) error {
 	t.Run("secret by id leak", func(ctx context.Context, t *testctx.T) {
 		var logs safeBuffer
 		c := connect(ctx, t, dagger.WithLogOutput(io.MultiWriter(os.Stderr, &logs)))
-
-		ctr := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
-
-		ctr = ctr.
-			WithWorkdir("/toplevel/leaker").
-			With(daggerExec("module", "init", "--sdk=go", "--source=.", "leaker", ".")).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-
-	"dagger/leaker/internal/dagger"
-)
-
-type Leaker struct {}
-
-func (l *Leaker) Leak(ctx context.Context, target string) string {
-	secret, _ := dag.LoadSecretFromID(dagger.SecretID(target)).Plaintext(ctx)
-	return secret
-}
-`,
-			)
-
-		ctr = ctr.
-			WithWorkdir("/toplevel").
-			With(daggerExec("module", "init", "--sdk=go", "--source=.", "toplevel", ".")).
-			With(daggerExec("module", "install", "./leaker")).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"fmt"
-)
-
-type Toplevel struct {}
-
-func (t *Toplevel) Attempt(ctx context.Context, uniq string) error {
-	secretID, err := dag.SetSecret("mysecret", "asdfasdf").ID(ctx)
-	if err != nil {
-		return err
-	}
-
-	plaintext, err := dag.LoadSecretFromID(secretID).Plaintext(ctx)
-	if err != nil {
-		return err
-	}
-	if plaintext != "asdfasdf" {
-		return fmt.Errorf("expected \"asdfasdf\", but got %q", plaintext)
-	}
-
-	plaintext, err = dag.Leaker().Leak(ctx, string(secretID))
-	if err != nil {
-		return err
-	}
-	if plaintext != "" {
-		return fmt.Errorf("expected \"\", but got %q", plaintext)
-	}
-
-	return nil
-}
-`,
-			)
+		ctr := moduleFixture(t, c, "go/runtime-secret-id-leak")
 
 		_, err := ctr.With(daggerQuery(`{attempt(uniq: %q)}`, identity.NewID())).Stdout(ctx)
 		require.NoError(t, err)
@@ -317,81 +186,7 @@ func (t *Toplevel) Attempt(ctx context.Context, uniq string) error {
 
 	t.Run("secrets cache normally", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-
-		ctr := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
-
-		ctr = ctr.
-			WithWorkdir("/toplevel/secreter").
-			With(daggerExec("module", "init", "--sdk=go", "--source=.", "secreter", ".")).
-			WithNewFile("main.go", `package main
-
-import "dagger/secreter/internal/dagger"
-
-type Secreter struct {}
-
-func (_ *Secreter) Make(uniq string) *dagger.Secret {
-	return dag.SetSecret("MY_SECRET", uniq)
-}
-`,
-			)
-
-		ctr = ctr.
-			WithWorkdir("/toplevel").
-			With(daggerExec("module", "init", "--sdk=go", "--source=.", "toplevel", ".")).
-			With(daggerExec("module", "install", "./secreter")).
-			WithNewFile("main.go", fmt.Sprintf(`package main
-
-import (
-	"context"
-	"fmt"
-	"dagger/toplevel/internal/dagger"
-)
-
-type Toplevel struct {}
-
-func (_ *Toplevel) AttemptInternal(ctx context.Context) error {
-	return diffSecret(
-		ctx,
-		dag.SetSecret("MY_SECRET", "foo"),
-		dag.SetSecret("MY_SECRET", "bar"),
-	)
-}
-
-func (_ *Toplevel) AttemptExternal(ctx context.Context) error {
-	return diffSecret(
-		ctx,
-		dag.Secreter().Make("foo"),
-		dag.Secreter().Make("bar"),
-	)
-}
-
-func diffSecret(ctx context.Context, first, second *dagger.Secret) error {
-	firstOut, err := dag.Container().
-		From("%[1]s").
-		WithSecretVariable("VAR", first).
-		WithExec([]string{"sh", "-c", "head -c 128 /dev/random | sha256sum"}).
-		Stdout(ctx)
-	if err != nil {
-		return err
-	}
-
-	secondOut, err := dag.Container().
-		From("%[1]s").
-		WithSecretVariable("VAR", second).
-		WithExec([]string{"sh", "-c", "head -c 128 /dev/random | sha256sum"}).
-		Stdout(ctx)
-	if err != nil {
-		return err
-	}
-
-	if firstOut != secondOut {
-		return fmt.Errorf("%%q != %%q", firstOut, secondOut)
-	}
-	return nil
-}
-`, alpineImage),
-			)
+		ctr := moduleFixture(t, c, "go/runtime-secret-cache-normal")
 
 		t.Run("internal secrets cache", func(ctx context.Context, t *testctx.T) {
 			_, err := ctr.With(daggerQuery(`{attemptInternal}`)).Stdout(ctx)
@@ -407,30 +202,7 @@ func diffSecret(ctx context.Context, first, second *dagger.Secret) error {
 	t.Run("optional secret field on module object", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		out, err := daggerCliBase(t, c).
-			With(pythonSource(`
-import base64
-import dagger
-from dagger import dag, field, function, object_type
-
-
-@object_type
-class Test:
-    @function
-    def getobj(self, *, top_secret: dagger.Secret | None = None) -> "Obj":
-        return Obj(top_secret=top_secret)
-
-
-@object_type
-class Obj:
-    top_secret: dagger.Secret | None = field(default=None)
-
-    @function
-    async def getSecret(self) -> str:
-        plaintext = await self.top_secret.plaintext()
-        return base64.b64encode(plaintext.encode()).decode()
-`)).
-			With(daggerInitPython()).
+		out, err := moduleFixture(t, c, "python/runtime-optional-secret-field").
 			WithEnvVariable("TOP_SECRET", "omg").
 			With(daggerCall("getobj", "--top-secret", "env://TOP_SECRET", "get-secret")).
 			Stdout(ctx)
@@ -447,59 +219,7 @@ func (ModuleSuite) TestStartServices(ctx context.Context, t *testctx.T) {
 	t.Run("use service in multiple functions", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		out, err := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--source=.", "--sdk=go", "test", ".")).
-			WithNewFile("/work/main.go", fmt.Sprintf(`package main
-
-	import (
-		"context"
-		"fmt"
-		"dagger/test/internal/dagger"
-	)
-
-	type Test struct {
-	}
-
-	func (m *Test) FnA(ctx context.Context) (*Sub, error) {
-		svc := dag.Container().
-			From("python").
-			WithMountedDirectory(
-				"/srv/www",
-				dag.Directory().WithNewFile("index.html", "hey there"),
-			).
-			WithWorkdir("/srv/www").
-			WithExposedPort(23457).
-			WithDefaultArgs([]string{"python", "-m", "http.server", "23457"}).
-			AsService()
-
-		ctr := dag.Container().
-			From("%s").
-			WithServiceBinding("svc", svc).
-			WithExec([]string{"wget", "-O", "-", "http://svc:23457"})
-
-		out, err := ctr.Stdout(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if out != "hey there" {
-			return nil, fmt.Errorf("unexpected output: %%q", out)
-		}
-		return &Sub{Ctr: ctr}, nil
-	}
-
-	type Sub struct {
-		Ctr *dagger.Container
-	}
-
-	func (m *Sub) FnB(ctx context.Context) (string, error) {
-		return m.Ctr.
-			WithExec([]string{"wget", "-O", "-", "http://svc:23457"}).
-			Stdout(ctx)
-	}
-	`, alpineImage),
-			).
+		out, err := moduleFixture(t, c, "go/runtime-service-reuse").
 			With(daggerCall("fn-a", "fn-b")).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -509,42 +229,7 @@ func (ModuleSuite) TestStartServices(ctx context.Context, t *testctx.T) {
 	t.Run("service in multiple containers", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		_, err := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--source=.", "--sdk=go", "test", ".")).
-			WithNewFile("/work/main.go", fmt.Sprintf(`package main
-import (
-	"context"
-	"dagger/test/internal/dagger"
-)
-
-type Test struct {
-}
-
-func (m *Test) Fn(ctx context.Context) *dagger.Container {
-	redis := dag.Container().
-		From("redis").
-		WithExposedPort(6379).
-		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
-
-	cli := dag.Container().
-		From("redis").
-		WithoutEntrypoint().
-		WithServiceBinding("redis", redis)
-
-	ctrA := cli.WithExec([]string{"sh", "-c", "redis-cli -h redis info >> /tmp/out.txt"})
-
-	file := ctrA.Directory("/tmp").File("/out.txt")
-
-	ctrB := dag.Container().
-		From("%s").
-		WithFile("/out.txt", file)
-
-	return ctrB.WithExec([]string{"cat", "/out.txt"})
-}
-	`, alpineImage),
-			).
+		_, err := moduleFixture(t, c, "go/runtime-service-multiple-containers").
 			With(daggerCall("fn", "stdout")).
 			Sync(ctx)
 		require.NoError(t, err)
@@ -554,30 +239,7 @@ func (m *Test) Fn(ctx context.Context) *dagger.Container {
 func (ModuleSuite) TestReturnNilField(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	_, err := goGitBase(t, c).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("module", "init", "--sdk=go", "test", ".")).
-		With(sdkSource("go", `package main
-
-type Test struct {
-	A *Thing
-	B *Thing
-}
-
-type Thing struct{}
-
-func New() *Test {
-	return &Test{
-		A: &Thing{},
-	}
-}
-
-func (m *Test) Hello() string {
-	return "Hello"
-}
-
-`)).
+	_, err := moduleFixture(t, c, "go/runtime-return-nil-field").
 		With(daggerCall("hello")).
 		Sync(ctx)
 	require.NoError(t, err)
@@ -587,23 +249,7 @@ func (ModuleSuite) TestGetEmptyField(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	t.Run("without constructor", func(ctx context.Context, t *testctx.T) {
-		out, err := goGitBase(t, c).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=go", "test", ".")).
-			With(sdkSource("go", `package main
-
-import "dagger/test/internal/dagger"
-
-type Test struct {
-	A string
-	B int
-	C *dagger.Container
-	D dagger.ImageLayerCompression
-	E dagger.Platform
-}
-
-`)).
+		out, err := moduleFixture(t, c, "go/runtime-empty-field").
 			With(daggerQuery("{a,b}")).
 			Stdout(ctx)
 
@@ -612,27 +258,7 @@ type Test struct {
 	})
 
 	t.Run("with constructor", func(ctx context.Context, t *testctx.T) {
-		out, err := goGitBase(t, c).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=go", "test", ".")).
-			With(sdkSource("go", `package main
-
-import "dagger/test/internal/dagger"
-
-type Test struct {
-	A string
-	B int
-	C *dagger.Container
-	// these aren't tested here, since we can't give them zero values in the constructor
-	// D dagger.ImageLayerCompression
-	// E dagger.Platform
-}
-
-func New() *Test {
-	return &Test{}
-}
-`)).
+		out, err := moduleFixture(t, c, "go/runtime-empty-field-constructor").
 			With(daggerQuery("{a,b}")).
 			Stdout(ctx)
 
@@ -642,98 +268,30 @@ func New() *Test {
 }
 
 func (ModuleSuite) TestFloat(ctx context.Context, t *testctx.T) {
-	depSrc := `package main
-
-type Dep struct{}
-
-func (m *Dep) Dep(n float64) float32 {
-	return float32(n)
-}
-`
-
 	type testCase struct {
-		sdk    string
-		source string
+		sdk     string
+		fixture string
 	}
 
 	testCases := []testCase{
 		{
-			sdk: "go",
-			source: `package main
-
-import "context"
-
-type Test struct{}
-
-func (m *Test) Test(n float64) float64 {
-	return n
-}
-
-func (m *Test) TestFloat32(n float32) float32 {
-	return n
-}
-
-func (m *Test) Dep(ctx context.Context, n float64) (float64, error) {
-	return dag.Dep().Dep(ctx, n)
-}`,
+			sdk:     "go",
+			fixture: "go/runtime-float",
 		},
 		{
-			sdk: "typescript",
-			source: `import { dag, float, object, func } from "@dagger.io/dagger"
-
-@object()
-export class Test {
-  @func()
-  test(n: float): float {
-    return n
-  }
-
-  @func()
-  testFloat32(n: float): float {
-    return n
-  }
-
-  @func()
-  async dep(n: float): Promise<float> {
-    return dag.dep().dep(n)
-  }
-}`,
+			sdk:     "typescript",
+			fixture: "typescript/runtime-float",
 		},
 		{
-			sdk: "python",
-			source: `import dagger
-from dagger import dag
-
-@dagger.object_type
-class Test:
-    @dagger.function
-    def test(self, n: float) -> float:
-        return n
-
-    @dagger.function
-    def testFloat32(self, n: float) -> float:
-        return n
-
-    @dagger.function
-    async def dep(self, n: float) -> float:
-        return await dag.dep().dep(n)
-`,
+			sdk:     "python",
+			fixture: "python/runtime-float",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-
-			modGen := c.Container().From(golangImage).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				WithWorkdir("/work/dep").
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "dep", ".")).
-				WithNewFile("/work/dep/main.go", depSrc).
-				WithWorkdir("/work").
-				With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, "--source=.", ".")).
-				With(sdkSource(tc.sdk, tc.source)).
-				With(daggerExec("module", "install", "./dep"))
+			modGen := moduleFixture(t, c, tc.fixture)
 
 			t.Run("float64", func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.With(daggerCall("test", "--n=3.14")).Stdout(ctx)
@@ -759,38 +317,7 @@ class Test:
 func (ModuleSuite) TestReturnNil(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("module", "init", "--source=.", "--sdk=go", "test", ".")).
-		WithNewFile("main.go", `package main
-
-import (
-	"dagger/test/internal/dagger"
-)
-
-type Test struct {
-	Dirs []*dagger.Directory
-}
-
-func (m *Test) Nothing() (*dagger.Directory, error) {
-	return nil, nil
-}
-
-func (m *Test) ListWithNothing() ([]*dagger.Directory, error) {
-	return []*dagger.Directory{nil}, nil
-}
-
-func (m *Test) ObjsWithNothing() ([]*Test, error) {
-	return []*Test{
-		nil,
-		{
-			Dirs: []*dagger.Directory{nil},
-		},
-	}, nil
-}
-`,
-		)
+	modGen := moduleFixture(t, c, "go/runtime-return-nil")
 
 	out, err := modGen.With(daggerQuery(`{nothing{entries}}`)).Stdout(ctx)
 	require.NoError(t, err)
@@ -807,106 +334,27 @@ func (m *Test) ObjsWithNothing() ([]*Test, error) {
 
 func (ModuleSuite) TestFunctionCacheControl(ctx context.Context, t *testctx.T) {
 	for _, tc := range []struct {
-		sdk    string
-		source string
+		sdk     string
+		fixture string
 	}{
 		{
 			// TODO: add test that function doc strings still get parsed correctly, don't include //+ etc.
-			sdk: "go",
-			source: `package main
-
-import (
-	"crypto/rand"
-)
-
-type Test struct{}
-
-// My cool doc on TestTtl
-// +cache="40s"
-func (m *Test) TestTtl() string {
-	return rand.Text()
-}
-
-// My dope doc on TestCachePerSession
-// +cache="session"
-func (m *Test) TestCachePerSession() string {
-	return rand.Text()
-}
-
-// My darling doc on TestNeverCache
-// +cache="never"
-func (m *Test) TestNeverCache() string {
-	return rand.Text()
-}
-
-// My rad doc on TestAlwaysCache
-func (m *Test) TestAlwaysCache() string {
-	return rand.Text()
-}
-`,
+			sdk:     "go",
+			fixture: "go/runtime-cache-control",
 		},
 		{
-			sdk: "python",
-			source: `import dagger
-import random
-import string
-
-@dagger.object_type
-class Test:
-		@dagger.function(cache="40s")
-		def test_ttl(self) -> str:
-				return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
-
-		@dagger.function(cache="session")
-		def test_cache_per_session(self) -> str:
-				return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
-
-		@dagger.function(cache="never")
-		def test_never_cache(self) -> str:
-				return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
-
-		@dagger.function
-		def test_always_cache(self) -> str:
-				return ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
-`,
+			sdk:     "python",
+			fixture: "python/runtime-cache-control",
 		},
 		{
-			sdk: "typescript",
-			source: `
-import crypto from "crypto"
-
-import {  object, func } from "@dagger.io/dagger"
-
-@object()
-export class Test {
-	@func({ cache: "40s"})
-	testTtl(): string {
-		return crypto.randomBytes(16).toString("hex")
-	}
-
-	@func({ cache: "session" })
-	testCachePerSession(): string {
-		return crypto.randomBytes(16).toString("hex")
-	}
-
-	@func({ cache: "never" })
-	testNeverCache(): string {
-		return crypto.randomBytes(16).toString("hex")
-	}
-
-	@func()
-	testAlwaysCache(): string {
-		return crypto.randomBytes(16).toString("hex")
-	}
-}
-
-`,
+			sdk:     "typescript",
+			fixture: "typescript/runtime-cache-control",
 		},
 	} {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			t.Run("always cache", func(ctx context.Context, t *testctx.T) {
 				c1 := connect(ctx, t)
-				modGen1 := modInit(t, c1, tc.sdk, tc.source)
+				modGen1 := moduleFixture(t, c1, tc.fixture)
 
 				out1, err := modGen1.
 					WithEnvVariable("CACHE_BUST", rand.Text()).
@@ -915,7 +363,7 @@ export class Test {
 				require.NoError(t, c1.Close())
 
 				c2 := connect(ctx, t)
-				modGen2 := modInit(t, c2, tc.sdk, tc.source)
+				modGen2 := moduleFixture(t, c2, tc.fixture)
 
 				out2, err := modGen2.
 					WithEnvVariable("CACHE_BUST", rand.Text()).
@@ -927,7 +375,7 @@ export class Test {
 
 			t.Run("cache per session", func(ctx context.Context, t *testctx.T) {
 				c1 := connect(ctx, t)
-				modGen1 := modInit(t, c1, tc.sdk, tc.source)
+				modGen1 := moduleFixture(t, c1, tc.fixture)
 
 				out1a, err := modGen1.
 					WithEnvVariable("CACHE_BUST", rand.Text()).
@@ -941,7 +389,7 @@ export class Test {
 				require.NoError(t, c1.Close())
 
 				c2 := connect(ctx, t)
-				modGen2 := modInit(t, c2, tc.sdk, tc.source)
+				modGen2 := moduleFixture(t, c2, tc.fixture)
 
 				out2a, err := modGen2.
 					WithEnvVariable("CACHE_BUST", rand.Text()).
@@ -958,7 +406,7 @@ export class Test {
 
 			t.Run("never cache", func(ctx context.Context, t *testctx.T) {
 				c1 := connect(ctx, t)
-				modGen1 := modInit(t, c1, tc.sdk, tc.source)
+				modGen1 := moduleFixture(t, c1, tc.fixture)
 
 				out1a, err := modGen1.
 					WithEnvVariable("CACHE_BUST", rand.Text()).
@@ -972,7 +420,7 @@ export class Test {
 				require.NoError(t, c1.Close())
 
 				c2 := connect(ctx, t)
-				modGen2 := modInit(t, c2, tc.sdk, tc.source)
+				modGen2 := moduleFixture(t, c2, tc.fixture)
 
 				out2a, err := modGen2.
 					WithEnvVariable("CACHE_BUST", rand.Text()).
@@ -989,7 +437,7 @@ export class Test {
 
 			t.Run("cache ttl", func(ctx context.Context, t *testctx.T) {
 				c1 := connect(ctx, t)
-				modGen1 := modInit(t, c1, tc.sdk, tc.source)
+				modGen1 := moduleFixture(t, c1, tc.fixture)
 
 				out1, err := modGen1.
 					WithEnvVariable("CACHE_BUST", rand.Text()).
@@ -998,7 +446,7 @@ export class Test {
 				require.NoError(t, c1.Close())
 
 				c2 := connect(ctx, t)
-				modGen2 := modInit(t, c2, tc.sdk, tc.source)
+				modGen2 := moduleFixture(t, c2, tc.fixture)
 
 				out2, err := modGen2.
 					WithEnvVariable("CACHE_BUST", rand.Text()).
@@ -1010,7 +458,7 @@ export class Test {
 				time.Sleep(41 * time.Second)
 
 				c3 := connect(ctx, t)
-				modGen3 := modInit(t, c3, tc.sdk, tc.source)
+				modGen3 := moduleFixture(t, c3, tc.fixture)
 
 				out3, err := modGen3.
 					WithEnvVariable("CACHE_BUST", rand.Text()).
@@ -1022,27 +470,8 @@ export class Test {
 	}
 
 	t.Run("setSecret invalidates cache", func(ctx context.Context, t *testctx.T) {
-		const modSDK = "go"
-		const modSrc = `package main
-
-import (
-	"crypto/rand"
-	"dagger/test/internal/dagger"
-)
-
-type Test struct{}
-
-func (m *Test) TestSetSecret() *dagger.Container {
-	r := rand.Text()
-	s := dag.SetSecret(r, r)
-	return dag.Container().
-		From("` + alpineImage + `").
-		WithSecretVariable("TOP_SECRET", s)
-}
-`
-
 		c1 := connect(ctx, t)
-		modGen1 := modInit(t, c1, modSDK, modSrc)
+		modGen1 := moduleFixture(t, c1, "go/runtime-cache-set-secret")
 
 		out1a, err := modGen1.
 			WithEnvVariable("CACHE_BUST", rand.Text()).
@@ -1056,7 +485,7 @@ func (m *Test) TestSetSecret() *dagger.Container {
 		require.NoError(t, c1.Close())
 
 		c2 := connect(ctx, t)
-		modGen2 := modInit(t, c2, modSDK, modSrc)
+		modGen2 := moduleFixture(t, c2, "go/runtime-cache-set-secret")
 
 		out2a, err := modGen2.
 			WithEnvVariable("CACHE_BUST", rand.Text()).
@@ -1072,69 +501,8 @@ func (m *Test) TestSetSecret() *dagger.Container {
 	})
 
 	t.Run("dependency contextual arg", func(ctx context.Context, t *testctx.T) {
-		const modSDK = "go"
-		const modSrc = `package main
-import (
-	"context"
-	"dagger/test/internal/dagger"
-)
-type Test struct{}
-func (m *Test) CallDep(ctx context.Context, cacheBust string) (*dagger.Directory, error) {
-	return dag.Dep().Test().Sync(ctx)
-}
-func (m *Test) CallDepFile(ctx context.Context, cacheBust string) (*dagger.Directory, error) {
-	return dag.Dep().TestFile().Sync(ctx)
-}
-`
-
-		const depSrc = `package main
-import (
-	"dagger/dep/internal/dagger"
-)
-type Dep struct{}
-func (m *Dep) Test() *dagger.Directory {
-	return dag.Depdep().Test()
-}
-func (m *Dep) TestFile() *dagger.Directory {
-	return dag.Depdep().TestFile()
-}
-`
-
-		const depDepSrc = `package main
-import (
-	"crypto/rand"
-	"dagger/depdep/internal/dagger"
-)
-type Depdep struct{}
-func (m *Depdep) Test(
-	// +defaultPath="."
-	dir *dagger.Directory,
-) *dagger.Directory {
-	return dir.WithNewFile("rand.txt", rand.Text())
-}
-func (m *Depdep) TestFile(
-	// +defaultPath="dagger.json"
-	f *dagger.File,
-) *dagger.Directory {
-	return dag.Directory().
-		WithFile("dagger.json", f).
-		WithNewFile("rand.txt", rand.Text())
-}
-`
-
 		getModGen := func(c *dagger.Client) *dagger.Container {
-			return goGitBase(t, c).
-				WithWorkdir("/work/depdep").
-				With(daggerExec("module", "init", "depdep", "--sdk="+modSDK, "--source=.", ".")).
-				WithNewFile("/work/depdep/main.go", depDepSrc).
-				WithWorkdir("/work/dep").
-				With(daggerExec("module", "init", "dep", "--sdk="+modSDK, "--source=.", ".")).
-				With(daggerExec("module", "install", "../depdep")).
-				WithNewFile("/work/dep/main.go", depSrc).
-				WithWorkdir("/work").
-				With(daggerExec("module", "init", "test", "--sdk="+modSDK, "--source=.", ".")).
-				With(sdkSource(modSDK, modSrc)).
-				With(daggerExec("module", "install", "./dep"))
+			return moduleFixture(t, c, "go/runtime-contextual-arg-dep")
 		}
 
 		t.Run("dir", func(ctx context.Context, t *testctx.T) {
@@ -1174,6 +542,7 @@ func (m *Depdep) TestFile(
 
 	t.Run("git contextual arg", func(ctx context.Context, t *testctx.T) {
 		modDir := t.TempDir()
+		copyTestdataFixture(ctx, t, modDir, "modules", "go", "runtime-contextual-git-arg")
 
 		gitCmd := exec.Command("git", "init")
 		gitCmd.Dir = modDir
@@ -1189,51 +558,6 @@ func (m *Depdep) TestFile(
 		gitCmd.Dir = modDir
 		gitOutput, err = gitCmd.CombinedOutput()
 		require.NoError(t, err, string(gitOutput))
-
-		initCmd := hostDaggerCommand(ctx, t, modDir, "module", "init", "--sdk=go", "--source=.", "test", ".")
-		initOutput, err := initCmd.CombinedOutput()
-		require.NoError(t, err, string(initOutput))
-
-		installCmd := hostDaggerCommand(ctx, t, modDir, "module", "install",
-			"github.com/dagger/dagger-test-modules/contextual-git-bug@"+vcsTestCaseCommit)
-		installOutput, err := installCmd.CombinedOutput()
-		require.NoError(t, err, string(installOutput))
-
-		err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
-
-import (
-    "context"
-    "dagger/test/internal/dagger"
-)
-
-type Test struct {
-    //+private
-    Ref *dagger.GitRef
-    //+private
-    Dep *dagger.Dep
-}
-
-func New(
-    // +defaultPath="."
-    ref *dagger.GitRef,
-    //+defaultPath="crap"
-    source *dagger.Directory,
-) *Test {
-    return &Test{
-        Ref: ref,
-        Dep: dag.Dep(source),
-    }
-}
-
-func (m *Test) Fn(
-    ctx context.Context,
-    //+defaultPath="config/config.local.js"
-    configFile *dagger.File,
-) (*dagger.Directory, error) {
-    return m.Dep.WithRef(m.Ref).Fn().WithFile("config.js", configFile).Sync(ctx)
-}
-`), 0o644)
-		require.NoError(t, err)
 
 		gitCmd = exec.Command("git", "add", ".")
 		gitCmd.Dir = modDir
