@@ -1,0 +1,13 @@
+{
+  "name": "caller",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "relayer",
+      "source": "relayer"
+    }
+  ]
+}
