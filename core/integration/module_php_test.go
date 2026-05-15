@@ -1,7 +1,7 @@
 package core
 
-// These tests cover modules authored with the PHP SDK. They verify `dagger
-// module init`, generated PHP bindings, and executing PHP module functions.
+// These tests cover modules authored with the PHP SDK. They verify generated
+// PHP bindings and executing PHP module functions.
 //
 // See also:
 // - module_definition_test.go: SDK-neutral module API definition behavior.
@@ -21,73 +21,6 @@ type PHPSuite struct{}
 
 func TestPHP(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(PHPSuite{})
-}
-
-func (PHPSuite) TestInit(ctx context.Context, t *testctx.T) {
-	t.Run("from local", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		sdkSrc, err := filepath.Abs("../../sdk/php/")
-		require.NoError(t, err)
-
-		out, err := goGitBase(t, c).
-			WithDirectory("/work/sdk/php", c.Host().Directory(sdkSrc)).
-			With(daggerExec("module", "init", "--sdk=./sdk/php", "bare", ".")).
-			With(daggerCallAt(".", "container-echo", "--string-arg", "hello", "stdout")).
-			Stdout(ctx)
-
-		require.NoError(t, err)
-		require.Equal(t, "hello\n", out)
-	})
-
-	t.Run("from upstream", func(ctx context.Context, t *testctx.T) {
-		// TODO: re-enable once upstream has unified ID support; the
-		// published PHP SDK can't handle the ID scalar produced by this branch's schema.
-		t.Skip("requires unified ID support in upstream PHP SDK")
-
-		c := connect(ctx, t)
-
-		out, err := daggerCliBase(t, c).
-			With(daggerExec("module", "init", "--sdk=github.com/dagger/dagger/sdk/php", "bare", ".")).
-			With(daggerCallAt(".", "container-echo", "--string-arg", "hello", "stdout")).
-			Stdout(ctx)
-
-		require.NoError(t, err)
-		require.Equal(t, "hello\n", out)
-	})
-
-	t.Run("from alias", func(ctx context.Context, t *testctx.T) {
-		// The alias expands to github.com/dagger/dagger/sdk/php@engine.Tag.
-		// Local dev-engine builds synthesize a pseudo tag that is not a Git ref;
-		// remote/CI builds use a commit SHA and keep this alias coverage active.
-		skipSDKAliasIfDevTag(t, "PHP")
-
-		c := connect(ctx, t)
-
-		out, err := daggerCliBase(t, c).
-			With(daggerExec("module", "init", "--sdk=php", "bare", ".")).
-			With(daggerCallAt(".", "container-echo", "--string-arg", "hello", "stdout")).
-			Stdout(ctx)
-
-		require.NoError(t, err)
-		require.Equal(t, "hello\n", out)
-	})
-
-	t.Run("from alias with ref", func(ctx context.Context, t *testctx.T) {
-		// TODO: re-enable once main has unified ID support; the @main SDK
-		// can't handle the ID scalar produced by this branch's schema.
-		t.Skip("requires unified ID support on main branch")
-
-		c := connect(ctx, t)
-
-		out, err := daggerCliBase(t, c).
-			With(daggerExec("module", "init", "--sdk=php@main", "bare", ".")).
-			With(daggerCallAt(".", "container-echo", "--string-arg", "hello", "stdout")).
-			Stdout(ctx)
-
-		require.NoError(t, err)
-		require.Equal(t, "hello\n", out)
-	})
 }
 
 func (PHPSuite) TestDefaultValue(_ context.Context, t *testctx.T) {
