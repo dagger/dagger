@@ -32,6 +32,145 @@ Make core integration tests fixture-based:
 Tests should mount or copy prebuilt fixture modules from
 `core/integration/testdata` and then exercise the behavior under test.
 
+## Handoff Status
+
+As of 2026-05-15, this migration is in progress on branch `workspace`.
+
+Last code checkpoint:
+
+- `ff00fd8a0 test: convert runtime parent secret fixtures`
+
+Current strategy:
+
+- Finish the fixture conversion pass first.
+- Do not spend time on slow live integration runs until the conversion
+  inventory is clean.
+- Keep committing small behavior groups.
+- For each conversion group, run `gofmt` and the cheap compile check:
+
+  ```bash
+  go test ./core/integration -run '^$'
+  ```
+
+- After the conversion pass, run targeted live Dagger integration tests with
+  the harness described in [Verification](#verification).
+
+Validation so far:
+
+- Every committed conversion batch through `ff00fd8a0` was formatted.
+- `go test ./core/integration -run '^$'` passed after the committed batches.
+- Slow live integration runs were paused after the conversion-first direction.
+
+Shared fixture helpers already added in `core/integration/module_helpers_test.go`:
+
+- `moduleFixture`
+- `moduleEntrypointFixture`
+- `withModuleFixture`
+- `withModuleEntrypointFixture`
+- `withWorkspaceFixture`
+- `fixtureJoin`
+- `withTestdataFixture`
+- `withTestdataFile`
+- `copyTestdataFixture`
+- `goGitBase`
+
+Committed conversion areas so far:
+
+- shared fixture helpers
+- Go integration tests
+- secret integration tests
+- cache integration tests
+- module self-call tests
+- workspace integration tests
+- dang dependency setup
+- isolated Go fixtures
+- legacy fixture setup, partially
+- module error fixtures
+- persistence and MCP fixtures
+- module dependency runtime fixtures
+- workspace compatibility environment fixtures
+- CA cert module fixtures, partially
+- interface, constructor, source map, validation, definition, and service
+  module fixtures
+- custom SDK fixtures
+- benchmark module fixtures
+- cross-session fixtures
+- shell fixtures
+- runtime secret and runtime parent-field fixtures
+
+Current broad inventory from the worktree after `ff00fd8a0`:
+
+```text
+core/integration/container_test.go:1
+core/integration/module_path_inputs_test.go:19
+core/integration/module_terminal_test.go:7
+core/integration/cacert_test.go:1
+core/integration/module_runtime_behavior_test.go:37
+core/integration/client_generator_test.go:28
+core/integration/module_up_test.go:1
+core/integration/module_python_test.go:26
+core/integration/envfile_test.go:3
+core/integration/module_helpers_test.go:5
+core/integration/workspace_compat_test.go:1
+core/integration/legacy_test.go:35
+core/integration/gitcredential_test.go:3
+core/integration/module_type_test.go:22
+core/integration/module_typescript_test.go:38
+core/integration/module_deprecation_test.go:3
+core/integration/module_call_test.go:77
+core/integration/workspace_selection_test.go:3
+core/integration/client_test.go:1
+core/integration/module_config_test.go:27
+```
+
+The broad inventory is intentionally conservative. Inspect each hit before
+converting: some tests may be authoring-only coverage that should move out of
+core instead of becoming a fixture.
+
+Recommended next order:
+
+1. Finish `module_runtime_behavior_test.go`.
+
+   Remaining groups include duplicate secret names, secret-by-ID leak, normal
+   secret cache behavior, optional Python secret fields, service reuse, nil and
+   empty fields, float handling across SDKs, return-nil behavior, cache-control
+   annotations, `setSecret` cache invalidation, dependency contextual args, and
+   git contextual args.
+
+2. Convert the large module runtime/schema files:
+
+   - `module_call_test.go`
+   - `module_path_inputs_test.go`
+   - `module_config_test.go`
+   - `module_type_test.go`
+
+3. Convert SDK-specific runtime files that remain in core:
+
+   - `module_python_test.go`
+   - `module_typescript_test.go`
+   - `client_generator_test.go`
+
+   Keep only core/runtime behavior. Authoring, bootstrap, dependency update,
+   generated binding refresh, and package-manager detection coverage belongs in
+   SDK-as-module repos.
+
+4. Convert or move the smaller host-CLI one-offs:
+
+   - `legacy_test.go`
+   - `module_terminal_test.go`
+   - `envfile_test.go`
+   - `gitcredential_test.go`
+   - `workspace_selection_test.go`
+   - `workspace_compat_test.go`
+   - `module_deprecation_test.go`
+   - `module_up_test.go`
+   - `container_test.go`
+   - `client_test.go`
+   - remaining `cacert_test.go`
+
+5. Delete or shrink the dynamic helpers in `module_helpers_test.go` once no
+   tests depend on them.
+
 ## Why
 
 1. Removed module-management commands
@@ -167,10 +306,33 @@ Fixtures should be stable, readable, and minimal.
 7. Run targeted integration packages after each group, then run the broader
    suite.
 
-The implementer should refresh the inventory at the start of the work. This doc
-intentionally does not carry a full call-site audit.
+Use the broad scanner below while finishing the cleanup. It catches helper
+calls, nested Dagger exec helpers, host-side Dagger commands, and simple
+container `dagger module ...` execs.
 
-Useful starting commands:
+```bash
+rg -n \
+  -e 'dagger(NonNested)?Exec(Raw)?\([^)]*"module",\s*"(init|install|update)"' \
+  -e 'hostDagger(Exec|Command)\([^\n]*"module",\s*"(init|install|update)"' \
+  -e 'workspaceSelectionDaggerExec\([^)]*"module",\s*"(init|install|update)"' \
+  -e 'WithExec\(\[\]string\{"dagger",\s*"module",\s*"(init|install|update)"' \
+  -e 'dagger(NonNested)?Exec(Raw)?\([^)]*"(develop|uninstall)"' \
+  -e 'hostDagger(Exec|Command)\([^\n]*"(develop|uninstall)"' \
+  -e '\b(modInit|withModInit|withModInitAt|daggerInitPython|daggerInitPythonAt)\b' \
+  core/integration
+rg -c \
+  -e 'dagger(NonNested)?Exec(Raw)?\([^)]*"module",\s*"(init|install|update)"' \
+  -e 'hostDagger(Exec|Command)\([^\n]*"module",\s*"(init|install|update)"' \
+  -e 'workspaceSelectionDaggerExec\([^)]*"module",\s*"(init|install|update)"' \
+  -e 'WithExec\(\[\]string\{"dagger",\s*"module",\s*"(init|install|update)"' \
+  -e 'dagger(NonNested)?Exec(Raw)?\([^)]*"(develop|uninstall)"' \
+  -e 'hostDagger(Exec|Command)\([^\n]*"(develop|uninstall)"' \
+  -e '\b(modInit|withModInit|withModInitAt|daggerInitPython|daggerInitPythonAt)\b' \
+  core/integration
+```
+
+The narrower original scanner is still useful for the main helper patterns, but
+it misses host-side command setup and `daggerNonNestedExec`:
 
 ```bash
 rg -n \
