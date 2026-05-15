@@ -1,0 +1,5 @@
+type Dangchild {
+  pub value: String! {
+    "dang"
+  }
+}
