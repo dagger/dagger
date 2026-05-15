@@ -166,6 +166,16 @@ def _forward_ref_type(name: str) -> GeneratedType:
     )
 
 
+def _self_type() -> GeneratedType:
+    return GeneratedType(
+        source="Self",
+        base=_BaseType("Foo", None),
+        is_optional=False,
+        is_list=False,
+        has_annotated_outer=False,
+    )
+
+
 def _optional_type(inner: GeneratedType) -> GeneratedType:
     return GeneratedType(
         source=f"Optional[{inner.source}]",
@@ -236,6 +246,8 @@ def _type_leaf(  # type: ignore[no-untyped-def]
 ) -> GeneratedType:
     if aliases and draw(st.booleans()):
         return _alias_as_leaf(draw(st.sampled_from(aliases)))
+    if depth > 0 and draw(st.booleans()):
+        return _self_type()
     if allow_forward_ref and depth > 0 and draw(st.booleans()):
         return _forward_ref_type(draw(st.sampled_from(sorted(_FORWARD_REF_NAMES))))
     return _base_as_type(draw(base_type_strategy))
@@ -597,6 +609,7 @@ def _render_module(mod: GeneratedModule) -> str:  # noqa: C901, PLR0912
         [
             "import dagger",
             "from typing import Annotated, Optional, TypeAlias",
+            "from typing_extensions import Self",
             "from dagger import DefaultPath, Deprecated, Doc, Ignore, Name",
             "",
         ]
