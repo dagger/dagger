@@ -38,7 +38,7 @@ As of 2026-05-15, this migration is in progress on branch `workspace`.
 
 Last code checkpoint:
 
-- `2df7abf23 test: convert one-off module fixtures`
+- `4bfa384bb test: convert small host cli fixtures`
 
 Current strategy:
 
@@ -57,12 +57,14 @@ Current strategy:
 
 Validation so far:
 
-- Every committed conversion batch through `2df7abf23` was formatted.
+- Every committed conversion batch through `4bfa384bb` was formatted.
 - `go test ./core/integration -run '^$'` passed after the committed batches.
 - The uncommitted `module_runtime_behavior_test.go` fixture conversion was
   formatted and `go test ./core/integration -run '^$'` passed.
-- The uncommitted envfile, git credential, workspace selection, and module
-  deprecation fixture conversions were formatted and
+- The uncommitted `module_terminal_test.go` fixture conversion was formatted
+  and `go test ./core/integration -run '^$'` passed.
+- The envfile, git credential, workspace selection, and module deprecation
+  fixture conversions were formatted and
   `go test ./core/integration -run '^$'` passed.
 - The one-hit host/CLI fixture conversions in `module_up_test.go`,
   `workspace_compat_test.go`, `container_test.go`, `client_test.go`, and
@@ -111,14 +113,13 @@ Committed conversion areas so far:
 - module call, path input, config, and type fixtures, uncommitted
 - module up, CA cert terminal, container save nested, client stable ID, and
   workspace compat blueprint fixtures
-- envfile, git credential, workspace selection, and module deprecation
-  fixtures, uncommitted
+- envfile, git credential, workspace selection, and module deprecation fixtures
+- module terminal fixtures, uncommitted
 
 Current broad inventory from the worktree after the uncommitted large module
 runtime/schema and small host/CLI fixture conversions:
 
 ```text
-core/integration/module_terminal_test.go:7
 core/integration/module_helpers_test.go:5
 core/integration/legacy_test.go:35
 ```
@@ -132,7 +133,6 @@ Recommended next order:
 1. Convert or move the smaller host-CLI one-offs:
 
    - `legacy_test.go`
-   - `module_terminal_test.go`
 
 2. Delete or shrink the dynamic helpers in `module_helpers_test.go` once no
    tests depend on them.
