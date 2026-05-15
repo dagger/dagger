@@ -31,13 +31,8 @@ func TestListen(t *testing.T) {
 func (ListenSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 	t.Run("serves explicit workspace entrypoint", func(ctx context.Context, t *testctx.T) {
 		workspaceDir := t.TempDir()
-		initHostDangBlueprint(ctx, t, workspaceDir, "greeter", `
-type Greeter {
-  pub hello: String! {
-    "hello from workspace"
-  }
-}
-`)
+		initGitRepo(ctx, t, workspaceDir)
+		copyTestdataFixture(ctx, t, workspaceDir, "workspaces", "listen-greeter")
 
 		addr, token := startListenSession(ctx, t, workspaceDir)
 
@@ -56,13 +51,8 @@ type Greeter {
 
 	t.Run("disable host read write still serves base api from workspace root", func(ctx context.Context, t *testctx.T) {
 		workspaceDir := t.TempDir()
-		initHostDangBlueprint(ctx, t, workspaceDir, "greeter", `
-type Greeter {
-  pub hello: String! {
-    "hello from workspace"
-  }
-}
-`)
+		initGitRepo(ctx, t, workspaceDir)
+		copyTestdataFixture(ctx, t, workspaceDir, "workspaces", "listen-greeter")
 
 		addr, token := startListenSession(ctx, t, workspaceDir, "--disable-host-read-write")
 
