@@ -11,6 +11,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"dagger.io/dagger"
@@ -21,13 +22,41 @@ import (
 func customSDKRuntimeFixture(t *testctx.T, c *dagger.Client, sdkDir string) *dagger.Container {
 	t.Helper()
 
-	return workspaceBase(t, c).
-		WithDirectory("/work/sdk", c.Host().Directory("./testdata/sdks/"+sdkDir)).
-		WithNewFile(".dagger/config.toml", `[modules.test]
-source = ".."
-entrypoint = true
-`).
-		WithNewFile("dagger.json", `{"name":"test","sdk":{"source":"./sdk"},"source":"."}`)
+	return workspaceFixture(t, c, "custom-sdk/runtime").
+		With(withTestdataFixture(t, c, "sdk", "sdks", sdkDir))
+}
+
+func customSDKLocalFixture(t *testctx.T, c *dagger.Client) *dagger.Container {
+	t.Helper()
+
+	return goGitBase(t, c).
+		With(withModuleFixture(t, c, ".", "go/custom-sdk-test-local")).
+		With(withModuleFixture(t, c, "coolsdk", "go/custom-sdk-cool-sdk"))
+}
+
+func customSDKInitFixture(t *testctx.T, c *dagger.Client) *dagger.Container {
+	t.Helper()
+
+	return goGitBase(t, c).
+		With(withModuleFixture(t, c, ".", "go/custom-sdk-init-test")).
+		With(withModuleFixture(t, c, "coolsdk", "go/custom-sdk-init-sdk"))
+}
+
+func customSDKGitFixture(t *testctx.T, c *dagger.Client, sdkSource string) *dagger.Container {
+	t.Helper()
+
+	cfg := fmt.Sprintf(`{
+  "name": "test",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": %q
+  },
+  "source": "."
+}`, sdkSource)
+
+	return goGitBase(t, c).
+		With(withTestdataFile(t, c, "main.go", "modules", "go", "custom-sdk-test-git", "main.go")).
+		WithNewFile("dagger.json", cfg)
 }
 
 func (ModuleSuite) TestCustomSDKRuntime(ctx context.Context, t *testctx.T) {
@@ -68,63 +97,7 @@ func (ModuleSuite) TestCustomSDK(ctx context.Context, t *testctx.T) {
 	t.Run("local", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		ctr := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work/coolsdk").
-			With(daggerExec("module", "init", "--source=.", "--sdk=go", "cool-sdk", ".")).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"encoding/json"
-
-	"dagger/cool-sdk/internal/dagger"
-)
-
-type CoolSdk struct {}
-
-func (m *CoolSdk) ModuleTypes(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
-	mod := modSource.WithSDK("go").AsModule()
-	modID, err := mod.ID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	b, err := json.Marshal(modID)
-	if err != nil {
-		return nil, err
-	}
-	return dag.Container().
-		From("alpine").
-		WithNewFile(outputFilePath, string(b)).
-		WithEntrypoint([]string{
-			"sh", "-c", "",
-		}), nil
-}
-
-func (m *CoolSdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.Container {
-	return modSource.WithSDK("go").AsModule().Runtime().WithEnvVariable("COOL", "true")
-}
-
-func (m *CoolSdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.GeneratedCode {
-	return dag.GeneratedCode(modSource.WithSDK("go").AsModule().GeneratedContextDirectory())
-}
-`,
-			).
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--source=.", "--sdk=coolsdk", "test", ".")).
-			WithNewFile("main.go", `package main
-
-import "os"
-
-type Test struct {}
-
-func (m *Test) Fn() string {
-	return os.Getenv("COOL")
-}
-`,
-			)
-
-		out, err := ctr.
+		out, err := customSDKLocalFixture(t, c).
 			With(daggerCall("fn")).
 			Stdout(ctx)
 
@@ -138,24 +111,8 @@ func (m *Test) Fn() string {
 			privateSetup, cleanup := privateRepoSetup(c, t, tc)
 			defer cleanup()
 
-			ctr := goGitBase(t, c).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			out, err := customSDKGitFixture(t, c, testGitModuleRef(tc, "cool-sdk")).
 				With(privateSetup).
-				WithWorkdir("/work").
-				With(daggerExec("module", "init", "--source=.", "test", "--sdk="+testGitModuleRef(tc, "cool-sdk"), ".")).
-				WithNewFile("main.go", `package main
-
-import "os"
-
-type Test struct {}
-
-func (m *Test) Fn() string {
-	return os.Getenv("COOL")
-}
-`,
-				)
-
-			out, err := ctr.
 				With(daggerCall("fn")).
 				Stdout(ctx)
 
@@ -164,67 +121,12 @@ func (m *Test) Fn() string {
 		})
 	})
 
-	t.Run("module initialization", func(ctx context.Context, t *testctx.T) {
+	t.Run("module types", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		// verify that SDKs can successfully:
-		// - create an exec during module initialization
-		// - call CurrentModule().Source
-		ctr := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work/coolsdk").
-			With(daggerExec("module", "init", "--source=.", "--sdk=go", "cool-sdk", ".")).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"encoding/json"
-
-	"dagger/cool-sdk/internal/dagger"
-)
-
-type CoolSdk struct {}
-
-
-func (m *CoolSdk) ModuleTypes(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, outputFilePath string) (*dagger.Container, error) {
-	// return hardcoded typedefs; this module will thus only work during init, but that's all we're testing here
-	mod := dag.Module().WithObject(dag.TypeDef().
-		WithObject("Test").
-		WithFunction(dag.Function("CoolFn", dag.TypeDef().WithKind(dagger.TypeDefKindVoidKind).WithOptional(true))))
-	modID, err := mod.ID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	b, err := json.Marshal(modID)
-	if err != nil {
-		return nil, err
-	}
-	return dag.Container().
-		From("alpine").
-		WithNewFile(outputFilePath, string(b)).
-		WithEntrypoint([]string{
-			"sh", "-c", "",
-		}), nil
-}
-
-func (m *CoolSdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.Container {
-	return modSource.WithSDK("go").AsModule().Runtime().WithEnvVariable("COOL", "true")
-}
-
-func (m *CoolSdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.GeneratedCode {
-	return dag.GeneratedCode(modSource.WithSDK("go").AsModule().GeneratedContextDirectory())
-}
-`,
-			).
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--source=.", "--sdk=coolsdk", "test", ".")).
-			WithNewFile("main.go", `package main
-
-type Test struct {}
-`,
-			)
-
-		out, err := ctr.
+		// Verify that SDKs can create an exec and call CurrentModule().Source
+		// while producing module type definitions.
+		out, err := customSDKInitFixture(t, c).
 			With(daggerFunctions()).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -239,18 +141,7 @@ func (ModuleSuite) TestUnbundleSDK(ctx context.Context, t *testctx.T) {
 	t.Run("only codegen", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		ctr := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithDirectory("/work/sdk", c.Host().Directory("./testdata/sdks/only-codegen")).
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=./sdk", "--source=.", "test", "."))
-
-		t.Run("can run dagger develop", func(ctx context.Context, t *testctx.T) {
-			generatedFile, err := ctr.With(daggerExec("develop")).File("/work/hello.txt").Contents(ctx)
-
-			require.NoError(t, err)
-			require.Equal(t, "Hello, world!", generatedFile)
-		})
+		ctr := customSDKRuntimeFixture(t, c, "only-codegen")
 
 		t.Run("explicit error on dagger call", func(ctx context.Context, t *testctx.T) {
 			_, err := ctr.With(daggerExec("call", "foo")).Sync(ctx)
@@ -268,17 +159,7 @@ func (ModuleSuite) TestUnbundleSDK(ctx context.Context, t *testctx.T) {
 	t.Run("only runtime", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		ctr := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithDirectory("/work/sdk", c.Host().Directory("./testdata/sdks/only-runtime")).
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=./sdk", "--source=.", "test", "."))
-
-		t.Run("can run dagger develop without failing", func(ctx context.Context, t *testctx.T) {
-			_, err := ctr.With(daggerExec("develop")).Sync(ctx)
-
-			require.NoError(t, err)
-		})
+		ctr := customSDKRuntimeFixture(t, c, "only-runtime")
 
 		t.Run("can run dagger functions", func(ctx context.Context, t *testctx.T) {
 			out, err := ctr.With(daggerFunctions()).Stdout(ctx)
