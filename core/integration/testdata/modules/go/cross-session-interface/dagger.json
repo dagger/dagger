@@ -1,0 +1,17 @@
+{
+  "name": "test",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "drive",
+      "source": "drive"
+    },
+    {
+      "name": "rolls-royce",
+      "source": "rolls-royce"
+    }
+  ]
+}
