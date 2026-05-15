@@ -1,0 +1,13 @@
+{
+  "name": "keychain",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "generator-module",
+      "source": "generator"
+    }
+  ]
+}
