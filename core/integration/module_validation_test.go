@@ -10,7 +10,6 @@ package core
 
 import (
 	"context"
-	_ "embed"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -22,89 +21,22 @@ import (
 
 func (ModuleSuite) TestWrapping(ctx context.Context, t *testctx.T) {
 	type testCase struct {
-		sdk    string
-		source string
+		sdk     string
+		fixture string
 	}
 
 	for _, tc := range []testCase{
 		{
-			sdk: "go",
-			source: `package main
-
-import (
-	"dagger/test/internal/dagger"
-)
-
-type Test struct{}
-
-func (m *Test) Container() *WrappedContainer {
-	return &WrappedContainer{
-		dag.Container().From("` + alpineImage + `"),
-	}
-}
-
-type WrappedContainer struct {
-	Unwrap *dagger.Container` + "`" + `json:"unwrap"` + "`" + `
-}
-
-func (c *WrappedContainer) Echo(msg string) *WrappedContainer {
-	return &WrappedContainer{
-		c.Unwrap.WithExec([]string{"echo", "-n", msg}),
-	}
-}
-`,
+			sdk:     "go",
+			fixture: "go/wrapped-container",
 		},
 		{
-			sdk: "python",
-			source: `from typing import Self
-
-import dagger
-from dagger import dag
-
-@dagger.object_type
-class WrappedContainer:
-    unwrap: dagger.Container = dagger.field()
-
-    @dagger.function
-    def echo(self, msg: str) -> Self:
-        return WrappedContainer(unwrap=self.unwrap.with_exec(["echo", "-n", msg]))
-
-@dagger.object_type
-class Test:
-    @dagger.function
-    def container(self) -> WrappedContainer:
-        return WrappedContainer(unwrap=dag.container().from_("` + alpineImage + `"))
-
-`,
+			sdk:     "python",
+			fixture: "python/wrapped-container",
 		},
 		{
-			sdk: "typescript",
-			source: `
-import { dag, Container, object, func } from "@dagger.io/dagger"
-
-@object()
-export class WrappedContainer {
-  @func()
-  unwrap: Container
-
-  constructor(unwrap: Container) {
-    this.unwrap = unwrap
-  }
-
-  @func()
-  echo(msg: string): WrappedContainer {
-    return new WrappedContainer(this.unwrap.withExec(["echo", "-n", msg]))
-  }
-}
-
-@object()
-export class Test {
-  @func()
-  container(): WrappedContainer {
-    return new WrappedContainer(dag.container().from("` + alpineImage + `"))
-  }
-}
-`,
+			sdk:     "typescript",
+			fixture: "typescript/wrapped-container",
 		},
 	} {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
@@ -112,7 +44,7 @@ export class Test {
 
 			id := identity.NewID()
 
-			out, err := modInit(t, c, tc.sdk, tc.source).
+			out, err := moduleFixture(t, c, tc.fixture).
 				With(daggerQuery(
 					fmt.Sprintf(`{container{echo(msg:%q){unwrap{stdout}}}}`, id),
 				)).
@@ -155,48 +87,18 @@ func (ModuleSuite) TestLoops(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	_, err := goGitBase(t, c).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		With(daggerExec("module", "init", "--sdk=go", "depA", "depA")).
-		With(daggerExec("module", "init", "--sdk=go", "depB", "depB")).
-		With(daggerExec("module", "init", "--sdk=go", "depC", "depC")).
-		With(daggerExec("module", "install", "-m=depC", "./depB")).
-		With(daggerExec("module", "install", "-m=depB", "./depA")).
-		With(daggerExec("module", "install", "-m=depA", "./depC")).
+		With(withModuleFixture(t, c, ".", "go/circular-deps")).
 		With(daggerCallAt("depA", "--help")).
 		Sync(ctx)
 	requireErrOut(t, err, `module "depA" has a circular dependency on itself through dependency "depC"`)
 }
 
-//go:embed testdata/modules/go/id/arg/main.go
-var goodIDArgGoSrc string
-
-//go:embed testdata/modules/python/id/arg/main.py
-var goodIDArgPySrc string
-
-//go:embed testdata/modules/typescript/id/arg/index.ts
-var goodIDArgTSSrc string
-
-//go:embed testdata/modules/go/id/field/main.go
-var badIDFieldGoSrc string
-
-//go:embed testdata/modules/typescript/id/field/index.ts
-var badIDFieldTSSrc string
-
-//go:embed testdata/modules/go/id/fn/main.go
-var badIDFnGoSrc string
-
-//go:embed testdata/modules/python/id/fn/main.py
-var badIDFnPySrc string
-
-//go:embed testdata/modules/typescript/id/fn/index.ts
-var badIDFnTSSrc string
-
 func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 	// verify disallowed names are rejected
 
 	type testCase struct {
-		sdk    string
-		source string
+		sdk     string
+		fixture string
 	}
 
 	t.Run("id", func(ctx context.Context, t *testctx.T) {
@@ -205,22 +107,22 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 
 			for _, tc := range []testCase{
 				{
-					sdk:    "go",
-					source: goodIDArgGoSrc,
+					sdk:     "go",
+					fixture: "go/id/arg",
 				},
 				{
-					sdk:    "python",
-					source: goodIDArgPySrc,
+					sdk:     "python",
+					fixture: "python/id/arg",
 				},
 				{
-					sdk:    "typescript",
-					source: goodIDArgTSSrc,
+					sdk:     "typescript",
+					fixture: "typescript/id/arg",
 				},
 			} {
 				t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 					c := connect(ctx, t)
 
-					out, err := modInit(t, c, tc.sdk, tc.source).
+					out, err := moduleFixture(t, c, tc.fixture).
 						With(daggerQuery(`{fn(id:"YES!!!!")}`)).
 						Stdout(ctx)
 					require.NoError(t, err)
@@ -232,22 +134,18 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 		t.Run("field", func(ctx context.Context, t *testctx.T) {
 			for _, tc := range []testCase{
 				{
-					sdk:    "go",
-					source: badIDFieldGoSrc,
+					sdk:     "go",
+					fixture: "go/id/field",
 				},
 				{
-					sdk:    "typescript",
-					source: badIDFieldTSSrc,
+					sdk:     "typescript",
+					fixture: "typescript/id/field",
 				},
 			} {
 				t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 					c := connect(ctx, t)
 
-					_, err := c.Container().From(golangImage).
-						WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-						WithWorkdir("/work").
-						With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, ".")).
-						With(sdkSource(tc.sdk, tc.source)).
+					_, err := moduleFixture(t, c, tc.fixture).
 						With(daggerQuery(`{fn{id}}`)).
 						Sync(ctx)
 
@@ -259,26 +157,22 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 		t.Run("fn", func(ctx context.Context, t *testctx.T) {
 			for _, tc := range []testCase{
 				{
-					sdk:    "go",
-					source: badIDFnGoSrc,
+					sdk:     "go",
+					fixture: "go/id/fn",
 				},
 				{
-					sdk:    "python",
-					source: badIDFnPySrc,
+					sdk:     "python",
+					fixture: "python/id/fn",
 				},
 				{
-					sdk:    "typescript",
-					source: badIDFnTSSrc,
+					sdk:     "typescript",
+					fixture: "typescript/id/fn",
 				},
 			} {
 				t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 					c := connect(ctx, t)
 
-					_, err := c.Container().From(golangImage).
-						WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-						WithWorkdir("/work").
-						With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, ".")).
-						With(sdkSource(tc.sdk, tc.source)).
+					_, err := moduleFixture(t, c, tc.fixture).
 						With(daggerQuery(`{id}`)).
 						Sync(ctx)
 
