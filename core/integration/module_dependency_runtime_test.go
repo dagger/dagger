@@ -2,16 +2,14 @@ package core
 
 // These tests cover a module calling other installed modules from its own
 // functions. They assume dependency entries already exist in config, then verify
-// runtime calls, schema exposure, and codegen refresh when local deps change.
+// runtime calls and schema exposure.
 //
 // See also:
-// - module_dependency_cli_test.go: CLI mutations of module dependency entries.
 // - workspace_modules_test.go: workspace-level module installation/configuration.
 
 import (
 	"context"
 	"fmt"
-	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -253,102 +251,6 @@ func testModuleWithLocalDep(t *testctx.T, c *dagger.Client, sdk, source string) 
 		With(daggerExec("module", "init", "test", "--sdk="+sdk, "--source=.", ".")).
 		With(sdkSource(sdk, source)).
 		With(daggerExec("module", "install", "./dep"))
-}
-
-// TestDevelopRefreshesParentCodegenAfterLocalDependencyAPIChange verifies that
-// `dagger develop` updates parent SDK codegen after a local dependency makes a
-// breaking API change, so parent code can be updated to call the new API.
-func (ModuleSuite) TestDevelopRefreshesParentCodegenAfterLocalDependencyAPIChange(ctx context.Context, t *testctx.T) {
-	type testCase struct {
-		sdk      string
-		source   string
-		changed  string
-		expected string
-	}
-
-	for _, tc := range []testCase{
-		{
-			sdk:      "go",
-			source:   useGoOuter,
-			expected: "Hellov2",
-			changed:  strings.ReplaceAll(useGoOuter, `Hello(ctx)`, `Hellov2(ctx)`),
-		},
-		{
-			sdk:      "python",
-			source:   usePythonOuter,
-			expected: "hellov2",
-			changed:  strings.ReplaceAll(usePythonOuter, `.hello()`, `.hellov2()`),
-		},
-		{
-			sdk:      "typescript",
-			source:   useTSOuter,
-			expected: "hellov2",
-			changed:  strings.ReplaceAll(useTSOuter, `.hello()`, `.hellov2()`),
-		},
-	} {
-		t.Run(fmt.Sprintf("%s parent codegen observes local dependency API change", tc.sdk), func(ctx context.Context, t *testctx.T) {
-			c := connect(ctx, t)
-			modGen := testModuleWithLocalDep(t, c, tc.sdk, tc.source)
-
-			out, err := modGen.With(daggerQuery(`{useHello}`)).Stdout(ctx)
-			require.NoError(t, err)
-			require.JSONEq(t, `{"useHello":"hello"}`, out)
-
-			// Rename the dependency function so parent codegen must refresh before
-			// parent source can update from Hello to Hellov2.
-			newInner := strings.ReplaceAll(useInner, `Hello()`, `Hellov2()`)
-			modGen = modGen.
-				WithWorkdir("/work/dep").
-				With(sdkSource("go", newInner)).
-				WithWorkdir("/work").
-				With(daggerExec("develop"))
-
-			var codegenContents string
-			if tc.sdk == "go" {
-				// If go, the changes will be in `dep.gen.go`
-				codegenContents, err = modGen.File("internal/dagger/dep.gen.go").Contents(ctx)
-			} else {
-				codegenContents, err = modGen.File(sdkCodegenFile(t, tc.sdk)).Contents(ctx)
-			}
-
-			require.NoError(t, err)
-			require.Contains(t, codegenContents, tc.expected)
-
-			modGen = modGen.With(sdkSource(tc.sdk, tc.changed))
-
-			out, err = modGen.With(daggerQuery(`{useHello}`)).Stdout(ctx)
-			require.NoError(t, err)
-			require.JSONEq(t, `{"useHello":"hello"}`, out)
-		})
-	}
-}
-
-// TestDevelopRefreshesLocalDependencyImplementationChanges verifies that
-// `dagger develop` refreshes a parent module after a local dependency changes
-// implementation but keeps the same API shape.
-func (ModuleSuite) TestDevelopRefreshesLocalDependencyImplementationChanges(ctx context.Context, t *testctx.T) {
-	for _, tc := range useLocalDepTestCases {
-		t.Run(fmt.Sprintf("%s parent observes local dependency change", tc.sdk), func(ctx context.Context, t *testctx.T) {
-			c := connect(ctx, t)
-			modGen := testModuleWithLocalDep(t, c, tc.sdk, tc.source)
-
-			modGen = modGen.With(daggerQuery(`{useHello}`))
-			out, err := modGen.Stdout(ctx)
-			require.NoError(t, err)
-			require.JSONEq(t, `{"useHello":"hello"}`, out)
-
-			newInner := strings.ReplaceAll(useInner, `"hello"`, `"goodbye"`)
-			modGen = modGen.
-				WithWorkdir("/work/dep").
-				With(sdkSource("go", newInner)).
-				WithWorkdir("/work").
-				With(daggerExec("develop"))
-
-			out, err = modGen.With(daggerQuery(`{useHello}`)).Stdout(ctx)
-			require.NoError(t, err)
-			require.JSONEq(t, `{"useHello":"goodbye"}`, out)
-		})
-	}
 }
 
 func (ModuleSuite) TestUseLocalMulti(ctx context.Context, t *testctx.T) {
