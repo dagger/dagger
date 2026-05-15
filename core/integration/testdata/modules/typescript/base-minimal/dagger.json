@@ -1,0 +1,7 @@
+{
+  "name": "minimal",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "typescript"
+  }
+}
