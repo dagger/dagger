@@ -95,20 +95,6 @@ func moduleLoadingDaggerQueryFail(query string, args ...string) dagger.WithConta
 	}
 }
 
-func moduleLoadingDangModule(dir, name, typeName, fnName, result string) dagger.WithContainerFunc {
-	return func(ctr *dagger.Container) *dagger.Container {
-		return ctr.
-			WithNewFile(dir+"/dagger.json", `{"name":"`+name+`","sdk":{"source":"dang"}}`).
-			WithNewFile(dir+"/main.dang", `
-type `+typeName+` {
-  pub `+fnName+`: String! {
-    "`+result+`"
-  }
-}
-`)
-	}
-}
-
 // TestModuleSourceResolution should pin down how module loading behaves before
 // arbitration, including the cases where a path does not actually resolve to a
 // module source.
@@ -126,26 +112,19 @@ func (ModuleLoadingSuite) TestModuleSourceResolution(ctx context.Context, t *tes
 	})
 
 	t.Run("module under unicode path initializes and loads", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
+		workdir := filepath.Join(t.TempDir(), "wórk", "sub")
+		require.NoError(t, os.MkdirAll(workdir, 0o755))
+		initGitRepo(ctx, t, workdir)
 
-		out, err := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/wórk/sub/").
-			With(daggerExec("module", "init", "--source=.", "--sdk=go", "test", ".")).
-			WithNewFile("/wórk/sub/main.go", `package main
-			import (
-				"context"
-			)
-			type Test struct {}
-			func (m *Test) Hello(ctx context.Context) string {
-				return "hello"
-			}
-			`,
-			).
-			With(daggerQuery(`{hello}`)).
-			Stdout(ctx)
+		copyTestdataFixture(ctx, t, filepath.Join(workdir, ".dagger", "modules", "test"), "modules", "go", "unicode-path")
+		writeWorkspaceConfigFile(t, workdir, `[modules.test]
+source = "modules/test"
+entrypoint = true
+`)
+
+		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "call", "hello")
 		require.NoError(t, err)
-		require.JSONEq(t, `{"hello":"hello"}`, out)
+		require.Equal(t, "hello", strings.TrimSpace(string(out)))
 	})
 
 	t.Run("source may point to ancestor within context", func(ctx context.Context, t *testctx.T) {
@@ -173,7 +152,7 @@ type App {
 	t.Run("relative extra module path resolves from invocation cwd", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		base := workspaceBase(t, c).
-			With(moduleLoadingDangModule("submodule", "relmod", "Relmod", "whoami", "loaded from submodule")).
+			With(withModuleFixture(t, c, "submodule", "dang/relmod")).
 			WithNewFile("nested/.keep", "")
 
 		for _, tc := range []struct {
@@ -218,22 +197,12 @@ type App {
 		require.Contains(t, strings.ToLower(out), "director")
 	})
 
-	t.Run("canonical and symlinked module paths dedupe to one source", func(ctx context.Context, t *testctx.T) {
+	t.Run("canonical equivalent module paths dedupe to one source", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		ctr := workspaceBase(t, c).
-			With(moduleLoadingDangModule("modules/app", "app", "App", "message", "loaded once")).
-			WithExec([]string{"ln", "-s", "modules/app", "linked-app"}).
-			WithNewFile(".dagger/config.toml", `[modules.real]
-source = "modules/app"
-entrypoint = true
+		ctr := workspaceFixture(t, c, "module-loading/canonical-source")
 
-[modules.linked]
-source = "linked-app"
-entrypoint = true
-`)
-
-		out, err := ctr.With(moduleLoadingDaggerCall("message")).CombinedOutput(ctx)
-		require.NoError(t, err, out)
+		out, err := ctr.With(moduleLoadingDaggerCall("message")).Stdout(ctx)
+		require.NoError(t, err)
 		require.Equal(t, "loaded once", strings.TrimSpace(out))
 	})
 }
@@ -313,39 +282,7 @@ type App {
 func (ModuleLoadingSuite) TestAmbientWorkspaceModuleLoading(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	base := workspaceBase(t, c).
-		With(initDangBlueprint("ci", `
-type Ci {
-  pub source: Directory!
-
-  new(source: Workspace!) {
-    self.source = source.directory(".")
-    self
-  }
-
-  pub build: String! {
-    "built!"
-  }
-
-  pub deploy: String! {
-    "deployed!"
-  }
-}
-`)).
-		With(initDangModule("lint", `
-type Lint {
-  pub check: String! {
-    "lint passed"
-  }
-}
-`)).
-		With(initDangModule("test", `
-type Test {
-  pub run: String! {
-    "tests passed"
-  }
-}
-`))
+	base := workspaceFixture(t, c, "module-loading/ambient")
 
 	t.Run("dagger functions shows all modules", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerFunctions()).Stdout(ctx)
@@ -375,22 +312,8 @@ type Test {
 	})
 
 	t.Run("entrypoint module with workspace arg", func(ctx context.Context, t *testctx.T) {
-		ctr := workspaceBase(t, c).
-			WithNewFile("hello.txt", "hello from workspace").
-			With(initDangBlueprint("greeter", `
-type Greeter {
-  pub source: Directory!
-
-  new(source: Workspace!) {
-    self.source = source.directory(".")
-    self
-  }
-
-  pub read: String! {
-    source.file("hello.txt").contents
-  }
-}
-`))
+		ctr := workspaceFixture(t, c, "module-loading/entrypoint-greeter").
+			WithNewFile("hello.txt", "hello from workspace")
 
 		out, err := ctr.With(daggerCall("read")).Stdout(ctx)
 		require.NoError(t, err)
@@ -398,21 +321,7 @@ type Greeter {
 	})
 
 	t.Run("workspace without ambient entrypoint keeps modules namespaced", func(ctx context.Context, t *testctx.T) {
-		ctr := workspaceBase(t, c).
-			With(initDangModule("build", `
-type Build {
-  pub run: String! {
-    "build ran"
-  }
-}
-`)).
-			With(initDangModule("lint", `
-type Lint {
-  pub run: String! {
-    "lint ran"
-  }
-}
-`))
+		ctr := workspaceFixture(t, c, "module-loading/namespaced")
 
 		out, err := ctr.With(moduleLoadingDaggerFunctions()).Stdout(ctx)
 		require.NoError(t, err)
@@ -433,23 +342,7 @@ type Lint {
 // configurations before any runtime loading occurs.
 func (ModuleLoadingSuite) TestAmbientWorkspaceValidation(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	ctr := workspaceBase(t, c).
-		With(initDangModule("alpha", `
-type Alpha {
-  pub run: String! {
-    "alpha"
-  }
-}
-`)).
-		With(initDangModule("beta", `
-type Beta {
-  pub run: String! {
-    "beta"
-  }
-}
-`)).
-		With(daggerExec("workspace", "config", "modules.alpha.entrypoint", "true")).
-		With(daggerExec("workspace", "config", "modules.beta.entrypoint", "true"))
+	ctr := workspaceFixture(t, c, "module-loading/multiple-entrypoints")
 
 	out, err := ctr.With(moduleLoadingDaggerExecFail("functions")).CombinedOutput(ctx)
 	require.NoError(t, err)
@@ -469,8 +362,8 @@ func (ModuleLoadingSuite) TestModuleLoadingPrecedence(ctx context.Context, t *te
 source = "modules/ambient"
 entrypoint = true
 `).
-			With(moduleLoadingDangModule(".dagger/modules/ambient", "ambient", "Ambient", "build", "ambient build")).
-			With(moduleLoadingDangModule("nested", "nested", "Nested", "build", "cwd build")).
+			With(withModuleFixture(t, c, ".dagger/modules/ambient", "dang/ambient-build")).
+			With(withModuleFixture(t, c, "nested", "dang/nested-build")).
 			WithWorkdir("/work/nested")
 
 		out, err := ctr.With(moduleLoadingDaggerCall("build")).Stdout(ctx)
@@ -485,7 +378,7 @@ entrypoint = true
 	t.Run("unconfigured workspace does not infer module from cwd", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c).
-			With(moduleLoadingDangModule("nested", "nested", "Nested", "build", "cwd build")).
+			With(withModuleFixture(t, c, "nested", "dang/nested-build")).
 			WithWorkdir("/work/nested")
 
 		out, err := ctr.With(moduleLoadingDaggerCallFail("build")).CombinedOutput(ctx)
@@ -496,8 +389,8 @@ entrypoint = true
 	t.Run("extra module loads without inferring cwd dagger.json", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c).
-			With(moduleLoadingDangModule("nested", "nested", "Nested", "build", "cwd build")).
-			With(moduleLoadingDangModule("extra", "extra", "Extra", "build", "extra build")).
+			With(withModuleFixture(t, c, "nested", "dang/nested-build")).
+			With(withModuleFixture(t, c, "extra", "dang/extra-build")).
 			WithWorkdir("/work/nested")
 
 		out, err := ctr.With(moduleLoadingDaggerCall("-m", "../extra", "build")).Stdout(ctx)
@@ -511,15 +404,8 @@ entrypoint = true
 
 	t.Run("extra modules override ambient workspace entrypoint", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		ctr := workspaceBase(t, c).
-			With(initDangBlueprint("ambient", `
-type Ambient {
-  pub build: String! {
-    "ambient build"
-  }
-}
-`)).
-			With(moduleLoadingDangModule("extra", "extra", "Extra", "build", "extra build"))
+		ctr := workspaceFixture(t, c, "module-loading/ambient-build").
+			With(withModuleFixture(t, c, "extra", "dang/extra-build"))
 
 		out, err := ctr.With(moduleLoadingDaggerCall("-m", "./extra", "build")).Stdout(ctx)
 		require.NoError(t, err)
@@ -528,15 +414,8 @@ type Ambient {
 
 	t.Run("no module mode suppresses ambient module loading", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		ctr := workspaceBase(t, c).
-			With(initDangBlueprint("ambient", `
-type Ambient {
-  pub build: String! {
-    "ambient build"
-  }
-}
-`)).
-			With(moduleLoadingDangModule("nested", "nested", "Nested", "build", "cwd build")).
+		ctr := workspaceFixture(t, c, "module-loading/ambient-build").
+			With(withModuleFixture(t, c, "nested", "dang/nested-build")).
 			WithWorkdir("/work/nested")
 
 		out, err := ctr.With(moduleLoadingDaggerQuery(`{version}`, "-M")).Stdout(ctx)
@@ -554,19 +433,10 @@ type Ambient {
 func (ModuleLoadingSuite) TestModuleLoadingDedupeAndConflicts(ctx context.Context, t *testctx.T) {
 	t.Run("duplicate nominations are deduped before arbitration", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		ctr := workspaceBase(t, c).
-			With(moduleLoadingDangModule("modules/app", "app", "App", "message", "deduped app")).
-			WithNewFile(".dagger/config.toml", `[modules.first]
-source = "modules/app"
-entrypoint = true
+		ctr := workspaceFixture(t, c, "module-loading/deduped")
 
-[modules.second]
-source = "modules/app"
-entrypoint = true
-`)
-
-		out, err := ctr.With(moduleLoadingDaggerCall("message")).CombinedOutput(ctx)
-		require.NoError(t, err, out)
+		out, err := ctr.With(moduleLoadingDaggerCall("message")).Stdout(ctx)
+		require.NoError(t, err)
 		require.Equal(t, "deduped app", strings.TrimSpace(out))
 	})
 
@@ -576,23 +446,7 @@ entrypoint = true
 
 	t.Run("multiple distinct ambient entrypoints are rejected", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		ctr := workspaceBase(t, c).
-			With(initDangModule("alpha", `
-type Alpha {
-  pub run: String! {
-    "alpha"
-  }
-}
-`)).
-			With(initDangModule("beta", `
-type Beta {
-  pub run: String! {
-    "beta"
-  }
-}
-`)).
-			With(daggerExec("workspace", "config", "modules.alpha.entrypoint", "true")).
-			With(daggerExec("workspace", "config", "modules.beta.entrypoint", "true"))
+		ctr := workspaceFixture(t, c, "module-loading/multiple-entrypoints")
 
 		out, err := ctr.With(moduleLoadingDaggerExecFail("functions")).CombinedOutput(ctx)
 		require.NoError(t, err)
@@ -608,18 +462,7 @@ func (ModuleLoadingSuite) TestEntrypointRootRouting(ctx context.Context, t *test
 	c := connect(ctx, t)
 
 	t.Run("root field shadowing", func(ctx context.Context, t *testctx.T) {
-		base := workspaceBase(t, c).
-			With(initDangBlueprint("ci", `
-type Ci {
-  pub build: String! {
-    "built!"
-  }
-
-  pub container: String! {
-    "custom container"
-  }
-}
-`))
+		base := workspaceFixture(t, c, "module-loading/root-shadow")
 
 		out, err := base.With(daggerFunctions()).Stdout(ctx)
 		require.NoError(t, err)
@@ -632,21 +475,7 @@ type Ci {
 	})
 
 	t.Run("constructor argument overlap", func(ctx context.Context, t *testctx.T) {
-		base := workspaceBase(t, c).
-			With(initDangBlueprint("ci", `
-type Ci {
-  pub prefix: String!
-
-  new(prefix: String! = "ctor") {
-    self.prefix = prefix
-    self
-  }
-
-  pub echo(prefix: String! = "method"): String! {
-    self.prefix + ":" + prefix
-  }
-}
-`))
+		base := workspaceFixture(t, c, "module-loading/ctor-overlap")
 
 		out, err := base.With(daggerCall("--prefix", "ctor", "echo", "--prefix", "method")).Stdout(ctx)
 		require.NoError(t, err)
@@ -658,18 +487,7 @@ type Ci {
 	})
 
 	t.Run("self-named method does not recurse", func(ctx context.Context, t *testctx.T) {
-		base := workspaceBase(t, c).
-			With(initStandaloneDangModule("test", `
-type Test {
-  pub test: String! {
-    "test-result"
-  }
-
-  pub other: String! {
-    "other-result"
-  }
-}
-`))
+		base := moduleEntrypointFixture(t, c, "test", "dang/root-self-named")
 
 		out, err := base.With(daggerCall("test")).Stdout(ctx)
 		require.NoError(t, err)
@@ -681,26 +499,7 @@ type Test {
 	})
 
 	t.Run("core return types still work through entrypoint proxies", func(ctx context.Context, t *testctx.T) {
-		base := workspaceBase(t, c).
-			With(initStandaloneDangModule("dirs", `
-type Dirs {
-  pub directory: Directory! {
-    Dagger.directory.withNewFile("hello.txt", "hello from dirs")
-  }
-
-  pub file: File! {
-    Dagger.file("greeting.txt", "hi")
-  }
-
-  pub container: Container! {
-    Dagger.container.from("alpine:3.20")
-  }
-
-  pub greet: String! {
-    "greetings!"
-  }
-}
-`))
+		base := moduleEntrypointFixture(t, c, "dirs", "dang/core-types")
 
 		out, err := base.With(daggerCall("greet")).Stdout(ctx)
 		require.NoError(t, err)
@@ -720,28 +519,7 @@ type Dirs {
 	})
 
 	t.Run("directory field does not recurse in container runtime plumbing", func(ctx context.Context, t *testctx.T) {
-		base := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--sdk=go", "--source=.", "playground", ".")).
-			WithNewFile("main.go", `package main
-
-import (
-	"dagger/playground/internal/dagger"
-)
-
-type Playground struct {
-	*dagger.Directory
-}
-
-func New() Playground {
-	return Playground{Directory: dag.Directory()}
-}
-
-func (p *Playground) SayHello() string {
-	return "hello!"
-}
-`)
+		base := moduleEntrypointFixture(t, c, "playground", "go/playground-directory-field")
 
 		out, err := base.With(daggerQuery(`{sayHello, directory{entries}}`)).Stdout(ctx)
 		require.NoError(t, err)

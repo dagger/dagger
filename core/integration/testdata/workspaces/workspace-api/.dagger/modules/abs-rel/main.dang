@@ -1,0 +1,12 @@
+type AbsRel {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory("/sub")
+    self
+  }
+
+  pub ls: [String!] {
+    source.entries
+  }
+}
