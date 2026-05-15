@@ -1,0 +1,8 @@
+{
+  "name": "test",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "./sdk"
+  },
+  "source": "."
+}
