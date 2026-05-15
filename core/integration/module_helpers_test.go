@@ -102,6 +102,38 @@ func configFile(dirPath string, cfg *modules.ModuleConfig) dagger.WithContainerF
 	return fileContents(cfgPath, string(cfgBytes))
 }
 
+func testDataPath(t testing.TB, elems ...string) string {
+	t.Helper()
+	pathElems := append([]string{"testdata"}, elems...)
+	absPath, err := filepath.Abs(filepath.Join(pathElems...))
+	require.NoError(t, err)
+	return absPath
+}
+
+func moduleFixture(t testing.TB, c *dagger.Client, fixture string) *dagger.Container {
+	t.Helper()
+	return goGitBase(t, c).
+		With(withModuleFixture(t, c, ".", fixture))
+}
+
+func withModuleFixture(t testing.TB, c *dagger.Client, dst, fixture string) dagger.WithContainerFunc {
+	t.Helper()
+	return withTestdataFixture(t, c, dst, "modules", fixture)
+}
+
+func withWorkspaceFixture(t testing.TB, c *dagger.Client, dst, fixture string) dagger.WithContainerFunc {
+	t.Helper()
+	return withTestdataFixture(t, c, dst, fixture)
+}
+
+func withTestdataFixture(t testing.TB, c *dagger.Client, dst string, elems ...string) dagger.WithContainerFunc {
+	t.Helper()
+	fixturePath := testDataPath(t, elems...)
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithDirectory(dst, c.Host().Directory(fixturePath))
+	}
+}
+
 func privateRepoSetup(c *dagger.Client, t *testctx.T, tc vcsTestCase) (dagger.WithContainerFunc, func()) {
 	var socket *dagger.Socket
 	cleanup := func() {}
