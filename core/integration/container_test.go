@@ -5641,22 +5641,9 @@ func (ContainerSuite) TestSaveInNested(ctx context.Context, t *testctx.T) {
 		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:dev")
 
-	out, err := dockerc.WithWorkdir("/src/test").
-		WithExec([]string{"dagger", "module", "init", "test", "--sdk=go", "."}).
-		WithNewFile("main.go", `package main
-
-import "context"
-
-type Test struct{}
-
-func (m *Test) Try(ctx context.Context) error {
-	return dag.Container().
-		From("alpine").
-		WithExec([]string{"touch", "/foo"}).
-		ExportImage(ctx, "foobar:latest")
-}
-
-		`).
+	out, err := dockerc.
+		With(withModuleFixture(t, c, "/src/test", "go/container-save-nested")).
+		WithWorkdir("/src/test").
 		WithExec([]string{"dagger", "call", "-m", ".", "try"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeFailure}).
 		Stderr(ctx)
 	require.NoError(t, err)

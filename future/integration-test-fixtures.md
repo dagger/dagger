@@ -38,7 +38,7 @@ As of 2026-05-15, this migration is in progress on branch `workspace`.
 
 Last code checkpoint:
 
-- `ff00fd8a0 test: convert runtime parent secret fixtures`
+- `4b5485ad5 test: convert sdk client fixtures`
 
 Current strategy:
 
@@ -57,13 +57,14 @@ Current strategy:
 
 Validation so far:
 
-- Every committed conversion batch through `ff00fd8a0` was formatted.
+- Every committed conversion batch through `4b5485ad5` was formatted.
 - `go test ./core/integration -run '^$'` passed after the committed batches.
 - The uncommitted `module_runtime_behavior_test.go` fixture conversion was
   formatted and `go test ./core/integration -run '^$'` passed.
-- The uncommitted `module_python_test.go`, `module_typescript_test.go`, and
-  `client_generator_test.go` fixture conversions were formatted and
-  `go test ./core/integration -run '^$'` passed.
+- The one-hit host/CLI fixture conversions in `module_up_test.go`,
+  `workspace_compat_test.go`, `container_test.go`, `client_test.go`, and
+  `cacert_test.go` were formatted and `go test ./core/integration -run '^$'`
+  passed.
 - Slow live integration runs were paused after the conversion-first direction.
 
 Shared fixture helpers already added in `core/integration/module_helpers_test.go`:
@@ -102,26 +103,23 @@ Committed conversion areas so far:
 - cross-session fixtures
 - shell fixtures
 - runtime secret and runtime parent-field fixtures
+- module Python, TypeScript, and client generator fixtures
 - module runtime behavior fixtures, uncommitted
 - module call, path input, config, and type fixtures, uncommitted
-- module Python, TypeScript, and client generator fixtures, uncommitted
+- module up, CA cert terminal, container save nested, client stable ID, and
+  workspace compat blueprint fixtures
 
 Current broad inventory from the worktree after the uncommitted large module
-runtime/schema and SDK/client-generator fixture conversions:
+runtime/schema and one-hit host/CLI fixture conversions:
 
 ```text
-core/integration/container_test.go:1
 core/integration/module_terminal_test.go:7
-core/integration/cacert_test.go:1
-core/integration/module_up_test.go:1
 core/integration/envfile_test.go:3
 core/integration/module_helpers_test.go:5
-core/integration/workspace_compat_test.go:1
 core/integration/legacy_test.go:35
 core/integration/gitcredential_test.go:3
 core/integration/module_deprecation_test.go:3
 core/integration/workspace_selection_test.go:3
-core/integration/client_test.go:1
 ```
 
 The broad inventory is intentionally conservative. Inspect each hit before
@@ -137,12 +135,7 @@ Recommended next order:
    - `envfile_test.go`
    - `gitcredential_test.go`
    - `workspace_selection_test.go`
-   - `workspace_compat_test.go`
    - `module_deprecation_test.go`
-   - `module_up_test.go`
-   - `container_test.go`
-   - `client_test.go`
-   - remaining `cacert_test.go`
 
 2. Delete or shrink the dynamic helpers in `module_helpers_test.go` once no
    tests depend on them.
