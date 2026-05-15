@@ -1,0 +1,12 @@
+type GiSub {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory("src", gitignore: true)
+    self
+  }
+
+  pub ls: [String!] {
+    source.entries
+  }
+}
