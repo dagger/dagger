@@ -1,0 +1,5 @@
+{
+  "name": "reader",
+  "sdk": "go",
+  "source": "."
+}
