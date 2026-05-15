@@ -142,57 +142,8 @@ func (GitCredentialSuite) TestGitCredentialErrors(ctx context.Context, t *testct
 
 		env := setupGitCredentials("github.com", token, workDir)
 
-		// Create the root directory for the main module
 		rootDir := filepath.Join(workDir, "main")
-		require.NoError(t, os.MkdirAll(rootDir, 0755))
-
-		// Create the dep directory inside the main module
-		depModDir := filepath.Join(rootDir, "dep")
-		require.NoError(t, os.MkdirAll(depModDir, 0755))
-
-		// Write the dependent module's code with correct return type
-		err = os.WriteFile(filepath.Join(depModDir, "main.go"), []byte(`package main
-
-import (
-    "context"
-    "dagger/dep/internal/dagger"
-)
-
-type Dep struct{}
-
-func (m *Dep) ListFiles(ctx context.Context, dir *dagger.Directory) ([]string, error) {
-    return dir.Entries(ctx)
-}
-`), 0644)
-		require.NoError(t, err)
-
-		// Initialize the dependent module
-		_, err = hostDaggerExec(ctx, t, depModDir, "module", "init", "--source=.", "--sdk=go", "dep", ".")
-		require.NoError(t, err)
-
-		// Write the main module's code with matching return type
-		err = os.WriteFile(filepath.Join(rootDir, "main.go"), []byte(`package main
-
-import (
-    "context"
-    "dagger/test/internal/dagger"
-)
-
-type Test struct{}
-
-func (m *Test) Fn(ctx context.Context, dir *dagger.Directory) ([]string, error) {
-    return dag.Dep().ListFiles(ctx, dir)
-}
-`), 0644)
-		require.NoError(t, err)
-
-		// Initialize the main module
-		_, err = hostDaggerExec(ctx, t, rootDir, "module", "init", "--source=.", "--sdk=go", "test", ".")
-		require.NoError(t, err)
-
-		// Install the dependent module using relative path
-		_, err = hostDaggerExec(ctx, t, rootDir, "module", "install", "./dep")
-		require.NoError(t, err)
+		copyTestdataFixture(ctx, t, rootDir, "modules", "go", "gitcredential-private-dir")
 
 		// Execute the module with a private Git repository directory
 		out, err := execWithEnv(ctx, t, rootDir, env, "call", "fn", "--dir", "https://github.com/grouville/daggerverse-private.git")
