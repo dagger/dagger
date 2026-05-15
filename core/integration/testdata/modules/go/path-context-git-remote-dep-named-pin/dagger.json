@@ -1,0 +1,14 @@
+{
+  "name": "test",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "context-git",
+      "source": "github.com/dagger/dagger-test-modules/context-git",
+      "pin": "v1.2.3"
+    }
+  ]
+}
