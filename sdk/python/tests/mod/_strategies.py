@@ -498,6 +498,7 @@ class GeneratedModule:
     has_helper_class: bool
     foo_inherits_helper: bool
     functions: tuple[GeneratedFunction, ...]
+    dagger_alias: str | None = None
 
 
 def _alias_name_strategy(prefix: str = "Alias") -> st.SearchStrategy[str]:
@@ -588,6 +589,8 @@ def module_strategy(  # type: ignore[no-untyped-def]
             used_fn_names.add(f.name)
         attempts += 1
 
+    dagger_alias = draw(st.sampled_from([None, None, "dgr", "dgmod"]))
+
     return _render_module(
         GeneratedModule(
             use_future_annotations=use_future_annotations,
@@ -596,6 +599,7 @@ def module_strategy(  # type: ignore[no-untyped-def]
             has_helper_class=has_helper_class,
             foo_inherits_helper=foo_inherits_helper,
             functions=tuple(fns),
+            dagger_alias=dagger_alias,
         )
     )
 
@@ -610,9 +614,14 @@ def _render_module(mod: GeneratedModule) -> str:  # noqa: C901, PLR0912
     if mod.use_future_annotations:
         lines.append("from __future__ import annotations")
         lines.append("")
+    dpkg = mod.dagger_alias or "dagger"
+    if mod.dagger_alias:
+        lines.append("import dagger")
+        lines.append(f"import dagger as {mod.dagger_alias}")
+    else:
+        lines.append("import dagger")
     lines.extend(
         [
-            "import dagger",
             "from typing import Annotated, Optional, TypeAlias",
             "from typing_extensions import Self",
             "from dagger import DefaultPath, Deprecated, Doc, Ignore, Name",
@@ -634,18 +643,18 @@ def _render_module(mod: GeneratedModule) -> str:  # noqa: C901, PLR0912
     if mod.has_helper_class:
         lines.extend(
             [
-                "@dagger.object_type",
+                f"@{dpkg}.object_type",
                 "class Helper:",
-                '    name: str = dagger.field(default="h")',
+                f'    name: str = {dpkg}.field(default="h")',
                 "",
-                "    @dagger.function",
+                f"    @{dpkg}.function",
                 "    def hello(self) -> str:",
                 "        return self.name",
                 "",
             ]
         )
 
-    lines.append("@dagger.object_type")
+    lines.append(f"@{dpkg}.object_type")
     base_clause = "(Helper)" if mod.foo_inherits_helper else ""
     lines.append(f"class Foo{base_clause}:")
 
@@ -661,13 +670,13 @@ def _render_module(mod: GeneratedModule) -> str:  # noqa: C901, PLR0912
             else:
                 param_strs.append(f"{p.name}: {p.annotation} = {p.default_expr}")
         if fn.method_kind == "staticmethod":
-            decorator_lines = ["    @staticmethod", "    @dagger.function"]
+            decorator_lines = ["    @staticmethod", f"    @{dpkg}.function"]
             params_rendered = ", ".join(param_strs)
         elif fn.method_kind == "classmethod":
-            decorator_lines = ["    @classmethod", "    @dagger.function"]
+            decorator_lines = ["    @classmethod", f"    @{dpkg}.function"]
             params_rendered = ", ".join(["cls", *param_strs])
         else:
-            decorator_lines = ["    @dagger.function"]
+            decorator_lines = [f"    @{dpkg}.function"]
             params_rendered = ", ".join(["self", *param_strs])
         lines.extend(
             [
