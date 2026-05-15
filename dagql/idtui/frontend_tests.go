@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"charm.land/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
@@ -218,7 +219,6 @@ func (tv *TestView) Render(ctx tuist.Context) {
 	selected := rows[selectedIdx]
 	left := tv.renderInteractiveSidebar(ctx.Resize(leftWidth, viewportHeight), view, rows, selectedIdx)
 	right := tv.renderDetailLines(ctx, out, selected, rightWidth, viewportHeight)
-	border := out.String(VertBar).Foreground(termenv.ANSIBrightBlack).Faint().String()
 
 	for i := range viewportHeight {
 		var l, r string
@@ -228,7 +228,7 @@ func (tv *TestView) Render(ctx tuist.Context) {
 		if i < len(right) {
 			r = right[i]
 		}
-		ctx.Line(padANSI(l, leftWidth) + " " + border + " " + r)
+		ctx.Line(renderTestPaneLine(out, l, r, leftWidth))
 	}
 }
 
@@ -1091,6 +1091,88 @@ func (tv *TestView) renderDetailLines(ctx tuist.Context, out *termenv.Output, ro
 
 func renderDetailSplitter(out TermOutput, width int) string {
 	return out.String(strings.Repeat(HorizBar, max(width, 0))).Foreground(termenv.ANSIBrightBlack).Faint().String()
+}
+
+func renderTestPaneLine(out TermOutput, left, right string, leftWidth int) string {
+	leftJoin := visibleLineIsHorizontalRule(left) && visibleCellAt(left, leftWidth-1) == HorizBar
+	rightJoin := visibleLineIsHorizontalRule(right) && visibleCellAt(right, 0) == HorizBar
+	return padANSI(left, leftWidth) +
+		testPaneGap(out, leftJoin) +
+		testPaneJunction(out, leftJoin, rightJoin) +
+		testPaneGap(out, rightJoin) +
+		right
+}
+
+func testPaneGap(out TermOutput, join bool) string {
+	if !join {
+		return " "
+	}
+	return out.String(HorizBar).Foreground(termenv.ANSIBrightBlack).Faint().String()
+}
+
+func testPaneJunction(out TermOutput, leftJoin, rightJoin bool) string {
+	sym := VertBar
+	switch {
+	case leftJoin && rightJoin:
+		sym = CrossBar
+	case leftJoin:
+		sym = VertLeftBar
+	case rightJoin:
+		sym = VertRightBar
+	}
+	return out.String(sym).Foreground(termenv.ANSIBrightBlack).Faint().String()
+}
+
+func visibleLineIsHorizontalRule(s string) bool {
+	seenBar := false
+	for i := 0; i < len(s); {
+		if s[i] == '\x1b' {
+			i = skipANSI(s, i)
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 0 {
+			break
+		}
+		if lipgloss.Width(string(r)) > 0 {
+			switch string(r) {
+			case HorizBar:
+				seenBar = true
+			case " ":
+				// Ignore padding.
+			default:
+				return false
+			}
+		}
+		i += size
+	}
+	return seenBar
+}
+
+func visibleCellAt(s string, col int) string {
+	if col < 0 {
+		return ""
+	}
+	visibleCol := 0
+	for i := 0; i < len(s); {
+		if s[i] == '\x1b' {
+			i = skipANSI(s, i)
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 0 {
+			break
+		}
+		cellWidth := lipgloss.Width(string(r))
+		if cellWidth > 0 {
+			if col >= visibleCol && col < visibleCol+cellWidth {
+				return string(r)
+			}
+			visibleCol += cellWidth
+		}
+		i += size
+	}
+	return ""
 }
 
 func (tv *TestView) detailLogLineCount(span *dagui.Span) int {

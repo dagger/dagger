@@ -176,6 +176,19 @@ func stripANSITest(s string) string {
 	return ansiRETest.ReplaceAllString(s, "")
 }
 
+func TestTestViewPaneLineJoinsHorizontalSplitters(t *testing.T) {
+	var buf strings.Builder
+	out := NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+	left := "\x1b[2m" + strings.Repeat(HorizBar, 4) + "\x1b[0m"
+	right := "\x1b[2m" + strings.Repeat(HorizBar, 5) + "\x1b[0m"
+
+	got := stripANSITest(renderTestPaneLine(out, left, right, 4))
+	want := strings.Repeat(HorizBar, 5) + CrossBar + strings.Repeat(HorizBar, 6)
+	if got != want {
+		t.Fatalf("joined pane line = %q, want %q", got, want)
+	}
+}
+
 func TestTestViewDetailLogsRenderAboveChildrenWithSplitter(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	spanID := dagui.SpanID{SpanID: trace.SpanID{1}}
