@@ -5,7 +5,6 @@ package core
 
 import (
 	"os"
-	"path"
 	"strings"
 
 	"dagger.io/dagger"
