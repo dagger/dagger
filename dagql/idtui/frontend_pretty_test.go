@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/vito/tuist"
 	"go.opentelemetry.io/otel/trace"
@@ -264,6 +265,22 @@ func prettyTestSpanID(id byte) dagui.SpanID {
 
 func prettyTestTraceID() dagui.TraceID {
 	return dagui.TraceID{TraceID: trace.TraceID{1}}
+}
+
+func TestLogPagerQClosesLikeEscape(t *testing.T) {
+	fe := NewWithDB(io.Discard, dagui.NewDB())
+	restored := false
+	fe.logPager = &LogPagerView{}
+	fe.logPagerReturn = func() { restored = true }
+
+	fe.handleNavKeyUV(uv.KeyPressEvent(uv.Key{Text: "q", Code: 'q'}))
+
+	if fe.logPager != nil {
+		t.Fatal("expected q to close log pager")
+	}
+	if !restored {
+		t.Fatal("expected q to restore prior focus like escape")
+	}
 }
 
 func TestDoQuitInvalidatesCachedRender(t *testing.T) {

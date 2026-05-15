@@ -1345,8 +1345,10 @@ func (fe *frontendPretty) keys(out *termenv.Output) []key.Binding {
 				KeyEnabled(fe.logPager.SearchQuery != "")),
 			key.NewBinding(key.WithKeys("esc", "alt+esc"),
 				key.WithHelp("esc", "back")),
-			key.NewBinding(key.WithKeys("q", "ctrl+c"),
-				key.WithHelp("q", quitMsg)),
+			key.NewBinding(key.WithKeys("q"),
+				key.WithHelp("q", "back")),
+			key.NewBinding(key.WithKeys("ctrl+c"),
+				key.WithHelp("ctrl+c", quitMsg)),
 		}
 	}
 	var focused *dagui.Span
@@ -2221,7 +2223,9 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 
 	if fe.logPager != nil {
 		switch keyStr {
-		case "q", "ctrl+c":
+		case "q", "esc", "alt+esc":
+			fe.closeLogPager()
+		case "ctrl+c":
 			if fe.shell != nil {
 				if fe.shellInterrupt != nil {
 					fe.shellInterrupt(errors.New("interrupted"))
@@ -2229,8 +2233,6 @@ func (fe *frontendPretty) handleNavKeyUV(ev uv.KeyPressEvent) {
 			} else {
 				fe.quitAction(ErrInterrupted)
 			}
-		case "esc", "alt+esc":
-			fe.closeLogPager()
 		case "down", "j":
 			fe.logPager.ScrollBy(1)
 		case "up", "k":
