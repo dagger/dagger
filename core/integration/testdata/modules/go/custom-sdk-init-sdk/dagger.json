@@ -1,0 +1,7 @@
+{
+  "name": "cool-sdk",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  }
+}
