@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -74,18 +73,8 @@ func initMCPTestModule(ctx context.Context, t testing.TB) string {
 	t.Helper()
 
 	modDir := t.TempDir()
-
-	_, err := hostDaggerExec(ctx, t, modDir, "module", "init", "--sdk=go", "--source=.", "test", ".")
-	require.NoError(t, err)
-
-	require.NoError(t, os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
-
-type Test struct{}
-
-func (m *Test) Greeting() string {
-	return "hello from module"
-}
-`), 0o644))
+	copyTestdataFixture(ctx, t, modDir, "workspaces", "mcp-greeting")
+	initGitRepo(ctx, t, modDir)
 
 	functionsOut, err := hostDaggerExec(ctx, t, modDir, "functions")
 	require.NoError(t, err)
