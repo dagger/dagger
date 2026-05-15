@@ -19,80 +19,7 @@ import (
 func (CLISuite) TestModuleFunctions(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	ctr := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("module", "init", "--source=.", "--sdk=go", "test", ".")).
-		WithNewFile("main.go", `package main
-
-import (
-	"context"
-
-	"dagger/test/internal/dagger"
-)
-
-type Test struct{}
-
-// doc for FnA
-func (m *Test) FnA() *dagger.Container {
-	return nil
-}
-
-// doc for FnB
-func (m *Test) FnB() Duck {
-	return nil
-}
-
-type Duck interface {
-	DaggerObject
-	// quack that thang
-	Quack(ctx context.Context) (string, error)
-}
-
-// doc for FnC
-func (m *Test) FnC() *Obj {
-	return nil
-}
-
-// doc for Prim
-func (m *Test) Prim() string {
-	return "yo"
-}
-
-type Obj struct {
-	// doc for FieldA
-	FieldA *dagger.Container
-	// doc for FieldB
-	FieldB string
-	// doc for FieldC
-	FieldC *Obj
-	// doc for FieldD
-	FieldD *OtherObj
-}
-
-// doc for FnD
-func (m *Obj) FnD() *dagger.Container {
-	return nil
-}
-
-type OtherObj struct {
-	// doc for OtherFieldA
-	OtherFieldA *dagger.Container
-	// doc for OtherFieldB
-	OtherFieldB string
-	// doc for OtherFieldC
-	OtherFieldC *Obj
-	// doc for OtherFieldD
-	OtherFieldD *OtherObj
-}
-
-// doc for FnE
-func (m *OtherObj) FnE() *dagger.Container {
-	return nil
-}
-
-`,
-		)
+	ctr := moduleFixture(t, c, "go/functions-introspection")
 
 	t.Run("top-level", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.With(daggerFunctions("-m", ".")).Stdout(ctx)
@@ -213,31 +140,12 @@ func (CLISuite) TestModuleLoadErrors(ctx context.Context, t *testctx.T) {
 func (CLISuite) TestModuleWithoutSDK(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	helloCode := `package main
-
-// A Dagger module to say hello to the world!
-type Hello struct{}
-
-// Hello prints out a greeting
-func (m *Hello) Hello() string {
-	return "hi"
-}
-`
-
 	base := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work")
+		WithWorkdir("/work").
+		With(withWorkspaceFixture(t, c, "/work/test", "workspaces/module-without-sdk"))
 
-	testCtr := base.
-		WithWorkdir("/work/test/nosdk/hello").
-		With(daggerExec("module", "init", "--sdk=go", "hello", ".")).
-		WithNewFile("main.go", helloCode).
-		WithWorkdir("/work/test/nosdk").
-		With(daggerExec("module", "init", "nosdk", ".")).
-		With(daggerExec("module", "install", "./hello")).
-		WithWorkdir("/work/test").
-		With(daggerExec("module", "init", "test", ".")).
-		With(daggerExec("module", "install", "./nosdk"))
+	testCtr := base.WithWorkdir("/work/test")
 
 	daggerJSON, err := testCtr.File("dagger.json").Contents(ctx)
 	require.NoError(t, err)
