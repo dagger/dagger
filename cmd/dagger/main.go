@@ -76,6 +76,7 @@ var (
 	web                      bool
 	noExit                   bool
 	xRelease                 string
+	autoApply                bool
 	_, useCloudEngine        = os.LookupEnv("DAGGER_CLOUD_ENGINE")
 	enableScaleOut           bool
 
@@ -158,15 +159,10 @@ func init() {
 		checksCmd,
 		upCmd,
 		generateCmd,
-		initCmd,
 		workspaceCmd,
 		migrateCmd,
-		moduleCmd,
 		moduleDepInstallCmd,
-		moduleUnInstallCmd,
 		moduleUpdateCmd,
-		moduleDevelopCmd,
-		modulePublishCmd,
 		funcListCmd,
 		callCoreCmd.Command(),
 		callModCmd.Command(),

@@ -238,6 +238,74 @@ entrypoint = true
 	})
 }
 
+func (ModuleLoadingSuite) TestModuleSourceAddressValidation(ctx context.Context, t *testctx.T) {
+	validModule := func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithNewFile("main.dang", `
+type App {
+  pub hello: String! {
+    "hello"
+  }
+}
+`)
+	}
+
+	t.Run("local source cannot escape context", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := workspaceBase(t, c).
+			With(validModule).
+			WithNewFile("dagger.json", `{"name":"app","sdk":{"source":"dang"},"source":".."}`).
+			With(moduleLoadingDaggerQueryFail(`{hello}`, "-m", ".")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `source path ".." escapes context from source root "."`)
+	})
+
+	t.Run("local source cannot be absolute", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := workspaceBase(t, c).
+			With(validModule).
+			WithNewFile("dagger.json", `{"name":"app","sdk":{"source":"dang"},"source":"/tmp"}`).
+			With(moduleLoadingDaggerQueryFail(`{hello}`, "-m", ".")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `source path "/tmp" is absolute`)
+	})
+
+	t.Run("local dependency source cannot escape context", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := workspaceBase(t, c).
+			With(validModule).
+			WithNewFile("dagger.json", `{
+  "name": "app",
+  "sdk": {"source": "dang"},
+  "dependencies": [{"name": "escape", "source": ".."}]
+}`).
+			With(moduleLoadingDaggerQueryFail(`{escape{hello}}`, "-m", ".")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `local module dep source path ".." escapes context "/work"`)
+	})
+
+	t.Run("local dependency source cannot be absolute", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := workspaceBase(t, c).
+			With(validModule).
+			WithNewFile("dagger.json", `{
+  "name": "app",
+  "sdk": {"source": "dang"},
+  "dependencies": [{"name": "escape", "source": "/tmp/foo"}]
+}`).
+			With(moduleLoadingDaggerQueryFail(`{escape{hello}}`, "-m", ".")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `local module dep source path "/tmp/foo" is absolute`)
+	})
+}
+
 // TestAmbientWorkspaceModuleLoading should pin down the baseline runtime shape
 // of a configured workspace: one ambient entrypoint promoted to Query root,
 // sibling modules still loaded under their names, and the same layout visible
