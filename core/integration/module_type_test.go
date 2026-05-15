@@ -28,13 +28,15 @@ func TestType(t *testing.T) {
 
 func (TypeSuite) TestCustomTypes(ctx context.Context, t *testctx.T) {
 	type testCase struct {
-		sdk    string
-		source string
+		sdk     string
+		fixture string
+		source  string
 	}
 
 	for _, tc := range []testCase{
 		{
-			sdk: "go",
+			sdk:     "go",
+			fixture: "go/type-custom-types-01",
 			source: `package main
 
 import "strings"
@@ -59,7 +61,8 @@ func (t *Repeater) Render() string {
 `,
 		},
 		{
-			sdk: "python",
+			sdk:     "python",
+			fixture: "python/type-custom-types-02",
 			source: `import dagger
 
 @dagger.object_type
@@ -80,7 +83,8 @@ class Test:
 `,
 		},
 		{
-			sdk: "typescript",
+			sdk:     "typescript",
+			fixture: "typescript/type-custom-types-03",
 			source: `
 import { object, func } from "@dagger.io/dagger"
 
@@ -116,7 +120,7 @@ export class Test {
 		t.Run(fmt.Sprintf("custom %s types", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			out, err := modInit(t, c, tc.sdk, tc.source).
+			out, err := moduleFixture(t, c, tc.fixture).
 				With(daggerQuery(`{repeater(msg:"echo!", times: 3){render}}`)).
 				Stdout(ctx)
 
@@ -128,13 +132,15 @@ export class Test {
 
 func (TypeSuite) TestReturnTypeDetection(ctx context.Context, t *testctx.T) {
 	type testCase struct {
-		sdk    string
-		source string
+		sdk     string
+		fixture string
+		source  string
 	}
 
 	for _, tc := range []testCase{
 		{
-			sdk: "go",
+			sdk:     "go",
+			fixture: "go/type-return-type-detection-01",
 			source: `package main
 
 type Test struct {}
@@ -149,7 +155,8 @@ func (m *Test) MyFunction() X {
 `,
 		},
 		{
-			sdk: "python",
+			sdk:     "python",
+			fixture: "python/type-return-type-detection-02",
 			source: `import dagger
 
 @dagger.object_type
@@ -164,7 +171,8 @@ class Test:
 `,
 		},
 		{
-			sdk: "typescript",
+			sdk:     "typescript",
+			fixture: "typescript/type-return-type-detection-03",
 			source: `
 import { object, func } from "@dagger.io/dagger"
 
@@ -191,7 +199,7 @@ export class Test {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			out, err := modInit(t, c, tc.sdk, tc.source).
+			out, err := moduleFixture(t, c, tc.fixture).
 				With(daggerQuery(`{myFunction{message}}`)).
 				Stdout(ctx)
 
@@ -203,13 +211,15 @@ export class Test {
 
 func (TypeSuite) TestReturnObject(ctx context.Context, t *testctx.T) {
 	type testCase struct {
-		sdk    string
-		source string
+		sdk     string
+		fixture string
+		source  string
 	}
 
 	for _, tc := range []testCase{
 		{
-			sdk: "go",
+			sdk:     "go",
+			fixture: "go/type-return-object-01",
 			source: `package main
 
 type Test struct {}
@@ -227,7 +237,8 @@ func (m *Test) MyFunction() X {
 `,
 		},
 		{
-			sdk: "python",
+			sdk:     "python",
+			fixture: "python/type-return-object-02",
 			source: `from dagger import field, function, object_type
 
 @object_type
@@ -245,7 +256,8 @@ class Test:
 `,
 		},
 		{
-			sdk: "typescript",
+			sdk:     "typescript",
+			fixture: "typescript/type-return-object-03",
 			source: `
 import { object, func } from "@dagger.io/dagger"
 
@@ -284,7 +296,7 @@ export class Test {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			out, err := modInit(t, c, tc.sdk, tc.source).
+			out, err := moduleFixture(t, c, tc.fixture).
 				With(daggerQuery(`{myFunction{message, recipient, from, timestamp}}`)).
 				Stdout(ctx)
 
@@ -296,13 +308,15 @@ export class Test {
 
 func (TypeSuite) TestReturnNestedObject(ctx context.Context, t *testctx.T) {
 	type testCase struct {
-		sdk    string
-		source string
+		sdk     string
+		fixture string
+		source  string
 	}
 
 	for _, tc := range []testCase{
 		{
-			sdk: "go",
+			sdk:     "go",
+			fixture: "go/type-return-nested-object-01",
 			source: `package main
 
 type Test struct{}
@@ -321,7 +335,8 @@ func (m *Test) MyFunction() Foo {
 `,
 		},
 		{
-			sdk: "python",
+			sdk:     "python",
+			fixture: "python/type-return-nested-object-02",
 			source: `from dagger import field, function, object_type
 
 @object_type
@@ -340,7 +355,8 @@ class Test:
 `,
 		},
 		{
-			sdk: "typescript",
+			sdk:     "typescript",
+			fixture: "typescript/type-return-nested-object-03",
 			source: `
 import { object, func } from "@dagger.io/dagger"
 
@@ -377,7 +393,7 @@ export class Test {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			out, err := modInit(t, c, tc.sdk, tc.source).
+			out, err := moduleFixture(t, c, tc.fixture).
 				With(daggerQuery(`{myFunction{msgContainer{msg}}}`)).
 				Stdout(ctx)
 
@@ -389,13 +405,15 @@ export class Test {
 
 func (TypeSuite) TestReturnCompositeCore(ctx context.Context, t *testctx.T) {
 	type testCase struct {
-		sdk    string
-		source string
+		sdk     string
+		fixture string
+		source  string
 	}
 
 	for _, tc := range []testCase{
 		{
-			sdk: "go",
+			sdk:     "go",
+			fixture: "go/type-return-composite-core-01",
 			source: `package main
 
 import (
@@ -420,7 +438,8 @@ func (m *Test) MyStruct() *Foo {
 `,
 		},
 		{
-			sdk: "python",
+			sdk:     "python",
+			fixture: "python/type-return-composite-core-02",
 			source: `import dagger
 from dagger import dag
 
@@ -441,7 +460,8 @@ class Test:
 `,
 		},
 		{
-			sdk: "typescript",
+			sdk:     "typescript",
+			fixture: "typescript/type-return-composite-core-03",
 			source: `
 import { dag, Container, File, object, func } from "@dagger.io/dagger"
 
@@ -481,7 +501,7 @@ export class Test {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			modGen := modInit(t, c, tc.sdk, tc.source)
+			modGen := moduleFixture(t, c, tc.fixture)
 
 			out, err := modGen.With(daggerQuery(`{mySlice{stdout}}`)).Stdout(ctx)
 			require.NoError(t, err)
@@ -496,13 +516,15 @@ export class Test {
 
 func (TypeSuite) TestReturnComplexThing(ctx context.Context, t *testctx.T) {
 	type testCase struct {
-		sdk    string
-		source string
+		sdk     string
+		fixture string
+		source  string
 	}
 
 	for _, tc := range []testCase{
 		{
-			sdk: "go",
+			sdk:     "go",
+			fixture: "go/type-return-complex-thing-01",
 			source: `package main
 
 import (
@@ -535,7 +557,8 @@ func (m *Test) Scan() ScanResult {
 `,
 		},
 		{
-			sdk: "python",
+			sdk:     "python",
+			fixture: "python/type-return-complex-thing-02",
 			source: `import dagger
 from dagger import dag
 
@@ -565,7 +588,8 @@ class Test:
 `,
 		},
 		{
-			sdk: "typescript",
+			sdk:     "typescript",
+			fixture: "typescript/type-return-complex-thing-03",
 			source: `
 import { dag, Container, object, func } from "@dagger.io/dagger"
 
@@ -615,7 +639,7 @@ export class Test {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			out, err := modInit(t, c, tc.sdk, tc.source).
+			out, err := moduleFixture(t, c, tc.fixture).
 				With(daggerQuery(`{scan{targets{stdout},report{contents,authors}}}`)).
 				Stdout(ctx)
 
@@ -627,13 +651,15 @@ export class Test {
 
 func (TypeSuite) TestIDableType(ctx context.Context, t *testctx.T) {
 	type testCase struct {
-		sdk    string
-		source string
+		sdk     string
+		fixture string
+		source  string
 	}
 
 	for _, tc := range []testCase{
 		{
-			sdk: "go",
+			sdk:     "go",
+			fixture: "go/type-i-dable-type-01",
 			source: `package main
 
 type Test struct {
@@ -651,7 +677,8 @@ func (m *Test) Get() string {
 `,
 		},
 		{
-			sdk: "python",
+			sdk:     "python",
+			fixture: "python/type-i-dable-type-02",
 			source: `from typing import Self
 
 import dagger
@@ -671,7 +698,8 @@ class Test:
 `,
 		},
 		{
-			sdk: "typescript",
+			sdk:     "typescript",
+			fixture: "typescript/type-i-dable-type-03",
 			source: `
 import { object, func } from "@dagger.io/dagger"
 
@@ -696,7 +724,7 @@ export class Test {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			modGen := modInit(t, c, tc.sdk, tc.source)
+			modGen := moduleFixture(t, c, tc.fixture)
 
 			// sanity check
 			out, err := modGen.With(daggerQuery(`{set(data: "abc"){get}}`)).Stdout(ctx)
@@ -720,12 +748,14 @@ func (TypeSuite) TestArgOwnType(ctx context.Context, t *testctx.T) {
 	// the raw JSON, since the module doesn't understand it's own types as IDs
 
 	type testCase struct {
-		sdk    string
-		source string
+		sdk     string
+		fixture string
+		source  string
 	}
 	for _, tc := range []testCase{
 		{
-			sdk: "go",
+			sdk:     "go",
+			fixture: "go/type-arg-own-type-01",
 			source: `package main
 
 import "strings"
@@ -753,7 +783,8 @@ func (m *Test) Uppers(msg []Message) []Message {
 }`,
 		},
 		{
-			sdk: "python",
+			sdk:     "python",
+			fixture: "python/type-arg-own-type-02",
 			source: `import dagger
 
 @dagger.object_type
@@ -779,7 +810,8 @@ class Test:
 `,
 		},
 		{
-			sdk: "typescript",
+			sdk:     "typescript",
+			fixture: "typescript/type-arg-own-type-03",
 			source: `
 import { object, func } from "@dagger.io/dagger"
 
@@ -820,11 +852,7 @@ export class Test {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			modGen := c.Container().From(golangImage).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				WithWorkdir("/work").
-				With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, ".")).
-				With(sdkSource(tc.sdk, tc.source))
+			modGen := moduleFixture(t, c, tc.fixture)
 
 			out, err := modGen.With(daggerQuery(`{sayHello(name: "world"){id}}`)).Stdout(ctx)
 			require.NoError(t, err)
@@ -842,28 +870,9 @@ export class Test {
 }
 
 func (TypeSuite) TestArgNull(ctx context.Context, t *testctx.T) {
-	src := `package main
-
-import "strings"
-
-type Test struct {}
-
-func (m *Test) UpperOpt(
-	a string, // +optional
-) string {
-	return strings.ToUpper(a)
-}
-
-func (m *Test) UpperReq(
-	a string,
-) string {
-	return strings.ToUpper(a)
-}
-`
-
 	var logs safeBuffer
 	c := connect(ctx, t, dagger.WithLogOutput(&logs))
-	modGen := modInit(t, c, "go", src)
+	modGen := moduleFixture(t, c, "go/type-arg-null")
 
 	out, err := modGen.With(daggerQuery(`{upperOpt(a: null)}`)).Stdout(ctx)
 	require.NoError(t, err)
@@ -877,12 +886,14 @@ func (m *Test) UpperReq(
 
 func (TypeSuite) TestScalarType(ctx context.Context, t *testctx.T) {
 	type testCase struct {
-		sdk    string
-		source string
+		sdk     string
+		fixture string
+		source  string
 	}
 	for _, tc := range []testCase{
 		{
-			sdk: "go",
+			sdk:     "go",
+			fixture: "go/type-scalar-type-01",
 			source: `package main
 
 import "dagger/test/internal/dagger"
@@ -915,7 +926,8 @@ func (m *Test) ToPlatforms(platform []string) []dagger.Platform {
 `,
 		},
 		{
-			sdk: "python",
+			sdk:     "python",
+			fixture: "python/type-scalar-type-02",
 			source: `import dagger
 from dagger import function, object_type
 
@@ -939,7 +951,8 @@ class Test:
 `,
 		},
 		{
-			sdk: "typescript",
+			sdk:     "typescript",
+			fixture: "typescript/type-scalar-type-03",
 			source: `import { object, func, Platform } from "@dagger.io/dagger"
 
 @object()
@@ -969,7 +982,7 @@ export class Test {
 	} {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-			modGen := modInit(t, c, tc.sdk, tc.source)
+			modGen := moduleFixture(t, c, tc.fixture)
 
 			out, err := modGen.With(daggerQuery(`{fromPlatform(platform: "linux/amd64")}`)).Stdout(ctx)
 			require.NoError(t, err)
@@ -1003,12 +1016,14 @@ export class Test {
 func (TypeSuite) TestEnumType(ctx context.Context, t *testctx.T) {
 	t.Run("simple enum", func(ctx context.Context, t *testctx.T) {
 		type testCase struct {
-			sdk    string
-			source string
+			sdk     string
+			fixture string
+			source  string
 		}
 		for _, tc := range []testCase{
 			{
-				sdk: "go",
+				sdk:     "go",
+				fixture: "go/type-enum-type-01",
 				source: `package main
 
 import "dagger/test/internal/dagger"
@@ -1032,7 +1047,8 @@ func (m *Test) ToProto(proto string) dagger.NetworkProtocol {
 `,
 			},
 			{
-				sdk: "python",
+				sdk:     "python",
+				fixture: "python/type-enum-type-02",
 				source: `import dagger
 from dagger import function, object_type
 
@@ -1060,7 +1076,8 @@ class Test:
 `,
 			},
 			{
-				sdk: "typescript",
+				sdk:     "typescript",
+				fixture: "typescript/type-enum-type-03",
 				source: `import { object, func, NetworkProtocol } from "@dagger.io/dagger";
 
 @object()
@@ -1085,7 +1102,7 @@ export class Test {
 		} {
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
-				modGen := modInit(t, c, tc.sdk, tc.source)
+				modGen := moduleFixture(t, c, tc.fixture)
 
 				out, err := modGen.With(daggerQuery(`{fromProto(proto: "TCP")}`)).Stdout(ctx)
 				require.NoError(t, err)
@@ -1110,13 +1127,15 @@ export class Test {
 
 	t.Run("multi-name for a value", func(ctx context.Context, t *testctx.T) {
 		type testCase struct {
-			sdk    string
-			source string
+			sdk     string
+			fixture string
+			source  string
 		}
 
 		for _, tc := range []testCase{
 			{
-				sdk: "go",
+				sdk:     "go",
+				fixture: "go/type-enum-type-04",
 				source: `package main
 
 import (
@@ -1135,7 +1154,8 @@ func (m *Test) ToImageLayerCompression(imageLayerCompression string) dagger.Imag
 			`,
 			},
 			{
-				sdk: "typescript",
+				sdk:     "typescript",
+				fixture: "typescript/type-enum-type-05",
 				source: `import { ImageLayerCompression, object, func } from "@dagger.io/dagger";
 
 @object()
@@ -1152,7 +1172,8 @@ export class Test {
 }`,
 			},
 			{
-				sdk: "python",
+				sdk:     "python",
+				fixture: "python/type-enum-type-06",
 				source: `import dagger
 from dagger import function, object_type
 
@@ -1170,7 +1191,7 @@ class Test:
 		} {
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
-				modGen := modInit(t, c, tc.sdk, tc.source)
+				modGen := moduleFixture(t, c, tc.fixture)
 
 				out, err := modGen.With(daggerQuery(`{fromImageLayerCompression(imageLayerCompression: "ESTARGZ")}`)).Stdout(ctx)
 				require.NoError(t, err)
@@ -1196,12 +1217,14 @@ func (TypeSuite) TestCustomEnumType(ctx context.Context, t *testctx.T) {
 	t.Run("custom enum type", func(ctx context.Context, t *testctx.T) {
 		type testCase struct {
 			sdk             string
+			fixture         string
 			supportsMembers bool
 			source          string
 		}
 		for _, tc := range []testCase{
 			{
 				sdk:             "go",
+				fixture:         "go/type-custom-enum-type-01",
 				supportsMembers: true,
 				source: `package main
 
@@ -1248,6 +1271,7 @@ func (m *Test) ToStatus(status string) Status {
 			},
 			{
 				sdk:             "python",
+				fixture:         "python/type-custom-enum-type-02",
 				supportsMembers: true,
 				source: `import enum
 
@@ -1293,6 +1317,7 @@ class Test:
 			},
 			{
 				sdk:             "typescript",
+				fixture:         "typescript/type-custom-enum-type-03",
 				supportsMembers: true,
 				source: `import { func, object } from "@dagger.io/dagger"
 
@@ -1348,7 +1373,7 @@ export class Test {
 		} {
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
-				modGen := modInit(t, c, tc.sdk, tc.source)
+				modGen := moduleFixture(t, c, tc.fixture)
 
 				// status property
 				out, err := modGen.With(daggerQuery(`{status}`)).Stdout(ctx)
@@ -1433,49 +1458,16 @@ export class Test {
 	})
 
 	t.Run("custom external enum type", func(ctx context.Context, t *testctx.T) {
-		depSrc := `package main
-
-// Enum for Status
-type Status string
-
-const (
-	// Active status
-	Active Status = "ACTIVE value"
-
-	// Inactive status
-	Inactive Status = "INACTIVE value"
-)
-
-type Dep struct{}
-
-func (m *Dep) Active() Status {
-	return Active
-}
-
-func (m *Dep) Inactive() Status {
-	return Inactive
-}
-
-func (m *Dep) Invert(status Status) Status {
-	switch status {
-	case Active:
-		return Inactive
-	case Inactive:
-		return Active
-	default:
-		panic("invalid status")
-	}
-}
-`
-
 		type testCase struct {
 			sdk             string
+			fixture         string
 			supportsMembers bool
 			source          string
 		}
 		for _, tc := range []testCase{
 			{
 				sdk:             "go",
+				fixture:         "go/type-custom-enum-type-04",
 				supportsMembers: true,
 				source: `package main
 
@@ -1511,6 +1503,7 @@ func (m *Test) Inactive(ctx context.Context) (string, error) {
 			},
 			{
 				sdk:             "python",
+				fixture:         "python/type-custom-enum-type-05",
 				supportsMembers: true,
 				source: `import dataclasses
 
@@ -1534,6 +1527,7 @@ class Test:
 			},
 			{
 				sdk:             "typescript",
+				fixture:         "typescript/type-custom-enum-type-06",
 				supportsMembers: true,
 				source: `import { dag, func, object, DepStatus } from "@dagger.io/dagger"
 
@@ -1563,9 +1557,7 @@ export class Test {
 			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
-				modGen := modInit(t, c, tc.sdk, tc.source).
-					With(withModInitAt("./dep", "go", depSrc)).
-					With(daggerExec("module", "install", "./dep"))
+				modGen := moduleFixture(t, c, tc.fixture)
 
 				out, err := modGen.With(daggerQuery(`{active inactive}`)).Stdout(ctx)
 				require.NoError(t, err)
@@ -1584,57 +1576,11 @@ export class Test {
 		// we can't define an enum with the values false/true/null
 		// however, these tests define FALSE/TRUE/NULL, which should be fine!
 
-		depSrc := `package main
-
-type Dep struct{}
-
-type MyEnum string
-
-const (
-	MyEnumFalse MyEnum = "false"
-	MyEnumTrue  MyEnum = "true"
-	MyEnumNull  MyEnum = "null"
-)
-
-func (m *Dep) Thing(f MyEnum) MyEnum {
-	return f
-}
-`
-
-		src := `package main
-
-import (
-	"context"
-	"fmt"
-	"dagger/test/internal/dagger"
-)
-
-type Test struct{}
-
-func (m *Test) TestBool(ctx context.Context) (string, error) {
-	f, err := dag.Dep().Thing(ctx, dagger.DepMyEnumFalse)
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprint(f), nil
-}
-
-func (m *Test) TestNull(ctx context.Context) (string, error) {
-	f, err := dag.Dep().Thing(ctx, dagger.DepMyEnumNull)
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprint(f), nil
-}
-`
-
 		t.Run("bool", func(ctx context.Context, t *testctx.T) {
 			var logs safeBuffer
 			c := connect(ctx, t, dagger.WithLogOutput(&logs))
 
-			modGen := modInit(t, c, "go", src).
-				With(withModInitAt("./dep", "go", depSrc)).
-				With(daggerExec("module", "install", "./dep"))
+			modGen := moduleFixture(t, c, "go/type-custom-conflicting-enum")
 
 			out, err := modGen.With(daggerQuery(`{testBool}`)).Stdout(ctx)
 			require.NoError(t, err)
@@ -1645,9 +1591,7 @@ func (m *Test) TestNull(ctx context.Context) (string, error) {
 			var logs safeBuffer
 			c := connect(ctx, t, dagger.WithLogOutput(&logs))
 
-			modGen := modInit(t, c, "go", src).
-				With(withModInitAt("./dep", "go", depSrc)).
-				With(daggerExec("module", "install", "./dep"))
+			modGen := moduleFixture(t, c, "go/type-custom-conflicting-enum")
 
 			out, err := modGen.With(daggerQuery(`{testNull}`)).Stdout(ctx)
 			require.NoError(t, err)
