@@ -13,9 +13,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -62,29 +60,9 @@ func daggerShellNoMod(script string) dagger.WithContainerFunc {
 func (ShellSuite) TestNoSDK(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	helloCode := `package main
-
-// A Dagger module to say hello to the world!
-type Hello struct{}
-
-// Hello prints out a greeting
-func (m *Hello) Hello() string {
-	return "hi"
-}
-`
-
 	testCtr := goGitBase(t, c).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		WithWorkdir("/work/test/nosdk/hello").
-		With(daggerExec("module", "init", "--sdk=go", "hello", ".")).
-		WithNewFile("main.go", helloCode).
-		WithWorkdir("/work/test/nosdk").
-		With(daggerExec("module", "init", "nosdk", ".")).
-		With(daggerExec("module", "install", "./hello")).
-		WithWorkdir("/work/test").
-		With(daggerExec("module", "init", "test", ".")).
-		With(daggerExec("module", "install", "./nosdk"))
+		With(withTestdataFixture(t, c, "test", "modules", "shell", "nosdk")).
+		WithWorkdir("/work/test")
 
 	daggerJSON, err := testCtr.File("dagger.json").Contents(ctx)
 	require.NoError(t, err)
@@ -113,29 +91,7 @@ func (m *Hello) Hello() string {
 
 func (ShellSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *testctx.T) {
 	tmpdir := t.TempDir()
-	initOutput, err := hostDaggerExec(ctx, t, tmpdir, "module", "init", "--source=.", "--sdk=go", "test", ".")
-	require.NoError(t, err, string(initOutput))
-
-	err = os.WriteFile(filepath.Join(tmpdir, "main.go"), []byte(`package main
-import (
-	"context"
-
-	"dagger/test/internal/dagger"
-)
-
-type Test struct {}
-
-func (*Test) Fn(ctx context.Context, secret *dagger.Secret) (string, error) {
-	return secret.Plaintext(ctx)
-}
-
-func (*Test) Fn2(ctx context.Context, secret *dagger.Secret) *dagger.Container {
-	return dag.Container().From("alpine:3.20").
-		WithSecretVariable("TOPSECRET", secret).
-		WithExec([]string{"sh", "-c", "echo -n $(echo -n $TOPSECRET | base64)"})
-}
-`), 0o644)
-	require.NoError(t, err)
+	copyTestdataFixture(ctx, t, tmpdir, "modules", "go", "shell-secret-uri")
 
 	t.Run("dagger shell default cache key", func(ctx context.Context, t *testctx.T) {
 		c1 := connect(ctx, t)
@@ -270,19 +226,7 @@ func (ShellSuite) TestScriptMode(ctx context.Context, t *testctx.T) {
 func (ShellSuite) TestDefaultToModule(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	out, err := modInit(t, c, "go", `package main
-
-import (
-	"dagger/test/internal/dagger"
-)
-
-type Test struct{}
-
-func (m *Test) Container() *dagger.Container {
-	return dag.Container(). From("`+alpineImage+`")
-}
-`,
-	).
+	out, err := moduleFixture(t, c, "go/shell-default-container").
 		With(daggerShell("container | with-exec cat /etc/os-release | stdout")).
 		Stdout(ctx)
 	require.NoError(t, err)
@@ -292,111 +236,7 @@ func (m *Test) Container() *dagger.Container {
 func (ShellSuite) TestModuleLookup(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	setup := modInit(t, c, "go", `// Main module
-//
-// Multiline module description.
-
-package main
-
-import (
-	"dagger/test/internal/dagger"
-)
-
-// Constructor description.
-func New(
-	// +defaultPath=.
-	source *dagger.Directory,
-) *Test {
-	return &Test{Source: source}
-}
-
-// Test main object
-//
-// Multiline object description.
-type Test struct{
-	Source *dagger.Directory
-}
-
-// Test version
-func (Test) Version() string {
-	return "test function"
-}
-
-// Encouragement
-func (Test) Go() string {
-	return "Let's go!"
-}
-`,
-	).
-		With(withModInitAt("modules/dep", "go", `// Dependency module
-
-package main
-
-func New() *Dep {
-	return &Dep{
-		Version: "dep function",
-	}
-}
-
-type Dep struct{
-	// Dep version
-	Version string
-}
-`,
-		)).
-		With(withModInitAt("modules/git", "go", `// A git helper
-
-package main
-
-func New(url string) *Git {
-	return &Git{URL: url}
-}
-
-type Git struct{
-	URL string
-}
-`,
-		)).
-		With(withModInitAt("modules/go", "go", `// A go helper
-
-package main
-
-type Go struct{}
-
-// Go version
-func (Go) Version() string {
-	return "go version"
-}
-`,
-		)).
-		With(withModInitAt("modules/objdoc", "go", `package main
-
-func New() *Objdoc {
-	return &Objdoc{}
-}
-
-// Object-only description
-type Objdoc struct{}
-
-func (Objdoc) Hello() string {
-	return "hello"
-}
-`,
-		)).
-		With(withModInitAt("other", "go", ` package main
-
-// A local module
-type Other struct{}
-
-func (Other) Version() string {
-	return "other function"
-}
-`,
-		)).
-		With(daggerExec("module", "install", "./modules/dep")).
-		With(daggerExec("module", "install", "./modules/git")).
-		With(daggerExec("module", "install", "./modules/go")).
-		With(daggerExec("module", "install", "./modules/objdoc"))
+	setup := moduleFixture(t, c, "go/shell-module-lookup")
 
 	t.Run("general help", func(ctx context.Context, t *testctx.T) {
 		out, err := setup.
@@ -573,7 +413,7 @@ func (Other) Version() string {
 func (ShellSuite) TestNoLoadModule(ctx context.Context, t *testctx.T) {
 	t.Run("sanity check", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		out, err := modInit(t, c, "go", "").
+		out, err := moduleFixture(t, c, "go/shell-empty").
 			With(daggerShell(".help")).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -582,7 +422,7 @@ func (ShellSuite) TestNoLoadModule(ctx context.Context, t *testctx.T) {
 
 	t.Run("forced no load", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		out, err := modInit(t, c, "go", "").
+		out, err := moduleFixture(t, c, "go/shell-empty").
 			With(daggerShellNoMod(".help")).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -591,7 +431,7 @@ func (ShellSuite) TestNoLoadModule(ctx context.Context, t *testctx.T) {
 
 	t.Run("dynamically loaded", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		out, err := modInit(t, c, "go", "").
+		out, err := moduleFixture(t, c, "go/shell-empty").
 			With(daggerShellNoMod(".cd .; .help")).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -600,7 +440,7 @@ func (ShellSuite) TestNoLoadModule(ctx context.Context, t *testctx.T) {
 
 	t.Run("stateless load", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		out, err := modInit(t, c, "go", "").
+		out, err := moduleFixture(t, c, "go/shell-empty").
 			With(daggerShellNoMod(". | .help container-echo")).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -609,7 +449,7 @@ func (ShellSuite) TestNoLoadModule(ctx context.Context, t *testctx.T) {
 
 	t.Run("stateless .help load", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		out, err := modInit(t, c, "go", "").
+		out, err := moduleFixture(t, c, "go/shell-empty").
 			With(daggerShellNoMod(".help .")).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -619,32 +459,9 @@ func (ShellSuite) TestNoLoadModule(ctx context.Context, t *testctx.T) {
 }
 
 func (ShellSuite) TestLoadAnotherModule(ctx context.Context, t *testctx.T) {
-	test := `package main
-
-type Test struct{}
-
-func (m *Test) Bar() string {
-	return "testbar"
-}
-`
-
-	foo := `package main
-
-func New() *Foo {
-	return &Foo{
-		Bar: "foobar",
-	}
-}
-
-type Foo struct{
-	Bar string
-}
-`
 	t.Run("main object", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		out, err := modInit(t, c, "go", test).
-			With(daggerExec("module", "init", "--sdk=go", "foo", "./foo")).
-			With(sdkSourceAt("foo", "go", foo)).
+		out, err := moduleFixture(t, c, "go/shell-load-another").
 			With(daggerShell("foo")).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -653,9 +470,7 @@ type Foo struct{
 
 	t.Run("stateful", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		out, err := modInit(t, c, "go", test).
-			With(daggerExec("module", "init", "--sdk=go", "foo", "./foo")).
-			With(sdkSourceAt("foo", "go", foo)).
+		out, err := moduleFixture(t, c, "go/shell-load-another").
 			With(daggerShell(".cd foo; bar")).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -664,9 +479,7 @@ type Foo struct{
 
 	t.Run("stateless", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		modGen := modInit(t, c, "go", test).
-			With(daggerExec("module", "init", "--sdk=go", "foo", "./foo")).
-			With(sdkSourceAt("foo", "go", foo))
+		modGen := moduleFixture(t, c, "go/shell-load-another")
 
 		out, err := modGen.
 			With(daggerShell("foo | bar")).
@@ -684,7 +497,7 @@ type Foo struct{
 
 func (ShellSuite) TestNotExists(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
-	_, err := modInit(t, c, "go", "").
+	_, err := moduleFixture(t, c, "go/shell-empty").
 		With(daggerShell("i-dont-exist")).
 		Sync(ctx)
 	requireErrOut(t, err, "\"i-dont-exist\" does not exist")
@@ -717,8 +530,7 @@ func (ShellSuite) TestBasicModule(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	script := "container-echo hello-world-im-here | stdout"
-	out, err := daggerCliBase(t, c).
-		With(withModInit("go", "")).
+	out, err := moduleFixture(t, c, "go/shell-empty").
 		With(daggerShell(script)).
 		Stdout(ctx)
 	require.NoError(t, err)
@@ -728,20 +540,9 @@ func (ShellSuite) TestBasicModule(ctx context.Context, t *testctx.T) {
 func (ShellSuite) TestPassingID(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	source := `package main
-
-import "context"
-
-type Test struct{}
-
-func (m *Test) DirectoryID(ctx context.Context) (string, error) {
-	id, err := dag.Directory().WithNewFile("foo", "bar").ID(ctx)
-	return string(id), err
-}
-`
 	script := "load-directory-from-id $(directory-id) | file foo | contents"
 
-	out, err := modInit(t, c, "go", source).
+	out, err := moduleFixture(t, c, "go/shell-passing-id").
 		With(daggerShell(script)).
 		Stdout(ctx)
 
@@ -1128,18 +929,6 @@ func (ShellSuite) TestNonExecChainBreak(ctx context.Context, t *testctx.T) {
 			requireErrRegexp(t, err, `requires 2 positional argument.*\nusage: with-file <path> <source>`)
 		})
 	}
-}
-
-func (ShellSuite) TestInstall(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	_, err := modInit(t, c, "go", "").
-		With(daggerExec("module", "init", "--sdk=go", "dep", "./dep")).
-		With(daggerShell(".install ./dep")).
-		WithExec([]string{"grep", "dep", ".dagger/config.toml"}).
-		Sync(ctx)
-
-	require.NoError(t, err)
 }
 
 func (ShellSuite) TestMultipleCommandOutputs(ctx context.Context, t *testctx.T) {
