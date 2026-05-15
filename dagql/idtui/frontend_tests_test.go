@@ -89,6 +89,34 @@ func TestTestViewDetailDoesNotRenderSubtestsAsChildren(t *testing.T) {
 	}
 }
 
+func TestTestViewDetailTitleUsesTestName(t *testing.T) {
+	span := &dagui.Span{SpanSnapshot: dagui.SpanSnapshot{Name: "span operation name"}}
+	node := &dagui.TestNode{
+		ID:       "test",
+		Kind:     dagui.TestNodeCase,
+		Name:     "span operation name",
+		FullName: "pkg.TestThing",
+		Span:     span,
+		Category: dagui.TestCategoryPassing,
+		Counts:   dagui.TestCounts{Passing: 1},
+	}
+
+	var buf strings.Builder
+	out := NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+	tv := &TestView{}
+	lines := tv.renderDetailLines(tuist.Context{}, out, testSidebarRow{kind: testSidebarNode, node: node}, 80, 80)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(lines[0], "pkg.TestThing") {
+		t.Fatalf("expected detail title to use full test name, got %q", lines[0])
+	}
+	if strings.Contains(joined, "span operation name") {
+		t.Fatalf("expected detail pane not to show span name, got:\n%s", joined)
+	}
+	if strings.Count(joined, "pkg.TestThing") != 1 {
+		t.Fatalf("expected full test name only in title, got:\n%s", joined)
+	}
+}
+
 func TestTestViewPrettyReportSummary(t *testing.T) {
 	spanID := func(id byte) dagui.SpanID {
 		return dagui.SpanID{SpanID: trace.SpanID{id}}
