@@ -1534,11 +1534,17 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	}
 
 	// Pre-render chrome below progress to measure its height for truncation.
+	// Global tests are rendered before progress so their claims can suppress
+	// duplicate test logs in the trace rows above them.
+	globalTestLines := fe.renderLiveGlobalTests(ctx)
 	logsLines := fe.renderLogsLines(progPrefix)
 
 	chromeHeight := 1 + 1 // keymap (1 line, sibling) + gap after progress
 	if len(logsLines) > 0 {
 		chromeHeight += len(logsLines) + 1
+	}
+	if len(globalTestLines) > 0 {
+		chromeHeight += len(globalTestLines) + 1
 	}
 	chromeHeight += fe.errorLabelHeight() // promptErrLabel is a sibling, not rendered here
 	chromeHeight += fe.editlineHeight()   // textInput is a sibling, not rendered here
@@ -1557,6 +1563,10 @@ func (fe *frontendPretty) Render(ctx tuist.Context) {
 	// Append chrome
 	if len(logsLines) > 0 {
 		ctx.Lines(logsLines...)
+		ctx.Line("") // trailing gap
+	}
+	if len(globalTestLines) > 0 {
+		ctx.Lines(globalTestLines...)
 		ctx.Line("") // trailing gap
 	}
 	// NOTE: textInput and formWrap are rendered as siblings in the TUI
