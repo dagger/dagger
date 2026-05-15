@@ -127,6 +127,66 @@ class GeneratedType:
 _FORWARD_REF_NAMES = {"Foo"}  # the always-defined class in render_module
 
 
+def _base_as_type(base: _BaseType) -> GeneratedType:
+    return GeneratedType(
+        source=base.annotation,
+        base=base,
+        is_optional=False,
+        is_list=False,
+        has_annotated_outer=False,
+    )
+
+
+def _forward_ref_type(name: str) -> GeneratedType:
+    return GeneratedType(
+        source=f'"{name}"',
+        base=_BaseType(name, None),
+        is_optional=False,
+        is_list=False,
+        has_annotated_outer=False,
+    )
+
+
+def _optional_type(inner: GeneratedType) -> GeneratedType:
+    return GeneratedType(
+        source=f"Optional[{inner.source}]",
+        base=inner.base,
+        is_optional=True,
+        is_list=inner.is_list,
+        has_annotated_outer=False,
+    )
+
+
+def _pipe_none_type(inner: GeneratedType) -> GeneratedType:
+    return GeneratedType(
+        source=f"{inner.source} | None",
+        base=inner.base,
+        is_optional=True,
+        is_list=inner.is_list,
+        has_annotated_outer=False,
+    )
+
+
+def _list_type(inner: GeneratedType) -> GeneratedType:
+    return GeneratedType(
+        source=f"list[{inner.source}]",
+        base=inner.base,
+        is_optional=False,
+        is_list=True,
+        has_annotated_outer=False,
+    )
+
+
+def _annotated_type(inner: GeneratedType, metadata: str) -> GeneratedType:
+    return GeneratedType(
+        source=f"Annotated[{inner.source}, {metadata}]",
+        base=inner.base,
+        is_optional=inner.is_optional,
+        is_list=inner.is_list,
+        has_annotated_outer=True,
+    )
+
+
 @st.composite
 def _annotated_meta_list(  # type: ignore[no-untyped-def]
     draw, base: _BaseType, max_items: int = 2
@@ -143,8 +203,24 @@ def _annotated_meta_list(  # type: ignore[no-untyped-def]
     return ", ".join(metas)
 
 
+def _type_rules() -> tuple[str, ...]:
+    return ("leaf", "optional", "pipe-none", "list", "annotated")
+
+
 @st.composite
-def _type_expr(  # type: ignore[no-untyped-def]  # noqa: PLR0911 — wrapper dispatch
+def _type_leaf(  # type: ignore[no-untyped-def]
+    draw,
+    *,
+    depth: int,
+    allow_forward_ref: bool,
+) -> GeneratedType:
+    if allow_forward_ref and depth > 0 and draw(st.booleans()):
+        return _forward_ref_type(draw(st.sampled_from(sorted(_FORWARD_REF_NAMES))))
+    return _base_as_type(draw(base_type_strategy))
+
+
+@st.composite
+def _type_expr(  # type: ignore[no-untyped-def]
     draw,
     *,
     depth: int = 0,
@@ -158,44 +234,22 @@ def _type_expr(  # type: ignore[no-untyped-def]  # noqa: PLR0911 — wrapper dis
     forward reference. Recursion is bounded by ``max_depth`` so the
     generator always terminates in finite time.
     """
-    # Leaf — pick a base type, optionally as a forward reference.
     if depth >= max_depth:
-        if (
-            allow_forward_ref
-            and depth > 0  # don't wrap the very top level in a string
-            and draw(st.booleans())
-        ):
-            name = draw(st.sampled_from(sorted(_FORWARD_REF_NAMES)))
-            base = _BaseType(name, None)
-            return GeneratedType(
-                source=f'"{name}"',
-                base=base,
-                is_optional=False,
-                is_list=False,
-                has_annotated_outer=False,
+        return draw(
+            _type_leaf(
+                depth=depth,
+                allow_forward_ref=allow_forward_ref,
             )
-        base = draw(base_type_strategy)
-        return GeneratedType(
-            source=base.annotation,
-            base=base,
-            is_optional=False,
-            is_list=False,
-            has_annotated_outer=False,
         )
 
-    # Recursive case — pick a wrapper.
-    wrapper = draw(
-        st.sampled_from(["base", "optional", "pipe-none", "list", "annotated"])
-    )
+    wrapper = draw(st.sampled_from(_type_rules()))
 
-    if wrapper == "base":
-        base = draw(base_type_strategy)
-        return GeneratedType(
-            source=base.annotation,
-            base=base,
-            is_optional=False,
-            is_list=False,
-            has_annotated_outer=False,
+    if wrapper == "leaf":
+        return draw(
+            _type_leaf(
+                depth=depth,
+                allow_forward_ref=allow_forward_ref,
+            )
         )
 
     if wrapper == "optional":
@@ -206,13 +260,7 @@ def _type_expr(  # type: ignore[no-untyped-def]  # noqa: PLR0911 — wrapper dis
                 allow_forward_ref=allow_forward_ref,
             )
         )
-        return GeneratedType(
-            source=f"Optional[{inner.source}]",
-            base=inner.base,
-            is_optional=True,
-            is_list=inner.is_list,
-            has_annotated_outer=False,
-        )
+        return _optional_type(inner)
 
     if wrapper == "pipe-none":
         # ``"Foo" | None`` is invalid even under ``from __future__``
@@ -225,13 +273,7 @@ def _type_expr(  # type: ignore[no-untyped-def]  # noqa: PLR0911 — wrapper dis
                 allow_forward_ref=False,
             )
         )
-        return GeneratedType(
-            source=f"{inner.source} | None",
-            base=inner.base,
-            is_optional=True,
-            is_list=inner.is_list,
-            has_annotated_outer=False,
-        )
+        return _pipe_none_type(inner)
 
     if wrapper == "list":
         inner = draw(
@@ -241,13 +283,7 @@ def _type_expr(  # type: ignore[no-untyped-def]  # noqa: PLR0911 — wrapper dis
                 allow_forward_ref=allow_forward_ref,
             )
         )
-        return GeneratedType(
-            source=f"list[{inner.source}]",
-            base=inner.base,
-            is_optional=False,
-            is_list=True,
-            has_annotated_outer=False,
-        )
+        return _list_type(inner)
 
     # Annotated wrapper — last branch.
     inner = draw(
@@ -258,13 +294,7 @@ def _type_expr(  # type: ignore[no-untyped-def]  # noqa: PLR0911 — wrapper dis
         )
     )
     metas = draw(_annotated_meta_list(inner.base))
-    return GeneratedType(
-        source=f"Annotated[{inner.source}, {metas}]",
-        base=inner.base,
-        is_optional=inner.is_optional,
-        is_list=inner.is_list,
-        has_annotated_outer=True,
-    )
+    return _annotated_type(inner, metas)
 
 
 # ---------------------------------------------------------------------------
