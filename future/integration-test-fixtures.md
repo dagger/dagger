@@ -59,6 +59,11 @@ Validation so far:
 
 - Every committed conversion batch through `ff00fd8a0` was formatted.
 - `go test ./core/integration -run '^$'` passed after the committed batches.
+- The uncommitted `module_runtime_behavior_test.go` fixture conversion was
+  formatted and `go test ./core/integration -run '^$'` passed.
+- The uncommitted `module_python_test.go`, `module_typescript_test.go`, and
+  `client_generator_test.go` fixture conversions were formatted and
+  `go test ./core/integration -run '^$'` passed.
 - Slow live integration runs were paused after the conversion-first direction.
 
 Shared fixture helpers already added in `core/integration/module_helpers_test.go`:
@@ -97,30 +102,26 @@ Committed conversion areas so far:
 - cross-session fixtures
 - shell fixtures
 - runtime secret and runtime parent-field fixtures
+- module runtime behavior fixtures, uncommitted
+- module call, path input, config, and type fixtures, uncommitted
+- module Python, TypeScript, and client generator fixtures, uncommitted
 
-Current broad inventory from the worktree after `ff00fd8a0`:
+Current broad inventory from the worktree after the uncommitted large module
+runtime/schema and SDK/client-generator fixture conversions:
 
 ```text
 core/integration/container_test.go:1
-core/integration/module_path_inputs_test.go:19
 core/integration/module_terminal_test.go:7
 core/integration/cacert_test.go:1
-core/integration/module_runtime_behavior_test.go:37
-core/integration/client_generator_test.go:28
 core/integration/module_up_test.go:1
-core/integration/module_python_test.go:26
 core/integration/envfile_test.go:3
 core/integration/module_helpers_test.go:5
 core/integration/workspace_compat_test.go:1
 core/integration/legacy_test.go:35
 core/integration/gitcredential_test.go:3
-core/integration/module_type_test.go:22
-core/integration/module_typescript_test.go:38
 core/integration/module_deprecation_test.go:3
-core/integration/module_call_test.go:77
 core/integration/workspace_selection_test.go:3
 core/integration/client_test.go:1
-core/integration/module_config_test.go:27
 ```
 
 The broad inventory is intentionally conservative. Inspect each hit before
@@ -129,32 +130,7 @@ core instead of becoming a fixture.
 
 Recommended next order:
 
-1. Finish `module_runtime_behavior_test.go`.
-
-   Remaining groups include duplicate secret names, secret-by-ID leak, normal
-   secret cache behavior, optional Python secret fields, service reuse, nil and
-   empty fields, float handling across SDKs, return-nil behavior, cache-control
-   annotations, `setSecret` cache invalidation, dependency contextual args, and
-   git contextual args.
-
-2. Convert the large module runtime/schema files:
-
-   - `module_call_test.go`
-   - `module_path_inputs_test.go`
-   - `module_config_test.go`
-   - `module_type_test.go`
-
-3. Convert SDK-specific runtime files that remain in core:
-
-   - `module_python_test.go`
-   - `module_typescript_test.go`
-   - `client_generator_test.go`
-
-   Keep only core/runtime behavior. Authoring, bootstrap, dependency update,
-   generated binding refresh, and package-manager detection coverage belongs in
-   SDK-as-module repos.
-
-4. Convert or move the smaller host-CLI one-offs:
+1. Convert or move the smaller host-CLI one-offs:
 
    - `legacy_test.go`
    - `module_terminal_test.go`
@@ -168,7 +144,7 @@ Recommended next order:
    - `client_test.go`
    - remaining `cacert_test.go`
 
-5. Delete or shrink the dynamic helpers in `module_helpers_test.go` once no
+2. Delete or shrink the dynamic helpers in `module_helpers_test.go` once no
    tests depend on them.
 
 ## Why
