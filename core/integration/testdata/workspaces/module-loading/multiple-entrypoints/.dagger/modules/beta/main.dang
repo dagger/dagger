@@ -1,0 +1,5 @@
+type Beta {
+  pub run: String! {
+    "beta"
+  }
+}

@@ -1,0 +1,9 @@
+type Ci {
+  pub build: String! {
+    "built!"
+  }
+
+  pub container: String! {
+    "custom container"
+  }
+}
