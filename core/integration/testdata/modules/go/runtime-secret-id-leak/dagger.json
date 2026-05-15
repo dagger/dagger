@@ -1,0 +1,13 @@
+{
+  "name": "toplevel",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "leaker",
+      "source": "leaker"
+    }
+  ]
+}
