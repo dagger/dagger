@@ -316,7 +316,7 @@ class Test:
 						ctr.WithEnvVariable("TEST_LOCK_FILE", "requirements.lock"),
 					)
 				}).
-				With(daggerInitPython()).
+				With(withPythonModule(t, c, "python/base-test")).
 				WithExec([]string{"sh", "-c", "grep dagger-io $TEST_LOCK_FILE"}).
 				With(daggerCallAt(".", "whoami")).
 				Stdout(ctx)
@@ -356,7 +356,7 @@ class Test:
 		out, err := daggerCliBase(t, c).
 			With(pyprojectExtra(nil, `requires-python = ">=3.11"`)).
 			With(source).
-			With(daggerInitPython()).
+			With(withPythonModule(t, c, "python/base-test")).
 			With(daggerCallAt(".", "relaxed")).
 			Stdout(ctx)
 
@@ -371,7 +371,7 @@ class Test:
 			// Space after `==` is intentional.
 			With(pyprojectExtra(nil, `requires-python = "== 3.11.6"`)).
 			With(source).
-			With(daggerInitPython()).
+			With(withPythonModule(t, c, "python/base-test")).
 			With(daggerCallAt(".", "pinned")).
 			Stdout(ctx)
 
@@ -386,7 +386,7 @@ class Test:
 			With(source).
 			With(pyprojectExtra(nil, `requires-python = ">=3.10"`)).
 			With(fileContents(".python-version", "3.11")).
-			With(daggerInitPython()).
+			With(withPythonModule(t, c, "python/base-test")).
 			With(daggerCallAt(".", "relaxed")).
 			Stdout(ctx)
 
@@ -400,7 +400,7 @@ class Test:
 		out, err := daggerCliBase(t, c).
 			With(fileContents(".python-version", "3.13.1")).
 			With(source).
-			With(daggerInitPython()).
+			With(withPythonModule(t, c, "python/base-test")).
 			With(daggerCallAt(".", "pinned")).
 			Stdout(ctx)
 
@@ -415,7 +415,7 @@ class Test:
 			With(pyprojectExtra(nil, `requires-python = ">=3.10"`)).
 			With(fileContents(".python-version", "3.11")).
 			With(source).
-			With(daggerInitPython()).
+			With(withPythonModule(t, c, "python/base-test")).
 			With(daggerCallAt(".", "relaxed")).
 			Stdout(ctx)
 
@@ -437,7 +437,7 @@ class Test:
                 base-image = "python:3.12.1-slim@sha256:a64ac5be6928c6a94f00b16e09cdf3ba3edd44452d10ffa4516a58004873573e"
             `)).
 			With(source).
-			With(daggerInitPython()).
+			With(withPythonModule(t, c, "python/base-test")).
 			With(daggerCallAt(".", "pinned")).
 			Stdout(ctx)
 
@@ -450,7 +450,7 @@ class Test:
 
 		out, err := daggerCliBase(t, c).
 			With(source).
-			With(daggerInitPython()).
+			With(withPythonModule(t, c, "python/base-test")).
 			With(daggerCallAt(".", "relaxed")).
 			Stdout(ctx)
 
@@ -508,7 +508,8 @@ class Test:
         return f"{v.major}.{v.minor}"
 `,
 			)).
-			With(daggerExec("module", "init", "--sdk=../extended", "--source=.", "test", ".")).
+			With(withPythonModule(t, c, "python/base-test")).
+			With(fileContents("dagger.json", `{"name":"test","engineVersion":"latest","sdk":{"source":"../extended"},"source":"."}`)).
 			// use-uv = false should be ignored
 			WithExec([]string{"test", "-f", "uv.lock"}).
 			With(daggerCallAt(".", "version")).
@@ -528,7 +529,7 @@ func (PythonSuite) TestUv(ctx context.Context, t *testctx.T) {
                 [tool.dagger]
                 use-uv = false
             `)).
-			With(daggerInitPython()).
+			With(withPythonModule(t, c, "python/base-test")).
 			// Only uv creates a lock
 			WithExec([]string{"test", "!", "-f", "uv.lock"}).
 			WithExec([]string{"test", "!", "-f", "requirements.lock"}).
@@ -558,7 +559,7 @@ func (PythonSuite) TestUv(ctx context.Context, t *testctx.T) {
                 [tool.dagger]
                 use-uv = false
             `)).
-			With(daggerInitPython()).
+			With(withPythonModule(t, c, "python/base-test")).
 			With(daggerCallAt(".", "container-echo", "--string-arg=hello", "stdout")).
 			Stdout(ctx)
 
@@ -598,7 +599,7 @@ class Test:
                 uv-version = "0.7.13"
             `)).
 			With(source).
-			With(daggerInitPython()).
+			With(withPythonModule(t, c, "python/base-test")).
 			With(daggerCallAt(".", "version")).
 			Stdout(ctx)
 
@@ -639,7 +640,7 @@ class Test:
                     [[tool.uv.index]]
                     url = "https://pypi.org/simple"
                 `)).
-				With(daggerInitPython()).
+				With(withPythonModule(t, c, "python/base-test")).
 				With(daggerCallAt(".", "urls")).
 				Stdout(ctx)
 
@@ -652,7 +653,7 @@ class Test:
 
 			out, err := daggerCliBase(t, c).
 				With(source).
-				With(daggerInitPython()).
+				With(withPythonModule(t, c, "python/base-test")).
 				With(daggerCallAt(".", "urls", "--json")).
 				Stdout(ctx)
 
@@ -670,7 +671,7 @@ class Test:
                     url = "https://pypi.example.com/simple"
                     default = true
                 `)).
-				With(daggerInitPython()).
+				With(withPythonModule(t, c, "python/base-test")).
 				Sync(ctx)
 
 			requireErrOut(t, err, "Failed to fetch: `https://pypi.example.com/simple")
@@ -1406,7 +1407,7 @@ class Test:
 		// default. Pre-fix the analyzer recorded the literal name string
 		// ``"DEFAULT_NAME"`` instead of the value.
 		modGen := daggerCliBase(t, c).
-			With(daggerInitPython()).
+			With(withPythonModule(t, c, "python/base-test")).
 			With(fileContents("src/test/helpers.py", `
 DEFAULT_NAME = "from-helpers"
 `)).
@@ -1531,7 +1532,7 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
 
 	ctr := goGitBase(t, c).
 		WithWorkdir("/work/dep").
-		With(daggerInitPython("dep")).
+		With(withPythonModule(t, c, "python/base-dep")).
 		With(fileContents("src/dep/__init__.py", `
             import dagger
 
@@ -1544,10 +1545,10 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
                 @dagger.function
                 def fn(self) -> Obj:
                     return Obj(foo="foo")
-        `)).
+		`)).
 		WithWorkdir("/work/test").
-		With(daggerInitPython()).
-		With(daggerExec("module", "install", "../dep"))
+		With(withPythonModule(t, c, "python/base-test")).
+		With(fileContents("dagger.json", `{"name":"test","engineVersion":"latest","sdk":{"source":"python"},"dependencies":[{"name":"dep","source":"../dep"}]}`))
 
 	t.Run("return as other module object", func(ctx context.Context, t *testctx.T) {
 		t.Run("direct", func(ctx context.Context, t *testctx.T) {
@@ -1702,7 +1703,7 @@ func (PythonSuite) TestErrors(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctr := goGitBase(t, c).
 		WithWorkdir("/work/dep").
-		With(daggerInitPython("dep")).
+		With(withPythonModule(t, c, "python/base-dep")).
 		With(fileContents("src/dep/__init__.py", fmt.Sprintf(`
             import dagger
             from dagger import dag
@@ -1717,10 +1718,10 @@ func (PythonSuite) TestErrors(ctx context.Context, t *testctx.T) {
                         .with_exec(["sh", "-c", ">&2 echo 'oh noes'; exit 5"])
                         .stdout()
                     )
-        `, alpineImage))).
+		`, alpineImage))).
 		WithWorkdir("/work/test").
-		With(daggerInitPython()).
-		With(daggerExec("module", "install", "../dep")).
+		With(withPythonModule(t, c, "python/base-test")).
+		With(fileContents("dagger.json", `{"name":"test","engineVersion":"latest","sdk":{"source":"python"},"dependencies":[{"name":"dep","source":"../dep"}]}`)).
 		With(pythonSource(`
 			import dagger
 			from dagger import dag
@@ -1790,12 +1791,13 @@ func pythonSourceAt(modPath, contents string) dagger.WithContainerFunc {
 func pythonModInit(t testing.TB, c *dagger.Client, source string) *dagger.Container {
 	t.Helper()
 	return daggerCliBase(t, c).
-		With(daggerInitPython()).
+		With(withPythonModule(t, c, "python/base-test")).
 		With(pythonSource(source))
 }
 
-func daggerInitPython(args ...string) dagger.WithContainerFunc {
-	return daggerInitPythonAt("", args...)
+func withPythonModule(t testing.TB, c *dagger.Client, fixture string) dagger.WithContainerFunc {
+	t.Helper()
+	return withModuleFixture(t, c, ".", fixture)
 }
 
 func pyprojectExtra(dependencies []string, contents string) dagger.WithContainerFunc {
@@ -1814,19 +1816,6 @@ name = "test"
 version = "0.0.0"
 `
 	return fileContents("pyproject.toml", base+depLine+"\n"+contents)
-}
-
-func daggerInitPythonAt(modPath string, args ...string) dagger.WithContainerFunc {
-	execArgs := append([]string{"module", "init", "--sdk=python"}, args...)
-	if len(args) == 0 {
-		execArgs = append(execArgs, "test")
-	}
-	if modPath != "" {
-		execArgs = append(execArgs, "--source="+modPath, modPath)
-	} else {
-		execArgs = append(execArgs, "--source=.", ".")
-	}
-	return daggerExec(execArgs...)
 }
 
 func pipLockMod(t *testctx.T, c *dagger.Client, inc []string) dagger.WithContainerFunc {
