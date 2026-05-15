@@ -320,8 +320,7 @@ query ModuleIntrospection($path: String!) {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			modDir := t.TempDir()
 
-			_, err := hostDaggerExec(ctx, t, modDir, "module", "init", "--source=.", "test", "--sdk="+tc.sdk, ".")
-			require.NoError(t, err)
+			moduleDeprecationFixture(ctx, t, modDir, tc.sdk)
 			require.NoError(t, tc.writeFiles(modDir))
 
 			c := connect(ctx, t)
@@ -438,6 +437,21 @@ query ModuleIntrospection($path: String!) {
 			}
 			require.NotNil(t, valueArg, "TestFooer.foo must have arg 'value'")
 		})
+	}
+}
+
+func moduleDeprecationFixture(ctx context.Context, t *testctx.T, dir, sdk string) {
+	t.Helper()
+
+	switch sdk {
+	case "go":
+		copyTestdataFixture(ctx, t, dir, "modules", "go", "base-test")
+	case "typescript":
+		copyTestdataFixture(ctx, t, dir, "modules", "typescript", "base-test")
+	case "python":
+		copyTestdataFixture(ctx, t, dir, "modules", "python", "base-test")
+	default:
+		require.FailNowf(t, "unsupported SDK", "unsupported SDK %q", sdk)
 	}
 }
 
@@ -575,8 +589,7 @@ class Test:
 		t.Run(fmt.Sprintf("%s rejects deprecated required arguments", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			modDir := t.TempDir()
 
-			_, err := hostDaggerExec(ctx, t, modDir, "module", "init", "--source=.", "test", "--sdk="+tc.sdk, ".")
-			require.NoError(t, err)
+			moduleDeprecationFixture(ctx, t, modDir, tc.sdk)
 
 			target := filepath.Join(modDir, sdkSourceFile(tc.sdk))
 			require.NoError(t, os.MkdirAll(filepath.Dir(target), 0o755))
@@ -584,7 +597,7 @@ class Test:
 
 			c := connect(ctx, t)
 
-			_, err = testutil.QueryWithClient[Resp](c, t, introspect, &testutil.QueryOptions{
+			_, err := testutil.QueryWithClient[Resp](c, t, introspect, &testutil.QueryOptions{
 				Variables: map[string]any{"path": modDir},
 			})
 			require.Error(t, err)
@@ -704,8 +717,7 @@ class Test:
 		t.Run(fmt.Sprintf("%s allows deprecated optional arguments", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			modDir := t.TempDir()
 
-			_, err := hostDaggerExec(ctx, t, modDir, "module", "init", "--source=.", "test", "--sdk="+tc.sdk, ".")
-			require.NoError(t, err)
+			moduleDeprecationFixture(ctx, t, modDir, tc.sdk)
 
 			target := filepath.Join(modDir, sdkSourceFile(tc.sdk))
 			require.NoError(t, os.MkdirAll(filepath.Dir(target), 0o755))
@@ -713,7 +725,7 @@ class Test:
 
 			c := connect(ctx, t)
 
-			_, err = testutil.QueryWithClient[Resp](c, t, introspect, &testutil.QueryOptions{
+			_, err := testutil.QueryWithClient[Resp](c, t, introspect, &testutil.QueryOptions{
 				Variables: map[string]any{"path": modDir},
 			})
 			if err != nil {
