@@ -101,50 +101,21 @@ func (ModuleSuite) TestSSHAuthSockPathHandling(ctx context.Context, t *testctx.T
 
 func (ModuleSuite) TestPrivateDeps(ctx context.Context, t *testctx.T) {
 	t.Run("golang", func(ctx context.Context, t *testctx.T) {
-		privateDepCode := `package main
-
-import (
-	"github.com/dagger/dagger-test-modules/privatedeps/pkg/cooldep"
-)
-
-type Foo struct{}
-
-// Returns a container that echoes whatever string argument is provided
-func (m *Foo) HowCoolIsDagger() string {
-	return cooldep.HowCoolIsThat
-}
-`
-
-		daggerjson := `{
-  "name": "foo",
-  "engineVersion": "v0.16.2",
-  "sdk": {
-    "source": "go",
-    "config": {
-      "goprivate": "github.com/dagger/dagger-test-modules"
-    }
-  }
-}`
-
 		c := connect(ctx, t)
 		sockPath, cleanup := setupPrivateRepoSSHAgent(t)
 		defer cleanup()
 
 		socket := c.Host().UnixSocket(sockPath)
 
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithExec([]string{"apk", "add", "git", "openssh", "openssl"}).
+		modGen := goGitBase(t, c).
+			WithExec([]string{"apk", "add", "openssh", "openssl"}).
 			WithUnixSocket("/sock/unix-socket", socket).
 			WithEnvVariable("SSH_AUTH_SOCK", "/sock/unix-socket").
-			WithWorkdir("/work").
 			WithNewFile("/root/.gitconfig", `
 [url "ssh://git@github.com/"]
 	insteadOf = https://github.com/
 `).
-			With(daggerExec("module", "init", "--sdk=go", "--source=.", "foo", ".")).
-			WithNewFile("main.go", privateDepCode).
-			WithNewFile("dagger.json", daggerjson)
+			With(withModuleEntrypointFixture(t, c, ".", "foo", "go/private-language-dep"))
 
 		howCoolIsDagger, err := modGen.
 			With(daggerExec("call", "how-cool-is-dagger")).
