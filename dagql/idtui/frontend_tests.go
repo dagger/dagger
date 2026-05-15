@@ -1055,17 +1055,29 @@ func (tv *TestView) renderDetailLines(ctx tuist.Context, out *termenv.Output, ro
 	var childLines []string
 	var childView *TestSpanChildrenView
 	if span != nil && tv.SpanChildren != nil {
-		if view := tv.childViewForSpan(span); view != nil {
-			result := tv.RenderChildResult(ctx.Resize(width, contentHeight), view)
+		if childSpans := tv.SpanChildren(span); childSpans != nil {
+			result := tv.RenderChildResult(ctx.Resize(width, contentHeight), childSpans)
 			if len(result.Lines) > 0 {
 				childLines = result.Lines
-				childView = view
+				childView, _ = childSpans.(*TestSpanChildrenView)
 			}
 		}
 	}
 
 	logNeed := tv.detailLogLineCount(span)
-	childHeight, logHeight := allocateDetailSectionHeights(len(childLines), logNeed, contentHeight)
+	hasSplitter := logNeed > 0 && len(childLines) > 0 && contentHeight >= 3
+	sectionHeight := contentHeight
+	if hasSplitter {
+		sectionHeight--
+	}
+	childHeight, logHeight := allocateDetailSectionHeights(len(childLines), logNeed, sectionHeight)
+	if logHeight > 0 {
+		logLines := tv.renderDetailLogLines(out, span, width, logHeight)
+		lines = append(lines, cropLines(logLines, logHeight)...)
+	}
+	if hasSplitter {
+		lines = append(lines, renderDetailSplitter(out, width))
+	}
 	if childHeight > 0 && len(childLines) > 0 {
 		if childView != nil {
 			childLines = childView.cropRenderedLines(childLines, childHeight)
@@ -1074,20 +1086,20 @@ func (tv *TestView) renderDetailLines(ctx tuist.Context, out *termenv.Output, ro
 		}
 		lines = append(lines, childLines...)
 	}
-	if logHeight > 0 {
-		logLines := tv.renderDetailLogLines(out, span, width, logHeight)
-		lines = append(lines, cropLines(logLines, logHeight)...)
-	}
 	return cropLines(lines, height)
+}
+
+func renderDetailSplitter(out TermOutput, width int) string {
+	return out.String(strings.Repeat(HorizBar, max(width, 0))).Foreground(termenv.ANSIBrightBlack).Faint().String()
 }
 
 func (tv *TestView) detailLogLineCount(span *dagui.Span) int {
 	if span == nil {
-		return 2
+		return 0
 	}
 	logs := tv.Logs[span.ID]
 	if logs == nil || logs.UsedHeight() == 0 {
-		return 2
+		return 0
 	}
 	return logs.UsedHeight() + 1
 }
@@ -1097,17 +1109,11 @@ func (tv *TestView) renderDetailLogLines(out *termenv.Output, span *dagui.Span, 
 		return nil
 	}
 	if span == nil {
-		return []string{
-			renderLogSectionHeader(out, width, false),
-			out.String("No direct logs for a virtual suite.").Foreground(termenv.ANSIBrightBlack).Faint().String(),
-		}
+		return nil
 	}
 	logs := tv.Logs[span.ID]
 	if logs == nil || logs.UsedHeight() == 0 {
-		return []string{
-			renderLogSectionHeader(out, width, false),
-			out.String("No logs for selected test span.").Foreground(termenv.ANSIBrightBlack).Faint().String(),
-		}
+		return nil
 	}
 	lines := []string{renderLogSectionHeader(out, width, true)}
 	logs.SetWidth(width)
@@ -1131,8 +1137,8 @@ func allocateDetailSectionHeights(childNeed, logNeed, height int) (int, int) {
 	if logNeed == 0 {
 		return min(childNeed, height), 0
 	}
-	childMax := max((height+1)/2, 1)
-	logMax := max(height/2, 1)
+	logMax := height / 2
+	childMax := height - logMax
 	childHeight := min(childNeed, childMax)
 	logHeight := min(logNeed, logMax)
 	remaining := height - childHeight - logHeight

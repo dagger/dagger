@@ -90,6 +90,15 @@ func TestTestViewDetailDoesNotRenderSubtestsAsChildren(t *testing.T) {
 	}
 }
 
+type staticLinesComponent struct {
+	tuist.Compo
+	lines []string
+}
+
+func (c *staticLinesComponent) Render(ctx tuist.Context) {
+	ctx.Lines(c.lines...)
+}
+
 func TestTestViewDetailTitleUsesTestName(t *testing.T) {
 	span := &dagui.Span{SpanSnapshot: dagui.SpanSnapshot{Name: "span operation name"}}
 	node := &dagui.TestNode{
@@ -115,6 +124,9 @@ func TestTestViewDetailTitleUsesTestName(t *testing.T) {
 	}
 	if strings.Count(joined, "pkg.TestThing") != 1 {
 		t.Fatalf("expected full test name only in title, got:\n%s", joined)
+	}
+	if strings.Contains(joined, "LOGS") {
+		t.Fatalf("expected no logs UI when logs are absent, got:\n%s", joined)
 	}
 }
 
@@ -162,6 +174,51 @@ var ansiRETest = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func stripANSITest(s string) string {
 	return ansiRETest.ReplaceAllString(s, "")
+}
+
+func TestTestViewDetailLogsRenderAboveChildrenWithSplitter(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	spanID := dagui.SpanID{SpanID: trace.SpanID{1}}
+	span := &dagui.Span{SpanSnapshot: dagui.SpanSnapshot{ID: spanID, Name: "span operation name"}}
+	node := &dagui.TestNode{
+		ID:       "test",
+		Kind:     dagui.TestNodeCase,
+		Name:     "span operation name",
+		FullName: "pkg.TestThing",
+		Span:     span,
+		Category: dagui.TestCategoryFailing,
+		Counts:   dagui.TestCounts{Failing: 1},
+	}
+	logs := NewVterm(termenv.Ascii)
+	logs.SetWidth(80)
+	_, _ = logs.Write([]byte("boom\n"))
+
+	var buf strings.Builder
+	out := NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+	tv := &TestView{
+		Logs: map[dagui.SpanID]*Vterm{spanID: logs},
+		SpanChildren: func(*dagui.Span) tuist.Component {
+			return &staticLinesComponent{lines: []string{"child one", "child two"}}
+		},
+	}
+	lines := tv.renderDetailLines(tuist.Context{}, out, testSidebarRow{kind: testSidebarNode, node: node}, 80, 80)
+	plainLines := strings.Split(stripANSITest(strings.Join(lines, "\n")), "\n")
+	logIdx, boomIdx, splitIdx, childIdx := -1, -1, -1, -1
+	for i, line := range plainLines {
+		switch {
+		case strings.HasPrefix(strings.TrimRight(line, " "), "LOGS L inspect"):
+			logIdx = i
+		case strings.Contains(line, "boom"):
+			boomIdx = i
+		case strings.Contains(line, HorizBar) && strings.Trim(strings.TrimSpace(line), HorizBar) == "" && i > 0 && boomIdx >= 0 && splitIdx < 0:
+			splitIdx = i
+		case strings.Contains(line, "child one"):
+			childIdx = i
+		}
+	}
+	if !(logIdx >= 0 && boomIdx > logIdx && splitIdx > boomIdx && childIdx > splitIdx) {
+		t.Fatalf("expected logs, splitter, then children; got:\n%s", strings.Join(plainLines, "\n"))
+	}
 }
 
 func TestTestViewDetailLogsAreNotFocusable(t *testing.T) {
