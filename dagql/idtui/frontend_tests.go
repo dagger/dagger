@@ -78,8 +78,8 @@ type TestView struct {
 	// ListOnly forces passive embedded rendering: no selected row and no detail
 	// pane, even if focus were accidentally routed to this component.
 	ListOnly bool
-	// SummaryIndent is used by ListOnly test summaries. Final output keeps a
-	// small left margin; inline live output relies on the trace pipe prefix.
+	// SummaryIndent is used by ListOnly test summaries. Anchored inline reports
+	// use it to offset beneath a trace row; global reports keep it at zero.
 	SummaryIndent int
 	// SummaryLogLines caps inline logs per failing/skipped summary entry.
 	SummaryLogLines int
@@ -1420,10 +1420,7 @@ func (s *SpanTreeView) renderInlineTests(ctx tuist.Context, r *renderer, row *da
 		return append([]string{""}, lines...)
 	}
 	tv := s.fe.inlineTestView(row.Span.ID)
-	summaryIndent := 0
-	if s.fe.finalRender {
-		summaryIndent = 2
-	}
+	summaryIndent := 2
 	if tv.SummaryIndent != summaryIndent {
 		tv.SummaryIndent = summaryIndent
 		tv.Update()
@@ -1490,8 +1487,8 @@ func (fe *frontendPretty) renderLiveGlobalTests(ctx tuist.Context) []string {
 		return nil
 	}
 	tv := fe.inlineTestView(dagui.SpanID{})
-	if tv.SummaryIndent != 2 {
-		tv.SummaryIndent = 2
+	if tv.SummaryIndent != 0 {
+		tv.SummaryIndent = 0
 		tv.Update()
 	}
 	if tv.SummaryLogLines != 8 {
@@ -1523,12 +1520,8 @@ func (fe *frontendPretty) renderFinalGlobalTests(ctx tuist.Context) []string {
 		return nil
 	}
 	tv := fe.inlineTestView(dagui.SpanID{})
-	summaryIndent := 2
-	if fe.reportOnly {
-		summaryIndent = 0
-	}
-	if tv.SummaryIndent != summaryIndent {
-		tv.SummaryIndent = summaryIndent
+	if tv.SummaryIndent != 0 {
+		tv.SummaryIndent = 0
 		tv.Update()
 	}
 	if tv.SummaryLogLines != -1 {

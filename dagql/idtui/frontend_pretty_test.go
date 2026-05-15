@@ -37,6 +37,7 @@ func TestSortErrorOriginsUsesCurrentSpanData(t *testing.T) {
 }
 
 func TestRenderShowsLiveGlobalTestsForPlainCall(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
 	db := dagui.NewDB()
 	rootID := prettyTestSpanID(1)
 	testID := prettyTestSpanID(2)
@@ -69,9 +70,104 @@ func TestRenderShowsLiveGlobalTestsForPlainCall(t *testing.T) {
 	fe.FrontendOpts.GCThreshold = time.Hour
 	fe.recalculateViewLocked()
 
-	got := strings.Join(fe.tui.RenderLines(), "\n")
-	if !strings.Contains(got, "TESTS") || !strings.Contains(got, "unit failure") || !strings.Contains(got, "FAIL") {
+	lines := fe.tui.RenderLines()
+	got := strings.Join(lines, "\n")
+	if !strings.Contains(got, "unit failure") || !strings.Contains(got, "FAIL") {
 		t.Fatalf("live render did not include global test report:\n%s", got)
+	}
+	testsLine, ok := findPrettyTestLine(lines, "TESTS")
+	if !ok {
+		t.Fatalf("live render did not include TESTS line:\n%s", got)
+	}
+	if testsLine != "TESTS" {
+		t.Fatalf("global live TESTS line = %q, want no indentation", testsLine)
+	}
+}
+
+func TestFinalGlobalTestsUnindented(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	rootID := prettyTestSpanID(1)
+	testID := prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID:        rootID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "plain dagger call",
+			StartTime: start,
+			EndTime:   start.Add(2 * time.Second),
+			Final:     true,
+		},
+		{
+			ID:           testID,
+			TraceID:      prettyTestTraceID(),
+			Name:         "unit failure",
+			StartTime:    start.Add(time.Second),
+			EndTime:      start.Add(2 * time.Second),
+			ParentID:     rootID,
+			TestCaseName: "unit failure",
+			TestStatus:   dagui.TestStatusFailure,
+			Final:        true,
+		},
+	})
+	db.SetPrimarySpan(rootID)
+
+	fe := NewWithDB(io.Discard, db)
+	fe.finalRender = true
+	lines := fe.renderFinalGlobalTests(tuist.Context{Width: 80})
+	testsLine, ok := findPrettyTestLine(lines, "TESTS")
+	if !ok {
+		t.Fatalf("final global tests did not include TESTS line:\n%s", strings.Join(lines, "\n"))
+	}
+	if testsLine != "TESTS" {
+		t.Fatalf("global final TESTS line = %q, want no indentation", testsLine)
+	}
+}
+
+func TestLiveInlineCheckTestsIndentedUnderTrace(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	db := dagui.NewDB()
+	checkID := prettyTestSpanID(1)
+	testID := prettyTestSpanID(2)
+	start := time.Unix(100, 0)
+	db.ImportSnapshots([]dagui.SpanSnapshot{
+		{
+			ID:        checkID,
+			TraceID:   prettyTestTraceID(),
+			Name:      "check unit",
+			StartTime: start,
+			EndTime:   start.Add(2 * time.Second),
+			CheckName: "unit",
+			Final:     true,
+		},
+		{
+			ID:           testID,
+			TraceID:      prettyTestTraceID(),
+			Name:         "unit failure",
+			StartTime:    start.Add(time.Second),
+			EndTime:      start.Add(2 * time.Second),
+			ParentID:     checkID,
+			TestCaseName: "unit failure",
+			TestStatus:   dagui.TestStatusFailure,
+			Final:        true,
+		},
+	})
+	db.SetPrimarySpan(checkID)
+
+	fe := NewWithDB(io.Discard, db)
+	fe.FrontendOpts.Verbosity = dagui.ShowCompletedVerbosity
+	fe.FrontendOpts.GCThreshold = time.Hour
+	fe.recalculateViewLocked()
+
+	lines := fe.tui.RenderLines()
+	testsLine, ok := findPrettyTestLine(lines, "TESTS")
+	if !ok {
+		t.Fatalf("live check render did not include inline TESTS line:\n%s", strings.Join(lines, "\n"))
+	}
+	idx := strings.Index(testsLine, "TESTS")
+	if idx < 2 || testsLine[idx-2:idx] != "  " || !strings.Contains(testsLine[:idx], VertBoldBar) {
+		t.Fatalf("inline TESTS line = %q, want trace pipe plus two-space test indent", testsLine)
 	}
 }
 
@@ -143,6 +239,15 @@ func TestLiveGlobalTestsSkipCheckScopedNoTestSuites(t *testing.T) {
 	if lines := fe.renderLiveGlobalTests(tuist.Context{Width: 80}); len(lines) != 0 {
 		t.Fatalf("expected no global live report for check-scoped no-test suite, got:\n%s", strings.Join(lines, "\n"))
 	}
+}
+
+func findPrettyTestLine(lines []string, want string) (string, bool) {
+	for _, line := range lines {
+		if strings.Contains(line, want) {
+			return line, true
+		}
+	}
+	return "", false
 }
 
 func prettyTestSpanID(id byte) dagui.SpanID {
