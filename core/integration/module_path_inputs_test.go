@@ -24,14 +24,16 @@ import (
 
 func (ModuleSuite) TestContextDirectory(ctx context.Context, t *testctx.T) {
 	type testCase struct {
-		sdk    string
-		source string
+		sdk     string
+		fixture string
+		source  string
 	}
 
 	t.Run("load context inside git repo with module in a sub dir", func(ctx context.Context, t *testctx.T) {
 		for _, tc := range []testCase{
 			{
-				sdk: "go",
+				sdk:     "go",
+				fixture: "go/path-context-directory-01",
 				source: `package main
 
 import (
@@ -158,7 +160,8 @@ func (t *Test) Files(
 `,
 			},
 			{
-				sdk: "python",
+				sdk:     "python",
+				fixture: "python/path-context-directory-02",
 				source: `from typing import Annotated
 
 import dagger
@@ -226,7 +229,8 @@ class Test:
 `,
 			},
 			{
-				sdk: "typescript",
+				sdk:     "typescript",
+				fixture: "typescript/path-context-directory-03",
 				source: `import { Directory, File, object, func, argument } from "@dagger.io/dagger"
 
 @object()
@@ -293,12 +297,7 @@ export class Test {
 					WithWorkdir("/work").
 					WithDirectory("/work/backend", c.Directory().WithNewFile("foo.txt", "foo")).
 					WithDirectory("/work/frontend", c.Directory().WithNewFile("bar.txt", "bar")).
-					WithWorkdir("/work/ci").
-					With(daggerExec("module", "init", "test", ".", "--sdk="+tc.sdk, "--source=dagger")).
-					WithNewFile("/work/ci/LICENSE", "").
-					WithWorkdir("/work/ci/dagger").
-					With(sdkSource(tc.sdk, tc.source)).
-					WithDirectory("/work/ci/dagger/sub", c.Directory().WithNewFile("sub.txt", "sub")).
+					With(withModuleFixture(t, c, "/work/ci", tc.fixture)).
 					WithWorkdir("/work")
 
 				t.Run("absolute and relative root context dir", func(ctx context.Context, t *testctx.T) {
@@ -337,7 +336,8 @@ export class Test {
 	t.Run("load context inside git repo with module at the root of the repo", func(ctx context.Context, t *testctx.T) {
 		for _, tc := range []testCase{
 			{
-				sdk: "go",
+				sdk:     "go",
+				fixture: "go/path-context-directory-04",
 				source: `package main
 
 import (
@@ -442,7 +442,8 @@ func (t *Test) Files(
 `,
 			},
 			{
-				sdk: "python",
+				sdk:     "python",
+				fixture: "python/path-context-directory-05",
 				source: `from typing import Annotated
 
 import dagger
@@ -498,7 +499,8 @@ class Test:
 `,
 			},
 			{
-				sdk: "typescript",
+				sdk:     "typescript",
+				fixture: "typescript/path-context-directory-06",
 				source: `import { Directory, File, object, func, argument } from "@dagger.io/dagger"
 
 @object()
@@ -557,11 +559,7 @@ export class Test {
 					WithWorkdir("/work").
 					WithDirectory("/work/backend", c.Directory().WithNewFile("foo.txt", "foo")).
 					WithDirectory("/work/frontend", c.Directory().WithNewFile("bar.txt", "bar")).
-					With(daggerExec("module", "init", "test", ".", "--sdk="+tc.sdk, "--source=dagger")).
-					WithNewFile("/work/LICENSE", "").
-					WithDirectory("/work/dagger/sub", c.Directory().WithNewFile("sub.txt", "sub")).
-					WithWorkdir("/work/dagger").
-					With(sdkSource(tc.sdk, tc.source)).
+					With(withModuleFixture(t, c, "/work", tc.fixture)).
 					WithWorkdir("/work")
 
 				t.Run("absolute and relative root context dir", func(ctx context.Context, t *testctx.T) {
@@ -594,7 +592,8 @@ export class Test {
 	t.Run("load directory and files with invalid context path value", func(ctx context.Context, t *testctx.T) {
 		for _, tc := range []testCase{
 			{
-				sdk: "go",
+				sdk:     "go",
+				fixture: "go/path-context-directory-07",
 				source: `package main
 
 import (
@@ -646,7 +645,8 @@ func (t *Test) NonExistingFile(
 `,
 			},
 			{
-				sdk: "python",
+				sdk:     "python",
+				fixture: "python/path-context-directory-08",
 				source: `from typing import Annotated
 
 import dagger
@@ -688,7 +688,8 @@ class Test:
 `,
 			},
 			{
-				sdk: "typescript",
+				sdk:     "typescript",
+				fixture: "typescript/path-context-directory-09",
 				source: `import { Directory, File,object, func, argument } from "@dagger.io/dagger"
 @object()
 export class Test {
@@ -724,9 +725,7 @@ export class Test {
 				modGen := goGitBase(t, c).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work").
-					With(daggerExec("module", "init", "test", ".", "--sdk="+tc.sdk, "--source=dagger")).
-					WithWorkdir("/work/dagger").
-					With(sdkSource(tc.sdk, tc.source)).
+					With(withModuleFixture(t, c, "/work", tc.fixture)).
 					WithWorkdir("/work")
 
 				t.Run("too high relative context dir path", func(ctx context.Context, t *testctx.T) {
@@ -765,34 +764,8 @@ export class Test {
 
 		ctr := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work/dep").
-			With(daggerExec("module", "init", "--source=.", "--sdk=go", "dep", ".")).
-			WithNewFile("main.go", `package main
-
-import (
-	"dagger/dep/internal/dagger"
-)
-
-type Dep struct{}
-
-func (m *Dep) GetSource(
-	// +defaultPath="/dep"
-	// +ignore=["**", "!yo"]
-	source *dagger.Directory,
-) *dagger.Directory {
-	return source
-}
-
-func (m *Dep) GetRelSource(
-  // +defaultPath="."
-	// +ignore=["**", "!yo"]
-	source *dagger.Directory,
-) *dagger.Directory {
-  return source
-}
-`,
-			).
-			WithNewFile("yo", "yo")
+			With(withModuleFixture(t, c, "/work", "go/path-context-directory-deps")).
+			WithWorkdir("/work/dep")
 
 		out, err := ctr.With(daggerCall("get-source", "entries")).Stdout(ctx)
 		require.NoError(t, err)
@@ -803,26 +776,7 @@ func (m *Dep) GetRelSource(
 		require.Equal(t, "yo\n", out)
 
 		ctr = ctr.
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--source=.", "--sdk=go", "test", ".")).
-			With(daggerExec("module", "install", "./dep")).
-			WithNewFile("main.go", `package main
-
-import (
-	"dagger/test/internal/dagger"
-)
-
-type Test struct{}
-
-func (m *Test) GetDepSource() *dagger.Directory {
-	return dag.Dep().GetSource()
-}
-
-func (m *Test) GetRelDepSource() *dagger.Directory {
-	return dag.Dep().GetRelSource()
-}
-`,
-			)
+			WithWorkdir("/work")
 
 		out, err = ctr.With(daggerCall("get-dep-source", "entries")).Stdout(ctx)
 		require.NoError(t, err)
@@ -850,107 +804,8 @@ func (m *Test) GetRelDepSource() *dagger.Directory {
 
 		ctr := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work/dep").
-			With(daggerExec("module", "init", "--source=.", "--sdk=go", "dep", ".")).
-			WithNewFile("main.go", `package main
-
-import (
-	"dagger/dep/internal/dagger"
-)
-
-type Dep struct{}
-
-func (m *Dep) GetSource(
-	// +defaultPath="/dep"
-	// +ignore=["**", "!yo"]
-	source *dagger.Directory,
-) *dagger.Directory {
-	return source
-}
-
-func (m *Dep) GetRelSource(
-	// +defaultPath="."
-	// +ignore=["**","!yo"]
-	source *dagger.Directory,
-) *dagger.Directory {
-	return source
-}
-		`).
-			WithNewFile("yo", "yo")
-
-		ctr = ctr.
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--source=.", "--sdk=go", "test", ".")).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-
-	"dagger/test/internal/dagger"
-	"github.com/Khan/genqlient/graphql"
-)
-
-type Test struct{}
-
-func (m *Test) GetDepSource(ctx context.Context, src *dagger.Directory) (*dagger.Directory, error) {
-	err := src.AsModule(dagger.DirectoryAsModuleOpts{SourceRootPath: "dep"}).Serve(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	type DirectoryIDRes struct {
-		Dep struct {
-			GetSource struct {
-				ID string
-			}
-		}
-	}
-
-	directoryIDRes := &DirectoryIDRes{}
-	res := &graphql.Response{Data: directoryIDRes}
-
-	err = dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
-		Query: "{dep {getSource {id} } }",
-	}, res)
-
-	if err != nil {
-		return nil, err
-	}
-
-
-	return dag.LoadDirectoryFromID(dagger.DirectoryID(directoryIDRes.Dep.GetSource.ID)), nil
-}
-
-func (m *Test) GetRelDepSource(ctx context.Context, src *dagger.Directory) (*dagger.Directory, error) {
-	err := src.AsModule(dagger.DirectoryAsModuleOpts{SourceRootPath: "dep"}).Serve(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	type DirectoryIDRes struct {
-		Dep struct {
-			GetRelSource struct {
-				ID string
-			}
-		}
-	}
-
-	directoryIDRes := &DirectoryIDRes{}
-	res := &graphql.Response{Data: directoryIDRes}
-
-	err = dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
-		Query: "{dep {getRelSource {id} } }",
-	}, res)
-
-	if err != nil {
-		return nil, err
-	}
-
-
-	return dag.LoadDirectoryFromID(dagger.DirectoryID(directoryIDRes.Dep.GetRelSource.ID)), nil
-}
-			`,
-			)
+			With(withModuleFixture(t, c, "/work", "go/path-context-directory-as-module")).
+			WithWorkdir("/work")
 
 		out, err := ctr.With(daggerCall("get-dep-source", "--src", ".", "entries")).Stdout(ctx)
 		require.NoError(t, err)
@@ -1129,12 +984,14 @@ func (ModuleSuite) TestContextDirectoryGit(ctx context.Context, t *testctx.T) {
 
 func (ModuleSuite) TestContextGit(ctx context.Context, t *testctx.T) {
 	type testCase struct {
-		sdk    string
-		source string
+		sdk     string
+		fixture string
+		source  string
 	}
 	tcs := []testCase{
 		{
-			sdk: "go",
+			sdk:     "go",
+			fixture: "go/path-context-git-01",
 			source: `package main
 
 import (
@@ -1198,7 +1055,8 @@ func (m *Test) commitAndRef(ctx context.Context, ref *dagger.GitRef) (string, er
 `,
 		},
 		{
-			sdk: "python",
+			sdk:     "python",
+			fixture: "python/path-context-git-02",
 			source: `from typing import Annotated
 import dagger
 from dagger import DefaultPath, function, object_type
@@ -1232,7 +1090,8 @@ class Test:
 `,
 		},
 		{
-			sdk: "typescript",
+			sdk:     "typescript",
+			fixture: "typescript/path-context-git-03",
 			source: `import { GitRepository, GitRef, object, func, argument } from "@dagger.io/dagger"
 
 @object()
@@ -1280,7 +1139,8 @@ export class Test {
 }`,
 		},
 		{
-			sdk: "java",
+			sdk:     "java",
+			fixture: "java/path-context-git-04",
 			source: `package io.dagger.modules.test;
 
 
@@ -1332,7 +1192,7 @@ public class Test {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			modGen := modInit(t, c, tc.sdk, tc.source).
+			modGen := moduleFixture(t, c, tc.fixture).
 				WithExec([]string{"sh", "-c", `git init && git add . && git commit -m "initial commit"`}).
 				WithExec([]string{"git", "clean", "-fdx"})
 			headCommit, err := modGen.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
@@ -1424,7 +1284,6 @@ func (ModuleSuite) TestContextGitRemoteDep(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	remoteRepo := "github.com/dagger/dagger-test-modules"
-	remoteModule := remoteRepo + "/context-git"
 
 	// this commit is *not* the target of any version
 	// so, this ends up repinning
@@ -1437,50 +1296,15 @@ func (ModuleSuite) TestContextGitRemoteDep(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			require.Contains(t, fullref, version)
 
-			if version != "" {
-				version = "@" + version
-			}
-
-			// create a module that depends on the remote module
+			fixture := map[string]string{
+				"":            "go/path-context-git-remote-dep-default",
+				"main":        "go/path-context-git-remote-dep-main",
+				"context-git": "go/path-context-git-remote-dep-context-git",
+				"v1.2.3":      "go/path-context-git-remote-dep-v1-2-3",
+			}[version]
 			modGen := goGitBase(t, c).
 				WithWorkdir("/work").
-				With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
-				WithNewFile("dagger.json", `{
-			"name": "test",
-	"source": ".",
-	"sdk": "go",
-	"dependencies": [
-		{
-			"name": "context-git",
-			"source": "`+remoteModule+version+`",
-			"pin": "`+commit+`"
-		}
-	]
-	}`).
-				With(sdkSource("go", `package main
-
-	import (
-		"context"
-	)
-
-	type Test struct{}
-
-	func (m *Test) TestRepoLocal(ctx context.Context) (string, error) {
-		return dag.ContextGit().TestRepoLocal(ctx)
-	}
-
-	func (m *Test) TestRepoRemote(ctx context.Context) (string, error) {
-		return dag.ContextGit().TestRepoRemote(ctx)
-	}
-
-	func (m *Test) TestRefLocal(ctx context.Context) (string, error) {
-		return dag.ContextGit().TestRefLocal(ctx)
-	}
-
-	func (m *Test) TestRefRemote(ctx context.Context) (string, error) {
-		return dag.ContextGit().TestRefRemote(ctx)
-	}
-	`)).
+				With(withModuleFixture(t, c, "/work", fixture)).
 				WithExec([]string{"sh", "-c", `git init && git add . && git commit -m "initial commit"`})
 
 			t.Run("repo local", func(ctx context.Context, t *testctx.T) {
@@ -1518,7 +1342,6 @@ func (ModuleSuite) TestContextGitRemoteDepNamedPin(ctx context.Context, t *testc
 	c := connect(ctx, t)
 
 	remoteRepo := "github.com/dagger/dagger-test-modules"
-	remoteModule := remoteRepo + "/context-git"
 
 	// Use a tag pin — tags are immutable and exercise the same ref(name: ...)
 	// code path as branches, without the risk of a branch being pruned.
@@ -1533,31 +1356,7 @@ func (ModuleSuite) TestContextGitRemoteDepNamedPin(ctx context.Context, t *testc
 
 	modGen := goGitBase(t, c).
 		WithWorkdir("/work").
-		With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
-		WithNewFile("dagger.json", `{
-			"name": "test",
-			"source": ".",
-			"sdk": "go",
-			"dependencies": [
-				{
-					"name": "context-git",
-					"source": "`+remoteModule+`",
-					"pin": "`+pin+`"
-				}
-			]
-		}`).
-		With(sdkSource("go", `package main
-
-		import (
-			"context"
-		)
-
-		type Test struct{}
-
-		func (m *Test) TestRefLocal(ctx context.Context) (string, error) {
-			return dag.ContextGit().TestRefLocal(ctx)
-		}
-		`)).
+		With(withModuleFixture(t, c, "/work", "go/path-context-git-remote-dep-named-pin")).
 		WithExec([]string{"sh", "-c", `git init && git add . && git commit -m "initial commit"`})
 
 	out, err := modGen.With(daggerCall("test-ref-local")).Stdout(ctx)
@@ -1568,25 +1367,7 @@ func (ModuleSuite) TestContextGitRemoteDepNamedPin(ctx context.Context, t *testc
 func (ModuleSuite) TestContextGitDetectDirty(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := modInit(t, c, "go", `
-package main
-
-import (
-	"context"
-	"dagger/test/internal/dagger"
-)
-
-type Test struct{}
-
-func (m *Test) IsDirty(
-	ctx context.Context,
-	// +defaultPath="./.git"
-	git *dagger.GitRepository,
-) (bool, error) {
-	clean, err := git.Uncommitted().IsEmpty(ctx)
-	return !clean, err
-}
-`).
+	modGen := moduleFixture(t, c, "go/path-context-git-detect-dirty").
 		WithNewFile("somefile.txt", "some content").
 		With(gitUserConfig).
 		WithExec([]string{"sh", "-c", `git init && git add . && git commit -m "initial commit"`})
@@ -1612,93 +1393,7 @@ func (ModuleSuite) TestIgnore(ctx context.Context, t *testctx.T) {
 		WithWorkdir("/work").
 		WithDirectory("/work/backend", c.Directory().WithNewFile("foo.txt", "foo").WithNewFile("bar.txt", "bar")).
 		WithDirectory("/work/frontend", c.Directory().WithNewFile("bar.txt", "bar")).
-		With(daggerExec("module", "init", "--sdk=go", "--source=dagger", "test", ".")).
-		WithNewFile("/work/LICENSE", "").
-		WithWorkdir("/work/dagger").
-		With(sdkSource("go", `
-package main
-
-import (
-  "dagger/test/internal/dagger"
-)
-
-type Test struct{}
-
-func (t *Test) IgnoreAll(
-  // +ignore=["**"]
-  // +defaultPath="./dagger"
-  dir *dagger.Directory,
-) *dagger.Directory {
-  return dir
-}
-
-func (t *Test) IgnoreThenReverseIgnore(
-  // +ignore=["**", "!**"]
-  // +defaultPath="./dagger"
-  dir *dagger.Directory,
-) *dagger.Directory {
-  return dir
-}
-
-func (t *Test) IgnoreThenReverseIgnoreThenExcludeGitFiles(
-  // +ignore=["**", "!**", "*.git*"]
-  // +defaultPath="./dagger"
-  dir *dagger.Directory,
-) *dagger.Directory {
-  return dir
-}
-
-func (t *Test) IgnoreThenExcludeFilesThenReverseIgnore(
-  // +ignore=["**", "*.git*", "!**"]
-  // +defaultPath="./dagger"
-  dir *dagger.Directory,
-) *dagger.Directory {
-  return dir
-}
-
-func (t *Test) IgnoreDir(
-  // +ignore=["internal"]
-  // +defaultPath="./dagger"
-  dir *dagger.Directory,
-) *dagger.Directory {
-  return dir
-}
-
-func (t *Test) IgnoreEverythingButMainGo(
-  // +ignore=["**", "!main.go"]
-  // +defaultPath="./dagger"
-  dir *dagger.Directory,
-) *dagger.Directory {
-  return dir
-}
-
-func (t *Test) NoIgnore(
-  // +ignore=["!main.go"]
-  // +defaultPath="./dagger"
-  dir *dagger.Directory,
-) *dagger.Directory {
-  return dir
-}
-
-func (t *Test) IgnoreEveryGoFileExceptMainGo(
-  // +ignore=["**/*.go", "!main.go"]
-  // +defaultPath="./dagger"
-  dir *dagger.Directory,
-) *dagger.Directory {
-  return dir
-}
-
-func (t *Test) IgnoreDirButKeepFileInSubdir(
-  // +ignore=["internal/foo", "!internal/foo/bar.go"]
-  // +defaultPath="./dagger"
-  dir *dagger.Directory,
-) *dagger.Directory {
-  return dir
-}`)).
-		WithDirectory("./internal/foo", c.Directory().
-			WithNewFile("bar.go", "package foo").
-			WithNewFile("baz.go", "package foo"),
-		).
+		With(withModuleFixture(t, c, "/work", "go/path-ignore")).
 		WithWorkdir("/work")
 
 	t.Run("ignore with context directory", func(ctx context.Context, t *testctx.T) {
@@ -1835,14 +1530,16 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 
 func (ModuleSuite) TestIgnorePrefiltersExplicitDirectoryArgs(ctx context.Context, t *testctx.T) {
 	type testCase struct {
-		sdk    string
-		source string
+		sdk     string
+		fixture string
+		source  string
 	}
 
 	t.Run("pre filtering directory on module call", func(ctx context.Context, t *testctx.T) {
 		for _, tc := range []testCase{
 			{
-				sdk: "go",
+				sdk:     "go",
+				fixture: "go/path-ignore-prefilters-explicit-directory-args-01",
 				source: `package main
 
 import (
@@ -1862,7 +1559,8 @@ func (t *Test) Call(
 }`,
 			},
 			{
-				sdk: "typescript",
+				sdk:     "typescript",
+				fixture: "typescript/path-ignore-prefilters-explicit-directory-args-02",
 				source: `import { object, func, Directory, argument } from "@dagger.io/dagger"
 
 @object()
@@ -1876,7 +1574,8 @@ export class Test {
 }`,
 			},
 			{
-				sdk: "python",
+				sdk:     "python",
+				fixture: "python/path-ignore-prefilters-explicit-directory-args-03",
 				source: `from typing import Annotated
 
 import dagger
@@ -1905,26 +1604,7 @@ class Test:
 						WithNewFile("foo.txt", "foo").
 						WithNewFile("bar.txt", "bar").
 						WithDirectory("bar", c.Directory().WithNewFile("baz.txt", "baz"))).
-					WithWorkdir("/work/dep").
-					With(daggerExec("module", "init", "test", ".", "--sdk="+tc.sdk, "--source=.")).
-					With(sdkSource(tc.sdk, tc.source)).
-					WithWorkdir("/work").
-					With(daggerExec("module", "init", "--sdk=go", "--source=.", "test-mod", ".")).
-					With(daggerExec("module", "install", "./dep")).
-					With(sdkSource("go", `package main
-
-import (
-	"dagger/test-mod/internal/dagger"
-)
-
-type TestMod struct {}
-
-func (t *TestMod) Test(
-  dir *dagger.Directory,
-) *dagger.Directory {
- return dag.Test().Call(dir)
-}`,
-					))
+					With(withModuleFixture(t, c, "/work", tc.fixture))
 
 				out, err := modGen.With(daggerCall("test", "--dir", "./input", "entries")).Stdout(ctx)
 				require.NoError(t, err)
@@ -1940,37 +1620,7 @@ func (ModuleSuite) TestGitignore(ctx context.Context, t *testctx.T) {
 	modGen := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/dagger").
-		With(daggerExec("module", "init", "--sdk=go", "--source=.", "test", ".")).
-		WithDirectory("./backend", c.Directory().WithNewFile("foo.txt", "foo")).
-		WithDirectory("./frontend", c.Directory().WithNewFile("bar.txt", "bar")).
-		WithNewFile("./.gitignore", "frontend/*.txt\n").
-		With(sdkSource("go", `
-package main
-
-import (
-	"context"
-	"dagger/test/internal/dagger"
-)
-
-type Test struct{}
-
-func (t *Test) GetFile(ctx context.Context, filename string) (string, error) {
-	return dag.CurrentModule().Source().File(filename).Contents(ctx)
-}
-
-func (t *Test) GetFileAt(ctx context.Context, filename string, dir *dagger.Directory) (string, error) {
-	return dir.File(filename).Contents(ctx)
-}
-
-func (t *Test) GetFileContext(
-	ctx context.Context,
-	filename string,
-	// +defaultPath="."
-	dir *dagger.Directory,
-) (string, error) {
-	return dir.File(filename).Contents(ctx)
-}
-		`))
+		With(withModuleFixture(t, c, "/work/dagger", "go/path-gitignore"))
 
 	t.Run("gitignore applies to loaded module", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerCall("get-file", "--filename", "backend/foo.txt")).Stdout(ctx)
@@ -2008,154 +1658,6 @@ func (t *Test) GetFileContext(
 }
 
 func (ModuleSuite) TestContextParallel(ctx context.Context, t *testctx.T) {
-	src := `package main
-
-import (
-	"context"
-	"dagger/test/internal/dagger"
-)
-
-type Test struct{}
-
-func (z *Test) Fn(
-	ctx context.Context,
-	rand string,
-
-	// +defaultPath="/"
-  // +ignore=[
-	// "**",
-	// "!analytics"
-	// ]
-	a *dagger.Directory,
-
-	// +defaultPath="/"
-  // +ignore=[
-	// "**",
-	// "!auth"
-	// ]
-	b *dagger.Directory,
-
-	// +defaultPath="/"
-  // +ignore=[
-	// "**",
-	// "!bin"
-	// ]
-	c *dagger.Directory,
-
-	// +defaultPath="/"
-  // +ignore=[
-	// "**",
-	// "!cmd"
-	// ]
-	d *dagger.Directory,
-
-	// +defaultPath="/"
-  // +ignore=[
-	// "**",
-	// "!core"
-	// ]
-	e *dagger.Directory,
-
-	// +defaultPath="/"
-  // +ignore=[
-	// "**",
-	// "!dagql"
-	// ]
-	f *dagger.Directory,
-
-	// +defaultPath="/"
-  // +ignore=[
-	// "**",
-	// "!docs"
-	// ]
-	g *dagger.Directory,
-
-	// +defaultPath="/"
-  // +ignore=[
-	// "**",
-	// "!engine"
-	// ]
-	h *dagger.Directory,
-
-	// +defaultPath="/"
-  // +ignore=[
-	// "**",
-	// "!evals"
-	// ]
-	i *dagger.Directory,
-
-	// +defaultPath="/"
-  // +ignore=[
-	// "**",
-	// "!hack"
-	// ]
-	j *dagger.Directory,
-
-	// +defaultPath="/"
-  // +ignore=[
-	// "**",
-	// "!helm"
-	// ]
-	k *dagger.Directory,
-
-	// +defaultPath="/"
-  // +ignore=[
-	// "**",
-	// "!internal"
-	// ]
-	l *dagger.Directory,
-
-	// +defaultPath="/"
-  // +ignore=[
-	// "**",
-	// "!modules"
-	// ]
-	m *dagger.Directory,
-
-	// +defaultPath="/"
-  // +ignore=[
-	// "**",
-	// "!network"
-	// ]
-	n *dagger.Directory,
-
-	// +defaultPath="/"
-  // +ignore=[
-	// "**",
-	// "!sdk"
-	// ]
-	o *dagger.Directory,
-
-	// +defaultPath="/"
-  // +ignore=[
-	// "**",
-	// "!toolchains"
-	// ]
-	p *dagger.Directory,
-
-	// +defaultPath="/"
-  // +ignore=[
-	// "**",
-	// "!util"
-	// ]
-	q *dagger.Directory,
-
-	// +defaultPath="/"
-  // +ignore=[
-	// "**",
-	// "!version"
-	// ]
-	r *dagger.Directory,
-) (string, error) {
-	for _, dir := range [](*dagger.Directory){a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r} {
-		if _, err := dir.Entries(ctx); err != nil {
-			return "", err
-		}
-	}
-	return "woo", nil
-}
-`
-
 	c1 := connect(ctx, t)
 	c2 := connect(ctx, t)
 
@@ -2166,8 +1668,7 @@ func (z *Test) Fn(
 			WithWorkdir(workdir).
 			WithoutDirectory(filepath.Join(workdir, ".dagger")).
 			WithoutFile(filepath.Join(workdir, "dagger.json")).
-			With(daggerExec("module", "init", "--sdk=go", "--source=.dagger", "test", ".")).
-			WithNewFile(filepath.Join(workdir, ".dagger/main.go"), src)
+			With(withModuleFixture(t, c, workdir, "go/path-context-parallel"))
 	}
 
 	rand1 := rand.Text()
@@ -2186,33 +1687,11 @@ func (z *Test) Fn(
 func (ModuleSuite) TestDefaultPathNoCache(ctx context.Context, t *testctx.T) {
 	t.Run("sources are reloaded when changed with defaultPath", func(ctx context.Context, t *testctx.T) {
 		modDir := t.TempDir()
-
-		_, err := hostDaggerExec(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test", ".")
-		require.NoError(t, err)
+		copyTestdataFixture(ctx, t, modDir, "modules", "go", "path-default-path-no-cache")
 
 		initialContent := "initial content"
 		testFilePath := filepath.Join(modDir, "test-file.txt")
-		err = os.WriteFile(testFilePath, []byte(initialContent), 0o644)
-		require.NoError(t, err)
-
-		moduleSrc := `package main
-
-import (
-       "context"
-       "dagger/test/internal/dagger"
-)
-
-type Test struct{}
-
-func (m *Test) ReadFile(
-       ctx context.Context,
-       // +defaultPath="."
-       dir *dagger.Directory,
-) (string, error) {
-       return dir.File("test-file.txt").Contents(ctx)
-}
-`
-		err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(moduleSrc), 0o644)
+		err := os.WriteFile(testFilePath, []byte(initialContent), 0o644)
 		require.NoError(t, err)
 
 		// it's critical that we re-use a single session here like shell/prompt
