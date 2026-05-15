@@ -94,18 +94,6 @@ var workspaceInitCmd = &cobra.Command{
 	RunE:  runWorkspaceInit,
 }
 
-var initCmd = &cobra.Command{
-	Use:        moduleInitCmd.Use,
-	Short:      "Initialize a new module",
-	Long:       "Deprecated alias for `dagger module init`.",
-	Example:    moduleInitCmd.Example,
-	Args:       validateModuleInitArgs,
-	GroupID:    moduleGroup.ID,
-	Hidden:     true,
-	Deprecated: `use "dagger module init" instead`,
-	RunE:       runModuleInit,
-}
-
 var workspaceConfigCmd = &cobra.Command{
 	Use:   "config [key] [value]",
 	Short: "Get or set workspace configuration",
@@ -134,7 +122,6 @@ func init() {
 	addWorkspaceHereFlag(workspaceInitCmd)
 
 	setWorkspaceFlagPolicy(workspaceInitCmd, workspaceFlagPolicyLocalOnly)
-	setWorkspaceFlagPolicy(initCmd, workspaceFlagPolicyLocalOnly)
 }
 
 func addWorkspaceHereFlag(cmd *cobra.Command) {
@@ -201,33 +188,6 @@ func writeWorkspaceConfig(ctx context.Context, ws *dagger.Workspace, key, value 
 
 func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client, ref, name string, here bool) error {
 	msg, err := dag.CurrentWorkspace().Install(ctx, ref, dagger.WorkspaceInstallOpts{Name: name, Here: here})
-	if err != nil {
-		return err
-	}
-
-	_, err = fmt.Fprintln(out, msg)
-	return err
-}
-
-type workspaceModuleInitOptions struct {
-	Name      string
-	SDK       string
-	Source    string
-	Include   []string
-	SelfCalls bool
-	Here      bool
-}
-
-func initWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client, opts workspaceModuleInitOptions) error {
-	ws := dag.CurrentWorkspace()
-
-	msg, err := ws.ModuleInit(ctx, opts.Name, dagger.WorkspaceModuleInitOpts{
-		SDK:       opts.SDK,
-		Source:    opts.Source,
-		Include:   opts.Include,
-		SelfCalls: opts.SelfCalls,
-		Here:      opts.Here,
-	})
 	if err != nil {
 		return err
 	}
