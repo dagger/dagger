@@ -464,13 +464,10 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, 
 		t.Helper()
 
 		workdir := t.TempDir()
+		copyTestdataFixture(ctx, t, workdir, "modules", "go", "workspace-selection-files-standalone")
 		require.NoError(t, os.WriteFile(filepath.Join(workdir, "marker.txt"), []byte("cwd marker"), 0o644))
 
-		_, err := hostDaggerExec(ctx, t, workdir, "module", "init", "--sdk=go", "--source=.", "files", ".")
-		require.NoError(t, err)
-		require.NoError(t, os.WriteFile(filepath.Join(workdir, "main.go"), []byte(workspaceSelectionFilesModuleSource), 0o644))
-
-		_, err = os.Stat(filepath.Join(workdir, ".git"))
+		_, err := os.Stat(filepath.Join(workdir, ".git"))
 		require.ErrorIs(t, err, os.ErrNotExist)
 		return workdir
 	}
@@ -787,8 +784,7 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceBindingPropagation(ctx conte
 			With(workspaceSelectionEnvWorkspace("/work/ambient", "ambient-base", "ambient-ci")).
 			WithWorkdir("/work/selected").
 			With(workspaceSelectionDaggerExec("workspace", "init", "--here")).
-			With(workspaceSelectionDaggerExec("module", "init", "--sdk=go", "nester")).
-			WithNewFile("/work/selected/.dagger/modules/nester/main.go", workspaceSelectionNestedModuleSource()).
+			With(withModuleFixture(t, c, "/work/selected/.dagger/modules/nester", "go/workspace-selection-nester")).
 			WithNewFile("/work/selected/.dagger/config.toml", `[modules.nester]
 source = "modules/nester"
 entrypoint = true
@@ -815,8 +811,7 @@ greeting = "selected-ci"
 			With(workspaceSelectionEnvWorkspace("/work/ambient", "ambient-base", "ambient-ci")).
 			WithWorkdir("/work/selected").
 			With(workspaceSelectionDaggerExec("workspace", "init", "--here")).
-			With(workspaceSelectionDaggerExec("module", "init", "--sdk=go", "nester")).
-			WithNewFile("/work/selected/.dagger/modules/nester/main.go", workspaceSelectionNestedModuleSource()).
+			With(withModuleFixture(t, c, "/work/selected/.dagger/modules/nester", "go/workspace-selection-nester")).
 			WithNewFile("/work/selected/.dagger/config.toml", `[modules.nester]
 source = "modules/nester"
 entrypoint = true
