@@ -19,16 +19,6 @@ import (
 )
 
 func (ModuleSuite) TestTypedefSourceMaps(ctx context.Context, t *testctx.T) {
-	goBaseSrc := `package main
-
-type Test struct {}
-    `
-
-	tsBaseSrc := `import { object, func } from "@dagger.io/dagger"
-
-@object()
-export class Test {}`
-
 	type languageMatch struct {
 		golang     []string
 		typescript []string
@@ -36,42 +26,12 @@ export class Test {}`
 
 	tcs := []struct {
 		sdk     string
-		src     string
+		fixture string
 		matches languageMatch
 	}{
 		{
-			sdk: "go",
-			src: `package main
-
-import "context"
-
-type Dep struct {
-    FieldDef string
-}
-
-func (m *Dep) FuncDef(
-	arg1 string,
-	arg2 string, // +optional
-) string {
-    return ""
-}
-
-type MyEnum string
-const (
-    MyEnumA MyEnum = "MyEnumA"
-    MyEnumB MyEnum = "MyEnumB"
-)
-
-type MyInterface interface {
-	DaggerObject
-	Do(ctx context.Context, val int) (string, error)
-}
-
-func (m *Dep) Collect(MyEnum, MyInterface) error {
-    // force all the types here to be collected
-    return nil
-}
-    `,
+			sdk:     "go",
+			fixture: "go/source-map-dep",
 			matches: languageMatch{
 				golang: []string{
 					// struct
@@ -111,27 +71,8 @@ func (m *Dep) Collect(MyEnum, MyInterface) error {
 			},
 		},
 		{
-			sdk: "typescript",
-			src: `import { object, func } from "@dagger.io/dagger"
-
-export enum MyEnum {
-  A = "MyEnumA",
-	B = "MyEnumB",
-}
-
-@object()
-export class Dep {
-  @func()
-  fieldDef: string
-
-  @func()
-  funcDef(arg1: string, arg2?: string): string {
-    return ""
-  }
-
-	@func()
-	async collect(enumValue: MyEnum): Promise<void> {}
-}`,
+			sdk:     "typescript",
+			fixture: "typescript/source-map-dep",
 			matches: languageMatch{
 				golang: []string{
 					// struct
@@ -171,9 +112,9 @@ export class Dep {
 		t.Run(fmt.Sprintf("%s dep with go generation", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			modGen := modInit(t, c, "go", goBaseSrc).
-				With(withModInitAt("./dep", tc.sdk, tc.src)).
-				With(daggerExec("module", "install", "./dep"))
+			modGen := goGitBase(t, c).
+				With(withModuleFixture(t, c, ".", "go/source-map-root")).
+				With(withModuleFixture(t, c, "dep", tc.fixture))
 
 			codegenContents, err := modGen.File("internal/dagger/dep.gen.go").Contents(ctx)
 			require.NoError(t, err)
@@ -188,9 +129,9 @@ export class Dep {
 		t.Run(fmt.Sprintf("%s dep with typescript generation", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			modGen := modInit(t, c, "typescript", tsBaseSrc).
-				With(withModInitAt("./dep", tc.sdk, tc.src)).
-				With(daggerExec("module", "install", "./dep"))
+			modGen := goGitBase(t, c).
+				With(withModuleFixture(t, c, ".", "typescript/source-map-root")).
+				With(withModuleFixture(t, c, "dep", tc.fixture))
 
 			codegenContents, err := modGen.File(sdkCodegenFile(t, "typescript")).Contents(ctx)
 			require.NoError(t, err)
