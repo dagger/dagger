@@ -1,0 +1,17 @@
+{
+  "name": "test",
+  "engineVersion": "v0.20.6",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "top-level",
+      "source": "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git/top-level@d730fb3af8757e1ca293e01aa4fcfd510a6e40e5"
+    }
+  ],
+  "codegen": {
+    "automaticGitignore": false
+  },
+  "disableDefaultFunctionCaching": true
+}
