@@ -238,25 +238,7 @@ func (WorkspaceCompatSuite) TestLegacyToolchainCompat(ctx context.Context, t *te
 		}
 
 		base := goGitBase(t, c).
-			WithWorkdir("/work/tool").
-			With(daggerExec("module", "init", "--sdk=go", "--source=.", "probe", ".")).
-			WithNewFile("main.go", `package main
-
-type Probe struct {
-	Value string
-}
-
-func New(
-	// +optional
-	value string,
-) *Probe {
-	return &Probe{Value: value}
-}
-
-func (m *Probe) Selected() string {
-	return m.Value
-}
-`)
+			With(withModuleFixture(t, c, "/work/tool", "go/workspace-compat-probe"))
 
 		alpha := base.
 			WithWorkdir("/work").
