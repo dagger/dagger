@@ -367,6 +367,7 @@ def param_strategy(  # type: ignore[no-untyped-def]
     max_depth: int = 3,
     allow_forward_ref: bool = True,
     aliases: tuple[_AliasLeaf, ...] = (),
+    constants: tuple[_RenderedConstant, ...] = (),
 ) -> GeneratedParam:
     """Generate a single function parameter."""
     type_expr = draw(
@@ -390,7 +391,13 @@ def param_strategy(  # type: ignore[no-untyped-def]
         and type_expr.base.default_strategy is not None
         and draw(st.booleans())
     ):
-        default_expr = draw(type_expr.base.default_strategy)
+        matching_consts = [
+            c for c in constants if c.base.annotation == type_expr.base.annotation
+        ]
+        if matching_consts and draw(st.booleans()):
+            default_expr = draw(st.sampled_from(matching_consts)).name
+        else:
+            default_expr = draw(type_expr.base.default_strategy)
 
     return GeneratedParam(
         name=draw(param_name_strategy()),
@@ -425,6 +432,7 @@ def function_strategy(  # type: ignore[no-untyped-def]
     *,
     allow_forward_ref: bool = True,
     aliases: tuple[_AliasLeaf, ...] = (),
+    constants: tuple[_RenderedConstant, ...] = (),
 ) -> GeneratedFunction:
     name = draw(_function_name_strategy())
     method_kind = draw(
@@ -439,6 +447,7 @@ def function_strategy(  # type: ignore[no-untyped-def]
             param_strategy(
                 allow_forward_ref=allow_forward_ref,
                 aliases=aliases,
+                constants=constants,
             )
         )
         if p.name not in used_names:
@@ -489,6 +498,15 @@ class _RenderedAlias:
 
 
 @dataclasses.dataclass(frozen=True)
+class _RenderedConstant:
+    """A module-level constant declaration like ``MAX = 100``."""
+
+    name: str
+    value_expr: str
+    base: _BaseType
+
+
+@dataclasses.dataclass(frozen=True)
 class _GeneratedField:
     """A class-level ``dagger.field(default=...)`` declaration on Foo."""
 
@@ -507,6 +525,7 @@ class GeneratedModule:
     has_helper_class: bool
     foo_inherits_helper: bool
     functions: tuple[GeneratedFunction, ...]
+    constants: tuple[_RenderedConstant, ...] = ()
     dagger_alias: str | None = None
     fields: tuple[_GeneratedField, ...] = ()
 
@@ -527,7 +546,7 @@ def _alias_target(draw) -> GeneratedType:  # type: ignore[no-untyped-def]
 
 
 @st.composite
-def module_strategy(  # type: ignore[no-untyped-def]  # noqa: PLR0915
+def module_strategy(  # type: ignore[no-untyped-def]  # noqa: C901, PLR0915
     draw, *, max_functions: int = 4
 ) -> str:
     """Strategy that produces a complete Dagger module source string."""
@@ -583,6 +602,28 @@ def module_strategy(  # type: ignore[no-untyped-def]  # noqa: PLR0915
     has_helper_class = draw(st.booleans())
     foo_inherits_helper = has_helper_class and draw(st.booleans())
 
+    constants: list[_RenderedConstant] = []
+    used_const_names: set[str] = set()
+    const_count = draw(st.integers(min_value=0, max_value=2))
+    while len(constants) < const_count:
+        cname = draw(
+            st.text(min_size=2, max_size=6, alphabet="ABCDEFGH").map(
+                lambda s: f"CONST_{s}"
+            )
+        )
+        if cname in used_const_names:
+            continue
+        used_const_names.add(cname)
+        c_base = draw(
+            st.sampled_from(
+                [b for b in _PRIMITIVE_BASES if b.default_strategy is not None]
+            )
+        )
+        c_value = draw(c_base.default_strategy)
+        constants.append(
+            _RenderedConstant(name=cname, value_expr=c_value, base=c_base)
+        )
+
     n = draw(st.integers(min_value=1, max_value=max_functions))
     fns: list[GeneratedFunction] = []
     used_fn_names: set[str] = set()
@@ -592,6 +633,7 @@ def module_strategy(  # type: ignore[no-untyped-def]  # noqa: PLR0915
             function_strategy(
                 allow_forward_ref=allow_forward_ref,
                 aliases=tuple(alias_leaves),
+                constants=tuple(constants),
             )
         )
         if f.name not in used_fn_names:
@@ -633,6 +675,7 @@ def module_strategy(  # type: ignore[no-untyped-def]  # noqa: PLR0915
             has_helper_class=has_helper_class,
             foo_inherits_helper=foo_inherits_helper,
             functions=tuple(fns),
+            constants=tuple(constants),
             dagger_alias=dagger_alias,
             fields=tuple(fields),
         )
@@ -663,6 +706,9 @@ def _render_module(mod: GeneratedModule) -> str:  # noqa: C901, PLR0912
             "",
         ]
     )
+    lines.extend(f"{c.name} = {c.value_expr}" for c in mod.constants)
+    if mod.constants:
+        lines.append("")
     for alias in mod.aliases:
         if alias.explicit_typealias:
             lines.append(f"{alias.name}: TypeAlias = {alias.target_source}")
