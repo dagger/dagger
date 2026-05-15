@@ -6,14 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/engineutil"
-	"github.com/dagger/dagger/engine/slog"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/mitchellh/mapstructure"
 	"github.com/opencontainers/go-digest"
@@ -30,12 +28,9 @@ const (
 	// change is needed in the generated library.
 	// Otherwise, update it to the latest known commit during release.
 	goSDKLibVersion = "7058e9313c720d82c6a07fefb6ce3fab60c7ec4e" // v0.20.6
-
-	goSDKModuleLoadDebugEnv = "_DAGGER_DEBUG_MODULE_LOAD"
 )
 
 var goSDKExecMDDigest = digest.FromString("go-sdk-with-exec-execmd")
-var goSDKModuleLoadDebug = os.Getenv(goSDKModuleLoadDebugEnv) != ""
 
 /*
 goSDK is the one special sdk not implemented as module, instead the
@@ -294,15 +289,6 @@ func (sdk *goSDK) ModuleTypes(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get module context directory ID: %w", err)
 	}
-	if goSDKModuleLoadDebugEnabled() {
-		slog.InfoContext(ctx, "go sdk module typedefs input",
-			"module_name", modName,
-			"source_subpath", srcSubpath,
-			"context_dir_id", contextDirID.Display(),
-			"schema_json_file_id", schemaJSONFileID.Display(),
-			"module_context_id", moduleContextID.Display(),
-		)
-	}
 
 	ctr, err = sdk.base(ctx)
 	if err != nil {
@@ -319,14 +305,6 @@ func (sdk *goSDK) ModuleTypes(
 			return inst, fmt.Errorf("compute Go SDK exec call digest: %w", err)
 		}
 		execMD.CallDigest = callDigest
-	}
-	if goSDKModuleLoadDebugEnabled() {
-		slog.InfoContext(ctx, "go sdk module typedefs exec",
-			"module_name", modName,
-			"source_subpath", srcSubpath,
-			"exec_call_digest", execMD.CallDigest.String(),
-			"exec_md_digest", goSDKExecMDDigest.String(),
-		)
 	}
 	err = dag.Select(ctx, ctr, &ctr,
 		dagql.Selector{
@@ -456,32 +434,11 @@ func (sdk *goSDK) ModuleTypes(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get module ID from type defs json: %w", err)
 	}
-	if goSDKModuleLoadDebugEnabled() {
-		var moduleResultID uint64
-		if modCallID.IsHandle() {
-			moduleResultID = modCallID.EngineResultID()
-		}
-		slog.InfoContext(ctx, "go sdk module typedefs output",
-			"module_name", modName,
-			"source_subpath", srcSubpath,
-			"typedefs_json_bytes", len(modDefsID),
-			"typedefs_json_digest", digest.FromBytes([]byte(modDefsID)).String(),
-			"module_id_is_handle", modCallID.IsHandle(),
-			"module_engine_result_id", moduleResultID,
-		)
-	}
-
 	inst, err = dagql.NewID[*core.Module](modCallID).Load(ctx, dag)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load module from type defs json: %w", err)
 	}
-	if goSDKModuleLoadDebugEnabled() {
-		logGoSDKLoadedModuleSummary(ctx, modName, srcSubpath, inst.Self())
-	}
 	if modCallID.IsHandle() {
-		// generate-typedefs emits a handle-form module ID out of the withExec result.
-		// Retain that loaded module under the producing exec container so it cannot be
-		// pruned while the exec result that created it is still live.
 		cache, err := dagql.EngineCache(ctx)
 		if err != nil {
 			return inst, fmt.Errorf("failed to get engine cache for go type defs dependency: %w", err)
@@ -492,79 +449,6 @@ func (sdk *goSDK) ModuleTypes(
 	}
 
 	return inst, nil
-}
-
-func goSDKModuleLoadDebugEnabled() bool {
-	return goSDKModuleLoadDebug
-}
-
-func logGoSDKLoadedModuleSummary(ctx context.Context, moduleName, sourceSubpath string, mod *core.Module) {
-	if mod == nil {
-		return
-	}
-
-	objectNames := make([]string, 0, len(mod.ObjectDefs))
-	for _, objDef := range mod.ObjectDefs {
-		typeDef := objDef.Self()
-		if typeDef == nil || !typeDef.AsObject.Valid || typeDef.AsObject.Value.Self() == nil {
-			continue
-		}
-		obj := typeDef.AsObject.Value.Self()
-		objectNames = append(objectNames, obj.Name)
-	}
-	sort.Strings(objectNames)
-
-	mainObjectName := ""
-	var mainFunctionNames []string
-	var mainFieldNames []string
-	if mainObj, ok := mod.MainObject(); ok && mainObj != nil {
-		mainObjectName = mainObj.Name
-		for _, fnDef := range mainObj.Functions {
-			if fn := fnDef.Self(); fn != nil {
-				mainFunctionNames = append(mainFunctionNames, fn.Name)
-			}
-		}
-		for _, fieldDef := range mainObj.Fields {
-			if field := fieldDef.Self(); field != nil {
-				mainFieldNames = append(mainFieldNames, field.Name)
-			}
-		}
-	}
-	sort.Strings(mainFunctionNames)
-	sort.Strings(mainFieldNames)
-
-	slog.InfoContext(ctx, "go sdk loaded module summary",
-		"module_name", moduleName,
-		"source_subpath", sourceSubpath,
-		"loaded_module_name", mod.NameField,
-		"loaded_module_original_name", mod.OriginalName,
-		"description", trimStringForLog(mod.Description, 160),
-		"object_count", len(objectNames),
-		"object_names", limitGoSDKLogStrings(objectNames, 20),
-		"main_object", mainObjectName,
-		"main_function_count", len(mainFunctionNames),
-		"main_function_names", limitGoSDKLogStrings(mainFunctionNames, 60),
-		"main_field_count", len(mainFieldNames),
-		"main_field_names", limitGoSDKLogStrings(mainFieldNames, 40),
-	)
-}
-
-func limitGoSDKLogStrings(vals []string, limit int) []string {
-	if len(vals) == 0 || limit <= 0 {
-		return nil
-	}
-	cp := append([]string(nil), vals...)
-	if len(cp) > limit {
-		cp = cp[:limit]
-	}
-	return cp
-}
-
-func trimStringForLog(val string, limit int) string {
-	if limit <= 0 || len(val) <= limit {
-		return val
-	}
-	return val[:limit] + "..."
 }
 
 func (sdk *goSDK) Runtime(
