@@ -1,0 +1,12 @@
+type Greeter {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory(".")
+    self
+  }
+
+  pub read: String! {
+    source.file("hello.txt").contents
+  }
+}
