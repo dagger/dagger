@@ -504,6 +504,30 @@ func (tv *TestView) CurrentActionSpan() *dagui.Span {
 	return node.Span
 }
 
+func (tv *TestView) CurrentActionTitle() (string, dagui.TestCategory, bool) {
+	switch tv.focusArea {
+	case testFocusChildren:
+		if tv.focusedChildren != nil {
+			if span := tv.focusedChildren.FocusedSpan(); span != nil {
+				return span.Name, dagui.TestCategoryPassing, false
+			}
+		}
+	case testFocusLogs:
+		if tv.focusedLogSpan.IsValid() {
+			if view := tv.currentView(); view != nil {
+				if node := view.BySpan[tv.focusedLogSpan]; node != nil {
+					return testNodeTitleName(node), node.Category, true
+				}
+			}
+		}
+	}
+	node := tv.FocusedNode()
+	if node == nil || node.Kind == dagui.TestNodeVirtualSuite {
+		return "", dagui.TestCategoryPassing, false
+	}
+	return testNodeTitleName(node), node.Category, true
+}
+
 func (tv *TestView) makeReturnFocus(fe *frontendPretty) func() {
 	area := tv.focusArea
 	rowID := tv.focusedRow
@@ -570,7 +594,13 @@ func (tv *TestView) focusSelectedLogHandle(fe *frontendPretty, span *dagui.Span)
 		return false
 	}
 	logs := tv.Logs[span.ID]
-	handle := tv.logHandleFor(span, logs, span.Name)
+	title := span.Name
+	if view := tv.currentView(); view != nil {
+		if node := view.BySpan[span.ID]; node != nil {
+			title = testNodeTitleName(node)
+		}
+	}
+	handle := tv.logHandleFor(span, logs, title)
 	if handle == nil {
 		return false
 	}
@@ -774,7 +804,11 @@ func (tv *TestView) renderTestSummaryHeader(out TermOutput, prefix string, width
 }
 
 func renderTestViewerHint(out TermOutput) string {
-	return out.String("T").Foreground(termenv.ANSIBrightBlack).Bold().String() +
+	return renderInspectKeyHint(out, "T")
+}
+
+func renderInspectKeyHint(out TermOutput, key string) string {
+	return out.String(key).Foreground(termenv.ANSIBrightBlack).Bold().String() +
 		out.String(" inspect").Foreground(termenv.ANSIBrightBlack).String()
 }
 
@@ -1095,7 +1129,6 @@ func (tv *TestView) renderDetailLines(ctx tuist.Context, out *termenv.Output, ro
 	lines = append(lines, clipANSI(icon+" "+name+duration, width))
 	lines = append(lines, out.String(strings.Repeat(HorizBar, max(width, 0))).Foreground(termenv.ANSIBrightBlack).Faint().String())
 
-	lines = append(lines, tv.renderSummaryLine(out, node, width))
 	if node.Kind == dagui.TestNodeVirtualSuite {
 		lines = append(lines, out.String(clipPlain("virtual suite · no backing span", width)).Foreground(termenv.ANSIBrightBlack).Faint().String())
 	} else if span == nil {
@@ -1104,26 +1137,25 @@ func (tv *TestView) renderDetailLines(ctx tuist.Context, out *termenv.Output, ro
 
 	if span != nil && tv.SpanChildren != nil {
 		if childSpans := tv.SpanChildren(span); childSpans != nil {
-			lines = append(lines, "")
-			lines = append(lines, out.String("Children").Foreground(termenv.ANSIBrightBlack).Bold().String())
-			childHeight := max(height-len(lines), 1)
+			childHeight := max(height-len(lines)-2, 1)
 			result := tv.RenderChildResult(ctx.Resize(width, childHeight), childSpans)
-			if len(result.Lines) == 0 {
-				lines = append(lines, out.String("No child spans.").Foreground(termenv.ANSIBrightBlack).Faint().String())
-			} else {
+			if len(result.Lines) > 0 {
+				lines = append(lines, "")
+				lines = append(lines, out.String("Children").Foreground(termenv.ANSIBrightBlack).Bold().String())
 				lines = append(lines, result.Lines...)
 			}
 		}
 	}
 
 	lines = append(lines, "")
-	lines = append(lines, out.String("Logs").Foreground(termenv.ANSIBrightBlack).Bold().String())
 	if span == nil {
+		lines = append(lines, renderLogSectionHeader(out, width, false, false))
 		lines = append(lines, out.String("No direct logs for a virtual suite.").Foreground(termenv.ANSIBrightBlack).Faint().String())
 		return cropLines(lines, height)
 	}
 	logs := tv.Logs[span.ID]
 	if logs == nil || logs.UsedHeight() == 0 {
+		lines = append(lines, renderLogSectionHeader(out, width, false, false))
 		lines = append(lines, out.String("No logs for selected test span.").Foreground(termenv.ANSIBrightBlack).Faint().String())
 		return cropLines(lines, height)
 	}
@@ -1156,28 +1188,6 @@ func (tv *TestView) renderPassedGroupDetailLines(out *termenv.Output, row testSi
 		out.String(clipPlain("Press enter to expand or collapse this group.", width)).Foreground(termenv.ANSIBrightBlack).Faint().String(),
 	}
 	return cropLines(lines, height)
-}
-
-func (tv *TestView) renderSummaryLine(out *termenv.Output, node *dagui.TestNode, width int) string {
-	counts := node.Counts
-	parts := []string{
-		out.String(testCategoryIcon(node.Category)).Foreground(testCategoryColor(node.Category)).String(),
-		out.String(node.Category.String()).Foreground(testCategoryColor(node.Category)).String(),
-		out.String(fmt.Sprintf("%d tests", counts.Total())).Foreground(termenv.ANSIBrightBlack).Faint().String(),
-	}
-	if counts.Failing > 0 {
-		parts = append(parts, out.String(fmt.Sprintf("%d failing", counts.Failing)).Foreground(termenv.ANSIRed).String())
-	}
-	if counts.Running > 0 {
-		parts = append(parts, out.String(fmt.Sprintf("%d running", counts.Running)).Foreground(termenv.ANSIYellow).String())
-	}
-	if counts.Passing > 0 {
-		parts = append(parts, out.String(fmt.Sprintf("%d passing", counts.Passing)).Foreground(termenv.ANSIGreen).String())
-	}
-	if counts.Skipped > 0 {
-		parts = append(parts, out.String(fmt.Sprintf("%d skipped", counts.Skipped)).Foreground(termenv.ANSIBrightBlack).String())
-	}
-	return clipANSI(strings.Join(parts, " · "), width)
 }
 
 func (fe *frontendPretty) toggleTestsMode() {
