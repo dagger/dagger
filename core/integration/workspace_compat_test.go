@@ -368,19 +368,7 @@ func (WorkspaceCompatSuite) TestCompatWarning(ctx context.Context, t *testctx.T)
 
 	blueprintDir := filepath.Join(workdir, "blueprint")
 	require.NoError(t, os.MkdirAll(blueprintDir, 0o755))
-
-	_, err := hostDaggerExec(ctx, t, blueprintDir, "module", "init", "--sdk=go", "hello", ".")
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(blueprintDir, "main.go"), []byte(`package main
-
-import "context"
-
-type Hello struct{}
-
-func (m *Hello) Greet(ctx context.Context) string {
-	return "hello from blueprint"
-}
-`), 0o644))
+	copyTestdataFixture(ctx, t, blueprintDir, "modules", "go", "workspace-compat-blueprint")
 
 	require.NoError(t, os.WriteFile(filepath.Join(workdir, "dagger.json"), []byte(`{
   "name": "app",
