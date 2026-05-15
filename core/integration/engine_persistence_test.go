@@ -122,21 +122,11 @@ func (EngineSuite) TestDiskPersistenceAcrossRestart(ctx context.Context, t *test
 	t.Run("function cache control survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "phase7-function-cache-state-" + identity.NewID()
-		moduleSrc := `package main
-
-import "crypto/rand"
-
-type Test struct{}
-
-func (m *Test) TestAlwaysCache() string {
-	return rand.Text()
-}
-`
 
 		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
 
-		modA := modInit(t, engineClientA, "go", moduleSrc)
+		modA := moduleFixture(t, engineClientA, "go/cache-random")
 		outA, err := modA.
 			WithEnvVariable("CACHE_BUST", identity.NewID()).
 			With(daggerCallAt(".", "test-always-cache")).
@@ -150,7 +140,7 @@ func (m *Test) TestAlwaysCache() string {
 		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
 
-		modB := modInit(t, engineClientB, "go", moduleSrc)
+		modB := moduleFixture(t, engineClientB, "go/cache-random")
 		outB, err := modB.
 			WithEnvVariable("CACHE_BUST", identity.NewID()).
 			With(daggerCallAt(".", "test-always-cache")).
@@ -162,68 +152,11 @@ func (m *Test) TestAlwaysCache() string {
 	t.Run("contextual function cache survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "phase7-contextual-function-cache-state-" + identity.NewID()
-		moduleSrc := `package main
-
-import (
-	"context"
-	"crypto/rand"
-
-	"dagger/test/internal/dagger"
-)
-
-type Test struct{}
-
-func (m *Test) ContextDir(
-	ctx context.Context,
-	// +defaultPath="."
-	dir *dagger.Directory,
-) (string, error) {
-	contents, err := dir.File("dagger.json").Contents(ctx)
-	if err != nil {
-		return "", err
-	}
-	return rand.Text() + "|" + contents, nil
-}
-
-func (m *Test) ContextFile(
-	ctx context.Context,
-	// +defaultPath="dagger.json"
-	file *dagger.File,
-) (string, error) {
-	contents, err := file.Contents(ctx)
-	if err != nil {
-		return "", err
-	}
-	return rand.Text() + "|" + contents, nil
-}
-
-func (m *Test) ContextGitRepository(
-	ctx context.Context,
-	// +defaultPath="."
-	repo *dagger.GitRepository,
-) (string, error) {
-	commit, err := repo.Head().Commit(ctx)
-	if err != nil {
-		return "", err
-	}
-	return rand.Text() + "|" + commit, nil
-}
-
-func (m *Test) ContextGitRef(
-	ctx context.Context,
-	// +defaultPath="."
-	ref *dagger.GitRef,
-) (string, error) {
-	commit, err := ref.Commit(ctx)
-	if err != nil {
-		return "", err
-	}
-	return rand.Text() + "|" + commit, nil
-}
-`
 
 		getMod := func(client *dagger.Client) *dagger.Container {
-			return modInit(t, client, "go", moduleSrc).
+			return moduleFixture(t, client, "go/contextual-cache").
+				WithEnvVariable("GIT_AUTHOR_DATE", "2000-01-01T00:00:00Z").
+				WithEnvVariable("GIT_COMMITTER_DATE", "2000-01-01T00:00:00Z").
 				WithExec([]string{"git", "add", "."}).
 				WithExec([]string{"git", "commit", "-m", "make HEAD exist"})
 		}
