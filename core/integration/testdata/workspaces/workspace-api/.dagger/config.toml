@@ -1,0 +1,32 @@
+[modules.reader]
+source = "modules/reader"
+
+[modules.lister]
+source = "modules/lister"
+
+[modules.subdir]
+source = "modules/subdir"
+
+[modules.filtered]
+source = "modules/filtered"
+
+[modules.gi-root]
+source = "modules/gi-root"
+
+[modules.gi-sub]
+source = "modules/gi-sub"
+
+[modules.gi-off]
+source = "modules/gi-off"
+
+[modules.escape-dir]
+source = "modules/escape-dir"
+
+[modules.escape-file]
+source = "modules/escape-file"
+
+[modules.abs-rel]
+source = "modules/abs-rel"
+
+[modules.finder]
+source = "modules/finder"

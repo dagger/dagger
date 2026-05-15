@@ -75,8 +75,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--sdk=go", "dep", ".")
-		require.NoError(t, err)
+		copyTestdataFixture(ctx, t, depDir, "modules", "go", "minimal-dep")
 
 		c := connect(ctx, t, dagger.WithWorkdir(workdir))
 		msg, err := c.CurrentWorkspace().Install(ctx, "./dep")
@@ -103,8 +102,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--sdk=go", "dep", ".")
-		require.NoError(t, err)
+		copyTestdataFixture(ctx, t, depDir, "modules", "go", "minimal-dep")
 
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
 		require.NoError(t, err)
@@ -142,8 +140,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		initGitRepo(ctx, t, workdir)
 		initGitRepo(ctx, t, depDir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--sdk=go", "dep", ".")
-		require.NoError(t, err)
+		copyTestdataFixture(ctx, t, depDir, "modules", "go", "minimal-dep")
 		require.NoError(t, os.WriteFile(filepath.Join(depDir, "main.go"), []byte(`package main
 
 type Dep struct{}
@@ -170,10 +167,8 @@ entrypoint = true
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--sdk=go", "dep", ".")
-		require.NoError(t, err)
-		_, err = hostDaggerExec(ctx, t, workdir, "module", "init", "--sdk=go", "--source=.", "app", ".")
-		require.NoError(t, err)
+		copyTestdataFixture(ctx, t, depDir, "modules", "go", "minimal-dep")
+		copyTestdataFixture(ctx, t, workdir, "modules", "go", "minimal-app")
 
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
 		require.NoError(t, err)
@@ -233,14 +228,13 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleMutation(ctx context.Context, t 
 		require.NoError(t, os.MkdirAll(depDir, 0o755))
 		initGitRepo(ctx, t, workdir)
 
-		_, err := hostDaggerExec(ctx, t, depDir, "module", "init", "--sdk=go", "dep", ".")
-		require.NoError(t, err)
+		copyTestdataFixture(ctx, t, depDir, "modules", "go", "minimal-dep")
 
 		writeWorkspaceConfigFile(t, workdir, `[modules.dep]
 source = "../existing"
 `)
 
-		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "--name=dep", "./dep")
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "--name=dep", "./dep")
 		require.Error(t, err)
 		requireErrOut(t, err, `module "dep" already exists in workspace config with source "../existing" (new source "../dep")`)
 
@@ -256,33 +250,8 @@ source = "../existing"
 func (WorkspaceModulesSuite) TestWorkspaceManagedModuleBehavior(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	source := `
-type Objects {
-  pub objectA: ObjectsA! {
-    ObjectsA()
-  }
-}
-
-type ObjectsA {
-  pub message: String! {
-    "Hello from A"
-  }
-
-  pub objectB: ObjectsB! {
-    ObjectsB()
-  }
-}
-
-type ObjectsB {
-  pub message: String! {
-    "Hello from B"
-  }
-}
-`
-
 	t.Run("main object with prefixed children", func(ctx context.Context, t *testctx.T) {
-		base := workspaceBase(t, c).
-			With(initDangModule("objects", source))
+		base := workspaceFixture(t, c, "workspace-managed")
 
 		out, err := base.With(daggerCall("objects", "object-a", "message")).Stdout(ctx)
 		require.NoError(t, err)
@@ -294,17 +263,7 @@ type ObjectsB {
 	})
 
 	t.Run("renamed workspace-installed module", func(ctx context.Context, t *testctx.T) {
-		base := workspaceBase(t, c).
-			With(initDangModule("hello-world", `
-type HelloWorld {
-  pub greet(name: String! = "world"): String! {
-    "hello, " + name + "!"
-  }
-}
-`)).
-			With(daggerExec("workspace", "config", "modules.hello-world.source", "modules/hello-world")).
-			With(daggerExec("workspace", "config", "modules.hello-world.entrypoint", "false")).
-			With(daggerExec("workspace", "config", "modules.greeter.source", "modules/hello-world"))
+		base := workspaceFixture(t, c, "workspace-managed")
 
 		out, err := base.With(daggerCall("greeter", "greet")).Stdout(ctx)
 		require.NoError(t, err)
@@ -324,22 +283,7 @@ type HelloWorld {
 	})
 
 	t.Run("configured workspace ignores cwd dagger.json", func(ctx context.Context, t *testctx.T) {
-		ctr := workspaceBase(t, c).
-			With(initDangBlueprint("configured", `
-type Configured {
-  pub greet: String! {
-    "hello from configured workspace"
-  }
-}
-`)).
-			WithNewFile("modules/cwd/dagger.json", `{"name":"cwd","sdk":{"source":"dang"}}`).
-			WithNewFile("modules/cwd/main.dang", `
-type Cwd {
-  pub greet: String! {
-    "hello from cwd dagger json"
-  }
-}
-`)
+		ctr := workspaceFixture(t, c, "workspace-managed")
 
 		out, err := ctr.
 			WithWorkdir("/work/modules/cwd").
@@ -351,14 +295,7 @@ type Cwd {
 
 	t.Run("unconfigured workspace does not infer module from cwd", func(ctx context.Context, t *testctx.T) {
 		ctr := workspaceBase(t, c).
-			WithNewFile("modules/cwd/dagger.json", `{"name":"cwd","sdk":{"source":"dang"}}`).
-			WithNewFile("modules/cwd/main.dang", `
-type Cwd {
-  pub greet: String! {
-    "hello from cwd dagger json"
-  }
-}
-`)
+			With(withWorkspaceFixture(t, c, ".", "workspaces/cwd-only"))
 
 		out, err := ctr.
 			WithWorkdir("/work/modules/cwd").

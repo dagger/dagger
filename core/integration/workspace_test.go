@@ -6,8 +6,6 @@ package core
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -45,6 +43,11 @@ func nativeWorkspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
 	return workspaceBase(t, c).With(daggerExec("workspace", "init"))
 }
 
+func workspaceFixture(t testing.TB, c *dagger.Client, fixture string) *dagger.Container {
+	t.Helper()
+	return workspaceBase(t, c).With(withWorkspaceFixture(t, c, ".", "workspaces/"+fixture))
+}
+
 // legacyWorkspaceBase creates a native git repo rooted at /work but seeds it
 // with a legacy dagger.json project shape. Compat detection and migration tests
 // use this to separate "legacy on disk" from "workspace at runtime".
@@ -70,57 +73,6 @@ func ensureWorkspaceInit() dagger.WithContainerFunc {
 	}
 }
 
-// initDangModule creates a config-owned Dang workspace module with the given
-// name and source code.
-func initDangModule(name, source string) dagger.WithContainerFunc {
-	return func(ctr *dagger.Container) *dagger.Container {
-		return ctr.
-			With(daggerExec("module", "init", "--here", "--sdk=dang", name)).
-			WithNewFile(".dagger/modules/"+name+"/main.dang", source)
-	}
-}
-
-// initStandaloneDangModule creates a standalone Dang module in the current
-// working directory and overwrites main.dang with the provided source.
-func initStandaloneDangModule(name, source string) dagger.WithContainerFunc {
-	return func(ctr *dagger.Container) *dagger.Container {
-		return ctr.
-			With(daggerExec("module", "init", "--sdk=dang", "--source=.", name, ".")).
-			WithNewFile("main.dang", source)
-	}
-}
-
-// initDangBlueprint creates a config-owned Dang workspace module and marks it
-// as the workspace entrypoint so its methods are promoted to the root.
-func initDangBlueprint(name, source string) dagger.WithContainerFunc {
-	return func(ctr *dagger.Container) *dagger.Container {
-		return ctr.
-			With(daggerExec("module", "init", "--here", "--sdk=dang", name)).
-			WithNewFile(".dagger/modules/"+name+"/main.dang", source).
-			With(daggerExec("workspace", "config", "modules."+name+".entrypoint", "true"))
-	}
-}
-
-// initHostDangBlueprint creates a minimal explicit workspace on the host with a
-// single Dang entrypoint module. Host-side command tests can use this to
-// exercise ambient workspace loading directly.
-func initHostDangBlueprint(ctx context.Context, t testing.TB, workdir, name, source string) {
-	t.Helper()
-
-	initGitRepo(ctx, t, workdir)
-
-	_, err := hostDaggerExec(ctx, t, workdir, "workspace", "init")
-	require.NoError(t, err)
-
-	_, err = hostDaggerExec(ctx, t, workdir, "module", "init", "--sdk=dang", name)
-	require.NoError(t, err)
-
-	require.NoError(t, os.WriteFile(filepath.Join(workdir, ".dagger", "modules", name, "main.dang"), []byte(source), 0o644))
-
-	_, err = hostDaggerExec(ctx, t, workdir, "workspace", "config", "modules."+name+".entrypoint", "true")
-	require.NoError(t, err)
-}
-
 // TestSingleQueryWorkspaceModuleLoadingSkipsUnreferencedBrokenModules locks in
 // the user-visible behavior behind the SingleQuery optimization. A single raw
 // GraphQL query that names one workspace module should only load that module;
@@ -129,22 +81,7 @@ func initHostDangBlueprint(ctx context.Context, t testing.TB, workdir, name, sou
 func (WorkspaceSuite) TestSingleQueryWorkspaceModuleLoadingSkipsUnreferencedBrokenModules(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	base := workspaceBase(t, c).
-		WithNewFile(".dagger/config.toml", `[modules.good]
-source = "modules/good"
-
-[modules.bad]
-source = "modules/bad"
-`).
-		With(moduleLoadingDangModule(".dagger/modules/good", "good", "Good", "ping", "healthy module loaded")).
-		WithNewFile(".dagger/modules/bad/dagger.json", `{"name":"bad","sdk":{"source":"dang"}}`).
-		WithNewFile(".dagger/modules/bad/main.dang", `
-type Bad {
-  pub broken: String! {
-    this is intentionally invalid dang source
-  }
-}
-`)
+	base := workspaceFixture(t, c, "single-query-broken")
 
 	t.Run("query naming only the healthy module succeeds", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerQuery(`{ good { ping } }`)).Stdout(ctx)
@@ -172,21 +109,7 @@ type Bad {
 func (WorkspaceSuite) TestEntrypointWithFieldHidden(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	base := workspaceBase(t, c).
-		With(initDangBlueprint("greeter", `
-type Greeter {
-  pub msg: String!
-
-  new(name: String!) {
-    self.msg = "hello, " + name + "!"
-    self
-  }
-
-  pub greet: String! {
-    msg
-  }
-}
-`))
+	base := workspaceFixture(t, c, "workspace-entrypoint")
 
 	t.Run("dagger functions omits with", func(ctx context.Context, t *testctx.T) {
 		out, err := base.With(daggerFunctions()).Stdout(ctx)
