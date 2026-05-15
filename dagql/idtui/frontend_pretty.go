@@ -2981,6 +2981,7 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 			}
 			origins = append(origins, cause)
 		}
+		sortErrorOrigins(origins)
 		multi := len(origins) > 1
 		for _, cause := range origins {
 			if multi {
@@ -2999,6 +3000,53 @@ func (fe *frontendPretty) renderRowContentRest(ctx tuist.Context, out TermOutput
 		fe.renderStepError(out, r, row, prefix)
 	}
 	fe.renderDebug(out, row.Span, prefix+Block25+" ", false)
+}
+
+func sortErrorOrigins(origins []*dagui.Span) {
+	// Error origins can be linked before their referenced spans have arrived.
+	// In that case their StartTime is still zero when they are inserted into the
+	// SpanSet, and mutating StartTime later won't re-sort the set. Sort a copy at
+	// render time using the current span data so final output is deterministic.
+	sort.SliceStable(origins, func(i, j int) bool {
+		return compareErrorOrigins(origins[i], origins[j]) < 0
+	})
+}
+
+func compareErrorOrigins(a, b *dagui.Span) int {
+	if a == b {
+		return 0
+	}
+	if a == nil {
+		return 1
+	}
+	if b == nil {
+		return -1
+	}
+	if !a.StartTime.IsZero() && !b.StartTime.IsZero() && !a.StartTime.Equal(b.StartTime) {
+		if a.StartTime.Before(b.StartTime) {
+			return -1
+		}
+		return 1
+	}
+	if a.StartTime.IsZero() != b.StartTime.IsZero() {
+		if a.StartTime.IsZero() {
+			return 1
+		}
+		return -1
+	}
+	if c := strings.Compare(spanPath(a), spanPath(b)); c != 0 {
+		return c
+	}
+	return strings.Compare(a.ID.String(), b.ID.String())
+}
+
+func spanPath(span *dagui.Span) string {
+	var parts []string
+	for cur := span; cur != nil; cur = cur.ParentSpan {
+		parts = append(parts, cur.Name)
+	}
+	slices.Reverse(parts)
+	return strings.Join(parts, "\x00")
 }
 
 func (fe *frontendPretty) renderDebug(out TermOutput, span *dagui.Span, prefix string, force bool) {
