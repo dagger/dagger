@@ -79,8 +79,8 @@ func TestRenderShowsLiveGlobalTestsForPlainCall(t *testing.T) {
 	if !ok {
 		t.Fatalf("live render did not include TESTS line:\n%s", got)
 	}
-	if testsLine != "TESTS" {
-		t.Fatalf("global live TESTS line = %q, want no indentation", testsLine)
+	if testsLine != "TESTS  T inspect" {
+		t.Fatalf("global live TESTS line = %q, want hint with no indentation", testsLine)
 	}
 }
 
@@ -114,6 +114,11 @@ func TestFinalGlobalTestsUnindented(t *testing.T) {
 	db.SetPrimarySpan(rootID)
 
 	fe := NewWithDB(io.Discard, db)
+	// Render live first so the final report proves it does not inherit the live
+	// "T inspect" hint from the cached inline TestView.
+	if lines := fe.renderLiveGlobalTests(tuist.Context{Width: 80}); len(lines) == 0 {
+		t.Fatal("live global tests did not render")
+	}
 	fe.finalRender = true
 	lines := fe.renderFinalGlobalTests(tuist.Context{Width: 80})
 	testsLine, ok := findPrettyTestLine(lines, "TESTS")
@@ -168,6 +173,9 @@ func TestLiveInlineCheckTestsIndentedUnderTrace(t *testing.T) {
 	idx := strings.Index(testsLine, "TESTS")
 	if idx < 2 || testsLine[idx-2:idx] != "  " || !strings.Contains(testsLine[:idx], VertBoldBar) {
 		t.Fatalf("inline TESTS line = %q, want trace pipe plus two-space test indent", testsLine)
+	}
+	if !strings.Contains(testsLine[idx:], "TESTS  T inspect") {
+		t.Fatalf("inline TESTS line = %q, want test viewer hint", testsLine)
 	}
 }
 
