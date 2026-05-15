@@ -1,0 +1,12 @@
+type Greeter {
+  pub msg: String!
+
+  new(name: String!) {
+    self.msg = "hello, " + name + "!"
+    self
+  }
+
+  pub greet: String! {
+    msg
+  }
+}

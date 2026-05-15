@@ -1,0 +1,7 @@
+[modules.real]
+source = "modules/app"
+entrypoint = true
+
+[modules.canonical]
+source = "./modules/app"
+entrypoint = true

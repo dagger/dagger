@@ -1,0 +1,10 @@
+type Paths {
+  pub foundFromNested: String!
+  pub missingFromBoundary: String!
+
+  new(ws: Workspace!) {
+    self.foundFromNested = ws.findUp(name: "target.txt", from: "nested") ?? ""
+    self.missingFromBoundary = ws.findUp(name: "target.txt", from: "/") ?? ""
+    self
+  }
+}
