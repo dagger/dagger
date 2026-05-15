@@ -864,6 +864,11 @@ func (c *Cache) lookupCacheForRequestLocked(
 		return retRes, true, true, nil
 	}
 
+	// Dynamic-input / CacheHitTransform support exists for volatile container
+	// variables (Container.withVolatileVariable). It may generalize to other
+	// cache-identity-excluded inputs in the future, but today volatile variables
+	// are the only consumer.
+	//
 	// Some dynamic-input callers intentionally use a broad equivalent digest as
 	// a lookup-only key, then rebase request-local state onto a private result.
 	// In that case, do not teach the exact request identity to the broad hit; the
