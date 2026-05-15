@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"charm.land/lipgloss/v2"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/muesli/termenv"
@@ -74,43 +73,23 @@ func (h *LogFocusHandle) Render(ctx tuist.Context) {
 	out := NewOutput(outBuf, termenv.WithProfile(h.Profile))
 
 	width := max(ctx.Width, 1)
-	used := 0
-	if h.logs != nil {
-		used = h.logs.UsedHeight()
-	}
-
-	selector := " "
-	if h.focused {
-		selector = CaretRightFilled
-	}
-	label := "Logs"
-	if h.title != "" {
-		label += " · " + h.title
-	}
-	meta := fmt.Sprintf("%d lines", used)
-	if used == 1 {
-		meta = "1 line"
-	}
-
-	prefix := selector + " " + Diamond + " "
-	available := max(width-lipgloss.Width(prefix), 1)
-	text := clipPlain(label+" · "+meta+" · press L to open", available)
-
-	if h.focused {
-		fmt.Fprint(out, sidebarSelectedSegment(out, prefix, termenv.ANSIWhite, false, false))
-		fmt.Fprint(out, sidebarSelectedSegment(out, text, termenv.ANSIWhite, true, false))
-		visible := prefix + text
-		if pad := width - lipgloss.Width(visible); pad > 0 {
-			fmt.Fprint(out, sidebarSelectedSegment(out, strings.Repeat(" ", pad), nil, false, false))
-		}
-	} else {
-		fmt.Fprint(out, out.String(selector).Foreground(termenv.ANSIBrightBlack))
-		fmt.Fprint(out, " ")
-		fmt.Fprint(out, out.String(Diamond).Foreground(termenv.ANSIBrightBlack))
-		fmt.Fprint(out, " ")
-		fmt.Fprint(out, out.String(text).Foreground(termenv.ANSIBrightBlack))
-	}
+	fmt.Fprint(out, renderLogSectionHeader(out, width, true, h.focused))
 	ctx.Line(outBuf.String())
+}
+
+func renderLogSectionHeader(out TermOutput, width int, hint, focused bool) string {
+	plain := "LOGS"
+	if hint {
+		plain += "  L inspect"
+	}
+	if focused {
+		return out.String(padANSI(clipPlain(plain, width), width)).Foreground(termenv.ANSIWhite).Background(testSidebarRowBG).Bold().String()
+	}
+	heading := out.String("LOGS").Bold().String()
+	if hint {
+		heading += "  " + renderInspectKeyHint(out, "L")
+	}
+	return clipTestSummaryLine(heading, width)
 }
 
 // LogPagerView renders a single Vterm as a fullscreen, focusable log pager.
@@ -118,10 +97,11 @@ func (h *LogFocusHandle) Render(ctx tuist.Context) {
 type LogPagerView struct {
 	tuist.Compo
 
-	Profile termenv.Profile
-	SpanID  dagui.SpanID
-	Title   string
-	Logs    *Vterm
+	Profile   termenv.Profile
+	SpanID    dagui.SpanID
+	Title     string
+	TitleIcon string
+	Logs      *Vterm
 
 	focused bool
 
@@ -168,9 +148,53 @@ func (p *LogPagerView) Render(ctx tuist.Context) {
 	}
 	height = max(height, 1)
 
-	title := "Logs"
+	if p.Logs != nil && p.Logs.UsedHeight() > 0 {
+		// The header includes scroll percentage, so size the pager before
+		// rendering it. The log area starts after the title and divider.
+		p.Logs.SetPrefix("")
+		p.Logs.SetWidth(width)
+		p.Logs.SetHeight(max(height-2, 1))
+	}
+
+	title := p.titleText()
+	if p.focused {
+		title = out.String(padANSI(clipPlain(title, width), width)).Foreground(termenv.ANSIWhite).Background(testSidebarRowBG).Bold().String()
+	} else {
+		title = out.String(clipPlain(title, width)).Foreground(termenv.ANSIWhite).Bold().String()
+	}
+
+	lines := []string{
+		title,
+		out.String(strings.Repeat(HorizBar, max(width, 0))).Foreground(termenv.ANSIBrightBlack).Faint().String(),
+	}
+	if len(lines) >= height {
+		ctx.Lines(cropLines(lines, height)...)
+		return
+	}
+
+	if p.Logs == nil || p.Logs.UsedHeight() == 0 {
+		lines = append(lines, out.String("No logs.").Foreground(termenv.ANSIBrightBlack).String())
+		ctx.Lines(cropLines(lines, height)...)
+		return
+	}
+
+	view := strings.TrimSuffix(p.Logs.View(), "\n")
+	if view == "" {
+		lines = append(lines, out.String("No logs.").Foreground(termenv.ANSIBrightBlack).String())
+	} else {
+		lines = append(lines, strings.Split(view, "\n")...)
+	}
+	ctx.Lines(cropLines(lines, height)...)
+}
+
+func (p *LogPagerView) titleText() string {
+	title := "LOGS"
 	if p.Title != "" {
-		title += " · " + p.Title
+		target := p.Title
+		if p.TitleIcon != "" {
+			target = p.TitleIcon + " " + target
+		}
+		title += " · " + target
 	}
 	var meta []string
 	if p.Logs != nil {
@@ -192,38 +216,7 @@ func (p *LogPagerView) Render(ctx tuist.Context) {
 	if len(meta) > 0 {
 		title += " · " + strings.Join(meta, " · ")
 	}
-	if p.focused {
-		title = hl(out.String(clipPlain(title, width)).Foreground(termenv.ANSIWhite).Bold()).String()
-	} else {
-		title = out.String(clipPlain(title, width)).Foreground(termenv.ANSIWhite).Bold().String()
-	}
-
-	lines := []string{
-		title,
-		out.String(strings.Repeat(HorizBar, max(width, 0))).Foreground(termenv.ANSIBrightBlack).Faint().String(),
-	}
-	if len(lines) >= height {
-		ctx.Lines(cropLines(lines, height)...)
-		return
-	}
-
-	if p.Logs == nil || p.Logs.UsedHeight() == 0 {
-		lines = append(lines, out.String("No logs.").Foreground(termenv.ANSIBrightBlack).String())
-		ctx.Lines(cropLines(lines, height)...)
-		return
-	}
-
-	logHeight := max(height-len(lines), 1)
-	p.Logs.SetPrefix("")
-	p.Logs.SetWidth(width)
-	p.Logs.SetHeight(logHeight)
-	view := strings.TrimSuffix(p.Logs.View(), "\n")
-	if view == "" {
-		lines = append(lines, out.String("No logs.").Foreground(termenv.ANSIBrightBlack).String())
-	} else {
-		lines = append(lines, strings.Split(view, "\n")...)
-	}
-	ctx.Lines(cropLines(lines, height)...)
+	return title
 }
 
 func (p *LogPagerView) ScrollBy(delta int) {
@@ -371,25 +364,39 @@ func (fe *frontendPretty) openFocusedLogs() {
 	if !fe.spanHasLogs(span) {
 		return
 	}
+	title := span.Name
+	titleIcon := ""
+	if fe.testsMode && fe.fullscreenTests != nil {
+		if actionTitle, category, ok := fe.fullscreenTests.CurrentActionTitle(); actionTitle != "" {
+			title = actionTitle
+			if ok {
+				titleIcon = testCategoryIcon(category)
+			}
+		}
+	}
 	if fe.testsMode && fe.fullscreenTests != nil && fe.fullscreenTests.focusArea == testFocusSidebar {
 		// Treat L from the tests sidebar as an explicit move to the reusable log
 		// handle before opening the pager, so popping the pager restores that
 		// immediate state.
 		fe.fullscreenTests.focusSelectedLogHandle(fe, span)
 	}
-	fe.openLogPager(span, fe.makeLogPagerReturnFocus())
+	fe.openLogPager(span, title, titleIcon, fe.makeLogPagerReturnFocus())
 }
 
-func (fe *frontendPretty) openLogPager(span *dagui.Span, restore func()) {
+func (fe *frontendPretty) openLogPager(span *dagui.Span, title, titleIcon string, restore func()) {
 	if !fe.spanHasLogs(span) {
 		return
 	}
+	if title == "" {
+		title = span.Name
+	}
 	logs := fe.logs.Logs[span.ID]
 	fe.logPager = &LogPagerView{
-		Profile: fe.profile,
-		SpanID:  span.ID,
-		Title:   span.Name,
-		Logs:    logs,
+		Profile:   fe.profile,
+		SpanID:    span.ID,
+		Title:     title,
+		TitleIcon: titleIcon,
+		Logs:      logs,
 	}
 	fe.logPagerReturn = restore
 	fe.applyTuistFocus()

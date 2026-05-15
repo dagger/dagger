@@ -1,6 +1,7 @@
 package idtui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -114,6 +115,65 @@ func TestTestViewDetailTitleUsesTestName(t *testing.T) {
 	}
 	if strings.Count(joined, "pkg.TestThing") != 1 {
 		t.Fatalf("expected full test name only in title, got:\n%s", joined)
+	}
+}
+
+func TestTestViewDetailLogSectionUsesCompactHeader(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	spanID := dagui.SpanID{SpanID: trace.SpanID{1}}
+	span := &dagui.Span{SpanSnapshot: dagui.SpanSnapshot{ID: spanID, Name: "span operation name"}}
+	node := &dagui.TestNode{
+		ID:       "test",
+		Kind:     dagui.TestNodeCase,
+		Name:     "span operation name",
+		FullName: "pkg.TestThing",
+		Span:     span,
+		Category: dagui.TestCategoryFailing,
+		Counts:   dagui.TestCounts{Failing: 1},
+	}
+	logs := NewVterm(termenv.Ascii)
+	logs.SetWidth(80)
+	_, _ = logs.Write([]byte("boom\n"))
+
+	var buf strings.Builder
+	out := NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+	tv := &TestView{Logs: map[dagui.SpanID]*Vterm{spanID: logs}}
+	lines := tv.renderDetailLines(tuist.Context{}, out, testSidebarRow{kind: testSidebarNode, node: node}, 80, 80)
+	joined := strings.Join(lines, "\n")
+	plain := stripANSITest(joined)
+	if !strings.Contains(plain, "LOGS  L inspect") {
+		t.Fatalf("expected compact logs heading, got:\n%s", joined)
+	}
+	for _, noise := range []string{"failing · 1 tests", "Logs · pkg.TestThing", "press L to open"} {
+		if strings.Contains(plain, noise) {
+			t.Fatalf("expected detail pane not to contain %q, got:\n%s", noise, joined)
+		}
+	}
+	if !strings.Contains(plain, "boom") {
+		t.Fatalf("expected rendered logs, got:\n%s", joined)
+	}
+}
+
+var ansiRETest = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func stripANSITest(s string) string {
+	return ansiRETest.ReplaceAllString(s, "")
+}
+
+func TestLogPagerTitleUsesLogsHeadingAndTestName(t *testing.T) {
+	logs := NewVterm(termenv.Ascii)
+	logs.SetWidth(80)
+	logs.SetHeight(10)
+	_, _ = logs.Write([]byte("boom\n"))
+	pager := &LogPagerView{
+		Title:     "pkg.TestThing",
+		TitleIcon: IconFailure,
+		Logs:      logs,
+	}
+
+	got := pager.titleText()
+	if got != "LOGS · ✘ pkg.TestThing · 1 line · 100%" {
+		t.Fatalf("log pager title = %q", got)
 	}
 }
 
