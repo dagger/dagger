@@ -283,6 +283,21 @@ func TestLogPagerQClosesLikeEscape(t *testing.T) {
 	}
 }
 
+func TestTestsModeQClosesLikeEscape(t *testing.T) {
+	fe := NewWithDB(io.Discard, dagui.NewDB())
+	fe.testsMode = true
+	fe.fullscreenTests = &TestView{}
+
+	fe.handleNavKeyUV(uv.KeyPressEvent(uv.Key{Text: "q", Code: 'q'}))
+
+	if fe.testsMode {
+		t.Fatal("expected q to close tests mode")
+	}
+	if fe.fullscreenTests != nil {
+		t.Fatal("expected q to clear fullscreen tests")
+	}
+}
+
 func TestDoQuitInvalidatesCachedRender(t *testing.T) {
 	db := dagui.NewDB()
 	spanID := dagui.SpanID{SpanID: trace.SpanID{1}}
