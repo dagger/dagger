@@ -10,7 +10,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -380,33 +379,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 
 		caCertsTest{"terminal", func(ctx context.Context, t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			modDir := t.TempDir()
-			err := os.WriteFile(filepath.Join(modDir, "main.go"), fmt.Appendf(nil, `package main
-
-	import (
-		"context"
-		"dagger/test/internal/dagger"
-	)
-
-	func New(ctx context.Context) *Test {
-		return &Test{
-			Ctr: dag.Container().
-				From("%s").
-				WithExec([]string{"apk", "add", "curl"}).
-				WithDefaultTerminalCmd([]string{"/bin/sh"}),
-		}
-	}
-
-	type Test struct {
-		Ctr *dagger.Container
-	}
-	`, alpineImage), 0644)
-			require.NoError(t, err)
-
-			initCmd := hostDaggerCommand(ctx, t, modDir, "module", "init", "--source=.", "--sdk=go", "test", ".")
-			copy(initCmd.Env, os.Environ())
-			initCmd.Env = append(initCmd.Env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+f.engineEndpoint)
-			initOutput, err := initCmd.CombinedOutput()
-			require.NoError(t, err, initOutput)
+			copyTestdataFixture(ctx, t, modDir, "modules", "go", "cacert-terminal")
 
 			// cache the module load itself so there's less to wait for in the shell invocation below
 			functionsCmd := hostDaggerCommand(ctx, t, modDir, "functions", "-m", ".")
