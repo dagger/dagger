@@ -1471,6 +1471,49 @@ class Foo:
     assert param.resolved_type.is_optional is True
 
 
+def test_ast_type_alias_does_not_rewrite_annotated_metadata_strings():
+    """``Name("Alias")`` metadata remains a value even when Alias is a type alias."""
+    metadata = _analyze("""
+from typing import Annotated, TypeAlias
+
+import dagger
+from dagger import Name
+
+Alias: TypeAlias = str
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def greet(self, name: Annotated[Alias, Name("Alias")]) -> str:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.kind == "primitive"
+    assert param.resolved_type.name == "str"
+    assert param.api_name == "Alias"
+
+
+def test_ast_type_alias_inside_quoted_compound_annotation():
+    """``"Optional[Alias]"`` expands aliases inside the parsed forward ref."""
+    metadata = _analyze("""
+from typing import Optional, TypeAlias
+
+import dagger
+
+Alias: TypeAlias = str
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def greet(self, name: "Optional[Alias]" = None) -> str:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.kind == "primitive"
+    assert param.resolved_type.name == "str"
+    assert param.resolved_type.is_optional is True
+
+
 def test_ast_optional_type_alias():
     """``MaybeDir = dagger.Directory | None`` resolves to optional Directory."""
     metadata = _analyze("""
