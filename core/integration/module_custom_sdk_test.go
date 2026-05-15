@@ -13,9 +13,56 @@ import (
 	"context"
 	"strings"
 
+	"dagger.io/dagger"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
+
+func customSDKRuntimeFixture(t *testctx.T, c *dagger.Client, sdkDir string) *dagger.Container {
+	t.Helper()
+
+	return workspaceBase(t, c).
+		WithDirectory("/work/sdk", c.Host().Directory("./testdata/sdks/"+sdkDir)).
+		WithNewFile(".dagger/config.toml", `[modules.test]
+source = ".."
+entrypoint = true
+`).
+		WithNewFile("dagger.json", `{"name":"test","sdk":{"source":"./sdk"},"source":"."}`)
+}
+
+func (ModuleSuite) TestCustomSDKRuntime(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := customSDKRuntimeFixture(t, c, "only-runtime").
+		With(daggerCall("hello-world")).
+		CombinedOutput(ctx)
+	require.NoError(t, err, out)
+	require.Contains(t, out, "Hello world")
+}
+
+func (ModuleSuite) TestPartialCustomSDKRuntime(ctx context.Context, t *testctx.T) {
+	t.Run("only codegen rejects runtime calls", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := customSDKRuntimeFixture(t, c, "only-codegen").
+			With(daggerExec("call", "foo")).
+			Sync(ctx)
+		requireErrOut(t, err, `"./sdk" SDK does not support defining and executing functions`)
+	})
+
+	t.Run("only runtime exposes functions", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := customSDKRuntimeFixture(t, c, "only-runtime")
+		out, err := ctr.With(daggerFunctions()).CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "hello-world")
+
+		out, err = ctr.With(daggerCall("hello-world")).CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "Hello world")
+	})
+}
 
 func (ModuleSuite) TestCustomSDK(ctx context.Context, t *testctx.T) {
 	t.Run("local", func(ctx context.Context, t *testctx.T) {
