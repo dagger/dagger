@@ -31,108 +31,11 @@ func (ModuleSuite) TestConflictingSameNameTransitiveDeps(ctx context.Context, t 
 	c := connect(ctx, t)
 
 	ctr := goGitBase(t, c).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work/dstr").
-		With(daggerExec("module", "init", "--source=.", "--sdk=go", "d", ".")).
-		WithNewFile("main.go", `package main
-
-type D struct{}
-
-type Obj struct {
-	Foo string
-}
-
-func (m *D) Fn(foo string) Obj {
-	return Obj{Foo: foo}
-}
-`,
-		)
-
-	ctr = ctr.
-		WithWorkdir("/work/dint").
-		With(daggerExec("module", "init", "--source=.", "--sdk=go", "d", ".")).
-		WithNewFile("main.go", `package main
-
-type D struct{}
-
-type Obj struct {
-	Foo int
-}
-
-func (m *D) Fn(foo int) Obj {
-	return Obj{Foo: foo}
-}
-`,
-		)
-
-	ctr = ctr.
-		WithWorkdir("/work").
-		With(daggerExec("module", "init", "--source=c", "--sdk=go", "c", "c")).
-		WithWorkdir("/work/c").
-		With(daggerExec("module", "install", "../dstr")).
-		WithNewFile("main.go", `package main
-
-import (
-	"context"
-)
-
-type C struct{}
-
-func (m *C) Fn(ctx context.Context, foo string) (string, error) {
-	return dag.D().Fn(foo).Foo(ctx)
-}
-`,
-		)
-
-	ctr = ctr.
-		WithWorkdir("/work").
-		With(daggerExec("module", "init", "--source=b", "--sdk=go", "b", "b")).
-		With(daggerExec("module", "install", "-m=b", "./dint")).
-		WithNewFile("/work/b/main.go", `package main
-
-import (
-	"context"
-)
-
-type B struct{}
-
-func (m *B) Fn(ctx context.Context, foo int) (int, error) {
-	return dag.D().Fn(foo).Foo(ctx)
-}
-`,
-		)
-
-	ctr = ctr.
-		WithWorkdir("/work").
-		With(daggerExec("module", "init", "--source=a", "--sdk=go", "a", "a")).
-		WithWorkdir("/work/a").
-		With(daggerExec("module", "install", "../b")).
-		With(daggerExec("module", "install", "../c")).
-		WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"strconv"
-)
-
-type A struct{}
-
-func (m *A) Fn(ctx context.Context) (string, error) {
-	fooStr, err := dag.C().Fn(ctx, "foo")
-	if err != nil {
-		return "", err
-	}
-	fooInt, err := dag.B().Fn(ctx, 123)
-	if err != nil {
-		return "", err
-	}
-	return fooStr + strconv.Itoa(fooInt), nil
-}
-`,
-		)
+		With(withTestdataFixture(t, c, ".", "modules/go/conflicting-transitive-deps")).
+		WithWorkdir("/work/a")
 
 	t.Run("runtime resolves conflicting transitive deps", func(ctx context.Context, t *testctx.T) {
-		out, err := ctr.With(daggerQuery(`{fn}`)).Stdout(ctx)
+		out, err := ctr.With(daggerQueryAt(".", `{fn}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"fn": "foo123"}`, out)
 	})
@@ -146,65 +49,23 @@ func (m *A) Fn(ctx context.Context) (string, error) {
 	})
 }
 
-var useInner = `package main
-
-type Dep struct{}
-
-func (m *Dep) Hello() string {
-	return "hello"
-}
-`
-
-var useGoOuter = `package main
-
-import "context"
-
-type Test struct{}
-
-func (m *Test) UseHello(ctx context.Context) (string, error) {
-	return dag.Dep().Hello(ctx)
-}
-`
-
-var usePythonOuter = `import dagger
-from dagger import dag
-
-@dagger.object_type
-class Test:
-    @dagger.function
-    async def use_hello(self) -> str:
-        return await dag.dep().hello()
-`
-
-var useTSOuter = `
-import { dag, object, func } from '@dagger.io/dagger'
-
-@object()
-export class Test {
-	@func()
-	async useHello(): Promise<string> {
-		return dag.dep().hello()
-	}
-}
-`
-
 type localDepTestCase struct {
-	sdk    string
-	source string
+	sdk     string
+	fixture string
 }
 
 var useLocalDepTestCases = []localDepTestCase{
 	{
-		sdk:    "go",
-		source: useGoOuter,
+		sdk:     "go",
+		fixture: "go/local-dep-parent",
 	},
 	{
-		sdk:    "python",
-		source: usePythonOuter,
+		sdk:     "python",
+		fixture: "python/local-dep-parent",
 	},
 	{
-		sdk:    "typescript",
-		source: useTSOuter,
+		sdk:     "typescript",
+		fixture: "typescript/local-dep-parent",
 	},
 }
 
@@ -215,134 +76,61 @@ func (ModuleSuite) TestUseLocalDependencyFromParentModule(ctx context.Context, t
 	for _, tc := range useLocalDepTestCases {
 		t.Run(fmt.Sprintf("%s parent calls local dependency", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-			modGen := testModuleWithLocalDep(t, c, tc.sdk, tc.source)
+			modGen := testModuleWithLocalDep(t, c, tc.fixture)
 
-			out, err := modGen.With(daggerQuery(`{useHello}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQueryAt(".", `{useHello}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"useHello":"hello"}`, out)
 		})
 	}
 }
 
-// TestUseLocalDependencyDirectSchemaAccess documents current schema exposure:
-// a client that loads the parent module can call the direct dependency's root
-// field too. Workspace semantics are expected to change this; failures here are
-// about dependency re-exporting, not parent module use of its dependency.
-func (ModuleSuite) TestUseLocalDependencyDirectSchemaAccess(ctx context.Context, t *testctx.T) {
+// TestUseLocalDependencySchemaIsolation verifies that loading a parent module
+// does not promote local dependency root fields onto the client Query schema.
+// Parent-module use of the dependency is covered above.
+func (ModuleSuite) TestUseLocalDependencySchemaIsolation(ctx context.Context, t *testctx.T) {
 	for _, tc := range useLocalDepTestCases {
-		t.Run(fmt.Sprintf("%s schema exposes local dependency", tc.sdk), func(ctx context.Context, t *testctx.T) {
+		t.Run(fmt.Sprintf("%s schema hides local dependency", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-			modGen := testModuleWithLocalDep(t, c, tc.sdk, tc.source)
+			modGen := testModuleWithLocalDep(t, c, tc.fixture)
 
-			out, err := modGen.With(daggerQuery(`{dep{hello}}`)).Stdout(ctx)
-			require.NoError(t, err)
-			require.JSONEq(t, `{"dep":{"hello":"hello"}}`, out)
+			_, err := modGen.With(daggerQueryAt(".", `{dep{hello}}`)).Stdout(ctx)
+			requireErrOut(t, err, `Cannot query field \"dep\" on type \"Query\"`)
 		})
 	}
 }
 
-func testModuleWithLocalDep(t *testctx.T, c *dagger.Client, sdk, source string) *dagger.Container {
-	return goGitBase(t, c).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work/dep").
-		With(daggerExec("module", "init", "--sdk=go", "dep", ".")).
-		With(sdkSource("go", useInner)).
-		WithWorkdir("/work").
-		With(daggerExec("module", "init", "test", "--sdk="+sdk, "--source=.", ".")).
-		With(sdkSource(sdk, source)).
-		With(daggerExec("module", "install", "./dep"))
+func testModuleWithLocalDep(t *testctx.T, c *dagger.Client, fixture string) *dagger.Container {
+	return moduleFixture(t, c, fixture)
 }
 
 func (ModuleSuite) TestUseLocalMulti(ctx context.Context, t *testctx.T) {
 	type testCase struct {
-		sdk    string
-		source string
+		sdk     string
+		fixture string
 	}
 
 	for _, tc := range []testCase{
 		{
-			sdk: "go",
-			source: `package main
-
-import "context"
-import "fmt"
-
-type Test struct {}
-
-func (m *Test) Names(ctx context.Context) ([]string, error) {
-	fooName, err := dag.Foo().Name(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("foo.name: %w", err)
-	}
-	barName, err := dag.Bar().Name(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("bar.name: %w", err)
-	}
-	return []string{fooName, barName}, nil
-}
-`,
+			sdk:     "go",
+			fixture: "go/multi-dep-parent",
 		},
 		{
-			sdk: "python",
-			source: `import dagger
-from dagger import dag
-
-@dagger.object_type
-class Test:
-    @dagger.function
-    async def names(self) -> list[str]:
-        return [
-            await dag.foo().name(),
-            await dag.bar().name(),
-        ]
-`,
+			sdk:     "python",
+			fixture: "python/multi-dep-parent",
 		},
 		{
-			sdk: "typescript",
-			source: `
-import { dag, object, func } from '@dagger.io/dagger'
-
-@object()
-export class Test {
-	@func()
-	async names(): Promise<string[]> {
-		return [await dag.foo().name(), await dag.bar().name()]
-	}
-}
-`,
+			sdk:     "typescript",
+			fixture: "typescript/multi-dep-parent",
 		},
 	} {
 		t.Run(fmt.Sprintf("%s uses go", tc.sdk), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			modGen := goGitBase(t, c).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				WithWorkdir("/work/foo").
-				WithNewFile("/work/foo/main.go", `package main
-
-        type Foo struct {}
-
-        func (m *Foo) Name() string { return "foo" }
-        `,
-				).
-				With(daggerExec("module", "init", "--source=.", "--sdk=go", "foo", ".")).
-				WithWorkdir("/work/bar").
-				WithNewFile("/work/bar/main.go", `package main
-
-        type Bar struct {}
-
-        func (m *Bar) Name() string { return "bar" }
-        `,
-				).
-				With(daggerExec("module", "init", "--source=.", "--sdk=go", "bar", ".")).
-				WithWorkdir("/work").
-				With(daggerExec("module", "init", "test", "--sdk="+tc.sdk, "--source=.", ".")).
-				With(daggerExec("module", "install", "./foo")).
-				With(daggerExec("module", "install", "./bar")).
-				With(sdkSource(tc.sdk, tc.source)).
+			modGen := moduleFixture(t, c, tc.fixture).
 				WithEnvVariable("BUST", identity.NewID()) // NB(vito): hmm...
 
-			out, err := modGen.With(daggerQuery(`{names}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQueryAt(".", `{names}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"names":["foo", "bar"]}`, out)
 		})
