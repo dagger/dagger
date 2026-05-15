@@ -1,0 +1,7 @@
+{
+  "name": "other",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  }
+}
