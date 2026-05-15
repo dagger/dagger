@@ -464,6 +464,18 @@ func (UserDefaultsSuite) TestConstructorOptional(ctx context.Context, t *testctx
 	}
 }
 
+func (UserDefaultsSuite) TestConstructorOptionalEmptySecret(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	out, err := nestedDaggerContainer(t, c, "go", "defaults").
+		WithEnvVariable("PASSWORD", "").
+		WithWorkdir("defaults").
+		WithNewFile(".env", "password=env://PASSWORD").
+		WithExec([]string{"dagger", "call", "password", "plaintext"}, nestedExec).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "", out)
+}
+
 func trimDaggerFunctionUsageText(s string) string {
 	// Trim the output for readability
 	start := strings.Index(s, "ARGUMENTS")
