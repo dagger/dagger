@@ -1,0 +1,7 @@
+{
+  "name": "servicer",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  }
+}
