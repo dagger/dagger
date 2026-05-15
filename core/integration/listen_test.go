@@ -6,7 +6,6 @@ package core
 //
 // See also:
 // - module_loading_test.go: current-directory module nomination and entrypoints.
-// - module_nested_cli_test.go: running the CLI inside module-launched containers.
 
 import (
 	"context"
