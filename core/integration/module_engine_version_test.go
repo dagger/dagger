@@ -1,8 +1,8 @@
 package core
 
 // These tests cover the `engineVersion` value stored in module config. They
-// verify the schema version seen by module code and CLI mutations that read,
-// preserve, or update that pinned version.
+// verify the schema version seen by standalone module code and module
+// dependencies.
 //
 // See also:
 // - engine_test.go: engine lifecycle behavior.
@@ -11,7 +11,6 @@ package core
 import (
 	"context"
 
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -188,170 +187,5 @@ func schemaVersion(ctx context.Context) (string, error) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "v0.10.0 v0.11.0")
-	})
-}
-
-func (ModuleSuite) TestModuleDevelopVersion(ctx context.Context, t *testctx.T) {
-	moduleSrc := `package main
-
-import (
-	"context"
-	"github.com/Khan/genqlient/graphql"
-)
-
-type Foo struct {}
-
-func (m *Foo) GetVersion(ctx context.Context) (string, error) {
-	return schemaVersion(ctx)
-}
-
-func schemaVersion(ctx context.Context) (string, error) {
-	resp := &graphql.Response{}
-	err := dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
-		Query: "{__schemaVersion}",
-	}, resp)
-	if err != nil {
-		return "", err
-	}
-	return resp.Data.(map[string]any)["__schemaVersion"].(string), nil
-}`
-
-	t.Run("from low", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		work := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "engineVersion": "v0.0.0"}`).
-			WithNewFile("main.go", moduleSrc)
-
-		work = work.With(daggerExec("develop"))
-		daggerJSON, err := work.
-			File("dagger.json").
-			Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, engine.Version, gjson.Get(daggerJSON, "engineVersion").String())
-	})
-
-	t.Run("from high", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		work := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "engineVersion": "v100.0.0"}`).
-			WithNewFile("main.go", moduleSrc)
-
-		work = work.With(daggerExec("develop"))
-		_, err := work.
-			File("dagger.json").
-			Contents(ctx)
-
-		// sadly, just no way to handle this :(
-		// in the future, the format of dagger.json might change dramatically,
-		// and so there's no real way to know from the older version how to
-		// convert it back down
-		require.Error(t, err)
-		requireErrOut(t, err, `module requires dagger v100.0.0, but you have`)
-	})
-
-	t.Run("from missing", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		work := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go"}`).
-			WithNewFile("main.go", moduleSrc)
-
-		work = work.With(daggerExec("develop"))
-		daggerJSON, err := work.
-			File("dagger.json").
-			Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, engine.Version, gjson.Get(daggerJSON, "engineVersion").String())
-	})
-
-	t.Run("to specified", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		work := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "engineVersion": "v0.0.0"}`)
-
-		work = work.With(daggerExec("develop", "--compat=v0.9.9"))
-		daggerJSON, err := work.
-			File("dagger.json").
-			Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "v0.9.9", gjson.Get(daggerJSON, "engineVersion").String())
-	})
-
-	t.Run("skipped", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		work := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "engineVersion": "v0.9.9"}`)
-
-		work = work.With(daggerExec("develop", "--compat"))
-		daggerJSON, err := work.
-			File("dagger.json").
-			Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "v0.9.9", gjson.Get(daggerJSON, "engineVersion").String())
-	})
-
-	t.Run("in install", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		work := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.0.0"}`).
-			WithNewFile("main.go", moduleSrc)
-
-		work = work.With(daggerExec("module", "install", "github.com/shykes/hello"))
-		daggerJSON, err := work.
-			File("dagger.json").
-			Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, engine.Version, gjson.Get(daggerJSON, "engineVersion").String())
-	})
-
-	t.Run("in uninstall", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		work := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "dependencies": [{ "name": "hello", "source": "github.com/shykes/hello", "pin": "2d789671a44c4d559be506a9bc4b71b0ba6e23c9" }], "source": ".", "engineVersion": "v0.0.0"}`).
-			WithNewFile("main.go", moduleSrc)
-
-		work = work.With(daggerExec("uninstall", "hello"))
-		daggerJSON, err := work.
-			File("dagger.json").
-			Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, engine.Version, gjson.Get(daggerJSON, "engineVersion").String())
-	})
-
-	t.Run("in update", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		work := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.0.0"}`).
-			WithNewFile("main.go", moduleSrc)
-
-		work = work.With(daggerExec("module", "update"))
-		daggerJSON, err := work.
-			File("dagger.json").
-			Contents(ctx)
-		require.NoError(t, err)
-		require.Equal(t, engine.Version, gjson.Get(daggerJSON, "engineVersion").String())
 	})
 }

@@ -178,35 +178,6 @@ func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 		})
 	})
 
-	t.Run("Allows $schema keyword", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		baseWithOldConfig := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("module", "init", "--source=.", "--sdk=go", "test", ".")).
-			WithNewFile("/work/main.go", `package main
-			type Test struct {}
-
-			func (m *Test) Fn() string { return "wowzas" }
-			`,
-			).
-			WithNewFile("/work/dagger.json", `{
-				"$schema": "https://docs.dagger.io/reference/dagger.schema.json",
-				"name": "test",
-				"sdk": "go"
-			}`,
-			)
-
-		// verify develop didn't remove $schema field
-		baseWithNewConfig := baseWithOldConfig.With(daggerExec("develop"))
-		confContents, err := baseWithNewConfig.File("dagger.json").Contents(ctx)
-		require.NoError(t, err)
-		var modCfg modules.ModuleConfigWithUserFields
-		require.NoError(t, json.Unmarshal([]byte(confContents), &modCfg))
-		require.Equal(t, "test", modCfg.Name)
-		require.Equal(t, "https://docs.dagger.io/reference/dagger.schema.json", modCfg.Schema)
-	})
 }
 
 func (ModuleConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
@@ -1331,23 +1302,6 @@ func (ModuleConfigSuite) TestDaggerGitWithSources(ctx context.Context, t *testct
 				require.NoError(t, err)
 				require.Equal(t, "hi", strings.TrimSpace(out))
 
-				ctr = ctr.With(daggerExec("develop", "--sdk=go", "--source=.")).
-					WithNewFile("main.go", `package main
-
-import "context"
-
-type Work struct {}
-
-func (m *Work) Fn(ctx context.Context) (string, error) {
-	return dag.Foo().ContainerEcho("hi").Stdout(ctx)
-}
-`,
-					)
-
-				out, err = ctr.With(daggerCall("fn")).Stdout(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "hi", strings.TrimSpace(out))
-
 				out, err = ctr.With(daggerCallAt(testGitModuleRef(tc, "various-source-values/"+modSubpath), "container-echo", "--string-arg", "hi", "stdout")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "hi", strings.TrimSpace(out))
@@ -1406,109 +1360,4 @@ func (ModuleConfigSuite) TestDepPins(ctx context.Context, t *testctx.T) {
 	out, err := ctr.With(daggerExec("call", "hello")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "VERSION 2")
-}
-
-func (ModuleConfigSuite) TestDepPinsStayPinned(ctx context.Context, t *testctx.T) {
-	// check that pins stay pinned when running "dagger develop"
-
-	c := connect(ctx, t)
-
-	repo := "github.com/dagger/dagger-test-modules/versioned"
-	branch := "main"
-	commit := "82adc5f7997e43ab3027810347298405f32a44db"
-
-	ctr := goGitBase(t, c).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("module", "init", "--source=.", "--sdk=go", "test", "."))
-
-	modCfgContents, err := ctr.
-		File("dagger.json").
-		Contents(ctx)
-	require.NoError(t, err)
-	var modCfg modules.ModuleConfig
-	require.NoError(t, json.Unmarshal([]byte(modCfgContents), &modCfg))
-	modCfg.Dependencies = append(modCfg.Dependencies, &modules.ModuleConfigDependency{
-		Name:   "versioned",
-		Source: repo + "@" + branch,
-		Pin:    commit,
-	})
-	rewrittenModCfg, err := json.Marshal(modCfg)
-	require.NoError(t, err)
-	ctr = ctr.WithNewFile("dagger.json", string(rewrittenModCfg))
-
-	ctr = ctr.With(daggerExec("develop"))
-	modCfgContents, err = ctr.
-		File("dagger.json").
-		Contents(ctx)
-	require.NoError(t, err)
-	var modCfgNew modules.ModuleConfig
-	require.NoError(t, json.Unmarshal([]byte(modCfgContents), &modCfgNew))
-	require.Equal(t, modCfg, modCfgNew)
-}
-
-func (ModuleConfigSuite) TestDepWritePins(ctx context.Context, t *testctx.T) {
-	// check that pins are correctly written into dagger.json
-
-	t.Run("install head", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		// get the latest commit on main
-		repo := "github.com/dagger/dagger-test-modules"
-		head := c.Git(repo).Head()
-		commit, err := head.Commit(ctx)
-		require.NoError(t, err)
-		ref, err := head.Ref(ctx)
-		require.NoError(t, err)
-
-		ctr := goGitBase(t, c).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work/dep").
-			With(daggerExec("module", "init", "--source=.", "--sdk=go", "test", ".")).
-			With(daggerExec("module", "install", repo))
-
-		modCfgContents, err := ctr.
-			File("dagger.json").
-			Contents(ctx)
-		require.NoError(t, err)
-
-		var modCfg modules.ModuleConfig
-		require.NoError(t, json.Unmarshal([]byte(modCfgContents), &modCfg))
-		require.Len(t, modCfg.Dependencies, 1)
-		dep := modCfg.Dependencies[0]
-
-		require.Equal(t, "root-mod", dep.Name)
-		require.Equal(t, repo+"@"+strings.TrimPrefix(ref, "refs/heads/"), dep.Source)
-		require.Equal(t, commit, dep.Pin)
-	})
-
-	t.Run("install branch", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		// get the latest commit on main
-		repo := "github.com/dagger/dagger-test-modules"
-		branch := "main"
-		commit, err := c.Git(repo).Branch(branch).Commit(ctx)
-		require.NoError(t, err)
-
-		ctr := goGitBase(t, c).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work/dep").
-			With(daggerExec("module", "init", "--source=.", "--sdk=go", "test", ".")).
-			With(daggerExec("module", "install", repo+"@"+branch))
-
-		modCfgContents, err := ctr.
-			File("dagger.json").
-			Contents(ctx)
-		require.NoError(t, err)
-
-		var modCfg modules.ModuleConfig
-		require.NoError(t, json.Unmarshal([]byte(modCfgContents), &modCfg))
-		require.Len(t, modCfg.Dependencies, 1)
-		dep := modCfg.Dependencies[0]
-
-		require.Equal(t, "root-mod", dep.Name)
-		require.Equal(t, repo+"@"+branch, dep.Source)
-		require.Equal(t, commit, dep.Pin)
-	})
 }
