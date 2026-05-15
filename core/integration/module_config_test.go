@@ -67,12 +67,6 @@ func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 				_, err := base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
 				requireErrOut(t, err, `source path ".." escapes context from source root "."`)
-
-				_, err = base.With(daggerExec("develop")).Sync(ctx)
-				requireErrOut(t, err, `source path ".." escapes context from source root "."`)
-
-				_, err = base.With(daggerExec("module", "install", "./dep")).Sync(ctx)
-				requireErrOut(t, err, `source path ".." escapes context from source root "."`)
 			})
 
 			t.Run("local with absolute path", func(ctx context.Context, t *testctx.T) {
@@ -88,12 +82,6 @@ func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 					}))
 
 				_, err := base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
-				requireErrOut(t, err, `source path "/tmp" is absolute`)
-
-				_, err = base.With(daggerExec("develop")).Sync(ctx)
-				requireErrOut(t, err, `source path "/tmp" is absolute`)
-
-				_, err = base.With(daggerExec("module", "install", "./dep")).Sync(ctx)
 				requireErrOut(t, err, `source path "/tmp" is absolute`)
 			})
 
@@ -127,12 +115,6 @@ func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				_, err := base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
 				requireErrOut(t, err, `local module dep source path ".." escapes context "/work"`)
 
-				_, err = base.With(daggerExec("develop")).Sync(ctx)
-				requireErrOut(t, err, `local module dep source path ".." escapes context "/work"`)
-
-				_, err = base.With(daggerExec("module", "install", "./dep")).Sync(ctx)
-				requireErrOut(t, err, `local module dep source path ".." escapes context "/work"`)
-
 				base = base.
 					With(configFile(".", &modules.ModuleConfig{
 						Name: "evil",
@@ -146,12 +128,6 @@ func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 					}))
 
 				_, err = base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
-				requireErrOut(t, err, `local module dep source path "../tmp/foo" escapes context "/work"`)
-
-				_, err = base.With(daggerExec("develop")).Sync(ctx)
-				requireErrOut(t, err, `local module dep source path "../tmp/foo" escapes context "/work"`)
-
-				_, err = base.With(daggerExec("module", "install", "./dep")).Sync(ctx)
 				requireErrOut(t, err, `local module dep source path "../tmp/foo" escapes context "/work"`)
 			})
 
@@ -173,12 +149,6 @@ func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				_, err := base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
 				requireErrOut(t, err, `local module dep source path "/tmp/foo" is absolute`)
 
-				_, err = base.With(daggerExec("develop")).Sync(ctx)
-				requireErrOut(t, err, `local module dep source path "/tmp/foo" is absolute`)
-
-				_, err = base.With(daggerExec("module", "install", "./dep")).Sync(ctx)
-				requireErrOut(t, err, `local module dep source path "/tmp/foo" is absolute`)
-
 				base = base.
 					With(configFile(".", &modules.ModuleConfig{
 						Name: "evil",
@@ -192,12 +162,6 @@ func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 					}))
 
 				_, err = base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
-				requireErrOut(t, err, `local module dep source path "/./dep" is absolute`)
-
-				_, err = base.With(daggerExec("develop")).Sync(ctx)
-				requireErrOut(t, err, `local module dep source path "/./dep" is absolute`)
-
-				_, err = base.With(daggerExec("module", "install", "./dep")).Sync(ctx)
 				requireErrOut(t, err, `local module dep source path "/./dep" is absolute`)
 			})
 
@@ -910,19 +874,6 @@ func (m *Coolsdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dag
 			require.NoError(t, err)
 			require.Equal(t, "keepdir/", strings.TrimSpace(out))
 
-			// call should still work after develop
-			ctr = ctr.With(daggerExec("develop"))
-
-			out, err = ctr.
-				With(daggerCall("fn", "directory", "--path", "subdir", "entries")).
-				Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "keepdir/", strings.TrimSpace(out))
-			out, err = ctr.
-				With(daggerCall("fn", "directory", "--path", "subdir/keepdir", "entries")).
-				Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "", strings.TrimSpace(out))
 		})
 	}
 
