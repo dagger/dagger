@@ -60,45 +60,8 @@ type JavaSdkDev {
   Test the Java SDK
   """
   pub test: Void @check {
-    let resourceProbeScript = [
-      "set -eu",
-      "src='dagger-codegen-maven-plugin/src/main/resources/introspection/introspection.graphql'",
-      "target='dagger-codegen-maven-plugin/target/classes/introspection/introspection.graphql'",
-      "jar='dagger-codegen-maven-plugin/target/dagger-codegen-maven-plugin-0.20.6.jar'",
-      "probe() {",
-      "  if [ -e $src ]; then src_state=$(stat -c 'src exists size=%s inode=%i links=%h mtime=%Y' $src); else src_state='src missing'; fi",
-      "  if [ -e $target ]; then target_state=$(stat -c 'target exists size=%s inode=%i links=%h mtime=%Y' $target); else target_state='target missing'; fi",
-      "  if [ -e $jar ]; then",
-      "    jar_size=$(stat -c '%s' $jar)",
-      "    jar_entries=$(unzip -l $jar 2>/dev/null | awk 'index($4, \"introspection/\")==1 || index($4, \"schemas/\")==1 {printf \"%s,\", $4}' || true)",
-      "    jar_state=jar_exists_size:${jar_size}:entries:${jar_entries}",
-      "  else",
-      "    jar_state='jar missing'",
-      "  fi",
-      "  printf '%s | %s | %s' \"$src_state\" \"$target_state\" \"$jar_state\"",
-      "}",
-      "(",
-      "  last=''",
-      "  while :; do",
-      "    current=$(probe)",
-      "    if [ \"$current\" != \"$last\" ]; then",
-      "      echo \"RESOURCE_PROBE $(date -Iseconds) | $current\"",
-      "      last=\"$current\"",
-      "    fi",
-      "    sleep 0.2",
-      "  done",
-      ") &",
-      "watcher=$!",
-      "status=0",
-      "mvn clean verify -Ddaggerengine.version=local || status=$?",
-      "echo \"RESOURCE_PROBE_FINAL $(date -Iseconds) | $(probe)\"",
-      "kill \"$watcher\" || true",
-      "wait \"$watcher\" 2>/dev/null || true",
-      "exit \"$status\"",
-    ].join("\n")
-
     devContainer
-      .withExec(["sh", "-lc", resourceProbeScript])
+      .withExec(["mvn", "clean", "verify", "-Ddaggerengine.version=local"])
       .sync
 
     null

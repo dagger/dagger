@@ -334,6 +334,17 @@ func (GitSuite) TestDiscardGitDir(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (GitSuite) TestRemoteGitTreeNormalizesTimestamps(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	file := c.Git("https://github.com/dagger/dagger").
+		Commit("7bed576fbc61fff0015f5bf9c85f17c43102a4a3").
+		Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).
+		File("README.md")
+
+	require.Equal(t, 1, getFileTimestamp(ctx, t, c, file))
+}
+
 func (GitSuite) TestKeepGitDir(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

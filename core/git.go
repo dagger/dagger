@@ -514,12 +514,14 @@ func doGitCheckout(
 	if err != nil {
 		return fmt.Errorf("could not find worktree: %w", err)
 	}
-	epoch := []unix.Timespec{{}, {}}
+	// Use a deterministic non-zero timestamp. Some build tools treat missing
+	// outputs as epoch and skip initial copies when sources are also epoch.
+	normalizedTime := []unix.Timespec{{Sec: 1}, {Sec: 1}}
 	if err := filepath.WalkDir(checkoutDir, func(path string, _ os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		return unix.UtimesNanoAt(unix.AT_FDCWD, path, epoch, unix.AT_SYMLINK_NOFOLLOW)
+		return unix.UtimesNanoAt(unix.AT_FDCWD, path, normalizedTime, unix.AT_SYMLINK_NOFOLLOW)
 	}); err != nil {
 		return fmt.Errorf("failed to normalize checkout timestamps: %w", err)
 	}
