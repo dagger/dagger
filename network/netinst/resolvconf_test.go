@@ -27,8 +27,8 @@ func TestWriteResolverConfigKeepsInternalResolverAndPublicNameservers(t *testing
 
 	got := dst.String()
 	require.Contains(t, got, "nameserver 10.0.0.2")
+	require.Contains(t, got, "nameserver 10.0.0.10")
 	require.Contains(t, got, "nameserver 8.8.4.4")
-	require.NotContains(t, got, "nameserver 10.0.0.10")
 	require.NotContains(t, got, "nameserver 127.0.0.1")
 	require.Contains(t, got, "search example.com")
 }

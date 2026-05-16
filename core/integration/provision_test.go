@@ -539,9 +539,6 @@ func doLoadEngine(ctx context.Context, dag *dagger.Client, ctr *dagger.Container
 	return loadEngineTar(ctx, ctr, cli, engineTag, dag.Host().File(tarPath))
 }
 
-	return loadEngineTar(ctx, ctr, cli, engineTag, dag.Host().File(tarPath))
-}
-
 func loadKernelCompatEngine(ctx context.Context, dag *dagger.Client, ctr *dagger.Container, cli string, version string) (*dagger.Container, string, error) {
 	engineTag := "registry.dagger.io/engine:" + version
 	compatTag := engineTag + "-kernel-compat"

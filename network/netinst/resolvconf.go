@@ -131,9 +131,5 @@ func keepNameserver(nameserver, containerDNS string) bool {
 		return false
 	}
 
-	if addr.IsPrivate() {
-		return false
-	}
-
 	return true
 }
