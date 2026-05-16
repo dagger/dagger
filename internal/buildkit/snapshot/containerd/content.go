@@ -4,8 +4,10 @@ import (
 	"context"
 
 	"github.com/containerd/containerd/v2/core/content"
+	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/pkg/namespaces"
 	cerrdefs "github.com/containerd/errdefs"
+	bksnapshots "github.com/dagger/dagger/engine/snapshots"
 	digest "github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -58,6 +60,11 @@ func (c *Store) ListStatuses(ctx context.Context, filters ...string) ([]content.
 }
 
 func (c *Store) Abort(ctx context.Context, ref string) error {
+	var err error
+	ctx, err = bksnapshots.EnsureLease(ctx)
+	if err != nil {
+		return err
+	}
 	ctx = namespaces.WithNamespace(ctx, c.ns)
 	return c.Store.Abort(ctx, ref)
 }
@@ -68,12 +75,18 @@ func (c *Store) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (content
 }
 
 func (c *Store) Writer(ctx context.Context, opts ...content.WriterOpt) (content.Writer, error) {
+	var err error
+	ctx, err = bksnapshots.EnsureLease(ctx)
+	if err != nil {
+		return nil, err
+	}
 	ctx = namespaces.WithNamespace(ctx, c.ns)
 	w, err := c.Store.Writer(ctx, opts...)
 	if err != nil {
 		return nil, err
 	}
-	return &nsWriter{Writer: w, ns: c.ns}, nil
+	leaseID, _ := leases.FromContext(ctx)
+	return &nsWriter{Writer: w, ns: c.ns, leaseID: leaseID}, nil
 }
 
 func (c *Store) WithFallbackNS(ns string) content.Store {
@@ -85,10 +98,20 @@ func (c *Store) WithFallbackNS(ns string) content.Store {
 
 type nsWriter struct {
 	content.Writer
-	ns string
+	ns      string
+	leaseID string
 }
 
 func (w *nsWriter) Commit(ctx context.Context, size int64, expected digest.Digest, opts ...content.Opt) error {
+	var err error
+	if w.leaseID != "" {
+		ctx = leases.WithLease(ctx, w.leaseID)
+	} else {
+		ctx, err = bksnapshots.EnsureLease(ctx)
+		if err != nil {
+			return err
+		}
+	}
 	ctx = namespaces.WithNamespace(ctx, w.ns)
 	return w.Writer.Commit(ctx, size, expected, opts...)
 }

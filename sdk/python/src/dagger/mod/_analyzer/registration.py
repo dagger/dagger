@@ -186,11 +186,26 @@ def _add_parameter(
     # Note: optionality from type (T | None) is already handled by
     # _resolved_type_to_typedef via resolved.is_optional.
 
+    # ``default_path`` / ``default_address`` are engine-side context-aware
+    # defaults (the engine fills the value from the call context). They
+    # take precedence over a Python-level ``= None`` literal — the engine
+    # rejects a parameter with both as "cannot set more than one default
+    # value", and ``DefaultPath`` carries strictly more information than
+    # ``= None`` anyway. Drop the redundant ``= None`` in that case so
+    # only ``default_path`` reaches the engine.
+    has_engine_default = bool(param_meta.default_path or param_meta.default_address)
+
     # Convert default value to JSON if present. The parser already validated
     # that non-None defaults are JSON-serializable (and warned otherwise), so
     # a JSON failure here indicates a parser bug and must not be suppressed.
     default_value = None
-    if param_meta.has_default:
+    if has_engine_default and param_meta.has_default:
+        # Engine-side default takes precedence; ``= None`` is the
+        # client-side optional marker which the type's ``is_optional``
+        # already conveys via ``_resolved_type_to_typedef``. Send
+        # neither default_value nor extra optional wrapping.
+        pass
+    elif param_meta.has_default:
         import json
 
         if param_meta.default_value is not None:

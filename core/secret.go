@@ -175,9 +175,6 @@ func SetSecretHandle(name string, accessor string) dagql.SessionResourceHandle {
 }
 
 func SecretHandleFromPlaintext(secretSalt []byte, plaintext []byte) dagql.SessionResourceHandle {
-	if len(plaintext) == 0 {
-		return ""
-	}
 	const (
 		timeCost = 10
 		memory   = 2 * 1024

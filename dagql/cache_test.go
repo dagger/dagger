@@ -14,6 +14,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/dagger/dagger/engine"
+	snapshots "github.com/dagger/dagger/engine/snapshots"
 	telemetry "github.com/dagger/otel-go"
 	set "github.com/hashicorp/go-set/v3"
 	"github.com/opencontainers/go-digest"
@@ -36,14 +37,54 @@ type cacheTestOnReleaseInt struct {
 type cacheTestLeaseProvider struct {
 	nextLeaseID atomic.Int32
 	releases    atomic.Int32
+	resourcesMu sync.Mutex
+	resources   map[string][]leases.Resource
 }
 
 func (p *cacheTestLeaseProvider) WithOperationLease(ctx context.Context) (context.Context, func(context.Context) error, error) {
-	leaseID := fmt.Sprintf("shared-%d", p.nextLeaseID.Add(1))
-	return leases.WithLease(ctx, leaseID), func(context.Context) error {
-		p.releases.Add(1)
+	return snapshots.WithLazyLease(ctx, p, func(l *leases.Lease) error {
+		l.ID = fmt.Sprintf("shared-%d", p.nextLeaseID.Add(1))
 		return nil
-	}, nil
+	})
+}
+
+func (p *cacheTestLeaseProvider) Create(_ context.Context, opts ...leases.Opt) (leases.Lease, error) {
+	l := leases.Lease{}
+	for _, opt := range opts {
+		if err := opt(&l); err != nil {
+			return leases.Lease{}, err
+		}
+	}
+	return l, nil
+}
+
+func (p *cacheTestLeaseProvider) Delete(_ context.Context, _ leases.Lease, _ ...leases.DeleteOpt) error {
+	p.releases.Add(1)
+	return nil
+}
+
+func (p *cacheTestLeaseProvider) List(context.Context, ...string) ([]leases.Lease, error) {
+	return nil, nil
+}
+
+func (p *cacheTestLeaseProvider) AddResource(_ context.Context, lease leases.Lease, resource leases.Resource) error {
+	p.resourcesMu.Lock()
+	defer p.resourcesMu.Unlock()
+	if p.resources == nil {
+		p.resources = map[string][]leases.Resource{}
+	}
+	p.resources[lease.ID] = append(p.resources[lease.ID], resource)
+	return nil
+}
+
+func (p *cacheTestLeaseProvider) DeleteResource(context.Context, leases.Lease, leases.Resource) error {
+	return nil
+}
+
+func (p *cacheTestLeaseProvider) ListResources(_ context.Context, lease leases.Lease) ([]leases.Resource, error) {
+	p.resourcesMu.Lock()
+	defer p.resourcesMu.Unlock()
+	return append([]leases.Resource(nil), p.resources[lease.ID]...), nil
 }
 
 type cacheTestLeaseCheckedInt struct {
@@ -741,6 +782,11 @@ func TestCacheEvaluate(t *testing.T) {
 			return cacheTestObjectResultWithValue(t, srv, frame, &cacheTestObject{
 				Value: 1,
 				lazyEval: func(ctx context.Context) error {
+					var err error
+					ctx, err = snapshots.EnsureLease(ctx)
+					if err != nil {
+						return err
+					}
 					leaseID, ok := leases.FromContext(ctx)
 					if !ok || leaseID == "" {
 						return fmt.Errorf("lazy evaluation missing operation lease")
@@ -763,6 +809,42 @@ func TestCacheEvaluate(t *testing.T) {
 		assert.Assert(t, leaseProvider.nextLeaseID.Load() > 0)
 		assert.Equal(t, leaseProvider.nextLeaseID.Load(), leaseProvider.releases.Load())
 
+		assert.NilError(t, cacheIface.ReleaseSession(ctx, cacheTestSessionID(t, ctx)))
+	})
+
+	t.Run("lazy evaluation without lease-sensitive work does not acquire lease", func(t *testing.T) {
+		t.Parallel()
+		ctx := cacheTestContext(t.Context())
+		leaseProvider := &cacheTestLeaseProvider{}
+		ctx = ContextWithOperationLeaseProvider(ctx, leaseProvider)
+		ctx = leases.WithLease(ctx, "request-1")
+		cacheIface, err := NewCache(ctx, "", nil, nil)
+		assert.NilError(t, err)
+		ctx = ContextWithCache(ctx, cacheIface)
+		srv := cacheTestServer(t)
+
+		frame := &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType((&cacheTestObject{}).Type()),
+			Field: "lazy-no-lease",
+		}
+
+		resAny, err := cacheIface.GetOrInitCall(ctx, cacheTestSessionID(t, ctx), srv, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
+			return cacheTestObjectResultWithValue(t, srv, frame, &cacheTestObject{
+				Value: 1,
+				lazyEval: func(ctx context.Context) error {
+					if leaseID, ok := leases.FromContext(ctx); ok && leaseID != "" {
+						return fmt.Errorf("lazy evaluation unexpectedly had operation lease %q", leaseID)
+					}
+					return nil
+				},
+			}), nil
+		})
+		assert.NilError(t, err)
+
+		assert.NilError(t, cacheIface.Evaluate(ctx, resAny))
+		assert.Equal(t, int32(0), leaseProvider.nextLeaseID.Load())
+		assert.Equal(t, int32(0), leaseProvider.releases.Load())
 		assert.NilError(t, cacheIface.ReleaseSession(ctx, cacheTestSessionID(t, ctx)))
 	})
 
@@ -1270,6 +1352,11 @@ func TestCacheContextCancel(t *testing.T) {
 				ResultCall:     reqCall,
 				ConcurrencyKey: "shared-lease",
 			}, func(ctx context.Context) (AnyResult, error) {
+				var err error
+				ctx, err = snapshots.EnsureLease(ctx)
+				if err != nil {
+					return nil, err
+				}
 				leaseID, ok := leases.FromContext(ctx)
 				if !ok || leaseID == "" {
 					return nil, fmt.Errorf("shared call missing operation lease")
@@ -1282,6 +1369,11 @@ func TestCacheContextCancel(t *testing.T) {
 				return cacheTestDetachedResult(reqCall, cacheTestLeaseCheckedInt{
 					Int: NewInt(1),
 					onAttach: func(ctx context.Context) error {
+						var err error
+						ctx, err = snapshots.EnsureLease(ctx)
+						if err != nil {
+							return err
+						}
 						attachLeaseID, ok := leases.FromContext(ctx)
 						if !ok || attachLeaseID == "" {
 							return fmt.Errorf("attach dependency results missing operation lease")

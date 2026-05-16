@@ -22,7 +22,6 @@ import (
 	containerdfs "github.com/containerd/continuity/fs"
 
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
@@ -479,7 +478,7 @@ func lockMountedCaches(ctx context.Context, mounts []ContainerMount) (func(), er
 			continue
 		}
 		cacheSelf := ctrMount.CacheSource.Volume.Self()
-		if cacheSelf.Sharing != CacheSharingModeLocked {
+		if !cacheSharingModeLocksWrites(cacheSelf.Sharing) {
 			continue
 		}
 		payload, err := cacheSelf.EncodePersistedObject(ctx, nil)
@@ -505,6 +504,11 @@ func lockMountedCaches(ctx context.Context, mounts []ContainerMount) (func(), er
 			locker.Unlock(lockKeys[i])
 		}
 	}, nil
+}
+
+func cacheSharingModeLocksWrites(mode CacheSharingMode) bool {
+	// Stop-gap: PRIVATE is implemented with the same serialized writes as LOCKED.
+	return mode == CacheSharingModeLocked || mode == CacheSharingModePrivate
 }
 
 func (plan *materializedExecPlan) releaseActives(ctx context.Context) error {
@@ -857,7 +861,7 @@ type execTmpFS struct {
 	opt *pb.TmpfsOpt
 }
 
-func (tmpfs *execTmpFS) Mount(_ context.Context, readonly bool) (snapshot.Mountable, error) {
+func (tmpfs *execTmpFS) Mount(_ context.Context, readonly bool) (bkcache.MountableRef, error) {
 	return &execTmpFSMount{
 		readonly: readonly,
 		opt:      tmpfs.opt,
@@ -912,7 +916,7 @@ type execSecretMount struct {
 	data []byte
 }
 
-func (secret *execSecretMount) Mount(_ context.Context, _ bool) (snapshot.Mountable, error) {
+func (secret *execSecretMount) Mount(_ context.Context, _ bool) (bkcache.MountableRef, error) {
 	return &execSecretMountInstance{
 		secret: secret,
 	}, nil
@@ -1007,7 +1011,7 @@ type execSSHMount struct {
 	mode   fs.FileMode
 }
 
-func (ssh *execSSHMount) Mount(ctx context.Context, _ bool) (snapshot.Mountable, error) {
+func (ssh *execSSHMount) Mount(ctx context.Context, _ bool) (bkcache.MountableRef, error) {
 	sock, cleanup, err := ssh.socket.Self().MountSSHAgent(ctx)
 	if err != nil {
 		return nil, err
@@ -1987,11 +1991,12 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		var nestedClientMetadata *engine.ClientMetadata
 		if opts.ExperimentalPrivilegedNesting {
 			nestedClientMetadata = &engine.ClientMetadata{
-				ClientID:          identity.NewID(),
-				ClientVersion:     engine.Version,
-				SessionID:         clientMetadata.SessionID,
-				AllowedLLMModules: slices.Clone(clientMetadata.AllowedLLMModules),
-				LockMode:          clientMetadata.LockMode,
+				ClientID:              identity.NewID(),
+				ClientVersion:         engine.Version,
+				SessionID:             clientMetadata.SessionID,
+				AllowedLLMModules:     slices.Clone(clientMetadata.AllowedLLMModules),
+				LockMode:              clientMetadata.LockMode,
+				UseRecipeIDsByDefault: execMD != nil && execMD.UseRecipeIDsByDefault,
 			}
 		}
 

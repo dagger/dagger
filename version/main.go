@@ -44,8 +44,11 @@ func New(
 	}
 
 	if git, err := gitParent.Directory(".git").Sync(ctx); err == nil {
-		v.Git = git.AsGit()
-		v.GitDir = git
+		repo := git.AsGit()
+		if _, err := repo.Head().Commit(ctx); err == nil {
+			v.Git = repo
+			v.GitDir = git
+		}
 	}
 
 	return v

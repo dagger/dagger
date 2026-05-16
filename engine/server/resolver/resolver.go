@@ -21,12 +21,12 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/auth"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkauth "github.com/dagger/dagger/internal/buildkit/session/auth"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
 	"github.com/dagger/dagger/internal/buildkit/util/imageutil"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	buildkitpush "github.com/dagger/dagger/internal/buildkit/util/push"
 	"github.com/dagger/dagger/internal/buildkit/util/tracing"
 	telemetry "github.com/dagger/otel-go"
@@ -253,7 +253,7 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 		return nil, err
 	}
 
-	leaseCtx, release, err := leaseutil.WithLease(ctx, r.leaseManager, leases.WithExpiration(5*time.Minute), leaseutil.MakeTemporary)
+	leaseCtx, release, err := bkcache.WithLease(ctx, r.leaseManager, leases.WithExpiration(5*time.Minute), bkcache.MakeTemporary)
 	if err != nil {
 		return nil, err
 	}
@@ -488,7 +488,7 @@ func (r *Resolver) tryLocalCanonicalClosure(
 		return nil, false, nil, nil
 	}
 
-	leaseCtx, release, err := leaseutil.WithLease(ctx, r.leaseManager, leases.WithExpiration(5*time.Minute), leaseutil.MakeTemporary)
+	leaseCtx, release, err := bkcache.WithLease(ctx, r.leaseManager, leases.WithExpiration(5*time.Minute), bkcache.MakeTemporary)
 	if err != nil {
 		return nil, false, nil, err
 	}

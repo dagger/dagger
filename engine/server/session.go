@@ -18,11 +18,11 @@ import (
 	"github.com/Khan/genqlient/graphql"
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/leases"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/sirupsen/logrus"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -589,7 +589,7 @@ func (srv *Server) initializeDaggerClient(
 		if leaseID, ok := leases.FromContext(ctx); ok && leaseID != "" {
 			return ctx, func(context.Context) error { return nil }, nil
 		}
-		return leaseutil.WithLease(ctx, srv.leaseManager, leaseutil.MakeTemporary)
+		return bkcache.WithLazyLease(ctx, srv.leaseManager, bkcache.MakeTemporary)
 	}))
 	// make query available via context to all APIs
 	ctx = core.ContextWithQuery(ctx, client.dagqlRoot)
@@ -1330,7 +1330,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 		if leaseID, ok := leases.FromContext(ctx); ok && leaseID != "" {
 			return ctx, func(context.Context) error { return nil }, nil
 		}
-		return leaseutil.WithLease(ctx, srv.leaseManager, leaseutil.MakeTemporary)
+		return bkcache.WithLazyLease(ctx, srv.leaseManager, bkcache.MakeTemporary)
 	}))
 
 	// make query available via context to all APIs
@@ -2075,7 +2075,7 @@ func (srv *Server) DNS() *oci.DNSConfig {
 }
 
 // The lease manager for the engine as a whole
-func (srv *Server) LeaseManager() *leaseutil.Manager {
+func (srv *Server) LeaseManager() *bkcache.LeaseManager {
 	return srv.leaseManager
 }
 

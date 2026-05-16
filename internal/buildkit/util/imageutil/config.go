@@ -4,19 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
-	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
-	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/core/remotes"
 	"github.com/containerd/containerd/v2/core/remotes/docker"
 	"github.com/containerd/containerd/v2/pkg/reference"
 	"github.com/containerd/platforms"
 	srctypes "github.com/dagger/dagger/internal/buildkit/source/types"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/internal/buildkit/util/resolver/limited"
 	"github.com/dagger/dagger/internal/buildkit/util/resolver/retryhandler"
 	intoto "github.com/in-toto/in-toto-golang/in_toto"
@@ -31,24 +27,6 @@ type ContentCache interface {
 	content.Manager
 }
 
-var leasesMu sync.Mutex
-var leasesF []func(context.Context) error
-
-func CancelCacheLeases() {
-	leasesMu.Lock()
-	for _, f := range leasesF {
-		f(context.TODO())
-	}
-	leasesF = nil
-	leasesMu.Unlock()
-}
-
-func AddLease(f func(context.Context) error) {
-	leasesMu.Lock()
-	leasesF = append(leasesF, f)
-	leasesMu.Unlock()
-}
-
 // ResolveToNonImageError is returned by the resolver when the ref is mutated by policy to a non-image ref
 type ResolveToNonImageError struct {
 	Ref     string
@@ -59,7 +37,7 @@ func (e ResolveToNonImageError) Error() string {
 	return fmt.Sprintf("ref mutated by policy to non-image: %s://%s -> %s", srctypes.DockerImageScheme, e.Ref, e.Updated)
 }
 
-func Config(ctx context.Context, str string, resolver remotes.Resolver, cache ContentCache, leaseManager leases.Manager, p *ocispecs.Platform) (digest.Digest, []byte, error) {
+func Config(ctx context.Context, str string, resolver remotes.Resolver, cache ContentCache, p *ocispecs.Platform) (digest.Digest, []byte, error) {
 	var platform platforms.MatchComparer
 	if p != nil {
 		platform = platforms.Only(*p)
@@ -69,18 +47,6 @@ func Config(ctx context.Context, str string, resolver remotes.Resolver, cache Co
 	ref, err := reference.Parse(str)
 	if err != nil {
 		return "", nil, errors.WithStack(err)
-	}
-
-	if leaseManager != nil {
-		ctx2, done, err := leaseutil.WithLease(ctx, leaseManager, leases.WithExpiration(5*time.Minute), leaseutil.MakeTemporary)
-		if err != nil {
-			return "", nil, errors.WithStack(err)
-		}
-		ctx = ctx2
-		defer func() {
-			// this lease is not deleted to allow other components to access manifest/config from cache. It will be deleted after 5 min deadline or on pruning inactive builder
-			AddLease(done)
-		}()
 	}
 
 	desc := ocispecs.Descriptor{

@@ -14,7 +14,7 @@ Dagger makes your software delivery *programmable*, *local-first*, *repeatable* 
 
 **Programmable**. Shell scripts and proprietary YAML are no longer acceptable for automating software delivery. Dagger provides: a complete execution engine and system API; SDKs for 8 languages; an interactive REPL; a rich ecosystem of reusable modules; and more.
 
-**Local-first**. Once you automate a task with Dagger, it will reliably run on any supported system: your laptop, AI sandbox, CI server, or dedicated cloud infrastructure. The only dependency is a container runtime like Docker.
+**Local-first**. Once you automate a task with Dagger, it will reliably run on any supported system: your laptop, AI sandbox, CI server, or dedicated cloud infrastructure. The only dependency is a supported container runtime such as Docker or Incus.
 
 **Repeatable**. Tools run in containers, orchestrated by sandboxed functions. Host dependencies are explicit and strictly typed. Intermediate artifacts are built just-in-time. Every operation is incremental by default, with advanced cache control. Whether it's a test report, a build or a deployment, Dagger gives you an output you can trust.
 
@@ -30,7 +30,7 @@ Dagger makes your software delivery *programmable*, *local-first*, *repeatable* 
 
 **Incremental execution**. Every operation is keyed by its inputs. Change one file and only the affected operations re-run. Caching is content-addressed and works automatically across local runs and CI.
 
-**Runs anywhere**. The only requirement is a Linux container runtime. Runs natively on Linux, or via Docker Desktop and similar products on macOS and Windows. Local and CI behavior are identical.
+**Runs anywhere**. The only requirement is a Linux container runtime. Runs natively on Linux, or via Docker Desktop, Incus, and similar products on macOS and Windows. Local and CI behavior are identical.
 
 **Built-in tracing**. Every operation emits OpenTelemetry spans. The CLI includes a live TUI; traces can also be exported to Jaeger, Honeycomb, or any OTel-compatible backend.
 

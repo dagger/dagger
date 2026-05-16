@@ -1,3 +1,6 @@
+//go:build linux
+// +build linux
+
 package netinst
 
 import (
@@ -132,6 +135,7 @@ expand-hosts
 pid-file={{.PidFile}}
 except-interface=lo
 interface={{.NetworkInterface}}
+bind-interfaces
 addn-hosts={{.AddnHostsFile}}
 resolv-file={{.UpstreamResolvFile}}
 `

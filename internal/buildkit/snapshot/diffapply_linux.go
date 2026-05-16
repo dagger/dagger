@@ -14,9 +14,9 @@ import (
 	"github.com/containerd/containerd/v2/plugins/snapshots/overlay/overlayutils"
 	"github.com/containerd/continuity/fs"
 	"github.com/containerd/continuity/sysx"
+	bksnapshots "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/internal/buildkit/util/overlay"
 	"github.com/hashicorp/go-multierror"
 	"github.com/pkg/errors"
@@ -825,7 +825,7 @@ func opaqueXattr(userxattr bool) string {
 func needsUserXAttr(ctx context.Context, sn Snapshotter, lm leases.Manager) (bool, error) {
 	key := identity.NewID()
 
-	ctx, done, err := leaseutil.WithLease(ctx, lm, leaseutil.MakeTemporary)
+	ctx, done, err := bksnapshots.WithLease(ctx, lm, bksnapshots.MakeTemporary)
 	if err != nil {
 		return false, errors.Wrap(err, "failed to create lease for checking user xattr")
 	}

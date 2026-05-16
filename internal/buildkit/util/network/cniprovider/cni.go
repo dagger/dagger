@@ -21,12 +21,10 @@ import (
 const aboveTargetGracePeriod = 5 * time.Minute
 
 type Opt struct {
-	Root         string
-	ConfigPath   string
-	BinaryDir    string
-	PoolSize     int
-	BridgeName   string
-	BridgeSubnet string
+	Root       string
+	ConfigPath string
+	BinaryDir  string
+	PoolSize   int
 }
 
 func New(opt Opt) (network.Provider, error) {
@@ -380,12 +378,19 @@ func (ns *cniNS) Sample() (*resourcestypes.NetworkSample, error) {
 
 func (ns *cniNS) release() error {
 	bklog.L.Tracef("releasing cni network namespace %s", ns.id)
-	err := ns.handle.Remove(context.TODO(), ns.id, ns.nativeID, ns.opts...)
-	if err1 := unmountNetNS(ns.nativeID); err1 != nil && err == nil {
-		err = err1
-	}
-	if err1 := deleteNetNS(ns.nativeID); err1 != nil && err == nil {
-		err = err1
+	var err error
+	for i := 0; i < 5; i++ {
+		err = ns.handle.Remove(context.TODO(), ns.id, ns.nativeID, ns.opts...)
+		if err1 := unmountNetNS(ns.nativeID); err1 != nil && err == nil {
+			err = err1
+		}
+		if err1 := deleteNetNS(ns.nativeID); err1 != nil && err == nil {
+			err = err1
+		}
+		if err == nil || errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 	return err
 }

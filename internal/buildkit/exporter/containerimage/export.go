@@ -19,6 +19,7 @@ import (
 	"github.com/containerd/containerd/v2/pkg/rootfs"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/containerd/platforms"
+	bksnapshots "github.com/dagger/dagger/engine/snapshots"
 	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
 	"github.com/dagger/dagger/internal/buildkit/cache"
 	cacheconfig "github.com/dagger/dagger/internal/buildkit/cache/config"
@@ -28,7 +29,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/session"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/internal/buildkit/util/progress"
 	"github.com/dagger/dagger/internal/buildkit/util/push"
 	digest "github.com/opencontainers/go-digest"
@@ -220,7 +220,7 @@ func (e *imageExporterInstance) Export(ctx context.Context, src *exporter.Source
 	}
 	opts.Annotations = opts.Annotations.Merge(as)
 
-	ctx, done, err := leaseutil.WithLease(ctx, e.opt.LeaseManager, leaseutil.MakeTemporary)
+	ctx, done, err := bksnapshots.WithLease(ctx, e.opt.LeaseManager, bksnapshots.MakeTemporary)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -453,7 +453,7 @@ func (e *imageExporterInstance) unpackImage(ctx context.Context, img images.Imag
 	}
 
 	// get containerd snapshotter
-		ctrdSnapshotter, release := containerdsnapshot.NewContainerdSnapshotter(snapshotter)
+	ctrdSnapshotter, release := containerdsnapshot.NewContainerdSnapshotter(snapshotter)
 	defer release()
 
 	var chain []digest.Digest

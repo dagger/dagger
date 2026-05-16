@@ -1,0 +1,183 @@
+---
+title: "Incus"
+description: "Learn how to use Dagger with Incus."
+slug: /reference/container-runtimes/incus
+---
+
+# Incus
+
+Dagger can be used with Incus as a local OCI-compatible container runtime.
+
+## Prerequisites
+
+Ensure that the `incus` client can talk to a running Incus daemon on the host:
+
+```console
+$ incus info
+Server version: 6.x
+Server status:  Running
+...
+```
+
+Incus is available from the [official installation docs](https://linuxcontainers.org/incus/docs/main/installing/). For host and kernel requirements, see the [Incus requirements documentation](https://linuxcontainers.org/incus/docs/main/requirements/).
+
+On Ubuntu 24.04 LTS and later, Incus is available as a native package. The same package path applies to Ubuntu 25.10. On Raspberry Pi 5, use the Ubuntu ARM64 image or install Ubuntu Server for `arm64`, then install Incus the same way. If you specifically want the newest Incus feature release rather than the distro package, follow the official installation docs for the feature branch.
+
+## Install the Dagger CLI from a local checkout
+
+If you are validating a local Dagger checkout, build the CLI from source and use that binary for the rest of the steps:
+
+```console
+go version
+go build -o ./bin/dagger ./cmd/dagger
+export PATH="$PWD/bin:$PATH"
+export _EXPERIMENTAL_DAGGER_CLI_BIN="$PWD/bin/dagger"
+dagger version
+```
+
+If you want to install it globally on the Pi instead, run `go install ./cmd/dagger` and ensure `"$GOBIN"` is on your `PATH`. Use Go `1.25.6` or newer, matching the version in `go.mod`.
+
+## Step-by-step: Ubuntu 25.10
+
+Use this flow to validate Dagger on a standard Ubuntu 25.10 workstation or laptop.
+
+1. Install Incus and verify the daemon:
+
+   ```console
+   sudo apt update
+   sudo apt install incus
+   incus info
+   ```
+
+   If you want to run virtual machines as well as containers, install the QEMU package recommended by the Incus docs. For container-only testing, the `incus` package is enough.
+
+2. Allow your user to talk to the local Incus socket:
+
+   ```console
+   sudo usermod -aG incus-admin "$USER"
+   newgrp incus-admin
+   incus info
+   ```
+
+   If `incus info` fails here, re-open your terminal session and try again.
+
+3. Confirm that Incus can launch a container on the host:
+
+   ```console
+   incus launch images:ubuntu/25.10 test-incus
+   incus exec test-incus -- uname -a
+   incus delete -f test-incus
+   ```
+
+4. From the Dagger repository, run the Incus backend sanity checks:
+
+   ```console
+   export _EXPERIMENTAL_DAGGER_CLI_BIN="$PWD/bin/dagger"
+   DRIVER_TEST=1 go test ./engine/client/drivers -run 'TestBackendImagePullAndExists/incus|TestBackendContainerRunExec/incus|TestBackendContainerLs/incus|TestBackendContainerRunWithOptions/incus|TestBackendIncusImageLoadAndExists' -count=1
+   ```
+
+   This runs the Incus-specific backend checks only. The Incus path seeds a tiny local image from a test tarball, so you do not need Docker, Podman, Nerdctl, or Apple tooling installed. The full `engine/client/drivers` matrix also includes those other backends, so only run that wider matrix on a machine where they are installed and usable.
+
+5. Run the Dagger provisioning suite so the engine starts through Incus, reconnects, and cleans up correctly:
+
+   ```console
+   export _EXPERIMENTAL_DAGGER_CLI_BIN="$PWD/bin/dagger"
+   go test ./core/integration -run TestProvision -count=1
+   ```
+
+6. Run a live Dagger command through Incus to confirm the engine is working end to end:
+
+   ```console
+   export _EXPERIMENTAL_DAGGER_RUNNER_HOST=image+incus://registry.dagger.io/engine:dev
+   dagger core version
+   dagger query -M '{ version }'
+   incus list | grep dagger-engine
+   ```
+
+   You should see the engine container in `incus list`, and `dagger query` should return the same version as the CLI.
+
+7. Repeat the same `go test ./core/integration -run TestProvision -count=1` command after a CLI restart to confirm reconnect and reuse behavior.
+
+## Step-by-step: Raspberry Pi 5 with Ubuntu
+
+Use this flow on a Raspberry Pi 5 running Ubuntu Server or Ubuntu Desktop for `arm64`. The same Dagger checks apply, but this host is a better fit when you want to verify the low-overhead container path on ARM hardware.
+
+1. Install Incus and confirm the daemon:
+
+   ```console
+   sudo apt update
+   sudo apt install incus
+   incus info
+   ```
+
+2. Build and install the Dagger CLI from a local checkout on the Pi:
+
+   ```console
+   go version
+   go build -o ./bin/dagger ./cmd/dagger
+   export PATH="$PWD/bin:$PATH"
+   dagger version
+   ```
+
+   Build on the Pi itself so the resulting binary matches the Pi’s Linux `arm64` environment.
+
+3. Put your user in the Incus admin group and refresh the shell:
+
+   ```console
+   sudo usermod -aG incus-admin "$USER"
+   newgrp incus-admin
+   incus info
+   ```
+
+4. Verify that Incus can launch an `arm64` container on the Pi:
+
+   ```console
+   incus launch images:ubuntu/25.10 test-incus
+   incus exec test-incus -- uname -m
+   incus delete -f test-incus
+   ```
+
+   On a Pi 5, `uname -m` should report `aarch64`.
+
+5. Run the backend sanity checks from the Dagger repository:
+
+   ```console
+   export _EXPERIMENTAL_DAGGER_CLI_BIN="$PWD/bin/dagger"
+   DRIVER_TEST=1 go test ./engine/client/drivers -run 'TestBackendImagePullAndExists/incus|TestBackendContainerRunExec/incus|TestBackendContainerLs/incus|TestBackendContainerRunWithOptions/incus|TestBackendIncusImageLoadAndExists' -count=1
+   ```
+
+   This runs the Incus-specific backend checks only. The Incus path seeds a tiny local image from a test tarball, so you do not need Docker, Podman, Nerdctl, or Apple tooling installed. The full `engine/client/drivers` matrix also includes those other backends, so only run that wider matrix on a machine where they are installed and usable.
+
+6. Run the provisioning suite and confirm the engine container starts, reconnects, and cleans up:
+
+   ```console
+   export _EXPERIMENTAL_DAGGER_CLI_BIN="$PWD/bin/dagger"
+   go test ./core/integration -run TestProvision -count=1
+   ```
+
+7. Run a live Dagger command through Incus:
+
+   ```console
+   export _EXPERIMENTAL_DAGGER_RUNNER_HOST=image+incus://registry.dagger.io/engine:dev
+   dagger core version
+   dagger query -M '{ version }'
+   incus list | grep dagger-engine
+   ```
+
+8. Repeat the same Dagger command after closing the terminal and starting a fresh shell to confirm the engine reconnect path works on the Pi.
+
+## Example
+
+```console
+$ incus list
+NAME    STATE    IPV4    IPV6
+$ dagger core version
+v0.18.19
+$ incus list
+NAME                  STATE   IPV4       IPV6
+dagger-engine-v0.18.19 RUNNING 10.0.0.12  -
+```
+
+## Resources
+
+If you have any questions about using Incus with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask in our [help channel](https://discord.com/channels/707636530424053791/1030538312508776540).

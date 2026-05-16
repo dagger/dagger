@@ -584,6 +584,83 @@ func (EngineSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t *tes
 	})
 }
 
+func (EngineSuite) TestLocalCachePruneRemoteGitSnapshot(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	engine := devEngineContainer(c, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
+	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { engineSvc.Stop(ctx) })
+
+	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+
+	newNestedClient := func() *dagger.Client {
+		t.Helper()
+
+		c2, err := dagger.Connect(
+			ctx,
+			dagger.WithRunnerHost(endpoint),
+			dagger.WithLogOutput(testutil.NewTWriter(t)),
+		)
+		require.NoError(t, err)
+		return c2
+	}
+
+	const (
+		repoURL = "https://github.com/dagger/dagger"
+		commit  = "7bed576fbc61fff0015f5bf9c85f17c43102a4a3"
+	)
+	fetchReadme := func(c2 *dagger.Client) string {
+		t.Helper()
+
+		content, err := c2.Git(repoURL).Commit(commit).Tree().File("README.md").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, content, "Dagger")
+		return content
+	}
+
+	c2 := newNestedClient()
+	readmeBeforePrune := fetchReadme(c2)
+	require.NoError(t, c2.Close())
+
+	pruneClient := newNestedClient()
+	var usedBeforePrune int
+	for i := range 10 {
+		usedBeforePrune, err = pruneClient.Engine().LocalCache().EntrySet().DiskSpaceBytes(ctx)
+		require.NoError(t, err)
+		if usedBeforePrune > 0 {
+			break
+		}
+		if i < 9 {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
+	var usedAfterPrune int
+	for i := range 10 {
+		err := pruneClient.Engine().LocalCache().Prune(ctx)
+		require.NoError(t, err)
+
+		usedAfterPrune, err = pruneClient.Engine().LocalCache().EntrySet().DiskSpaceBytes(ctx)
+		require.NoError(t, err)
+		if usedAfterPrune < usedBeforePrune {
+			break
+		}
+		if i < 9 {
+			time.Sleep(1 * time.Second)
+		}
+	}
+	require.Less(t, usedAfterPrune, usedBeforePrune, "explicit prune should remove entries before the remote git tree is fetched again")
+	require.NoError(t, pruneClient.Close())
+
+	c2 = newNestedClient()
+	readmeAfterPrune := fetchReadme(c2)
+	require.NoError(t, c2.Close())
+
+	require.Equal(t, readmeBeforePrune, readmeAfterPrune)
+}
+
 func (EngineSuite) TestLocalCacheEntryRecordType(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

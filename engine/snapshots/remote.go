@@ -7,7 +7,6 @@ import (
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )
@@ -17,8 +16,15 @@ func (sr *immutableRef) ExportChain(ctx context.Context, refCfg config.RefConfig
 		return &ExportChain{}, nil
 	}
 
-	if _, ok := leases.FromContext(ctx); !ok {
-		leaseCtx, done, err := leaseutil.WithLease(ctx, sr.cm.LeaseManager, leaseutil.MakeTemporary)
+	if leaseID, ok := leases.FromContext(ctx); !ok || leaseID == "" {
+		var err error
+		ctx, err = EnsureLease(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if leaseID, ok := leases.FromContext(ctx); !ok || leaseID == "" {
+		leaseCtx, done, err := WithLease(ctx, sr.cm.LeaseManager, MakeTemporary)
 		if err != nil {
 			return nil, err
 		}

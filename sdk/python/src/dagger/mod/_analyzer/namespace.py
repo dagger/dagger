@@ -237,6 +237,30 @@ class StubNamespace:
             )
             self._namespace[key] = StubType(name, module)
 
+    def add_relative_import(
+        self,
+        name: str,
+        alias: str | None,
+        module: str | None,
+        level: int,
+    ) -> None:
+        """Register a name brought in by a relative import as a stub.
+
+        Relative imports (``from . import x``, ``from ..pkg import x``)
+        can't be resolved at static analysis time without the importing
+        package's context, and dispatching them through ``importlib`` is
+        unsafe — an empty module name raises ``ValueError`` and a non-empty
+        one would silently bind the wrong top-level module. Bind the
+        imported name to a stub instead so type annotations referencing
+        it don't ``NameError`` during evaluation. Cross-file decorated
+        classes from the same module are still resolved via
+        ``add_declared_type``.
+        """
+        key = alias or name
+        prefix = "." * level
+        origin = f"{prefix}{module}" if module else prefix
+        self._namespace[key] = StubType(name, origin)
+
     def add_declared_type(self, name: str) -> None:
         """Register a type declared in the module being analyzed.
 

@@ -78,41 +78,52 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 		invalidateSchemaCache: srv.invalidateSchemaCache,
 	}
 	if !opts.NoIDs {
-		class.Install(
-			Field[T]{
-				Spec: &FieldSpec{
-					Name:        "id",
-					Description: fmt.Sprintf("A unique identifier for this %s.", class.TypeName()),
-					Type:        ID[T]{inner: opts.Typed},
-					Args: NewInputSpecs(
-						InputSpec{
-							Name:        "recipe",
-							Description: "Return the canonical recipe-form ID instead of the default runtime handle ID.",
-							Type:        Boolean(false),
-							Default:     Boolean(false),
-							Internal:    true,
-						},
-					),
-					DoNotCache: "IDs describe the current attached result; cache hits could return stale runtime handles for an equivalent object.",
-				},
-				Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, _ call.View) (AnyResult, error) {
-					recipe, _ := args["recipe"].(Boolean)
-					var (
-						selfID *call.ID
-						err    error
-					)
-					if bool(recipe) {
-						selfID, err = self.RecipeID(ctx)
-					} else {
-						selfID, err = self.ID()
-					}
-					if err != nil {
-						return nil, err
-					}
-					return NewResultForCurrentCall(ctx, NewDynamicID[T](selfID, opts.Typed))
-				},
+		class.Install(Field[T]{
+			Spec: &FieldSpec{
+				Name:        "id",
+				Description: fmt.Sprintf("A unique identifier for this %s.", class.TypeName()),
+				Type:        ID[T]{inner: opts.Typed},
+				Args: NewInputSpecs(InputSpec{
+					Name:        "recipe",
+					Description: "Return the canonical recipe-form ID instead of the default runtime handle ID.",
+					Type:        Boolean(false),
+					Default:     Boolean(false),
+					Internal:    true,
+				}),
+				DoNotCache: "IDs describe the current attached result; cache hits could return stale runtime handles for an equivalent object.",
 			},
-		)
+			Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, _ call.View) (AnyResult, error) {
+				recipe, _ := args["recipe"].(Boolean)
+				recipeExplicit := false
+				if call := CurrentCall(ctx); call != nil {
+					for _, arg := range call.Args {
+						if arg != nil && arg.Name == "recipe" {
+							recipeExplicit = true
+							break
+						}
+					}
+				}
+				if !recipeExplicit {
+					if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
+						recipe = Boolean(clientMetadata.UseRecipeIDsByDefault)
+					}
+				}
+
+				var (
+					selfID *call.ID
+					err    error
+				)
+				if recipe {
+					selfID, err = self.RecipeID(ctx)
+				} else {
+					selfID, err = self.ID()
+				}
+				if err != nil {
+					return nil, err
+				}
+				return NewResultForCurrentCall(ctx, NewDynamicID[T](selfID, opts.Typed))
+			},
+		})
 		class.idable = true
 	}
 	return class

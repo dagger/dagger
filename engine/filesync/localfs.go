@@ -15,7 +15,6 @@ import (
 	"github.com/containerd/continuity/sysx"
 	bkcontenthash "github.com/dagger/dagger/engine/contenthash"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/fsutil"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
@@ -509,7 +508,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to get mountable: %w", err)
 	}
-	copyRefMnter := snapshot.LocalMounter(copyRefMntable)
+	copyRefMnter := bkcache.LocalMounter(copyRefMntable)
 	copyRefMntPath, err := copyRefMnter.Mount()
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to mount: %w", err)

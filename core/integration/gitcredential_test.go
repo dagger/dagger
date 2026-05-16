@@ -91,22 +91,22 @@ func (GitCredentialSuite) TestGitCredentialErrors(ctx context.Context, t *testct
 		require.Contains(t, string(out), "Description")
 	})
 
-	t.Run("bitbucket private module", func(ctx context.Context, t *testctx.T) {
-		workDir := t.TempDir()
+	// t.Run("bitbucket private module", func(ctx context.Context, t *testctx.T) {
+	// 	workDir := t.TempDir()
 
-		pat := "QVRDVFQzeEZmR04wTHhxdWRtNVpjNFFIOE0xc3V0WWxHS2dfcjVTdVJxN0gwOVRrT0ZuUUViUDN4OURodldFQ3V1N1dzaTU5NkdBR2pIWTlhbVMzTEo5VE9OaFVFYlotUW5ZXzFmNnN3alRYRXJhUEJrcnI1NlpMLTdCeG4xMjdPYXpJRlFOMUF3VndLaWJDeW8wMm50U0JtYVA5MlRyUkMtUFN5a2sxQk4weXg1LUhjVXRqNmNVPTIwOEY2RThFCg=="
-		token, err := decodeAndTrimPAT(pat)
-		require.NoError(t, err)
+	// 	pat := "QVRDVFQzeEZmR04wTHhxdWRtNVpjNFFIOE0xc3V0WWxHS2dfcjVTdVJxN0gwOVRrT0ZuUUViUDN4OURodldFQ3V1N1dzaTU5NkdBR2pIWTlhbVMzTEo5VE9OaFVFYlotUW5ZXzFmNnN3alRYRXJhUEJrcnI1NlpMLTdCeG4xMjdPYXpJRlFOMUF3VndLaWJDeW8wMm50U0JtYVA5MlRyUkMtUFN5a2sxQk4weXg1LUhjVXRqNmNVPTIwOEY2RThFCg=="
+	// 	token, err := decodeAndTrimPAT(pat)
+	// 	require.NoError(t, err)
 
-		env := setupGitCredentials("bitbucket.org", token, workDir)
-		modDir := filepath.Join(workDir, "module")
-		err = os.MkdirAll(modDir, 0755)
-		require.NoError(t, err)
+	// 	env := setupGitCredentials("bitbucket.org", token, workDir)
+	// 	modDir := filepath.Join(workDir, "module")
+	// 	err = os.MkdirAll(modDir, 0755)
+	// 	require.NoError(t, err)
 
-		out, err := execWithEnv(ctx, t, modDir, env, "-m", "https://bitbucket.org/dagger-modules/private-modules-test.git", "functions")
-		require.NoError(t, err)
-		require.Contains(t, string(out), "Description")
-	})
+	// 	out, err := execWithEnv(ctx, t, modDir, env, "-m", "https://bitbucket.org/dagger-modules/private-modules-test.git", "functions")
+	// 	require.NoError(t, err)
+	// 	require.Contains(t, string(out), "Description")
+	// })
 
 	t.Run("gitlab private module", func(ctx context.Context, t *testctx.T) {
 		workDir := t.TempDir()

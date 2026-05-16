@@ -18,6 +18,7 @@ import (
 	"github.com/containerd/containerd/v2/pkg/labels"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/dagger/dagger/engine/slog"
+	bksnapshots "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/cache/config"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/identity"
@@ -27,7 +28,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/internal/buildkit/util/overlay"
 	"github.com/dagger/dagger/internal/buildkit/util/progress"
 	rootlessmountopts "github.com/dagger/dagger/internal/buildkit/util/rootless/mountopts"
@@ -418,7 +418,7 @@ func (cr *cacheRecord) mount(ctx context.Context) (_ snapshot.Mountable, rerr er
 				"containerd.io/gc.flat": time.Now().UTC().Format(time.RFC3339Nano),
 			}
 			return nil
-		}, leaseutil.MakeTemporary); err != nil && !cerrdefs.IsAlreadyExists(err) {
+		}, bksnapshots.MakeTemporary); err != nil && !cerrdefs.IsAlreadyExists(err) {
 			return nil, err
 		}
 		defer func() {
@@ -1130,7 +1130,7 @@ func (sr *immutableRef) withRemoteSnapshotLabelsStargzMode(ctx context.Context, 
 }
 
 func (sr *immutableRef) prepareRemoteSnapshotsStargzMode(ctx context.Context, s session.Group) error {
-	_, err := g.Do(ctx, sr.ID()+"-prepare-remote-snapshot", func(ctx context.Context) (_ *leaseutil.LeaseRef, rerr error) {
+	_, err := g.Do(ctx, sr.ID()+"-prepare-remote-snapshot", func(ctx context.Context) (_ *bksnapshots.LeaseRef, rerr error) {
 		dhs := sr.descHandlers
 		for _, r := range sr.layerChain() {
 			r := r
@@ -1227,7 +1227,7 @@ func makeTmpLabelsStargzMode(labels map[string]string, s session.Group) (fields 
 }
 
 func (sr *immutableRef) unlazy(ctx context.Context, dhs DescHandlers, pg progress.Controller, s session.Group, topLevel bool, ensureContentStore bool) error {
-	_, err := g.Do(ctx, sr.ID()+"-unlazy", func(ctx context.Context) (_ *leaseutil.LeaseRef, rerr error) {
+	_, err := g.Do(ctx, sr.ID()+"-unlazy", func(ctx context.Context) (_ *bksnapshots.LeaseRef, rerr error) {
 		if _, err := sr.cm.Snapshotter.Stat(ctx, sr.getSnapshotID()); err == nil {
 			if !ensureContentStore {
 				return nil, nil
@@ -1321,7 +1321,7 @@ func (sr *immutableRef) unlazyLayer(ctx context.Context, dhs DescHandlers, pg pr
 	}
 
 	if _, ok := leases.FromContext(ctx); !ok {
-		leaseCtx, done, err := leaseutil.WithLease(ctx, sr.cm.LeaseManager, leaseutil.MakeTemporary)
+		leaseCtx, done, err := bksnapshots.WithLease(ctx, sr.cm.LeaseManager, bksnapshots.MakeTemporary)
 		if err != nil {
 			return err
 		}

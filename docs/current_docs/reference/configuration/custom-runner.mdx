@@ -66,6 +66,7 @@ environment variable currently accepts values in the following format:
 1. `image://<container image reference>` - Start the runner in Docker using the provided container image, pulling it locally if needed
     - Requires a local [container runtime](/reference/container-runtimes/).
     - Can force a specific container runtime using `image+<runtime>://<container image reference>`, e.g. `image+podman://registry.dagger.io/engine:latest`.
+    - Incus is supported via `image+incus://<container image reference>` when the `incus` client and daemon socket are available on the host. See the [Incus guide](../container-runtimes/incus.mdx) for installation and validation steps.
 1. `kube-pod://<podname>?context=<context>&namespace=<namespace>&container=<container>` - Connect to the runner inside the given Kubernetes pod.
     - Query strings params like context and namespace are optional.
 1. `unix://<path to unix socket>` - Connect to the runner over the provided UNIX socket.
