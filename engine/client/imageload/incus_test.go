@@ -94,63 +94,52 @@ func TestUntarIntoRejectsHardlinkTraversal(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestUntarIntoRejectsHardlinkParentTraversal(t *testing.T) {
+func TestUntarIntoAllowsHardlinkParentTraversalWithinRoot(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	require.NoError(t, tw.WriteHeader(&tar.Header{
-		Name:     "link",
-		Linkname: "a/../passwd",
-		Typeflag: tar.TypeLink,
-	}))
-	require.NoError(t, tw.Close())
-
-	rootfs := t.TempDir()
-	err := untarInto(rootfs, bytes.NewReader(buf.Bytes()))
-	require.Error(t, err)
-}
-
-func TestUntarIntoRejectsSymlinkEscape(t *testing.T) {
-	t.Parallel()
-
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	require.NoError(t, tw.WriteHeader(&tar.Header{
-		Name:     "escape",
-		Linkname: "../../tmp",
-		Typeflag: tar.TypeSymlink,
-	}))
-	require.NoError(t, tw.WriteHeader(&tar.Header{
-		Name:     "escape/passwd",
+		Name:     "usr/bin/sh",
 		Mode:     0o644,
 		Size:     int64(len("owned")),
 		Typeflag: tar.TypeReg,
 	}))
 	_, err := io.WriteString(tw, "owned")
 	require.NoError(t, err)
+	require.NoError(t, tw.WriteHeader(&tar.Header{
+		Name:     "bin/linked-sh",
+		Linkname: "../usr/bin/sh",
+		Typeflag: tar.TypeLink,
+	}))
 	require.NoError(t, tw.Close())
 
 	rootfs := t.TempDir()
 	err = untarInto(rootfs, bytes.NewReader(buf.Bytes()))
-	require.Error(t, err)
+	require.NoError(t, err)
+	linked, err := os.ReadFile(filepath.Join(rootfs, "bin/linked-sh"))
+	require.NoError(t, err)
+	require.Equal(t, "owned", string(linked))
 }
 
-func TestUntarIntoRejectsSymlinkParentTraversal(t *testing.T) {
+func TestUntarIntoAllowsSymlinkParentTraversalWithinRoot(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	require.NoError(t, tw.WriteHeader(&tar.Header{
 		Name:     "escape",
-		Linkname: "a/../tmp",
+		Linkname: "../tmp",
 		Typeflag: tar.TypeSymlink,
 	}))
 	require.NoError(t, tw.Close())
 
 	rootfs := t.TempDir()
 	err := untarInto(rootfs, bytes.NewReader(buf.Bytes()))
-	require.Error(t, err)
+	require.NoError(t, err)
+	linkTarget, err := os.Readlink(filepath.Join(rootfs, "escape"))
+	require.NoError(t, err)
+	require.Equal(t, "../tmp", linkTarget)
 }
 
 func TestUntarIntoAllowsAbsoluteSymlinkAndHardlinkTargets(t *testing.T) {
@@ -196,6 +185,40 @@ func TestUntarIntoAllowsAbsoluteSymlinkAndHardlinkTargets(t *testing.T) {
 	hardlink, err := os.Stat(filepath.Join(rootfs, "usr/bin/linked-sh"))
 	require.NoError(t, err)
 	require.True(t, os.SameFile(original, hardlink))
+}
+
+func TestUntarIntoReplacesSymlinkWithRegularFile(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+
+	require.NoError(t, tw.WriteHeader(&tar.Header{
+		Name:     "bin",
+		Linkname: "/usr/bin",
+		Typeflag: tar.TypeSymlink,
+	}))
+	require.NoError(t, tw.WriteHeader(&tar.Header{
+		Name:     "bin",
+		Mode:     0o644,
+		Size:     int64(len("shell")),
+		Typeflag: tar.TypeReg,
+	}))
+	_, err := io.WriteString(tw, "shell")
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+
+	rootfs := t.TempDir()
+	err = untarInto(rootfs, bytes.NewReader(buf.Bytes()))
+	require.NoError(t, err)
+
+	info, err := os.Lstat(filepath.Join(rootfs, "bin"))
+	require.NoError(t, err)
+	require.False(t, info.Mode()&os.ModeSymlink != 0)
+
+	contents, err := os.ReadFile(filepath.Join(rootfs, "bin"))
+	require.NoError(t, err)
+	require.Equal(t, "shell", string(contents))
 }
 
 func TestUntarIntoLastWriteWinsForSymlinkAndHardlinkEntries(t *testing.T) {

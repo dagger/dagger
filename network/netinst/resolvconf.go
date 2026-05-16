@@ -6,6 +6,7 @@ package netinst
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"net/netip"
 	"os"
 	"strings"
@@ -67,7 +68,16 @@ func replaceNameservers(containerDNS, containerDNSResolve string) error {
 	}
 	defer dst.Close()
 
+	if err := writeResolverConfig(dst, src, containerDNS); err != nil {
+		return err
+	}
+
+	return dst.Close()
+}
+
+func writeResolverConfig(dst io.Writer, src io.Reader, containerDNS string) error {
 	fmt.Fprintln(dst, "# container ns resolver")
+	fmt.Fprintln(dst, "nameserver", containerDNS)
 
 	srcScan := bufio.NewScanner(src)
 	nameservers := make([]string, 0, 2)
@@ -89,6 +99,10 @@ func replaceNameservers(containerDNS, containerDNSResolve string) error {
 		lines = append(lines, line)
 	}
 
+	if err := srcScan.Err(); err != nil {
+		return err
+	}
+
 	if len(nameservers) == 0 {
 		nameservers = []string{"1.1.1.1", "8.8.8.8"}
 	}
@@ -100,7 +114,7 @@ func replaceNameservers(containerDNS, containerDNSResolve string) error {
 		fmt.Fprintln(dst, line)
 	}
 
-	return dst.Close()
+	return nil
 }
 
 func keepNameserver(nameserver, containerDNS string) bool {

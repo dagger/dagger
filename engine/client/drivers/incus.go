@@ -284,17 +284,38 @@ func incusLaunchArgs(name string, opts runOpts, stateDir, cfgDir string, hasConf
 	}
 
 	for _, port := range opts.ports {
-		hostPort, containerPort, ok := strings.Cut(port, ":")
-		if !ok {
-			hostPort = port
-			containerPort = port
+		hostPort, containerPort, protocol, err := parseIncusPortMapping(port)
+		if err != nil {
+			return nil, err
 		}
-		args = append(args, "-d", "dagger-port-"+hostPort+",type=proxy,listen=tcp:127.0.0.1:"+hostPort+",connect=tcp:127.0.0.1:"+containerPort)
+		deviceName := fmt.Sprintf("dagger-port-%s-%s-%s", hostPort, containerPort, protocol)
+		listenAddr := fmt.Sprintf("%s:127.0.0.1:%s", protocol, hostPort)
+		connectAddr := fmt.Sprintf("%s:127.0.0.1:%s", protocol, containerPort)
+		args = append(args, "-d", deviceName+",type=proxy,listen="+listenAddr+",connect="+connectAddr)
 	}
 
 	args = append(args, "--")
 	args = append(args, opts.args...)
 	return args, nil
+}
+
+func parseIncusPortMapping(port string) (string, string, string, error) {
+	protocol := "tcp"
+	if before, after, ok := strings.Cut(port, "/"); ok {
+		port = before
+		protocol = strings.ToLower(after)
+	}
+	switch protocol {
+	case "tcp", "udp":
+	default:
+		return "", "", "", fmt.Errorf("unsupported port protocol %q", protocol)
+	}
+	hostPort, containerPort, ok := strings.Cut(port, ":")
+	if !ok {
+		hostPort = port
+		containerPort = port
+	}
+	return hostPort, containerPort, protocol, nil
 }
 
 func incusRemoteImageRef(image string) (string, bool) {

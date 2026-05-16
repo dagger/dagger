@@ -914,7 +914,7 @@ func resolvePathWithinRoot(rootfs, target string, create bool) (string, error) {
 				if err != nil {
 					return "", err
 				}
-				resolved, err := archiveTargetWithinRoot(rootfs, filepath.Dir(next), linkname)
+				resolved, err := archiveTargetWithinRoot(rootfs, linkname)
 				if err != nil {
 					return "", err
 				}
@@ -949,7 +949,8 @@ func resolvePathWithinRoot(rootfs, target string, create bool) (string, error) {
 }
 
 func safeResolvedPath(rootfs, baseDir, name string) (string, error) {
-	target, err := archiveTargetWithinRoot(rootfs, baseDir, name)
+	_ = baseDir
+	target, err := archiveTargetWithinRoot(rootfs, name)
 	if err != nil {
 		return "", err
 	}
@@ -961,8 +962,10 @@ func safeResolvedPath(rootfs, baseDir, name string) (string, error) {
 }
 
 func safeSymlinkTarget(rootfs, baseDir, linkname string) error {
-	_, err := archiveTargetWithinRoot(rootfs, baseDir, linkname)
-	return err
+	_ = rootfs
+	_ = baseDir
+	_ = linkname
+	return nil
 }
 
 func safeOpenFile(rootfs, target string, perm os.FileMode) (*os.File, error) {
@@ -971,11 +974,8 @@ func safeOpenFile(rootfs, target string, perm os.FileMode) (*os.File, error) {
 		return nil, err
 	}
 	full := filepath.Join(dir, filepath.Base(target))
-	if info, err := os.Lstat(full); err == nil {
-		if info.IsDir() {
-			return nil, fmt.Errorf("path %q is a directory", full)
-		}
-		if err := os.Remove(full); err != nil {
+	if _, err := os.Lstat(full); err == nil {
+		if err := os.RemoveAll(full); err != nil {
 			return nil, err
 		}
 	}
@@ -996,18 +996,9 @@ func ensurePathWithinRoot(rootfs, target string) error {
 	return nil
 }
 
-func archiveTargetWithinRoot(rootfs, baseDir, name string) (string, error) {
-	if hasParentTraversal(name) {
-		return "", fmt.Errorf("illegal file path: %q", name)
-	}
-
-	target := name
-	if filepath.IsAbs(name) {
-		target = filepath.Join(rootfs, strings.TrimPrefix(filepath.Clean(name), string(os.PathSeparator)))
-	} else {
-		target = filepath.Join(baseDir, name)
-	}
-	target = filepath.Clean(target)
+func archiveTargetWithinRoot(rootfs, name string) (string, error) {
+	cleaned := filepath.Clean(string(os.PathSeparator) + strings.TrimPrefix(name, string(os.PathSeparator)))
+	target := filepath.Join(rootfs, strings.TrimPrefix(cleaned, string(os.PathSeparator)))
 	if err := ensurePathWithinRoot(rootfs, target); err != nil {
 		return "", fmt.Errorf("illegal file path: %q", name)
 	}

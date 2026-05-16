@@ -244,11 +244,64 @@ func TestIncusLaunchArgs(t *testing.T) {
 		"-d", "dagger-config,type=disk,source=/home/test/.config/dagger,path=/root/.config/dagger",
 		"-c", "environment.FOO=bar",
 		"-c", "environment.EMPTY=",
-		"-d", "dagger-port-8080,type=proxy,listen=tcp:127.0.0.1:8080,connect=tcp:127.0.0.1:80",
-		"-d", "dagger-port-9000,type=proxy,listen=tcp:127.0.0.1:9000,connect=tcp:127.0.0.1:9000",
+		"-d", "dagger-port-8080-80-tcp,type=proxy,listen=tcp:127.0.0.1:8080,connect=tcp:127.0.0.1:80",
+		"-d", "dagger-port-9000-9000-tcp,type=proxy,listen=tcp:127.0.0.1:9000,connect=tcp:127.0.0.1:9000",
 		"--",
 		"--debug",
 	}, args)
+}
+
+func TestParseIncusPortMapping(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		input         string
+		host, backend string
+		protocol      string
+	}{
+		{
+			name:     "default tcp",
+			input:    "8080:80",
+			host:     "8080",
+			backend:  "80",
+			protocol: "tcp",
+		},
+		{
+			name:     "udp protocol",
+			input:    "8080:80/udp",
+			host:     "8080",
+			backend:  "80",
+			protocol: "udp",
+		},
+		{
+			name:     "single port with protocol",
+			input:    "9000/tcp",
+			host:     "9000",
+			backend:  "9000",
+			protocol: "tcp",
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			host, backend, protocol, err := parseIncusPortMapping(tc.input)
+			require.NoError(t, err)
+			require.Equal(t, tc.host, host)
+			require.Equal(t, tc.backend, backend)
+			require.Equal(t, tc.protocol, protocol)
+		})
+	}
+}
+
+func TestParseIncusPortMappingRejectsUnknownProtocol(t *testing.T) {
+	t.Parallel()
+
+	_, _, _, err := parseIncusPortMapping("8080:80/sctp")
+	require.Error(t, err)
 }
 
 func TestIncusLaunchArgsRejectsGPU(t *testing.T) {
