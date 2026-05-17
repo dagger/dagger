@@ -38,3 +38,23 @@ func TestNewCacheMissSpanExporterNonNil(t *testing.T) {
 		t.Fatalf("expected non-nil exporter")
 	}
 }
+
+func TestCacheMissErrIncludesChangedInputs(t *testing.T) {
+	err := cacheMissErr([]string{"--foo", "--bar"})
+	if err == nil {
+		t.Fatal("expected non-nil error")
+	}
+	if got, want := err.Error(), "call failed because it was not served from cache; changed inputs: --foo, --bar"; got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestCacheMissErrNoChangedInputs(t *testing.T) {
+	err := cacheMissErr(nil)
+	if err == nil {
+		t.Fatal("expected non-nil error")
+	}
+	if got := err.Error(); got != "call failed because it was not served from cache; the request inputs changed or the result was invalidated" {
+		t.Fatalf("unexpected error message: %q", got)
+	}
+}

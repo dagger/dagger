@@ -113,6 +113,8 @@ type FuncCommand struct {
 	c   *client.Client
 	ctx context.Context
 
+	changedInputs []string
+
 	// withFn is the `with` function on Query root, if present.
 	// Used to forward constructor args from the root command.
 	withFn *modFunction
@@ -238,7 +240,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 				})
 
 				if returnValue == nil && fc.failOnCacheMiss && cacheMiss.failedMiss() {
-					return fmt.Errorf("call failed because it was not served from cache")
+					return cacheMissErr(fc.changedInputs)
 				}
 				return returnValue
 			},
@@ -263,6 +265,13 @@ func (fc *FuncCommand) Command() *cobra.Command {
 		fc.cmd.PersistentFlags().BoolVarP(&jsonOutput, "json", "j", false, "Present result as JSON")
 	}
 	return fc.cmd
+}
+
+func cacheMissErr(changedInputs []string) error {
+	if len(changedInputs) == 0 {
+		return fmt.Errorf("call failed because it was not served from cache; the request inputs changed or the result was invalidated")
+	}
+	return fmt.Errorf("call failed because it was not served from cache; changed inputs: %s", strings.Join(changedInputs, ", "))
 }
 
 func stripHelpArgs(args []string) []string {
@@ -658,6 +667,7 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 			continue
 		}
 
+		fc.changedInputs = append(fc.changedInputs, fmt.Sprintf("--%s", a.FlagName()))
 		p.Go(func() (flagResult, error) {
 			v, err := a.GetFlagValue(fc.ctx, flag, fc.c.Dagger(), fc.mod)
 			if err != nil {
