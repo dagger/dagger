@@ -182,6 +182,8 @@ func (fc *FuncCommand) Command() *cobra.Command {
 					c.SetContext(idtui.WithPrintTraceLink(c.Context(), true))
 				}
 
+				fc.changedInputs = nil
+
 				execArgs := a
 				// With DisableFlagParsing enabled, --help can remain in args when it
 				// appears after the first positional token. Strip it once we know help
