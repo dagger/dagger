@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync/atomic"
 
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -65,6 +66,49 @@ func defaultRunnerHost() string {
 }
 
 type runClientCallback func(context.Context, *client.Client) error
+
+type failOnCacheMissContextKey struct{}
+
+var failOnCacheMissKey = failOnCacheMissContextKey{}
+
+type cacheMissState struct {
+	failed atomic.Bool
+}
+
+func (s *cacheMissState) failedMiss() bool {
+	return s.failed.Load()
+}
+
+type failOnCacheMissSpanExporter struct {
+	state *cacheMissState
+}
+
+func newCacheMissSpanExporter(state *cacheMissState) sdktrace.SpanExporter {
+	return &failOnCacheMissSpanExporter{state: state}
+}
+
+func (e *failOnCacheMissSpanExporter) ExportSpans(_ context.Context, spans []sdktrace.ReadOnlySpan) error {
+	for _, span := range spans {
+		var isCallSpan bool
+		var cached bool
+		for _, attr := range span.Attributes() {
+			if string(attr.Key) == telemetry.DagCallAttr {
+				isCallSpan = true
+			}
+			if string(attr.Key) == telemetry.CachedAttr {
+				cached = true
+			}
+		}
+		if isCallSpan && !cached {
+			e.state.failed.Store(true)
+		}
+	}
+	return nil
+}
+
+func (e *failOnCacheMissSpanExporter) Shutdown(context.Context) error {
+	return nil
+}
 
 func withEngine(
 	ctx context.Context,
@@ -174,6 +218,11 @@ func resolveLockMode(paramLockMode, globalLockMode string) (string, error) {
 	return string(mode), nil
 }
 
+func getCacheMissState(ctx context.Context) *cacheMissState {
+	state, _ := ctx.Value(failOnCacheMissKey).(*cacheMissState)
+	return state
+}
+
 func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
 	// Setup telemetry config
 	telemetryCfg := telemetry.Config{
@@ -183,6 +232,13 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
 		LiveTraceExporters:  []sdktrace.SpanExporter{Frontend.SpanExporter()},
 		LiveLogExporters:    []sdklog.Exporter{Frontend.LogExporter()},
 		LiveMetricExporters: []sdkmetric.Exporter{Frontend.MetricExporter()},
+	}
+
+	if state := getCacheMissState(ctx); state != nil {
+		telemetryCfg.LiveTraceExporters = append(
+			telemetryCfg.LiveTraceExporters,
+			newCacheMissSpanExporter(state),
+		)
 	}
 	if spans, logs, metrics, ok := enginetel.ConfiguredCloudExporters(ctx); ok {
 		telemetryCfg.LiveTraceExporters = append(telemetryCfg.LiveTraceExporters, spans)

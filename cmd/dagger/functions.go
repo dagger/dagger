@@ -116,6 +116,8 @@ type FuncCommand struct {
 	// withFn is the `with` function on Query root, if present.
 	// Used to forward constructor args from the root command.
 	withFn *modFunction
+
+	failOnCacheMiss bool
 }
 
 func (fc *FuncCommand) Command() *cobra.Command {
@@ -190,7 +192,14 @@ func (fc *FuncCommand) Command() *cobra.Command {
 				params := initModuleParams(execArgs)
 				params.LoadWorkspaceModules = shouldLoadWorkspaceModules(fc.DisableModuleLoad)
 
-				return withEngine(c.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
+				cacheMiss := &cacheMissState{}
+				execCtx := c.Context()
+				if fc.failOnCacheMiss {
+					execCtx = context.WithValue(execCtx, failOnCacheMissKey, cacheMiss)
+					c.SetContext(execCtx)
+				}
+
+				returnValue := withEngine(execCtx, params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient
 					fc.q = querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
 
@@ -227,9 +236,13 @@ func (fc *FuncCommand) Command() *cobra.Command {
 
 					return nil
 				})
+
+				if returnValue == nil && fc.failOnCacheMiss && cacheMiss.failedMiss() {
+					return fmt.Errorf("call failed because it was not served from cache")
+				}
+				return returnValue
 			},
 		}
-
 		if fc.cmd.Annotations == nil {
 			fc.cmd.Annotations = map[string]string{}
 		}
@@ -246,6 +259,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 
 		fc.cmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "Save the result to a local file or directory")
 
+		fc.cmd.PersistentFlags().BoolVar(&fc.failOnCacheMiss, "fail-on-cache-miss", false, "Fail if the call cannot be served from cache")
 		fc.cmd.PersistentFlags().BoolVarP(&jsonOutput, "json", "j", false, "Present result as JSON")
 	}
 	return fc.cmd
