@@ -568,18 +568,21 @@ class ModuleParser:
 
         ``from <pkg>.sub.mod import X`` resolves to ``<root>/sub/mod.py``
         (or its ``__init__.py``) when ``<pkg>`` is the analyzed module's
-        own package name. Anything whose first component isn't that name —
-        third-party packages, the stdlib — returns ``None`` and keeps its
-        existing stub behavior. A bare ``from <pkg> import x`` (no
-        submodule) also returns ``None``: like ``from . import x`` it has
-        no dotted module to pin to a file.
+        own package name. A package-root import (``from <pkg> import X``)
+        resolves to ``<root>/__init__.py``. Anything whose first component
+        isn't that name — third-party packages, the stdlib — returns
+        ``None`` and keeps its existing stub behavior.
         """
         if module is None or package_root is None:
             return None
         root, package_name = package_root
         head, _, submodule = module.partition(".")
-        if head != package_name or not submodule:
+        if head != package_name:
             return None
+        if not submodule:
+            cand = root / "__init__.py"
+            resolved = cand.resolve() if cand.exists() else cand
+            return path_index.get(resolved)
         target_dir = root
         for part in submodule.split("."):
             target_dir = target_dir / part
