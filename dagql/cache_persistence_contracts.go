@@ -46,6 +46,7 @@ type persistStateSnapshot struct {
 	eqClassDigests        []persistdb.MirrorEqClassDigest
 	terms                 []persistdb.MirrorTerm
 	termInputs            []persistdb.MirrorTermInput
+	resultTermAssocs      []persistdb.MirrorResultTermAssoc
 	resultOutputEqClasses []persistdb.MirrorResultOutputEqClass
 	results               []persistResultSnapshot
 	snapshotContentLinks  []persistdb.MirrorSnapshotContentLink

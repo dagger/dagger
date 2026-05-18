@@ -38,6 +38,12 @@ type MirrorTermInput struct {
 	ProvenanceKind string
 }
 
+type MirrorResultTermAssoc struct {
+	TermID          int64
+	ResultID        int64
+	RuntimeDepsJSON string
+}
+
 type MirrorResultOutputEqClass struct {
 	ResultID  int64
 	EqClassID int64
@@ -85,6 +91,7 @@ const clearMirrorResultSnapshotLinks = `DELETE FROM result_snapshot_links`
 const clearMirrorPersistedEdges = `DELETE FROM persisted_edges`
 const clearMirrorResultDeps = `DELETE FROM result_deps`
 const clearMirrorResultOutputEqClasses = `DELETE FROM result_output_eq_classes`
+const clearMirrorResultTermAssocs = `DELETE FROM result_term_assocs`
 const clearMirrorTermInputs = `DELETE FROM term_inputs`
 const clearMirrorTerms = `DELETE FROM terms`
 const clearMirrorEqClassDigests = `DELETE FROM eq_class_digests`
@@ -100,6 +107,7 @@ func (q *Queries) ClearMirrorState(ctx context.Context) error {
 		clearMirrorPersistedEdges,
 		clearMirrorResultDeps,
 		clearMirrorResultOutputEqClasses,
+		clearMirrorResultTermAssocs,
 		clearMirrorTermInputs,
 		clearMirrorTerms,
 		clearMirrorEqClassDigests,
@@ -161,6 +169,15 @@ INSERT INTO term_inputs (term_id, position, input_eq_class_id, provenance_kind) 
 
 func (q *Queries) InsertMirrorTermInput(ctx context.Context, arg MirrorTermInput) error {
 	_, err := q.exec(ctx, nil, insertMirrorTermInput, arg.TermID, arg.Position, arg.InputEqClassID, arg.ProvenanceKind)
+	return err
+}
+
+const insertMirrorResultTermAssoc = `
+INSERT INTO result_term_assocs (term_id, result_id, runtime_deps_json) VALUES (?, ?, ?)
+`
+
+func (q *Queries) InsertMirrorResultTermAssoc(ctx context.Context, arg MirrorResultTermAssoc) error {
+	_, err := q.exec(ctx, nil, insertMirrorResultTermAssoc, arg.TermID, arg.ResultID, arg.RuntimeDepsJSON)
 	return err
 }
 
@@ -353,6 +370,25 @@ func (q *Queries) ListMirrorTermInputs(ctx context.Context) ([]MirrorTermInput, 
 	for rows.Next() {
 		var row MirrorTermInput
 		if err := rows.Scan(&row.TermID, &row.Position, &row.InputEqClassID, &row.ProvenanceKind); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+const listMirrorResultTermAssocs = `SELECT term_id, result_id, runtime_deps_json FROM result_term_assocs`
+
+func (q *Queries) ListMirrorResultTermAssocs(ctx context.Context) ([]MirrorResultTermAssoc, error) {
+	rows, err := q.db.QueryContext(ctx, listMirrorResultTermAssocs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []MirrorResultTermAssoc
+	for rows.Next() {
+		var row MirrorResultTermAssoc
+		if err := rows.Scan(&row.TermID, &row.ResultID, &row.RuntimeDepsJSON); err != nil {
 			return nil, err
 		}
 		out = append(out, row)

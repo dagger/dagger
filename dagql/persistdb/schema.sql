@@ -45,6 +45,15 @@ CREATE TABLE IF NOT EXISTS term_inputs (
     FOREIGN KEY(input_eq_class_id) REFERENCES eq_classes(id) ON DELETE CASCADE
 ) STRICT, WITHOUT ROWID;
 
+CREATE TABLE IF NOT EXISTS result_term_assocs (
+    term_id INTEGER NOT NULL,
+    result_id INTEGER NOT NULL,
+    runtime_deps_json TEXT NOT NULL DEFAULT '[]',
+    PRIMARY KEY(term_id, result_id),
+    FOREIGN KEY(term_id) REFERENCES terms(id) ON DELETE CASCADE,
+    FOREIGN KEY(result_id) REFERENCES results(id) ON DELETE CASCADE
+) STRICT, WITHOUT ROWID;
+
 CREATE TABLE IF NOT EXISTS result_output_eq_classes (
     result_id INTEGER NOT NULL,
     eq_class_id INTEGER NOT NULL,

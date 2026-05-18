@@ -3592,6 +3592,208 @@ func TestCacheDoNotCacheNormalizesNestedHitMetadata(t *testing.T) {
 	assert.Equal(t, 1, c.Size())
 }
 
+func TestRuntimeDependencyFreshnessPropagatesThroughScalarNestedCall(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+
+	liveFileFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(&ast.Type{NamedType: "File", NonNull: true}),
+		Field: "file",
+		Receiver: &ResultCallRef{Call: &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType(&ast.Type{NamedType: "Host", NonNull: true}),
+			Field: "host",
+		}},
+		Args: []*ResultCallArg{{
+			Name: "noCache",
+			Value: &ResultCallLiteral{
+				Kind:      ResultCallLiteralKindBool,
+				BoolValue: true,
+			},
+		}},
+	}
+	liveFileDep := runtimeResultDependency{
+		ResultID: 12,
+		Frame:    liveFileFrame,
+		Digest:   digest.FromString("runtime-transitive-live-file"),
+	}
+	scalarDep := runtimeResultDependency{
+		ResultID: 34,
+		Frame:    cacheTestIntCall("runtime-transitive-scalar"),
+		Digest:   digest.FromString("runtime-transitive-scalar"),
+		FreshnessDeps: runtimeResultDependencySet{
+			liveFileDep,
+		},
+	}
+
+	live, err := c.liveRuntimeDependencies(runtimeResultDependencySet{scalarDep})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, len(live))
+	assert.Equal(t, liveFileDep.ResultID, live[0].ResultID)
+	assert.Equal(t, liveFileDep.Digest.String(), live[0].Digest.String())
+	assert.Assert(t, live[0].Frame != nil)
+	assert.Equal(t, "file", live[0].Frame.Field)
+	assert.Assert(t, live[0].FrameDigest != "")
+}
+
+func TestRuntimeDependencyFreshnessDedupesByValidationFact(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+
+	liveFileFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(&ast.Type{NamedType: "File", NonNull: true}),
+		Field: "file",
+		Receiver: &ResultCallRef{Call: &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType(&ast.Type{NamedType: "Host", NonNull: true}),
+			Field: "host",
+		}},
+		Args: []*ResultCallArg{{
+			Name: "noCache",
+			Value: &ResultCallLiteral{
+				Kind:      ResultCallLiteralKindBool,
+				BoolValue: true,
+			},
+		}},
+	}
+	observedDigest := digest.FromString("runtime-dedupe-live-file")
+	live, err := c.liveRuntimeDependencies(runtimeResultDependencySet{
+		{
+			ResultID: 12,
+			Frame:    liveFileFrame,
+			Digest:   observedDigest,
+		},
+		{
+			ResultID: 34,
+			Frame:    liveFileFrame,
+			Digest:   observedDigest,
+		},
+	})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, len(live))
+	assert.Assert(t, live[0].ResultID == 12 || live[0].ResultID == 34)
+	assert.Assert(t, live[0].FrameDigest != "")
+	assert.Equal(t, observedDigest.String(), live[0].Digest.String())
+}
+
+func TestRuntimeDependencyValidationKeyUsesStoredFrameDigest(t *testing.T) {
+	t.Parallel()
+
+	frameDigest := digest.FromString("runtime-key-frame")
+	observedDigest := digest.FromString("runtime-key-content")
+	key := runtimeResultDependencyValidationKey(runtimeResultDependency{
+		ResultID: 17,
+		Frame: &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType(&ast.Type{NamedType: "File", NonNull: true}),
+			Field: "file",
+			Receiver: &ResultCallRef{
+				ResultID: 999,
+			},
+		},
+		FrameDigest: frameDigest,
+		Digest:      observedDigest,
+	})
+	assert.Equal(t, fmt.Sprintf("%s\x00%s", frameDigest, observedDigest), key)
+}
+
+func TestRuntimeDependencyRetentionKeepsOnlyLiveValidationFrameRefs(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	c, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+
+	hostFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(&ast.Type{NamedType: "Host", NonNull: true}),
+		Field: "host",
+	}
+	hostRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: hostFrame}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(hostFrame, 1), nil
+	})
+	assert.NilError(t, err)
+	hostID := hostRes.cacheSharedResult().id
+
+	liveFileFrame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(&ast.Type{NamedType: "File", NonNull: true}),
+		Field: "file",
+		Receiver: &ResultCallRef{
+			ResultID: uint64(hostID),
+		},
+		Args: []*ResultCallArg{{
+			Name: "noCache",
+			Value: &ResultCallLiteral{
+				Kind:      ResultCallLiteralKindBool,
+				BoolValue: true,
+			},
+		}},
+	}
+	liveFileRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: liveFileFrame}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(liveFileFrame, 2), nil
+	})
+	assert.NilError(t, err)
+	liveFileID := liveFileRes.cacheSharedResult().id
+
+	scalarFrame := cacheTestIntCall("runtime-retention-scalar")
+	scalarRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: scalarFrame}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(scalarFrame, 3), nil
+	})
+	assert.NilError(t, err)
+	scalarID := scalarRes.cacheSharedResult().id
+
+	liveFileDep := runtimeResultDependency{
+		ResultID: uint64(liveFileID),
+		Frame:    liveFileFrame,
+		Digest:   digest.FromString("runtime-retention-live-file"),
+	}
+	scalarDep := runtimeResultDependency{
+		ResultID: uint64(scalarID),
+		Frame:    scalarFrame,
+		Digest:   digest.FromString("runtime-retention-scalar"),
+		FreshnessDeps: runtimeResultDependencySet{
+			liveFileDep,
+		},
+	}
+
+	outerFrame := cacheTestIntCall("runtime-retention-outer")
+	outerDigest, err := outerFrame.deriveRecipeDigest(c)
+	assert.NilError(t, err)
+	scalarDigest, err := scalarFrame.deriveRecipeDigest(c)
+	assert.NilError(t, err)
+	c.runtimeDepsMu.Lock()
+	c.runtimeDepsByCallDigest = map[string]map[string]runtimeResultDependency{
+		runtimeDependencyKey("test-session", outerDigest): {
+			scalarDigest.String(): scalarDep,
+		},
+	}
+	c.runtimeDepsMu.Unlock()
+
+	outerRes, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{ResultCall: outerFrame}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(outerFrame, 4), nil
+	})
+	assert.NilError(t, err)
+	outerShared := outerRes.cacheSharedResult()
+	assert.Assert(t, outerShared != nil)
+	assert.Assert(t, outerShared.deps != nil)
+
+	_, retainedScalar := outerShared.deps[scalarID]
+	_, retainedLiveFile := outerShared.deps[liveFileID]
+	_, retainedHost := outerShared.deps[hostID]
+	assert.Assert(t, !retainedScalar)
+	assert.Assert(t, !retainedLiveFile)
+	assert.Assert(t, retainedHost)
+}
+
 func TestCacheDoNotCachePreservesAttachedReturnedObject(t *testing.T) {
 	t.Parallel()
 	ctx := cacheTestContext(t.Context())

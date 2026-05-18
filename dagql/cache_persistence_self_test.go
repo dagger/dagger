@@ -126,6 +126,33 @@ func TestPersistedSelfCodecObjectIDRoundTrip(t *testing.T) {
 	assert.Check(t, is.Equal(decodedRecipeEnc, originalRecipeEnc))
 }
 
+func TestPersistedSelfCodecRejectsTypedObjectResultWithoutPersistedObjectCodec(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	cacheIface, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+	c := cacheIface
+	srv := cacheTestServer(t)
+
+	objectCall := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&cacheTestObject{}).Type()),
+		Field: "obj",
+	}
+	original, err := c.GetOrInitCall(ctx, "test-session", srv, &CallRequest{ResultCall: objectCall}, func(context.Context) (AnyResult, error) {
+		return cacheTestObjectResult(t, srv, objectCall, 42, nil), nil
+	})
+	assert.NilError(t, err)
+
+	wrapped := Result[Typed]{
+		shared: original.cacheSharedResult(),
+	}
+	_, err = DefaultPersistedSelfCodec.EncodeResult(ctx, nil, wrapped)
+	assert.Assert(t, err != nil)
+	assert.ErrorContains(t, err, `type "CacheTestObject" does not implement persisted object encoding`)
+}
+
 func TestObjectCacheHitPreservesObjectResultShape(t *testing.T) {
 	t.Parallel()
 

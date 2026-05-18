@@ -38,6 +38,10 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("list mirror term_inputs: %w", err)
 	}
+	resultTermAssocRows, err := c.pdb.ListMirrorResultTermAssocs(ctx)
+	if err != nil {
+		return fmt.Errorf("list mirror result_term_assocs: %w", err)
+	}
 	resultOutputEqClassRows, err := c.pdb.ListMirrorResultOutputEqClasses(ctx)
 	if err != nil {
 		return fmt.Errorf("list mirror result_output_eq_classes: %w", err)
@@ -301,6 +305,38 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			}
 			outputTerms[termID] = struct{}{}
 			c.traceTermCreated(ctx, "import", importRunID, term)
+		}
+
+		for _, row := range resultTermAssocRows {
+			termID := egraphTermID(row.TermID)
+			if c.egraphTerms[termID] == nil {
+				return fmt.Errorf("import result_term_assoc: missing term %d", row.TermID)
+			}
+			resultID := sharedResultID(row.ResultID)
+			if c.resultsByID[resultID] == nil {
+				return fmt.Errorf("import result_term_assoc: missing result %d", row.ResultID)
+			}
+			var runtimeDepSets []runtimeResultDependencySet
+			if row.RuntimeDepsJSON != "" {
+				if err := json.Unmarshal([]byte(row.RuntimeDepsJSON), &runtimeDepSets); err != nil {
+					return fmt.Errorf("import result_term_assoc (%d,%d) runtime deps: %w", row.TermID, row.ResultID, err)
+				}
+			}
+			termResults := c.termResults[termID]
+			if termResults == nil {
+				termResults = make(map[sharedResultID]egraphResultTermAssoc)
+				c.termResults[termID] = termResults
+			}
+			resultTerms := c.resultTerms[resultID]
+			if resultTerms == nil {
+				resultTerms = make(map[egraphTermID]struct{})
+				c.resultTerms[resultID] = resultTerms
+			}
+			termResults[resultID] = egraphResultTermAssoc{
+				inputProvenance: slices.Clone(c.termInputProvenance[termID]),
+				runtimeDepSets:  cloneRuntimeResultDependencySets(runtimeDepSets),
+			}
+			resultTerms[termID] = struct{}{}
 		}
 
 		for _, row := range resultOutputEqClassRows {

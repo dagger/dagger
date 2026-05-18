@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -1225,6 +1226,93 @@ func (*Test) Rand(
 	require.NotEmpty(t, res3.Test.Rand)
 
 	require.NotEqual(t, res1.Test.Rand, res3.Test.Rand)
+}
+
+func (ModuleSuite) TestCrossSessionInlineDependencyContextualDirChange(ctx context.Context, t *testctx.T) {
+	tmpdir := t.TempDir()
+	depDir := filepath.Join(tmpdir, "dep")
+	modDir := filepath.Join(tmpdir, "mod")
+	dataDir := filepath.Join(tmpdir, "data")
+	require.NoError(t, os.MkdirAll(depDir, 0755))
+	require.NoError(t, os.MkdirAll(modDir, 0755))
+	require.NoError(t, os.MkdirAll(dataDir, 0755))
+
+	gitInitCmd := exec.Command("git", "init")
+	gitInitCmd.Dir = tmpdir
+	gitInitOutput, err := gitInitCmd.CombinedOutput()
+	require.NoError(t, err, string(gitInitOutput))
+
+	initDepCmd := hostDaggerCommand(ctx, t, tmpdir, "init", "--source=dep", "--name=dep", "--sdk=go", "dep")
+	initDepOutput, err := initDepCmd.CombinedOutput()
+	require.NoError(t, err, string(initDepOutput))
+
+	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "value.txt"), []byte("one"), 0644))
+
+	err = os.WriteFile(filepath.Join(depDir, "main.go"), []byte(`package main
+import (
+	"context"
+
+	"dagger/dep/internal/dagger"
+)
+
+type Dep struct {
+	Dir *dagger.Directory
+}
+
+func New(
+	// +defaultPath="/data"
+	dir *dagger.Directory,
+) *Dep {
+	return &Dep{Dir: dir}
+}
+
+func (d *Dep) Read(ctx context.Context) (string, error) {
+	return d.Dir.File("value.txt").Contents(ctx)
+}
+`), 0644)
+	require.NoError(t, err)
+
+	initModCmd := hostDaggerCommand(ctx, t, tmpdir, "init", "--source=mod", "--name=test", "--sdk=go", "mod")
+	initModOutput, err := initModCmd.CombinedOutput()
+	require.NoError(t, err, string(initModOutput))
+
+	installDepCmd := hostDaggerCommand(ctx, t, tmpdir, "install", "-m=mod", "dep")
+	installDepOutput, err := installDepCmd.CombinedOutput()
+	require.NoError(t, err, string(installDepOutput))
+
+	err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+import "context"
+
+type Test struct {}
+
+func (*Test) Read(ctx context.Context) (string, error) {
+	return dag.Dep().Read(ctx)
+}
+`), 0644)
+	require.NoError(t, err)
+
+	read := func(c *dagger.Client) string {
+		mod, err := c.ModuleSource(modDir).AsModule().Sync(ctx)
+		require.NoError(t, err)
+		require.NoError(t, mod.Serve(ctx))
+
+		res, err := testutil.QueryWithClient[struct {
+			Test struct {
+				Read string
+			}
+		}](c, t, `{test{read}}`, nil)
+		require.NoError(t, err)
+		return res.Test.Read
+	}
+
+	c1 := connect(ctx, t)
+	require.Equal(t, "one", read(c1))
+	require.NoError(t, c1.Close())
+
+	require.NoError(t, os.WriteFile(filepath.Join(dataDir, "value.txt"), []byte("two"), 0644))
+
+	c2 := connect(ctx, t)
+	require.Equal(t, "two", read(c2))
 }
 
 func (SecretSuite) TestCrossSessionSecretURICaching(ctx context.Context, t *testctx.T) {
