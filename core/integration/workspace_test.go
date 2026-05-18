@@ -203,7 +203,7 @@ type Paths {
 
 	out, err = ctr.With(daggerCall("workspace-path")).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "app", strings.TrimSpace(out))
+	require.Equal(t, "/app", strings.TrimSpace(out))
 
 	out, err = ctr.With(daggerCall("workspace-address")).Stdout(ctx)
 	require.NoError(t, err)
