@@ -447,6 +447,20 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type WorkspaceGit
+  """
+  @spec as_workspace_git(t()) :: Dagger.WorkspaceGit.t()
+  def as_workspace_git(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asWorkspaceGit")
+
+    %Dagger.WorkspaceGit{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Returns the digest of the binding value
   """
   @spec digest(t()) :: {:ok, String.t()} | {:error, term()}

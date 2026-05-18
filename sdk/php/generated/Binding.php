@@ -299,6 +299,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the binding value, as type WorkspaceGit
+     */
+    public function asWorkspaceGit(): WorkspaceGit
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asWorkspaceGit');
+        return new \Dagger\WorkspaceGit($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Returns the digest of the binding value
      */
     public function digest(): string

@@ -124,6 +124,15 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Git state for this workspace. Errors if the workspace is not in a git repository.
+     */
+    public function git(): WorkspaceGit
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('git');
+        return new \Dagger\WorkspaceGit($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Whether a config.toml file exists in the workspace.
      */
     public function hasConfig(): bool

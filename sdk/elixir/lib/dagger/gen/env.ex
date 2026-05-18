@@ -1290,6 +1290,42 @@ defmodule Dagger.Env do
   end
 
   @doc """
+  Create or update a binding of type WorkspaceGit in the environment
+  """
+  @spec with_workspace_git_input(t(), String.t(), Dagger.WorkspaceGit.t(), String.t()) ::
+          Dagger.Env.t()
+  def with_workspace_git_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspaceGitInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired WorkspaceGit output to be assigned in the environment
+  """
+  @spec with_workspace_git_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_workspace_git_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspaceGitOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
   Create or update a binding of type Workspace in the environment
   """
   @spec with_workspace_input(t(), String.t(), Dagger.Workspace.t(), String.t()) :: Dagger.Env.t()

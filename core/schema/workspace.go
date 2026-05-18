@@ -2,7 +2,9 @@ package schema
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -55,6 +57,9 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the file or directory to search for.`),
 				dagql.Arg("from").Doc(`Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.`),
 			),
+		dagql.NodeFunc("git", s.git).
+			WithInput(dagql.PerClientInput).
+			Doc("Git state for this workspace. Errors if the workspace is not in a git repository."),
 		dagql.Func("checks", s.checks).
 			Doc("Return all checks from modules loaded in the workspace.").
 			Args(
@@ -75,6 +80,15 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Refresh workspace-managed state and return the resulting changeset.",
 				"Currently this refreshes existing lockfile entries only.").
 			Experimental("Experimental workspace update API currently refreshes existing lockfile entries only."),
+	}.Install(srv)
+
+	dagql.Fields[*core.WorkspaceGit]{
+		dagql.NodeFunc("__repository", s.workspaceGitRepository).
+			Doc("(Internal-only) The git repository backing this workspace git state."),
+		dagql.NodeFunc("head", s.workspaceGitHead).
+			Doc("The checked-out HEAD of this workspace."),
+		dagql.NodeFunc("uncommitted", s.workspaceGitUncommitted).
+			Doc("Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted."),
 	}.Install(srv)
 }
 
@@ -333,6 +347,163 @@ func (s *workspaceSchema) update(
 	}
 
 	return changes.Self(), nil
+}
+
+func (s *workspaceSchema) git(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	_ struct{},
+) (dagql.ObjectResult[*core.WorkspaceGit], error) {
+	var inst dagql.ObjectResult[*core.WorkspaceGit]
+	if err := s.ensureWorkspaceGitDirectory(ctx, parent.Self()); err != nil {
+		return inst, err
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, &core.WorkspaceGit{
+		Workspace: parent,
+	})
+}
+
+func (s *workspaceSchema) ensureWorkspaceGitDirectory(ctx context.Context, ws *core.Workspace) error {
+	if !ws.HasGit() {
+		return fmt.Errorf("workspace is not in a git repository")
+	}
+
+	var (
+		statFS   core.StatFS
+		statPath = ".git"
+	)
+	if ws.HostPath() != "" {
+		var err error
+		ctx, err = s.withWorkspaceClientContext(ctx, ws)
+		if err != nil {
+			return err
+		}
+
+		query, err := core.CurrentQuery(ctx)
+		if err != nil {
+			return err
+		}
+		bk, err := query.Engine(ctx)
+		if err != nil {
+			return fmt.Errorf("buildkit: %w", err)
+		}
+
+		statFS = core.NewCallerStatFS(bk)
+		statPath, err = pathutil.SandboxedRelativePath(".git", ws.HostPath())
+		if err != nil {
+			return err
+		}
+	} else {
+		statFS = &core.DirectoryStatFS{Dir: ws.Rootfs()}
+	}
+
+	_, st, err := statFS.Stat(ctx, statPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("workspace is not in a git repository")
+	}
+	if err != nil {
+		return fmt.Errorf("workspace git metadata: %w", err)
+	}
+	// Git worktrees use a .git file that points to metadata outside the workspace.
+	if st.FileType == core.FileTypeRegular {
+		return fmt.Errorf("git worktrees are not supported by Workspace.git yet: .git is a file")
+	}
+	if !st.IsDir() {
+		return fmt.Errorf("workspace git metadata .git has type %s, expected directory", st.FileType)
+	}
+	return nil
+}
+
+func (s *workspaceSchema) workspaceGitRepository(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.WorkspaceGit],
+	_ struct{},
+) (dagql.ObjectResult[*core.GitRepository], error) {
+	var inst dagql.ObjectResult[*core.GitRepository]
+
+	ws := parent.Self().Workspace.Self()
+	if err := s.ensureWorkspaceGitDirectory(ctx, ws); err != nil {
+		return inst, err
+	}
+
+	dir, err := s.resolveRootfs(ctx, ws, ".", core.CopyFilter{}, false)
+	if err != nil {
+		return inst, fmt.Errorf("workspace git directory: %w", err)
+	}
+
+	backend := &core.LocalGitRepository{
+		Directory: dir,
+	}
+	repo, err := core.NewGitRepository(ctx, backend)
+	if err != nil {
+		return inst, err
+	}
+
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, repo)
+}
+
+func (s *workspaceSchema) workspaceGitHead(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.WorkspaceGit],
+	_ struct{},
+) (dagql.Result[*core.GitRef], error) {
+	var inst dagql.Result[*core.GitRef]
+	repo, err := s.selectWorkspaceGitRepository(ctx, parent)
+	if err != nil {
+		return inst, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	if err := srv.Select(ctx, repo, &inst, dagql.Selector{Field: "head"}); err != nil {
+		return inst, err
+	}
+	return inst, nil
+}
+
+func (s *workspaceSchema) workspaceGitUncommitted(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.WorkspaceGit],
+	_ struct{},
+) (dagql.ObjectResult[*core.Changeset], error) {
+	var inst dagql.ObjectResult[*core.Changeset]
+	repo, err := s.selectWorkspaceGitRepository(ctx, parent)
+	if err != nil {
+		return inst, err
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	if err := srv.Select(ctx, repo, &inst, dagql.Selector{Field: "uncommitted"}); err != nil {
+		return inst, err
+	}
+	return inst, nil
+}
+
+func (s *workspaceSchema) selectWorkspaceGitRepository(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.WorkspaceGit],
+) (dagql.ObjectResult[*core.GitRepository], error) {
+	var repo dagql.ObjectResult[*core.GitRepository]
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return repo, err
+	}
+	if err := srv.Select(ctx, parent, &repo, dagql.Selector{Field: "__repository"}); err != nil {
+		return repo, err
+	}
+	return repo, nil
 }
 
 // resolveWorkspacePath resolves a workspace API path into a boundary-relative path:

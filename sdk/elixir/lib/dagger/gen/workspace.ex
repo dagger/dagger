@@ -145,6 +145,20 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Git state for this workspace. Errors if the workspace is not in a git repository.
+  """
+  @spec git(t()) :: Dagger.WorkspaceGit.t()
+  def git(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("git")
+
+    %Dagger.WorkspaceGit{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Whether a config.toml file exists in the workspace.
   """
   @spec has_config(t()) :: {:ok, boolean()} | {:error, term()}

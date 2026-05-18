@@ -1025,6 +1025,16 @@ class Client extends Client\AbstractClient implements Client\IdAble
     }
 
     /**
+     * Load a WorkspaceGit from its ID.
+     */
+    public function loadWorkspaceGitFromID(WorkspaceGitId|WorkspaceGit $id): WorkspaceGit
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadWorkspaceGitFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\WorkspaceGit($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Create a new module.
      */
     public function module(): Module
