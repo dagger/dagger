@@ -297,11 +297,12 @@ class ModuleParser:
         # type-aliases can't bleed into each other's resolution paths.
         self._module_type_aliases: dict[Path, dict[str, ast.expr]] = {}
 
-        # Per-file map of names brought in by relative imports to the parsed
-        # file they came from. Populated in ``_collect_relative_imports``
-        # and consumed by ``_expand_alias`` (cross-file alias resolution)
-        # and ``_eval_constant`` (cross-file constant resolution).
-        self._relative_import_origins: dict[Path, dict[str, Path]] = {}
+        # Per-file map of names brought in by a relative import or an
+        # absolute self-package import to the parsed file they came from.
+        # Populated in ``_collect_cross_file_imports`` and consumed by
+        # ``_expand_alias`` (cross-file alias resolution) and
+        # ``_eval_constant`` (cross-file constant resolution).
+        self._cross_file_import_origins: dict[Path, dict[str, Path]] = {}
 
         # File currently being extracted. Set by ``_extract_declarations`` so
         # ``_eval_constant`` can scope name lookups to the containing file.
@@ -344,9 +345,10 @@ class ModuleParser:
         # Phase 2.5: Collect module-level constants for default resolution
         self._collect_module_constants()
 
-        # Phase 2.6: Map relative-import names to the file that defines them
-        # (so cross-file aliases and constants can be resolved).
-        self._collect_relative_imports()
+        # Phase 2.6: Map relative- and absolute-self-import names to the
+        # file that defines them (so cross-file aliases and constants can
+        # be resolved).
+        self._collect_cross_file_imports()
 
         # Record per-file origin of the unqualified ``field`` name.
         self._track_field_origins()
@@ -596,14 +598,39 @@ class ModuleParser:
                 constants[item.target.id] = item.value
         self._class_constants[key] = constants
 
-    def _collect_relative_imports(self) -> None:
-        """Map relative-import names to the parsed file they were defined in.
+    def _detect_package_root(self) -> tuple[Path, str] | None:
+        """Locate the analyzed module's package root directory and name.
 
-        For ``from .types import Source`` in ``pkg/main.py``, record
-        ``(pkg/main.py, "Source") -> pkg/types.py`` provided ``pkg/types.py``
-        is also in the parsed file set. ``_expand_alias`` consults this map
-        to follow aliases across files; ``_eval_constant`` can do the same
-        for constants.
+        The root is the parent of the shallowest ``__init__.py`` among the
+        parsed files; its directory name is what the module imports itself
+        by (``from <pkg>.helpers import X``). Returns ``None`` for a
+        single-file module or when no ``__init__.py`` was parsed — neither
+        can carry an absolute self-import.
+        """
+        init_files = [
+            file_path.resolve()
+            for file_path in self._asts
+            if file_path.name == "__init__.py"
+        ]
+        if not init_files:
+            return None
+        shallowest = min(init_files, key=lambda p: len(p.parts))
+        root = shallowest.parent
+        return root, root.name
+
+    def _collect_cross_file_imports(self) -> None:
+        """Map imported names to the parsed file they were defined in.
+
+        Two import shapes both bind a name from a sibling file of the same
+        module, and both are recorded here:
+
+        * relative imports — ``from .types import Source`` in
+          ``pkg/main.py`` records ``(pkg/main.py, "Source") -> pkg/types.py``;
+        * absolute self-imports — ``from pkg.types import Source`` records
+          the same, when ``pkg`` is the module's own package name.
+
+        ``_expand_alias`` consults this map to follow aliases across files;
+        ``_eval_constant`` does the same for constants.
 
         The mapping is best-effort — when the target file isn't in the
         parsed set (third-party package, dynamic ``__path__``, etc.), the
@@ -616,16 +643,22 @@ class ModuleParser:
         path_index: dict[Path, Path] = {
             resolved: original for original, resolved in resolved_paths.items()
         }
+        package_root = self._detect_package_root()
 
         for file_path, tree in self._asts.items():
-            mapping = self._relative_import_origins.setdefault(file_path, {})
+            mapping = self._cross_file_import_origins.setdefault(file_path, {})
             current_resolved = resolved_paths[file_path]
             for node in ast.iter_child_nodes(tree):
-                if not isinstance(node, ast.ImportFrom) or node.level <= 0:
+                if not isinstance(node, ast.ImportFrom):
                     continue
-                target = self._resolve_relative_import_target(
-                    current_resolved, node.level, node.module, path_index
-                )
+                if node.level > 0:
+                    target = self._resolve_relative_import_target(
+                        current_resolved, node.level, node.module, path_index
+                    )
+                else:
+                    target = self._resolve_absolute_import_target(
+                        node.module, package_root, path_index
+                    )
                 if target is None:
                     continue
                 for alias in node.names:
@@ -661,6 +694,37 @@ class ModuleParser:
         # Bare ``from . import x`` — no module to resolve to a file.
         return None
 
+    @staticmethod
+    def _resolve_absolute_import_target(
+        module: str | None,
+        package_root: tuple[Path, str] | None,
+        path_index: dict[Path, Path],
+    ) -> Path | None:
+        """Return the parsed-file path for an absolute self-package import.
+
+        ``from <pkg>.sub.mod import X`` resolves to ``<root>/sub/mod.py``
+        (or its ``__init__.py``) when ``<pkg>`` is the analyzed module's
+        own package name. Anything whose first component isn't that name —
+        third-party packages, the stdlib — returns ``None`` and keeps its
+        existing stub behavior. A bare ``from <pkg> import x`` (no
+        submodule) also returns ``None``: like ``from . import x`` it has
+        no dotted module to pin to a file.
+        """
+        if module is None or package_root is None:
+            return None
+        root, package_name = package_root
+        head, _, submodule = module.partition(".")
+        if head != package_name or not submodule:
+            return None
+        target_dir = root
+        for part in submodule.split("."):
+            target_dir = target_dir / part
+        for cand in (target_dir.with_suffix(".py"), target_dir / "__init__.py"):
+            resolved = cand.resolve() if cand.exists() else cand
+            if resolved in path_index:
+                return path_index[resolved]
+        return None
+
     def _looks_like_type_expr(self, node: ast.expr) -> bool:
         """Return True when ``node`` looks like a type expression.
 
@@ -684,8 +748,9 @@ class ModuleParser:
         type-position ``Name`` that resolves to a known alias with the alias's
         right-hand side. Chained aliases (``B = A``, ``A = dagger.Directory``)
         collapse to their final form, and cross-file aliases imported via
-        ``from .types import Source`` are followed by switching the active file
-        context while expanding the foreign alias body.
+        ``from .types import Source`` (or the absolute ``from pkg.types
+        import Source``) are followed by switching the active file context
+        while expanding the foreign alias body.
 
         The traversal deliberately stops at value positions inside annotations,
         especially ``Annotated`` metadata arguments, so ``Name("Alias")`` keeps
@@ -712,7 +777,7 @@ class ModuleParser:
         cloned = copy.deepcopy(annotation)
         expander = _AliasExpander(
             aliases_by_file=self._module_type_aliases,
-            origins_by_file=self._relative_import_origins,
+            origins_by_file=self._cross_file_import_origins,
             current_file=file_path,
         )
         return expander.visit(cloned)
@@ -2026,7 +2091,8 @@ class ModuleParser:
             #   1. Class body — closest scope when evaluating a default
             #      inside a method.
             #   2. Current file's module-level constants.
-            #   3. Any file that bound this name via a relative import.
+            #   3. Any file that bound this name via a relative or
+            #      absolute self-package import.
             current = self._current_file
             if current is not None and self._current_class_name is not None:
                 class_constants = self._class_constants.get(
@@ -2038,7 +2104,7 @@ class ModuleParser:
                 file_constants = self._module_constants.get(current, {})
                 if node.id in file_constants:
                     return self._eval_constant(file_constants[node.id])
-                origin = self._relative_import_origins.get(current, {}).get(node.id)
+                origin = self._cross_file_import_origins.get(current, {}).get(node.id)
                 if origin is not None:
                     origin_constants = self._module_constants.get(origin, {})
                     if node.id in origin_constants:

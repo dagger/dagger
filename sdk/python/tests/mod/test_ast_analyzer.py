@@ -1894,6 +1894,44 @@ def test_ast_cross_file_type_alias_with_default_path(tmp_path):
     assert param.default_path == "."
 
 
+def test_ast_absolute_self_import_type_alias(tmp_path):
+    """Alias imported via an absolute self-package import resolves cross-file.
+
+    Real modules commonly import their own siblings absolutely
+    (``from my_pkg.params import Count``) rather than relatively. The
+    analyzer must recognise the leading component as its own package name
+    and follow the import to the parsed sibling file, just as it does for
+    ``from .params import Count``.
+    """
+    pkg = tmp_path / "my_pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "params.py").write_text(
+        "from typing import Annotated, TypeAlias\n"
+        "from dagger import Doc\n"
+        'Count: TypeAlias = Annotated[int, Doc("how many")]\n',
+        encoding="utf-8",
+    )
+    (pkg / "main.py").write_text(
+        "import dagger\n"
+        "from my_pkg.params import Count\n"
+        "\n"
+        "@dagger.object_type\n"
+        "class Foo:\n"
+        "    @dagger.function\n"
+        "    def run(self, n: Count) -> str: ...\n",
+        encoding="utf-8",
+    )
+    metadata = analyze_module(
+        source_files=[pkg / "__init__.py", pkg / "params.py", pkg / "main.py"],
+        main_object_name="Foo",
+    )
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.kind == "primitive"
+    assert param.resolved_type.name == "int"
+    assert param.doc == "how many"
+
+
 # -- Annotated metadata recursion -------------------------------------------
 
 
