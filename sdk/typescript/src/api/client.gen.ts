@@ -2930,6 +2930,13 @@ export type WorkspaceGeneratorsOpts = {
   include?: string[]
 }
 
+export type WorkspaceModuleSourceOpts = {
+  /**
+   * Location of the module source to load. Relative paths (e.g., "tools/lint") resolve from the workspace directory; absolute paths (e.g., "/tools/lint") resolve from the workspace boundary.
+   */
+  path?: string
+}
+
 export type WorkspaceServicesOpts = {
   /**
    * Only include services matching the specified patterns
@@ -14814,6 +14821,17 @@ export class Workspace extends BaseClient {
     const response: Awaited<boolean> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Load a module source from the workspace.
+   *
+   * Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+   * @param opts.path Location of the module source to load. Relative paths (e.g., "tools/lint") resolve from the workspace directory; absolute paths (e.g., "/tools/lint") resolve from the workspace boundary.
+   */
+  moduleSource = (opts?: WorkspaceModuleSourceOpts): ModuleSource => {
+    const ctx = this._ctx.select("moduleSource", { ...opts })
+    return new ModuleSource(ctx)
   }
 
   /**

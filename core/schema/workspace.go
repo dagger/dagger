@@ -45,6 +45,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("path").Doc(`Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from the workspace directory; absolute paths (e.g., "/go.mod") resolve from the workspace boundary.`),
 			),
+		dagql.NodeFunc("moduleSource", s.moduleSource).
+			WithInput(dagql.PerClientInput).
+			Doc(`Load a module source from the workspace.`,
+				`Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.`).
+			Args(
+				dagql.Arg("path").Doc(`Location of the module source to load. Relative paths (e.g., "tools/lint") resolve from the workspace directory; absolute paths (e.g., "/tools/lint") resolve from the workspace boundary.`),
+			),
 		dagql.NodeFunc("findUp", s.findUp).
 			WithInput(dagql.PerClientInput).
 			Doc(`Search for a file or directory by walking up from the start path within the workspace.`,
@@ -214,6 +221,10 @@ type workspaceFileArgs struct {
 	Path string
 }
 
+type workspaceModuleSourceArgs struct {
+	Path string `default:"."`
+}
+
 type workspaceUpdateArgs struct {
 }
 
@@ -244,6 +255,54 @@ func (s *workspaceSchema) file(
 		},
 	); err != nil {
 		return inst, fmt.Errorf("workspace file %q: %w", args.Path, err)
+	}
+
+	return inst, nil
+}
+
+func (s *workspaceSchema) moduleSource(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceModuleSourceArgs,
+) (inst dagql.Result[*core.ModuleSource], _ error) {
+	ws := parent.Self()
+
+	ctx, err := s.withWorkspaceClientContext(ctx, ws)
+	if err != nil {
+		return inst, err
+	}
+
+	if ws.HostPath() != "" {
+		refString, err := workspaceModuleSourceLocalRef(ws, args.Path)
+		if err != nil {
+			return inst, err
+		}
+
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return inst, err
+		}
+
+		if err := srv.Select(ctx, srv.Root(), &inst,
+			dagql.Selector{
+				Field: "moduleSource",
+				Args: []dagql.NamedInput{
+					{Name: "refString", Value: dagql.NewString(refString)},
+					{Name: "disableFindUp", Value: dagql.NewBoolean(true)},
+				},
+			},
+		); err != nil {
+			return inst, fmt.Errorf("workspace module source %q: %w", args.Path, err)
+		}
+	} else {
+		inst, err = s.remoteModuleSource(ctx, ws, args.Path)
+		if err != nil {
+			return inst, fmt.Errorf("workspace module source %q: %w", args.Path, err)
+		}
+	}
+
+	if err := validateWorkspaceModuleSource(ws, args.Path, inst.Self()); err != nil {
+		return inst, err
 	}
 
 	return inst, nil
@@ -348,6 +407,176 @@ func resolveWorkspacePath(pathArg, workspacePath string) string {
 	}
 	// Relative path: relative to workspace directory within boundary.
 	return filepath.Join(workspacePath, clean)
+}
+
+func workspaceModuleSourceLocalRef(ws *core.Workspace, pathArg string) (string, error) {
+	resolvedPath := resolveWorkspacePath(pathArg, ws.Path)
+	return pathutil.SandboxedRelativePath(resolvedPath, ws.HostPath())
+}
+
+func workspaceModuleSourceGitRoot(ws *core.Workspace, pathArg string) (core.WorkspaceRemoteModuleSource, string, error) {
+	remote, ok := ws.RemoteModuleSource()
+	if !ok {
+		return core.WorkspaceRemoteModuleSource{}, "", fmt.Errorf("workspace module source is unavailable")
+	}
+	if remote.Commit == "" {
+		return core.WorkspaceRemoteModuleSource{}, "", fmt.Errorf("workspace module source has no resolved commit")
+	}
+
+	resolvedPath := resolveWorkspacePath(pathArg, ws.Path)
+	resolvedPath, err := workspaceBoundaryPath(resolvedPath)
+	if err != nil {
+		return core.WorkspaceRemoteModuleSource{}, "", err
+	}
+	if remote.Root == "" {
+		remote.Root = "."
+	}
+	sourceRoot := filepath.Join(remote.Root, resolvedPath)
+	if sourceRoot == "" {
+		sourceRoot = "."
+	}
+	if err := validatePathWithinRoot(remote.Root, sourceRoot); err != nil {
+		return core.WorkspaceRemoteModuleSource{}, "", err
+	}
+	return remote, sourceRoot, nil
+}
+
+func (s *workspaceSchema) remoteModuleSource(
+	ctx context.Context,
+	ws *core.Workspace,
+	pathArg string,
+) (inst dagql.Result[*core.ModuleSource], _ error) {
+	remote, sourceRoot, err := workspaceModuleSourceGitRoot(ws, pathArg)
+	if err != nil {
+		return inst, err
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	bk, err := query.Engine(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get engine client: %w", err)
+	}
+	dag, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	contextDir := ws.Rootfs()
+	if contextDir.Self() == nil {
+		return inst, fmt.Errorf("workspace module source has no root filesystem")
+	}
+
+	gitSrc := &core.ModuleSource{
+		ConfigExists:      true,
+		Kind:              core.ModuleSourceKindGit,
+		ContextDirectory:  contextDir,
+		SourceRootSubpath: sourceRoot,
+		OriginalSubpath:   sourceRoot,
+		Git: &core.GitModuleSource{
+			CloneRef:             remote.CloneRef,
+			HTMLRepoURL:          remote.HTMLRepoURL,
+			RepoRootPath:         remote.RepoRootPath,
+			Version:              remote.Version,
+			Commit:               remote.Commit,
+			Ref:                  remote.Ref,
+			UnfilteredContextDir: contextDir,
+		},
+	}
+	if gitSrc.Git.HTMLRepoURL == "" {
+		gitSrc.Git.HTMLRepoURL = remote.CloneRef
+	}
+	if gitSrc.Git.RepoRootPath == "" {
+		gitSrc.Git.RepoRootPath = remote.CloneRef
+	}
+	if gitSrc.SourceRootSubpath == "" {
+		gitSrc.SourceRootSubpath = "."
+	}
+
+	gitSrc.Git.Symbolic = gitSrc.Git.CloneRef
+	if gitSrc.SourceRootSubpath != "." {
+		gitSrc.Git.Symbolic += "/" + gitSrc.SourceRootSubpath
+	}
+	gitSrc.Git.HTMLURL, err = gitSrc.Git.Link(gitSrc.SourceRootSubpath, -1, -1)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get git module source HTML URL: %w", err)
+	}
+
+	configPath := filepath.Join(gitSrc.SourceRootSubpath, modules.Filename)
+	if err := (&moduleSourceSchema{}).loadGitModuleSource(ctx, query, bk, dag, gitSrc, configPath); err != nil {
+		return inst, err
+	}
+
+	inst, err = dagql.NewResultForCurrentCall(ctx, gitSrc)
+	if err != nil {
+		return inst, fmt.Errorf("failed to create instance: %w", err)
+	}
+	return inst, nil
+}
+
+func workspaceBoundaryPath(pathArg string) (string, error) {
+	clean := filepath.Clean(pathArg)
+	if clean == "" {
+		clean = "."
+	}
+	if clean == "." {
+		return clean, nil
+	}
+	if !filepath.IsLocal(clean) {
+		return "", fmt.Errorf("path %q resolves outside root", pathArg)
+	}
+	return clean, nil
+}
+
+func validateWorkspaceModuleSource(ws *core.Workspace, pathArg string, src *core.ModuleSource) error {
+	if src == nil {
+		return fmt.Errorf("workspace module source %q: module source is nil", pathArg)
+	}
+	if !src.ConfigExists {
+		return fmt.Errorf("workspace module source %q does not contain a dagger config file", pathArg)
+	}
+
+	switch src.Kind {
+	case core.ModuleSourceKindLocal:
+		if ws.HostPath() == "" {
+			return fmt.Errorf("workspace module source %q resolved to a local source from a non-local workspace", pathArg)
+		}
+		if src.Local == nil {
+			return fmt.Errorf("workspace module source %q resolved to an invalid local source", pathArg)
+		}
+		sourceRoot := filepath.Join(src.Local.ContextDirectoryPath, src.SourceRootSubpath)
+		if err := validatePathWithinRoot(ws.HostPath(), sourceRoot); err != nil {
+			return fmt.Errorf("workspace module source %q: %w", pathArg, err)
+		}
+	case core.ModuleSourceKindGit:
+		remote, ok := ws.RemoteModuleSource()
+		if !ok {
+			return fmt.Errorf("workspace module source %q resolved to a git source from a non-git workspace", pathArg)
+		}
+		if src.Git == nil {
+			return fmt.Errorf("workspace module source %q resolved to an invalid git source", pathArg)
+		}
+		sourceRoot := filepath.Join(src.SourceRootSubpath)
+		if err := validatePathWithinRoot(remote.Root, sourceRoot); err != nil {
+			return fmt.Errorf("workspace module source %q: %w", pathArg, err)
+		}
+	default:
+		return fmt.Errorf("workspace module source %q resolved to unsupported source kind %q", pathArg, src.Kind)
+	}
+	return nil
+}
+
+func validatePathWithinRoot(root, candidate string) error {
+	rel, err := pathutil.LexicalRelativePath(root, candidate)
+	if err != nil {
+		return fmt.Errorf("check workspace boundary: %w", err)
+	}
+	if rel == "." || filepath.IsLocal(rel) {
+		return nil
+	}
+	return fmt.Errorf("path %q resolves outside root %q", candidate, root)
 }
 
 func workspaceAPIPath(resolvedPath string) string {

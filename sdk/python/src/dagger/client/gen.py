@@ -15326,6 +15326,25 @@ class Workspace(Type):
         _ctx = self._select("initialized", _args)
         return await _ctx.execute(bool)
 
+    def module_source(self, *, path: str | None = ".") -> ModuleSource:
+        """Load a module source from the workspace.
+
+        Relative paths resolve from the workspace directory. Absolute paths
+        resolve from the workspace boundary.
+
+        Parameters
+        ----------
+        path:
+            Location of the module source to load. Relative paths (e.g.,
+            "tools/lint") resolve from the workspace directory; absolute paths
+            (e.g., "/tools/lint") resolve from the workspace boundary.
+        """
+        _args = [
+            Arg("path", path, "."),
+        ]
+        _ctx = self._select("moduleSource", _args)
+        return ModuleSource(_ctx)
+
     async def path(self) -> str:
         """Workspace directory path relative to the workspace boundary.
 

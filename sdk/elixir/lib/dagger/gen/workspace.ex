@@ -178,6 +178,24 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Load a module source from the workspace.
+
+  Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+  """
+  @spec module_source(t(), [{:path, String.t() | nil}]) :: Dagger.ModuleSource.t()
+  def module_source(%__MODULE__{} = workspace, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("moduleSource")
+      |> QB.maybe_put_arg("path", optional_args[:path])
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: workspace.client
+    }
+  end
+
+  @doc """
   Workspace directory path relative to the workspace boundary.
   """
   @spec path(t()) :: {:ok, String.t()} | {:error, term()}

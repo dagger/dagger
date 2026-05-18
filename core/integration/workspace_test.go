@@ -406,6 +406,279 @@ type Subdir {
 	require.NotContains(t, entries, "sub/")
 }
 
+func (WorkspaceSuite) TestWorkspaceModuleSource(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceBase(t, c).
+		WithWorkdir("modules/target").
+		With(daggerExec("init", "--sdk=dang", "--name=target")).
+		WithNewFile("main.dang", `
+type Target {
+  pub message: String! {
+    "target loaded"
+  }
+}
+`).
+		WithWorkdir("../..").
+		WithExec([]string{"mkdir", "-p", "https:/example.com/owner/repo"}).
+		WithWorkdir("https:/example.com/owner/repo").
+		With(daggerExec("init", "--sdk=dang", "--name=urlish")).
+		WithNewFile("main.dang", `
+type Urlish {
+  pub message: String! {
+    "url-looking path loaded"
+  }
+}
+`).
+		WithWorkdir("../../../..").
+		WithExec([]string{"mkdir", "-p", "modules/not-a-module"}).
+		With(initDangModule("loader", `
+type Loader {
+  pub moduleName(workspace: Workspace!, path: String! = "modules/target"): String! {
+    workspace.moduleSource(path: path).moduleName
+  }
+}
+`))
+
+	t.Run("loads module source relative to workspace", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("loader", "module-name")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "target", strings.TrimSpace(out))
+	})
+
+	t.Run("treats url-looking paths as workspace paths", func(ctx context.Context, t *testctx.T) {
+		out, err := base.With(daggerCall("loader", "module-name", "--path=https://example.com/owner/repo")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "urlish", strings.TrimSpace(out))
+	})
+
+	t.Run("rejects paths outside workspace", func(ctx context.Context, t *testctx.T) {
+		_, err := base.With(daggerCall("loader", "module-name", "--path=../outside")).Stdout(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "resolves outside root")
+	})
+
+	t.Run("rejects existing non-module directories", func(ctx context.Context, t *testctx.T) {
+		_, err := base.With(daggerCall("loader", "module-name", "--path=modules/not-a-module")).Stdout(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "does not contain a dagger config file")
+	})
+}
+
+func (WorkspaceSuite) TestRemoteWorkspaceModuleSource(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	workspace := workspaceBase(t, c).
+		WithWorkdir("modules/target").
+		With(daggerExec("init", "--sdk=dang", "--name=target")).
+		WithNewFile("main.dang", `
+type Target {
+  pub message: String! {
+    "target loaded"
+  }
+}
+`).
+		WithWorkdir("../..").
+		WithExec([]string{"mkdir", "-p", "https:/example.com/owner/repo"}).
+		WithWorkdir("https:/example.com/owner/repo").
+		With(daggerExec("init", "--sdk=dang", "--name=urlish")).
+		WithNewFile("main.dang", `
+type Urlish {
+  pub message: String! {
+    "url-looking path loaded"
+  }
+}
+`).
+		WithWorkdir("../../../..").
+		WithExec([]string{"mkdir", "-p", "modules/not-a-module"}).
+		WithExec([]string{"sh", "-c", `
+set -eux
+git add .
+git commit -m "init"
+git init --bare --initial-branch=main /srv/repo.git
+git remote add origin /srv/repo.git
+git push origin HEAD:refs/heads/main
+git --git-dir=/srv/repo.git update-server-info
+`})
+
+	commitOut, err := workspace.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
+	require.NoError(t, err)
+	commit := strings.TrimSpace(commitOut)
+
+	gitSrv, _ := gitSmartHTTPServiceDirAuth(
+		ctx, t, c,
+		"",
+		workspace.Directory("/srv"),
+		"", nil,
+	)
+	gitSrv, err = gitSrv.Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = gitSrv.Stop(ctx) })
+
+	host, err := gitSrv.Hostname(ctx)
+	require.NoError(t, err)
+	modPath := "http://" + resolveServiceIP(ctx, t, c, host) + "/repo.git@main"
+
+	queryCtr := daggerCliBase(t, c).
+		WithNewFile("/tmp/workspace_module_source_probe.go", workspaceModuleSourceProbe)
+
+	t.Run("loads git-backed module source relative to remote workspace", func(ctx context.Context, t *testctx.T) {
+		out, err := queryCtr.With(workspaceModuleSourceProbeExec(modPath, "modules/target")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "target\n"+commit, strings.TrimSpace(out))
+	})
+
+	t.Run("treats url-looking paths as remote workspace paths", func(ctx context.Context, t *testctx.T) {
+		out, err := queryCtr.With(workspaceModuleSourceProbeExec(modPath, "https://example.com/owner/repo")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "urlish\n"+commit, strings.TrimSpace(out))
+	})
+
+	t.Run("rejects paths outside remote workspace", func(ctx context.Context, t *testctx.T) {
+		_, err := queryCtr.With(workspaceModuleSourceProbeExec(modPath, "../outside")).Stdout(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "resolves outside root")
+	})
+
+	t.Run("rejects existing remote non-module directories", func(ctx context.Context, t *testctx.T) {
+		_, err := queryCtr.With(workspaceModuleSourceProbeExec(modPath, "modules/not-a-module")).Stdout(ctx)
+		require.Error(t, err)
+		requireErrOut(t, err, "does not contain a dagger config file")
+	})
+}
+
+func workspaceModuleSourceProbeExec(workspaceRef, path string) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
+		return c.WithExec([]string{"go", "run", "/tmp/workspace_module_source_probe.go", workspaceRef, path}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		})
+	}
+}
+
+const workspaceModuleSourceProbe = `package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"os/exec"
+	"strings"
+)
+
+type connectParams struct {
+	Port         int    ` + "`json:\"port\"`" + `
+	SessionToken string ` + "`json:\"session_token\"`" + `
+}
+
+type graphqlResponse struct {
+	Data struct {
+		CurrentWorkspace struct {
+			ModuleSource struct {
+				ModuleName string ` + "`json:\"moduleName\"`" + `
+				Commit     string ` + "`json:\"commit\"`" + `
+			} ` + "`json:\"moduleSource\"`" + `
+		} ` + "`json:\"currentWorkspace\"`" + `
+	} ` + "`json:\"data\"`" + `
+	Errors []struct {
+		Message string ` + "`json:\"message\"`" + `
+	} ` + "`json:\"errors\"`" + `
+}
+
+func main() {
+	if len(os.Args) != 3 {
+		fmt.Fprintln(os.Stderr, "usage: workspace_module_source_probe <workspace-ref> <path>")
+		os.Exit(2)
+	}
+
+	cmd := exec.Command("/bin/dagger", "session", "--workspace", os.Args[1])
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	defer func() {
+		_ = stdin.Close()
+		_ = cmd.Wait()
+	}()
+
+	var params connectParams
+	if err := json.NewDecoder(stdout).Decode(&params); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	authToken := params.SessionToken
+	if nestedToken := os.Getenv("DAGGER_SESSION_TOKEN"); nestedToken != "" {
+		authToken = nestedToken
+	}
+
+	body, err := json.Marshal(map[string]any{
+		"query": ` + "`query($path: String!) { currentWorkspace { moduleSource(path: $path) { moduleName commit } } }`" + `,
+		"variables": map[string]string{
+			"path": os.Args[2],
+		},
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://127.0.0.1:%d/query", params.Port), bytes.NewReader(body))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(authToken, "")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "graphql status %s: %s\n", resp.Status, respBody)
+		os.Exit(1)
+	}
+
+	var gql graphqlResponse
+	if err := json.Unmarshal(respBody, &gql); err != nil {
+		fmt.Fprintf(os.Stderr, "decode graphql response: %v\n%s\n", err, respBody)
+		os.Exit(1)
+	}
+	if len(gql.Errors) > 0 {
+		messages := make([]string, len(gql.Errors))
+		for i, err := range gql.Errors {
+			messages[i] = err.Message
+		}
+		fmt.Fprintln(os.Stderr, strings.Join(messages, "\n"))
+		os.Exit(1)
+	}
+
+	src := gql.Data.CurrentWorkspace.ModuleSource
+	fmt.Println(src.ModuleName)
+	fmt.Println(src.Commit)
+}
+`
+
 // TestWorkspacePathTraversal verifies that a module cannot use Workspace to
 // escape the workspace root and access arbitrary host paths.
 func (WorkspaceSuite) TestWorkspacePathTraversal(ctx context.Context, t *testctx.T) {

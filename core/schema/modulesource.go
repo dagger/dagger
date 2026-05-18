@@ -696,64 +696,8 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return inst, fmt.Errorf("failed to get git module source HTML URL: %w", err)
 	}
 
-	var configContents string
-	err = dag.Select(ctx, gitSrc.ContextDirectory, &configContents,
-		dagql.Selector{
-			Field: "file",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(configPath)},
-			},
-		},
-		dagql.Selector{Field: "contents"},
-	)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return inst, fmt.Errorf("git module source %q does not contain a dagger config file", gitSrc.AsString())
-		}
-		return inst, fmt.Errorf("failed to load git module dagger config: %w", err)
-	}
-	if err := s.initFromModConfig([]byte(configContents), gitSrc); err != nil {
+	if err := s.loadGitModuleSource(ctx, query.Self(), bk, dag, gitSrc, configPath); err != nil {
 		return inst, err
-	}
-
-	// load this module source's context directory and deps in parallel
-	var eg errgroup.Group
-	eg.Go(func() error {
-		if err := s.loadModuleSourceContext(ctx, gitSrc); err != nil {
-			return fmt.Errorf("failed to load git module source context: %w", err)
-		}
-
-		if gitSrc.SDK != nil {
-			gitSrc.SDKImpl, err = sdk.NewLoader().SDKForModule(ctx, query.Self(), gitSrc.SDK, gitSrc)
-			if err != nil {
-				return fmt.Errorf("failed to load sdk for git module source: %w", err)
-			}
-		}
-
-		return nil
-	})
-
-	eg.Go(func() error {
-		return s.loadBlueprintModule(ctx, bk, gitSrc)
-	})
-
-	gitSrc.Dependencies = make([]dagql.ObjectResult[*core.ModuleSource], len(gitSrc.ConfigDependencies))
-	for i, depCfg := range gitSrc.ConfigDependencies {
-		eg.Go(func() error {
-			var err error
-			gitSrc.Dependencies[i], err = core.ResolveDepToSource(ctx, bk, dag, gitSrc, depCfg.Source, depCfg.Pin, depCfg.Name)
-			if err != nil {
-				return fmt.Errorf("failed to resolve dep to source: %w", err)
-			}
-			return nil
-		})
-	}
-	if err := eg.Wait(); err != nil {
-		return inst, err
-	}
-
-	if err := gitSrc.LoadUserDefaults(ctx); err != nil {
-		return inst, fmt.Errorf("load user defaults: %w", err)
 	}
 
 	if lockResolution.ShouldWrite && lookupLock != nil {
@@ -780,6 +724,78 @@ func (s *moduleSourceSchema) gitModuleSource(
 	}
 
 	return inst, nil
+}
+
+func (s *moduleSourceSchema) loadGitModuleSource(
+	ctx context.Context,
+	query *core.Query,
+	bk *engineutil.Client,
+	dag *dagql.Server,
+	gitSrc *core.ModuleSource,
+	configPath string,
+) error {
+	var configContents string
+	err := dag.Select(ctx, gitSrc.ContextDirectory, &configContents,
+		dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(configPath)},
+			},
+		},
+		dagql.Selector{Field: "contents"},
+	)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("git module source %q does not contain a dagger config file", gitSrc.AsString())
+		}
+		return fmt.Errorf("failed to load git module dagger config: %w", err)
+	}
+	if err := s.initFromModConfig([]byte(configContents), gitSrc); err != nil {
+		return err
+	}
+
+	// load this module source's context directory and deps in parallel
+	var eg errgroup.Group
+	eg.Go(func() error {
+		if err := s.loadModuleSourceContext(ctx, gitSrc); err != nil {
+			return fmt.Errorf("failed to load git module source context: %w", err)
+		}
+
+		if gitSrc.SDK != nil {
+			sdkImpl, err := sdk.NewLoader().SDKForModule(ctx, query, gitSrc.SDK, gitSrc)
+			if err != nil {
+				return fmt.Errorf("failed to load sdk for git module source: %w", err)
+			}
+			gitSrc.SDKImpl = sdkImpl
+		}
+
+		return nil
+	})
+
+	eg.Go(func() error {
+		return s.loadBlueprintModule(ctx, bk, gitSrc)
+	})
+
+	gitSrc.Dependencies = make([]dagql.ObjectResult[*core.ModuleSource], len(gitSrc.ConfigDependencies))
+	for i, depCfg := range gitSrc.ConfigDependencies {
+		eg.Go(func() error {
+			var err error
+			gitSrc.Dependencies[i], err = core.ResolveDepToSource(ctx, bk, dag, gitSrc, depCfg.Source, depCfg.Pin, depCfg.Name)
+			if err != nil {
+				return fmt.Errorf("failed to resolve dep to source: %w", err)
+			}
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+
+	if err := gitSrc.LoadUserDefaults(ctx); err != nil {
+		return fmt.Errorf("load user defaults: %w", err)
+	}
+
+	return nil
 }
 
 func moduleResolveLockPolicy(ref *gitutil.Ref) workspace.LockPolicy {

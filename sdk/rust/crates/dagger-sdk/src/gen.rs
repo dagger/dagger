@@ -15620,6 +15620,12 @@ pub struct WorkspaceGeneratorsOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceModuleSourceOpts<'a> {
+    /// Location of the module source to load. Relative paths (e.g., "tools/lint") resolve from the workspace directory; absolute paths (e.g., "/tools/lint") resolve from the workspace boundary.
+    #[builder(setter(into, strip_option), default)]
+    pub path: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceServicesOpts<'a> {
     /// Only include services matching the specified patterns
     #[builder(setter(into, strip_option), default)]
@@ -15811,6 +15817,37 @@ impl Workspace {
     pub async fn initialized(&self) -> Result<bool, DaggerError> {
         let query = self.selection.select("initialized");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Load a module source from the workspace.
+    /// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn module_source(&self) -> ModuleSource {
+        let query = self.selection.select("moduleSource");
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a module source from the workspace.
+    /// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn module_source_opts<'a>(&self, opts: WorkspaceModuleSourceOpts<'a>) -> ModuleSource {
+        let mut query = self.selection.select("moduleSource");
+        if let Some(path) = opts.path {
+            query = query.arg("path", path);
+        }
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Workspace directory path relative to the workspace boundary.
     pub async fn path(&self) -> Result<String, DaggerError> {

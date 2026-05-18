@@ -15486,6 +15486,31 @@ func (r *Workspace) Initialized(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
+// WorkspaceModuleSourceOpts contains options for Workspace.ModuleSource
+type WorkspaceModuleSourceOpts struct {
+	// Location of the module source to load. Relative paths (e.g., "tools/lint") resolve from the workspace directory; absolute paths (e.g., "/tools/lint") resolve from the workspace boundary.
+	//
+	// Default: "."
+	Path string
+}
+
+// Load a module source from the workspace.
+//
+// Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+func (r *Workspace) ModuleSource(opts ...WorkspaceModuleSourceOpts) *ModuleSource {
+	q := r.query.Select("moduleSource")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `path` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Path) {
+			q = q.Arg("path", opts[i].Path)
+		}
+	}
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
 // Workspace directory path relative to the workspace boundary.
 func (r *Workspace) Path(ctx context.Context) (string, error) {
 	if r.path != nil {

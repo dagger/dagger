@@ -6547,6 +6547,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::moduleSource",
+			"p": "Dagger/Workspace.html#method_moduleSource",
+			"d": "<p>Load a module source from the workspace.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::path",
 			"p": "Dagger/Workspace.html#method_path",
 			"d": "<p>Workspace directory path relative to the workspace boundary.</p>"

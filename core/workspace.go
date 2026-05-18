@@ -28,6 +28,21 @@ type Workspace struct {
 	// Internal only (not in GraphQL schema). Empty for remote workspaces.
 	// Used by workspace filesystem operations that need host access.
 	hostPath string
+
+	// remoteModuleSource stores enough information to resolve module sources
+	// from remote workspaces as git module sources instead of directory sources.
+	remoteModuleSource *WorkspaceRemoteModuleSource
+}
+
+// WorkspaceRemoteModuleSource records the git provenance for a remote workspace.
+type WorkspaceRemoteModuleSource struct {
+	CloneRef     string
+	Version      string
+	Commit       string
+	Ref          string
+	Root         string
+	HTMLRepoURL  string
+	RepoRootPath string
 }
 
 // Rootfs returns the pre-fetched root filesystem directory for remote workspaces.
@@ -50,6 +65,19 @@ func (ws *Workspace) HostPath() string {
 // SetHostPath sets the internal host filesystem path.
 func (ws *Workspace) SetHostPath(p string) {
 	ws.hostPath = p
+}
+
+// RemoteModuleSource returns git provenance for remote workspace module loading.
+func (ws *Workspace) RemoteModuleSource() (WorkspaceRemoteModuleSource, bool) {
+	if ws.remoteModuleSource == nil {
+		return WorkspaceRemoteModuleSource{}, false
+	}
+	return *ws.remoteModuleSource, true
+}
+
+// SetRemoteModuleSource stores git provenance for remote workspace module loading.
+func (ws *Workspace) SetRemoteModuleSource(src WorkspaceRemoteModuleSource) {
+	ws.remoteModuleSource = &src
 }
 
 func (*Workspace) Type() *ast.Type {

@@ -16992,6 +16992,26 @@
                         <td data-property-name=""><a class="property-name" id="Workspace-initialized" href="#Workspace-initialized"><code>initialized</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
                         <td> Whether .dagger/config.toml exists. </td>
                       </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Workspace-moduleSource" href="#Workspace-moduleSource"><code>moduleSource</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td>
+                          <p>Load a module source from the workspace.</p>
+                          <p>Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Location of the module source to load. Relative paths (e.g., &quot;tools/lint&quot;) resolve from the workspace directory; absolute paths (e.g., &quot;/tools/lint&quot;) resolve from the workspace boundary.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Workspace-path" href="#Workspace-path"><code>path</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> Workspace directory path relative to the workspace boundary. </td>

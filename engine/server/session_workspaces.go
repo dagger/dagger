@@ -217,6 +217,8 @@ type workspaceRemoteRef struct {
 	cloneRef        string
 	version         string
 	workspaceSubdir string
+	htmlRepoURL     string
+	repoRootPath    string
 }
 
 func parseWorkspaceRemoteRef(ctx context.Context, remoteRef string) (workspaceRemoteRef, error) {
@@ -236,10 +238,19 @@ func parseWorkspaceRemoteRef(ctx context.Context, remoteRef string) (workspaceRe
 		if err != nil {
 			return workspaceRemoteRef{}, fmt.Errorf("invalid git subdir in workspace ref %q: %w", remoteRef, err)
 		}
+		cloneRef := gitURL.Remote()
+		htmlRepoURL := cloneRef
+		repoRootPath := cloneRef
+		if parsedRef, err := core.ParseGitRefString(ctx, cloneRef); err == nil {
+			htmlRepoURL = parsedRef.RepoRoot.Repo
+			repoRootPath = parsedRef.RepoRoot.Root
+		}
 		return workspaceRemoteRef{
-			cloneRef:        gitURL.Remote(),
+			cloneRef:        cloneRef,
 			version:         version,
 			workspaceSubdir: workspaceSubdir,
+			htmlRepoURL:     htmlRepoURL,
+			repoRootPath:    repoRootPath,
 		}, nil
 	}
 
@@ -256,6 +267,8 @@ func parseWorkspaceRemoteRef(ctx context.Context, remoteRef string) (workspaceRe
 		cloneRef:        parsedRef.SourceCloneRef,
 		version:         parsedRef.ModVersion,
 		workspaceSubdir: workspaceSubdir,
+		htmlRepoURL:     parsedRef.RepoRoot.Repo,
+		repoRootPath:    parsedRef.RepoRoot.Root,
 	}, nil
 }
 
@@ -281,9 +294,13 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerCl
 		return fmt.Errorf("remote workspace %q: parsing git ref: %w", remoteRef, err)
 	}
 
-	tree, err := srv.cloneGitTree(ctx, client.dag, parsedRef.cloneRef, parsedRef.version)
+	tree, resolvedRef, err := srv.cloneGitTree(ctx, client.dag, parsedRef.cloneRef, parsedRef.version)
 	if err != nil {
 		return fmt.Errorf("remote workspace %q: %w", remoteRef, err)
+	}
+	resolvedVersion := resolvedRef.ShortName()
+	if resolvedVersion == "" {
+		resolvedVersion = resolvedRef.SHA
 	}
 
 	resolveLocalRef := func(ws *workspace.Workspace, relPath string) string {
@@ -303,6 +320,14 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerCl
 		},
 		false, // isLocal
 		tree,  // pre-built rootfs for remote
+		&core.WorkspaceRemoteModuleSource{
+			CloneRef:     parsedRef.cloneRef,
+			Version:      resolvedVersion,
+			Commit:       resolvedRef.SHA,
+			Ref:          resolvedRef.Name,
+			HTMLRepoURL:  parsedRef.htmlRepoURL,
+			RepoRootPath: parsedRef.repoRootPath,
+		},
 	)
 }
 
@@ -318,7 +343,7 @@ func (srv *Server) detectAndLoadWorkspace(
 	workspaceAddress func(ws *workspace.Workspace) string,
 	isLocal bool,
 ) error {
-	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client, statFS, readFile, cwd, resolveLocalRef, workspaceAddress, isLocal, dagql.ObjectResult[*core.Directory]{})
+	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client, statFS, readFile, cwd, resolveLocalRef, workspaceAddress, isLocal, dagql.ObjectResult[*core.Directory]{}, nil)
 }
 
 // pendingModule represents a module to be loaded from compat parsing,
@@ -449,6 +474,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	workspaceAddress func(ws *workspace.Workspace) string,
 	isLocal bool,
 	prebuiltRootfs dagql.ObjectResult[*core.Directory],
+	remoteModuleSource *core.WorkspaceRemoteModuleSource,
 ) error {
 	clientMD := client.clientMetadata
 	loadModules := client.pendingWorkspaceLoad && clientMD != nil && clientMD.LoadWorkspaceModules
@@ -488,7 +514,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	if workspaceAddress != nil {
 		address = workspaceAddress(ws)
 	}
-	coreWS, err := srv.buildCoreWorkspace(ctx, client, ws, isLocal, prebuiltRootfs, address)
+	coreWS, err := srv.buildCoreWorkspace(ctx, client, ws, isLocal, prebuiltRootfs, address, remoteModuleSource)
 	if err != nil {
 		return fmt.Errorf("building workspace: %w", err)
 	}
@@ -581,6 +607,7 @@ func (srv *Server) buildCoreWorkspace(
 	isLocal bool,
 	prebuiltRootfs dagql.ObjectResult[*core.Directory],
 	address string,
+	remoteModuleSource *core.WorkspaceRemoteModuleSource,
 ) (*core.Workspace, error) {
 	// Capture the current client ID for routing host filesystem operations.
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
@@ -604,6 +631,11 @@ func (srv *Server) buildCoreWorkspace(
 	} else {
 		// Remote: store the cloned git tree.
 		coreWS.SetRootfs(prebuiltRootfs)
+		if remoteModuleSource != nil {
+			src := *remoteModuleSource
+			src.Root = detected.Root
+			coreWS.SetRemoteModuleSource(src)
+		}
 	}
 
 	return coreWS, nil
@@ -622,7 +654,7 @@ func remoteWorkspaceAddress(cloneRef, workspacePath, version string) string {
 }
 
 // cloneGitTree clones a git repository and returns its directory tree.
-func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, cloneRef, version string) (dagql.ObjectResult[*core.Directory], error) {
+func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, cloneRef, version string) (dagql.ObjectResult[*core.Directory], *gitutil.Ref, error) {
 	// Build the ref selector — use "head" if no version specified.
 	refSelector := dagql.Selector{Field: "head"}
 	if version != "" {
@@ -632,8 +664,8 @@ func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, cloneRef
 		}
 	}
 
-	var tree dagql.ObjectResult[*core.Directory]
-	err := dag.Select(ctx, dag.Root(), &tree,
+	var gitRef dagql.ObjectResult[*core.GitRef]
+	err := dag.Select(ctx, dag.Root(), &gitRef,
 		dagql.Selector{
 			Field: "git",
 			Args: []dagql.NamedInput{
@@ -641,12 +673,23 @@ func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, cloneRef
 			},
 		},
 		refSelector,
+	)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, nil, fmt.Errorf("resolving repo ref: %w", err)
+	}
+
+	var tree dagql.ObjectResult[*core.Directory]
+	err = dag.Select(ctx, gitRef, &tree,
 		dagql.Selector{Field: "tree"},
 	)
 	if err != nil {
-		return tree, fmt.Errorf("cloning repo: %w", err)
+		return tree, nil, fmt.Errorf("cloning repo: %w", err)
 	}
-	return tree, nil
+	if gitRef.Self().Ref == nil {
+		return tree, nil, fmt.Errorf("resolved repo ref is empty")
+	}
+	ref := *gitRef.Self().Ref
+	return tree, &ref, nil
 }
 
 // ensureModulesLoaded loads all pending modules (from compat parsing,

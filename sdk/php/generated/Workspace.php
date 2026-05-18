@@ -151,6 +151,20 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Load a module source from the workspace.
+     *
+     * Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+     */
+    public function moduleSource(?string $path = '.'): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleSource');
+        if (null !== $path) {
+        $innerQueryBuilder->setArgument('path', $path);
+        }
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Workspace directory path relative to the workspace boundary.
      */
     public function path(): string
