@@ -7451,6 +7451,7 @@ impl EnumTypeDef {
         let query = self.selection.select("sourceModuleName");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The members of the enum.
     pub async fn values(&self) -> Result<Vec<EnumValueTypeDef>, DaggerError> {
         let query = self.selection.select("values");
         let query = query.select("id");
