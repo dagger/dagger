@@ -66,6 +66,7 @@ func NewInstaller(
 	for _, installer := range []Installer{
 		&debianLike{},
 		&rhelLike{},
+		&nixosLike{},
 	} {
 		eg.Go(func() error {
 			if err := installer.initialize(ctrFS); err != nil {
