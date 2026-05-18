@@ -4393,16 +4393,16 @@ func decodePersistedContainerLazy(
 			Owner:     persisted.Owner,
 		}
 		return nil
-	case "withFile":
+	case "withFile", "withNewFile":
 		var persisted persistedContainerWithFileLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return fmt.Errorf("decode persisted container withFile lazy payload: %w", err)
+			return fmt.Errorf("decode persisted container %s lazy payload: %w", call.Field, err)
 		}
-		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withFile parent")
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container "+call.Field+" parent")
 		if err != nil {
 			return err
 		}
-		source, err := loadPersistedObjectResultByResultID[*File](ctx, dag, persisted.SourceResultID, "container withFile source")
+		source, err := loadPersistedObjectResultByResultID[*File](ctx, dag, persisted.SourceResultID, "container "+call.Field+" source")
 		if err != nil {
 			return err
 		}

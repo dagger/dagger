@@ -112,6 +112,38 @@ func (EngineSuite) TestDiskPersistenceAcrossRestart(ctx context.Context, t *test
 		require.Greater(t, entryCount, 0)
 	})
 
+	t.Run("container withNewFile hit survives restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-container-with-new-file-state-" + identity.NewID()
+		const newFilePath = "/tmp/persisted-new-file.txt"
+		const newFileContents = "persisted withNewFile\n"
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		ctrID, err := engineClientA.
+			Container().
+			From(alpineImage).
+			WithNewFile(newFilePath, newFileContents).
+			ID(ctx)
+		require.NoError(t, err)
+
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		contents, err := engineClientB.
+			LoadContainerFromID(ctrID).
+			File(newFilePath).
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, newFileContents, contents)
+	})
+
 	t.Run("function cache control survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "phase7-function-cache-state-" + identity.NewID()
