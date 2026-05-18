@@ -29,6 +29,8 @@
             <h4 class="nav-group-title">Queries</h4>
             <ul class="nav-group-items">
               <li><a href="#query-address">address</a></li>
+              <li><a href="#query-builtinModuleSource">builtinModuleSource</a></li>
+              <li><a href="#query-builtinModuleSources">builtinModuleSources</a></li>
               <li><a href="#query-cacheVolume">cacheVolume</a></li>
               <li><a href="#query-changeset">changeset</a></li>
               <li><a href="#query-cloud">cloud</a></li>
@@ -55,6 +57,7 @@
               <li><a href="#query-llm">llm</a></li>
               <li><a href="#query-loadAddressFromID">loadAddressFromID</a></li>
               <li><a href="#query-loadBindingFromID">loadBindingFromID</a></li>
+              <li><a href="#query-loadBuiltinModuleSourceFromID">loadBuiltinModuleSourceFromID</a></li>
               <li><a href="#query-loadCacheVolumeFromID">loadCacheVolumeFromID</a></li>
               <li><a href="#query-loadChangesetFromID">loadChangesetFromID</a></li>
               <li><a href="#query-loadCheckFromID">loadCheckFromID</a></li>
@@ -136,6 +139,8 @@
               <li><a href="#definition-BindingID">BindingID</a></li>
               <li><a href="#definition-Boolean">Boolean</a></li>
               <li><a href="#definition-BuildArg">BuildArg</a></li>
+              <li><a href="#definition-BuiltinModuleSource">BuiltinModuleSource</a></li>
+              <li><a href="#definition-BuiltinModuleSourceID">BuiltinModuleSourceID</a></li>
               <li><a href="#definition-CacheSharingMode">CacheSharingMode</a></li>
               <li><a href="#definition-CacheVolume">CacheVolume</a></li>
               <li><a href="#definition-CacheVolumeID">CacheVolumeID</a></li>
@@ -337,6 +342,91 @@
                       </tr>
                     </tbody>
                   </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-builtinModuleSource" class="operation operation-query" data-traverse-target="query-builtinModuleSource">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>builtinModuleSource</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Resolve a builtin module source by catalog name.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-ModuleSource"><code>ModuleSource!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
+                        </td>
+                        <td> The builtin module source catalog name. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-builtinModuleSources" class="operation operation-query" data-traverse-target="query-builtinModuleSources">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>builtinModuleSources</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>List builtin module source catalog entries visible to this client.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-BuiltinModuleSource"><code>[BuiltinModuleSource!]!</code></a>
+                  </p>
                 </div>
               </div>
             </div>
@@ -1685,6 +1775,59 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-BindingID"><code>BindingID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadBuiltinModuleSourceFromID" class="operation operation-query" data-traverse-target="query-loadBuiltinModuleSourceFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadBuiltinModuleSourceFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a BuiltinModuleSource from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-BuiltinModuleSource"><code>BuiltinModuleSource!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-BuiltinModuleSourceID"><code>BuiltinModuleSourceID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -5550,6 +5693,10 @@
                         <td> Retrieve the binding value, as type Address </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asBuiltinModuleSource" href="#Binding-asBuiltinModuleSource"><code>asBuiltinModuleSource</code></a> - <span class="property-type"><a href="#definition-BuiltinModuleSource"><code>BuiltinModuleSource!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type BuiltinModuleSource </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asCacheVolume" href="#Binding-asCacheVolume"><code>asCacheVolume</code></a> - <span class="property-type"><a href="#definition-CacheVolume"><code>CacheVolume!</code></a></span> </td>
                         <td> Retrieve the binding value, as type CacheVolume </td>
                       </tr>
@@ -5768,6 +5915,59 @@
   <span class="hljs-attr">"value"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span>
 <span class="hljs-punctuation">}</span>
 </code></pre>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-BuiltinModuleSource" class="definition definition-object" data-traverse-target="definition-BuiltinModuleSource">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">BuiltinModuleSource</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>An engine-bundled module source catalog entry.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="BuiltinModuleSource-description" href="#BuiltinModuleSource-description"><code>description</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Human-readable builtin module description. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="BuiltinModuleSource-id" href="#BuiltinModuleSource-id"><code>id</code></a> - <span class="property-type"><a href="#definition-BuiltinModuleSourceID"><code>BuiltinModuleSourceID!</code></a></span> </td>
+                        <td> A unique identifier for this BuiltinModuleSource. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="BuiltinModuleSource-name" href="#BuiltinModuleSource-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Stable builtin module catalog name. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-BuiltinModuleSourceID" class="definition definition-scalar" data-traverse-target="definition-BuiltinModuleSourceID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">BuiltinModuleSourceID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>BuiltinModuleSourceID</code> scalar type represents an identifier for an object of type BuiltinModuleSource.</p>
                 </div>
               </div>
             </div>
@@ -9599,6 +9799,52 @@
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withAddressOutput" href="#Env-withAddressOutput"><code>withAddressOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Declare a desired Address output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withBuiltinModuleSourceInput" href="#Env-withBuiltinModuleSourceInput"><code>withBuiltinModuleSourceInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type BuiltinModuleSource in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-BuiltinModuleSourceID"><code>BuiltinModuleSourceID!</code></a></span></h6>
+                                <p>The BuiltinModuleSource value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withBuiltinModuleSourceOutput" href="#Env-withBuiltinModuleSourceOutput"><code>withBuiltinModuleSourceOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired BuiltinModuleSource output to be assigned in the environment </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -14572,7 +14818,7 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-kind" href="#ModuleSource-kind"><code>kind</code></a> - <span class="property-type"><a href="#definition-ModuleSourceKind"><code>ModuleSourceKind!</code></a></span> </td>
-                        <td> The kind of module source (currently local, git or dir). </td>
+                        <td> The kind of module source (currently local, git, dir, or builtin). </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-localContextDirectoryPath" href="#ModuleSource-localContextDirectoryPath"><code>localContextDirectoryPath</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -15031,6 +15277,13 @@
                       </tr>
                       <tr>
                         <td>
+                          <p><code>BUILTIN_SOURCE</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
                           <p><code>LOCAL</code></p>
                         </td>
                         <td>
@@ -15046,6 +15299,13 @@
                       <tr>
                         <td>
                           <p><code>DIR</code></p>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>BUILTIN</code></p>
                         </td>
                         <td>
                         </td>

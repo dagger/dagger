@@ -100,6 +100,12 @@ func namespaceFromModule(ctx context.Context, m *core.Module) (string, error) {
 			return "", err
 		}
 		symbolic = sourceDigest.String()
+	case core.ModuleSourceKindBuiltin:
+		sourceDigest, err := src.Self().SourceImplementationDigest(ctx)
+		if err != nil {
+			return "", err
+		}
+		symbolic = sourceDigest.String()
 	}
 
 	return "mod(" + name + symbolic + ")", nil

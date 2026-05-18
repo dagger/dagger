@@ -30,6 +30,20 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type BuiltinModuleSource
+  """
+  @spec as_builtin_module_source(t()) :: Dagger.BuiltinModuleSource.t()
+  def as_builtin_module_source(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asBuiltinModuleSource")
+
+    %Dagger.BuiltinModuleSource{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Retrieve the binding value, as type CacheVolume
   """
   @spec as_cache_volume(t()) :: Dagger.CacheVolume.t()

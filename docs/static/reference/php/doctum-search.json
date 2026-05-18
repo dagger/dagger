@@ -128,6 +128,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\BuiltinModuleSource",
+			"p": "Dagger/BuiltinModuleSource.html",
+			"d": "<p>An engine-bundled module source catalog entry.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\BuiltinModuleSourceId",
+			"p": "Dagger/BuiltinModuleSourceId.html",
+			"d": "<p>The <code>BuiltinModuleSourceID</code> scalar type represents an identifier for an object of type BuiltinModuleSource.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\CacheVolume",
 			"p": "Dagger/CacheVolume.html",
 			"d": "<p>A directory whose contents persist across runs.</p>",
@@ -1663,6 +1683,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Binding::asBuiltinModuleSource",
+			"p": "Dagger/Binding.html#method_asBuiltinModuleSource",
+			"d": "<p>Retrieve the binding value, as type BuiltinModuleSource</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Binding::asCacheVolume",
 			"p": "Dagger/Binding.html#method_asCacheVolume",
 			"d": "<p>Retrieve the binding value, as type CacheVolume</p>"
@@ -1885,6 +1911,24 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\BuiltinModuleSource::description",
+			"p": "Dagger/BuiltinModuleSource.html#method_description",
+			"d": "<p>Human-readable builtin module description.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\BuiltinModuleSource::id",
+			"p": "Dagger/BuiltinModuleSource.html#method_id",
+			"d": "<p>A unique identifier for this BuiltinModuleSource.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\BuiltinModuleSource::name",
+			"p": "Dagger/BuiltinModuleSource.html#method_name",
+			"d": "<p>Stable builtin module catalog name.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\CacheVolume::id",
 			"p": "Dagger/CacheVolume.html#method_id",
 			"d": "<p>A unique identifier for this CacheVolume.</p>"
@@ -2101,6 +2145,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::builtinModuleSource",
+			"p": "Dagger/Client.html#method_builtinModuleSource",
+			"d": "<p>Resolve a builtin module source by catalog name.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::builtinModuleSources",
+			"p": "Dagger/Client.html#method_builtinModuleSources",
+			"d": "<p>List builtin module source catalog entries visible to this client.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::cacheVolume",
 			"p": "Dagger/Client.html#method_cacheVolume",
 			"d": "<p>Constructs a cache volume for a given cache key.</p>"
@@ -2266,6 +2322,12 @@
 			"n": "Dagger\\Client::loadBindingFromID",
 			"p": "Dagger/Client.html#method_loadBindingFromID",
 			"d": "<p>Load a Binding from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadBuiltinModuleSourceFromID",
+			"p": "Dagger/Client.html#method_loadBuiltinModuleSourceFromID",
+			"d": "<p>Load a BuiltinModuleSource from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -3892,6 +3954,18 @@
 			"n": "Dagger\\Env::withAddressOutput",
 			"p": "Dagger/Env.html#method_withAddressOutput",
 			"d": "<p>Declare a desired Address output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withBuiltinModuleSourceInput",
+			"p": "Dagger/Env.html#method_withBuiltinModuleSourceInput",
+			"d": "<p>Create or update a binding of type BuiltinModuleSource in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withBuiltinModuleSourceOutput",
+			"p": "Dagger/Env.html#method_withBuiltinModuleSourceOutput",
+			"d": "<p>Declare a desired BuiltinModuleSource output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",
@@ -5697,7 +5771,7 @@
 			"t": "M",
 			"n": "Dagger\\ModuleSource::kind",
 			"p": "Dagger/ModuleSource.html#method_kind",
-			"d": "<p>The kind of module source (currently local, git or dir).</p>"
+			"d": "<p>The kind of module source (currently local, git, dir, or builtin).</p>"
 		},
 		{
 			"t": "M",

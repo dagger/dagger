@@ -37,12 +37,14 @@ type ModuleSourceKind string
 var ModuleSourceKindEnum = dagql.NewEnum[ModuleSourceKind]()
 
 var (
-	ModuleSourceKindLocal = ModuleSourceKindEnum.Register("LOCAL_SOURCE")
-	_                     = ModuleSourceKindEnum.AliasView("LOCAL", "LOCAL_SOURCE", enumView)
-	ModuleSourceKindGit   = ModuleSourceKindEnum.Register("GIT_SOURCE")
-	_                     = ModuleSourceKindEnum.AliasView("GIT", "GIT_SOURCE", enumView)
-	ModuleSourceKindDir   = ModuleSourceKindEnum.Register("DIR_SOURCE")
-	_                     = ModuleSourceKindEnum.AliasView("DIR", "DIR_SOURCE", enumView)
+	ModuleSourceKindLocal   = ModuleSourceKindEnum.Register("LOCAL_SOURCE")
+	_                       = ModuleSourceKindEnum.AliasView("LOCAL", "LOCAL_SOURCE", enumView)
+	ModuleSourceKindGit     = ModuleSourceKindEnum.Register("GIT_SOURCE")
+	_                       = ModuleSourceKindEnum.AliasView("GIT", "GIT_SOURCE", enumView)
+	ModuleSourceKindDir     = ModuleSourceKindEnum.Register("DIR_SOURCE")
+	_                       = ModuleSourceKindEnum.AliasView("DIR", "DIR_SOURCE", enumView)
+	ModuleSourceKindBuiltin = ModuleSourceKindEnum.Register("BUILTIN_SOURCE")
+	_                       = ModuleSourceKindEnum.AliasView("BUILTIN", "BUILTIN_SOURCE", enumView)
 )
 
 func (proto ModuleSourceKind) Type() *ast.Type {
@@ -103,6 +105,8 @@ func (proto ModuleSourceKind) HumanString() string {
 		return "git"
 	case ModuleSourceKindDir:
 		return "directory"
+	case ModuleSourceKindBuiltin:
+		return "builtin"
 	default:
 		return string(proto)
 	}
@@ -191,10 +195,11 @@ type ModuleSource struct {
 
 	ContextDirectory dagql.ObjectResult[*Directory] `field:"true" name:"contextDirectory" doc:"The full directory loaded for the module source, including the source code as a subdirectory."`
 
-	Kind   ModuleSourceKind `field:"true" name:"kind" doc:"The kind of module source (currently local, git or dir)."`
-	Local  *LocalModuleSource
-	Git    *GitModuleSource
-	DirSrc *DirModuleSource
+	Kind    ModuleSourceKind `field:"true" name:"kind" doc:"The kind of module source (currently local, git, dir, or builtin)."`
+	Local   *LocalModuleSource
+	Git     *GitModuleSource
+	DirSrc  *DirModuleSource
+	Builtin *BuiltinModuleSource
 }
 
 var moduleSourceSDKLoader func(context.Context, *Query, *SDKConfig, *ModuleSource) (SDK, error)
@@ -253,6 +258,10 @@ func (src ModuleSource) Clone() *ModuleSource {
 
 	if src.Git != nil {
 		src.Git = src.Git.Clone()
+	}
+
+	if src.Builtin != nil {
+		src.Builtin = src.Builtin.Clone()
 	}
 
 	oriConfigClients := src.ConfigClients
@@ -396,6 +405,15 @@ type persistedDirModuleSourcePayload struct {
 	OriginalContextDirResultID uint64 `json:"originalContextDirResultID,omitempty"`
 }
 
+type persistedBuiltinModuleSourcePayload struct {
+	Name                   string        `json:"name,omitempty"`
+	Description            string        `json:"description,omitempty"`
+	ManifestDigest         digest.Digest `json:"manifestDigest,omitempty"`
+	SourceRootSubpath      string        `json:"sourceRootSubpath,omitempty"`
+	FullRootfsSubpath      string        `json:"fullRootfsSubpath,omitempty"`
+	OriginalRootfsResultID uint64        `json:"originalRootfsResultID,omitempty"`
+}
+
 type persistedModuleSourceSDKCapabilities struct {
 	Runtime         bool `json:"runtime,omitempty"`
 	ModuleTypes     bool `json:"moduleTypes,omitempty"`
@@ -433,6 +451,7 @@ type persistedModuleSourcePayload struct {
 	Local                           *LocalModuleSource                    `json:"local,omitempty"`
 	Git                             *persistedGitModuleSourcePayload      `json:"git,omitempty"`
 	DirSrc                          *persistedDirModuleSourcePayload      `json:"dirSrc,omitempty"`
+	Builtin                         *persistedBuiltinModuleSourcePayload  `json:"builtin,omitempty"`
 	GitUnfilteredContextDirResultID uint64                                `json:"gitUnfilteredContextDirResultID,omitempty"`
 	SDKCapabilities                 *persistedModuleSourceSDKCapabilities `json:"sdkCapabilities,omitempty"`
 }
@@ -733,6 +752,22 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 			payload.DirSrc.OriginalContextDirResultID = originalContextDirID
 		}
 	}
+	if src.Builtin != nil {
+		payload.Builtin = &persistedBuiltinModuleSourcePayload{
+			Name:              src.Builtin.Name,
+			Description:       src.Builtin.Description,
+			ManifestDigest:    src.Builtin.ManifestDigest,
+			SourceRootSubpath: src.Builtin.SourceRootSubpath,
+			FullRootfsSubpath: src.Builtin.FullRootfsSubpath,
+		}
+		if src.Builtin.OriginalRootfs.Self() != nil {
+			originalRootfsID, err := encodePersistedObjectRef(cache, src.Builtin.OriginalRootfs, "module source builtin original rootfs")
+			if err != nil {
+				return nil, err
+			}
+			payload.Builtin.OriginalRootfsResultID = originalRootfsID
+		}
+	}
 	return json.Marshal(payload)
 }
 
@@ -831,6 +866,22 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 			src.DirSrc.OriginalContextDir = originalContextDir
 		}
 	}
+	if persisted.Builtin != nil {
+		src.Builtin = &BuiltinModuleSource{
+			Name:              persisted.Builtin.Name,
+			Description:       persisted.Builtin.Description,
+			ManifestDigest:    persisted.Builtin.ManifestDigest,
+			SourceRootSubpath: persisted.Builtin.SourceRootSubpath,
+			FullRootfsSubpath: persisted.Builtin.FullRootfsSubpath,
+		}
+		if persisted.Builtin.OriginalRootfsResultID != 0 {
+			originalRootfs, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.Builtin.OriginalRootfsResultID, "module source builtin original rootfs")
+			if err != nil {
+				return nil, err
+			}
+			src.Builtin.OriginalRootfs = originalRootfs
+		}
+	}
 	if src.SDK != nil {
 		if persisted.SDKCapabilities == nil {
 			return nil, fmt.Errorf("decode persisted module source: missing persisted sdk capabilities")
@@ -851,6 +902,12 @@ func (src *ModuleSource) AsString() string {
 
 	case ModuleSourceKindGit:
 		return GitRefString(src.Git.CloneRef, src.SourceRootSubpath, src.Git.Version)
+
+	case ModuleSourceKindBuiltin:
+		if src.Builtin == nil {
+			return ""
+		}
+		return "builtin:" + src.Builtin.Name
 
 	default:
 		return ""
@@ -875,6 +932,11 @@ func (src *ModuleSource) Pin() string {
 		return ""
 	case ModuleSourceKindGit:
 		return src.Git.Commit
+	case ModuleSourceKindBuiltin:
+		if src.Builtin == nil {
+			return ""
+		}
+		return src.Builtin.ManifestDigest.String()
 	default:
 		return ""
 	}
@@ -1108,6 +1170,14 @@ func (src *ModuleSource) SourceImplementationDigest(ctx context.Context) (digest
 		src.SourceRootSubpath,
 		src.SourceSubpath,
 		contextDigest,
+	}
+	if src.Kind == ModuleSourceKindBuiltin && src.Builtin != nil {
+		inputs = append(inputs,
+			"builtin:"+src.Builtin.Name,
+			src.Builtin.ManifestDigest.String(),
+			src.Builtin.SourceRootSubpath,
+			src.Builtin.FullRootfsSubpath,
+		)
 	}
 
 	if src.SDK != nil && src.SDK.Debug {
@@ -1414,66 +1484,79 @@ func (src *ModuleSource) loadContextFromSource(
 		inst = ctxDir
 
 	case ModuleSourceKindDir:
-		if !filepath.IsAbs(path) {
-			path = filepath.Join("/", src.SourceRootSubpath, path)
-		}
+		return src.loadContextFromDirectorySource(ctx, dag, path, filterInputs)
 
-		// Use the Dir context directory.
-		ctxDir := src.ContextDirectory
-
-		if path != "/" {
-			if err := dag.Select(ctx, ctxDir, &ctxDir,
-				dagql.Selector{
-					Field: "directory",
-					Args: []dagql.NamedInput{
-						{Name: "path", Value: dagql.String(path)},
-					},
-				},
-			); err != nil {
-				return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
-			}
-		}
-
-		if len(filterInputs) > 0 {
-			ctxDirID, err := ctxDir.ID()
-			if err != nil {
-				return inst, fmt.Errorf("context directory ID for filtering: %w", err)
-			}
-			if err := dag.Select(ctx, dag.Root(), &ctxDir,
-				dagql.Selector{
-					Field: "directory",
-				},
-				dagql.Selector{
-					Field: "withDirectory",
-					Args: append([]dagql.NamedInput{
-						{Name: "path", Value: dagql.String("/")},
-						{Name: "source", Value: dagql.NewID[*Directory](ctxDirID)},
-					}, filterInputs...),
-				},
-			); err != nil {
-				return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
-			}
-		}
-
-		snapshot, err := ctxDir.Self().Snapshot.GetOrEval(ctx, ctxDir.Result)
-		if err != nil {
-			return inst, fmt.Errorf("context directory snapshot: %w", err)
-		}
-		dirPath, err := ctxDir.Self().Dir.GetOrEval(ctx, ctxDir.Result)
-		if err != nil {
-			return inst, fmt.Errorf("context directory path: %w", err)
-		}
-		dgst, err := GetContentHashFromDirectory(ctx, snapshot, dirPath)
-		if err != nil {
-			return inst, err
-		}
-		inst, err = ctxDir.WithContentDigest(ctx, dgst)
-		if err != nil {
-			return inst, fmt.Errorf("failed to set contextual directory content digest: %w", err)
-		}
+	case ModuleSourceKindBuiltin:
+		return src.loadContextFromDirectorySource(ctx, dag, path, filterInputs)
 
 	default:
 		return inst, fmt.Errorf("unsupported module src kind: %q", src.Kind)
+	}
+
+	return inst, nil
+}
+
+func (src *ModuleSource) loadContextFromDirectorySource(
+	ctx context.Context,
+	dag *dagql.Server,
+	path string,
+	filterInputs []dagql.NamedInput,
+) (inst dagql.ObjectResult[*Directory], err error) {
+	if !filepath.IsAbs(path) {
+		path = filepath.Join("/", src.SourceRootSubpath, path)
+	}
+
+	ctxDir := src.ContextDirectory
+
+	if path != "/" {
+		if err := dag.Select(ctx, ctxDir, &ctxDir,
+			dagql.Selector{
+				Field: "directory",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(path)},
+				},
+			},
+		); err != nil {
+			return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
+		}
+	}
+
+	if len(filterInputs) > 0 {
+		ctxDirID, err := ctxDir.ID()
+		if err != nil {
+			return inst, fmt.Errorf("context directory ID for filtering: %w", err)
+		}
+		if err := dag.Select(ctx, dag.Root(), &ctxDir,
+			dagql.Selector{
+				Field: "directory",
+			},
+			dagql.Selector{
+				Field: "withDirectory",
+				Args: append([]dagql.NamedInput{
+					{Name: "path", Value: dagql.String("/")},
+					{Name: "source", Value: dagql.NewID[*Directory](ctxDirID)},
+				}, filterInputs...),
+			},
+		); err != nil {
+			return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
+		}
+	}
+
+	snapshot, err := ctxDir.Self().Snapshot.GetOrEval(ctx, ctxDir.Result)
+	if err != nil {
+		return inst, fmt.Errorf("context directory snapshot: %w", err)
+	}
+	dirPath, err := ctxDir.Self().Dir.GetOrEval(ctx, ctxDir.Result)
+	if err != nil {
+		return inst, fmt.Errorf("context directory path: %w", err)
+	}
+	dgst, err := GetContentHashFromDirectory(ctx, snapshot, dirPath)
+	if err != nil {
+		return inst, err
+	}
+	inst, err = ctxDir.WithContentDigest(ctx, dgst)
+	if err != nil {
+		return inst, fmt.Errorf("failed to set contextual directory content digest: %w", err)
 	}
 
 	return inst, nil
@@ -1559,12 +1642,11 @@ func (src *ModuleSource) LoadContextFile(
 			return inst, fmt.Errorf("failed to select context directory subpath: %w", err)
 		}
 
-	case ModuleSourceKindDir:
+	case ModuleSourceKindDir, ModuleSourceKindBuiltin:
 		if !filepath.IsAbs(path) {
 			path = filepath.Join("/", src.SourceRootSubpath, path)
 		}
 
-		// Use the Dir context directory.
 		ctxDir := src.ContextDirectory
 
 		if err := dag.Select(ctx, ctxDir, &inst,
@@ -1837,9 +1919,13 @@ func ResolveDepToSource(
 			}
 			return inst, nil
 
-		case ModuleSourceKindDir:
-			// parent=dir, dep=local
+		case ModuleSourceKindDir, ModuleSourceKindBuiltin:
+			// parent=dir/builtin, dep=local
 			depPath := filepath.Join(parentSrc.SourceRootSubpath, depSrcRef)
+			contextDir := parentSrc.ContextDirectory
+			if parentSrc.Kind == ModuleSourceKindBuiltin && parentSrc.Builtin != nil && parentSrc.Builtin.OriginalRootfs.Self() != nil {
+				contextDir = parentSrc.Builtin.OriginalRootfs
+			}
 			selectors := []dagql.Selector{{
 				Field: "asModuleSource",
 				Args: []dagql.NamedInput{
@@ -1855,7 +1941,7 @@ func ResolveDepToSource(
 					},
 				})
 			}
-			err := dag.Select(ctx, parentSrc.ContextDirectory, &inst, selectors...)
+			err := dag.Select(ctx, contextDir, &inst, selectors...)
 			if err != nil {
 				return inst, err
 			}
@@ -1885,6 +1971,28 @@ func ResolveDepToSource(
 		err := dag.Select(ctx, dag.Root(), &inst, selectors...)
 		if err != nil {
 			return inst, fmt.Errorf("failed to load git dep: %w", err)
+		}
+		return inst, nil
+
+	case ModuleSourceKindBuiltin:
+		// parent=*, dep=builtin
+		selectors := []dagql.Selector{{
+			Field: "builtinModuleSource",
+			Args: []dagql.NamedInput{
+				{Name: "name", Value: dagql.String(parsedDepRef.Builtin.Name)},
+			},
+		}}
+		if depName != "" {
+			selectors = append(selectors, dagql.Selector{
+				Field: "withName",
+				Args: []dagql.NamedInput{
+					{Name: "name", Value: dagql.String(depName)},
+				},
+			})
+		}
+		err := dag.Select(ctx, dag.Root(), &inst, selectors...)
+		if err != nil {
+			return inst, fmt.Errorf("failed to load builtin dep: %w", err)
 		}
 		return inst, nil
 
@@ -2058,6 +2166,13 @@ func (fs ModuleSourceStatFS) Stat(ctx context.Context, path string) (string, *St
 	case ModuleSourceKindDir:
 		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
 		return CallDirStat(ctx, fs.src.ContextDirectory, path)
+	case ModuleSourceKindBuiltin:
+		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
+		contextDir := fs.src.ContextDirectory
+		if fs.src.Builtin != nil && fs.src.Builtin.OriginalRootfs.Self() != nil {
+			contextDir = fs.src.Builtin.OriginalRootfs
+		}
+		return CallDirStat(ctx, contextDir, path)
 	default:
 		return "", nil, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
 	}
@@ -2078,6 +2193,13 @@ func (fs ModuleSourceStatFS) Exists(ctx context.Context, path string) (string, b
 	case ModuleSourceKindDir:
 		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
 		return CallDirExists(ctx, fs.src.ContextDirectory, path)
+	case ModuleSourceKindBuiltin:
+		path = filepath.Join("/", fs.src.SourceRootSubpath, path)
+		contextDir := fs.src.ContextDirectory
+		if fs.src.Builtin != nil && fs.src.Builtin.OriginalRootfs.Self() != nil {
+			contextDir = fs.src.Builtin.OriginalRootfs
+		}
+		return CallDirExists(ctx, contextDir, path)
 	default:
 		return "", false, fmt.Errorf("unsupported module source kind: %s", fs.src.Kind)
 	}

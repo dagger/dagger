@@ -261,7 +261,7 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
-  The kind of module source (currently local, git or dir).
+  The kind of module source (currently local, git, dir, or builtin).
   """
   @spec kind(t()) :: {:ok, Dagger.ModuleSourceKind.t()} | {:error, term()}
   def kind(%__MODULE__{} = module_source) do

@@ -20,6 +20,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the binding value, as type BuiltinModuleSource
+     */
+    public function asBuiltinModuleSource(): BuiltinModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asBuiltinModuleSource');
+        return new \Dagger\BuiltinModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type CacheVolume
      */
     public function asCacheVolume(): CacheVolume

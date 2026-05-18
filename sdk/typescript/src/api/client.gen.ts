@@ -54,6 +54,11 @@ export type BuildArg = {
 }
 
 /**
+ * The `BuiltinModuleSourceID` scalar type represents an identifier for an object of type BuiltinModuleSource.
+ */
+export type BuiltinModuleSourceID = string & { __BuiltinModuleSourceID: never }
+
+/**
  * Sharing mode of the cache volume.
  */
 export enum CacheSharingMode {
@@ -2127,6 +2132,8 @@ export type ModuleSourceID = string & { __ModuleSourceID: never }
  * The kind of module source.
  */
 export enum ModuleSourceKind {
+  Builtin = "BUILTIN_SOURCE",
+  BuiltinSource = ModuleSourceKind.Builtin,
   Dir = "DIR_SOURCE",
   DirSource = ModuleSourceKind.Dir,
   Git = "GIT_SOURCE",
@@ -2141,6 +2148,8 @@ export enum ModuleSourceKind {
  */
 function ModuleSourceKindValueToName(value: ModuleSourceKind): string {
   switch (value) {
+    case ModuleSourceKind.Builtin:
+      return "BUILTIN"
     case ModuleSourceKind.Dir:
       return "DIR"
     case ModuleSourceKind.Git:
@@ -2158,6 +2167,8 @@ function ModuleSourceKindValueToName(value: ModuleSourceKind): string {
  */
 function ModuleSourceKindNameToValue(name: string): ModuleSourceKind {
   switch (name) {
+    case "BUILTIN":
+      return ModuleSourceKind.Builtin
     case "DIR":
       return ModuleSourceKind.Dir
     case "GIT":
@@ -3128,6 +3139,14 @@ export class Binding extends BaseClient {
   }
 
   /**
+   * Retrieve the binding value, as type BuiltinModuleSource
+   */
+  asBuiltinModuleSource = (): BuiltinModuleSource => {
+    const ctx = this._ctx.select("asBuiltinModuleSource")
+    return new BuiltinModuleSource(ctx)
+  }
+
+  /**
    * Retrieve the binding value, as type CacheVolume
    */
   asCacheVolume = (): CacheVolume => {
@@ -3428,6 +3447,76 @@ export class Binding extends BaseClient {
     }
 
     const ctx = this._ctx.select("typeName")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * An engine-bundled module source catalog entry.
+ */
+export class BuiltinModuleSource extends BaseClient {
+  private readonly _id?: BuiltinModuleSourceID = undefined
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: BuiltinModuleSourceID,
+    _description?: string,
+    _name?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._description = _description
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this BuiltinModuleSource.
+   */
+  id = async (): Promise<BuiltinModuleSourceID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<BuiltinModuleSourceID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Human-readable builtin module description.
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const ctx = this._ctx.select("description")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Stable builtin module catalog name.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -6930,6 +7019,38 @@ export class Env extends BaseClient {
    */
   withAddressOutput = (name: string, description: string): Env => {
     const ctx = this._ctx.select("withAddressOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type BuiltinModuleSource in the environment
+   * @param name The name of the binding
+   * @param value The BuiltinModuleSource value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withBuiltinModuleSourceInput = (
+    name: string,
+    value: BuiltinModuleSource,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withBuiltinModuleSourceInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired BuiltinModuleSource output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withBuiltinModuleSourceOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withBuiltinModuleSourceOutput", {
+      name,
+      description,
+    })
     return new Env(ctx)
   }
 
@@ -11633,7 +11754,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The kind of module source (currently local, git or dir).
+   * The kind of module source (currently local, git, dir, or builtin).
    */
   kind = async (): Promise<ModuleSourceKind> => {
     if (this._kind) {
@@ -12321,6 +12442,32 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Resolve a builtin module source by catalog name.
+   * @param name The builtin module source catalog name.
+   */
+  builtinModuleSource = (name: string): ModuleSource => {
+    const ctx = this._ctx.select("builtinModuleSource", { name })
+    return new ModuleSource(ctx)
+  }
+
+  /**
+   * List builtin module source catalog entries visible to this client.
+   */
+  builtinModuleSources = async (): Promise<BuiltinModuleSource[]> => {
+    type builtinModuleSources = {
+      id: BuiltinModuleSourceID
+    }
+
+    const ctx = this._ctx.select("builtinModuleSources").select("id")
+
+    const response: Awaited<builtinModuleSources[]> = await ctx.execute()
+
+    return response.map((r) =>
+      new Client(ctx.copy()).loadBuiltinModuleSourceFromID(r.id),
+    )
+  }
+
+  /**
    * Constructs a cache volume for a given cache key.
    * @param key A string identifier to target this cache volume (e.g., "modules-cache").
    * @param opts.source Identifier of the directory to use as the cache volume's root.
@@ -12592,6 +12739,16 @@ export class Client extends BaseClient {
   loadBindingFromID = (id: BindingID): Binding => {
     const ctx = this._ctx.select("loadBindingFromID", { id })
     return new Binding(ctx)
+  }
+
+  /**
+   * Load a BuiltinModuleSource from its ID.
+   */
+  loadBuiltinModuleSourceFromID = (
+    id: BuiltinModuleSourceID,
+  ): BuiltinModuleSource => {
+    const ctx = this._ctx.select("loadBuiltinModuleSourceFromID", { id })
+    return new BuiltinModuleSource(ctx)
   }
 
   /**

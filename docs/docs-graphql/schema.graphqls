@@ -87,6 +87,9 @@ type Binding {
   """Retrieve the binding value, as type Address"""
   asAddress: Address!
 
+  """Retrieve the binding value, as type BuiltinModuleSource"""
+  asBuiltinModuleSource: BuiltinModuleSource!
+
   """Retrieve the binding value, as type CacheVolume"""
   asCacheVolume: CacheVolume!
 
@@ -206,6 +209,23 @@ input BuildArg {
   """The build argument value."""
   value: String!
 }
+
+"""An engine-bundled module source catalog entry."""
+type BuiltinModuleSource {
+  """Human-readable builtin module description."""
+  description: String!
+
+  """A unique identifier for this BuiltinModuleSource."""
+  id: BuiltinModuleSourceID!
+
+  """Stable builtin module catalog name."""
+  name: String!
+}
+
+"""
+The `BuiltinModuleSourceID` scalar type represents an identifier for an object of type BuiltinModuleSource.
+"""
+scalar BuiltinModuleSourceID
 
 """Sharing mode of the cache volume."""
 enum CacheSharingMode {
@@ -2480,6 +2500,31 @@ type Env {
     description: String!
   ): Env!
 
+  """
+  Create or update a binding of type BuiltinModuleSource in the environment
+  """
+  withBuiltinModuleSourceInput(
+    """The name of the binding"""
+    name: String!
+
+    """The BuiltinModuleSource value to assign to the binding"""
+    value: BuiltinModuleSourceID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired BuiltinModuleSource output to be assigned in the environment
+  """
+  withBuiltinModuleSourceOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type CacheVolume in the environment"""
   withCacheVolumeInput(
     """The name of the binding"""
@@ -4651,7 +4696,7 @@ type ModuleSource {
   """
   introspectionSchemaJSON: File!
 
-  """The kind of module source (currently local, git or dir)."""
+  """The kind of module source (currently local, git, dir, or builtin)."""
   kind: ModuleSourceKind!
 
   """
@@ -4846,9 +4891,11 @@ enum ModuleSourceKind {
   LOCAL_SOURCE
   GIT_SOURCE
   DIR_SOURCE
+  BUILTIN_SOURCE
   LOCAL
   GIT
   DIR
+  BUILTIN
 }
 
 """Transport layer network protocol associated to a port."""
@@ -4951,6 +4998,15 @@ type Query {
   initialize an address to load directories, containers, secrets or other object types.
   """
   address(value: String!): Address!
+
+  """Resolve a builtin module source by catalog name."""
+  builtinModuleSource(
+    """The builtin module source catalog name."""
+    name: String!
+  ): ModuleSource!
+
+  """List builtin module source catalog entries visible to this client."""
+  builtinModuleSources: [BuiltinModuleSource!]!
 
   """Constructs a cache volume for a given cache key."""
   cacheVolume(
@@ -5180,6 +5236,9 @@ type Query {
 
   """Load a Binding from its ID."""
   loadBindingFromID(id: BindingID!): Binding!
+
+  """Load a BuiltinModuleSource from its ID."""
+  loadBuiltinModuleSourceFromID(id: BuiltinModuleSourceID!): BuiltinModuleSource!
 
   """Load a CacheVolume from its ID."""
   loadCacheVolumeFromID(id: CacheVolumeID!): CacheVolume!

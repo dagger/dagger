@@ -136,6 +136,9 @@ type AddressID string
 // The `BindingID` scalar type represents an identifier for an object of type Binding.
 type BindingID string
 
+// The `BuiltinModuleSourceID` scalar type represents an identifier for an object of type BuiltinModuleSource.
+type BuiltinModuleSourceID string
+
 // The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
 type CacheVolumeID string
 
@@ -591,6 +594,15 @@ func (r *Binding) AsAddress() *Address {
 	}
 }
 
+// Retrieve the binding value, as type BuiltinModuleSource
+func (r *Binding) AsBuiltinModuleSource() *BuiltinModuleSource {
+	q := r.query.Select("asBuiltinModuleSource")
+
+	return &BuiltinModuleSource{
+		query: q,
+	}
+}
+
 // Retrieve the binding value, as type CacheVolume
 func (r *Binding) AsCacheVolume() *CacheVolume {
 	q := r.query.Select("asCacheVolume")
@@ -950,6 +962,87 @@ func (r *Binding) TypeName(ctx context.Context) (string, error) {
 		return *r.typeName, nil
 	}
 	q := r.query.Select("typeName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// An engine-bundled module source catalog entry.
+type BuiltinModuleSource struct {
+	query *querybuilder.Selection
+
+	description *string
+	id          *BuiltinModuleSourceID
+	name        *string
+}
+
+func (r *BuiltinModuleSource) WithGraphQLQuery(q *querybuilder.Selection) *BuiltinModuleSource {
+	return &BuiltinModuleSource{
+		query: q,
+	}
+}
+
+// Human-readable builtin module description.
+func (r *BuiltinModuleSource) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this BuiltinModuleSource.
+func (r *BuiltinModuleSource) ID(ctx context.Context) (BuiltinModuleSourceID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response BuiltinModuleSourceID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *BuiltinModuleSource) XXX_GraphQLType() string {
+	return "BuiltinModuleSource"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *BuiltinModuleSource) XXX_GraphQLIDType() string {
+	return "BuiltinModuleSourceID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *BuiltinModuleSource) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *BuiltinModuleSource) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Stable builtin module catalog name.
+func (r *BuiltinModuleSource) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
 
 	var response string
 
@@ -5827,6 +5920,30 @@ func (r *Env) WithAddressInput(name string, value *Address, description string) 
 // Declare a desired Address output to be assigned in the environment
 func (r *Env) WithAddressOutput(name string, description string) *Env {
 	q := r.query.Select("withAddressOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type BuiltinModuleSource in the environment
+func (r *Env) WithBuiltinModuleSourceInput(name string, value *BuiltinModuleSource, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withBuiltinModuleSourceInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired BuiltinModuleSource output to be assigned in the environment
+func (r *Env) WithBuiltinModuleSourceOutput(name string, description string) *Env {
+	q := r.query.Select("withBuiltinModuleSourceOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -11409,7 +11526,7 @@ func (r *ModuleSource) IntrospectionSchemaJSON() *File {
 	}
 }
 
-// The kind of module source (currently local, git or dir).
+// The kind of module source (currently local, git, dir, or builtin).
 func (r *ModuleSource) Kind(ctx context.Context) (ModuleSourceKind, error) {
 	if r.kind != nil {
 		return *r.kind, nil
@@ -12128,6 +12245,49 @@ func (r *Query) Address(value string) *Address {
 	}
 }
 
+// Resolve a builtin module source by catalog name.
+func (r *Query) BuiltinModuleSource(name string) *ModuleSource {
+	q := r.query.Select("builtinModuleSource")
+	q = q.Arg("name", name)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
+// List builtin module source catalog entries visible to this client.
+func (r *Query) BuiltinModuleSources(ctx context.Context) ([]BuiltinModuleSource, error) {
+	q := r.query.Select("builtinModuleSources")
+
+	q = q.Select("id")
+
+	type builtinModuleSources struct {
+		Id BuiltinModuleSourceID
+	}
+
+	convert := func(fields []builtinModuleSources) []BuiltinModuleSource {
+		out := []BuiltinModuleSource{}
+
+		for i := range fields {
+			val := BuiltinModuleSource{id: &fields[i].Id}
+			val.query = q.Root().Select("loadBuiltinModuleSourceFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []builtinModuleSources
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // CacheVolumeOpts contains options for Query.CacheVolume
 type CacheVolumeOpts struct {
 	// Identifier of the directory to use as the cache volume's root.
@@ -12652,6 +12812,16 @@ func (r *Query) LoadBindingFromID(id BindingID) *Binding {
 	q = q.Arg("id", id)
 
 	return &Binding{
+		query: q,
+	}
+}
+
+// Load a BuiltinModuleSource from its ID.
+func (r *Query) LoadBuiltinModuleSourceFromID(id BuiltinModuleSourceID) *BuiltinModuleSource {
+	q := r.query.Select("loadBuiltinModuleSourceFromID")
+	q = q.Arg("id", id)
+
+	return &BuiltinModuleSource{
 		query: q,
 	}
 }
@@ -16205,6 +16375,8 @@ func (v ModuleSourceKind) Name() string {
 		return "GIT_SOURCE"
 	case ModuleSourceKindDirSource:
 		return "DIR_SOURCE"
+	case ModuleSourceKindBuiltinSource:
+		return "BUILTIN_SOURCE"
 	default:
 		return ""
 	}
@@ -16233,6 +16405,10 @@ func (v *ModuleSourceKind) UnmarshalJSON(dt []byte) error {
 	switch s {
 	case "":
 		*v = ""
+	case "BUILTIN":
+		*v = ModuleSourceKindBuiltin
+	case "BUILTIN_SOURCE":
+		*v = ModuleSourceKindBuiltinSource
 	case "DIR":
 		*v = ModuleSourceKindDir
 	case "DIR_SOURCE":
@@ -16260,6 +16436,9 @@ const (
 
 	ModuleSourceKindDirSource ModuleSourceKind = "DIR_SOURCE"
 	ModuleSourceKindDir       ModuleSourceKind = ModuleSourceKindDirSource
+
+	ModuleSourceKindBuiltinSource ModuleSourceKind = "BUILTIN_SOURCE"
+	ModuleSourceKindBuiltin       ModuleSourceKind = ModuleSourceKindBuiltinSource
 )
 
 // Transport layer network protocol associated to a port.

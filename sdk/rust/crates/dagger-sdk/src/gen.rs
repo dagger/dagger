@@ -76,6 +76,41 @@ impl BindingId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct BuiltinModuleSourceId(pub String);
+impl From<&str> for BuiltinModuleSourceId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for BuiltinModuleSourceId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<BuiltinModuleSourceId> for BuiltinModuleSource {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<BuiltinModuleSourceId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<BuiltinModuleSourceId> for BuiltinModuleSourceId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<BuiltinModuleSourceId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<BuiltinModuleSourceId, DaggerError>(self) })
+    }
+}
+impl BuiltinModuleSourceId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct CacheVolumeId(pub String);
 impl From<&str> for CacheVolumeId {
     fn from(value: &str) -> Self {
@@ -2485,6 +2520,15 @@ impl Binding {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Retrieve the binding value, as type BuiltinModuleSource
+    pub fn as_builtin_module_source(&self) -> BuiltinModuleSource {
+        let query = self.selection.select("asBuiltinModuleSource");
+        BuiltinModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieve the binding value, as type CacheVolume
     pub fn as_cache_volume(&self) -> CacheVolume {
         let query = self.selection.select("asCacheVolume");
@@ -2774,6 +2818,29 @@ impl Binding {
     /// Returns the binding type
     pub async fn type_name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("typeName");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
+pub struct BuiltinModuleSource {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl BuiltinModuleSource {
+    /// Human-readable builtin module description.
+    pub async fn description(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("description");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this BuiltinModuleSource.
+    pub async fn id(&self) -> Result<BuiltinModuleSourceId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Stable builtin module catalog name.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -7629,6 +7696,55 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create or update a binding of type BuiltinModuleSource in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The BuiltinModuleSource value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_builtin_module_source_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<BuiltinModuleSourceId>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withBuiltinModuleSourceInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired BuiltinModuleSource output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_builtin_module_source_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withBuiltinModuleSourceOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create or update a binding of type CacheVolume in the environment
     ///
     /// # Arguments
@@ -12175,7 +12291,7 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// The kind of module source (currently local, git or dir).
+    /// The kind of module source (currently local, git, dir, or builtin).
     pub async fn kind(&self) -> Result<ModuleSourceKind, DaggerError> {
         let query = self.selection.select("kind");
         query.execute(self.graphql_client.clone()).await
@@ -12812,6 +12928,29 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Resolve a builtin module source by catalog name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The builtin module source catalog name.
+    pub fn builtin_module_source(&self, name: impl Into<String>) -> ModuleSource {
+        let mut query = self.selection.select("builtinModuleSource");
+        query = query.arg("name", name.into());
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// List builtin module source catalog entries visible to this client.
+    pub fn builtin_module_sources(&self) -> Vec<BuiltinModuleSource> {
+        let query = self.selection.select("builtinModuleSources");
+        vec![BuiltinModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
+    }
     /// Constructs a cache volume for a given cache key.
     ///
     /// # Arguments
@@ -13343,6 +13482,25 @@ impl Query {
             }),
         );
         Binding {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a BuiltinModuleSource from its ID.
+    pub fn load_builtin_module_source_from_id(
+        &self,
+        id: impl IntoID<BuiltinModuleSourceId>,
+    ) -> BuiltinModuleSource {
+        let mut query = self.selection.select("loadBuiltinModuleSourceFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        BuiltinModuleSource {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -15963,6 +16121,10 @@ pub enum ModuleSourceExperimentalFeature {
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum ModuleSourceKind {
+    #[serde(rename = "BUILTIN")]
+    Builtin,
+    #[serde(rename = "BUILTIN_SOURCE")]
+    BuiltinSource,
     #[serde(rename = "DIR")]
     Dir,
     #[serde(rename = "DIR_SOURCE")]

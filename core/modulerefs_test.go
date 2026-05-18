@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/vcs"
 	"github.com/stretchr/testify/require"
 )
@@ -29,6 +30,34 @@ func TestMatchVersion(t *testing.T) {
 
 	_, err = matchVersion([]string{"hello/v0.3.0"}, "v0.3.0", "/hello")
 	require.NoError(t, err)
+}
+
+func TestParseRefStringBuiltin(t *testing.T) {
+	t.Setenv(distconsts.PythonSDKManifestDigestEnvName, "sha256:1111111111111111111111111111111111111111111111111111111111111111")
+
+	parsed, err := ParseRefString(
+		context.Background(),
+		neverExistsFS{},
+		"python-runtime",
+		"",
+	)
+	require.NoError(t, err)
+	require.Equal(t, ModuleSourceKindBuiltin, parsed.Kind)
+	require.Equal(t, "python-runtime", parsed.Builtin.Name)
+}
+
+func TestParseRefStringBuiltinPrefix(t *testing.T) {
+	t.Setenv(distconsts.PythonSDKManifestDigestEnvName, "sha256:1111111111111111111111111111111111111111111111111111111111111111")
+
+	parsed, err := ParseRefString(
+		context.Background(),
+		neverExistsFS{},
+		"builtin:python-runtime",
+		"",
+	)
+	require.NoError(t, err)
+	require.Equal(t, ModuleSourceKindBuiltin, parsed.Kind)
+	require.Equal(t, "python-runtime", parsed.Builtin.Name)
 }
 
 // Test ParseRefString using an interface to control Host side effect

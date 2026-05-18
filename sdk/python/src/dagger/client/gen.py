@@ -21,6 +21,11 @@ class BindingID(Scalar):
     of type Binding."""
 
 
+class BuiltinModuleSourceID(Scalar):
+    """The `BuiltinModuleSourceID` scalar type represents an identifier
+    for an object of type BuiltinModuleSource."""
+
+
 class CacheVolumeID(Scalar):
     """The `CacheVolumeID` scalar type represents an identifier for an
     object of type CacheVolume."""
@@ -492,6 +497,9 @@ class ModuleSourceExperimentalFeature(Enum):
 class ModuleSourceKind(Enum):
     """The kind of module source."""
 
+    BUILTIN_SOURCE = "BUILTIN_SOURCE"
+    BUILTIN = "BUILTIN_SOURCE"
+
     DIR_SOURCE = "DIR_SOURCE"
     DIR = "DIR_SOURCE"
 
@@ -782,6 +790,12 @@ class Binding(Type):
         _args: list[Arg] = []
         _ctx = self._select("asAddress", _args)
         return Address(_ctx)
+
+    def as_builtin_module_source(self) -> "BuiltinModuleSource":
+        """Retrieve the binding value, as type BuiltinModuleSource"""
+        _args: list[Arg] = []
+        _ctx = self._select("asBuiltinModuleSource", _args)
+        return BuiltinModuleSource(_ctx)
 
     def as_cache_volume(self) -> "CacheVolume":
         """Retrieve the binding value, as type CacheVolume"""
@@ -1082,6 +1096,77 @@ class Binding(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("typeName", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
+class BuiltinModuleSource(Type):
+    """An engine-bundled module source catalog entry."""
+
+    async def description(self) -> str:
+        """Human-readable builtin module description.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> BuiltinModuleSourceID:
+        """A unique identifier for this BuiltinModuleSource.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        BuiltinModuleSourceID
+            The `BuiltinModuleSourceID` scalar type represents an identifier
+            for an object of type BuiltinModuleSource.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(BuiltinModuleSourceID)
+
+    async def name(self) -> str:
+        """Stable builtin module catalog name.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
         return await _ctx.execute(str)
 
 
@@ -5883,6 +5968,50 @@ class Env(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withAddressOutput", _args)
+        return Env(_ctx)
+
+    def with_builtin_module_source_input(
+        self,
+        name: str,
+        value: BuiltinModuleSource,
+        description: str,
+    ) -> Self:
+        """Create or update a binding of type BuiltinModuleSource in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        value:
+            The BuiltinModuleSource value to assign to the binding
+        description:
+            The purpose of the input
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withBuiltinModuleSourceInput", _args)
+        return Env(_ctx)
+
+    def with_builtin_module_source_output(self, name: str, description: str) -> Self:
+        """Declare a desired BuiltinModuleSource output to be assigned in the
+        environment
+
+        Parameters
+        ----------
+        name:
+            The name of the binding
+        description:
+            A description of the desired value of the binding
+        """
+        _args = [
+            Arg("name", name),
+            Arg("description", description),
+        ]
+        _ctx = self._select("withBuiltinModuleSourceOutput", _args)
         return Env(_ctx)
 
     def with_cache_volume_input(
@@ -11575,7 +11704,7 @@ class ModuleSource(Type):
         return File(_ctx)
 
     async def kind(self) -> ModuleSourceKind:
-        """The kind of module source (currently local, git or dir).
+        """The kind of module source (currently local, git, dir, or builtin).
 
         Returns
         -------
@@ -12356,6 +12485,26 @@ class Query(Root):
         _ctx = self._select("address", _args)
         return Address(_ctx)
 
+    def builtin_module_source(self, name: str) -> ModuleSource:
+        """Resolve a builtin module source by catalog name.
+
+        Parameters
+        ----------
+        name:
+            The builtin module source catalog name.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("builtinModuleSource", _args)
+        return ModuleSource(_ctx)
+
+    async def builtin_module_sources(self) -> list[BuiltinModuleSource]:
+        """List builtin module source catalog entries visible to this client."""
+        _args: list[Arg] = []
+        _ctx = self._select("builtinModuleSources", _args)
+        return await _ctx.execute_object_list(BuiltinModuleSource)
+
     def cache_volume(
         self,
         key: str,
@@ -12808,6 +12957,16 @@ class Query(Root):
         ]
         _ctx = self._select("loadBindingFromID", _args)
         return Binding(_ctx)
+
+    def load_builtin_module_source_from_id(
+        self, id: BuiltinModuleSourceID
+    ) -> BuiltinModuleSource:
+        """Load a BuiltinModuleSource from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadBuiltinModuleSourceFromID", _args)
+        return BuiltinModuleSource(_ctx)
 
     def load_cache_volume_from_id(self, id: CacheVolumeID) -> CacheVolume:
         """Load a CacheVolume from its ID."""
@@ -15398,6 +15557,8 @@ __all__ = [
     "Binding",
     "BindingID",
     "BuildArg",
+    "BuiltinModuleSource",
+    "BuiltinModuleSourceID",
     "CacheSharingMode",
     "CacheVolume",
     "CacheVolumeID",

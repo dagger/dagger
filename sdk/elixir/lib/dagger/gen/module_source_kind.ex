@@ -6,7 +6,15 @@ defmodule Dagger.ModuleSourceKind do
 
   use Dagger.Core.Base, kind: :enum, name: "ModuleSourceKind"
 
-  @type t() :: :LOCAL_SOURCE | :GIT_SOURCE | :DIR_SOURCE | :LOCAL | :GIT | :DIR
+  @type t() ::
+          :LOCAL_SOURCE
+          | :GIT_SOURCE
+          | :DIR_SOURCE
+          | :BUILTIN_SOURCE
+          | :LOCAL
+          | :GIT
+          | :DIR
+          | :BUILTIN
 
   @spec local_source() :: :LOCAL_SOURCE
   def local_source(), do: :LOCAL_SOURCE
@@ -17,6 +25,9 @@ defmodule Dagger.ModuleSourceKind do
   @spec dir_source() :: :DIR_SOURCE
   def dir_source(), do: :DIR_SOURCE
 
+  @spec builtin_source() :: :BUILTIN_SOURCE
+  def builtin_source(), do: :BUILTIN_SOURCE
+
   @spec local() :: :LOCAL
   def local(), do: :LOCAL
 
@@ -26,6 +37,9 @@ defmodule Dagger.ModuleSourceKind do
   @spec dir() :: :DIR
   def dir(), do: :DIR
 
+  @spec builtin() :: :BUILTIN
+  def builtin(), do: :BUILTIN
+
   @doc false
   @spec from_string(String.t()) :: t()
   def from_string(string)
@@ -33,7 +47,9 @@ defmodule Dagger.ModuleSourceKind do
   def from_string("LOCAL_SOURCE"), do: :LOCAL_SOURCE
   def from_string("GIT_SOURCE"), do: :GIT_SOURCE
   def from_string("DIR_SOURCE"), do: :DIR_SOURCE
+  def from_string("BUILTIN_SOURCE"), do: :BUILTIN_SOURCE
   def from_string("LOCAL"), do: :LOCAL
   def from_string("GIT"), do: :GIT
   def from_string("DIR"), do: :DIR
+  def from_string("BUILTIN"), do: :BUILTIN
 end

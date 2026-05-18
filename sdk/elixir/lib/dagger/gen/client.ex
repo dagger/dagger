@@ -30,6 +30,42 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Resolve a builtin module source by catalog name.
+  """
+  @spec builtin_module_source(t(), String.t()) :: Dagger.ModuleSource.t()
+  def builtin_module_source(%__MODULE__{} = client, name) do
+    query_builder =
+      client.query_builder |> QB.select("builtinModuleSource") |> QB.put_arg("name", name)
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  List builtin module source catalog entries visible to this client.
+  """
+  @spec builtin_module_sources(t()) :: {:ok, [Dagger.BuiltinModuleSource.t()]} | {:error, term()}
+  def builtin_module_sources(%__MODULE__{} = client) do
+    query_builder =
+      client.query_builder |> QB.select("builtinModuleSources") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(client.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.BuiltinModuleSource{
+           query_builder:
+             QB.query()
+             |> QB.select("loadBuiltinModuleSourceFromID")
+             |> QB.put_arg("id", id),
+           client: client.client
+         }
+       end}
+    end
+  end
+
+  @doc """
   Constructs a cache volume for a given cache key.
   """
   @spec cache_volume(t(), String.t(), [
@@ -480,6 +516,21 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("loadBindingFromID") |> QB.put_arg("id", id)
 
     %Dagger.Binding{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a BuiltinModuleSource from its ID.
+  """
+  @spec load_builtin_module_source_from_id(t(), Dagger.BuiltinModuleSourceID.t()) ::
+          Dagger.BuiltinModuleSource.t()
+  def load_builtin_module_source_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadBuiltinModuleSourceFromID") |> QB.put_arg("id", id)
+
+    %Dagger.BuiltinModuleSource{
       query_builder: query_builder,
       client: client.client
     }

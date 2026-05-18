@@ -52,6 +52,18 @@ func Address(value string) *dagger.Address {
 	return client.Address(value)
 }
 
+// Resolve a builtin module source by catalog name.
+func BuiltinModuleSource(name string) *dagger.ModuleSource {
+	client := initClient()
+	return client.BuiltinModuleSource(name)
+}
+
+// List builtin module source catalog entries visible to this client.
+func BuiltinModuleSources(ctx context.Context) ([]dagger.BuiltinModuleSource, error) {
+	client := initClient()
+	return client.BuiltinModuleSources(ctx)
+}
+
 // Constructs a cache volume for a given cache key.
 func CacheVolume(key string, opts ...dagger.CacheVolumeOpts) *dagger.CacheVolume {
 	client := initClient()
@@ -222,6 +234,12 @@ func LoadAddressFromID(id dagger.AddressID) *dagger.Address {
 func LoadBindingFromID(id dagger.BindingID) *dagger.Binding {
 	client := initClient()
 	return client.LoadBindingFromID(id)
+}
+
+// Load a BuiltinModuleSource from its ID.
+func LoadBuiltinModuleSourceFromID(id dagger.BuiltinModuleSourceID) *dagger.BuiltinModuleSource {
+	client := initClient()
+	return client.LoadBuiltinModuleSourceFromID(id)
 }
 
 // Load a CacheVolume from its ID.

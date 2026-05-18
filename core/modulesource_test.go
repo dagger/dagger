@@ -3,6 +3,7 @@ package core
 import (
 	"testing"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -46,4 +47,63 @@ func TestGitModuleSourceSymbolic(t *testing.T) {
 			require.Equal(t, tc.expected, result, "AsString() returned unexpected result")
 		})
 	}
+}
+
+func TestBuiltinModuleSourceClone(t *testing.T) {
+	src := &ModuleSource{
+		Kind: ModuleSourceKindBuiltin,
+		Builtin: &BuiltinModuleSource{
+			Name:              "python",
+			Description:       "Python runtime",
+			ManifestDigest:    digest.FromString("python-runtime"),
+			SourceRootSubpath: "runtime",
+		},
+	}
+
+	clone := src.Clone()
+	require.NotSame(t, src.Builtin, clone.Builtin)
+	require.Equal(t, src.Builtin, clone.Builtin)
+
+	clone.Builtin.Name = "typescript"
+	require.Equal(t, "python", src.Builtin.Name)
+}
+
+func TestBuiltinModuleSourceAsString(t *testing.T) {
+	src := &ModuleSource{
+		Kind: ModuleSourceKindBuiltin,
+		Builtin: &BuiltinModuleSource{
+			Name: "python",
+		},
+	}
+
+	require.Equal(t, "builtin:python", src.AsString())
+}
+
+func TestBuiltinModuleSourcePin(t *testing.T) {
+	dgst := digest.FromString("python-runtime")
+	src := &ModuleSource{
+		Kind: ModuleSourceKindBuiltin,
+		Builtin: &BuiltinModuleSource{
+			Name:           "python-runtime",
+			ManifestDigest: dgst,
+		},
+	}
+
+	require.Equal(t, dgst.String(), src.Pin())
+}
+
+func TestBuiltinModuleResultCallIdentity(t *testing.T) {
+	dgst := digest.FromString("python-runtime")
+	src := &ModuleSource{
+		Kind: ModuleSourceKindBuiltin,
+		Builtin: &BuiltinModuleSource{
+			Name:           "python-runtime",
+			ManifestDigest: dgst,
+		},
+	}
+
+	ref, pin, err := resultCallModuleRefAndPin(src)
+	require.NoError(t, err)
+	require.Equal(t, "builtin:python-runtime", ref)
+	require.Equal(t, dgst.String(), pin)
 }

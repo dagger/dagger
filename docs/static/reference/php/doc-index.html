@@ -111,7 +111,9 @@
                     <dd><p>A standardized address to load containers, directories, secrets, and other object types. Address format depends on the type, and is validated at type selection.</p></dd><dt><a href="Dagger/AddressId.html"><abbr title="Dagger\AddressId">AddressId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The <code>AddressID</code> scalar type represents an identifier for an object of type Address.</p></dd><dt><a href="Dagger/Binding.html#method_asAddress">
 <abbr title="Dagger\Binding">Binding</abbr>::asAddress</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
-                    <dd><p>Retrieve the binding value, as type Address</p></dd><dt><a href="Dagger/Binding.html#method_asCacheVolume">
+                    <dd><p>Retrieve the binding value, as type Address</p></dd><dt><a href="Dagger/Binding.html#method_asBuiltinModuleSource">
+<abbr title="Dagger\Binding">Binding</abbr>::asBuiltinModuleSource</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
+                    <dd><p>Retrieve the binding value, as type BuiltinModuleSource</p></dd><dt><a href="Dagger/Binding.html#method_asCacheVolume">
 <abbr title="Dagger\Binding">Binding</abbr>::asCacheVolume</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>Retrieve the binding value, as type CacheVolume</p></dd><dt><a href="Dagger/Binding.html#method_asChangeset">
 <abbr title="Dagger\Binding">Binding</abbr>::asChangeset</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
@@ -246,9 +248,15 @@
         <dl id="indexB"><dt><a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd></dd><dt><a href="Dagger/BindingId.html"><abbr title="Dagger\BindingId">BindingId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>The <code>BindingID</code> scalar type represents an identifier for an object of type Binding.</p></dd><dt><a href="Dagger/BuildArg.html"><abbr title="Dagger\BuildArg">BuildArg</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
-                    <dd><p>Key value object that represents a build argument.</p></dd><dt><a href="Dagger/Changeset.html#method_before">
+                    <dd><p>Key value object that represents a build argument.</p></dd><dt><a href="Dagger/BuiltinModuleSource.html"><abbr title="Dagger\BuiltinModuleSource">BuiltinModuleSource</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>An engine-bundled module source catalog entry.</p></dd><dt><a href="Dagger/BuiltinModuleSourceId.html"><abbr title="Dagger\BuiltinModuleSourceId">BuiltinModuleSourceId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>The <code>BuiltinModuleSourceID</code> scalar type represents an identifier for an object of type BuiltinModuleSource.</p></dd><dt><a href="Dagger/Changeset.html#method_before">
 <abbr title="Dagger\Changeset">Changeset</abbr>::before</a>() &mdash; <em>Method in class <a href="Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></em></dt>
-                    <dd><p>The older/lower snapshot to compare against.</p></dd><dt><a href="Dagger/GitRepository.html#method_branch">
+                    <dd><p>The older/lower snapshot to compare against.</p></dd><dt><a href="Dagger/Client.html#method_builtinModuleSource">
+<abbr title="Dagger\Client">Client</abbr>::builtinModuleSource</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>Resolve a builtin module source by catalog name.</p></dd><dt><a href="Dagger/Client.html#method_builtinModuleSources">
+<abbr title="Dagger\Client">Client</abbr>::builtinModuleSources</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>List builtin module source catalog entries visible to this client.</p></dd><dt><a href="Dagger/GitRepository.html#method_branch">
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::branch</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
                     <dd><p>Returns details of a branch.</p></dd><dt><a href="Dagger/GitRepository.html#method_branches">
 <abbr title="Dagger\GitRepository">GitRepository</abbr>::branches</a>() &mdash; <em>Method in class <a href="Dagger/GitRepository.html"><abbr title="Dagger\GitRepository">GitRepository</abbr></a></em></dt>
@@ -394,7 +402,9 @@
                     <dd></dd><dt><a href="Dagger/Attribute/Doc.html"><abbr title="Dagger\Attribute\Doc">Doc</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Attribute.html">Dagger\Attribute</a></em></dt>
                     <dd></dd><dt><a href="Dagger/Binding.html#method_digest">
 <abbr title="Dagger\Binding">Binding</abbr>::digest</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
-                    <dd><p>Returns the digest of the binding value</p></dd><dt><a href="Dagger/Changeset.html#method_diffStats">
+                    <dd><p>Returns the digest of the binding value</p></dd><dt><a href="Dagger/BuiltinModuleSource.html#method_description">
+<abbr title="Dagger\BuiltinModuleSource">BuiltinModuleSource</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/BuiltinModuleSource.html"><abbr title="Dagger\BuiltinModuleSource">BuiltinModuleSource</abbr></a></em></dt>
+                    <dd><p>Human-readable builtin module description.</p></dd><dt><a href="Dagger/Changeset.html#method_diffStats">
 <abbr title="Dagger\Changeset">Changeset</abbr>::diffStats</a>() &mdash; <em>Method in class <a href="Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></em></dt>
                     <dd><p>Structured per-path diff statistics (kind and line counts) for this changeset.</p></dd><dt><a href="Dagger/Check.html#method_description">
 <abbr title="Dagger\Check">Check</abbr>::description</a>() &mdash; <em>Method in class <a href="Dagger/Check.html"><abbr title="Dagger\Check">Check</abbr></a></em></dt>
@@ -715,7 +725,9 @@
 <abbr title="Dagger\Binding">Binding</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
                     <dd><p>A unique identifier for this Binding.</p></dd><dt><a href="Dagger/Binding.html#method_isNull">
 <abbr title="Dagger\Binding">Binding</abbr>::isNull</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
-                    <dd><p>Returns true if the binding is null</p></dd><dt><a href="Dagger/CacheVolume.html#method_id">
+                    <dd><p>Returns true if the binding is null</p></dd><dt><a href="Dagger/BuiltinModuleSource.html#method_id">
+<abbr title="Dagger\BuiltinModuleSource">BuiltinModuleSource</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/BuiltinModuleSource.html"><abbr title="Dagger\BuiltinModuleSource">BuiltinModuleSource</abbr></a></em></dt>
+                    <dd><p>A unique identifier for this BuiltinModuleSource.</p></dd><dt><a href="Dagger/CacheVolume.html#method_id">
 <abbr title="Dagger\CacheVolume">CacheVolume</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/CacheVolume.html"><abbr title="Dagger\CacheVolume">CacheVolume</abbr></a></em></dt>
                     <dd><p>A unique identifier for this CacheVolume.</p></dd><dt><a href="Dagger/Changeset.html#method_id">
 <abbr title="Dagger\Changeset">Changeset</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></em></dt>
@@ -895,7 +907,7 @@
 <abbr title="Dagger\DiffStat">DiffStat</abbr>::kind</a>() &mdash; <em>Method in class <a href="Dagger/DiffStat.html"><abbr title="Dagger\DiffStat">DiffStat</abbr></a></em></dt>
                     <dd><p>Type of change.</p></dd><dt><a href="Dagger/ModuleSource.html#method_kind">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::kind</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>The kind of module source (currently local, git or dir).</p></dd><dt><a href="Dagger/TypeDef.html#method_kind">
+                    <dd><p>The kind of module source (currently local, git, dir, or builtin).</p></dd><dt><a href="Dagger/TypeDef.html#method_kind">
 <abbr title="Dagger\TypeDef">TypeDef</abbr>::kind</a>() &mdash; <em>Method in class <a href="Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></em></dt>
                     <dd><p>The kind of type this is (e.g. primitive, list, object).</p></dd>        </dl><h2 id="letterL">L</h2>
         <dl id="indexL"><dt><a href="Dagger/Attribute/ListOfType.html"><abbr title="Dagger\Attribute\ListOfType">ListOfType</abbr></a> &mdash; <em>Class in namespace <a href="Dagger/Attribute.html">Dagger\Attribute</a></em></dt>
@@ -909,7 +921,9 @@
 <abbr title="Dagger\Client">Client</abbr>::loadAddressFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a Address from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadBindingFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadBindingFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
-                    <dd><p>Load a Binding from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadCacheVolumeFromID">
+                    <dd><p>Load a Binding from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadBuiltinModuleSourceFromID">
+<abbr title="Dagger\Client">Client</abbr>::loadBuiltinModuleSourceFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
+                    <dd><p>Load a BuiltinModuleSource from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadCacheVolumeFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadCacheVolumeFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
                     <dd><p>Load a CacheVolume from its ID.</p></dd><dt><a href="Dagger/Client.html#method_loadChangesetFromID">
 <abbr title="Dagger\Client">Client</abbr>::loadChangesetFromID</a>() &mdash; <em>Method in class <a href="Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a></em></dt>
@@ -1111,7 +1125,9 @@
                     <dd><p>The module dependency this was declared in.</p></dd>        </dl><h2 id="letterN">N</h2>
         <dl id="indexN"><dt><a href="Dagger/Binding.html#method_name">
 <abbr title="Dagger\Binding">Binding</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Binding.html"><abbr title="Dagger\Binding">Binding</abbr></a></em></dt>
-                    <dd><p>Returns the binding name</p></dd><dt><a href="Dagger/Check.html#method_name">
+                    <dd><p>Returns the binding name</p></dd><dt><a href="Dagger/BuiltinModuleSource.html#method_name">
+<abbr title="Dagger\BuiltinModuleSource">BuiltinModuleSource</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/BuiltinModuleSource.html"><abbr title="Dagger\BuiltinModuleSource">BuiltinModuleSource</abbr></a></em></dt>
+                    <dd><p>Stable builtin module catalog name.</p></dd><dt><a href="Dagger/Check.html#method_name">
 <abbr title="Dagger\Check">Check</abbr>::name</a>() &mdash; <em>Method in class <a href="Dagger/Check.html"><abbr title="Dagger\Check">Check</abbr></a></em></dt>
                     <dd><p>Return the fully qualified name of the check</p></dd><dt><a href="Dagger/Connection.html#method_newEnvSession">
 <abbr title="Dagger\Connection">Connection</abbr>::newEnvSession</a>() &mdash; <em>Method in class <a href="Dagger/Connection.html"><abbr title="Dagger\Connection">Connection</abbr></a></em></dt>
@@ -1666,7 +1682,11 @@
 <abbr title="Dagger\Env">Env</abbr>::withAddressInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Create or update a binding of type Address in the environment</p></dd><dt><a href="Dagger/Env.html#method_withAddressOutput">
 <abbr title="Dagger\Env">Env</abbr>::withAddressOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
-                    <dd><p>Declare a desired Address output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withCacheVolumeInput">
+                    <dd><p>Declare a desired Address output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withBuiltinModuleSourceInput">
+<abbr title="Dagger\Env">Env</abbr>::withBuiltinModuleSourceInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Create or update a binding of type BuiltinModuleSource in the environment</p></dd><dt><a href="Dagger/Env.html#method_withBuiltinModuleSourceOutput">
+<abbr title="Dagger\Env">Env</abbr>::withBuiltinModuleSourceOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
+                    <dd><p>Declare a desired BuiltinModuleSource output to be assigned in the environment</p></dd><dt><a href="Dagger/Env.html#method_withCacheVolumeInput">
 <abbr title="Dagger\Env">Env</abbr>::withCacheVolumeInput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>
                     <dd><p>Create or update a binding of type CacheVolume in the environment</p></dd><dt><a href="Dagger/Env.html#method_withCacheVolumeOutput">
 <abbr title="Dagger\Env">Env</abbr>::withCacheVolumeOutput</a>() &mdash; <em>Method in class <a href="Dagger/Env.html"><abbr title="Dagger\Env">Env</abbr></a></em></dt>

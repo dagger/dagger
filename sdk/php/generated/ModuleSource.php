@@ -181,7 +181,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The kind of module source (currently local, git or dir).
+     * The kind of module source (currently local, git, dir, or builtin).
      */
     public function kind(): ModuleSourceKind
     {

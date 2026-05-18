@@ -24,6 +24,25 @@ class Client extends Client\AbstractClient implements Client\IdAble
     }
 
     /**
+     * Resolve a builtin module source by catalog name.
+     */
+    public function builtinModuleSource(string $name): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('builtinModuleSource');
+        $innerQueryBuilder->setArgument('name', $name);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * List builtin module source catalog entries visible to this client.
+     */
+    public function builtinModuleSources(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('builtinModuleSources');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'builtinModuleSources');
+    }
+
+    /**
      * Constructs a cache volume for a given cache key.
      */
     public function cacheVolume(
@@ -380,6 +399,16 @@ class Client extends Client\AbstractClient implements Client\IdAble
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadBindingFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\Binding($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a BuiltinModuleSource from its ID.
+     */
+    public function loadBuiltinModuleSourceFromID(BuiltinModuleSourceId|BuiltinModuleSource $id): BuiltinModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadBuiltinModuleSourceFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\BuiltinModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
