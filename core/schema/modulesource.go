@@ -818,6 +818,12 @@ func (s *moduleSourceSchema) loadBlueprintModule(
 				toolchainJobs = toolchainJobs.WithJob(pcfg.Name, func(ctx context.Context) error {
 					toolchain, err := core.ResolveDepToSource(ctx, bk, dag, src, pcfg.Source, pcfg.Pin, pcfg.Name)
 					if err != nil {
+						if core.FastModuleSourceKindCheck(pcfg.Source, pcfg.Pin) == core.ModuleSourceKindLocal && errors.Is(err, os.ErrNotExist) {
+							// Don't let a stale local toolchain path block uninstall; leave a
+							// zero entry so "dagger toolchain uninstall <name>" can still match.
+							slog.Warn("failed to resolve stale local toolchain, skipping", "name", pcfg.Name, "source", pcfg.Source, "error", err)
+							return nil
+						}
 						return fmt.Errorf("failed to resolve toolchain to source: %w", err)
 					}
 					src.Toolchains[i] = toolchain
@@ -1792,31 +1798,41 @@ func (s *moduleSourceSchema) moduleSourceRemoveItems(
 	var filteredConfigItems []*modules.ModuleConfigDependency
 
 	for i, existingItem := range accessor.getItems(parentSrc) {
-		existingName := existingItem.Self().ModuleName
+		// a toolchain whose local path was deleted resolves to a zero value,
+		// so Self() will be nil. fall back to the config entry's name so
+		// "dagger toolchain uninstall <name>" can still match.
+		var existingName string
 		var existingSymbolic, existingVersion string
+		var existingSourceRootSubpath string
 
-		switch existingItem.Self().Kind {
-		case core.ModuleSourceKindLocal:
-			if parentSrc.Kind != core.ModuleSourceKindLocal {
-				return nil, fmt.Errorf("cannot remove local %s from non-local module source kind %s", accessor.typ, parentSrc.Kind)
-			}
-			parentSrcRoot := filepath.Join(parentSrc.Local.ContextDirectoryPath, parentSrc.SourceRootSubpath)
-			itemSrcRoot := filepath.Join(parentSrc.Local.ContextDirectoryPath, existingItem.Self().SourceRootSubpath)
-			var err error
-			existingSymbolic, err = pathutil.LexicalRelativePath(parentSrcRoot, itemSrcRoot)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get relative path: %w", err)
-			}
+		if existingItem.Self() != nil {
+			existingName = existingItem.Self().ModuleName
+			existingSourceRootSubpath = existingItem.Self().SourceRootSubpath
+			switch existingItem.Self().Kind {
+			case core.ModuleSourceKindLocal:
+				if parentSrc.Kind != core.ModuleSourceKindLocal {
+					return nil, fmt.Errorf("cannot remove local %s from non-local module source kind %s", accessor.typ, parentSrc.Kind)
+				}
+				parentSrcRoot := filepath.Join(parentSrc.Local.ContextDirectoryPath, parentSrc.SourceRootSubpath)
+				itemSrcRoot := filepath.Join(parentSrc.Local.ContextDirectoryPath, existingItem.Self().SourceRootSubpath)
+				var err error
+				existingSymbolic, err = pathutil.LexicalRelativePath(parentSrcRoot, itemSrcRoot)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get relative path: %w", err)
+				}
 
-		case core.ModuleSourceKindGit:
-			existingSymbolic = existingItem.Self().Git.CloneRef
-			if existingItem.Self().SourceRootSubpath != "" {
-				existingSymbolic += "/" + strings.TrimPrefix(existingItem.Self().SourceRootSubpath, "/")
-			}
-			existingVersion = existingItem.Self().Git.Version
+			case core.ModuleSourceKindGit:
+				existingSymbolic = existingItem.Self().Git.CloneRef
+				if existingItem.Self().SourceRootSubpath != "" {
+					existingSymbolic += "/" + strings.TrimPrefix(existingItem.Self().SourceRootSubpath, "/")
+				}
+				existingVersion = existingItem.Self().Git.Version
 
-		default:
-			return nil, fmt.Errorf("unhandled %s kind: %s", accessor.typ, existingItem.Self().Kind)
+			default:
+				return nil, fmt.Errorf("unhandled %s kind: %s", accessor.typ, existingItem.Self().Kind)
+			}
+		} else if accessor.typ == core.ModuleRelationTypeToolchain {
+			existingName = parentSrc.ConfigToolchains[i].Name
 		}
 
 		keep := true
@@ -1852,7 +1868,7 @@ func (s *moduleSourceSchema) moduleSourceRemoveItems(
 				reqModVersion := parsedGitRef.ModVersion
 				if !strings.HasPrefix(reqModVersion, parsedGitRef.RepoRootSubdir) {
 					reqModVersion, _ = strings.CutPrefix(reqModVersion, parsedGitRef.RepoRootSubdir+"/")
-					existingVersion, _ = strings.CutPrefix(existingVersion, existingItem.Self().SourceRootSubpath+"/")
+					existingVersion, _ = strings.CutPrefix(existingVersion, existingSourceRootSubpath+"/")
 				}
 				return nil, fmt.Errorf(
 					"version %q was requested to be uninstalled but the %s %q was installed with %q. Try re-running without specifying the version number",

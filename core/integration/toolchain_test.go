@@ -862,7 +862,6 @@ func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *test
 
 		// Try to list toolchains
 		out, err := modGen.With(daggerExec("toolchain", "list")).Stdout(ctx)
-
 		if err != nil {
 			// If this fails, it might be because the source doesn't exist at v0.19.9
 			// or because symbolic deduplication is still blocking it
@@ -890,6 +889,84 @@ func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *test
 		require.NoError(t, err)
 		require.Contains(t, out, "dev environment config", "Expected customized config content")
 		t.Logf("Successfully called dev toolchain with customized defaultPath: %s", out)
+	})
+}
+
+func (ToolchainSuite) TestToolchainUninstall(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("install then uninstall toolchain", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithExec([]string{"git", "init"}).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithDirectory(".", c.Host().Directory("./testdata/test-blueprint")).
+			WithDirectory("app", c.Directory()).
+			WithWorkdir("app").
+			With(daggerExec("init")).
+			WithExec([]string{"mkdir", "-p", "toolchains"}).
+			WithExec([]string{"cp", "-r", "../hello", "toolchains/helm-dev"}).
+			With(daggerExec("toolchain", "install", "./toolchains/helm-dev", "--name", "helm"))
+
+		daggerjson, err := ctr.File("dagger.json").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, "helm")
+
+		daggerjson, err = ctr.With(daggerExec("toolchain", "uninstall", "helm")).
+			File("dagger.json").Contents(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, daggerjson, "helm")
+	})
+
+	t.Run("uninstall toolchain after local path is deleted", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithExec([]string{"git", "init"}).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithDirectory(".", c.Host().Directory("./testdata/test-blueprint")).
+			WithDirectory("app", c.Directory()).
+			WithWorkdir("app").
+			With(daggerExec("init")).
+			WithExec([]string{"mkdir", "-p", "toolchains"}).
+			WithExec([]string{"cp", "-r", "../hello", "toolchains/helm-dev"}).
+			With(daggerExec("toolchain", "install", "./toolchains/helm-dev", "--name", "helm")).
+			WithExec([]string{"rm", "-rf", "toolchains/helm-dev"})
+
+		var err error
+		ctr, err = ctr.With(daggerExec("toolchain", "uninstall", "helm")).Sync(ctx)
+		require.NoError(t, err, "uninstall should succeed even with stale local path")
+
+		daggerjson, err := ctr.File("dagger.json").Contents(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, daggerjson, "helm")
+	})
+
+	t.Run("uninstall stale local toolchain preserves other toolchain", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithExec([]string{"git", "init"}).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithDirectory(".", c.Host().Directory("./testdata/test-blueprint")).
+			WithDirectory("app", c.Directory()).
+			WithWorkdir("app").
+			With(daggerExec("init")).
+			WithExec([]string{"mkdir", "-p", "toolchains"}).
+			WithExec([]string{"cp", "-r", "../hello", "toolchains/helm-dev"}).
+			With(daggerExec("toolchain", "install", "./toolchains/helm-dev", "--name", "helm")).
+			With(daggerExec("toolchain", "install", "../myblueprint-ts")).
+			WithExec([]string{"rm", "-rf", "toolchains/helm-dev"})
+
+		var err error
+		ctr, err = ctr.With(daggerExec("toolchain", "uninstall", "helm")).Sync(ctx)
+		require.NoError(t, err, "uninstall should succeed even with stale local path")
+
+		daggerjson, err := ctr.File("dagger.json").Contents(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, daggerjson, "helm")
+		require.Contains(t, daggerjson, "myblueprint-ts")
 	})
 }
 
