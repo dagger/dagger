@@ -162,11 +162,12 @@ class ModuleParser:
         self._module_type_aliases: dict[Path, dict[str, ast.expr]] = {}
 
         # Per-file map of names brought in by a relative import or an
-        # absolute self-package import to the parsed file they came from.
+        # absolute self-package import to the parsed file and original name
+        # they came from.
         # Populated in ``_collect_cross_file_imports`` and consumed by
         # ``_expand_alias`` (cross-file alias resolution) and
         # ``_eval_constant`` (cross-file constant resolution).
-        self._cross_file_import_origins: dict[Path, dict[str, Path]] = {}
+        self._cross_file_import_origins: dict[Path, dict[str, tuple[Path, str]]] = {}
 
         # File currently being extracted. Set by ``_extract_declarations`` so
         # ``_eval_constant`` can scope name lookups to the containing file.
@@ -489,9 +490,11 @@ class ModuleParser:
         module, and both are recorded here:
 
         * relative imports — ``from .types import Source`` in
-          ``pkg/main.py`` records ``(pkg/main.py, "Source") -> pkg/types.py``;
-        * absolute self-imports — ``from pkg.types import Source`` records
-          the same, when ``pkg`` is the module's own package name.
+          ``pkg/main.py`` records
+          ``(pkg/main.py, "Source") -> (pkg/types.py, "Source")``;
+        * absolute self-imports — ``from pkg.types import Source as Src``
+          records ``(pkg/main.py, "Src") -> (pkg/types.py, "Source")``,
+          when ``pkg`` is the module's own package name.
 
         ``_expand_alias`` consults this map to follow aliases across files;
         ``_eval_constant`` does the same for constants.
@@ -529,7 +532,38 @@ class ModuleParser:
                     if alias.name == "*":
                         continue
                     bound = alias.asname or alias.name
-                    mapping[bound] = target
+                    mapping[bound] = (target, alias.name)
+
+    def _resolve_cross_file_import_origin(
+        self, file_path: Path, name: str
+    ) -> tuple[Path, str] | None:
+        """Return the final parsed-file/name origin for an imported name.
+
+        ``_collect_cross_file_imports`` stores one import edge at a time:
+        local bound name -> (origin file, original exported name). This
+        helper follows those edges so package-root re-exports like
+        ``main.py: from pkg import Count`` plus
+        ``pkg/__init__.py: from .params import Count`` resolve to
+        ``(params.py, "Count")``.
+        """
+        current_file = file_path
+        current_name = name
+        seen: set[tuple[Path, str]] = set()
+
+        while True:
+            key = (current_file, current_name)
+            if key in seen:
+                return None
+            seen.add(key)
+
+            origin = self._cross_file_import_origins.get(current_file, {}).get(
+                current_name
+            )
+            if origin is None:
+                if current_file == file_path and current_name == name:
+                    return None
+                return current_file, current_name
+            current_file, current_name = origin
 
     @staticmethod
     def _resolve_relative_import_target(
@@ -635,18 +669,19 @@ class ModuleParser:
                 seen.add(key)
                 current = local_aliases[name]
                 continue
-            origin = self._cross_file_import_origins.get(current_file, {}).get(name)
+            origin = self._resolve_cross_file_import_origin(current_file, name)
             if origin is not None:
-                origin_aliases = self._module_type_aliases.get(origin, {})
-                if name in origin_aliases:
-                    key = (origin, name)
+                origin_file, origin_name = origin
+                origin_aliases = self._module_type_aliases.get(origin_file, {})
+                if origin_name in origin_aliases:
+                    key = (origin_file, origin_name)
                     if key in seen:
                         break
                     seen.add(key)
                     # Switch context: continue expanding inside the origin file
                     # so any further chained aliases use that file's map.
-                    current_file = origin
-                    current = origin_aliases[name]
+                    current_file = origin_file
+                    current = origin_aliases[origin_name]
                     continue
             break
 
@@ -1990,17 +2025,18 @@ class ModuleParser:
                 file_constants = self._module_constants.get(current, {})
                 if node.id in file_constants:
                     return self._eval_constant(file_constants[node.id])
-                origin = self._cross_file_import_origins.get(current, {}).get(node.id)
+                origin = self._resolve_cross_file_import_origin(current, node.id)
                 if origin is not None:
-                    origin_constants = self._module_constants.get(origin, {})
-                    if node.id in origin_constants:
+                    origin_file, origin_name = origin
+                    origin_constants = self._module_constants.get(origin_file, {})
+                    if origin_name in origin_constants:
                         # Switch the current-file scope so any nested name
                         # references inside the constant resolve against the
                         # foreign file's own constants.
                         previous = self._current_file
-                        self._current_file = origin
+                        self._current_file = origin_file
                         try:
-                            return self._eval_constant(origin_constants[node.id])
+                            return self._eval_constant(origin_constants[origin_name])
                         finally:
                             self._current_file = previous
             logger.warning(
