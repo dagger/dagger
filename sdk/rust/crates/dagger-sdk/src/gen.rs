@@ -1108,6 +1108,41 @@ impl GeneratorId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct GitCommitId(pub String);
+impl From<&str> for GitCommitId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for GitCommitId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<GitCommitId> for GitCommit {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<GitCommitId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<GitCommitId> for GitCommitId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<GitCommitId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<GitCommitId, DaggerError>(self) })
+    }
+}
+impl GitCommitId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct GitRefId(pub String);
 impl From<&str> for GitRefId {
     fn from(value: &str) -> Self {
@@ -2597,6 +2632,15 @@ impl Binding {
     pub fn as_generator_group(&self) -> GeneratorGroup {
         let query = self.selection.select("asGeneratorGroup");
         GeneratorGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieve the binding value, as type GitCommit
+    pub fn as_git_commit(&self) -> GitCommit {
+        let query = self.selection.select("asGitCommit");
+        GitCommit {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -8268,6 +8312,55 @@ impl Env {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create or update a binding of type GitCommit in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `value` - The GitCommit value to assign to the binding
+    /// * `description` - The purpose of the input
+    pub fn with_git_commit_input(
+        &self,
+        name: impl Into<String>,
+        value: impl IntoID<GitCommitId>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withGitCommitInput");
+        query = query.arg("name", name.into());
+        query = query.arg_lazy(
+            "value",
+            Box::new(move || {
+                let value = value.clone();
+                Box::pin(async move { value.into_id().await.unwrap().quote() })
+            }),
+        );
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Declare a desired GitCommit output to be assigned in the environment
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the binding
+    /// * `description` - A description of the desired value of the binding
+    pub fn with_git_commit_output(
+        &self,
+        name: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Env {
+        let mut query = self.selection.select("withGitCommitOutput");
+        query = query.arg("name", name.into());
+        query = query.arg("description", description.into());
+        Env {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create or update a binding of type GitRef in the environment
     ///
     /// # Arguments
@@ -10468,6 +10561,206 @@ impl GeneratorGroup {
     }
 }
 #[derive(Clone)]
+pub struct GitCommit {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct GitCommitAncestorReleaseTagOpts {
+    /// Include pre-release tags when choosing the latest tag.
+    #[builder(setter(into, strip_option), default)]
+    pub include_pre_release: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct GitCommitReleaseTagOpts {
+    /// Include pre-release tags when choosing the latest tag.
+    #[builder(setter(into, strip_option), default)]
+    pub include_pre_release: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct GitCommitTreeOpts<'a> {
+    /// The depth of the tree to fetch.
+    #[builder(setter(into, strip_option), default)]
+    pub depth: Option<isize>,
+    /// Set to true to discard .git directory.
+    #[builder(setter(into, strip_option), default)]
+    pub discard_git_dir: Option<bool>,
+    /// Set to true to populate tag refs in the local checkout .git.
+    #[builder(setter(into, strip_option), default)]
+    pub include_tags: Option<bool>,
+    #[builder(setter(into, strip_option), default)]
+    pub ssh_auth_socket: Option<SocketId>,
+    #[builder(setter(into, strip_option), default)]
+    pub ssh_known_hosts: Option<&'a str>,
+}
+impl GitCommit {
+    /// The latest semver release tag reachable from this commit.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn ancestor_release_tag(&self) -> GitRef {
+        let query = self.selection.select("ancestorReleaseTag");
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The latest semver release tag reachable from this commit.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn ancestor_release_tag_opts(&self, opts: GitCommitAncestorReleaseTagOpts) -> GitRef {
+        let mut query = self.selection.select("ancestorReleaseTag");
+        if let Some(include_pre_release) = opts.include_pre_release {
+            query = query.arg("includePreRelease", include_pre_release);
+        }
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Git author email.
+    pub async fn author_email(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("authorEmail");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Git author name.
+    pub async fn author_name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("authorName");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Git author date, in RFC3339 format.
+    pub async fn authored_date(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("authoredDate");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Git committer date, in RFC3339 format.
+    pub async fn committed_date(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("committedDate");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Git committer email.
+    pub async fn committer_email(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("committerEmail");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Git committer name.
+    pub async fn committer_name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("committerName");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this GitCommit.
+    pub async fn id(&self) -> Result<GitCommitId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Full commit message.
+    pub async fn message(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("message");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Commit message body, excluding the headline.
+    pub async fn message_body(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("messageBody");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// First line of the commit message.
+    pub async fn message_headline(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("messageHeadline");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Parent commit SHAs.
+    pub async fn parent_shas(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("parentShas");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The latest semver release tag that points directly at this commit.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn release_tag(&self) -> GitRef {
+        let query = self.selection.select("releaseTag");
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The latest semver release tag that points directly at this commit.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn release_tag_opts(&self, opts: GitCommitReleaseTagOpts) -> GitRef {
+        let mut query = self.selection.select("releaseTag");
+        if let Some(include_pre_release) = opts.include_pre_release {
+            query = query.arg("includePreRelease", include_pre_release);
+        }
+        GitRef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The full commit SHA.
+    pub async fn sha(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("sha");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The abbreviated commit SHA.
+    pub async fn short_sha(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("shortSha");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The filesystem tree at this commit.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn tree(&self) -> Directory {
+        let query = self.selection.select("tree");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The filesystem tree at this commit.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn tree_opts<'a>(&self, opts: GitCommitTreeOpts<'a>) -> Directory {
+        let mut query = self.selection.select("tree");
+        if let Some(discard_git_dir) = opts.discard_git_dir {
+            query = query.arg("discardGitDir", discard_git_dir);
+        }
+        if let Some(depth) = opts.depth {
+            query = query.arg("depth", depth);
+        }
+        if let Some(include_tags) = opts.include_tags {
+            query = query.arg("includeTags", include_tags);
+        }
+        if let Some(ssh_known_hosts) = opts.ssh_known_hosts {
+            query = query.arg("sshKnownHosts", ssh_known_hosts);
+        }
+        if let Some(ssh_auth_socket) = opts.ssh_auth_socket {
+            query = query.arg("sshAuthSocket", ssh_auth_socket);
+        }
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+#[derive(Clone)]
 pub struct GitRef {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -10489,6 +10782,11 @@ impl GitRef {
     /// The resolved commit id at this ref.
     pub async fn commit(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("commit");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The resolved commit SHA at this ref.
+    pub async fn commit_sha(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("commitSHA");
         query.execute(self.graphql_client.clone()).await
     }
     /// Find the best common ancestor between this ref and another ref.
@@ -10516,10 +10814,24 @@ impl GitRef {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The resolved name of this ref.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The resolved ref name at this ref.
     pub async fn r#ref(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("ref");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// The commit this ref resolves to.
+    pub fn target_commit(&self) -> GitCommit {
+        let query = self.selection.select("targetCommit");
+        GitCommit {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// The filesystem tree at this ref.
     ///
@@ -10619,10 +10931,10 @@ impl GitRepository {
     /// # Arguments
     ///
     /// * `id` - Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
-    pub fn commit(&self, id: impl Into<String>) -> GitRef {
+    pub fn commit(&self, id: impl Into<String>) -> GitCommit {
         let mut query = self.selection.select("commit");
         query = query.arg("id", id.into());
-        GitRef {
+        GitCommit {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -13841,6 +14153,22 @@ impl Query {
             }),
         );
         GeneratorGroup {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a GitCommit from its ID.
+    pub fn load_git_commit_from_id(&self, id: impl IntoID<GitCommitId>) -> GitCommit {
+        let mut query = self.selection.select("loadGitCommitFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        GitCommit {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

@@ -912,6 +912,20 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Load a GitCommit from its ID.
+  """
+  @spec load_git_commit_from_id(t(), Dagger.GitCommitID.t()) :: Dagger.GitCommit.t()
+  def load_git_commit_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadGitCommitFromID") |> QB.put_arg("id", id)
+
+    %Dagger.GitCommit{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Load a GitRef from its ID.
   """
   @spec load_git_ref_from_id(t(), Dagger.GitRefID.t()) :: Dagger.GitRef.t()

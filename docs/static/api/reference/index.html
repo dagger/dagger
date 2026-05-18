@@ -85,6 +85,7 @@
               <li><a href="#query-loadGeneratedCodeFromID">loadGeneratedCodeFromID</a></li>
               <li><a href="#query-loadGeneratorFromID">loadGeneratorFromID</a></li>
               <li><a href="#query-loadGeneratorGroupFromID">loadGeneratorGroupFromID</a></li>
+              <li><a href="#query-loadGitCommitFromID">loadGitCommitFromID</a></li>
               <li><a href="#query-loadGitRefFromID">loadGitRefFromID</a></li>
               <li><a href="#query-loadGitRepositoryFromID">loadGitRepositoryFromID</a></li>
               <li><a href="#query-loadHTTPStateFromID">loadHTTPStateFromID</a></li>
@@ -203,6 +204,8 @@
               <li><a href="#definition-GeneratorGroup">GeneratorGroup</a></li>
               <li><a href="#definition-GeneratorGroupID">GeneratorGroupID</a></li>
               <li><a href="#definition-GeneratorID">GeneratorID</a></li>
+              <li><a href="#definition-GitCommit">GitCommit</a></li>
+              <li><a href="#definition-GitCommitID">GitCommitID</a></li>
               <li><a href="#definition-GitRef">GitRef</a></li>
               <li><a href="#definition-GitRefID">GitRefID</a></li>
               <li><a href="#definition-GitRepository">GitRepository</a></li>
@@ -3292,6 +3295,59 @@
               </div>
             </div>
           </section>
+          <section id="query-loadGitCommitFromID" class="operation operation-query" data-traverse-target="query-loadGitCommitFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadGitCommitFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a GitCommit from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-GitCommit"><code>GitCommit!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-GitCommitID"><code>GitCommitID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-loadGitRefFromID" class="operation operation-query" data-traverse-target="query-loadGitRefFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -5600,6 +5656,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asGeneratorGroup" href="#Binding-asGeneratorGroup"><code>asGeneratorGroup</code></a> - <span class="property-type"><a href="#definition-GeneratorGroup"><code>GeneratorGroup!</code></a></span> </td>
                         <td> Retrieve the binding value, as type GeneratorGroup </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asGitCommit" href="#Binding-asGitCommit"><code>asGitCommit</code></a> - <span class="property-type"><a href="#definition-GitCommit"><code>GitCommit!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type GitCommit </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asGitRef" href="#Binding-asGitRef"><code>asGitRef</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>
@@ -10223,6 +10283,52 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withGitCommitInput" href="#Env-withGitCommitInput"><code>withGitCommitInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type GitCommit in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-GitCommitID"><code>GitCommitID!</code></a></span></h6>
+                                <p>The GitCommit value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withGitCommitOutput" href="#Env-withGitCommitOutput"><code>withGitCommitOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired GitCommit output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withGitRefInput" href="#Env-withGitRefInput"><code>withGitRefInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Create or update a binding of type GitRef in the environment </td>
                       </tr>
@@ -12629,6 +12735,164 @@
               </div>
             </div>
           </section>
+          <section id="definition-GitCommit" class="definition definition-object" data-traverse-target="definition-GitCommit">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">GitCommit</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>An immutable git commit.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="GitCommit-ancestorReleaseTag" href="#GitCommit-ancestorReleaseTag"><code>ancestorReleaseTag</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef</code></a></span> </td>
+                        <td> The latest semver release tag reachable from this commit. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>includePreRelease</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Include pre-release tags when choosing the latest tag.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GitCommit-authorEmail" href="#GitCommit-authorEmail"><code>authorEmail</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Git author email. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GitCommit-authorName" href="#GitCommit-authorName"><code>authorName</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Git author name. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GitCommit-authoredDate" href="#GitCommit-authoredDate"><code>authoredDate</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Git author date, in RFC3339 format. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GitCommit-committedDate" href="#GitCommit-committedDate"><code>committedDate</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Git committer date, in RFC3339 format. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GitCommit-committerEmail" href="#GitCommit-committerEmail"><code>committerEmail</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Git committer email. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GitCommit-committerName" href="#GitCommit-committerName"><code>committerName</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Git committer name. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GitCommit-id" href="#GitCommit-id"><code>id</code></a> - <span class="property-type"><a href="#definition-GitCommitID"><code>GitCommitID!</code></a></span> </td>
+                        <td> A unique identifier for this GitCommit. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GitCommit-message" href="#GitCommit-message"><code>message</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Full commit message. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GitCommit-messageBody" href="#GitCommit-messageBody"><code>messageBody</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Commit message body, excluding the headline. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GitCommit-messageHeadline" href="#GitCommit-messageHeadline"><code>messageHeadline</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> First line of the commit message. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GitCommit-parentShas" href="#GitCommit-parentShas"><code>parentShas</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
+                        <td> Parent commit SHAs. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="GitCommit-releaseTag" href="#GitCommit-releaseTag"><code>releaseTag</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef</code></a></span> </td>
+                        <td> The latest semver release tag that points directly at this commit. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>includePreRelease</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Include pre-release tags when choosing the latest tag.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GitCommit-sha" href="#GitCommit-sha"><code>sha</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The full commit SHA. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GitCommit-shortSha" href="#GitCommit-shortSha"><code>shortSha</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The abbreviated commit SHA. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="GitCommit-tree" href="#GitCommit-tree"><code>tree</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td> The filesystem tree at this commit. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>discardGitDir</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Set to true to discard .git directory.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>depth</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
+                                <p>The depth of the tree to fetch.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>includeTags</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Set to true to populate tag refs in the local checkout .git.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>sshKnownHosts</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>sshAuthSocket</code></span> - <span class="property-type"><a href="#definition-SocketID"><code>SocketID</code></a></span></h6>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-GitCommitID" class="definition definition-scalar" data-traverse-target="definition-GitCommitID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">GitCommitID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>GitCommitID</code> scalar type represents an identifier for an object of type GitCommit.</p>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="definition-GitRef" class="definition definition-object" data-traverse-target="definition-GitRef">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -12651,8 +12915,13 @@
                     </thead>
                     <tbody>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="GitRef-commit" href="#GitRef-commit"><code>commit</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The resolved commit id at this ref. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="GitRef-commit" href="#GitRef-commit"><code>commit</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The resolved commit id at this ref. <span class="deprecation-reason">Use "commitSHA" instead.</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GitRef-commitSHA" href="#GitRef-commitSHA"><code>commitSHA</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The resolved commit SHA at this ref. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="GitRef-commonAncestor" href="#GitRef-commonAncestor"><code>commonAncestor</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>
@@ -12676,8 +12945,17 @@
                         <td> A unique identifier for this GitRef. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="GitRef-ref" href="#GitRef-ref"><code>ref</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The resolved ref name at this ref. </td>
+                        <td data-property-name=""><a class="property-name" id="GitRef-name" href="#GitRef-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The resolved name of this ref. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="GitRef-ref" href="#GitRef-ref"><code>ref</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The resolved ref name at this ref. <span class="deprecation-reason">Use "name" instead.</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GitRef-targetCommit" href="#GitRef-targetCommit"><code>targetCommit</code></a> - <span class="property-type"><a href="#definition-GitCommit"><code>GitCommit!</code></a></span> </td>
+                        <td> The commit this ref resolves to. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="GitRef-tree" href="#GitRef-tree"><code>tree</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
@@ -12780,7 +13058,7 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="GitRepository-commit" href="#GitRepository-commit"><code>commit</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="GitRepository-commit" href="#GitRepository-commit"><code>commit</code></a> - <span class="property-type"><a href="#definition-GitCommit"><code>GitCommit!</code></a></span> </td>
                         <td> Returns details of a commit. </td>
                       </tr>
                       <tr class="row-field-arguments">

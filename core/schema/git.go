@@ -96,7 +96,14 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`Tag's name (e.g., "v0.3.9").`),
 			),
 		dagql.NodeFunc("commit", s.commit).
-			View(AllVersion).
+			View(AfterVersion("v0.21.0")).
+			Doc(`Returns details of a commit.`).
+			Args(
+				// TODO: id is normally a reserved word; we should probably rename this
+				dagql.Arg("id").Doc(`Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").`),
+			),
+		dagql.NodeFunc("commit", s.commitRef).
+			View(BeforeVersion("v0.21.0")).
 			Doc(`Returns details of a commit.`).
 			Args(
 				// TODO: id is normally a reserved word; we should probably rename this
@@ -139,6 +146,12 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.GitRef]{
+		dagql.NodeFunc("targetCommit", s.targetCommit).
+			View(AllVersion).
+			Doc(`The commit this ref resolves to.`),
+		dagql.NodeFunc("commitSHA", s.fetchCommit).
+			IsPersistable().
+			Doc(`The resolved commit SHA at this ref.`),
 		dagql.NodeFunc("tree", s.tree).
 			IsPersistable().
 			View(AllVersion).
@@ -159,15 +172,81 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("commit", s.fetchCommit).
 			IsPersistable().
-			Doc(`The resolved commit id at this ref.`),
+			Doc(`The resolved commit id at this ref.`).
+			Deprecated(`Use "commitSHA" instead.`),
+		dagql.NodeFunc("name", s.fetchRef).
+			IsPersistable().
+			Doc(`The resolved name of this ref.`),
 		dagql.NodeFunc("ref", s.fetchRef).
 			IsPersistable().
-			Doc(`The resolved ref name at this ref.`),
+			Doc(`The resolved ref name at this ref.`).
+			Deprecated(`Use "name" instead.`),
 		dagql.NodeFunc("commonAncestor", s.commonAncestor).
 			Doc(`Find the best common ancestor between this ref and another ref.`).
 			Args(
 				dagql.Arg("other").Doc(`The other ref to compare against.`),
 			),
+	}.Install(srv)
+
+	dagql.Fields[*core.GitCommit]{
+		dagql.NodeFunc("releaseTag", s.releaseTag).
+			Doc(`The latest semver release tag that points directly at this commit.`).
+			Args(
+				dagql.Arg("includePreRelease").Doc(`Include pre-release tags when choosing the latest tag.`),
+			),
+		dagql.NodeFunc("ancestorReleaseTag", s.ancestorReleaseTag).
+			Doc(`The latest semver release tag reachable from this commit.`).
+			Args(
+				dagql.Arg("includePreRelease").Doc(`Include pre-release tags when choosing the latest tag.`),
+			),
+		dagql.NodeFunc("tree", s.commitTree).
+			IsPersistable().
+			View(AllVersion).
+			Doc(`The filesystem tree at this commit.`).
+			Args(
+				dagql.Arg("discardGitDir").
+					Doc(`Set to true to discard .git directory.`),
+				dagql.Arg("depth").
+					Doc(`The depth of the tree to fetch.`),
+				dagql.Arg("includeTags").
+					Doc(`Set to true to populate tag refs in the local checkout .git.`),
+			),
+		dagql.NodeFunc("sha", s.commitSHA).
+			IsPersistable().
+			Doc(`The full commit SHA.`),
+		dagql.NodeFunc("shortSha", s.commitShortSHA).
+			IsPersistable().
+			Doc(`The abbreviated commit SHA.`),
+		dagql.NodeFunc("authoredDate", s.commitAuthoredDate).
+			IsPersistable().
+			Doc(`Git author date, in RFC3339 format.`),
+		dagql.NodeFunc("committedDate", s.commitCommittedDate).
+			IsPersistable().
+			Doc(`Git committer date, in RFC3339 format.`),
+		dagql.NodeFunc("authorName", s.commitAuthorName).
+			IsPersistable().
+			Doc(`Git author name.`),
+		dagql.NodeFunc("authorEmail", s.commitAuthorEmail).
+			IsPersistable().
+			Doc(`Git author email.`),
+		dagql.NodeFunc("committerName", s.commitCommitterName).
+			IsPersistable().
+			Doc(`Git committer name.`),
+		dagql.NodeFunc("committerEmail", s.commitCommitterEmail).
+			IsPersistable().
+			Doc(`Git committer email.`),
+		dagql.NodeFunc("message", s.commitMessage).
+			IsPersistable().
+			Doc(`Full commit message.`),
+		dagql.NodeFunc("messageHeadline", s.commitMessageHeadline).
+			IsPersistable().
+			Doc(`First line of the commit message.`),
+		dagql.NodeFunc("messageBody", s.commitMessageBody).
+			IsPersistable().
+			Doc(`Commit message body, excluding the headline.`),
+		dagql.NodeFunc("parentShas", s.commitParentSHAs).
+			IsPersistable().
+			Doc(`Parent commit SHAs.`),
 	}.Install(srv)
 }
 
@@ -1010,10 +1089,18 @@ func supportsStrictRefs(ctx context.Context) bool {
 	return core.Supports(ctx, "v0.19.0")
 }
 
-func (s *gitSchema) commit(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args commitArgs) (inst dagql.Result[*core.GitRef], _ error) {
+func (s *gitSchema) commit(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args commitArgs) (inst dagql.Result[*core.GitCommit], _ error) {
 	if supportsStrictRefs(ctx) && !gitutil.IsCommitSHA(args.ID) {
 		return inst, fmt.Errorf("invalid commit SHA: %q", args.ID)
 	}
+	ref, err := parent.Self().Remote.Lookup(args.ID)
+	if err != nil {
+		return inst, err
+	}
+	return s.gitCommitResult(ctx, parent, ref)
+}
+
+func (s *gitSchema) commitRef(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args commitArgs) (inst dagql.Result[*core.GitRef], _ error) {
 	return s.ref(ctx, parent, refArgs{Name: args.ID})
 }
 
@@ -1249,6 +1336,460 @@ func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.Gi
 	}
 
 	return inst, nil
+}
+
+func (s *gitSchema) targetCommit(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args struct{}) (inst dagql.Result[*core.GitCommit], _ error) {
+	return s.gitCommitResult(ctx, parent.Self().Repo, parent.Self().Ref)
+}
+
+func (s *gitSchema) gitCommitResult(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], ref *gitutil.Ref) (inst dagql.Result[*core.GitCommit], _ error) {
+	repo := parent.Self()
+	refBackend, err := repo.Backend.Get(ctx, ref)
+	if err != nil {
+		return inst, err
+	}
+
+	result := &core.GitCommit{
+		Repo:     parent,
+		Ref:      &gitutil.Ref{SHA: ref.SHA},
+		FetchRef: ref,
+		Backend:  refBackend,
+	}
+	inst, err = dagql.NewResultForCurrentCall(ctx, result)
+	if err != nil {
+		return inst, err
+	}
+
+	dgstInputs := []string{
+		repo.URL.Value.String(),
+		ref.SHA,
+		strconv.FormatBool(repo.DiscardGitDir),
+	}
+	if remoteRepo, ok := repo.Backend.(*core.RemoteGitRepository); ok {
+		if remoteRepo.SSHAuthSocket.Self() != nil {
+			dgstInputs = append(dgstInputs, "sshAuthSock", string(remoteRepo.SSHAuthSocket.Self().Handle))
+		}
+		if remoteRepo.AuthToken.Self() != nil {
+			dgstInputs = append(dgstInputs, "authToken", strconv.FormatBool(remoteRepo.AuthToken.Self() != nil))
+		}
+		if remoteRepo.AuthHeader.Self() != nil {
+			dgstInputs = append(dgstInputs, "authHeader", strconv.FormatBool(remoteRepo.AuthHeader.Self() != nil))
+		}
+	}
+	inst, err = inst.WithContentDigest(ctx, hashutil.HashStrings(dgstInputs...))
+	if err != nil {
+		return inst, err
+	}
+	return inst, nil
+}
+
+func (s *gitSchema) commitTree(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args treeArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	dir, err := parent.Self().Tree(ctx, srv, args.DiscardGitDir, args.Depth, args.IncludeTags)
+	if err != nil {
+		return inst, err
+	}
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	if err != nil {
+		return inst, err
+	}
+
+	if _, ok := parent.Self().Repo.Self().Backend.(*core.RemoteGitRepository); ok {
+		ref := &core.GitRef{
+			Repo:    parent.Self().Repo,
+			Backend: parent.Self().Backend,
+			Ref:     parent.Self().Ref,
+		}
+		dgst, err := calcGitContentDigest(ref, args)
+		if err != nil {
+			return inst, err
+		}
+		inst, err = inst.WithContentDigest(ctx, dgst)
+		if err != nil {
+			return inst, err
+		}
+	}
+
+	return inst, nil
+}
+
+func gitCommitMetadata(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit]) (*core.GitCommitMetadata, error) {
+	return parent.Self().Metadata(ctx)
+}
+
+func (s *gitSchema) commitSHA(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
+	meta, err := gitCommitMetadata(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(meta.SHA), nil
+}
+
+func (s *gitSchema) commitShortSHA(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
+	meta, err := gitCommitMetadata(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(meta.ShortSHA), nil
+}
+
+func (s *gitSchema) commitAuthoredDate(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
+	meta, err := gitCommitMetadata(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(meta.AuthoredDate), nil
+}
+
+func (s *gitSchema) commitCommittedDate(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
+	meta, err := gitCommitMetadata(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(meta.CommittedDate), nil
+}
+
+func (s *gitSchema) commitAuthorName(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
+	meta, err := gitCommitMetadata(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(meta.AuthorName), nil
+}
+
+func (s *gitSchema) commitAuthorEmail(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
+	meta, err := gitCommitMetadata(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(meta.AuthorEmail), nil
+}
+
+func (s *gitSchema) commitCommitterName(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
+	meta, err := gitCommitMetadata(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(meta.CommitterName), nil
+}
+
+func (s *gitSchema) commitCommitterEmail(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
+	meta, err := gitCommitMetadata(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(meta.CommitterEmail), nil
+}
+
+func (s *gitSchema) commitMessage(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
+	meta, err := gitCommitMetadata(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(meta.Message), nil
+}
+
+func (s *gitSchema) commitMessageHeadline(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
+	headline, err := parent.Self().MessageHeadline(ctx)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(headline), nil
+}
+
+func (s *gitSchema) commitMessageBody(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.String, error) {
+	body, err := parent.Self().MessageBody(ctx)
+	if err != nil {
+		return "", err
+	}
+	return dagql.NewString(body), nil
+}
+
+func (s *gitSchema) commitParentSHAs(ctx context.Context, parent dagql.ObjectResult[*core.GitCommit], args struct{}) (dagql.Array[dagql.String], error) {
+	meta, err := gitCommitMetadata(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+	return dagql.NewStringArray(meta.ParentSHAs...), nil
+}
+
+type releaseTagArgs struct {
+	IncludePreRelease bool `default:"false"`
+}
+
+type gitReleaseTag struct {
+	RefName string
+	SHA     string
+	Version string
+}
+
+func (s *gitSchema) releaseTag(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.GitCommit],
+	args releaseTagArgs,
+) (dagql.Nullable[dagql.Result[*core.GitRef]], error) {
+	return s.commitReleaseTag(ctx, parent, args.IncludePreRelease, false)
+}
+
+func (s *gitSchema) ancestorReleaseTag(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.GitCommit],
+	args releaseTagArgs,
+) (dagql.Nullable[dagql.Result[*core.GitRef]], error) {
+	return s.commitReleaseTag(ctx, parent, args.IncludePreRelease, true)
+}
+
+func (s *gitSchema) commitReleaseTag(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.GitCommit],
+	includePreRelease bool,
+	ancestor bool,
+) (dagql.Nullable[dagql.Result[*core.GitRef]], error) {
+	none := dagql.Null[dagql.Result[*core.GitRef]]()
+
+	tag, err := selectGitReleaseTag(ctx, parent.Self(), includePreRelease, ancestor)
+	if err != nil {
+		return none, err
+	}
+	if tag == nil {
+		return none, nil
+	}
+
+	ref, err := s.gitRefResult(ctx, parent.Self().Repo, &gitutil.Ref{
+		Name: tag.RefName,
+		SHA:  tag.SHA,
+	})
+	if err != nil {
+		return none, err
+	}
+	return dagql.NonNull(ref), nil
+}
+
+func selectGitReleaseTag(ctx context.Context, commit *core.GitCommit, includePreRelease bool, ancestor bool) (*gitReleaseTag, error) {
+	if commit == nil || commit.Ref == nil || commit.Ref.SHA == "" {
+		return nil, fmt.Errorf("git commit release tag: missing commit SHA")
+	}
+	if commit.Repo.Self() == nil || commit.Repo.Self().Backend == nil {
+		return nil, fmt.Errorf("git commit release tag: missing repository")
+	}
+	if commit.Backend == nil {
+		return nil, fmt.Errorf("git commit release tag: missing backend")
+	}
+
+	var remoteTags map[string]string
+	if _, ok := commit.Repo.Self().Backend.(*core.RemoteGitRepository); ok {
+		remoteTags = remotePeeledTagRefs(commit.Repo.Self().Remote)
+	}
+
+	depth := 1
+	if ancestor {
+		depth = 0
+	}
+
+	var selected *gitReleaseTag
+	err := commit.Mount(ctx, depth, false, func(git *gitutil.GitCLI) error {
+		localTags := map[string]string{}
+		if _, ok := commit.Repo.Self().Backend.(*core.LocalGitRepository); ok {
+			var err error
+			localTags, err = localPeeledTagRefs(ctx, git)
+			if err != nil {
+				return err
+			}
+
+			remoteName, err := defaultGitFetchRemote(ctx, git)
+			if err != nil {
+				return err
+			}
+			if remoteName != "" {
+				remote, err := git.LsRemote(ctx, remoteName)
+				if err != nil {
+					return fmt.Errorf("list tags from git remote %q: %w", remoteName, err)
+				}
+				remoteTags = remotePeeledTagRefs(remote)
+			}
+		}
+
+		tags, err := reconcileGitTagRefs(localTags, remoteTags)
+		if err != nil {
+			return err
+		}
+		tags = semverReleaseTags(tags, includePreRelease)
+		sortGitReleaseTags(tags)
+
+		if ancestor {
+			selected = latestReachableGitReleaseTag(ctx, git, commit.Ref.SHA, tags)
+		} else {
+			selected = latestDirectGitReleaseTag(commit.Ref.SHA, tags)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return selected, nil
+}
+
+func localPeeledTagRefs(ctx context.Context, git *gitutil.GitCLI) (map[string]string, error) {
+	out, err := git.Run(ctx,
+		"for-each-ref",
+		"--format=%(refname)%09%(objecttype)%09%(objectname)%09%(*objecttype)%09%(*objectname)",
+		"refs/tags",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list local git tags: %w", err)
+	}
+
+	tags := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		fields := strings.Split(line, "\t")
+		for len(fields) < 5 {
+			fields = append(fields, "")
+		}
+
+		refName := fields[0]
+		objectType := fields[1]
+		objectSHA := fields[2]
+		peeledType := fields[3]
+		peeledSHA := fields[4]
+
+		switch {
+		case objectType == "commit" && gitutil.IsCommitSHA(objectSHA):
+			tags[refName] = objectSHA
+		case peeledType == "commit" && gitutil.IsCommitSHA(peeledSHA):
+			tags[refName] = peeledSHA
+		}
+	}
+	return tags, nil
+}
+
+func remotePeeledTagRefs(remote *gitutil.Remote) map[string]string {
+	tags := map[string]string{}
+	if remote == nil {
+		return tags
+	}
+
+	peeled := map[string]string{}
+	for _, ref := range remote.Refs {
+		if ref == nil {
+			continue
+		}
+		if tagName, ok := strings.CutSuffix(ref.Name, "^{}"); ok {
+			if strings.HasPrefix(tagName, "refs/tags/") && gitutil.IsCommitSHA(ref.SHA) {
+				peeled[tagName] = ref.SHA
+			}
+			continue
+		}
+		if strings.HasPrefix(ref.Name, "refs/tags/") && gitutil.IsCommitSHA(ref.SHA) {
+			tags[ref.Name] = ref.SHA
+		}
+	}
+	for name, sha := range peeled {
+		tags[name] = sha
+	}
+	return tags
+}
+
+func defaultGitFetchRemote(ctx context.Context, git *gitutil.GitCLI) (string, error) {
+	out, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "symbolic-ref", "--quiet", "--short", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	branch := strings.TrimSpace(string(out))
+	if branch != "" {
+		out, err := git.New(gitutil.WithIgnoreError()).Run(ctx, "config", "--get", "branch."+branch+".remote")
+		if err != nil {
+			return "", err
+		}
+		if remote := strings.TrimSpace(string(out)); remote != "" {
+			return remote, nil
+		}
+	}
+
+	out, err = git.New(gitutil.WithIgnoreError()).Run(ctx, "remote", "get-url", "origin")
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(string(out)) == "" {
+		return "", nil
+	}
+	return "origin", nil
+}
+
+func reconcileGitTagRefs(localTags, remoteTags map[string]string) ([]gitReleaseTag, error) {
+	byName := make(map[string]gitReleaseTag, len(localTags)+len(remoteTags))
+	for name, sha := range localTags {
+		byName[name] = gitReleaseTag{RefName: name, SHA: sha}
+	}
+	for name, remoteSHA := range remoteTags {
+		if local, ok := byName[name]; ok && local.SHA != remoteSHA {
+			return nil, fmt.Errorf("git tag %q resolves to different commits locally (%s) and remotely (%s)", strings.TrimPrefix(name, "refs/tags/"), local.SHA, remoteSHA)
+		}
+		byName[name] = gitReleaseTag{RefName: name, SHA: remoteSHA}
+	}
+
+	tags := make([]gitReleaseTag, 0, len(byName))
+	for _, tag := range byName {
+		tags = append(tags, tag)
+	}
+	return tags, nil
+}
+
+func semverReleaseTags(tags []gitReleaseTag, includePreRelease bool) []gitReleaseTag {
+	releases := make([]gitReleaseTag, 0, len(tags))
+	for _, tag := range tags {
+		version := strings.TrimPrefix(tag.RefName, "refs/tags/")
+		if !semver.IsValid(version) {
+			continue
+		}
+		if !includePreRelease && semver.Prerelease(version) != "" {
+			continue
+		}
+		tag.Version = version
+		releases = append(releases, tag)
+	}
+	return releases
+}
+
+func sortGitReleaseTags(tags []gitReleaseTag) {
+	slices.SortFunc(tags, func(a, b gitReleaseTag) int {
+		if c := semver.Compare(a.Version, b.Version); c != 0 {
+			return -c
+		}
+		return cmp.Compare(a.RefName, b.RefName)
+	})
+}
+
+func latestDirectGitReleaseTag(commitSHA string, tags []gitReleaseTag) *gitReleaseTag {
+	for i := range tags {
+		if tags[i].SHA == commitSHA {
+			return &tags[i]
+		}
+	}
+	return nil
+}
+
+func latestReachableGitReleaseTag(ctx context.Context, git *gitutil.GitCLI, commitSHA string, tags []gitReleaseTag) *gitReleaseTag {
+	for i := range tags {
+		if tags[i].SHA == commitSHA {
+			return &tags[i]
+		}
+		if isGitAncestor(ctx, git, tags[i].SHA, commitSHA) {
+			return &tags[i]
+		}
+	}
+	return nil
+}
+
+func isGitAncestor(ctx context.Context, git *gitutil.GitCLI, ancestorSHA, commitSHA string) bool {
+	_, err := git.Run(ctx, "merge-base", "--is-ancestor", ancestorSHA, commitSHA)
+	return err == nil
 }
 
 func (s *gitSchema) fetchCommit(

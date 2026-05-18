@@ -1774,6 +1774,44 @@ export type GeneratorGroupID = string & { __GeneratorGroupID: never }
  */
 export type GeneratorID = string & { __GeneratorID: never }
 
+export type GitCommitAncestorReleaseTagOpts = {
+  /**
+   * Include pre-release tags when choosing the latest tag.
+   */
+  includePreRelease?: boolean
+}
+
+export type GitCommitReleaseTagOpts = {
+  /**
+   * Include pre-release tags when choosing the latest tag.
+   */
+  includePreRelease?: boolean
+}
+
+export type GitCommitTreeOpts = {
+  /**
+   * Set to true to discard .git directory.
+   */
+  discardGitDir?: boolean
+
+  /**
+   * The depth of the tree to fetch.
+   */
+  depth?: number
+
+  /**
+   * Set to true to populate tag refs in the local checkout .git.
+   */
+  includeTags?: boolean
+  sshKnownHosts?: string
+  sshAuthSocket?: Socket
+}
+
+/**
+ * The `GitCommitID` scalar type represents an identifier for an object of type GitCommit.
+ */
+export type GitCommitID = string & { __GitCommitID: never }
+
 export type GitRefTreeOpts = {
   /**
    * Set to true to discard .git directory.
@@ -3229,6 +3267,14 @@ export class Binding extends BaseClient {
   asGeneratorGroup = (): GeneratorGroup => {
     const ctx = this._ctx.select("asGeneratorGroup")
     return new GeneratorGroup(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type GitCommit
+   */
+  asGitCommit = (): GitCommit => {
+    const ctx = this._ctx.select("asGitCommit")
+    return new GitCommit(ctx)
   }
 
   /**
@@ -7292,6 +7338,35 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Create or update a binding of type GitCommit in the environment
+   * @param name The name of the binding
+   * @param value The GitCommit value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withGitCommitInput = (
+    name: string,
+    value: GitCommit,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withGitCommitInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired GitCommit output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withGitCommitOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withGitCommitOutput", { name, description })
+    return new Env(ctx)
+  }
+
+  /**
    * Create or update a binding of type GitRef in the environment
    * @param name The name of the binding
    * @param value The GitRef value to assign to the binding
@@ -9505,21 +9580,304 @@ export class GeneratorGroup extends BaseClient {
 }
 
 /**
+ * An immutable git commit.
+ */
+export class GitCommit extends BaseClient {
+  private readonly _id?: GitCommitID = undefined
+  private readonly _authorEmail?: string = undefined
+  private readonly _authorName?: string = undefined
+  private readonly _authoredDate?: string = undefined
+  private readonly _committedDate?: string = undefined
+  private readonly _committerEmail?: string = undefined
+  private readonly _committerName?: string = undefined
+  private readonly _message?: string = undefined
+  private readonly _messageBody?: string = undefined
+  private readonly _messageHeadline?: string = undefined
+  private readonly _sha?: string = undefined
+  private readonly _shortSha?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: GitCommitID,
+    _authorEmail?: string,
+    _authorName?: string,
+    _authoredDate?: string,
+    _committedDate?: string,
+    _committerEmail?: string,
+    _committerName?: string,
+    _message?: string,
+    _messageBody?: string,
+    _messageHeadline?: string,
+    _sha?: string,
+    _shortSha?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._authorEmail = _authorEmail
+    this._authorName = _authorName
+    this._authoredDate = _authoredDate
+    this._committedDate = _committedDate
+    this._committerEmail = _committerEmail
+    this._committerName = _committerName
+    this._message = _message
+    this._messageBody = _messageBody
+    this._messageHeadline = _messageHeadline
+    this._sha = _sha
+    this._shortSha = _shortSha
+  }
+
+  /**
+   * A unique identifier for this GitCommit.
+   */
+  id = async (): Promise<GitCommitID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<GitCommitID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The latest semver release tag reachable from this commit.
+   * @param opts.includePreRelease Include pre-release tags when choosing the latest tag.
+   */
+  ancestorReleaseTag = (opts?: GitCommitAncestorReleaseTagOpts): GitRef => {
+    const ctx = this._ctx.select("ancestorReleaseTag", { ...opts })
+    return new GitRef(ctx)
+  }
+
+  /**
+   * Git author email.
+   */
+  authorEmail = async (): Promise<string> => {
+    if (this._authorEmail) {
+      return this._authorEmail
+    }
+
+    const ctx = this._ctx.select("authorEmail")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Git author name.
+   */
+  authorName = async (): Promise<string> => {
+    if (this._authorName) {
+      return this._authorName
+    }
+
+    const ctx = this._ctx.select("authorName")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Git author date, in RFC3339 format.
+   */
+  authoredDate = async (): Promise<string> => {
+    if (this._authoredDate) {
+      return this._authoredDate
+    }
+
+    const ctx = this._ctx.select("authoredDate")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Git committer date, in RFC3339 format.
+   */
+  committedDate = async (): Promise<string> => {
+    if (this._committedDate) {
+      return this._committedDate
+    }
+
+    const ctx = this._ctx.select("committedDate")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Git committer email.
+   */
+  committerEmail = async (): Promise<string> => {
+    if (this._committerEmail) {
+      return this._committerEmail
+    }
+
+    const ctx = this._ctx.select("committerEmail")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Git committer name.
+   */
+  committerName = async (): Promise<string> => {
+    if (this._committerName) {
+      return this._committerName
+    }
+
+    const ctx = this._ctx.select("committerName")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Full commit message.
+   */
+  message = async (): Promise<string> => {
+    if (this._message) {
+      return this._message
+    }
+
+    const ctx = this._ctx.select("message")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Commit message body, excluding the headline.
+   */
+  messageBody = async (): Promise<string> => {
+    if (this._messageBody) {
+      return this._messageBody
+    }
+
+    const ctx = this._ctx.select("messageBody")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * First line of the commit message.
+   */
+  messageHeadline = async (): Promise<string> => {
+    if (this._messageHeadline) {
+      return this._messageHeadline
+    }
+
+    const ctx = this._ctx.select("messageHeadline")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Parent commit SHAs.
+   */
+  parentShas = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("parentShas")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The latest semver release tag that points directly at this commit.
+   * @param opts.includePreRelease Include pre-release tags when choosing the latest tag.
+   */
+  releaseTag = (opts?: GitCommitReleaseTagOpts): GitRef => {
+    const ctx = this._ctx.select("releaseTag", { ...opts })
+    return new GitRef(ctx)
+  }
+
+  /**
+   * The full commit SHA.
+   */
+  sha = async (): Promise<string> => {
+    if (this._sha) {
+      return this._sha
+    }
+
+    const ctx = this._ctx.select("sha")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The abbreviated commit SHA.
+   */
+  shortSha = async (): Promise<string> => {
+    if (this._shortSha) {
+      return this._shortSha
+    }
+
+    const ctx = this._ctx.select("shortSha")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The filesystem tree at this commit.
+   * @param opts.discardGitDir Set to true to discard .git directory.
+   * @param opts.depth The depth of the tree to fetch.
+   * @param opts.includeTags Set to true to populate tag refs in the local checkout .git.
+   */
+  tree = (opts?: GitCommitTreeOpts): Directory => {
+    const ctx = this._ctx.select("tree", { ...opts })
+    return new Directory(ctx)
+  }
+}
+
+/**
  * A git ref (tag, branch, or commit).
  */
 export class GitRef extends BaseClient {
   private readonly _id?: GitRefID = undefined
   private readonly _commit?: string = undefined
+  private readonly _commitSHA?: string = undefined
+  private readonly _name?: string = undefined
   private readonly _ref?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
    */
-  constructor(ctx?: Context, _id?: GitRefID, _commit?: string, _ref?: string) {
+  constructor(
+    ctx?: Context,
+    _id?: GitRefID,
+    _commit?: string,
+    _commitSHA?: string,
+    _name?: string,
+    _ref?: string,
+  ) {
     super(ctx)
 
     this._id = _id
     this._commit = _commit
+    this._commitSHA = _commitSHA
+    this._name = _name
     this._ref = _ref
   }
 
@@ -9540,6 +9898,7 @@ export class GitRef extends BaseClient {
 
   /**
    * The resolved commit id at this ref.
+   * @deprecated Use "commitSHA" instead.
    */
   commit = async (): Promise<string> => {
     if (this._commit) {
@@ -9547,6 +9906,21 @@ export class GitRef extends BaseClient {
     }
 
     const ctx = this._ctx.select("commit")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The resolved commit SHA at this ref.
+   */
+  commitSHA = async (): Promise<string> => {
+    if (this._commitSHA) {
+      return this._commitSHA
+    }
+
+    const ctx = this._ctx.select("commitSHA")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -9563,7 +9937,23 @@ export class GitRef extends BaseClient {
   }
 
   /**
+   * The resolved name of this ref.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * The resolved ref name at this ref.
+   * @deprecated Use "name" instead.
    */
   ref = async (): Promise<string> => {
     if (this._ref) {
@@ -9575,6 +9965,14 @@ export class GitRef extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * The commit this ref resolves to.
+   */
+  targetCommit = (): GitCommit => {
+    const ctx = this._ctx.select("targetCommit")
+    return new GitCommit(ctx)
   }
 
   /**
@@ -9655,9 +10053,9 @@ export class GitRepository extends BaseClient {
    * Returns details of a commit.
    * @param id Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
    */
-  commit = (id: string): GitRef => {
+  commit = (id: string): GitCommit => {
     const ctx = this._ctx.select("commit", { id })
-    return new GitRef(ctx)
+    return new GitCommit(ctx)
   }
 
   /**
@@ -12838,6 +13236,14 @@ export class Client extends BaseClient {
   loadGeneratorGroupFromID = (id: GeneratorGroupID): GeneratorGroup => {
     const ctx = this._ctx.select("loadGeneratorGroupFromID", { id })
     return new GeneratorGroup(ctx)
+  }
+
+  /**
+   * Load a GitCommit from its ID.
+   */
+  loadGitCommitFromID = (id: GitCommitID): GitCommit => {
+    const ctx = this._ctx.select("loadGitCommitFromID", { id })
+    return new GitCommit(ctx)
   }
 
   /**

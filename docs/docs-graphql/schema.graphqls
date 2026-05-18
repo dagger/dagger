@@ -126,6 +126,9 @@ type Binding {
   """Retrieve the binding value, as type GeneratorGroup"""
   asGeneratorGroup: GeneratorGroup!
 
+  """Retrieve the binding value, as type GitCommit"""
+  asGitCommit: GitCommit!
+
   """Retrieve the binding value, as type GitRef"""
   asGitRef: GitRef!
 
@@ -2762,6 +2765,27 @@ type Env {
     description: String!
   ): Env!
 
+  """Create or update a binding of type GitCommit in the environment"""
+  withGitCommitInput(
+    """The name of the binding"""
+    name: String!
+
+    """The GitCommit value to assign to the binding"""
+    value: GitCommitID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """Declare a desired GitCommit output to be assigned in the environment"""
+  withGitCommitOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Create or update a binding of type GitRef in the environment"""
   withGitRefInput(
     """The name of the binding"""
@@ -3837,10 +3861,88 @@ The `GeneratorID` scalar type represents an identifier for an object of type Gen
 """
 scalar GeneratorID
 
+"""An immutable git commit."""
+type GitCommit {
+  """The latest semver release tag reachable from this commit."""
+  ancestorReleaseTag(
+    """Include pre-release tags when choosing the latest tag."""
+    includePreRelease: Boolean = false
+  ): GitRef
+
+  """Git author email."""
+  authorEmail: String!
+
+  """Git author name."""
+  authorName: String!
+
+  """Git author date, in RFC3339 format."""
+  authoredDate: String!
+
+  """Git committer date, in RFC3339 format."""
+  committedDate: String!
+
+  """Git committer email."""
+  committerEmail: String!
+
+  """Git committer name."""
+  committerName: String!
+
+  """A unique identifier for this GitCommit."""
+  id: GitCommitID!
+
+  """Full commit message."""
+  message: String!
+
+  """Commit message body, excluding the headline."""
+  messageBody: String!
+
+  """First line of the commit message."""
+  messageHeadline: String!
+
+  """Parent commit SHAs."""
+  parentShas: [String!]!
+
+  """The latest semver release tag that points directly at this commit."""
+  releaseTag(
+    """Include pre-release tags when choosing the latest tag."""
+    includePreRelease: Boolean = false
+  ): GitRef
+
+  """The full commit SHA."""
+  sha: String!
+
+  """The abbreviated commit SHA."""
+  shortSha: String!
+
+  """The filesystem tree at this commit."""
+  tree(
+    """Set to true to discard .git directory."""
+    discardGitDir: Boolean = false
+
+    """The depth of the tree to fetch."""
+    depth: Int = 1
+
+    """Set to true to populate tag refs in the local checkout .git."""
+    includeTags: Boolean = false
+
+    sshKnownHosts: String
+
+    sshAuthSocket: SocketID
+  ): Directory!
+}
+
+"""
+The `GitCommitID` scalar type represents an identifier for an object of type GitCommit.
+"""
+scalar GitCommitID
+
 """A git ref (tag, branch, or commit)."""
 type GitRef {
   """The resolved commit id at this ref."""
-  commit: String!
+  commit: String! @deprecated(reason: "Use \"commitSHA\" instead.")
+
+  """The resolved commit SHA at this ref."""
+  commitSHA: String!
 
   """Find the best common ancestor between this ref and another ref."""
   commonAncestor(
@@ -3851,8 +3953,14 @@ type GitRef {
   """A unique identifier for this GitRef."""
   id: GitRefID!
 
+  """The resolved name of this ref."""
+  name: String!
+
   """The resolved ref name at this ref."""
-  ref: String!
+  ref: String! @deprecated(reason: "Use \"name\" instead.")
+
+  """The commit this ref resolves to."""
+  targetCommit: GitCommit!
 
   """The filesystem tree at this ref."""
   tree(
@@ -3892,7 +4000,7 @@ type GitRepository {
     Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
     """
     id: String!
-  ): GitRef!
+  ): GitCommit!
 
   """Returns details for HEAD."""
   head: GitRef!
@@ -5270,6 +5378,9 @@ type Query {
 
   """Load a GeneratorGroup from its ID."""
   loadGeneratorGroupFromID(id: GeneratorGroupID!): GeneratorGroup!
+
+  """Load a GitCommit from its ID."""
+  loadGitCommitFromID(id: GitCommitID!): GitCommit!
 
   """Load a GitRef from its ID."""
   loadGitRefFromID(id: GitRefID!): GitRef!
