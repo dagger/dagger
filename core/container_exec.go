@@ -478,7 +478,7 @@ func lockMountedCaches(ctx context.Context, mounts []ContainerMount) (func(), er
 			continue
 		}
 		cacheSelf := ctrMount.CacheSource.Volume.Self()
-		if cacheSelf.Sharing != CacheSharingModeLocked {
+		if !cacheSharingModeLocksWrites(cacheSelf.Sharing) {
 			continue
 		}
 		payload, err := cacheSelf.EncodePersistedObject(ctx, nil)
@@ -504,6 +504,11 @@ func lockMountedCaches(ctx context.Context, mounts []ContainerMount) (func(), er
 			locker.Unlock(lockKeys[i])
 		}
 	}, nil
+}
+
+func cacheSharingModeLocksWrites(mode CacheSharingMode) bool {
+	// Stop-gap: PRIVATE is implemented with the same serialized writes as LOCKED.
+	return mode == CacheSharingModeLocked || mode == CacheSharingModePrivate
 }
 
 func (plan *materializedExecPlan) releaseActives(ctx context.Context) error {

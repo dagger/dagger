@@ -37,14 +37,14 @@ $ viztest: Viztest! X.Xs CACHED
 │   ): Directory! X.Xs CACHED
 │
 ├╴$ container: Container! X.Xs CACHED
-├╴$ .withDirectory(
+├╴○ .withDirectory(
 │   ┆ path: "/level-1"
 │   ┆ source: Directory.withFile(
 │   ┆ ┆ path: "file"
 │   ┆ ┆ source: file(name: "file", contents: "hey"): File!
 │   ┆ ┆ permissions: 420
 │   ┆ ): Directory!
-│   ): Container! X.Xs CACHED
+│   ): Container! X.Xs
 ├╴$ .withDirectory(
 │   ┆ path: "/level-2"
 │   ┆ source: Directory.withDirectory(

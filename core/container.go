@@ -307,6 +307,13 @@ type ContainerWithDirectoryLazy struct {
 	Owner  string
 }
 
+type containerWithDirectoryOp struct {
+	Path   string
+	Source dagql.ObjectResult[*Directory]
+	Filter CopyFilter
+	Owner  string
+}
+
 type ContainerWithFileLazy struct {
 	LazyState
 	Parent      dagql.ObjectResult[*Container]
@@ -3258,20 +3265,91 @@ func (*ContainerFileLazy) EncodePersisted(context.Context, dagql.PersistedObject
 	return nil, fmt.Errorf("encode persisted container file lazy: unsupported top-level form")
 }
 
+func containerWithDirectoryOpFromLazy(lazy *ContainerWithDirectoryLazy) containerWithDirectoryOp {
+	return containerWithDirectoryOp{
+		Path:   lazy.Path,
+		Source: lazy.Source,
+		Filter: lazy.Filter,
+		Owner:  lazy.Owner,
+	}
+}
+
+func containerWithDirectoryOwnerRequiresParentFS(owner string) bool {
+	if owner == "" {
+		return false
+	}
+
+	uidOrName, gidOrName, hasGroup := strings.Cut(owner, ":")
+	if _, err := parseUID(uidOrName); err != nil {
+		return true
+	}
+	if hasGroup {
+		if _, err := parseUID(gidOrName); err != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func collectContainerWithDirectoryChain(lazy *ContainerWithDirectoryLazy) (dagql.ObjectResult[*Container], []containerWithDirectoryOp) {
+	ops := []containerWithDirectoryOp{containerWithDirectoryOpFromLazy(lazy)}
+	base := lazy.Parent
+
+	for {
+		parent := base.Self()
+		if parent == nil {
+			break
+		}
+		parentLazy, ok := parent.Lazy.(*ContainerWithDirectoryLazy)
+		if !ok || parentLazy.LazyInitComplete || containerWithDirectoryOwnerRequiresParentFS(parentLazy.Owner) {
+			break
+		}
+		ops = append(ops, containerWithDirectoryOpFromLazy(parentLazy))
+		base = parentLazy.Parent
+	}
+
+	slices.Reverse(ops)
+	return base, ops
+}
+
 func (lazy *ContainerWithDirectoryLazy) Evaluate(ctx context.Context, container *Container) error {
 	return lazy.LazyState.Evaluate(ctx, "Container.withDirectory", func(ctx context.Context) error {
+		if containerWithDirectoryOwnerRequiresParentFS(lazy.Owner) {
+			cache, err := dagql.EngineCache(ctx)
+			if err != nil {
+				return err
+			}
+			if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
+				return err
+			}
+			if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+				return err
+			}
+			_, err = container.WithDirectory(ctx, lazy.Parent, lazy.Path, lazy.Source, lazy.Filter, lazy.Owner)
+			if err != nil {
+				return err
+			}
+			container.Lazy = nil
+			return nil
+		}
+
+		base, ops := collectContainerWithDirectoryChain(lazy)
 		cache, err := dagql.EngineCache(ctx)
 		if err != nil {
 			return err
 		}
-		if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
+		evaluate := make([]dagql.AnyResult, 0, 1+len(ops))
+		evaluate = append(evaluate, base)
+		for _, op := range ops {
+			evaluate = append(evaluate, op.Source)
+		}
+		if err := cache.Evaluate(ctx, evaluate...); err != nil {
 			return err
 		}
-		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+		if err := materializeContainerStateFromParent(ctx, container, base); err != nil {
 			return err
 		}
-		_, err = container.WithDirectory(ctx, lazy.Parent, lazy.Path, lazy.Source, lazy.Filter, lazy.Owner)
-		if err != nil {
+		if _, err := container.withDirectoryChainFromCurrentState(ctx, base, ops); err != nil {
 			return err
 		}
 		container.Lazy = nil
@@ -4887,6 +4965,30 @@ func (container *Container) WithRootFS(ctx context.Context, dir dagql.ObjectResu
 	return container, nil
 }
 
+func (container *Container) ensureRootFS(ctx context.Context) error {
+	if container.FS == nil {
+		container.FS = new(LazyAccessor[*Directory, *Container])
+	}
+	if _, ok := container.FS.Peek(); ok {
+		return nil
+	}
+
+	scratchDir, scratchSnapshot, err := loadCanonicalScratchDirectory(ctx)
+	if err != nil {
+		return err
+	}
+	rootfs := &Directory{
+		Platform: container.Platform,
+		Services: slices.Clone(container.Services),
+		Dir:      new(LazyAccessor[string, *Directory]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+	}
+	rootfs.Dir.setValue(scratchDir)
+	rootfs.Snapshot.setValue(scratchSnapshot)
+	container.FS.setValue(rootfs)
+	return nil
+}
+
 // mutates container caller must have handled cloning or creating a new child.
 func (container *Container) WithDirectory(
 	ctx context.Context,
@@ -4921,23 +5023,8 @@ func (container *Container) WithDirectory(
 	}
 
 	if mnt == nil {
-		if container.FS == nil {
-			container.FS = new(LazyAccessor[*Directory, *Container])
-		}
-		if _, ok := container.FS.Peek(); !ok {
-			scratchDir, scratchSnapshot, err := loadCanonicalScratchDirectory(ctx)
-			if err != nil {
-				return nil, err
-			}
-			rootfs := &Directory{
-				Platform: container.Platform,
-				Services: slices.Clone(container.Services),
-				Dir:      new(LazyAccessor[string, *Directory]),
-				Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
-			}
-			rootfs.Dir.setValue(scratchDir)
-			rootfs.Snapshot.setValue(scratchSnapshot)
-			container.FS.setValue(rootfs)
+		if err := container.ensureRootFS(ctx); err != nil {
+			return nil, err
 		}
 	}
 
@@ -4954,6 +5041,190 @@ func (container *Container) WithDirectory(
 	}
 	container.ImageRef = ""
 	return container, nil
+}
+
+// mutates container caller must have handled cloning or creating a new child.
+func (container *Container) withDirectoryChainFromCurrentState(
+	ctx context.Context,
+	parentForOwnership dagql.ObjectResult[*Container],
+	ops []containerWithDirectoryOp,
+) (*Container, error) {
+	type batch struct {
+		target *LazyAccessor[*Directory, *Container]
+		path   string
+		ops    []directoryWithDirectoryOp
+	}
+
+	var current batch
+	flush := func() error {
+		if len(current.ops) == 0 {
+			return nil
+		}
+
+		targetParent, err := materializedTargetParentDirectoryForContainerPath(ctx, container, current.path)
+		if err != nil {
+			return err
+		}
+		if targetParentRef, ok := targetParent.Snapshot.Peek(); ok && targetParentRef != nil {
+			defer targetParentRef.Release(context.WithoutCancel(ctx))
+		}
+		dir, err := bareDirectoryForContainerPath(container, current.path)
+		if err != nil {
+			return err
+		}
+		if err := dir.evaluateWithDirectoryChainFromMaterializedBase(ctx, targetParent, current.ops); err != nil {
+			return err
+		}
+
+		current = batch{}
+		container.ImageRef = ""
+		return nil
+	}
+
+	for _, op := range ops {
+		mnt, mntSubpath, err := locatePath(container, op.Path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to locate path %s: %w", op.Path, err)
+		}
+
+		if mnt != nil && mnt.FileSource != nil && (mntSubpath == "/" || mntSubpath == "" || mntSubpath == ".") {
+			if err := flush(); err != nil {
+				return nil, err
+			}
+			if _, err := container.withDirectoryFromCurrentState(ctx, parentForOwnership, op.Path, op.Source, op.Filter, op.Owner); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		var target *LazyAccessor[*Directory, *Container]
+		switch {
+		case mnt == nil:
+			if err := container.ensureRootFS(ctx); err != nil {
+				return nil, err
+			}
+			target = container.FS
+		case mnt.DirectorySource != nil:
+			target = mnt.DirectorySource
+		default:
+			if err := flush(); err != nil {
+				return nil, err
+			}
+			if _, err := container.withDirectoryFromCurrentState(ctx, parentForOwnership, op.Path, op.Source, op.Filter, op.Owner); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		resolvedOwner := op.Owner
+		if op.Owner != "" {
+			if containerWithDirectoryOwnerRequiresParentFS(op.Owner) {
+				return nil, fmt.Errorf("container withDirectory chain replay requires numeric owner, got %q", op.Owner)
+			}
+			ownership, err := container.ownership(ctx, parentForOwnership, op.Owner)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve ownership for %s: %w", op.Owner, err)
+			}
+			resolvedOwner = strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID)
+		}
+
+		if len(current.ops) != 0 && current.target != target {
+			if err := flush(); err != nil {
+				return nil, err
+			}
+		}
+		if len(current.ops) == 0 {
+			current.target = target
+			current.path = op.Path
+		}
+		current.ops = append(current.ops, directoryWithDirectoryOp{
+			DestDir: mntSubpath,
+			Source:  op.Source,
+			Filter:  op.Filter,
+			Owner:   resolvedOwner,
+		})
+	}
+
+	if err := flush(); err != nil {
+		return nil, err
+	}
+	return container, nil
+}
+
+// mutates container caller must have handled cloning or creating a new child.
+func (container *Container) withDirectoryFromCurrentState(
+	ctx context.Context,
+	parentForOwnership dagql.ObjectResult[*Container],
+	subdir string,
+	src dagql.ObjectResult[*Directory],
+	filter CopyFilter,
+	owner string,
+) (*Container, error) {
+	mnt, mntSubpath, err := locatePath(container, subdir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to locate path %s: %w", subdir, err)
+	}
+
+	if mnt != nil && mnt.FileSource != nil && (mntSubpath == "/" || mntSubpath == "" || mntSubpath == ".") {
+		container, err = container.WithoutMount(ctx, mnt.Target)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmount %s: %w", mnt.Target, err)
+		}
+		return container.withDirectoryFromCurrentState(ctx, parentForOwnership, subdir, src, filter, owner)
+	}
+
+	resolvedOwner := owner
+	if owner != "" {
+		if containerWithDirectoryOwnerRequiresParentFS(owner) {
+			return nil, fmt.Errorf("container withDirectory chain replay requires numeric owner, got %q", owner)
+		}
+		ownership, err := container.ownership(ctx, parentForOwnership, owner)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve ownership for %s: %w", owner, err)
+		}
+		resolvedOwner = strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID)
+	}
+
+	if mnt == nil {
+		if err := container.ensureRootFS(ctx); err != nil {
+			return nil, err
+		}
+	}
+
+	targetParent, err := materializedTargetParentDirectoryForContainerPath(ctx, container, subdir)
+	if err != nil {
+		return nil, err
+	}
+	if targetParentRef, ok := targetParent.Snapshot.Peek(); ok && targetParentRef != nil {
+		defer targetParentRef.Release(context.WithoutCancel(ctx))
+	}
+	dir, err := bareDirectoryForContainerPath(container, subdir)
+	if err != nil {
+		return nil, err
+	}
+	if err := dir.evaluateWithDirectoryChainFromMaterializedBase(ctx, targetParent, []directoryWithDirectoryOp{
+		{
+			DestDir: mntSubpath,
+			Source:  src,
+			Filter:  filter,
+			Owner:   resolvedOwner,
+		},
+	}); err != nil {
+		return nil, err
+	}
+	container.ImageRef = ""
+	return container, nil
+}
+
+func materializedTargetParentDirectoryForContainerPath(ctx context.Context, current *Container, targetPath string) (*Directory, error) {
+	if current == nil {
+		return nil, fmt.Errorf("container lazy current state is nil")
+	}
+	dir, err := bareDirectoryForContainerPath(current, targetPath)
+	if err != nil {
+		return nil, err
+	}
+	return cloneDetachedDirectoryForContainerResult(ctx, dir)
 }
 
 // mutates container caller must have handled cloning or creating a new child.

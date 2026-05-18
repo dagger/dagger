@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sys/unix"
 
 	"github.com/dagger/dagger/dagql"
 )
@@ -497,10 +498,32 @@ func doGitCheckout(
 		}
 	}
 
+	if !discardGitDir {
+		if _, err := checkoutGit.Run(ctx, "read-tree", "HEAD"); err != nil {
+			return fmt.Errorf("failed to normalize git index: %w", err)
+		}
+	}
+
 	if discardGitDir {
 		if err := os.RemoveAll(checkoutDirGit); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("failed to remove .git: %w", err)
 		}
+	}
+
+	checkoutDir, err := checkoutGit.WorkTree(ctx)
+	if err != nil {
+		return fmt.Errorf("could not find worktree: %w", err)
+	}
+	// Use a deterministic non-zero timestamp. Some build tools treat missing
+	// outputs as epoch and skip initial copies when sources are also epoch.
+	normalizedTime := []unix.Timespec{{Sec: 1}, {Sec: 1}}
+	if err := filepath.WalkDir(checkoutDir, func(path string, _ os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		return unix.UtimesNanoAt(unix.AT_FDCWD, path, normalizedTime, unix.AT_SYMLINK_NOFOLLOW)
+	}); err != nil {
+		return fmt.Errorf("failed to normalize checkout timestamps: %w", err)
 	}
 
 	return nil

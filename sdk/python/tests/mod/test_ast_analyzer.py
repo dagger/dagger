@@ -1450,6 +1450,27 @@ class Foo:
     assert param.resolved_type.name == "Directory"
 
 
+def test_ast_type_alias_inside_union():
+    """``Name: TypeAlias = str`` used as ``Name | None`` resolves to optional str."""
+    metadata = _analyze("""
+from typing import TypeAlias
+
+import dagger
+
+Name: TypeAlias = str
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def greet(self, name: Name | None) -> str:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.kind == "primitive"
+    assert param.resolved_type.name == "str"
+    assert param.resolved_type.is_optional is True
+
+
 def test_ast_optional_type_alias():
     """``MaybeDir = dagger.Directory | None`` resolves to optional Directory."""
     metadata = _analyze("""

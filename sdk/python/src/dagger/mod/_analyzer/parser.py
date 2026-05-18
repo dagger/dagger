@@ -582,6 +582,23 @@ class ModuleParser:
                     current = origin_aliases[name]
                     continue
             break
+
+        # Expand aliases inside ``X | Y`` union expressions so that
+        # ``Name | None`` (where ``Name: TypeAlias = str``) reaches the
+        # resolver as ``str | None`` instead of an unresolved "Name" object.
+        # The while loop only handles a bare Name at the top level, so
+        # compound annotations with aliased sub-expressions pass through
+        # unexpanded without this recursion.
+        if isinstance(current, ast.BinOp) and isinstance(current.op, ast.BitOr):
+            expanded_left = self._expand_alias(current.left, current_file)
+            expanded_right = self._expand_alias(current.right, current_file)
+            if expanded_left is not current.left or expanded_right is not current.right:
+                new_node = ast.BinOp(
+                    left=expanded_left, op=current.op, right=expanded_right
+                )
+                ast.copy_location(new_node, current)
+                return new_node
+
         return current
 
     def _build_namespace(self) -> None:

@@ -175,15 +175,18 @@ func (c *Client) setupNetwork(ctx context.Context, state *execState) error {
 	if !ok {
 		return fmt.Errorf("unknown network mode %s", state.procInfo.Meta.NetMode)
 	}
-	// if our process spec allows changes to the netns and doesn't have a hostname, assign one so buildkit doesn't default to pooled network namespaces
-	// ideally, we'd be less aggressive and find a way to CLONE_NEWNET the parent netns, but for now isolation is preferable to unpredictable rule bleeding.
-	if state.procInfo.Meta.SecurityMode == pb.SecurityMode_INSECURE && state.procInfo.Meta.Hostname == "" {
-		state.procInfo.Meta.Hostname = uuid.NewString()
-	}
-	if state.procInfo.Meta.Hostname == "" {
+
+	networkHostname := state.procInfo.Meta.Hostname
+	switch {
+	case networkHostname != "":
+	case state.procInfo.Meta.SecurityMode == pb.SecurityMode_INSECURE:
+		networkHostname = uuid.NewString()
+		state.procInfo.Meta.Hostname = networkHostname
+	default:
 		state.procInfo.Meta.Hostname = defaultHostname
 	}
-	networkNamespace, err := provider.New(ctx, state.procInfo.Meta.Hostname)
+
+	networkNamespace, err := provider.New(ctx, networkHostname)
 	if err != nil {
 		return fmt.Errorf("create network namespace: %w", err)
 	}

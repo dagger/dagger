@@ -128,9 +128,7 @@ public class DaggerCodegenMojo extends AbstractMojo {
     getLog()
         .info(String.format("Querying local dagger CLI for schema (version=%s)", actualVersion));
     this.version = actualVersion;
-    return DaggerCLIUtils.query(
-        getClass().getClassLoader().getResourceAsStream("introspection/introspection.graphql"),
-        this.bin);
+    return DaggerCLIUtils.query(DaggerCLIUtils.introspectionQuery(getClass()), this.bin);
   }
 
   public File getOutputDirectory() {

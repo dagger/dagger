@@ -38,10 +38,7 @@ func init() {
 func Trace(cmd *cobra.Command, args []string) error {
 	traceID := args[0]
 
-	return Frontend.Run(cmd.Context(), dagui.FrontendOpts{
-		Verbosity: dagui.ShowCompletedVerbosity,
-		NoExit:    true,
-	}, func(ctx context.Context) (cleanups.CleanupF, error) {
+	return Frontend.Run(cmd.Context(), opts, func(ctx context.Context) (cleanups.CleanupF, error) {
 		cloudAuth, err := auth.GetCloudAuth(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("cloud auth: %w", err)
@@ -62,7 +59,9 @@ func Trace(cmd *cobra.Command, args []string) error {
 		}
 
 		spanExp := Frontend.SpanExporter()
+		defer spanExp.Shutdown(ctx)
 		logExp := Frontend.LogExporter()
+		defer logExp.Shutdown(ctx)
 
 		noop := func() error { return nil }
 

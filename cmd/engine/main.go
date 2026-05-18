@@ -751,7 +751,7 @@ func applyMainFlags(c *cli.Context, cfg *bkconfig.Config) error {
 		cfg.Workers.OCI.NetworkConfig.Mode = c.GlobalString("oci-worker-net")
 	}
 	if c.GlobalIsSet("oci-cni-config-path") {
-		cfg.Workers.OCI.NetworkConfig.CNIConfigPath = c.GlobalString("oci-cni-worker-path")
+		cfg.Workers.OCI.NetworkConfig.CNIConfigPath = c.GlobalString("oci-cni-config-path")
 	}
 	if c.GlobalIsSet("oci-cni-binary-dir") {
 		cfg.Workers.OCI.NetworkConfig.CNIBinaryPath = c.GlobalString("oci-cni-binary-dir")
