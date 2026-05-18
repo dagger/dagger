@@ -1,0 +1,12 @@
+{
+  "name": "rust-sdk",
+  "engineVersion": "v0.20.6",
+  "sdk": {
+    "source": "go"
+  },
+  "include": [
+    "!target/",
+    "!.dagger/"
+  ],
+  "source": "runtime"
+}

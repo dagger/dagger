@@ -20,6 +20,9 @@ pub use client::*;
 #[cfg(feature = "gen")]
 pub use gen::*;
 
+#[cfg(feature = "gen")]
+pub mod module;
+
 pub mod id {
     use std::pin::Pin;
 
