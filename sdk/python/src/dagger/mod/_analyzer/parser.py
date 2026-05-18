@@ -135,7 +135,7 @@ class _AliasExpander(ast.NodeTransformer):
     def __init__(
         self,
         aliases_by_file: dict[Path, dict[str, ast.expr]],
-        origins_by_file: dict[Path, dict[str, Path]],
+        origins_by_file: dict[Path, dict[str, tuple[Path, str]]],
         current_file: Path,
     ):
         super().__init__()
@@ -196,8 +196,8 @@ class _AliasExpander(ast.NodeTransformer):
         if target is None:
             return original
 
-        origin, value = target
-        key = (origin, name)
+        origin, origin_name, value = target
+        key = (origin, origin_name)
         if key in self.seen:
             return original
 
@@ -211,18 +211,29 @@ class _AliasExpander(ast.NodeTransformer):
             self.current_file = saved_file
             self.seen.discard(key)
 
-    def _alias_target(self, name: str) -> tuple[Path, ast.expr] | None:
+    def _alias_target(self, name: str) -> tuple[Path, str, ast.expr] | None:
         local_aliases = self.aliases_by_file.get(self.current_file, {})
         if name in local_aliases:
-            return self.current_file, local_aliases[name]
+            return self.current_file, name, local_aliases[name]
 
-        origin = self.origins_by_file.get(self.current_file, {}).get(name)
-        if origin is not None:
-            origin_aliases = self.aliases_by_file.get(origin, {})
-            if name in origin_aliases:
-                return origin, origin_aliases[name]
-
-        return None
+        # Follow import chain, handling re-exports through __init__.py
+        current_file = self.current_file
+        current_name = name
+        visited: set[tuple[Path, str]] = set()
+        while True:
+            key = (current_file, current_name)
+            if key in visited:
+                return None
+            visited.add(key)
+            entry = self.origins_by_file.get(current_file, {}).get(current_name)
+            if entry is None:
+                return None
+            origin_file, origin_name = entry
+            origin_aliases = self.aliases_by_file.get(origin_file, {})
+            if origin_name in origin_aliases:
+                return origin_file, origin_name, origin_aliases[origin_name]
+            current_file = origin_file
+            current_name = origin_name
 
     def visit_Constant(self, node: ast.Constant) -> ast.expr:
         # String forward references — re-parse the string, recursively
@@ -298,11 +309,12 @@ class ModuleParser:
         self._module_type_aliases: dict[Path, dict[str, ast.expr]] = {}
 
         # Per-file map of names brought in by a relative import or an
-        # absolute self-package import to the parsed file they came from.
+        # absolute self-package import to the parsed file and original name
+        # they came from.
         # Populated in ``_collect_cross_file_imports`` and consumed by
         # ``_expand_alias`` (cross-file alias resolution) and
         # ``_eval_constant`` (cross-file constant resolution).
-        self._cross_file_import_origins: dict[Path, dict[str, Path]] = {}
+        self._cross_file_import_origins: dict[Path, dict[str, tuple[Path, str]]] = {}
 
         # File currently being extracted. Set by ``_extract_declarations`` so
         # ``_eval_constant`` can scope name lookups to the containing file.
@@ -625,9 +637,11 @@ class ModuleParser:
         module, and both are recorded here:
 
         * relative imports — ``from .types import Source`` in
-          ``pkg/main.py`` records ``(pkg/main.py, "Source") -> pkg/types.py``;
-        * absolute self-imports — ``from pkg.types import Source`` records
-          the same, when ``pkg`` is the module's own package name.
+          ``pkg/main.py`` records
+          ``(pkg/main.py, "Source") -> (pkg/types.py, "Source")``;
+        * absolute self-imports — ``from pkg.types import Source as Src``
+          records ``(pkg/main.py, "Src") -> (pkg/types.py, "Source")``,
+          when ``pkg`` is the module's own package name.
 
         ``_expand_alias`` consults this map to follow aliases across files;
         ``_eval_constant`` does the same for constants.
@@ -665,7 +679,38 @@ class ModuleParser:
                     if alias.name == "*":
                         continue
                     bound = alias.asname or alias.name
-                    mapping[bound] = target
+                    mapping[bound] = (target, alias.name)
+
+    def _resolve_cross_file_import_origin(
+        self, file_path: Path, name: str
+    ) -> tuple[Path, str] | None:
+        """Return the final parsed-file/name origin for an imported name.
+
+        ``_collect_cross_file_imports`` stores one import edge at a time:
+        local bound name -> (origin file, original exported name). This
+        helper follows those edges so package-root re-exports like
+        ``main.py: from pkg import Count`` plus
+        ``pkg/__init__.py: from .params import Count`` resolve to
+        ``(params.py, "Count")``.
+        """
+        current_file = file_path
+        current_name = name
+        seen: set[tuple[Path, str]] = set()
+
+        while True:
+            key = (current_file, current_name)
+            if key in seen:
+                return None
+            seen.add(key)
+
+            origin = self._cross_file_import_origins.get(current_file, {}).get(
+                current_name
+            )
+            if origin is None:
+                if current_file == file_path and current_name == name:
+                    return None
+                return current_file, current_name
+            current_file, current_name = origin
 
     @staticmethod
     def _resolve_relative_import_target(
@@ -2107,17 +2152,18 @@ class ModuleParser:
                 file_constants = self._module_constants.get(current, {})
                 if node.id in file_constants:
                     return self._eval_constant(file_constants[node.id])
-                origin = self._cross_file_import_origins.get(current, {}).get(node.id)
+                origin = self._resolve_cross_file_import_origin(current, node.id)
                 if origin is not None:
-                    origin_constants = self._module_constants.get(origin, {})
-                    if node.id in origin_constants:
+                    origin_file, origin_name = origin
+                    origin_constants = self._module_constants.get(origin_file, {})
+                    if origin_name in origin_constants:
                         # Switch the current-file scope so any nested name
                         # references inside the constant resolve against the
                         # foreign file's own constants.
                         previous = self._current_file
-                        self._current_file = origin
+                        self._current_file = origin_file
                         try:
-                            return self._eval_constant(origin_constants[node.id])
+                            return self._eval_constant(origin_constants[origin_name])
                         finally:
                             self._current_file = previous
             logger.warning(
