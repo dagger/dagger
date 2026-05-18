@@ -3181,6 +3181,64 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 }
 
 // load the given module source's dependencies as modules
+// BuildLegacyAsModuleArgs is the single builder for the asModule args salted
+// into AsModuleVariantDigest, so every load path yields one module identity.
+func BuildLegacyAsModuleArgs(
+	nameOverride string,
+	legacyDefaultPath bool,
+	defaultPathContextSourceRef string,
+	defaultPathContextSourcePin string,
+	configDefaults map[string]any,
+	defaultsFromDotEnv bool,
+	argCustomizations []*modules.ModuleConfigArgument,
+) ([]dagql.NamedInput, error) {
+	args := []dagql.NamedInput{}
+	if nameOverride != "" {
+		args = append(args, dagql.NamedInput{
+			Name: "legacyNameOverride", Value: dagql.String(nameOverride),
+		})
+	}
+	if legacyDefaultPath {
+		args = append(args, dagql.NamedInput{
+			Name: "legacyDefaultPath", Value: dagql.Boolean(true),
+		})
+	}
+	if defaultPathContextSourceRef != "" {
+		args = append(args, dagql.NamedInput{
+			Name: "defaultPathContextSourceRef", Value: dagql.String(defaultPathContextSourceRef),
+		})
+		if defaultPathContextSourcePin != "" {
+			args = append(args, dagql.NamedInput{
+				Name: "defaultPathContextSourcePin", Value: dagql.String(defaultPathContextSourcePin),
+			})
+		}
+	}
+	if len(configDefaults) > 0 {
+		wsJSON, err := json.Marshal(configDefaults)
+		if err != nil {
+			return nil, fmt.Errorf("encoding workspace config: %w", err)
+		}
+		args = append(args, dagql.NamedInput{
+			Name: "legacyWorkspaceConfigJson", Value: dagql.String(string(wsJSON)),
+		})
+		if defaultsFromDotEnv {
+			args = append(args, dagql.NamedInput{
+				Name: "legacyDefaultsFromDotEnv", Value: dagql.Boolean(true),
+			})
+		}
+	}
+	if len(argCustomizations) > 0 {
+		custJSON, err := json.Marshal(argCustomizations)
+		if err != nil {
+			return nil, fmt.Errorf("encoding arg customizations: %w", err)
+		}
+		args = append(args, dagql.NamedInput{
+			Name: "legacyArgCustomizationsJson", Value: dagql.String(string(custJSON)),
+		})
+	}
+	return args, nil
+}
+
 func (s *moduleSourceSchema) loadDependencyModules(
 	ctx context.Context,
 	src dagql.ObjectResult[*core.ModuleSource],
@@ -3210,20 +3268,37 @@ func (s *moduleSourceSchema) loadDependencyModules(
 	tcMods := make([]dagql.ObjectResult[*core.Module], len(src.Self().Toolchains))
 	for i, tcSrc := range src.Self().Toolchains {
 		eg.Go(func() error {
-			var toolchainAsModuleArgs []dagql.NamedInput
+			// Must match pendingRelatedModule (session_workspaces.go).
+			var cfg *modules.ModuleConfigDependency
+			if i < len(src.Self().ConfigToolchains) {
+				cfg = src.Self().ConfigToolchains[i]
+			}
+			var (
+				nameOverride      string
+				configDefaults    map[string]any
+				argCustomizations []*modules.ModuleConfigArgument
+			)
+			if cfg != nil {
+				nameOverride = cfg.Name
+				configDefaults = workspace.ExtractConfigDefaults(cfg.Customizations)
+				argCustomizations = cfg.Customizations
+			}
+			var dpRef, dpPin string
 			if defaultPathContextSrc.Self() != nil {
-				toolchainAsModuleArgs = []dagql.NamedInput{
-					{
-						Name:  "defaultPathContextSourceRef",
-						Value: dagql.String(defaultPathContextSrc.Self().AsString()),
-					},
-				}
-				if defaultPathContextSrc.Self().Pin() != "" {
-					toolchainAsModuleArgs = append(toolchainAsModuleArgs, dagql.NamedInput{
-						Name:  "defaultPathContextSourcePin",
-						Value: dagql.String(defaultPathContextSrc.Self().Pin()),
-					})
-				}
+				dpRef = defaultPathContextSrc.Self().AsString()
+				dpPin = defaultPathContextSrc.Self().Pin()
+			}
+			toolchainAsModuleArgs, err := BuildLegacyAsModuleArgs(
+				nameOverride,
+				false, // related modules never set LegacyDefaultPath (see pendingRelatedModule)
+				dpRef,
+				dpPin,
+				configDefaults,
+				false, // DefaultsFromDotEnv is not set for related modules
+				argCustomizations,
+			)
+			if err != nil {
+				return fmt.Errorf("build toolchain asModule args: %w", err)
 			}
 			return dag.Select(ctx, tcSrc, &tcMods[i],
 				dagql.Selector{Field: "asModule", Args: toolchainAsModuleArgs},
