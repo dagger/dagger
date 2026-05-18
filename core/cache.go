@@ -199,7 +199,13 @@ func (*CacheVolume) DecodePersistedObject(ctx context.Context, dag *dagql.Server
 		if err != nil {
 			return nil, err
 		}
-		ref, err := query.SnapshotManager().GetMutableBySnapshotID(ctx, link.RefKey, bkcache.NoUpdateLastUsed)
+		ref, err := query.SnapshotManager().GetMutableBySnapshotID(
+			ctx,
+			link.RefKey,
+			bkcache.NoUpdateLastUsed,
+			bkcache.WithRecordType(bkclient.UsageRecordTypeCacheMount),
+			bkcache.WithDescription(fmt.Sprintf("cache volume %q", cache.Key)),
+		)
 		if err != nil {
 			return nil, fmt.Errorf("reopen persisted cache volume snapshot %q: %w", link.RefKey, err)
 		}
