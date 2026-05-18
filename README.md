@@ -47,3 +47,5 @@ Dagger makes your software delivery *programmable*, *local-first*, *repeatable* 
 ## Contributing
 
 See [CONTRIBUTING.md](https://github.com/dagger/dagger/blob/main/CONTRIBUTING.md).
+
+<!-- CI-only disk pressure investigation marker. -->
