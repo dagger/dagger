@@ -113,9 +113,13 @@ type FuncCommand struct {
 	c   *client.Client
 	ctx context.Context
 
+	changedInputs []string
+
 	// withFn is the `with` function on Query root, if present.
 	// Used to forward constructor args from the root command.
 	withFn *modFunction
+
+	failOnCacheMiss bool
 }
 
 func (fc *FuncCommand) Command() *cobra.Command {
@@ -178,6 +182,8 @@ func (fc *FuncCommand) Command() *cobra.Command {
 					c.SetContext(idtui.WithPrintTraceLink(c.Context(), true))
 				}
 
+				fc.changedInputs = nil
+
 				execArgs := a
 				// With DisableFlagParsing enabled, --help can remain in args when it
 				// appears after the first positional token. Strip it once we know help
@@ -190,7 +196,14 @@ func (fc *FuncCommand) Command() *cobra.Command {
 				params := initModuleParams(execArgs)
 				params.LoadWorkspaceModules = shouldLoadWorkspaceModules(fc.DisableModuleLoad)
 
-				return withEngine(c.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
+				cacheMiss := &cacheMissState{}
+				execCtx := c.Context()
+				if fc.failOnCacheMiss {
+					execCtx = context.WithValue(execCtx, failOnCacheMissKey, cacheMiss)
+					c.SetContext(execCtx)
+				}
+
+				returnValue := withEngine(execCtx, params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient
 					fc.q = querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
 
@@ -227,9 +240,13 @@ func (fc *FuncCommand) Command() *cobra.Command {
 
 					return nil
 				})
+
+				if returnValue == nil && fc.failOnCacheMiss && cacheMiss.failedMiss() {
+					return cacheMissErr(fc.changedInputs)
+				}
+				return returnValue
 			},
 		}
-
 		if fc.cmd.Annotations == nil {
 			fc.cmd.Annotations = map[string]string{}
 		}
@@ -246,9 +263,17 @@ func (fc *FuncCommand) Command() *cobra.Command {
 
 		fc.cmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "Save the result to a local file or directory")
 
+		fc.cmd.PersistentFlags().BoolVar(&fc.failOnCacheMiss, "fail-on-cache-miss", false, "Fail if the call cannot be served from cache")
 		fc.cmd.PersistentFlags().BoolVarP(&jsonOutput, "json", "j", false, "Present result as JSON")
 	}
 	return fc.cmd
+}
+
+func cacheMissErr(changedInputs []string) error {
+	if len(changedInputs) == 0 {
+		return fmt.Errorf("call failed because it was not served from cache; the request inputs changed or the result was invalidated")
+	}
+	return fmt.Errorf("call failed because it was not served from cache; changed inputs: %s", strings.Join(changedInputs, ", "))
 }
 
 func stripHelpArgs(args []string) []string {
@@ -644,6 +669,7 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 			continue
 		}
 
+		fc.changedInputs = append(fc.changedInputs, fmt.Sprintf("--%s", a.FlagName()))
 		p.Go(func() (flagResult, error) {
 			v, err := a.GetFlagValue(fc.ctx, flag, fc.c.Dagger(), fc.mod)
 			if err != nil {

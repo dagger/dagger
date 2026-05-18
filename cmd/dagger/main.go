@@ -155,6 +155,7 @@ func init() {
 		funcListCmd,
 		callCoreCmd.Command(),
 		callModCmd.Command(),
+		callTwiceCmd,
 		sessionCmd(),
 		newGenCmd(),
 		shellCmd,

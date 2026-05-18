@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
 	"sort"
 	"strings"
 
@@ -40,6 +42,36 @@ var callModCmd = &FuncCommand{
 	Short: "Call one or more functions, interconnected into a pipeline",
 	Annotations: map[string]string{
 		printTraceLinkKey: "true",
+	},
+}
+
+var callTwiceCmd = &cobra.Command{
+	Use:   "call-twice [options] [function]...",
+	Short: "Call a function chain twice, verifying cache usage on the second run",
+	Long: strings.ReplaceAll(`Run the requested function pipeline once normally, then re-run it with --fail-on-cache-miss to verify that the result was served from cache.
+
+This is more convenient than running dagger twice manually.`, "´", "`"),
+	DisableFlagParsing:    true,
+	DisableFlagsInUseLine: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		exe, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("determine executable path: %w", err)
+		}
+
+		first := exec.Command(exe, append([]string{"call"}, args...)...)
+		first.Stdin = os.Stdin
+		first.Stdout = cmd.OutOrStdout()
+		first.Stderr = cmd.ErrOrStderr()
+		if err := first.Run(); err != nil {
+			return err
+		}
+
+		second := exec.Command(exe, append([]string{"call", "--fail-on-cache-miss"}, args...)...)
+		second.Stdin = os.Stdin
+		second.Stdout = cmd.OutOrStdout()
+		second.Stderr = cmd.ErrOrStderr()
+		return second.Run()
 	},
 }
 

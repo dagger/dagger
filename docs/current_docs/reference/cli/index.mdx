@@ -64,12 +64,13 @@ dagger call [options]
 ### Options
 
 ```
-      --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
-      --eager-runtime       load module runtime eagerly
-  -j, --json                Present result as JSON
-  -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
-  -M, --no-mod              Don't automatically load a module (mutually exclusive with --mod)
-  -o, --output string       Save the result to a local file or directory
+      --allow-llm strings    List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
+      --eager-runtime        load module runtime eagerly
+      --fail-on-cache-miss   Fail if the call cannot be served from cache
+  -j, --json                 Present result as JSON
+  -m, --mod string           Module reference to load, either a local path or a remote git repo (defaults to current directory)
+  -M, --no-mod               Don't automatically load a module (mutually exclusive with --mod)
+  -o, --output string        Save the result to a local file or directory
 ```
 
 ### Options inherited from parent commands
@@ -151,8 +152,9 @@ dagger core [options]
 ### Options
 
 ```
-  -j, --json            Present result as JSON
-  -o, --output string   Save the result to a local file or directory
+      --fail-on-cache-miss   Fail if the call cannot be served from cache
+  -j, --json                 Present result as JSON
+  -o, --output string        Save the result to a local file or directory
 ```
 
 ### Options inherited from parent commands
