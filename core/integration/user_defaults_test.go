@@ -751,6 +751,18 @@ DEFAULTS_GREETING='{"foo":"bar"}'
 			`{"foo":"bar"}`,
 			nil,
 		},
+		{
+			"preserve quotes without namespace",
+			"./defaults/.env",
+			`
+GREETING='{"hello":"world"}'
+`,
+			"defaults",
+			[]string{"dagger", "call", "greeting"},
+			dagger.ReturnTypeSuccess,
+			`{"hello":"world"}`,
+			nil,
+		},
 	} {
 		tc := tc
 		t.Run(tc.description, func(ctx context.Context, t *testctx.T) {
