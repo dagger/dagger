@@ -235,7 +235,9 @@ type ModuleConfigArgument struct {
 	Argument string `json:"argument"`
 
 	// The default value to use for this argument.
-	Default string `json:"default,omitempty"`
+	// Can be a string for primitive values, or a map for structured values
+	// such as service references: {"from": "module:function"}.
+	Default any `json:"default,omitempty"`
 
 	// The default path to use for File or Directory arguments.
 	DefaultPath string `json:"defaultPath,omitempty"`

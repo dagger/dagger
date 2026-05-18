@@ -81,9 +81,14 @@ func parseLegacyConfig(data []byte) (*modules.ModuleConfig, error) {
 func extractConfigDefaults(customizations []*modules.ModuleConfigArgument) map[string]any {
 	config := make(map[string]any)
 	for _, cust := range customizations {
-		if cust != nil && len(cust.Function) == 0 && cust.Default != "" {
-			config[cust.Argument] = cust.Default
+		if cust == nil || len(cust.Function) != 0 || cust.Default == nil {
+			continue
 		}
+		// Skip empty string defaults
+		if s, ok := cust.Default.(string); ok && s == "" {
+			continue
+		}
+		config[cust.Argument] = cust.Default
 	}
 	if len(config) == 0 {
 		return nil

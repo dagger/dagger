@@ -27,8 +27,7 @@
           "description": "The name of the argument to override."
         },
         "default": {
-          "type": "string",
-          "description": "The default value to use for this argument."
+          "description": "The default value to use for this argument. Can be a string for primitive values, or a map for structured values such as service references: {\"from\": \"module:function\"}."
         },
         "defaultPath": {
           "type": "string",
