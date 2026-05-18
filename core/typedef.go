@@ -2690,6 +2690,7 @@ type persistedFunction struct {
 	ReturnTypeResultID uint64              `json:"returnTypeResultID,omitempty"`
 	Deprecated         *string             `json:"deprecated,omitempty"`
 	SourceMapResultID  uint64              `json:"sourceMapResultID,omitempty"`
+	SourceModuleName   string              `json:"sourceModuleName,omitempty"`
 	CachePolicy        FunctionCachePolicy `json:"cachePolicy,omitempty"`
 	CacheTTLSeconds    *int64              `json:"cacheTTLSeconds,omitempty"`
 	IsCheck            bool                `json:"isCheck,omitempty"`
@@ -2866,6 +2867,7 @@ func encodePersistedFunction(cache dagql.PersistedObjectCache, fn *Function) (*p
 		Name:               fn.Name,
 		Description:        fn.Description,
 		Deprecated:         fn.Deprecated,
+		SourceModuleName:   fn.SourceModuleName,
 		CachePolicy:        fn.CachePolicy,
 		IsCheck:            fn.IsCheck,
 		IsGenerator:        fn.IsGenerator,
@@ -2913,6 +2915,7 @@ func decodePersistedFunction(ctx context.Context, dag *dagql.Server, fn *persist
 		Description:        fn.Description,
 		ReturnType:         returnType,
 		Deprecated:         fn.Deprecated,
+		SourceModuleName:   fn.SourceModuleName,
 		CachePolicy:        fn.CachePolicy,
 		IsCheck:            fn.IsCheck,
 		IsGenerator:        fn.IsGenerator,
