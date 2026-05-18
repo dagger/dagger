@@ -12,6 +12,12 @@ type CallRequest struct {
 	TTL            int64
 	DoNotCache     bool
 	IsPersistable  bool
+
+	// CacheHitTransform can rebase request-local state onto an equivalent cache
+	// hit before it is returned to the caller. It must return a detached result;
+	// the cache will publish that result under this request without mutating the
+	// shared result that satisfied the broad cache lookup.
+	CacheHitTransform func(context.Context, AnyResult) (AnyResult, error)
 }
 
 func (req *CallRequest) Clone() *CallRequest {
@@ -23,11 +29,12 @@ func (req *CallRequest) Clone() *CallRequest {
 		frame = &ResultCall{}
 	}
 	return &CallRequest{
-		ResultCall:     frame,
-		ConcurrencyKey: req.ConcurrencyKey,
-		TTL:            req.TTL,
-		DoNotCache:     req.DoNotCache,
-		IsPersistable:  req.IsPersistable,
+		ResultCall:        frame,
+		ConcurrencyKey:    req.ConcurrencyKey,
+		TTL:               req.TTL,
+		DoNotCache:        req.DoNotCache,
+		IsPersistable:     req.IsPersistable,
+		CacheHitTransform: req.CacheHitTransform,
 	}
 }
 

@@ -18,3 +18,24 @@ Dagger allows you to build, publish, and export container images, also known as 
 <ExportContainerImageToHost />
 
 <SetEnvVar />
+
+## Use volatile variables for exec-time metadata
+
+`withVolatileVariable` sets a non-secret environment variable for future `withExec` calls without invalidating exec cache when only the variable's value changes.
+
+Typical examples include CI and reporting metadata such as:
+- commit SHA
+- branch or ref
+- CI run ID
+
+:::warning
+`withVolatileVariable` is an expert-only escape hatch. Use it only when you are certain that changing the variable alone must not invalidate cached `withExec` results. If that assumption is wrong, Dagger may reuse stale or incorrect cached results.
+:::
+
+Unlike `withEnvVariable`, volatile variables:
+- are visible only to future `withExec` calls
+- are not persisted into the container image config
+- are not returned by `envVariable` or `envVariables`
+- are not available to `expand: true`
+
+Use `withEnvVariable` for normal container configuration, `withSecretVariable` for sensitive values, and `withVolatileVariable` only for exec-time metadata that should not decide cache reuse.

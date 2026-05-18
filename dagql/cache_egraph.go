@@ -655,6 +655,33 @@ func (c *Cache) selectLookupCandidateForSessionLocked(sessionID string, candidat
 	return nil
 }
 
+func (c *Cache) resultMatchesRecipeDigestLocked(res *sharedResult, recipeDigest digest.Digest) bool {
+	if res == nil || recipeDigest == "" {
+		return false
+	}
+	frame := res.loadResultCall()
+	if frame == nil {
+		return false
+	}
+	resDigest, err := frame.deriveRecipeDigest(c)
+	return err == nil && resDigest == recipeDigest
+}
+
+func (c *Cache) selectLookupCandidateForSessionAndRecipeLocked(sessionID string, candidates *set.TreeSet[*sharedResult], recipeDigest digest.Digest) *sharedResult {
+	if candidates == nil {
+		return nil
+	}
+	for res := range candidates.Items() {
+		if !c.sessionSatisfiesResourceRequirementsLocked(sessionID, res) {
+			continue
+		}
+		if c.resultMatchesRecipeDigestLocked(res, recipeDigest) {
+			return res
+		}
+	}
+	return c.selectLookupCandidateForSessionLocked(sessionID, candidates)
+}
+
 func (c *Cache) lookupMatchForDigestsLocked(recipeDigest digest.Digest, extraDigests []call.ExtraDigest, nowUnix int64) lookupMatch {
 	match := lookupMatch{
 		primaryLookupPossible: true,
@@ -810,54 +837,71 @@ func (c *Cache) lookupCacheForRequestLocked(
 	requestSelf digest.Digest,
 	requestInputs []digest.Digest,
 	requestInputRefs []ResultCallStructuralInputRef,
-) (AnyResult, bool, error) {
+) (AnyResult, bool, bool, error) {
 	if req == nil || req.ResultCall == nil {
-		return nil, false, nil
+		return nil, false, false, nil
 	}
 	now := time.Now()
 	nowUnix := now.Unix()
 	match := c.lookupMatchForCallLocked(req.ResultCall, requestDigest, requestSelf, requestInputs, nowUnix)
 	c.traceLookupAttempt(ctx, requestDigest.String(), match.selfDigest.String(), match.inputDigests, req.IsPersistable)
-	hitRes := c.selectLookupCandidateForSessionLocked(sessionID, match.candidates)
+	hitRes := c.selectLookupCandidateForSessionAndRecipeLocked(sessionID, match.candidates, requestDigest)
 
 	if hitRes == nil {
 		c.traceLookupMissNoMatch(ctx, requestDigest.String(), match.primaryLookupPossible, match.missingInputIndex, match.termDigest, match.termSetSize)
-		return nil, false, nil
+		return nil, false, false, nil
 	}
+	hitExactRecipe := match.hitRecipeDigest && c.resultMatchesRecipeDigestLocked(hitRes, requestDigest)
 
 	// fast-path: if we got a very simple recipe-digest hit we can skip trying to teach the egraph anything new
-	if requestDigest != "" && len(req.ResultCall.ExtraDigests) == 0 && req.TTL == 0 && !req.IsPersistable && match.hitRecipeDigest {
+	if requestDigest != "" && len(req.ResultCall.ExtraDigests) == 0 && req.TTL == 0 && !req.IsPersistable && hitExactRecipe {
 		touchSharedResultLastUsed(hitRes, now.UnixNano())
 		retRes := Result[Typed]{
 			shared:   hitRes,
 			hitCache: true,
 		}
 		c.traceLookupHit(ctx, requestDigest.String(), hitRes, match.termDigest)
-		return retRes, true, nil
+		return retRes, true, true, nil
 	}
+
+	// Dynamic-input / CacheHitTransform support exists for volatile container
+	// variables (Container.withVolatileVariable). It may generalize to other
+	// cache-identity-excluded inputs in the future, but today volatile variables
+	// are the only consumer.
+	//
+	// Some dynamic-input callers intentionally use a broad equivalent digest as
+	// a lookup-only key, then rebase request-local state onto a private result.
+	// In that case, do not teach the exact request identity to the broad hit; the
+	// transformed result will be indexed for the exact request after it is
+	// materialized.
+	shouldTransformHit := req.CacheHitTransform != nil && !hitExactRecipe
 
 	// We have a cache hit. Teach this request identity onto the existing shared
 	// result so any raw ID we hand back is itself resolvable by the cache later.
 	res := hitRes
 	// A TTL-bearing call can alias an existing result on lookup; apply the same
 	// conservative expiry merge policy here so TTL remains effective on hits.
-	res.expiresAtUnix = mergeSharedResultExpiryUnix(
-		res.expiresAtUnix,
-		candidateSharedResultExpiryUnix(nowUnix, req.TTL),
-	)
+	if !shouldTransformHit {
+		res.expiresAtUnix = mergeSharedResultExpiryUnix(
+			res.expiresAtUnix,
+			candidateSharedResultExpiryUnix(nowUnix, req.TTL),
+		)
+	}
 	touchSharedResultLastUsed(res, now.UnixNano())
-	if req.IsPersistable {
+	if req.IsPersistable && !shouldTransformHit {
 		c.upsertPersistedEdgeLocked(ctx, res, candidateSharedResultExpiryUnix(nowUnix, req.TTL), false)
 	}
-	if err := c.teachResultIdentityLocked(ctx, res, req.ResultCall, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
-		return nil, false, err
+	if !shouldTransformHit {
+		if err := c.teachResultIdentityLocked(ctx, res, req.ResultCall, requestDigest, requestSelf, requestInputs, requestInputRefs); err != nil {
+			return nil, false, false, err
+		}
 	}
 	retRes := Result[Typed]{
 		shared:   res,
 		hitCache: true,
 	}
 	c.traceLookupHit(ctx, requestDigest.String(), res, match.termDigest)
-	return retRes, true, nil
+	return retRes, true, hitExactRecipe, nil
 }
 
 func (c *Cache) lookupCacheForRequest(
@@ -881,7 +925,7 @@ func (c *Cache) lookupCacheForRequest(
 	}
 
 	c.egraphMu.Lock()
-	retRes, hit, err := c.lookupCacheForRequestLocked(ctx, sessionID, req, requestDigest, requestSelf, requestInputs, requestInputRefs)
+	retRes, hit, hitRecipeDigest, err := c.lookupCacheForRequestLocked(ctx, sessionID, req, requestDigest, requestSelf, requestInputs, requestInputRefs)
 	if err != nil || !hit {
 		c.egraphMu.Unlock()
 		return retRes, hit, err
@@ -912,8 +956,7 @@ func (c *Cache) lookupCacheForRequest(
 	c.sessionMu.Unlock()
 	c.egraphMu.Unlock()
 
-	loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
-	if err != nil {
+	rollbackTrackedHit := func(err error) (AnyResult, bool, error) {
 		c.egraphMu.Lock()
 		c.sessionMu.Lock()
 		if resultIDs := c.sessionResultIDsBySession[sessionID]; resultIDs != nil {
@@ -933,10 +976,74 @@ func (c *Cache) lookupCacheForRequest(
 		return nil, false, errors.Join(err, decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases))
 	}
 
+	loadedHit, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
+	if err != nil {
+		return rollbackTrackedHit(err)
+	}
+	if req.CacheHitTransform != nil && !hitRecipeDigest {
+		transformedHit, err := req.CacheHitTransform(ctx, loadedHit)
+		if err != nil {
+			return rollbackTrackedHit(err)
+		}
+		loadedHit, err = c.publishTransformedCacheHit(ctx, sessionID, resolver, req, transformedHit)
+		if err != nil {
+			return rollbackTrackedHit(err)
+		}
+	}
+
 	if c.traceEnabled() {
 		c.traceSessionResultTracked(ctx, sessionID, loadedHit, true, trackedCount)
 	}
 	return loadedHit, true, nil
+}
+
+func (c *Cache) publishTransformedCacheHit(
+	ctx context.Context,
+	sessionID string,
+	resolver TypeResolver,
+	req *CallRequest,
+	val AnyResult,
+) (AnyResult, error) {
+	if val == nil {
+		return nil, fmt.Errorf("publish transformed cache hit: nil result")
+	}
+	if shared := val.cacheSharedResult(); shared != nil && shared.id != 0 {
+		return nil, fmt.Errorf("publish transformed cache hit: transform returned cache-backed result")
+	}
+	oc := &ongoingCall{
+		val:           val,
+		isPersistable: req.IsPersistable,
+		ttlSeconds:    req.TTL,
+	}
+	if err := c.initCompletedResult(ctx, resolver, oc, req, sessionID); err != nil {
+		return nil, fmt.Errorf("publish transformed cache hit: %w", err)
+	}
+	if oc.res == nil {
+		return nil, fmt.Errorf("publish transformed cache hit: completed without initialized result")
+	}
+
+	retRes := Result[Typed]{
+		shared:   oc.res,
+		hitCache: true,
+	}
+	c.trackSessionResult(ctx, sessionID, retRes, true)
+	if oc.handoffHoldActive {
+		c.egraphMu.Lock()
+		queue, decErr := c.decrementIncomingOwnershipLocked(ctx, oc.res, nil)
+		collectReleases, collectErr := c.collectUnownedResultsLocked(context.WithoutCancel(ctx), queue)
+		c.egraphMu.Unlock()
+		oc.handoffHoldActive = false
+		if relErr := errors.Join(decErr, collectErr, runOnReleaseFuncs(context.WithoutCancel(ctx), collectReleases)); relErr != nil {
+			return nil, fmt.Errorf("publish transformed cache hit: release publication hold: %w", relErr)
+		}
+	}
+	touchSharedResultLastUsed(oc.res, time.Now().UnixNano())
+
+	loaded, err := c.ensurePersistedHitValueLoaded(ctx, resolver, retRes)
+	if err != nil {
+		return nil, fmt.Errorf("publish transformed cache hit: normalize transformed result: %w", err)
+	}
+	return loaded, nil
 }
 
 func (c *Cache) TeachCallEquivalentToResult(ctx context.Context, sessionID string, frame *ResultCall, res AnyResult) error {
@@ -1095,6 +1202,11 @@ func (c *Cache) resultIDForCall(frame *ResultCall) (sharedResultID, error) {
 	match := c.lookupMatchForCallLocked(frame, requestDigest, requestSelf, requestInputs, time.Now().Unix())
 	if match.candidates == nil || match.candidates.Empty() {
 		return 0, fmt.Errorf("resolve result ID for call: no attached result for %s", requestDigest)
+	}
+	for hitRes := range match.candidates.Items() {
+		if hitRes != nil && hitRes.id != 0 && c.resultMatchesRecipeDigestLocked(hitRes, requestDigest) {
+			return hitRes.id, nil
+		}
 	}
 	for hitRes := range match.candidates.Items() {
 		if hitRes != nil && hitRes.id != 0 {
