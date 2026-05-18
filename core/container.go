@@ -5745,10 +5745,23 @@ func (container *Container) WithSecretVariable(
 	name string,
 	secret dagql.ObjectResult[*Secret],
 ) (*Container, error) {
-	container.Secrets = append(container.Secrets, ContainerSecret{
+	newSecret := ContainerSecret{
 		Secret:  secret,
 		EnvName: name,
-	})
+	}
+
+	var replaced bool
+	for i, existing := range container.Secrets {
+		if shell.EqualEnvKeys(existing.EnvName, name) {
+			container.Secrets[i] = newSecret
+			replaced = true
+			break
+		}
+	}
+
+	if !replaced {
+		container.Secrets = append(container.Secrets, newSecret)
+	}
 
 	// set image ref to empty string
 	container.ImageRef = ""
