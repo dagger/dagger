@@ -34,11 +34,12 @@ func (EngineSuite) TestDiskPersistenceAcrossRestart(ctx context.Context, t *test
 		)
 	}
 
-	startEngine := func(
+	startEngineWithClientOpts := func(
 		client *dagger.Client,
 		ctx context.Context,
 		t *testctx.T,
 		stateKey string,
+		clientOpts []dagger.ClientOpt,
 		opts ...func(*dagger.Container) *dagger.Container,
 	) (*dagger.Service, *dagger.Service, *dagger.Client) {
 		t.Helper()
@@ -51,13 +52,25 @@ func (EngineSuite) TestDiskPersistenceAcrossRestart(ctx context.Context, t *test
 		endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
 		require.NoError(t, err)
 
-		engineClient, err := dagger.Connect(
-			ctx,
+		connectOpts := []dagger.ClientOpt{
 			dagger.WithRunnerHost(endpoint),
 			dagger.WithLogOutput(testutil.NewTWriter(t)),
-		)
+		}
+		connectOpts = append(connectOpts, clientOpts...)
+		engineClient, err := dagger.Connect(ctx, connectOpts...)
 		require.NoError(t, err)
 		return upstreamSvc, engineSvc, engineClient
+	}
+
+	startEngine := func(
+		client *dagger.Client,
+		ctx context.Context,
+		t *testctx.T,
+		stateKey string,
+		opts ...func(*dagger.Container) *dagger.Container,
+	) (*dagger.Service, *dagger.Service, *dagger.Client) {
+		t.Helper()
+		return startEngineWithClientOpts(client, ctx, t, stateKey, nil, opts...)
 	}
 
 	stopEngine := func(
@@ -110,6 +123,138 @@ func (EngineSuite) TestDiskPersistenceAcrossRestart(ctx context.Context, t *test
 		entryCount, err := engineClientB.Engine().LocalCache().EntrySet().EntryCount(ctx)
 		require.NoError(t, err)
 		require.Greater(t, entryCount, 0)
+	})
+
+	t.Run("service-bound graph does not break disk persistence", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-service-binding-state-" + identity.NewID()
+		serviceScript := "#!/bin/sh\nwhile true; do printf 'ok\\n' | nc -l -p 8080; done\n"
+		randomScript := `
+set -eu
+mkdir -p /work
+head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
+`
+		serviceRunScript := `
+set -eu
+mkdir -p /work
+nc sidecar 8080 > /work/service.txt
+head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
+`
+
+		runRandom := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) string {
+			t.Helper()
+
+			randomContents, err := engineClient.
+				Container().
+				From(alpineImage).
+				WithExec([]string{"sh", "-ec", randomScript}).
+				Directory("/work").
+				File("random.txt").
+				Contents(ctx)
+			require.NoError(t, err)
+			return strings.TrimSpace(randomContents)
+		}
+
+		runServiceBound := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) {
+			t.Helper()
+
+			service := engineClient.
+				Container().
+				From(alpineImage).
+				WithNewFile("/bin/app", serviceScript, dagger.ContainerWithNewFileOpts{Permissions: 0o755}).
+				WithExposedPort(8080).
+				WithDefaultArgs([]string{"/bin/app"}).
+				AsService()
+
+			workDir := engineClient.
+				Container().
+				From(alpineImage).
+				WithServiceBinding("sidecar", service).
+				WithExec([]string{"sh", "-ec", serviceRunScript}).
+				Directory("/work")
+
+			serviceContents, err := workDir.File("service.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "ok\n", serviceContents)
+
+			randomContents, err := workDir.File("random.txt").Contents(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, strings.TrimSpace(randomContents))
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		randomA := runRandom(ctx, t, engineClientA)
+		runServiceBound(ctx, t, engineClientA)
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		randomB := runRandom(ctx, t, engineClientB)
+		require.Equal(t, randomA, randomB, "unrelated withExec output should survive engine restart after a service-bound graph")
+	})
+
+	t.Run("generator group graph does not break disk persistence", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-generator-group-state-" + identity.NewID()
+		generatorWorkdir, err := filepath.Abs("testdata/generators/hello-with-generators")
+		require.NoError(t, err)
+		clientOpts := []dagger.ClientOpt{
+			dagger.WithWorkdir(generatorWorkdir),
+			dagger.WithLoadWorkspaceModules(),
+		}
+		randomScript := `
+set -eu
+mkdir -p /work
+head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
+`
+
+		runRandom := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) string {
+			t.Helper()
+
+			randomContents, err := engineClient.
+				Container().
+				From(alpineImage).
+				WithExec([]string{"sh", "-ec", randomScript}).
+				Directory("/work").
+				File("random.txt").
+				Contents(ctx)
+			require.NoError(t, err)
+			return strings.TrimSpace(randomContents)
+		}
+
+		runGeneratorGroup := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) {
+			t.Helper()
+
+			empty, err := engineClient.
+				CurrentWorkspace().
+				Generators(dagger.WorkspaceGeneratorsOpts{Include: []string{"generate-files"}}).
+				Run().
+				IsEmpty(ctx)
+			require.NoError(t, err)
+			require.False(t, empty)
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngineWithClientOpts(c, ctx, t, stateKey, clientOpts, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		randomA := runRandom(ctx, t, engineClientA)
+		runGeneratorGroup(ctx, t, engineClientA)
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngineWithClientOpts(c, ctx, t, stateKey, clientOpts, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		randomB := runRandom(ctx, t, engineClientB)
+		require.Equal(t, randomA, randomB, "unrelated withExec output should survive engine restart after a generator group graph")
 	})
 
 	t.Run("function cache control survives restart", func(ctx context.Context, t *testctx.T) {

@@ -15,9 +15,9 @@ This enables caching: since inputs are immutable and operations are deterministi
 
 DAGs of operations can be serialized as IDs, which have associated digests that serve as the operations' cache keys.
 
-THERE ARE NO REFERENCES RIGHT NOW BECAUSE THESE DOCS ARE VERY OLD. THE SOURCE OF TRUTH IS THE CODE.
+The reference docs in `references/` are up to date and should be treated as current guidance for understanding the cache, persistence, pruning, lazy evaluation, session resources, filesync, typedefs, and e-graph behavior. The code remains the final source of truth, but the reference docs are expected to match the current implementation.
 
-The only exception to this is references/debugging.md, which HAS CRITICAL INSTRUCTIONS on running tests and debugging generally.
+Always read the relevant reference docs for the cache area being debugged. For broad cache investigations, read all of them. `references/debugging.md` has critical instructions on running tests, replaying CI traces, and debugging generally.
 
 ## Scripts
 
