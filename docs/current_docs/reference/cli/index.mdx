@@ -19,7 +19,6 @@ dagger [options] [subcommand | file...]
   -y, --auto-apply                   Automatically apply changes when a changeset is returned
   -c, --command string               Execute a dagger shell command
   -d, --debug                        Show debug logs and full verbosity
-      --eager-runtime                load module runtime eagerly
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
       --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
@@ -66,7 +65,6 @@ dagger call [options]
 
 ```
       --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
-      --eager-runtime       load module runtime eagerly
   -j, --json                Present result as JSON
   -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
   -M, --no-mod              Don't automatically load a module (mutually exclusive with --mod)
@@ -117,7 +115,6 @@ dagger config -m github.com/dagger/hello-dagger
 
 ```
       --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
-      --eager-runtime       load module runtime eagerly
       --json                output in JSON format
   -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
 ```
@@ -212,7 +209,6 @@ dagger develop [options]
 ```
       --allow-llm strings        List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
       --compat string[="skip"]   Engine API version to target (default "latest")
-      --eager-runtime            load module runtime eagerly
       --license string           License identifier to generate. See https://spdx.org/licenses/ (default "Apache-2.0")
   -m, --mod string               Module reference to load, either a local path or a remote git repo (defaults to current directory)
   -r, --recursive                Develop recursively into local dependencies
@@ -704,7 +700,6 @@ dagger toolchain install github.com/dagger/dagger/toolchains/go
 ```
       --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
       --compat string       Engine API version to target (default "latest")
-      --eager-runtime       load module runtime eagerly
   -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
   -n, --name string         Name to use for the toolchain in the module. Defaults to the name of the toolchain being installed.
 ```
@@ -752,7 +747,6 @@ dagger toolchain list
 
 ```
       --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
-      --eager-runtime       load module runtime eagerly
   -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
 ```
 
@@ -800,7 +794,6 @@ dagger toolchain uninstall mytoolchain
 ```
       --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
       --compat string       Engine API version to target (default "latest")
-      --eager-runtime       load module runtime eagerly
   -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
 ```
 
@@ -848,7 +841,6 @@ dagger toolchain update
 ```
       --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
       --compat string       Engine API version to target (default "latest")
-      --eager-runtime       load module runtime eagerly
   -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
 ```
 
@@ -896,7 +888,6 @@ dagger uninstall hello
 ```
       --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
       --compat string       Engine API version to target (default "latest")
-      --eager-runtime       load module runtime eagerly
   -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
 ```
 
@@ -949,7 +940,6 @@ dagger update [options] [<DEPENDENCY>...]
 ```
       --allow-llm strings   List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session
       --compat string       Engine API version to target (default "latest")
-      --eager-runtime       load module runtime eagerly
   -m, --mod string          Module reference to load, either a local path or a remote git repo (defaults to current directory)
 ```
 

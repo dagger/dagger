@@ -2203,6 +2203,10 @@ func (e gqlError) WriteTo(w http.ResponseWriter) {
 		Err:     e.error,
 		Message: e.Error(),
 	}
+	var extErr dagql.ExtendedError
+	if errors.As(e.error, &extErr) {
+		gqlerr.Extensions = extErr.Extensions()
+	}
 	res := graphql.Response{
 		Errors: gqlerror.List{gqlerr},
 	}

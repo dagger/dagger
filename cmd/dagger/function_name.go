@@ -10,7 +10,6 @@ func initModuleParams(a []string) client.Params {
 	return client.Params{
 		ExecCmd:              a,
 		Function:             functionName(a),
-		EagerRuntime:         eagerRuntime,
 		LoadWorkspaceModules: shouldLoadWorkspaceModules(false),
 	}
 }
