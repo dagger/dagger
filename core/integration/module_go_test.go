@@ -816,6 +816,39 @@ func (GoSuite) TestSignatures(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (GoSuite) TestCompileErrorsLoadRuntimeForCallAndCheck(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("main.go", `package main
+
+type Test struct{}
+
+func (m *Test) Hello() string {
+	return 1
+}
+`)
+
+	out, err := modGen.With(daggerFunctions()).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "hello")
+
+	out, err = modGen.With(daggerExecFail("functions", "--eager-runtime")).CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "cannot use 1")
+
+	out, err = modGen.With(daggerExecFail("call", "hello")).CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "cannot use 1")
+
+	out, err = modGen.With(daggerExecFail("check")).CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "cannot use 1")
+}
+
 func (GoSuite) TestSignaturesBuiltinTypes(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

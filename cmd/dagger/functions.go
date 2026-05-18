@@ -92,6 +92,9 @@ type FuncCommand struct {
 	// DisableModuleLoad skips adding a flag for loading a user Dagger Module.
 	DisableModuleLoad bool
 
+	// EagerRuntime loads the module runtime during module initialization.
+	EagerRuntime bool
+
 	// cmd is the parent cobra command.
 	cmd *cobra.Command
 
@@ -189,6 +192,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 
 				params := initModuleParams(execArgs)
 				params.LoadWorkspaceModules = shouldLoadWorkspaceModules(fc.DisableModuleLoad)
+				params.EagerRuntime = params.EagerRuntime || fc.EagerRuntime
 
 				return withEngine(c.Context(), params, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient
@@ -206,17 +210,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 						// Return the same ExecError exit code.
 						var ex *dagger.ExecError
 						if errors.As(err, &ex) {
-							tty := !silent && (hasTTY && progress == "auto" || progress == "tty")
-							// Only the pretty frontend prints the stderr of
-							// the exec error in the final render
-							if !tty && ex.Stdout != "" {
-								c.PrintErrln("Stdout:")
-								c.PrintErrln(ex.Stdout)
-							}
-							if !tty && ex.Stderr != "" {
-								c.PrintErrln("Stderr:")
-								c.PrintErrln(ex.Stderr)
-							}
+							printExecErrorOutput(c.PrintErrln, ex)
 							return idtui.ExitError{
 								OriginalCode: ex.ExitCode,
 								Original:     err,

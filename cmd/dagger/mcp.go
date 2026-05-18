@@ -47,6 +47,7 @@ var mcpCmd = &cobra.Command{
 		return withEngine(ctx, client.Params{
 			Stdin:                stdin,
 			Stdout:               stdout,
+			EagerRuntime:         true,
 			LoadWorkspaceModules: true,
 		}, mcpStart)
 	},

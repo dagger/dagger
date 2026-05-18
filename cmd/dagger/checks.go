@@ -50,6 +50,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		params := client.Params{
 			EnableCloudScaleOut:  enableScaleOut,
+			EagerRuntime:         true,
 			LoadWorkspaceModules: true,
 		}
 		return withEngine(

@@ -35,6 +35,7 @@ import (
 	"golang.org/x/term"
 	"mvdan.cc/sh/v3/interp"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
@@ -491,6 +492,7 @@ func main() {
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		stop()
 		var exit idtui.ExitError
+		var ex *dagger.ExecError
 		switch {
 		case errors.As(err, &exit):
 			os.Exit(exit.Code())
@@ -498,6 +500,12 @@ func main() {
 			os.Exit(0)
 		case errors.Is(err, context.Canceled) || errors.Is(err, idtui.ErrInterrupted):
 			os.Exit(2)
+		case errors.As(err, &ex):
+			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+			printExecErrorOutput(func(a ...any) {
+				fmt.Fprintln(stderr, a...)
+			}, ex)
+			os.Exit(ex.ExitCode)
 		default:
 			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
 			var es interp.ExitStatus
@@ -506,6 +514,22 @@ func main() {
 			}
 			os.Exit(1)
 		}
+	}
+}
+
+func printExecErrorOutput(printErrln func(...any), ex *dagger.ExecError) {
+	tty := !silent && (hasTTY && progress == "auto" || progress == "tty")
+	// Only the pretty frontend prints the stderr of the exec error in the final render.
+	if tty {
+		return
+	}
+	if ex.Stdout != "" {
+		printErrln("Stdout:")
+		printErrln(ex.Stdout)
+	}
+	if ex.Stderr != "" {
+		printErrln("Stderr:")
+		printErrln(ex.Stderr)
 	}
 }
 

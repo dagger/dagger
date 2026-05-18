@@ -36,8 +36,9 @@ var callCoreCmd = &FuncCommand{
 }
 
 var callModCmd = &FuncCommand{
-	Name:  "call [options]",
-	Short: "Call one or more functions, interconnected into a pipeline",
+	Name:         "call [options]",
+	Short:        "Call one or more functions, interconnected into a pipeline",
+	EagerRuntime: true,
 	Annotations: map[string]string{
 		printTraceLinkKey: "true",
 	},
