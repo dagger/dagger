@@ -141,7 +141,7 @@ func (CallSuite) TestArgTypes(ctx context.Context, t *testctx.T) {
 
 				out, err := modGen.With(daggerCallAt(".", "fn", "--dir", "~", "entries")).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "foo.txt\nsubdir/\n", out)
+				require.Equal(t, ".gitconfig\nfoo.txt\nsubdir/\n", out)
 
 				out, err = modGen.With(daggerCallAt(".", "fn", "--dir", "~/subdir", "entries")).Stdout(ctx)
 				require.NoError(t, err)
