@@ -45,7 +45,7 @@ func daggerClientInstallAt(generator string, outputDirPath string) dagger.WithCo
 }
 
 func daggerQuery(query string, args ...any) dagger.WithContainerFunc {
-	return daggerQueryAt("", query, args...)
+	return daggerQueryAt(".", query, args...) // TODO remove this "." once legacy compat is fixed
 }
 
 func daggerQueryAt(modPath string, query string, args ...any) dagger.WithContainerFunc {
