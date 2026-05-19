@@ -63,7 +63,7 @@ func daggerQueryAt(modPath string, query string, args ...any) dagger.WithContain
 }
 
 func daggerCall(args ...string) dagger.WithContainerFunc {
-	return daggerCallAt("", args...)
+	return daggerCallAt(".", args...) // TODO FIXME, change "." back to ""
 }
 
 func daggerCallAt(modPath string, args ...string) dagger.WithContainerFunc {
