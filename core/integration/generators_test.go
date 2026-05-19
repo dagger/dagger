@@ -257,7 +257,9 @@ func (GeneratorsSuite) TestWorkspaceGeneratorsVisibleFromModule(ctx context.Cont
 
 	out, err := modGen.
 		WithWorkdir("hello-with-generators").
-		With(daggerExec("toolchain", "install", "./toolchain")).
+		WithNewFile(".dagger/config.toml", `[modules.toolchain-generators]
+source = "../toolchain"
+`).
 		With(daggerCall("workspace-generators-empty")).
 		Stdout(ctx)
 	require.NoError(t, err)
