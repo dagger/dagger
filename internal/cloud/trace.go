@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/dagger/dagger/engine/slog"
@@ -212,6 +213,63 @@ func (c *Client) StreamLogs(
 		handler(logs)
 		return nil
 	})
+}
+
+// queryGraphQL POSTs a one-shot GraphQL request to the Cloud /query endpoint
+// and unmarshals the `data` field of the response into out. Surfaces GraphQL
+// errors (HTTP 200 with non-empty `errors`) as Go errors.
+func (c *Client) queryGraphQL(ctx context.Context, gqlReq *graphqlRequest, out any) error {
+	body, err := json.Marshal(gqlReq)
+	if err != nil {
+		return fmt.Errorf("marshal graphql request: %w", err)
+	}
+
+	endpoint := c.u.JoinPath("/query").String()
+	slog.Debug("cloud GraphQL query", "url", endpoint, "op", gqlReq.OpName)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.h.Do(req)
+	if err != nil {
+		return fmt.Errorf("query %s: %w", gqlReq.OpName, err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read %s response: %w", gqlReq.OpName, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s: %s: %s", gqlReq.OpName, resp.Status, string(respBody))
+	}
+
+	var envelope struct {
+		Data   json.RawMessage `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(respBody, &envelope); err != nil {
+		return fmt.Errorf("unmarshal %s response: %w", gqlReq.OpName, err)
+	}
+	if len(envelope.Errors) > 0 {
+		msgs := make([]string, len(envelope.Errors))
+		for i, e := range envelope.Errors {
+			msgs[i] = e.Message
+		}
+		return fmt.Errorf("%s: %s", gqlReq.OpName, strings.Join(msgs, "; "))
+	}
+	if out != nil && len(envelope.Data) > 0 {
+		if err := json.Unmarshal(envelope.Data, out); err != nil {
+			return fmt.Errorf("unmarshal %s data: %w", gqlReq.OpName, err)
+		}
+	}
+	return nil
 }
 
 // streamGraphQL connects to the Cloud GraphQL SSE endpoint and streams
