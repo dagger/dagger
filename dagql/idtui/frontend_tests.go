@@ -872,6 +872,16 @@ type testSummaryEntries struct {
 
 func collectTestSummaryEntries(view *dagui.TestView) testSummaryEntries {
 	var entries testSummaryEntries
+	addNonPassing := func(entry testSummaryEntry) {
+		switch entry.category {
+		case dagui.TestCategoryFailing:
+			entries.failing = append(entries.failing, entry)
+		case dagui.TestCategoryRunning:
+			entries.running = append(entries.running, entry)
+		case dagui.TestCategorySkipped:
+			entries.skipped = append(entries.skipped, entry)
+		}
+	}
 	var walk func(*dagui.TestNode)
 	walk = func(node *dagui.TestNode) {
 		if node == nil {
@@ -886,15 +896,13 @@ func collectTestSummaryEntries(view *dagui.TestView) testSummaryEntries {
 			})
 			return
 		}
-		if node.Kind == dagui.TestNodeCase {
-			entry := testSummaryEntry{category: node.SelfCategory, label: testSummarySpanHierarchyLabel(node), span: node.Span}
-			switch node.SelfCategory {
-			case dagui.TestCategoryFailing:
-				entries.failing = append(entries.failing, entry)
-			case dagui.TestCategoryRunning:
-				entries.running = append(entries.running, entry)
-			case dagui.TestCategorySkipped:
-				entries.skipped = append(entries.skipped, entry)
+		switch node.Kind {
+		case dagui.TestNodeCase:
+			addNonPassing(testSummaryEntry{category: node.SelfCategory, label: testSummarySpanHierarchyLabel(node), span: node.Span})
+		case dagui.TestNodeSuite:
+			if node.Span != nil {
+				category := node.Span.TestCategory()
+				addNonPassing(testSummaryEntry{category: category, label: testSummarySuiteLabel(node), span: node.Span})
 			}
 		}
 		for _, child := range node.Children {
