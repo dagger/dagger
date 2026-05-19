@@ -399,6 +399,7 @@ class Test:
 
 		out, err := daggerCliBase(t, c).
 			With(withPythonModule(t, c, "python/base-test")).
+			With(pyprojectExtra(nil, `requires-python = ">=3.10"`)).
 			With(fileContents(".python-version", "3.13.1")).
 			With(source).
 			With(daggerCallAt(".", "pinned")).
