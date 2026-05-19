@@ -7,6 +7,7 @@ classes, functions, and fields for Dagger module registration.
 from __future__ import annotations
 
 import ast
+import copy
 import json
 import logging
 from pathlib import Path
@@ -108,6 +109,141 @@ def _parse_docstring_deprecated(raw_doc: str) -> tuple[str | None, str | None]:
     # Get the doc portion before the deprecated directive
     doc_part = raw_doc[: match.start()].strip()
     return doc_part or None, deprecated_msg or ""
+
+
+class _AliasExpander(ast.NodeTransformer):
+    """Expand module-level aliases inside type positions of an annotation.
+
+    Sister to ``ModuleParser._expand_alias``. The transformer walks an
+    annotation as a type expression, replacing each ``Name`` that resolves to
+    a known type alias with the alias's right-hand side. ``Annotated`` is the
+    important boundary: only its first argument is a type. Metadata arguments
+    such as ``Name("Alias")`` or ``DefaultPath(".")`` are value positions and
+    must not be alias-expanded.
+
+    String forward references are parsed only while walking those type
+    positions, so ``"Alias"``, ``"Optional[Alias]"``, and nested quoted
+    references still resolve, without rewriting metadata string literals that
+    merely happen to match an alias name.
+
+    Cross-file aliases (``from .types import Source``) are followed by
+    switching ``current_file`` while expanding inside the imported alias's
+    right-hand side, so chained foreign aliases resolve correctly. A
+    per-(file, name) seen-set prevents infinite recursion on cycles.
+    """
+
+    def __init__(
+        self,
+        aliases_by_file: dict[Path, dict[str, ast.expr]],
+        origins_by_file: dict[Path, dict[str, Path]],
+        current_file: Path,
+    ):
+        super().__init__()
+        self.aliases_by_file = aliases_by_file
+        self.origins_by_file = origins_by_file
+        self.current_file = current_file
+        self.seen: set[tuple[Path, str]] = set()
+
+    def visit_Name(self, node: ast.Name) -> ast.expr:
+        return self._expand_name(node.id, node)
+
+    def visit_Call(self, node: ast.Call) -> ast.expr:
+        # Calls in supported annotations are Annotated metadata values
+        # (Doc(...), Name(...), Ignore(...), etc.), not type expressions.
+        return node
+
+    def visit_Subscript(self, node: ast.Subscript) -> ast.expr:
+        base_name = self._subscript_base_name(node)
+        if base_name == "Annotated":
+            self._visit_annotated_base(node)
+            return node
+        if base_name == "Literal":
+            # Literal[...] arguments are values rather than type positions.
+            # Dagger rejects Literal later; keep the original expression intact.
+            return node
+
+        node.value = self.visit(node.value)
+        node.slice = self.visit(node.slice)  # type: ignore[assignment]
+        return node
+
+    @staticmethod
+    def _subscript_base_name(node: ast.Subscript) -> str | None:
+        value = node.value
+        if isinstance(value, ast.Name):
+            return value.id
+        if isinstance(value, ast.Attribute):
+            return value.attr
+        return None
+
+    def _visit_annotated_base(self, node: ast.Subscript) -> None:
+        slice_node = node.slice
+        if isinstance(slice_node, ast.Tuple):
+            if slice_node.elts:
+                slice_node.elts[0] = self.visit(slice_node.elts[0])
+            return
+        if isinstance(slice_node, ast.Index):
+            value = slice_node.value  # type: ignore[attr-defined]
+            if isinstance(value, ast.Tuple):
+                if value.elts:
+                    value.elts[0] = self.visit(value.elts[0])
+                return
+            slice_node.value = self.visit(value)  # type: ignore[attr-defined]
+            return
+        node.slice = self.visit(slice_node)  # type: ignore[assignment]
+
+    def _expand_name(self, name: str, original: ast.expr) -> ast.expr:
+        target = self._alias_target(name)
+        if target is None:
+            return original
+
+        origin, value = target
+        key = (origin, name)
+        if key in self.seen:
+            return original
+
+        self.seen.add(key)
+        saved_file = self.current_file
+        self.current_file = origin
+        try:
+            expanded = self.visit(copy.deepcopy(value))
+            return ast.copy_location(expanded, original)
+        finally:
+            self.current_file = saved_file
+            self.seen.discard(key)
+
+    def _alias_target(self, name: str) -> tuple[Path, ast.expr] | None:
+        local_aliases = self.aliases_by_file.get(self.current_file, {})
+        if name in local_aliases:
+            return self.current_file, local_aliases[name]
+
+        origin = self.origins_by_file.get(self.current_file, {}).get(name)
+        if origin is not None:
+            origin_aliases = self.aliases_by_file.get(origin, {})
+            if name in origin_aliases:
+                return origin, origin_aliases[name]
+
+        return None
+
+    def visit_Constant(self, node: ast.Constant) -> ast.expr:
+        # String forward references — re-parse the string, recursively
+        # expand any aliases inside it, then return the expanded AST
+        # directly (not re-wrapped in a Constant). The resolver walks
+        # arbitrary AST nodes natively; round-tripping through
+        # ast.unparse + Constant would force the resolver to parse the
+        # string again as a single name, which fails for compound
+        # expressions like ``Optional[str]``.
+        #
+        # Non-string Constants (None, True, numbers used in Literal[…])
+        # pass through untouched.
+        if not isinstance(node.value, str):
+            return node
+        try:
+            inner = ast.parse(node.value, mode="eval").body
+        except SyntaxError:
+            return node
+        expanded = self.visit(inner)
+        ast.copy_location(expanded, node)
+        return expanded
 
 
 class ModuleParser:
@@ -528,7 +664,7 @@ class ModuleParser:
     def _looks_like_type_expr(self, node: ast.expr) -> bool:
         """Return True when ``node`` looks like a type expression.
 
-        We restrict alias expansion to RHS shapes that can plausibly be a
+        We restrict alias expansion to right-hand-side shapes that can plausibly be a
         type — ``Annotated[...]``, generics, ``T | None``, attribute access,
         and bare names — so plain string/number constants stay out of the
         type-resolution path.
@@ -542,64 +678,44 @@ class ModuleParser:
         annotation: ast.expr,
         file_path: Path,
     ) -> ast.expr:
-        """Expand a module-level type alias to its underlying expression.
+        """Expand every module-level type alias anywhere in the annotation.
 
-        Walks chained aliases (``B = A``, ``A = dagger.Directory``) and
-        protects against cycles by tracking the names already seen. Also
-        follows aliases across files — when a name was imported via
-        ``from .types import Source``, expansion continues using
-        ``types.py``'s alias map so the foreign file's
-        ``Source = Annotated[...]`` is honored.
+        Walks the annotation AST via ``_AliasExpander`` and substitutes each
+        type-position ``Name`` that resolves to a known alias with the alias's
+        right-hand side. Chained aliases (``B = A``, ``A = dagger.Directory``)
+        collapse to their final form, and cross-file aliases imported via
+        ``from .types import Source`` are followed by switching the active file
+        context while expanding the foreign alias body.
 
-        If the annotation isn't a known alias (or expansion hits a cycle),
-        returns the most recently expanded node — which may be the
-        original input.
+        The traversal deliberately stops at value positions inside annotations,
+        especially ``Annotated`` metadata arguments, so ``Name("Alias")`` keeps
+        the literal API name even when ``Alias`` is also a type alias.
+
+        - ``Alias | None`` (BinOp.left/right) — PR #13149's symptom
+        - ``Optional[Alias]``, ``list[Alias]``, ``Annotated[Alias, …]``
+          (only the first ``Annotated`` argument is a type position)
+        - ``def f(x: "Alias")`` and forward refs nested inside other
+          types (Constant value when the constant is a string —
+          re-parsed and recursively expanded by ``visit_Constant``)
+        - ``def f(x: "Optional[Alias]")`` where the parsed root node may stay
+          the same while one of its children is expanded in place
+
+        Cycle protection is preserved via a per-(file, name) seen-set
+        so recursive aliases (``A = list[A]``) stop at the first revisit
+        rather than infinite-looping.
         """
-        seen: set[tuple[Path, str]] = set()
-        current = annotation
-        current_file = file_path
-        while isinstance(current, ast.Name):
-            name = current.id
-            local_aliases = self._module_type_aliases.get(current_file, {})
-            if name in local_aliases:
-                key = (current_file, name)
-                if key in seen:
-                    break
-                seen.add(key)
-                current = local_aliases[name]
-                continue
-            origin = self._relative_import_origins.get(current_file, {}).get(name)
-            if origin is not None:
-                origin_aliases = self._module_type_aliases.get(origin, {})
-                if name in origin_aliases:
-                    key = (origin, name)
-                    if key in seen:
-                        break
-                    seen.add(key)
-                    # Switch context: continue expanding inside the origin file
-                    # so any further chained aliases use that file's map.
-                    current_file = origin
-                    current = origin_aliases[name]
-                    continue
-            break
-
-        # Expand aliases inside ``X | Y`` union expressions so that
-        # ``Name | None`` (where ``Name: TypeAlias = str``) reaches the
-        # resolver as ``str | None`` instead of an unresolved "Name" object.
-        # The while loop only handles a bare Name at the top level, so
-        # compound annotations with aliased sub-expressions pass through
-        # unexpanded without this recursion.
-        if isinstance(current, ast.BinOp) and isinstance(current.op, ast.BitOr):
-            expanded_left = self._expand_alias(current.left, current_file)
-            expanded_right = self._expand_alias(current.right, current_file)
-            if expanded_left is not current.left or expanded_right is not current.right:
-                new_node = ast.BinOp(
-                    left=expanded_left, op=current.op, right=expanded_right
-                )
-                ast.copy_location(new_node, current)
-                return new_node
-
-        return current
+        # Deep-copy the annotation tree before transforming. NodeTransformer
+        # mutates the nodes it walks (replacing children in-place), and the
+        # alias-target nodes are stored in self._module_type_aliases — we
+        # don't want the cached alias map to develop expanded versions of
+        # itself across calls.
+        cloned = copy.deepcopy(annotation)
+        expander = _AliasExpander(
+            aliases_by_file=self._module_type_aliases,
+            origins_by_file=self._relative_import_origins,
+            current_file=file_path,
+        )
+        return expander.visit(cloned)
 
     def _build_namespace(self) -> None:
         """Build the namespace for type resolution."""
