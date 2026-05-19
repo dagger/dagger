@@ -565,7 +565,7 @@ func (WorkspaceCompatSuite) TestConstructorOptionalEmptySecret(ctx context.Conte
 		WithEnvVariable("PASSWORD", "").
 		WithWorkdir("defaults").
 		WithNewFile(".env", "password=env://PASSWORD").
-		WithExec([]string{"dagger", "call", "password", "plaintext"}, nestedExec).
+		WithExec([]string{"dagger", "call", "-m", ".", "password", "plaintext"}, nestedExec).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "", out)
