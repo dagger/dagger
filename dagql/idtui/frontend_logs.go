@@ -59,6 +59,7 @@ func NewLogs(output io.Writer) Frontend {
 		out:         out,
 		prefixW:     multiprefixw.New(out),
 		pendingLogs: make(map[dagui.SpanID][]sdklog.Record),
+		testLogs:    make(map[dagui.SpanID]*Vterm),
 	}
 	return fe
 }
@@ -73,6 +74,9 @@ func (fe *frontendLogs) Run(ctx context.Context, opts dagui.FrontendOpts, f func
 	if cleanup != nil {
 		runErr = errors.Join(runErr, cleanup())
 	}
+	if !opts.Silent && fe.renderFinalTests() {
+		fmt.Fprintln(fe.out)
+	}
 	// Replay the primary output log to stdout/stderr.
 	if writeErr := renderPrimaryOutput(fe.out, fe.db); writeErr != nil {
 		runErr = errors.Join(runErr, writeErr)
@@ -81,6 +85,22 @@ func (fe *frontendLogs) Run(ctx context.Context, opts dagui.FrontendOpts, f func
 		handleTelemetryErrorOutput(fe.out, fe.out, *p)
 	}
 	return normalizeFrontendExit(runErr, fe.db)
+}
+
+func (fe *frontendLogs) renderFinalTests() bool {
+	view := fe.db.TestView()
+	if !view.HasTests() {
+		return false
+	}
+	tv := &TestView{
+		Profile:         fe.profile,
+		Logs:            fe.logs.testLogs,
+		SummaryLogLines: -1,
+	}
+	for _, line := range tv.renderTestSummaryLines(fe.out, view, 80, finalTestViewHeight(tv)) {
+		fmt.Fprintln(fe.out, line)
+	}
+	return true
 }
 
 func (fe *frontendLogs) Opts() *dagui.FrontendOpts {

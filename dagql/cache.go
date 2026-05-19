@@ -16,6 +16,7 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	set "github.com/hashicorp/go-set/v3"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	_ "modernc.org/sqlite"
@@ -428,6 +429,162 @@ func (c *Cache) sessionLazySpanContext(sessionID string, resultID sharedResultID
 	return spanCtx, true
 }
 
+// captureSessionResultInstallSpan records the current span context as an
+// install site for res in the given session. This wires explicit provenance
+// for lazy failure attribution: the resume span of a later-failing lazy value
+// looks up its install spans here and adds them as cause links.
+//
+// Trivial fields (auto-generated unwrap accessors) skip capture so they don't
+// claim ownership of values they merely return.
+func (c *Cache) captureSessionResultInstallSpan(ctx context.Context, sessionID string, res AnyResult) {
+	if c == nil || sessionID == "" || res == nil {
+		return
+	}
+	if CurrentFieldIsTrivial(ctx) {
+		return
+	}
+	shared := res.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		return
+	}
+	spanCtx := trace.SpanContextFromContext(ctx)
+	if !spanCtx.IsValid() {
+		return
+	}
+
+	// Direct install: this call returned this result.
+	c.recordSessionResultInstallSpanLocked(sessionID, shared.id, spanCtx)
+
+	// If this is a module API call return, propagate the install span to the
+	// entire transitive liveness closure. Module-returned values are typically
+	// constructed by inner SDK calls whose own install spans aren't visible to
+	// the user; attributing failures anywhere in the construction chain back to
+	// the module API span is the right thing.
+	call := CurrentCall(ctx)
+	if call == nil || call.Module == nil {
+		return
+	}
+
+	c.egraphMu.RLock()
+	closure := c.collectTransitiveDepsLocked(shared.id)
+	c.egraphMu.RUnlock()
+
+	for depID := range closure {
+		c.recordSessionResultInstallSpanLocked(sessionID, depID, spanCtx)
+	}
+}
+
+func (c *Cache) recordSessionResultInstallSpanLocked(sessionID string, resultID sharedResultID, spanCtx trace.SpanContext) {
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+	if c.sessionResultInstallSpans == nil {
+		c.sessionResultInstallSpans = make(map[string]map[sharedResultID]map[trace.SpanID]trace.SpanContext)
+	}
+	bySession := c.sessionResultInstallSpans[sessionID]
+	if bySession == nil {
+		bySession = make(map[sharedResultID]map[trace.SpanID]trace.SpanContext)
+		c.sessionResultInstallSpans[sessionID] = bySession
+	}
+	byResult := bySession[resultID]
+	if byResult == nil {
+		byResult = make(map[trace.SpanID]trace.SpanContext)
+		bySession[resultID] = byResult
+	}
+	byResult[spanCtx.SpanID()] = spanCtx
+}
+
+// collectTransitiveDepsLocked returns all sharedResultIDs reachable from
+// rootID via parent.deps, excluding rootID itself. Caller must hold egraphMu
+// at least for read.
+func (c *Cache) collectTransitiveDepsLocked(rootID sharedResultID) map[sharedResultID]struct{} {
+	out := make(map[sharedResultID]struct{})
+	if rootID == 0 {
+		return out
+	}
+	queue := []sharedResultID{rootID}
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		res := c.resultsByID[id]
+		if res == nil {
+			continue
+		}
+		for depID := range res.deps {
+			if depID == rootID {
+				continue
+			}
+			if _, seen := out[depID]; seen {
+				continue
+			}
+			out[depID] = struct{}{}
+			queue = append(queue, depID)
+		}
+	}
+	return out
+}
+
+// ResultInstallSpans returns install span contexts recorded for res in the
+// given session — i.e. the API spans whose call returned (or owns) this
+// result. Used to attribute later runtime failures (e.g. a service exiting
+// early) back to the API span that installed the value.
+func (c *Cache) ResultInstallSpans(sessionID string, res AnyResult) []trace.SpanContext {
+	if c == nil || sessionID == "" || res == nil {
+		return nil
+	}
+	shared := res.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		return nil
+	}
+	return c.sessionResultInstallSpanContexts(sessionID, shared.id)
+}
+
+// sessionResultInstallSpanContexts returns the install span contexts for
+// resultID in the given session. Direct map lookup — no graph walk.
+func (c *Cache) sessionResultInstallSpanContexts(sessionID string, resultID sharedResultID) []trace.SpanContext {
+	if c == nil || sessionID == "" || resultID == 0 {
+		return nil
+	}
+
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+	byResult := c.sessionResultInstallSpans[sessionID]
+	if byResult == nil {
+		return nil
+	}
+	spans := byResult[resultID]
+	if len(spans) == 0 {
+		return nil
+	}
+	out := make([]trace.SpanContext, 0, len(spans))
+	for _, spanCtx := range spans {
+		if spanCtx.IsValid() {
+			out = append(out, spanCtx)
+		}
+	}
+	return out
+}
+
+func lazyResumeLinks(originalSpanCtx trace.SpanContext, installSpanContexts []trace.SpanContext) []trace.Link {
+	links := []trace.Link{{SpanContext: originalSpanCtx}}
+	seen := map[trace.SpanID]struct{}{originalSpanCtx.SpanID(): {}}
+	for _, installCtx := range installSpanContexts {
+		if !installCtx.IsValid() {
+			continue
+		}
+		if _, dup := seen[installCtx.SpanID()]; dup {
+			continue
+		}
+		seen[installCtx.SpanID()] = struct{}{}
+		links = append(links, trace.Link{
+			SpanContext: installCtx,
+			Attributes: []attribute.KeyValue{
+				attribute.String(telemetry.LinkPurposeAttr, telemetry.LinkPurposeCause),
+			},
+		})
+	}
+	return links
+}
+
 func HasPendingLazyEvaluation(res AnyResult) bool {
 	if res == nil {
 		return false
@@ -492,6 +649,7 @@ func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 	delete(c.sessionResultIDsBySession, sessionID)
 	delete(c.sessionArbitraryCallKeysBySession, sessionID)
 	delete(c.sessionLazySpansBySession, sessionID)
+	delete(c.sessionResultInstallSpans, sessionID)
 	delete(c.sessionResourcesBySession, sessionID)
 	delete(c.sessionHandlesBySession, sessionID)
 	c.sessionMu.Unlock()
@@ -1084,8 +1242,16 @@ type Cache struct {
 	sessionResultIDsBySession         map[string]map[sharedResultID]struct{}
 	sessionArbitraryCallKeysBySession map[string]map[string]struct{}
 	sessionLazySpansBySession         map[string]map[sharedResultID]trace.SpanContext
-	sessionResourcesBySession         map[string]map[SessionResourceHandle]*sessionResourceBindings
-	sessionHandlesBySession           map[string]*set.TreeSet[SessionResourceHandle]
+	// sessionResultInstallSpans records which API spans returned/own which
+	// results in a session. On lazy failure, the resume span cause-links the
+	// install spans of the failed result so dagui marks them caused-failed.
+	// Membership is expanded eagerly at install time over the owned-dependency
+	// closure (HasDependencyResults / HasDependencyResultsKinds with Owned=true),
+	// and over the transitive parent.deps closure for module API call returns —
+	// no reverse walk at failure time.
+	sessionResultInstallSpans map[string]map[sharedResultID]map[trace.SpanID]trace.SpanContext
+	sessionResourcesBySession map[string]map[SessionResourceHandle]*sessionResourceBindings
+	sessionHandlesBySession   map[string]*set.TreeSet[SessionResourceHandle]
 
 	sqlDB *sql.DB
 	// persistent normalized cache store (disk persistence/import).
@@ -2407,6 +2573,39 @@ func (c *Cache) waitForLazyEvaluation(ctx context.Context, shared *sharedResult,
 	return waitErr
 }
 
+// evaluateLivenessDeps forces all of resultID's parent.deps before its own
+// lazy callback fires. This keeps chained downstream calls pending instead
+// of firing redundant resume spans when an upstream prerequisite fails:
+// the failing dep's resume span attributes via its install_spans, and our
+// own resume span never starts to forward the cascaded error.
+func (c *Cache) evaluateLivenessDeps(ctx context.Context, resultID sharedResultID) error {
+	if c == nil || resultID == 0 {
+		return nil
+	}
+	c.egraphMu.RLock()
+	res := c.resultsByID[resultID]
+	if res == nil || len(res.deps) == 0 {
+		c.egraphMu.RUnlock()
+		return nil
+	}
+	deps := make([]AnyResult, 0, len(res.deps))
+	for depID := range res.deps {
+		dep := c.resultsByID[depID]
+		if dep == nil {
+			c.egraphMu.RUnlock()
+			return fmt.Errorf("evaluate liveness dep: result %d depends on missing result %d", resultID, depID)
+		}
+		deps = append(deps, Result[Typed]{shared: dep})
+	}
+	c.egraphMu.RUnlock()
+	for _, dep := range deps {
+		if err := c.evaluateOne(ctx, dep); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (c *Cache) Evaluate(ctx context.Context, results ...AnyResult) error {
 	switch len(results) {
 	case 0:
@@ -2448,6 +2647,25 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 		id:     shared.id,
 		parent: stack,
 	})
+
+	// Fast path: if evaluation is already complete or there is nothing to do,
+	// skip preflight entirely.
+	shared.lazyMu.Lock()
+	if shared.lazyEvalComplete || lazyEvalFuncOfResult(res) == nil {
+		shared.lazyMu.Unlock()
+		return nil
+	}
+	shared.lazyMu.Unlock()
+
+	// Preflight liveness deps before claiming the lazy state. Each parent.deps
+	// edge is a prerequisite: if it fails, our lazy callback shouldn't fire
+	// (and shouldn't create a resume span that mis-attributes the cascade).
+	// Attribution is direct lookup against install_spans, so the failing dep
+	// is responsible for cause-linking its own owners — no need to fire a
+	// resume span here just to forward the same error.
+	if err := c.evaluateLivenessDeps(stackCtx, shared.id); err != nil {
+		return err
+	}
 
 	shared.lazyMu.Lock()
 	currentLazyEval := lazyEvalFuncOfResult(res)
@@ -2495,11 +2713,17 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 				if resultCall != nil && resultCall.Field != "" {
 					spanName = "resume " + resultCall.Field
 				}
+				// Lazy failure attribution: link the resume span back to all
+				// API spans that installed/own this result in the session.
+				// dagui interprets cause-purpose links as "this resume is the
+				// cause of those installs failing" and propagates failure.
+				installCtxs := c.sessionResultInstallSpanContexts(clientMD.SessionID, shared.id)
+				links := lazyResumeLinks(originalSpanCtx, installCtxs)
 				var resumeCtx context.Context
 				resumeCtx, resumeSpan = Tracer(evalCtx).Start(
 					evalCtx,
 					spanName,
-					telemetry.Resume(trace.ContextWithSpanContext(evalCtx, originalSpanCtx)),
+					trace.WithLinks(links...),
 					telemetry.Passthrough(),
 				)
 				callbackCtx = trace.ContextWithSpan(resumeCtx, resumedCallbackSpan{
@@ -2885,6 +3109,7 @@ func (c *Cache) getOrInitCall(
 				return nil, fmt.Errorf("normalize do-not-cache attached result: %w", err)
 			}
 			c.trackSessionResult(ctx, sessionID, normalized, false)
+			c.captureSessionResultInstallSpan(ctx, sessionID, normalized)
 			return normalized, nil
 		}
 		if lazyEval := lazyEvalFuncOfResult(val); lazyEval != nil {
@@ -2950,6 +3175,7 @@ func (c *Cache) getOrInitCall(
 	}
 	if hit {
 		c.captureSessionLazySpanContext(ctx, sessionID, hitRes)
+		c.captureSessionResultInstallSpan(ctx, sessionID, hitRes)
 		return hitRes, nil
 	}
 
@@ -3263,6 +3489,7 @@ func (c *Cache) wait(
 	}
 	c.trackSessionResult(ctx, sessionID, retRes, false)
 	c.captureSessionLazySpanContext(ctx, sessionID, retRes)
+	c.captureSessionResultInstallSpan(ctx, sessionID, retRes)
 	c.callsMu.Lock()
 	oc.waiters--
 	lastWaiter := oc.waiters == 0
@@ -3625,8 +3852,9 @@ func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, r
 	if parent == nil || val == nil {
 		return nil
 	}
-	withDeps, ok := UnwrapAs[HasDependencyResults](val)
-	if !ok {
+	withKinds, hasKinds := UnwrapAs[HasDependencyResultsKinds](val)
+	withDeps, hasDeps := UnwrapAs[HasDependencyResults](val)
+	if !hasKinds && !hasDeps {
 		return nil
 	}
 	self := Result[Typed]{shared: parent}
@@ -3639,38 +3867,63 @@ func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, r
 		}
 		attachedSelf = objSelf
 	}
-	deps, err := withDeps.AttachDependencyResults(ctx, attachedSelf, func(child AnyResult) (AnyResult, error) {
-		attached, err := c.attachResult(ctx, sessionID, resolver, child)
+	attach := func(child AnyResult) (AnyResult, error) {
+		return c.attachResult(ctx, sessionID, resolver, child)
+	}
+	var deps []DependencyResult
+	if hasKinds {
+		var err error
+		deps, err = withKinds.AttachDependencyResultsKinds(ctx, attachedSelf, attach)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		return attached, nil
-	})
-	if err != nil {
-		return err
+	} else {
+		attached, err := withDeps.AttachDependencyResults(ctx, attachedSelf, attach)
+		if err != nil {
+			return err
+		}
+		// Default: a value implementing only HasDependencyResults treats every
+		// returned dep as owned (failure attribution propagates).
+		deps = make([]DependencyResult, 0, len(attached))
+		for _, a := range attached {
+			deps = append(deps, DependencyResult{Result: a, Owned: true})
+		}
 	}
 	if len(deps) == 0 || parent.id == 0 {
 		return nil
 	}
 
-	seen := make(map[sharedResultID]struct{}, len(deps))
+	seen := make(map[sharedResultID]bool, len(deps))
 	for _, dep := range deps {
-		if dep == nil {
+		if dep.Result == nil {
 			continue
 		}
-		attachedDepRes := dep.cacheSharedResult()
+		attachedDepRes := dep.Result.cacheSharedResult()
 		if attachedDepRes == nil || attachedDepRes.id == 0 {
-			return fmt.Errorf("attach dependency result %T: unexpected detached result", dep)
+			return fmt.Errorf("attach dependency result %T: unexpected detached result", dep.Result)
 		}
 		if attachedDepRes.id == parent.id {
 			continue
 		}
-		if _, ok := seen[attachedDepRes.id]; ok {
+		if alreadyOwned, ok := seen[attachedDepRes.id]; ok {
+			// Already linked. If the previous edge was non-owned and this one is
+			// owned, propagate the install span now; otherwise nothing to do.
+			if !alreadyOwned && dep.Owned {
+				c.captureSessionResultInstallSpan(ctx, sessionID, dep.Result)
+				seen[attachedDepRes.id] = true
+			}
 			continue
 		}
-		seen[attachedDepRes.id] = struct{}{}
-		if err := c.AddExplicitDependency(ctx, attachedSelf, dep, "attached_dependency_result"); err != nil {
+		seen[attachedDepRes.id] = dep.Owned
+		if err := c.AddExplicitDependency(ctx, attachedSelf, dep.Result, "attached_dependency_result"); err != nil {
 			return err
+		}
+		// Owned deps inherit the parent's install span — failures in their
+		// lazy work will mark the parent's API span caused-failed via the
+		// resume span's cause links. Liveness-only deps (e.g. lazy parents
+		// in receiver chains) keep their original install spans only.
+		if dep.Owned {
+			c.captureSessionResultInstallSpan(ctx, sessionID, dep.Result)
 		}
 	}
 

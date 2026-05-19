@@ -12,13 +12,20 @@ Expected stderr:
 ✔ parsing command line arguments X.Xs
 
 $ viztest: Viztest! X.Xs CACHED
-✘ .pending: Void X.Xs ERROR
+✘ .serviceErrorAttribution: Void X.Xs ERROR
 ├╴$ container: Container! X.Xs CACHED
 ├╴$ .from(address: "alpine"): Container! X.Xs CACHED
+├╴$ .asService(args: ["sh", "-c", "echo service is starting; sleep 1; echo service is crashing >&2; exit 42"]): Service! X.Xs ERROR
+│ ┃ service is starting
+│ ┃ service is crashing
+│ ! exit code: 42
+│
+├╴$ Container.withServiceBinding(
+│   ┆ alias: "crashy"
+│   ┆ service: Container.asService(args: ["sh", "-c", "echo service is starting; sleep 1; echo service is crashing >&2; exit 42"]): Service!
+│   ): Container! X.Xs CACHED
 ├╴✔ withEnvVariable NOW=20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X X.Xs
-├╴✔ withExec sleep 1 X.Xs
-├╴✘ withExec false X.Xs ERROR
-│ ! exit code: 1
-╰╴○ withExec sleep 1 X.Xs
+╰╴✘ withExec sh -c 'echo client is waiting; sleep 10; echo should not happen' X.Xs ERROR
+  ┃ client is waiting
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide set DAGGER_NO_NAG=1

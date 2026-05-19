@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/engine"
@@ -92,6 +93,12 @@ type RunningService struct {
 	dependencyExitPropagationMu         sync.Mutex
 	dependencyExitPropagationSuppressed int
 	dependencyExitPropagationChanged    chan struct{}
+
+	// errorOrigin is the span context of the API call that returned/owns this
+	// service, recorded as an install span by the dagql cache. Used to
+	// attribute service-exit failures (e.g. a withExec that fails because its
+	// bound service crashed) back to that API call.
+	errorOrigin trace.SpanContext
 
 	manager *Services
 
@@ -181,7 +188,12 @@ type ServiceStartOpts struct {
 	ClientSpecific bool
 	IO             *ServiceIO
 
-	LogTargetCallDigest digest.Digest
+	// OriginSpanContexts are the install-span contexts of the API calls that
+	// returned/own the Service value. When the service exits with an error,
+	// these are linked as causal origins so the UI attributes the failure
+	// back to the API span that created the service. The first valid one
+	// also routes the service's stdio logs to its row.
+	OriginSpanContexts []trace.SpanContext
 }
 
 // Start starts the given service, returning the running service. If the
@@ -292,14 +304,27 @@ func (ss *Services) startResultWithOpts(
 	if err != nil {
 		return nil, nil, fmt.Errorf("service digest: %w", err)
 	}
-	if opts.LogTargetCallDigest == "" {
-		callDig, err := svc.RecipeDigest(ctx)
-		if err != nil {
-			return nil, nil, fmt.Errorf("service recipe digest: %w", err)
-		}
-		opts.LogTargetCallDigest = callDig
+	if len(opts.OriginSpanContexts) == 0 {
+		opts.OriginSpanContexts = lookupServiceOriginSpanContexts(ctx, svc)
 	}
 	return ss.startWithOpts(ctx, serviceDig, svc.Self(), opts, suppressDependencyExitPropagation)
+}
+
+// lookupServiceOriginSpanContexts returns the dagql install-span contexts for
+// the given Service result in the current session. These are the API spans
+// that returned/own the value; the service's exit error is attributed back to
+// them so a failing bound service points the UI at "Container.asService" (or
+// whichever call produced the service) rather than a hidden runtime span.
+func lookupServiceOriginSpanContexts(ctx context.Context, svc dagql.ObjectResult[*Service]) []trace.SpanContext {
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil || cache == nil {
+		return nil
+	}
+	clientMD, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil || clientMD.SessionID == "" {
+		return nil
+	}
+	return cache.ResultInstallSpans(clientMD.SessionID, svc)
 }
 
 func (ss *Services) StartInteractive(

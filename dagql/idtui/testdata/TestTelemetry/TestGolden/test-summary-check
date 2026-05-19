@@ -1,0 +1,20 @@
+Expected stderr:
+
+✔ viztest:test-summary X.Xs ⡀⡄⡆⡇⣇⣧⣷⣿ OK
+
+  TESTS
+    ✘ viztest summary suite › failed test 01 FAIL
+          failed test 01 log line 1
+          failed test 01 log line 2
+
+    ∅ viztest summary suite › skipped test 01 SKIP
+          skipped test 01 log line 1
+          skipped test 01 log line 2
+
+    ∅ viztest summary suite › skipped test 02 SKIP
+          skipped test 02 log line 1
+          skipped test 02 log line 2
+
+    ✘ 1 failed
+    ∅ 2 skipped
+    ✔ 2 passed

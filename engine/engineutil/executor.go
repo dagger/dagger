@@ -52,10 +52,6 @@ type ExecutionMetadata struct {
 
 	CallDigest digest.Digest
 
-	// If set, stdout/stderr emitted by this execution should be associated
-	// with this DAG call digest on the client side.
-	LogTargetCallDigest digest.Digest
-
 	// hostname -> list of aliases
 	HostAliases map[string][]string
 	// search domains to install prior to the session's domain
