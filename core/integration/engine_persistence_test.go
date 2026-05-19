@@ -162,65 +162,67 @@ func (EngineSuite) TestDiskPersistenceAcrossRestart(ctx context.Context, t *test
 	t.Run("service-bound graph does not break disk persistence", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "phase7-service-binding-state-" + identity.NewID()
-		serviceScript := "#!/bin/sh\nwhile true; do printf 'ok\\n' | nc -l -p 8080; done\n"
-		randomScript := `
+		serviceScript := "#!/bin/sh\nwhile true; do cat /work/service-random.txt | nc -l -p 8080; done\n"
+		serviceSetupScript := `
 set -eu
 mkdir -p /work
-head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
+head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/service-random.txt
 `
 		serviceRunScript := `
 set -eu
 mkdir -p /work
 nc sidecar 8080 > /work/service.txt
-head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
+head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/client-random.txt
 `
 
-		runRandom := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) string {
-			t.Helper()
-
-			randomContents, err := engineClient.
-				Container().
-				From(alpineImage).
-				WithExec([]string{"sh", "-ec", randomScript}).
-				Directory("/work").
-				File("random.txt").
-				Contents(ctx)
-			require.NoError(t, err)
-			return strings.TrimSpace(randomContents)
+		type serviceBoundOutput struct {
+			serviceRandom string
+			clientRandom  string
 		}
 
-		runServiceBound := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) {
+		runServiceBound := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client, clientBust string) serviceBoundOutput {
 			t.Helper()
 
 			service := engineClient.
 				Container().
 				From(alpineImage).
+				WithExec([]string{"sh", "-ec", serviceSetupScript}).
 				WithNewFile("/bin/app", serviceScript, dagger.ContainerWithNewFileOpts{Permissions: 0o755}).
 				WithExposedPort(8080).
 				WithDefaultArgs([]string{"/bin/app"}).
 				AsService()
 
-			workDir := engineClient.
+			clientCtr := engineClient.
 				Container().
 				From(alpineImage).
-				WithServiceBinding("sidecar", service).
+				WithServiceBinding("sidecar", service)
+			if clientBust != "" {
+				clientCtr = clientCtr.WithEnvVariable("CLIENT_BUST", clientBust)
+			}
+			workDir := clientCtr.
 				WithExec([]string{"sh", "-ec", serviceRunScript}).
 				Directory("/work")
 
 			serviceContents, err := workDir.File("service.txt").Contents(ctx)
 			require.NoError(t, err)
-			require.Equal(t, "ok\n", serviceContents)
+			serviceRandom := strings.TrimSpace(serviceContents)
+			require.NotEmpty(t, serviceRandom)
 
-			randomContents, err := workDir.File("random.txt").Contents(ctx)
+			clientContents, err := workDir.File("client-random.txt").Contents(ctx)
 			require.NoError(t, err)
-			require.NotEmpty(t, strings.TrimSpace(randomContents))
+			clientRandom := strings.TrimSpace(clientContents)
+			require.NotEmpty(t, clientRandom)
+
+			return serviceBoundOutput{
+				serviceRandom: serviceRandom,
+				clientRandom:  clientRandom,
+			}
 		}
 
 		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
 
-		randomA := runRandom(ctx, t, engineClientA)
-		runServiceBound(ctx, t, engineClientA)
+		outA := runServiceBound(ctx, t, engineClientA, "")
 		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
 		upstreamSvcA = nil
 		engineSvcA = nil
@@ -229,8 +231,13 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
 
-		randomB := runRandom(ctx, t, engineClientB)
-		require.Equal(t, randomA, randomB, "unrelated withExec output should survive engine restart after a service-bound graph")
+		outB := runServiceBound(ctx, t, engineClientB, "")
+		require.Equal(t, outA.serviceRandom, outB.serviceRandom, "service container output should survive engine restart")
+		require.Equal(t, outA.clientRandom, outB.clientRandom, "service-bound client output should survive engine restart")
+
+		outC := runServiceBound(ctx, t, engineClientB, identity.NewID())
+		require.Equal(t, outA.serviceRandom, outC.serviceRandom, "service container output should still be cached when only the client container is invalidated")
+		require.NotEqual(t, outA.clientRandom, outC.clientRandom, "client container output should be recomputed after invalidation")
 	})
 
 	t.Run("generator group graph does not break disk persistence", func(ctx context.Context, t *testctx.T) {

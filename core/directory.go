@@ -196,11 +196,11 @@ const (
 )
 
 type persistedDirectoryPayload struct {
-	Form     string          `json:"form"`
-	Dir      string          `json:"dir,omitempty"`
-	Platform Platform        `json:"platform"`
-	Services ServiceBindings `json:"services,omitempty"`
-	LazyJSON json.RawMessage `json:"lazyJSON,omitempty"`
+	Form     string                    `json:"form"`
+	Dir      string                    `json:"dir,omitempty"`
+	Platform Platform                  `json:"platform"`
+	Services []persistedServiceBinding `json:"services,omitempty"`
+	LazyJSON json.RawMessage           `json:"lazyJSON,omitempty"`
 }
 
 func (dir *Directory) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
@@ -213,10 +213,14 @@ func (dir *Directory) EncodePersistedObject(ctx context.Context, cache dagql.Per
 			dirPath = peekedDir
 		}
 	}
+	services, err := encodePersistedServiceBindings(cache, "directory", dir.Services)
+	if err != nil {
+		return nil, err
+	}
 	payload := persistedDirectoryPayload{
 		Dir:      dirPath,
 		Platform: dir.Platform,
-		Services: slices.Clone(dir.Services),
+		Services: services,
 	}
 	if dir.Snapshot != nil {
 		if snapshot, ok := dir.Snapshot.Peek(); ok && snapshot != nil {
@@ -256,10 +260,14 @@ func decodePersistedDirectoryWithSnapshotRole(ctx context.Context, dag *dagql.Se
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted directory payload: %w", err)
 	}
+	services, err := decodePersistedServiceBindings(ctx, dag, "directory", persisted.Services)
+	if err != nil {
+		return nil, err
+	}
 
 	dir := &Directory{
 		Platform: persisted.Platform,
-		Services: slices.Clone(persisted.Services),
+		Services: services,
 		Dir:      new(LazyAccessor[string, *Directory]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
 	}

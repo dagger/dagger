@@ -507,6 +507,7 @@ type persistedContainerPayload struct {
 	Annotations        []containerutil.ContainerAnnotation `json:"annotations,omitempty"`
 	ImageRef           string                              `json:"imageRef,omitempty"`
 	Ports              []Port                              `json:"ports,omitempty"`
+	Services           []persistedServiceBinding           `json:"services,omitempty"`
 	DefaultTerminalCmd DefaultTerminalCmdOpts              `json:"defaultTerminalCmd"`
 	SystemEnvNames     []string                            `json:"systemEnvNames,omitempty"`
 	DefaultArgs        bool                                `json:"defaultArgs,omitempty"`
@@ -1378,10 +1379,9 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 	if container == nil {
 		return nil, fmt.Errorf("encode persisted container: nil container")
 	}
-	// FIXME: remove this restriction immediately after the first cut by adding
-	// explicit structural persistence for services.
-	if len(container.Services) > 0 {
-		return nil, fmt.Errorf("encode persisted container: services are not yet supported")
+	services, err := encodePersistedServiceBindings(cache, "container", container.Services)
+	if err != nil {
+		return nil, err
 	}
 
 	payload := persistedContainerPayload{
@@ -1395,6 +1395,7 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 		Annotations:        slices.Clone(container.Annotations),
 		ImageRef:           container.ImageRef,
 		Ports:              slices.Clone(container.Ports),
+		Services:           services,
 		DefaultTerminalCmd: container.DefaultTerminalCmd,
 		SystemEnvNames:     slices.Clone(container.SystemEnvNames),
 		DefaultArgs:        container.DefaultArgs,
@@ -1584,6 +1585,10 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 			Owner:         persistedSocket.Owner,
 		})
 	}
+	services, err := decodePersistedServiceBindings(ctx, dag, "container", persisted.Services)
+	if err != nil {
+		return nil, err
+	}
 
 	metaAccessor := new(LazyAccessor[bkcache.ImmutableRef, *Container])
 	links, err := loadPersistedSnapshotLinksByResultID(ctx, dag, resultID, "container")
@@ -1614,6 +1619,7 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 		Sockets:            sockets,
 		ImageRef:           persisted.ImageRef,
 		Ports:              slices.Clone(persisted.Ports),
+		Services:           services,
 		DefaultTerminalCmd: persisted.DefaultTerminalCmd,
 		SystemEnvNames:     slices.Clone(persisted.SystemEnvNames),
 		DefaultArgs:        persisted.DefaultArgs,
