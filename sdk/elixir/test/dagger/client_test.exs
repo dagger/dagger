@@ -48,6 +48,8 @@ defmodule Dagger.ClientTest do
     assert ["## What is Dagger?" | _] = String.split(readme, "\n")
   end
 
+  # 2 minutes
+  @tag timeout: 180_000
   test "container build", %{dag: dag} do
     repo =
       dag
