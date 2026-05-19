@@ -58,12 +58,7 @@ func (r *ReleaseTest) ExistingModule(
 		WithDirectory("/work/module", testdata).
 		WithWorkdir("/work/module")
 
-	_, err := ctr.WithExec([]string{"dagger", "develop"}).Sync(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to run dagger develop on existing module: %w", err)
-	}
-
-	_, err = ctr.WithExec([]string{"dagger", "call", "-m", ".", "container-echo", "--string-arg", "hello-world", "sync"}).Sync(ctx)
+	_, err := ctr.WithExec([]string{"dagger", "call", "-m", ".", "container-echo", "--string-arg", "hello-world", "sync"}).Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to run dagger call on existing module: %w", err)
 	}
