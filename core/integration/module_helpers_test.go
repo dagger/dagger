@@ -416,28 +416,3 @@ func goGitBase(t testing.TB, c *dagger.Client) *dagger.Container {
 		WithExec([]string{"git", "init"})
 }
 
-func logGen(ctx context.Context, t *testctx.T, modSrc *dagger.Directory) {
-	t.Helper()
-	generated, err := modSrc.File("dagger.gen.go").Contents(ctx)
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		t.Name()
-		fileName := filepath.Join(
-			os.TempDir(),
-			t.Name(),
-			fmt.Sprintf("dagger.gen.%d.go", time.Now().Unix()),
-		)
-
-		if err := os.MkdirAll(filepath.Dir(fileName), 0o755); err != nil {
-			t.Logf("failed to create temp dir for generated code: %v", err)
-			return
-		}
-
-		if err := os.WriteFile(fileName, []byte(generated), 0o644); err != nil {
-			t.Logf("failed to write generated code to %s: %v", fileName, err)
-		} else {
-			t.Logf("wrote generated code to %s", fileName)
-		}
-	})
-}
