@@ -3,20 +3,20 @@ module dagger/viztest
 go 1.25.0
 
 require (
-	github.com/99designs/gqlgen v0.17.90
 	github.com/Khan/genqlient v0.8.1
 	github.com/dagger/otel-go v1.41.0
 	github.com/vektah/gqlparser/v2 v2.5.33
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/log v0.17.0
 	go.opentelemetry.io/otel/trace v1.43.0
-	golang.org/x/sync v0.20.0
 )
 
 require (
+	github.com/99designs/gqlgen v0.17.90 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.17.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.17.0 // indirect
 	go.opentelemetry.io/otel/sdk/log v0.17.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
 )
 
 require (
