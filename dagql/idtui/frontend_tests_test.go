@@ -403,6 +403,41 @@ func TestTestViewPrettyReportSummary(t *testing.T) {
 	}
 }
 
+func TestTestViewPrettyReportIncludesSuiteFailure(t *testing.T) {
+	spanID := func(id byte) dagui.SpanID {
+		return dagui.SpanID{SpanID: trace.SpanID{id}}
+	}
+	suiteSpan := &dagui.Span{SpanSnapshot: dagui.SpanSnapshot{
+		ID:         spanID(1),
+		Name:       "suite crashed",
+		TestStatus: dagui.TestStatusFailure,
+	}}
+	suite := &dagui.TestNode{
+		ID:           "suite",
+		Kind:         dagui.TestNodeSuite,
+		Name:         "suite crashed",
+		FullName:     "github.com/acme/project/suite",
+		Span:         suiteSpan,
+		SelfCategory: dagui.TestCategoryFailing,
+		Category:     dagui.TestCategoryFailing,
+	}
+	view := &dagui.TestView{Roots: []*dagui.TestNode{suite}}
+	tv := &TestView{SummaryIndent: 2}
+
+	var buf strings.Builder
+	out := NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+	got := strings.Join(tv.renderTestSummaryLines(out, view, 80, 80), "\n")
+	want := strings.Join([]string{
+		"  TESTS",
+		"    ✘ github.com/acme/project/suite FAIL",
+		"",
+		"    0 tests",
+	}, "\n")
+	if got != want {
+		t.Fatalf("unexpected suite failure summary:\n%s", got)
+	}
+}
+
 func TestTestViewPrettyReportListsPassingSuitesCompactly(t *testing.T) {
 	passingA := &dagui.TestNode{
 		ID:       "suite-a",
