@@ -1,8 +1,8 @@
-## Dagger: a better way to ship
+## Staydagger: a fork of Dagger for Incus-friendly engine work
 
-Dagger is a platform for automating software delivery. It can build, test and ship any codebase, reliably and at scale.
+Staydagger is a fork of Dagger for internal engine customization, including Incus support and fork-specific release workflows.
 
-Dagger runs locally, in your CI server, or directly in the cloud.
+It keeps the same source tree shape as Dagger, but publishes fork-owned artifacts and package namespaces.
 
 ```bash
 brew install dagger/tap/dagger

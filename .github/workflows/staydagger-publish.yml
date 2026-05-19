@@ -1,0 +1,59 @@
+name: Staydagger Publish
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v**"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build CLI from source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/staydagger/bin"
+          go build -o "$RUNNER_TEMP/staydagger/bin/dagger" ./cmd/dagger
+          echo "$RUNNER_TEMP/staydagger/bin" >> "$GITHUB_PATH"
+
+      - name: Publish engine image
+        shell: bash
+        env:
+          STAYDAGGER_ENGINE_IMAGE: ghcr.io/${{ github.repository_owner }}/staydagger-engine
+          STAYDAGGER_ENGINE_IMAGE_USERNAME: ${{ github.actor }}
+          STAYDAGGER_ENGINE_IMAGE_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_REF_TYPE}" == "branch" ]]; then
+            image_tags=(main "${GITHUB_SHA}")
+          else
+            image_tags=("${GITHUB_REF_NAME}" "${GITHUB_SHA}")
+          fi
+
+          tag_args=()
+          for tag in "${image_tags[@]}"; do
+            tag_args+=(--tag="$tag")
+          done
+
+          dagger --silent -m . call engine-dev publish \
+            --image="$STAYDAGGER_ENGINE_IMAGE" \
+            "${tag_args[@]}" \
+            --registry-username="$STAYDAGGER_ENGINE_IMAGE_USERNAME" \
+            --registry-password=env:STAYDAGGER_ENGINE_IMAGE_PASSWORD

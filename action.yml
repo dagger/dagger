@@ -1,5 +1,5 @@
-name: "staydagger call for Alternative CI Runners"
-description: ""
+name: "staydagger call"
+description: "Invoke a Staydagger module function from GitHub Actions."
 
 inputs:
   function:
@@ -13,11 +13,21 @@ inputs:
 
   version:
     description: "Staydagger version to run against"
-    default: "v0\.19\.2"
+    default: "v0.20.8"
     required: false
 
   dev-engine:
     description: "Whether to run against a dev Engine"
+    default: "false"
+    required: false
+
+  redirect:
+    description: "Filepath to redirect result to"
+    default: ""
+    required: false
+
+  upload-logs:
+    description: "Whether to redirect logs to an artifact"
     default: "false"
     required: false
 
@@ -57,45 +67,34 @@ runs:
           fi
         fi
 
-    - name: Start dev dagger
-      shell: bash
-      if: inputs.dev-engine == 'true'
-      run: |
-        echo "::group::Starting dev engine"
-
-        if ! [[ -x "$(command -v docker)" ]]; then
-          echo "docker is not installed"
-          exit 1
-        fi
-        if ! [[ -x "$(command -v dagger)" ]]; then
-          echo "dagger is not installed"
-          exit 1
-        fi
-
-        # put env variables in ${{ runner.temp }}/actions/call/local-envs instead of
-        # $GITHUB_ENV to avoid leaking into parent workflow
-        echo "export PATH=$PWD/bin:$PATH" >> ${{ runner.temp }}/actions/call/local-envs
-
-        echo "::endgroup::"
-
-    - name: Wait for dagger to be ready
-      shell: bash
-      run: |
-        source ${{ runner.temp }}/actions/call/local-envs
-
-        echo "::group::Dagger client version"
-        dagger --silent version
-        echo "::endgroup::"
-
-        echo "::group::Dagger server version"
-        dagger --silent core version
-        echo "::endgroup::"
-
     - name: ${{ inputs.function }}
       shell: bash
       run: |
         source ${{ runner.temp }}/actions/call/local-envs
+
+        function redirect_logs() {
+          if [[ "${{ inputs.upload-logs }}" == "true" ]]; then
+            "$@" &> ${{ runner.temp }}/actions/call/call.log
+          elif [[ -n "${{ inputs.redirect }}" ]]; then
+            "$@" | tee "${{ inputs.redirect }}"
+          else
+            "$@"
+          fi
+        }
+
         set -x
-        dagger --silent --quiet --mod "${{ inputs.module }}" call ${{ inputs.function }}
+        if [[ "${{ inputs.module }}" == "." ]]; then
+          # Apply GHA-specific .env
+          [ -e .env.gha ] && mv .env.gha .env
+        fi
+        redirect_logs dagger --cloud -m "${{ inputs.module }}" call ${{ inputs.function }}
       env:
-        DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
+        DAGGER_CLOUD_TOKEN: oidc
+
+    - name: Archive call logs
+      if: always() && inputs.upload-logs == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: call-logs-${{ runner.name }}-${{ github.job }}
+        path: ${{ runner.temp }}/actions/call/call.log
+        overwrite: true
