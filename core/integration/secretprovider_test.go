@@ -328,11 +328,13 @@ func (SecretProvider) TestVaultOIDCEndToEnd(ctx context.Context, t *testctx.T) {
 }
 
 func (SecretProvider) TestVaultTTL(ctx context.Context, t *testctx.T) {
+	const vaultImage = "hashicorp/vault:1.18"
+
 	baseContainer := func(c *dagger.Client, vault *dagger.Service) *dagger.Container {
 		return c.Container().
 			From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithFile("/bin/vault", c.Container().From("hashicorp/vault").File("/bin/vault")).
+			WithFile("/bin/vault", c.Container().From(vaultImage).File("/bin/vault")).
 			WithEnvVariable("VAULT_ADDR", "http://vault:8200").
 			WithEnvVariable("VAULT_TOKEN", "vault-root-token").
 			WithServiceBinding("vault", vault)
@@ -358,7 +360,7 @@ type Foo struct{}
 // to expire. It then gets its plaintext value again.
 // After that it returns both the values as string, which our tescase then verifies.
 func (m *Foo) VerifySecret(ctx context.Context, vault *dagger.Service, secret *dagger.Secret, tc string) (string, error) {
-	_, err := dag.Container().From("hashicorp/vault").
+	_, err := dag.Container().From("`+vaultImage+`").
 		WithEnvVariable("VAULT_ADDR", "http://vault:8200").
 		WithEnvVariable("VAULT_TOKEN", "vault-root-token").
 		WithServiceBinding("vault", vault).
@@ -374,7 +376,7 @@ func (m *Foo) VerifySecret(ctx context.Context, vault *dagger.Service, secret *d
 	}
 
 	// simulate an update in secret while the pipeline is running
-	_, err = dag.Container().From("hashicorp/vault").
+	_, err = dag.Container().From("`+vaultImage+`").
 		WithEnvVariable("VAULT_ADDR", "http://vault:8200").
 		WithEnvVariable("VAULT_TOKEN", "vault-root-token").
 		WithServiceBinding("vault", vault).
@@ -420,7 +422,7 @@ func (m *Foo) VerifySecret(ctx context.Context, vault *dagger.Service, secret *d
 			c := connect(ctx, t)
 
 			vault, err := c.Container().
-				From("hashicorp/vault").
+				From(vaultImage).
 				WithEnvVariable("VAULT_DEV_ROOT_TOKEN_ID", "vault-root-token").
 				WithEnvVariable("VAULT_LOG_LEVEL", "debug").
 				WithDockerHealthcheck([]string{"vault", "status", "-address=http://127.0.0.1:8200"}, dagger.ContainerWithDockerHealthcheckOpts{

@@ -2,7 +2,6 @@ package schema
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 
 	"github.com/dagger/dagger/core"
@@ -60,14 +59,6 @@ func (s *cacheSchema) cacheVolumeCacheKey(
 		}
 		args.Namespace = namespaceKey
 		if err := req.SetArgInput(ctx, "namespace", dagql.NewString(namespaceKey), false); err != nil {
-			return err
-		}
-	}
-
-	if args.Sharing == core.CacheSharingModePrivate {
-		// For now, PRIVATE means "always unique cache volume" to avoid
-		// surprising cross-call sharing behavior.
-		if err := req.SetArgInput(ctx, "privateNonce", dagql.NewString(rand.Text()), false); err != nil {
 			return err
 		}
 	}

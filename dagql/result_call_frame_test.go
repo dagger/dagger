@@ -455,3 +455,73 @@ func TestResultCallRefResultIDFallbackStillWorks(t *testing.T) {
 
 	cacheTestReleaseSession(t, cacheIface, ctx)
 }
+
+// TestResultCallArgPBRedactsSensitive ensures the telemetry/call protobuf
+// encoder redacts args flagged sensitive (e.g. setSecret(plaintext:)), mirroring
+// redactedArgForID on the call.ID path. Regression test for sensitive secret
+// plaintext leaking verbatim into CLI --progress output.
+func TestResultCallArgPBRedactsSensitive(t *testing.T) {
+	t.Parallel()
+
+	c := &Cache{}
+
+	sensitive := &ResultCallArg{
+		Name:        "plaintext",
+		IsSensitive: true,
+		Value:       &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: "super-secret"},
+	}
+	pbArg, err := resultCallArgPB(c, sensitive)
+	require.NoError(t, err)
+	require.Equal(t, "plaintext", pbArg.Name)
+	require.Equal(t, "***", pbArg.Value.GetString_())
+	require.NotContains(t, pbArg.Value.GetString_(), "super-secret")
+
+	public := &ResultCallArg{
+		Name:  "name",
+		Value: &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: "toast"},
+	}
+	pbArg, err = resultCallArgPB(c, public)
+	require.NoError(t, err)
+	require.Equal(t, "toast", pbArg.Value.GetString_())
+
+	pbArg, err = resultCallArgPB(c, nil)
+	require.NoError(t, err)
+	require.Nil(t, pbArg)
+}
+
+// TestResultCallPBRedactsSensitiveArg exercises the full ResultCall.callPB
+// encoder (the path core/telemetry.go uses for the DagCall span attr) with a
+// setSecret-shaped frame: the non-sensitive arg passes through while the
+// sensitive plaintext is redacted.
+func TestResultCallPBRedactsSensitiveArg(t *testing.T) {
+	t.Parallel()
+
+	c := &Cache{}
+	frame := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(String("").Type()),
+		Field: "setSecret",
+		Args: []*ResultCallArg{
+			{
+				Name:  "name",
+				Value: &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: "toast"},
+			},
+			{
+				Name:        "plaintext",
+				IsSensitive: true,
+				Value:       &ResultCallLiteral{Kind: ResultCallLiteralKindString, StringValue: "super-secret"},
+			},
+		},
+	}
+
+	pb, err := frame.callPB(c)
+	require.NoError(t, err)
+	require.Len(t, pb.Args, 2)
+
+	byName := make(map[string]string, len(pb.Args))
+	for _, a := range pb.Args {
+		byName[a.Name] = a.Value.GetString_()
+	}
+	require.Equal(t, "toast", byName["name"])
+	require.Equal(t, "***", byName["plaintext"])
+}
