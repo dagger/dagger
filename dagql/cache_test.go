@@ -6106,3 +6106,32 @@ func TestCacheArbitraryRecursiveCall(t *testing.T) {
 	})
 	assert.Assert(t, is.ErrorIs(err, ErrCacheRecursiveCall))
 }
+
+func TestResolveSessionResourceCandidatesOrdering(t *testing.T) {
+	ctx := t.Context()
+	cache, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+
+	const sessionID = "test-session"
+	const preferredClientID = "preferred-client"
+	const latestClientID = "latest-client"
+	handle := SessionResourceHandle("test-resource")
+
+	assert.NilError(t, cache.BindSessionResource(ctx, sessionID, "alpha-client", handle, "alpha"))
+	assert.NilError(t, cache.BindSessionResource(ctx, sessionID, preferredClientID, handle, "preferred"))
+	assert.NilError(t, cache.BindSessionResource(ctx, sessionID, latestClientID, handle, "latest"))
+
+	resolved, err := cache.ResolveSessionResource(ctx, sessionID, preferredClientID, handle)
+	assert.NilError(t, err)
+	assert.Equal(t, resolved, "preferred")
+
+	candidates, err := cache.ResolveSessionResourceCandidates(ctx, sessionID, preferredClientID, handle)
+	assert.NilError(t, err)
+	assert.Assert(t, is.Len(candidates, 3))
+	assert.Equal(t, candidates[0].ClientID, preferredClientID)
+	assert.Equal(t, candidates[0].Value, "preferred")
+	assert.Equal(t, candidates[1].ClientID, latestClientID)
+	assert.Equal(t, candidates[1].Value, "latest")
+	assert.Equal(t, candidates[2].ClientID, "alpha-client")
+	assert.Equal(t, candidates[2].Value, "alpha")
+}

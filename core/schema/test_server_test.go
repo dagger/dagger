@@ -65,8 +65,8 @@ func (s *currentTypeDefsTestServer) SpecificClientMetadata(context.Context, stri
 	return nil, nil
 }
 
-func (s *currentTypeDefsTestServer) SpecificClientAttachableConn(context.Context, string) (*grpc.ClientConn, error) {
-	return nil, nil
+func (s *currentTypeDefsTestServer) SpecificClientAttachableConn(context.Context, string, core.SpecificClientAttachableConnOpts) (*grpc.ClientConn, bool, error) {
+	return nil, false, nil
 }
 
 func (s *currentTypeDefsTestServer) DefaultDeps(context.Context) (*core.SchemaBuilder, error) {
