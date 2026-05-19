@@ -54,7 +54,7 @@ import (
 	telemetry "github.com/dagger/otel-go"
 )
 
-// Engine shutdown may need to sync disks, which can be expensive.
+// Engine shutdown may need to sync disks and cache metadata, which can be expensive.
 const gracefulStopTimeout = 5 * time.Minute
 const ebpfProgramEnvPrefix = "DAGGER_EBPF_PROG_"
 
