@@ -265,13 +265,18 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		runGeneratorGroup := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) {
 			t.Helper()
 
-			empty, err := engineClient.
+			run := engineClient.
 				CurrentWorkspace().
 				Generators(dagger.WorkspaceGeneratorsOpts{Include: []string{"generate-files"}}).
-				Run().
-				IsEmpty(ctx)
+				Run()
+
+			empty, err := run.IsEmpty(ctx)
 			require.NoError(t, err)
 			require.False(t, empty)
+
+			changesEmpty, err := run.Changes().IsEmpty(ctx)
+			require.NoError(t, err)
+			require.False(t, changesEmpty)
 		}
 
 		upstreamSvcA, engineSvcA, engineClientA := startEngineWithClientOpts(c, ctx, t, stateKey, clientOpts, engineWithPersistenceTestGC(ctx, t))

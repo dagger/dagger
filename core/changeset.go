@@ -240,6 +240,11 @@ type changesetJSONEnvelope struct {
 	AfterID  dagql.ID[*Directory] `json:"afterId"`
 }
 
+type persistedChangesetPayload struct {
+	BeforeResultID uint64 `json:"beforeResultID,omitempty"`
+	AfterResultID  uint64 `json:"afterResultID,omitempty"`
+}
+
 // MarshalJSON implements custom JSON marshaling that stores directory IDs
 func (ch *Changeset) MarshalJSON() ([]byte, error) {
 	beforeID, err := ch.Before.ID()
@@ -285,6 +290,52 @@ func (ch *Changeset) ResolveRefs(ctx context.Context, srv *dagql.Server) error {
 	return nil
 }
 
+func (ch *Changeset) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	_ = ctx
+	if ch == nil {
+		return nil, fmt.Errorf("encode persisted changeset: nil changeset")
+	}
+	beforeID, err := encodePersistedObjectRef(cache, ch.Before, "changeset before")
+	if err != nil {
+		return nil, err
+	}
+	afterID, err := encodePersistedObjectRef(cache, ch.After, "changeset after")
+	if err != nil {
+		return nil, err
+	}
+	payload, err := json.Marshal(persistedChangesetPayload{
+		BeforeResultID: beforeID,
+		AfterResultID:  afterID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal persisted changeset payload: %w", err)
+	}
+	return payload, nil
+}
+
+func (*Changeset) DecodePersistedObject(
+	ctx context.Context,
+	dag *dagql.Server,
+	_ uint64,
+	_ *dagql.ResultCall,
+	payload json.RawMessage,
+) (dagql.Typed, error) {
+	var persisted persistedChangesetPayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted changeset payload: %w", err)
+	}
+
+	before, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.BeforeResultID, "changeset before")
+	if err != nil {
+		return nil, err
+	}
+	after, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.AfterResultID, "changeset after")
+	if err != nil {
+		return nil, err
+	}
+	return NewChangeset(ctx, before, after)
+}
+
 // changesetPathSets enables O(1) path lookups during conflict detection.
 type changesetPathSets struct {
 	added    map[string]struct{}
@@ -322,6 +373,8 @@ func (*Changeset) TypeDescription() string {
 }
 
 var _ Syncable = (*Changeset)(nil)
+var _ dagql.PersistedObject = (*Changeset)(nil)
+var _ dagql.PersistedObjectDecoder = (*Changeset)(nil)
 var _ dagql.HasDependencyResults = (*Changeset)(nil)
 
 func (ch *Changeset) Evaluate(context.Context) error {

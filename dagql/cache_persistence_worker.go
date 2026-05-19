@@ -151,6 +151,7 @@ func (c *Cache) snapshotPersistState(ctx context.Context) (persistStateSnapshot,
 			resultID:              resultID,
 			frame:                 res.loadResultCall().clone(),
 			self:                  payload.self,
+			isObject:              payload.isObject,
 			hasValue:              payload.hasValue,
 			sessionResourceHandle: res.sessionResourceHandle,
 			persistedEnvelope:     payload.persistedEnvelope,
@@ -405,6 +406,7 @@ func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 		}
 		shared := &sharedResult{
 			self:                  snapshot.self,
+			isObject:              snapshot.isObject,
 			hasValue:              snapshot.hasValue,
 			id:                    snapshot.resultID,
 			sessionResourceHandle: snapshot.sessionResourceHandle,
@@ -413,6 +415,7 @@ func (c *Cache) persistResultEnvelope(ctx context.Context, snapshot *persistResu
 	}
 	shared := &sharedResult{
 		self:                  snapshot.self,
+		isObject:              snapshot.isObject,
 		hasValue:              snapshot.hasValue,
 		id:                    snapshot.resultID,
 		sessionResourceHandle: snapshot.sessionResourceHandle,

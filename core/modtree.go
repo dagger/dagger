@@ -27,10 +27,10 @@ type ModTreeNode struct {
 	Description string
 	DagqlServer *dagql.Server
 	// This module is the same across all ModTreeNode, this is the root module.
-	Module *Module
+	Module dagql.ObjectResult[*Module]
 	// This original module is the one in which the node has been defined.
-	OriginalModule *Module
-	Type           *TypeDef
+	OriginalModule dagql.ObjectResult[*Module]
+	Type           dagql.ObjectResult[*TypeDef]
 	IsCheck        bool
 	IsGenerator    bool
 	IsUp           bool
@@ -48,7 +48,7 @@ func (node *ModTreeNode) Path() ModTreePath {
 
 func NewModTree(ctx context.Context, mod dagql.ObjectResult[*Module]) (*ModTreeNode, error) {
 	main := mod.Self()
-	mainObj, ok := main.MainObject()
+	mainType, ok := main.mainObjectTypeDefResult()
 	if !ok {
 		return nil, fmt.Errorf("%q: no main object", main.Name())
 	}
@@ -56,19 +56,12 @@ func NewModTree(ctx context.Context, mod dagql.ObjectResult[*Module]) (*ModTreeN
 	if err != nil {
 		return nil, err
 	}
-	mainObjRes, err := dagql.NewObjectResultForCurrentCall(ctx, srv, mainObj)
-	if err != nil {
-		return nil, fmt.Errorf("wrap main object typedef %q: %w", mainObj.Name, err)
-	}
 	return &ModTreeNode{
 		DagqlServer:    srv,
-		Module:         main,
-		OriginalModule: main,
-		Type: (&TypeDef{
-			Kind:     TypeDefKindObject,
-			AsObject: dagql.NonNull(mainObjRes),
-		}).syncName(),
-		Description: main.Description,
+		Module:         mod,
+		OriginalModule: mod,
+		Type:           mainType,
+		Description:    main.Description,
 	}, nil
 }
 
@@ -176,14 +169,14 @@ func (node *ModTreeNode) runAsCheck(
 }
 
 func (node *ModTreeNode) runGeneratorAsCheckLocally(ctx context.Context) error {
-	cs, err := node.runGeneratorLocally(ctx)
+	changes, err := node.runGeneratorLocally(ctx)
 	if err != nil {
 		return err
 	}
-	if cs == nil {
+	if changes.Self() == nil {
 		return nil
 	}
-	empty, err := cs.IsEmpty(ctx)
+	empty, err := changes.Self().IsEmpty(ctx)
 	if err != nil {
 		return err
 	}
@@ -478,8 +471,8 @@ func (node *ModTreeNode) runUpLocally(ctx context.Context, parentSpan trace.Span
 	return &runUpStartResult{ReadySpan: readySpan}, nil
 }
 
-func (node *ModTreeNode) RunGenerator(ctx context.Context, include, exclude []string) (*Changeset, error) {
-	var cs *Changeset
+func (node *ModTreeNode) RunGenerator(ctx context.Context, include, exclude []string) (dagql.ObjectResult[*Changeset], error) {
+	var changes dagql.ObjectResult[*Changeset]
 	err := node.Run(ctx,
 		func(n *ModTreeNode) bool { return n.IsGenerator },
 		func(ctx context.Context, n *ModTreeNode, _ *engine.ClientMetadata) (rerr error) {
@@ -492,27 +485,31 @@ func (node *ModTreeNode) RunGenerator(ctx context.Context, include, exclude []st
 				),
 			)
 			defer telemetry.EndWithCause(span, &rerr)
-			changes, err := n.runGeneratorLocally(ctx)
-			cs = changes
+			localChanges, err := n.runGeneratorLocally(ctx)
+			changes = localChanges
 			return err
 		},
 		include, exclude)
-	return cs, err
+	return changes, err
 }
 
-func (node *ModTreeNode) runGeneratorLocally(ctx context.Context) (*Changeset, error) {
+func (node *ModTreeNode) runGeneratorLocally(ctx context.Context) (dagql.ObjectResult[*Changeset], error) {
 	var changes dagql.ObjectResult[*Changeset]
 	if err := node.DagqlValue(ctx, &changes); err != nil {
-		return nil, err
+		return dagql.ObjectResult[*Changeset]{}, err
 	}
-	return changes.Self(), nil
+	return changes, nil
 }
 
 // buildScaleOutModuleQuery builds a query to load a module for scale-out execution.
 // It handles all module source kinds (Local, Git, Dir) and returns a query
 // positioned at the "asModule" selection, ready for check/generator-specific queries.
 func (node *ModTreeNode) buildScaleOutModuleQuery(query *querybuilder.Selection) (*querybuilder.Selection, error) {
-	modSrc := node.Module.Source.Value.Self()
+	mod := node.Module.Self()
+	if mod == nil {
+		return nil, fmt.Errorf("build scale-out module query: missing module")
+	}
+	modSrc := mod.Source.Value.Self()
 	switch modSrc.Kind {
 	case ModuleSourceKindLocal:
 		query = query.Select("moduleSource").
@@ -574,7 +571,7 @@ func dagqlServerForModule(ctx context.Context, mod dagql.ObjectResult[*Module]) 
 // The address of the dagger module that is the root of the tree
 // If the node is a "file", the root address is the URL of the filesystem root
 func (node *ModTreeNode) RootAddress() string {
-	mod := node.Module
+	mod := node.Module.Self()
 	if mod == nil {
 		return ""
 	}
@@ -599,8 +596,12 @@ func (node *ModTreeNode) DagqlValue(ctx context.Context, dest any) error {
 	// A node is also treated as root if its parent is a synthetic naming-only
 	// node (e.g. injected by workspace checks reparenting, which sets
 	// Parent to an empty ModTreeNode with nil Module).
-	if node.Parent == nil || node.Parent.Module == nil {
-		return srv.Select(ctx, srv.Root(), dest, dagql.Selector{Field: gqlFieldName(node.Module.Name())})
+	if node.Parent == nil || node.Parent.Module.Self() == nil {
+		mod := node.Module.Self()
+		if mod == nil {
+			return fmt.Errorf("%q: get value: missing module", node.PathString())
+		}
+		return srv.Select(ctx, srv.Root(), dest, dagql.Selector{Field: gqlFieldName(mod.Name())})
 	}
 	// 2. Is parent an object?
 	if parentObjType := node.Parent.ObjectType(); parentObjType != nil {
@@ -837,7 +838,7 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 				DagqlServer:    node.DagqlServer,
 				Module:         node.Module,
 				OriginalModule: node.OriginalModule,
-				Type:           fn.ReturnType.Self(),
+				Type:           fn.ReturnType,
 				IsCheck:        fn.IsCheck,
 				IsGenerator:    fn.IsGenerator,
 				IsUp:           fn.IsUp,
@@ -847,25 +848,18 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 			if returnsObject := fn.ReturnType.Self().AsObject.Valid; returnsObject &&
 				// avoid cycles (X.withFoo: X)
 				returnType != nodeType {
-				if subObj, ok := node.OriginalModule.ObjectByName(fn.ReturnType.Self().ToType().Name()); ok {
-					subObjRes, err := dagql.NewObjectResultForCurrentCall(ctx, node.DagqlServer, subObj)
-					if err != nil {
-						return nil, fmt.Errorf("wrap child object typedef %q: %w", subObj.Name, err)
-					}
+				if subType, ok := node.OriginalModule.Self().objectTypeDefResultByName(fn.ReturnType.Self().ToType().Name()); ok {
 					children = append(children, &ModTreeNode{
 						Parent:         node,
 						Name:           fn.Name,
 						DagqlServer:    node.DagqlServer,
 						Module:         node.Module,
 						OriginalModule: node.OriginalModule,
-						Type: (&TypeDef{
-							Kind:     TypeDefKindObject,
-							AsObject: dagql.NonNull(subObjRes),
-						}).syncName(),
-						IsCheck:     false,
-						IsGenerator: false,
-						IsUp:        false,
-						Description: subObj.Description,
+						Type:           subType,
+						IsCheck:        false,
+						IsGenerator:    false,
+						IsUp:           false,
+						Description:    subType.Self().AsObject.Value.Self().Description,
 					})
 				}
 			}
@@ -878,7 +872,7 @@ func (node *ModTreeNode) Children(ctx context.Context) ([]*ModTreeNode, error) {
 				DagqlServer:    node.DagqlServer,
 				Module:         node.Module,
 				OriginalModule: node.OriginalModule,
-				Type:           field.TypeDef.Self(),
+				Type:           field.TypeDef,
 				IsCheck:        false,
 				IsGenerator:    false,
 				IsUp:           false,
@@ -915,5 +909,234 @@ func (node *ModTreeNode) Child(ctx context.Context, name string) (*ModTreeNode, 
 }
 
 func (node *ModTreeNode) ObjectType() *ObjectTypeDef {
-	return node.Type.AsObject.Value.Self()
+	if node == nil || node.Type.Self() == nil {
+		return nil
+	}
+	typeDef := node.Type.Self()
+	if !typeDef.AsObject.Valid {
+		return nil
+	}
+	return typeDef.AsObject.Value.Self()
+}
+
+type persistedModTree struct {
+	Nodes []persistedModTreeNode `json:"nodes,omitempty"`
+}
+
+type persistedModTreeNode struct {
+	ID                     int    `json:"id"`
+	ParentID               int    `json:"parentID,omitempty"`
+	Name                   string `json:"name,omitempty"`
+	Description            string `json:"description,omitempty"`
+	ModuleResultID         uint64 `json:"moduleResultID,omitempty"`
+	OriginalModuleResultID uint64 `json:"originalModuleResultID,omitempty"`
+	TypeResultID           uint64 `json:"typeResultID,omitempty"`
+	IsCheck                bool   `json:"isCheck,omitempty"`
+	IsGenerator            bool   `json:"isGenerator,omitempty"`
+	IsUp                   bool   `json:"isUp,omitempty"`
+}
+
+type persistedModTreeEncoder struct {
+	cache    dagql.PersistedObjectCache
+	ids      map[*ModTreeNode]int
+	visiting map[*ModTreeNode]bool
+	tree     persistedModTree
+}
+
+func newPersistedModTreeEncoder(cache dagql.PersistedObjectCache) *persistedModTreeEncoder {
+	return &persistedModTreeEncoder{
+		cache:    cache,
+		ids:      map[*ModTreeNode]int{},
+		visiting: map[*ModTreeNode]bool{},
+	}
+}
+
+func (enc *persistedModTreeEncoder) Add(node *ModTreeNode) (int, error) {
+	if node == nil {
+		return 0, nil
+	}
+	if id, ok := enc.ids[node]; ok {
+		return id, nil
+	}
+	if enc.visiting[node] {
+		return 0, fmt.Errorf("encode persisted mod tree node %q: parent cycle", node.Name)
+	}
+	enc.visiting[node] = true
+	defer delete(enc.visiting, node)
+
+	parentID, err := enc.Add(node.Parent)
+	if err != nil {
+		return 0, err
+	}
+
+	id := len(enc.tree.Nodes) + 1
+	enc.ids[node] = id
+	persisted := persistedModTreeNode{
+		ID:          id,
+		ParentID:    parentID,
+		Name:        node.Name,
+		Description: node.Description,
+		IsCheck:     node.IsCheck,
+		IsGenerator: node.IsGenerator,
+		IsUp:        node.IsUp,
+	}
+	if node.Module.Self() != nil {
+		moduleID, err := encodePersistedObjectRef(enc.cache, node.Module, "mod tree module")
+		if err != nil {
+			return 0, err
+		}
+		persisted.ModuleResultID = moduleID
+	}
+	if node.OriginalModule.Self() != nil {
+		originalModuleID, err := encodePersistedObjectRef(enc.cache, node.OriginalModule, "mod tree original module")
+		if err != nil {
+			return 0, err
+		}
+		persisted.OriginalModuleResultID = originalModuleID
+	}
+	if node.Type.Self() != nil {
+		typeID, err := encodePersistedObjectRef(enc.cache, node.Type, "mod tree typedef")
+		if err != nil {
+			return 0, err
+		}
+		persisted.TypeResultID = typeID
+	}
+	enc.tree.Nodes = append(enc.tree.Nodes, persisted)
+	return id, nil
+}
+
+func decodePersistedModTree(ctx context.Context, dag *dagql.Server, tree persistedModTree) (map[int]*ModTreeNode, error) {
+	nodes := make(map[int]*ModTreeNode, len(tree.Nodes))
+	serverByModuleID := map[uint64]*dagql.Server{}
+
+	for _, persisted := range tree.Nodes {
+		if persisted.ID == 0 {
+			return nil, fmt.Errorf("decode persisted mod tree: zero node ID")
+		}
+		if _, exists := nodes[persisted.ID]; exists {
+			return nil, fmt.Errorf("decode persisted mod tree: duplicate node ID %d", persisted.ID)
+		}
+
+		node := &ModTreeNode{
+			Name:        persisted.Name,
+			Description: persisted.Description,
+			IsCheck:     persisted.IsCheck,
+			IsGenerator: persisted.IsGenerator,
+			IsUp:        persisted.IsUp,
+		}
+		if persisted.ModuleResultID != 0 {
+			module, err := loadPersistedObjectResultByResultID[*Module](ctx, dag, persisted.ModuleResultID, "mod tree module")
+			if err != nil {
+				return nil, err
+			}
+			node.Module = module
+			if srv, ok := serverByModuleID[persisted.ModuleResultID]; ok {
+				node.DagqlServer = srv
+			} else {
+				srv, err := dagqlServerForModule(ctx, module)
+				if err != nil {
+					return nil, fmt.Errorf("decode persisted mod tree server for module %d: %w", persisted.ModuleResultID, err)
+				}
+				serverByModuleID[persisted.ModuleResultID] = srv
+				node.DagqlServer = srv
+			}
+		}
+		if persisted.OriginalModuleResultID != 0 {
+			originalModule, err := loadPersistedObjectResultByResultID[*Module](ctx, dag, persisted.OriginalModuleResultID, "mod tree original module")
+			if err != nil {
+				return nil, err
+			}
+			node.OriginalModule = originalModule
+		}
+		if persisted.TypeResultID != 0 {
+			typeDef, err := loadPersistedObjectResultByResultID[*TypeDef](ctx, dag, persisted.TypeResultID, "mod tree typedef")
+			if err != nil {
+				return nil, err
+			}
+			node.Type = typeDef
+		}
+		nodes[persisted.ID] = node
+	}
+
+	for _, persisted := range tree.Nodes {
+		if persisted.ParentID == 0 {
+			continue
+		}
+		parent, ok := nodes[persisted.ParentID]
+		if !ok {
+			return nil, fmt.Errorf("decode persisted mod tree node %d: unknown parent %d", persisted.ID, persisted.ParentID)
+		}
+		nodes[persisted.ID].Parent = parent
+	}
+
+	return nodes, nil
+}
+
+func attachModTreeNodeDependencyResults(
+	node *ModTreeNode,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	return attachModTreeNodeDependencyResultsWithSeen(node, attach, map[*ModTreeNode]struct{}{})
+}
+
+func attachModTreeNodeDependencyResultsWithSeen(
+	node *ModTreeNode,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+	seen map[*ModTreeNode]struct{},
+) ([]dagql.AnyResult, error) {
+	if node == nil {
+		return nil, nil
+	}
+	if _, ok := seen[node]; ok {
+		return nil, nil
+	}
+	seen[node] = struct{}{}
+
+	var owned []dagql.AnyResult
+	if node.Parent != nil {
+		parentDeps, err := attachModTreeNodeDependencyResultsWithSeen(node.Parent, attach, seen)
+		if err != nil {
+			return nil, err
+		}
+		owned = append(owned, parentDeps...)
+	}
+
+	if node.Module.Self() != nil {
+		attached, err := attach(node.Module)
+		if err != nil {
+			return nil, fmt.Errorf("attach mod tree module: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Module])
+		if !ok {
+			return nil, fmt.Errorf("attach mod tree module: unexpected result %T", attached)
+		}
+		node.Module = typed
+		owned = append(owned, typed)
+	}
+	if node.OriginalModule.Self() != nil {
+		attached, err := attach(node.OriginalModule)
+		if err != nil {
+			return nil, fmt.Errorf("attach mod tree original module: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Module])
+		if !ok {
+			return nil, fmt.Errorf("attach mod tree original module: unexpected result %T", attached)
+		}
+		node.OriginalModule = typed
+		owned = append(owned, typed)
+	}
+	if node.Type.Self() != nil {
+		attached, err := attach(node.Type)
+		if err != nil {
+			return nil, fmt.Errorf("attach mod tree typedef: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*TypeDef])
+		if !ok {
+			return nil, fmt.Errorf("attach mod tree typedef: unexpected result %T", attached)
+		}
+		node.Type = typed
+		owned = append(owned, typed)
+	}
+
+	return owned, nil
 }

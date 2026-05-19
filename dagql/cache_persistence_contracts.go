@@ -32,6 +32,7 @@ type persistResultSnapshot struct {
 	resultID              sharedResultID
 	frame                 *ResultCall
 	self                  Typed
+	isObject              bool
 	hasValue              bool
 	sessionResourceHandle SessionResourceHandle
 	persistedEnvelope     *PersistedResultEnvelope

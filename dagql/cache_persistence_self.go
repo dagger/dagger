@@ -90,7 +90,15 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 		sessionResourceHandle = shared.sessionResourceHandle
 	}
 
+	isObject := false
 	if _, ok := res.(AnyObjectResult); ok {
+		isObject = true
+	}
+	if shared := res.cacheSharedResult(); shared != nil && shared.isObject {
+		isObject = true
+	}
+
+	if isObject {
 		encoder, ok := res.Unwrap().(PersistedObject)
 		if !ok {
 			return PersistedResultEnvelope{}, fmt.Errorf("encode persisted object payload: type %q does not implement persisted object encoding", res.Type().Name())

@@ -1,6 +1,10 @@
 package core
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+
 	"github.com/dagger/dagger/dagql"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -61,6 +65,106 @@ func (*Workspace) Type() *ast.Type {
 
 func (*Workspace) TypeDescription() string {
 	return "A Dagger workspace detected from the current working directory."
+}
+
+var _ dagql.PersistedObject = (*Workspace)(nil)
+var _ dagql.PersistedObjectDecoder = (*Workspace)(nil)
+var _ dagql.HasDependencyResults = (*Workspace)(nil)
+
+type persistedWorkspacePayload struct {
+	RootfsResultID uint64 `json:"rootfsResultID,omitempty"`
+	Path           string `json:"path,omitempty"`
+	Address        string `json:"address,omitempty"`
+	Initialized    bool   `json:"initialized,omitempty"`
+	ConfigPath     string `json:"configPath,omitempty"`
+	HasConfig      bool   `json:"hasConfig,omitempty"`
+	ClientID       string `json:"clientID,omitempty"`
+	HostPath       string `json:"hostPath,omitempty"`
+}
+
+func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	_ = ctx
+	if ws == nil {
+		return nil, fmt.Errorf("encode persisted workspace: nil workspace")
+	}
+
+	payload := persistedWorkspacePayload{
+		Path:        ws.Path,
+		Address:     ws.Address,
+		Initialized: ws.Initialized,
+		ConfigPath:  ws.ConfigPath,
+		HasConfig:   ws.HasConfig,
+		ClientID:    ws.ClientID,
+		HostPath:    ws.hostPath,
+	}
+	if ws.rootfs.Self() != nil {
+		rootfsID, err := encodePersistedObjectRef(cache, ws.rootfs, "workspace rootfs")
+		if err != nil {
+			return nil, err
+		}
+		payload.RootfsResultID = rootfsID
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal persisted workspace payload: %w", err)
+	}
+	return payloadBytes, nil
+}
+
+func (*Workspace) DecodePersistedObject(
+	ctx context.Context,
+	dag *dagql.Server,
+	_ uint64,
+	_ *dagql.ResultCall,
+	payload json.RawMessage,
+) (dagql.Typed, error) {
+	var persisted persistedWorkspacePayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted workspace payload: %w", err)
+	}
+
+	var rootfs dagql.ObjectResult[*Directory]
+	if persisted.RootfsResultID != 0 {
+		var err error
+		rootfs, err = loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.RootfsResultID, "workspace rootfs")
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &Workspace{
+		rootfs:      rootfs,
+		Path:        persisted.Path,
+		Address:     persisted.Address,
+		Initialized: persisted.Initialized,
+		ConfigPath:  persisted.ConfigPath,
+		HasConfig:   persisted.HasConfig,
+		ClientID:    persisted.ClientID,
+		hostPath:    persisted.HostPath,
+	}, nil
+}
+
+func (ws *Workspace) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	_ = ctx
+	if ws == nil || ws.rootfs.Self() == nil {
+		return nil, nil
+	}
+
+	attached, err := attach(ws.rootfs)
+	if err != nil {
+		return nil, fmt.Errorf("attach workspace rootfs: %w", err)
+	}
+	typed, ok := attached.(dagql.ObjectResult[*Directory])
+	if !ok {
+		return nil, fmt.Errorf("attach workspace rootfs: unexpected result %T", attached)
+	}
+	ws.rootfs = typed
+	return []dagql.AnyResult{typed}, nil
 }
 
 func (ws *Workspace) Clone() *Workspace {

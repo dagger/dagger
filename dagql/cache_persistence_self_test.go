@@ -126,6 +126,28 @@ func TestPersistedSelfCodecObjectIDRoundTrip(t *testing.T) {
 	assert.Check(t, is.Equal(decodedRecipeEnc, originalRecipeEnc))
 }
 
+func TestPersistedSelfCodecUsesSharedObjectClassification(t *testing.T) {
+	t.Parallel()
+	ctx := setupPersistCodecTest(t)
+
+	call := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&persistCodecObj{}).Type()),
+		Field: "obj",
+	}
+	shared := &sharedResult{
+		self:     &persistCodecObj{Name: "x"},
+		isObject: true,
+		hasValue: true,
+	}
+	shared.storeResultCall(call)
+
+	env, err := DefaultPersistedSelfCodec.EncodeResult(ctx, nil, Result[Typed]{shared: shared})
+	assert.NilError(t, err)
+	assert.Check(t, is.Equal(env.Kind, persistedResultKindObject))
+	assert.Check(t, is.Equal(string(env.ObjectJSON), `{"name":"x"}`))
+}
+
 func TestObjectCacheHitPreservesObjectResultShape(t *testing.T) {
 	t.Parallel()
 
