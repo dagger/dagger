@@ -8264,6 +8264,19 @@ func hostDaggerExec(ctx context.Context, t testing.TB, workdir string, args ...s
 	return output, err
 }
 
+// runs a dagger cli command directly on the host and captures only stdout
+func hostDaggerOutput(ctx context.Context, t testing.TB, workdir string, args ...string) ([]byte, error) {
+	t.Helper()
+	var stderr bytes.Buffer
+	cmd := hostDaggerCommand(ctx, t, workdir, args...)
+	cmd.Stderr = io.MultiWriter(testutil.NewTWriter(t), &stderr)
+	output, err := cmd.Output()
+	if err != nil {
+		err = fmt.Errorf("stdout: %s\nstderr: %s: %w", string(output), stderr.String(), err)
+	}
+	return output, err
+}
+
 func cleanupExec(t testing.TB, cmd *exec.Cmd) {
 	t.Cleanup(func() {
 		if cmd.Process == nil {
