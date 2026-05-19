@@ -1204,19 +1204,17 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "hi from mod-b", strings.TrimSpace(out))
 	})
 
-	t.Run("local with absolute paths linking to modules outside of root", func(ctx context.Context, t *testctx.T) {
+	t.Run("named local dependency rejects absolute source", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		ctr := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			With(withModuleFixture(t, c, "/work", "go/call-by-name-outside-root")).
-			With(withModuleFixture(t, c, "/outside/mod-a", "go/call-by-name-mod-a")).
 			WithWorkdir("/work")
 
-		// call main module at /work path
 		_, err := ctr.With(daggerCallAt("foo", "fn")).Stdout(ctx)
 		require.Error(t, err)
-		requireErrOut(t, err, `local module dependency context directory "/outside/mod-a" is not in parent context directory "/work"`)
+		requireErrOut(t, err, `local module dep source path "/outside/mod-a" is absolute`)
 	})
 
 	t.Run("local ref with @", func(ctx context.Context, t *testctx.T) {
