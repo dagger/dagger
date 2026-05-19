@@ -42,6 +42,7 @@ Examples:
 		return withEngine(
 			cmd.Context(),
 			client.Params{
+				EagerRuntime:         true,
 				LoadWorkspaceModules: true,
 			},
 			func(ctx context.Context, engineClient *client.Client) error {
