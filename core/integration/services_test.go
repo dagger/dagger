@@ -12,6 +12,13 @@
 
 package core
 
+// These tests cover Dagger services: starting long-running containers, wiring
+// service endpoints into clients, and reaching services over the network.
+//
+// See also:
+// - container_test.go: core Container behavior.
+// - module_runtime_behavior_test.go: services used from module code.
+
 import (
 	"bytes"
 	"context"
@@ -202,60 +209,11 @@ func (ServiceSuite) TestWithHostname(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "Hello, world!", resp)
 }
 
-//go:embed testdata/counter/main.go
-var counterMain string
-
 func (ServiceSuite) TestContentAddressedModuleScoping(ctx context.Context, t *testctx.T) {
 	t.Run("addressable within module", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		_, err := goGitBase(t, c).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work/hoster").
-			With(daggerExec("init", "--source=.", "--name=hoster", "--sdk=go")).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"fmt"
-)
-
-type Hoster struct{}
-
-func (m *Hoster) Run(ctx context.Context) error {
-	srv := dag.Container().
-		From("`+busyboxImage+`").
-		WithWorkdir("/srv").
-		WithNewFile("index.html", "I am the one who hosts.").
-		WithDefaultArgs([]string{"httpd", "-v", "-f"}).
-		WithExposedPort(80).
-		AsService()
-
-	hn, err := srv.Hostname(ctx)
-	if err != nil {
-		return err
-	}
-
-	_, err = srv.Start(ctx)
-	if err != nil {
-		return err
-	}
-
-	resp, err := dag.Container().
-		From("`+busyboxImage+`").
-		WithExec([]string{"wget", "-O-", "http://"+hn}).
-		Stdout(ctx)
-	if err != nil {
-		return err
-	}
-	if resp != "I am the one who hosts." {
-		return fmt.Errorf("unexpected response: %q", resp)
-	}
-
-	return nil
-}
-`,
-			).
+		_, err := moduleFixture(t, c, "go/service-content-addressed-hoster").
 			With(daggerCall("run")).
 			Sync(ctx)
 		require.NoError(t, err)
@@ -264,115 +222,8 @@ func (m *Hoster) Run(ctx context.Context) error {
 	t.Run("addressable across modules", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		_, err := goGitBase(t, c).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work/caller").
-			With(daggerExec("init", "--source=.", "--name=caller", "--sdk=go")).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"strconv"
-	"time"
-
-	"dagger/caller/internal/dagger"
-)
-
-type Caller struct{}
-
-func (m *Caller) Count(ctx context.Context, service *dagger.Service, buster string) (int, error) {
-	hn, err := service.Hostname(ctx)
-	if err != nil {
-		return 0, err
-	}
-
-	resp, err := dag.Container().
-		From("`+busyboxImage+`").
-		WithEnvVariable("NOW", time.Now().String()).
-		WithExec([]string{"wget", "-O-", "http://"+hn}).
-		Stdout(ctx)
-	if err != nil {
-		return 0, err
-	}
-
-	return strconv.Atoi(resp)
-}
-`,
-			).
-			WithWorkdir("/work/hoster").
-			With(daggerExec("init", "--source=.", "--name=hoster", "--sdk=go")).
-			With(daggerExec("install", "../caller")).
-			WithNewFile("counter/main.go", counterMain).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-	_ "embed"
-	"fmt"
-	"strconv"
-	"time"
-)
-
-type Hoster struct{}
-
-//go:embed counter/main.go
-var counterMain string
-
-func (m *Hoster) Run(ctx context.Context) error {
-	counter := dag.Container().
-		From("`+golangImage+`").
-		WithWorkdir("/srv").
-		WithNewFile("main.go", counterMain).
-		WithDefaultArgs([]string{"go", "run", "main.go"}).
-		WithExposedPort(80).
-		AsService()
-
-	// explicitly start since we want to test that it's the same instance
-	// across the following call and subsequent cross-module calls
-	_, err := counter.Start(ctx)
-	if err != nil {
-		return err
-	}
-
-	// first query the service locally, to ensure the subsequent calls
-	// start at 2
-	resp, err := dag.Container().
-		From("`+busyboxImage+`").
-		WithEnvVariable("NOW", time.Now().String()).
-		WithServiceBinding("counter", counter).
-		WithExec([]string{"wget", "-O-", "http://counter"}).
-		Stdout(ctx)
-	if err != nil {
-		return err
-	}
-	n, err := strconv.Atoi(resp)
-	if err != nil {
-		return err
-	}
-	if n != 1 {
-		return fmt.Errorf("expected %d, got %d", 1, n)
-	}
-
-	n, err = dag.Caller().Count(ctx, counter, time.Now().String())
-	if err != nil {
-		return err
-	}
-	if n != 2 {
-		return fmt.Errorf("expected %d, got %d", 2, n)
-	}
-
-	n, err = dag.Caller().Count(ctx, counter, time.Now().String())
-	if err != nil {
-		return err
-	}
-	if n != 3 {
-		return fmt.Errorf("expected %d, got %d", 3, n)
-	}
-
-	return nil
-}
-`,
-			).
+		_, err := moduleFixture(t, c, "go/service-content-addressed-cross").
+			With(withModuleFixture(t, c, "caller", "go/service-content-addressed-caller")).
 			With(daggerCall("run")).
 			Sync(ctx)
 		require.NoError(t, err)
@@ -383,49 +234,7 @@ func (ServiceSuite) TestWithHostnameModuleScoping(ctx context.Context, t *testct
 	t.Run("works within module", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		_, err := goGitBase(t, c).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work/hoster").
-			With(daggerExec("init", "--source=.", "--name=hoster", "--sdk=go")).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"fmt"
-)
-
-type Hoster struct{}
-
-func (m *Hoster) Run(ctx context.Context) error {
-	srv := dag.Container().
-		From("`+busyboxImage+`").
-		WithWorkdir("/srv").
-		WithNewFile("index.html", "I am the one who hosts.").
-		WithDefaultArgs([]string{"httpd", "-v", "-f"}).
-		WithExposedPort(80).
-		AsService().
-		WithHostname("wwwhatsup0")
-
-	_, err := srv.Start(ctx)
-	if err != nil {
-		return err
-	}
-
-	resp, err := dag.Container().
-		From("`+busyboxImage+`").
-		WithExec([]string{"wget", "-O-", "http://wwwhatsup0"}).
-		Stdout(ctx)
-	if err != nil {
-		return err
-	}
-	if resp != "I am the one who hosts." {
-		return fmt.Errorf("unexpected response: %q", resp)
-	}
-
-	return nil
-}
-`,
-			).
+		_, err := moduleFixture(t, c, "go/service-hostname-hoster").
 			With(daggerCall("run")).
 			Sync(ctx)
 		require.NoError(t, err)
@@ -434,214 +243,19 @@ func (m *Hoster) Run(ctx context.Context) error {
 	t.Run("is not reachable across modules", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		_, err := goGitBase(t, c).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work/caller").
-			With(daggerExec("init", "--source=.", "--name=caller", "--sdk=go")).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"fmt"
-	"time"
-)
-
-type Caller struct{}
-
-func (m *Caller) Run(ctx context.Context) error {
-	resp, err := dag.Container().
-		From("`+busyboxImage+`").
-		WithEnvVariable("NOW", time.Now().String()).
-		WithExec([]string{"wget", "-O-", "http://wwwhatsup1"}).
-		Stdout(ctx)
-	if err == nil {
-		return fmt.Errorf("should not have been able to reach service")
-	}
-
-	srv := dag.Container().
-		From("`+busyboxImage+`").
-		WithWorkdir("/srv").
-		WithNewFile("index.html", "I am within the called module.").
-		WithDefaultArgs([]string{"httpd", "-v", "-f"}).
-		WithExposedPort(80).
-		AsService().
-		WithHostname("wwwhatsup1")
-
-	_, err = srv.Start(ctx)
-	if err != nil {
-		return err
-	}
-
-	resp, err = dag.Container().
-		From("`+busyboxImage+`").
-		WithEnvVariable("NOW", time.Now().String()).
-		WithExec([]string{"wget", "-O-", "http://wwwhatsup1"}).
-		Stdout(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to reach service: %w", err)
-	}
-	if resp != "I am within the called module." {
-		return fmt.Errorf("unexpected response: %q", resp)
-	}
-	return nil
-}
-`,
-			).
-			WithWorkdir("/work/hoster").
-			With(daggerExec("init", "--source=.", "--name=hoster", "--sdk=go")).
-			With(daggerExec("install", "../caller")).
-			WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"fmt"
-	"time"
-)
-
-type Hoster struct{}
-
-func (m *Hoster) Run(ctx context.Context) error {
-	srv := dag.Container().
-		From("`+busyboxImage+`").
-		WithWorkdir("/srv").
-		WithNewFile("index.html", "I am the one who hosts.").
-		WithDefaultArgs([]string{"httpd", "-v", "-f"}).
-		WithExposedPort(80).
-		AsService().
-		WithHostname("wwwhatsup1")
-
-	_, err := srv.Start(ctx)
-	if err != nil {
-		return err
-	}
-
-	err = dag.Caller().Run(ctx)
-	if err != nil {
-		return err
-	}
-
-	resp, err := dag.Container().
-		From("`+busyboxImage+`").
-		WithEnvVariable("NOW", time.Now().String()).
-		WithExec([]string{"wget", "-O-", "http://wwwhatsup1"}).
-		Stdout(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to reach service: %w", err)
-	}
-	if resp != "I am the one who hosts." {
-		return fmt.Errorf("unexpected response: %q", resp)
-	}
-
-	return nil
-}
-`,
-			).
+		_, err := moduleFixture(t, c, "go/service-hostname-cross").
+			With(withModuleFixture(t, c, "caller", "go/service-hostname-caller")).
 			With(daggerCall("run")).
 			Sync(ctx)
 		require.NoError(t, err)
 	})
 }
 
-//go:embed testdata/relay/main.go
-var relayMain string
-
 func (ServiceSuite) TestWithHostnameCircular(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	_, err := goGitBase(t, c).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work/relayer").
-		With(daggerExec("init", "--source=.", "--name=relayer", "--sdk=go")).
-		WithNewFile("relay/main.go", relayMain).
-		WithNewFile("main.go", `package main
-
-import (
-	_ "embed"
-
-	"dagger/relayer/internal/dagger"
-)
-
-type Relayer struct{}
-
-//go:embed relay/main.go
-var relayMain string
-
-func (m *Relayer) Service() *dagger.Service {
-	return dag.Container().
-		From("`+golangImage+`").
-		WithWorkdir("/srv").
-		WithNewFile("main.go", relayMain).
-		WithDefaultArgs([]string{"go", "run", "main.go"}).
-		WithExposedPort(80).
-		AsService()
-}
-`,
-		).
-		WithWorkdir("/work/caller").
-		With(daggerExec("init", "--source=.", "--name=caller", "--sdk=go")).
-		With(daggerExec("install", "../relayer")).
-		WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"fmt"
-	"time"
-	"net/url"
-
-	"golang.org/x/sync/errgroup"
-
-	"dagger/caller/internal/dagger"
-)
-
-type Caller struct{}
-
-func (m *Caller) Run(ctx context.Context) error {
-	foo := dag.Relayer().Service().WithHostname("foo")
-	bar := dag.Relayer().Service().WithHostname("bar")
-	baz := dag.Relayer().Service().WithHostname("baz")
-
-	startGroup := new(errgroup.Group)
-	for _, srv := range []*dagger.Service{foo, bar, baz} {
-		startGroup.Go(func() error {
-			_, err := srv.Start(ctx)
-			return err
-		})
-	}
-	if err := startGroup.Wait(); err != nil {
-		return err
-	}
-
-	relayURL := &url.URL{
-		Scheme: "http",
-		Host:   "foo",
-		Path:   "/",
-		RawQuery: url.Values{
-			"relay": {
-				"http://bar",
-				"http://baz",
-				"http://foo",
-			},
-			"end": {"hello"},
-		}.Encode(),
-	}
-
-	resp, err := dag.Container().
-		From("`+busyboxImage+`").
-		WithEnvVariable("NOW", time.Now().String()).
-		WithExec([]string{"cat", "/etc/resolv.conf"}).
-		WithExec([]string{"wget", "-O-", relayURL.String()}).
-		Stdout(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to reach service: %w", err)
-	}
-	if resp != "http://bar: http://baz: http://foo: hello" {
-		return fmt.Errorf("unexpected response: %q", resp)
-	}
-
-	return nil
-}
-`,
-		).
+	_, err := moduleFixture(t, c, "go/service-relay-caller").
+		With(withModuleFixture(t, c, "relayer", "go/service-relayer")).
 		With(daggerCall("run")).
 		Sync(ctx)
 	require.NoError(t, err)
@@ -650,69 +264,8 @@ func (m *Caller) Run(ctx context.Context) error {
 func (ServiceSuite) TestServiceTunnelStartsOnceForDifferentClients(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	out, err := goGitBase(t, c).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work/starter").
-		With(daggerExec("init", "--source=.", "--name=starter", "--sdk=go")).
-		WithNewFile("main.go", `package main
-
-import (
-	_ "embed"
-	"context"
-
-	"dagger/starter/internal/dagger"
-)
-
-type Starter struct{}
-
-
-func (m *Starter) Start(ctx context.Context, s *dagger.Service) {
-	go func() {s.Up(ctx)}()
-}
-`,
-		).
-		WithWorkdir("/work/caller").
-		With(daggerExec("init", "--source=.", "--name=caller", "--sdk=go")).
-		With(daggerExec("install", "../starter")).
-		WithNewFile("main.go", `package main
-
-import (
-	"context"
-	"time"
-	"dagger/caller/internal/dagger"
-
-)
-
-type Caller struct{}
-
-func (m *Caller) Run(ctx context.Context) (string, error) {
-	svcCache := dag.CacheVolume("svc_cache")
-
-	dag.Container().From("alpine").WithMountedCache("/cache", svcCache).
-		WithEnvVariable("CACHE", time.Now().String()).
-		WithExec([]string{"truncate", "-s", "0", "/cache/svc.txt"}).Sync(ctx)
-
-	svc := dag.Container().From("alpine").
-		WithMountedCache("/cache", svcCache).
-		WithExposedPort(8080, dagger.ContainerWithExposedPortOpts{ExperimentalSkipHealthcheck: true}).
-		WithDefaultArgs([]string{"sh", "-c", "echo started >> /cache/svc.txt && while true; do wc -l /cache/svc.txt && sleep 5; done"}).
-		AsService()
-
-	// we're passing the service to a different module that calls "up" on it so it's a different client
-	// which is what triggers the behavior this test is testing.
-	dag.Starter().Start(ctx, svc)
-
-	dag.Container().From("alpine").WithServiceBinding("db", svc).
-		WithEnvVariable("CACHE", time.Now().String()).
-		WithExec([]string{"echo", "hello"}).
-		Sync(ctx)
-
-	return dag.Container().From("alpine").WithMountedCache("/cache", svcCache).
-		WithEnvVariable("CACHE", time.Now().String()).
-		WithExec([]string{"wc", "-l", "/cache/svc.txt"}).Stdout(ctx)
-}
-`,
-		).
+	out, err := moduleFixture(t, c, "go/service-starter-caller").
+		With(withModuleFixture(t, c, "starter", "go/service-starter")).
 		With(daggerCall("run")).
 		Stdout(ctx)
 	require.NoError(t, err)
@@ -2561,7 +2114,7 @@ cd repo
 	if [ ! -d .git ]; then
 		git init
 		git branch -m %s
-		git add * || true
+		git add -A
 		git commit -m "init"
 	fi
 cd ..

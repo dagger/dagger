@@ -1,5 +1,12 @@
 package core
 
+// These tests cover modules authored with the Java SDK. They verify generated
+// Java bindings and executing Java module functions.
+//
+// See also:
+// - module_definition_test.go: SDK-neutral module API definition behavior.
+// - module_type_test.go: cross-SDK custom type behavior.
+
 import (
 	"path/filepath"
 	"testing"
@@ -18,68 +25,12 @@ func TestJava(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(JavaSuite{})
 }
 
-func (JavaSuite) TestInit(_ context.Context, t *testctx.T) {
-	t.Run("from upstream", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec(
-				"init",
-				"--name=bare",
-				"--sdk=github.com/dagger/dagger/sdk/java"))
-
-		out, err := modGen.
-			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.JSONEq(t, `{"containerEcho":{"stdout":"hello\n"}}`, out)
-	})
-
-	t.Run("from alias", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec(
-				"init",
-				"--name=bare",
-				"--sdk=java"))
-
-		out, err := modGen.
-			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.JSONEq(t, `{"containerEcho":{"stdout":"hello\n"}}`, out)
-	})
-
-	t.Run("from alias with ref", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec(
-				"init",
-				"--name=bare",
-				"--sdk=java@main"))
-
-		out, err := modGen.
-			With(daggerQuery(`{containerEcho(stringArg:"hello"){stdout}}`)).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.JSONEq(t, `{"containerEcho":{"stdout":"hello\n"}}`, out)
-	})
-}
-
 func (JavaSuite) TestFields(_ context.Context, t *testctx.T) {
 	t.Run("can set and retrieve field using custom function", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "fields").
-			With(daggerShell("with-version a.b.c | get-version")).
+			With(daggerShellAt(".", "with-version a.b.c | get-version")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -90,7 +41,7 @@ func (JavaSuite) TestFields(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "fields").
-			With(daggerShell("with-version a.b.c | version")).
+			With(daggerShellAt(".", "with-version a.b.c | version")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -101,7 +52,7 @@ func (JavaSuite) TestFields(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "fields").
-			With(daggerShell("with-version a.b.c | public-version")).
+			With(daggerShellAt(".", "with-version a.b.c | public-version")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -112,7 +63,7 @@ func (JavaSuite) TestFields(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "fields").
-			With(daggerShell("with-version a.b.c | get-internal-version")).
+			With(daggerShellAt(".", "with-version a.b.c | get-internal-version")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -123,7 +74,7 @@ func (JavaSuite) TestFields(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		_, err := javaModule(t, c, "fields").
-			With(daggerShell("with-version a.b.c | internal-version")).
+			With(daggerShellAt(".", "with-version a.b.c | internal-version")).
 			Stdout(ctx)
 
 		require.Error(t, err)
@@ -135,7 +86,7 @@ func (JavaSuite) TestDefaultValue(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "defaults").
-			With(daggerCall("echo", "--value=hello")).
+			With(daggerCallAt(".", "echo", "--value=hello")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -146,7 +97,7 @@ func (JavaSuite) TestDefaultValue(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "defaults").
-			With(daggerCall("echo")).
+			With(daggerCallAt(".", "echo")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -159,7 +110,7 @@ func (JavaSuite) TestOptionalValue(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "defaults").
-			With(daggerCall("echo-else")).
+			With(daggerCallAt(".", "echo-else")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -170,7 +121,7 @@ func (JavaSuite) TestOptionalValue(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "defaults").
-			With(daggerCall("echo-else", "--value", "foo")).
+			With(daggerCallAt(".", "echo-else", "--value", "foo")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -181,7 +132,7 @@ func (JavaSuite) TestOptionalValue(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "defaults").
-			With(daggerCall("echo-opt-default")).
+			With(daggerCallAt(".", "echo-opt-default")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -194,7 +145,7 @@ func (JavaSuite) TestDefaultPath(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "defaults").
-			With(daggerCall("file-name", "--file=./pom.xml")).
+			With(daggerCallAt(".", "file-name", "--file=./pom.xml")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -205,7 +156,7 @@ func (JavaSuite) TestDefaultPath(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "defaults").
-			With(daggerCall("file-name")).
+			With(daggerCallAt(".", "file-name")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -216,7 +167,7 @@ func (JavaSuite) TestDefaultPath(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "defaults").
-			With(daggerCall("file-names", "--dir", ".")).
+			With(daggerCallAt(".", "file-names", "--dir", ".")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -227,7 +178,7 @@ func (JavaSuite) TestDefaultPath(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "defaults").
-			With(daggerCall("file-names")).
+			With(daggerCallAt(".", "file-names")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -240,7 +191,7 @@ func (JavaSuite) TestIgnore(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "defaults").
-			With(daggerCall("files-no-ignore")).
+			With(daggerCallAt(".", "files-no-ignore")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -252,7 +203,7 @@ func (JavaSuite) TestIgnore(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "defaults").
-			With(daggerCall("files-ignore")).
+			With(daggerCallAt(".", "files-ignore")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -264,7 +215,7 @@ func (JavaSuite) TestIgnore(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "defaults").
-			With(daggerCall("files-neg-ignore")).
+			With(daggerCallAt(".", "files-neg-ignore")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -279,7 +230,7 @@ func (JavaSuite) TestConstructor(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "construct").
-			With(daggerCall("--value", "from cli", "echo")).
+			With(daggerCallAt(".", "--value", "from cli", "echo")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -290,7 +241,7 @@ func (JavaSuite) TestConstructor(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "construct").
-			With(daggerCall("echo")).
+			With(daggerCallAt(".", "echo")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -303,7 +254,7 @@ func (JavaSuite) TestEnum(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "enums").
-			With(daggerCall("print", "--severity=LOW")).
+			With(daggerCallAt(".", "print", "--severity=LOW")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -314,7 +265,7 @@ func (JavaSuite) TestEnum(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		_, err := javaModule(t, c, "enums").
-			With(daggerCall("print", "--severity=FOO")).
+			With(daggerCallAt(".", "print", "--severity=FOO")).
 			Stdout(ctx)
 
 		require.Error(t, err)
@@ -325,7 +276,7 @@ func (JavaSuite) TestEnum(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "enums").
-			With(daggerCall("from-string", "--severity=MEDIUM")).
+			With(daggerCallAt(".", "from-string", "--severity=MEDIUM")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -336,7 +287,7 @@ func (JavaSuite) TestEnum(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "enums").
-			With(daggerCall("get-severities-list")).
+			With(daggerCallAt(".", "get-severities-list")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -347,7 +298,7 @@ func (JavaSuite) TestEnum(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "enums").
-			With(daggerCall("get-severities-array")).
+			With(daggerCallAt(".", "get-severities-array")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -358,7 +309,7 @@ func (JavaSuite) TestEnum(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "enums").
-			With(daggerCall("list-to-string", "--severities=MEDIUM,LOW")).
+			With(daggerCallAt(".", "list-to-string", "--severities=MEDIUM,LOW")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -369,7 +320,7 @@ func (JavaSuite) TestEnum(_ context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := javaModule(t, c, "enums").
-			With(daggerCall("array-to-string", "--severities=HIGH,LOW")).
+			With(daggerCallAt(".", "array-to-string", "--severities=HIGH,LOW")).
 			Stdout(ctx)
 
 		require.NoError(t, err)

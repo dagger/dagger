@@ -509,9 +509,10 @@ func (r ObjectResult[T]) preselect(ctx context.Context, sel Selector) (ObjectRes
 			Args:           frameArgs,
 			ImplicitInputs: implicitInputs,
 		},
-		TTL:           field.Spec.TTL,
-		DoNotCache:    field.Spec.DoNotCache != "",
-		IsPersistable: field.Spec.IsPersistable,
+		TTL:                  field.Spec.TTL,
+		DoNotCache:           field.Spec.DoNotCache != "",
+		IsPersistable:        field.Spec.IsPersistable,
+		PassthroughTelemetry: field.Spec.PassthroughTelemetry,
 	}
 	if clientMD, err := engine.ClientMetadataFromContext(ctx); err != nil {
 		slog.Warn("failed to get client metadata from context for call", "err", err)
@@ -837,6 +838,10 @@ type FieldSpec struct {
 	// Used for entrypoint proxies that delegate to real fields which
 	// emit their own telemetry.
 	NoTelemetry bool
+
+	// PassthroughTelemetry keeps this field's telemetry span available for call
+	// metadata while asking the UI to show its children in its place.
+	PassthroughTelemetry bool
 
 	// extend is used during installation to copy the spec of a previous field
 	// with the same name
@@ -1297,6 +1302,14 @@ func (field Field[T]) IsPersistable() Field[T] {
 		panic("cannot call on extended field")
 	}
 	field.Spec.IsPersistable = true
+	return field
+}
+
+func (field Field[T]) PassthroughTelemetry() Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
+	field.Spec.PassthroughTelemetry = true
 	return field
 }
 

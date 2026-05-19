@@ -1,5 +1,12 @@
 package core
 
+// These tests cover the GraphQL Directory object: creating, reading, filtering,
+// mounting, exporting, and comparing directory contents.
+//
+// See also:
+// - file_test.go: core File object behavior.
+// - ownership_test.go: file and directory ownership propagation.
+
 import (
 	"context"
 	"crypto/rand"

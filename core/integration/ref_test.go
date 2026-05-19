@@ -1,5 +1,13 @@
 package core
 
+// These tests cover strings that identify module sources, such as local paths,
+// remote refs, and Git-looking paths. They verify how those refs resolve before
+// module loading begins.
+//
+// See also:
+// - git_test.go: Git repository fetch behavior.
+// - module_loading_test.go: source selection after a reference resolves.
+
 import (
 	"context"
 	"strings"
@@ -18,20 +26,7 @@ func (ModuleSuite) TestRefIntegration(ctx context.Context, t *testctx.T) {
 	t.Run("local module with same format as remote: github.com/dagger/dagger", func(ctx context.Context, t *testctx.T) {
 		out, err := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work/github.com/dagger/dagger").
-			WithExec([]string{"pwd"}).
-			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
-			WithNewFile("/work/github.com/dagger/dagger/main.go", `package main
-
-				import "context"
-
-				type Dep struct {}
-
-				func (m *Dep) GetSource(ctx context.Context) string {
-					return "hello"
-				}
-				`,
-			).
+			With(withModuleFixture(t, c, "/work/github.com/dagger/dagger", "go/ref-local-remote-format")).
 			WithWorkdir("/work").
 			With(daggerCallAt("github.com/dagger/dagger", "get-source")).
 			Stdout(ctx)

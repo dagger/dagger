@@ -1,6 +1,7 @@
 package core
 
 import (
+	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -12,12 +13,19 @@ type Workspace struct {
 	// directories lazily via per-call host.directory() instead.
 	rootfs dagql.ObjectResult[*Directory]
 
-	// Path is the workspace directory relative to the workspace boundary.
-	Path        string `field:"true" doc:"Workspace directory path relative to the workspace boundary."`
-	Address     string `field:"true" doc:"Canonical Dagger address of the workspace directory."`
-	Initialized bool   `field:"true" doc:"Whether .dagger/config.toml exists."`
-	ConfigPath  string `field:"true" doc:"Path to config.toml relative to the workspace boundary (empty if not initialized)."`
-	HasConfig   bool   `field:"true" doc:"Whether a config.toml file exists in the workspace."`
+	// compatWorkspace stores the originating compat-workspace projection when
+	// this workspace was loaded from a legacy dagger.json instead of an explicit
+	// .dagger/config.toml. Internal only.
+	compatWorkspace *workspacepkg.CompatWorkspace
+
+	Address    string `field:"true" doc:"Canonical Dagger address of the workspace location."`
+	Cwd        string `field:"true" doc:"Current location within the workspace root. Relative paths in workspace APIs resolve from here."`
+	ConfigFile string `field:"true" doc:"Selected native workspace config file relative to the workspace root, if any."`
+
+	// LockFile is the selected lockfile path relative to the workspace root.
+	// It is independent from ConfigFile: compat config and missing native config
+	// can still have a writable local lockfile.
+	LockFile string
 
 	// ClientID is the ID of the client that created this workspace.
 	// Used to route host filesystem operations through the correct session
@@ -50,6 +58,17 @@ func (ws *Workspace) HostPath() string {
 // SetHostPath sets the internal host filesystem path.
 func (ws *Workspace) SetHostPath(p string) {
 	ws.hostPath = p
+}
+
+// CompatWorkspace returns the internal compat-workspace provenance for this
+// workspace. Nil means this workspace was not loaded from legacy compat mode.
+func (ws *Workspace) CompatWorkspace() *workspacepkg.CompatWorkspace {
+	return ws.compatWorkspace
+}
+
+// SetCompatWorkspace sets the internal compat-workspace provenance.
+func (ws *Workspace) SetCompatWorkspace(compat *workspacepkg.CompatWorkspace) {
+	ws.compatWorkspace = compat
 }
 
 func (*Workspace) Type() *ast.Type {

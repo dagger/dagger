@@ -1,11 +1,14 @@
 package core
 
+// These tests cover `dagger mcp`, the Model Context Protocol server exposed by
+// the CLI over stdio. They verify which module and core methods are available
+// with and without `--env-privileged`.
+
 import (
 	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -70,18 +73,8 @@ func initMCPTestModule(ctx context.Context, t testing.TB) string {
 	t.Helper()
 
 	modDir := t.TempDir()
-
-	_, err := hostDaggerExec(ctx, t, modDir, "init", "--name=test", "--sdk=go", "--source=.")
-	require.NoError(t, err)
-
-	require.NoError(t, os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
-
-type Test struct{}
-
-func (m *Test) Greeting() string {
-	return "hello from module"
-}
-`), 0o644))
+	copyTestdataFixture(ctx, t, modDir, "workspaces", "mcp-greeting")
+	initGitRepo(ctx, t, modDir)
 
 	functionsOut, err := hostDaggerExec(ctx, t, modDir, "functions")
 	require.NoError(t, err)

@@ -1,0 +1,12 @@
+{
+  "name": "test",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "include": [
+    "dagger/subdir/keepdir",
+    "!dagger/subdir/keepdir/rmdir"
+  ],
+  "source": "dagger"
+}

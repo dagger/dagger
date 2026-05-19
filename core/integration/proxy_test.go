@@ -1,5 +1,11 @@
 package core
 
+// These tests cover HTTP proxy settings passed from the client environment into
+// Dagger network operations.
+//
+// See also:
+// - http_test.go: HTTP resource fetching.
+
 import (
 	"context"
 	"fmt"

@@ -1,5 +1,10 @@
 package core
 
+// These tests cover resolving Dagger secrets from Google Cloud Secret Manager.
+//
+// See also:
+// - secretprovider_test.go: shared secret provider behavior.
+
 import (
 	"context"
 	"fmt"

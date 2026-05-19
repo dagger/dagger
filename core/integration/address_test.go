@@ -1,5 +1,9 @@
 package core
 
+// These tests cover the Address API, which interprets strings as Dagger
+// resources. They verify raw address values and conversion to containers,
+// services, local files/directories, Git refs, and secrets.
+
 import (
 	"context"
 	"fmt"

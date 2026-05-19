@@ -1,5 +1,11 @@
 package core
 
+// These tests cover container platform selection. They verify linux/amd64 and
+// linux/arm64 execution, emulation, and platform metadata on images.
+//
+// See also:
+// - container_test.go: core Container behavior.
+
 import (
 	"context"
 	"fmt"

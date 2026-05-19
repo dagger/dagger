@@ -1,5 +1,11 @@
 package core
 
+// These tests cover the engine's on-disk local cache. They verify garbage
+// collection, retention policy, and local cache configuration.
+//
+// See also:
+// - cache_test.go: cache volumes and cache keys exposed through the API.
+
 import (
 	"context"
 	"fmt"

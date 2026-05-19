@@ -1,0 +1,4 @@
+interface:
+  display_name: "TUI QA"
+  short_description: "QA terminal output, timing, and hangs"
+  default_prompt: "Use $tui-qa to record a terminal session, capture timestamped screen snapshots, and report output, delay, and hang issues."

@@ -1,0 +1,12 @@
+type Lister {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory(".")
+    self
+  }
+
+  pub ls: [String!] {
+    source.entries
+  }
+}

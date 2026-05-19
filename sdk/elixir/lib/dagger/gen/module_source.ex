@@ -40,6 +40,9 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
+  @deprecated """
+  Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.
+  """
   @doc """
   The blueprint referenced by the module source.
   """
@@ -396,6 +399,9 @@ defmodule Dagger.ModuleSource do
     end
   end
 
+  @deprecated """
+  Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.
+  """
   @doc """
   The toolchains referenced by the module source.
   """

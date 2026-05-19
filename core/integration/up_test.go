@@ -1,5 +1,14 @@
 package core
 
+// These tests cover top-level `dagger up`, which starts services declared by a
+// workspace or SDK. They verify direct SDK use, env services, port collisions,
+// service binding, partial startup failures, workspace skip/port config, and
+// toolchain use.
+//
+// See also:
+// - module_up_test.go: module development server and interactive module UI.
+// - services_test.go: core service lifecycle and networking.
+
 import (
 	"context"
 	"fmt"
@@ -193,80 +202,38 @@ func (UpSuite) TestUpRunService(ctx context.Context, t *testctx.T) {
 	require.Contains(t, out, "OK: service responded")
 }
 
-func (UpSuite) TestUpIgnoreServices(ctx context.Context, t *testctx.T) {
+func (UpSuite) TestWorkspaceUpSkip(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := upTestEnv(t, c)
 	require.NoError(t, err)
 
-	// Install hello-with-services as a toolchain
-	modGen = modGen.
-		WithWorkdir("app").
-		With(daggerExec("init")).
-		With(daggerExec("toolchain", "install", "../hello-with-services"))
+	ctr := modGen.WithNewFile(".dagger/config.toml", `[modules.hello-with-services]
+source = "../hello-with-services"
+up.skip = ["redis"]
+`)
 
-	// Verify all three services are listed before ignoring
-	out, err := modGen.
-		With(daggerExec("up", "-l")).
-		CombinedOutput(ctx)
-	require.NoError(t, err)
-	require.Contains(t, out, "hello-with-services:web")
-	require.Contains(t, out, "hello-with-services:redis")
-	require.Contains(t, out, "hello-with-services:infra:database")
-
-	// Add ignoreServices to filter out redis
-	modGen = modGen.WithNewFile("dagger.json", `{
-  "name": "app",
-  "engineVersion": "v0.16.0",
-  "toolchains": [
-    {
-      "name": "hello-with-services",
-      "source": "../hello-with-services",
-      "ignoreServices": [
-        "redis"
-      ]
-    }
-  ]
-}`)
-	out, err = modGen.
-		With(daggerExec("up", "-l")).
-		CombinedOutput(ctx)
+	out, err := ctr.With(daggerExec("up", "-l")).CombinedOutput(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "hello-with-services:web")
 	require.NotContains(t, out, "hello-with-services:redis")
 	require.Contains(t, out, "hello-with-services:infra:database")
 }
 
-func (UpSuite) TestUpPortMapping(ctx context.Context, t *testctx.T) {
+func (UpSuite) TestWorkspaceUpPortMapping(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := upTestEnv(t, c)
 	require.NoError(t, err)
 
-	// Install hello-with-services as a toolchain with port mapping
-	// Remap web from port 80 to host port 3000
-	modGen = modGen.
-		WithWorkdir("app").
-		With(daggerExec("init")).
-		WithNewFile("dagger.json", `{
-  "name": "app",
-  "engineVersion": "v0.16.0",
-  "toolchains": [
-    {
-      "name": "hello-with-services",
-      "source": "../hello-with-services",
-      "portMappings": {
-        "web": ["3000:80"]
-      },
-      "ignoreServices": [
-        "redis",
-        "infra:database"
-      ]
-    }
-  ]
-}`)
+	ctr := modGen.WithNewFile(".dagger/config.toml", `[modules.hello-with-services]
+source = "../hello-with-services"
+up.skip = ["redis", "infra:database"]
 
-	// Run dagger up in the background with port mapping, verify service
-	// is accessible on the remapped port.
-	out, err := modGen.
+[ports.3000]
+backendService = "hello-with-services:web"
+backendPort = 80
+`)
+
+	out, err := ctr.
 		With(daggerUpVerify("", "http://localhost:3000", "nginx",
 			"OK: port mapping works", 120)).
 		CombinedOutput(ctx)
@@ -292,8 +259,9 @@ func (UpSuite) TestUpAsToolchain(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			modGen = modGen.
 				WithWorkdir("app").
-				With(daggerExec("init")).
-				With(daggerExec("toolchain", "install", "../"+tc.path))
+				WithNewFile(".dagger/config.toml", fmt.Sprintf(`[modules.%s]
+source = "../../%s"
+`, tc.path, tc.path))
 			// list services
 			out, err := modGen.
 				With(daggerExec("up", "-l")).

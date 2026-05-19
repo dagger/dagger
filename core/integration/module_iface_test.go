@@ -1,5 +1,12 @@
 package core
 
+// These tests cover Dagger interfaces declared by modules across SDKs. They
+// verify interface definitions, implementation objects, and module functions
+// that accept or return interface values.
+//
+// See also:
+// - module_type_test.go: concrete custom types in module APIs.
+
 import (
 	"context"
 	"fmt"
@@ -36,7 +43,7 @@ func (InterfaceSuite) TestIfaceBasic(ctx context.Context, t *testctx.T) {
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithMountedDirectory("/work", c.Host().Directory(tc.path)).
 				WithWorkdir("/work").
-				With(daggerCall("test")).
+				With(daggerCallAt(".", "test")).
 				Sync(ctx)
 			require.NoError(t, err)
 		})
@@ -48,23 +55,8 @@ func (InterfaceSuite) TestIfaceGoSadPaths(ctx context.Context, t *testctx.T) {
 		var logs safeBuffer
 		c := connect(ctx, t, dagger.WithLogOutput(&logs))
 
-		_, err := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", `package main
-type Test struct {}
-
-type BadIface interface {
-	Foo(ctx context.Context) (string, error)
-}
-
-func (m *Test) Fn() BadIface {
-	return nil
-}
-	`,
-			).
-			With(daggerFunctions()).
+		_, err := moduleFixture(t, c, "go/iface-bad-no-embed").
+			With(daggerFunctions("-m", ".")).
 			Sync(ctx)
 		require.Error(t, err)
 		require.NoError(t, c.Close())
@@ -75,33 +67,10 @@ func (m *Test) Fn() BadIface {
 func (InterfaceSuite) TestIfaceGoDanglingInterface(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen, err := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", `package main
-type Test struct {}
-
-func (test *Test) Hello() string {
-	return "hello"
-}
-
-type DanglingObject struct {}
-
-func (obj *DanglingObject) Hello(x DanglingIface) DanglingIface {
-	return x
-}
-
-type DanglingIface interface {
-	DoThing() (error)
-}
-	`,
-		).
-		Sync(ctx)
-	require.NoError(t, err)
+	modGen := moduleFixture(t, c, "go/dangling-interface")
 
 	out, err := modGen.
-		With(daggerQuery(`{hello}`)).
+		With(daggerQueryAt(".", `{hello}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"hello":"hello"}`, out)
@@ -109,93 +78,26 @@ type DanglingIface interface {
 
 func (InterfaceSuite) TestIfaceCall(ctx context.Context, t *testctx.T) {
 	type testCase struct {
-		sdk        string
-		depSource  string
-		testSource string
+		sdk         string
+		depFixture  string
+		testFixture string
 	}
 
 	tests := []testCase{
 		{
-			sdk: "go",
-			depSource: `package main
-
-type Mallard struct {}
-
-func (m *Mallard) Quack() string {
-	return "mallard quack"
-}
-			`,
-			testSource: `package main
-
-import (
-	"context"
-)
-
-type Test struct {}
-
-type Duck interface {
-	DaggerObject
-	Quack(ctx context.Context) (string, error)
-}
-
-func (m *Test) GetDuck() Duck {
-	return dag.Mallard()
-}`,
+			sdk:         "go",
+			depFixture:  "go/iface-call-mallard",
+			testFixture: "go/iface-call-test",
 		},
 		{
-			sdk: "typescript",
-			depSource: `import { object, func } from "@dagger.io/dagger"
-
-@object()
-export class Mallard {
-  @func()
-  quack(): string {
-    return "mallard quack"
-  }
-}
-
-`,
-			testSource: `import { dag, object, func } from "@dagger.io/dagger"
-
-export interface Duck {
-  quack: () => Promise<string>
-}
-
-@object()
-export class Test {
-  @func()
-  getDuck(): Duck {
-    return dag.mallard()
-  }
-}
-`,
+			sdk:         "typescript",
+			depFixture:  "typescript/iface-call-mallard",
+			testFixture: "typescript/iface-call-test",
 		},
 		{
-			sdk: "python",
-			depSource: `import dagger
-
-@dagger.object_type
-class Mallard:
-    @dagger.function
-    def quack(self) -> str:
-        return "mallard quack"
-`,
-			testSource: `import typing
-
-import dagger
-from dagger import dag
-
-@dagger.interface
-class Duck(typing.Protocol):
-    @dagger.function
-    async def quack(self) -> str: ...
-
-@dagger.object_type
-class Test:
-    @dagger.function
-    def get_duck(self) -> Duck:
-        return dag.mallard()
-`,
+			sdk:         "python",
+			depFixture:  "python/iface-call-mallard",
+			testFixture: "python/iface-call-test",
 		},
 	}
 
@@ -213,11 +115,10 @@ class Test:
 				out, err := c.Container().From(golangImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work").
-					With(withModInitAt("mallard", tc.sdk, tc.depSource)).
+					With(withModuleFixture(t, c, ".", rtc.testFixture)).
+					With(withModuleFixture(t, c, "mallard", tc.depFixture)).
 					With(daggerCallAt("mallard", "quack")).
-					With(withModInit(rtc.sdk, rtc.testSource)).
-					With(daggerExec("install", "./mallard")).
-					With(daggerCall("get-duck", "quack")).
+					With(daggerCallAt(".", "get-duck", "quack")).
 					Stdout(ctx)
 
 				require.NoError(t, err)

@@ -2,9 +2,11 @@ package schema
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,6 +36,78 @@ func TestMatchWorkspaceInclude(t *testing.T) {
 		match, err := matchWorkspaceInclude(ctx, node, []string{"helm:**"})
 		require.NoError(t, err)
 		require.False(t, match)
+	})
+}
+
+func TestWorkspaceConfigWithCompatFallback(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("no config and no compat returns empty config", func(t *testing.T) {
+		cfg, err := workspaceConfigWithCompatFallback(ctx, &core.Workspace{})
+		require.NoError(t, err)
+		require.Empty(t, cfg.Modules)
+		require.Empty(t, cfg.Ports)
+	})
+
+	t.Run("compat workspace projects skips and port mappings", func(t *testing.T) {
+		compat, err := workspace.ParseCompatWorkspace([]byte(`{
+			"name": "app",
+			"toolchains": [{
+				"name": "hello-with-services",
+				"source": "./hello-with-services",
+				"ignoreServices": ["redis", "infra:database"],
+				"portMappings": {
+					"web": ["3000:80"]
+				}
+			}]
+		}`))
+		require.NoError(t, err)
+		require.NotNil(t, compat)
+
+		ws := &core.Workspace{}
+		ws.SetCompatWorkspace(compat)
+		cfg, err := workspaceConfigWithCompatFallback(ctx, ws)
+		require.NoError(t, err)
+		require.Equal(t, []string{"redis", "infra:database"}, cfg.Modules["hello-with-services"].Up.Skip)
+		require.Equal(t, workspace.PortMapping{
+			BackendService: "hello-with-services:web",
+			BackendPort:    80,
+		}, cfg.Ports["3000"])
+	})
+}
+
+func TestWorkspaceConfigSkipPatterns(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("missing config has no skips", func(t *testing.T) {
+		patterns, err := workspaceConfigSkipPatterns(ctx, &core.Workspace{}, func(entry workspace.ModuleEntry) []string {
+			return entry.Generate.Skip
+		})
+		require.NoError(t, err)
+		require.Empty(t, patterns)
+	})
+
+	t.Run("compat workspace uses projected skips", func(t *testing.T) {
+		compat, err := workspace.ParseCompatWorkspace([]byte(`{
+			"name": "app",
+			"toolchains": [{
+				"name": "hello-with-generators",
+				"source": "./hello-with-generators",
+				"ignoreGenerators": ["generate-other-files", "other-generators:*"]
+			}]
+		}`))
+		require.NoError(t, err)
+		require.NotNil(t, compat)
+
+		ws := &core.Workspace{}
+		ws.SetCompatWorkspace(compat)
+		patterns, err := workspaceConfigSkipPatterns(ctx, ws, func(entry workspace.ModuleEntry) []string {
+			return entry.Generate.Skip
+		})
+		require.NoError(t, err)
+		require.Equal(t, map[string][]string{
+			"hello-with-generators": []string{"generate-other-files", "other-generators:*"},
+		}, patterns)
 	})
 }
 
@@ -113,20 +187,33 @@ func TestSelectVisibleGeneratorModules(t *testing.T) {
 }
 
 func TestResolveWorkspacePath(t *testing.T) {
-	t.Run("relative path resolves from workspace directory", func(t *testing.T) {
-		require.Equal(t, "services/payment/src", resolveWorkspacePath("src", "services/payment"))
+	t.Run("relative path resolves from workspace cwd", func(t *testing.T) {
+		got, err := resolveWorkspacePath("src", "services/payment")
+		require.NoError(t, err)
+		require.Equal(t, "services/payment/src", got)
 	})
 
-	t.Run("dot resolves to workspace directory", func(t *testing.T) {
-		require.Equal(t, "services/payment", resolveWorkspacePath(".", "services/payment"))
+	t.Run("dot resolves to workspace cwd", func(t *testing.T) {
+		got, err := resolveWorkspacePath(".", "services/payment")
+		require.NoError(t, err)
+		require.Equal(t, "services/payment", got)
 	})
 
-	t.Run("absolute path resolves from workspace boundary", func(t *testing.T) {
-		require.Equal(t, "shared/config", resolveWorkspacePath("/shared/config", "services/payment"))
+	t.Run("absolute path resolves from workspace root", func(t *testing.T) {
+		got, err := resolveWorkspacePath("/shared/config", "services/payment")
+		require.NoError(t, err)
+		require.Equal(t, "shared/config", got)
 	})
 
-	t.Run("root absolute path resolves to boundary root", func(t *testing.T) {
-		require.Equal(t, "", resolveWorkspacePath("/", "services/payment"))
+	t.Run("root absolute path resolves to workspace root", func(t *testing.T) {
+		got, err := resolveWorkspacePath("/", "services/payment")
+		require.NoError(t, err)
+		require.Equal(t, ".", got)
+	})
+
+	t.Run("relative path cannot escape workspace root", func(t *testing.T) {
+		got, err := resolveWorkspacePath("../../..", "services/payment")
+		require.ErrorContains(t, err, "escapes workspace root", fmt.Sprintf("got %q instead of an error", got))
 	})
 }
 
@@ -138,6 +225,77 @@ func TestWorkspaceAPIPath(t *testing.T) {
 
 	t.Run("nested path is absolute from boundary", func(t *testing.T) {
 		require.Equal(t, "/services/payment", workspaceAPIPath("services/payment"))
+	})
+}
+
+func TestWorkspaceMigrationWarningsKeepsGapWarningsAggregated(t *testing.T) {
+	plan := &workspace.MigrationPlan{
+		Warnings: []string{
+			"migration gap one",
+			"migration gap two",
+		},
+		MigrationGapCount:   2,
+		MigrationReportPath: ".dagger/migration-report.md",
+	}
+
+	appendWorkspaceMigrationNonGapWarnings(plan, []string{"hint warning"})
+
+	require.Equal(t, []string{
+		"hint warning",
+		"2 migration gap(s) need manual review; see .dagger/migration-report.md",
+	}, workspaceMigrationWarnings(plan))
+}
+
+func TestWorkspaceFilterWithDirectoryArgs(t *testing.T) {
+	args := workspaceFilterWithDirectoryArgs(nil, core.CopyFilter{
+		Include: []string{"app/**"},
+		Exclude: []string{".git"},
+	})
+
+	require.Len(t, args, 4)
+	require.Equal(t, "path", args[0].Name)
+	require.Equal(t, "source", args[1].Name)
+	require.Equal(t, "include", args[2].Name)
+	require.Equal(t, "exclude", args[3].Name)
+	for _, arg := range args {
+		require.NotEqual(t, "directory", arg.Name)
+	}
+}
+
+func TestResolveWorkspaceRefreshModules(t *testing.T) {
+	t.Run("explicit selection keeps order and removes duplicates", func(t *testing.T) {
+		cfg := &workspace.Config{
+			Modules: map[string]workspace.ModuleEntry{
+				"alpha": {Source: "github.com/example/alpha@main"},
+				"beta":  {Source: "github.com/example/beta@main"},
+				"gamma": {Source: "github.com/example/gamma@main"},
+			},
+		}
+
+		mods, err := resolveWorkspaceRefreshModules(cfg, []string{"gamma", "alpha", "gamma"})
+		require.NoError(t, err)
+		require.Equal(t, []workspaceRefreshModule{
+			{Name: "gamma", Source: "github.com/example/gamma@main"},
+			{Name: "alpha", Source: "github.com/example/alpha@main"},
+		}, mods)
+	})
+
+	t.Run("missing modules return error", func(t *testing.T) {
+		cfg := &workspace.Config{
+			Modules: map[string]workspace.ModuleEntry{
+				"alpha": {Source: "github.com/example/alpha@main"},
+			},
+		}
+
+		_, err := resolveWorkspaceRefreshModules(cfg, []string{"alpha", "missing", "other"})
+		require.ErrorContains(t, err, "workspace module(s) not found: missing, other")
+	})
+
+	t.Run("selection is required", func(t *testing.T) {
+		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{}}
+
+		_, err := resolveWorkspaceRefreshModules(cfg, nil)
+		require.ErrorContains(t, err, "at least one workspace module name is required")
 	})
 }
 

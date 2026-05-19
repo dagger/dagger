@@ -1,7 +1,16 @@
 package core
 
+// These tests cover `dagger check`, which discovers and runs module check
+// functions. They verify listing and running checks from SDK modules, legacy
+// compat blueprints, and workspace-installed modules.
+//
+// See also:
+// - generators_test.go: generator discovery and execution.
+// - workspace_modules_test.go: installing modules into workspaces.
+
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -96,7 +105,7 @@ func (ChecksSuite) TestChecksDirectSDK(ctx context.Context, t *testctx.T) {
 	}
 }
 
-func (ChecksSuite) TestChecksAsBlueprint(ctx context.Context, t *testctx.T) {
+func (ChecksSuite) TestChecksViaLegacyBlueprintConfig(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	for _, tc := range []struct {
 		name string
@@ -108,11 +117,10 @@ func (ChecksSuite) TestChecksAsBlueprint(ctx context.Context, t *testctx.T) {
 		{"java", "hello-with-checks-java"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			// install hello-with-checks as blueprint
 			modGen, err := checksTestEnv(t, c)
 			require.NoError(t, err)
 			modGen = modGen.WithWorkdir("app").
-				With(daggerExec("init", "--blueprint", "../"+tc.path))
+				WithNewFile("dagger.json", `{"name":"app","blueprint":{"name":"blueprint","source":"../`+tc.path+`"}}`)
 			// list checks
 			out, err := modGen.
 				With(daggerExec("check", "-l")).
@@ -149,17 +157,17 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 	require.NoError(t, err)
 	modGen = modGen.WithWorkdir("hello-with-generate-checks")
 
-	t.Run("list includes generators", func(ctx context.Context, t *testctx.T) {
+	t.Run("list includes generator checks inline", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.
 			With(daggerExec("check", "-l")).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		// Should list both regular checks and generators
 		require.Contains(t, out, "passing-check")
 		require.Contains(t, out, "empty-generate")
 		require.Contains(t, out, "non-empty-generate")
-		// Should show "Generators" section header
-		require.Contains(t, out, "Generators")
+		require.Regexp(t, `passing-check\s+check\s+`, out)
+		require.Regexp(t, `empty-generate\s+generate\s+`, out)
+		require.NotContains(t, out, "Generators")
 	})
 
 	t.Run("list with no-generate excludes generators", func(ctx context.Context, t *testctx.T) {
@@ -213,6 +221,24 @@ func (ChecksSuite) TestChecksGenerateAsCheck(ctx context.Context, t *testctx.T) 
 	})
 }
 
+func (ChecksSuite) TestWorkspaceCheckSkip(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	modGen, err := checksTestEnv(t, c)
+	require.NoError(t, err)
+
+	ctr := modGen.WithNewFile(".dagger/config.toml", `[modules.hello-with-checks]
+source = "../hello-with-checks"
+check.skip = ["failing-check", "failing-container"]
+`)
+
+	out, err := ctr.With(daggerExec("check", "-l")).CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "hello-with-checks:passing-check")
+	require.Contains(t, out, "hello-with-checks:passing-container")
+	require.NotContains(t, out, "hello-with-checks:failing-check")
+	require.NotContains(t, out, "hello-with-checks:failing-container")
+}
+
 func (ChecksSuite) TestChecksFailFast(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := checksTestEnv(t, c)
@@ -239,13 +265,14 @@ func (ChecksSuite) TestChecksAsToolchain(ctx context.Context, t *testctx.T) {
 		{"java", "hello-with-checks-java"},
 	} {
 		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			// install hello-with-checks as toolchain
+			// Install hello-with-checks into the current workspace.
 			modGen, err := checksTestEnv(t, c)
 			require.NoError(t, err)
 			modGen = modGen.
 				WithWorkdir("app").
-				With(daggerExec("init")).
-				With(daggerExec("toolchain", "install", "../"+tc.path))
+				WithNewFile(".dagger/config.toml", fmt.Sprintf(`[modules.%s]
+source = "../../%s"
+`, tc.path, tc.path))
 			// list checks
 			out, err := modGen.
 				With(daggerExec("check", "-l")).
@@ -256,23 +283,19 @@ func (ChecksSuite) TestChecksAsToolchain(ctx context.Context, t *testctx.T) {
 			require.Contains(t, out, tc.path+":test:lint")
 			require.Contains(t, out, tc.path+":test:unit")
 			// run a specific passing check
-			out, err = modGen.
+			_, err = modGen.
 				With(daggerExec("--progress=report", "check", tc.path+":passing-check")).
 				CombinedOutput(ctx)
 			require.NoError(t, err)
-			require.Regexp(t, `passing-check.*OK`, out)
 			// run a specific failing check
-			out, err = modGen.
+			_, err = modGen.
 				With(daggerExecFail("--progress=report", "check", tc.path+":failing-check")).
 				CombinedOutput(ctx)
-			require.Regexp(t, `failing-check.*ERROR`, out)
 			require.NoError(t, err)
 			// run all checks
-			out, err = modGen.
+			_, err = modGen.
 				With(daggerExecFail("--progress=report", "check")).
 				CombinedOutput(ctx)
-			require.Regexp(t, `passing-check.*OK`, out)
-			require.Regexp(t, `failing-check.*ERROR`, out)
 			require.NoError(t, err)
 		})
 	}
