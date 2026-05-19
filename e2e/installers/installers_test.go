@@ -1,6 +1,6 @@
 // Package installers contains e2e contract tests for installer scripts.
 //
-// workspace:include ../../install.sh
+//go:test:include ../../install.sh
 package installers
 
 import (

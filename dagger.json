@@ -69,13 +69,7 @@
     {
       "name": "golang",
       "source": "github.com/dagger/go@main",
-      "pin": "4985ec6b9752e9deac3d37276c0f8a33ceba30bf",
-      "customizations": [
-        {
-          "argument": "selectModule",
-          "default": "e2e/*"
-        }
-      ]
+      "pin": "c26c15f26b6bd52b024e750ad116748b2933d242"
     },
     {
       "name": "helm",
