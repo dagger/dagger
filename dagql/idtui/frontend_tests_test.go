@@ -394,14 +394,50 @@ func TestTestViewPrettyReportSummary(t *testing.T) {
 		"    ∅ suite › skipped SKIP",
 		"          skip reason",
 		"",
-		"    ∅ empty NO TESTS",
-		"",
 		"    ✘ 1 failed",
 		"    ∅ 1 skipped",
 		"    ✔ 2 passed",
 	}, "\n")
 	if got != want {
 		t.Fatalf("unexpected pretty report summary:\n%s", got)
+	}
+}
+
+func TestTestViewPrettyReportListsPassingSuitesCompactly(t *testing.T) {
+	passingA := &dagui.TestNode{
+		ID:       "suite-a",
+		Kind:     dagui.TestNodeSuite,
+		Name:     "short suite a",
+		FullName: "github.com/acme/project/suite-a",
+		Category: dagui.TestCategoryPassing,
+		Counts:   dagui.TestCounts{Passing: 12},
+	}
+	passingB := &dagui.TestNode{
+		ID:       "suite-b",
+		Kind:     dagui.TestNodeVirtualSuite,
+		Name:     "github.com/acme/project/suite-b",
+		FullName: "github.com/acme/project/suite-b",
+		Category: dagui.TestCategoryPassing,
+		Counts:   dagui.TestCounts{Passing: 1},
+	}
+	view := &dagui.TestView{
+		Roots:  []*dagui.TestNode{passingA, passingB},
+		Counts: dagui.TestCounts{Passing: 13},
+	}
+	tv := &TestView{SummaryIndent: 2}
+
+	var buf strings.Builder
+	out := NewOutput(&buf, termenv.WithProfile(termenv.Ascii))
+	got := strings.Join(tv.renderTestSummaryLines(out, view, 80, 80), "\n")
+	want := strings.Join([]string{
+		"  TESTS",
+		"    ✔ github.com/acme/project/suite-a  12 passed",
+		"    ✔ github.com/acme/project/suite-b  1 passed",
+		"",
+		"    ✔ 13 passed",
+	}, "\n")
+	if got != want {
+		t.Fatalf("unexpected passing suite summary:\n%s", got)
 	}
 }
 

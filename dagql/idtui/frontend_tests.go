@@ -681,13 +681,13 @@ func (tv *TestView) renderTestSummaryLines(out TermOutput, view *dagui.TestView,
 		return cropLines(lines, height)
 	}
 	entries := collectTestSummaryEntries(view)
-	addedEntry := false
+	addedContent := false
 	appendEntry := func(entry testSummaryEntry) {
-		if addedEntry {
+		if addedContent {
 			lines = append(lines, "")
 		}
 		lines = append(lines, tv.renderTestSummaryEntry(out, entry, width)...)
-		addedEntry = true
+		addedContent = true
 	}
 	for _, entry := range entries.failing {
 		appendEntry(entry)
@@ -698,8 +698,17 @@ func (tv *TestView) renderTestSummaryLines(out TermOutput, view *dagui.TestView,
 	for _, entry := range entries.running {
 		appendEntry(entry)
 	}
+	if len(entries.passing) > 0 {
+		if addedContent {
+			lines = append(lines, "")
+		}
+		for _, entry := range entries.passing {
+			lines = append(lines, tv.renderTestSummaryPassingSuite(out, entry, width))
+		}
+		addedContent = true
+	}
 	if counts := renderTestSummaryCounts(out, view.Counts, tv.SummaryIndent, width); len(counts) > 0 {
-		if addedEntry {
+		if addedContent {
 			lines = append(lines, "")
 		}
 		lines = append(lines, counts...)
@@ -737,6 +746,18 @@ func (tv *TestView) renderTestSummaryEntry(out TermOutput, entry testSummaryEntr
 	lines := []string{clipTestSummaryLine(indent+icon+" "+label+" "+status, width)}
 	lines = append(lines, tv.renderTestSummaryLogs(out, entry, width)...)
 	return lines
+}
+
+func (tv *TestView) renderTestSummaryPassingSuite(out TermOutput, entry testSummaryEntry, width int) string {
+	indent := strings.Repeat(" ", max(tv.SummaryIndent, 0)+2)
+	icon := out.String(IconSuccess).Foreground(termenv.ANSIGreen).String()
+	count := out.String(fmt.Sprintf("%d passed", entry.counts.Passing)).Foreground(termenv.ANSIGreen).String()
+	label := entry.label
+	if width > 0 {
+		labelWidth := max(width-lipgloss.Width(indent)-lipgloss.Width(icon)-lipgloss.Width(count)-3, 1)
+		label = clipPlain(label, labelWidth)
+	}
+	return clipTestSummaryLine(indent+icon+" "+label+"  "+count, width)
 }
 
 func (tv *TestView) renderTestSummaryLogs(out TermOutput, entry testSummaryEntry, width int) []string {
@@ -823,9 +844,6 @@ func clipTestSummaryLine(s string, width int) string {
 }
 
 func testSummaryStatus(entry testSummaryEntry) string {
-	if entry.noTests {
-		return "NO TESTS"
-	}
 	switch entry.category {
 	case dagui.TestCategoryFailing, dagui.TestCategoryMixed:
 		return "FAIL"
@@ -842,13 +860,14 @@ type testSummaryEntry struct {
 	category dagui.TestCategory
 	label    string
 	span     *dagui.Span
-	noTests  bool
+	counts   dagui.TestCounts
 }
 
 type testSummaryEntries struct {
 	failing []testSummaryEntry
 	running []testSummaryEntry
 	skipped []testSummaryEntry
+	passing []testSummaryEntry
 }
 
 func collectTestSummaryEntries(view *dagui.TestView) testSummaryEntries {
@@ -858,20 +877,19 @@ func collectTestSummaryEntries(view *dagui.TestView) testSummaryEntries {
 		if node == nil {
 			return
 		}
+		if testSummaryPassingSuite(node) {
+			entries.passing = append(entries.passing, testSummaryEntry{
+				category: node.Category,
+				label:    testSummarySuiteLabel(node),
+				span:     testTUISpan(node),
+				counts:   node.Counts,
+			})
+			return
+		}
 		if node.Kind == dagui.TestNodeCase {
 			entry := testSummaryEntry{category: node.SelfCategory, label: testSummarySpanHierarchyLabel(node), span: node.Span}
 			switch node.SelfCategory {
 			case dagui.TestCategoryFailing:
-				entries.failing = append(entries.failing, entry)
-			case dagui.TestCategoryRunning:
-				entries.running = append(entries.running, entry)
-			case dagui.TestCategorySkipped:
-				entries.skipped = append(entries.skipped, entry)
-			}
-		} else if node.Counts.Total() == 0 && node.Category != dagui.TestCategoryPassing {
-			entry := testSummaryEntry{category: node.Category, label: testSummarySpanHierarchyLabel(node), span: testTUISpan(node), noTests: true}
-			switch node.Category {
-			case dagui.TestCategoryFailing, dagui.TestCategoryMixed:
 				entries.failing = append(entries.failing, entry)
 			case dagui.TestCategoryRunning:
 				entries.running = append(entries.running, entry)
@@ -887,6 +905,26 @@ func collectTestSummaryEntries(view *dagui.TestView) testSummaryEntries {
 		walk(root)
 	}
 	return entries
+}
+
+func testSummaryPassingSuite(node *dagui.TestNode) bool {
+	if node == nil {
+		return false
+	}
+	if node.Kind != dagui.TestNodeSuite && node.Kind != dagui.TestNodeVirtualSuite {
+		return false
+	}
+	return node.Category == dagui.TestCategoryPassing && node.Counts.Passing > 0
+}
+
+func testSummarySuiteLabel(node *dagui.TestNode) string {
+	if node == nil {
+		return ""
+	}
+	if node.FullName != "" {
+		return node.FullName
+	}
+	return testSummarySpanHierarchyLabel(node)
 }
 
 func testSummarySpanHierarchyLabel(node *dagui.TestNode) string {
