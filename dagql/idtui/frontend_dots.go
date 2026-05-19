@@ -74,6 +74,7 @@ func NewDots(output io.Writer) Frontend {
 		pendingLogs: make(map[dagui.SpanID][]sdklog.Record),
 		testLogs:    make(map[dagui.SpanID]*Vterm),
 	}
+	fe.reporter.logs.Logs = fe.logs.testLogs
 	return fe
 }
 
@@ -89,29 +90,53 @@ func (fe *frontendDots) Run(ctx context.Context, opts dagui.FrontendOpts, f func
 		runErr = errors.Join(runErr, cleanup())
 	}
 
+	reportErr := normalizeFrontendExit(runErr, fe.db)
+
 	fe.mu.Lock()
 	if !opts.Silent {
 		fmt.Fprintln(fe.out)
 		fmt.Fprintln(fe.out)
-		if fe.renderFinalTests() {
+		if reportErr != nil {
+			fe.reporter.err = reportErr
+			if renderErr := fe.renderFinalReport(); renderErr != nil {
+				runErr = renderErr
+			} else {
+				runErr = reportErr
+			}
+		} else if fe.renderFinalTests() {
 			fmt.Fprintln(fe.out)
 		}
 	}
-	var telemetryErr error
-	if p := fe.telemetryError.Load(); p != nil {
-		telemetryErr = *p
-	}
-	handleTelemetryErrorOutput(fe.out, fe.out, telemetryErr)
-	if fe.reporter.msgPreFinalRender.Len() > 0 {
-		fmt.Fprintln(fe.out, fe.reporter.msgPreFinalRender.String())
-	}
-	if writeErr := renderPrimaryOutput(fe.out, fe.db); writeErr != nil {
-		runErr = errors.Join(runErr, writeErr)
+	if opts.Silent || reportErr == nil {
+		fe.renderFinalMessages(fe.reporter.msgPreFinalRender.String())
+		if writeErr := renderPrimaryOutput(fe.out, fe.db); writeErr != nil {
+			runErr = errors.Join(runErr, writeErr)
+		}
 	}
 	fe.mu.Unlock()
 
 	fe.db.WriteDot(opts.DotOutputFilePath, opts.DotFocusField, opts.DotShowInternal)
 	return normalizeFrontendExit(runErr, fe.db)
+}
+
+func (fe *frontendDots) renderFinalReport() error {
+	preFinalMessage := fe.reporter.msgPreFinalRender.String()
+	fe.reporter.msgPreFinalRender.Reset()
+
+	renderErr := fe.reporter.FinalRender(fe.out)
+	fe.renderFinalMessages(preFinalMessage)
+	return renderErr
+}
+
+func (fe *frontendDots) renderFinalMessages(preFinalMessage string) {
+	var telemetryErr error
+	if p := fe.telemetryError.Load(); p != nil {
+		telemetryErr = *p
+	}
+	handleTelemetryErrorOutput(fe.out, fe.out, telemetryErr)
+	if preFinalMessage != "" {
+		fmt.Fprintln(fe.out, preFinalMessage)
+	}
 }
 
 func (fe *frontendDots) renderFinalTests() bool {
