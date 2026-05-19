@@ -199,7 +199,11 @@ type TypescriptSdkDev {
     container
       # ⚠️  Keep this in sync with the engine version defined in package.json
       .from("node:" + nodeVersion + "-alpine")
-      .withMountedCache("/usr/local/share/.cache/yarn", cacheVolume("yarn_cache:" + nodeVersion))
+      .withMountedCache(
+        path: "/usr/local/share/.cache/yarn",
+        cache: cacheVolume("yarn_cache:" + nodeVersion),
+        sharing: CacheSharingMode.LOCKED,
+      )
       .withWorkdir("/app")
       .withFile(sourcePath + "/package.json", source.file("package.json"))
       .withFile(sourcePath + "/yarn.lock", source.file("yarn.lock"))
@@ -212,7 +216,11 @@ type TypescriptSdkDev {
   pub nodejsBase(nodeVersion: String! = nodeVersionPrevLts): Container! {
     container
       .from("node:" + nodeVersion + "-alpine")
-      .withMountedCache("/usr/local/share/.cache/yarn", cacheVolume("yarn_cache:" + nodeVersion))
+      .withMountedCache(
+        path: "/usr/local/share/.cache/yarn",
+        cache: cacheVolume("yarn_cache:" + nodeVersion),
+        sharing: CacheSharingMode.LOCKED,
+      )
       .withWorkdir("/app")
   }
 
