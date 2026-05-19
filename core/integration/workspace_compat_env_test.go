@@ -574,7 +574,8 @@ func (WorkspaceCompatSuite) TestConstructorOptionalEmptySecret(ctx context.Conte
 func (WorkspaceCompatSuite) TestConstructorPlaintextSecretDefault(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ctr := daggerCliBase(t, c).
-		With(withModInit("go", `package main
+		WithNewFile("dagger.json", `{"name":"test","engineVersion":"latest","sdk":{"source":"go"},"source":"."}`).
+		WithNewFile("main.go", `package main
 
 import "dagger/test/internal/dagger"
 
@@ -586,11 +587,11 @@ func New(
 }
 
 type Test struct{}
-`)).
+`).
 		WithNewFile(".env", "password=topsecret\nsomekey=somevalue\n")
 
 	out, err := ctr.
-		WithExec([]string{"dagger", "call", "--help"}, nestedExec).
+		WithExec([]string{"dagger", "call", "-m", ".", "--help"}, nestedExec).
 		Stderr(ctx)
 	require.NoError(t, err)
 	require.NotContains(t, out, "topsecret")
