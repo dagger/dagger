@@ -639,13 +639,8 @@ ENV PLATFORM=${OS}/${ARCH}
 		require.NoError(t, err)
 		require.Equal(t, strings.Join([]string{
 			".git/",
-			".gitattributes",
-			".gitignore",
 			"dagger.json",
 			"foo.txt",
-			"go.mod",
-			"go.sum",
-			"internal/",
 			"main.go",
 		}, "\n"), strings.TrimSpace(out))
 
@@ -653,13 +648,8 @@ ENV PLATFORM=${OS}/${ARCH}
 		require.NoError(t, err)
 		require.Equal(t, strings.Join([]string{
 			".git/",
-			".gitattributes",
-			".gitignore",
 			"dagger.json",
 			"foo.txt",
-			"go.mod",
-			"go.sum",
-			"internal/",
 			"main.go",
 		}, "\n"), strings.TrimSpace(out))
 	})
