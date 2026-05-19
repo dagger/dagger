@@ -416,6 +416,9 @@ func (s *moduleSourceSchema) localModuleSource(
 				}
 				switch parsedRef.Kind {
 				case core.ModuleSourceKindLocal:
+					if filepath.IsAbs(namedDep.Source) {
+						return inst, fmt.Errorf("local module dep source path %q is absolute", namedDep.Source)
+					}
 					depModPath := filepath.Join(defaultFindUpSourceRootDir, namedDep.Source)
 					return s.localModuleSource(ctx, query, bk, depModPath, false, allowNotExists)
 				case core.ModuleSourceKindGit:
