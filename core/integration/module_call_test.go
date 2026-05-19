@@ -237,6 +237,7 @@ func (CallSuite) TestArgTypes(ctx context.Context, t *testctx.T) {
 				WithExec([]string{"git", "add", "."}).
 				WithExec([]string{"git", "commit", "-m", "initial commit"}).
 				WithExec([]string{"git", "branch", "ye-olde"}).
+				WithNewFile("content.txt", "my content").
 				WithExec([]string{"git", "add", "."}).
 				WithExec([]string{"git", "commit", "-m", "my content"})
 
