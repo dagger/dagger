@@ -521,14 +521,6 @@ func (tv *TestView) makeReturnFocus(fe *frontendPretty) func() {
 	}
 }
 
-func (tv *TestView) spanHasLogs(span *dagui.Span) bool {
-	if span == nil || tv.Logs == nil {
-		return false
-	}
-	logs := tv.Logs[span.ID]
-	return logs != nil && logs.UsedHeight() > 0
-}
-
 func (tv *TestView) childViewForSpan(span *dagui.Span) *TestSpanChildrenView {
 	if span == nil || tv.SpanChildren == nil {
 		return nil
@@ -1485,8 +1477,7 @@ func (fe *frontendPretty) focusFocusedTestDetail() {
 	if fe.fullscreenTests == nil {
 		return
 	}
-	switch fe.fullscreenTests.focusArea {
-	case testFocusChildren:
+	if fe.fullscreenTests.focusArea == testFocusChildren {
 		if fe.fullscreenTests.focusedChildren != nil {
 			fe.fullscreenTests.focusedChildren.OpenOrGoIn(fe)
 			fe.Update()

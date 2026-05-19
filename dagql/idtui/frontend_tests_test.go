@@ -229,7 +229,7 @@ func TestTestViewDetailLogsRenderAboveChildrenWithSplitter(t *testing.T) {
 			childIdx = i
 		}
 	}
-	if !(logIdx >= 0 && boomIdx > logIdx && splitIdx > boomIdx && childIdx > splitIdx) {
+	if logIdx < 0 || boomIdx <= logIdx || splitIdx <= boomIdx || childIdx <= splitIdx {
 		t.Fatalf("expected logs, splitter, then children; got:\n%s", strings.Join(plainLines, "\n"))
 	}
 }

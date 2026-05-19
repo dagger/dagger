@@ -414,7 +414,7 @@ func (idx *TestIndex) ViewForSpan(root *Span) *TestView {
 	}
 
 	sortTestNodes(roots)
-	roots = groupVirtualSuites(roots, nodesBySpan)
+	roots = groupVirtualSuites(roots)
 	sortTestNodes(roots)
 
 	return buildTestView(roots, nodesBySpan)
@@ -534,7 +534,7 @@ func (idx *TestIndex) rebuildStructure() {
 	}
 
 	sortTestNodes(roots)
-	roots = groupVirtualSuites(roots, nodesBySpan)
+	roots = groupVirtualSuites(roots)
 	sortTestNodes(roots)
 
 	idx.nodesBySpan = nodesBySpan
@@ -666,7 +666,7 @@ func nearestTestAncestor(span *Span, nodesBySpan map[SpanID]*TestNode) *TestNode
 	return nil
 }
 
-func groupVirtualSuites(roots []*TestNode, nodesBySpan map[SpanID]*TestNode) []*TestNode {
+func groupVirtualSuites(roots []*TestNode) []*TestNode {
 	realSuites := make(map[string]*TestNode)
 	for _, node := range roots {
 		if node.Kind == TestNodeSuite && node.suiteName != "" {
