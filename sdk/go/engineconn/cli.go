@@ -35,6 +35,14 @@ var (
 	OverrideChecksumsURL  string
 )
 
+type CLIDownloader struct {
+	Ref              string
+	Release          bool
+	LogOutput        io.Writer
+	CleanupOld       bool
+	RequesterVersion string
+}
+
 func FromLocalCLI(ctx context.Context, cfg *Config) (EngineConn, bool, error) {
 	binPath, ok := os.LookupEnv("_EXPERIMENTAL_DAGGER_CLI_BIN")
 	if !ok {
@@ -57,107 +65,140 @@ func FromLocalCLI(ctx context.Context, cfg *Config) (EngineConn, bool, error) {
 }
 
 func FromDownloadedCLI(ctx context.Context, cfg *Config) (EngineConn, error) {
-	cacheDir := filepath.Join(xdg.CacheHome, "dagger")
-	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
+	binPath, err := (CLIDownloader{
+		Ref:        CLIVersion,
+		Release:    true,
+		LogOutput:  cfg.LogOutput,
+		CleanupOld: true,
+	}).Download(ctx)
+	if err != nil {
 		return nil, err
 	}
 
-	binName := daggerCLIBinPrefix + CLIVersion
+	return startCLISession(ctx, binPath, cfg)
+}
+
+func (d CLIDownloader) Download(ctx context.Context) (string, error) {
+	if d.Ref == "" {
+		return "", fmt.Errorf("CLI download ref must not be empty")
+	}
+
+	cacheDir := filepath.Join(xdg.CacheHome, "dagger")
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
+		return "", err
+	}
+
+	binName := daggerCLIBinPrefix + d.Ref
 	if runtime.GOOS == windowsPlatform {
 		binName += ".exe"
 	}
 	binPath := filepath.Join(cacheDir, binName)
 
 	if _, err := os.Stat(binPath); os.IsNotExist(err) {
-		if cfg.LogOutput != nil {
-			fmt.Fprintf(cfg.LogOutput, "Downloading CLI... ")
+		if d.LogOutput != nil {
+			fmt.Fprintf(d.LogOutput, "Downloading CLI... ")
 		}
 
 		tmpbin, err := os.CreateTemp(cacheDir, "temp-"+binName)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create temp file: %w", err)
+			return "", fmt.Errorf("failed to create temp file: %w", err)
 		}
 		defer tmpbin.Close()
 		defer os.Remove(tmpbin.Name())
 
-		// extract the CLI from the archive and verify it has the expected checksum
-		expected, err := expectedChecksum(ctx)
-		if err != nil {
-			return nil, err
+		var expected string
+		if d.Release {
+			expected, err = d.expectedChecksum(ctx)
+			if err != nil {
+				return "", err
+			}
 		}
 
-		actual, err := extractCLI(ctx, tmpbin)
+		actual, err := d.extract(ctx, tmpbin)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 
-		if actual != expected {
-			return nil, fmt.Errorf("checksum mismatch: expected %s, got %s", expected, actual)
+		if d.Release {
+			if actual != expected {
+				return "", fmt.Errorf("checksum mismatch: expected %s, got %s", expected, actual)
+			}
 		}
 
 		// make the temp file executable and move it to its final name
 		if err := tmpbin.Chmod(0o700); err != nil {
-			return nil, err
+			return "", err
 		}
 
 		if err := tmpbin.Close(); err != nil {
-			return nil, fmt.Errorf("failed to close temporary file: %w", err)
+			return "", fmt.Errorf("failed to close temporary file: %w", err)
 		}
 
 		if err := os.Rename(tmpbin.Name(), binPath); err != nil {
-			return nil, fmt.Errorf("failed to rename %q to %q: %w", tmpbin.Name(), binPath, err)
+			return "", fmt.Errorf("failed to rename %q to %q: %w", tmpbin.Name(), binPath, err)
 		}
 
-		if cfg.LogOutput != nil {
-			fmt.Fprintln(cfg.LogOutput, "OK!")
+		if d.LogOutput != nil {
+			fmt.Fprintln(d.LogOutput, "OK!")
 		}
 
 		// cleanup any old CLI binaries
-		entries, err := os.ReadDir(cacheDir)
-		if err != nil {
-			if cfg.LogOutput != nil {
-				fmt.Fprintf(cfg.LogOutput, "failed to list cache dir: %v", err)
-			}
-		} else {
-			for _, entry := range entries {
-				if entry.Name() == binName {
-					continue
-				}
-				if strings.HasPrefix(entry.Name(), daggerCLIBinPrefix) {
-					if err := os.Remove(filepath.Join(cacheDir, entry.Name())); err != nil {
-						if cfg.LogOutput != nil {
-							fmt.Fprintf(cfg.LogOutput, "failed to remove old dagger bin: %v", err)
-						}
-					}
+		if d.CleanupOld {
+			cleanupOldCLIs(cacheDir, binName, d.LogOutput)
+		}
+	} else if err != nil {
+		return "", fmt.Errorf("failed to stat %q: %w", binPath, err)
+	}
+
+	return binPath, nil
+}
+
+func cleanupOldCLIs(cacheDir, currentBinName string, logOutput io.Writer) {
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		if logOutput != nil {
+			fmt.Fprintf(logOutput, "failed to list cache dir: %v", err)
+		}
+		return
+	}
+	for _, entry := range entries {
+		if entry.Name() == currentBinName {
+			continue
+		}
+		if strings.HasPrefix(entry.Name(), daggerCLIBinPrefix) {
+			if err := os.Remove(filepath.Join(cacheDir, entry.Name())); err != nil {
+				if logOutput != nil {
+					fmt.Fprintf(logOutput, "failed to remove old dagger bin: %v", err)
 				}
 			}
 		}
-	} else if err != nil {
-		return nil, fmt.Errorf("failed to stat %q: %w", binPath, err)
 	}
-
-	return startCLISession(ctx, binPath, cfg)
 }
 
 // returns a map of CLI archive name -> checksum for that archive
-func checksumMap(ctx context.Context) (map[string]string, error) {
+func (d CLIDownloader) checksumMap(ctx context.Context) (map[string]string, error) {
+	if !d.Release {
+		return nil, fmt.Errorf("checksums are only available for release CLI downloads")
+	}
+
 	checksums := make(map[string]string)
+	checksumsURL := d.checksumsURL()
 
 	checksumFileContents := bytes.NewBuffer(nil)
-	checksumReq, err := http.NewRequestWithContext(ctx, http.MethodGet, checksumsURL(), nil)
+	checksumReq, err := http.NewRequestWithContext(ctx, http.MethodGet, checksumsURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create checksums request: %w", err)
 	}
 	resp, err := http.DefaultClient.Do(checksumReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to download checksums from %s: %w", checksumsURL(), err)
+		return nil, fmt.Errorf("failed to download checksums from %s: %w", checksumsURL, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to download checksums from %s: %s", checksumsURL(), resp.Status)
+		return nil, fmt.Errorf("failed to download checksums from %s: %s", checksumsURL, resp.Status)
 	}
 	if _, err := io.Copy(checksumFileContents, resp.Body); err != nil {
-		return nil, fmt.Errorf("failed to download checksums from %s: %w", checksumsURL(), err)
+		return nil, fmt.Errorf("failed to download checksums from %s: %w", checksumsURL, err)
 	}
 
 	scanner := bufio.NewScanner(checksumFileContents)
@@ -169,27 +210,32 @@ func checksumMap(ctx context.Context) (map[string]string, error) {
 		}
 		checksums[parts[1]] = parts[0]
 	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("failed to scan checksums from %s: %w", checksumsURL, err)
+	}
 
 	return checksums, nil
 }
 
-func expectedChecksum(ctx context.Context) (string, error) {
-	checksums, err := checksumMap(ctx)
+func (d CLIDownloader) expectedChecksum(ctx context.Context) (string, error) {
+	checksums, err := d.checksumMap(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	expected, ok := checksums[defaultCLIArchiveName()]
+	archiveName := d.archiveName()
+	expected, ok := checksums[archiveName]
 	if !ok {
-		return "", fmt.Errorf("no checksum for %s", defaultCLIArchiveName())
+		return "", fmt.Errorf("no checksum for %s", archiveName)
 	}
 	return expected, nil
 }
 
 // Download the CLI archive and extract the CLI from it into the provided dest.
 // Returns the sha256 hash of the whole archive as read during download.
-func extractCLI(ctx context.Context, dest io.Writer) (string, error) {
-	archiveReq, err := http.NewRequestWithContext(ctx, http.MethodGet, cliArchiveURL(), nil)
+func (d CLIDownloader) extract(ctx context.Context, dest io.Writer) (string, error) {
+	archiveURL := d.archiveURL()
+	archiveReq, err := http.NewRequestWithContext(ctx, http.MethodGet, archiveURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create archive request: %w", err)
 	}
@@ -199,7 +245,7 @@ func extractCLI(ctx context.Context, dest io.Writer) (string, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to download CLI archive from %s: %s", cliArchiveURL(), resp.Status)
+		return "", fmt.Errorf("failed to download CLI archive from %s: %s", archiveURL, resp.Status)
 	}
 
 	// the body is either a tar.gz file or (on windows) a zipfile, unpack it and extract the dagger binary
@@ -287,43 +333,62 @@ func extractZip(src io.Reader, dest io.Writer) error {
 	return nil
 }
 
-func defaultCLIArchiveName() string {
-	if OverrideCLIArchiveURL != "" {
-		url, err := url.Parse(OverrideCLIArchiveURL)
-		if err != nil {
-			panic(err)
-		}
-		return filepath.Base(url.Path)
-	}
+func cliArchiveName(version string) string {
 	ext := "tar.gz"
 	if runtime.GOOS == windowsPlatform {
 		ext = "zip"
 	}
-	return fmt.Sprintf("dagger_v%s_%s_%s.%s",
-		CLIVersion,
+	return fmt.Sprintf("dagger_%s_%s_%s.%s",
+		version,
 		runtime.GOOS,
 		runtime.GOARCH,
 		ext,
 	)
 }
 
-func cliArchiveURL() string {
+func (d CLIDownloader) archiveName() string {
+	if OverrideCLIArchiveURL != "" {
+		return archiveNameFromURL(OverrideCLIArchiveURL)
+	}
+	ref := d.Ref
+	if d.Release {
+		ref = "v" + strings.TrimPrefix(ref, "v")
+	}
+	return cliArchiveName(ref)
+}
+
+func archiveNameFromURL(rawURL string) string {
+	url, err := url.Parse(rawURL)
+	if err != nil {
+		panic(err)
+	}
+	return filepath.Base(url.Path)
+}
+
+func (d CLIDownloader) archiveURL() string {
 	if OverrideCLIArchiveURL != "" {
 		return OverrideCLIArchiveURL
 	}
-	return fmt.Sprintf("https://%s/dagger/releases/%s/%s",
+	if d.Release {
+		return fmt.Sprintf("https://%s/dagger/releases/%s/%s",
+			defaultCLIHost,
+			strings.TrimPrefix(d.Ref, "v"),
+			d.archiveName(),
+		)
+	}
+	return fmt.Sprintf("https://%s/dagger/main/%s/%s",
 		defaultCLIHost,
-		CLIVersion,
-		defaultCLIArchiveName(),
+		d.Ref,
+		d.archiveName(),
 	)
 }
 
-func checksumsURL() string {
+func (d CLIDownloader) checksumsURL() string {
 	if OverrideChecksumsURL != "" {
 		return OverrideChecksumsURL
 	}
 	return fmt.Sprintf("https://%s/dagger/releases/%s/checksums.txt",
 		defaultCLIHost,
-		CLIVersion,
+		strings.TrimPrefix(d.Ref, "v"),
 	)
 }

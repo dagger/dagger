@@ -3,7 +3,27 @@
 
 package main
 
-import "os/exec"
+import (
+	"os"
+	"os/exec"
+)
 
 func ensureChildProcessesAreKilled(cmd *exec.Cmd) {
+}
+
+func execCLI(binPath string, args, env []string) error {
+	cmd := exec.Command(binPath, args[1:]...)
+	cmd.Args = args
+	cmd.Env = env
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			os.Exit(exitErr.ExitCode())
+		}
+		return err
+	}
+	os.Exit(0)
+	return nil
 }
