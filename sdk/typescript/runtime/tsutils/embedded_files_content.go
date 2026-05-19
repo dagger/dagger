@@ -39,11 +39,6 @@ var StaticBundleTelemetryTS string
 //go:embed template/package.json
 var StaticDefaultPackageJSON string
 
-// StaticEntrypoint is the content of the __dagger.entrypoint.ts file.
-//
-//go:embed bin/__dagger.entrypoint.ts
-var StaticEntrypointTS string
-
 var TemplateIndexTS = func(name string) string {
 	return fmt.Sprintf(`/**
  * A generated module for %s functions
