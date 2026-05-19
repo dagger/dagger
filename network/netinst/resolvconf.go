@@ -1,14 +1,20 @@
+//go:build linux
+// +build linux
+
 package netinst
 
 import (
 	"bufio"
 	"fmt"
+	"io"
+	"net/netip"
 	"os"
 	"strings"
 	"syscall"
 )
 
 const resolv = "/etc/resolv.conf"
+const systemdResolv = "/run/systemd/resolve/resolv.conf"
 
 func InstallResolvconf(name, containerDNS string) error {
 	containerDNSResolv := containerResolvPath(name)
@@ -42,7 +48,15 @@ func InstallResolvconf(name, containerDNS string) error {
 }
 
 func replaceNameservers(containerDNS, containerDNSResolve string) error {
-	src, err := os.Open(resolv)
+	srcPath := systemdResolv
+	if _, err := os.Stat(srcPath); err != nil {
+		srcPath = resolv
+	}
+	if _, err := os.Stat(upstreamResolvPath); err == nil && srcPath == resolv {
+		srcPath = upstreamResolvPath
+	}
+
+	src, err := os.Open(srcPath)
 	if err != nil {
 		return nil
 	}
@@ -54,18 +68,68 @@ func replaceNameservers(containerDNS, containerDNSResolve string) error {
 	}
 	defer dst.Close()
 
+	if err := writeResolverConfig(dst, src, containerDNS); err != nil {
+		return err
+	}
+
+	return dst.Close()
+}
+
+func writeResolverConfig(dst io.Writer, src io.Reader, containerDNS string) error {
 	fmt.Fprintln(dst, "# container ns resolver")
 	fmt.Fprintln(dst, "nameserver", containerDNS)
 
 	srcScan := bufio.NewScanner(src)
+	nameservers := make([]string, 0, 2)
+	lines := make([]string, 0, 8)
 
 	for srcScan.Scan() {
-		if strings.HasPrefix(srcScan.Text(), "nameserver") {
+		line := srcScan.Text()
+		if strings.HasPrefix(line, "nameserver") {
+			fields := strings.Fields(line)
+			if len(fields) < 2 {
+				continue
+			}
+			if keepNameserver(fields[1], containerDNS) {
+				nameservers = append(nameservers, fields[1])
+			}
 			continue
 		}
 
-		fmt.Fprintln(dst, srcScan.Text())
+		lines = append(lines, line)
 	}
 
-	return dst.Close()
+	if err := srcScan.Err(); err != nil {
+		return err
+	}
+
+	if len(nameservers) == 0 {
+		nameservers = []string{"1.1.1.1", "8.8.8.8"}
+	}
+
+	for _, nameserver := range nameservers {
+		fmt.Fprintln(dst, "nameserver", nameserver)
+	}
+	for _, line := range lines {
+		fmt.Fprintln(dst, line)
+	}
+
+	return nil
+}
+
+func keepNameserver(nameserver, containerDNS string) bool {
+	if nameserver == containerDNS {
+		return false
+	}
+
+	addr, err := netip.ParseAddr(nameserver)
+	if err != nil {
+		return false
+	}
+
+	if addr.IsLoopback() || addr.IsUnspecified() || addr.IsLinkLocalUnicast() {
+		return false
+	}
+
+	return true
 }

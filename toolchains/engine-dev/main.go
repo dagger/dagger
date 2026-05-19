@@ -437,7 +437,7 @@ type targetResult struct {
 func (dev *EngineDev) ReleaseDryRun(ctx context.Context) error {
 	return dev.Publish(
 		ctx,
-		"dagger-engine.dev", // image
+		"staydagger-engine.dev", // image
 		// FIXME: why not from HEAD like the SDKs?
 		[]string{"main"}, // tag
 		true,             // dryRun
@@ -452,7 +452,7 @@ func (dev *EngineDev) Publish(
 	ctx context.Context,
 
 	// Image target to push to
-	// +default="ghcr.io/dagger/engine"
+	// +default="ghcr.io/staydagger/staydagger-engine"
 	image string,
 	// List of tags to use
 	tag []string,

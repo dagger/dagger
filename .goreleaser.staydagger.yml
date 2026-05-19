@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/goreleaser/goreleaser/v2.7.0/www/docs/static/schema-pro.json
+
+version: 2
+
+project_name: staydagger
+
+includes:
+  - from_file:
+      path: ./.goreleaser.common.yml
+
+snapshot:
+  version_template: "{{ .Tag }}-next"
+
+archives:
+  - name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
+    files:
+      - LICENSE
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+blobs:
+  - provider: s3
+    region: "{{ .Env.AWS_REGION }}"
+    bucket: "{{ .Env.AWS_BUCKET }}"
+    directory: "staydagger/releases/{{ .Version }}"

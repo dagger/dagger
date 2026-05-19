@@ -298,6 +298,8 @@ module.exports = {
                 "reference/container-runtimes/docker",
                 "reference/container-runtimes/podman",
                 "reference/container-runtimes/nerdctl",
+                "reference/container-runtimes/incus",
+                "reference/container-runtimes/incus-validation",
                 "reference/container-runtimes/apple-container",
               ],
             },

@@ -1,0 +1,123 @@
+---
+title: "Validate Dagger with Incus on Raspberry Pi 5"
+description: "Reproduce and verify Dagger running through Incus on an ARM64 Ubuntu host."
+slug: /reference/container-runtimes/incus-validation
+---
+
+# Validate Dagger with Incus on Raspberry Pi 5
+
+This guide records a local validation of Dagger running through Incus on a Raspberry Pi 5 with Ubuntu 26.04 LTS. The host was limited to two CPU cores during the run to keep the machine responsive and avoid hangs on the Pi.
+
+## Validation host
+
+- Host: Raspberry Pi 5, 8 GB
+- OS: Ubuntu 26.04 LTS
+- Kernel: 7.0.0-1010-raspi
+- Architecture: aarch64
+- CPU: Cortex-A76
+- Dagger CLI: built from this repository checkout
+
+Shell commands used to capture the host details:
+
+```console
+cat /etc/os-release
+uname -a
+lscpu | sed -n '1,12p'
+```
+
+Output captured on the validation host:
+
+```console
+PRETTY_NAME="Ubuntu 26.04 LTS"
+VERSION="26.04 (Resolute Raccoon)"
+Linux staytest 7.0.0-1010-raspi #10-Ubuntu SMP PREEMPT_DYNAMIC Wed Apr 29 16:04:13 UTC 2026 aarch64 GNU/Linux
+Architecture: aarch64
+CPU(s): 4
+Model name: Cortex-A76
+```
+
+## Prerequisites
+
+- Raspberry Pi 5 or another `aarch64` Linux host with enough RAM to run Incus and the Dagger engine
+- Ubuntu 26.04 LTS or a similar Linux distribution with Incus support
+- Incus installed and the daemon running
+- Current user added to the `incus-admin` group
+- A fresh login session after the group change so the new group membership is visible
+- Go 1.25.6 or newer
+- Dagger built from this repository checkout or from the pull request branch under test
+- `taskset` available on the host for CPU pinning on small machines
+- Network access for pulling the Dagger engine image and the test container image
+
+Verify the Incus session before continuing:
+
+```console
+incus info
+id
+```
+
+If the `incus-admin` group was added recently, open a fresh shell session before running the rest of the commands
+
+## Problems encountered during validation
+
+The following issues showed up while getting the setup working on the Pi:
+
+- `incus` initially returned permission errors until the shell session was refreshed after adding the user to `incus-admin`
+- `newgrp` was not installed on this host, so a new terminal session was needed to pick up the updated group list
+- `dagger` was not initially on `PATH`, so the CLI had to be built from the checkout and added to the shell path
+- The Pi became unstable when too many CPU cores were used, so the validation was pinned to two cores with `taskset -c 0,1`
+- `dagger init` sometimes paused at `connecting to engine`, so `dagger version` and `dagger query` were used first to verify engine reachability
+- Stale Dagger client or engine processes could leave the CLI appearing stuck, so the validation used a clean, fresh run before the final verification
+- The engine cleanup path was noisy early on, so the final validation was repeated only after the cleanup fixes were in place
+
+## Reproduce the validation
+
+1. Build the Dagger CLI from the checkout under test:
+
+   ```console
+   go build -o ./bin/dagger ./cmd/dagger
+   export PATH="$PWD/bin:$PATH"
+   dagger version
+   ```
+
+2. Limit the command to two CPU cores on Pi-like hardware:
+
+   ```console
+   taskset -c 0,1 dagger version
+   ```
+
+3. Point Dagger at Incus explicitly so the engine runs in an Incus container:
+
+   ```console
+   taskset -c 0,1 env _EXPERIMENTAL_DAGGER_RUNNER_HOST='image+incus://registry.dagger.io/engine:dev' dagger version
+   ```
+
+4. Run a small container image through Dagger and confirm the output:
+
+   ```console
+   $ taskset -c 0,1 env _EXPERIMENTAL_DAGGER_RUNNER_HOST='image+incus://registry.dagger.io/engine:dev' dagger query --progress=plain -M <<'EOF'
+   query {
+     container {
+       from(address: "node:24-alpine") {
+         withExec(args: ["node", "-e", "console.log(process.version); console.log('hello world')"]) {
+           stdout
+         }
+       }
+     }
+   }
+   EOF
+   ```
+
+Expected output from the container:
+
+```console
+v24.15.0
+hello world
+```
+
+## Validation notes
+
+- The run above was verified on the Raspberry Pi 5 host listed in this document
+- `taskset -c 0,1` was used to keep the host stable during Dagger and Incus activity
+- If `dagger init` appears to hang on `connecting to engine`, use `dagger version` or `dagger query` first to confirm that the engine is reachable
+- If `incus info` fails after adding the user to `incus-admin`, log out and log back in before retrying
+- If `dagger` is missing from `PATH`, run it from the built binary in `./bin` or add that directory to `PATH`

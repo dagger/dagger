@@ -435,7 +435,7 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 		return fmt.Errorf("create rootfs temp dir: %w", err)
 	}
 	state.cleanups.Add("remove rootfs temp dir", func() error {
-		return os.RemoveAll(state.rootfsPath)
+		return removeAllWithRetry(state.rootfsPath)
 	})
 	state.spec.Root.Path = state.rootfsPath
 	if state.rootMount.Selector != "" {
@@ -1398,4 +1398,16 @@ func (c *Client) runContainer(ctx context.Context, state *execState) (rerr error
 	}
 
 	return exitError(ctx, state.exitCodePath, c.callWithIO(ctx, state.procInfo, startedCallback, killer, runcCall), state.procInfo.Meta.ValidExitCodes)
+}
+
+func removeAllWithRetry(path string) error {
+	var err error
+	for i := 0; i < 50; i++ {
+		err = os.RemoveAll(path)
+		if err == nil || os.IsNotExist(err) {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return err
 }

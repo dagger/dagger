@@ -19,7 +19,7 @@ func (dev *EngineDev) LoadToDocker(
 	docker *dagger.Socket,
 
 	// +optional
-	// +default="localhost/dagger-engine.dev:latest"
+	// +default="localhost/staydagger-engine.dev:latest"
 	name string,
 
 	// +optional
@@ -87,7 +87,7 @@ func (e LoadedEngine) Start(
 	ctx context.Context,
 
 	// +optional
-	// +default="dagger-engine.dev"
+	// +default="staydagger-engine.dev"
 	name string,
 	// +optional
 	cloudToken *dagger.Secret,

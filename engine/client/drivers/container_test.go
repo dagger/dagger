@@ -1,10 +1,14 @@
 package drivers
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -35,9 +39,112 @@ var backends = []struct {
 		name:    "apple",
 		backend: apple{},
 	},
+	{
+		name:    "incus",
+		backend: incus{},
+	},
 }
 
 var _, shouldRun = os.LookupEnv("DRIVER_TEST")
+
+func requireBackendAvailable(t *testing.T, backend containerBackend) {
+	t.Helper()
+
+	available, err := backend.Available(t.Context())
+	require.NoError(t, err)
+	if !available {
+		t.Skip("backend not available")
+	}
+}
+
+func testImageForBackend(name string) string {
+	if name == "incus" {
+		return "local:test-incus-native:latest"
+	}
+	return "alpine:3.18"
+}
+
+func seedIncusTestImage(t *testing.T, backend containerBackend, imageRef string) {
+	t.Helper()
+
+	ctx := t.Context()
+	exists, err := backend.ImageExists(ctx, imageRef)
+	require.NoError(t, err)
+	if exists {
+		return
+	}
+
+	tarball, err := buildTestIncusArchive(imageRef)
+	require.NoError(t, err)
+
+	tmp, err := os.CreateTemp("", "dagger-incus-seed-*.tar.gz")
+	require.NoError(t, err)
+	defer os.Remove(tmp.Name())
+	_, err = tmp.Write(tarball)
+	require.NoError(t, err)
+	require.NoError(t, tmp.Close())
+
+	cmd := exec.CommandContext(ctx, "incus", "image", "import", tmp.Name(), "--alias", incusImageAlias(imageRef))
+	require.NoError(t, cmd.Run())
+}
+
+func buildTestIncusArchive(repoTag string) ([]byte, error) {
+	var tarball bytes.Buffer
+	gw := gzip.NewWriter(&tarball)
+	tw := tar.NewWriter(gw)
+
+	metadata := []byte(fmt.Sprintf(`architecture: %s
+creation_date: 0
+properties:
+  description: %s
+  os: %s
+`, normalizeIncusTestArchitecture(runtime.GOARCH), repoTag, runtime.GOOS))
+	if err := tw.WriteHeader(&tar.Header{
+		Name: "metadata.yaml",
+		Mode: 0o644,
+		Size: int64(len(metadata)),
+	}); err != nil {
+		return nil, err
+	}
+	if _, err := tw.Write(metadata); err != nil {
+		return nil, err
+	}
+
+	payload := []byte("hello from dagger")
+	if err := tw.WriteHeader(&tar.Header{
+		Name: "rootfs/hello.txt",
+		Mode: 0o644,
+		Size: int64(len(payload)),
+	}); err != nil {
+		return nil, err
+	}
+	if _, err := tw.Write(payload); err != nil {
+		return nil, err
+	}
+
+	if err := tw.Close(); err != nil {
+		return nil, err
+	}
+	if err := gw.Close(); err != nil {
+		return nil, err
+	}
+	return tarball.Bytes(), nil
+}
+
+func normalizeIncusTestArchitecture(arch string) string {
+	switch arch {
+	case "amd64":
+		return "x86_64"
+	case "arm64":
+		return "aarch64"
+	case "386":
+		return "i686"
+	case "arm":
+		return "armhf"
+	default:
+		return arch
+	}
+}
 
 func TestBackendImagePullAndExists(t *testing.T) {
 	if !shouldRun {
@@ -46,14 +153,23 @@ func TestBackendImagePullAndExists(t *testing.T) {
 
 	for _, tc := range backends {
 		t.Run(tc.name, func(t *testing.T) {
+			requireBackendAvailable(t, tc.backend)
 			ctx := t.Context()
 
-			testImage := "alpine:3.18"
-			_ = tc.backend.ImageRemove(ctx, testImage)
+			testImage := testImageForBackend(tc.name)
+			if tc.name == "incus" {
+				seedIncusTestImage(t, tc.backend, testImage)
+			} else {
+				_ = tc.backend.ImageRemove(ctx, testImage)
+			}
 
 			existsBefore, err := tc.backend.ImageExists(ctx, testImage)
 			require.NoError(t, err)
-			require.False(t, existsBefore)
+			if tc.name == "incus" {
+				require.True(t, existsBefore)
+			} else {
+				require.False(t, existsBefore)
+			}
 
 			err = tc.backend.ImagePull(ctx, testImage)
 			require.NoError(t, err)
@@ -75,11 +191,19 @@ func TestBackendImageLoadAndExists(t *testing.T) {
 	}
 
 	for _, tc := range backends {
+		if tc.name == "incus" {
+			continue
+		}
 		t.Run(tc.name, func(t *testing.T) {
+			requireBackendAvailable(t, tc.backend)
 			ctx := t.Context()
 
-			sourceImage := "alpine:3.18"
-			_ = tc.backend.ImageRemove(ctx, sourceImage)
+			sourceImage := testImageForBackend(tc.name)
+			if tc.name == "incus" {
+				seedIncusTestImage(t, tc.backend, sourceImage)
+			} else {
+				_ = tc.backend.ImageRemove(ctx, sourceImage)
+			}
 			loadedImageName := "test-loaded-alpine:custom"
 			_ = tc.backend.ImageRemove(ctx, loadedImageName)
 
@@ -122,6 +246,62 @@ func TestBackendImageLoadAndExists(t *testing.T) {
 	}
 }
 
+func TestBackendIncusImageLoadAndExists(t *testing.T) {
+	if !shouldRun {
+		t.Skip()
+	}
+
+	tc := struct {
+		name    string
+		backend containerBackend
+	}{
+		name:    "incus",
+		backend: incus{},
+	}
+
+	t.Run(tc.name, func(t *testing.T) {
+		requireBackendAvailable(t, tc.backend)
+		ctx := t.Context()
+
+		testImage := testImageForBackend(tc.name)
+		seedIncusTestImage(t, tc.backend, testImage)
+		loadedImageName := "test-loaded-alpine:custom"
+		_ = tc.backend.ImageRemove(ctx, loadedImageName)
+
+		existsBefore, err := tc.backend.ImageExists(ctx, testImage)
+		require.NoError(t, err)
+		require.True(t, existsBefore)
+
+		err = tc.backend.ImagePull(ctx, testImage)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			ctx := context.WithoutCancel(ctx)
+			require.NoError(t, tc.backend.ImageRemove(ctx, testImage))
+			require.NoError(t, tc.backend.ImageRemove(ctx, loadedImageName))
+		})
+
+		existsAfter, err := tc.backend.ImageExists(ctx, testImage)
+		require.NoError(t, err)
+		require.True(t, existsAfter)
+
+		loadBackend := tc.backend.ImageLoader(ctx)
+		require.NotNil(t, loadBackend)
+		loader, err := loadBackend.Loader(ctx)
+		require.NoError(t, err)
+
+		var tarballBuffer bytes.Buffer
+		err = loader.TarballReader(ctx, testImage, &tarballBuffer)
+		require.NoError(t, err)
+
+		err = loader.TarballWriter(ctx, loadedImageName, bytes.NewReader(tarballBuffer.Bytes()))
+		require.NoError(t, err)
+
+		existsLoaded, err := tc.backend.ImageExists(ctx, loadedImageName)
+		require.NoError(t, err)
+		require.True(t, existsLoaded)
+	})
+}
+
 func TestBackendContainerRunExec(t *testing.T) {
 	if !shouldRun {
 		t.Skip()
@@ -129,11 +309,16 @@ func TestBackendContainerRunExec(t *testing.T) {
 
 	for _, tc := range backends {
 		t.Run(tc.name, func(t *testing.T) {
+			requireBackendAvailable(t, tc.backend)
 			ctx := t.Context()
 			containerName := "test-run-exec-container"
-			testImage := "alpine:3.18"
+			testImage := testImageForBackend(tc.name)
+			if tc.name == "incus" {
+				seedIncusTestImage(t, tc.backend, testImage)
+			} else {
+				_ = tc.backend.ImageRemove(ctx, testImage)
+			}
 
-			_ = tc.backend.ImageRemove(ctx, testImage)
 			_ = tc.backend.ContainerRemove(ctx, containerName)
 			err := tc.backend.ImagePull(ctx, testImage)
 			require.NoError(t, err)
@@ -184,11 +369,16 @@ func TestBackendContainerLs(t *testing.T) {
 
 	for _, tc := range backends {
 		t.Run(tc.name, func(t *testing.T) {
+			requireBackendAvailable(t, tc.backend)
 			ctx := t.Context()
-			testImage := "alpine:3.18"
+			testImage := testImageForBackend(tc.name)
+			if tc.name == "incus" {
+				seedIncusTestImage(t, tc.backend, testImage)
+			} else {
+				_ = tc.backend.ImageRemove(ctx, testImage)
+			}
 			containers := []string{"test-ls-container-1", "test-ls-container-2"}
 
-			_ = tc.backend.ImageRemove(ctx, testImage)
 			for _, containerName := range containers {
 				_ = tc.backend.ContainerRemove(ctx, containerName)
 			}
@@ -245,11 +435,16 @@ func TestBackendContainerRunWithOptions(t *testing.T) {
 
 	for _, tc := range backends {
 		t.Run(tc.name, func(t *testing.T) {
+			requireBackendAvailable(t, tc.backend)
 			ctx := t.Context()
 			containerName := "test-run-options-container"
-			testImage := "alpine:3.18"
+			testImage := testImageForBackend(tc.name)
+			if tc.name == "incus" {
+				seedIncusTestImage(t, tc.backend, testImage)
+			} else {
+				_ = tc.backend.ImageRemove(ctx, testImage)
+			}
 
-			_ = tc.backend.ImageRemove(ctx, testImage)
 			_ = tc.backend.ContainerRemove(ctx, containerName)
 
 			err := tc.backend.ImagePull(ctx, testImage)
