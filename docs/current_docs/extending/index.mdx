@@ -1,27 +1,28 @@
 ---
 slug: /extending
 title: "Developing Modules"
-description: "Write your own Dagger modules to automate tasks specific to your project, team, or the broader community."
+description: "Choose an SDK for writing Dagger modules."
 ---
 
 # Developing Modules
 
-When pre-built modules don't cover your needs, you can write your own. A module is a package of functions — written in any supported SDK — that extends the Dagger API.
+A module is a package of Dagger functions. To write one, start by choosing an SDK.
 
-## When to develop a module
+## Choose an SDK
 
-Modules range from project-specific to general-purpose.
+- [Base Edition](/extending/editions/dang): Dang. Smallest setup; best for pure Dagger orchestration.
+- [Go Edition](/extending/editions/go): Go. Strong types, compiled tools, Go libraries.
+- [TypeScript Edition](/extending/editions/typescript): TypeScript. Node, Bun, Deno, frontend tooling.
+- [Python Edition](/extending/editions/python): Python. Python packages, data tooling, scripts.
 
-A project-specific module automates something unique to your codebase — a custom deploy script, a build that stitches together internal tools, an integration test that needs your exact infrastructure. Start here. It lives in `.dagger/modules/`, it doesn't need to be polished, and you can always generalize later.
+Not sure? Start with Dang. Use another SDK when you need that language's ecosystem.
 
-A general-purpose module solves a problem for anyone — linting, testing, container builds. If you're building one of these, check what's already installable with `dagger install` before starting from scratch.
+## What SDK Pages Cover
 
-## Get started
+Each SDK page owns its own setup:
 
-**[Start with the Base Edition](/extending/editions/dang)** — uses Dang, Dagger's native DSL. No codegen, no external dependencies. The recommended starting point.
-
-If your module needs libraries from an existing ecosystem, pick the matching edition:
-
-- [Go Edition](/extending/editions/go)
-- [TypeScript Edition](/extending/editions/typescript)
-- [Python Edition](/extending/editions/python)
+- installing the SDK
+- initializing a new module
+- regenerating SDK-managed files
+- adding dependencies
+- IDE setup and project layout
