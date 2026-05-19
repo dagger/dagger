@@ -72,8 +72,6 @@ func (CallSuite) TestArgTypes(ctx context.Context, t *testctx.T) {
 
 			modGen := moduleFixture(t, c, "go/call-service-binding")
 
-			logGen(ctx, t, modGen.Directory("."))
-
 			httpServer, _ := httpService(ctx, t, c, "im up")
 			endpoint, err := httpServer.Endpoint(ctx)
 			require.NoError(t, err)
@@ -89,8 +87,6 @@ func (CallSuite) TestArgTypes(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
 			modGen := moduleFixture(t, c, "go/call-service-direct")
-
-			logGen(ctx, t, modGen.Directory("."))
 
 			httpServer, _ := httpService(ctx, t, c, "im up")
 			endpoint, err := httpServer.Endpoint(ctx)
@@ -108,8 +104,6 @@ func (CallSuite) TestArgTypes(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		modGen := moduleFixture(t, c, "go/call-list-args")
-
-		logGen(ctx, t, modGen.Directory("."))
 
 		out, err := modGen.With(daggerCallAt(".", "hello", "--msgs", "yo", "--msgs", "my", "--msgs", "friend")).Stdout(ctx)
 		require.NoError(t, err)
@@ -817,7 +811,6 @@ func (CallSuite) TestReturnTypes(ctx context.Context, t *testctx.T) {
 
 		modGen := moduleFixture(t, c, "go/call-return-list-objects")
 
-		logGen(ctx, t, modGen.Directory("."))
 		expected := "0\n1\n2\n"
 		expectedJSON := `[{"bar": 0}, {"bar": 1}, {"bar": 2}]`
 
@@ -856,8 +849,6 @@ func (CallSuite) TestReturnTypes(ctx context.Context, t *testctx.T) {
 
 		modGen := moduleFixture(t, c, "go/call-return-container")
 
-		logGen(ctx, t, modGen.Directory("."))
-
 		t.Run("default", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCallAt(".", "ctr")).Stdout(ctx)
 			require.NoError(t, err)
@@ -887,8 +878,6 @@ func (CallSuite) TestReturnTypes(ctx context.Context, t *testctx.T) {
 
 		modGen := moduleFixture(t, c, "go/call-return-directory")
 
-		logGen(ctx, t, modGen.Directory("."))
-
 		t.Run("default", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCallAt(".", "dir")).Stdout(ctx)
 			require.NoError(t, err)
@@ -917,8 +906,6 @@ func (CallSuite) TestReturnTypes(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		modGen := moduleFixture(t, c, "go/call-return-file")
-
-		logGen(ctx, t, modGen.Directory("."))
 
 		t.Run("default", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCallAt(".", "file")).Stdout(ctx)
@@ -1064,8 +1051,6 @@ func (CallSuite) TestSaveOutput(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	modGen := moduleFixture(t, c, "go/call-save-output")
-
-	logGen(ctx, t, modGen.Directory("."))
 
 	t.Run("truncate file", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.
