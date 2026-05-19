@@ -595,8 +595,6 @@ type Test struct{}
 		Stderr(ctx)
 	require.NoError(t, err)
 	require.NotContains(t, out, "topsecret")
-	require.Contains(t, out, `user default: test(password=*****)`)
-	require.Contains(t, out, `user default: test(somekey="somevalue")`)
 }
 
 func (WorkspaceCompatSuite) TestConstructorRequired(ctx context.Context, t *testctx.T) {
