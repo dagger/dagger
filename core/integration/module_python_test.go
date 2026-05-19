@@ -292,6 +292,7 @@ build-backend = "poetry.core.masonry.api"
 			c := connect(ctx, t)
 
 			out, err := daggerCliBase(t, c).
+				With(withPythonModule(t, c, "python/base-test")).
 				With(fileContents(tc.path, fmt.Sprintf(`
 import anyio
 import dagger
@@ -316,7 +317,6 @@ class Test:
 						ctr.WithEnvVariable("TEST_LOCK_FILE", "requirements.lock"),
 					)
 				}).
-				With(withPythonModule(t, c, "python/base-test")).
 				WithExec([]string{"sh", "-c", "grep dagger-io $TEST_LOCK_FILE"}).
 				With(daggerCallAt(".", "whoami")).
 				Stdout(ctx)
@@ -354,9 +354,9 @@ class Test:
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
+			With(withPythonModule(t, c, "python/base-test")).
 			With(pyprojectExtra(nil, `requires-python = ">=3.11"`)).
 			With(source).
-			With(withPythonModule(t, c, "python/base-test")).
 			With(daggerCallAt(".", "relaxed")).
 			Stdout(ctx)
 
@@ -368,10 +368,10 @@ class Test:
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
+			With(withPythonModule(t, c, "python/base-test")).
 			// Space after `==` is intentional.
 			With(pyprojectExtra(nil, `requires-python = "== 3.11.6"`)).
 			With(source).
-			With(withPythonModule(t, c, "python/base-test")).
 			With(daggerCallAt(".", "pinned")).
 			Stdout(ctx)
 
@@ -383,10 +383,10 @@ class Test:
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
+			With(withPythonModule(t, c, "python/base-test")).
 			With(source).
 			With(pyprojectExtra(nil, `requires-python = ">=3.10"`)).
 			With(fileContents(".python-version", "3.11")).
-			With(withPythonModule(t, c, "python/base-test")).
 			With(daggerCallAt(".", "relaxed")).
 			Stdout(ctx)
 
@@ -398,9 +398,9 @@ class Test:
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
+			With(withPythonModule(t, c, "python/base-test")).
 			With(fileContents(".python-version", "3.13.1")).
 			With(source).
-			With(withPythonModule(t, c, "python/base-test")).
 			With(daggerCallAt(".", "pinned")).
 			Stdout(ctx)
 
@@ -412,10 +412,10 @@ class Test:
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
+			With(withPythonModule(t, c, "python/base-test")).
 			With(pyprojectExtra(nil, `requires-python = ">=3.10"`)).
 			With(fileContents(".python-version", "3.11")).
 			With(source).
-			With(withPythonModule(t, c, "python/base-test")).
 			With(daggerCallAt(".", "relaxed")).
 			Stdout(ctx)
 
@@ -427,6 +427,7 @@ class Test:
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
+			With(withPythonModule(t, c, "python/base-test")).
 			// base image takes precedence over .python-version
 			// warning: uv will fail if these don't match, just testing the
 			// the runtime's version discovery
@@ -437,7 +438,6 @@ class Test:
                 base-image = "python:3.12.1-slim@sha256:a64ac5be6928c6a94f00b16e09cdf3ba3edd44452d10ffa4516a58004873573e"
             `)).
 			With(source).
-			With(withPythonModule(t, c, "python/base-test")).
 			With(daggerCallAt(".", "pinned")).
 			Stdout(ctx)
 
@@ -449,8 +449,8 @@ class Test:
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			With(source).
 			With(withPythonModule(t, c, "python/base-test")).
+			With(source).
 			With(daggerCallAt(".", "relaxed")).
 			Stdout(ctx)
 
@@ -490,6 +490,7 @@ func (PythonSuite) TestAltRuntime(ctx context.Context, t *testctx.T) {
 	t.Run("disabled custom config", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
 			WithWorkdir("/work/test").
+			With(withPythonModule(t, c, "python/base-test")).
 			With(pyprojectExtra(nil, `
 requires-python = ">=3.11"
 
@@ -508,7 +509,6 @@ class Test:
         return f"{v.major}.{v.minor}"
 `,
 			)).
-			With(withPythonModule(t, c, "python/base-test")).
 			With(fileContents("dagger.json", `{"name":"test","engineVersion":"latest","sdk":{"source":"../extended"},"source":"."}`)).
 			// use-uv = false should be ignored
 			WithExec([]string{"test", "-f", "uv.lock"}).
@@ -525,11 +525,11 @@ func (PythonSuite) TestUv(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		ctr, err := daggerCliBase(t, c).
+			With(withPythonModule(t, c, "python/base-test")).
 			With(pyprojectExtra(nil, `
                 [tool.dagger]
                 use-uv = false
             `)).
-			With(withPythonModule(t, c, "python/base-test")).
 			// Only uv creates a lock
 			WithExec([]string{"test", "!", "-f", "uv.lock"}).
 			WithExec([]string{"test", "!", "-f", "requirements.lock"}).
@@ -553,13 +553,13 @@ func (PythonSuite) TestUv(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
+			With(withPythonModule(t, c, "python/base-test")).
 			With(pyprojectExtra(nil, `
                 requires-python = "<3.11"
 
                 [tool.dagger]
                 use-uv = false
             `)).
-			With(withPythonModule(t, c, "python/base-test")).
 			With(daggerCallAt(".", "container-echo", "--string-arg=hello", "stdout")).
 			Stdout(ctx)
 
@@ -591,6 +591,7 @@ class Test:
 		)
 
 		out, err := daggerCliBase(t, c).
+			With(withPythonModule(t, c, "python/base-test")).
 			// Intentionally using a version that's older than the runtime's default.
 			// Can't lag too far behind because the runtime may depend on some
 			// newer feature.
@@ -599,7 +600,6 @@ class Test:
                 uv-version = "0.7.13"
             `)).
 			With(source).
-			With(withPythonModule(t, c, "python/base-test")).
 			With(daggerCallAt(".", "version")).
 			Stdout(ctx)
 
@@ -631,6 +631,7 @@ class Test:
 			c := connect(ctx, t)
 
 			out, err := daggerCliBase(t, c).
+				With(withPythonModule(t, c, "python/base-test")).
 				With(source).
 				With(pyprojectExtra(nil, `
                     [[tool.uv.index]]
@@ -640,7 +641,6 @@ class Test:
                     [[tool.uv.index]]
                     url = "https://pypi.org/simple"
                 `)).
-				With(withPythonModule(t, c, "python/base-test")).
 				With(daggerCallAt(".", "urls")).
 				Stdout(ctx)
 
@@ -652,8 +652,8 @@ class Test:
 			c := connect(ctx, t)
 
 			out, err := daggerCliBase(t, c).
-				With(source).
 				With(withPythonModule(t, c, "python/base-test")).
+				With(source).
 				With(daggerCallAt(".", "urls", "--json")).
 				Stdout(ctx)
 
@@ -665,13 +665,13 @@ class Test:
 			c := connect(ctx, t)
 
 			_, err := daggerCliBase(t, c).
+				With(withPythonModule(t, c, "python/base-test")).
 				With(source).
 				With(pyprojectExtra(nil, `
                     [[tool.uv.index]]
                     url = "https://pypi.example.com/simple"
                     default = true
                 `)).
-				With(withPythonModule(t, c, "python/base-test")).
 				Sync(ctx)
 
 			requireErrOut(t, err, "Failed to fetch: `https://pypi.example.com/simple")
