@@ -259,8 +259,9 @@ func (UpSuite) TestUpAsToolchain(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			modGen = modGen.
 				WithWorkdir("app").
-				With(daggerExec("init")).
-				With(daggerExec("toolchain", "install", "../"+tc.path))
+				WithNewFile(".dagger/config.toml", fmt.Sprintf(`[modules.%s]
+source = "../../%s"
+`, tc.path, tc.path))
 			// list services
 			out, err := modGen.
 				With(daggerExec("up", "-l")).
