@@ -490,6 +490,16 @@ func resultCallArgPB(c *Cache, arg *ResultCallArg) (*callpbv1.Argument, error) {
 	if arg == nil {
 		return nil, nil
 	}
+	// Redact sensitive args from the telemetry/call protobuf, mirroring
+	// redactedArgForID on the call.ID path. Without this, sensitive values such
+	// as setSecret(plaintext:) are emitted verbatim to telemetry and rendered
+	// in the CLI progress output.
+	if arg.IsSensitive {
+		return &callpbv1.Argument{
+			Name:  arg.Name,
+			Value: &callpbv1.Literal{Value: &callpbv1.Literal_String_{String_: "***"}},
+		}, nil
+	}
 	lit, err := resultCallLiteralPB(c, arg.Value)
 	if err != nil {
 		return nil, err
