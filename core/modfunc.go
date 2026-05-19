@@ -236,7 +236,7 @@ func (fn *ModuleFunction) mergeUserDefaultsTypeDefs(ctx context.Context) error {
 		if fn.metadata.Name != "" {
 			uiFnName += "." + fn.metadata.Name
 		}
-		console(ctx, "user default: %s(%s=%q)", uiFnName, argName, argDefault.UserInput)
+		console(ctx, "user default: %s(%s=%s)", uiFnName, argName, argDefault.DisplayInput())
 		currentArgRes, ok := updatedMetadata.LookupArg(argName)
 		if !ok {
 			return fmt.Errorf("find function arg %q on %s", argName, uiFnName)
@@ -387,6 +387,23 @@ func (fn *ModuleFunction) newUserDefault(arg *FunctionArg, userInput string) *Us
 
 type UserDefault struct {
 	UserDefaultPrimitive
+}
+
+func (ud *UserDefault) DisplayInput() string {
+	if ud.IsPlaintextSecret() {
+		return "*****"
+	}
+	return fmt.Sprintf("%q", ud.UserInput)
+}
+
+func (ud *UserDefault) IsPlaintextSecret() bool {
+	typeDef := ud.Arg.TypeDef.Self()
+	return typeDef != nil &&
+		typeDef.Kind == TypeDefKindObject &&
+		typeDef.AsObject.Valid &&
+		typeDef.AsObject.Value.Self() != nil &&
+		typeDef.AsObject.Value.Self().Name == "Secret" &&
+		!strings.Contains(ud.UserInput, "://")
 }
 
 func (ud *UserDefault) IsObject() bool {
