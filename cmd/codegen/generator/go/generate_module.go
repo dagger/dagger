@@ -232,18 +232,18 @@ func (g *GoGenerator) syncModReplaceAndTidy(mod *modfile.File, genSt *generator.
 	}
 
 	// preserve any replace directives in sdk/go's go.mod (e.g. pre-1.0 packages)
-	for _, minReq := range sdkMod.Replace {
-		if _, ok := modRequires[minReq.New.Path]; !ok {
-			// ignore anything that's sdk/go only
-			continue
-		}
-		genSt.PostCommands = append(genSt.PostCommands,
-			exec.Command("go", "mod", "edit", "-replace", minReq.Old.Path+"="+minReq.New.Path+"@"+minReq.New.Version))
-		if goWork != "" {
-			genSt.PostCommands = append(genSt.PostCommands,
-				exec.Command("go", "work", "edit", "-replace", minReq.Old.Path+"="+minReq.New.Path+"@"+minReq.New.Version))
-		}
-	}
+//	for _, minReq := range sdkMod.Replace {
+//		if _, ok := modRequires[minReq.New.Path]; !ok {
+//			// ignore anything that's sdk/go only
+//			continue
+//		}
+//		genSt.PostCommands = append(genSt.PostCommands,
+//			exec.Command("go", "mod", "edit", "-replace", minReq.Old.Path+"="+minReq.New.Path+"@"+minReq.New.Version))
+//		if goWork != "" {
+//			genSt.PostCommands = append(genSt.PostCommands,
+//				exec.Command("go", "work", "edit", "-replace", minReq.Old.Path+"="+minReq.New.Path+"@"+minReq.New.Version))
+//		}
+//	}
 
 	// Check if the module go.mod replaces the dagger.io/dagger library with a custom path.
 	// If so, we keep it as is.

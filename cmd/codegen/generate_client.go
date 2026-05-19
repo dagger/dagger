@@ -77,6 +77,7 @@ func GenerateClient(cmd *cobra.Command, args []string) error {
 		clientConfig.ModuleName = res.Source.Name
 		clientConfig.EngineVersion = res.Source.EngineVersion
 		clientConfig.ModuleDependencies = res.Source.Dependencies
+		clientConfig.LibVersion = libVersion
 	}
 
 	cfg.ClientConfig = clientConfig
@@ -95,4 +96,6 @@ func init() {
 	// Specific client generation flags
 	generateClientCmd.Flags().StringVar(&moduleSourceID, "module-source-id", "", "id of the module to generate code for")
 	generateClientCmd.Flags().StringVar(&clientDir, "client-dir", "", "directory where the client will be generated (output by default)")
+	generateClientCmd.Flags().StringVar(&libVersion, "lib-version", "", "if set, use the given version of dagger.io/dagger in the generated client")
+
 }

@@ -4,7 +4,7 @@ package dagger
 
 import (
 {{ if IsModuleCode -}}
-	"{{.UtilityPkgImport}}/querybuilder"
+	"github.com/dagger/querybuilder"
 {{- else -}}
 	"dagger.io/dagger/querybuilder"
 {{- end }}

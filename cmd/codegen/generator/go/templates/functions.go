@@ -101,6 +101,9 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"Dependencies":            funcs.Dependencies,
 		"HasLocalDependencies":    funcs.HasLocalDependencies,
 		"IsExtendableType":        funcs.isExtendableType,
+		"IsCoreType":              funcs.isCoreType,
+		"IsLibraryCode":           funcs.isLibraryCode,
+		"ReturnsExtendableType":   funcs.returnsExtendableType,
 		"FullSchemaTypes":         funcs.fullSchemaTypes,
 		"json":                    funcs.json,
 	}
@@ -115,6 +118,33 @@ func (funcs goTemplateFuncs) fullSchemaTypes() []*introspection.Type {
 
 func (goTemplateFuncs) isExtendableType(t introspection.Type) bool {
 	return slices.Contains(introspection.ExtendableTypes, t.Name)
+}
+
+// isCoreType returns true if the type is a core Dagger API type (not contributed
+// by a dependency module). Core types have no @sourceMap directive.
+func (goTemplateFuncs) isCoreType(t introspection.Type) bool {
+	return t.Directives.SourceMap() == nil
+}
+
+// isLibraryCode returns true when generating the SDK library itself (dagger.io/dagger).
+// This is the only mode that needs full type generation with direct field access.
+func (funcs goTemplateFuncs) isLibraryCode() bool {
+	return !funcs.isModuleCode() && !funcs.isStandaloneClient()
+}
+
+// returnsExtendableType returns true if the field's return type is an extendable
+// type (Query, Binding, Env). These methods must be overridden on wrapper types
+// because the embedded SDK type's method returns the SDK type, not the wrapper.
+func (goTemplateFuncs) returnsExtendableType(f introspection.Field) bool {
+	ref := f.TypeRef
+	// Unwrap NON_NULL
+	if ref.Kind == introspection.TypeKindNonNull {
+		ref = ref.OfType
+	}
+	if ref.Kind != introspection.TypeKindObject {
+		return false
+	}
+	return slices.Contains(introspection.ExtendableTypes, ref.Name)
 }
 
 func (goTemplateFuncs) json(v any) (string, error) {
