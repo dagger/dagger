@@ -26,6 +26,7 @@ type Class[T Typed] struct {
 	idable  bool
 	fields  map[string][]*Field[T]
 	fieldsL *sync.RWMutex
+	view    ViewFilter
 
 	invalidateSchemaCache func()
 
@@ -39,6 +40,9 @@ var _ ObjectType = Class[Typed]{}
 type ClassOpts[T Typed] struct {
 	// NoIDs disables the default "id" field and disables the IDType method.
 	NoIDs bool
+
+	// View limits the object type and generated ID/load fields to a schema view.
+	View ViewFilter
 
 	// Typed contains the Typed value whose Type() determines the class's type.
 	//
@@ -60,6 +64,10 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 			opts.NoIDs = true
 		}
 
+		if o.View != nil {
+			opts.View = o.View
+		}
+
 		if any(o.Typed) != nil {
 			opts.Typed = o.Typed
 		}
@@ -73,6 +81,7 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 		inner:     opts.Typed,
 		fields:    map[string][]*Field[T]{},
 		fieldsL:   new(sync.RWMutex),
+		view:      opts.View,
 		sourceMap: opts.SourceMap,
 
 		invalidateSchemaCache: srv.invalidateSchemaCache,
@@ -83,6 +92,7 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 				Name:        "id",
 				Description: fmt.Sprintf("A unique identifier for this %s.", class.TypeName()),
 				Type:        ID[T]{inner: opts.Typed},
+				ViewFilter:  opts.View,
 				Args: NewInputSpecs(InputSpec{
 					Name:        "recipe",
 					Description: "Return the canonical recipe-form ID instead of the default runtime handle ID.",
@@ -127,6 +137,10 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 		class.idable = true
 	}
 	return class
+}
+
+func (class Class[T]) ViewFilter() ViewFilter {
+	return class.view
 }
 
 func (class Class[T]) ForkObjectType(srv *Server) (ObjectType, error) {
@@ -280,6 +294,10 @@ func (class Class[T]) ExtendLoadByID(spec FieldSpec, fun LoadByIDFunc) {
 //
 // Each currently defined field is installed on the returned definition.
 func (class Class[T]) TypeDefinition(view call.View) *ast.Definition {
+	if class.view != nil && !class.view.Contains(view) {
+		return nil
+	}
+
 	class.fieldsL.RLock()
 	defer class.fieldsL.RUnlock()
 	var val any = class.inner
@@ -1399,6 +1417,9 @@ func definition(kind ast.DefinitionKind, val Type, view call.View) *ast.Definiti
 	var def *ast.Definition
 	if isType, ok := val.(Definitive); ok {
 		def = isType.TypeDefinition(view)
+		if def == nil {
+			return nil
+		}
 	} else {
 		def = &ast.Definition{
 			Kind: kind,

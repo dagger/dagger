@@ -2742,6 +2742,8 @@ class Container(Type):
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
         permissions:
+            Permission given to the copied directory and contents (e.g.,
+            0755).
         """
         _args = [
             Arg("path", path),

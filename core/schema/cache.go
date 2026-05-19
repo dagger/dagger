@@ -23,11 +23,14 @@ func (s *cacheSchema) Install(srv *dagql.Server) {
 			Doc("Constructs a cache volume for a given cache key.").
 			Args(
 				dagql.Arg("key").Doc(`A string identifier to target this cache volume (e.g., "modules-cache").`),
-				dagql.Arg("source").Doc(`Identifier of the directory to use as the cache volume's root.`),
-				dagql.Arg("sharing").Doc(`Sharing mode of the cache volume.`),
+				dagql.Arg("source").Doc(`Identifier of the directory to use as the cache volume's root.`).
+					View(AfterVersion("v0.20.7")),
+				dagql.Arg("sharing").Doc(`Sharing mode of the cache volume.`).
+					View(AfterVersion("v0.20.7")),
 				dagql.Arg("owner").Doc(`A user:group to set for the cache volume root.`,
 					`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
-					`If the group is omitted, it defaults to the same as the user.`),
+					`If the group is omitted, it defaults to the same as the user.`).
+					View(AfterVersion("v0.20.7")),
 			),
 	}.Install(srv)
 

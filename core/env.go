@@ -375,6 +375,10 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType, directives ...*ast.D
 	if !ok {
 		return fmt.Errorf("failed to lookup ID type for %T", targetType)
 	}
+	var targetView dagql.ViewFilter
+	if viewFiltered, ok := targetType.(interface{ ViewFilter() dagql.ViewFilter }); ok {
+		targetView = viewFiltered.ViewFilter()
+	}
 	typeName := targetType.TypeName()
 	// Install get<TargetType>()
 	envType.Extend(
@@ -382,6 +386,7 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType, directives ...*ast.D
 			Name:        "with" + typeName + "Input",
 			Description: fmt.Sprintf("Create or update a binding of type %s in the environment", typeName),
 			Type:        envType.Typed(),
+			ViewFilter:  targetView,
 			Directives:  directives,
 			Args: dagql.NewInputSpecs(
 				dagql.InputSpec{
@@ -428,6 +433,7 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType, directives ...*ast.D
 			Name:        "with" + typeName + "Output",
 			Description: fmt.Sprintf("Declare a desired %s output to be assigned in the environment", typeName),
 			Type:        envType.Typed(),
+			ViewFilter:  targetView,
 			Directives:  directives,
 			Args: dagql.NewInputSpecs(
 				dagql.InputSpec{
@@ -459,6 +465,7 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType, directives ...*ast.D
 			Type:        targetType.Typed(),
 			Args:        dagql.InputSpecs{},
 			DoNotCache:  "Bindings are mutable",
+			ViewFilter:  targetView,
 			Directives:  directives,
 		},
 		func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {

@@ -2635,7 +2635,7 @@ type ContainerWithDirectoryOpts struct {
 	Owner string
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
-
+	// Permission given to the copied directory and contents (e.g., 0755).
 	Permissions int
 }
 

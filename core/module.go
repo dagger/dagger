@@ -1186,38 +1186,6 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef dagql.Obje
 
 	obj := typeDef.Self().AsObject.Value.Self()
 
-	for _, fieldRes := range obj.Fields {
-		field := fieldRes.Self()
-		if gqlFieldName(field.Name) == "id" {
-			return fmt.Errorf("cannot define field with reserved name %q on object %q", field.Name, obj.Name)
-		}
-		// Workspace cannot be stored as a field on a module object
-		if field.TypeDef.Self().Kind == TypeDefKindObject && field.TypeDef.Self().AsObject.Value.Self().Name == "Workspace" {
-			return fmt.Errorf("object %q field %q: Workspace cannot be stored as a field on a module object; declare it as a function argument instead",
-				obj.OriginalName,
-				field.OriginalName,
-			)
-		}
-		fieldType, ok, err := mod.lookupValidationModType(ctx, field.TypeDef, state)
-		if err != nil {
-			return fmt.Errorf("failed to get mod type for type def: %w", err)
-		}
-		if ok {
-			sourceMod := fieldType.SourceMod()
-			// fields can reference core types and local types, but not types from other modules
-			if sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod.Name() != mod.Name() {
-				return fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
-					obj.OriginalName,
-					field.OriginalName,
-					sourceMod.Name(),
-				)
-			}
-		}
-		if err := mod.validateTypeDef(ctx, field.TypeDef, state); err != nil {
-			return err
-		}
-	}
-
 	for fn := range obj.functions() {
 		if gqlFieldName(fn.Name) == "id" {
 			return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
@@ -1259,6 +1227,38 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef dagql.Obje
 			if err := mod.validateTypeDef(ctx, arg.TypeDef, state); err != nil {
 				return err
 			}
+		}
+	}
+
+	for _, fieldRes := range obj.Fields {
+		field := fieldRes.Self()
+		if gqlFieldName(field.Name) == "id" {
+			return fmt.Errorf("cannot define field with reserved name %q on object %q", field.Name, obj.Name)
+		}
+		// Workspace cannot be stored as a field on a module object
+		if field.TypeDef.Self().Kind == TypeDefKindObject && field.TypeDef.Self().AsObject.Value.Self().Name == "Workspace" {
+			return fmt.Errorf("object %q field %q: Workspace cannot be stored as a field on a module object; declare it as a function argument instead",
+				obj.OriginalName,
+				field.OriginalName,
+			)
+		}
+		fieldType, ok, err := mod.lookupValidationModType(ctx, field.TypeDef, state)
+		if err != nil {
+			return fmt.Errorf("failed to get mod type for type def: %w", err)
+		}
+		if ok {
+			sourceMod := fieldType.SourceMod()
+			// fields can reference core types and local types, but not types from other modules
+			if sourceMod != nil && sourceMod.Name() != ModuleName && sourceMod.Name() != mod.Name() {
+				return fmt.Errorf("object %q field %q cannot reference external type from dependency module %q",
+					obj.OriginalName,
+					field.OriginalName,
+					sourceMod.Name(),
+				)
+			}
+		}
+		if err := mod.validateTypeDef(ctx, field.TypeDef, state); err != nil {
+			return err
 		}
 	}
 	return nil
