@@ -476,6 +476,33 @@ func (UserDefaultsSuite) TestConstructorOptionalEmptySecret(ctx context.Context,
 	require.Equal(t, "", out)
 }
 
+func (UserDefaultsSuite) TestConstructorPlaintextSecretDefault(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := daggerCliBase(t, c).
+		With(withModInit("go", `package main
+
+import "dagger/test/internal/dagger"
+
+func New(
+	password *dagger.Secret,
+	somekey string,
+) *Test {
+	return &Test{}
+}
+
+type Test struct{}
+`)).
+		WithNewFile(".env", "password=topsecret\nsomekey=somevalue\n")
+
+	out, err := ctr.
+		WithExec([]string{"dagger", "call", "--help"}, nestedExec).
+		Stderr(ctx)
+	require.NoError(t, err)
+	require.NotContains(t, out, "topsecret")
+	require.Contains(t, out, `user default: test(password=*****)`)
+	require.Contains(t, out, `user default: test(somekey="somevalue")`)
+}
+
 func trimDaggerFunctionUsageText(s string) string {
 	// Trim the output for readability
 	start := strings.Index(s, "ARGUMENTS")
