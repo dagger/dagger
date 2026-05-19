@@ -285,7 +285,7 @@ func (r *DaggerEngine) ClientDockerConfig() *Secret { // dagger-engine (../../..
 
 // Generate the json schema for a dagger config file
 // Currently supported: "dagger.json", "engine.json"
-func (r *DaggerEngine) ConfigSchema(filename string) *File { // dagger-engine (../../../../toolchains/engine-dev/main.go:359:1)
+func (r *DaggerEngine) ConfigSchema(filename string) *File { // dagger-engine (../../../../toolchains/engine-dev/main.go:362:1)
 	q := r.query.Select("configSchema")
 	q = q.Arg("filename", filename)
 
@@ -296,17 +296,17 @@ func (r *DaggerEngine) ConfigSchema(filename string) *File { // dagger-engine (.
 
 // DaggerEngineContainerOpts contains options for DaggerEngine.Container
 type DaggerEngineContainerOpts struct {
-	Platform Platform // dagger-engine (../../../../toolchains/engine-dev/main.go:147:2)
+	Platform Platform // dagger-engine (../../../../toolchains/engine-dev/main.go:150:2)
 
-	GpuSupport bool // dagger-engine (../../../../toolchains/engine-dev/main.go:149:2)
+	GpuSupport bool // dagger-engine (../../../../toolchains/engine-dev/main.go:152:2)
 
-	Version string // dagger-engine (../../../../toolchains/engine-dev/main.go:151:2)
+	Version string // dagger-engine (../../../../toolchains/engine-dev/main.go:154:2)
 
-	Tag string // dagger-engine (../../../../toolchains/engine-dev/main.go:153:2)
+	Tag string // dagger-engine (../../../../toolchains/engine-dev/main.go:156:2)
 }
 
 // Build the engine container
-func (r *DaggerEngine) Container(opts ...DaggerEngineContainerOpts) *Container { // dagger-engine (../../../../toolchains/engine-dev/main.go:143:1)
+func (r *DaggerEngine) Container(opts ...DaggerEngineContainerOpts) *Container { // dagger-engine (../../../../toolchains/engine-dev/main.go:146:1)
 	q := r.query.Select("container")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -334,7 +334,7 @@ func (r *DaggerEngine) Container(opts ...DaggerEngineContainerOpts) *Container {
 
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
-func (r *DaggerEngine) Generate() *Changeset { // dagger-engine (../../../../toolchains/engine-dev/main.go:374:1)
+func (r *DaggerEngine) Generate() *Changeset { // dagger-engine (../../../../toolchains/engine-dev/main.go:377:1)
 	q := r.query.Select("generate")
 
 	return &Changeset{
@@ -344,11 +344,11 @@ func (r *DaggerEngine) Generate() *Changeset { // dagger-engine (../../../../too
 
 // DaggerEngineGraphqlSchemaOpts contains options for DaggerEngine.GraphqlSchema
 type DaggerEngineGraphqlSchemaOpts struct {
-	Version string // dagger-engine (../../../../toolchains/engine-dev/main.go:333:2)
+	Version string // dagger-engine (../../../../toolchains/engine-dev/main.go:336:2)
 }
 
 // Introspect the engine API schema, and return it as a graphql schema
-func (r *DaggerEngine) GraphqlSchema(opts ...DaggerEngineGraphqlSchemaOpts) *File { // dagger-engine (../../../../toolchains/engine-dev/main.go:330:1)
+func (r *DaggerEngine) GraphqlSchema(opts ...DaggerEngineGraphqlSchemaOpts) *File { // dagger-engine (../../../../toolchains/engine-dev/main.go:333:1)
 	q := r.query.Select("graphqlSchema")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -424,13 +424,13 @@ type DaggerEngineInstallClientOpts struct {
 	//
 	// The engine service to bind
 	//
-	Service *Service // dagger-engine (../../../../toolchains/engine-dev/main.go:275:2)
+	Service *Service // dagger-engine (../../../../toolchains/engine-dev/main.go:278:2)
 
-	Version string // dagger-engine (../../../../toolchains/engine-dev/main.go:277:2)
+	Version string // dagger-engine (../../../../toolchains/engine-dev/main.go:280:2)
 }
 
 // Configure the given client container so that it can connect to the given engine service
-func (r *DaggerEngine) InstallClient(client *Container, opts ...DaggerEngineInstallClientOpts) *Container { // dagger-engine (../../../../toolchains/engine-dev/main.go:269:1)
+func (r *DaggerEngine) InstallClient(client *Container, opts ...DaggerEngineInstallClientOpts) *Container { // dagger-engine (../../../../toolchains/engine-dev/main.go:272:1)
 	assertNotNil("client", client)
 	q := r.query.Select("installClient")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -452,7 +452,7 @@ func (r *DaggerEngine) InstallClient(client *Container, opts ...DaggerEngineInst
 
 // Introspect the engine API schema, and return it as a json-encoded file.
 // This file is used by SDKs to generate clients.
-func (r *DaggerEngine) IntrospectionJSON() *File { // dagger-engine (../../../../toolchains/engine-dev/main.go:317:1)
+func (r *DaggerEngine) IntrospectionJSON() *File { // dagger-engine (../../../../toolchains/engine-dev/main.go:320:1)
 	q := r.query.Select("introspectionJson")
 
 	return &File{
@@ -461,7 +461,7 @@ func (r *DaggerEngine) IntrospectionJSON() *File { // dagger-engine (../../../..
 }
 
 // Build the `introspect` tool which introspects the engine API
-func (r *DaggerEngine) IntrospectionTool() *File { // dagger-engine (../../../../toolchains/engine-dev/main.go:351:1)
+func (r *DaggerEngine) IntrospectionTool() *File { // dagger-engine (../../../../toolchains/engine-dev/main.go:354:1)
 	q := r.query.Select("introspectionTool")
 
 	return &File{
@@ -537,6 +537,10 @@ type DaggerEnginePlaygroundOpts struct {
 	Metrics bool // dagger-engine (../../../../toolchains/engine-dev/main.go:117:2)
 
 	Version string // dagger-engine (../../../../toolchains/engine-dev/main.go:119:2)
+	//
+	// Extra wolfi packages to install
+	//
+	ExtraPackages []string // dagger-engine (../../../../toolchains/engine-dev/main.go:122:2)
 }
 
 // Build an ephemeral environment with the Dagger CLI and engine built from source, installed and ready to use
@@ -563,6 +567,10 @@ func (r *DaggerEngine) Playground(opts ...DaggerEnginePlaygroundOpts) *Container
 		if !querybuilder.IsZeroValue(opts[i].Version) {
 			q = q.Arg("version", opts[i].Version)
 		}
+		// `extraPackages` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExtraPackages) {
+			q = q.Arg("extraPackages", opts[i].ExtraPackages)
+		}
 	}
 
 	return &Container{
@@ -577,17 +585,17 @@ type DaggerEnginePublishOpts struct {
 	//
 	//
 	// Default: "ghcr.io/dagger/engine"
-	Image string // dagger-engine (../../../../toolchains/engine-dev/main.go:456:2)
+	Image string // dagger-engine (../../../../toolchains/engine-dev/main.go:459:2)
 
-	DryRun bool // dagger-engine (../../../../toolchains/engine-dev/main.go:461:2)
+	DryRun bool // dagger-engine (../../../../toolchains/engine-dev/main.go:464:2)
 
-	RegistryUsername string // dagger-engine (../../../../toolchains/engine-dev/main.go:464:2)
+	RegistryUsername string // dagger-engine (../../../../toolchains/engine-dev/main.go:467:2)
 
-	RegistryPassword *Secret // dagger-engine (../../../../toolchains/engine-dev/main.go:466:2)
+	RegistryPassword *Secret // dagger-engine (../../../../toolchains/engine-dev/main.go:469:2)
 }
 
 // Publish all engine images to a registry
-func (r *DaggerEngine) Publish(ctx context.Context, tag []string, opts ...DaggerEnginePublishOpts) error { // dagger-engine (../../../../toolchains/engine-dev/main.go:451:1)
+func (r *DaggerEngine) Publish(ctx context.Context, tag []string, opts ...DaggerEnginePublishOpts) error { // dagger-engine (../../../../toolchains/engine-dev/main.go:454:1)
 	if r.publish != nil {
 		return nil
 	}
@@ -615,7 +623,7 @@ func (r *DaggerEngine) Publish(ctx context.Context, tag []string, opts ...Dagger
 	return q.Execute(ctx)
 }
 
-func (r *DaggerEngine) ReleaseDryRun(ctx context.Context) error { // dagger-engine (../../../../toolchains/engine-dev/main.go:437:1)
+func (r *DaggerEngine) ReleaseDryRun(ctx context.Context) error { // dagger-engine (../../../../toolchains/engine-dev/main.go:440:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -626,17 +634,17 @@ func (r *DaggerEngine) ReleaseDryRun(ctx context.Context) error { // dagger-engi
 
 // DaggerEngineServiceOpts contains options for DaggerEngine.Service
 type DaggerEngineServiceOpts struct {
-	GpuSupport bool // dagger-engine (../../../../toolchains/engine-dev/main.go:212:2)
+	GpuSupport bool // dagger-engine (../../../../toolchains/engine-dev/main.go:215:2)
 
-	SharedCache bool // dagger-engine (../../../../toolchains/engine-dev/main.go:214:2)
+	SharedCache bool // dagger-engine (../../../../toolchains/engine-dev/main.go:217:2)
 
-	Metrics bool // dagger-engine (../../../../toolchains/engine-dev/main.go:216:2)
+	Metrics bool // dagger-engine (../../../../toolchains/engine-dev/main.go:219:2)
 
-	Version string // dagger-engine (../../../../toolchains/engine-dev/main.go:218:2)
+	Version string // dagger-engine (../../../../toolchains/engine-dev/main.go:221:2)
 }
 
 // Create a test engine service
-func (r *DaggerEngine) Service(name string, opts ...DaggerEngineServiceOpts) *Service { // dagger-engine (../../../../toolchains/engine-dev/main.go:208:1)
+func (r *DaggerEngine) Service(name string, opts ...DaggerEngineServiceOpts) *Service { // dagger-engine (../../../../toolchains/engine-dev/main.go:211:1)
 	q := r.query.Select("service")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `gpuSupport` optional argument
