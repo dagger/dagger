@@ -103,26 +103,22 @@ func (*Viztest) FailMulti(ctx context.Context) (rerr error) {
 	defer telemetry.End(span, func() error { return rerr }) //nolint:staticcheck
 	// NB: theoretically this would be from a concurrency pool or something but
 	// we'll simulate it instead to reduce randomness
-	return errors.Join(
-		func() (rerr error) {
-			ctx, span := Tracer().Start(ctx, "sub-thing 1")
-			defer telemetry.End(span, func() error { return rerr }) //nolint:staticcheck
-			_, err := dag.Container().
-				From("alpine").
-				WithExec([]string{"sh", "-c", "echo this is a failing effect; exit 1"}).
-				Sync(ctx)
-			return err
-		}(),
-		(func() (rerr error) {
-			ctx, span := Tracer().Start(ctx, "sub-thing 2")
-			defer telemetry.End(span, func() error { return rerr }) //nolint:staticcheck
-			_, err := dag.Container().
-				From("alpine").
-				WithExec([]string{"sh", "-c", "echo this is another failing effect; exit 1"}).
-				Sync(ctx)
-			return err
-		})(),
-	)
+
+	ctx1, span := Tracer().Start(ctx, "sub-thing 1")
+	_, err1 := dag.Container().
+		From("alpine").
+		WithExec([]string{"sh", "-c", "echo this is a failing effect; exit 1"}).
+		Sync(ctx1)
+	telemetry.End(span, func() error { return err1 }) //nolint:staticcheck
+
+	ctx2, span := Tracer().Start(ctx, "sub-thing 2")
+	_, err2 := dag.Container().
+		From("alpine").
+		WithExec([]string{"sh", "-c", "echo this is another failing effect; exit 1"}).
+		Sync(ctx2)
+	telemetry.End(span, func() error { return err2 }) //nolint:staticcheck
+
+	return errors.Join(err1, err2)
 }
 
 // +cache="session"
