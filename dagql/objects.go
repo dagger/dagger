@@ -516,7 +516,7 @@ func (r ObjectResult[T]) preselect(ctx context.Context, sel Selector) (ObjectRes
 	if clientMD, err := engine.ClientMetadataFromContext(ctx); err != nil {
 		slog.Warn("failed to get client metadata from context for call", "err", err)
 	} else {
-		req.ConcurrencyKey = clientMD.ClientID
+		req.ConcurrencyKey = clientMD.SessionID
 	}
 	if field.Spec.GetDynamicInput != nil {
 		if err := field.Spec.GetDynamicInput(ctx, r, inputArgs, view, req); err != nil {

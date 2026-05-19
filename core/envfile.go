@@ -141,7 +141,8 @@ func (ef *EnvFile) variables(ctx context.Context, allowUnboundVariables bool) (v
 //	TOKEN=topsecret
 //	NAME=hello
 func (ef *EnvFile) Namespace(ctx context.Context, prefix string) (*EnvFile, error) {
-	vars, err := ef.Variables(ctx, false)
+	// use raw variables here given that they'll get expanded later when used
+	vars, err := ef.Variables(ctx, true)
 	if err != nil {
 		return nil, fmt.Errorf("Evaluate env file: %w", err)
 	}

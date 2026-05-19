@@ -35,7 +35,7 @@ pub fn field_options_struct_name(field: &FullTypeFields) -> Option<String> {
 
 pub fn format_function(funcs: &CommonFunctions, field: &FullTypeFields) -> Option<rust::Tokens> {
     let is_async = field.type_.pipe(|t| &t.type_ref).pipe(|t| {
-        if t.is_object() || t.is_list_of_objects() {
+        if t.is_object() {
             None
         } else {
             Some(quote! {
@@ -228,7 +228,7 @@ fn render_optional_args(_funcs: &CommonFunctions, field: &FullTypeFields) -> Opt
 fn render_output_type(funcs: &CommonFunctions, type_ref: &TypeRef) -> rust::Tokens {
     let output_type = funcs.format_output_type(type_ref);
 
-    if type_ref.is_object() || type_ref.is_list_of_objects() {
+    if type_ref.is_object() {
         return quote! {
             $(output_type)
         };
@@ -267,12 +267,24 @@ fn render_execution(funcs: &CommonFunctions, field: &FullTypeFields) -> rust::To
                 .as_ref()
                 .unwrap(),
         );
+        let id_type = format!("{}Id", output_type);
+        let load_fn = format!(
+            "load_{}_from_id",
+            format_struct_name(&output_type.to_string())
+        );
         return quote! {
-            vec![$(output_type) {
+            let query = query.select("id");
+            let ids: Vec<$(&id_type)> =
+                query.execute(self.graphql_client.clone()).await?;
+            let root = Query {
                 proc: self.proc.clone(),
-                selection: query,
+                selection: crate::querybuilder::query(),
                 graphql_client: self.graphql_client.clone(),
-            }]
+            };
+            Ok(ids
+                .into_iter()
+                .map(|id| root.$(&load_fn)(id))
+                .collect())
         };
     }
 

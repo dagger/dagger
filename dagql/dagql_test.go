@@ -2770,6 +2770,35 @@ func TestImplicitInputCachePerClient(t *testing.T) {
 	assert.Equal(t, callForClient("client-b"), 2)
 }
 
+func TestDefaultConcurrencyKeyUsesSessionID(t *testing.T) {
+	srv := newExternalDagqlServerForTest(t, Query{})
+	cache := newCache(t)
+
+	var seenConcurrencyKey string
+	dagql.Fields[Query]{
+		dagql.NodeFuncWithDynamicInputs("defaultConcurrencyKey", func(context.Context, dagql.ObjectResult[Query], struct{}) (int, error) {
+			return 1, nil
+		}, func(_ context.Context, _ dagql.ObjectResult[Query], _ struct{}, req *dagql.CallRequest) error {
+			seenConcurrencyKey = req.ConcurrencyKey
+			return nil
+		}),
+	}.Install(srv)
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		ClientID:  "dagql-test-client",
+		SessionID: "dagql-test-session",
+	})
+	ctx = dagql.ContextWithCache(ctx, cache)
+
+	var res int
+	err := srv.Select(ctx, srv.Root(), &res, dagql.Selector{
+		Field: "defaultConcurrencyKey",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, res, 1)
+	assert.Equal(t, seenConcurrencyKey, "dagql-test-session")
+}
+
 func TestImplicitInputCachePerSession(t *testing.T) {
 	srv := newExternalDagqlServerForTest(t, Query{})
 	cache := newCache(t)

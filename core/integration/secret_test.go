@@ -153,6 +153,24 @@ func (SecretSuite) TestUnsetVariable(ctx context.Context, t *testctx.T) {
 	require.NotContains(t, out, "AWS_KEY")
 }
 
+func (SecretSuite) TestSecretVariableOverride(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	short := c.SetSecret("short", "AA")
+	long := c.SetSecret("long", "BBBBBBBBB")
+	cmd := []string{"sh", "-c", `printf '%d' "${#T}"`}
+
+	out, err := c.Container().
+		From(alpineImage).
+		WithSecretVariable("T", short).
+		WithSecretVariable("T", long).
+		WithExec(cmd).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "9", out)
+}
+
 func (SecretSuite) TestWhitespaceScrubbed(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

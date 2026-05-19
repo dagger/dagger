@@ -278,7 +278,7 @@ func (s *hostSchema) directory(ctx context.Context, host dagql.ObjectResult[*cor
 	if err != nil {
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
-	callerConn, err := query.SpecificClientAttachableConn(ctx, clientMetadata.ClientID)
+	callerConn, _, err := query.SpecificClientAttachableConn(ctx, clientMetadata.ClientID, core.SpecificClientAttachableConnOpts{})
 	if err != nil {
 		return inst, fmt.Errorf("failed to get caller attachable conn: %w", err)
 	}
