@@ -1,0 +1,20 @@
+kind: Dependencies
+body: |
+  Bump pinned OpenTelemetry log packages from v0.16.0/v0.17.0 to v0.19.0
+
+  Updates the four `replace` directives (and matching `require` lines) in
+  both `go.mod` and `sdk/go/go.mod` to v0.19.0:
+
+  - `go.opentelemetry.io/otel/log`
+  - `go.opentelemetry.io/otel/sdk/log`
+  - `go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp`
+  - `go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc`
+
+  Addresses [CVE-2026-39882](https://github.com/advisories/GHSA-w8rr-5gcm-pp58)
+  (CVSS 5.3) in `otlploghttp` by limiting OTLP response body reads to 4 MiB,
+  and unblocks downstream consumers that previously had to mirror the
+  v0.16.0 pin in their own `replace` directives.
+time: 2026-05-17T14:55:53.000000000+00:00
+custom:
+    Author: iahsanGill
+    PR: "TBD"
