@@ -477,6 +477,9 @@ func (idx *TestIndex) spanUpdated(span *Span) {
 			idx.markStructureDirty()
 			return
 		}
+	} else if node.Parent != nil && node.Parent.Kind == TestNodeSuite && node.Kind == TestNodeCase && nearest == nil && node.suiteName == node.Parent.suiteName {
+		// The case is synthetically grouped under a real suite with the same
+		// test.suite.name even though the spans are not parented together.
 	} else if nearest != node.Parent {
 		idx.markStructureDirty()
 		return
@@ -664,10 +667,12 @@ func nearestTestAncestor(span *Span, nodesBySpan map[SpanID]*TestNode) *TestNode
 }
 
 func groupVirtualSuites(roots []*TestNode, nodesBySpan map[SpanID]*TestNode) []*TestNode {
-	realSuites := make(map[string]struct{})
-	for _, node := range nodesBySpan {
-		if node.Kind == TestNodeSuite {
-			realSuites[node.suiteName] = struct{}{}
+	realSuites := make(map[string]*TestNode)
+	for _, node := range roots {
+		if node.Kind == TestNodeSuite && node.suiteName != "" {
+			if realSuites[node.suiteName] == nil {
+				realSuites[node.suiteName] = node
+			}
 		}
 	}
 
@@ -678,8 +683,9 @@ func groupVirtualSuites(roots []*TestNode, nodesBySpan map[SpanID]*TestNode) []*
 			grouped = append(grouped, node)
 			continue
 		}
-		if _, hasRealSuite := realSuites[node.suiteName]; hasRealSuite {
-			grouped = append(grouped, node)
+		if suite := realSuites[node.suiteName]; suite != nil {
+			node.Parent = suite
+			suite.Children = append(suite.Children, node)
 			continue
 		}
 		suite := suiteGroups[node.suiteName]

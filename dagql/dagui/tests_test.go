@@ -233,6 +233,46 @@ func TestTestHierarchyCountsAndSuites(t *testing.T) {
 	if got := virtualSuite.Counts.Total(); got != 2 {
 		t.Fatalf("expected virtual suite not to count itself, got %d", got)
 	}
+
+	db = NewDB()
+	realSuite := SpanSnapshot{
+		ID:            testID(1),
+		TraceID:       TraceID{TraceID: trace.TraceID{1}},
+		Name:          "real-suite",
+		StartTime:     time.Unix(1, 0),
+		EndTime:       time.Unix(2, 0),
+		TestSuiteName: "real-suite",
+		Status:        sdktrace.Status{Code: codes.Ok},
+	}
+	orphanCaseA := testSnapshot(2, "case-a", SpanID{}, TestStatusSuccess)
+	orphanCaseA.TestSuiteName = "real-suite"
+	orphanCaseB := testSnapshot(3, "case-b", SpanID{}, TestStatusSuccess)
+	orphanCaseB.TestSuiteName = "real-suite"
+	db.ImportSnapshots([]SpanSnapshot{realSuite, orphanCaseA, orphanCaseB})
+	view = db.TestView()
+	realSuiteNode := view.FindSuiteByName("real-suite")
+	if realSuiteNode == nil || realSuiteNode.Kind != TestNodeSuite {
+		t.Fatalf("expected real suite node, got %#v", realSuiteNode)
+	}
+	if got := realSuiteNode.Counts.Total(); got != 2 {
+		t.Fatalf("expected real suite to adopt orphan cases, got %d", got)
+	}
+	if caseNode := view.FindCaseByName("case-a"); caseNode == nil || caseNode.Parent != realSuiteNode {
+		t.Fatalf("expected orphan case to be parented by real suite, got %#v", caseNode)
+	}
+
+	initialRebuilds := db.testIndex.structuralRebuildCount
+	orphanCaseA.TestStatus = TestStatusFailure
+	db.ImportSnapshots([]SpanSnapshot{orphanCaseA})
+	if db.TestView() != view {
+		t.Fatal("expected orphan case status update to reuse grouped view")
+	}
+	if db.testIndex.structuralRebuildCount != initialRebuilds {
+		t.Fatalf("expected no structural rebuild for orphan case status update, got %d -> %d", initialRebuilds, db.testIndex.structuralRebuildCount)
+	}
+	if realSuiteNode.Counts.Failing != 1 || realSuiteNode.Category != TestCategoryFailing {
+		t.Fatalf("expected real suite aggregate to update, got counts=%+v category=%s", realSuiteNode.Counts, realSuiteNode.Category)
+	}
 }
 
 func TestTestViewForSpanScopesVirtualSuites(t *testing.T) {
