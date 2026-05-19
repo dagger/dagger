@@ -239,7 +239,135 @@ func callDangFunction(ctx context.Context, env dang.EvalEnv, fnCall *core.Functi
 	return call.Eval(ctx, env)
 }
 
+type dangLocalTypes struct {
+	modules map[*dang.Module]struct{}
+}
+
+func dangEvalModule(env dang.EvalEnv) (dang.Env, bool) {
+	modVal, ok := env.(*dang.ModuleValue)
+	if !ok {
+		return nil, false
+	}
+	return modVal.Mod, true
+}
+
+func collectDangLocalTypes(env dang.EvalEnv) dangLocalTypes {
+	local := dangLocalTypes{modules: map[*dang.Module]struct{}{}}
+	mod, ok := dangEvalModule(env)
+	if !ok {
+		return local
+	}
+	for name, namedType := range mod.NamedTypes() {
+		origin, found := mod.LocalTypeOrigin(name)
+		if !found || origin.Kind != dang.BindingOriginLocal {
+			continue
+		}
+		if localMod, ok := namedType.(*dang.Module); ok {
+			local.modules[localMod] = struct{}{}
+		}
+	}
+	return local
+}
+
+func isDangLocalValueBinding(env dang.EvalEnv, name string) bool {
+	mod, ok := dangEvalModule(env)
+	if !ok {
+		return true
+	}
+	origin, found := mod.LocalValueOrigin(name)
+	return !found || origin.Kind == dang.BindingOriginLocal
+}
+
+func (local dangLocalTypes) contains(mod *dang.Module) bool {
+	_, ok := local.modules[mod]
+	return ok
+}
+
+func dangLocalTypeName(name string) string {
+	return "DangSDKLocalType" + name
+}
+
+// markDangLocalType gives a local Dang type a temporary, non-core schema name
+// while preserving its OriginalName. Core's Module.WithObject namespacing later
+// uses OriginalName to produce the final module-prefixed name; the temporary
+// Name only prevents local references like Container from being mistaken for
+// daggercore.Container before namespacing runs.
+func markDangLocalType(ctx context.Context, srv *dagql.Server, typeDef dagql.ObjectResult[*core.TypeDef], name string) (dagql.ObjectResult[*core.TypeDef], error) {
+	if name == "" || typeDef.Self() == nil {
+		return typeDef, nil
+	}
+	temporaryName := dangLocalTypeName(name)
+	switch typeDef.Self().Kind {
+	case core.TypeDefKindObject:
+		obj := typeDef.Self().AsObject.Value
+		var updatedObj dagql.ObjectResult[*core.ObjectTypeDef]
+		if err := srv.Select(ctx, obj, &updatedObj, dagql.Selector{
+			Field: "__withName",
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(temporaryName)}},
+		}); err != nil {
+			return typeDef, fmt.Errorf("mark local object type: %w", err)
+		}
+		updatedObjID, err := core.ResultIDInput(updatedObj)
+		if err != nil {
+			return typeDef, fmt.Errorf("local object type ID: %w", err)
+		}
+		var updated dagql.ObjectResult[*core.TypeDef]
+		if err := srv.Select(ctx, typeDef, &updated, dagql.Selector{
+			Field: "__withObjectTypeDef",
+			Args:  []dagql.NamedInput{{Name: "objectTypeDef", Value: updatedObjID}},
+		}); err != nil {
+			return typeDef, fmt.Errorf("mark local object typedef: %w", err)
+		}
+		return updated, nil
+	case core.TypeDefKindInterface:
+		iface := typeDef.Self().AsInterface.Value
+		var updatedIface dagql.ObjectResult[*core.InterfaceTypeDef]
+		if err := srv.Select(ctx, iface, &updatedIface, dagql.Selector{
+			Field: "__withName",
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(temporaryName)}},
+		}); err != nil {
+			return typeDef, fmt.Errorf("mark local interface type: %w", err)
+		}
+		updatedIfaceID, err := core.ResultIDInput(updatedIface)
+		if err != nil {
+			return typeDef, fmt.Errorf("local interface type ID: %w", err)
+		}
+		var updated dagql.ObjectResult[*core.TypeDef]
+		if err := srv.Select(ctx, typeDef, &updated, dagql.Selector{
+			Field: "__withInterfaceTypeDef",
+			Args:  []dagql.NamedInput{{Name: "interfaceTypeDef", Value: updatedIfaceID}},
+		}); err != nil {
+			return typeDef, fmt.Errorf("mark local interface typedef: %w", err)
+		}
+		return updated, nil
+	case core.TypeDefKindEnum:
+		enum := typeDef.Self().AsEnum.Value
+		var updatedEnum dagql.ObjectResult[*core.EnumTypeDef]
+		if err := srv.Select(ctx, enum, &updatedEnum, dagql.Selector{
+			Field: "__withName",
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(temporaryName)}},
+		}); err != nil {
+			return typeDef, fmt.Errorf("mark local enum type: %w", err)
+		}
+		updatedEnumID, err := core.ResultIDInput(updatedEnum)
+		if err != nil {
+			return typeDef, fmt.Errorf("local enum type ID: %w", err)
+		}
+		var updated dagql.ObjectResult[*core.TypeDef]
+		if err := srv.Select(ctx, typeDef, &updated, dagql.Selector{
+			Field: "__withEnumTypeDef",
+			Args:  []dagql.NamedInput{{Name: "enumTypeDef", Value: updatedEnumID}},
+		}); err != nil {
+			return typeDef, fmt.Errorf("mark local enum typedef: %w", err)
+		}
+		return updated, nil
+	default:
+		return typeDef, nil
+	}
+}
+
 func initDangModule(ctx context.Context, srv *dagql.Server, env dang.EvalEnv) (res dagql.ObjectResult[*core.Module], _ error) {
+	localTypes := collectDangLocalTypes(env)
 	sels := []dagql.Selector{
 		{
 			Field: "module",
@@ -248,13 +376,16 @@ func initDangModule(ctx context.Context, srv *dagql.Server, env dang.EvalEnv) (r
 
 	binds := env.Bindings(dang.PublicVisibility)
 	for _, binding := range binds {
+		if !isDangLocalValueBinding(env, binding.Key) {
+			continue
+		}
 		switch val := binding.Value.(type) {
 		case *dang.ConstructorFunction:
-			objDef, err := createObjectTypeDef(ctx, srv, binding.Key, val, env)
+			objDef, err := createObjectTypeDef(ctx, srv, binding.Key, val, env, localTypes)
 			if err != nil {
 				return res, fmt.Errorf("failed to create object %s: %w", binding.Key, err)
 			}
-			fnDef, err := createFunction(ctx, srv, val.ClassType, binding.Key, val.FnType, env)
+			fnDef, err := createFunction(ctx, srv, val.ClassType, binding.Key, val.FnType, env, localTypes)
 			if err != nil {
 				return res, fmt.Errorf("failed to create constructor for %s: %w", binding.Key, err)
 			}
@@ -288,7 +419,7 @@ func initDangModule(ctx context.Context, srv *dagql.Server, env dang.EvalEnv) (r
 			}
 			switch mod.Kind {
 			case dang.EnumKind:
-				enumDef, err := createEnumTypeDef(ctx, srv, binding.Key, val)
+				enumDef, err := createEnumTypeDef(ctx, srv, binding.Key, val, localTypes)
 				if err != nil {
 					return res, fmt.Errorf("failed to create enum %s: %w", binding.Key, err)
 				}
@@ -303,7 +434,7 @@ func initDangModule(ctx context.Context, srv *dagql.Server, env dang.EvalEnv) (r
 			case dang.ScalarKind:
 				slog.Info("skipping scalar module value (handled as string type)", "name", binding.Key)
 			case dang.InterfaceKind:
-				interfaceDef, err := createInterfaceTypeDef(ctx, srv, binding.Key, val, env)
+				interfaceDef, err := createInterfaceTypeDef(ctx, srv, binding.Key, val, env, localTypes)
 				if err != nil {
 					return res, fmt.Errorf("failed to create interface %s: %w", binding.Key, err)
 				}
@@ -331,10 +462,10 @@ func initDangModule(ctx context.Context, srv *dagql.Server, env dang.EvalEnv) (r
 	return res, nil
 }
 
-func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Module, name string, fn *hm.FunctionType, env dang.EvalEnv) (dagql.ObjectResult[*core.Function], error) {
+func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Module, name string, fn *hm.FunctionType, env dang.EvalEnv, localTypes dangLocalTypes) (dagql.ObjectResult[*core.Function], error) {
 	var res dagql.ObjectResult[*core.Function]
 
-	retTypeDef, err := dangTypeToTypeDef(ctx, srv, fn.Ret(false), env)
+	retTypeDef, err := dangTypeToTypeDef(ctx, srv, fn.Ret(false), env, localTypes)
 	if err != nil {
 		return res, fmt.Errorf("failed to convert return type for %s: %w", fn, err)
 	}
@@ -372,7 +503,7 @@ func createFunction(ctx context.Context, srv *dagql.Server, mod *dang.Module, na
 		if !mono {
 			return res, fmt.Errorf("non-monotype argument %s", arg.Key)
 		}
-		typeDef, err := dangTypeToTypeDef(ctx, srv, argType, env)
+		typeDef, err := dangTypeToTypeDef(ctx, srv, argType, env, localTypes)
 		if err != nil {
 			return res, fmt.Errorf("failed to convert argument type for %s: %w", arg.Key, err)
 		}
@@ -563,7 +694,7 @@ func dangValToGo(val dang.Value) (any, error) {
 	}
 }
 
-func createObjectTypeDef(ctx context.Context, srv *dagql.Server, name string, module *dang.ConstructorFunction, env dang.EvalEnv) (dagql.ObjectResult[*core.TypeDef], error) {
+func createObjectTypeDef(ctx context.Context, srv *dagql.Server, name string, module *dang.ConstructorFunction, env dang.EvalEnv, localTypes dangLocalTypes) (dagql.ObjectResult[*core.TypeDef], error) {
 	var res dagql.ObjectResult[*core.TypeDef]
 
 	classMod := module.ClassType
@@ -580,14 +711,25 @@ func createObjectTypeDef(ctx context.Context, srv *dagql.Server, name string, mo
 		},
 	}
 
-	for bindingName, scheme := range classMod.Bindings(dang.PublicVisibility) {
+	for _, form := range module.ClassBodyForms {
+		slot, ok := form.(*dang.SlotDecl)
+		if !ok || slot.Visibility < dang.PublicVisibility {
+			continue
+		}
+
+		bindingName := slot.Name.Name
+		scheme, found := classMod.LocalSchemeOf(bindingName)
+		if !found {
+			return res, fmt.Errorf("missing local slot %s for %s", bindingName, name)
+		}
+
 		slotType, isMono := scheme.Type()
 		if !isMono {
 			return res, fmt.Errorf("non-monotype method %s", bindingName)
 		}
 		switch x := slotType.(type) {
 		case *hm.FunctionType:
-			fnDef, err := createFunction(ctx, srv, classMod, bindingName, x, env)
+			fnDef, err := createFunction(ctx, srv, classMod, bindingName, x, env, localTypes)
 			if err != nil {
 				return res, fmt.Errorf("failed to create method %s for %s: %w", bindingName, name, err)
 			}
@@ -601,7 +743,7 @@ func createObjectTypeDef(ctx context.Context, srv *dagql.Server, name string, mo
 				Args:  []dagql.NamedInput{{Name: "function", Value: dagql.NewID[*core.Function](fnDefID)}},
 			})
 		default:
-			fieldDef, err := dangTypeToTypeDef(ctx, srv, slotType, env)
+			fieldDef, err := dangTypeToTypeDef(ctx, srv, slotType, env, localTypes)
 			if err != nil {
 				return res, fmt.Errorf("failed to create field %s: %w", bindingName, err)
 			}
@@ -629,17 +771,24 @@ func createObjectTypeDef(ctx context.Context, srv *dagql.Server, name string, mo
 	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
 		return res, fmt.Errorf("failed to create object typedef: %w", err)
 	}
+	if localTypes.contains(classMod) {
+		var err error
+		res, err = markDangLocalType(ctx, srv, res, name)
+		if err != nil {
+			return res, fmt.Errorf("failed to mark local object typedef: %w", err)
+		}
+	}
 
 	return res, nil
 }
 
-func dangTypeToTypeDef(ctx context.Context, srv *dagql.Server, dangType hm.Type, env dang.EvalEnv) (dagql.ObjectResult[*core.TypeDef], error) {
+func dangTypeToTypeDef(ctx context.Context, srv *dagql.Server, dangType hm.Type, env dang.EvalEnv, localTypes dangLocalTypes) (dagql.ObjectResult[*core.TypeDef], error) {
 	var res dagql.ObjectResult[*core.TypeDef]
 
 	sels := []dagql.Selector{{Field: "typeDef"}}
 
 	if nonNull, isNonNull := dangType.(hm.NonNullType); isNonNull {
-		inner, err := dangTypeToTypeDef(ctx, srv, nonNull.Type, env)
+		inner, err := dangTypeToTypeDef(ctx, srv, nonNull.Type, env, localTypes)
 		if err != nil {
 			return res, fmt.Errorf("failed to convert non-null type: %w", err)
 		}
@@ -659,7 +808,7 @@ func dangTypeToTypeDef(ctx context.Context, srv *dagql.Server, dangType hm.Type,
 
 	switch t := dangType.(type) {
 	case dang.ListType:
-		elemTypeDef, err := dangTypeToTypeDef(ctx, srv, t.Type, env)
+		elemTypeDef, err := dangTypeToTypeDef(ctx, srv, t.Type, env, localTypes)
 		if err != nil {
 			return res, fmt.Errorf("failed to convert list element type: %w", err)
 		}
@@ -698,34 +847,28 @@ func dangTypeToTypeDef(ctx context.Context, srv *dagql.Server, dangType hm.Type,
 		case "":
 			return res, fmt.Errorf("cannot directly expose ad-hoc object type: %s", t)
 		default:
-			sel := dagql.Selector{
-				Field: "withObject",
-				Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(t.Named)}},
+			switch t.Kind {
+			case dang.EnumKind:
+				sels = append(sels, dagql.Selector{
+					Field: "withEnum",
+					Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(t.Named)}},
+				})
+			case dang.ScalarKind:
+				sels = append(sels, dagql.Selector{
+					Field: "withKind",
+					Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindString}},
+				})
+			case dang.InterfaceKind:
+				sels = append(sels, dagql.Selector{
+					Field: "withInterface",
+					Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(t.Named)}},
+				})
+			default:
+				sels = append(sels, dagql.Selector{
+					Field: "withObject",
+					Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(t.Named)}},
+				})
 			}
-			if val, found := env.Get(t.Named); found {
-				if modVal, ok := val.(*dang.ModuleValue); ok {
-					if mod, ok := modVal.Mod.(*dang.Module); ok {
-						switch mod.Kind {
-						case dang.EnumKind:
-							sel = dagql.Selector{
-								Field: "withEnum",
-								Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(t.Named)}},
-							}
-						case dang.ScalarKind:
-							sel = dagql.Selector{
-								Field: "withKind",
-								Args:  []dagql.NamedInput{{Name: "kind", Value: core.TypeDefKindString}},
-							}
-						case dang.InterfaceKind:
-							sel = dagql.Selector{
-								Field: "withInterface",
-								Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(t.Named)}},
-							}
-						}
-					}
-				}
-			}
-			sels = append(sels, sel)
 		}
 	default:
 		return res, fmt.Errorf("unknown type: %T: %s", dangType, dangType)
@@ -734,11 +877,18 @@ func dangTypeToTypeDef(ctx context.Context, srv *dagql.Server, dangType hm.Type,
 	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
 		return res, fmt.Errorf("failed to select typedef: %w", err)
 	}
+	if mod, ok := dangType.(*dang.Module); ok && localTypes.contains(mod) {
+		var err error
+		res, err = markDangLocalType(ctx, srv, res, mod.Named)
+		if err != nil {
+			return res, fmt.Errorf("failed to mark local typedef: %w", err)
+		}
+	}
 
 	return res, nil
 }
 
-func createEnumTypeDef(ctx context.Context, srv *dagql.Server, name string, enumMod *dang.ModuleValue) (dagql.ObjectResult[*core.TypeDef], error) {
+func createEnumTypeDef(ctx context.Context, srv *dagql.Server, name string, enumMod *dang.ModuleValue, localTypes dangLocalTypes) (dagql.ObjectResult[*core.TypeDef], error) {
 	var res dagql.ObjectResult[*core.TypeDef]
 
 	sels := []dagql.Selector{
@@ -762,11 +912,18 @@ func createEnumTypeDef(ctx context.Context, srv *dagql.Server, name string, enum
 	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
 		return res, fmt.Errorf("failed to create enum typedef: %w", err)
 	}
+	if mod, ok := enumMod.Mod.(*dang.Module); ok && localTypes.contains(mod) {
+		var err error
+		res, err = markDangLocalType(ctx, srv, res, name)
+		if err != nil {
+			return res, fmt.Errorf("failed to mark local enum typedef: %w", err)
+		}
+	}
 
 	return res, nil
 }
 
-func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string, interfaceMod *dang.ModuleValue, env dang.EvalEnv) (dagql.ObjectResult[*core.TypeDef], error) {
+func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string, interfaceMod *dang.ModuleValue, env dang.EvalEnv, localTypes dangLocalTypes) (dagql.ObjectResult[*core.TypeDef], error) {
 	var res dagql.ObjectResult[*core.TypeDef]
 
 	mod, ok := interfaceMod.Mod.(*dang.Module)
@@ -789,7 +946,7 @@ func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string,
 		}
 		switch x := fieldType.(type) {
 		case *hm.FunctionType:
-			fnDef, err := createFunction(ctx, srv, mod, fieldName, x, env)
+			fnDef, err := createFunction(ctx, srv, mod, fieldName, x, env, localTypes)
 			if err != nil {
 				return res, fmt.Errorf("failed to create method %s for interface %s: %w", fieldName, name, err)
 			}
@@ -802,7 +959,7 @@ func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string,
 				Args:  []dagql.NamedInput{{Name: "function", Value: dagql.NewID[*core.Function](fnDefID)}},
 			})
 		default:
-			fieldTypeDef, err := dangTypeToTypeDef(ctx, srv, fieldType, env)
+			fieldTypeDef, err := dangTypeToTypeDef(ctx, srv, fieldType, env, localTypes)
 			if err != nil {
 				return res, fmt.Errorf("failed to create field %s for interface %s: %w", fieldName, name, err)
 			}
@@ -826,6 +983,13 @@ func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string,
 
 	if err := srv.Select(ctx, srv.Root(), &res, sels...); err != nil {
 		return res, fmt.Errorf("failed to create interface typedef: %w", err)
+	}
+	if localTypes.contains(mod) {
+		var err error
+		res, err = markDangLocalType(ctx, srv, res, name)
+		if err != nil {
+			return res, fmt.Errorf("failed to mark local interface typedef: %w", err)
+		}
 	}
 
 	return res, nil
