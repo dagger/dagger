@@ -115,13 +115,16 @@ func (dev *EngineDev) Playground(
 	sharedCache bool,
 	// +optional
 	metrics bool,
-	//+optional
+	// +optional
 	version string,
+	// Extra wolfi packages to install
+	// +optional
+	extraPackages []string,
 ) (*dagger.Container, error) {
 	ctr := base
 	if ctr == nil {
 		ctr = dag.Wolfi().Container(dagger.WolfiContainerOpts{
-			Packages: []string{"apk-tools", "git"},
+			Packages: append([]string{"apk-tools", "git"}, extraPackages...),
 		}).WithEnvVariable("HOME", "/root")
 	}
 	ctr = ctr.WithWorkdir("$HOME", dagger.ContainerWithWorkdirOpts{Expand: true})
@@ -315,7 +318,7 @@ func (dev *EngineDev) InstallClient(
 // Introspect the engine API schema, and return it as a json-encoded file.
 // This file is used by SDKs to generate clients.
 func (dev *EngineDev) IntrospectionJSON(ctx context.Context) (*dagger.File, error) {
-	playground, err := dev.Playground(ctx, nil, false, false, false, "")
+	playground, err := dev.Playground(ctx, nil, false, false, false, "", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -332,7 +335,7 @@ func (dev *EngineDev) GraphqlSchema(
 	// +optional
 	version string,
 ) (*dagger.File, error) {
-	playground, err := dev.Playground(ctx, nil, false, false, false, "")
+	playground, err := dev.Playground(ctx, nil, false, false, false, "", nil)
 	if err != nil {
 		return nil, err
 	}

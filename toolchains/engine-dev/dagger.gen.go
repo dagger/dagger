@@ -624,7 +624,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg version", err))
 				}
 			}
-			return (*EngineDev).Playground(&parent, ctx, base, gpuSupport, sharedCache, metrics, version)
+			var extraPackages []string
+			if inputArgs["extraPackages"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["extraPackages"]), &extraPackages)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg extraPackages", err))
+				}
+			}
+			return (*EngineDev).Playground(&parent, ctx, base, gpuSupport, sharedCache, metrics, version, extraPackages)
 		case "Publish":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
