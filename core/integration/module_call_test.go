@@ -1431,7 +1431,7 @@ func (m *Test) Fn(ctx context.Context, sockPath string) (string, error) {
 
 		sockPath, cleanup := getHostSocket(t)
 		defer cleanup()
-		sockID, err := hostDaggerExec(ctx, t, idModDir, "call", "fn", "--sockPath", sockPath)
+		sockID, err := hostDaggerOutput(ctx, t, idModDir, "call", "fn", "--sockPath", sockPath)
 		require.NoError(t, err)
 
 		modDir := t.TempDir()
