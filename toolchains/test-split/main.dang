@@ -28,7 +28,7 @@ type TestSplit {
   """
   pub testBase: Void @check {
     testSkip(
-      skip: ["TestProvision", "TestTelemetry", "TestModule", "TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava", "TestContainer", "TestDockerfile", "TestLLM", "TestCLI", "TestEngine", "TestClientGenerator", "TestInterface", "TestCall", "TestShell", "TestDaggerCMD", "TestWorkspace"],
+      skip: ["TestProvision", "TestTelemetry", "TestModule", "TestDang", "TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava", "TestContainer", "TestDockerfile", "TestLLM", "TestCLI", "TestEngine", "TestClientGenerator", "TestInterface", "TestCall", "TestShell", "TestDaggerCMD", "TestWorkspace"],
       pkg: "./...",
       race: true,
     )
@@ -94,7 +94,7 @@ type TestSplit {
   Test Module Runtimes
   """
   pub testModuleRuntimes: Void @check {
-    testSpecific(["TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"])
+    testSpecific(["TestDang", "TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava"])
   }
 
   """
