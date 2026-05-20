@@ -356,8 +356,8 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.BoolVar(&useCloudEngine, "cloud", useCloudEngine, "Run in a Dagger Cloud Engine")
 	flags.Lookup("cloud").Hidden = true
 
-	// this flag enables scale-out for a few commands, e.g. checks, generate
-	flags.BoolVar(&enableScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each check or generate executed")
+	// this flag enables scale-out for a few commands, e.g. checks
+	flags.BoolVar(&enableScaleOut, "scale-out", false, "Enable scale-out to cloud engines for each check executed")
 	flags.Lookup("scale-out").Hidden = true
 
 	for _, fl := range []string{
