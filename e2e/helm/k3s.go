@@ -39,7 +39,7 @@ func newK3S(dag *dagger.Client, name string) k3sCluster {
 		AsService(dagger.ContainerAsServiceOpts{
 			Args: []string{
 				"sh", "-c",
-				"k3s server --debug --bind-address $(ip route | grep src | awk '{print $NF}') --disable traefik --disable metrics-server --egress-selector-mode=disabled",
+				"k3s server --debug --snapshotter=native --bind-address $(ip route | grep src | awk '{print $NF}') --disable traefik --disable metrics-server --egress-selector-mode=disabled",
 			},
 			InsecureRootCapabilities: true,
 			UseEntrypoint:            true,
