@@ -292,7 +292,7 @@ build-backend = "poetry.core.masonry.api"
 			c := connect(ctx, t)
 
 			out, err := daggerCliBase(t, c).
-				With(withPythonModule(t, c, "python/base-test")).
+				With(fileContents("dagger.json", `{"name":"test","engineVersion":"latest","sdk":{"source":"python"}}`)).
 				With(fileContents(tc.path, fmt.Sprintf(`
 import anyio
 import dagger
