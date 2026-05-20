@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -466,10 +467,10 @@ func (c *Cache) captureSessionResultInstallSpan(ctx context.Context, sessionID s
 	}
 
 	c.egraphMu.RLock()
-	closure := c.collectTransitiveDepsLocked(shared.id)
+	depIDs := c.transitiveDepIDsLocked(shared.id)
 	c.egraphMu.RUnlock()
 
-	for depID := range closure {
+	for _, depID := range depIDs {
 		c.recordSessionResultInstallSpanLocked(sessionID, depID, spanCtx)
 	}
 }
@@ -478,49 +479,33 @@ func (c *Cache) recordSessionResultInstallSpanLocked(sessionID string, resultID 
 	c.sessionMu.Lock()
 	defer c.sessionMu.Unlock()
 	if c.sessionResultInstallSpans == nil {
-		c.sessionResultInstallSpans = make(map[string]map[sharedResultID]map[trace.SpanID]trace.SpanContext)
+		c.sessionResultInstallSpans = make(map[string]map[sharedResultID]map[string]trace.SpanContext)
 	}
 	bySession := c.sessionResultInstallSpans[sessionID]
 	if bySession == nil {
-		bySession = make(map[sharedResultID]map[trace.SpanID]trace.SpanContext)
+		bySession = make(map[sharedResultID]map[string]trace.SpanContext)
 		c.sessionResultInstallSpans[sessionID] = bySession
 	}
 	byResult := bySession[resultID]
 	if byResult == nil {
-		byResult = make(map[trace.SpanID]trace.SpanContext)
+		byResult = make(map[string]trace.SpanContext)
 		bySession[resultID] = byResult
 	}
-	byResult[spanCtx.SpanID()] = spanCtx
+	byResult[spanContextKey(spanCtx)] = spanCtx
 }
 
-// collectTransitiveDepsLocked returns all sharedResultIDs reachable from
-// rootID via parent.deps, excluding rootID itself. Caller must hold egraphMu
-// at least for read.
-func (c *Cache) collectTransitiveDepsLocked(rootID sharedResultID) map[sharedResultID]struct{} {
-	out := make(map[sharedResultID]struct{})
+// transitiveDepIDsLocked returns the cached liveness closure of rootID via
+// parent.deps, excluding rootID itself. Caller must hold egraphMu at least for
+// read. The returned IDs are sorted for deterministic install-span recording.
+func (c *Cache) transitiveDepIDsLocked(rootID sharedResultID) []sharedResultID {
 	if rootID == 0 {
-		return out
+		return nil
 	}
-	queue := []sharedResultID{rootID}
-	for len(queue) > 0 {
-		id := queue[0]
-		queue = queue[1:]
-		res := c.resultsByID[id]
-		if res == nil {
-			continue
-		}
-		for depID := range res.deps {
-			if depID == rootID {
-				continue
-			}
-			if _, seen := out[depID]; seen {
-				continue
-			}
-			out[depID] = struct{}{}
-			queue = append(queue, depID)
-		}
+	res := c.resultsByID[rootID]
+	if res == nil || res.transitiveDeps == nil || res.transitiveDeps.Empty() {
+		return nil
 	}
-	return out
+	return res.transitiveDeps.Slice()
 }
 
 // ResultInstallSpans returns install span contexts recorded for res in the
@@ -561,20 +546,22 @@ func (c *Cache) sessionResultInstallSpanContexts(sessionID string, resultID shar
 			out = append(out, spanCtx)
 		}
 	}
+	slices.SortFunc(out, compareSpanContexts)
 	return out
 }
 
 func lazyResumeLinks(originalSpanCtx trace.SpanContext, installSpanContexts []trace.SpanContext) []trace.Link {
 	links := []trace.Link{{SpanContext: originalSpanCtx}}
-	seen := map[trace.SpanID]struct{}{originalSpanCtx.SpanID(): {}}
+	seen := map[string]struct{}{spanContextKey(originalSpanCtx): {}}
 	for _, installCtx := range installSpanContexts {
 		if !installCtx.IsValid() {
 			continue
 		}
-		if _, dup := seen[installCtx.SpanID()]; dup {
+		key := spanContextKey(installCtx)
+		if _, dup := seen[key]; dup {
 			continue
 		}
-		seen[installCtx.SpanID()] = struct{}{}
+		seen[key] = struct{}{}
 		links = append(links, trace.Link{
 			SpanContext: installCtx,
 			Attributes: []attribute.KeyValue{
@@ -870,8 +857,11 @@ func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*shared
 			onReleases = append(onReleases, res.onRelease)
 		}
 		res.deps = nil
+		res.depParents = nil
+		res.transitiveDeps = nil
 
 		for _, depID := range depIDs {
+			c.forgetDependencyEdgeLocked(res.id, depID)
 			depRes := c.resultsByID[depID]
 			if depRes == nil {
 				continue
@@ -1247,9 +1237,9 @@ type Cache struct {
 	// install spans of the failed result so dagui marks them caused-failed.
 	// Membership is expanded eagerly at install time over the owned-dependency
 	// closure (HasDependencyResults / HasDependencyResultsKinds with Owned=true),
-	// and over the transitive parent.deps closure for module API call returns —
-	// no reverse walk at failure time.
-	sessionResultInstallSpans map[string]map[sharedResultID]map[trace.SpanID]trace.SpanContext
+	// and over the cached transitive parent.deps closure for module API call
+	// returns — no graph walk at install or failure time.
+	sessionResultInstallSpans map[string]map[sharedResultID]map[string]trace.SpanContext
 	sessionResourcesBySession map[string]map[SessionResourceHandle]*sessionResourceBindings
 	sessionHandlesBySession   map[string]*set.TreeSet[SessionResourceHandle]
 
@@ -1306,13 +1296,24 @@ func compareSharedResults(a, b *sharedResult) int {
 		return -1
 	case b == nil:
 		return 1
-	case a.id < b.id:
-		return -1
-	case a.id > b.id:
-		return 1
 	default:
-		return 0
+		return compareSharedResultID(a.id, b.id)
 	}
+}
+
+func compareSpanContexts(a, b trace.SpanContext) int {
+	aTraceID := a.TraceID()
+	bTraceID := b.TraceID()
+	if cmp := bytes.Compare(aTraceID[:], bTraceID[:]); cmp != 0 {
+		return cmp
+	}
+	aSpanID := a.SpanID()
+	bSpanID := b.SpanID()
+	return bytes.Compare(aSpanID[:], bSpanID[:])
+}
+
+func spanContextKey(ctx trace.SpanContext) string {
+	return ctx.TraceID().String() + "/" + ctx.SpanID().String()
 }
 
 type cacheUsageSizer interface {
@@ -1361,6 +1362,11 @@ type sharedResult struct {
 	// explicit out-of-band deps and exact resultCall refs mirrored into deps
 	// during materialization.
 	deps map[sharedResultID]struct{}
+	// depParents is the reverse index for direct deps. transitiveDeps caches the
+	// full parent.deps closure so module-return install-span propagation can copy
+	// a sorted set instead of re-walking the egraph under lock on every return.
+	depParents     *set.TreeSet[sharedResultID]
+	transitiveDeps *set.TreeSet[sharedResultID]
 	// sessionResourceHandle is set when this result is itself an attached
 	// session-resource handle leaf. requiredSessionResources is the flattened
 	// transitive set of handle requirements for cache-hit validation.
@@ -1856,6 +1862,7 @@ func (c *Cache) addExplicitDependencyLocked(
 	}
 
 	parentRes.deps[depRes.id] = struct{}{}
+	c.rememberDependencyEdgeLocked(parentRes, depRes)
 	c.incrementIncomingOwnershipLocked(ctx, depRes)
 	c.traceExplicitDepAdded(ctx, parentRes.id, depRes.id, reason)
 	if err := c.recomputeRequiredSessionResourcesLocked(parentRes); err != nil {
@@ -1863,6 +1870,62 @@ func (c *Cache) addExplicitDependencyLocked(
 	}
 
 	return nil
+}
+
+func (c *Cache) rememberDependencyEdgeLocked(parentRes *sharedResult, depRes *sharedResult) {
+	if parentRes == nil || depRes == nil || parentRes.id == 0 || depRes.id == 0 || parentRes.id == depRes.id {
+		return
+	}
+	if depRes.depParents == nil {
+		depRes.depParents = newSharedResultIDSet()
+	}
+	depRes.depParents.Insert(parentRes.id)
+
+	delta := newSharedResultIDSet()
+	delta.Insert(depRes.id)
+	if depRes.transitiveDeps != nil {
+		delta.InsertSet(depRes.transitiveDeps)
+	}
+	c.propagateTransitiveDepDeltaLocked(parentRes, delta)
+}
+
+func (c *Cache) propagateTransitiveDepDeltaLocked(res *sharedResult, delta *set.TreeSet[sharedResultID]) {
+	if res == nil || delta == nil || delta.Empty() {
+		return
+	}
+	if res.transitiveDeps == nil {
+		res.transitiveDeps = newSharedResultIDSet()
+	}
+	inserted := newSharedResultIDSet()
+	for depID := range delta.Items() {
+		if depID == 0 || depID == res.id {
+			continue
+		}
+		if res.transitiveDeps.Insert(depID) {
+			inserted.Insert(depID)
+		}
+	}
+	if inserted.Empty() || res.depParents == nil || res.depParents.Empty() {
+		return
+	}
+	for parentID := range res.depParents.Items() {
+		parent := c.resultsByID[parentID]
+		if parent == nil {
+			continue
+		}
+		c.propagateTransitiveDepDeltaLocked(parent, inserted)
+	}
+}
+
+func (c *Cache) forgetDependencyEdgeLocked(parentID sharedResultID, depID sharedResultID) {
+	depRes := c.resultsByID[depID]
+	if depRes == nil || depRes.depParents == nil {
+		return
+	}
+	depRes.depParents.Remove(parentID)
+	if depRes.depParents.Empty() {
+		depRes.depParents = nil
+	}
 }
 
 type Result[T Typed] struct {
@@ -3802,6 +3865,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			continue
 		}
 		oc.res.deps[depID] = struct{}{}
+		c.rememberDependencyEdgeLocked(oc.res, depRes)
 		c.incrementIncomingOwnershipLocked(ctx, depRes)
 		c.traceResultCallDepAdded(ctx, oc.res.id, depID, dep.path)
 	}

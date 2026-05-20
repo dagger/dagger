@@ -334,8 +334,10 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			if parent.deps == nil {
 				parent.deps = make(map[sharedResultID]struct{})
 			}
+			dep := c.resultsByID[depID]
 			parent.deps[depID] = struct{}{}
-			c.incrementIncomingOwnershipLocked(ctx, c.resultsByID[depID])
+			c.rememberDependencyEdgeLocked(parent, dep)
+			c.incrementIncomingOwnershipLocked(ctx, dep)
 			c.traceImportResultDepLoaded(ctx, importRunID, parentID, depID)
 			c.traceExplicitDepAdded(ctx, parentID, depID, "import")
 		}
