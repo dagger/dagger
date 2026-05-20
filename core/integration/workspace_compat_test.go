@@ -111,6 +111,24 @@ type Myapp {
 	})
 }
 
+func legacySDKOnlyGoSource(t testing.TB, c *dagger.Client, message string) *dagger.Container {
+	t.Helper()
+
+	return legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "sdk": {"source": "go"}
+}`, func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithNewFile("main.go", `package main
+
+type Myapp struct{}
+
+func (m *Myapp) Greet() string {
+	return "`+message+`"
+}
+`)
+	})
+}
+
 func legacyCompatRemoteRef(ctx context.Context, t *testctx.T, c *dagger.Client, content *dagger.Directory) string {
 	t.Helper()
 
@@ -310,20 +328,44 @@ func (WorkspaceCompatSuite) TestCompatDetection(ctx context.Context, t *testctx.
 		require.Equal(t, "hello from compat source", strings.TrimSpace(out))
 	})
 
-	t.Run("sdk-only root source does not create a compat workspace", func(ctx context.Context, t *testctx.T) {
+	t.Run("sdk-only root source creates a compat workspace", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := legacySDKOnlyDangSource(t, c, "hello from root source")
 
-		out, err := ctr.With(compatDaggerExecFail("call", "greet")).CombinedOutput(ctx)
+		out, err := ctr.With(compatDaggerCall("greet")).CombinedOutput(ctx)
 		require.NoError(t, err, out)
-		require.Contains(t, out, `unknown command "greet" for "dagger call"`)
-		require.NotContains(t, out, "hello from root source")
-		require.NotContains(t, out, "inferring from dagger.json")
+		require.Contains(t, out, "hello from root source")
+		require.Contains(t, out, "inferring from dagger.json")
 
 		out, err = ctr.With(compatDaggerExec("call", "-m", ".", "greet")).CombinedOutput(ctx)
 		require.NoError(t, err, out)
 		require.Contains(t, out, "hello from root source")
 		require.NotContains(t, out, "inferring from dagger.json")
+	})
+
+	t.Run("sdk-only child config is found from cwd", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
+			WithNewFile("modules/plain/dagger.json", `{
+  "name": "plain",
+  "sdk": {"source": "dang"}
+}`).
+			WithNewFile("modules/plain/main.dang", `
+type Plain {
+  pub greet: String! {
+    "hello from child module"
+  }
+}
+`).
+			WithExec([]string{"mkdir", "-p", "modules/plain/nested"}).
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "initial"}).
+			WithWorkdir("/work/modules/plain/nested")
+
+		out, err := ctr.With(compatDaggerCall("greet")).CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "hello from child module")
+		require.Contains(t, out, "No workspace config found, inferring from dagger.json.")
 	})
 
 	t.Run("native workspace config suppresses compat inference", func(ctx context.Context, t *testctx.T) {
@@ -356,6 +398,43 @@ type Native {
 		out, err := ctr.With(compatDaggerCall("native", "greet")).CombinedOutput(ctx)
 		require.NoError(t, err, out)
 		require.Contains(t, out, "hello from native workspace")
+		require.NotContains(t, out, "inferring from dagger.json")
+	})
+
+	t.Run("native workspace config suppresses sdk-only child config", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := workspaceBase(t, c).
+			WithNewFile(".dagger/config.toml", `[modules.native]
+source = "modules/native"
+entrypoint = true
+`).
+			WithNewFile(".dagger/modules/native/dagger.json", `{"name":"native","sdk":{"source":"dang"}}`).
+			WithNewFile(".dagger/modules/native/main.dang", `
+type Native {
+  pub identify: String! {
+    "native workspace"
+  }
+}
+`).
+			WithNewFile("modules/plain/dagger.json", `{
+  "name": "plain",
+  "sdk": {"source": "dang"}
+}`).
+			WithNewFile("modules/plain/main.dang", `
+type Plain {
+  pub identify: String! {
+    "cwd dagger.json"
+  }
+}
+`).
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "initial"}).
+			WithWorkdir("/work/modules/plain")
+
+		out, err := ctr.With(compatDaggerCall("identify")).CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "native workspace")
+		require.NotContains(t, out, "cwd dagger.json")
 		require.NotContains(t, out, "inferring from dagger.json")
 	})
 }
@@ -547,19 +626,31 @@ func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.
 		require.Equal(t, "hello from migrated compat", strings.TrimSpace(out))
 	})
 
-	t.Run("migrate is a no-op for sdk-only root-source modules", func(ctx context.Context, t *testctx.T) {
+	t.Run("migrate creates root parent workspace for sdk-only root-source modules", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		ctr := legacySDKOnlyDangSource(t, c, "hello from sdk-only root")
+		ctr := legacySDKOnlyGoSource(t, c, "hello from sdk-only root").
+			With(compatDaggerExec("migrate", "-y"))
 
-		out, err := ctr.With(compatDaggerExec("migrate")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "No migration needed.")
+		out, err := ctr.CombinedOutput(ctx)
+		require.NoError(t, err, out)
+		require.Contains(t, out, "Warning: Root module requires explicit loading. If your scripts rely on implicit loading, change them to `dagger -m . ...`.")
 
 		_, err = ctr.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
 		require.NoError(t, err, "sdk-only dagger.json should remain in place")
 
 		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/config.toml"}).Sync(ctx)
-		require.Error(t, err, "sdk-only modules should not create workspace config")
+		require.NoError(t, err, "root parent workspace config should be created")
+
+		configOut, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, configOut, `[modules.go-sdk]`)
+		require.Contains(t, configOut, `source = "github.com/dagger/go-sdk"`)
+
+		reportOut, err := ctr.WithExec([]string{"cat", ".dagger/migration-report.md"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, reportOut, "## Root module requires explicit loading")
+		require.Contains(t, reportOut, "**This works**: `dagger -m . call --help`")
+		require.Contains(t, reportOut, "**This no longer works**: `dagger call --help`")
 	})
 
 	t.Run("migrate writes a migration report for unsupported gaps", func(ctx context.Context, t *testctx.T) {
@@ -589,14 +680,14 @@ func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.
 
 		output, err := ctr.CombinedOutput(ctx)
 		require.NoError(t, err, output)
-		require.Contains(t, output, "Warning: 2 migration gap(s) need manual review; see .dagger/migration-report.md")
+		require.Contains(t, output, "Warning: 2 old setting(s) need review; see .dagger/migration-report.md")
 
 		report, err := ctr.WithExec([]string{"cat", ".dagger/migration-report.md"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, report, "# Migration Report")
-		require.Contains(t, report, "Module `toolchain`")
-		require.Contains(t, report, `constructor arg "src" has 'ignore' and 'defaultPath' customization`)
-		require.Contains(t, report, `function customization for "build" could not be migrated automatically`)
+		require.Contains(t, report, "`toolchain` needs a manual check")
+		require.Contains(t, report, `constructor arg "src" has 'ignore' and 'defaultPath', which workspace settings do not support`)
+		require.Contains(t, report, `function setting "build.tag" is not supported in workspace config`)
 	})
 }
 
