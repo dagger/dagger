@@ -151,9 +151,14 @@ type Myapp {
 		require.Equal(t, "hello from original source", strings.TrimSpace(out))
 	})
 
-	t.Run("sdk-only root-source modules create root parent workspace", func(ctx context.Context, t *testctx.T) {
+	t.Run("sdk-only config migrates before install", func(ctx context.Context, t *testctx.T) {
+		// The allowed path for an SDK-only dagger.json is explicit migration
+		// first, then workspace mutation. Migration creates the parent native
+		// workspace config and preserves the root module, so a later `dagger
+		// install` can safely add dependencies to .dagger/config.toml.
 		c := connect(ctx, t)
 		ctr := legacySDKOnlyGoSource(t, c, "hello from root source").
+			With(legacyDangModule("dep", "dep", "Dep", "hello from dep")).
 			With(daggerExec("migrate", "-y"))
 
 		out, err := ctr.CombinedOutput(ctx)
@@ -183,6 +188,16 @@ type Myapp {
 		callOut, err := ctr.With(daggerCallAt(".", "greet")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hello from root source", strings.TrimSpace(callOut))
+
+		ctr = ctr.With(daggerExec("install", "./dep"))
+		installOut, err := ctr.CombinedOutput(ctx)
+		require.NoError(t, err, installOut)
+		require.Contains(t, installOut, `Installed module "dep" in /work/.dagger/config.toml`)
+
+		configOut, err = ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, configOut, `[modules.dep]`)
+		require.Contains(t, configOut, `source = "../dep"`)
 	})
 
 	t.Run("remote refs refresh lock entries", func(ctx context.Context, t *testctx.T) {
