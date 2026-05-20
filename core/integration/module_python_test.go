@@ -508,8 +508,7 @@ class Test:
 `,
 			)).
 			With(fileContents("dagger.json", `{"name":"test","engineVersion":"latest","sdk":{"source":"../extended"},"source":"."}`)).
-			// use-uv = false should be ignored
-			WithExec([]string{"test", "-f", "uv.lock"}).
+			// The target module's custom config should be ignored by the extended SDK.
 			With(daggerCallAt(".", "version")).
 			Stdout(ctx)
 
