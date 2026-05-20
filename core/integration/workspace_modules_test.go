@@ -95,7 +95,10 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.Equal(t, "../dep", cfg.Modules["dep"].Source)
 	})
 
-	t.Run("workspace install initializes a workspace when needed", func(ctx context.Context, t *testctx.T) {
+	t.Run("install initializes empty workspace", func(ctx context.Context, t *testctx.T) {
+		// With no native workspace config and no legacy dagger.json, `dagger
+		// install` owns workspace initialization: it should create
+		// .dagger/config.toml and record the dependency there.
 		workdir := t.TempDir()
 		depDir := filepath.Join(workdir, "dep")
 
@@ -158,31 +161,6 @@ entrypoint = true
 		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "call", "greet")
 		require.NoError(t, err)
 		require.Equal(t, "hello from absolute workspace module", strings.TrimSpace(string(out)))
-	})
-
-	t.Run("workspace install creates workspace config instead of editing dagger.json for standalone modules", func(ctx context.Context, t *testctx.T) {
-		workdir := t.TempDir()
-		depDir := filepath.Join(workdir, "dep")
-
-		require.NoError(t, os.MkdirAll(depDir, 0o755))
-		initGitRepo(ctx, t, workdir)
-
-		copyTestdataFixture(ctx, t, depDir, "modules", "go", "minimal-dep")
-		copyTestdataFixture(ctx, t, workdir, "modules", "go", "minimal-app")
-
-		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
-		require.NoError(t, err)
-		outStr := strings.TrimSpace(string(out))
-		require.Contains(t, outStr, "Created workspace config in "+filepath.Join(workdir, workspacecfg.LockDirName))
-		require.Contains(t, outStr, `Installed module "dep" in `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName))
-
-		moduleConfig, err := os.ReadFile(filepath.Join(workdir, workspacecfg.ModuleConfigFileName))
-		require.NoError(t, err)
-		require.NotContains(t, string(moduleConfig), `"name": "dep"`)
-
-		cfg := readInstalledWorkspaceConfig(t, workdir)
-		require.Contains(t, cfg.Modules, "dep")
-		require.Equal(t, "../dep", cfg.Modules["dep"].Source)
 	})
 
 	t.Run("workspace install rejects module-specific flags", func(ctx context.Context, t *testctx.T) {
@@ -282,7 +260,10 @@ func (WorkspaceModulesSuite) TestWorkspaceManagedModuleBehavior(ctx context.Cont
 		require.Equal(t, "hello, world!", out)
 	})
 
-	t.Run("configured workspace ignores cwd dagger.json", func(ctx context.Context, t *testctx.T) {
+	t.Run("native workspace ignores cwd dagger.json", func(ctx context.Context, t *testctx.T) {
+		// Once .dagger/config.toml exists, it is authoritative for workspace
+		// module commands. A dagger.json in the current working directory must
+		// not steal resolution away from the configured workspace module.
 		ctr := workspaceFixture(t, c, "workspace-managed")
 
 		out, err := ctr.
