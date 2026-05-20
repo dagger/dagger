@@ -82,7 +82,11 @@ source-include = ["tests/**", "docs/**", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/"]
-addopts = ["--import-mode=importlib"]
+addopts = [
+    "--import-mode=importlib",
+    # Show Hypothesis example counts for generated module-source tests.
+    "--hypothesis-show-statistics",
+]
 markers = [
     "slow: mark test as slow (integration)",
     "provision: mark provisioning tests",
