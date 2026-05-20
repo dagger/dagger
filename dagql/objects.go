@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"sort"
@@ -171,14 +172,8 @@ func (class Class[T]) ForkObjectType(srv *Server) (ObjectType, error) {
 	defer class.fieldsL.RUnlock()
 
 	forked := class
-	forked.fields = make(map[string][]*Field[T], len(class.fields))
-	for name, fields := range class.fields {
-		forked.fields[name] = slices.Clone(fields)
-	}
-	forked.interfaces = make(map[string]*Interface, len(class.interfaces))
-	for name, iface := range class.interfaces {
-		forked.interfaces[name] = iface
-	}
+	forked.fields = maps.Clone(forked.fields)
+	forked.interfaces = maps.Clone(class.interfaces)
 	forked.fieldsL = new(sync.RWMutex)
 	forked.invalidateSchemaCache = srv.invalidateSchemaCache
 	return forked, nil
@@ -1543,8 +1538,7 @@ func findExpectedTypeName(input Input) string {
 	v := reflect.ValueOf(input)
 	switch v.Kind() {
 	case reflect.Struct:
-		for i := 0; i < v.NumField(); i++ {
-			f := v.Field(i)
+		for _, f := range v.Fields() {
 			if !f.CanInterface() {
 				continue
 			}
@@ -1640,14 +1634,13 @@ func reflectFieldsForType[T any](obj any, optIn bool, init func(any) (T, error))
 	if objT == nil {
 		return nil, nil
 	}
-	if objT.Kind() == reflect.Ptr {
+	if objT.Kind() == reflect.Pointer {
 		objT = objT.Elem()
 	}
 	if objT.Kind() != reflect.Struct {
 		return nil, fmt.Errorf("inputs must be a struct, got %T (%s)", obj, objT.Kind())
 	}
-	for i := range objT.NumField() {
-		fieldT := objT.Field(i)
+	for fieldT := range objT.Fields() {
 		if fieldT.Anonymous {
 			fieldI := reflect.New(fieldT.Type).Elem().Interface()
 			embeddedFields, err := reflectFieldsForType(fieldI, optIn, init)
@@ -1702,7 +1695,7 @@ func getField(
 		return nil, false, fmt.Errorf("get field %q: object is nil", fieldName)
 	}
 	objV := reflect.ValueOf(obj)
-	if objT.Kind() == reflect.Ptr {
+	if objT.Kind() == reflect.Pointer {
 		// if objV.IsZero() {
 		// 	return nil, false, nil
 		// }
