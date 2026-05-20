@@ -3,6 +3,8 @@ package schema
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/dagger/dagger/core"
@@ -231,8 +233,8 @@ func TestWorkspaceAPIPath(t *testing.T) {
 func TestWorkspaceMigrationWarningsKeepsGapWarningsAggregated(t *testing.T) {
 	plan := &workspace.MigrationPlan{
 		Warnings: []string{
-			"migration gap one",
-			"migration gap two",
+			"old setting one",
+			"old setting two",
 		},
 		MigrationGapCount:   2,
 		MigrationReportPath: ".dagger/migration-report.md",
@@ -242,8 +244,215 @@ func TestWorkspaceMigrationWarningsKeepsGapWarningsAggregated(t *testing.T) {
 
 	require.Equal(t, []string{
 		"hint warning",
-		"2 migration gap(s) need manual review; see .dagger/migration-report.md",
+		"2 old setting(s) need review; see .dagger/migration-report.md",
 	}, workspaceMigrationWarnings(plan))
+}
+
+func TestWorkspaceMigrationRootPath(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "repo")
+	ws := &core.Workspace{}
+	ws.SetHostPath(root)
+	plan := &workspace.MigrationPlan{
+		ProjectRoot: filepath.Join(root, "services", "api"),
+	}
+
+	got, err := workspaceMigrationRootPath(ws, plan, filepath.Join(workspace.LockDirName, workspace.ConfigFileName))
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join("services", "api", workspace.LockDirName, workspace.ConfigFileName), got)
+}
+
+func TestWorkspaceMigrationParentPlans(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "repo")
+	ws := &core.Workspace{}
+	ws.SetHostPath(root)
+
+	t.Run("plain module outside migrated workspaces creates root parent with SDK module", func(t *testing.T) {
+		plain := testRuntimeCompatWorkspace(t, filepath.Join(root, "modules", "video"), `{
+  "name": "video",
+  "sdk": {"source": "go"}
+}`)
+
+		plans, err := workspaceMigrationParentPlansForPlainModules(ws, []*workspace.CompatWorkspace{plain}, nil)
+		require.NoError(t, err)
+		require.Len(t, plans, 1)
+		require.Equal(t, root, plans[0].ProjectRoot)
+		cfg, err := workspace.ParseConfig(plans[0].WorkspaceConfigData)
+		require.NoError(t, err)
+		require.Equal(t, "github.com/dagger/go-sdk", cfg.Modules["go-sdk"].Source)
+		require.Equal(t, []string{
+			"modules/video requires explicit loading. If your scripts rely on implicit loading, change them to `dagger -m modules/video ...`.",
+		}, plans[0].Warnings)
+		require.Equal(t, filepath.Join(workspace.LockDirName, "migration-report.md"), plans[0].MigrationReportPath)
+		require.Contains(t, string(plans[0].MigrationReportData), "## modules/video requires explicit loading")
+		require.Contains(t, string(plans[0].MigrationReportData), "**This works**: `dagger -m modules/video call --help`")
+		require.Contains(t, string(plans[0].MigrationReportData), "**This no longer works**: `cd modules/video; dagger call --help`")
+	})
+
+	t.Run("plain root module creates root parent with SDK module", func(t *testing.T) {
+		plain := testRuntimeCompatWorkspace(t, root, `{
+  "name": "myapp",
+  "sdk": {"source": "go"}
+}`)
+
+		plans, err := workspaceMigrationParentPlansForPlainModules(ws, []*workspace.CompatWorkspace{plain}, nil)
+		require.NoError(t, err)
+		require.Len(t, plans, 1)
+		require.Equal(t, root, plans[0].ProjectRoot)
+		cfg, err := workspace.ParseConfig(plans[0].WorkspaceConfigData)
+		require.NoError(t, err)
+		require.Equal(t, "github.com/dagger/go-sdk", cfg.Modules["go-sdk"].Source)
+		require.Equal(t, []string{
+			"Root module requires explicit loading. If your scripts rely on implicit loading, change them to `dagger -m . ...`.",
+		}, plans[0].Warnings)
+		require.Equal(t, filepath.Join(workspace.LockDirName, "migration-report.md"), plans[0].MigrationReportPath)
+		require.Contains(t, string(plans[0].MigrationReportData), "## Root module requires explicit loading")
+		require.Contains(t, string(plans[0].MigrationReportData), "**This works**: `dagger -m . call --help`")
+		require.Contains(t, string(plans[0].MigrationReportData), "**This no longer works**: `dagger call --help`")
+	})
+
+	t.Run("plain module under migrated workspace installs SDK in migrated workspace", func(t *testing.T) {
+		plain := testRuntimeCompatWorkspace(t, filepath.Join(root, "services", "api", "modules", "video"), `{
+  "name": "video",
+  "sdk": {"source": "go"}
+}`)
+		migrated := &workspace.MigrationPlan{
+			ProjectRoot:         filepath.Join(root, "services", "api"),
+			WorkspaceConfigData: []byte(initialWorkspaceConfig),
+		}
+
+		plans, err := workspaceMigrationParentPlansForPlainModules(ws, []*workspace.CompatWorkspace{plain}, []*workspace.MigrationPlan{migrated})
+		require.NoError(t, err)
+		require.Empty(t, plans)
+		cfg, err := workspace.ParseConfig(migrated.WorkspaceConfigData)
+		require.NoError(t, err)
+		require.Equal(t, "github.com/dagger/go-sdk", cfg.Modules["go-sdk"].Source)
+		require.Equal(t, []string{
+			"services/api/modules/video requires explicit loading. If your scripts rely on implicit loading, change them to `dagger -m services/api/modules/video ...`.",
+		}, workspaceMigrationWarnings(migrated))
+		require.Equal(t, filepath.Join(workspace.LockDirName, "migration-report.md"), migrated.MigrationReportPath)
+		require.Contains(t, string(migrated.MigrationReportData), "## services/api/modules/video requires explicit loading")
+	})
+
+	t.Run("plain module beside migrated workspace creates root parent", func(t *testing.T) {
+		plain := testRuntimeCompatWorkspace(t, filepath.Join(root, "modules", "video"), `{
+  "name": "video",
+  "sdk": {"source": "go"}
+}`)
+		migrated := &workspace.MigrationPlan{
+			ProjectRoot:         filepath.Join(root, "services", "api"),
+			WorkspaceConfigData: []byte(initialWorkspaceConfig),
+		}
+
+		plans, err := workspaceMigrationParentPlansForPlainModules(ws, []*workspace.CompatWorkspace{plain}, []*workspace.MigrationPlan{migrated})
+		require.NoError(t, err)
+		require.Len(t, plans, 1)
+		require.Equal(t, root, plans[0].ProjectRoot)
+	})
+
+	t.Run("parent SDK modules are deduped", func(t *testing.T) {
+		video := testRuntimeCompatWorkspace(t, filepath.Join(root, "modules", "video"), `{
+  "name": "video",
+  "sdk": {"source": "go"}
+}`)
+		audio := testRuntimeCompatWorkspace(t, filepath.Join(root, "modules", "audio"), `{
+  "name": "audio",
+  "sdk": {"source": "go"}
+}`)
+
+		plans, err := workspaceMigrationParentPlansForPlainModules(ws, []*workspace.CompatWorkspace{video, audio}, nil)
+		require.NoError(t, err)
+		require.Len(t, plans, 1)
+		cfg, err := workspace.ParseConfig(plans[0].WorkspaceConfigData)
+		require.NoError(t, err)
+		require.Len(t, cfg.Modules, 1)
+		require.Equal(t, "github.com/dagger/go-sdk", cfg.Modules["go-sdk"].Source)
+	})
+
+	t.Run("parent SDK module name conflicts get a stable alternate name", func(t *testing.T) {
+		plain := testRuntimeCompatWorkspace(t, filepath.Join(root, "services", "api", "modules", "video"), `{
+  "name": "video",
+  "sdk": {"source": "go"}
+}`)
+		migrated := &workspace.MigrationPlan{
+			ProjectRoot: filepath.Join(root, "services", "api"),
+			WorkspaceConfigData: []byte(`[modules.go-sdk]
+source = "github.com/acme/custom-go-sdk"
+`),
+		}
+
+		_, err := workspaceMigrationParentPlansForPlainModules(ws, []*workspace.CompatWorkspace{plain}, []*workspace.MigrationPlan{migrated})
+		require.NoError(t, err)
+		cfg, err := workspace.ParseConfig(migrated.WorkspaceConfigData)
+		require.NoError(t, err)
+		require.Equal(t, "github.com/acme/custom-go-sdk", cfg.Modules["go-sdk"].Source)
+		require.Equal(t, "github.com/dagger/go-sdk", cfg.Modules["go-sdk-runtime"].Source)
+	})
+}
+
+func TestWorkspaceMigrationRootTargetPathsRejectsDuplicates(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "repo")
+	ws := &core.Workspace{}
+	ws.SetHostPath(root)
+
+	_, err := workspaceMigrationRootTargetPaths(ws, workspaceMigrationPlanBundle{
+		WorkspacePlans: []*workspace.MigrationPlan{
+			{ProjectRoot: root},
+		},
+		ParentPlans: []workspaceMigrationParentPlan{
+			{ProjectRoot: root},
+		},
+	})
+	require.ErrorContains(t, err, `migration target ".dagger/config.toml" is planned more than once`)
+}
+
+func TestWorkspaceMigrationHiddenPath(t *testing.T) {
+	require.True(t, workspaceMigrationHiddenPath(filepath.Join(".git", "hooks", workspace.ModuleConfigFileName)))
+	require.True(t, workspaceMigrationHiddenPath(filepath.Join("app", ".dagger", "modules", workspace.ModuleConfigFileName)))
+	require.True(t, workspaceMigrationHiddenPath(filepath.Join("app", ".hidden", workspace.ModuleConfigFileName)))
+	require.False(t, workspaceMigrationHiddenPath(filepath.Join("app", "modules", workspace.ModuleConfigFileName)))
+}
+
+func TestWorkspaceMigrationUniqueSortedPaths(t *testing.T) {
+	require.Equal(t, []string{
+		"dagger.json",
+		filepath.Join("modules", "api", "dagger.json"),
+		filepath.Join("modules", "web", "dagger.json"),
+	}, workspaceMigrationUniqueSortedPaths([]string{
+		filepath.Join("modules", "web", "dagger.json"),
+		"dagger.json",
+		filepath.Join("modules", "api", "dagger.json"),
+		"dagger.json",
+		filepath.Join("modules", "web", "dagger.json"),
+	}))
+}
+
+func TestWorkspaceMigrationHasExplicitConfigAncestor(t *testing.T) {
+	ctx := context.Background()
+	root := filepath.Join(string(filepath.Separator), "repo")
+	configPath := filepath.Join(root, "services", "api", workspace.LockDirName, workspace.ConfigFileName)
+	statFS := core.StatFSFunc(func(_ context.Context, path string) (string, *core.Stat, error) {
+		if filepath.Clean(path) != configPath {
+			return "", nil, os.ErrNotExist
+		}
+		return filepath.Dir(path), &core.Stat{Name: filepath.Base(path)}, nil
+	})
+
+	got, err := workspaceMigrationHasExplicitConfigAncestor(ctx, statFS, root, filepath.Join(root, "services", "api", "modules", "child"))
+	require.NoError(t, err)
+	require.True(t, got)
+
+	got, err = workspaceMigrationHasExplicitConfigAncestor(ctx, statFS, root, filepath.Join(root, "services", "other"))
+	require.NoError(t, err)
+	require.False(t, got)
+}
+
+func testRuntimeCompatWorkspace(t *testing.T, projectRoot string, data string) *workspace.CompatWorkspace {
+	t.Helper()
+
+	compatWorkspace, err := workspace.ParseRuntimeCompatWorkspaceAt([]byte(data), filepath.Join(projectRoot, workspace.ModuleConfigFileName))
+	require.NoError(t, err)
+	require.NotNil(t, compatWorkspace)
+	return compatWorkspace
 }
 
 func TestWorkspaceFilterWithDirectoryArgs(t *testing.T) {

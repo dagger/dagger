@@ -145,6 +145,25 @@ func TestParseCompatWorkspace(t *testing.T) {
 	require.Nil(t, noCompat)
 }
 
+func TestParseRuntimeCompatWorkspace(t *testing.T) {
+	t.Parallel()
+
+	compat, err := ParseRuntimeCompatWorkspaceAt([]byte(`{
+		"name": "app",
+		"sdk": {"source": "dang"}
+	}`), filepath.Join("repo", ModuleConfigFileName))
+	require.NoError(t, err)
+	require.NotNil(t, compat)
+	require.Equal(t, "repo", compat.ProjectRoot)
+	require.NotNil(t, compat.MainModule)
+	require.Equal(t, "app", compat.MainModule.Name)
+	require.Equal(t, ModuleEntry{
+		Source:     "modules/app",
+		Entrypoint: true,
+	}, compat.MainModule.Entry)
+	require.Empty(t, compat.Modules)
+}
+
 func TestWorkspaceConfigMigratesPortMappings(t *testing.T) {
 	t.Parallel()
 
@@ -210,4 +229,65 @@ func TestWorkspaceConfigMigratesToolchainSkipFields(t *testing.T) {
 	require.Equal(t, []string{"flaky-check"}, roundTrip.Modules["hello"].Check.Skip)
 	require.Equal(t, []string{"generate-other-files", "other-generators:*"}, roundTrip.Modules["hello"].Generate.Skip)
 	require.Equal(t, []string{"redis", "infra:database"}, roundTrip.Modules["hello"].Up.Skip)
+}
+
+func TestMustMigrateToWorkspaceConfig(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		cfg  string
+		want bool
+	}{
+		{
+			name: "toolchains",
+			cfg: `{
+				"name": "app",
+				"toolchains": [{"name": "go", "source": "./go"}]
+			}`,
+			want: true,
+		},
+		{
+			name: "blueprint",
+			cfg: `{
+				"name": "app",
+				"blueprint": {"source": "./blueprint"}
+			}`,
+			want: true,
+		},
+		{
+			name: "non-dot source",
+			cfg: `{
+				"name": "app",
+				"sdk": {"source": "go"},
+				"source": "ci"
+			}`,
+			want: true,
+		},
+		{
+			name: "plain module config",
+			cfg: `{
+				"name": "app",
+				"sdk": {"source": "go"}
+			}`,
+			want: false,
+		},
+		{
+			name: "explicit dot source",
+			cfg: `{
+				"name": "app",
+				"sdk": {"source": "go"},
+				"source": "."
+			}`,
+			want: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg, err := parseLegacyConfig([]byte(tc.cfg))
+			require.NoError(t, err)
+			require.Equal(t, tc.want, mustMigrateToWorkspaceConfig(cfg))
+		})
+	}
 }

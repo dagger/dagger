@@ -628,7 +628,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	if wsConfig == nil && hasModuleConfig {
 		cfgPath := filepath.Join(moduleDir, workspace.ModuleConfigFileName)
 		if data, readErr := readFile(ctx, cfgPath); readErr == nil {
-			compatWorkspace, _ = workspace.ParseCompatWorkspaceAt(data, cfgPath)
+			compatWorkspace, _ = workspace.ParseRuntimeCompatWorkspaceAt(data, cfgPath)
 		}
 		if compatWorkspace != nil {
 			if clientMD == nil || !clientMD.SuppressCompatWorkspaceWarning {

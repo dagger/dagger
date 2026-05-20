@@ -57,23 +57,38 @@ type CompatMainModule struct {
 	Entry      ModuleEntry
 }
 
-// ParseCompatWorkspace parses an eligible legacy dagger.json into the shared
+// ParseCompatWorkspace parses a legacy dagger.json into the migration-compatible
 // compat-workspace representation. Returns nil if the legacy config does not
-// create ambient workspace context.
+// need to migrate into workspace config at its own location.
 func ParseCompatWorkspace(data []byte) (*CompatWorkspace, error) {
 	return ParseCompatWorkspaceAt(data, "")
 }
 
-// ParseCompatWorkspaceAt parses an eligible legacy dagger.json into the shared
+// ParseCompatWorkspaceAt parses a legacy dagger.json into the migration-compatible
 // compat-workspace representation, with optional provenance from the config
-// path. Returns nil if the legacy config does not create ambient workspace
-// context.
+// path. Returns nil if the legacy config does not need to migrate into
+// workspace config at its own location.
 func ParseCompatWorkspaceAt(data []byte, configPath string) (*CompatWorkspace, error) {
 	cfg, err := parseLegacyConfig(data)
 	if err != nil {
 		return nil, err
 	}
-	if !legacyConfigCreatesCompatWorkspace(cfg) {
+	if !mustMigrateToWorkspaceConfig(cfg) {
+		return nil, nil
+	}
+	return buildCompatWorkspace(cfg, configPath), nil
+}
+
+// ParseRuntimeCompatWorkspaceAt parses a legacy dagger.json into the runtime
+// compat-workspace representation, with optional provenance from the config
+// path. Returns nil if the legacy config cannot create ambient workspace
+// context.
+func ParseRuntimeCompatWorkspaceAt(data []byte, configPath string) (*CompatWorkspace, error) {
+	cfg, err := parseLegacyConfig(data)
+	if err != nil {
+		return nil, err
+	}
+	if !legacyConfigCreatesRuntimeCompatWorkspace(cfg) {
 		return nil, nil
 	}
 	return buildCompatWorkspace(cfg, configPath), nil
@@ -202,6 +217,16 @@ func (compatWorkspace *CompatWorkspace) WorkspaceConfig() *Config {
 	return cfg
 }
 
+// MustMigrateToWorkspaceConfig reports whether this compat workspace was
+// created from a legacy dagger.json that must be replaced by .dagger/config.toml
+// at the same location during migration.
+func (compatWorkspace *CompatWorkspace) MustMigrateToWorkspaceConfig() bool {
+	if compatWorkspace == nil {
+		return false
+	}
+	return mustMigrateToWorkspaceConfig(compatWorkspace.Config)
+}
+
 // parseHostContainerPort parses a "host:container" port string. Local
 // reimplementation of the engine's core.ParsePortMapping to avoid an import
 // cycle (core/workspace is imported by core).
@@ -221,7 +246,17 @@ func parseHostContainerPort(raw string) (host, container int, err error) {
 	return host, container, nil
 }
 
-func legacyConfigCreatesCompatWorkspace(cfg *modules.ModuleConfig) bool {
+func legacyConfigCreatesRuntimeCompatWorkspace(cfg *modules.ModuleConfig) bool {
+	if mustMigrateToWorkspaceConfig(cfg) {
+		return true
+	}
+	return cfg != nil && cfg.SDK != nil && cfg.Name != ""
+}
+
+// mustMigrateToWorkspaceConfig reports whether a legacy dagger.json carries
+// workspace-level semantics and must be replaced by .dagger/config.toml at the
+// same location during migration.
+func mustMigrateToWorkspaceConfig(cfg *modules.ModuleConfig) bool {
 	if cfg == nil {
 		return false
 	}

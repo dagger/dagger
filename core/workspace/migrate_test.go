@@ -103,7 +103,8 @@ func TestPlanMigrationWritesMigrationReportForGaps(t *testing.T) {
 
 	reportData := string(plan.MigrationReportData)
 	require.Contains(t, reportData, "# Migration Report")
-	require.Contains(t, reportData, "Module `toolchain`")
+	require.Contains(t, reportData, "`toolchain` needs a manual check")
+	require.Contains(t, reportData, "ACTION: Review each item below")
 	require.Contains(t, reportData, `"defaultPath": "./custom-config.txt"`)
 	require.Contains(t, reportData, `"function": [`)
 }
@@ -194,6 +195,19 @@ func TestPlanMigrationFailsOnConflictingLegacyPins(t *testing.T) {
 
 	_, err := PlanMigration(compat)
 	require.ErrorContains(t, err, "conflicting pins for source")
+}
+
+func TestPlanMigrationRejectsConfigWithoutWorkspaceConfigMigration(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := parseLegacyConfig([]byte(`{
+	  "name": "myapp",
+	  "sdk": {"source": "go"}
+	}`))
+	require.NoError(t, err)
+
+	_, err = PlanMigration(buildCompatWorkspace(cfg, filepath.Join("repo", ModuleConfigFileName)))
+	require.ErrorContains(t, err, "dagger.json does not require workspace config migration")
 }
 
 func testMigrationPlan(t *testing.T, projectRoot, cfg string) *MigrationPlan {
