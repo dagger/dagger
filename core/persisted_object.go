@@ -2,12 +2,25 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 )
+
+func encodePersistedObjectPayload(payload any) (dagql.PersistedObjectEncoding, error) {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, err
+	}
+	return dagql.PersistedObjectEncoding{JSON: raw}, nil
+}
+
+func encodePersistedObjectRawJSON(raw json.RawMessage) dagql.PersistedObjectEncoding {
+	return dagql.PersistedObjectEncoding{JSON: raw}
+}
 
 func persistedDecodeQuery(dag *dagql.Server) (*Query, error) {
 	if dag == nil {

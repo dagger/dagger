@@ -507,6 +507,7 @@ type persistedContainerPayload struct {
 	Annotations        []containerutil.ContainerAnnotation `json:"annotations,omitempty"`
 	ImageRef           string                              `json:"imageRef,omitempty"`
 	Ports              []Port                              `json:"ports,omitempty"`
+	Services           []persistedServiceBinding           `json:"services,omitempty"`
 	DefaultTerminalCmd DefaultTerminalCmdOpts              `json:"defaultTerminalCmd"`
 	SystemEnvNames     []string                            `json:"systemEnvNames,omitempty"`
 	DefaultArgs        bool                                `json:"defaultArgs,omitempty"`
@@ -1290,40 +1291,65 @@ func (container *Container) CacheUsageSize(ctx context.Context, identity string)
 	return size, true, nil
 }
 
-func encodePersistedContainerDirectoryValue(ctx context.Context, cache dagql.PersistedObjectCache, dir *Directory) (json.RawMessage, error) {
+func remapContainerSnapshotLinks(links []dagql.PersistedSnapshotRefLink, role string) []dagql.PersistedSnapshotRefLink {
+	if len(links) == 0 {
+		return nil
+	}
+	remapped := make([]dagql.PersistedSnapshotRefLink, 0, len(links))
+	for _, link := range links {
+		if link.Role != "snapshot" {
+			continue
+		}
+		remapped = append(remapped, dagql.PersistedSnapshotRefLink{
+			RefKey: link.RefKey,
+			Role:   role,
+		})
+	}
+	return remapped
+}
+
+func encodePersistedContainerDirectoryValue(ctx context.Context, cache dagql.PersistedObjectCache, dir *Directory, role string) (json.RawMessage, []dagql.PersistedSnapshotRefLink, error) {
 	if dir == nil {
 		encoded, err := json.Marshal(persistedContainerDirectoryValue{Form: persistedContainerValueFormPending})
 		if err != nil {
-			return nil, fmt.Errorf("marshal pending container directory value: %w", err)
+			return nil, nil, fmt.Errorf("marshal pending container directory value: %w", err)
 		}
-		return encoded, nil
+		return encoded, nil, nil
 	}
-	value, err := dir.EncodePersistedObject(ctx, cache)
+	encoding, err := dir.EncodePersistedObject(ctx, cache)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return json.Marshal(persistedContainerDirectoryValue{
+	encoded, err := json.Marshal(persistedContainerDirectoryValue{
 		Form:  persistedContainerValueFormMaterialized,
-		Value: value,
+		Value: encoding.JSON,
 	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return encoded, remapContainerSnapshotLinks(encoding.SnapshotLinks, role), nil
 }
 
-func encodePersistedContainerFileValue(ctx context.Context, cache dagql.PersistedObjectCache, file *File) (json.RawMessage, error) {
+func encodePersistedContainerFileValue(ctx context.Context, cache dagql.PersistedObjectCache, file *File, role string) (json.RawMessage, []dagql.PersistedSnapshotRefLink, error) {
 	if file == nil {
 		encoded, err := json.Marshal(persistedContainerFileValue{Form: persistedContainerValueFormPending})
 		if err != nil {
-			return nil, fmt.Errorf("marshal pending container file value: %w", err)
+			return nil, nil, fmt.Errorf("marshal pending container file value: %w", err)
 		}
-		return encoded, nil
+		return encoded, nil, nil
 	}
-	value, err := file.EncodePersistedObject(ctx, cache)
+	encoding, err := file.EncodePersistedObject(ctx, cache)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return json.Marshal(persistedContainerFileValue{
+	encoded, err := json.Marshal(persistedContainerFileValue{
 		Form:  persistedContainerValueFormMaterialized,
-		Value: value,
+		Value: encoding.JSON,
 	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return encoded, remapContainerSnapshotLinks(encoding.SnapshotLinks, role), nil
 }
 
 func decodePersistedContainerDirectoryValue(ctx context.Context, dag *dagql.Server, resultID uint64, role string, payload json.RawMessage) (decodedContainerDirectoryValue, error) {
@@ -1374,16 +1400,16 @@ func decodePersistedContainerFileValue(ctx context.Context, dag *dagql.Server, r
 	}
 }
 
-func (container *Container) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (container *Container) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	if container == nil {
-		return nil, fmt.Errorf("encode persisted container: nil container")
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted container: nil container")
 	}
-	// FIXME: remove this restriction immediately after the first cut by adding
-	// explicit structural persistence for services.
-	if len(container.Services) > 0 {
-		return nil, fmt.Errorf("encode persisted container: services are not yet supported")
+	services, err := encodePersistedServiceBindings(cache, "container", container.Services)
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, err
 	}
 
+	var snapshotLinks []dagql.PersistedSnapshotRefLink
 	payload := persistedContainerPayload{
 		Form:               persistedContainerFormReady,
 		Config:             container.Config,
@@ -1395,6 +1421,7 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 		Annotations:        slices.Clone(container.Annotations),
 		ImageRef:           container.ImageRef,
 		Ports:              slices.Clone(container.Ports),
+		Services:           services,
 		DefaultTerminalCmd: container.DefaultTerminalCmd,
 		SystemEnvNames:     slices.Clone(container.SystemEnvNames),
 		DefaultArgs:        container.DefaultArgs,
@@ -1402,23 +1429,32 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 	if container.Lazy != nil {
 		lazyJSON, err := container.Lazy.EncodePersisted(ctx, cache)
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		payload.Form = persistedContainerFormLazy
 		payload.LazyJSON = lazyJSON
 	}
+	if container.MetaSnapshot != nil {
+		if snapshot, ok := container.MetaSnapshot.Peek(); ok && snapshot != nil {
+			snapshotLinks = append(snapshotLinks, dagql.PersistedSnapshotRefLink{
+				RefKey: snapshot.SnapshotID(),
+				Role:   "meta",
+			})
+		}
+	}
 	if container.FS != nil {
 		fsValue, ok := container.FS.Peek()
 		if ok && fsValue != nil {
-			encoded, err := encodePersistedContainerDirectoryValue(ctx, cache, fsValue)
+			encoded, links, err := encodePersistedContainerDirectoryValue(ctx, cache, fsValue, "fs")
 			if err != nil {
-				return nil, err
+				return dagql.PersistedObjectEncoding{}, err
 			}
 			payload.FS = encoded
+			snapshotLinks = append(snapshotLinks, links...)
 		}
 	}
 
-	for _, mnt := range container.Mounts {
+	for i, mnt := range container.Mounts {
 		encoded := persistedContainerMountPayload{
 			Target:   mnt.Target,
 			Readonly: mnt.Readonly,
@@ -1427,40 +1463,42 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 		case mnt.DirectorySource != nil:
 			encoded.Kind = persistedContainerMountKindDirectory
 			if dir, ok := mnt.DirectorySource.Peek(); ok && dir != nil {
-				val, err := encodePersistedContainerDirectoryValue(ctx, cache, dir)
+				val, links, err := encodePersistedContainerDirectoryValue(ctx, cache, dir, fmt.Sprintf("mount_dir:%d", i))
 				if err != nil {
-					return nil, err
+					return dagql.PersistedObjectEncoding{}, err
 				}
 				encoded.Value = val
+				snapshotLinks = append(snapshotLinks, links...)
 			}
 		case mnt.FileSource != nil:
 			encoded.Kind = persistedContainerMountKindFile
 			if file, ok := mnt.FileSource.Peek(); ok && file != nil {
-				val, err := encodePersistedContainerFileValue(ctx, cache, file)
+				val, links, err := encodePersistedContainerFileValue(ctx, cache, file, fmt.Sprintf("mount_file:%d", i))
 				if err != nil {
-					return nil, err
+					return dagql.PersistedObjectEncoding{}, err
 				}
 				encoded.Value = val
+				snapshotLinks = append(snapshotLinks, links...)
 			}
 		case mnt.CacheSource != nil:
 			encoded.Kind = persistedContainerMountKindCache
 			id, err := encodePersistedObjectRef(cache, mnt.CacheSource.Volume, fmt.Sprintf("cache mount %q", mnt.Target))
 			if err != nil {
-				return nil, err
+				return dagql.PersistedObjectEncoding{}, err
 			}
 			encoded.CacheSourceResultID = id
 		case mnt.TmpfsSource != nil:
 			encoded.Kind = persistedContainerMountKindTmpfs
 			encoded.TmpfsSize = mnt.TmpfsSource.Size
 		default:
-			return nil, fmt.Errorf("encode persisted container mount %q: unsupported mount source", mnt.Target)
+			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted container mount %q: unsupported mount source", mnt.Target)
 		}
 		payload.Mounts = append(payload.Mounts, encoded)
 	}
 	for _, secret := range container.Secrets {
 		secretID, err := encodePersistedObjectRef(cache, secret.Secret, "container secret")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		payload.Secrets = append(payload.Secrets, persistedContainerSecretPayload{
 			SecretResultID: secretID,
@@ -1473,7 +1511,7 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 	for _, socket := range container.Sockets {
 		sourceID, err := encodePersistedObjectRef(cache, socket.Source, "container socket")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		payload.Sockets = append(payload.Sockets, persistedContainerSocketPayload{
 			SourceResultID: sourceID,
@@ -1484,9 +1522,12 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 
 	enc, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("marshal persisted container payload: %w", err)
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted container payload: %w", err)
 	}
-	return enc, nil
+	return dagql.PersistedObjectEncoding{
+		JSON:          enc,
+		SnapshotLinks: snapshotLinks,
+	}, nil
 }
 
 func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, call *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
@@ -1584,6 +1625,10 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 			Owner:         persistedSocket.Owner,
 		})
 	}
+	services, err := decodePersistedServiceBindings(ctx, dag, "container", persisted.Services)
+	if err != nil {
+		return nil, err
+	}
 
 	metaAccessor := new(LazyAccessor[bkcache.ImmutableRef, *Container])
 	links, err := loadPersistedSnapshotLinksByResultID(ctx, dag, resultID, "container")
@@ -1614,6 +1659,7 @@ func (*Container) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 		Sockets:            sockets,
 		ImageRef:           persisted.ImageRef,
 		Ports:              slices.Clone(persisted.Ports),
+		Services:           services,
 		DefaultTerminalCmd: persisted.DefaultTerminalCmd,
 		SystemEnvNames:     slices.Clone(persisted.SystemEnvNames),
 		DefaultArgs:        persisted.DefaultArgs,

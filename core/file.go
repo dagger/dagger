@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -192,16 +191,16 @@ const (
 )
 
 type persistedFilePayload struct {
-	Form     string          `json:"form"`
-	File     string          `json:"file,omitempty"`
-	Platform Platform        `json:"platform"`
-	Services ServiceBindings `json:"services,omitempty"`
-	LazyJSON json.RawMessage `json:"lazyJSON,omitempty"`
+	Form     string                    `json:"form"`
+	File     string                    `json:"file,omitempty"`
+	Platform Platform                  `json:"platform"`
+	Services []persistedServiceBinding `json:"services,omitempty"`
+	LazyJSON json.RawMessage           `json:"lazyJSON,omitempty"`
 }
 
-func (file *File) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (file *File) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	if file == nil {
-		return nil, fmt.Errorf("encode persisted file: nil file")
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted file: nil file")
 	}
 	filePath := ""
 	if file.File != nil {
@@ -209,35 +208,45 @@ func (file *File) EncodePersistedObject(ctx context.Context, cache dagql.Persist
 			filePath = peekedPath
 		}
 	}
+	services, err := encodePersistedServiceBindings(cache, "file", file.Services)
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, err
+	}
 	payload := persistedFilePayload{
 		File:     filePath,
 		Platform: file.Platform,
-		Services: slices.Clone(file.Services),
+		Services: services,
 	}
 	if file.Snapshot != nil {
 		if snapshot, ok := file.Snapshot.Peek(); ok && snapshot != nil {
 			payload.Form = persistedFileFormSnapshot
 			payloadJSON, err := json.Marshal(payload)
 			if err != nil {
-				return nil, fmt.Errorf("marshal persisted file payload: %w", err)
+				return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted file payload: %w", err)
 			}
-			return payloadJSON, nil
+			return dagql.PersistedObjectEncoding{
+				JSON: payloadJSON,
+				SnapshotLinks: []dagql.PersistedSnapshotRefLink{{
+					RefKey: snapshot.SnapshotID(),
+					Role:   "snapshot",
+				}},
+			}, nil
 		}
 	}
 	if file.Lazy != nil {
 		payload.Form = persistedFileFormLazy
 		lazyJSON, err := file.Lazy.EncodePersisted(ctx, cache)
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		payload.LazyJSON = lazyJSON
 		payloadJSON, err := json.Marshal(payload)
 		if err != nil {
-			return nil, fmt.Errorf("marshal persisted file payload: %w", err)
+			return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted file payload: %w", err)
 		}
-		return payloadJSON, nil
+		return encodePersistedObjectRawJSON(payloadJSON), nil
 	}
-	return nil, fmt.Errorf("%w: encode persisted file: missing snapshot and lazy op", dagql.ErrPersistStateNotReady)
+	return dagql.PersistedObjectEncoding{}, fmt.Errorf("%w: encode persisted file: missing snapshot and lazy op", dagql.ErrPersistStateNotReady)
 }
 
 //nolint:dupl // symmetric with decodePersistedDirectoryWithSnapshotRole in directory.go; sharing hides type specifics
@@ -246,10 +255,14 @@ func decodePersistedFileWithSnapshotRole(ctx context.Context, dag *dagql.Server,
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted file payload: %w", err)
 	}
+	services, err := decodePersistedServiceBindings(ctx, dag, "file", persisted.Services)
+	if err != nil {
+		return nil, err
+	}
 
 	file := &File{
 		Platform: persisted.Platform,
-		Services: slices.Clone(persisted.Services),
+		Services: services,
 		File:     new(LazyAccessor[string, *File]),
 		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
 	}

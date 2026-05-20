@@ -877,26 +877,26 @@ type persistedModulePayload struct {
 	AsModuleVariantDigest         string         `json:"asModuleVariantDigest,omitempty"`
 }
 
-func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	var persisted persistedModulePayload
 	if mod.Source.Valid {
 		sourceID, err := encodePersistedObjectRef(cache, mod.Source.Value, "module source")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		persisted.SourceResultID = sourceID
 	}
 	if mod.ContextSource.Valid {
 		contextSourceID, err := encodePersistedObjectRef(cache, mod.ContextSource.Value, "module context source")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		persisted.ContextSourceResultID = contextSourceID
 	}
 	if mod.Runtime.Valid {
 		runtimeID, err := encodePersistedObjectRef(cache, mod.Runtime.Value, "module runtime")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		persisted.RuntimeResultID = runtimeID
 	}
@@ -911,7 +911,7 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 			}
 			depResultID, err := encodePersistedObjectRef(cache, depInst, fmt.Sprintf("module dependency %q", dep.Name()))
 			if err != nil {
-				return nil, err
+				return dagql.PersistedObjectEncoding{}, err
 			}
 			if mod.IncludeSelfInDeps && depInst.Self() == mod {
 				continue
@@ -928,7 +928,7 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 	for _, def := range mod.ObjectDefs {
 		defID, err := encodePersistedObjectRef(cache, def, "module object typedef")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		persisted.ObjectDefResultIDs = append(persisted.ObjectDefResultIDs, defID)
 	}
@@ -936,7 +936,7 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 	for _, def := range mod.InterfaceDefs {
 		defID, err := encodePersistedObjectRef(cache, def, "module interface typedef")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		persisted.InterfaceDefResultIDs = append(persisted.InterfaceDefResultIDs, defID)
 	}
@@ -944,7 +944,7 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 	for _, def := range mod.EnumDefs {
 		defID, err := encodePersistedObjectRef(cache, def, "module enum typedef")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		persisted.EnumDefResultIDs = append(persisted.EnumDefResultIDs, defID)
 	}
@@ -956,9 +956,9 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 
 	jsonBytes, err := json.Marshal(persisted)
 	if err != nil {
-		return nil, fmt.Errorf("encode persisted module payload: %w", err)
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted module payload: %w", err)
 	}
-	return jsonBytes, nil
+	return encodePersistedObjectRawJSON(jsonBytes), nil
 }
 
 func (*Module) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {

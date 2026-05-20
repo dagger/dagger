@@ -26,14 +26,21 @@ func (*persistSnapshotValue) Type() *ast.Type {
 	}
 }
 
-func (v *persistSnapshotValue) EncodePersistedObject(ctx context.Context, cache PersistedObjectCache) (json.RawMessage, error) {
+func (v *persistSnapshotValue) EncodePersistedObject(ctx context.Context, cache PersistedObjectCache) (PersistedObjectEncoding, error) {
 	_ = ctx
 	_ = cache
-	return json.Marshal(struct {
+	payload, err := json.Marshal(struct {
 		Name string `json:"name"`
 	}{
 		Name: v.Name,
 	})
+	if err != nil {
+		return PersistedObjectEncoding{}, err
+	}
+	return PersistedObjectEncoding{
+		JSON:          payload,
+		SnapshotLinks: v.PersistedSnapshotRefLinks(),
+	}, nil
 }
 
 func (v *persistSnapshotValue) PersistedSnapshotRefLinks() []PersistedSnapshotRefLink {
@@ -250,6 +257,53 @@ func TestCachePersistenceImportHydratesSnapshotMetadataAndSyncsOwnerLeases(t *te
 	assert.Assert(t, snapshotManagerB.deleteStaleCallSeen)
 	_, keepFound := snapshotManagerB.deleteStaleKeep[resultSnapshotLeaseID(resultID, "snapshot")]
 	assert.Assert(t, keepFound)
+}
+
+func TestCachePersistenceWorkerUsesEncodedSnapshotLinks(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+	cacheIface, err := NewCache(ctx, dbPath, &fakeSnapshotManager{}, nil)
+	assert.NilError(t, err)
+	c := cacheIface
+	defer func() {
+		assert.NilError(t, c.Close(context.Background()))
+	}()
+
+	key := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&persistSnapshotValue{}).Type()),
+		Field: "persist-snapshot-owner",
+	}
+
+	res, err := c.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+		ResultCall:    key,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestPlainResult(&persistSnapshotValue{
+			Name:       "x",
+			SnapshotID: "snapshot-before",
+		}), nil
+	})
+	assert.NilError(t, err)
+	resultID := res.cacheSharedResult().id
+	assert.DeepEqual(t, res.cacheSharedResult().loadSnapshotOwnerLinks(), []PersistedSnapshotRefLink{{
+		RefKey: "snapshot-before",
+		Role:   "snapshot",
+	}})
+
+	self := res.Unwrap().(*persistSnapshotValue)
+	self.SnapshotID = "snapshot-after"
+
+	assert.NilError(t, c.persistCurrentState(ctx))
+	rows, err := c.pdb.ListMirrorResultSnapshotLinks(ctx)
+	assert.NilError(t, err)
+	assert.DeepEqual(t, rows, []persistdb.MirrorResultSnapshotLink{{
+		ResultID: int64(resultID),
+		RefKey:   "snapshot-after",
+		Role:     "snapshot",
+	}})
 }
 
 var _ bkcache.SnapshotManager = (*fakeSnapshotManager)(nil)

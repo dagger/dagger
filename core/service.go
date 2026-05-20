@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -56,8 +57,6 @@ type Service struct {
 	NoInit                        bool
 	ExecMD                        *engineutil.ExecutionMetadata
 	ModuleContext                 dagql.ObjectResult[*Module]
-	FunctionCall                  *FunctionCall
-	EnvContext                    dagql.ObjectResult[*Env]
 	ExecMeta                      *executor.Meta
 
 	// TunnelUpstream is the service that this service is tunnelling to.
@@ -78,6 +77,215 @@ func (*Service) Type() *ast.Type {
 
 func (*Service) TypeDescription() string {
 	return "A content-addressed service providing TCP connectivity."
+}
+
+var _ dagql.PersistedObject = (*Service)(nil)
+var _ dagql.PersistedObjectDecoder = (*Service)(nil)
+var _ dagql.HasDependencyResults = (*Service)(nil)
+
+type persistedServicePayload struct {
+	CustomHostname                string                        `json:"customHostname,omitempty"`
+	ContainerResultID             uint64                        `json:"containerResultID,omitempty"`
+	Args                          []string                      `json:"args,omitempty"`
+	ExperimentalPrivilegedNesting bool                          `json:"experimentalPrivilegedNesting,omitempty"`
+	InsecureRootCapabilities      bool                          `json:"insecureRootCapabilities,omitempty"`
+	NoInit                        bool                          `json:"noInit,omitempty"`
+	ExecMD                        *engineutil.ExecutionMetadata `json:"execMD,omitempty"`
+	ModuleContextResultID         uint64                        `json:"moduleContextResultID,omitempty"`
+	ExecMeta                      *executor.Meta                `json:"execMeta,omitempty"`
+	TunnelUpstreamResultID        uint64                        `json:"tunnelUpstreamResultID,omitempty"`
+	TunnelPorts                   []PortForward                 `json:"tunnelPorts,omitempty"`
+	HostSockets                   []persistedServiceHostSocket  `json:"hostSockets,omitempty"`
+}
+
+type persistedServiceHostSocket struct {
+	Kind           SocketKind                  `json:"kind,omitempty"`
+	Handle         dagql.SessionResourceHandle `json:"handle,omitempty"`
+	URLVal         string                      `json:"urlVal,omitempty"`
+	PortForwardVal PortForward                 `json:"portForwardVal,omitempty"`
+	SourceClientID string                      `json:"sourceClientID,omitempty"`
+}
+
+type persistedServiceBinding struct {
+	ServiceResultID uint64   `json:"serviceResultID"`
+	Hostname        string   `json:"hostname"`
+	Aliases         AliasSet `json:"aliases,omitempty"`
+}
+
+func (svc *Service) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	_ = ctx
+	if svc == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted service: nil service")
+	}
+	payload := persistedServicePayload{
+		CustomHostname:                svc.CustomHostname,
+		Args:                          slices.Clone(svc.Args),
+		ExperimentalPrivilegedNesting: svc.ExperimentalPrivilegedNesting,
+		InsecureRootCapabilities:      svc.InsecureRootCapabilities,
+		NoInit:                        svc.NoInit,
+		ExecMD:                        svc.ExecMD,
+		ExecMeta:                      svc.ExecMeta,
+		TunnelPorts:                   slices.Clone(svc.TunnelPorts),
+		HostSockets:                   make([]persistedServiceHostSocket, 0, len(svc.HostSockets)),
+	}
+	var err error
+	if svc.Container.Self() != nil {
+		payload.ContainerResultID, err = encodePersistedObjectRef(cache, svc.Container, "service container")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+	}
+	if svc.ModuleContext.Self() != nil {
+		payload.ModuleContextResultID, err = encodePersistedObjectRef(cache, svc.ModuleContext, "service module context")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+	}
+	if svc.TunnelUpstream.Self() != nil {
+		payload.TunnelUpstreamResultID, err = encodePersistedObjectRef(cache, svc.TunnelUpstream, "service tunnel upstream")
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+	}
+	for i, sock := range svc.HostSockets {
+		if sock == nil {
+			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted service host socket %d: nil socket", i)
+		}
+		payload.HostSockets = append(payload.HostSockets, persistedServiceHostSocket{
+			Kind:           sock.Kind,
+			Handle:         sock.Handle,
+			URLVal:         sock.URLVal,
+			PortForwardVal: sock.PortForwardVal,
+			SourceClientID: sock.SourceClientID,
+		})
+	}
+	enc, err := json.Marshal(payload)
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted service payload: %w", err)
+	}
+	return encodePersistedObjectRawJSON(enc), nil
+}
+
+func (*Service) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedServicePayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted service payload: %w", err)
+	}
+	container, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ContainerResultID, "service container")
+	if err != nil {
+		return nil, err
+	}
+	moduleContext, err := loadPersistedObjectResultByResultID[*Module](ctx, dag, persisted.ModuleContextResultID, "service module context")
+	if err != nil {
+		return nil, err
+	}
+	tunnelUpstream, err := loadPersistedObjectResultByResultID[*Service](ctx, dag, persisted.TunnelUpstreamResultID, "service tunnel upstream")
+	if err != nil {
+		return nil, err
+	}
+	hostSockets := make([]*Socket, 0, len(persisted.HostSockets))
+	for _, sock := range persisted.HostSockets {
+		hostSockets = append(hostSockets, &Socket{
+			Kind:           sock.Kind,
+			Handle:         sock.Handle,
+			URLVal:         sock.URLVal,
+			PortForwardVal: sock.PortForwardVal,
+			SourceClientID: sock.SourceClientID,
+		})
+	}
+	return &Service{
+		CustomHostname:                persisted.CustomHostname,
+		Container:                     container,
+		Args:                          slices.Clone(persisted.Args),
+		ExperimentalPrivilegedNesting: persisted.ExperimentalPrivilegedNesting,
+		InsecureRootCapabilities:      persisted.InsecureRootCapabilities,
+		NoInit:                        persisted.NoInit,
+		ExecMD:                        persisted.ExecMD,
+		ModuleContext:                 moduleContext,
+		ExecMeta:                      persisted.ExecMeta,
+		TunnelUpstream:                tunnelUpstream,
+		TunnelPorts:                   slices.Clone(persisted.TunnelPorts),
+		HostSockets:                   hostSockets,
+	}, nil
+}
+
+func (svc *Service) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	_ = ctx
+	if svc == nil {
+		return nil, nil
+	}
+	var owned []dagql.AnyResult
+	if svc.Container.Self() != nil {
+		container, err := attachContainerResult(attach, svc.Container, "attach service container")
+		if err != nil {
+			return nil, err
+		}
+		svc.Container = container
+		owned = append(owned, container)
+	}
+	if svc.ModuleContext.Self() != nil {
+		attached, err := attach(svc.ModuleContext)
+		if err != nil {
+			return nil, fmt.Errorf("attach service module context: %w", err)
+		}
+		moduleContext, ok := attached.(dagql.ObjectResult[*Module])
+		if !ok {
+			return nil, fmt.Errorf("attach service module context: expected %T, got %T", svc.ModuleContext, attached)
+		}
+		svc.ModuleContext = moduleContext
+		owned = append(owned, moduleContext)
+	}
+	if svc.TunnelUpstream.Self() != nil {
+		upstream, err := attachServiceResult(attach, svc.TunnelUpstream, "attach service tunnel upstream")
+		if err != nil {
+			return nil, err
+		}
+		svc.TunnelUpstream = upstream
+		owned = append(owned, upstream)
+	}
+	return owned, nil
+}
+
+func encodePersistedServiceBindings(cache dagql.PersistedObjectCache, owner string, bindings ServiceBindings) ([]persistedServiceBinding, error) {
+	if len(bindings) == 0 {
+		return nil, nil
+	}
+	persisted := make([]persistedServiceBinding, 0, len(bindings))
+	for _, binding := range bindings {
+		serviceID, err := encodePersistedObjectRef(cache, binding.Service, fmt.Sprintf("%s service %q", owner, binding.Hostname))
+		if err != nil {
+			return nil, err
+		}
+		persisted = append(persisted, persistedServiceBinding{
+			ServiceResultID: serviceID,
+			Hostname:        binding.Hostname,
+			Aliases:         slices.Clone(binding.Aliases),
+		})
+	}
+	return persisted, nil
+}
+
+func decodePersistedServiceBindings(ctx context.Context, dag *dagql.Server, owner string, persisted []persistedServiceBinding) (ServiceBindings, error) {
+	if len(persisted) == 0 {
+		return nil, nil
+	}
+	bindings := make(ServiceBindings, 0, len(persisted))
+	for _, binding := range persisted {
+		service, err := loadPersistedObjectResultByResultID[*Service](ctx, dag, binding.ServiceResultID, fmt.Sprintf("%s service %q", owner, binding.Hostname))
+		if err != nil {
+			return nil, err
+		}
+		bindings = append(bindings, ServiceBinding{
+			Service:  service,
+			Hostname: binding.Hostname,
+			Aliases:  slices.Clone(binding.Aliases),
+		})
+	}
+	return bindings, nil
 }
 
 // Clone returns a deep copy of the container suitable for modifying in a
@@ -609,8 +817,8 @@ func (svc *Service) startContainer(
 			clientMetadata.ClientID,
 			nestedClientMetadata,
 			svc.ModuleContext,
-			svc.FunctionCall,
-			svc.EnvContext,
+			nil,
+			dagql.ObjectResult[*Env]{},
 		)
 		runErr <- err
 	}()
