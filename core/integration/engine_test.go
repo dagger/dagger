@@ -869,23 +869,48 @@ func (EngineSuite) TestDagqlCacheEntriesNoLeak(ctx context.Context, t *testctx.T
 		return found, nil
 	}
 
+	// Seed the workload directly via the Dagger Go API. The CLI commands
+	// 'dagger module init' / 'dagger module install' were removed on this
+	// branch (see commit d2b365b83), so the workload's go module, its
+	// python dependency, and the dep wiring all have to be written by the
+	// test itself. Putting that in Go (instead of shell heredocs in the
+	// WithExec) keeps it readable and confines the WithExec to what the
+	// test is actually measuring: repeated schema loads via dagger
+	// functions.
+	workloadDir := c.Directory().
+		WithNewFile("dagger.json", `{"name":"main","engineVersion":"latest","sdk":{"source":"go"},"dependencies":[{"name":"dep","source":"./dep"}]}`).
+		WithNewFile("main.go", `package main
+
+type Main struct{}
+
+func (m *Main) Hello() string { return "hi" }
+`).
+		WithNewFile("dep/dagger.json", `{"name":"dep","engineVersion":"latest","sdk":{"source":"python"}}`).
+		WithNewFile("dep/pyproject.toml", `[project]
+name = "dep"
+version = "0.0.0"
+requires-python = ">=3.14"
+dependencies = ["dagger-io"]
+
+[build-system]
+requires = ["uv_build>=0.8.4,<0.9.0"]
+build-backend = "uv_build"
+`).
+		WithNewFile("dep/src/dep/__init__.py", `import dagger
+
+@dagger.object_type
+class Dep:
+    @dagger.function
+    def hello(self) -> str:
+        return "hi"
+`)
+
 	runWorkload := func() error {
 		_, err := engineClientContainer(ctx, t, c, devEngine).
+			WithMountedDirectory("/tmp/main", workloadDir).
+			WithWorkdir("/tmp/main").
 			WithExec([]string{"sh", "-ec", `
 set -eu
-rm -rf /tmp/main
-mkdir -p /tmp/main
-cd /tmp/main
-
-dagger module init --sdk=go main . >/dev/null
-
-mkdir -p dep
-cd dep
-dagger module init --sdk=python dep . >/dev/null
-
-cd /tmp/main
-dagger module install ./dep >/dev/null
-
 # Load module + dependency schema a few times to exercise cache lifecycle.
 for i in $(seq 1 4); do
   dagger functions >/dev/null
