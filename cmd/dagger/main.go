@@ -9,6 +9,8 @@ import (
 	"io"
 	"iter"
 	"maps"
+	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"runtime/pprof"
@@ -35,10 +37,12 @@ import (
 	"golang.org/x/term"
 	"mvdan.cc/sh/v3/interp"
 
+	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client/drivers"
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -69,6 +73,7 @@ var (
 	interactiveCommandParsed []string
 	web                      bool
 	noExit                   bool
+	xRelease                 string
 	_, useCloudEngine        = os.LookupEnv("DAGGER_CLOUD_ENGINE")
 	enableScaleOut           bool
 
@@ -83,6 +88,10 @@ var (
 
 	Frontend idtui.Frontend
 )
+
+const daggerXReleaseEnv = "DAGGER_X_RELEASE"
+
+var githubCommitAPI = "https://api.github.com/repos/dagger/dagger/commits/"
 
 func init() {
 	// allow user explicitly setting progress via env, but default it to "auto"
@@ -346,6 +355,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.BoolVarP(&web, "web", "w", false, "Open trace URL in a web browser")
 	flags.BoolVarP(&noExit, "no-exit", "E", false, "Leave the TUI running after completion")
 	flags.BoolVarP(&autoApply, "auto-apply", "y", false, "Automatically apply changes when a changeset is returned")
+	flags.StringVar(&xRelease, "x-release", xRelease, "Run an experimental release from a Dagger git ref")
 
 	flags.StringVar(&dotOutputFilePath, "dot-output", "", "If set, write the calls made during execution to a dot file at the given path before exiting")
 	flags.StringVar(&dotFocusField, "dot-focus-field", "", "In dot output, filter out vertices that aren't this field or descendents of this field")
@@ -382,7 +392,124 @@ func disableFlagsInUseLine(cmd *cobra.Command) {
 	}
 }
 
-func parseGlobalFlags() {
+func execXRelease(ctx context.Context) error {
+	ref := strings.TrimSpace(xRelease)
+	commit, resolved, err := resolveXReleaseRef(ctx, ref)
+	if err != nil {
+		return fmt.Errorf("resolve experimental release %q: %w", ref, err)
+	}
+
+	downloader := engineconn.CLIDownloader{
+		Ref:       commit,
+		LogOutput: stderr,
+	}
+	binPath, err := downloader.Download(ctx)
+	if err != nil {
+		return fmt.Errorf("download experimental release CLI: %w", err)
+	}
+
+	msg := fmt.Sprintf("running build from %s", ref)
+	if resolved {
+		msg += fmt.Sprintf("; resolved to %s; pin with %s=%s or --x-release=%s", commit, daggerXReleaseEnv, commit, commit)
+	}
+	fmt.Fprintln(stderr, xReleaseLogLine(msg))
+
+	if shouldCleanupOldEngines() {
+		_ = drivers.CleanupOldEngines(ctx, []string{
+			engineVersion(engine.Tag),
+			engineVersion(commit),
+		})
+	}
+
+	args := xReleaseProcessArgs(os.Args[1:])
+	env := xReleaseProcessEnv(os.Environ())
+	execArgs := append([]string{binPath}, args...)
+	if err := execCLI(binPath, execArgs, env); err != nil {
+		return fmt.Errorf("exec experimental release CLI: %w", err)
+	}
+	return nil
+}
+
+func resolveXReleaseRef(ctx context.Context, ref string) (string, bool, error) {
+	if ref == "" {
+		return "", false, fmt.Errorf("ref must not be empty")
+	}
+	if len(ref) == 40 {
+		return strings.ToLower(ref), false, nil
+	}
+
+	commitURL := githubCommitAPI + url.PathEscape(ref)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, commitURL, nil)
+	if err != nil {
+		return "", false, fmt.Errorf("create GitHub commit request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", false, fmt.Errorf("resolve git ref from GitHub: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return "", false, fmt.Errorf("resolve git ref from GitHub: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	var commit struct {
+		SHA string `json:"sha"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64*1024)).Decode(&commit); err != nil {
+		return "", false, fmt.Errorf("decode GitHub commit response: %w", err)
+	}
+	return strings.ToLower(commit.SHA), true, nil
+}
+
+func xReleaseProcessArgs(args []string) []string {
+	rewritten := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			return append(rewritten, args[i:]...)
+		}
+		switch {
+		case arg == "--x-release":
+			if i+1 < len(args) {
+				i++
+			}
+		case strings.HasPrefix(arg, "--x-release="):
+		default:
+			rewritten = append(rewritten, arg)
+		}
+	}
+	return rewritten
+}
+
+func xReleaseProcessEnv(environ []string) []string {
+	env := make([]string, 0, len(environ)+1)
+	hasLeaveOldEngine := false
+	for _, kv := range environ {
+		key, _, _ := strings.Cut(kv, "=")
+		if key == daggerXReleaseEnv {
+			continue
+		}
+		if key == "DAGGER_LEAVE_OLD_ENGINE" {
+			hasLeaveOldEngine = true
+		}
+		env = append(env, kv)
+	}
+	if !hasLeaveOldEngine {
+		env = append(env, "DAGGER_LEAVE_OLD_ENGINE=1")
+	}
+	return env
+}
+
+func shouldCleanupOldEngines() bool {
+	val, ok := os.LookupEnv("DAGGER_LEAVE_OLD_ENGINE")
+	if !ok {
+		return true
+	}
+	leaveOldEngine, _ := strconv.ParseBool(val)
+	return !leaveOldEngine
+}
+
+func parseGlobalFlags() *pflag.FlagSet {
 	flags := pflag.NewFlagSet("global", pflag.ContinueOnError)
 	flags.Usage = func() {}
 	flags.ParseErrorsAllowlist.UnknownFlags = true
@@ -391,6 +518,19 @@ func parseGlobalFlags() {
 		fmt.Fprintln(stderr, err)
 		os.Exit(1)
 	}
+	if !flags.Changed("x-release") {
+		xRelease = os.Getenv(daggerXReleaseEnv)
+	}
+	xRelease = strings.TrimSpace(xRelease)
+	return flags
+}
+
+func xReleaseLogLine(msg string) string {
+	line := "[dagger x-release] " + msg
+	if stderrIsTTY {
+		return idtui.NewOutput(stderr).String(line).Bold().Foreground(termenv.ANSIYellow).String()
+	}
+	return line
 }
 
 func Tracer() trace.Tracer {
@@ -425,6 +565,21 @@ var opts dagui.FrontendOpts
 
 func main() {
 	parseGlobalFlags()
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	exitWithCode := func(code int) {
+		stop()
+		os.Exit(code)
+	}
+	if xRelease != "" {
+		if err := execXRelease(ctx); err != nil {
+			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+			exitWithCode(1)
+		}
+		fmt.Fprintln(stderr, rootCmd.ErrPrefix(), "internal error: experimental release exec returned without replacing the current process")
+		exitWithCode(1)
+	}
+
 	opts.Verbosity += dagui.ShowCompletedVerbosity // keep progress by default
 	opts.Verbosity += verbose                      // raise verbosity with -v
 	opts.Verbosity -= quiet                        // lower verbosity with -q
@@ -459,7 +614,7 @@ func main() {
 	case "tty":
 		if !hasTTY {
 			fmt.Fprintf(stderr, "no tty available for progress %q\n", progress)
-			os.Exit(1)
+			exitWithCode(1)
 		}
 		Frontend = idtui.NewPretty(stderr)
 	case "dots":
@@ -470,43 +625,41 @@ func main() {
 		Frontend = idtui.NewReporter(stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown progress type %q\n", progress)
-		os.Exit(1)
+		exitWithCode(1)
 	}
 
 	// Parse the interactive command to support shell-like syntax
 	parsedCommand, err := shlex.Split(interactiveCommand)
 	if err != nil {
 		fmt.Fprintf(stderr, "cannot parse interactive command: %s", err)
-		os.Exit(1)
+		exitWithCode(1)
 	}
 	interactiveCommandParsed = parsedCommand
 
 	installGlobalFlags(rootCmd.PersistentFlags())
 
-	ctx := context.Background()
 	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
 	ctx = slog.ContextWithDebugMode(ctx, debugFlag)
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
-		stop()
 		var exit idtui.ExitError
 		switch {
 		case errors.As(err, &exit):
-			os.Exit(exit.Code())
+			exitWithCode(exit.Code())
 		case errors.Is(err, idtui.ErrShellExited):
-			os.Exit(0)
+			exitWithCode(0)
 		case errors.Is(err, context.Canceled) || errors.Is(err, idtui.ErrInterrupted):
-			os.Exit(2)
+			exitWithCode(2)
 		default:
 			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
 			var es interp.ExitStatus
 			if errors.As(err, &es) {
-				os.Exit(int(es))
+				exitWithCode(int(es))
 			}
-			os.Exit(1)
+			exitWithCode(1)
 		}
 	}
+	stop()
 }
 
 func NormalizeWorkdir(workdir string) (string, error) {

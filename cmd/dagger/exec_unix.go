@@ -17,3 +17,7 @@ func ensureChildProcessesAreKilled(cmd *exec.Cmd) {
 	}
 	cmd.WaitDelay = waitDelay
 }
+
+func execCLI(binPath string, args, env []string) error {
+	return syscall.Exec(binPath, args, env)
+}
