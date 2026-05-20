@@ -278,7 +278,7 @@ func TestModuleResolutionFromSubdirectory(t *testing.T) {
 	require.Equal(t, "changelog", client.pendingModules[0].Name)
 }
 
-func TestDetectAndLoadWorkspaceIgnoresCWDModuleWhenConfigExists(t *testing.T) {
+func TestDetectAndLoadWorkspaceIgnoresCompatFallbackWhenConfigExists(t *testing.T) {
 	t.Parallel()
 
 	existingFiles := map[string]bool{
@@ -310,7 +310,7 @@ entrypoint = true
 source = "modules/local"
 `), nil
 		case "/repo/mymod/dagger.json":
-			return []byte(`{"name":"mymod"}`), nil
+			return []byte(`{"name":"mymod","sdk":{"source":"go"}}`), nil
 		default:
 			return nil, os.ErrNotExist
 		}
@@ -354,7 +354,7 @@ source = "modules/local"
 	require.False(t, client.pendingModules[1].Entrypoint)
 }
 
-func TestDetectAndLoadWorkspaceDoesNotInferModuleFromCWDWithoutConfig(t *testing.T) {
+func TestDetectAndLoadWorkspaceLoadsPlainModuleCompatWithoutConfig(t *testing.T) {
 	t.Parallel()
 
 	existingFiles := map[string]bool{
@@ -374,7 +374,7 @@ func TestDetectAndLoadWorkspaceDoesNotInferModuleFromCWDWithoutConfig(t *testing
 
 	readFile := func(_ context.Context, path string) ([]byte, error) {
 		if filepath.Clean(path) == "/repo/mymod/dagger.json" {
-			return []byte(`{"name":"mymod"}`), nil
+			return []byte(`{"name":"mymod","sdk":{"source":"go"}}`), nil
 		}
 		return nil, os.ErrNotExist
 	}
@@ -403,7 +403,70 @@ func TestDetectAndLoadWorkspaceDoesNotInferModuleFromCWDWithoutConfig(t *testing
 	)
 	require.NoError(t, err)
 	require.Empty(t, client.workspace.ConfigFile)
+	require.Len(t, client.pendingModules, 1)
+	require.Equal(t, moduleLoadKindAmbient, client.pendingModules[0].Kind)
+	require.Equal(t, "mymod", client.pendingModules[0].Name)
+	require.Equal(t, "/repo/mymod", client.pendingModules[0].Ref)
+	require.True(t, client.pendingModules[0].Entrypoint)
+}
+
+func TestDetectAndLoadWorkspaceKeepsCompatFallbackForExplicitExtraModule(t *testing.T) {
+	t.Parallel()
+
+	existingFiles := map[string]bool{
+		"/repo/.git":        true,
+		"/repo/dagger.json": true,
+	}
+
+	statFS := core.StatFSFunc(func(_ context.Context, path string) (string, *core.Stat, error) {
+		path = filepath.Clean(path)
+		if existingFiles[path] {
+			return filepath.Dir(path), &core.Stat{
+				Name: filepath.Base(path),
+			}, nil
+		}
+		return "", nil, os.ErrNotExist
+	})
+
+	readFile := func(_ context.Context, path string) ([]byte, error) {
+		if filepath.Clean(path) == "/repo/dagger.json" {
+			return []byte(`{"name":"ambient","toolchains":[{"name":"tool","source":"./tool"}]}`), nil
+		}
+		return nil, os.ErrNotExist
+	}
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		ClientID: "test-client",
+	})
+
+	extra := []engine.ExtraModule{{
+		Ref:        "/repo/explicit",
+		Entrypoint: true,
+	}}
+	client := &daggerClient{
+		pendingWorkspaceLoad: true,
+		clientMetadata: &engine.ClientMetadata{
+			ExtraModules: extra,
+		},
+		pendingExtraModules: extra,
+	}
+
+	srv := &Server{}
+	err := srv.detectAndLoadWorkspace(ctx, client,
+		statFS,
+		readFile,
+		"/repo",
+		func(ws *workspace.Workspace, relPath string) string {
+			return filepath.Join(ws.Root, relPath)
+		},
+		nil,
+		true,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, client.workspace)
+	require.NotNil(t, client.workspace.CompatWorkspace())
 	require.Empty(t, client.pendingModules)
+	require.Equal(t, extra, client.pendingExtraModules)
 }
 
 func TestDetectAndLoadWorkspaceDoesNotInferModuleFromCWDWithoutWorkspace(t *testing.T) {
@@ -513,7 +576,7 @@ func TestRemoteWorkspaceCwdUsesDetectionStart(t *testing.T) {
 	require.Equal(t, filepath.Join(".dagger", workspace.ConfigFileName), client.workspace.ConfigFile)
 }
 
-func TestRemoteWorkspaceDoesNotInferModuleFromCWD(t *testing.T) {
+func TestRemoteWorkspaceLoadsPlainModuleCompatFromCWD(t *testing.T) {
 	t.Parallel()
 
 	existingFiles := map[string]bool{
@@ -532,7 +595,7 @@ func TestRemoteWorkspaceDoesNotInferModuleFromCWD(t *testing.T) {
 
 	readFile := func(_ context.Context, path string) ([]byte, error) {
 		if filepath.Clean(path) == "subdir/dagger.json" {
-			return []byte(`{"name":"remote-mod"}`), nil
+			return []byte(`{"name":"remote-mod","sdk":{"source":"go"}}`), nil
 		}
 		return nil, os.ErrNotExist
 	}
@@ -567,7 +630,11 @@ func TestRemoteWorkspaceDoesNotInferModuleFromCWD(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join("subdir", "child"), client.workspace.Cwd)
-	require.Empty(t, client.pendingModules)
+	require.Len(t, client.pendingModules, 1)
+	require.Equal(t, moduleLoadKindAmbient, client.pendingModules[0].Kind)
+	require.Equal(t, "remote-mod", client.pendingModules[0].Name)
+	require.Equal(t, core.GitRefString("github.com/acme/repo", "subdir", "main"), client.pendingModules[0].Ref)
+	require.True(t, client.pendingModules[0].Entrypoint)
 }
 
 func TestDetectAndLoadWorkspaceDoesNotLoadModulesByDefault(t *testing.T) {
@@ -617,6 +684,7 @@ func TestDetectAndLoadWorkspaceDoesNotLoadModulesByDefault(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NotNil(t, client.workspace)
+	require.NotNil(t, client.workspace.CompatWorkspace())
 	require.Empty(t, client.pendingModules)
 }
 
