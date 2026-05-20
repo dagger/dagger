@@ -916,6 +916,10 @@ func toChangeset(dag *dagger.Client, item any) (*dagger.Changeset, error) {
 }
 
 func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response any, autoApply bool) (rerr error) {
+	return handleChangesetResponseAt(ctx, dag, response, autoApply, ".")
+}
+
+func handleChangesetResponseAt(ctx context.Context, dag *dagger.Client, response any, autoApply bool, exportPath string) (rerr error) {
 	changeset, err := toChangeset(dag, response)
 	if err != nil {
 		return err
@@ -964,7 +968,7 @@ func handleChangesetResponse(ctx context.Context, dag *dagger.Client, response a
 
 	ctx, span := Tracer().Start(ctx, "applying changes")
 	defer telemetry.EndWithCause(span, &rerr)
-	if _, err := changeset.Export(ctx, "."); err != nil {
+	if _, err := changeset.Export(ctx, exportPath); err != nil {
 		return err
 	}
 	return nil
