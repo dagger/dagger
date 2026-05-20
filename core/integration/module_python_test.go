@@ -673,6 +673,7 @@ class Test:
                     url = "https://pypi.example.com/simple"
                     default = true
                 `)).
+				With(daggerCallAt(".", "urls")).
 				Sync(ctx)
 
 			requireErrOut(t, err, "Failed to fetch: `https://pypi.example.com/simple")
