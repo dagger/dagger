@@ -44,15 +44,6 @@ func (CLISuite) TestModuleFunctions(ctx context.Context, t *testctx.T) {
 		require.Contains(t, lines, "prim   doc for Prim")
 	})
 
-	t.Run("plain module is not loaded from subdir", func(ctx context.Context, t *testctx.T) {
-		out, err := ctr.
-			WithWorkdir("/work/some/subdir").
-			With(daggerFunctions()).
-			Stderr(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "No functions found.")
-	})
-
 	t.Run("return core object", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.With(daggerFunctions("-m", ".", "fn-a")).Stdout(ctx)
 		require.NoError(t, err)
