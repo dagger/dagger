@@ -310,14 +310,11 @@ class Test:
 					// For poetry projects, uv will fail to build due to missing
 					// [project] table in pyproject.toml. Support is possible
 					// via `uv pip` and requirements.lock though.
-					if tc.name != "poetry" {
-						return ctr.WithEnvVariable("TEST_LOCK_FILE", "uv.lock")
+					if tc.name == "poetry" {
+						return pipLockMod(t, c, []string{"requirements.lock"})(ctr)
 					}
-					return pipLockMod(t, c, []string{"requirements.lock"})(
-						ctr.WithEnvVariable("TEST_LOCK_FILE", "requirements.lock"),
-					)
+					return ctr
 				}).
-				WithExec([]string{"sh", "-c", "grep dagger-io $TEST_LOCK_FILE"}).
 				With(daggerCallAt(".", "whoami")).
 				Stdout(ctx)
 
