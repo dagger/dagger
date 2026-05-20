@@ -45,7 +45,7 @@ func TestModule(t *testing.T) {
 }
 
 // Updated between CI repro attempts to force a new source tree.
-const unknownCommandCIDebugMarker = "attempt-010-20260520T222921Z"
+const unknownCommandCIDebugMarker = "attempt-011-20260520T224336Z"
 
 func (ModuleSuite) TestInvalidSDK(ctx context.Context, t *testctx.T) {
 	t.Run("invalid sdk returns readable error", func(ctx context.Context, t *testctx.T) {
