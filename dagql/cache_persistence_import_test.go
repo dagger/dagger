@@ -170,6 +170,7 @@ func TestCachePersistenceImportRoundTripAcrossRestart(t *testing.T) {
 	cacheB, err := NewCache(ctx, dbPath, nil, nil)
 	assert.NilError(t, err)
 	cB := cacheB
+	assert.Equal(t, CachePersistenceResetNone, cB.PersistenceResetReason())
 	defer func() {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()
@@ -215,6 +216,7 @@ func TestCachePersistenceImportRoundTripObjectResult(t *testing.T) {
 	cacheB, err := NewCache(ctx, dbPath, nil, nil)
 	assert.NilError(t, err)
 	cB := cacheB
+	assert.Equal(t, CachePersistenceResetNone, cB.PersistenceResetReason())
 	defer func() {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()
@@ -271,6 +273,7 @@ func TestCachePersistenceImportedObjectHitWithoutServerErrors(t *testing.T) {
 	cacheB, err := NewCache(ctx, dbPath, nil, nil)
 	assert.NilError(t, err)
 	cB := cacheB
+	assert.Equal(t, CachePersistenceResetNone, cB.PersistenceResetReason())
 	defer func() {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()
@@ -368,6 +371,7 @@ func TestCachePersistenceImportedObjectLoadSerializesPersistedDecode(t *testing.
 	cacheB, err := NewCache(ctx, dbPath, nil, nil)
 	assert.NilError(t, err)
 	cB := cacheB
+	assert.Equal(t, CachePersistenceResetNone, cB.PersistenceResetReason())
 	defer func() {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()
@@ -464,6 +468,7 @@ func TestCachePersistenceUncleanMarkerWipesStore(t *testing.T) {
 	cacheB, err := NewCache(ctx, dbPath, nil, nil)
 	assert.NilError(t, err)
 	cB := cacheB
+	assert.Equal(t, CachePersistenceResetUncleanShutdown, cB.PersistenceResetReason())
 	defer func() {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()
@@ -478,6 +483,73 @@ func TestCachePersistenceUncleanMarkerWipesStore(t *testing.T) {
 	assert.Assert(t, !resB.HitCache())
 	assert.Equal(t, 8, cacheTestUnwrapInt(t, resB))
 	cacheTestReleaseSession(t, cB, ctx)
+}
+
+func TestCachePersistenceSchemaMismatchWipesStore(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+
+	cacheA, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	cA := cacheA
+
+	key := cacheTestIntCall("persist-import-schema-mismatch-wipe")
+	_, err = cA.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+		ResultCall:    key,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(key, 70), nil
+	})
+	assert.NilError(t, err)
+	cacheTestReleaseSession(t, cA, ctx)
+	assert.NilError(t, cA.persistCurrentState(ctx))
+	assert.NilError(t, cA.Close(context.Background()))
+
+	db, q, err := prepareCacheDBs(ctx, dbPath)
+	assert.NilError(t, err)
+	assert.NilError(t, q.UpsertMeta(ctx, persistdb.MetaKeySchemaVersion, "old-schema"))
+	assert.NilError(t, q.UpsertMeta(ctx, persistdb.MetaKeyCleanShutdown, "1"))
+	assert.NilError(t, closeCacheDBs(db, q))
+
+	cacheB, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	cB := cacheB
+	assert.Equal(t, CachePersistenceResetSchemaMismatch, cB.PersistenceResetReason())
+	defer func() {
+		assert.NilError(t, cB.Close(context.Background()))
+	}()
+
+	resB, err := cB.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+		ResultCall:    key,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestIntResult(key, 71), nil
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, !resB.HitCache())
+	assert.Equal(t, 71, cacheTestUnwrapInt(t, resB))
+	cacheTestReleaseSession(t, cB, ctx)
+}
+
+func TestCacheCloseDiscardingPersistenceDoesNotMarkClean(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+
+	cacheA, err := NewCache(ctx, dbPath, nil, nil)
+	assert.NilError(t, err)
+	assert.NilError(t, cacheA.CloseDiscardingPersistence())
+
+	db, q, err := prepareCacheDBs(ctx, dbPath)
+	assert.NilError(t, err)
+	cleanShutdownVal, found, err := q.SelectMetaValue(ctx, persistdb.MetaKeyCleanShutdown)
+	assert.NilError(t, err)
+	assert.Assert(t, found)
+	assert.Equal(t, "0", cleanShutdownVal)
+	assert.NilError(t, closeCacheDBs(db, q))
 }
 
 func TestCachePersistenceImportFailureWipesStore(t *testing.T) {
@@ -512,6 +584,7 @@ func TestCachePersistenceImportFailureWipesStore(t *testing.T) {
 	cacheB, err := NewCache(ctx, dbPath, nil, nil)
 	assert.NilError(t, err)
 	cB := cacheB
+	assert.Equal(t, CachePersistenceResetImportFailure, cB.PersistenceResetReason())
 	defer func() {
 		assert.NilError(t, cB.Close(context.Background()))
 	}()

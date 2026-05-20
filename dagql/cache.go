@@ -88,6 +88,15 @@ const cachePersistenceSchemaVersion = "15"
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrPersistStateNotReady = errors.New("persist state not ready")
 
+type CachePersistenceResetReason string
+
+const (
+	CachePersistenceResetNone            CachePersistenceResetReason = ""
+	CachePersistenceResetSchemaMismatch  CachePersistenceResetReason = "schema_mismatch"
+	CachePersistenceResetUncleanShutdown CachePersistenceResetReason = "unclean_shutdown"
+	CachePersistenceResetImportFailure   CachePersistenceResetReason = "import_failure"
+)
+
 func NewCache(
 	ctx context.Context,
 	dbPath string,
@@ -119,6 +128,7 @@ func NewCache(
 		return nil, fmt.Errorf("read schema_version metadata: %w", err)
 	}
 	if found && schemaVersionVal != cachePersistenceSchemaVersion {
+		c.persistenceResetReason = CachePersistenceResetSchemaMismatch
 		c.tracePersistStoreWipedSchemaMismatch(ctx, cachePersistenceSchemaVersion, schemaVersionVal)
 		slog.Warn("dagql persistence store schema version mismatch; wiping and cold-starting", "expected", cachePersistenceSchemaVersion, "actual", schemaVersionVal)
 		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
@@ -144,6 +154,7 @@ func NewCache(
 		return nil, fmt.Errorf("read clean_shutdown metadata: %w", err)
 	}
 	if found && cleanShutdownVal != "1" {
+		c.persistenceResetReason = CachePersistenceResetUncleanShutdown
 		c.tracePersistStoreWipedUncleanShutdown(ctx, cleanShutdownVal)
 		slog.Warn("dagql persistence store marked unclean; wiping and cold-starting", "cleanShutdown", cleanShutdownVal)
 		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
@@ -161,6 +172,7 @@ func NewCache(
 		c.pdb = persistDB
 	}
 	if err := c.importPersistedState(ctx); err != nil {
+		c.persistenceResetReason = CachePersistenceResetImportFailure
 		c.tracePersistStoreWipedImportFailure(ctx, err)
 		slog.Warn("dagql persistence import failed; wiping and cold-starting", "err", err)
 		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
@@ -1108,6 +1120,10 @@ func closeCacheDBs(db *sql.DB, persistDB *persistdb.Queries) error {
 	return err
 }
 
+func RemoveCachePersistenceStore(dbPath string) error {
+	return wipeSQLiteFiles(dbPath)
+}
+
 func wipeSQLiteFiles(dbPath string) error {
 	removeIfExists := func(path string) error {
 		err := os.Remove(path)
@@ -1135,6 +1151,8 @@ type Cache struct {
 	sessionMu sync.Mutex
 	// egraphMu protects all e-graph state and indexes.
 	egraphMu sync.RWMutex
+
+	persistenceResetReason CachePersistenceResetReason
 
 	// calls that are in progress, keyed by a combination of the call key and the concurrency key
 	// two calls with the same call+concurrency key will be "single-flighted" (only one will actually run)
@@ -2895,6 +2913,30 @@ func (c *Cache) Close(ctx context.Context) error {
 		slog.Info("completed dagql cache close successfully")
 	})
 	return c.closeErr
+}
+
+func (c *Cache) CloseDiscardingPersistence() error {
+	c.closeOnce.Do(func() {
+		slog.Info(
+			"discarding dagql cache without persistence",
+			"hasSQLDB", c.sqlDB != nil,
+			"hasPersistDB", c.pdb != nil,
+		)
+		if closeErr := closeCacheDBs(c.sqlDB, c.pdb); closeErr != nil {
+			slog.Error("failed to close discarded dagql persistence databases", "err", closeErr)
+			c.closeErr = errors.Join(c.closeErr, closeErr)
+		}
+		c.sqlDB = nil
+		c.pdb = nil
+	})
+	return c.closeErr
+}
+
+func (c *Cache) PersistenceResetReason() CachePersistenceResetReason {
+	if c == nil {
+		return CachePersistenceResetNone
+	}
+	return c.persistenceResetReason
 }
 
 func (c *Cache) Size() int {

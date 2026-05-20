@@ -127,6 +127,79 @@ func (EngineSuite) TestDiskPersistenceAcrossRestart(ctx context.Context, t *test
 		require.Greater(t, entryCount, 0)
 	})
 
+	t.Run("unclean shutdown discards local cache state and recovers", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-unclean-reset-state-" + identity.NewID()
+		const sentinelPath = "/state/worker/reset-sentinel"
+		randomScript := `
+set -eu
+mkdir -p /work
+head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
+`
+
+		runRandom := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) string {
+			t.Helper()
+
+			randomContents, err := engineClient.
+				Container().
+				From(alpineImage).
+				WithExec([]string{"sh", "-ec", randomScript}).
+				Directory("/work").
+				File("random.txt").
+				Contents(ctx)
+			require.NoError(t, err)
+			random := strings.TrimSpace(randomContents)
+			require.NotEmpty(t, random)
+			return random
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		randomA := runRandom(ctx, t, engineClientA)
+
+		_, err := upstreamSvcA.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+		require.NoError(t, err)
+		upstreamSvcA = nil
+		_, err = engineSvcA.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+		require.NoError(t, err)
+		engineSvcA = nil
+		engineClientA = nil
+
+		_, err = c.
+			Container().
+			From(alpineImage).
+			WithMountedCache("/state", c.CacheVolume(stateKey)).
+			WithExec([]string{"sh", "-ec", "test -d /state/worker && touch " + sentinelPath}).
+			Sync(ctx)
+		require.NoError(t, err)
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		randomB := runRandom(ctx, t, engineClientB)
+		require.NotEqual(t, randomA, randomB, "cache state from before the unclean shutdown should be discarded")
+
+		stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB)
+		upstreamSvcB = nil
+		engineSvcB = nil
+		engineClientB = nil
+
+		_, err = c.
+			Container().
+			From(alpineImage).
+			WithMountedCache("/state", c.CacheVolume(stateKey)).
+			WithExec([]string{"sh", "-ec", "test ! -e " + sentinelPath}).
+			Sync(ctx)
+		require.NoError(t, err)
+
+		upstreamSvcC, engineSvcC, engineClientC := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcC, engineSvcC, engineClientC) })
+
+		randomC := runRandom(ctx, t, engineClientC)
+		require.Equal(t, randomB, randomC, "cache state produced after reset should survive a later clean restart")
+	})
+
 	t.Run("container withNewFile hit survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "phase7-container-with-new-file-state-" + identity.NewID()

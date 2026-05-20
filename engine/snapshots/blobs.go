@@ -183,7 +183,7 @@ func (cm *snapshotManager) ensureExportBlob(
 			switch cm.Snapshotter.Name() {
 			case "overlayfs", "stargz":
 				logWarnOnErr = true
-			case "fuse-overlayfs", "native":
+			case "native":
 				enableOverlay = false
 			}
 		}
