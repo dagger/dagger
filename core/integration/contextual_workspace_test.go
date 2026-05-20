@@ -127,7 +127,7 @@ type Myapp {
 		require.Equal(t, "file:///work/app", strings.TrimSpace(out))
 	})
 
-	t.Run("non-eligible legacy module does not inject a workspace", func(ctx context.Context, t *testctx.T) {
+	t.Run("plain module config injects a compat workspace", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		ctr := legacyWorkspaceBase(t, c, `{
@@ -146,9 +146,9 @@ type Standalone {
 `)
 		})
 
-		out, err := ctr.With(daggerReportCallFailure("workspace-path")).CombinedOutput(ctx)
+		out, err := ctr.With(daggerReportCall("workspace-path")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, `unknown command "workspace-path"`)
+		require.Equal(t, ".", strings.TrimSpace(out))
 	})
 
 	t.Run("workspace config beats outer compat inference", func(ctx context.Context, t *testctx.T) {
