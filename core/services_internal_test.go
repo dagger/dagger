@@ -7,8 +7,10 @@ import (
 	"testing"
 	"time"
 
+	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type dependencyExitPropagationStartable struct {
@@ -59,6 +61,47 @@ func (s *dependencyExitPropagationStartable) Start(_ context.Context, running *R
 	}()
 
 	return nil
+}
+
+func testSpanContext(traceHex, spanHex string) trace.SpanContext {
+	traceID, err := trace.TraceIDFromHex(traceHex)
+	if err != nil {
+		panic(err)
+	}
+	spanID, err := trace.SpanIDFromHex(spanHex)
+	if err != nil {
+		panic(err)
+	}
+	return trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: traceID,
+		SpanID:  spanID,
+	})
+}
+
+func TestRunningServiceOriginSpanContextsAreDeterministic(t *testing.T) {
+	running := &RunningService{}
+	later := testSpanContext("00000000000000000000000000000002", "0000000000000002")
+	earlier := testSpanContext("00000000000000000000000000000001", "0000000000000001")
+
+	running.addOriginSpanContexts([]trace.SpanContext{later, earlier, later})
+
+	require.Equal(t, []trace.SpanContext{earlier, later}, running.originSpanContextsSnapshot())
+	require.Equal(t, earlier, running.errorOriginSpanContext())
+}
+
+func TestServiceBindingExitErrorAddsBindingOriginAlongsideInnerOrigin(t *testing.T) {
+	starter := testSpanContext("00000000000000000000000000000001", "0000000000000001")
+	binding := testSpanContext("00000000000000000000000000000002", "0000000000000002")
+
+	err := &serviceBindingExitError{
+		err:     telemetry.TrackOrigin(errors.New("service exited"), starter),
+		origins: []trace.SpanContext{starter, binding},
+	}
+
+	origins := telemetry.ParseErrorOrigins(err.Error())
+	require.Len(t, origins, 2)
+	require.Contains(t, origins, starter)
+	require.Contains(t, origins, binding)
 }
 
 func TestStartWithKeySuppressesDependencyExitPropagationUntilRelease(t *testing.T) {

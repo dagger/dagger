@@ -41,7 +41,6 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -765,13 +764,7 @@ func (c *Client) setupOTel(ctx context.Context, state *execState) error {
 		destClientID = state.callerClientID
 	}
 
-	stdioAttrs := []log.KeyValue{}
-	if state.execMD != nil && state.execMD.LogTargetCallDigest != "" {
-		stdioAttrs = append(stdioAttrs,
-			log.String(telemetry.DagDigestAttr, state.execMD.LogTargetCallDigest.String()),
-		)
-	}
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, stdioAttrs...)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	state.cleanups.Add("close logs", stdio.Close)
 	state.procInfo.Stdout = nopCloser{io.MultiWriter(stdio.Stdout, state.procInfo.Stdout)}
 	state.procInfo.Stderr = nopCloser{io.MultiWriter(stdio.Stderr, state.procInfo.Stderr)}

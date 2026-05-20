@@ -5,6 +5,7 @@ package idtui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -71,7 +72,9 @@ func NewDots(output io.Writer) Frontend {
 		out:         out,
 		prefixW:     multiprefixw.New(out),
 		pendingLogs: make(map[dagui.SpanID][]sdklog.Record),
+		testLogs:    make(map[dagui.SpanID]*Vterm),
 	}
+	fe.reporter.logs.Logs = fe.logs.testLogs
 	return fe
 }
 
@@ -81,15 +84,75 @@ func (fe *frontendDots) SetSidebarContent(SidebarSection) {}
 
 func (fe *frontendDots) Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) (cleanups.CleanupF, error)) error {
 	fe.opts = opts
-	return fe.reporter.Run(ctx, opts, func(ctx context.Context) (cleanups.CleanupF, error) {
-		cleanup, err := f(ctx)
+	fe.reporter.FrontendOpts = opts
+	cleanup, runErr := f(ctx)
+	if cleanup != nil {
+		runErr = errors.Join(runErr, cleanup())
+	}
+
+	reportErr := normalizeFrontendExit(runErr, fe.db)
+
+	fe.mu.Lock()
+	if !opts.Silent {
 		fmt.Fprintln(fe.out)
 		fmt.Fprintln(fe.out)
-		if p := fe.telemetryError.Load(); p != nil {
-			handleTelemetryErrorOutput(fe.out, fe.out, *p)
+		if reportErr != nil {
+			fe.reporter.err = reportErr
+			if renderErr := fe.renderFinalReport(); renderErr != nil {
+				runErr = renderErr
+			} else {
+				runErr = reportErr
+			}
+		} else if fe.renderFinalTests() {
+			fmt.Fprintln(fe.out)
 		}
-		return cleanup, err
-	})
+	}
+	if opts.Silent || reportErr == nil {
+		fe.renderFinalMessages(fe.reporter.msgPreFinalRender.String())
+		if writeErr := renderPrimaryOutput(fe.out, fe.db); writeErr != nil {
+			runErr = errors.Join(runErr, writeErr)
+		}
+	}
+	fe.mu.Unlock()
+
+	fe.db.WriteDot(opts.DotOutputFilePath, opts.DotFocusField, opts.DotShowInternal)
+	return normalizeFrontendExit(runErr, fe.db)
+}
+
+func (fe *frontendDots) renderFinalReport() error {
+	preFinalMessage := fe.reporter.msgPreFinalRender.String()
+	fe.reporter.msgPreFinalRender.Reset()
+
+	renderErr := fe.reporter.FinalRender(fe.out)
+	fe.renderFinalMessages(preFinalMessage)
+	return renderErr
+}
+
+func (fe *frontendDots) renderFinalMessages(preFinalMessage string) {
+	var telemetryErr error
+	if p := fe.telemetryError.Load(); p != nil {
+		telemetryErr = *p
+	}
+	handleTelemetryErrorOutput(fe.out, fe.out, telemetryErr)
+	if preFinalMessage != "" {
+		fmt.Fprintln(fe.out, preFinalMessage)
+	}
+}
+
+func (fe *frontendDots) renderFinalTests() bool {
+	view := fe.db.TestView()
+	if !view.HasTests() {
+		return false
+	}
+	tv := &TestView{
+		Profile:         fe.profile,
+		Logs:            fe.logs.testLogs,
+		SummaryLogLines: -1,
+	}
+	for _, line := range tv.renderTestSummaryLines(fe.out, view, 80, finalTestViewHeight(tv)) {
+		fmt.Fprintln(fe.out, line)
+	}
+	return true
 }
 
 func (fe *frontendDots) Opts() *dagui.FrontendOpts {

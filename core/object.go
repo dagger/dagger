@@ -1344,6 +1344,7 @@ func objField(ctx context.Context, mod dagql.ObjectResult[*Module], field *Field
 		Type:             field.TypeDef.Self().ToTyped(),
 		Module:           moduleID,
 		DeprecatedReason: field.Deprecated,
+		Trivial:          true,
 	}
 	spec.Directives = append(spec.Directives, &ast.Directive{
 		Name: trivialFieldDirectiveName,

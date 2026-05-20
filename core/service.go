@@ -20,7 +20,6 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	"github.com/dagger/dagger/engine/telemetryattrs"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
@@ -273,6 +272,31 @@ func (io *ServiceIO) Close() error {
 	return errors.Join(errs...)
 }
 
+// firstValidSpanContext returns the first IsValid() context from spans, or a
+// zero SpanContext if none are valid.
+func firstValidSpanContext(spans []trace.SpanContext) trace.SpanContext {
+	for _, s := range spans {
+		if s.IsValid() {
+			return s
+		}
+	}
+	return trace.SpanContext{}
+}
+
+// trackOriginIfMissing stamps the given origin onto err's message (as
+// [traceparent:...]) unless err is nil or already carries an origin. The
+// receiving span's EndWithCause will then add the origin as an error-origin
+// link.
+func trackOriginIfMissing(err error, origin trace.SpanContext) error {
+	if err == nil || !origin.IsValid() {
+		return err
+	}
+	if len(telemetry.ParseErrorOrigins(err.Error())) > 0 {
+		return err
+	}
+	return telemetry.TrackOrigin(err, origin)
+}
+
 func (svc *Service) Start(
 	ctx context.Context,
 	running *RunningService,
@@ -358,9 +382,6 @@ func (svc *Service) startContainer(
 	} else {
 		cloned := *execMD
 		execMD = &cloned
-	}
-	if opts.LogTargetCallDigest != "" {
-		execMD.LogTargetCallDigest = opts.LogTargetCallDigest
 	}
 
 	query, err := CurrentQuery(ctx)
@@ -460,9 +481,26 @@ func (svc *Service) startContainer(
 		meta.Env = addDefaultEnvvar(meta.Env, "TERM", "xterm")
 	}
 
-	attrs := []attribute.KeyValue{}
-	if opts.LogTargetCallDigest != "" {
-		attrs = append(attrs, attribute.String(telemetryattrs.UIResumeOutputAttr, opts.LogTargetCallDigest.String()))
+	attrs := []attribute.KeyValue{
+		// Hide the synthetic service exec span from the UI; its failure
+		// status propagates up to the installing API span (e.g. .asService)
+		// via the cause link below, and its stdio logs are routed there via
+		// DagDigestAttr from executor_spec.
+		attribute.Bool(telemetry.UIPassthroughAttr, true),
+	}
+
+	originSpanContexts := running.originSpanContextsSnapshot()
+	if len(originSpanContexts) == 0 {
+		originSpanContexts = normalizeSpanContexts(opts.OriginSpanContexts)
+		running.addOriginSpanContexts(originSpanContexts)
+	}
+
+	spanOpts := []trace.SpanStartOption{trace.WithAttributes(attrs...)}
+	// Cause-link the service exec span to the API spans that installed the
+	// Service value. If this service exits with an error, dagui will then
+	// surface the failure on the installing API span (e.g. .asService).
+	for _, originCtx := range originSpanContexts {
+		spanOpts = append(spanOpts, trace.WithLinks(serviceOriginLink(originCtx)))
 	}
 
 	ctx, span := Tracer(ctx).Start(
@@ -470,8 +508,18 @@ func (svc *Service) startContainer(
 		ctx,
 		// Match naming scheme of normal exec span.
 		fmt.Sprintf("exec %s", strings.Join(svc.Args, " ")),
-		trace.WithAttributes(attrs...),
+		spanOpts...,
 	)
+	running.setServiceSpan(span, originSpanContexts)
+	// Pick a single install-span context as the canonical "error origin" for
+	// the running service so binding-exit errors can carry a traceparent
+	// pointing at it. Fall back to the service span itself when no install
+	// span is known (e.g. for direct startResult calls outside a dagql call).
+	originCtx := firstValidSpanContext(originSpanContexts)
+	if !originCtx.IsValid() {
+		originCtx = span.SpanContext()
+	}
+	running.setErrorOrigin(originCtx)
 	defer func() {
 		if rerr != nil {
 			// NB: this is intentionally conditional; we only complete if there was
@@ -530,6 +578,15 @@ func (svc *Service) startContainer(
 	}
 
 	exited := make(chan struct{})
+	// Route the service's stdio logs to the installing API call's row by
+	// passing its span context as the executor cause context. setupOTel uses
+	// that as the active span for SpanStdio, so log records get tied to the
+	// install span ID — the same way a normal withExec's logs are tied to
+	// its dagql call span.
+	logTargetCtx := originCtx
+	if !logTargetCtx.IsValid() {
+		logTargetCtx = span.SpanContext()
+	}
 	runErr := make(chan error)
 	go func() {
 		err := bk.Run(
@@ -546,7 +603,7 @@ func (svc *Service) startContainer(
 				Signal: signal,
 			},
 			started,
-			span.SpanContext(),
+			logTargetCtx,
 			execMD,
 			clientMetadata.SessionID,
 			clientMetadata.ClientID,
@@ -605,7 +662,7 @@ func (svc *Service) startContainer(
 			close(exited)
 		}()
 
-		exitErr = <-runErr
+		exitErr = trackOriginIfMissing(<-runErr, originCtx)
 		slog.Info("service exited", "err", exitErr)
 
 		// show the exit status; doing so won't fail anything, and is
@@ -1309,8 +1366,8 @@ type ServiceBinding struct {
 func (bndp ServiceBindings) AttachDependencyResults(
 	owner string,
 	attach func(dagql.AnyResult) (dagql.AnyResult, error),
-) ([]dagql.AnyResult, error) {
-	owned := make([]dagql.AnyResult, 0, len(bndp))
+) ([]dagql.DependencyResult, error) {
+	owned := make([]dagql.DependencyResult, 0, len(bndp))
 	for i := range bndp {
 		binding := &bndp[i]
 		if binding.Service.Self() == nil {
@@ -1325,7 +1382,10 @@ func (bndp ServiceBindings) AttachDependencyResults(
 			return nil, fmt.Errorf("attach %s service %q: unexpected result %T", owner, binding.Hostname, attached)
 		}
 		binding.Service = typed
-		owned = append(owned, typed)
+		owned = append(owned, dagql.DependencyResult{
+			Result: typed,
+			Owned:  false,
+		})
 	}
 	return owned, nil
 }

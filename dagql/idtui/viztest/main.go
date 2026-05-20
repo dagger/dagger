@@ -21,6 +21,10 @@ type Viztest struct {
 	Num int
 }
 
+type ModuleTypeReturn struct {
+	Container *dagger.Container
+}
+
 // HelloWorld returns the string "Hello, world!"
 // +cache="session"
 func (*Viztest) HelloWorld() string {
@@ -119,6 +123,42 @@ func (*Viztest) FailMulti(ctx context.Context) (rerr error) {
 	telemetry.End(span, func() error { return err2 }) //nolint:staticcheck
 
 	return errors.Join(err1, err2)
+}
+
+const testSummarySuite = "viztest summary"
+
+// TestSummary emits a deterministic OpenTelemetry test summary.
+// +cache="never"
+// +check
+func (*Viztest) TestSummary(ctx context.Context) error {
+	ctx, suite := Tracer().Start(ctx, "viztest summary suite",
+		trace.WithAttributes(
+			attribute.String("test.suite.name", testSummarySuite),
+			attribute.String("test.suite.run.status", "success"),
+		))
+	defer suite.End()
+
+	emitTestSummaryCase(ctx, "passing test 01", "pass")
+	emitTestSummaryCase(ctx, "passing test 02", "pass")
+	for i := 1; i <= 2; i++ {
+		emitTestSummaryCase(ctx, fmt.Sprintf("skipped test %02d", i), "skipped")
+	}
+	emitTestSummaryCase(ctx, "failed test 01", "fail")
+	return nil
+}
+
+func emitTestSummaryCase(ctx context.Context, name, status string) {
+	ctx, span := Tracer().Start(ctx, name,
+		trace.WithAttributes(
+			attribute.String("test.case.name", testSummarySuite+"/"+name),
+			attribute.String("test.suite.name", testSummarySuite),
+			attribute.String("test.case.result.status", status),
+		))
+	stdio := telemetry.SpanStdio(ctx, "")
+	fmt.Fprintf(stdio.Stdout, "%s log line 1\n", name)
+	fmt.Fprintf(stdio.Stdout, "%s log line 2\n", name)
+	stdio.Close()
+	span.End()
 }
 
 // +cache="session"
@@ -439,6 +479,26 @@ func (v *Viztest) UseExecService(ctx context.Context) error {
 	return err
 }
 
+// ServiceErrorAttribution binds a container to a service that logs and then
+// exits non-zero, exercising service-exit failure attribution back to the
+// .asService call that returned it.
+// +cache="session"
+func (*Viztest) ServiceErrorAttribution(ctx context.Context) error {
+	crashy := dag.Container().
+		From("alpine").
+		AsService(dagger.ContainerAsServiceOpts{
+			Args: []string{"sh", "-c", "echo service is starting; sleep 1; echo service is crashing >&2; exit 42"},
+		})
+
+	_, err := dag.Container().
+		From("alpine").
+		WithServiceBinding("crashy", crashy).
+		WithEnvVariable("NOW", time.Now().String()).
+		WithExec([]string{"sh", "-c", "echo client is waiting; sleep 10; echo should not happen"}).
+		Sync(ctx)
+	return err
+}
+
 // +cache="session"
 func (*Viztest) NoExecService() *dagger.Service {
 	return dag.Container().
@@ -533,6 +593,17 @@ RUN echo hello, world!
 RUN echo im failing && false
 `).
 		DockerBuild()
+}
+
+// +cache="session"
+func (*Viztest) ModuleTypeReturnFail() *ModuleTypeReturn {
+	return &ModuleTypeReturn{
+		Container: dag.Container().
+			From("alpine").
+			WithEnvVariable("NOW", time.Now().String()).
+			WithExec([]string{"sh", "-c", "echo module type container failing; exit 1"}).
+			WithEnvVariable("AFTER", "should stay pending"),
+	}
 }
 
 // +cache="session"
