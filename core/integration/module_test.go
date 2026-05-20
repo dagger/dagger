@@ -44,6 +44,9 @@ func TestModule(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(ModuleSuite{})
 }
 
+// Updated between CI repro attempts to force a new source tree.
+const unknownCommandCIDebugMarker = "attempt-001-20260520T203303Z"
+
 func (ModuleSuite) TestInvalidSDK(ctx context.Context, t *testctx.T) {
 	t.Run("invalid sdk returns readable error", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
