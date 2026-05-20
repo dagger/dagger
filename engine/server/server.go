@@ -172,7 +172,6 @@ type NewServerOpts struct {
 	BuildkitConfig *bkconfig.Config
 }
 
-//nolint:gocyclo
 func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	cfg := opts.Config
 	bkcfg := opts.BuildkitConfig
