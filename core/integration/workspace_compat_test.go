@@ -329,6 +329,11 @@ func (WorkspaceCompatSuite) TestCompatDetection(ctx context.Context, t *testctx.
 	})
 
 	t.Run("sdk-only root source creates a compat workspace", func(ctx context.Context, t *testctx.T) {
+		// A root dagger.json with only name+sdk is still compat workspace
+		// state when no native workspace config exists. Ambient commands from
+		// the project root should infer and warn about that compat workspace.
+		// The module can still be loaded explicitly with -m ., but the command
+		// still reports that workspace state came from legacy dagger.json.
 		c := connect(ctx, t)
 		ctr := legacySDKOnlyDangSource(t, c, "hello from root source")
 
@@ -340,10 +345,14 @@ func (WorkspaceCompatSuite) TestCompatDetection(ctx context.Context, t *testctx.
 		out, err = ctr.With(compatDaggerExec("call", "-m", ".", "greet")).CombinedOutput(ctx)
 		require.NoError(t, err, out)
 		require.Contains(t, out, "hello from root source")
-		require.NotContains(t, out, "inferring from dagger.json")
+		require.Contains(t, out, "inferring from dagger.json")
 	})
 
 	t.Run("sdk-only child config is found from cwd", func(ctx context.Context, t *testctx.T) {
+		// Workspace detection starts at the current working directory. When a
+		// nested command runs under an SDK-only dagger.json and no native
+		// workspace config shadows it, the nearest parent dagger.json should be
+		// loaded as the ambient compat workspace and named in the warning.
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c).
 			WithNewFile("modules/plain/dagger.json", `{
@@ -365,7 +374,7 @@ type Plain {
 		out, err := ctr.With(compatDaggerCall("greet")).CombinedOutput(ctx)
 		require.NoError(t, err, out)
 		require.Contains(t, out, "hello from child module")
-		require.Contains(t, out, "No workspace config found, inferring from dagger.json.")
+		require.Contains(t, out, "No workspace config found, inferring from ../dagger.json.")
 	})
 
 	t.Run("native workspace config suppresses compat inference", func(ctx context.Context, t *testctx.T) {
@@ -479,6 +488,33 @@ func (WorkspaceCompatSuite) TestCompatRequiresWorkspaceRoot(ctx context.Context,
 	// rejected as generic module fields.
 	_, err := hostDaggerExec(ctx, t, workdir, "--silent", "functions", "-m", ".")
 	requireErrOut(t, err, "This module's dagger.json uses toolchains or blueprints, which have moved to workspaces.")
+}
+
+// TestWorkspaceCompatMutationGuards should cover commands that would create or
+// mutate native workspace config while a legacy compat config still owns the
+// workspace state.
+func (WorkspaceCompatSuite) TestWorkspaceCompatMutationGuards(ctx context.Context, t *testctx.T) {
+	t.Run("install rejects sdk-only legacy config", func(ctx context.Context, t *testctx.T) {
+		// An SDK-only dagger.json is still legacy compat state. It may be run
+		// and migrated, but workspace mutations must not silently create
+		// .dagger/config.toml beside it because that would bypass migration and
+		// let native config drift from the legacy project state.
+		workdir := t.TempDir()
+		depDir := filepath.Join(workdir, "dep")
+
+		require.NoError(t, os.MkdirAll(depDir, 0o755))
+		initGitRepo(ctx, t, workdir)
+
+		copyTestdataFixture(ctx, t, depDir, "modules", "go", "minimal-dep")
+		copyTestdataFixture(ctx, t, workdir, "modules", "go", "minimal-app")
+
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
+		require.Error(t, err)
+		requireErrOut(t, err, "workspace is using legacy dagger.json config; run dagger migrate first")
+
+		_, err = os.Stat(filepath.Join(workdir, ".dagger", "config.toml"))
+		require.ErrorIs(t, err, os.ErrNotExist)
+	})
 }
 
 // TestLegacyWorkspaceDirectLoadErrors should cover the new hard failures when
