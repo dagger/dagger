@@ -1551,11 +1551,21 @@ func (ClientGeneratorTest) TestConstructorArgs(ctx context.Context, t *testctx.T
 	// A module whose constructor takes arguments produces a Query.with field
 	// via entrypoint proxying. The Go SDK also generates a Query.With helper
 	// for chaining closures (WithQueryFunc). These must not conflict.
+	//
+	// Pre-init the Go module so `dagger client install go` sees a parent
+	// go.mod when computing the client's module import path. Without it,
+	// the codegen falls back to deriving the client module name from
+	// ModuleName + ClientDir (`test/dagger`) instead of
+	// parent_module + ClientDir (`dagger/test/dagger`), and cmd/main.go's
+	// import below would not resolve. The bootstrap path that used to
+	// create the parent go.mod implicitly (`dagger init --sdk=go`) was
+	// removed in commit d2b365b83.
 	moduleSrc := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		WithExec([]string{"apk", "add", "git"}).
 		WithExec([]string{"git", "init"}).
+		WithExec([]string{"go", "mod", "init", "dagger/test"}).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 		With(nonNestedDevEngine(c)).
 		With(clientGeneratorGoModule("test")).
