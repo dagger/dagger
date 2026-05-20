@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -29,7 +30,7 @@ func newSnapshotter(
 		address = cfg.ProxySnapshotterPath
 	)
 	if address != "" {
-		return nil, "", fmt.Errorf("proxy snapshotter is not supported")
+		return nil, "", errors.New("proxy snapshotter is not supported")
 	}
 
 	if name == "" {

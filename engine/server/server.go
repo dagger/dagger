@@ -463,7 +463,7 @@ func (srv *Server) initLocalCacheState(ctx context.Context, cfg config.Config, o
 			return fmt.Errorf("remove local cache state after %s: %w", resetReason, err)
 		}
 	}
-	return fmt.Errorf("local cache state reset retry exhausted")
+	return errors.New("local cache state reset retry exhausted")
 }
 
 func (srv *Server) initLocalCacheStateOnce(ctx context.Context, cfg config.Config, ociCfg bkconfig.OCIConfig) (localCacheStateResetReason, error) {
