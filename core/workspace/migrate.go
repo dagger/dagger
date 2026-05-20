@@ -51,6 +51,9 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 	}
 
 	cfg := compatWorkspace.Config
+	if !mustMigrateToWorkspaceConfig(cfg) {
+		return nil, fmt.Errorf("dagger.json does not require workspace config migration")
+	}
 	hasSDK := cfg.SDK != nil && cfg.SDK.Source != ""
 	needsProjectModuleMigration := hasSDK
 
@@ -250,15 +253,15 @@ func generateMigrationReportMarkdown(configPath string, warnings []migrationWarn
 	var b strings.Builder
 
 	b.WriteString("# Migration Report\n\n")
-	fmt.Fprintf(&b, "Migration completed, but %d legacy configuration item(s) could not be migrated automatically.\n\n", len(warnings))
-	b.WriteString("Review the items below and re-apply them manually if they still matter.\n\n")
+	b.WriteString("Dagger migrated `dagger.json`, but some old settings need a manual check.\n\n")
+	b.WriteString("ACTION: Review each item below. If your project still relies on it, add the setting back manually.\n\n")
 	fmt.Fprintf(&b, "Legacy config: `%s`\n", filepath.Base(configPath))
 
 	for i, warning := range warnings {
-		fmt.Fprintf(&b, "\n## %d. Module `%s`\n\n", i+1, warning.module)
-		fmt.Fprintf(&b, "Problem: %s\n", warning.message)
+		fmt.Fprintf(&b, "\n## %d. `%s` needs a manual check\n\n", i+1, warning.module)
+		fmt.Fprintf(&b, "Dagger could not migrate this setting automatically: %s\n", warning.message)
 		if origJSON := warning.originalJSON(); origJSON != "" {
-			fmt.Fprintf(&b, "\nOriginal legacy customization:\n\n```json\n%s\n```\n", origJSON)
+			fmt.Fprintf(&b, "\nOriginal setting:\n\n```json\n%s\n```\n", origJSON)
 		}
 	}
 
@@ -277,11 +280,15 @@ func analyzeCustomizations(toolchains []*modules.ModuleConfigDependency) []migra
 			}
 			if !isConstructorCustomization(cust) {
 				funcName := strings.Join(cust.Function, ".")
+				settingName := funcName
+				if cust.Argument != "" {
+					settingName += "." + cust.Argument
+				}
 				warnings = append(warnings, migrationWarning{
 					module: tc.Name,
 					message: fmt.Sprintf(
-						"function customization for %q could not be migrated automatically because workspace config only carries constructor settings values",
-						funcName,
+						"function setting %q is not supported in workspace config",
+						settingName,
 					),
 					original: cust,
 				})
@@ -299,7 +306,7 @@ func analyzeCustomizations(toolchains []*modules.ModuleConfigDependency) []migra
 				if cust.DefaultAddress != "" {
 					parts = append(parts, "'defaultAddress'")
 				}
-				msg += " " + strings.Join(parts, " and ") + " customization that cannot be expressed as a workspace settings value"
+				msg += " " + strings.Join(parts, " and ") + ", which workspace settings do not support"
 				warnings = append(warnings, migrationWarning{
 					module:   tc.Name,
 					message:  msg,
