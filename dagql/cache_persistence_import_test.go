@@ -43,10 +43,14 @@ func (*persistConcurrentDecodeObj) Type() *ast.Type {
 	}
 }
 
-func (obj *persistConcurrentDecodeObj) EncodePersistedObject(ctx context.Context, cache PersistedObjectCache) (json.RawMessage, error) {
+func (obj *persistConcurrentDecodeObj) EncodePersistedObject(ctx context.Context, cache PersistedObjectCache) (PersistedObjectEncoding, error) {
 	_ = ctx
 	_ = cache
-	return json.Marshal(persistedPersistConcurrentDecodeObj{Name: obj.Name})
+	payload, err := json.Marshal(persistedPersistConcurrentDecodeObj{Name: obj.Name})
+	if err != nil {
+		return PersistedObjectEncoding{}, err
+	}
+	return PersistedObjectEncoding{JSON: payload}, nil
 }
 
 func (*persistConcurrentDecodeObj) DecodePersistedObject(ctx context.Context, dag *Server, resultID uint64, _ *ResultCall, payload json.RawMessage) (Typed, error) {

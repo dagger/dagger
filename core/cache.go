@@ -131,32 +131,48 @@ type persistedCacheVolumePayload struct {
 	Selector  string           `json:"selector,omitempty"`
 }
 
-func (cache *CacheVolume) EncodePersistedObject(ctx context.Context, persistedCache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (cache *CacheVolume) EncodePersistedObject(ctx context.Context, persistedCache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	_ = persistedCache
 	if cache == nil {
-		return nil, fmt.Errorf("encode persisted cache volume: nil cache volume")
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted cache volume: nil cache volume")
 	}
 	sourceID := ""
 	if cache.Source.Valid {
 		encoded, err := cache.Source.Value.Encode()
 		if err != nil {
-			return nil, fmt.Errorf("encode persisted cache volume source: %w", err)
+			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted cache volume source: %w", err)
 		}
 		sourceID = encoded
 	}
+	cache.mu.Lock()
+	selector := cache.selector
+	if selector == "" {
+		selector = "/"
+	}
+	var snapshotLinks []dagql.PersistedSnapshotRefLink
+	if cache.snapshot != nil {
+		snapshotLinks = []dagql.PersistedSnapshotRefLink{{
+			RefKey: cache.snapshot.SnapshotID(),
+			Role:   "snapshot",
+		}}
+	}
+	cache.mu.Unlock()
 	payload, err := json.Marshal(persistedCacheVolumePayload{
 		Key:       cache.Key,
 		Namespace: cache.Namespace,
 		SourceID:  sourceID,
 		Sharing:   cache.Sharing,
 		Owner:     cache.Owner,
-		Selector:  cache.getSnapshotSelector(),
+		Selector:  selector,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("marshal persisted cache volume payload: %w", err)
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted cache volume payload: %w", err)
 	}
-	return payload, nil
+	return dagql.PersistedObjectEncoding{
+		JSON:          payload,
+		SnapshotLinks: snapshotLinks,
+	}, nil
 }
 
 func (*CacheVolume) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {

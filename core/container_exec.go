@@ -525,7 +525,7 @@ func lockMountedCaches(ctx context.Context, mounts []ContainerMount) (func(), er
 		if err != nil {
 			return nil, fmt.Errorf("encode cache lock key for mount %d: %w", i, err)
 		}
-		lockSet["cache-volume:"+string(payload)] = struct{}{}
+		lockSet["cache-volume:"+string(payload.JSON)] = struct{}{}
 	}
 	if len(lockSet) == 0 {
 		return func() {}, nil

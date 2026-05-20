@@ -918,14 +918,10 @@ func desiredSnapshotLinksForResult(res *sharedResult) []PersistedSnapshotRefLink
 		return snapshotOwnerLinksFromTyped(state.self)
 	}
 
-	res.payloadMu.RLock()
-	defer res.payloadMu.RUnlock()
-	if len(res.snapshotOwnerLinks) == 0 {
+	if len(state.snapshotOwnerLinks) == 0 {
 		return nil
 	}
-	links := make([]PersistedSnapshotRefLink, len(res.snapshotOwnerLinks))
-	copy(links, res.snapshotOwnerLinks)
-	return links
+	return slices.Clone(state.snapshotOwnerLinks)
 }
 
 func (c *Cache) resultSnapshotLeaseCleanup(res *sharedResult) OnReleaseFunc {
@@ -938,9 +934,7 @@ func (c *Cache) resultSnapshotLeaseCleanup(res *sharedResult) OnReleaseFunc {
 			return nil
 		}
 
-		res.payloadMu.RLock()
-		links := append([]PersistedSnapshotRefLink(nil), res.snapshotOwnerLinks...)
-		res.payloadMu.RUnlock()
+		links := res.loadSnapshotOwnerLinks()
 
 		seen := make(map[snapshotOwnerKey]struct{}, len(links))
 		var rerr error
@@ -966,9 +960,7 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 
 	links := desiredSnapshotLinksForResult(res)
 
-	res.payloadMu.RLock()
-	oldLinks := append([]PersistedSnapshotRefLink(nil), res.snapshotOwnerLinks...)
-	res.payloadMu.RUnlock()
+	oldLinks := res.loadSnapshotOwnerLinks()
 
 	oldByKey := make(map[snapshotOwnerKey]PersistedSnapshotRefLink, len(oldLinks))
 	newByKey := make(map[snapshotOwnerKey]PersistedSnapshotRefLink, len(links))
@@ -1015,12 +1007,11 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 		}
 	}
 
-	res.payloadMu.Lock()
-	res.snapshotOwnerLinks = make([]PersistedSnapshotRefLink, 0, len(newByKey))
+	newLinks := make([]PersistedSnapshotRefLink, 0, len(newByKey))
 	for _, link := range newByKey {
-		res.snapshotOwnerLinks = append(res.snapshotOwnerLinks, link)
+		newLinks = append(newLinks, link)
 	}
-	res.payloadMu.Unlock()
+	res.storeSnapshotOwnerLinks(newLinks)
 
 	return nil
 }
@@ -1373,9 +1364,10 @@ type sharedResult struct {
 	sessionResourceHandle    SessionResourceHandle
 	requiredSessionResources *set.TreeSet[SessionResourceHandle]
 	// snapshotOwnerLinks are the exact direct snapshot-owner links currently
-	// attached for this result. They are the single source of truth for owner
-	// lease cleanup, debug output, and persistence export. They are not
-	// child-result deps.
+	// attached for this result. They are the source of truth for owner lease
+	// cleanup and debug output. Persistence export for newly encoded objects
+	// derives links from the same object encode pass that produced the payload.
+	// They are not child-result deps.
 	snapshotOwnerLinks []PersistedSnapshotRefLink
 
 	// expiresAtUnix is the in-memory TTL deadline for cache-hit eligibility.
@@ -1418,6 +1410,7 @@ type sharedResultPayloadState struct {
 	isObject           bool
 	hasValue           bool
 	persistedEnvelope  *PersistedResultEnvelope
+	snapshotOwnerLinks []PersistedSnapshotRefLink
 	createdAtUnixNano  int64
 	lastUsedAtUnixNano int64
 }
@@ -1451,11 +1444,31 @@ func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 		isObject:           res.isObject,
 		hasValue:           res.hasValue,
 		persistedEnvelope:  res.persistedEnvelope,
+		snapshotOwnerLinks: slices.Clone(res.snapshotOwnerLinks),
 		createdAtUnixNano:  res.createdAtUnixNano,
 		lastUsedAtUnixNano: res.lastUsedAtUnixNano,
 	}
 	res.payloadMu.RUnlock()
 	return state
+}
+
+func (res *sharedResult) loadSnapshotOwnerLinks() []PersistedSnapshotRefLink {
+	if res == nil {
+		return nil
+	}
+	res.payloadMu.RLock()
+	links := slices.Clone(res.snapshotOwnerLinks)
+	res.payloadMu.RUnlock()
+	return links
+}
+
+func (res *sharedResult) storeSnapshotOwnerLinks(links []PersistedSnapshotRefLink) {
+	if res == nil {
+		return
+	}
+	res.payloadMu.Lock()
+	res.snapshotOwnerLinks = slices.Clone(links)
+	res.payloadMu.Unlock()
 }
 
 func resultIsObject(val AnyResult, resolver TypeResolver) (bool, error) {
@@ -2253,7 +2266,7 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 			return r.shared.requiredSessionResources.Copy()
 		}(),
 		persistedEnvelope:  state.persistedEnvelope,
-		snapshotOwnerLinks: slices.Clone(r.shared.snapshotOwnerLinks),
+		snapshotOwnerLinks: state.snapshotOwnerLinks,
 		createdAtUnixNano:  state.createdAtUnixNano,
 		lastUsedAtUnixNano: state.lastUsedAtUnixNano,
 		cacheUsageSizeByIdentity: func() map[string]int64 {
@@ -2337,7 +2350,7 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 		sessionResourceHandle:    handle,
 		requiredSessionResources: reqs,
 		persistedEnvelope:        state.persistedEnvelope,
-		snapshotOwnerLinks:       slices.Clone(r.shared.snapshotOwnerLinks),
+		snapshotOwnerLinks:       state.snapshotOwnerLinks,
 		createdAtUnixNano:        state.createdAtUnixNano,
 		lastUsedAtUnixNano:       state.lastUsedAtUnixNano,
 		cacheUsageSizeByIdentity: func() map[string]int64 {

@@ -82,10 +82,10 @@ type persistedWorkspacePayload struct {
 	HostPath       string `json:"hostPath,omitempty"`
 }
 
-func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	if ws == nil {
-		return nil, fmt.Errorf("encode persisted workspace: nil workspace")
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted workspace: nil workspace")
 	}
 
 	payload := persistedWorkspacePayload{
@@ -100,16 +100,16 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 	if ws.rootfs.Self() != nil {
 		rootfsID, err := encodePersistedObjectRef(cache, ws.rootfs, "workspace rootfs")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		payload.RootfsResultID = rootfsID
 	}
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("marshal persisted workspace payload: %w", err)
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted workspace payload: %w", err)
 	}
-	return payloadBytes, nil
+	return encodePersistedObjectRawJSON(payloadBytes), nil
 }
 
 func (*Workspace) DecodePersistedObject(

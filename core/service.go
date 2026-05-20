@@ -112,10 +112,10 @@ type persistedServiceBinding struct {
 	Aliases         AliasSet `json:"aliases,omitempty"`
 }
 
-func (svc *Service) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (svc *Service) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	if svc == nil {
-		return nil, fmt.Errorf("encode persisted service: nil service")
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted service: nil service")
 	}
 	payload := persistedServicePayload{
 		CustomHostname:                svc.CustomHostname,
@@ -132,24 +132,24 @@ func (svc *Service) EncodePersistedObject(ctx context.Context, cache dagql.Persi
 	if svc.Container.Self() != nil {
 		payload.ContainerResultID, err = encodePersistedObjectRef(cache, svc.Container, "service container")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 	}
 	if svc.ModuleContext.Self() != nil {
 		payload.ModuleContextResultID, err = encodePersistedObjectRef(cache, svc.ModuleContext, "service module context")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 	}
 	if svc.TunnelUpstream.Self() != nil {
 		payload.TunnelUpstreamResultID, err = encodePersistedObjectRef(cache, svc.TunnelUpstream, "service tunnel upstream")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 	}
 	for i, sock := range svc.HostSockets {
 		if sock == nil {
-			return nil, fmt.Errorf("encode persisted service host socket %d: nil socket", i)
+			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted service host socket %d: nil socket", i)
 		}
 		payload.HostSockets = append(payload.HostSockets, persistedServiceHostSocket{
 			Kind:           sock.Kind,
@@ -161,9 +161,9 @@ func (svc *Service) EncodePersistedObject(ctx context.Context, cache dagql.Persi
 	}
 	enc, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("marshal persisted service payload: %w", err)
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted service payload: %w", err)
 	}
-	return enc, nil
+	return encodePersistedObjectRawJSON(enc), nil
 }
 
 func (*Service) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {

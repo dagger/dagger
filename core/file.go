@@ -198,9 +198,9 @@ type persistedFilePayload struct {
 	LazyJSON json.RawMessage           `json:"lazyJSON,omitempty"`
 }
 
-func (file *File) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (file *File) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	if file == nil {
-		return nil, fmt.Errorf("encode persisted file: nil file")
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted file: nil file")
 	}
 	filePath := ""
 	if file.File != nil {
@@ -210,7 +210,7 @@ func (file *File) EncodePersistedObject(ctx context.Context, cache dagql.Persist
 	}
 	services, err := encodePersistedServiceBindings(cache, "file", file.Services)
 	if err != nil {
-		return nil, err
+		return dagql.PersistedObjectEncoding{}, err
 	}
 	payload := persistedFilePayload{
 		File:     filePath,
@@ -222,25 +222,31 @@ func (file *File) EncodePersistedObject(ctx context.Context, cache dagql.Persist
 			payload.Form = persistedFileFormSnapshot
 			payloadJSON, err := json.Marshal(payload)
 			if err != nil {
-				return nil, fmt.Errorf("marshal persisted file payload: %w", err)
+				return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted file payload: %w", err)
 			}
-			return payloadJSON, nil
+			return dagql.PersistedObjectEncoding{
+				JSON: payloadJSON,
+				SnapshotLinks: []dagql.PersistedSnapshotRefLink{{
+					RefKey: snapshot.SnapshotID(),
+					Role:   "snapshot",
+				}},
+			}, nil
 		}
 	}
 	if file.Lazy != nil {
 		payload.Form = persistedFileFormLazy
 		lazyJSON, err := file.Lazy.EncodePersisted(ctx, cache)
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		payload.LazyJSON = lazyJSON
 		payloadJSON, err := json.Marshal(payload)
 		if err != nil {
-			return nil, fmt.Errorf("marshal persisted file payload: %w", err)
+			return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted file payload: %w", err)
 		}
-		return payloadJSON, nil
+		return encodePersistedObjectRawJSON(payloadJSON), nil
 	}
-	return nil, fmt.Errorf("%w: encode persisted file: missing snapshot and lazy op", dagql.ErrPersistStateNotReady)
+	return dagql.PersistedObjectEncoding{}, fmt.Errorf("%w: encode persisted file: missing snapshot and lazy op", dagql.ErrPersistStateNotReady)
 }
 
 //nolint:dupl // symmetric with decodePersistedDirectoryWithSnapshotRole in directory.go; sharing hides type specifics

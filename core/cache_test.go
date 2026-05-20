@@ -298,10 +298,10 @@ func TestCacheVolumeEncodeDecodePersistsSourceID(t *testing.T) {
 	require.NoError(t, err)
 
 	var raw persistedCacheVolumePayload
-	require.NoError(t, json.Unmarshal(payload, &raw))
+	require.NoError(t, json.Unmarshal(payload.JSON, &raw))
 	require.NotEmpty(t, raw.SourceID)
 
-	decodedAny, err := (&CacheVolume{}).DecodePersistedObject(context.Background(), nil, 0, nil, payload)
+	decodedAny, err := (&CacheVolume{}).DecodePersistedObject(context.Background(), nil, 0, nil, payload.JSON)
 	require.NoError(t, err)
 	decoded := decodedAny.(*CacheVolume)
 	require.True(t, decoded.Source.Valid)

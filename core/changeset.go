@@ -290,27 +290,27 @@ func (ch *Changeset) ResolveRefs(ctx context.Context, srv *dagql.Server) error {
 	return nil
 }
 
-func (ch *Changeset) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (ch *Changeset) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	if ch == nil {
-		return nil, fmt.Errorf("encode persisted changeset: nil changeset")
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted changeset: nil changeset")
 	}
 	beforeID, err := encodePersistedObjectRef(cache, ch.Before, "changeset before")
 	if err != nil {
-		return nil, err
+		return dagql.PersistedObjectEncoding{}, err
 	}
 	afterID, err := encodePersistedObjectRef(cache, ch.After, "changeset after")
 	if err != nil {
-		return nil, err
+		return dagql.PersistedObjectEncoding{}, err
 	}
 	payload, err := json.Marshal(persistedChangesetPayload{
 		BeforeResultID: beforeID,
 		AfterResultID:  afterID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("marshal persisted changeset payload: %w", err)
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted changeset payload: %w", err)
 	}
-	return payload, nil
+	return encodePersistedObjectRawJSON(payload), nil
 }
 
 func (*Changeset) DecodePersistedObject(

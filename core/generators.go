@@ -253,21 +253,21 @@ func decodePersistedGeneratorPayload(
 	return g, nil
 }
 
-func (g *Generator) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (g *Generator) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	tree := newPersistedModTreeEncoder(cache)
 	generatorPayload, err := encodePersistedGeneratorPayload(cache, tree, g)
 	if err != nil {
-		return nil, err
+		return dagql.PersistedObjectEncoding{}, err
 	}
 	payload, err := json.Marshal(persistedGeneratorObjectPayload{
 		Tree:      tree.tree,
 		Generator: generatorPayload,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("marshal persisted generator payload: %w", err)
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted generator payload: %w", err)
 	}
-	return payload, nil
+	return encodePersistedObjectRawJSON(payload), nil
 }
 
 func (*Generator) DecodePersistedObject(
@@ -316,21 +316,21 @@ func (g *Generator) AttachDependencyResults(
 	return owned, nil
 }
 
-func (gg *GeneratorGroup) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (gg *GeneratorGroup) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	if gg == nil {
-		return nil, fmt.Errorf("encode persisted generator group: nil generator group")
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted generator group: nil generator group")
 	}
 	tree := newPersistedModTreeEncoder(cache)
 	nodeID, err := tree.Add(gg.Node)
 	if err != nil {
-		return nil, err
+		return dagql.PersistedObjectEncoding{}, err
 	}
 	generatorPayloads := make([]persistedGeneratorPayload, 0, len(gg.Generators))
 	for _, generator := range gg.Generators {
 		generatorPayload, err := encodePersistedGeneratorPayload(cache, tree, generator)
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		generatorPayloads = append(generatorPayloads, generatorPayload)
 	}
@@ -340,9 +340,9 @@ func (gg *GeneratorGroup) EncodePersistedObject(ctx context.Context, cache dagql
 		Generators: generatorPayloads,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("marshal persisted generator group payload: %w", err)
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted generator group payload: %w", err)
 	}
-	return payload, nil
+	return encodePersistedObjectRawJSON(payload), nil
 }
 
 func (*GeneratorGroup) DecodePersistedObject(
