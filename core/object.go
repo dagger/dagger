@@ -1134,6 +1134,16 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 		return fmt.Errorf("failed to resolve module identity for entrypoint object %q: %w", obj.TypeDef.Name, err)
 	}
 	constructorName := gqlFieldName(obj.Module.Self().Name())
+	debugFunctionNames, debugTarget := debugObjectFunctionNames(obj.TypeDef)
+	if debugTarget {
+		slog.InfoContext(ctx, "debug installing entrypoint methods",
+			"module", obj.Module.Self().Name(),
+			"object", obj.TypeDef.Name,
+			"constructor", constructorName,
+			"function_count", len(debugFunctionNames),
+			"functions", debugFunctionNames,
+		)
+	}
 
 	// Build constructor arg specs from the module's type definition
 	// rather than looking them up from the server — the constructor
@@ -1211,6 +1221,15 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 
 		methodName := proxySpec.Name
 		methodArgs := proxySpec.Args.Inputs(dag.View)
+		if debugFunctionName(methodName) {
+			slog.InfoContext(ctx, "debug installing entrypoint proxy",
+				"module", obj.Module.Self().Name(),
+				"object", obj.TypeDef.Name,
+				"constructor", constructorName,
+				"method", methodName,
+				"arg_count", len(methodArgs),
+			)
+		}
 		dag.Root().ObjectType().Extend(
 			proxySpec,
 			func(ctx context.Context, self dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
@@ -1289,6 +1308,30 @@ func (obj *ModuleObject) installEntrypointMethods(ctx context.Context, dag *dagq
 	}
 
 	return nil
+}
+
+func debugObjectFunctionNames(objDef *ObjectTypeDef) ([]string, bool) {
+	if objDef == nil {
+		return nil, false
+	}
+	names := make([]string, 0, len(objDef.Functions))
+	var target bool
+	for _, fun := range objDef.Functions {
+		if fun.Self() == nil {
+			continue
+		}
+		name := fun.Self().Name
+		names = append(names, name)
+		if debugFunctionName(name) {
+			target = true
+		}
+	}
+	slices.Sort(names)
+	return names, target
+}
+
+func debugFunctionName(name string) bool {
+	return name == "testTtl" || name == "test-ttl"
 }
 
 func orderedNamedInputs(specs []dagql.InputSpec, args map[string]dagql.Input) []dagql.NamedInput {

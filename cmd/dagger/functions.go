@@ -328,6 +328,10 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	}
 	fc.mod = mod
 
+	if debugCommandParseTarget(a) {
+		fc.logCommandParseSchemaSummary(ctx, "workspace_loaded", a, c, nil, nil)
+	}
+
 	// Now that the module is loaded, show usage by default since errors
 	// are more likely to be from wrong CLI usage.
 	fc.showUsage = true
@@ -396,25 +400,57 @@ func (fc *FuncCommand) logCommandParseSchemaSummary(ctx context.Context, reason 
 	if cmd != nil {
 		cmdPath = cmd.CommandPath()
 	}
+	var availableSubcommands []string
+	if cmd != nil {
+		for _, sub := range cmd.Commands() {
+			if sub == nil || sub.Hidden {
+				continue
+			}
+			availableSubcommands = append(availableSubcommands, sub.Name())
+		}
+	}
+	sort.Strings(availableSubcommands)
 	errMsg := ""
 	if parseErr != nil {
 		errMsg = parseErr.Error()
 	}
+	cwd, _ := os.Getwd()
+	hasTestTTL := hasDebugCommandName(rootFns)
 
 	slog.InfoContext(ctx, "dagger call parse schema summary",
 		"reason", reason,
 		"error", errMsg,
+		"pid", os.Getpid(),
+		"cwd", cwd,
 		"requested_args", limitFuncLogStrings(requestedArgs, 40),
 		"remaining_args", limitFuncLogStrings(remainingArgs, 40),
 		"command_path", cmdPath,
+		"available_subcommands", limitFuncLogStrings(availableSubcommands, 40),
 		"main_object", mainObjectName,
 		"object_count", len(fc.mod.Objects),
 		"interface_count", len(fc.mod.Interfaces),
 		"enum_count", len(fc.mod.Enums),
 		"input_count", len(fc.mod.Inputs),
 		"query_function_count", len(rootFns),
+		"query_has_test_ttl", hasTestTTL,
 		"query_functions", limitFuncLogStrings(rootFns, 40),
 	)
+
+	if debugCommandParseTarget(requestedArgs) || strings.Contains(errMsg, "test-ttl") {
+		fmt.Fprintf(os.Stderr, "DAGGER_DEBUG_COMMAND_SCHEMA reason=%s pid=%d cwd=%q error=%q requested_args=%q remaining_args=%q command_path=%q query_has_test_ttl=%t query_function_count=%d query_functions=%q available_subcommands=%q\n",
+			reason,
+			os.Getpid(),
+			cwd,
+			errMsg,
+			strings.Join(requestedArgs, " "),
+			strings.Join(remainingArgs, " "),
+			cmdPath,
+			hasTestTTL,
+			len(rootFns),
+			strings.Join(limitFuncLogStrings(rootFns, 40), ","),
+			strings.Join(limitFuncLogStrings(availableSubcommands, 40), ","),
+		)
+	}
 }
 
 func limitFuncLogStrings(vals []string, limit int) []string {
@@ -426,6 +462,19 @@ func limitFuncLogStrings(vals []string, limit int) []string {
 		cp = cp[:limit]
 	}
 	return cp
+}
+
+func debugCommandParseTarget(args []string) bool {
+	return hasDebugCommandName(args)
+}
+
+func hasDebugCommandName(vals []string) bool {
+	for _, val := range vals {
+		if val == "test-ttl" || val == "testTtl" {
+			return true
+		}
+	}
+	return false
 }
 
 // traverse recursively builds the command tree, until the leaf command is found.
