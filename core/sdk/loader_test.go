@@ -105,3 +105,76 @@ func TestParseSDKName(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkspaceModuleForRuntime(t *testing.T) {
+	originalTag := engine.Tag
+	defer func() {
+		engine.Tag = originalTag
+	}()
+	engine.Tag = "v0.12.6"
+
+	for _, tc := range []struct {
+		name      string
+		runtime   string
+		want      WorkspaceModule
+		wantOK    bool
+		wantError string
+	}{
+		{
+			name:    "go",
+			runtime: "go",
+			want:    WorkspaceModule{Name: "go-sdk", Source: "github.com/dagger/go-sdk"},
+			wantOK:  true,
+		},
+		{
+			name:    "typescript",
+			runtime: "typescript",
+			want:    WorkspaceModule{Name: "typescript-sdk", Source: "github.com/dagger/typescript-sdk"},
+			wantOK:  true,
+		},
+		{
+			name:    "python",
+			runtime: "python",
+			want:    WorkspaceModule{Name: "python-sdk", Source: "github.com/dagger/python-sdk"},
+			wantOK:  true,
+		},
+		{
+			name:    "java defaults to engine tag",
+			runtime: "java",
+			want:    WorkspaceModule{Name: "java-sdk", Source: "github.com/dagger/dagger/sdk/java@v0.12.6"},
+			wantOK:  true,
+		},
+		{
+			name:    "php keeps explicit suffix",
+			runtime: "php@main",
+			want:    WorkspaceModule{Name: "php-sdk", Source: "github.com/dagger/dagger/sdk/php@main"},
+			wantOK:  true,
+		},
+		{
+			name:    "dang has no workspace module",
+			runtime: "dang",
+		},
+		{
+			name:    "external sdk has no static mapping",
+			runtime: "github.com/acme/custom-sdk",
+		},
+		{
+			name:      "invalid builtin sdk version still errors",
+			runtime:   "go@v0.12.6",
+			wantError: "the go sdk does not currently support selecting a specific version",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok, err := WorkspaceModuleForRuntime(tc.runtime)
+			if tc.wantError != "" {
+				require.EqualError(t, err, tc.wantError)
+				require.False(t, ok)
+				require.Empty(t, got)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.wantOK, ok)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
