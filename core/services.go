@@ -1,23 +1,26 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	stderrors "errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/slog"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
+	"github.com/dagger/dagger/network"
+	telemetry "github.com/dagger/otel-go"
 	"github.com/opencontainers/go-digest"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/network"
 )
 
 const (
@@ -94,10 +97,16 @@ type RunningService struct {
 	dependencyExitPropagationSuppressed int
 	dependencyExitPropagationChanged    chan struct{}
 
-	// errorOrigin is the span context of the API call that returned/owns this
-	// service, recorded as an install span by the dagql cache. Used to
-	// attribute service-exit failures (e.g. a withExec that fails because its
-	// bound service crashed) back to that API call.
+	// originSpanContexts are the API spans that returned/own this service in the
+	// current session, recorded as install spans by the dagql cache. They are
+	// merged as the already-running service is reused so its service exec span
+	// can link back to every installing API span, not just the first starter.
+	originMu           sync.Mutex
+	originSpanContexts []trace.SpanContext
+	serviceSpan        trace.Span
+	serviceSpanLinked  map[string]struct{}
+	// errorOrigin is the deterministic primary origin used as a fallback for
+	// service-exit errors when a more specific binding origin is unavailable.
 	errorOrigin trace.SpanContext
 
 	manager *Services
@@ -128,6 +137,159 @@ func NewServices() *Services {
 		running:  map[ServiceKey]*RunningService{},
 		bindings: map[ServiceKey]int{},
 	}
+}
+
+func compareSpanContexts(a, b trace.SpanContext) int {
+	aTraceID := a.TraceID()
+	bTraceID := b.TraceID()
+	if cmp := bytes.Compare(aTraceID[:], bTraceID[:]); cmp != 0 {
+		return cmp
+	}
+	aSpanID := a.SpanID()
+	bSpanID := b.SpanID()
+	return bytes.Compare(aSpanID[:], bSpanID[:])
+}
+
+func spanContextKey(ctx trace.SpanContext) string {
+	return ctx.TraceID().String() + "/" + ctx.SpanID().String()
+}
+
+func normalizeSpanContexts(spans []trace.SpanContext) []trace.SpanContext {
+	if len(spans) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(spans))
+	out := make([]trace.SpanContext, 0, len(spans))
+	for _, spanCtx := range spans {
+		if !spanCtx.IsValid() {
+			continue
+		}
+		key := spanContextKey(spanCtx)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, spanCtx)
+	}
+	slices.SortFunc(out, compareSpanContexts)
+	return out
+}
+
+func serviceOriginLink(originCtx trace.SpanContext) trace.Link {
+	return trace.Link{
+		SpanContext: originCtx,
+		Attributes: []attribute.KeyValue{
+			attribute.String(telemetry.LinkPurposeAttr, telemetry.LinkPurposeCause),
+		},
+	}
+}
+
+func (svc *RunningService) addOriginSpanContexts(origins []trace.SpanContext) {
+	if svc == nil || len(origins) == 0 {
+		return
+	}
+	origins = normalizeSpanContexts(origins)
+	if len(origins) == 0 {
+		return
+	}
+
+	var linkNow []trace.SpanContext
+	svc.originMu.Lock()
+	known := make(map[string]struct{}, len(svc.originSpanContexts))
+	for _, originCtx := range svc.originSpanContexts {
+		known[spanContextKey(originCtx)] = struct{}{}
+	}
+	for _, originCtx := range origins {
+		key := spanContextKey(originCtx)
+		if _, ok := known[key]; ok {
+			continue
+		}
+		known[key] = struct{}{}
+		svc.originSpanContexts = append(svc.originSpanContexts, originCtx)
+		if svc.serviceSpan != nil {
+			if svc.serviceSpanLinked == nil {
+				svc.serviceSpanLinked = make(map[string]struct{})
+			}
+			if _, linked := svc.serviceSpanLinked[key]; !linked {
+				svc.serviceSpanLinked[key] = struct{}{}
+				linkNow = append(linkNow, originCtx)
+			}
+		}
+	}
+	slices.SortFunc(svc.originSpanContexts, compareSpanContexts)
+	if originCtx := firstValidSpanContext(svc.originSpanContexts); originCtx.IsValid() {
+		svc.errorOrigin = originCtx
+	}
+	span := svc.serviceSpan
+	svc.originMu.Unlock()
+
+	if span == nil {
+		return
+	}
+	for _, originCtx := range linkNow {
+		span.AddLink(serviceOriginLink(originCtx))
+	}
+}
+
+func (svc *RunningService) originSpanContextsSnapshot() []trace.SpanContext {
+	if svc == nil {
+		return nil
+	}
+	svc.originMu.Lock()
+	defer svc.originMu.Unlock()
+	return slices.Clone(svc.originSpanContexts)
+}
+
+func (svc *RunningService) setServiceSpan(span trace.Span, alreadyLinked []trace.SpanContext) {
+	if svc == nil || span == nil {
+		return
+	}
+	alreadyLinked = normalizeSpanContexts(alreadyLinked)
+
+	var linkNow []trace.SpanContext
+	svc.originMu.Lock()
+	svc.serviceSpan = span
+	if svc.serviceSpanLinked == nil {
+		svc.serviceSpanLinked = make(map[string]struct{}, len(alreadyLinked))
+	}
+	for _, originCtx := range alreadyLinked {
+		svc.serviceSpanLinked[spanContextKey(originCtx)] = struct{}{}
+	}
+	for _, originCtx := range svc.originSpanContexts {
+		key := spanContextKey(originCtx)
+		if _, linked := svc.serviceSpanLinked[key]; linked {
+			continue
+		}
+		svc.serviceSpanLinked[key] = struct{}{}
+		linkNow = append(linkNow, originCtx)
+	}
+	svc.originMu.Unlock()
+
+	for _, originCtx := range linkNow {
+		span.AddLink(serviceOriginLink(originCtx))
+	}
+}
+
+func (svc *RunningService) setErrorOrigin(origin trace.SpanContext) {
+	if svc == nil || !origin.IsValid() {
+		return
+	}
+	svc.originMu.Lock()
+	if originCtx := firstValidSpanContext(svc.originSpanContexts); originCtx.IsValid() {
+		svc.errorOrigin = originCtx
+	} else {
+		svc.errorOrigin = origin
+	}
+	svc.originMu.Unlock()
+}
+
+func (svc *RunningService) errorOriginSpanContext() trace.SpanContext {
+	if svc == nil {
+		return trace.SpanContext{}
+	}
+	svc.originMu.Lock()
+	defer svc.originMu.Unlock()
+	return svc.errorOrigin
 }
 
 // Get returns the running service for the given service. If the service is
@@ -700,6 +862,8 @@ func (ss *Services) startWithKey(
 	opts ServiceStartOpts,
 	suppressDependencyExitPropagation bool,
 ) (_ *RunningService, release func(), err error) {
+	opts.OriginSpanContexts = normalizeSpanContexts(opts.OriginSpanContexts)
+
 	var suppressedRunning *RunningService
 	resumeDependencyExitPropagation := func() {}
 	suppress := func(running *RunningService) {
@@ -734,6 +898,7 @@ func (ss *Services) startWithKey(
 			ss.bindings[key]++
 			suppress(running)
 			ss.l.Unlock()
+			running.addOriginSpanContexts(opts.OriginSpanContexts)
 			return running, func() {
 				releaseSuppression()
 				ss.Detach(ctx, running)
@@ -741,6 +906,7 @@ func (ss *Services) startWithKey(
 		case isStarting:
 			suppress(starting.running)
 			ss.l.Unlock()
+			starting.running.addOriginSpanContexts(opts.OriginSpanContexts)
 			select {
 			case <-ctx.Done():
 				releaseSuppression()
@@ -752,6 +918,7 @@ func (ss *Services) startWithKey(
 				Key:     key,
 				manager: ss,
 			}
+			running.addOriginSpanContexts(opts.OriginSpanContexts)
 			suppress(running)
 			svcCtx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
 			start := &startingService{
