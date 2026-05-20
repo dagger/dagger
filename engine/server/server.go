@@ -39,7 +39,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/archutil"
 	"github.com/dagger/dagger/internal/buildkit/util/disk"
 	"github.com/dagger/dagger/internal/buildkit/util/entitlements"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/internal/buildkit/util/network"
 	"github.com/dagger/dagger/internal/buildkit/util/network/cniprovider"
 	"github.com/dagger/dagger/internal/buildkit/util/network/netproviders"
@@ -100,7 +99,7 @@ type Server struct {
 	snapshotter        ctdsnapshot.Snapshotter
 	snapshotterMDStore *storage.MetaStore // only set for overlay snapshotter right now
 	snapshotterName    string
-	leaseManager       *leaseutil.Manager
+	leaseManager       *bkcache.LeaseManager
 
 	corruptDBReset bool
 
@@ -274,7 +273,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, fmt.Errorf("failed to init metadata db: %w", err)
 	}
 
-	srv.leaseManager = leaseutil.WithNamespace(ctdmetadata.NewLeaseManager(srv.containerdMetaDB), "dagger")
+	srv.leaseManager = bkcache.NewLeaseManager(ctdmetadata.NewLeaseManager(srv.containerdMetaDB), "dagger")
 
 	srv.contentStore = containerdsnapshot.NewContentStore(srv.containerdMetaDB.ContentStore(), "dagger")
 

@@ -20,13 +20,11 @@ import (
 	"github.com/dagger/dagger/engine/snapshots/config"
 	overlay "github.com/dagger/dagger/engine/snapshots/fsdiff"
 	rootlessmountopts "github.com/dagger/dagger/engine/snapshots/rootlessmountopts"
-	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/dagger/dagger/internal/buildkit/util/flightcontrol"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/sys/mountinfo"
 	"github.com/moby/sys/userns"
 	digest "github.com/opencontainers/go-digest"
@@ -58,7 +56,7 @@ type MutableRef interface {
 }
 
 type Mountable interface {
-	Mount(ctx context.Context, readonly bool) (snapshot.Mountable, error)
+	Mount(ctx context.Context, readonly bool) (MountableRef, error)
 }
 
 type refMetadata struct {
@@ -255,7 +253,7 @@ type immutableRef struct {
 	refMetadata
 	released        bool
 	mu              sync.Mutex
-	mountCache      snapshot.Mountable
+	mountCache      MountableRef
 	triggerLastUsed bool
 	sizeG           flightcontrol.Group[int64]
 }
@@ -281,7 +279,7 @@ type mutableRef struct {
 	refMetadata
 	released        bool
 	mu              sync.Mutex
-	mountCache      snapshot.Mountable
+	mountCache      MountableRef
 	triggerLastUsed bool
 	sizeG           flightcontrol.Group[int64]
 }
@@ -603,7 +601,7 @@ func fieldsFromLabels(labels map[string]string) (fields []string) {
 	return
 }
 
-func (sr *immutableRef) Mount(ctx context.Context, readonly bool) (_ snapshot.Mountable, rerr error) {
+func (sr *immutableRef) Mount(ctx context.Context, readonly bool) (_ MountableRef, rerr error) {
 	if sr.released {
 		return nil, errors.Wrapf(errInvalid, "invalid immutable ref %p", sr)
 	}
@@ -618,7 +616,7 @@ func (sr *immutableRef) Mount(ctx context.Context, readonly bool) (_ snapshot.Mo
 			"containerd.io/gc.flat": time.Now().UTC().Format(time.RFC3339Nano),
 		}
 		return nil
-	}, leaseutil.MakeTemporary); err != nil && !cerrdefs.IsAlreadyExists(err) {
+	}, MakeTemporary); err != nil && !cerrdefs.IsAlreadyExists(err) {
 		return nil, err
 	}
 	releaseViewLease := func() error {
@@ -644,8 +642,8 @@ func (sr *immutableRef) Mount(ctx context.Context, readonly bool) (_ snapshot.Mo
 		mnts = setReadonly(mnts)
 	}
 	return &mountableWithRelease{
-		Mountable: mnts,
-		release:   releaseViewLease,
+		MountableRef: mnts,
+		release:      releaseViewLease,
 	}, nil
 }
 
@@ -760,7 +758,7 @@ func (sr *mutableRef) commit(ctx context.Context) (_ *immutableRef, rerr error) 
 	return ref, nil
 }
 
-func (sr *mutableRef) Mount(ctx context.Context, readonly bool) (_ snapshot.Mountable, rerr error) {
+func (sr *mutableRef) Mount(ctx context.Context, readonly bool) (_ MountableRef, rerr error) {
 	if sr.released {
 		return nil, errors.Wrapf(errInvalid, "invalid mutable ref %p", sr)
 	}
@@ -769,7 +767,7 @@ func (sr *mutableRef) Mount(ctx context.Context, readonly bool) (_ snapshot.Moun
 	return sr.mutableMount(ctx, readonly)
 }
 
-func (sr *mutableRef) mutableMount(ctx context.Context, readonly bool) (_ snapshot.Mountable, rerr error) {
+func (sr *mutableRef) mutableMount(ctx context.Context, readonly bool) (_ MountableRef, rerr error) {
 	if sr.mountCache == nil {
 		mnt, err := sr.cm.Snapshotter.Mounts(ctx, sr.SnapshotID())
 		if err != nil {
@@ -787,6 +785,11 @@ func (sr *mutableRef) mutableMount(ctx context.Context, readonly bool) (_ snapsh
 }
 
 func (sr *mutableRef) Commit(ctx context.Context) (ImmutableRef, error) {
+	ctx, err := EnsureLease(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "ensure lease for snapshot commit")
+	}
+
 	sr.cm.mu.Lock()
 	defer sr.cm.mu.Unlock()
 
@@ -827,21 +830,21 @@ func (sr *mutableRef) release(ctx context.Context) (rerr error) {
 	return rec.remove(ctx)
 }
 
-func setReadonly(mounts snapshot.Mountable) snapshot.Mountable {
+func setReadonly(mounts MountableRef) MountableRef {
 	return &readOnlyMounter{mounts}
 }
 
 type readOnlyMounter struct {
-	snapshot.Mountable
+	MountableRef
 }
 
 type mountableWithRelease struct {
-	snapshot.Mountable
+	MountableRef
 	release func() error
 }
 
 func (m *mountableWithRelease) Mount() ([]mount.Mount, func() error, error) {
-	mounts, release, err := m.Mountable.Mount()
+	mounts, release, err := m.MountableRef.Mount()
 	if err != nil {
 		if m.release != nil {
 			_ = m.release()
@@ -863,7 +866,7 @@ func (m *mountableWithRelease) Mount() ([]mount.Mount, func() error, error) {
 }
 
 func (m *readOnlyMounter) Mount() ([]mount.Mount, func() error, error) {
-	mounts, release, err := m.Mountable.Mount()
+	mounts, release, err := m.MountableRef.Mount()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -940,8 +943,8 @@ type sharableMountPool struct {
 	tmpdirRoot string
 }
 
-func (p sharableMountPool) setSharable(mounts snapshot.Mountable) snapshot.Mountable {
-	return &sharableMountable{Mountable: mounts, mountPoolRoot: p.tmpdirRoot}
+func (p sharableMountPool) setSharable(mounts MountableRef) MountableRef {
+	return &sharableMountable{MountableRef: mounts, mountPoolRoot: p.tmpdirRoot}
 }
 
 // sharableMountable allows sharing underlying (possibly writable) mounts among callers.
@@ -953,7 +956,7 @@ func (p sharableMountPool) setSharable(mounts snapshot.Mountable) snapshot.Mount
 //	needs to inspect the underlying mount configuration (e.g. for optimized differ for
 //	overlayfs), this wrapper shouldn't be used.
 type sharableMountable struct {
-	snapshot.Mountable
+	MountableRef
 
 	count         int32
 	mu            sync.Mutex
@@ -970,7 +973,7 @@ func (sm *sharableMountable) Mount() (_ []mount.Mount, _ func() error, retErr er
 	defer sm.mu.Unlock()
 
 	if sm.curMounts == nil {
-		mounts, release, err := sm.Mountable.Mount()
+		mounts, release, err := sm.MountableRef.Mount()
 		if err != nil {
 			return nil, nil, err
 		}

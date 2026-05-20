@@ -12,7 +12,6 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkconfig "github.com/dagger/dagger/engine/snapshots/config"
-	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -126,7 +125,7 @@ type cacheVolumeTestImmutableRef struct {
 	size       int64
 }
 
-func (r *cacheVolumeTestImmutableRef) Mount(context.Context, bool) (snapshot.Mountable, error) {
+func (r *cacheVolumeTestImmutableRef) Mount(context.Context, bool) (bkcache.MountableRef, error) {
 	panic("unexpected Mount call")
 }
 

@@ -2504,6 +2504,89 @@ func TestViews(t *testing.T) {
 	})
 }
 
+func TestIDRecipeArgIsInternal(t *testing.T) {
+	srv := newExternalDagqlServerForTest(t, Query{})
+
+	query := srv.SchemaForView("").Types["Query"]
+	id := query.Fields.ForName("id")
+	require.NotNil(t, id)
+	recipe := id.Arguments.ForName("recipe")
+	require.NotNil(t, recipe)
+	assert.Assert(t, recipe.Directives.ForName("internal") != nil)
+
+	gql := newTestClient(srv)
+	reqFail(t, gql, `query {
+		id(recipe: true)
+	}`, "cannot use internal argument")
+}
+
+func TestIDRecipeDefault(t *testing.T) {
+	cache := newCache(t)
+	ctx := dagql.ContextWithCache(testContext(), cache)
+	srv := newExternalDagqlServerForTest(t, Query{})
+	points.Install[Query](srv)
+
+	var point dagql.ObjectResult[*points.Point]
+	require.NoError(t, srv.Select(ctx, srv.Root(), &point, dagql.Selector{
+		Field: "point",
+		Args: []dagql.NamedInput{
+			{Name: "x", Value: dagql.Int(6)},
+			{Name: "y", Value: dagql.Int(7)},
+		},
+	}))
+
+	var current dagql.AnyID
+	require.NoError(t, srv.Select(ctx, point, &current, dagql.Selector{Field: "id"}))
+	currentID := mustID(t, current)
+	assert.Assert(t, currentID.IsHandle())
+
+	var legacy dagql.AnyID
+	require.NoError(t, srv.Select(ctx, point, &legacy, dagql.Selector{
+		Field: "id",
+		View:  "v0.20.8",
+	}))
+	legacyID := mustID(t, legacy)
+	assert.Assert(t, legacyID.IsHandle())
+
+	var explicitRecipe dagql.AnyID
+	require.NoError(t, srv.Select(ctx, point, &explicitRecipe, dagql.Selector{
+		Field: "id",
+		Args: []dagql.NamedInput{
+			{Name: "recipe", Value: dagql.Boolean(true)},
+		},
+	}))
+	explicitRecipeID := mustID(t, explicitRecipe)
+	assert.Assert(t, !explicitRecipeID.IsHandle())
+
+	recipeDefaultMetadata := testClientMetadata()
+	recipeDefaultMetadata.UseRecipeIDsByDefault = true
+	recipeDefaultCtx := engine.ContextWithClientMetadata(context.Background(), recipeDefaultMetadata)
+	recipeDefaultCtx = dagql.ContextWithCache(recipeDefaultCtx, cache)
+
+	var currentRecipeDefault dagql.AnyID
+	require.NoError(t, srv.Select(recipeDefaultCtx, point, &currentRecipeDefault, dagql.Selector{Field: "id"}))
+	currentRecipeDefaultID := mustID(t, currentRecipeDefault)
+	assert.Assert(t, !currentRecipeDefaultID.IsHandle())
+
+	var currentExplicitHandle dagql.AnyID
+	require.NoError(t, srv.Select(recipeDefaultCtx, point, &currentExplicitHandle, dagql.Selector{
+		Field: "id",
+		Args: []dagql.NamedInput{
+			{Name: "recipe", Value: dagql.Boolean(false)},
+		},
+	}))
+	currentExplicitHandleID := mustID(t, currentExplicitHandle)
+	assert.Assert(t, currentExplicitHandleID.IsHandle())
+
+	var legacyRecipeDefault dagql.AnyID
+	require.NoError(t, srv.Select(recipeDefaultCtx, point, &legacyRecipeDefault, dagql.Selector{
+		Field: "id",
+		View:  "v0.20.8",
+	}))
+	legacyRecipeDefaultID := mustID(t, legacyRecipeDefault)
+	assert.Assert(t, !legacyRecipeDefaultID.IsHandle())
+}
+
 func TestViewsCaching(t *testing.T) {
 	srv := newExternalDagqlServerForTest(t, Query{})
 	gql := newTestClient(srv)
@@ -2734,6 +2817,35 @@ func TestImplicitInputCachePerClient(t *testing.T) {
 	assert.Equal(t, callForClient("client-a"), 1)
 	assert.Equal(t, callForClient("client-b"), 2)
 	assert.Equal(t, callForClient("client-b"), 2)
+}
+
+func TestDefaultConcurrencyKeyUsesSessionID(t *testing.T) {
+	srv := newExternalDagqlServerForTest(t, Query{})
+	cache := newCache(t)
+
+	var seenConcurrencyKey string
+	dagql.Fields[Query]{
+		dagql.NodeFuncWithDynamicInputs("defaultConcurrencyKey", func(context.Context, dagql.ObjectResult[Query], struct{}) (int, error) {
+			return 1, nil
+		}, func(_ context.Context, _ dagql.ObjectResult[Query], _ struct{}, req *dagql.CallRequest) error {
+			seenConcurrencyKey = req.ConcurrencyKey
+			return nil
+		}),
+	}.Install(srv)
+
+	ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{
+		ClientID:  "dagql-test-client",
+		SessionID: "dagql-test-session",
+	})
+	ctx = dagql.ContextWithCache(ctx, cache)
+
+	var res int
+	err := srv.Select(ctx, srv.Root(), &res, dagql.Selector{
+		Field: "defaultConcurrencyKey",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, res, 1)
+	assert.Equal(t, seenConcurrencyKey, "dagql-test-session")
 }
 
 func TestImplicitInputCachePerSession(t *testing.T) {

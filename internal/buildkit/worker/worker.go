@@ -4,14 +4,14 @@ import (
 	"context"
 	"io"
 
+	bksnapshots "github.com/dagger/dagger/engine/snapshots"
+	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
 	"github.com/dagger/dagger/internal/buildkit/cache"
 	"github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	"github.com/dagger/dagger/internal/buildkit/frontend"
 	"github.com/dagger/dagger/internal/buildkit/session"
-	containerdsnapshot "github.com/dagger/dagger/engine/snapshots/containerd"
 	"github.com/dagger/dagger/internal/buildkit/solver"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -34,7 +34,7 @@ type Worker interface {
 	ContentStore() *containerdsnapshot.Store
 	Executor() executor.Executor
 	CacheManager() cache.Manager
-	LeaseManager() *leaseutil.Manager
+	LeaseManager() *bksnapshots.LeaseManager
 }
 
 type Infos interface {

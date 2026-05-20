@@ -2,7 +2,6 @@ package netproviders
 
 import (
 	"os"
-	"strconv"
 
 	"github.com/dagger/dagger/internal/buildkit/solver/pb"
 	"github.com/dagger/dagger/internal/buildkit/util/network"
@@ -34,22 +33,8 @@ func Providers(opt Opt) (providers map[pb.NetMode]network.Provider, resolvedMode
 		}
 		defaultProvider = hostProvider
 		resolvedMode = opt.Mode
-	case "bridge":
-		bridgeProvider, err := getBridgeProvider(opt.CNI)
-		if err != nil {
-			return nil, resolvedMode, err
-		}
-		defaultProvider = bridgeProvider
-		resolvedMode = "cni"
 	case "auto", "":
-		if v, err := strconv.ParseBool(os.Getenv("BUILDKIT_NETWORK_BRIDGE_AUTO")); v && err == nil {
-			bridgeProvider, err := getBridgeProvider(opt.CNI)
-			if err != nil {
-				return nil, resolvedMode, err
-			}
-			defaultProvider = bridgeProvider
-			resolvedMode = "cni"
-		} else if _, err := os.Stat(opt.CNI.ConfigPath); err == nil {
+		if _, err := os.Stat(opt.CNI.ConfigPath); err == nil {
 			cniProvider, err := cniprovider.New(opt.CNI)
 			if err != nil {
 				return nil, resolvedMode, err

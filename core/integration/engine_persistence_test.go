@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"crypto/rand"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
 )
@@ -110,6 +112,37 @@ func (EngineSuite) TestDiskPersistenceAcrossRestart(ctx context.Context, t *test
 		entryCount, err := engineClientB.Engine().LocalCache().EntrySet().EntryCount(ctx)
 		require.NoError(t, err)
 		require.Greater(t, entryCount, 0)
+	})
+
+	t.Run("container withNewFile hit survives restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-container-with-new-file-state-" + identity.NewID()
+		const newFilePath = "/tmp/persisted-new-file.txt"
+		const newFileContents = "persisted withNewFile\n"
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		ctrID, err := engineClientA.
+			Container().
+			From(alpineImage).
+			WithNewFile(newFilePath, newFileContents).
+			ID(ctx)
+		require.NoError(t, err)
+
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		contents, err := dagger.Ref[*dagger.Container](engineClientB, ctrID).
+			File(newFilePath).
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, newFileContents, contents)
 	})
 
 	t.Run("function cache control survives restart", func(ctx context.Context, t *testctx.T) {
@@ -646,5 +679,65 @@ printf 'layered\n' > /work/layered.txt
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, cacheValue+"\n", outB)
+	})
+
+	t.Run("source-backed cache volume supports concurrent mounts after restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-source-cache-volume-state-" + identity.NewID()
+		cacheKey := "phase7-source-cache-volume-data-" + identity.NewID()
+
+		cacheSource := func(client *dagger.Client) *dagger.Directory {
+			return client.
+				Container().
+				From(alpineImage).
+				WithNewFile("/cache-source/seed.txt", "seed\n").
+				Directory("/cache-source")
+		}
+
+		mountSourceCache := func(client *dagger.Client) *dagger.Container {
+			return client.
+				Container().
+				From(alpineImage).
+				WithMountedCache(
+					"/mnt/cache",
+					client.CacheVolume(cacheKey),
+					dagger.ContainerWithMountedCacheOpts{Source: cacheSource(client)},
+				)
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		outA, err := mountSourceCache(engineClientA).
+			WithExec([]string{"sh", "-ec", "cat /mnt/cache/seed.txt; echo initialized >> /mnt/cache/log.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "seed\n", outA)
+
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		var eg errgroup.Group
+		for i := range 8 {
+			eg.Go(func() error {
+				out, err := mountSourceCache(engineClientB).
+					WithEnvVariable("WORKER", fmt.Sprint(i)).
+					WithExec([]string{"sh", "-ec", "cat /mnt/cache/seed.txt; sleep 2; echo \"$WORKER\" >> /mnt/cache/log.txt"}).
+					Stdout(ctx)
+				if err != nil {
+					return fmt.Errorf("worker %d: %w", i, err)
+				}
+				if out != "seed\n" {
+					return fmt.Errorf("worker %d: expected seed output, got %q", i, out)
+				}
+				return nil
+			})
+		}
+		require.NoError(t, eg.Wait())
 	})
 }

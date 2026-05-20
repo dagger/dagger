@@ -15,9 +15,7 @@ This enables caching: since inputs are immutable and operations are deterministi
 
 DAGs of operations can be serialized as IDs, which have associated digests that serve as the operations' cache keys.
 
-THERE ARE NO REFERENCES RIGHT NOW BECAUSE THESE DOCS ARE VERY OLD. THE SOURCE OF TRUTH IS THE CODE.
-
-The only exception to this is references/debugging.md, which HAS CRITICAL INSTRUCTIONS on running tests and debugging generally.
+For test-running and debugging workflow, see `references/debugging.md`.
 
 ## Scripts
 

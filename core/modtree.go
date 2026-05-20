@@ -482,14 +482,7 @@ func (node *ModTreeNode) RunGenerator(ctx context.Context, include, exclude []st
 	var cs *Changeset
 	err := node.Run(ctx,
 		func(n *ModTreeNode) bool { return n.IsGenerator },
-		func(ctx context.Context, n *ModTreeNode, clientMD *engine.ClientMetadata) (rerr error) {
-			// Try scale-out if enabled (will be false for scaled-out sessions)
-			if clientMD != nil && clientMD.EnableCloudScaleOut {
-				if ok, changes, err := node.tryRunGeneratorScaleOut(ctx); ok {
-					cs = changes
-					return err
-				}
-			}
+		func(ctx context.Context, n *ModTreeNode, _ *engine.ClientMetadata) (rerr error) {
 			ctx, span := Tracer(ctx).Start(ctx, node.PathString(),
 				telemetry.Reveal(),
 				trace.WithAttributes(
@@ -513,49 +506,6 @@ func (node *ModTreeNode) runGeneratorLocally(ctx context.Context) (*Changeset, e
 		return nil, err
 	}
 	return changes.Self(), nil
-}
-
-func (node *ModTreeNode) tryRunGeneratorScaleOut(ctx context.Context) (_ bool, _ *Changeset, rerr error) {
-	q, err := CurrentQuery(ctx)
-	if err != nil {
-		return true, nil, err
-	}
-
-	cloudClient, useCloud, err := q.CloudEngineClient(ctx,
-		node.RootAddress(),
-		node.PathString(),
-		nil,
-	)
-	if err != nil {
-		return true, nil, fmt.Errorf("engine-to-engine connect: %w", err)
-	}
-	if !useCloud {
-		return false, nil, nil
-	}
-	defer func() {
-		rerr = errors.Join(rerr, cloudClient.Close())
-	}()
-
-	query, err := node.buildScaleOutModuleQuery(cloudClient.Dagger().QueryBuilder())
-	if err != nil {
-		return true, nil, err
-	}
-
-	query = query.Select("generator").Arg("name", node.PathString())
-	query = query.Select("run")
-	query = query.Select("changes")
-
-	var cs Changeset
-	if err := query.Bind(&cs).Execute(ctx); err != nil {
-		return true, nil, err
-	}
-
-	// ResolveRefs to load Directory objects from IDs
-	if err := cs.ResolveRefs(ctx, node.DagqlServer); err != nil {
-		return true, nil, fmt.Errorf("resolve changeset refs: %w", err)
-	}
-
-	return true, &cs, nil
 }
 
 // buildScaleOutModuleQuery builds a query to load a module for scale-out execution.

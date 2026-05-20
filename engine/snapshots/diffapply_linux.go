@@ -1,4 +1,4 @@
-package snapshotter
+package snapshots
 
 import (
 	"context"
@@ -17,16 +17,15 @@ import (
 	"github.com/dagger/dagger/engine/snapshots/fsdiff"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/hashicorp/go-multierror"
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 )
 
-// diffApply applies the provided diffs to the dest Mountable and returns the correctly calculated disk usage
+// diffApply applies the provided diffs to the dest MountableRef and returns the correctly calculated disk usage
 // that accounts for any hardlinks made from existing snapshots. ctx is expected to have a temporary lease
 // associated with it.
-func (sn *mergeSnapshotter) diffApply(ctx context.Context, dest Mountable, diffs ...Diff) (_ snapshots.Usage, rerr error) {
+func (sn *mergeSnapshotter) diffApply(ctx context.Context, dest MountableRef, diffs ...Diff) (_ snapshots.Usage, rerr error) {
 	a, err := applierFor(dest, sn.tryCrossSnapshotLink, sn.userxattr)
 	if err != nil {
 		return snapshots.Usage{}, errors.Wrapf(err, "failed to create applier")
@@ -39,7 +38,7 @@ func (sn *mergeSnapshotter) diffApply(ctx context.Context, dest Mountable, diffs
 	}()
 
 	for _, diff := range diffs {
-		var lowerMntable Mountable
+		var lowerMntable MountableRef
 		if diff.Lower != "" {
 			if info, err := sn.Stat(ctx, diff.Lower); err != nil {
 				return snapshots.Usage{}, errors.Wrapf(err, "failed to stat lower snapshot %s", diff.Lower)
@@ -55,7 +54,7 @@ func (sn *mergeSnapshotter) diffApply(ctx context.Context, dest Mountable, diffs
 				}
 			}
 		}
-		var upperMntable Mountable
+		var upperMntable MountableRef
 		if diff.Upper != "" {
 			if info, err := sn.Stat(ctx, diff.Upper); err != nil {
 				return snapshots.Usage{}, errors.Wrapf(err, "failed to stat upper snapshot %s", diff.Upper)
@@ -134,7 +133,7 @@ type applier struct {
 	dirModTimes          map[string]unix.Timespec
 }
 
-func applierFor(dest Mountable, tryCrossSnapshotLink, userxattr bool) (_ *applier, rerr error) {
+func applierFor(dest MountableRef, tryCrossSnapshotLink, userxattr bool) (_ *applier, rerr error) {
 	a := &applier{
 		dirModTimes: make(map[string]unix.Timespec),
 		userxattr:   userxattr,
@@ -478,7 +477,7 @@ type differ struct {
 	comparison fsdiff.Comparison
 }
 
-func differFor(lowerMntable, upperMntable Mountable, comparison fsdiff.Comparison) (_ *differ, rerr error) {
+func differFor(lowerMntable, upperMntable MountableRef, comparison fsdiff.Comparison) (_ *differ, rerr error) {
 	d := &differ{
 		visited:    make(map[string]struct{}),
 		inodes:     make(map[inode]string),
@@ -780,8 +779,15 @@ func opaqueXattr(userxattr bool) string {
 func needsUserXAttr(ctx context.Context, sn Snapshotter, lm leases.Manager) (bool, error) {
 	key := identity.NewID()
 
-	if _, ok := leases.FromContext(ctx); !ok {
-		leaseCtx, done, err := leaseutil.WithLease(ctx, lm, leaseutil.MakeTemporary)
+	if leaseID, ok := leases.FromContext(ctx); !ok || leaseID == "" {
+		leaseCtx, err := EnsureLease(ctx)
+		if err != nil {
+			return false, errors.Wrap(err, "failed to ensure lease for checking user xattr")
+		}
+		ctx = leaseCtx
+	}
+	if leaseID, ok := leases.FromContext(ctx); !ok || leaseID == "" {
+		leaseCtx, done, err := WithLease(ctx, lm, MakeTemporary)
 		if err != nil {
 			return false, errors.Wrap(err, "failed to create lease for checking user xattr")
 		}

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
+	bkcache "github.com/dagger/dagger/engine/snapshots"
 	snapshotutil "github.com/dagger/dagger/engine/snapshots/util"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 )
@@ -33,7 +33,7 @@ const (
 	MetaMountCombinedOutputPath = "combinedOutput"
 )
 
-func ReadSnapshotPath(ctx context.Context, c *Client, mntable snapshot.Mountable, filePath string, limit int) ([]byte, error) {
+func ReadSnapshotPath(ctx context.Context, c *Client, mntable bkcache.MountableRef, filePath string, limit int) ([]byte, error) {
 	ctx = withOutgoingContext(ctx)
 	stat, err := snapshotutil.StatFile(ctx, mntable, filePath)
 	if err != nil {

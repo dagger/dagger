@@ -12,6 +12,7 @@ import (
 
 	archiveexporter "github.com/containerd/containerd/v2/core/images/archive"
 	"github.com/containerd/containerd/v2/core/leases"
+	bksnapshots "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/cache"
 	cacheconfig "github.com/dagger/dagger/internal/buildkit/cache/config"
 	"github.com/dagger/dagger/internal/buildkit/client"
@@ -24,7 +25,6 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/dagger/dagger/internal/buildkit/util/contentutil"
 	"github.com/dagger/dagger/internal/buildkit/util/grpcerrors"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/dagger/dagger/internal/buildkit/util/progress"
 	"github.com/distribution/reference"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -149,7 +149,7 @@ func (e *imageExporterInstance) Export(ctx context.Context, src *exporter.Source
 	}
 	opts.Annotations = opts.Annotations.Merge(as)
 
-	ctx, done, err := leaseutil.WithLease(ctx, e.opt.LeaseManager, leaseutil.MakeTemporary)
+	ctx, done, err := bksnapshots.WithLease(ctx, e.opt.LeaseManager, bksnapshots.MakeTemporary)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -9,7 +9,6 @@ import (
 	"github.com/containerd/containerd/v2/core/content"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/locker"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -39,6 +38,12 @@ var (
 	ErrNoCurrentModule    = fmt.Errorf("no current module")
 	ErrNoCurrentWorkspace = fmt.Errorf("no current workspace")
 )
+
+type SpecificClientAttachableConnOpts struct {
+	// IfAvailable returns ok=false instead of waiting when the client currently
+	// has no active session attachables.
+	IfAvailable bool
+}
 
 // APIs from the server+session+client that are needed by core APIs
 type Server interface {
@@ -102,8 +107,9 @@ type Server interface {
 	MuxEndpoint(context.Context, string, http.Handler) error
 
 	// The session attachables connection for a specific client ID within the
-	// same session as the current client.
-	SpecificClientAttachableConn(context.Context, string) (*grpc.ClientConn, error)
+	// same session as the current client. Returns ok=false only when
+	// opts.IfAvailable is set and the client has no active session attachables.
+	SpecificClientAttachableConn(context.Context, string, SpecificClientAttachableConnOpts) (*grpc.ClientConn, bool, error)
 
 	// The auth provider for the current client
 	Auth(context.Context) (*auth.RegistryAuthProvider, error)
@@ -130,7 +136,7 @@ type Server interface {
 	DNS() *oci.DNSConfig
 
 	// The lease manager for the engine as a whole
-	LeaseManager() *leaseutil.Manager
+	LeaseManager() *bkcache.LeaseManager
 
 	// Return all the cache entries in the local cache. No support for filtering yet.
 	EngineLocalCacheEntries(context.Context) (*EngineCacheEntrySet, error)

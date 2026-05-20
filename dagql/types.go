@@ -181,8 +181,32 @@ type HasLazyEvaluation interface {
 //   - rewrite themselves in place to point at the attached result returned by attach
 //   - return only the subset of attached child results that should become
 //     explicit non-structural cache dependency edges
+//
+// Returned deps are treated as owned: the install span of the parent (the API
+// span that returned the parent value to a session) is attributed to each
+// dep, so failures in the dep's lazy work mark the parent's install span as
+// caused-failed. Implementations that want some deps to be liveness-only (no
+// failure attribution) should implement HasDependencyResultsKinds instead.
 type HasDependencyResults interface {
 	AttachDependencyResults(context.Context, AnyResult, func(AnyResult) (AnyResult, error)) ([]AnyResult, error)
+}
+
+// DependencyResult is an attached dependency result with a kind flag.
+type DependencyResult struct {
+	Result AnyResult
+	// Owned is true when the parent's install span should also be attributed
+	// to this dep for lazy failure causality. False marks the edge as
+	// liveness-only — the dep is kept alive by the parent and preflighted
+	// before the parent's lazy callback, but failures in the dep do not
+	// short-circuit attribution onto the parent's install span.
+	Owned bool
+}
+
+// HasDependencyResultsKinds is the kind-aware variant of HasDependencyResults.
+// When a value implements both, this one is preferred — the result kind flag
+// (Owned) controls install-span propagation for failure attribution.
+type HasDependencyResultsKinds interface {
+	AttachDependencyResultsKinds(context.Context, AnyResult, func(AnyResult) (AnyResult, error)) ([]DependencyResult, error)
 }
 
 // ScalarType represents a GraphQL Scalar type.

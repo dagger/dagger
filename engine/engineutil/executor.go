@@ -46,11 +46,11 @@ type ExecutionMetadata struct {
 	// Used when executing the module runtime itself.
 	Internal bool
 
-	CallDigest digest.Digest
+	// UseRecipeIDsByDefault configures nested clients started by this exec to
+	// resolve id() as recipe-form IDs unless explicitly requested otherwise.
+	UseRecipeIDsByDefault bool
 
-	// If set, stdout/stderr emitted by this execution should be associated
-	// with this DAG call digest on the client side.
-	LogTargetCallDigest digest.Digest
+	CallDigest digest.Digest
 
 	// hostname -> list of aliases
 	HostAliases map[string][]string

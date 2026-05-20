@@ -548,14 +548,22 @@ func (m *Dep) Bar(
 	callCmd := hostDaggerCommand(ctx, t, modDir, "call", "-s", "foo")
 	callOutput, err := callCmd.CombinedOutput()
 	require.NoError(t, err, string(callOutput))
-	// the CLI spams "user default: ..." messages despite -s, get the last line only
-	lastLine := callOutput
-	if idx := strings.LastIndex(string(callOutput), "\n"); idx != -1 {
-		lastLine = callOutput[idx+1:]
+	// the CLI spams "user default: ..." messages despite -s, so ignore them
+	// even if they are interleaved onto the same line as the scalar output.
+	var scalarOutput string
+	for _, line := range strings.Split(string(callOutput), "\n") {
+		if idx := strings.Index(line, "user default: "); idx != -1 {
+			line = line[:idx]
+		}
+		if line = strings.TrimSpace(line); line != "" {
+			scalarOutput = line
+		}
 	}
-	decodeOutput, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(lastLine)))
+	require.NotEmpty(t, scalarOutput, string(callOutput))
+
+	decodeOutput, err := base64.StdEncoding.DecodeString(scalarOutput)
 	require.NoError(t, err, string(callOutput))
-	require.Equal(t, "doodoo", string(decodeOutput))
+	require.Equal(t, "doodoo", string(decodeOutput), string(callOutput))
 }
 
 func (EnvFileSuite) TestUpdateVariableWithTheSameValue(ctx context.Context, t *testctx.T) {

@@ -1,7 +1,7 @@
 //go:build !linux
 // +build !linux
 
-package snapshotter
+package snapshots
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func (sn *mergeSnapshotter) diffApply(_ context.Context, _ Mountable, _ ...Diff) (_ snapshots.Usage, rerr error) {
+func (sn *mergeSnapshotter) diffApply(_ context.Context, _ MountableRef, _ ...Diff) (_ snapshots.Usage, rerr error) {
 	return snapshots.Usage{}, errors.New("diffApply not yet supported on " + runtime.GOOS)
 }
 

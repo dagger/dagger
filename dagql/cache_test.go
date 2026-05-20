@@ -14,6 +14,7 @@ import (
 
 	"github.com/containerd/containerd/v2/core/leases"
 	"github.com/dagger/dagger/engine"
+	snapshots "github.com/dagger/dagger/engine/snapshots"
 	telemetry "github.com/dagger/otel-go"
 	set "github.com/hashicorp/go-set/v3"
 	"github.com/opencontainers/go-digest"
@@ -36,14 +37,54 @@ type cacheTestOnReleaseInt struct {
 type cacheTestLeaseProvider struct {
 	nextLeaseID atomic.Int32
 	releases    atomic.Int32
+	resourcesMu sync.Mutex
+	resources   map[string][]leases.Resource
 }
 
 func (p *cacheTestLeaseProvider) WithOperationLease(ctx context.Context) (context.Context, func(context.Context) error, error) {
-	leaseID := fmt.Sprintf("shared-%d", p.nextLeaseID.Add(1))
-	return leases.WithLease(ctx, leaseID), func(context.Context) error {
-		p.releases.Add(1)
+	return snapshots.WithLazyLease(ctx, p, func(l *leases.Lease) error {
+		l.ID = fmt.Sprintf("shared-%d", p.nextLeaseID.Add(1))
 		return nil
-	}, nil
+	})
+}
+
+func (p *cacheTestLeaseProvider) Create(_ context.Context, opts ...leases.Opt) (leases.Lease, error) {
+	l := leases.Lease{}
+	for _, opt := range opts {
+		if err := opt(&l); err != nil {
+			return leases.Lease{}, err
+		}
+	}
+	return l, nil
+}
+
+func (p *cacheTestLeaseProvider) Delete(_ context.Context, _ leases.Lease, _ ...leases.DeleteOpt) error {
+	p.releases.Add(1)
+	return nil
+}
+
+func (p *cacheTestLeaseProvider) List(context.Context, ...string) ([]leases.Lease, error) {
+	return nil, nil
+}
+
+func (p *cacheTestLeaseProvider) AddResource(_ context.Context, lease leases.Lease, resource leases.Resource) error {
+	p.resourcesMu.Lock()
+	defer p.resourcesMu.Unlock()
+	if p.resources == nil {
+		p.resources = map[string][]leases.Resource{}
+	}
+	p.resources[lease.ID] = append(p.resources[lease.ID], resource)
+	return nil
+}
+
+func (p *cacheTestLeaseProvider) DeleteResource(context.Context, leases.Lease, leases.Resource) error {
+	return nil
+}
+
+func (p *cacheTestLeaseProvider) ListResources(_ context.Context, lease leases.Lease) ([]leases.Resource, error) {
+	p.resourcesMu.Lock()
+	defer p.resourcesMu.Unlock()
+	return append([]leases.Resource(nil), p.resources[lease.ID]...), nil
 }
 
 type cacheTestLeaseCheckedInt struct {
@@ -343,6 +384,50 @@ func TestCaptureSessionLazySpanContextFirstWriterWinsAndRelease(t *testing.T) {
 	cacheTestReleaseSession(t, c, ctx)
 	_, ok = c.sessionLazySpanContext("test-session", sharedA.id)
 	assert.Assert(t, !ok)
+}
+
+func TestSessionResultInstallSpanContextsSorted(t *testing.T) {
+	t.Parallel()
+
+	c := &Cache{}
+	spanCtxB := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{2},
+		SpanID:  trace.SpanID{2},
+	})
+	spanCtxA := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{1},
+		SpanID:  trace.SpanID{1},
+	})
+
+	c.recordSessionResultInstallSpanLocked("test-session", 1, spanCtxB)
+	c.recordSessionResultInstallSpanLocked("test-session", 1, spanCtxA)
+	c.recordSessionResultInstallSpanLocked("test-session", 1, spanCtxB)
+
+	got := c.sessionResultInstallSpanContexts("test-session", 1)
+	assert.DeepEqual(t, got, []trace.SpanContext{spanCtxA, spanCtxB})
+}
+
+func TestTransitiveDepIDsLockedUpdatesAncestors(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}
+	parent := &sharedResult{id: 1}
+	child := &sharedResult{id: 2}
+	grandchild := &sharedResult{id: 3}
+	c.resultsByID[parent.id] = parent
+	c.resultsByID[child.id] = child
+	c.resultsByID[grandchild.id] = grandchild
+
+	c.egraphMu.Lock()
+	assert.NilError(t, c.addExplicitDependencyLocked(ctx, parent, child, "test"))
+	assert.NilError(t, c.addExplicitDependencyLocked(ctx, child, grandchild, "test"))
+	parentDeps := c.transitiveDepIDsLocked(parent.id)
+	childDeps := c.transitiveDepIDsLocked(child.id)
+	c.egraphMu.Unlock()
+
+	assert.DeepEqual(t, parentDeps, []sharedResultID{child.id, grandchild.id})
+	assert.DeepEqual(t, childDeps, []sharedResultID{grandchild.id})
 }
 
 func TestEvaluateLazyUsesOriginalSpanForLogsAndNestedSpans(t *testing.T) {
@@ -741,6 +826,11 @@ func TestCacheEvaluate(t *testing.T) {
 			return cacheTestObjectResultWithValue(t, srv, frame, &cacheTestObject{
 				Value: 1,
 				lazyEval: func(ctx context.Context) error {
+					var err error
+					ctx, err = snapshots.EnsureLease(ctx)
+					if err != nil {
+						return err
+					}
 					leaseID, ok := leases.FromContext(ctx)
 					if !ok || leaseID == "" {
 						return fmt.Errorf("lazy evaluation missing operation lease")
@@ -763,6 +853,42 @@ func TestCacheEvaluate(t *testing.T) {
 		assert.Assert(t, leaseProvider.nextLeaseID.Load() > 0)
 		assert.Equal(t, leaseProvider.nextLeaseID.Load(), leaseProvider.releases.Load())
 
+		assert.NilError(t, cacheIface.ReleaseSession(ctx, cacheTestSessionID(t, ctx)))
+	})
+
+	t.Run("lazy evaluation without lease-sensitive work does not acquire lease", func(t *testing.T) {
+		t.Parallel()
+		ctx := cacheTestContext(t.Context())
+		leaseProvider := &cacheTestLeaseProvider{}
+		ctx = ContextWithOperationLeaseProvider(ctx, leaseProvider)
+		ctx = leases.WithLease(ctx, "request-1")
+		cacheIface, err := NewCache(ctx, "", nil, nil)
+		assert.NilError(t, err)
+		ctx = ContextWithCache(ctx, cacheIface)
+		srv := cacheTestServer(t)
+
+		frame := &ResultCall{
+			Kind:  ResultCallKindField,
+			Type:  NewResultCallType((&cacheTestObject{}).Type()),
+			Field: "lazy-no-lease",
+		}
+
+		resAny, err := cacheIface.GetOrInitCall(ctx, cacheTestSessionID(t, ctx), srv, &CallRequest{ResultCall: frame}, func(context.Context) (AnyResult, error) {
+			return cacheTestObjectResultWithValue(t, srv, frame, &cacheTestObject{
+				Value: 1,
+				lazyEval: func(ctx context.Context) error {
+					if leaseID, ok := leases.FromContext(ctx); ok && leaseID != "" {
+						return fmt.Errorf("lazy evaluation unexpectedly had operation lease %q", leaseID)
+					}
+					return nil
+				},
+			}), nil
+		})
+		assert.NilError(t, err)
+
+		assert.NilError(t, cacheIface.Evaluate(ctx, resAny))
+		assert.Equal(t, int32(0), leaseProvider.nextLeaseID.Load())
+		assert.Equal(t, int32(0), leaseProvider.releases.Load())
 		assert.NilError(t, cacheIface.ReleaseSession(ctx, cacheTestSessionID(t, ctx)))
 	})
 
@@ -1270,6 +1396,11 @@ func TestCacheContextCancel(t *testing.T) {
 				ResultCall:     reqCall,
 				ConcurrencyKey: "shared-lease",
 			}, func(ctx context.Context) (AnyResult, error) {
+				var err error
+				ctx, err = snapshots.EnsureLease(ctx)
+				if err != nil {
+					return nil, err
+				}
 				leaseID, ok := leases.FromContext(ctx)
 				if !ok || leaseID == "" {
 					return nil, fmt.Errorf("shared call missing operation lease")
@@ -1282,6 +1413,11 @@ func TestCacheContextCancel(t *testing.T) {
 				return cacheTestDetachedResult(reqCall, cacheTestLeaseCheckedInt{
 					Int: NewInt(1),
 					onAttach: func(ctx context.Context) error {
+						var err error
+						ctx, err = snapshots.EnsureLease(ctx)
+						if err != nil {
+							return err
+						}
 						attachLeaseID, ok := leases.FromContext(ctx)
 						if !ok || attachLeaseID == "" {
 							return fmt.Errorf("attach dependency results missing operation lease")
@@ -6013,4 +6149,33 @@ func TestCacheArbitraryRecursiveCall(t *testing.T) {
 		return nil, err
 	})
 	assert.Assert(t, is.ErrorIs(err, ErrCacheRecursiveCall))
+}
+
+func TestResolveSessionResourceCandidatesOrdering(t *testing.T) {
+	ctx := t.Context()
+	cache, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+
+	const sessionID = "test-session"
+	const preferredClientID = "preferred-client"
+	const latestClientID = "latest-client"
+	handle := SessionResourceHandle("test-resource")
+
+	assert.NilError(t, cache.BindSessionResource(ctx, sessionID, "alpha-client", handle, "alpha"))
+	assert.NilError(t, cache.BindSessionResource(ctx, sessionID, preferredClientID, handle, "preferred"))
+	assert.NilError(t, cache.BindSessionResource(ctx, sessionID, latestClientID, handle, "latest"))
+
+	resolved, err := cache.ResolveSessionResource(ctx, sessionID, preferredClientID, handle)
+	assert.NilError(t, err)
+	assert.Equal(t, resolved, "preferred")
+
+	candidates, err := cache.ResolveSessionResourceCandidates(ctx, sessionID, preferredClientID, handle)
+	assert.NilError(t, err)
+	assert.Assert(t, is.Len(candidates, 3))
+	assert.Equal(t, candidates[0].ClientID, preferredClientID)
+	assert.Equal(t, candidates[0].Value, "preferred")
+	assert.Equal(t, candidates[1].ClientID, latestClientID)
+	assert.Equal(t, candidates[1].Value, "latest")
+	assert.Equal(t, candidates[2].ClientID, "alpha-client")
+	assert.Equal(t, candidates[2].Value, "alpha")
 }

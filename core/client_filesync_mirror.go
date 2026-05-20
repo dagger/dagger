@@ -8,7 +8,6 @@ import (
 
 	"github.com/dagger/dagger/engine/filesync"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	digest "github.com/opencontainers/go-digest"
@@ -27,7 +26,7 @@ type ClientFilesyncMirror struct {
 
 	snapshot bkcache.MutableRef
 
-	mounter snapshot.Mounter
+	mounter bkcache.Mounter
 	mntPath string
 
 	sharedState *filesync.MirrorSharedState
@@ -252,7 +251,7 @@ func (m *ClientFilesyncMirror) ensureRuntimeLocked(ctx context.Context, query *Q
 	if err != nil {
 		return err
 	}
-	m.mounter = snapshot.LocalMounter(mountable)
+	m.mounter = bkcache.LocalMounter(mountable)
 	m.mntPath, err = m.mounter.Mount()
 	if err != nil {
 		return err

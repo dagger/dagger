@@ -21,12 +21,10 @@ import (
 const aboveTargetGracePeriod = 5 * time.Minute
 
 type Opt struct {
-	Root         string
-	ConfigPath   string
-	BinaryDir    string
-	PoolSize     int
-	BridgeName   string
-	BridgeSubnet string
+	Root       string
+	ConfigPath string
+	BinaryDir  string
+	PoolSize   int
 }
 
 func New(opt Opt) (network.Provider, error) {

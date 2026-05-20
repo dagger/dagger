@@ -319,8 +319,12 @@ func (cm *snapshotManager) linkContentToContextLease(ctx context.Context, desc o
 	if desc.Digest == "" {
 		return nil
 	}
+	ctx, err := EnsureLease(ctx)
+	if err != nil {
+		return errors.Wrap(err, "ensure lease for content")
+	}
 	leaseID, ok := leases.FromContext(ctx)
-	if !ok {
+	if !ok || leaseID == "" {
 		return nil
 	}
 	if err := cm.LeaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{

@@ -133,6 +133,11 @@ type ClientMetadata struct {
 	// Workspace explicitly declares the workspace binding for this client.
 	// When unset, the engine applies default workspace binding behavior.
 	Workspace *string `json:"workspace,omitempty"`
+
+	// UseRecipeIDsByDefault asks id() to return recipe-form IDs unless the
+	// request explicitly passes a recipe argument. This is engine-internal
+	// nested-client state and must not be forwarded through client headers.
+	UseRecipeIDsByDefault bool `json:"-"`
 }
 
 type clientMetadataCtxKey struct{}

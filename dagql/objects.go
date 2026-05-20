@@ -115,41 +115,52 @@ func NewClass[T Typed](srv *Server, opts_ ...ClassOpts[T]) Class[T] {
 		invalidateSchemaCache: srv.invalidateSchemaCache,
 	}
 	if !opts.NoIDs {
-		class.Install(
-			Field[T]{
-				Spec: &FieldSpec{
-					Name:        "id",
-					Description: fmt.Sprintf("A unique identifier for this %s.", class.TypeName()),
-					Type:        AnyID{},
-					Args: NewInputSpecs(
-						InputSpec{
-							Name:        "recipe",
-							Description: "Return the canonical recipe-form ID instead of the default runtime handle ID.",
-							Type:        Boolean(false),
-							Default:     Boolean(false),
-							Internal:    true,
-						},
-					),
-					DoNotCache: "IDs describe the current attached result; cache hits could return stale runtime handles for an equivalent object.",
-				},
-				Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, _ call.View) (AnyResult, error) {
-					recipe, _ := args["recipe"].(Boolean)
-					var (
-						selfID *call.ID
-						err    error
-					)
-					if bool(recipe) {
-						selfID, err = self.RecipeID(ctx)
-					} else {
-						selfID, err = self.ID()
-					}
-					if err != nil {
-						return nil, err
-					}
-					return NewResultForCurrentCall(ctx, NewAnyID(selfID))
-				},
+		class.Install(Field[T]{
+			Spec: &FieldSpec{
+				Name:        "id",
+				Description: fmt.Sprintf("A unique identifier for this %s.", class.TypeName()),
+				Type:        AnyID{},
+				Args: NewInputSpecs(InputSpec{
+					Name:        "recipe",
+					Description: "Return the canonical recipe-form ID instead of the default runtime handle ID.",
+					Type:        Boolean(false),
+					Default:     Boolean(false),
+					Internal:    true,
+				}),
+				DoNotCache: "IDs describe the current attached result; cache hits could return stale runtime handles for an equivalent object.",
 			},
-		)
+			Func: func(ctx context.Context, self ObjectResult[T], args map[string]Input, _ call.View) (AnyResult, error) {
+				recipe, _ := args["recipe"].(Boolean)
+				recipeExplicit := false
+				if call := CurrentCall(ctx); call != nil {
+					for _, arg := range call.Args {
+						if arg != nil && arg.Name == "recipe" {
+							recipeExplicit = true
+							break
+						}
+					}
+				}
+				if !recipeExplicit {
+					if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
+						recipe = Boolean(clientMetadata.UseRecipeIDsByDefault)
+					}
+				}
+
+				var (
+					selfID *call.ID
+					err    error
+				)
+				if bool(recipe) {
+					selfID, err = self.RecipeID(ctx)
+				} else {
+					selfID, err = self.ID()
+				}
+				if err != nil {
+					return nil, err
+				}
+				return NewResultForCurrentCall(ctx, NewAnyID(selfID))
+			},
+		})
 		class.idable = true
 	}
 	return class
@@ -582,7 +593,7 @@ func (r ObjectResult[T]) preselect(ctx context.Context, sel Selector) (ObjectRes
 	if clientMD, err := engine.ClientMetadataFromContext(ctx); err != nil {
 		slog.Warn("failed to get client metadata from context for call", "err", err)
 	} else {
-		req.ConcurrencyKey = clientMD.ClientID
+		req.ConcurrencyKey = clientMD.SessionID
 	}
 	if field.Spec.GetDynamicInput != nil {
 		if err := field.Spec.GetDynamicInput(ctx, r, inputArgs, view, req); err != nil {
@@ -626,6 +637,9 @@ func (r ObjectResult[T]) call(
 	field, ok := r.class.Field(fieldName, view)
 	if !ok {
 		return nil, fmt.Errorf("call: %s has no such field: %q", r.class.inner.Type().Name(), fieldName)
+	}
+	if field.Spec.Trivial {
+		ctx = ContextWithTrivialField(ctx)
 	}
 	if field.Spec.BuiltinLoadByIDFunc != nil {
 		return field.Spec.BuiltinLoadByIDFunc(ctx, r, inputArgs)
@@ -903,6 +917,12 @@ type FieldSpec struct {
 	// Used for entrypoint proxies that delegate to real fields which
 	// emit their own telemetry.
 	NoTelemetry bool
+
+	// Trivial marks fields that only unwrap data from their receiver rather
+	// than performing meaningful work. Used to suppress install-span capture
+	// for synthetic accessors (e.g. auto-generated module object field
+	// accessors) so they don't claim ownership of values they merely return.
+	Trivial bool
 
 	// extend is used during installation to copy the spec of a previous field
 	// with the same name

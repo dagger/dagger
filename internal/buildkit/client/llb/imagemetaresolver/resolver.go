@@ -96,7 +96,7 @@ func (imr *imageMetaResolver) ResolveImageConfig(ctx context.Context, ref string
 		return ref, res.dgst, res.config, nil
 	}
 
-	dgst, config, err := imageutil.Config(ctx, ref, imr.resolver, imr.buffer, nil, platform)
+	dgst, config, err := imageutil.Config(ctx, ref, imr.resolver, imr.buffer, platform)
 	if err != nil {
 		return "", "", nil, err
 	}

@@ -58,7 +58,8 @@ func (sdk *moduleTypes) ModuleTypes(
 	}
 
 	execMD := engineutil.ExecutionMetadata{
-		Internal: true,
+		Internal:              true,
+		UseRecipeIDsByDefault: true,
 	}
 	if curCall := dagql.CurrentCall(ctx); curCall != nil {
 		callDigest, err := curCall.RecipeDigest(ctx)
@@ -152,12 +153,14 @@ func (sdk *moduleTypes) ModuleTypes(
 	if err != nil {
 		return inst, fmt.Errorf("failed to load module from type defs json: %w", err)
 	}
-	cache, err := dagql.EngineCache(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get engine cache for sdk moduleTypes dependency: %w", err)
-	}
-	if err := cache.AddExplicitDependency(ctx, ctr, inst, "sdk_module_types_generated_module"); err != nil {
-		return inst, fmt.Errorf("failed to retain loaded module result from sdk moduleTypes exec: %w", err)
+	if modCallID.IsHandle() {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get engine cache for sdk moduleTypes dependency: %w", err)
+		}
+		if err := cache.AddExplicitDependency(ctx, ctr, inst, "sdk_module_types_generated_module"); err != nil {
+			return inst, fmt.Errorf("failed to retain loaded module result from sdk moduleTypes exec: %w", err)
+		}
 	}
 
 	return inst, nil

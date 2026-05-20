@@ -1,4 +1,4 @@
-package snapshotter
+package snapshots
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 	"github.com/dagger/dagger/engine/snapshots/fsdiff"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	"github.com/moby/sys/userns"
 	"github.com/pkg/errors"
 )
@@ -98,8 +97,15 @@ func (sn *mergeSnapshotter) Merge(ctx context.Context, key string, diffs []Diff,
 		diffs = diffs[baseIndex:]
 	}
 
-	if _, ok := leases.FromContext(ctx); !ok {
-		leaseCtx, done, err := leaseutil.WithLease(ctx, sn.lm, leaseutil.MakeTemporary)
+	if leaseID, ok := leases.FromContext(ctx); !ok || leaseID == "" {
+		leaseCtx, err := EnsureLease(ctx)
+		if err != nil {
+			return errors.Wrap(err, "failed to ensure temporary lease for view mounts during merge")
+		}
+		ctx = leaseCtx
+	}
+	if leaseID, ok := leases.FromContext(ctx); !ok || leaseID == "" {
+		leaseCtx, done, err := WithLease(ctx, sn.lm, MakeTemporary)
 		if err != nil {
 			return errors.Wrap(err, "failed to create temporary lease for view mounts during merge")
 		}

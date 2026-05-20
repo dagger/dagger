@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 type Lazy[T dagql.Typed] interface {
@@ -26,7 +28,7 @@ func NewLazyState() LazyState {
 	}
 }
 
-func (lazy *LazyState) Evaluate(ctx context.Context, typeName string, run func(context.Context) error) error {
+func (lazy *LazyState) Evaluate(ctx context.Context, typeName string, run func(context.Context) error) (rerr error) {
 	if lazy.LazyInitComplete {
 		return nil
 	}
@@ -45,8 +47,24 @@ func (lazy *LazyState) Evaluate(ctx context.Context, typeName string, run func(c
 	if lazy.LazyInitComplete {
 		return nil
 	}
-	if err := run(ctx); err != nil {
-		return err
+
+	start := time.Now()
+	slog.InfoContext(ctx, "start lazy evaluation",
+		"field", typeName,
+	)
+	defer func() {
+		args := []any{
+			"field", typeName,
+			"duration", time.Since(start),
+		}
+		if rerr != nil {
+			args = append(args, "err", rerr)
+		}
+		slog.InfoContext(ctx, "end lazy evaluation", args...)
+	}()
+
+	if rerr = run(ctx); rerr != nil {
+		return rerr
 	}
 	lazy.LazyInitComplete = true
 	return nil

@@ -112,6 +112,82 @@ type Test struct {
 		require.NoError(t, err)
 	})
 
+	t.Run("bound service crash keeps terminal open", func(ctx context.Context, t *testctx.T) {
+		modDir := t.TempDir()
+		err := os.WriteFile(filepath.Join(modDir, "main.go"), fmt.Appendf(nil, `package main
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+
+func New(ctx context.Context) *Test {
+	dep := dag.Container().
+		From("%s").
+		WithDefaultArgs([]string{"sh", "-c", "sleep 1; echo dependency crashed >&2; exit 42"}).
+		AsService()
+
+	return &Test{
+		Ctr: dag.Container().
+			From("%s").
+			WithWorkdir("/coolworkdir").
+			WithServiceBinding("dep", dep),
+	}
+}
+
+type Test struct {
+	Ctr *dagger.Container
+}
+`, alpineImage, alpineImage), 0644)
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+		require.NoError(t, err)
+
+		// cache the module load itself so there's less to wait for in the shell invocation below
+		_, err = hostDaggerExec(ctx, t, modDir, "functions")
+		require.NoError(t, err)
+
+		console, err := newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+
+		tty := console.Tty()
+		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
+		require.NoError(t, err)
+
+		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "terminal")
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
+
+		err = cmd.Start()
+		require.NoError(t, err)
+
+		prompt := fmt.Sprintf("/coolworkdir%s $ ", resetSeq)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		time.Sleep(2 * time.Second)
+
+		_, err = console.SendLine("echo still here")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("still here\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("exit")
+		require.NoError(t, err)
+
+		go console.ExpectEOF()
+
+		err = cmd.Wait()
+		require.NoError(t, err)
+	})
+
 	t.Run("basic", func(ctx context.Context, t *testctx.T) {
 		modDir := t.TempDir()
 		err := os.WriteFile(filepath.Join(modDir, "main.go"), fmt.Appendf(nil, `package main

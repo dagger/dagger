@@ -60,7 +60,7 @@ func ParseLegacyToolchains(data []byte) ([]LegacyToolchain, error) {
 			Name:           tc.Name,
 			Source:         tc.Source,
 			Pin:            tc.Pin,
-			ConfigDefaults: extractConfigDefaults(tc.Customizations),
+			ConfigDefaults: ExtractConfigDefaults(tc.Customizations),
 			Customizations: cloneCustomizations(tc.Customizations),
 		}
 	}
@@ -76,9 +76,8 @@ func parseLegacyConfig(data []byte) (*modules.ModuleConfig, error) {
 	return &cfg, nil
 }
 
-// extractConfigDefaults extracts constructor arg defaults from legacy customizations.
-// Only constructor-level customizations with a non-empty Default value are included.
-func extractConfigDefaults(customizations []*modules.ModuleConfigArgument) map[string]any {
+// ExtractConfigDefaults returns constructor arg defaults from customizations.
+func ExtractConfigDefaults(customizations []*modules.ModuleConfigArgument) map[string]any {
 	config := make(map[string]any)
 	for _, cust := range customizations {
 		if cust != nil && len(cust.Function) == 0 && cust.Default != "" {

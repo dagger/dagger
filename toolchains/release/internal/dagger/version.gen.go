@@ -10,10 +10,10 @@ import (
 )
 
 // The `VersionID` scalar type represents an identifier for an object of type Version.
-type VersionID string // version (../../../../version/main.go:54:6)
+type VersionID string // version (../../../../version/main.go:57:6)
 
 // Retrieve the binding value, as type Version
-func (r *Binding) AsVersion() *Version { // version (../../../../version/main.go:54:6)
+func (r *Binding) AsVersion() *Version { // version (../../../../version/main.go:57:6)
 	q := r.query.Select("asVersion")
 
 	return &Version{
@@ -22,7 +22,7 @@ func (r *Binding) AsVersion() *Version { // version (../../../../version/main.go
 }
 
 // Create or update a binding of type Version in the environment
-func (r *Env) WithVersionInput(name string, value *Version, description string) *Env { // version (../../../../version/main.go:54:6)
+func (r *Env) WithVersionInput(name string, value *Version, description string) *Env { // version (../../../../version/main.go:57:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withVersionInput")
 	q = q.Arg("name", name)
@@ -35,7 +35,7 @@ func (r *Env) WithVersionInput(name string, value *Version, description string) 
 }
 
 // Declare a desired Version output to be assigned in the environment
-func (r *Env) WithVersionOutput(name string, description string) *Env { // version (../../../../version/main.go:54:6)
+func (r *Env) WithVersionOutput(name string, description string) *Env { // version (../../../../version/main.go:57:6)
 	q := r.query.Select("withVersionOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -46,7 +46,7 @@ func (r *Env) WithVersionOutput(name string, description string) *Env { // versi
 }
 
 // Load a Version from its ID.
-func (r *Query) LoadVersionFromID(id VersionID) *Version { // version (../../../../version/main.go:54:6)
+func (r *Query) LoadVersionFromID(id VersionID) *Version { // version (../../../../version/main.go:57:6)
 	q := r.query.Select("loadVersionFromID")
 	q = q.Arg("id", id)
 
@@ -101,7 +101,7 @@ func (r *Query) Version(opts ...VersionOpts) *Version { // version (../../../../
 	}
 }
 
-type Version struct { // version (../../../../version/main.go:54:6)
+type Version struct { // version (../../../../version/main.go:57:6)
 	query *querybuilder.Selection
 
 	currentTag         *string
@@ -118,7 +118,7 @@ func (r *Version) WithGraphQLQuery(q *querybuilder.Selection) *Version {
 	}
 }
 
-func (r *Version) CurrentTag(ctx context.Context) (string, error) { // version (../../../../version/main.go:197:1)
+func (r *Version) CurrentTag(ctx context.Context) (string, error) { // version (../../../../version/main.go:200:1)
 	if r.currentTag != nil {
 		return *r.currentTag, nil
 	}
@@ -130,7 +130,7 @@ func (r *Version) CurrentTag(ctx context.Context) (string, error) { // version (
 	return response, q.Execute(ctx)
 }
 
-func (r *Version) Dirty(ctx context.Context) (bool, error) { // version (../../../../version/main.go:176:1)
+func (r *Version) Dirty(ctx context.Context) (bool, error) { // version (../../../../version/main.go:179:1)
 	if r.dirty != nil {
 		return *r.dirty, nil
 	}
@@ -142,7 +142,7 @@ func (r *Version) Dirty(ctx context.Context) (bool, error) { // version (../../.
 	return response, q.Execute(ctx)
 }
 
-func (r *Version) GitDir() *Directory { // version (../../../../version/main.go:57:2)
+func (r *Version) GitDir() *Directory { // version (../../../../version/main.go:60:2)
 	q := r.query.Select("gitDir")
 
 	return &Directory{
@@ -200,7 +200,7 @@ func (r *Version) UnmarshalJSON(bs []byte) error {
 }
 
 // Return the tag to use when auto-downloading the engine image from the CLI
-func (r *Version) ImageTag(ctx context.Context) (string, error) { // version (../../../../version/main.go:150:1)
+func (r *Version) ImageTag(ctx context.Context) (string, error) { // version (../../../../version/main.go:153:1)
 	if r.imageTag != nil {
 		return *r.imageTag, nil
 	}
@@ -213,7 +213,7 @@ func (r *Version) ImageTag(ctx context.Context) (string, error) { // version (..
 }
 
 // NextReleaseVersion returns the next release version from .changes/.next
-func (r *Version) NextReleaseVersion(ctx context.Context) (string, error) { // version (../../../../version/main.go:265:1)
+func (r *Version) NextReleaseVersion(ctx context.Context) (string, error) { // version (../../../../version/main.go:268:1)
 	if r.nextReleaseVersion != nil {
 		return *r.nextReleaseVersion, nil
 	}
@@ -226,7 +226,7 @@ func (r *Version) NextReleaseVersion(ctx context.Context) (string, error) { // v
 }
 
 // Generate a version string from the current context
-func (r *Version) Version(ctx context.Context) (string, error) { // version (../../../../version/main.go:67:1)
+func (r *Version) Version(ctx context.Context) (string, error) { // version (../../../../version/main.go:70:1)
 	if r.version != nil {
 		return *r.version, nil
 	}

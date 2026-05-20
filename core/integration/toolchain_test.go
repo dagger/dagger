@@ -484,6 +484,56 @@ func (ToolchainSuite) TestToolchainsWithConfiguration(ctx context.Context, t *te
 		require.Contains(t, out, "this is custom configuration")
 	})
 
+	// Regression: a defaultPath customization must also apply when the toolchain
+	// function is reached cross-module via dag.<toolchain>(), not only via the
+	// `dagger call <toolchain>` entrypoint.
+	t.Run("function defaultPath customization applies to cross-module toolchain call", func(ctx context.Context, t *testctx.T) {
+		modGen := toolchainTestEnv(t, c).
+			WithWorkdir("app").
+			With(daggerExec("init", "--sdk=go", "--name=app", "--source=.")).
+			WithNewFile("dagger.json", `
+{
+  "name": "app",
+  "engineVersion": "v0.19.4",
+  "sdk": {
+    "source": "go"
+  },
+  "toolchains": [
+    {
+      "name": "hello",
+      "source": "../hello",
+      "customizations": [
+        {
+          "function": ["appConfig"],
+          "argument": "config",
+          "defaultPath": "./custom-config.txt"
+        }
+      ]
+    }
+  ]
+}
+				`).
+			WithNewFile("custom-config.txt", "customized via toolchain customization").
+			WithNewFile("main.go", `package main
+
+import "context"
+
+type App struct{}
+
+// ConfigViaToolchain reaches the toolchain through the generated bindings.
+// AppConfig's config arg has an in-code +defaultPath of "./app-config.txt";
+// the app's customization must override it to "./custom-config.txt" here too.
+func (m *App) ConfigViaToolchain(ctx context.Context) (string, error) {
+	return dag.Hello().AppConfig(ctx)
+}
+`)
+		out, err := modGen.
+			With(daggerExec("call", "config-via-toolchain")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "customized via toolchain customization")
+	})
+
 	t.Run("override function default argument in chained function", func(ctx context.Context, t *testctx.T) {
 		modGen := toolchainTestEnv(t, c).
 			WithWorkdir("app").

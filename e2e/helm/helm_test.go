@@ -1,5 +1,6 @@
 // Package helm contains e2e contract tests for Dagger's Helm chart.
 //
+// workspace:include dagger.json
 // workspace:include k3s-entrypoint.sh
 // workspace:include ../../helm/dagger
 // workspace:include ../../.changes/.next

@@ -20,7 +20,6 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	"github.com/dagger/dagger/engine/telemetryattrs"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	"github.com/dagger/dagger/internal/buildkit/executor"
 	bkgw "github.com/dagger/dagger/internal/buildkit/frontend/gateway/client"
@@ -273,6 +272,31 @@ func (io *ServiceIO) Close() error {
 	return errors.Join(errs...)
 }
 
+// firstValidSpanContext returns the first IsValid() context from spans, or a
+// zero SpanContext if none are valid.
+func firstValidSpanContext(spans []trace.SpanContext) trace.SpanContext {
+	for _, s := range spans {
+		if s.IsValid() {
+			return s
+		}
+	}
+	return trace.SpanContext{}
+}
+
+// trackOriginIfMissing stamps the given origin onto err's message (as
+// [traceparent:...]) unless err is nil or already carries an origin. The
+// receiving span's EndWithCause will then add the origin as an error-origin
+// link.
+func trackOriginIfMissing(err error, origin trace.SpanContext) error {
+	if err == nil || !origin.IsValid() {
+		return err
+	}
+	if len(telemetry.ParseErrorOrigins(err.Error())) > 0 {
+		return err
+	}
+	return telemetry.TrackOrigin(err, origin)
+}
+
 func (svc *Service) Start(
 	ctx context.Context,
 	running *RunningService,
@@ -359,9 +383,6 @@ func (svc *Service) startContainer(
 		cloned := *execMD
 		execMD = &cloned
 	}
-	if opts.LogTargetCallDigest != "" {
-		execMD.LogTargetCallDigest = opts.LogTargetCallDigest
-	}
 
 	query, err := CurrentQuery(ctx)
 	if err != nil {
@@ -371,11 +392,21 @@ func (svc *Service) startContainer(
 	if err != nil {
 		return err
 	}
-	detachDeps, _, err := svcs.StartBindings(ctx, ctr.Services)
+	detachDeps, runningDeps, err := svcs.StartBindings(ctx, ctr.Services)
 	if err != nil {
 		return fmt.Errorf("start dependent services: %w", err)
 	}
 	cleanup.Add("detach deps", cleanups.Infallible(detachDeps))
+
+	propagateDependencyExits := len(runningDeps) > 0 &&
+		running.Key.Kind != ServiceRuntimeInteractive &&
+		(opts.IO == nil || !opts.IO.Interactive)
+	var dependencyErrCh <-chan error
+	if propagateDependencyExits {
+		var stopDependencyMonitors func()
+		dependencyErrCh, stopDependencyMonitors = monitorServiceBindings(ctx, ctr.Services, runningDeps, nil)
+		cleanup.Add("stop dependent service monitors", cleanups.Infallible(stopDependencyMonitors))
+	}
 
 	var domain string
 	if mod, err := query.ModuleParent(ctx); err == nil && svc.CustomHostname != "" {
@@ -450,9 +481,26 @@ func (svc *Service) startContainer(
 		meta.Env = addDefaultEnvvar(meta.Env, "TERM", "xterm")
 	}
 
-	attrs := []attribute.KeyValue{}
-	if opts.LogTargetCallDigest != "" {
-		attrs = append(attrs, attribute.String(telemetryattrs.UIResumeOutputAttr, opts.LogTargetCallDigest.String()))
+	attrs := []attribute.KeyValue{
+		// Hide the synthetic service exec span from the UI; its failure
+		// status propagates up to the installing API span (e.g. .asService)
+		// via the cause link below, and its stdio logs are routed there via
+		// DagDigestAttr from executor_spec.
+		attribute.Bool(telemetry.UIPassthroughAttr, true),
+	}
+
+	originSpanContexts := running.originSpanContextsSnapshot()
+	if len(originSpanContexts) == 0 {
+		originSpanContexts = normalizeSpanContexts(opts.OriginSpanContexts)
+		running.addOriginSpanContexts(originSpanContexts)
+	}
+
+	spanOpts := []trace.SpanStartOption{trace.WithAttributes(attrs...)}
+	// Cause-link the service exec span to the API spans that installed the
+	// Service value. If this service exits with an error, dagui will then
+	// surface the failure on the installing API span (e.g. .asService).
+	for _, originCtx := range originSpanContexts {
+		spanOpts = append(spanOpts, trace.WithLinks(serviceOriginLink(originCtx)))
 	}
 
 	ctx, span := Tracer(ctx).Start(
@@ -460,8 +508,18 @@ func (svc *Service) startContainer(
 		ctx,
 		// Match naming scheme of normal exec span.
 		fmt.Sprintf("exec %s", strings.Join(svc.Args, " ")),
-		trace.WithAttributes(attrs...),
+		spanOpts...,
 	)
+	running.setServiceSpan(span, originSpanContexts)
+	// Pick a single install-span context as the canonical "error origin" for
+	// the running service so binding-exit errors can carry a traceparent
+	// pointing at it. Fall back to the service span itself when no install
+	// span is known (e.g. for direct startResult calls outside a dagql call).
+	originCtx := firstValidSpanContext(originSpanContexts)
+	if !originCtx.IsValid() {
+		originCtx = span.SpanContext()
+	}
+	running.setErrorOrigin(originCtx)
 	defer func() {
 		if rerr != nil {
 			// NB: this is intentionally conditional; we only complete if there was
@@ -520,6 +578,15 @@ func (svc *Service) startContainer(
 	}
 
 	exited := make(chan struct{})
+	// Route the service's stdio logs to the installing API call's row by
+	// passing its span context as the executor cause context. setupOTel uses
+	// that as the active span for SpanStdio, so log records get tied to the
+	// install span ID — the same way a normal withExec's logs are tied to
+	// its dagql call span.
+	logTargetCtx := originCtx
+	if !logTargetCtx.IsValid() {
+		logTargetCtx = span.SpanContext()
+	}
 	runErr := make(chan error)
 	go func() {
 		err := bk.Run(
@@ -536,7 +603,7 @@ func (svc *Service) startContainer(
 				Signal: signal,
 			},
 			started,
-			span.SpanContext(),
+			logTargetCtx,
 			execMD,
 			clientMetadata.SessionID,
 			clientMetadata.ClientID,
@@ -570,6 +637,23 @@ func (svc *Service) startContainer(
 	}
 
 	var stopped atomic.Bool
+	var serviceErrMu sync.Mutex
+	var serviceErr error
+	setServiceErr := func(err error) {
+		if err == nil {
+			return
+		}
+		serviceErrMu.Lock()
+		defer serviceErrMu.Unlock()
+		if serviceErr == nil {
+			serviceErr = err
+		}
+	}
+	getServiceErr := func() error {
+		serviceErrMu.Lock()
+		defer serviceErrMu.Unlock()
+		return serviceErr
+	}
 
 	var exitErr error
 	go func() {
@@ -578,7 +662,7 @@ func (svc *Service) startContainer(
 			close(exited)
 		}()
 
-		exitErr = <-runErr
+		exitErr = trackOriginIfMissing(<-runErr, originCtx)
 		slog.Info("service exited", "err", exitErr)
 
 		// show the exit status; doing so won't fail anything, and is
@@ -586,7 +670,9 @@ func (svc *Service) startContainer(
 		var telemetryErr error
 		defer telemetry.EndWithCause(span, &telemetryErr)
 		defer func() {
-			if !stopped.Load() {
+			if err := getServiceErr(); err != nil {
+				telemetryErr = err
+			} else if !stopped.Load() {
 				// we only care about the exit result (likely 137) if we weren't stopped
 				telemetryErr = exitErr
 			}
@@ -615,6 +701,9 @@ func (svc *Service) startContainer(
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-exited:
+			if err := getServiceErr(); err != nil {
+				return err
+			}
 			return exitErr
 		}
 	}
@@ -637,6 +726,44 @@ func (svc *Service) startContainer(
 			slog.Info("service exited in stop", "err", exitErr)
 			return nil
 		}
+	}
+
+	stopDueToDependencyExit := func(depErr error) error {
+		if depErr == nil {
+			depErr = fmt.Errorf("dependent service exited")
+		}
+		setServiceErr(depErr)
+		if err := stopSvc(context.Background(), true); err != nil {
+			return errors.Join(depErr, err)
+		}
+		return depErr
+	}
+
+	// If a dependency exits while exit propagation is suppressed (e.g. during a
+	// service terminal), remember it and stop this service when suppression lifts.
+	var pendingDependencyErr error
+	var havePendingDependencyErr bool
+	deferDependencyExitIfSuppressed := func(depErr error) bool {
+		if !running.isDependencyExitPropagationSuppressed() {
+			return false
+		}
+		pendingDependencyErr = depErr
+		havePendingDependencyErr = true
+		return true
+	}
+
+	propagateDependencyExitAfterSuppression := func(depErr error, haveDepErr bool, depErrCh <-chan error) {
+		if !haveDepErr {
+			var ok bool
+			depErr, ok = <-depErrCh
+			if !ok {
+				return
+			}
+		}
+		if err := running.waitDependencyExitPropagationUnsuppressed(context.Background()); err != nil {
+			return
+		}
+		_ = stopDueToDependencyExit(depErr)
 	}
 
 	execSvc := func(ctx context.Context, cmd []string, env []string, sio *ServiceIO) error {
@@ -668,35 +795,50 @@ func (svc *Service) startContainer(
 		return err
 	}
 
-	select {
-	case err := <-checked:
-		if err != nil {
-			return fmt.Errorf("health check errored: %w", err)
-		}
-
-		running.Host = fullHost
-		running.Ports = ctr.Ports
-		running.Stop = stopSvc
-		running.Wait = waitSvc
-		running.Exec = execSvc
-		running.ContainerID = svcID
-		return nil
-	case <-exited:
-		if exitErr != nil {
-			var gwErr *gwpb.ExitError
-			if errors.As(exitErr, &gwErr) {
-				// Create ExecError with available service information
-				return &ExecError{
-					Err:      telemetry.TrackOrigin(gwErr, span.SpanContext()),
-					Cmd:      meta.Args,
-					ExitCode: int(gwErr.ExitCode),
-					Stdout:   stdoutBuf.String(),
-					Stderr:   stderrBuf.String(),
-				}
+	for {
+		select {
+		case err := <-checked:
+			if err != nil {
+				return fmt.Errorf("health check errored: %w", err)
 			}
-			return exitErr
+
+			running.Host = fullHost
+			running.Ports = ctr.Ports
+			running.Stop = stopSvc
+			running.Wait = waitSvc
+			running.Exec = execSvc
+			running.ContainerID = svcID
+			if havePendingDependencyErr || dependencyErrCh != nil {
+				go propagateDependencyExitAfterSuppression(pendingDependencyErr, havePendingDependencyErr, dependencyErrCh)
+			}
+			return nil
+		case depErr, ok := <-dependencyErrCh:
+			if !ok {
+				dependencyErrCh = nil
+				continue
+			}
+			if deferDependencyExitIfSuppressed(depErr) {
+				dependencyErrCh = nil
+				continue
+			}
+			return stopDueToDependencyExit(depErr)
+		case <-exited:
+			if exitErr != nil {
+				var gwErr *gwpb.ExitError
+				if errors.As(exitErr, &gwErr) {
+					// Create ExecError with available service information
+					return &ExecError{
+						Err:      telemetry.TrackOrigin(gwErr, span.SpanContext()),
+						Cmd:      meta.Args,
+						ExitCode: int(gwErr.ExitCode),
+						Stdout:   stdoutBuf.String(),
+						Stderr:   stderrBuf.String(),
+					}
+				}
+				return exitErr
+			}
+			return fmt.Errorf("service exited before healthcheck")
 		}
-		return fmt.Errorf("service exited before healthcheck")
 	}
 }
 
@@ -1219,6 +1361,33 @@ type ServiceBinding struct {
 	Service  dagql.ObjectResult[*Service]
 	Hostname string
 	Aliases  AliasSet
+}
+
+func (bndp ServiceBindings) AttachDependencyResults(
+	owner string,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.DependencyResult, error) {
+	owned := make([]dagql.DependencyResult, 0, len(bndp))
+	for i := range bndp {
+		binding := &bndp[i]
+		if binding.Service.Self() == nil {
+			continue
+		}
+		attached, err := attach(binding.Service)
+		if err != nil {
+			return nil, fmt.Errorf("attach %s service %q: %w", owner, binding.Hostname, err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Service])
+		if !ok {
+			return nil, fmt.Errorf("attach %s service %q: unexpected result %T", owner, binding.Hostname, attached)
+		}
+		binding.Service = typed
+		owned = append(owned, dagql.DependencyResult{
+			Result: typed,
+			Owned:  false,
+		})
+	}
+	return owned, nil
 }
 
 type AliasSet []string

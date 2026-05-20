@@ -1664,8 +1664,19 @@ func LoadIDResults[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]Ob
 
 type callCtx struct{}
 
+type trivialFieldCtx struct{}
+
 func ContextWithCall(ctx context.Context, call *ResultCall) context.Context {
 	return context.WithValue(ctx, callCtx{}, call)
+}
+
+func ContextWithTrivialField(ctx context.Context) context.Context {
+	return context.WithValue(ctx, trivialFieldCtx{}, true)
+}
+
+func CurrentFieldIsTrivial(ctx context.Context) bool {
+	trivial, _ := ctx.Value(trivialFieldCtx{}).(bool)
+	return trivial
 }
 
 func CurrentCall(ctx context.Context) *ResultCall {

@@ -17,7 +17,6 @@ import (
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/executor/oci"
-	"github.com/dagger/dagger/internal/buildkit/util/leaseutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/moby/locker"
 	"github.com/stretchr/testify/require"
@@ -47,6 +46,7 @@ type mockServer struct {
 	functionCall   *FunctionCall
 	env            dagql.ObjectResult[*Env]
 	clientMetadata *engine.ClientMetadata
+	attachables    map[string]*grpc.ClientConn
 }
 
 func (ms *mockServer) ServeHTTPToNestedClient(http.ResponseWriter, *http.Request, *engine.ClientMetadata, string, bool, dagql.AnyObjectResult, dagql.Typed, dagql.AnyObjectResult) {
@@ -125,8 +125,12 @@ func (ms *mockServer) CurrentWorkspace(context.Context) (*Workspace, error) {
 	return nil, nil
 }
 
-func (ms *mockServer) SpecificClientAttachableConn(context.Context, string) (*grpc.ClientConn, error) {
-	return nil, nil
+func (ms *mockServer) SpecificClientAttachableConn(_ context.Context, clientID string, opts SpecificClientAttachableConnOpts) (*grpc.ClientConn, bool, error) {
+	conn := ms.attachables[clientID]
+	if conn == nil && !opts.IfAvailable {
+		return nil, false, nil
+	}
+	return conn, conn != nil, nil
 }
 
 func (ms *mockServer) CurrentWorkspaceLock(context.Context) (*workspacepkg.Lock, bool, error) {
@@ -158,11 +162,11 @@ func (ms *mockServer) RegistryResolver(context.Context) (*serverresolver.Resolve
 
 func (ms *mockServer) Services(context.Context) (*Services, error) { return nil, nil }
 
-func (ms *mockServer) Platform() Platform               { return Platform{} }
-func (ms *mockServer) OCIStore() content.Store          { return nil }
-func (ms *mockServer) BuiltinOCIStore() content.Store   { return nil }
-func (ms *mockServer) DNS() *oci.DNSConfig              { return nil }
-func (ms *mockServer) LeaseManager() *leaseutil.Manager { return nil }
+func (ms *mockServer) Platform() Platform                  { return Platform{} }
+func (ms *mockServer) OCIStore() content.Store             { return nil }
+func (ms *mockServer) BuiltinOCIStore() content.Store      { return nil }
+func (ms *mockServer) DNS() *oci.DNSConfig                 { return nil }
+func (ms *mockServer) LeaseManager() *bkcache.LeaseManager { return nil }
 func (ms *mockServer) EngineLocalCacheEntries(context.Context) (*EngineCacheEntrySet, error) {
 	return nil, nil
 }

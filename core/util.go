@@ -16,7 +16,6 @@ import (
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	overlay "github.com/dagger/dagger/engine/snapshots/fsdiff"
-	snapshot "github.com/dagger/dagger/engine/snapshots/snapshotter"
 	"github.com/dagger/dagger/internal/buildkit/frontend/dockerfile/shell"
 	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
@@ -265,7 +264,7 @@ func MountRefCloser(ctx context.Context, ref bkcache.Ref, optFns ...mountRefOptF
 	}
 	m := ms[0]
 
-	lm := snapshot.LocalMounterWithMounts(ms)
+	lm := bkcache.LocalMounterWithMounts(ms)
 	dir, err := lm.Mount()
 	if err != nil {
 		return "", nil, nil, err
