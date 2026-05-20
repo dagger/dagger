@@ -47,6 +47,16 @@ type proxyTestFixtures struct {
 	noproxyHTTPServerURL url.URL
 }
 
+func proxyTestClient(ctx context.Context, t *testctx.T) *dagger.Client {
+	t.Helper()
+
+	// The outer proxy-test client only orchestrates services and launches a
+	// nested test run from a repo source snapshot. It is not exercising the
+	// checkout as a workspace, so keep it bound to an empty temp workdir instead
+	// of the repo root.
+	return connect(ctx, t, dagger.WithWorkdir(t.TempDir()))
+}
+
 func customProxyTests(
 	ctx context.Context,
 	t *testctx.T,
@@ -292,7 +302,7 @@ redirect ^(https?://)(.*).example(/.*)$		$1$2$3
 
 func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 	t.Run("basic", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
+		c := proxyTestClient(ctx, t)
 
 		customProxyTests(ctx, t, c, false,
 			proxyTest{name: "http", run: func(t *testctx.T, c *dagger.Client, f proxyTestFixtures) {
@@ -330,7 +340,7 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("auth", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
+		c := proxyTestClient(ctx, t)
 
 		customProxyTests(ctx, t, c, true,
 			proxyTest{name: "http", run: func(t *testctx.T, c *dagger.Client, f proxyTestFixtures) {
@@ -389,7 +399,7 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 				return
 			}
 
-			c := connect(ctx, t)
+			c := proxyTestClient(ctx, t)
 
 			customProxyTests(ctx, t, c, false,
 				proxyTest{
@@ -430,7 +440,7 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 				return
 			}
 
-			c := connect(ctx, t)
+			c := proxyTestClient(ctx, t)
 
 			customProxyTests(ctx, t, c, false,
 				proxyTest{
@@ -474,7 +484,7 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 }
 
 func (ContainerSuite) TestSystemGoProxy(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	c := proxyTestClient(ctx, t)
 
 	// Just a subset of modules we expect to be downloaded since trying to go one to one would
 	// be too fragile whenever the SDK changes.
