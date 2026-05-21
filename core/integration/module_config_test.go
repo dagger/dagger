@@ -587,7 +587,7 @@ func (ModuleConfigSuite) TestContextDefaultsToSourceRoot(ctx context.Context, t 
 		WithNewFile("random-file", "")
 
 	out, err := ctr.
-		With(daggerCall("fn")).
+		With(daggerCallAt(".", "fn")).
 		Stdout(ctx)
 
 	require.NoError(t, err)
