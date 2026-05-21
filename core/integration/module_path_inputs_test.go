@@ -577,7 +577,7 @@ export class Test {
 					WithWorkdir("/work")
 
 				t.Run("absolute and relative root context dir", func(ctx context.Context, t *testctx.T) {
-					out, err := modGen.With(daggerCall("dirs")).Stdout(ctx)
+					out, err := modGen.With(daggerCallAt(".", "dirs")).Stdout(ctx)
 					require.NoError(t, err)
 					expected := ".git/\nLICENSE\nbackend/\ndagger/\ndagger.json\nfrontend/\n.git/\nLICENSE\nbackend/\ndagger/\ndagger.json\nfrontend/\n"
 					switch tc.sdk {
@@ -590,19 +590,19 @@ export class Test {
 				})
 
 				t.Run("absolute context dir subpath", func(ctx context.Context, t *testctx.T) {
-					out, err := modGen.With(daggerCall("root-dir-path")).Stdout(ctx)
+					out, err := modGen.With(daggerCallAt(".", "root-dir-path")).Stdout(ctx)
 					require.NoError(t, err)
 					require.Equal(t, "foo.txt\nbar.txt\nsub.txt\n", out)
 				})
 
 				t.Run("relative context dir subpath", func(ctx context.Context, t *testctx.T) {
-					out, err := modGen.With(daggerCall("relative-dir-path")).Stdout(ctx)
+					out, err := modGen.With(daggerCallAt(".", "relative-dir-path")).Stdout(ctx)
 					require.NoError(t, err)
 					require.Equal(t, "sub.txt\nfoo.txt\n", out)
 				})
 
 				t.Run("files", func(ctx context.Context, t *testctx.T) {
-					out, err := modGen.With(daggerCall("files")).Stdout(ctx)
+					out, err := modGen.With(daggerCallAt(".", "files")).Stdout(ctx)
 					require.NoError(t, err)
 					require.Equal(t, "LICENSE\ndagger.json\n", out)
 				})
@@ -1147,7 +1147,7 @@ export class Test {
 
 	@func()
 	async testRefRemote(
-		@argument({ defaultPath: "https://github.com/dagger/dagger.git#v0.18.3") }) git: GitRef,
+		@argument({ defaultPath: "https://github.com/dagger/dagger.git#v0.18.3" }) git: GitRef,
 	): Promise<string> {
 		return await this.commitAndRef(git)
 	}
