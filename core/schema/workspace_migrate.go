@@ -692,6 +692,7 @@ func (s *workspaceSchema) workspaceMigrationBaseDirectory(
 	return baseDir, nil
 }
 
+//nolint:unparam
 func withWorkspaceMigrationFile(
 	ctx context.Context,
 	dir dagql.ObjectResult[*core.Directory],
