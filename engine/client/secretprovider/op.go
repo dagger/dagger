@@ -10,6 +10,21 @@ import (
 	"github.com/dagger/dagger/engine"
 )
 
+type opResolver struct{}
+
+func (opResolver) Resolve(ctx context.Context, key string) ([]byte, error) {
+	return opProvider(ctx, key)
+}
+
+func (opResolver) ResolveMany(ctx context.Context, keys []string) (map[string][]byte, error) {
+	if os.Getenv("OP_SERVICE_ACCOUNT_TOKEN") != "" {
+		return opSDKProviderMany(ctx, keys)
+	}
+
+	resolver := SecretResolverFunc(opProvider)
+	return resolver.ResolveMany(ctx, keys)
+}
+
 func opProvider(ctx context.Context, key string) ([]byte, error) {
 	key = "op://" + key
 
@@ -42,6 +57,46 @@ func opSDKProvider(ctx context.Context, key string) ([]byte, error) {
 		return nil, err
 	}
 	return []byte(secret), nil
+}
+
+func opSDKProviderMany(ctx context.Context, keys []string) (map[string][]byte, error) {
+	token := os.Getenv("OP_SERVICE_ACCOUNT_TOKEN")
+
+	client, err := onepassword.NewClient(
+		ctx,
+		onepassword.WithServiceAccountToken(token),
+		onepassword.WithIntegrationInfo("dagger", engine.BaseVersion(engine.Version)),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	refs := make([]string, 0, len(keys))
+	for _, key := range keys {
+		refs = append(refs, "op://"+key)
+	}
+
+	resolved, err := client.Secrets().ResolveAll(ctx, refs)
+	if err != nil {
+		return nil, err
+	}
+
+	values := make(map[string][]byte, len(keys))
+	for i, ref := range refs {
+		resp, ok := resolved.IndividualResponses[ref]
+		if !ok {
+			return nil, fmt.Errorf("unable to lookup %q: missing response", ref)
+		}
+		if resp.Error != nil {
+			return nil, fmt.Errorf("unable to lookup %q: %+v", ref, resp.Error)
+		}
+		if resp.Content == nil {
+			return nil, fmt.Errorf("unable to lookup %q: empty response", ref)
+		}
+		values[keys[i]] = []byte(resp.Content.Secret)
+	}
+
+	return values, nil
 }
 
 func opCLIProvider(ctx context.Context, key string) ([]byte, error) {

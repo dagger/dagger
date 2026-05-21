@@ -124,16 +124,114 @@ func (m *GetSecretResponse) GetData() []byte {
 	return nil
 }
 
+type GetSecretsRequest struct {
+	IDs         []string          `protobuf:"bytes,1,rep,name=IDs,proto3" json:"IDs,omitempty"`
+	Annotations map[string]string `protobuf:"bytes,2,rep,name=annotations,proto3" json:"annotations,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+}
+
+func (m *GetSecretsRequest) Reset()      { *m = GetSecretsRequest{} }
+func (*GetSecretsRequest) ProtoMessage() {}
+func (*GetSecretsRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_d4bc6c625e214507, []int{2}
+}
+func (m *GetSecretsRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *GetSecretsRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_GetSecretsRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *GetSecretsRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_GetSecretsRequest.Merge(m, src)
+}
+func (m *GetSecretsRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *GetSecretsRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_GetSecretsRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_GetSecretsRequest proto.InternalMessageInfo
+
+func (m *GetSecretsRequest) GetIDs() []string {
+	if m != nil {
+		return m.IDs
+	}
+	return nil
+}
+
+func (m *GetSecretsRequest) GetAnnotations() map[string]string {
+	if m != nil {
+		return m.Annotations
+	}
+	return nil
+}
+
+type GetSecretsResponse struct {
+	Secrets map[string]*GetSecretResponse `protobuf:"bytes,1,rep,name=secrets,proto3" json:"secrets,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+}
+
+func (m *GetSecretsResponse) Reset()      { *m = GetSecretsResponse{} }
+func (*GetSecretsResponse) ProtoMessage() {}
+func (*GetSecretsResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_d4bc6c625e214507, []int{3}
+}
+func (m *GetSecretsResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *GetSecretsResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_GetSecretsResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *GetSecretsResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_GetSecretsResponse.Merge(m, src)
+}
+func (m *GetSecretsResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *GetSecretsResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_GetSecretsResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_GetSecretsResponse proto.InternalMessageInfo
+
+func (m *GetSecretsResponse) GetSecrets() map[string]*GetSecretResponse {
+	if m != nil {
+		return m.Secrets
+	}
+	return nil
+}
+
 func init() {
 	proto.RegisterType((*GetSecretRequest)(nil), "moby.buildkit.secrets.v1.GetSecretRequest")
 	proto.RegisterMapType((map[string]string)(nil), "moby.buildkit.secrets.v1.GetSecretRequest.AnnotationsEntry")
 	proto.RegisterType((*GetSecretResponse)(nil), "moby.buildkit.secrets.v1.GetSecretResponse")
+	proto.RegisterType((*GetSecretsRequest)(nil), "moby.buildkit.secrets.v1.GetSecretsRequest")
+	proto.RegisterMapType((map[string]string)(nil), "moby.buildkit.secrets.v1.GetSecretsRequest.AnnotationsEntry")
+	proto.RegisterType((*GetSecretsResponse)(nil), "moby.buildkit.secrets.v1.GetSecretsResponse")
+	proto.RegisterMapType((map[string]*GetSecretResponse)(nil), "moby.buildkit.secrets.v1.GetSecretsResponse.SecretsEntry")
 }
 
 func init() { proto.RegisterFile("secrets.proto", fileDescriptor_d4bc6c625e214507) }
 
 var fileDescriptor_d4bc6c625e214507 = []byte{
-	// 288 bytes of a gzipped FileDescriptorProto
+	// 389 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0x2d, 0x4e, 0x4d, 0x2e,
 	0x4a, 0x2d, 0x29, 0xd6, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0x92, 0xc8, 0xcd, 0x4f, 0xaa, 0xd4,
 	0x4b, 0x2a, 0xcd, 0xcc, 0x49, 0xc9, 0xce, 0x2c, 0xd1, 0x83, 0x49, 0x96, 0x19, 0x2a, 0x1d, 0x64,
@@ -145,13 +243,20 @@ var fileDescriptor_d4bc6c625e214507 = []byte{
 	0x09, 0x70, 0x31, 0x67, 0xa7, 0x56, 0x42, 0xdd, 0x00, 0x62, 0x0a, 0x89, 0x70, 0xb1, 0x96, 0x25,
 	0xe6, 0x94, 0xa6, 0x4a, 0x30, 0x81, 0xc5, 0x20, 0x1c, 0x2b, 0x26, 0x0b, 0x46, 0x25, 0x75, 0x2e,
 	0x41, 0x24, 0x1b, 0x8b, 0x0b, 0xf2, 0xf3, 0x8a, 0x53, 0x85, 0x84, 0xb8, 0x58, 0x52, 0x12, 0x4b,
-	0x12, 0xc1, 0x26, 0xf0, 0x04, 0x81, 0xd9, 0x46, 0xf9, 0x5c, 0xec, 0x10, 0x55, 0xc5, 0x42, 0x29,
-	0x5c, 0x9c, 0x70, 0x3d, 0x42, 0x5a, 0xc4, 0x7b, 0x45, 0x4a, 0x9b, 0x28, 0xb5, 0x10, 0x47, 0x38,
-	0xd9, 0x5e, 0x78, 0x28, 0xc7, 0x70, 0xe3, 0xa1, 0x1c, 0xc3, 0x87, 0x87, 0x72, 0x8c, 0x0d, 0x8f,
-	0xe4, 0x18, 0x57, 0x3c, 0x92, 0x63, 0x3c, 0xf1, 0x48, 0x8e, 0xf1, 0xc2, 0x23, 0x39, 0xc6, 0x07,
-	0x8f, 0xe4, 0x18, 0x5f, 0x3c, 0x92, 0x63, 0xf8, 0xf0, 0x48, 0x8e, 0x71, 0xc2, 0x63, 0x39, 0x86,
-	0x0b, 0x8f, 0xe5, 0x18, 0x6e, 0x3c, 0x96, 0x63, 0x88, 0x62, 0x87, 0x9a, 0x99, 0xc4, 0x06, 0x8e,
-	0x3d, 0x63, 0x40, 0x00, 0x00, 0x00, 0xff, 0xff, 0x2c, 0x38, 0xec, 0x1f, 0xce, 0x01, 0x00, 0x00,
+	0x12, 0xc1, 0x26, 0xf0, 0x04, 0x81, 0xd9, 0x4a, 0x47, 0x19, 0x91, 0x54, 0x16, 0xc3, 0x7c, 0x2b,
+	0xc0, 0xc5, 0xec, 0xe9, 0x52, 0x2c, 0xc1, 0xa8, 0xc0, 0x0c, 0xb2, 0xca, 0xd3, 0xa5, 0x58, 0x28,
+	0x0e, 0x9b, 0x7f, 0x6d, 0x88, 0xf0, 0x6f, 0x31, 0x7d, 0x3c, 0x7c, 0x89, 0x91, 0x4b, 0x08, 0xd9,
+	0x4e, 0xa8, 0x97, 0x83, 0xb9, 0xd8, 0xa1, 0x8e, 0x02, 0x7b, 0x86, 0xdb, 0xc8, 0x92, 0x38, 0x27,
+	0x43, 0xb4, 0xeb, 0x41, 0xf9, 0x10, 0xf7, 0xc2, 0x4c, 0x92, 0x4a, 0xe7, 0xe2, 0x41, 0x96, 0xc0,
+	0xe2, 0x4e, 0x47, 0x64, 0x77, 0x72, 0x1b, 0x69, 0x13, 0x95, 0x2e, 0x20, 0x76, 0x22, 0x79, 0xca,
+	0xe8, 0x06, 0x23, 0x17, 0x3b, 0xd4, 0x26, 0xa1, 0x14, 0x2e, 0x4e, 0xb8, 0x5a, 0x21, 0x2d, 0xe2,
+	0x13, 0x9a, 0x14, 0x29, 0x96, 0x0b, 0xa5, 0x73, 0x71, 0x21, 0x82, 0x41, 0x48, 0x9b, 0x84, 0xf8,
+	0x95, 0xd2, 0x21, 0x25, 0x64, 0x9d, 0x6c, 0x2f, 0x3c, 0x94, 0x63, 0xb8, 0xf1, 0x50, 0x8e, 0xe1,
+	0xc3, 0x43, 0x39, 0xc6, 0x86, 0x47, 0x72, 0x8c, 0x2b, 0x1e, 0xc9, 0x31, 0x9e, 0x78, 0x24, 0xc7,
+	0x78, 0xe1, 0x91, 0x1c, 0xe3, 0x83, 0x47, 0x72, 0x8c, 0x2f, 0x1e, 0xc9, 0x31, 0x7c, 0x78, 0x24,
+	0xc7, 0x38, 0xe1, 0xb1, 0x1c, 0xc3, 0x85, 0xc7, 0x72, 0x0c, 0x37, 0x1e, 0xcb, 0x31, 0x44, 0xc1,
+	0xa2, 0x20, 0x89, 0x0d, 0x9c, 0x89, 0x8d, 0x01, 0x01, 0x00, 0x00, 0xff, 0xff, 0xba, 0x0c, 0xce,
+	0x7f, 0xd5, 0x03, 0x00, 0x00,
 }
 
 func (this *GetSecretRequest) Equal(that interface{}) bool {
@@ -210,6 +315,72 @@ func (this *GetSecretResponse) Equal(that interface{}) bool {
 	}
 	return true
 }
+func (this *GetSecretsRequest) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*GetSecretsRequest)
+	if !ok {
+		that2, ok := that.(GetSecretsRequest)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.IDs) != len(that1.IDs) {
+		return false
+	}
+	for i := range this.IDs {
+		if this.IDs[i] != that1.IDs[i] {
+			return false
+		}
+	}
+	if len(this.Annotations) != len(that1.Annotations) {
+		return false
+	}
+	for i := range this.Annotations {
+		if this.Annotations[i] != that1.Annotations[i] {
+			return false
+		}
+	}
+	return true
+}
+func (this *GetSecretsResponse) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*GetSecretsResponse)
+	if !ok {
+		that2, ok := that.(GetSecretsResponse)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Secrets) != len(that1.Secrets) {
+		return false
+	}
+	for i := range this.Secrets {
+		if !this.Secrets[i].Equal(that1.Secrets[i]) {
+			return false
+		}
+	}
+	return true
+}
 func (this *GetSecretRequest) GoString() string {
 	if this == nil {
 		return "nil"
@@ -243,6 +414,51 @@ func (this *GetSecretResponse) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
+func (this *GetSecretsRequest) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&secrets.GetSecretsRequest{")
+	s = append(s, "IDs: "+fmt.Sprintf("%#v", this.IDs)+",\n")
+	keysForAnnotations := make([]string, 0, len(this.Annotations))
+	for k, _ := range this.Annotations {
+		keysForAnnotations = append(keysForAnnotations, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Strings(keysForAnnotations)
+	mapStringForAnnotations := "map[string]string{"
+	for _, k := range keysForAnnotations {
+		mapStringForAnnotations += fmt.Sprintf("%#v: %#v,", k, this.Annotations[k])
+	}
+	mapStringForAnnotations += "}"
+	if this.Annotations != nil {
+		s = append(s, "Annotations: "+mapStringForAnnotations+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *GetSecretsResponse) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&secrets.GetSecretsResponse{")
+	keysForSecrets := make([]string, 0, len(this.Secrets))
+	for k, _ := range this.Secrets {
+		keysForSecrets = append(keysForSecrets, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Strings(keysForSecrets)
+	mapStringForSecrets := "map[string]*GetSecretResponse{"
+	for _, k := range keysForSecrets {
+		mapStringForSecrets += fmt.Sprintf("%#v: %#v,", k, this.Secrets[k])
+	}
+	mapStringForSecrets += "}"
+	if this.Secrets != nil {
+		s = append(s, "Secrets: "+mapStringForSecrets+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
 func valueToGoStringSecrets(v interface{}, typ string) string {
 	rv := reflect.ValueOf(v)
 	if rv.IsNil() {
@@ -265,6 +481,7 @@ const _ = grpc.SupportPackageIsVersion4
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type SecretsClient interface {
 	GetSecret(ctx context.Context, in *GetSecretRequest, opts ...grpc.CallOption) (*GetSecretResponse, error)
+	GetSecrets(ctx context.Context, in *GetSecretsRequest, opts ...grpc.CallOption) (*GetSecretsResponse, error)
 }
 
 type secretsClient struct {
@@ -284,9 +501,19 @@ func (c *secretsClient) GetSecret(ctx context.Context, in *GetSecretRequest, opt
 	return out, nil
 }
 
+func (c *secretsClient) GetSecrets(ctx context.Context, in *GetSecretsRequest, opts ...grpc.CallOption) (*GetSecretsResponse, error) {
+	out := new(GetSecretsResponse)
+	err := c.cc.Invoke(ctx, "/moby.buildkit.secrets.v1.Secrets/GetSecrets", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SecretsServer is the server API for Secrets service.
 type SecretsServer interface {
 	GetSecret(context.Context, *GetSecretRequest) (*GetSecretResponse, error)
+	GetSecrets(context.Context, *GetSecretsRequest) (*GetSecretsResponse, error)
 }
 
 // UnimplementedSecretsServer can be embedded to have forward compatible implementations.
@@ -295,6 +522,9 @@ type UnimplementedSecretsServer struct {
 
 func (*UnimplementedSecretsServer) GetSecret(ctx context.Context, req *GetSecretRequest) (*GetSecretResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetSecret not implemented")
+}
+func (*UnimplementedSecretsServer) GetSecrets(ctx context.Context, req *GetSecretsRequest) (*GetSecretsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetSecrets not implemented")
 }
 
 func RegisterSecretsServer(s *grpc.Server, srv SecretsServer) {
@@ -319,6 +549,24 @@ func _Secrets_GetSecret_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Secrets_GetSecrets_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSecretsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SecretsServer).GetSecrets(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/moby.buildkit.secrets.v1.Secrets/GetSecrets",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SecretsServer).GetSecrets(ctx, req.(*GetSecretsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _Secrets_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "moby.buildkit.secrets.v1.Secrets",
 	HandlerType: (*SecretsServer)(nil),
@@ -326,6 +574,10 @@ var _Secrets_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetSecret",
 			Handler:    _Secrets_GetSecret_Handler,
+		},
+		{
+			MethodName: "GetSecrets",
+			Handler:    _Secrets_GetSecrets_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -411,6 +663,106 @@ func (m *GetSecretResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *GetSecretsRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *GetSecretsRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *GetSecretsRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Annotations) > 0 {
+		for k := range m.Annotations {
+			v := m.Annotations[k]
+			baseI := i
+			i -= len(v)
+			copy(dAtA[i:], v)
+			i = encodeVarintSecrets(dAtA, i, uint64(len(v)))
+			i--
+			dAtA[i] = 0x12
+			i -= len(k)
+			copy(dAtA[i:], k)
+			i = encodeVarintSecrets(dAtA, i, uint64(len(k)))
+			i--
+			dAtA[i] = 0xa
+			i = encodeVarintSecrets(dAtA, i, uint64(baseI-i))
+			i--
+			dAtA[i] = 0x12
+		}
+	}
+	if len(m.IDs) > 0 {
+		for iNdEx := len(m.IDs) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.IDs[iNdEx])
+			copy(dAtA[i:], m.IDs[iNdEx])
+			i = encodeVarintSecrets(dAtA, i, uint64(len(m.IDs[iNdEx])))
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *GetSecretsResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *GetSecretsResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *GetSecretsResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Secrets) > 0 {
+		for k := range m.Secrets {
+			v := m.Secrets[k]
+			baseI := i
+			if v != nil {
+				{
+					size, err := v.MarshalToSizedBuffer(dAtA[:i])
+					if err != nil {
+						return 0, err
+					}
+					i -= size
+					i = encodeVarintSecrets(dAtA, i, uint64(size))
+				}
+				i--
+				dAtA[i] = 0x12
+			}
+			i -= len(k)
+			copy(dAtA[i:], k)
+			i = encodeVarintSecrets(dAtA, i, uint64(len(k)))
+			i--
+			dAtA[i] = 0xa
+			i = encodeVarintSecrets(dAtA, i, uint64(baseI-i))
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintSecrets(dAtA []byte, offset int, v uint64) int {
 	offset -= sovSecrets(v)
 	base := offset
@@ -456,6 +808,51 @@ func (m *GetSecretResponse) Size() (n int) {
 	return n
 }
 
+func (m *GetSecretsRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.IDs) > 0 {
+		for _, s := range m.IDs {
+			l = len(s)
+			n += 1 + l + sovSecrets(uint64(l))
+		}
+	}
+	if len(m.Annotations) > 0 {
+		for k, v := range m.Annotations {
+			_ = k
+			_ = v
+			mapEntrySize := 1 + len(k) + sovSecrets(uint64(len(k))) + 1 + len(v) + sovSecrets(uint64(len(v)))
+			n += mapEntrySize + 1 + sovSecrets(uint64(mapEntrySize))
+		}
+	}
+	return n
+}
+
+func (m *GetSecretsResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Secrets) > 0 {
+		for k, v := range m.Secrets {
+			_ = k
+			_ = v
+			l = 0
+			if v != nil {
+				l = v.Size()
+				l += 1 + sovSecrets(uint64(l))
+			}
+			mapEntrySize := 1 + len(k) + sovSecrets(uint64(len(k))) + l
+			n += mapEntrySize + 1 + sovSecrets(uint64(mapEntrySize))
+		}
+	}
+	return n
+}
+
 func sovSecrets(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
@@ -489,6 +886,47 @@ func (this *GetSecretResponse) String() string {
 	}
 	s := strings.Join([]string{`&GetSecretResponse{`,
 		`Data:` + fmt.Sprintf("%v", this.Data) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *GetSecretsRequest) String() string {
+	if this == nil {
+		return "nil"
+	}
+	keysForAnnotations := make([]string, 0, len(this.Annotations))
+	for k, _ := range this.Annotations {
+		keysForAnnotations = append(keysForAnnotations, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Strings(keysForAnnotations)
+	mapStringForAnnotations := "map[string]string{"
+	for _, k := range keysForAnnotations {
+		mapStringForAnnotations += fmt.Sprintf("%v: %v,", k, this.Annotations[k])
+	}
+	mapStringForAnnotations += "}"
+	s := strings.Join([]string{`&GetSecretsRequest{`,
+		`IDs:` + fmt.Sprintf("%v", this.IDs) + `,`,
+		`Annotations:` + mapStringForAnnotations + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *GetSecretsResponse) String() string {
+	if this == nil {
+		return "nil"
+	}
+	keysForSecrets := make([]string, 0, len(this.Secrets))
+	for k, _ := range this.Secrets {
+		keysForSecrets = append(keysForSecrets, k)
+	}
+	github_com_gogo_protobuf_sortkeys.Strings(keysForSecrets)
+	mapStringForSecrets := "map[string]*GetSecretResponse{"
+	for _, k := range keysForSecrets {
+		mapStringForSecrets += fmt.Sprintf("%v: %v,", k, this.Secrets[k])
+	}
+	mapStringForSecrets += "}"
+	s := strings.Join([]string{`&GetSecretsResponse{`,
+		`Secrets:` + mapStringForSecrets + `,`,
 		`}`,
 	}, "")
 	return s
@@ -772,6 +1210,394 @@ func (m *GetSecretResponse) Unmarshal(dAtA []byte) error {
 			if m.Data == nil {
 				m.Data = []byte{}
 			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipSecrets(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthSecrets
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *GetSecretsRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowSecrets
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: GetSecretsRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: GetSecretsRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field IDs", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSecrets
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthSecrets
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthSecrets
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.IDs = append(m.IDs, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Annotations", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSecrets
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthSecrets
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthSecrets
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Annotations == nil {
+				m.Annotations = make(map[string]string)
+			}
+			var mapkey string
+			var mapvalue string
+			for iNdEx < postIndex {
+				entryPreIndex := iNdEx
+				var wire uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowSecrets
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					wire |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				fieldNum := int32(wire >> 3)
+				if fieldNum == 1 {
+					var stringLenmapkey uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowSecrets
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						stringLenmapkey |= uint64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					intStringLenmapkey := int(stringLenmapkey)
+					if intStringLenmapkey < 0 {
+						return ErrInvalidLengthSecrets
+					}
+					postStringIndexmapkey := iNdEx + intStringLenmapkey
+					if postStringIndexmapkey < 0 {
+						return ErrInvalidLengthSecrets
+					}
+					if postStringIndexmapkey > l {
+						return io.ErrUnexpectedEOF
+					}
+					mapkey = string(dAtA[iNdEx:postStringIndexmapkey])
+					iNdEx = postStringIndexmapkey
+				} else if fieldNum == 2 {
+					var stringLenmapvalue uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowSecrets
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						stringLenmapvalue |= uint64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					intStringLenmapvalue := int(stringLenmapvalue)
+					if intStringLenmapvalue < 0 {
+						return ErrInvalidLengthSecrets
+					}
+					postStringIndexmapvalue := iNdEx + intStringLenmapvalue
+					if postStringIndexmapvalue < 0 {
+						return ErrInvalidLengthSecrets
+					}
+					if postStringIndexmapvalue > l {
+						return io.ErrUnexpectedEOF
+					}
+					mapvalue = string(dAtA[iNdEx:postStringIndexmapvalue])
+					iNdEx = postStringIndexmapvalue
+				} else {
+					iNdEx = entryPreIndex
+					skippy, err := skipSecrets(dAtA[iNdEx:])
+					if err != nil {
+						return err
+					}
+					if (skippy < 0) || (iNdEx+skippy) < 0 {
+						return ErrInvalidLengthSecrets
+					}
+					if (iNdEx + skippy) > postIndex {
+						return io.ErrUnexpectedEOF
+					}
+					iNdEx += skippy
+				}
+			}
+			m.Annotations[mapkey] = mapvalue
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipSecrets(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthSecrets
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *GetSecretsResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowSecrets
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: GetSecretsResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: GetSecretsResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Secrets", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSecrets
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthSecrets
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthSecrets
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Secrets == nil {
+				m.Secrets = make(map[string]*GetSecretResponse)
+			}
+			var mapkey string
+			var mapvalue *GetSecretResponse
+			for iNdEx < postIndex {
+				entryPreIndex := iNdEx
+				var wire uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowSecrets
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					wire |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				fieldNum := int32(wire >> 3)
+				if fieldNum == 1 {
+					var stringLenmapkey uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowSecrets
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						stringLenmapkey |= uint64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					intStringLenmapkey := int(stringLenmapkey)
+					if intStringLenmapkey < 0 {
+						return ErrInvalidLengthSecrets
+					}
+					postStringIndexmapkey := iNdEx + intStringLenmapkey
+					if postStringIndexmapkey < 0 {
+						return ErrInvalidLengthSecrets
+					}
+					if postStringIndexmapkey > l {
+						return io.ErrUnexpectedEOF
+					}
+					mapkey = string(dAtA[iNdEx:postStringIndexmapkey])
+					iNdEx = postStringIndexmapkey
+				} else if fieldNum == 2 {
+					var mapmsglen int
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowSecrets
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						mapmsglen |= int(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					if mapmsglen < 0 {
+						return ErrInvalidLengthSecrets
+					}
+					postmsgIndex := iNdEx + mapmsglen
+					if postmsgIndex < 0 {
+						return ErrInvalidLengthSecrets
+					}
+					if postmsgIndex > l {
+						return io.ErrUnexpectedEOF
+					}
+					mapvalue = &GetSecretResponse{}
+					if err := mapvalue.Unmarshal(dAtA[iNdEx:postmsgIndex]); err != nil {
+						return err
+					}
+					iNdEx = postmsgIndex
+				} else {
+					iNdEx = entryPreIndex
+					skippy, err := skipSecrets(dAtA[iNdEx:])
+					if err != nil {
+						return err
+					}
+					if (skippy < 0) || (iNdEx+skippy) < 0 {
+						return ErrInvalidLengthSecrets
+					}
+					if (iNdEx + skippy) > postIndex {
+						return io.ErrUnexpectedEOF
+					}
+					iNdEx += skippy
+				}
+			}
+			m.Secrets[mapkey] = mapvalue
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex

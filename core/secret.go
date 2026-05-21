@@ -25,6 +25,13 @@ type Secret struct {
 	SourceClientID string
 }
 
+type SecretSeed struct {
+	URI        string
+	Plaintext  []byte
+	CacheKey   string
+	ResultCall *dagql.ResultCall
+}
+
 func (*Secret) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "Secret",
@@ -245,6 +252,103 @@ func (secret *Secret) plaintextFromSessionResourceCandidate(ctx context.Context)
 		return nil, false, err
 	}
 	return resp.Data, false, nil
+}
+
+func NewSessionSecrets(ctx context.Context, query *Query, seeds []SecretSeed) ([]dagql.ObjectResult[*Secret], error) {
+	srv, err := CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current dagql server: %w", err)
+	}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current client metadata: %w", err)
+	}
+	if clientMetadata.SessionID == "" {
+		return nil, fmt.Errorf("empty session ID")
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("current dagql cache: %w", err)
+	}
+
+	results := make([]dagql.ObjectResult[*Secret], len(seeds))
+	for i, seed := range seeds {
+		var handle dagql.SessionResourceHandle
+		if seed.CacheKey != "" {
+			handle = SecretHandleFromCacheKey(seed.CacheKey)
+		} else {
+			handle = SecretHandleFromPlaintext(query.SecretSalt(), seed.Plaintext)
+		}
+		if handle == "" {
+			return nil, fmt.Errorf("secret must have a session resource handle")
+		}
+
+		call := seed.ResultCall
+		if call == nil {
+			call = secretResultCall(seed.URI, seed.CacheKey)
+		}
+
+		handleVal := &Secret{Handle: handle}
+		handleRes, err := dagql.NewObjectResultForCall(handleVal, srv, call)
+		if err != nil {
+			return nil, fmt.Errorf("create handle secret result: %w", err)
+		}
+		handleRes, err = handleRes.WithContentDigest(ctx, digest.Digest(handle))
+		if err != nil {
+			return nil, err
+		}
+		handleRes, err = handleRes.WithSessionResourceHandle(ctx, handle)
+		if err != nil {
+			return nil, err
+		}
+
+		concreteVal := &Secret{
+			URIVal:         seed.URI,
+			SourceClientID: clientMetadata.ClientID,
+		}
+		if err := cache.BindSessionResource(ctx, clientMetadata.SessionID, clientMetadata.ClientID, handle, concreteVal); err != nil {
+			return nil, fmt.Errorf("bind concrete secret: %w", err)
+		}
+
+		attached, err := cache.AttachResult(ctx, clientMetadata.SessionID, srv, handleRes)
+		if err != nil {
+			return nil, fmt.Errorf("attach secret result: %w", err)
+		}
+		attachedSecret, ok := attached.(dagql.ObjectResult[*Secret])
+		if !ok {
+			return nil, fmt.Errorf("attach secret result: unexpected result %T", attached)
+		}
+
+		results[i] = attachedSecret
+	}
+	return results, nil
+}
+
+func secretResultCall(uri string, cacheKey string) *dagql.ResultCall {
+	args := []*dagql.ResultCallArg{
+		{
+			Name: "uri",
+			Value: &dagql.ResultCallLiteral{
+				Kind:        dagql.ResultCallLiteralKindString,
+				StringValue: uri,
+			},
+		},
+	}
+	if cacheKey != "" {
+		args = append(args, &dagql.ResultCallArg{
+			Name: "cacheKey",
+			Value: &dagql.ResultCallLiteral{
+				Kind:        dagql.ResultCallLiteralKindString,
+				StringValue: cacheKey,
+			},
+		})
+	}
+	return &dagql.ResultCall{
+		Kind:  dagql.ResultCallKindField,
+		Type:  dagql.NewResultCallType((&Secret{}).Type()),
+		Field: "secret",
+		Args:  args,
+	}
 }
 
 func SecretHandleFromCacheKey(cacheKey string) dagql.SessionResourceHandle {

@@ -741,6 +741,24 @@ SECRETS=env://FOO,env://BAR,env://BAZ
 			},
 		},
 		{
+			"inner envfile mixed secrets",
+			"./defaults/.env",
+			`
+PASSWORD=env://PASSWORD
+SECRETS=env://FOO,env://BAR,env://BAZ
+`,
+			"./defaults",
+			[]string{"dagger", "call", "list-secrets"},
+			dagger.ReturnTypeSuccess,
+			"1\n2\n3\n",
+			func(c *dagger.Container) *dagger.Container {
+				return c.WithEnvVariable("PASSWORD", "topsecret").
+					WithEnvVariable("FOO", "1").
+					WithEnvVariable("BAR", "2").
+					WithEnvVariable("BAZ", "3")
+			},
+		},
+		{
 			"inner string with commas",
 			"./defaults/.env",
 			`

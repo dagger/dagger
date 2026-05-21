@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	bksecrets "github.com/dagger/dagger/internal/buildkit/session/secrets"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
@@ -18,6 +20,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client/secretprovider"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -389,6 +392,17 @@ type UserDefault struct {
 	UserDefaultPrimitive
 }
 
+type indexedUserDefault struct {
+	index int
+	value *UserDefault
+}
+
+type indexedUserDefaultInput struct {
+	index   int
+	argName string
+	value   dagql.Input
+}
+
 func (ud *UserDefault) DisplayInput() string {
 	if ud.IsPlaintextSecret() {
 		return "*****"
@@ -412,6 +426,21 @@ func (ud *UserDefault) IsObject() bool {
 
 func (ud *UserDefault) IsList() bool {
 	return ud.Arg.TypeDef.Self().Kind == TypeDefKindList
+}
+
+func (ud *UserDefault) IsSecretObjectDefault() bool {
+	typeDef := ud.Arg.TypeDef.Self()
+	if typeDef == nil {
+		return false
+	}
+	if typeDef.Kind == TypeDefKindObject && typeDef.AsObject.Valid && typeDef.AsObject.Value.Self() != nil {
+		return typeDef.AsObject.Value.Self().Name == "Secret"
+	}
+	if typeDef.Kind != TypeDefKindList || !typeDef.AsList.Valid || typeDef.AsList.Value.Self() == nil {
+		return false
+	}
+	elem := typeDef.AsList.Value.Self().ElementTypeDef.Self()
+	return elem != nil && elem.Kind == TypeDefKindObject && elem.AsObject.Valid && elem.AsObject.Value.Self() != nil && elem.AsObject.Value.Self().Name == "Secret"
 }
 
 func (ud *UserDefault) CallInput(ctx context.Context) (*FunctionCallArgValue, error) {
@@ -544,6 +573,189 @@ func (ud *UserDefault) String() string {
 	}
 	s += fmt.Sprintf("(%s=%q)", ud.Arg.Name, ud.UserInput)
 	return s
+}
+
+func normalizeSecretUserInput(userInput string) (string, string, error) {
+	addr := userInput
+	if !strings.Contains(addr, ":") {
+		addr = "env://" + addr
+	}
+	secretSource, val, _ := strings.Cut(addr, ":")
+	if !strings.HasPrefix(val, "//") {
+		addr = secretSource + "://" + val
+	}
+
+	var cacheKey string
+	addrWithoutQuery, queryValsStr, ok := strings.Cut(addr, "?")
+	if ok && queryValsStr != "" {
+		queryVals, err := url.ParseQuery(queryValsStr)
+		if err != nil {
+			return "", "", err
+		}
+		if ckey := queryVals.Get("cacheKey"); ckey != "" {
+			cacheKey = ckey
+			queryVals.Del("cacheKey")
+			queryValsStr = queryVals.Encode()
+			if queryValsStr != "" {
+				addr = fmt.Sprintf("%s?%s", addrWithoutQuery, queryValsStr)
+			} else {
+				addr = addrWithoutQuery
+			}
+		}
+	}
+
+	return addr, cacheKey, nil
+}
+
+func (fn *ModuleFunction) bulkSecretUserDefaultInputs(ctx context.Context, defaults []indexedUserDefault) ([]indexedUserDefaultInput, error) {
+	if len(defaults) == 0 {
+		return nil, nil
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get current query: %w", err)
+	}
+	mainClient, err := query.NonModuleParentClientMetadata(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("access main client: %w", err)
+	}
+	mainCtx := engine.ContextWithClientMetadata(ctx, mainClient)
+	type secretDefaultRef struct {
+		index       int
+		argName     string
+		uri         string
+		cacheKey    string
+		listElement bool
+		elemInput   dagql.Input
+	}
+
+	defaultsByIndex := map[int]*UserDefault{}
+	refs := make([]secretDefaultRef, 0, len(defaults))
+	for _, indexed := range defaults {
+		ud := indexed.value
+		defaultsByIndex[indexed.index] = ud
+		if ud.IsList() {
+			elemInput := ud.Arg.TypeDef.Self().AsList.Value.Self().ElementTypeDef.Self().ToInput()
+			for _, elem := range strings.Split(ud.UserInput, ",") {
+				uri, cacheKey, err := normalizeSecretUserInput(strings.TrimSpace(elem))
+				if err != nil {
+					return nil, ud.errorf(err, "resolve secret user default")
+				}
+				if _, _, err := secretprovider.ResolverForID(uri); err != nil {
+					return nil, ud.errorf(err, "resolve secret user default")
+				}
+				refs = append(refs, secretDefaultRef{
+					index:       indexed.index,
+					argName:     ud.Arg.Name,
+					uri:         uri,
+					cacheKey:    cacheKey,
+					listElement: true,
+					elemInput:   elemInput,
+				})
+			}
+			continue
+		}
+
+		uri, cacheKey, err := normalizeSecretUserInput(ud.UserInput)
+		if err != nil {
+			return nil, ud.errorf(err, "resolve secret user default")
+		}
+		if _, _, err := secretprovider.ResolverForID(uri); err != nil {
+			return nil, ud.errorf(err, "resolve secret user default")
+		}
+		refs = append(refs, secretDefaultRef{
+			index:    indexed.index,
+			argName:  ud.Arg.Name,
+			uri:      uri,
+			cacheKey: cacheKey,
+		})
+	}
+
+	ids := make([]string, 0, len(refs))
+	seen := map[string]struct{}{}
+	for _, ref := range refs {
+		if ref.cacheKey != "" {
+			continue
+		}
+		if _, ok := seen[ref.uri]; ok {
+			continue
+		}
+		seen[ref.uri] = struct{}{}
+		ids = append(ids, ref.uri)
+	}
+
+	plaintexts := map[string][]byte{}
+	if len(ids) > 0 {
+		conn, _, err := query.SpecificClientAttachableConn(mainCtx, mainClient.ClientID, SpecificClientAttachableConnOpts{})
+		if err != nil {
+			return nil, err
+		}
+		resp, err := bksecrets.NewSecretsClient(conn).GetSecrets(mainCtx, &bksecrets.GetSecretsRequest{IDs: ids})
+		if err != nil {
+			return nil, err
+		}
+		for id, secret := range resp.Secrets {
+			plaintexts[id] = secret.Data
+		}
+	}
+
+	seeds := make([]SecretSeed, 0, len(refs))
+	for _, ref := range refs {
+		seed := SecretSeed{
+			URI:      ref.uri,
+			CacheKey: ref.cacheKey,
+		}
+		if ref.cacheKey == "" {
+			plaintext, ok := plaintexts[ref.uri]
+			if !ok {
+				return nil, fmt.Errorf("secret %q: missing bulk response", ref.uri)
+			}
+			seed.Plaintext = plaintext
+		}
+		seeds = append(seeds, seed)
+	}
+
+	secretResults, err := NewSessionSecrets(mainCtx, query, seeds)
+	if err != nil {
+		return nil, err
+	}
+
+	singleInputs := make([]indexedUserDefaultInput, 0, len(defaults))
+	listInputs := map[int]dagql.DynamicArrayInput{}
+	for i, ref := range refs {
+		secretResult := secretResults[i]
+		idInput, err := ResultIDInput(secretResult)
+		if err != nil {
+			return nil, err
+		}
+		if !ref.listElement {
+			singleInputs = append(singleInputs, indexedUserDefaultInput{
+				index:   ref.index,
+				argName: ref.argName,
+				value:   idInput,
+			})
+			continue
+		}
+
+		arr, ok := listInputs[ref.index]
+		if !ok {
+			arr = dagql.DynamicArrayInput{Elem: ref.elemInput}
+		}
+		arr.Values = append(arr.Values, idInput)
+		listInputs[ref.index] = arr
+	}
+
+	for index, arr := range listInputs {
+		ud := defaultsByIndex[index]
+		singleInputs = append(singleInputs, indexedUserDefaultInput{
+			index:   index,
+			argName: ud.Arg.Name,
+			value:   arr,
+		})
+	}
+
+	return singleInputs, nil
 }
 
 // Lookup a user default for this function
@@ -727,22 +939,41 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 			})
 		}
 
-		// Process user-defined user defaults for objects (and lists of objects)
-		type userDefaultArgInput struct {
-			argName string
-			val     dagql.Input
-		}
-		userDefaultVals := make([]*userDefaultArgInput, len(userDefaults))
+		// Process user-defined user defaults for objects (and lists of objects).
+		// Secret defaults are grouped so providers can resolve them in one session RPC.
+		userDefaultVals := make([]*indexedUserDefaultInput, len(userDefaults))
+		var secretUserDefaults []indexedUserDefault
 		for i, userDefault := range userDefaults {
+			if userDefault.IsSecretObjectDefault() {
+				secretUserDefaults = append(secretUserDefaults, indexedUserDefault{
+					index: i,
+					value: userDefault,
+				})
+				continue
+			}
 			eg.Go(func() error {
 				input, err := userDefault.DagqlID(ctx)
 				if err != nil {
 					return err
 				}
 				arg := userDefault.Arg
-				userDefaultVals[i] = &userDefaultArgInput{
+				userDefaultVals[i] = &indexedUserDefaultInput{
+					index:   i,
 					argName: arg.Name,
-					val:     input,
+					value:   input,
+				}
+				return nil
+			})
+		}
+		if len(secretUserDefaults) > 0 {
+			eg.Go(func() error {
+				inputs, err := fn.bulkSecretUserDefaultInputs(ctx, secretUserDefaults)
+				if err != nil {
+					return err
+				}
+				for _, input := range inputs {
+					input := input
+					userDefaultVals[input.index] = &input
 				}
 				return nil
 			})
@@ -772,8 +1003,8 @@ func (fn *ModuleFunction) DynamicInputsForCall(
 		}
 		for _, arg := range userDefaultVals {
 			if arg != nil {
-				args[arg.argName] = dagql.Opt(arg.val)
-				if err := req.SetArgInput(ctx, arg.argName, dagql.Opt(arg.val), false); err != nil {
+				args[arg.argName] = dagql.Opt(arg.value)
+				if err := req.SetArgInput(ctx, arg.argName, dagql.Opt(arg.value), false); err != nil {
 					return err
 				}
 			}

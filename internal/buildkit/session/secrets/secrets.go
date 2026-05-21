@@ -28,3 +28,21 @@ func GetSecret(ctx context.Context, c session.Caller, id string) ([]byte, error)
 	}
 	return resp.Data, nil
 }
+
+func GetSecrets(ctx context.Context, c session.Caller, ids []string) (map[string][]byte, error) {
+	client := NewSecretsClient(c.Conn())
+	resp, err := client.GetSecrets(ctx, &GetSecretsRequest{
+		IDs: ids,
+	})
+	if err != nil {
+		if code := grpcerrors.Code(err); code == codes.Unimplemented || code == codes.NotFound {
+			return nil, errors.Wrapf(ErrNotFound, "secrets %v", ids)
+		}
+		return nil, err
+	}
+	values := make(map[string][]byte, len(resp.Secrets))
+	for id, secret := range resp.Secrets {
+		values[id] = secret.Data
+	}
+	return values, nil
+}
