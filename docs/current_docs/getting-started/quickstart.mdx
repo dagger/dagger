@@ -38,6 +38,21 @@ dagger check
 
 All three modules run their checks concurrently. You should see each one pass.
 
+Your output should include checks from the modules you installed, similar to:
+
+```text
+eslint:lint      passed
+vitest:test      passed
+prettier:check   passed
+```
+
+If `dagger check` fails before any checks run, make sure your container runtime is installed and running, then try again. If a specific check fails, list the available checks and run just that one:
+
+```shell
+dagger check -l
+dagger check eslint:lint
+```
+
 ## Explore what's available
 
 ```shell
