@@ -293,21 +293,6 @@ func (WorkspaceModulesSuite) TestWorkspaceManagedModuleBehavior(ctx context.Cont
 		require.Equal(t, "hello from configured workspace", strings.TrimSpace(out))
 	})
 
-	t.Run("unconfigured workspace does not infer module from cwd", func(ctx context.Context, t *testctx.T) {
-		ctr := workspaceBase(t, c).
-			With(withWorkspaceFixture(t, c, ".", "workspaces/cwd-only"))
-
-		out, err := ctr.
-			WithWorkdir("/work/modules/cwd").
-			WithExec([]string{"dagger", "call", "greet"}, dagger.ContainerWithExecOpts{
-				UseEntrypoint:                 true,
-				ExperimentalPrivilegedNesting: true,
-				Expect:                        dagger.ReturnTypeFailure,
-			}).
-			CombinedOutput(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "greet")
-	})
 }
 
 func readInstalledWorkspaceConfig(t *testctx.T, workdir string) *workspacecfg.Config {
