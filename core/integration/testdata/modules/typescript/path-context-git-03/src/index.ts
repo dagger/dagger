@@ -32,7 +32,7 @@ export class Test {
 
 	@func()
 	async testRefRemote(
-		@argument({ defaultPath: "https://github.com/dagger/dagger.git#v0.18.3") }) git: GitRef,
+		@argument({ defaultPath: "https://github.com/dagger/dagger.git#v0.18.3" }) git: GitRef,
 	): Promise<string> {
 		return await this.commitAndRef(git)
 	}
