@@ -6411,6 +6411,23 @@ func (m *Test) PrintDefault(ctx context.Context) (string, error) {
 }
 `,
 		},
+		{
+			sdk: "dang",
+			source: `type Test {
+  pub containerEcho(stringArg: String! = "Hello Self Calls"): Container! {
+    Dagger.container.from("alpine:latest").withExec(["echo", stringArg])
+  }
+
+  pub print(stringArg: String!): String! {
+    test.containerEcho(stringArg: stringArg).stdout
+  }
+
+  pub printDefault: String! {
+    test.containerEcho.stdout
+  }
+}
+`,
+		},
 		//		{
 		//			sdk: "typescript",
 		//			source: `import { dag, Container, object, func } from "@dagger.io/dagger"

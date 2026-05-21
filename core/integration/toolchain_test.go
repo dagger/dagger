@@ -946,6 +946,17 @@ func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *test
 func (ToolchainSuite) TestToolchainLocalModuleHints(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
+	ref, err := c.Host().Directory("../..").AsGit().Head().Ref(ctx)
+	require.NoError(t, err)
+	ref = strings.TrimPrefix(ref, "refs/heads/")
+	if ref != "main" {
+		// When we make an engine change that requires updates to module code, this
+		// test may start to fail and be unfixable on that branch. So, only run
+		// once we're already merged in to main.
+		t.Skipf("this test only runs against main")
+		return
+	}
+
 	t.Run("DAGGER_MODULE hint and --mod dot bypass", func(ctx context.Context, t *testctx.T) {
 		modGen := toolchainTestEnv(t, c).
 			WithWorkdir("app").
