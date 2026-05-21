@@ -160,6 +160,7 @@ module.exports = {
             "reference/cli/lockfiles",
           ],
         },
+        "reference/configuration/workspaces",
         "reference/configuration/modules",
         "reference/configuration/engine",
         "reference/configuration/cloud",

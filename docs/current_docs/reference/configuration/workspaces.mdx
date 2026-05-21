@@ -1,0 +1,126 @@
+---
+title: "Workspace Configuration"
+description: "Reference for .dagger/config.toml workspace configuration."
+sidebar_label: "Workspaces"
+slug: /reference/configuration/workspaces
+---
+
+# Workspace Configuration
+
+A Dagger workspace stores project-level configuration in `.dagger/config.toml`. The file declares which modules are installed, how they are configured, which environment overlays exist, and which local ports should be exposed.
+
+Use `dagger workspace config` to inspect or edit this file from the CLI:
+
+```shell
+dagger workspace config
+dagger workspace config modules.eslint.source
+dagger workspace config modules.eslint.settings.nodeVersion 22
+```
+
+Local module source paths are stored relative to `.dagger/config.toml`.
+
+## Example
+
+```toml
+defaults_from_dotenv = true
+ignore = ["node_modules", ".git"]
+
+[modules.eslint]
+source = "github.com/dagger/eslint"
+check.skip = ["legacy:*"]
+
+[modules.eslint.settings]
+nodeVersion = "22"
+
+[modules.web]
+source = "./modules/web"
+entrypoint = true
+generate.skip = ["docs"]
+
+[env.ci.modules.eslint.settings]
+nodeVersion = "22"
+
+[ports.3000]
+backendService = "web:dev"
+backendPort = 3000
+```
+
+## Top-level fields
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `modules` | table | Installed workspace modules, keyed by module name. |
+| `ignore` | string array | Paths to ignore when loading workspace files. |
+| `defaults_from_dotenv` | boolean | Load constructor defaults from `.env` where supported. |
+| `env` | table | Named environment overlays. |
+| `ports` | table | Host port mappings for workspace services. |
+
+## Modules
+
+Each module is declared under `[modules.<name>]`.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `source` | string | Module source. This can be a Git source or a local path. |
+| `entrypoint` | boolean | Expose the module as a top-level workspace entrypoint. |
+| `legacy-default-path` | boolean | Preserve legacy default path behavior for migrated modules. |
+| `settings` | table | Constructor settings passed to the module. |
+| `check.skip` | string array | Check names or glob patterns to skip for `dagger check`. |
+| `generate.skip` | string array | Generator names or glob patterns to skip for `dagger generate`. |
+| `up.skip` | string array | Service names or glob patterns to skip for `dagger up`. |
+
+Example:
+
+```toml
+[modules.go]
+source = "github.com/dagger/go"
+entrypoint = true
+check.skip = ["flaky-check"]
+
+[modules.go.settings]
+goVersion = "1.22"
+```
+
+Skip patterns apply to the action's leaf names scoped under the module. They may be exact names or globs.
+
+## Environment overlays
+
+Environment overlays can override module settings for a named environment. In this release, overlays only support module `settings`.
+
+```toml
+[env.ci.modules.go.settings]
+goVersion = "1.22"
+race = true
+```
+
+Run with an overlay using `--env`:
+
+```shell
+dagger --env ci check
+```
+
+If an overlay references an unknown module, Dagger returns an error instead of silently ignoring it.
+
+## Port mappings
+
+Port mappings expose workspace services on fixed host ports.
+
+```toml
+[ports.8080]
+backendService = "api:web"
+backendPort = 80
+```
+
+The table name is the host port. `backendService` is the service path scoped under a workspace module, and `backendPort` is the service port to forward.
+
+## What to commit
+
+Commit `.dagger/config.toml` so the team shares the same workspace definition.
+
+Commit `.dagger/lock` when your workflow depends on pinned module, Git, or image resolutions. For protected CI, prefer:
+
+```shell
+dagger --lock=frozen check
+```
+
+See [Lockfiles](/reference/cli/lockfiles) for lock modes and policies.
