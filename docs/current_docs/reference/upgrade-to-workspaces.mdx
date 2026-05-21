@@ -45,7 +45,77 @@ No. Backwards compatibility will infer a workspace from your existing `dagger.js
 dagger migrate
 ```
 
-This automatically converts your `dagger.json` workspace fields into `.dagger/config.toml`. If anything needs manual attention, it creates `.dagger/migration-report.md` with instructions.
+This creates a changeset that converts your legacy `dagger.json` workspace fields into workspace files. Review the changeset, apply it, then commit the result.
+
+To apply the migration without an interactive prompt, use the global auto-apply flag:
+
+```shell
+dagger migrate --auto-apply
+# Short form:
+dagger migrate -y
+```
+
+If Dagger cannot load one of the old modules while preparing settings hints, `dagger migrate` stops before applying changes. Use `dagger migrate --force` only when you want to proceed and review the missing settings manually.
+
+## Migration checklist
+
+1. Make sure your working tree is clean.
+2. Run `dagger migrate`.
+3. Review the generated changeset.
+4. Apply it, or rerun with `dagger migrate -y`.
+5. Run the Dagger commands your project already depends on.
+6. Commit the workspace files with the rest of your project.
+
+After migration, update CI to run workspace commands such as:
+
+```shell
+dagger check
+dagger generate
+dagger up
+```
+
+For generated code, keep your existing verification step, for example:
+
+```shell
+dagger generate
+git diff --exit-code
+```
+
+## Expected changes
+
+Most projects will see a diff like this:
+
+```text
+.dagger/
+|-- config.toml
+|-- migration-report.md     # only when manual review is needed
+`-- modules/
+    `-- <name>/
+        `-- dagger.json     # only when the old root module is moved
+dagger.json                 # removed from the repository root
+```
+
+`dagger migrate` may also update workspace-managed state, including lockfile data, when the migrated workspace needs pinned module resolutions.
+
+Review `.dagger/migration-report.md` if it exists. Dagger creates it when an old customization cannot be represented exactly as workspace settings.
+
+## Compatibility limits
+
+The compatibility layer can infer a workspace from many old `dagger.json` files, but it is not a substitute for committing `.dagger/config.toml`.
+
+The migration handles common cases automatically:
+
+- toolchains become installed workspace modules
+- blueprints become workspace modules with `entrypoint = true`
+- constructor defaults and `.env`-style defaults become module `settings`
+- the root module can move under `.dagger/modules/<name>/`
+
+Some cases need manual review:
+
+- function-level customizations are not supported in workspace config
+- constructor customizations using `ignore`, `defaultPath`, or `defaultAddress` need review
+- absolute local module paths cannot be rebased safely
+- modules that fail to load may need `dagger migrate --force` followed by manual settings review
 
 ## Quick reference
 
@@ -54,6 +124,10 @@ This automatically converts your `dagger.json` workspace fields into `.dagger/co
 | `dagger -m <ref>` (with toolchains) | `dagger -W <ref>` |
 | `dagger toolchain install <module>` | `dagger install <module>` |
 | `dagger install <dep>` (code dependency) | `dagger module install <dep>` |
+| `dagger call -m <module> <fn>` | `dagger call <module> <fn>` |
+| `dagger config` for project configuration | `dagger workspace config` |
+| `dagger config` for module settings | `dagger settings <module> <key> <value>` |
+| CI calls to individual old module functions | `dagger check` or `dagger generate` |
 | `toolchains` array in `dagger.json` | `[modules.*]` in `.dagger/config.toml` |
 | `blueprint` in `dagger.json` | `entrypoint = true` in `.dagger/config.toml` |
 | `customizations` in `dagger.json` | `[modules.*.settings]` in `.dagger/config.toml` |
