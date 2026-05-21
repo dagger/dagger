@@ -41,6 +41,15 @@ class WorkspaceModule extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * List constructor-backed settings for this module.
+     */
+    public function settings(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('settings');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'settings');
+    }
+
+    /**
      * The module source path.
      */
     public function source(): string

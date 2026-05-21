@@ -200,15 +200,6 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Retrieve the binding value, as type PhpSdk
-     */
-    public function asPhpSdk(): PhpSdk
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asPhpSdk');
-        return new \Dagger\PhpSdk($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Retrieve the binding value, as type SearchResult
      */
     public function asSearchResult(): SearchResult
@@ -323,6 +314,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asWorkspaceModule');
         return new \Dagger\WorkspaceModule($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieve the binding value, as type WorkspaceModuleSetting
+     */
+    public function asWorkspaceModuleSetting(): WorkspaceModuleSetting
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asWorkspaceModuleSetting');
+        return new \Dagger\WorkspaceModuleSetting($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

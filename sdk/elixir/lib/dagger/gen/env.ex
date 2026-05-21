@@ -1420,6 +1420,46 @@ defmodule Dagger.Env do
   end
 
   @doc """
+  Create or update a binding of type WorkspaceModuleSetting in the environment
+  """
+  @spec with_workspace_module_setting_input(
+          t(),
+          String.t(),
+          Dagger.WorkspaceModuleSetting.t(),
+          String.t()
+        ) :: Dagger.Env.t()
+  def with_workspace_module_setting_input(%__MODULE__{} = env, name, value, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspaceModuleSettingInput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", Dagger.ID.id!(value))
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
+  Declare a desired WorkspaceModuleSetting output to be assigned in the environment
+  """
+  @spec with_workspace_module_setting_output(t(), String.t(), String.t()) :: Dagger.Env.t()
+  def with_workspace_module_setting_output(%__MODULE__{} = env, name, description) do
+    query_builder =
+      env.query_builder
+      |> QB.select("withWorkspaceModuleSettingOutput")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("description", description)
+
+    %Dagger.Env{
+      query_builder: query_builder,
+      client: env.client
+    }
+  end
+
+  @doc """
   Declare a desired Workspace output to be assigned in the environment
   """
   @spec with_workspace_output(t(), String.t(), String.t()) :: Dagger.Env.t()

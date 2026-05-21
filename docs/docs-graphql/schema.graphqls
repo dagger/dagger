@@ -177,9 +177,6 @@ type Binding {
   """Retrieve the binding value, as type Workspace"""
   asWorkspace: Workspace!
 
-  """Retrieve the binding value, as type WorkspaceCwd"""
-  asWorkspaceCwd: WorkspaceCwd!
-
   """Retrieve the binding value, as type WorkspaceMigration"""
   asWorkspaceMigration: WorkspaceMigration!
 
@@ -188,6 +185,9 @@ type Binding {
 
   """Retrieve the binding value, as type WorkspaceModule"""
   asWorkspaceModule: WorkspaceModule!
+
+  """Retrieve the binding value, as type WorkspaceModuleSetting"""
+  asWorkspaceModuleSetting: WorkspaceModuleSetting!
 
   """Returns the digest of the binding value"""
   digest: String!
@@ -3142,29 +3142,6 @@ type Env {
     workspace: DirectoryID!
   ): Env!
 
-  """Create or update a binding of type WorkspaceCwd in the environment"""
-  withWorkspaceCwdInput(
-    """The name of the binding"""
-    name: String!
-
-    """The WorkspaceCwd value to assign to the binding"""
-    value: WorkspaceCwdID!
-
-    """The purpose of the input"""
-    description: String!
-  ): Env!
-
-  """
-  Declare a desired WorkspaceCwd output to be assigned in the environment
-  """
-  withWorkspaceCwdOutput(
-    """The name of the binding"""
-    name: String!
-
-    """A description of the desired value of the binding"""
-    description: String!
-  ): Env!
-
   """Create or update a binding of type Workspace in the environment"""
   withWorkspaceInput(
     """The name of the binding"""
@@ -3243,6 +3220,31 @@ type Env {
   Declare a desired WorkspaceModule output to be assigned in the environment
   """
   withWorkspaceModuleOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """
+  Create or update a binding of type WorkspaceModuleSetting in the environment
+  """
+  withWorkspaceModuleSettingInput(
+    """The name of the binding"""
+    name: String!
+
+    """The WorkspaceModuleSetting value to assign to the binding"""
+    value: WorkspaceModuleSettingID!
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired WorkspaceModuleSetting output to be assigned in the environment
+  """
+  withWorkspaceModuleSettingOutput(
     """The name of the binding"""
     name: String!
 
@@ -5475,9 +5477,6 @@ type Query {
   """Load a UpGroup from its ID."""
   loadUpGroupFromID(id: UpGroupID!): UpGroup!
 
-  """Load a WorkspaceCwd from its ID."""
-  loadWorkspaceCwdFromID(id: WorkspaceCwdID!): WorkspaceCwd!
-
   """Load a Workspace from its ID."""
   loadWorkspaceFromID(id: WorkspaceID!): Workspace!
 
@@ -5489,6 +5488,9 @@ type Query {
 
   """Load a WorkspaceModule from its ID."""
   loadWorkspaceModuleFromID(id: WorkspaceModuleID!): WorkspaceModule!
+
+  """Load a WorkspaceModuleSetting from its ID."""
+  loadWorkspaceModuleSettingFromID(id: WorkspaceModuleSettingID!): WorkspaceModuleSetting!
 
   """Create a new module."""
   module: Module!
@@ -6193,7 +6195,7 @@ scalar Void
 
 """A Dagger workspace detected from the current working directory."""
 type Workspace {
-  """Canonical Dagger address of the workspace directory."""
+  """Canonical Dagger address of the workspace location."""
   address: String!
 
   """Return all checks from modules loaded in the workspace."""
@@ -6211,9 +6213,9 @@ type Workspace {
   clientId: String!
 
   """
-  Path to config.toml relative to the workspace boundary (empty if not initialized).
+  Selected native workspace config file relative to the workspace root, if any.
   """
-  configPath: String!
+  configFile: String!
 
   """
   Read a configuration value from config.toml.
@@ -6238,21 +6240,26 @@ type Workspace {
     Value to set. Bools, integers, and comma-separated arrays are auto-detected.
     """
     value: String!
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
   ): String!
 
-  """The current working directory within the workspace."""
-  cwd: WorkspaceCwd!
+  """
+  Current location within the workspace root. Relative paths in workspace APIs resolve from here.
+  """
+  cwd: String!
 
   """
   Returns a Directory from the workspace.
 
-  Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+  Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
   """
   directory(
     """
     Location of the directory to retrieve. Relative paths (e.g., "src") resolve
-    from the workspace directory; absolute paths (e.g., "/src") resolve from the
-    workspace boundary.
+    from the workspace cwd; absolute paths (e.g., "/src") resolve from the
+    workspace root.
     """
     path: String!
 
@@ -6274,6 +6281,9 @@ type Workspace {
   envCreate(
     """Environment name."""
     name: String!
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
   ): String!
 
   """List named environments defined in the workspace configuration."""
@@ -6283,18 +6293,21 @@ type Workspace {
   envRemove(
     """Environment name."""
     name: String!
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
   ): String!
 
   """
   Returns a File from the workspace.
 
-  Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+  Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
   """
   file(
     """
     Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve
-    from the workspace directory; absolute paths (e.g., "/go.mod") resolve from
-    the workspace boundary.
+    from the workspace cwd; absolute paths (e.g., "/go.mod") resolve from the
+    workspace root.
     """
     path: String!
   ): File!
@@ -6304,9 +6317,9 @@ type Workspace {
 
   Returns the absolute workspace path if found, or null if not found.
 
-  Relative start paths resolve from the workspace directory.
+  Relative start paths resolve from the workspace cwd.
 
-  The search stops at the workspace boundary and will not traverse above it.
+  The search stops at the workspace root and will not traverse above it.
   """
   findUp(
     """The name of the file or directory to search for."""
@@ -6314,7 +6327,7 @@ type Workspace {
 
     """
     Path to start the search from. Relative paths resolve from the workspace
-    directory; absolute paths resolve from the workspace boundary.
+    cwd; absolute paths resolve from the workspace root.
     """
     from: String = "."
   ): String
@@ -6325,17 +6338,16 @@ type Workspace {
     include: [String!]
   ): GeneratorGroup!
 
-  """Whether a config.toml file exists in the workspace."""
-  hasConfig: Boolean!
-
   """A unique identifier for this Workspace."""
   id: WorkspaceID!
 
-  """Initialize a new workspace, creating .dagger/config.toml."""
-  init: String!
-
-  """Whether .dagger/config.toml exists."""
-  initialized: Boolean!
+  """Initialize workspace config, creating .dagger/config.toml."""
+  init(
+    """
+    Create the workspace config directory at the workspace cwd instead of using the default write target.
+    """
+    here: Boolean = false
+  ): String!
 
   """Install a module into the workspace, writing config.toml to the host."""
   install(
@@ -6344,6 +6356,9 @@ type Workspace {
 
     """Override name for the installed module entry."""
     name: String = ""
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
   ): String!
 
   """
@@ -6371,13 +6386,16 @@ type Workspace {
 
     """Enable the self-calls experimental feature for the new module."""
     selfCalls: Boolean = false
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
   ): String!
 
   """List modules defined in the workspace configuration."""
-  moduleList: [WorkspaceModule!]!
-
-  """Workspace directory path relative to the workspace boundary."""
-  path: String!
+  moduleList(
+    """Optional module alias to inspect."""
+    module: String = ""
+  ): [WorkspaceModule!]!
 
   """
   Refresh lock entries for selected workspace-config modules.
@@ -6402,66 +6420,6 @@ type Workspace {
   """
   update: Changeset! @experimental(reason: "Experimental workspace update API currently refreshes existing lockfile entries only.")
 }
-
-"""
-The current working directory within the workspace. This is set to the directory
-where workspace detection started, and cannot be changed.
-"""
-type WorkspaceCwd {
-  """
-  Returns a Directory from the current working directory within the workspace.
-
-  Relative paths resolve from the current working directory. Absolute paths resolve from the workspace boundary.
-  """
-  directory(
-    """
-    Location of the directory to retrieve. Relative paths (e.g., "src") resolve
-    from the current working directory; absolute paths (e.g., "/src") resolve
-    from the workspace boundary.
-    """
-    path: String!
-
-    """
-    Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
-    """
-    exclude: [String!] = []
-
-    """
-    Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
-    """
-    include: [String!] = []
-
-    """Apply .gitignore filter rules inside the directory."""
-    gitignore: Boolean = false
-  ): Directory!
-
-  """
-  Returns a File from the current working directory within the workspace.
-
-  Relative paths resolve from the current working directory. Absolute paths resolve from the workspace boundary.
-  """
-  file(
-    """
-    Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve
-    from the current working directory; absolute paths (e.g., "/go.mod") resolve
-    from the workspace boundary.
-    """
-    path: String!
-  ): File!
-
-  """A unique identifier for this WorkspaceCwd."""
-  id: WorkspaceCwdID!
-
-  """
-  Location of the current working directory within the workspace, relative to the workspace.
-  """
-  path: String!
-}
-
-"""
-The `WorkspaceCwdID` scalar type represents an identifier for an object of type WorkspaceCwd.
-"""
-scalar WorkspaceCwdID
 
 """
 The `WorkspaceID` scalar type represents an identifier for an object of type Workspace.
@@ -6521,6 +6479,9 @@ type WorkspaceModule {
   """The module name."""
   name: String!
 
+  """List constructor-backed settings for this module."""
+  settings: [WorkspaceModuleSetting!]!
+
   """The module source path."""
   source: String!
 }
@@ -6529,4 +6490,27 @@ type WorkspaceModule {
 The `WorkspaceModuleID` scalar type represents an identifier for an object of type WorkspaceModule.
 """
 scalar WorkspaceModuleID
+
+"""A constructor-backed module setting."""
+type WorkspaceModuleSetting {
+  """The constructor argument description."""
+  description: String!
+
+  """A unique identifier for this WorkspaceModuleSetting."""
+  id: WorkspaceModuleSettingID!
+
+  """The setting key."""
+  key: String!
+
+  """
+  The configured value after applying the selected workspace environment, or empty when unset.
+  """
+  value: String!
+}
+
+"""
+The `WorkspaceModuleSettingID` scalar type represents an identifier for an object of type WorkspaceModuleSetting.
+"""
+scalar WorkspaceModuleSettingID
+
 
