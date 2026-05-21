@@ -406,7 +406,33 @@ class GeneratedParam:
 
 
 _PARAM_NAME_ALPHABET = "abcdefghijklmnopqr"
-_RESERVED = {"self", "cls", "this", "msg"}
+_RESERVED = {
+    "self",
+    "cls",
+    "this",
+    "msg",
+    # Keep generated class members from shadowing names that the same class
+    # body may later use as annotations. Python evaluates annotations in the
+    # class-body scope, so e.g. ``bool: str = dagger.field(...)`` followed by
+    # ``def f(self) -> bool`` resolves the return annotation to the field
+    # object/default, not the builtin ``bool``.
+    "str",
+    "int",
+    "float",
+    "bool",
+    "bytes",
+    "list",
+    # Imported typing / Dagger metadata symbols used by rendered fixtures.
+    "Annotated",
+    "Optional",
+    "Self",
+    "TypeAlias",
+    "DefaultPath",
+    "Deprecated",
+    "Doc",
+    "Ignore",
+    "Name",
+}
 
 
 def param_name_strategy() -> st.SearchStrategy[str]:
