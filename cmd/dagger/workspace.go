@@ -196,6 +196,7 @@ func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Clie
 	return err
 }
 
+//nolint:unparam
 func workspaceRootFromAddress(address, cwd string) (string, error) {
 	if cwd == "" || cwd == "." {
 		return fileURLPathOrAddress(address), nil
