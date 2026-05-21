@@ -489,6 +489,20 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type WorkspaceModuleSetting
+  """
+  @spec as_workspace_module_setting(t()) :: Dagger.WorkspaceModuleSetting.t()
+  def as_workspace_module_setting(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asWorkspaceModuleSetting")
+
+    %Dagger.WorkspaceModuleSetting{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Returns the digest of the binding value
   """
   @spec digest(t()) :: {:ok, String.t()} | {:error, term()}

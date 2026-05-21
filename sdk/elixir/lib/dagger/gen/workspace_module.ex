@@ -49,6 +49,28 @@ defmodule Dagger.WorkspaceModule do
   end
 
   @doc """
+  List constructor-backed settings for this module.
+  """
+  @spec settings(t()) :: {:ok, [Dagger.WorkspaceModuleSetting.t()]} | {:error, term()}
+  def settings(%__MODULE__{} = workspace_module) do
+    query_builder =
+      workspace_module.query_builder |> QB.select("settings") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(workspace_module.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.WorkspaceModuleSetting{
+           query_builder:
+             QB.query()
+             |> QB.select("loadWorkspaceModuleSettingFromID")
+             |> QB.put_arg("id", id),
+           client: workspace_module.client
+         }
+       end}
+    end
+  end
+
+  @doc """
   The module source path.
   """
   @spec source(t()) :: {:ok, String.t()} | {:error, term()}

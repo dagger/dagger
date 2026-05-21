@@ -347,6 +347,9 @@ type WorkspaceMigrationStepID string
 // The `WorkspaceModuleID` scalar type represents an identifier for an object of type WorkspaceModule.
 type WorkspaceModuleID string
 
+// The `WorkspaceModuleSettingID` scalar type represents an identifier for an object of type WorkspaceModuleSetting.
+type WorkspaceModuleSettingID string
+
 // Key value object that represents a build argument.
 type BuildArg struct {
 	// The build argument name.
@@ -897,6 +900,15 @@ func (r *Binding) AsWorkspaceModule() *WorkspaceModule {
 	q := r.query.Select("asWorkspaceModule")
 
 	return &WorkspaceModule{
+		query: q,
+	}
+}
+
+// Retrieve the binding value, as type WorkspaceModuleSetting
+func (r *Binding) AsWorkspaceModuleSetting() *WorkspaceModuleSetting {
+	q := r.query.Select("asWorkspaceModuleSetting")
+
+	return &WorkspaceModuleSetting{
 		query: q,
 	}
 }
@@ -6717,6 +6729,30 @@ func (r *Env) WithWorkspaceModuleInput(name string, value *WorkspaceModule, desc
 // Declare a desired WorkspaceModule output to be assigned in the environment
 func (r *Env) WithWorkspaceModuleOutput(name string, description string) *Env {
 	q := r.query.Select("withWorkspaceModuleOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Create or update a binding of type WorkspaceModuleSetting in the environment
+func (r *Env) WithWorkspaceModuleSettingInput(name string, value *WorkspaceModuleSetting, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withWorkspaceModuleSettingInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired WorkspaceModuleSetting output to be assigned in the environment
+func (r *Env) WithWorkspaceModuleSettingOutput(name string, description string) *Env {
+	q := r.query.Select("withWorkspaceModuleSettingOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -13464,6 +13500,16 @@ func (r *Query) LoadWorkspaceModuleFromID(id WorkspaceModuleID) *WorkspaceModule
 	}
 }
 
+// Load a WorkspaceModuleSetting from its ID.
+func (r *Query) LoadWorkspaceModuleSettingFromID(id WorkspaceModuleSettingID) *WorkspaceModuleSetting {
+	q := r.query.Select("loadWorkspaceModuleSettingFromID")
+	q = q.Arg("id", id)
+
+	return &WorkspaceModuleSetting{
+		query: q,
+	}
+}
+
 // Create a new module.
 func (r *Query) Module() *Module {
 	q := r.query.Select("module")
@@ -15413,21 +15459,19 @@ func (r *UpGroup) Run() *UpGroup {
 type Workspace struct {
 	query *querybuilder.Selection
 
-	address         *string
-	clientId        *string
-	configDirectory *string
-	configFile      *string
-	configRead      *string
-	configWrite     *string
-	cwd             *string
-	envCreate       *string
-	envRemove       *string
-	findUp          *string
-	hasConfig       *bool
-	id              *WorkspaceID
-	init            *string
-	install         *string
-	moduleInit      *string
+	address     *string
+	clientId    *string
+	configFile  *string
+	configRead  *string
+	configWrite *string
+	cwd         *string
+	envCreate   *string
+	envRemove   *string
+	findUp      *string
+	id          *WorkspaceID
+	init        *string
+	install     *string
+	moduleInit  *string
 }
 
 func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
@@ -15489,20 +15533,7 @@ func (r *Workspace) ClientID(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Selected workspace config directory relative to the workspace root, if any.
-func (r *Workspace) ConfigDirectory(ctx context.Context) (string, error) {
-	if r.configDirectory != nil {
-		return *r.configDirectory, nil
-	}
-	q := r.query.Select("configDirectory")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Selected workspace config file relative to the workspace root, if any.
+// Selected native workspace config file relative to the workspace root, if any.
 func (r *Workspace) ConfigFile(ctx context.Context) (string, error) {
 	if r.configFile != nil {
 		return *r.configFile, nil
@@ -15751,19 +15782,6 @@ func (r *Workspace) Generators(opts ...WorkspaceGeneratorsOpts) *GeneratorGroup 
 	}
 }
 
-// Whether a workspace config file exists.
-func (r *Workspace) HasConfig(ctx context.Context) (bool, error) {
-	if r.hasConfig != nil {
-		return *r.hasConfig, nil
-	}
-	q := r.query.Select("hasConfig")
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
 // A unique identifier for this Workspace.
 func (r *Workspace) ID(ctx context.Context) (WorkspaceID, error) {
 	if r.id != nil {
@@ -15933,9 +15951,21 @@ func (r *Workspace) ModuleInit(ctx context.Context, name string, opts ...Workspa
 	return response, q.Execute(ctx)
 }
 
+// WorkspaceModuleListOpts contains options for Workspace.ModuleList
+type WorkspaceModuleListOpts struct {
+	// Optional module alias to inspect.
+	Module string
+}
+
 // List modules defined in the workspace configuration.
-func (r *Workspace) ModuleList(ctx context.Context) ([]WorkspaceModule, error) {
+func (r *Workspace) ModuleList(ctx context.Context, opts ...WorkspaceModuleListOpts) ([]WorkspaceModule, error) {
 	q := r.query.Select("moduleList")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `module` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Module) {
+			q = q.Arg("module", opts[i].Module)
+		}
+	}
 
 	q = q.Select("id")
 
@@ -16302,12 +16332,140 @@ func (r *WorkspaceModule) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// List constructor-backed settings for this module.
+func (r *WorkspaceModule) Settings(ctx context.Context) ([]WorkspaceModuleSetting, error) {
+	q := r.query.Select("settings")
+
+	q = q.Select("id")
+
+	type settings struct {
+		Id WorkspaceModuleSettingID
+	}
+
+	convert := func(fields []settings) []WorkspaceModuleSetting {
+		out := []WorkspaceModuleSetting{}
+
+		for i := range fields {
+			val := WorkspaceModuleSetting{id: &fields[i].Id}
+			val.query = q.Root().Select("loadWorkspaceModuleSettingFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []settings
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // The module source path.
 func (r *WorkspaceModule) Source(ctx context.Context) (string, error) {
 	if r.source != nil {
 		return *r.source, nil
 	}
 	q := r.query.Select("source")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A constructor-backed module setting.
+type WorkspaceModuleSetting struct {
+	query *querybuilder.Selection
+
+	description *string
+	id          *WorkspaceModuleSettingID
+	key         *string
+	value       *string
+}
+
+func (r *WorkspaceModuleSetting) WithGraphQLQuery(q *querybuilder.Selection) *WorkspaceModuleSetting {
+	return &WorkspaceModuleSetting{
+		query: q,
+	}
+}
+
+// The constructor argument description.
+func (r *WorkspaceModuleSetting) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this WorkspaceModuleSetting.
+func (r *WorkspaceModuleSetting) ID(ctx context.Context) (WorkspaceModuleSettingID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response WorkspaceModuleSettingID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *WorkspaceModuleSetting) XXX_GraphQLType() string {
+	return "WorkspaceModuleSetting"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *WorkspaceModuleSetting) XXX_GraphQLIDType() string {
+	return "WorkspaceModuleSettingID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *WorkspaceModuleSetting) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *WorkspaceModuleSetting) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The setting key.
+func (r *WorkspaceModuleSetting) Key(ctx context.Context) (string, error) {
+	if r.key != nil {
+		return *r.key, nil
+	}
+	q := r.query.Select("key")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The configured value after applying the selected workspace environment, or empty when unset.
+func (r *WorkspaceModuleSetting) Value(ctx context.Context) (string, error) {
+	if r.value != nil {
+		return *r.value, nil
+	}
+	q := r.query.Select("value")
 
 	var response string
 

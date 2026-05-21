@@ -117,11 +117,11 @@
               <li><a href="#query-loadTypeDefFromID">loadTypeDefFromID</a></li>
               <li><a href="#query-loadUpFromID">loadUpFromID</a></li>
               <li><a href="#query-loadUpGroupFromID">loadUpGroupFromID</a></li>
-              <li><a href="#query-loadWorkspaceCwdFromID">loadWorkspaceCwdFromID</a></li>
               <li><a href="#query-loadWorkspaceFromID">loadWorkspaceFromID</a></li>
               <li><a href="#query-loadWorkspaceMigrationFromID">loadWorkspaceMigrationFromID</a></li>
               <li><a href="#query-loadWorkspaceMigrationStepFromID">loadWorkspaceMigrationStepFromID</a></li>
               <li><a href="#query-loadWorkspaceModuleFromID">loadWorkspaceModuleFromID</a></li>
+              <li><a href="#query-loadWorkspaceModuleSettingFromID">loadWorkspaceModuleSettingFromID</a></li>
               <li><a href="#query-module">module</a></li>
               <li><a href="#query-moduleSource">moduleSource</a></li>
               <li><a href="#query-secret">secret</a></li>
@@ -285,8 +285,6 @@
               <li><a href="#definition-UpID">UpID</a></li>
               <li><a href="#definition-Void">Void</a></li>
               <li><a href="#definition-Workspace">Workspace</a></li>
-              <li><a href="#definition-WorkspaceCwd">WorkspaceCwd</a></li>
-              <li><a href="#definition-WorkspaceCwdID">WorkspaceCwdID</a></li>
               <li><a href="#definition-WorkspaceID">WorkspaceID</a></li>
               <li><a href="#definition-WorkspaceMigration">WorkspaceMigration</a></li>
               <li><a href="#definition-WorkspaceMigrationID">WorkspaceMigrationID</a></li>
@@ -294,6 +292,8 @@
               <li><a href="#definition-WorkspaceMigrationStepID">WorkspaceMigrationStepID</a></li>
               <li><a href="#definition-WorkspaceModule">WorkspaceModule</a></li>
               <li><a href="#definition-WorkspaceModuleID">WorkspaceModuleID</a></li>
+              <li><a href="#definition-WorkspaceModuleSetting">WorkspaceModuleSetting</a></li>
+              <li><a href="#definition-WorkspaceModuleSettingID">WorkspaceModuleSettingID</a></li>
             </ul>
           </div>
         </nav>
@@ -5000,59 +5000,6 @@
               </div>
             </div>
           </section>
-          <section id="query-loadWorkspaceCwdFromID" class="operation operation-query" data-traverse-target="query-loadWorkspaceCwdFromID">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading ">
-              <code>loadWorkspaceCwdFromID</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Load a WorkspaceCwd from its ID.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-WorkspaceCwd"><code>WorkspaceCwd!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-WorkspaceCwdID"><code>WorkspaceCwdID!</code></a></span>
-                        </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
           <section id="query-loadWorkspaceFromID" class="operation operation-query" data-traverse-target="query-loadWorkspaceFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -5248,6 +5195,59 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-WorkspaceModuleID"><code>WorkspaceModuleID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadWorkspaceModuleSettingFromID" class="operation operation-query" data-traverse-target="query-loadWorkspaceModuleSettingFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadWorkspaceModuleSettingFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a WorkspaceModuleSetting from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-WorkspaceModuleSetting"><code>WorkspaceModuleSetting!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-WorkspaceModuleSettingID"><code>WorkspaceModuleSettingID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -5894,10 +5894,6 @@
                         <td> Retrieve the binding value, as type Workspace </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Binding-asWorkspaceCwd" href="#Binding-asWorkspaceCwd"><code>asWorkspaceCwd</code></a> - <span class="property-type"><a href="#definition-WorkspaceCwd"><code>WorkspaceCwd!</code></a></span> </td>
-                        <td> Retrieve the binding value, as type WorkspaceCwd </td>
-                      </tr>
-                      <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asWorkspaceMigration" href="#Binding-asWorkspaceMigration"><code>asWorkspaceMigration</code></a> - <span class="property-type"><a href="#definition-WorkspaceMigration"><code>WorkspaceMigration!</code></a></span> </td>
                         <td> Retrieve the binding value, as type WorkspaceMigration </td>
                       </tr>
@@ -5908,6 +5904,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asWorkspaceModule" href="#Binding-asWorkspaceModule"><code>asWorkspaceModule</code></a> - <span class="property-type"><a href="#definition-WorkspaceModule"><code>WorkspaceModule!</code></a></span> </td>
                         <td> Retrieve the binding value, as type WorkspaceModule </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asWorkspaceModuleSetting" href="#Binding-asWorkspaceModuleSetting"><code>asWorkspaceModuleSetting</code></a> - <span class="property-type"><a href="#definition-WorkspaceModuleSetting"><code>WorkspaceModuleSetting!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type WorkspaceModuleSetting </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-digest" href="#Binding-digest"><code>digest</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -11263,52 +11263,6 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Env-withWorkspaceCwdInput" href="#Env-withWorkspaceCwdInput"><code>withWorkspaceCwdInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
-                        <td> Create or update a binding of type WorkspaceCwd in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-WorkspaceCwdID"><code>WorkspaceCwdID!</code></a></span></h6>
-                                <p>The WorkspaceCwd value to assign to the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The purpose of the input</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Env-withWorkspaceCwdOutput" href="#Env-withWorkspaceCwdOutput"><code>withWorkspaceCwdOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
-                        <td> Declare a desired WorkspaceCwd output to be assigned in the environment </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>The name of the binding</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>A description of the desired value of the binding</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withWorkspaceInput" href="#Env-withWorkspaceInput"><code>withWorkspaceInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Create or update a binding of type Workspace in the environment </td>
                       </tr>
@@ -11453,6 +11407,52 @@
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withWorkspaceModuleOutput" href="#Env-withWorkspaceModuleOutput"><code>withWorkspaceModuleOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Declare a desired WorkspaceModule output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withWorkspaceModuleSettingInput" href="#Env-withWorkspaceModuleSettingInput"><code>withWorkspaceModuleSettingInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type WorkspaceModuleSetting in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-WorkspaceModuleSettingID"><code>WorkspaceModuleSettingID!</code></a></span></h6>
+                                <p>The WorkspaceModuleSetting value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withWorkspaceModuleSettingOutput" href="#Env-withWorkspaceModuleSettingOutput"><code>withWorkspaceModuleSettingOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired WorkspaceModuleSetting output to be assigned in the environment </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -17294,7 +17294,7 @@
                     <tbody>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Workspace-address" href="#Workspace-address"><code>address</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> Canonical Dagger address of the workspace directory. </td>
+                        <td> Canonical Dagger address of the workspace location. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Workspace-checks" href="#Workspace-checks"><code>checks</code></a> - <span class="property-type"><a href="#definition-CheckGroup"><code>CheckGroup!</code></a></span> </td>
@@ -17322,8 +17322,8 @@
                         <td> The client ID that owns this workspace's host filesystem. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Workspace-configPath" href="#Workspace-configPath"><code>configPath</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> Path to config.toml relative to the workspace boundary (empty if not initialized). </td>
+                        <td data-property-name=""><a class="property-name" id="Workspace-configFile" href="#Workspace-configFile"><code>configFile</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Selected native workspace config file relative to the workspace root, if any. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Workspace-configRead" href="#Workspace-configRead"><code>configRead</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -17364,19 +17364,23 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>Value to set. Bools, integers, and comma-separated arrays are auto-detected.</p>
                               </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>here</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Write to the workspace config directory at the workspace cwd.</p>
+                              </div>
                             </div>
                           </div>
                         </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Workspace-cwd" href="#Workspace-cwd"><code>cwd</code></a> - <span class="property-type"><a href="#definition-WorkspaceCwd"><code>WorkspaceCwd!</code></a></span> </td>
-                        <td> The current working directory within the workspace. </td>
+                        <td data-property-name=""><a class="property-name" id="Workspace-cwd" href="#Workspace-cwd"><code>cwd</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Current location within the workspace root. Relative paths in workspace APIs resolve from here. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Workspace-directory" href="#Workspace-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td>
                           <p>Returns a Directory from the workspace.</p>
-                          <p>Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.</p>
+                          <p>Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.</p>
                         </td>
                       </tr>
                       <tr class="row-field-arguments">
@@ -17386,7 +17390,7 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Location of the directory to retrieve. Relative paths (e.g., &quot;src&quot;) resolve from the workspace directory; absolute paths (e.g., &quot;/src&quot;) resolve from the workspace boundary.</p>
+                                <p>Location of the directory to retrieve. Relative paths (e.g., &quot;src&quot;) resolve from the workspace cwd; absolute paths (e.g., &quot;/src&quot;) resolve from the workspace root.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>exclude</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
@@ -17417,6 +17421,10 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>Environment name.</p>
                               </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>here</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Write to the workspace config directory at the workspace cwd.</p>
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -17438,6 +17446,10 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>Environment name.</p>
                               </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>here</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Write to the workspace config directory at the workspace cwd.</p>
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -17446,7 +17458,7 @@
                         <td data-property-name=""><a class="property-name" id="Workspace-file" href="#Workspace-file"><code>file</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
                         <td>
                           <p>Returns a File from the workspace.</p>
-                          <p>Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.</p>
+                          <p>Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.</p>
                         </td>
                       </tr>
                       <tr class="row-field-arguments">
@@ -17456,7 +17468,7 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Location of the file to retrieve. Relative paths (e.g., &quot;go.mod&quot;) resolve from the workspace directory; absolute paths (e.g., &quot;/go.mod&quot;) resolve from the workspace boundary.</p>
+                                <p>Location of the file to retrieve. Relative paths (e.g., &quot;go.mod&quot;) resolve from the workspace cwd; absolute paths (e.g., &quot;/go.mod&quot;) resolve from the workspace root.</p>
                               </div>
                             </div>
                           </div>
@@ -17467,8 +17479,8 @@
                         <td>
                           <p>Search for a file or directory by walking up from the start path within the workspace.</p>
                           <p>Returns the absolute workspace path if found, or null if not found.</p>
-                          <p>Relative start paths resolve from the workspace directory.</p>
-                          <p>The search stops at the workspace boundary and will not traverse above it.</p>
+                          <p>Relative start paths resolve from the workspace cwd.</p>
+                          <p>The search stops at the workspace root and will not traverse above it.</p>
                         </td>
                       </tr>
                       <tr class="row-field-arguments">
@@ -17482,7 +17494,7 @@
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>from</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.</p>
+                                <p>Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root.</p>
                               </div>
                             </div>
                           </div>
@@ -17506,20 +17518,25 @@
                         </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="Workspace-hasConfig" href="#Workspace-hasConfig"><code>hasConfig</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
-                        <td> Whether a config.toml file exists in the workspace. </td>
-                      </tr>
-                      <tr>
                         <td data-property-name=""><a class="property-name" id="Workspace-id" href="#Workspace-id"><code>id</code></a> - <span class="property-type"><a href="#definition-WorkspaceID"><code>WorkspaceID!</code></a></span> </td>
                         <td> A unique identifier for this Workspace. </td>
                       </tr>
-                      <tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Workspace-init" href="#Workspace-init"><code>init</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> Initialize a new workspace, creating .dagger/config.toml. </td>
+                        <td> Initialize workspace config, creating .dagger/config.toml. </td>
                       </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Workspace-initialized" href="#Workspace-initialized"><code>initialized</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
-                        <td> Whether .dagger/config.toml exists. </td>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>here</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Create the workspace config directory at the workspace cwd instead of using the default write target.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Workspace-install" href="#Workspace-install"><code>install</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -17537,6 +17554,10 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>Override name for the installed module entry.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>here</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Write to the workspace config directory at the workspace cwd.</p>
                               </div>
                             </div>
                           </div>
@@ -17590,17 +17611,30 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>selfCalls</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>Enable the self-calls experimental feature for the new module.</p>
                               </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>here</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Write to the workspace config directory at the workspace cwd.</p>
+                              </div>
                             </div>
                           </div>
                         </td>
                       </tr>
-                      <tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Workspace-moduleList" href="#Workspace-moduleList"><code>moduleList</code></a> - <span class="property-type"><a href="#definition-WorkspaceModule"><code>[WorkspaceModule!]!</code></a></span> </td>
                         <td> List modules defined in the workspace configuration. </td>
                       </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Workspace-path" href="#Workspace-path"><code>path</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> Workspace directory path relative to the workspace boundary. </td>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>module</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Optional module alias to inspect.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Workspace-refreshModules" href="#Workspace-refreshModules"><code>refreshModules</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
@@ -17648,107 +17682,6 @@
                       </tr>
                     </tbody>
                   </table>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-WorkspaceCwd" class="definition definition-object" data-traverse-target="definition-WorkspaceCwd">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">WorkspaceCwd</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>The current working directory within the workspace. This is set to the directory where workspace detection started, and cannot be changed.</p>
-                </div>
-                <div class="definition-properties doc-copy-section">
-                  <h5>Fields</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Field Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="WorkspaceCwd-directory" href="#WorkspaceCwd-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
-                        <td>
-                          <p>Returns a Directory from the current working directory within the workspace.</p>
-                          <p>Relative paths resolve from the current working directory. Absolute paths resolve from the workspace boundary.</p>
-                        </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Location of the directory to retrieve. Relative paths (e.g., &quot;src&quot;) resolve from the current working directory; absolute paths (e.g., &quot;/src&quot;) resolve from the workspace boundary.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>exclude</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
-                                <p>Exclude artifacts that match the given pattern (e.g., [&quot;node_modules/&quot;, &quot;.git*&quot;]).</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
-                                <p>Include only artifacts that match the given pattern (e.g., [&quot;app/&quot;, &quot;package.*&quot;]).</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>gitignore</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>Apply .gitignore filter rules inside the directory.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="WorkspaceCwd-file" href="#WorkspaceCwd-file"><code>file</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
-                        <td>
-                          <p>Returns a File from the current working directory within the workspace.</p>
-                          <p>Relative paths resolve from the current working directory. Absolute paths resolve from the workspace boundary.</p>
-                        </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Location of the file to retrieve. Relative paths (e.g., &quot;go.mod&quot;) resolve from the current working directory; absolute paths (e.g., &quot;/go.mod&quot;) resolve from the workspace boundary.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="WorkspaceCwd-id" href="#WorkspaceCwd-id"><code>id</code></a> - <span class="property-type"><a href="#definition-WorkspaceCwdID"><code>WorkspaceCwdID!</code></a></span> </td>
-                        <td> A unique identifier for this WorkspaceCwd. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="WorkspaceCwd-path" href="#WorkspaceCwd-path"><code>path</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> Location of the current working directory within the workspace, relative to the workspace. </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-WorkspaceCwdID" class="definition definition-scalar" data-traverse-target="definition-WorkspaceCwdID">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">WorkspaceCwdID</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>The <code>WorkspaceCwdID</code> scalar type represents an identifier for an object of type WorkspaceCwd.</p>
                 </div>
               </div>
             </div>
@@ -17915,6 +17848,10 @@
                         <td> The module name. </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="WorkspaceModule-settings" href="#WorkspaceModule-settings"><code>settings</code></a> - <span class="property-type"><a href="#definition-WorkspaceModuleSetting"><code>[WorkspaceModuleSetting!]!</code></a></span> </td>
+                        <td> List constructor-backed settings for this module. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="WorkspaceModule-source" href="#WorkspaceModule-source"><code>source</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The module source path. </td>
                       </tr>
@@ -17934,6 +17871,63 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>WorkspaceModuleID</code> scalar type represents an identifier for an object of type WorkspaceModule.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-WorkspaceModuleSetting" class="definition definition-object" data-traverse-target="definition-WorkspaceModuleSetting">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">WorkspaceModuleSetting</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A constructor-backed module setting.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="WorkspaceModuleSetting-description" href="#WorkspaceModuleSetting-description"><code>description</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The constructor argument description. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="WorkspaceModuleSetting-id" href="#WorkspaceModuleSetting-id"><code>id</code></a> - <span class="property-type"><a href="#definition-WorkspaceModuleSettingID"><code>WorkspaceModuleSettingID!</code></a></span> </td>
+                        <td> A unique identifier for this WorkspaceModuleSetting. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="WorkspaceModuleSetting-key" href="#WorkspaceModuleSetting-key"><code>key</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The setting key. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="WorkspaceModuleSetting-value" href="#WorkspaceModuleSetting-value"><code>value</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The configured value after applying the selected workspace environment, or empty when unset. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-WorkspaceModuleSettingID" class="definition definition-scalar" data-traverse-target="definition-WorkspaceModuleSettingID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">WorkspaceModuleSettingID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>WorkspaceModuleSettingID</code> scalar type represents an identifier for an object of type WorkspaceModuleSetting.</p>
                 </div>
               </div>
             </div>

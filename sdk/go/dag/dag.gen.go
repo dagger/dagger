@@ -620,6 +620,12 @@ func LoadWorkspaceModuleFromID(id dagger.WorkspaceModuleID) *dagger.WorkspaceMod
 	return client.LoadWorkspaceModuleFromID(id)
 }
 
+// Load a WorkspaceModuleSetting from its ID.
+func LoadWorkspaceModuleSettingFromID(id dagger.WorkspaceModuleSettingID) *dagger.WorkspaceModuleSetting {
+	client := initClient()
+	return client.LoadWorkspaceModuleSettingFromID(id)
+}
+
 // Create a new module.
 func Module() *dagger.Module {
 	client := initClient()
