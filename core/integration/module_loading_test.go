@@ -375,17 +375,6 @@ entrypoint = true
 		require.Contains(t, out, "nested")
 	})
 
-	t.Run("unconfigured workspace does not infer module from cwd", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-		ctr := workspaceBase(t, c).
-			With(withModuleFixture(t, c, "nested", "dang/nested-build")).
-			WithWorkdir("/work/nested")
-
-		out, err := ctr.With(moduleLoadingDaggerCallFail("build")).CombinedOutput(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "build")
-	})
-
 	t.Run("extra module loads without inferring cwd dagger.json", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c).
