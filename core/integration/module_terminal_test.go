@@ -52,7 +52,7 @@ func cacheTerminalModule(ctx context.Context, t *testctx.T, modDir string, args 
 func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 	t.Run("default arg /bin/sh", func(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-default")
-		cacheTerminalModule(ctx, t, modDir, "functions")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "functions")
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
 		console, err := newTUIConsole(t, 60*time.Second)
@@ -67,7 +67,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommandRaw(ctx, t, modDir, "call", "ctr", "terminal")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "call", "ctr", "terminal")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -109,7 +109,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 
 	t.Run("bound service crash keeps terminal open", func(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-bound-service-crash")
-		cacheTerminalModule(ctx, t, modDir, "functions")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "functions")
 
 		console, err := newTUIConsole(t, 60*time.Second)
 		require.NoError(t, err)
@@ -119,7 +119,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "terminal")
+		cmd := hostDaggerCommand(ctx, t, modDir, "-m", ".", "call", "ctr", "terminal")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -154,7 +154,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 
 	t.Run("basic", func(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-basic")
-		cacheTerminalModule(ctx, t, modDir, "functions")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "functions")
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
 		console, err := newTUIConsole(t, 60*time.Second)
@@ -169,7 +169,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommandRaw(ctx, t, modDir, "call", "ctr", "terminal")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "call", "ctr", "terminal")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -238,7 +238,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 
 	t.Run("attachable", func(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-attachable")
-		cacheTerminalModule(ctx, t, modDir, "functions")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "functions")
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
 		console, err := newTUIConsole(t, 60*time.Second)
@@ -253,7 +253,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommandRaw(ctx, t, modDir, "call", "debug")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "call", "debug")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -295,7 +295,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 
 	t.Run("override args", func(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-override-args")
-		cacheTerminalModule(ctx, t, modDir, "call", "ctr", "sync")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "call", "ctr", "sync")
 
 		console, err := newTUIConsole(t, 60*time.Second)
 		require.NoError(t, err)
@@ -306,7 +306,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 5, Cols: 22})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommandRaw(ctx, t, modDir, "call", "ctr", "terminal", "--cmd=python")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "call", "ctr", "terminal", "--cmd=python")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -343,7 +343,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 
 	t.Run("nested client", func(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-nested-client")
-		cacheTerminalModule(ctx, t, modDir, "functions")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "functions")
 
 		thisRepoPath, err := filepath.Abs("../..")
 		require.NoError(t, err)
@@ -389,7 +389,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 41})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommandRaw(ctx, t, modDir, "call", "--nested-src", nestedSrcDir, "ctr", "terminal", "--experimental-privileged-nesting")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "call", "--nested-src", nestedSrcDir, "ctr", "terminal", "--experimental-privileged-nesting")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -408,7 +408,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 
 	t.Run("directory", func(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-directory")
-		cacheTerminalModule(ctx, t, modDir, "functions")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "functions")
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
 		console, err := newTUIConsole(t, 60*time.Second)
@@ -423,7 +423,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommandRaw(ctx, t, modDir, "call", "dir", "terminal")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "call", "dir", "terminal")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -456,7 +456,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 
 	t.Run("on failure", func(ctx context.Context, t *testctx.T) {
 		modDir := terminalFixtureMod(ctx, t, "terminal-on-failure")
-		cacheTerminalModule(ctx, t, modDir, "functions")
+		cacheTerminalModule(ctx, t, modDir, "-m", ".", "functions")
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
 		console, err := newTUIConsole(t, 60*time.Second)
@@ -471,7 +471,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
 
-		cmd := hostDaggerCommandRaw(ctx, t, modDir, "--interactive", "call", "ctr")
+		cmd := hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "--interactive", "call", "ctr")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
@@ -536,7 +536,7 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 		tty = console.Tty()
 		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
 		require.NoError(t, err)
-		cmd = hostDaggerCommandRaw(ctx, t, modDir, "--interactive", "--interactive-command", "/bin/noexist", "call", "ctr")
+		cmd = hostDaggerCommandRaw(ctx, t, modDir, "-m", ".", "--interactive", "--interactive-command", "/bin/noexist", "call", "ctr")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
