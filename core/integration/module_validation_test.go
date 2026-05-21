@@ -45,7 +45,7 @@ func (ModuleSuite) TestWrapping(ctx context.Context, t *testctx.T) {
 			id := identity.NewID()
 
 			out, err := moduleFixture(t, c, tc.fixture).
-				With(daggerQuery(
+				With(daggerQueryAt(".",
 					fmt.Sprintf(`{container{echo(msg:%q){unwrap{stdout}}}}`, id),
 				)).
 				Stdout(ctx)
