@@ -19,6 +19,12 @@ dagger check
 
 `dagger install` creates a workspace configuration (`.dagger/config.toml`) and adds the [setup module](https://github.com/dagger/setup). `dagger check` runs it — and the setup module inspects your project, then reports what it finds as failing checks. Each failing check tells you what to do next.
 
+For example, in a JavaScript project you may see a setup check fail with a suggested module:
+
+```text
+setup:eslint   failed   ESLint config detected. Install github.com/dagger/eslint.
+```
+
 ## The feedback loop
 
 Install what the setup module suggests, then run `dagger check` again:
@@ -29,6 +35,15 @@ dagger check
 ```
 
 The check that suggested ESLint turns green. New suggestions may appear for other tools the setup module detects. Repeat until you're happy with your coverage — you don't have to install everything at once.
+
+If the setup module does not suggest anything useful, list the checks it provides and run one directly:
+
+```shell
+dagger check -l
+dagger check setup:eslint
+```
+
+You can also skip setup and install modules manually.
 
 ## Manual setup
 
