@@ -2828,33 +2828,32 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 			}
 		}
 
-		leaseCtx, release, leaseErr := withOperationLease(withoutOperationLease(callbackCtx))
-		if leaseErr != nil {
-			shared.lazyMu.Lock()
-			shared.lazyEvalErr = fmt.Errorf("acquire operation lease: %w", leaseErr)
-			clearState := shared.lazyEvalWaiters == 0 && shared.lazyEvalWaitCh == waitCh
-			if clearState {
-				shared.lazyEvalWaitCh = nil
-				shared.lazyEvalCancel = nil
-				shared.lazyEvalErr = nil
-			}
-			shared.lazyMu.Unlock()
-			close(waitCh)
-			return
-		}
-		callbackCtx = leaseCtx
-
 		var err error
-		if resumeSpan != nil {
-			defer telemetry.EndWithCause(resumeSpan, &err)
+		// End resumeSpan before close(waitCh) so that callers awaiting
+		// evaluation observe the span as ended (and exported, via sync
+		// processors). Deferring would fire only after close(waitCh) and
+		// race with the caller's flush/read of exported spans.
+		runEval := func() {
+			if resumeSpan != nil {
+				defer telemetry.EndWithCause(resumeSpan, &err)
+			}
+
+			leaseCtx, release, leaseErr := withOperationLease(withoutOperationLease(callbackCtx))
+			if leaseErr != nil {
+				err = fmt.Errorf("acquire operation lease: %w", leaseErr)
+				return
+			}
+			callbackCtx = leaseCtx
+
+			err = lazyEval(callbackCtx)
+			if err == nil {
+				err = c.syncResultSnapshotLeases(callbackCtx, shared)
+			}
+			if releaseErr := release(context.WithoutCancel(callbackCtx)); releaseErr != nil && err == nil {
+				err = releaseErr
+			}
 		}
-		err = lazyEval(callbackCtx)
-		if err == nil {
-			err = c.syncResultSnapshotLeases(callbackCtx, shared)
-		}
-		if releaseErr := release(context.WithoutCancel(callbackCtx)); releaseErr != nil && err == nil {
-			err = releaseErr
-		}
+		runEval()
 
 		shared.lazyMu.Lock()
 		shared.lazyEvalErr = err
