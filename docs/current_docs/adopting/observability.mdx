@@ -26,6 +26,8 @@ After logging in, every `dagger` command sends traces to your Dagger Cloud dashb
 
 Traces are useful for debugging failures, optimizing slow workflows, and understanding what your team's Dagger usage looks like across projects.
 
+Before enabling trace export broadly, review what logs and metadata your workflows emit. CI traces can include repository metadata such as branch, commit, and status. For team rollout guidance, see [Security and Operations](/adopting/security#trace-data).
+
 ## OpenTelemetry
 
 Dagger's telemetry is built on [OpenTelemetry](https://opentelemetry.io/). Each function call is a trace; each operation is a span. This means you can export traces to any OTel-compatible backend:

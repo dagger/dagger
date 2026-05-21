@@ -22,6 +22,7 @@ module.exports = {
         "getting-started/quickstart",
         "adopting/workspace-setup",
         "adopting/secrets",
+        "adopting/security",
         "adopting/observability",
         {
           type: "category",
