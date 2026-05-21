@@ -1379,7 +1379,6 @@ type ongoingCall struct {
 	initCompletedResultOnce sync.Once
 	handoffHoldActive       bool
 	initCompletedResultErr  error
-	debugOwner              debugCallClientMetadata
 
 	waitCh                     chan struct{}
 	cancel                     context.CancelCauseFunc
@@ -1391,42 +1390,6 @@ type ongoingCall struct {
 	releaseSharedWorkLeaseOnce sync.Once
 
 	res *sharedResult
-}
-
-type debugCallClientMetadata struct {
-	ClientID             string
-	SessionID            string
-	LoadWorkspaceModules bool
-	Workspace            string
-}
-
-func debugIsCurrentTypeDefsCall(req *CallRequest) bool {
-	return req != nil && req.ResultCall != nil && req.Field == "currentTypeDefs"
-}
-
-func debugClientMetadataFromContext(ctx context.Context) debugCallClientMetadata {
-	md, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil || md == nil {
-		return debugCallClientMetadata{}
-	}
-	workspace := ""
-	if md.Workspace != nil {
-		workspace = *md.Workspace
-	}
-	return debugCallClientMetadata{
-		ClientID:             md.ClientID,
-		SessionID:            md.SessionID,
-		LoadWorkspaceModules: md.LoadWorkspaceModules,
-		Workspace:            workspace,
-	}
-}
-
-func debugShortCallKey(callKey string) string {
-	const max = 24
-	if len(callKey) <= max {
-		return callKey
-	}
-	return callKey[:max]
 }
 
 func (oc *ongoingCall) releaseSharedWorkLease(ctx context.Context) error {
@@ -2980,8 +2943,6 @@ func (c *Cache) getOrInitCall(
 		callKey:        callKey,
 		concurrencyKey: req.ConcurrencyKey,
 	}
-	debugCurrentTypeDefs := debugIsCurrentTypeDefsCall(req)
-	debugRequester := debugClientMetadataFromContext(ctx)
 
 	hitRes, hit, err := c.lookupCacheForRequest(ctx, sessionID, resolver, req, callDigest, requestSelf, requestInputs, requestInputRefs)
 	if err != nil {
@@ -2999,21 +2960,6 @@ func (c *Cache) getOrInitCall(
 
 	if req.ConcurrencyKey != "" {
 		if oc := c.ongoingCalls[callConcKeys]; oc != nil {
-			if debugCurrentTypeDefs {
-				slog.InfoContext(ctx, "debug currentTypeDefs singleflight join",
-					"call_key", debugShortCallKey(callKey),
-					"concurrency_key", req.ConcurrencyKey,
-					"owner_client_id", oc.debugOwner.ClientID,
-					"owner_session_id", oc.debugOwner.SessionID,
-					"owner_load_workspace_modules", oc.debugOwner.LoadWorkspaceModules,
-					"owner_workspace", oc.debugOwner.Workspace,
-					"waiter_client_id", debugRequester.ClientID,
-					"waiter_session_id", debugRequester.SessionID,
-					"waiter_load_workspace_modules", debugRequester.LoadWorkspaceModules,
-					"waiter_workspace", debugRequester.Workspace,
-					"existing_waiters", oc.waiters,
-				)
-			}
 			if req.IsPersistable {
 				oc.isPersistable = true
 			}
@@ -3042,7 +2988,6 @@ func (c *Cache) getOrInitCall(
 		callConcurrencyKeys:      callConcKeys,
 		isPersistable:            req.IsPersistable,
 		ttlSeconds:               req.TTL,
-		debugOwner:               debugRequester,
 		waitCh:                   make(chan struct{}),
 		cancel:                   cancel,
 		waiters:                  1,
@@ -3052,16 +2997,6 @@ func (c *Cache) getOrInitCall(
 
 	if req.ConcurrencyKey != "" {
 		c.ongoingCalls[callConcKeys] = oc
-	}
-	if debugCurrentTypeDefs {
-		slog.InfoContext(ctx, "debug currentTypeDefs singleflight owner",
-			"call_key", debugShortCallKey(callKey),
-			"concurrency_key", req.ConcurrencyKey,
-			"owner_client_id", debugRequester.ClientID,
-			"owner_session_id", debugRequester.SessionID,
-			"owner_load_workspace_modules", debugRequester.LoadWorkspaceModules,
-			"owner_workspace", debugRequester.Workspace,
-		)
 	}
 
 	go func() {

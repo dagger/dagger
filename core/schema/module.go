@@ -13,8 +13,6 @@ import (
 	"github.com/dagger/dagger/core/sdk"
 	"github.com/dagger/dagger/dagql"
 	dagqlintrospection "github.com/dagger/dagger/dagql/introspection"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/util/hashutil"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -2092,7 +2090,6 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, ar
 	if err != nil {
 		return nil, err
 	}
-	debugTarget := debugTypeDefsContainTestTTL(typeDefs)
 
 	queryTypeDef, err := currentQueryTypeDef(ctx, dag)
 	if err != nil {
@@ -2124,141 +2121,13 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, ar
 		}
 	}
 	if !args.ReturnAllTypes {
-		if debugTarget {
-			logCurrentTypeDefsTestTTLDebug(ctx, dag, args, typeDefs)
-		}
 		return typeDefs, nil
 	}
 	expanded, err := expandTypeDefClosure(ctx, dag, typeDefs)
 	if err != nil {
 		return nil, err
 	}
-	if debugTarget {
-		logCurrentTypeDefsTestTTLDebug(ctx, dag, args, expanded)
-	}
 	return expanded, nil
-}
-
-func debugTypeDefsContainTestTTL(typeDefs dagql.ObjectResultArray[*core.TypeDef]) bool {
-	for _, typeDef := range typeDefs {
-		typeDefSelf := typeDef.Self()
-		if typeDefSelf == nil || typeDefSelf.Kind != core.TypeDefKindObject || !typeDefSelf.AsObject.Valid {
-			continue
-		}
-		obj := typeDefSelf.AsObject.Value.Self()
-		if obj == nil {
-			continue
-		}
-		for _, fn := range obj.Functions {
-			if fn.Self() == nil {
-				continue
-			}
-			if debugTestTTLFunctionName(fn.Self().Name) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func logCurrentTypeDefsTestTTLDebug(ctx context.Context, dag *dagql.Server, args currentTypeDefsArgs, typeDefs dagql.ObjectResultArray[*core.TypeDef]) {
-	var clientID, sessionID string
-	var loadWorkspaceModules bool
-	var extraModules []string
-	if md, err := engine.ClientMetadataFromContext(ctx); err == nil && md != nil {
-		clientID = md.ClientID
-		sessionID = md.SessionID
-		loadWorkspaceModules = md.LoadWorkspaceModules
-		for _, mod := range md.ExtraModules {
-			extraModules = append(extraModules, fmt.Sprintf("%s:%t", mod.Ref, mod.Entrypoint))
-		}
-	}
-	slices.Sort(extraModules)
-
-	typeDefQueryFns, typeDefHasTestTTL := debugTypeDefQueryFunctions(typeDefs)
-	dagQueryFns, dagHasTestTTL, dagQueryFieldCount := debugDagQueryModuleFunctions(dag)
-	hideCore := args.HideCore.GetOr(dagql.NewBoolean(false)).Bool()
-
-	slog.InfoContext(ctx, "debug current typedefs for test ttl",
-		"client_id", clientID,
-		"session_id", sessionID,
-		"load_workspace_modules", loadWorkspaceModules,
-		"extra_modules", extraModules,
-		"return_all_types", args.ReturnAllTypes,
-		"hide_core", hideCore,
-		"typedef_count", len(typeDefs),
-		"query_has_test_ttl", typeDefHasTestTTL,
-		"query_functions", debugLimitStrings(typeDefQueryFns, 80),
-		"dag_query_has_test_ttl", dagHasTestTTL,
-		"dag_query_field_count", dagQueryFieldCount,
-		"dag_query_module_functions", debugLimitStrings(dagQueryFns, 80),
-	)
-}
-
-func debugTypeDefQueryFunctions(typeDefs dagql.ObjectResultArray[*core.TypeDef]) ([]string, bool) {
-	var fns []string
-	var hasTestTTL bool
-	for _, typeDef := range typeDefs {
-		typeDefSelf := typeDef.Self()
-		if typeDefSelf == nil || typeDefSelf.Kind != core.TypeDefKindObject || !typeDefSelf.AsObject.Valid {
-			continue
-		}
-		obj := typeDefSelf.AsObject.Value.Self()
-		if obj == nil || obj.Name != "Query" {
-			continue
-		}
-		for _, fn := range obj.Functions {
-			if fn.Self() == nil {
-				continue
-			}
-			fnSelf := fn.Self()
-			fns = append(fns, fmt.Sprintf("%s@%s", fnSelf.Name, fnSelf.SourceModuleName))
-			if debugTestTTLFunctionName(fnSelf.Name) {
-				hasTestTTL = true
-			}
-		}
-	}
-	slices.Sort(fns)
-	return fns, hasTestTTL
-}
-
-func debugDagQueryModuleFunctions(dag *dagql.Server) ([]string, bool, int) {
-	if dag == nil || dag.Root().ObjectType() == nil {
-		return nil, false, 0
-	}
-	fieldSpecs := dag.Root().ObjectType().FieldSpecs(dag.View)
-	fns := make([]string, 0, len(fieldSpecs))
-	var hasTestTTL bool
-	for _, spec := range fieldSpecs {
-		moduleName := ""
-		if spec.Module != nil {
-			moduleName = spec.Module.Name
-		}
-		if moduleName == "" && !debugTestTTLFunctionName(spec.Name) {
-			continue
-		}
-		fns = append(fns, fmt.Sprintf("%s@%s", spec.Name, moduleName))
-		if debugTestTTLFunctionName(spec.Name) {
-			hasTestTTL = true
-		}
-	}
-	slices.Sort(fns)
-	return fns, hasTestTTL, len(fieldSpecs)
-}
-
-func debugLimitStrings(vals []string, limit int) []string {
-	if len(vals) == 0 || limit <= 0 {
-		return nil
-	}
-	cp := append([]string(nil), vals...)
-	if len(cp) > limit {
-		cp = cp[:limit]
-	}
-	return cp
-}
-
-func debugTestTTLFunctionName(name string) bool {
-	return name == "testTtl" || name == "test-ttl"
 }
 
 func stripCoreQueryFunctions(

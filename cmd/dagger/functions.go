@@ -328,10 +328,6 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	}
 	fc.mod = mod
 
-	if debugCommandParseTarget(a) {
-		fc.logCommandParseSchemaSummary(ctx, "workspace_loaded", a, c, nil, nil)
-	}
-
 	// Now that the module is loaded, show usage by default since errors
 	// are more likely to be from wrong CLI usage.
 	fc.showUsage = true
@@ -383,6 +379,14 @@ func (fc *FuncCommand) logCommandParseSchemaSummary(ctx context.Context, reason 
 		return
 	}
 
+	errMsg := ""
+	if parseErr != nil {
+		errMsg = parseErr.Error()
+	}
+	if !debugCommandParseTarget(requestedArgs) && !strings.Contains(errMsg, "test-ttl") {
+		return
+	}
+
 	mainObjectName := ""
 	var rootFns []string
 	if fc.mod.MainObject != nil && fc.mod.MainObject.AsObject != nil {
@@ -410,10 +414,6 @@ func (fc *FuncCommand) logCommandParseSchemaSummary(ctx context.Context, reason 
 		}
 	}
 	sort.Strings(availableSubcommands)
-	errMsg := ""
-	if parseErr != nil {
-		errMsg = parseErr.Error()
-	}
 	cwd, _ := os.Getwd()
 	hasTestTTL := hasDebugCommandName(rootFns)
 
@@ -436,21 +436,19 @@ func (fc *FuncCommand) logCommandParseSchemaSummary(ctx context.Context, reason 
 		"query_functions", limitFuncLogStrings(rootFns, 40),
 	)
 
-	if debugCommandParseTarget(requestedArgs) || strings.Contains(errMsg, "test-ttl") {
-		fmt.Fprintf(os.Stderr, "DAGGER_DEBUG_COMMAND_SCHEMA reason=%s pid=%d cwd=%q error=%q requested_args=%q remaining_args=%q command_path=%q query_has_test_ttl=%t query_function_count=%d query_functions=%q available_subcommands=%q\n",
-			reason,
-			os.Getpid(),
-			cwd,
-			errMsg,
-			strings.Join(requestedArgs, " "),
-			strings.Join(remainingArgs, " "),
-			cmdPath,
-			hasTestTTL,
-			len(rootFns),
-			strings.Join(limitFuncLogStrings(rootFns, 40), ","),
-			strings.Join(limitFuncLogStrings(availableSubcommands, 40), ","),
-		)
-	}
+	fmt.Fprintf(os.Stderr, "DAGGER_DEBUG_COMMAND_SCHEMA reason=%s pid=%d cwd=%q error=%q requested_args=%q remaining_args=%q command_path=%q query_has_test_ttl=%t query_function_count=%d query_functions=%q available_subcommands=%q\n",
+		reason,
+		os.Getpid(),
+		cwd,
+		errMsg,
+		strings.Join(requestedArgs, " "),
+		strings.Join(remainingArgs, " "),
+		cmdPath,
+		hasTestTTL,
+		len(rootFns),
+		strings.Join(limitFuncLogStrings(rootFns, 40), ","),
+		strings.Join(limitFuncLogStrings(availableSubcommands, 40), ","),
+	)
 }
 
 func limitFuncLogStrings(vals []string, limit int) []string {
