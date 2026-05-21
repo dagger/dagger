@@ -1,7 +1,0 @@
-{
-  "name": "leaker",
-  "engineVersion": "latest",
-  "sdk": {
-    "source": "go"
-  }
-}
