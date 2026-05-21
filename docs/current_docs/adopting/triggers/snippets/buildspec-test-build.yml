@@ -1,6 +1,8 @@
 version: 0.2
 
 env:
+  variables:
+    DAGGER_VERSION: "0.20.6"
   secrets-manager:
     # assumes that the Dagger Cloud token is
     # in a secret with key dagger_cloud_token
@@ -11,7 +13,7 @@ phases:
   install:
     commands:
       - echo "Installing Dagger CLI"
-      - curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+      - curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=$DAGGER_VERSION BIN_DIR=$HOME/.local/bin sh
       - echo "Adding Dagger CLI to $PATH"
       - export PATH=$PATH:$HOME/.local/bin/
 

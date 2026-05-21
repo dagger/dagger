@@ -8,7 +8,7 @@ jobs:
       - setup_remote_docker
       - run:
           name: Install Dagger CLI
-          command: curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+          command: curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.20.6 BIN_DIR=$HOME/.local/bin sh
       - run:
           name: Test
           command: dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call test --source=.
@@ -20,7 +20,7 @@ jobs:
       - setup_remote_docker
       - run:
           name: Install Dagger CLI
-          command: curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+          command: curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.20.6 BIN_DIR=$HOME/.local/bin sh
       - run:
           name: Build
           command: dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build-container --source=https://github.com/golang/example#master:hello --args=. publish --address=ttl.sh/my-app-$RANDOM
