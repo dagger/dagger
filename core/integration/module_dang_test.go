@@ -123,6 +123,38 @@ func (DangSuite) TestMismatch(_ context.Context, t *testctx.T) {
 	})
 }
 
+func (DangSuite) TestCoreTypeShadowing(_ context.Context, t *testctx.T) {
+	t.Run("object shadows core container", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "test-shadowing").
+			With(daggerCall("make-container", "value")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "container", strings.TrimSpace(out))
+	})
+
+	t.Run("object shadows core directory", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "test-shadowing").
+			With(daggerCall("make-directory", "value")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "directory", strings.TrimSpace(out))
+	})
+
+	t.Run("qualified core container", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "test-shadowing").
+			With(daggerCall("make-core-container", "stdout")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "core", strings.TrimSpace(out))
+	})
+}
+
 func (DangSuite) TestPrivateArg(_ context.Context, t *testctx.T) {
 	t.Run("default private value", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
