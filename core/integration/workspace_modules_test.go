@@ -220,7 +220,6 @@ source = "../existing"
 		require.Contains(t, cfg.Modules, "dep")
 		require.Equal(t, "../existing", cfg.Modules["dep"].Source)
 	})
-
 }
 
 // TestWorkspaceManagedModuleBehavior covers runtime behavior that depends on a
@@ -273,7 +272,6 @@ func (WorkspaceModulesSuite) TestWorkspaceManagedModuleBehavior(ctx context.Cont
 		require.NoError(t, err)
 		require.Equal(t, "hello from configured workspace", strings.TrimSpace(out))
 	})
-
 }
 
 func readInstalledWorkspaceConfig(t *testctx.T, workdir string) *workspacecfg.Config {

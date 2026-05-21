@@ -32,14 +32,6 @@ func TestModuleLoading(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(ModuleLoadingSuite{})
 }
 
-func moduleLoadingDaggerExec(args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--progress=report"}, args...), dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		})
-	}
-}
-
 func moduleLoadingDaggerExecFail(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
 		return c.WithExec(append([]string{"dagger", "--progress=report"}, args...), dagger.ContainerWithExecOpts{
