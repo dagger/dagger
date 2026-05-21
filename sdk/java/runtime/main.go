@@ -168,6 +168,8 @@ func (m *JavaSdk) buildJavaDependencies(
 			"mvn",
 			"versions:set",
 			"-DgenerateBackupPoms=false",
+			"-DprocessDependencies=false",
+			"-DprocessPlugins=false",
 			fmt.Sprintf("-DnewVersion=%s", version),
 		)).
 		// Build and install the java modules one by one
