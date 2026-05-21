@@ -108,7 +108,7 @@ func TestWorkspaceConfigSkipPatterns(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.Equal(t, map[string][]string{
-			"hello-with-generators": []string{"generate-other-files", "other-generators:*"},
+			"hello-with-generators": {"generate-other-files", "other-generators:*"},
 		}, patterns)
 	})
 }
