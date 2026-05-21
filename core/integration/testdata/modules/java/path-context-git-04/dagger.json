@@ -2,6 +2,6 @@
   "name": "test",
   "engineVersion": "latest",
   "sdk": {
-    "source": "java"
+    "source": "./sdk/java"
   }
 }
