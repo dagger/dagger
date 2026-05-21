@@ -37,7 +37,7 @@ func (ModuleSuite) TestTypedefSourceMaps(ctx context.Context, t *testctx.T) {
 					// struct
 					`\ntype Dep struct { // dep \(../../dep/main.go:5:6\)\n`,
 					// struct field
-					`\nfunc \(.* \*Dep\) FieldDef\(.* // dep \(../../dep/main.go:6:5\)\n`,
+					`\nfunc \(.* \*Dep\) FieldDef\(.* // dep \(../../dep/main.go:6:2\)\n`,
 					// struct func
 					`\nfunc \(.* \*Dep\) FuncDef\(.* // dep \(../../dep/main.go:9:1\)\n`,
 					// struct func arg
@@ -46,18 +46,18 @@ func (ModuleSuite) TestTypedefSourceMaps(ctx context.Context, t *testctx.T) {
 					// enum
 					`\ntype DepMyEnum string // dep \(../../dep/main.go:16:6\)\n`,
 					// enum value
-					`\n\s*DepMyEnumA DepMyEnum = "MyEnumA" // dep \(../../dep/main.go:18:5\)\n`,
+					`\n\s*DepMyEnumA DepMyEnum = "MyEnumA" // dep \(../../dep/main.go:19:2\)\n`,
 
 					// interface
-					`\ntype DepMyInterface struct { // dep \(../../dep/main.go:22:6\)\n`,
+					`\ntype DepMyInterface struct { // dep \(../../dep/main.go:23:6\)\n`,
 					// interface func
-					`\nfunc \(.* \*DepMyInterface\) Do\(.* // dep \(../../dep/main.go:24:4\)\n`,
+					`\nfunc \(.* \*DepMyInterface\) Do\(.* // dep \(../../dep/main.go:25:4\)\n`,
 				},
 				typescript: []string{
 					// struct
 					`export class Dep extends BaseClient { // dep \(../../../dep/main.go:5:6\)`,
 					// struct field
-					`fieldDef = async \(\): Promise<string> => { // dep \(../../../dep/main.go:6:5\)`,
+					`fieldDef = async \(\): Promise<string> => { // dep \(../../../dep/main.go:6:2\)`,
 					// struct func
 					`\s*funcDef = async \(.*\s*opts\?: .* \/\/ dep \(../../../dep/main.go:9:1\) *\s*.*\/\/ dep \(../../../dep/main.go:9:1\)`,
 					// struct func arg
@@ -66,7 +66,7 @@ func (ModuleSuite) TestTypedefSourceMaps(ctx context.Context, t *testctx.T) {
 					// enum
 					`export enum DepMyEnum { // dep \(../../../dep/main.go:16:6\)`,
 					// enum value
-					`\s*A = "MyEnumA", // dep \(../../../dep/main.go:18:5\)`,
+					`\s*A = "MyEnumA", // dep \(../../../dep/main.go:19:2\)`,
 				},
 			},
 		},
@@ -114,7 +114,8 @@ func (ModuleSuite) TestTypedefSourceMaps(ctx context.Context, t *testctx.T) {
 
 			modGen := goGitBase(t, c).
 				With(withModuleFixture(t, c, ".", "go/source-map-root")).
-				With(withModuleFixture(t, c, "dep", tc.fixture))
+				With(withModuleFixture(t, c, "dep", tc.fixture)).
+				With(daggerClientInstallAt("go", "client"))
 
 			codegenContents, err := modGen.File("internal/dagger/dep.gen.go").Contents(ctx)
 			require.NoError(t, err)
@@ -131,7 +132,8 @@ func (ModuleSuite) TestTypedefSourceMaps(ctx context.Context, t *testctx.T) {
 
 			modGen := goGitBase(t, c).
 				With(withModuleFixture(t, c, ".", "typescript/source-map-root")).
-				With(withModuleFixture(t, c, "dep", tc.fixture))
+				With(withModuleFixture(t, c, "dep", tc.fixture)).
+				With(daggerClientInstallAt("typescript", "sdk"))
 
 			codegenContents, err := modGen.File(sdkCodegenFile(t, "typescript")).Contents(ctx)
 			require.NoError(t, err)
