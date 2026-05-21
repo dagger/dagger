@@ -42,6 +42,10 @@ Typical uses:
 - `pinned`: day-to-day development and most CI
 - `frozen`: reproducible, hermetic, or offline runs
 
+For protected CI and release jobs, commit `.dagger/lock` and prefer `--lock=frozen`. Frozen mode fails if a command needs a lookup that is missing from the lockfile, which prevents CI from silently resolving new module, Git, or container image references.
+
+For development branches and lock refresh jobs, use the default `pinned` mode or an intentional `--lock=live` run, then review and commit the resulting lockfile changes.
+
 ## Lock policies
 
 Lock policy is stored on each lock entry.

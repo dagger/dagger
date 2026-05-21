@@ -5,6 +5,9 @@ pool:
   name: 'Azure Pipelines'
   vmImage: ubuntu-latest
 
+variables:
+  DAGGER_VERSION: '0.20.6'
+
 steps:
 # full clone checkout required to prevent azure pipeline traces from being orphaned in the Dagger Cloud UI
 - checkout: self
@@ -13,7 +16,7 @@ steps:
 # branch checkout required to prevent azure pipeline traces from being orphaned in the Dagger Cloud UI
 - script: git checkout $(Build.SourceBranchName)
   displayName: 'Checkout Source Branch'
-- script: curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+- script: curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=$(DAGGER_VERSION) BIN_DIR=$HOME/.local/bin sh
   displayName: 'Install Dagger CLI'
 - script: dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call test --source=.
   displayName: 'Test'
