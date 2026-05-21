@@ -1213,7 +1213,18 @@ public class Test {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			modGen := moduleFixture(t, c, tc.fixture).
+			modGen := moduleFixture(t, c, tc.fixture)
+			if tc.sdk == "java" {
+				// This test compares defaultPath behavior across SDKs, so keep
+				// every fixture's git repo at /work. The usual javaModule helper
+				// puts modules under /work/modules, which would change what
+				// defaultPath("/") proves here.
+				sdkSrc, err := filepath.Abs("../../sdk/java")
+				require.NoError(t, err)
+				modGen = modGen.WithMountedDirectory("sdk/java", c.Host().Directory(sdkSrc))
+			}
+
+			modGen = modGen.
 				WithExec([]string{"sh", "-c", `git init && git add . && git commit -m "initial commit"`}).
 				WithExec([]string{"git", "clean", "-fdx"})
 			headCommit, err := modGen.WithExec([]string{"git", "rev-parse", "HEAD"}).Stdout(ctx)
