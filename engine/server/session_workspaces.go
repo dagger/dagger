@@ -595,14 +595,9 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	if err != nil {
 		return err
 	}
-	if ws == nil {
-		client.workspace = nil
-		client.pendingModules = nil
-		return nil
-	}
 
 	var wsConfig *workspace.Config
-	if ws.ConfigFile != "" {
+	if ws != nil && ws.ConfigFile != "" {
 		wsConfig, err = loadWorkspaceConfig(ctx, readFile, ws)
 		if err != nil {
 			return err
@@ -636,8 +631,26 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 				slog.Warn(msg,
 					"config", cfgPath)
 			}
+			// Workspace detection found no native root (e.g. a legacy module
+			// outside any git repo). Root the ambient compat workspace at the
+			// legacy module directory so the module is still served, matching
+			// the documented "fall back to the nearest dagger.json" behavior.
+			if ws == nil {
+				ws, err = workspace.DetectInRoot(ctx, pathExists, cwd, moduleDir)
+				if err != nil {
+					return err
+				}
+			}
 		}
-	} else if wsConfig == nil {
+	}
+
+	// No native workspace and no eligible legacy module: nothing to load.
+	if ws == nil {
+		client.workspace = nil
+		client.pendingModules = nil
+		return nil
+	}
+	if wsConfig == nil && compatWorkspace == nil {
 		slog.Info("No workspace modules detected.", "path", ws.Root)
 	}
 
