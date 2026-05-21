@@ -28,7 +28,7 @@ func (ModuleSuite) TestInteractiveFinalRenderEmitsProgress(ctx context.Context, 
 	t.Run("failure renders final progress", func(ctx context.Context, t *testctx.T) {
 		modDir := t.TempDir()
 
-		_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=progress", "--sdk=go")
+		err := os.WriteFile(filepath.Join(modDir, "dagger.json"), []byte(`{"name":"progress","engineVersion":"latest","sdk":{"source":"go"}}`), 0o644)
 		require.NoError(t, err)
 
 		moduleSrc := fmt.Sprintf(`package main
@@ -56,7 +56,7 @@ func (m *Progress) Fail(ctx context.Context) (string, error) {
 
 		// Warm the module so the run under test is bounded by the failing
 		// exec, not by codegen/load.
-		_, err = hostDaggerExec(ctx, t, modDir, "functions")
+		_, err = hostDaggerExec(ctx, t, modDir, "-m", ".", "functions")
 		require.NoError(t, err)
 
 		console, err := newTUIConsole(t, 60*time.Second)
@@ -66,7 +66,7 @@ func (m *Progress) Fail(ctx context.Context) (string, error) {
 		tty := console.Tty()
 		require.NoError(t, pty.Setsize(tty, &pty.Winsize{Rows: 12, Cols: 60}))
 
-		cmd := hostDaggerCommand(ctx, t, modDir, "call", "fail")
+		cmd := hostDaggerCommand(ctx, t, modDir, "-m", ".", "call", "fail")
 		cmd.Stdin = tty
 		cmd.Stdout = tty
 		cmd.Stderr = tty
