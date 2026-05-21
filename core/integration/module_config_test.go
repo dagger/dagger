@@ -192,8 +192,7 @@ func (ModuleConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 
 	t.Run("same mod name as dep", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		ctr := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		ctr := goGitBase(t, c).
 			With(withModuleFixture(t, c, "/work", "go/config-custom-dep-names-same-name")).
 			WithWorkdir("/work")
 
@@ -204,8 +203,7 @@ func (ModuleConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 
 	t.Run("two deps with same name", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
-		ctr := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		ctr := goGitBase(t, c).
 			With(withModuleFixture(t, c, "/work", "go/config-custom-dep-names-two-deps")).
 			WithWorkdir("/work")
 
@@ -270,8 +268,7 @@ func (ModuleConfigSuite) TestSDKConfig(ctx context.Context, t *testctx.T) {
 		for _, tc := range testcases {
 			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
-				ctr := c.Container().From(golangImage).
-					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				ctr := goGitBase(t, c).
 					With(withModuleFixture(t, c, "/work", "go/config-sdk-go")).
 					WithWorkdir("/work").
 					WithNewFile("dagger.json", tc.daggerjson)
@@ -379,8 +376,7 @@ func (ModuleConfigSuite) TestSDKConfig(ctx context.Context, t *testctx.T) {
 		} {
 			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
-				ctr := c.Container().From(golangImage).
-					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				ctr := goGitBase(t, c).
 					With(withModuleFixture(t, c, "/work", tc.fixture)).
 					WithWorkdir("/work").
 					WithNewFile("dagger.json", tc.daggerjson)
