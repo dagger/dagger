@@ -1428,11 +1428,6 @@ func (ModuleSuite) TestIgnore(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-then-reverse-ignore", "entries")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, strings.Join([]string{
-				".gitattributes",
-				".gitignore",
-				"dagger.gen.go",
-				"go.mod",
-				"go.sum",
 				"internal/",
 				"main.go",
 			}, "\n"), strings.TrimSpace(out))
@@ -1442,9 +1437,6 @@ func (ModuleSuite) TestIgnore(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-then-reverse-ignore-then-exclude-git-files", "entries")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, strings.Join([]string{
-				"dagger.gen.go",
-				"go.mod",
-				"go.sum",
 				"internal/",
 				"main.go",
 			}, "\n"), strings.TrimSpace(out))
@@ -1454,11 +1446,6 @@ func (ModuleSuite) TestIgnore(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-then-exclude-files-then-reverse-ignore", "entries")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, strings.Join([]string{
-				".gitattributes",
-				".gitignore",
-				"dagger.gen.go",
-				"go.mod",
-				"go.sum",
 				"internal/",
 				"main.go",
 			}, "\n"), strings.TrimSpace(out))
@@ -1468,11 +1455,6 @@ func (ModuleSuite) TestIgnore(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-dir", "entries")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, strings.Join([]string{
-				".gitattributes",
-				".gitignore",
-				"dagger.gen.go",
-				"go.mod",
-				"go.sum",
 				"main.go",
 			}, "\n"), strings.TrimSpace(out))
 		})
@@ -1487,11 +1469,6 @@ func (ModuleSuite) TestIgnore(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("no-ignore", "entries")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, strings.Join([]string{
-				".gitattributes",
-				".gitignore",
-				"dagger.gen.go",
-				"go.mod",
-				"go.sum",
 				"internal/",
 				"main.go",
 			}, "\n"), strings.TrimSpace(out))
@@ -1501,10 +1478,6 @@ func (ModuleSuite) TestIgnore(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ignore-every-go-file-except-main-go", "entries")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, strings.Join([]string{
-				".gitattributes",
-				".gitignore",
-				"go.mod",
-				"go.sum",
 				"internal/",
 				"main.go",
 			}, "\n"), strings.TrimSpace(out))
@@ -1513,7 +1486,6 @@ func (ModuleSuite) TestIgnore(ctx context.Context, t *testctx.T) {
 			out, err = modGen.With(daggerCall("ignore-every-go-file-except-main-go", "directory", "--path", "internal", "entries")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, strings.Join([]string{
-				"dagger/",
 				"foo/",
 			}, "\n"), strings.TrimSpace(out))
 		})
@@ -1641,7 +1613,9 @@ func (ModuleSuite) TestGitignore(ctx context.Context, t *testctx.T) {
 	modGen := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/dagger").
-		With(withModuleFixture(t, c, "/work/dagger", "go/path-gitignore"))
+		With(withModuleFixture(t, c, "/work/dagger", "go/path-gitignore")).
+		// Keep the ignored file out of testdata so it stays untracked in the simulated repo.
+		WithNewFile("/work/dagger/frontend/bar.txt", "bar")
 
 	t.Run("gitignore applies to loaded module", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerCall("get-file", "--filename", "backend/foo.txt")).Stdout(ctx)
