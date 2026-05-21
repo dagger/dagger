@@ -61,37 +61,37 @@ The Dagger Cloud GitHub App must be installed on the GitHub organization or user
 The app requires the following permissions:
 
 - **Commit statuses**: Read and write (to report check results)
-- **Contents**: Read-only (to read `dagger.json` and module source)
+- **Contents**: Read-only (to read `.dagger/config.toml`, workspace files, and module source)
 - **Pull requests**: Read-only (to respond to PR events)
 
 ## Checks
 
-Dagger Cloud Checks is a fully managed CI platform with integrated compute and caching. Checks run on Dagger engines fully managed by Dagger — there are no self-hosted runners or infrastructure to maintain. When a commit is pushed, Dagger Cloud detects the event, loads your module, discovers your [check functions](/core-concepts/checks), runs them on managed infrastructure, and reports results back to GitHub as commit statuses.
+Dagger Cloud Checks is a fully managed CI platform with integrated compute and caching. Checks run on Dagger engines fully managed by Dagger — there are no self-hosted runners or infrastructure to maintain. When a commit is pushed, Dagger Cloud detects the event, loads your workspace, discovers the [checks](/core-concepts/checks) exposed by its installed modules, runs them on managed infrastructure, and reports results back to GitHub as commit statuses.
 
 ### Prerequisites
 
 - A Dagger Cloud team account
-- A GitHub repository with a Dagger module (`dagger.json` at the repo root)
-- The module must define at least one [check function](/core-concepts/checks)
+- A GitHub repository with a Dagger workspace (`.dagger/config.toml` committed to the repository)
+- The workspace must install at least one module that exposes a [check](/core-concepts/checks)
 - The [Dagger Cloud GitHub App](#install-the-dagger-cloud-github-app) must be installed on the repository's GitHub organization
 
 ### How checks work
 
 After installing the Dagger Cloud GitHub App, Dagger Cloud monitors your repositories for new commits.
 
-1. Push a commit to a connected repository that has a `dagger.json`.
+1. Push a commit to a connected repository that has `.dagger/config.toml`.
 2. Dagger Cloud will:
    - Detect the push event via the GitHub webhook
-   - Load the module from the repository
-   - Discover all check functions defined in the module
+   - Load the workspace from the repository
+   - Discover all checks exposed by installed workspace modules
    - Run each check on managed infrastructure and report results back to GitHub as commit statuses
 
 You can view check results on the **Checks** page in Dagger Cloud.
 
 If no checks appear, verify that:
 
-- The repository has a `dagger.json` at its root
-- The module defines at least one [check function](/core-concepts/checks)
+- The repository has `.dagger/config.toml` committed
+- The workspace installs at least one module that exposes a [check](/core-concepts/checks)
 - The GitHub App is installed on the repository's organization
 - A new commit has been pushed (Dagger Cloud only runs checks on new events)
 
@@ -501,7 +501,7 @@ After [installing the Dagger Cloud GitHub App](#install-the-dagger-cloud-github-
 
     ![Enable module scanning](/img/current_docs/reference/configuration/cloud-modules-map.png)
 
-Dagger Cloud will scan your repositories for `dagger.json` files and discover modules automatically. The **Scan Results** section at the bottom of the page maintains a record of scans and their status.
+Dagger Cloud will scan your repositories for `.dagger/config.toml` workspace files and discover installed modules automatically. The **Scan Results** section at the bottom of the page maintains a record of scans and their status.
 
 ![Module scans](/img/current_docs/reference/configuration/cloud-modules-scans.png)
 
@@ -540,7 +540,7 @@ You cannot change a member's role at this time. Please contact Dagger via the su
 
 - Verify the GitHub App is installed on the repository's organization.
 - Push a new commit to trigger a check run — Dagger Cloud only runs checks on new events.
-- Check that the repository has a `dagger.json` at its root.
+- Check that the repository has `.dagger/config.toml` committed.
 
 ### Checks do not run on a commit
 
@@ -550,7 +550,7 @@ If a commit has merge conflicts with the default branch, checks will not run. Da
 
 - The module may have syntax errors or missing dependencies.
 - Check the trace visualization for detailed error messages.
-- Try running the module locally with `dagger check` to reproduce the issue.
+- Try running the workspace checks locally with `dagger check` to reproduce the issue.
 
 ### Secrets not available in checks
 
