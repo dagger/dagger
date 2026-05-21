@@ -70,7 +70,7 @@ func (ModuleSuite) TestNamespacing(ctx context.Context, t *testctx.T) {
 		WithWorkdir("/work")
 
 	out, err := ctr.
-		With(daggerQuery(`{fn(s:"yo")}`)).
+		With(daggerQueryAt(".", `{fn(s:"yo")}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"fn":["*dagger.Sub1Obj made 1:yo", "*dagger.Sub2Obj made 2:yo"]}`, out)
