@@ -415,4 +415,3 @@ func goGitBase(t testing.TB, c *dagger.Client) *dagger.Container {
 		WithWorkdir("/work").
 		WithExec([]string{"git", "init"})
 }
-

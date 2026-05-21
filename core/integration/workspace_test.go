@@ -65,14 +65,6 @@ func legacyWorkspaceBase(t testing.TB, c *dagger.Client, config string, ops ...d
 		WithExec([]string{"git", "commit", "-m", "initial"})
 }
 
-func ensureWorkspaceInit() dagger.WithContainerFunc {
-	return func(ctr *dagger.Container) *dagger.Container {
-		return ctr.WithExec([]string{"sh", "-c", "dagger workspace config-file | grep -vx none >/dev/null || dagger workspace init --here"}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		})
-	}
-}
-
 // TestSingleQueryWorkspaceModuleLoadingSkipsUnreferencedBrokenModules locks in
 // the user-visible behavior behind the SingleQuery optimization. A single raw
 // GraphQL query that names one workspace module should only load that module;

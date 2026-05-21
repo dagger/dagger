@@ -163,7 +163,6 @@ func (ModuleConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			})
 		})
 	})
-
 }
 
 func (ModuleConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
@@ -543,7 +542,6 @@ func (m *Coolsdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dag
 				Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "keepdir/", strings.TrimSpace(out))
-
 		})
 	}
 
