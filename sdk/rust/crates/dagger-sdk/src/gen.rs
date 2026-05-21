@@ -928,15 +928,17 @@ impl Changeset {
     pub async fn diff_stats(&self) -> Result<Vec<DiffStat>, DaggerError> {
         let query = self.selection.select("diffStats");
         let query = query.select("id");
-        let ids: Vec<DiffStatId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_diff_stat_from_id(id))
+            .map(|id| DiffStat {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("DiffStat"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// Applies the diff represented by this changeset to a path on the host.
@@ -1270,15 +1272,17 @@ impl CheckGroup {
     pub async fn list(&self) -> Result<Vec<Check>, DaggerError> {
         let query = self.selection.select("list");
         let query = query.select("id");
-        let ids: Vec<CheckId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_check_from_id(id))
+            .map(|id| Check {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Check"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// Generate a markdown report
@@ -2056,15 +2060,17 @@ impl Container {
     pub async fn env_variables(&self) -> Result<Vec<EnvVariable>, DaggerError> {
         let query = self.selection.select("envVariables");
         let query = query.select("id");
-        let ids: Vec<EnvVariableId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_env_variable_from_id(id))
+            .map(|id| EnvVariable {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("EnvVariable"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// check if a file or directory exists
@@ -2222,15 +2228,17 @@ impl Container {
     pub async fn exposed_ports(&self) -> Result<Vec<Port>, DaggerError> {
         let query = self.selection.select("exposedPorts");
         let query = query.select("id");
-        let ids: Vec<PortId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_port_from_id(id))
+            .map(|id| Port {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Port"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// Retrieves a file at the given path.
@@ -2355,15 +2363,17 @@ impl Container {
     pub async fn labels(&self) -> Result<Vec<Label>, DaggerError> {
         let query = self.selection.select("labels");
         let query = query.select("id");
-        let ids: Vec<LabelId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_label_from_id(id))
+            .map(|id| Label {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Label"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// Retrieves the list of paths where a directory is mounted.
@@ -4216,15 +4226,17 @@ impl CurrentModule {
     pub async fn dependencies(&self) -> Result<Vec<Module>, DaggerError> {
         let query = self.selection.select("dependencies");
         let query = query.select("id");
-        let ids: Vec<ModuleId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_module_from_id(id))
+            .map(|id| Module {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Module"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// The generated files and directories made on top of the module source's context directory.
@@ -5003,15 +5015,17 @@ impl Directory {
         let mut query = self.selection.select("search");
         query = query.arg("pattern", pattern.into());
         let query = query.select("id");
-        let ids: Vec<SearchResultId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_search_result_from_id(id))
+            .map(|id| SearchResult {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("SearchResult"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// Searches for content matching the given regular expression or literal string.
@@ -5059,15 +5073,17 @@ impl Directory {
             query = query.arg("limit", limit);
         }
         let query = query.select("id");
-        let ids: Vec<SearchResultId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_search_result_from_id(id))
+            .map(|id| SearchResult {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("SearchResult"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// Return file status
@@ -5912,15 +5928,17 @@ impl EngineCacheEntrySet {
     pub async fn entries(&self) -> Result<Vec<EngineCacheEntry>, DaggerError> {
         let query = self.selection.select("entries");
         let query = query.select("id");
-        let ids: Vec<EngineCacheEntryId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_engine_cache_entry_from_id(id))
+            .map(|id| EngineCacheEntry {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("EngineCacheEntry"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// The number of cache entries in this set.
@@ -5985,15 +6003,17 @@ impl EnumTypeDef {
     pub async fn members(&self) -> Result<Vec<EnumValueTypeDef>, DaggerError> {
         let query = self.selection.select("members");
         let query = query.select("id");
-        let ids: Vec<EnumValueTypeDefId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_enum_value_type_def_from_id(id))
+            .map(|id| EnumValueTypeDef {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("EnumValueTypeDef"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// The name of the enum.
@@ -6019,15 +6039,17 @@ impl EnumTypeDef {
     pub async fn values(&self) -> Result<Vec<EnumValueTypeDef>, DaggerError> {
         let query = self.selection.select("values");
         let query = query.select("id");
-        let ids: Vec<EnumValueTypeDefId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_enum_value_type_def_from_id(id))
+            .map(|id| EnumValueTypeDef {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("EnumValueTypeDef"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
 }
@@ -6220,15 +6242,17 @@ impl Env {
     pub async fn inputs(&self) -> Result<Vec<Binding>, DaggerError> {
         let query = self.selection.select("inputs");
         let query = query.select("id");
-        let ids: Vec<BindingId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_binding_from_id(id))
+            .map(|id| Binding {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Binding"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// Retrieves an output binding by name
@@ -6245,15 +6269,17 @@ impl Env {
     pub async fn outputs(&self) -> Result<Vec<Binding>, DaggerError> {
         let query = self.selection.select("outputs");
         let query = query.select("id");
-        let ids: Vec<BindingId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_binding_from_id(id))
+            .map(|id| Binding {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Binding"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// Return all services defined by the installed modules
@@ -7988,15 +8014,17 @@ impl EnvFile {
     pub async fn variables(&self) -> Result<Vec<EnvVariable>, DaggerError> {
         let query = self.selection.select("variables");
         let query = query.select("id");
-        let ids: Vec<EnvVariableId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_env_variable_from_id(id))
+            .map(|id| EnvVariable {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("EnvVariable"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// Return all variables
@@ -8013,15 +8041,17 @@ impl EnvFile {
             query = query.arg("raw", raw);
         }
         let query = query.select("id");
-        let ids: Vec<EnvVariableId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_env_variable_from_id(id))
+            .map(|id| EnvVariable {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("EnvVariable"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// Add a variable
@@ -8159,15 +8189,17 @@ impl Error {
     pub async fn values(&self) -> Result<Vec<ErrorValue>, DaggerError> {
         let query = self.selection.select("values");
         let query = query.select("id");
-        let ids: Vec<ErrorValueId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_error_value_from_id(id))
+            .map(|id| ErrorValue {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("ErrorValue"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// Add a value to the error.
@@ -8574,15 +8606,17 @@ impl File {
         let mut query = self.selection.select("search");
         query = query.arg("pattern", pattern.into());
         let query = query.select("id");
-        let ids: Vec<SearchResultId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_search_result_from_id(id))
+            .map(|id| SearchResult {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("SearchResult"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// Searches for content matching the given regular expression or literal string.
@@ -8630,15 +8664,17 @@ impl File {
             query = query.arg("globs", globs);
         }
         let query = query.select("id");
-        let ids: Vec<SearchResultId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_search_result_from_id(id))
+            .map(|id| SearchResult {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("SearchResult"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// Retrieves the size of the file, in bytes.
@@ -8857,15 +8893,17 @@ impl Function {
     pub async fn args(&self) -> Result<Vec<FunctionArg>, DaggerError> {
         let query = self.selection.select("args");
         let query = query.select("id");
-        let ids: Vec<FunctionArgId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_function_arg_from_id(id))
+            .map(|id| FunctionArg {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("FunctionArg"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// The reason this function is deprecated, if any.
@@ -9253,15 +9291,17 @@ impl FunctionCall {
     pub async fn input_args(&self) -> Result<Vec<FunctionCallArgValue>, DaggerError> {
         let query = self.selection.select("inputArgs");
         let query = query.select("id");
-        let ids: Vec<FunctionCallArgValueId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_function_call_arg_value_from_id(id))
+            .map(|id| FunctionCallArgValue {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("FunctionCallArgValue"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// The name of the function being called.
@@ -9632,15 +9672,17 @@ impl GeneratorGroup {
     pub async fn list(&self) -> Result<Vec<Generator>, DaggerError> {
         let query = self.selection.select("list");
         let query = query.select("id");
-        let ids: Vec<GeneratorId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_generator_from_id(id))
+            .map(|id| Generator {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Generator"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// Execute all selected generators
@@ -10439,15 +10481,17 @@ impl InputTypeDef {
     pub async fn fields(&self) -> Result<Vec<FieldTypeDef>, DaggerError> {
         let query = self.selection.select("fields");
         let query = query.select("id");
-        let ids: Vec<FieldTypeDefId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_field_type_def_from_id(id))
+            .map(|id| FieldTypeDef {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("FieldTypeDef"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// A unique identifier for this InputTypeDef.
@@ -10507,15 +10551,17 @@ impl InterfaceTypeDef {
     pub async fn functions(&self) -> Result<Vec<Function>, DaggerError> {
         let query = self.selection.select("functions");
         let query = query.select("id");
-        let ids: Vec<FunctionId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_function_from_id(id))
+            .map(|id| Function {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Function"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// A unique identifier for this InterfaceTypeDef.
@@ -10593,15 +10639,17 @@ impl JsonValue {
     pub async fn as_array(&self) -> Result<Vec<JsonValue>, DaggerError> {
         let query = self.selection.select("asArray");
         let query = query.select("id");
-        let ids: Vec<JsonValueId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_json_value_from_id(id))
+            .map(|id| JsonValue {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("JSONValue"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// Decode a boolean from json
@@ -11363,15 +11411,17 @@ impl Module {
     pub async fn dependencies(&self) -> Result<Vec<Module>, DaggerError> {
         let query = self.selection.select("dependencies");
         let query = query.select("id");
-        let ids: Vec<ModuleId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_module_from_id(id))
+            .map(|id| Module {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Module"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// The doc string of the module, if any
@@ -11383,15 +11433,17 @@ impl Module {
     pub async fn enums(&self) -> Result<Vec<TypeDef>, DaggerError> {
         let query = self.selection.select("enums");
         let query = query.select("id");
-        let ids: Vec<TypeDefId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_type_def_from_id(id))
+            .map(|id| TypeDef {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("TypeDef"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// The generated files and directories made on top of the module source's context directory.
@@ -11455,15 +11507,17 @@ impl Module {
     pub async fn interfaces(&self) -> Result<Vec<TypeDef>, DaggerError> {
         let query = self.selection.select("interfaces");
         let query = query.select("id");
-        let ids: Vec<TypeDefId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_type_def_from_id(id))
+            .map(|id| TypeDef {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("TypeDef"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// The introspection schema JSON file for this module.
@@ -11486,15 +11540,17 @@ impl Module {
     pub async fn objects(&self) -> Result<Vec<TypeDef>, DaggerError> {
         let query = self.selection.select("objects");
         let query = query.select("id");
-        let ids: Vec<TypeDefId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_type_def_from_id(id))
+            .map(|id| TypeDef {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("TypeDef"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
@@ -11804,15 +11860,17 @@ impl ModuleSource {
     pub async fn config_clients(&self) -> Result<Vec<ModuleConfigClient>, DaggerError> {
         let query = self.selection.select("configClients");
         let query = query.select("id");
-        let ids: Vec<ModuleConfigClientId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_module_config_client_from_id(id))
+            .map(|id| ModuleConfigClient {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("ModuleConfigClient"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// Whether an existing dagger.json for the module was found.
@@ -11833,15 +11891,17 @@ impl ModuleSource {
     pub async fn dependencies(&self) -> Result<Vec<ModuleSource>, DaggerError> {
         let query = self.selection.select("dependencies");
         let query = query.select("id");
-        let ids: Vec<ModuleSourceId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_module_source_from_id(id))
+            .map(|id| ModuleSource {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("ModuleSource"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// A content-hash of the module source. Module sources with the same digest will output the same generated context and convert into the same module instance.
@@ -11984,15 +12044,17 @@ impl ModuleSource {
     pub async fn toolchains(&self) -> Result<Vec<ModuleSource>, DaggerError> {
         let query = self.selection.select("toolchains");
         let query = query.select("id");
-        let ids: Vec<ModuleSourceId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_module_source_from_id(id))
+            .map(|id| ModuleSource {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("ModuleSource"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// User-defined defaults read from local .env files
@@ -12392,30 +12454,34 @@ impl ObjectTypeDef {
     pub async fn fields(&self) -> Result<Vec<FieldTypeDef>, DaggerError> {
         let query = self.selection.select("fields");
         let query = query.select("id");
-        let ids: Vec<FieldTypeDefId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_field_type_def_from_id(id))
+            .map(|id| FieldTypeDef {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("FieldTypeDef"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// Functions defined on this object, if any.
     pub async fn functions(&self) -> Result<Vec<Function>, DaggerError> {
         let query = self.selection.select("functions");
         let query = query.select("id");
-        let ids: Vec<FunctionId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_function_from_id(id))
+            .map(|id| Function {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Function"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// A unique identifier for this ObjectTypeDef.
@@ -12808,15 +12874,17 @@ impl Query {
     pub async fn current_type_defs(&self) -> Result<Vec<TypeDef>, DaggerError> {
         let query = self.selection.select("currentTypeDefs");
         let query = query.select("id");
-        let ids: Vec<TypeDefId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_type_def_from_id(id))
+            .map(|id| TypeDef {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("TypeDef"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// The TypeDef representations of the objects currently being served in the session.
@@ -12836,15 +12904,17 @@ impl Query {
             query = query.arg("hideCore", hide_core);
         }
         let query = query.select("id");
-        let ids: Vec<TypeDefId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_type_def_from_id(id))
+            .map(|id| TypeDef {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("TypeDef"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// Detect and return the current workspace.
@@ -13567,15 +13637,17 @@ impl SearchResult {
     pub async fn submatches(&self) -> Result<Vec<SearchSubmatch>, DaggerError> {
         let query = self.selection.select("submatches");
         let query = query.select("id");
-        let ids: Vec<SearchSubmatchId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_search_submatch_from_id(id))
+            .map(|id| SearchSubmatch {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("SearchSubmatch"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
 }
@@ -13807,15 +13879,17 @@ impl Service {
     pub async fn ports(&self) -> Result<Vec<Port>, DaggerError> {
         let query = self.selection.select("ports");
         let query = query.select("id");
-        let ids: Vec<PortId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
         Ok(ids
             .into_iter()
-            .map(|id| root.load_port_from_id(id))
+            .map(|id| Port {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Port"),
+                graphql_client: self.graphql_client.clone(),
+            })
             .collect())
     }
     /// Start the service and wait for its health checks to succeed.
@@ -14886,13 +14960,18 @@ impl UpGroup {
     pub async fn list(&self) -> Result<Vec<Up>, DaggerError> {
         let query = self.selection.select("list");
         let query = query.select("id");
-        let ids: Vec<UpId> = query.execute(self.graphql_client.clone()).await?;
-        let root = Query {
-            proc: self.proc.clone(),
-            selection: crate::querybuilder::query(),
-            graphql_client: self.graphql_client.clone(),
-        };
-        Ok(ids.into_iter().map(|id| root.load_up_from_id(id)).collect())
+        let ids: Vec<Id> = query.execute(self.graphql_client.clone()).await?;
+        Ok(ids
+            .into_iter()
+            .map(|id| Up {
+                proc: self.proc.clone(),
+                selection: crate::querybuilder::query()
+                    .select("node")
+                    .arg("id", &id.0)
+                    .inline_fragment("Up"),
+                graphql_client: self.graphql_client.clone(),
+            })
+            .collect())
     }
     /// Execute all selected service functions
     pub fn run(&self) -> UpGroup {

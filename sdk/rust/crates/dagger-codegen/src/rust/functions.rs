@@ -300,36 +300,30 @@ fn render_execution(funcs: &CommonFunctions, field: &FullTypeFields) -> rust::To
     }
 
     if let Some(true) = field.type_.pipe(|t| t.type_ref.is_list_of_objects()) {
-        let output_type = funcs.format_output_type(
-            field
-                .type_
-                .as_ref()
-                .unwrap()
-                .type_ref
-                .of_type
-                .as_ref()
-                .unwrap()
-                .of_type
-                .as_ref()
-                .unwrap(),
-        );
-        let id_type = format!("{}Id", output_type);
-        let load_fn = format!(
-            "load_{}_from_id",
-            format_struct_name(&output_type.to_string())
-        );
+        let elem_ref = field
+            .type_
+            .as_ref()
+            .unwrap()
+            .type_ref
+            .get_non_null()
+            .get_list_item()
+            .get_non_null();
+        let output_type = funcs.format_output_type(elem_ref);
+        let elem_graphql_name = elem_ref.name.clone().unwrap_or_default();
         return quote! {
             let query = query.select("id");
-            let ids: Vec<$(&id_type)> =
+            let ids: Vec<Id> =
                 query.execute(self.graphql_client.clone()).await?;
-            let root = Query {
-                proc: self.proc.clone(),
-                selection: crate::querybuilder::query(),
-                graphql_client: self.graphql_client.clone(),
-            };
             Ok(ids
                 .into_iter()
-                .map(|id| root.$(&load_fn)(id))
+                .map(|id| $(&output_type) {
+                    proc: self.proc.clone(),
+                    selection: crate::querybuilder::query()
+                        .select("node")
+                        .arg("id", &id.0)
+                        .inline_fragment($(quoted(elem_graphql_name))),
+                    graphql_client: self.graphql_client.clone(),
+                })
                 .collect())
         };
     }
