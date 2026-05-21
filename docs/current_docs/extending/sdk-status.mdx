@@ -1,0 +1,36 @@
+---
+title: "SDK Status"
+slug: /extending/sdk-status
+description: "Compare Dagger module SDK maturity and generated-code behavior."
+---
+
+# SDK Status
+
+Use this page to choose an SDK for a reusable module and to understand how much generated-code support each edition currently needs.
+
+| Edition | Best fit | Generated-code model | Status in these docs |
+| --- | --- | --- | --- |
+| [Dang](/extending/editions/dang) | Pure Dagger orchestration and portable reusable modules | No SDK codegen | Primary base edition |
+| [Go](/extending/editions/go) | Compiled tools, Go libraries, strong typing | SDK-managed Go files | Documented with recipes |
+| [TypeScript](/extending/editions/typescript) | Node, Bun, Deno, frontend tooling | local SDK package and TypeScript path mappings | Documented with recipes |
+| [Python](/extending/editions/python) | Python packages, data tooling, scripts | local SDK package under `sdk` | Documented with recipes |
+| [Java](/extending/editions/java) | JVM projects and Maven-based modules | generated sources under `target/generated-sources` | Edition page available; full guide not yet available |
+| [PHP](/extending/editions/php) | PHP projects and Composer workflows | local Composer path package under `sdk` | Edition page available; full guide not yet available |
+
+For new reusable modules, start with Dang unless you need a language ecosystem. Move to Go, TypeScript, or Python when the module needs libraries, test frameworks, package managers, or language-specific build tools from that ecosystem.
+
+Java and PHP pages document IDE setup and generated-code expectations, but their full edition guides are not yet available in this docs release.
+
+## Selection checklist
+
+- Choose Dang for small orchestration modules with minimal dependencies.
+- Choose Go when you need compiled helpers, native concurrency, or Go packages.
+- Choose TypeScript for JavaScript, TypeScript, frontend, Node, Bun, or Deno workflows.
+- Choose Python for Python packages, ML/data tooling, or script-heavy automation.
+- Choose Java or PHP only after confirming the current edition page covers the workflow you need.
+
+## Related pages
+
+- [Building Reusable Modules](/extending/reusable-modules)
+- [Generated Code Lifecycle](/extending/generated-code)
+- [Testing Modules](/extending/testing)

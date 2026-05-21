@@ -43,8 +43,10 @@ Following these principles leads to writing tests for your Dagger modules using 
 ```bash
 mkdir tests
 cd tests
-dagger module init --sdk=go --source=. tests
-dagger module install ..
+cat > dagger.json <<'EOF'
+{"name":"tests","sdk":{"source":"go"},"source":"."}
+EOF
+dagger install ..
 ```
 
 Then add the following to `main.go`:
@@ -70,8 +72,10 @@ func (m *Tests) Hello(ctx context.Context) error {
 ```bash
 mkdir tests
 cd tests
-dagger module init --sdk=python --source=. tests
-dagger module install ..
+cat > dagger.json <<'EOF'
+{"name":"tests","sdk":{"source":"python"},"source":"."}
+EOF
+dagger install ..
 ```
 
 Then add the following to `src/tests/main.py`:
@@ -93,8 +97,10 @@ class Tests:
 ```bash
 mkdir tests
 cd tests
-dagger module init --sdk=typescript --source=. tests
-dagger module install ..
+cat > dagger.json <<'EOF'
+{"name":"tests","sdk":{"source":"typescript"},"source":"."}
+EOF
+dagger install ..
 ```
 
 Then add the following to `src/index.ts`:
@@ -137,8 +143,10 @@ You can combine example modules with the test module pattern to turn those examp
 ```bash
 mkdir -p examples/go
 cd examples/go
-dagger module init --sdk=go --source=. examples/go
-dagger module install ../..
+cat > dagger.json <<'EOF'
+{"name":"examples","sdk":{"source":"go"},"source":"."}
+EOF
+dagger install ../..
 ```
 
 Then add the following to `main.go`:
@@ -163,8 +171,10 @@ func (m *Examples) GreeterHello(ctx context.Context) error {
 ```bash
 mkdir -p examples/python
 cd examples/python
-dagger module init --sdk=python --source=. examples/python
-dagger module install ../..
+cat > dagger.json <<'EOF'
+{"name":"examples","sdk":{"source":"python"},"source":"."}
+EOF
+dagger install ../..
 ```
 
 Then add the following to `src/examples/main.py`:
@@ -185,8 +195,10 @@ class Examples:
 ```bash
 mkdir -p examples/typescript
 cd examples/typescript
-dagger module init --sdk=typescript --source=. examples/typescript
-dagger module install ../..
+cat > dagger.json <<'EOF'
+{"name":"examples","sdk":{"source":"typescript"},"source":"."}
+EOF
+dagger install ../..
 ```
 
 Then add the following to `src/index.ts`:

@@ -14,7 +14,11 @@ Use Dang when your module is primarily orchestrating containers, files, and othe
 ## Project setup
 
 ```shell
-dagger module init --sdk=dang my-module
+mkdir my-module
+cd my-module
+cat > dagger.json <<'EOF'
+{"name":"my-module","sdk":{"source":"dang"}}
+EOF
 ```
 
 This creates a module at `.dagger/modules/my-module/` with a single `main.dang` file.
@@ -252,7 +256,7 @@ The `.changes(source)` call computes the diff between the generated output and t
 Modules can depend on other modules. Add a dependency:
 
 ```shell
-dagger module install github.com/dagger/go
+dagger install github.com/dagger/go
 ```
 
 Then call it in your code:
@@ -301,22 +305,22 @@ github.com/shykes/daggerverse/hello@v0.3.0
 
 ```shell
 # Install a dependency
-dagger module install github.com/shykes/daggerverse/hello@v0.3.0
+dagger install github.com/shykes/daggerverse/hello@v0.3.0
 
 # Update to latest version
-dagger module update hello
+dagger update hello
 
 # Update to a specific version
-dagger module update hello@v0.4.0
+dagger install github.com/shykes/daggerverse/hello@v0.4.0
 
 # Remove a dependency
 dagger uninstall hello
 
 # Local modules (same git repo) work too
-dagger module install ./path/to/module
+dagger install ./path/to/module
 ```
 
-Dependencies are pinned to exact commits in `dagger.json` and versioned via git refs. Updates are explicit.
+Dependencies are declared in `.dagger/config.toml` and resolved in `.dagger/lock` when lockfiles are enabled. Updates are explicit.
 
 ## Services
 
