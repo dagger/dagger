@@ -325,6 +325,8 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerCl
 
 // detectAndLoadWorkspace is the unified core of workspace detection and module loading
 // for local workspaces.
+//
+//nolint:unparam
 func (srv *Server) detectAndLoadWorkspace(
 	ctx context.Context,
 	client *daggerClient,
@@ -563,6 +565,8 @@ func legacyCallerModuleDir(isLocal bool, moduleDir string) string {
 // It works for both local and remote workspaces, parameterized by the filesystem
 // abstraction (statFS/readFile) and reference resolution (resolveLocalRef).
 // For remote workspaces, prebuiltRootfs provides the already-cloned git tree.
+//
+//nolint:gocyclo
 func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	ctx context.Context,
 	client *daggerClient,

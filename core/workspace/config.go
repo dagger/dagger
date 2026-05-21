@@ -540,7 +540,7 @@ func validateConfigKey(key string) error {
 	return validateKeyAgainstType(parts, reflect.TypeOf(Config{}), key)
 }
 
-func setConfigValue(cfg *Config, parts []string, value any) error {
+func setConfigValue(cfg *Config, parts []string, value any) error { //nolint:gocyclo
 	if len(parts) == 0 {
 		return fmt.Errorf("key is required")
 	}
