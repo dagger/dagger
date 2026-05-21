@@ -140,7 +140,6 @@ func hostGitInit(t *testctx.T, dir string) {
 	gitCmd.Dir = dir
 	out, err := gitCmd.CombinedOutput()
 	require.NoError(t, err, out)
-
 }
 
 func (LockfileSuite) TestFromLockfilePinnedRefreshesFloatEntry(ctx context.Context, t *testctx.T) {
@@ -871,7 +870,6 @@ func moduleResolveClientContainer(
 		WithExec([]string{"apk", "add", "git"}).
 		WithExec([]string{"git", "init"}).
 		WithExec([]string{"dagger", "workspace", "init"})
-
 }
 
 func moduleResolveServiceHost(t *testctx.T, rawURL string) string {

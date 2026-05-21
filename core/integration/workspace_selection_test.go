@@ -224,58 +224,6 @@ func workspaceSelectionRemoteRef(ctx context.Context, t *testctx.T, c *dagger.Cl
 	return "http://" + fields[0] + "/repo.git@main"
 }
 
-func workspaceSelectionNestedModuleSource() string {
-	return `package main
-
-import (
-	"context"
-	"strings"
-
-	"dagger/nester/internal/dagger"
-)
-
-func New(greeting string) *Nester {
-	return &Nester{Message: greeting}
-}
-
-type Nester struct {
-	Message string
-}
-
-func (m *Nester) Greeting() string {
-	return m.Message
-}
-
-func (m *Nester) NestedWorkspace(ctx context.Context, cli *dagger.File) (string, error) {
-	return m.nested(ctx, cli, []string{"query"}, dagger.ContainerWithExecOpts{
-		ExperimentalPrivilegedNesting: true,
-		Stdin:                         "{currentWorkspace{cwd configFile}}",
-	})
-}
-
-func (m *Nester) NestedGreeting(ctx context.Context, cli *dagger.File) (string, error) {
-	return m.nested(ctx, cli, []string{"call", "greeting"}, dagger.ContainerWithExecOpts{
-		ExperimentalPrivilegedNesting: true,
-	})
-}
-
-func (m *Nester) nested(ctx context.Context, cli *dagger.File, args []string, opts dagger.ContainerWithExecOpts) (string, error) {
-	execArgs := append([]string{"dagger", "--progress=report"}, args...)
-	out, err := dag.Container().
-		From("` + alpineImage + `").
-		WithMountedFile("/bin/dagger", cli).
-		WithExec([]string{"mkdir", "-p", "/empty"}).
-		WithWorkdir("/empty").
-		WithExec(execArgs, opts).
-		Stdout(ctx)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(out), nil
-}
-`
-}
-
 // TestDeclaredWorkspaceSelection should pin down the main user-visible
 // selection contract for --workspace/-W before any compat or ambient find-up
 // behavior is involved.
@@ -415,7 +363,6 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceMetadataQueries(ctx context.
 		require.NoError(t, err)
 		require.JSONEq(t, `{"currentWorkspace":{"address":"`+remoteRef+`","cwd":".","configFile":".dagger/config.toml"}}`, out)
 	})
-
 }
 
 // TestSelectedWorkspaceFileIO documents the host I/O boundary for -W.
