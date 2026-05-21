@@ -137,6 +137,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieve the binding value, as type GitCommit
+     */
+    public function asGitCommit(): GitCommit
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asGitCommit');
+        return new \Dagger\GitCommit($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieve the binding value, as type GitRef
      */
     public function asGitRef(): GitRef

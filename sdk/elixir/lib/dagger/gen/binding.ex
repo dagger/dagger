@@ -212,6 +212,20 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type GitCommit
+  """
+  @spec as_git_commit(t()) :: Dagger.GitCommit.t()
+  def as_git_commit(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asGitCommit")
+
+    %Dagger.GitCommit{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Retrieve the binding value, as type GitRef
   """
   @spec as_git_ref(t()) :: Dagger.GitRef.t()

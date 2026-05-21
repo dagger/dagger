@@ -56,7 +56,7 @@ func requireIsCommitSHA(ctx context.Context, t *testctx.T, actual string) {
 
 // verify git ref has expected commit hash
 func requireGitRefCommitEqual(ctx context.Context, t *testctx.T, expectedCommit string, ref *dagger.GitRef) {
-	commit, err := ref.Commit(ctx)
+	commit, err := ref.CommitSHA(ctx)
 	require.NoError(t, err)
 	if expectedCommit != "" {
 		require.Equal(t, expectedCommit, commit)
@@ -68,7 +68,7 @@ func requireGitRefCommitsEqual(ctx context.Context, t *testctx.T, refs ...*dagge
 	var first string
 	for i, ref := range refs {
 		if i == 0 {
-			commit, err := ref.Commit(ctx)
+			commit, err := ref.CommitSHA(ctx)
 			require.NoError(t, err)
 			first = commit
 			continue
@@ -79,14 +79,14 @@ func requireGitRefCommitsEqual(ctx context.Context, t *testctx.T, refs ...*dagge
 
 // verify git ref has expected name
 func requireGitRefNameEqual(ctx context.Context, t *testctx.T, expected string, ref *dagger.GitRef) {
-	name, err := ref.Ref(ctx)
+	name, err := ref.Name(ctx)
 	require.NoError(t, err)
 	require.Equal(t, expected, name)
 }
 
 // verify git ref name matches pattern
 func requireGitRefNameRegexp(ctx context.Context, t *testctx.T, pattern string, ref *dagger.GitRef) {
-	name, err := ref.Ref(ctx)
+	name, err := ref.Name(ctx)
 	require.NoError(t, err)
 	require.Regexp(t, pattern, name)
 }
@@ -190,7 +190,7 @@ func requireSampleGitHiddenCommit(ctx context.Context, t *testctx.T, c *dagger.C
 
 func requireStrictCommit(ctx context.Context, t *testctx.T, repo *dagger.GitRepository, refStr string) {
 	ref := repo.Commit(refStr)
-	_, err := ref.Commit(ctx)
+	_, err := ref.Sha(ctx)
 	require.Error(t, err)
 	requireErrOut(t, err, "invalid commit SHA")
 }
@@ -224,11 +224,11 @@ func requireSampleGitRepo(ctx context.Context, t *testctx.T, c *dagger.Client, r
 
 	// 2. TEST COMMIT REFS
 	// sample commit
-	requireSampleGitCommit(ctx, t, c, repo.Commit("c80ac2c13df7d573a069938e01ca13f7a81f0345"))
+	requireSampleGitCommit(ctx, t, c, repo.Ref("c80ac2c13df7d573a069938e01ca13f7a81f0345"))
 	// sample hidden commit
 	// $ git ls-remote https://github.com/dagger/dagger.git | grep pull/8735
 	// 318970484f692d7a76cfa533c5d47458631c9654	refs/pull/8735/head
-	requireSampleGitHiddenCommit(ctx, t, c, repo.Commit("318970484f692d7a76cfa533c5d47458631c9654"))
+	requireSampleGitHiddenCommit(ctx, t, c, repo.Ref("318970484f692d7a76cfa533c5d47458631c9654"))
 
 	// 3. TEST TAG REFS
 	// listing tags
@@ -259,6 +259,39 @@ func requireSampleGitRepo(ctx context.Context, t *testctx.T, c *dagger.Client, r
 	requireStrictTag(ctx, t, repo, "refs/heads/main")
 	requireStrictBranch(ctx, t, repo, "v0.9.5")
 	requireStrictBranch(ctx, t, repo, "refs/tags/v0.9.5")
+}
+
+func (GitSuite) TestGitCommit(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	repo := c.Git("https://github.com/dagger/dagger")
+	sha := "c80ac2c13df7d573a069938e01ca13f7a81f0345"
+
+	commit := repo.Commit(sha)
+	gotSHA, err := commit.Sha(ctx)
+	require.NoError(t, err)
+	require.Equal(t, sha, gotSHA)
+
+	shortSHA, err := commit.ShortSha(ctx)
+	require.NoError(t, err)
+	require.Equal(t, sha[:len(shortSHA)], shortSHA)
+
+	headline, err := commit.MessageHeadline(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, headline)
+
+	authoredDate, err := commit.AuthoredDate(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, authoredDate)
+
+	parents, err := commit.ParentShas(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, parents)
+
+	refCommitSHA, err := repo.Ref(sha).TargetCommit().Sha(ctx)
+	require.NoError(t, err)
+	require.Equal(t, sha, refCommitSHA)
+
+	requireSampleGitRootDir(ctx, t, c, commit.Tree())
 }
 
 func (GitSuite) TestGitRefs(ctx context.Context, t *testctx.T) {
@@ -673,7 +706,7 @@ func (GitSuite) TestGitCheckedTags(ctx context.Context, t *testctx.T) {
 
 		t.Run("commit", func(ctx context.Context, t *testctx.T) {
 			// v0.12.0 => 133917c6f9ce36d8cfdc595d9b7bd2c14cbc2c20
-			requireGitTagsExist(ctx, t, git.Commit("133917c6f9ce36d8cfdc595d9b7bd2c14cbc2c20"))
+			requireGitTagsExist(ctx, t, git.Ref("133917c6f9ce36d8cfdc595d9b7bd2c14cbc2c20"))
 		})
 
 		t.Run("head", func(ctx context.Context, t *testctx.T) {
@@ -1247,6 +1280,51 @@ func (GitSuite) TestGitLatestVersion(ctx context.Context, t *testctx.T) {
 	commit, err := git.LatestVersion().Commit(ctx)
 	require.NoError(t, err)
 	require.Equal(t, v2commit, commit)
+}
+
+func (GitSuite) TestGitCommitReleaseTags(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ctr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		With(gitUserConfig).
+		WithWorkdir("/src").
+		WithExec([]string{"git", "init"}).
+		WithExec([]string{"sh", "-c", `
+			echo base > file && git add file && git commit -m base && git tag v1.0.0 &&
+			echo stable > file && git add file && git commit -m stable && git tag v2.0.0 &&
+			echo rc > file && git add file && git commit -m rc && git tag v2.1.0-rc.1 &&
+			echo next > file && git add file && git commit -m next
+		`})
+
+	stableSHA, err := ctr.WithExec([]string{"git", "rev-parse", "v2.0.0^{commit}"}).Stdout(ctx)
+	require.NoError(t, err)
+	stableSHA = strings.TrimSpace(stableSHA)
+	rcSHA, err := ctr.WithExec([]string{"git", "rev-parse", "v2.1.0-rc.1^{commit}"}).Stdout(ctx)
+	require.NoError(t, err)
+	rcSHA = strings.TrimSpace(rcSHA)
+
+	git := ctr.Directory(".").AsGit()
+
+	ancestorStable, err := git.Head().TargetCommit().AncestorReleaseTag().Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/v2.0.0", ancestorStable)
+
+	ancestorPreRelease, err := git.Head().TargetCommit().
+		AncestorReleaseTag(dagger.GitCommitAncestorReleaseTagOpts{IncludePreRelease: true}).
+		Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/v2.1.0-rc.1", ancestorPreRelease)
+
+	directStable, err := git.Commit(stableSHA).ReleaseTag().Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/v2.0.0", directStable)
+
+	directPreRelease, err := git.Commit(rcSHA).
+		ReleaseTag(dagger.GitCommitReleaseTagOpts{IncludePreRelease: true}).
+		Name(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "refs/tags/v2.1.0-rc.1", directPreRelease)
 }
 
 func (GitSuite) TestGitCommonAncestor(ctx context.Context, t *testctx.T) {

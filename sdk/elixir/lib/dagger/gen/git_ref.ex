@@ -14,7 +14,9 @@ defmodule Dagger.GitRef do
   defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
-
+  @deprecated """
+  Use \\"commitSHA\\" instead.
+  """
   @doc """
   The resolved commit id at this ref.
   """
@@ -22,6 +24,17 @@ defmodule Dagger.GitRef do
   def commit(%__MODULE__{} = git_ref) do
     query_builder =
       git_ref.query_builder |> QB.select("commit")
+
+    Client.execute(git_ref.client, query_builder)
+  end
+
+  @doc """
+  The resolved commit SHA at this ref.
+  """
+  @spec commit_sha(t()) :: {:ok, String.t()} | {:error, term()}
+  def commit_sha(%__MODULE__{} = git_ref) do
+    query_builder =
+      git_ref.query_builder |> QB.select("commitSHA")
 
     Client.execute(git_ref.client, query_builder)
   end
@@ -54,6 +67,20 @@ defmodule Dagger.GitRef do
   end
 
   @doc """
+  The resolved name of this ref.
+  """
+  @spec name(t()) :: {:ok, String.t()} | {:error, term()}
+  def name(%__MODULE__{} = git_ref) do
+    query_builder =
+      git_ref.query_builder |> QB.select("name")
+
+    Client.execute(git_ref.client, query_builder)
+  end
+
+  @deprecated """
+  Use \\"name\\" instead.
+  """
+  @doc """
   The resolved ref name at this ref.
   """
   @spec ref(t()) :: {:ok, String.t()} | {:error, term()}
@@ -62,6 +89,20 @@ defmodule Dagger.GitRef do
       git_ref.query_builder |> QB.select("ref")
 
     Client.execute(git_ref.client, query_builder)
+  end
+
+  @doc """
+  The commit this ref resolves to.
+  """
+  @spec target_commit(t()) :: Dagger.GitCommit.t()
+  def target_commit(%__MODULE__{} = git_ref) do
+    query_builder =
+      git_ref.query_builder |> QB.select("targetCommit")
+
+    %Dagger.GitCommit{
+      query_builder: query_builder,
+      client: git_ref.client
+    }
   end
 
   @doc """

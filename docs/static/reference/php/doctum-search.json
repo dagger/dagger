@@ -848,6 +848,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\GitCommit",
+			"p": "Dagger/GitCommit.html",
+			"d": "<p>An immutable git commit.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\GitCommitId",
+			"p": "Dagger/GitCommitId.html",
+			"d": "<p>The <code>GitCommitID</code> scalar type represents an identifier for an object of type GitCommit.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\GitRef",
 			"p": "Dagger/GitRef.html",
 			"d": "<p>A git ref (tag, branch, or commit).</p>",
@@ -1741,6 +1761,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Binding::asGitCommit",
+			"p": "Dagger/Binding.html#method_asGitCommit",
+			"d": "<p>Retrieve the binding value, as type GitCommit</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Binding::asGitRef",
 			"p": "Dagger/Binding.html#method_asGitRef",
 			"d": "<p>Retrieve the binding value, as type GitRef</p>"
@@ -2446,6 +2472,12 @@
 			"n": "Dagger\\Client::loadGeneratorGroupFromID",
 			"p": "Dagger/Client.html#method_loadGeneratorGroupFromID",
 			"d": "<p>Load a GeneratorGroup from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadGitCommitFromID",
+			"p": "Dagger/Client.html#method_loadGitCommitFromID",
+			"d": "<p>Load a GitCommit from its ID.</p>"
 		},
 		{
 			"t": "M",
@@ -4057,6 +4089,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withGitCommitInput",
+			"p": "Dagger/Env.html#method_withGitCommitInput",
+			"d": "<p>Create or update a binding of type GitCommit in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withGitCommitOutput",
+			"p": "Dagger/Env.html#method_withGitCommitOutput",
+			"d": "<p>Declare a desired GitCommit output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withGitRefInput",
 			"p": "Dagger/Env.html#method_withGitRefInput",
 			"d": "<p>Create or update a binding of type GitRef in the environment</p>"
@@ -4873,9 +4917,111 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\GitCommit::ancestorReleaseTag",
+			"p": "Dagger/GitCommit.html#method_ancestorReleaseTag",
+			"d": "<p>The latest semver release tag reachable from this commit.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::authorEmail",
+			"p": "Dagger/GitCommit.html#method_authorEmail",
+			"d": "<p>Git author email.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::authorName",
+			"p": "Dagger/GitCommit.html#method_authorName",
+			"d": "<p>Git author name.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::authoredDate",
+			"p": "Dagger/GitCommit.html#method_authoredDate",
+			"d": "<p>Git author date, in RFC3339 format.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::committedDate",
+			"p": "Dagger/GitCommit.html#method_committedDate",
+			"d": "<p>Git committer date, in RFC3339 format.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::committerEmail",
+			"p": "Dagger/GitCommit.html#method_committerEmail",
+			"d": "<p>Git committer email.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::committerName",
+			"p": "Dagger/GitCommit.html#method_committerName",
+			"d": "<p>Git committer name.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::id",
+			"p": "Dagger/GitCommit.html#method_id",
+			"d": "<p>A unique identifier for this GitCommit.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::message",
+			"p": "Dagger/GitCommit.html#method_message",
+			"d": "<p>Full commit message.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::messageBody",
+			"p": "Dagger/GitCommit.html#method_messageBody",
+			"d": "<p>Commit message body, excluding the headline.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::messageHeadline",
+			"p": "Dagger/GitCommit.html#method_messageHeadline",
+			"d": "<p>First line of the commit message.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::parentShas",
+			"p": "Dagger/GitCommit.html#method_parentShas",
+			"d": "<p>Parent commit SHAs.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::releaseTag",
+			"p": "Dagger/GitCommit.html#method_releaseTag",
+			"d": "<p>The latest semver release tag that points directly at this commit.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::sha",
+			"p": "Dagger/GitCommit.html#method_sha",
+			"d": "<p>The full commit SHA.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::shortSha",
+			"p": "Dagger/GitCommit.html#method_shortSha",
+			"d": "<p>The abbreviated commit SHA.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitCommit::tree",
+			"p": "Dagger/GitCommit.html#method_tree",
+			"d": "<p>The filesystem tree at this commit.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\GitRef::commit",
 			"p": "Dagger/GitRef.html#method_commit",
 			"d": "<p>The resolved commit id at this ref.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitRef::commitSHA",
+			"p": "Dagger/GitRef.html#method_commitSHA",
+			"d": "<p>The resolved commit SHA at this ref.</p>"
 		},
 		{
 			"t": "M",
@@ -4891,9 +5037,21 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\GitRef::name",
+			"p": "Dagger/GitRef.html#method_name",
+			"d": "<p>The resolved name of this ref.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\GitRef::ref",
 			"p": "Dagger/GitRef.html#method_ref",
 			"d": "<p>The resolved ref name at this ref.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitRef::targetCommit",
+			"p": "Dagger/GitRef.html#method_targetCommit",
+			"d": "<p>The commit this ref resolves to.</p>"
 		},
 		{
 			"t": "M",
