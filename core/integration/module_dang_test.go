@@ -18,6 +18,11 @@ func TestDang(t *testing.T) {
 }
 
 func (DangSuite) TestDirectives(_ context.Context, t *testctx.T) {
+	assertEntries := func(t *testctx.T, out string, expected ...string) {
+		t.Helper()
+		require.ElementsMatch(t, expected, strings.Split(strings.TrimSpace(out), "\n"))
+	}
+
 	t.Run("positional defaultPath", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -25,7 +30,7 @@ func (DangSuite) TestDirectives(_ context.Context, t *testctx.T) {
 			With(daggerCall("with-positional-default-path")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "got source")
+		assertEntries(t, out, "positional-default.txt")
 	})
 
 	t.Run("named defaultPath", func(ctx context.Context, t *testctx.T) {
@@ -35,7 +40,7 @@ func (DangSuite) TestDirectives(_ context.Context, t *testctx.T) {
 			With(daggerCall("with-named-default-path")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "got source")
+		assertEntries(t, out, "named-default.txt")
 	})
 
 	t.Run("positional ignorePatterns", func(ctx context.Context, t *testctx.T) {
@@ -45,7 +50,7 @@ func (DangSuite) TestDirectives(_ context.Context, t *testctx.T) {
 			With(daggerCall("with-positional-ignore")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "got source")
+		assertEntries(t, out, "keep.txt")
 	})
 
 	t.Run("named ignorePatterns", func(ctx context.Context, t *testctx.T) {
@@ -55,7 +60,7 @@ func (DangSuite) TestDirectives(_ context.Context, t *testctx.T) {
 			With(daggerCall("with-named-ignore")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "got source")
+		assertEntries(t, out, "keep.txt")
 	})
 
 	t.Run("mixed syntax", func(ctx context.Context, t *testctx.T) {
@@ -65,7 +70,7 @@ func (DangSuite) TestDirectives(_ context.Context, t *testctx.T) {
 			With(daggerCall("with-mixed-syntax")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "got source")
+		assertEntries(t, out, "keep.log", "keep.txt")
 	})
 }
 
