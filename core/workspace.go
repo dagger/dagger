@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 
 	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
@@ -91,14 +92,18 @@ var _ dagql.PersistedObjectDecoder = (*Workspace)(nil)
 var _ dagql.HasDependencyResults = (*Workspace)(nil)
 
 type persistedWorkspacePayload struct {
-	RootfsResultID uint64 `json:"rootfsResultID,omitempty"`
-	Path           string `json:"path,omitempty"`
-	Address        string `json:"address,omitempty"`
-	Initialized    bool   `json:"initialized,omitempty"`
-	ConfigPath     string `json:"configPath,omitempty"`
-	HasConfig      bool   `json:"hasConfig,omitempty"`
-	ClientID       string `json:"clientID,omitempty"`
-	HostPath       string `json:"hostPath,omitempty"`
+	RootfsResultID  uint64                        `json:"rootfsResultID,omitempty"`
+	CompatWorkspace *workspacepkg.CompatWorkspace `json:"compatWorkspace,omitempty"`
+	Address         string                        `json:"address,omitempty"`
+	Cwd             string                        `json:"cwd,omitempty"`
+	ConfigFile      string                        `json:"configFile,omitempty"`
+	LockFile        string                        `json:"lockFile,omitempty"`
+	ClientID        string                        `json:"clientID,omitempty"`
+	HostPath        string                        `json:"hostPath,omitempty"`
+
+	// Decode-only names from main's pre-workspace-selection payload.
+	LegacyPath       string `json:"path,omitempty"`
+	LegacyConfigPath string `json:"configPath,omitempty"`
 }
 
 func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
@@ -108,13 +113,13 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 	}
 
 	payload := persistedWorkspacePayload{
-		Path:        ws.Path,
-		Address:     ws.Address,
-		Initialized: ws.Initialized,
-		ConfigPath:  ws.ConfigPath,
-		HasConfig:   ws.HasConfig,
-		ClientID:    ws.ClientID,
-		HostPath:    ws.hostPath,
+		CompatWorkspace: ws.compatWorkspace,
+		Address:         ws.Address,
+		Cwd:             ws.Cwd,
+		ConfigFile:      ws.ConfigFile,
+		LockFile:        ws.LockFile,
+		ClientID:        ws.ClientID,
+		HostPath:        ws.hostPath,
 	}
 	if ws.rootfs.Self() != nil {
 		rootfsID, err := encodePersistedObjectRef(cache, ws.rootfs, "workspace rootfs")
@@ -152,15 +157,28 @@ func (*Workspace) DecodePersistedObject(
 		}
 	}
 
+	cwd := persisted.Cwd
+	if cwd == "" {
+		cwd = persisted.LegacyPath
+	}
+	configFile := persisted.ConfigFile
+	if configFile == "" {
+		configFile = persisted.LegacyConfigPath
+	}
+	lockFile := persisted.LockFile
+	if lockFile == "" && configFile != "" {
+		lockFile = filepath.Join(filepath.Dir(configFile), workspacepkg.LockFileName)
+	}
+
 	return &Workspace{
-		rootfs:      rootfs,
-		Path:        persisted.Path,
-		Address:     persisted.Address,
-		Initialized: persisted.Initialized,
-		ConfigPath:  persisted.ConfigPath,
-		HasConfig:   persisted.HasConfig,
-		ClientID:    persisted.ClientID,
-		hostPath:    persisted.HostPath,
+		rootfs:          rootfs,
+		compatWorkspace: persisted.CompatWorkspace,
+		Address:         persisted.Address,
+		Cwd:             cwd,
+		ConfigFile:      configFile,
+		LockFile:        lockFile,
+		ClientID:        persisted.ClientID,
+		hostPath:        persisted.HostPath,
 	}, nil
 }
 
