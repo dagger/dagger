@@ -17,7 +17,6 @@ import (
 	"runtime"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/require"
@@ -266,12 +265,6 @@ func daggerCliBase(t testing.TB, c *dagger.Client) *dagger.Container {
 		WithWorkdir("/work")
 }
 
-func daggerCliGitBase(t testing.TB, c *dagger.Client) *dagger.Container {
-	return daggerCliBase(t, c).
-		WithExec([]string{"apk", "add", "git"}).
-		WithExec([]string{"git", "init"})
-}
-
 const testCLIBinPath = "/bin/dagger"
 
 func goCache(c *dagger.Client) dagger.WithContainerFunc {
@@ -299,19 +292,6 @@ func (s *safeBuffer) String() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.bu.String()
-}
-
-func limitTicker(interval time.Duration, limit int) <-chan time.Time {
-	ch := make(chan time.Time, limit)
-	ticker := time.NewTicker(interval)
-	go func() {
-		defer ticker.Stop()
-		defer close(ch)
-		for range limit {
-			ch <- <-ticker.C
-		}
-	}()
-	return ch
 }
 
 // ensure the cache mount doesn't get pruned in the middle of the test by having a container

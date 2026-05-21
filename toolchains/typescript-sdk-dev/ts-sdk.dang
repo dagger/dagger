@@ -118,7 +118,7 @@ type TypescriptSdkDev {
     release(
       dryRun: true,
       sourceTag: "HEAD",
-      npmToken: null,
+      npmToken: setSecret("npm-token", ""),
     )
   }
 
