@@ -303,13 +303,27 @@ export class Test {
 				t.Run("absolute and relative root context dir", func(ctx context.Context, t *testctx.T) {
 					out, err := modGen.With(daggerCallAt("ci", "dirs")).Stdout(ctx)
 					require.NoError(t, err)
-					require.Equal(t, ".git/\nbackend/\nci/\nfrontend/\nLICENSE\ndagger/\ndagger.json\n", out)
+					expected := ".git/\nbackend/\nci/\nfrontend/\nLICENSE\ndagger/\ndagger.json\n"
+					switch tc.sdk {
+					case "python":
+						expected = ".git/\nbackend/\nci/\nfrontend/\nLICENSE\ndagger/\ndagger.json\npyproject.toml\n"
+					case "typescript":
+						expected = ".git/\nbackend/\nci/\nfrontend/\nLICENSE\ndagger/\ndagger.json\npackage.json\ntsconfig.json\n"
+					}
+					require.Equal(t, expected, out)
 				})
 
 				t.Run("dir ignore", func(ctx context.Context, t *testctx.T) {
 					out, err := modGen.With(daggerCallAt("ci", "dirs-ignore")).Stdout(ctx)
 					require.NoError(t, err)
-					require.Equal(t, "backend/\nfrontend/\ndagger/\n", out)
+					expected := "backend/\nfrontend/\ndagger/\n"
+					switch tc.sdk {
+					case "python":
+						expected = "backend/\nfrontend/\ndagger/\npyproject.toml\n"
+					case "typescript":
+						expected = "backend/\nfrontend/\ndagger/\npackage.json\ntsconfig.json\n"
+					}
+					require.Equal(t, expected, out)
 				})
 
 				t.Run("absolute context dir subpath", func(ctx context.Context, t *testctx.T) {
@@ -565,7 +579,14 @@ export class Test {
 				t.Run("absolute and relative root context dir", func(ctx context.Context, t *testctx.T) {
 					out, err := modGen.With(daggerCall("dirs")).Stdout(ctx)
 					require.NoError(t, err)
-					require.Equal(t, ".git/\nLICENSE\nbackend/\ndagger/\ndagger.json\nfrontend/\n.git/\nLICENSE\nbackend/\ndagger/\ndagger.json\nfrontend/\n", out)
+					expected := ".git/\nLICENSE\nbackend/\ndagger/\ndagger.json\nfrontend/\n.git/\nLICENSE\nbackend/\ndagger/\ndagger.json\nfrontend/\n"
+					switch tc.sdk {
+					case "python":
+						expected = ".git/\nLICENSE\nbackend/\ndagger/\ndagger.json\nfrontend/\npyproject.toml\n.git/\nLICENSE\nbackend/\ndagger/\ndagger.json\nfrontend/\npyproject.toml\n"
+					case "typescript":
+						expected = ".git/\nLICENSE\nbackend/\ndagger/\ndagger.json\nfrontend/\npackage.json\ntsconfig.json\n.git/\nLICENSE\nbackend/\ndagger/\ndagger.json\nfrontend/\npackage.json\ntsconfig.json\n"
+					}
+					require.Equal(t, expected, out)
 				})
 
 				t.Run("absolute context dir subpath", func(ctx context.Context, t *testctx.T) {
