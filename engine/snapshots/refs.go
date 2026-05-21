@@ -993,7 +993,7 @@ func (sm *sharableMountable) Mount() (_ []mount.Mount, _ func() error, retErr er
 			// Don't need temporary mount wrapper for non-overlayfs mounts
 			return mounts, release, nil
 		}
-		dir, err := os.MkdirTemp(sm.mountPoolRoot, "buildkit")
+		dir, err := os.MkdirTemp(sm.mountPoolRoot, "dagger")
 		if err != nil {
 			return nil, nil, err
 		}

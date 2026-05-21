@@ -70,7 +70,7 @@ const (
 	DaggerSessionTokenEnv = "DAGGER_SESSION_TOKEN"
 	DaggerEngineNumCPUEnv = "DAGGER_ENGINE_NUM_CPU"
 
-	BuildkitQemuEmulatorMountPoint = "/dev/.buildkit_qemu_emulator"
+	DaggerQemuEmulatorMountPoint = "/dev/.dagger_qemu_emulator"
 
 	cgroupSampleInterval     = 5 * time.Second
 	finalCgroupSampleTimeout = 5 * time.Second
@@ -480,11 +480,11 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 		case mnt.Destination == MetaMountDestPath:
 			metaMount = &mnt
 
-		case mnt.Destination == BuildkitQemuEmulatorMountPoint,
+		case mnt.Destination == DaggerQemuEmulatorMountPoint,
 			strings.HasPrefix(mnt.Destination, "/dev/pipes/"):
 			// Keep specific sub-mounts of /dev in the OCI spec so that runc processes
 			// them after the /dev tmpfs mount. The qemu emulator is at
-			// /dev/.buildkit_qemu_emulator and /dev/pipes/ is used by heredoc processing.
+			// /dev/.dagger_qemu_emulator and /dev/pipes/ is used by heredoc processing.
 			filteredMounts = append(filteredMounts, mnt)
 
 		case containerfs.IsSpecialMountType(mnt.Type):

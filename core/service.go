@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	ctdleases "github.com/containerd/containerd/v2/core/leases"
 	"github.com/containerd/containerd/v2/core/mount"
 	containerdfs "github.com/containerd/continuity/fs"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
@@ -647,6 +648,18 @@ func (svc *Service) startContainer(
 	cache := query.SnapshotManager()
 
 	svcID := identity.NewID()
+	serviceResourceLeaseID := "dagger-service-" + svcID
+	_, err = query.LeaseManager().Create(ctx,
+		ctdleases.WithID(serviceResourceLeaseID),
+		ctdleases.WithLabel("dagger.io/lease.type", "service"),
+		ctdleases.WithLabel("dagger.io/service.id", svcID),
+		ctdleases.WithLabel("dagger.io/service.digest", dig.String()),
+	)
+	if err != nil {
+		return fmt.Errorf("create service resource lease: %w", err)
+	}
+	running.setResourceLease(cache, serviceResourceLeaseID)
+	ctx = ctdleases.WithLease(ctx, serviceResourceLeaseID)
 
 	releaseLockedCaches, err := lockMountedCaches(ctx, ctr.Mounts)
 	if err != nil {
@@ -670,6 +683,27 @@ func (svc *Service) startContainer(
 	cleanup.Add("release output refs", func() error {
 		return p.releaseOutputRefs(context.WithoutCancel(ctx))
 	})
+	protectedSnapshots := make(map[string]struct{})
+	for _, state := range p.States {
+		for _, ref := range []bkcache.Ref{
+			state.SourceRef,
+			state.ActiveRef,
+			state.OutputMutable,
+			state.OutputImmutable,
+		} {
+			if ref == nil {
+				continue
+			}
+			snapshotID := ref.SnapshotID()
+			if _, ok := protectedSnapshots[snapshotID]; ok {
+				continue
+			}
+			protectedSnapshots[snapshotID] = struct{}{}
+			if err := running.ProtectRef(ctx, ref); err != nil {
+				return fmt.Errorf("protect service mount snapshot %s: %w", snapshotID, err)
+			}
+		}
+	}
 
 	meta := svc.ExecMeta
 	if meta == nil {
@@ -1504,7 +1538,9 @@ func (svc *Service) runAndSnapshotChanges(
 		return res, false, fmt.Errorf("failed to remount mutable copy: %w", err)
 	}
 
-	running.TrackRef(abandonedRef)
+	if err := running.TrackRef(ctx, abandonedRef); err != nil {
+		return res, false, fmt.Errorf("track mcp remount ref: %w", err)
+	}
 	abandonedRef = nil
 
 	srv, err := CurrentDagqlServer(ctx)
