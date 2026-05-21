@@ -48,7 +48,6 @@ func initGitRepo(ctx context.Context, t testing.TB, workdir string) {
 	gitCmd.Dir = workdir
 	gitOutput, err = gitCmd.CombinedOutput()
 	require.NoError(t, err, string(gitOutput))
-
 }
 
 func writeWorkspaceConfigFile(t *testctx.T, workdir, configTOML string) {

@@ -82,7 +82,7 @@ type ElixirSdkDev {
     publish(
       tag: "HEAD",
       dryRun: true,
-      hexApiKey: null,
+      hexApiKey: setSecret("hex-api-key", ""),
     )
   }
 

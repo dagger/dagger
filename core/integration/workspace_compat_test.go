@@ -222,7 +222,6 @@ func (WorkspaceCompatSuite) TestLegacyBlueprintConfig(ctx context.Context, t *te
 			})
 		}
 	})
-
 }
 
 func (WorkspaceCompatSuite) TestLegacyToolchainCompat(ctx context.Context, t *testctx.T) {

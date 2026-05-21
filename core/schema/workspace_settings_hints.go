@@ -246,7 +246,7 @@ func constructorHintsFromModule(mod *core.Module) []workspace.ConstructorArgHint
 	return hints
 }
 
-var addressSupportedObjectSettingExamples = map[string]string{
+var addressSupportedObjectSettingExamples = map[string]string{ //nolint:gosec
 	"Container":     `"alpine:latest"`,
 	"Directory":     `"./path"`,
 	"File":          `"./file"`,
@@ -275,7 +275,7 @@ func buildHintFromArg(arg *core.FunctionArg) (workspace.ConstructorArgHint, bool
 	}, true
 }
 
-func typeInfoFromTypeDef(td *core.TypeDef) (typeLabel, exampleValue string, configurable bool) {
+func typeInfoFromTypeDef(td *core.TypeDef) (typeLabel, exampleValue string, configurable bool) { //nolint:gocyclo
 	if td == nil {
 		return "", "", false
 	}
