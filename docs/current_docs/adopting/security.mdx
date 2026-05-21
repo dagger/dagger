@@ -1,0 +1,91 @@
+---
+title: "Security and Operations"
+slug: /adopting/security
+description: "Plan a Dagger rollout for teams, CI, secrets, engines, traces, and module trust."
+---
+
+# Security and Operations
+
+Use this checklist when rolling out Dagger across a team or CI environment.
+
+## Engine isolation
+
+Dagger workflows run on a Dagger Engine. The default local engine is convenient for individual development, but shared environments need an explicit trust boundary.
+
+For CI and shared runners:
+
+- Run engines on dedicated runner pools or isolated nodes.
+- Avoid sharing a privileged engine between unrelated tenants.
+- Restrict network egress from engine hosts where your organization requires it.
+- Treat engine cache volumes as part of the trust boundary for the projects that use them.
+- Prefer exact engine and CLI versions in CI.
+
+The engine currently requires root capabilities for normal operation. If you self-host engines, review [Engine security](/reference/configuration/engine#security) and [Custom Runner execution requirements](/reference/configuration/custom-runner#execution-requirements) before putting engines in a shared cluster.
+
+## Engine choice
+
+Choose the engine model based on your trust and operations needs:
+
+| Engine model | Best for | Operational notes |
+| --- | --- | --- |
+| Local auto-provisioned engine | Developer laptops and simple CI | Easy to start; cache is local to the machine. |
+| Dagger Cloud Engine | Managed compute and shared cache | Requires Dagger Cloud token configuration. |
+| Self-hosted persistent engine | Teams that need cache control or network placement | Requires engine lifecycle, upgrades, storage, and isolation planning. |
+| Sidecar engine | CI systems that prefer per-job isolation | Requires privileged container support in that CI environment. |
+
+Use encrypted transport or a private network when connecting to a remote engine. Dagger does not add encryption to plain TCP runner connections; see [Custom Runner connection interface](/reference/configuration/custom-runner#connection-interface).
+
+## Module trust
+
+Installed modules execute code inside your Dagger workflows. Treat module installation like adding a build dependency:
+
+- Review module source before installing it.
+- Prefer versioned Git refs or tags for shared workspaces.
+- Commit `.dagger/config.toml` and `.dagger/lock`.
+- Review lockfile changes in pull requests.
+- Use `dagger --lock=frozen check` for protected branches after the lockfile is complete.
+- Limit which teams can approve new modules in production workspaces.
+
+For private modules, make sure CI has the required Git or registry credentials before using frozen lock mode.
+
+## Secrets
+
+Dagger has safeguards for secret values, including log redaction and cache exclusion. These safeguards do not make untrusted workflow code safe.
+
+Module code can intentionally read a secret, send it to a network service, write it to a file, or print derived values. Treat every module that receives a secret as trusted code.
+
+For team use:
+
+- Prefer short-lived credentials, OIDC, or a secret manager over long-lived static tokens.
+- Scope secrets to the smallest set of workflows that need them.
+- Avoid passing secrets to workflows triggered by untrusted forks.
+- Audit uses of `cmd:` secret providers; they execute commands on the host running the Dagger CLI.
+- Rotate credentials after changing module trust boundaries.
+
+See [Secrets](/adopting/secrets) for provider syntax.
+
+## Trace data
+
+Dagger emits OpenTelemetry traces. After `dagger login`, traces can be sent to Dagger Cloud; CI traces can include repository metadata such as branch and commit information.
+
+Before enabling traces broadly:
+
+- Decide whether traces for public repositories may be public.
+- Review what logs and metadata your workflows emit.
+- Avoid printing credentials, tokens, or sensitive business data in command output.
+- Configure organization defaults and retention policies in Dagger Cloud where applicable.
+- Use your own OpenTelemetry collector if your organization requires self-managed trace storage.
+
+See [Observability](/adopting/observability) for tracing options.
+
+## CI baseline
+
+For protected CI:
+
+1. Install an exact Dagger CLI version.
+2. Commit `.dagger/config.toml` and `.dagger/lock`.
+3. Run `dagger --lock=frozen check`.
+4. Inject only the secrets required for that job.
+5. Run on a runner class whose privilege and network access match the workflow risk.
+
+Use a separate lock refresh job or developer workflow to update `.dagger/lock`, then review that diff before merging.
