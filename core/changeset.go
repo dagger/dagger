@@ -102,11 +102,49 @@ type DiffStat struct {
 	RemovedLines int          `field:"true" doc:"Number of removed lines for this path."`
 }
 
+var _ dagql.PersistedObject = (*DiffStat)(nil)
+var _ dagql.PersistedObjectDecoder = (*DiffStat)(nil)
+
 func (*DiffStat) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "DiffStat",
 		NonNull:   true,
 	}
+}
+
+type persistedDiffStat struct {
+	Path         string       `json:"path"`
+	OldPath      *string      `json:"oldPath,omitempty"`
+	Kind         DiffStatKind `json:"kind"`
+	AddedLines   int          `json:"addedLines"`
+	RemovedLines int          `json:"removedLines"`
+}
+
+func (s *DiffStat) EncodePersistedObject(context.Context, dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	if s == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted diff stat: nil diff stat")
+	}
+	return encodePersistedObjectPayload(persistedDiffStat{
+		Path:         s.Path,
+		OldPath:      s.OldPath,
+		Kind:         s.Kind,
+		AddedLines:   s.AddedLines,
+		RemovedLines: s.RemovedLines,
+	})
+}
+
+func (*DiffStat) DecodePersistedObject(_ context.Context, _ *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedDiffStat
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted diff stat payload: %w", err)
+	}
+	return &DiffStat{
+		Path:         persisted.Path,
+		OldPath:      persisted.OldPath,
+		Kind:         persisted.Kind,
+		AddedLines:   persisted.AddedLines,
+		RemovedLines: persisted.RemovedLines,
+	}, nil
 }
 
 // ComputePaths computes the added, modified, and removed paths using git diff.
