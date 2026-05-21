@@ -1,0 +1,106 @@
+---
+title: "Building Reusable Modules"
+slug: /extending/reusable-modules
+description: "Design, test, version, and release Dagger modules for other workspaces."
+---
+
+# Building Reusable Modules
+
+A reusable module is a public or private package of Dagger functions that other workspaces can install. Treat it like any other library: keep the interface stable, test it directly, and release changes deliberately.
+
+## Authoring lifecycle
+
+1. Create or edit the module in its own directory.
+2. Run a module-loading command such as `dagger functions -m .` after changing the module's schema, dependencies, or SDK-managed files.
+3. Run the module's own tests and checks.
+4. Install the module from a consuming workspace and run the checks, generators, or services it exposes.
+5. Tag a release, or publish from a commit reference if the module is private.
+6. Ask consuming workspaces to update explicitly with `dagger install` or `dagger update`.
+
+Keep examples and tests in the same repository as the module. They catch broken defaults, missing files, and changes that only appear when the module is consumed from another workspace.
+
+## Public and private modules
+
+Module references can point at public Git repositories, private Git repositories available to the caller, or local paths during development.
+
+```shell
+dagger install github.com/acme/dagger-modules/lint@v1.2.0
+dagger install git@github.com:acme/private-modules.git/security@9f04d51
+dagger install ./modules/web
+```
+
+For reusable modules, prefer version tags or commit SHAs over floating branches in production workspaces. Consuming workspaces record resolved dependencies in `.dagger/lock` when lockfiles are enabled.
+
+## Interface design
+
+Design public functions around durable tasks, not implementation steps. Good module functions usually read like stable verbs:
+
+- `lint`
+- `test`
+- `build`
+- `publish`
+- `scan`
+- `dev`
+
+Use constructor settings for defaults that a workspace should configure once, such as runtime versions, source directories, or registry names. Use function arguments for per-call values, such as image tags or deployment targets.
+
+```toml
+[modules.web]
+source = "github.com/acme/dagger-web@v1.2.0"
+
+[modules.web.settings]
+nodeVersion = "22"
+packageManager = "pnpm"
+```
+
+Avoid requiring secrets in constructors. Accept `Secret` values on the function that needs them, so callers can decide whether the value comes from an environment variable, a secret store, or CI.
+
+## Checks
+
+Expose checks for validations that should run the same way locally and in CI. A check should:
+
+- require no positional arguments
+- return successfully when the validation passes
+- fail by returning an error or by running a command that exits non-zero
+- use optional arguments only for uncommon tuning
+
+Checks are discovered by `dagger check -l` and run by `dagger check`.
+
+Use checks for tests, linting, format verification, policy checks, generated-code verification, and setup validation.
+
+## Generators
+
+Expose generators when a module can update source files or generated assets. Generators should return a changeset so users can review changes before applying them.
+
+Generators are discovered by `dagger generate -l` and run by `dagger generate`.
+
+Use generators for API clients, protobuf output, lockfile normalization, scaffolding, documentation fragments, or code produced from a canonical source.
+
+## Services
+
+Expose services when users need a long-running dependency for development, integration tests, or local preview. Service functions should return `Service`, not a container that callers must know how to start.
+
+Services are discovered by `dagger up -l` and started by `dagger up`.
+
+Prefer stable names such as `web`, `api`, `db`, or `redis`. Document expected ports and any required settings in the module README.
+
+## Release checklist
+
+Before tagging a reusable module:
+
+- run `dagger functions -m .`
+- run the module's tests
+- run `dagger check` in an example consuming workspace
+- run `dagger generate` if the module exposes generators
+- verify the public function names and argument names are intentional
+- update examples for new required settings or secrets
+- tag the module with a version users can pin
+
+For private modules, use the same checklist and install by an authenticated Git reference your CI runners can access.
+
+## Related pages
+
+- [Base Edition](/extending/editions/dang)
+- [Testing Modules](/extending/testing)
+- [Generated Code Lifecycle](/extending/generated-code)
+- [Workspace Configuration](/reference/configuration/workspaces)

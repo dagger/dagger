@@ -111,10 +111,15 @@ module.exports = {
       collapsible: true,
       collapsed: true,
       items: [
+        "extending/reusable-modules",
+        "extending/generated-code",
+        "extending/sdk-status",
         "extending/editions/dang",
         "extending/editions/go/index",
         "extending/editions/typescript/index",
         "extending/editions/python/index",
+        "extending/editions/java/index",
+        "extending/editions/php/index",
         "extending/testing",
         {
           type: "category",

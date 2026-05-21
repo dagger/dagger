@@ -59,10 +59,13 @@ dagger check
 When pre-built modules don't cover your needs, you can write your own:
 
 ```shell
-dagger module init --sdk=go my-ci
+mkdir -p .dagger/modules/my-ci
+cat > .dagger/modules/my-ci/dagger.json <<'EOF'
+{"name":"my-ci","sdk":{"source":"go"},"source":"."}
+EOF
 ```
 
-This creates a local module in `.dagger/modules/my-ci/` that you can develop and use alongside installed modules.
+This declares a local module in `.dagger/modules/my-ci/` that you can develop and use alongside installed modules.
 
 See [Developing Modules](/extending) for the full guide.
 

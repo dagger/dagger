@@ -325,7 +325,7 @@ To get your IDE to recognize a Dagger Python module and any added Dagger module 
 For example, to open Visual Studio Code from the terminal, with functioning autocompletions (assuming the [Python extensions](https://github.com/microsoft/vscode-python) are installed):
 
 ```shell
-dagger develop
+dagger functions -m .
 uv run code .
 ```
 
@@ -337,7 +337,7 @@ The `uv run` command works with a `uv.lock` file. If you need to use a `requirem
 
 ### Project environment
 
-The following examples show how to get a working [project environment](https://docs.astral.sh/uv/concepts/projects/#project-environments) (`.venv`) from the terminal. Make sure to run `dagger develop` first to get the necessary `sdk` directory locally.
+The following examples show how to get a working [project environment](https://docs.astral.sh/uv/concepts/projects/#project-environments) (`.venv`) from the terminal. Make sure to load the module first, for example with `dagger functions -m .`, to get the necessary `sdk` directory locally.
 
 <Tabs groupId="pytools">
 <TabItem value="uv">

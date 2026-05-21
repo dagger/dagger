@@ -18,7 +18,7 @@ The Dagger dependency code, especially the code generated based on the Dagger en
 This creates a standard Maven project structure, and you can import the project into your favorite IDE as a Maven project. The IDE will automatically recognize the Dagger dependencies and provide code completion and other features out of the box.
 
 :::tip
-The `target` directory is added to the `.gitignore` file by default, so you don't need to worry about committing the generated code. This code is only to help the IDE provide code completion and other features. This code is not required to run the module. It can be refreshed by running `dagger develop` again.
+The `target` directory is added to the `.gitignore` file by default, so you don't need to worry about committing the generated code. This code is only to help the IDE provide code completion and other features. This code is not required to run the module. It can be refreshed by loading the module again, for example with `dagger functions -m .`.
 :::
 
 Most popular IDEs, like IntelliJ Idea or Visual Studio Code, support Maven projects, and will provide out-of-the-box code completion.
