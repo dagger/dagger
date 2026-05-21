@@ -232,6 +232,124 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		require.Equal(t, newFileContents, contents)
 	})
 
+	t.Run("directory search result list survives restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-directory-search-result-state-" + identity.NewID()
+		const pattern = `^\s*//\s*workspace:include\s+\S+\s*$`
+
+		runSearch := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) []string {
+			t.Helper()
+
+			results, err := engineClient.
+				Directory().
+				WithNewFile("one.go", "package main\n// workspace:include ./one\n").
+				WithNewFile("two.go", "package main\n// workspace:include ./two\n").
+				Search(ctx, pattern, dagger.DirectorySearchOpts{
+					Paths: []string{"one.go", "two.go"},
+				})
+			require.NoError(t, err)
+			require.Len(t, results, 2)
+
+			matches := make([]string, 0, len(results))
+			for _, result := range results {
+				filePath, err := result.FilePath(ctx)
+				require.NoError(t, err)
+
+				matchedLines, err := result.MatchedLines(ctx)
+				require.NoError(t, err)
+
+				submatches, err := result.Submatches(ctx)
+				require.NoError(t, err)
+				require.NotEmpty(t, submatches)
+				submatchText, err := submatches[0].Text(ctx)
+				require.NoError(t, err)
+				require.Contains(t, submatchText, "workspace:include")
+
+				matches = append(matches, filePath+":"+strings.TrimSpace(matchedLines))
+			}
+			require.ElementsMatch(t, []string{
+				"one.go:// workspace:include ./one",
+				"two.go:// workspace:include ./two",
+			}, matches)
+
+			return matches
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		matchesA := runSearch(ctx, t, engineClientA)
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		matchesB := runSearch(ctx, t, engineClientB)
+		require.ElementsMatch(t, matchesA, matchesB)
+	})
+
+	t.Run("changeset diff stat list survives restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-changeset-diff-stat-state-" + identity.NewID()
+
+		runDiffStats := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) []string {
+			t.Helper()
+
+			before := engineClient.
+				Directory().
+				WithNewFile("same.txt", "same\n").
+				WithNewFile("changed.txt", "old\n").
+				WithNewFile("removed.txt", "gone\n")
+			after := engineClient.
+				Directory().
+				WithNewFile("same.txt", "same\n").
+				WithNewFile("changed.txt", "new\n").
+				WithNewFile("added.txt", "new\n")
+
+			stats, err := after.Changes(before).DiffStats(ctx)
+			require.NoError(t, err)
+			require.Len(t, stats, 3)
+
+			got := make([]string, 0, len(stats))
+			for _, stat := range stats {
+				path, err := stat.Path(ctx)
+				require.NoError(t, err)
+				kind, err := stat.Kind(ctx)
+				require.NoError(t, err)
+				added, err := stat.AddedLines(ctx)
+				require.NoError(t, err)
+				removed, err := stat.RemovedLines(ctx)
+				require.NoError(t, err)
+				got = append(got, fmt.Sprintf("%s:%s:%d:%d", path, kind, added, removed))
+			}
+			require.ElementsMatch(t, []string{
+				"added.txt:ADDED:1:0",
+				"changed.txt:MODIFIED:1:1",
+				"removed.txt:REMOVED:0:1",
+			}, got)
+
+			return got
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		statsA := runDiffStats(ctx, t, engineClientA)
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		statsB := runDiffStats(ctx, t, engineClientB)
+		require.ElementsMatch(t, statsA, statsB)
+	})
+
 	t.Run("service-bound graph does not break disk persistence", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "phase7-service-binding-state-" + identity.NewID()
