@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dagger/dagger/internal/buildkit/identity"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
@@ -174,14 +174,60 @@ func (ModuleSuite) TestSecretNested(ctx context.Context, t *testctx.T) {
 		require.NoError(t, c.Close())
 	})
 
-	t.Run("secret by id leak", func(ctx context.Context, t *testctx.T) {
-		var logs safeBuffer
-		c := connect(ctx, t, dagger.WithLogOutput(io.MultiWriter(os.Stderr, &logs)))
-		ctr := moduleFixture(t, c, "go/runtime-secret-id-leak")
+	t.Run("secret by id cross-session isolation", func(ctx context.Context, t *testctx.T) {
+		tmpdir := t.TempDir()
 
-		_, err := ctr.With(daggerQuery(`{attempt(uniq: %q)}`, identity.NewID())).Stdout(ctx)
+		err := os.WriteFile(filepath.Join(tmpdir, "dagger.json"), []byte(`{"name":"test","engineVersion":"latest","sdk":{"source":"go"},"source":"."}`), 0o644)
 		require.NoError(t, err)
-		require.NoError(t, c.Close())
+		err = os.WriteFile(filepath.Join(tmpdir, "main.go"), []byte(`package main
+
+import (
+	"context"
+)
+
+type Test struct{}
+
+func (*Test) MakeSecretID(ctx context.Context) (string, error) {
+	id, err := dag.SetSecret("mysecret", "asdfasdf").ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+`), 0o644)
+		require.NoError(t, err)
+
+		c1 := connect(ctx, t)
+		require.NoError(t, c1.ModuleSource(tmpdir).AsModule().Serve(ctx))
+
+		res1, err := testutil.QueryWithClient[struct {
+			Test struct {
+				MakeSecretID string
+			}
+		}](c1, t, `{test{makeSecretId}}`, nil)
+		require.NoError(t, err)
+		secretID := res1.Test.MakeSecretID
+		require.NotEmpty(t, secretID)
+
+		sameSession, err := c1.LoadSecretFromID(dagger.SecretID(secretID)).Plaintext(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "asdfasdf", sameSession)
+
+		c2 := connect(ctx, t)
+		require.NoError(t, c2.ModuleSource(tmpdir).AsModule().Serve(ctx))
+
+		_, err = c2.LoadSecretFromID(dagger.SecretID(secretID)).Plaintext(ctx)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "no bound resource for session")
+
+		require.NoError(t, c1.Close())
+
+		c3 := connect(ctx, t)
+		require.NoError(t, c3.ModuleSource(tmpdir).AsModule().Serve(ctx))
+
+		_, err = c3.LoadSecretFromID(dagger.SecretID(secretID)).Plaintext(ctx)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "no bound resource for session")
 	})
 
 	t.Run("secrets cache normally", func(ctx context.Context, t *testctx.T) {
