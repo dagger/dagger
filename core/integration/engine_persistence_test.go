@@ -299,6 +299,55 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		require.Equal(t, newFileContents, contents)
 	})
 
+	t.Run("container selector lazy dependencies survive restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-container-selector-lazy-state-" + identity.NewID()
+		const fileContents = "selector lazy persisted\n"
+
+		buildRetainedGraph := func(engineClient *dagger.Client) *dagger.Directory {
+			source := engineClient.
+				Directory().
+				WithNewFile("file.txt", fileContents)
+			ctr := engineClient.
+				Container().
+				WithDirectory("/work", source)
+
+			return engineClient.
+				Directory().
+				WithDirectory("rootfs", ctr.Rootfs()).
+				WithDirectory("selected-dir", ctr.Directory("/work")).
+				WithFile("selected-file.txt", ctr.File("/work/file.txt"))
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		dirID, err := buildRetainedGraph(engineClientA).ID(ctx)
+		require.NoError(t, err)
+
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		loaded := engineClientB.LoadDirectoryFromID(dirID)
+
+		selectedFile, err := loaded.File("selected-file.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fileContents, selectedFile)
+
+		selectedDirFile, err := loaded.File("selected-dir/file.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fileContents, selectedDirFile)
+
+		rootfsFile, err := loaded.File("rootfs/work/file.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fileContents, rootfsFile)
+	})
+
 	t.Run("directory search result list survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "phase7-directory-search-result-state-" + identity.NewID()
