@@ -348,7 +348,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
 	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
 	flags.BoolVarP(&debugFlag, "debug", "d", debugFlag, "Show debug logs and full verbosity")
-	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty, dots, logs)")
+	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, classic, tty, dots, logs, report)")
 	flags.StringVar(&lockMode, "lock", "", "Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.")
 	flags.BoolVarP(&interactive, "interactive", "i", false, "Spawn a terminal on container exec failure")
 	flags.StringVar(&interactiveCommand, "interactive-command", "/bin/sh", "Change the default command for interactive mode")
@@ -596,9 +596,7 @@ func main() {
 	if progress == "auto" {
 		if env := os.Getenv("DAGGER_PROGRESS"); env != "" {
 			progress = env
-		} else if os.Getenv("CLAUDECODE") == "1" {
-			progress = "report"
-		} else if hasTTY {
+		} else if hasTTY && os.Getenv("CLAUDECODE") != "1" {
 			progress = "tty"
 		} else {
 			progress = "plain"
@@ -611,6 +609,8 @@ func main() {
 	switch progress {
 	case "plain":
 		Frontend = idtui.NewPlain(stderr)
+	case "classic":
+		Frontend = idtui.NewClassic(stderr)
 	case "tty":
 		if !hasTTY {
 			fmt.Fprintf(stderr, "no tty available for progress %q\n", progress)

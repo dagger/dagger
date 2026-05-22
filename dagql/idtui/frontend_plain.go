@@ -113,7 +113,8 @@ type logLine struct {
 	time time.Time
 }
 
-func NewPlain(w io.Writer) Frontend {
+// NewClassic creates the pre-LLM plain-text progress frontend.
+func NewClassic(w io.Writer) Frontend {
 	db := dagui.NewDB()
 	return &frontendPlain{
 		db:       db,
