@@ -988,6 +988,16 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
+                    <a href="../Dagger/Schema.html"><abbr title="Dagger\Schema">Schema</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_loadSchemaFromID">loadSchemaFromID</a>(<a href="../Dagger/SchemaId.html"><abbr title="Dagger\SchemaId">SchemaId</abbr></a> $id)
+        
+                                            <p><p>Load a Schema from its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
                     <a href="../Dagger/SearchResult.html"><abbr title="Dagger\SearchResult">SearchResult</abbr></a>
                 </div>
                 <div class="col-md-8">
@@ -1195,6 +1205,16 @@
                     <a href="#method_node">node</a>(<a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a> $id)
         
                                             <p><p>Load any object by its ID.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Schema.html"><abbr title="Dagger\Schema">Schema</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_schema">schema</a>(<a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a> $json)
+        
+                                            <p><p>Load a GraphQL introspection schema for merging.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -4856,8 +4876,50 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_loadSearchResultFromID">
+                    <h3 id="method_loadSchemaFromID">
         <div class="location">at line 908</div>
+        <code>                    <a href="../Dagger/Schema.html"><abbr title="Dagger\Schema">Schema</abbr></a>
+    <strong>loadSchemaFromID</strong>(<a href="../Dagger/SchemaId.html"><abbr title="Dagger\SchemaId">SchemaId</abbr></a> $id)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a Schema from its ID.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><a href="../Dagger/SchemaId.html"><abbr title="Dagger\SchemaId">SchemaId</abbr></a></td>
+                <td>$id</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Schema.html"><abbr title="Dagger\Schema">Schema</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_loadSearchResultFromID">
+        <div class="location">at line 918</div>
         <code>                    <a href="../Dagger/SearchResult.html"><abbr title="Dagger\SearchResult">SearchResult</abbr></a>
     <strong>loadSearchResultFromID</strong>(<a href="../Dagger/SearchResultId.html"><abbr title="Dagger\SearchResultId">SearchResultId</abbr></a> $id)
         </code>
@@ -4899,7 +4961,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadSearchSubmatchFromID">
-        <div class="location">at line 918</div>
+        <div class="location">at line 928</div>
         <code>                    <a href="../Dagger/SearchSubmatch.html"><abbr title="Dagger\SearchSubmatch">SearchSubmatch</abbr></a>
     <strong>loadSearchSubmatchFromID</strong>(<a href="../Dagger/SearchSubmatchId.html"><abbr title="Dagger\SearchSubmatchId">SearchSubmatchId</abbr></a> $id)
         </code>
@@ -4941,7 +5003,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadSecretFromID">
-        <div class="location">at line 928</div>
+        <div class="location">at line 938</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>loadSecretFromID</strong>(<a href="../Dagger/SecretId.html"><abbr title="Dagger\SecretId">SecretId</abbr></a> $id)
         </code>
@@ -4983,7 +5045,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadServiceFromID">
-        <div class="location">at line 938</div>
+        <div class="location">at line 948</div>
         <code>                    <a href="../Dagger/Service.html"><abbr title="Dagger\Service">Service</abbr></a>
     <strong>loadServiceFromID</strong>(<a href="../Dagger/ServiceId.html"><abbr title="Dagger\ServiceId">ServiceId</abbr></a> $id)
         </code>
@@ -5025,7 +5087,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadSocketFromID">
-        <div class="location">at line 948</div>
+        <div class="location">at line 958</div>
         <code>                    <a href="../Dagger/Socket.html"><abbr title="Dagger\Socket">Socket</abbr></a>
     <strong>loadSocketFromID</strong>(<a href="../Dagger/SocketId.html"><abbr title="Dagger\SocketId">SocketId</abbr></a> $id)
         </code>
@@ -5067,7 +5129,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadSourceMapFromID">
-        <div class="location">at line 958</div>
+        <div class="location">at line 968</div>
         <code>                    <a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a>
     <strong>loadSourceMapFromID</strong>(<a href="../Dagger/SourceMapId.html"><abbr title="Dagger\SourceMapId">SourceMapId</abbr></a> $id)
         </code>
@@ -5109,7 +5171,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadStatFromID">
-        <div class="location">at line 968</div>
+        <div class="location">at line 978</div>
         <code>                    <a href="../Dagger/Stat.html"><abbr title="Dagger\Stat">Stat</abbr></a>
     <strong>loadStatFromID</strong>(<a href="../Dagger/StatId.html"><abbr title="Dagger\StatId">StatId</abbr></a> $id)
         </code>
@@ -5151,7 +5213,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadSyncerFromID">
-        <div class="location">at line 978</div>
+        <div class="location">at line 988</div>
         <code>                    <a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a>
     <strong>loadSyncerFromID</strong>(<a href="../Dagger/SyncerId.html"><abbr title="Dagger\SyncerId">SyncerId</abbr></a> $id)
         </code>
@@ -5193,7 +5255,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadTerminalFromID">
-        <div class="location">at line 988</div>
+        <div class="location">at line 998</div>
         <code>                    <a href="../Dagger/Terminal.html"><abbr title="Dagger\Terminal">Terminal</abbr></a>
     <strong>loadTerminalFromID</strong>(<a href="../Dagger/TerminalId.html"><abbr title="Dagger\TerminalId">TerminalId</abbr></a> $id)
         </code>
@@ -5235,7 +5297,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadTypeDefFromID">
-        <div class="location">at line 998</div>
+        <div class="location">at line 1008</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>loadTypeDefFromID</strong>(<a href="../Dagger/TypeDefId.html"><abbr title="Dagger\TypeDefId">TypeDefId</abbr></a> $id)
         </code>
@@ -5277,7 +5339,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadUpFromID">
-        <div class="location">at line 1008</div>
+        <div class="location">at line 1018</div>
         <code>                    <a href="../Dagger/Up.html"><abbr title="Dagger\Up">Up</abbr></a>
     <strong>loadUpFromID</strong>(<a href="../Dagger/UpId.html"><abbr title="Dagger\UpId">UpId</abbr></a> $id)
         </code>
@@ -5319,7 +5381,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadUpGroupFromID">
-        <div class="location">at line 1018</div>
+        <div class="location">at line 1028</div>
         <code>                    <a href="../Dagger/UpGroup.html"><abbr title="Dagger\UpGroup">UpGroup</abbr></a>
     <strong>loadUpGroupFromID</strong>(<a href="../Dagger/UpGroupId.html"><abbr title="Dagger\UpGroupId">UpGroupId</abbr></a> $id)
         </code>
@@ -5361,7 +5423,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadWorkspaceFromID">
-        <div class="location">at line 1028</div>
+        <div class="location">at line 1038</div>
         <code>                    <a href="../Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a>
     <strong>loadWorkspaceFromID</strong>(<a href="../Dagger/WorkspaceId.html"><abbr title="Dagger\WorkspaceId">WorkspaceId</abbr></a> $id)
         </code>
@@ -5403,7 +5465,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadWorkspaceMigrationFromID">
-        <div class="location">at line 1038</div>
+        <div class="location">at line 1048</div>
         <code>                    <a href="../Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a>
     <strong>loadWorkspaceMigrationFromID</strong>(<a href="../Dagger/WorkspaceMigrationId.html"><abbr title="Dagger\WorkspaceMigrationId">WorkspaceMigrationId</abbr></a> $id)
         </code>
@@ -5445,7 +5507,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadWorkspaceMigrationStepFromID">
-        <div class="location">at line 1048</div>
+        <div class="location">at line 1058</div>
         <code>                    <a href="../Dagger/WorkspaceMigrationStep.html"><abbr title="Dagger\WorkspaceMigrationStep">WorkspaceMigrationStep</abbr></a>
     <strong>loadWorkspaceMigrationStepFromID</strong>(<a href="../Dagger/WorkspaceMigrationStepId.html"><abbr title="Dagger\WorkspaceMigrationStepId">WorkspaceMigrationStepId</abbr></a> $id)
         </code>
@@ -5487,7 +5549,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadWorkspaceModuleFromID">
-        <div class="location">at line 1058</div>
+        <div class="location">at line 1068</div>
         <code>                    <a href="../Dagger/WorkspaceModule.html"><abbr title="Dagger\WorkspaceModule">WorkspaceModule</abbr></a>
     <strong>loadWorkspaceModuleFromID</strong>(<a href="../Dagger/WorkspaceModuleId.html"><abbr title="Dagger\WorkspaceModuleId">WorkspaceModuleId</abbr></a> $id)
         </code>
@@ -5529,7 +5591,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_loadWorkspaceModuleSettingFromID">
-        <div class="location">at line 1068</div>
+        <div class="location">at line 1078</div>
         <code>                    <a href="../Dagger/WorkspaceModuleSetting.html"><abbr title="Dagger\WorkspaceModuleSetting">WorkspaceModuleSetting</abbr></a>
     <strong>loadWorkspaceModuleSettingFromID</strong>(<a href="../Dagger/WorkspaceModuleSettingId.html"><abbr title="Dagger\WorkspaceModuleSettingId">WorkspaceModuleSettingId</abbr></a> $id)
         </code>
@@ -5571,7 +5633,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_module">
-        <div class="location">at line 1078</div>
+        <div class="location">at line 1088</div>
         <code>                    <a href="../Dagger/Module.html"><abbr title="Dagger\Module">Module</abbr></a>
     <strong>module</strong>()
         </code>
@@ -5603,7 +5665,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_moduleRuntime">
-        <div class="location">at line 1084</div>
+        <div class="location">at line 1094</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>moduleRuntime</strong>(<a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a> $modSource, <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a> $introspectionJson)
         </code>
@@ -5651,7 +5713,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_moduleSource">
-        <div class="location">at line 1095</div>
+        <div class="location">at line 1105</div>
         <code>                    <a href="../Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a>
     <strong>moduleSource</strong>(string $refString, string|null $refPin = &#039;&#039;, bool|null $disableFindUp = false, bool|null $allowNotExists = false, <abbr title="Dagger\Dagger\ModuleSourceKind">ModuleSourceKind</abbr>|null $requireKind = null)
         </code>
@@ -5713,7 +5775,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_node">
-        <div class="location">at line 1122</div>
+        <div class="location">at line 1132</div>
         <code>                    <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
     <strong>node</strong>(<a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a> $id)
         </code>
@@ -5754,8 +5816,50 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_schema">
+        <div class="location">at line 1142</div>
+        <code>                    <a href="../Dagger/Schema.html"><abbr title="Dagger\Schema">Schema</abbr></a>
+    <strong>schema</strong>(<a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a> $json)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Load a GraphQL introspection schema for merging.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><a href="../Dagger/Json.html"><abbr title="Dagger\Json">Json</abbr></a></td>
+                <td>$json</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Schema.html"><abbr title="Dagger\Schema">Schema</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_secret">
-        <div class="location">at line 1132</div>
+        <div class="location">at line 1152</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>secret</strong>(string $uri, string|null $cacheKey = null)
         </code>
@@ -5802,7 +5906,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_setSecret">
-        <div class="location">at line 1147</div>
+        <div class="location">at line 1167</div>
         <code>                    <a href="../Dagger/Secret.html"><abbr title="Dagger\Secret">Secret</abbr></a>
     <strong>setSecret</strong>(string $name, string $plaintext)
         </code>
@@ -5849,7 +5953,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sourceDir">
-        <div class="location">at line 1155</div>
+        <div class="location">at line 1175</div>
         <code>                    <a href="../Dagger/Directory.html"><abbr title="Dagger\Directory">Directory</abbr></a>
     <strong>sourceDir</strong>()
         </code>
@@ -5882,7 +5986,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_sourceMap">
-        <div class="location">at line 1164</div>
+        <div class="location">at line 1184</div>
         <code>                    <a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a>
     <strong>sourceMap</strong>(string $filename, int $line, int $column)
         </code>
@@ -5934,7 +6038,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_typeDef">
-        <div class="location">at line 1176</div>
+        <div class="location">at line 1196</div>
         <code>                    <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a>
     <strong>typeDef</strong>()
         </code>
@@ -5966,7 +6070,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_version">
-        <div class="location">at line 1185</div>
+        <div class="location">at line 1205</div>
         <code>                    string
     <strong>version</strong>()
         </code>
@@ -5998,7 +6102,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_with">
-        <div class="location">at line 1194</div>
+        <div class="location">at line 1214</div>
         <code>                    <a href="../Dagger/Client.html"><abbr title="Dagger\Client">Client</abbr></a>
     <strong>with</strong>(<abbr title="Dagger\Dagger\Directory">Directory</abbr>|null $sdkSourceDir = null)
         </code>

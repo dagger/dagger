@@ -6,7 +6,7 @@
 selection surface.
 
 ```console
-$ dagger -W github.com/acme/hello@main check
+dagger -W github.com/acme/hello@main check
 ```
 
 For explicit remote workspace addresses, `dagger check` first asks Dagger Cloud

@@ -530,6 +530,12 @@ func LoadScalarTypeDefFromID(id dagger.ScalarTypeDefID) *dagger.ScalarTypeDef {
 	return client.LoadScalarTypeDefFromID(id)
 }
 
+// Load a Schema from its ID.
+func LoadSchemaFromID(id dagger.SchemaID) *dagger.Schema {
+	client := initClient()
+	return client.LoadSchemaFromID(id)
+}
+
 // Load a SearchResult from its ID.
 func LoadSearchResultFromID(id dagger.SearchResultID) *dagger.SearchResult {
 	client := initClient()
@@ -648,6 +654,12 @@ func ModuleSource(refString string, opts ...dagger.ModuleSourceOpts) *dagger.Mod
 func Node(id dagger.ID) dagger.Node {
 	client := initClient()
 	return client.Node(id)
+}
+
+// Load a GraphQL introspection schema for merging.
+func Schema(json dagger.JSON) *dagger.Schema {
+	client := initClient()
+	return client.Schema(json)
 }
 
 // Creates a new secret.

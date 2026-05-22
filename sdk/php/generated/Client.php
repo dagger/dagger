@@ -903,6 +903,16 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
+     * Load a Schema from its ID.
+     */
+    public function loadSchemaFromID(SchemaId $id): Schema
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadSchemaFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Schema($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a SearchResult from its ID.
      */
     public function loadSearchResultFromID(SearchResultId $id): SearchResult
@@ -1124,6 +1134,16 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('node');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\NodeClient($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a GraphQL introspection schema for merging.
+     */
+    public function schema(Json $json): Schema
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('schema');
+        $innerQueryBuilder->setArgument('json', $json);
+        return new \Dagger\Schema($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

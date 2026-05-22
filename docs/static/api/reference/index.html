@@ -56,6 +56,7 @@
               <li><a href="#query-module">module</a></li>
               <li><a href="#query-moduleSource">moduleSource</a></li>
               <li><a href="#query-node">node</a></li>
+              <li><a href="#query-schema">schema</a></li>
               <li><a href="#query-secret">secret</a></li>
               <li><a href="#query-setSecret">setSecret</a></li>
               <li><a href="#query-sourceMap">sourceMap</a></li>
@@ -141,6 +142,7 @@
               <li><a href="#definition-ReturnType">ReturnType</a></li>
               <li><a href="#definition-SDKConfig">SDKConfig</a></li>
               <li><a href="#definition-ScalarTypeDef">ScalarTypeDef</a></li>
+              <li><a href="#definition-Schema">Schema</a></li>
               <li><a href="#definition-SearchResult">SearchResult</a></li>
               <li><a href="#definition-SearchSubmatch">SearchSubmatch</a></li>
               <li><a href="#definition-Secret">Secret</a></li>
@@ -1640,6 +1642,58 @@
               </div>
             </div>
           </section>
+          <section id="query-schema" class="operation operation-query" data-traverse-target="query-schema">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>schema</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a GraphQL introspection schema for merging.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Schema"><code>Schema!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>json</code></span> - <span class="property-type"><a href="#definition-JSON"><code>JSON!</code></a></span>
+                        </td>
+                        <td> The introspection schema JSON to load. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-secret" class="operation operation-query" data-traverse-target="query-secret">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -2104,6 +2158,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asModuleSource" href="#Binding-asModuleSource"><code>asModuleSource</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
                         <td> Retrieve the binding value, as type ModuleSource </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asSchema" href="#Binding-asSchema"><code>asSchema</code></a> - <span class="property-type"><a href="#definition-Schema"><code>Schema!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type Schema </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asSearchResult" href="#Binding-asSearchResult"><code>asSearchResult</code></a> - <span class="property-type"><a href="#definition-SearchResult"><code>SearchResult!</code></a></span> </td>
@@ -6846,6 +6904,52 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withSchemaInput" href="#Env-withSchemaInput"><code>withSchemaInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type Schema in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span></h6>
+                                <p>The Schema value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withSchemaOutput" href="#Env-withSchemaOutput"><code>withSchemaOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired Schema output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withSearchResultInput" href="#Env-withSearchResultInput"><code>withSearchResultInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Create or update a binding of type SearchResult in the environment </td>
                       </tr>
@@ -11560,6 +11664,11 @@
                       </tr>
                       <tr>
                         <td>
+                          <p><a href="#definition-Schema"><code>Schema</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
                           <p><a href="#definition-SearchResult"><code>SearchResult</code></a></p>
                         </td>
                       </tr>
@@ -12028,6 +12137,62 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ScalarTypeDef-sourceModuleName" href="#ScalarTypeDef-sourceModuleName"><code>sourceModuleName</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> If this ScalarTypeDef is associated with a Module, the name of the module. Unset otherwise. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-Schema" class="definition definition-object" data-traverse-target="definition-Schema">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">Schema</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A GraphQL introspection schema that can be inspected and merged.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Schema-contents" href="#Schema-contents"><code>contents</code></a> - <span class="property-type"><a href="#definition-JSON"><code>JSON!</code></a></span> </td>
+                        <td> Serialize the schema back to introspection JSON. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Schema-id" href="#Schema-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span> </td>
+                        <td> A unique identifier for this Schema. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Schema-merge" href="#Schema-merge"><code>merge</code></a> - <span class="property-type"><a href="#definition-Schema"><code>Schema!</code></a></span> </td>
+                        <td> Merge a module's introspection-shaped type definitions into the schema, returning the combined schema. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>moduleTypes</code></span> - <span class="property-type"><a href="#definition-JSON"><code>JSON!</code></a></span></h6>
+                                <p>Introspection JSON describing the types the module defines. Object, interface and enum types are appended to the schema, and a constructor field for the module is added to the Query type.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>moduleName</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the module whose types are being merged. Used to stamp the @sourceModuleName directive and to derive the module&#39;s constructor field.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                     </tbody>
                   </table>
