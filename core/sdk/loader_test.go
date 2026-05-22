@@ -151,8 +151,10 @@ func TestWorkspaceModuleForRuntime(t *testing.T) {
 			wantOK:  true,
 		},
 		{
-			name:    "dang has no workspace module",
+			name:    "dang",
 			runtime: "dang",
+			want:    WorkspaceModule{Name: "dang-sdk", Source: "github.com/dagger/dang-sdk"},
+			wantOK:  true,
 		},
 		{
 			name:    "external sdk has no static mapping",
