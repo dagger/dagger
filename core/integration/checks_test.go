@@ -80,14 +80,14 @@ func (ChecksSuite) TestChecksDirectSDK(ctx context.Context, t *testctx.T) {
 			require.Contains(t, out, "test:unit")
 			// run a specific passing check
 			out, err = modGen.
-				With(daggerExec("--progress=report", "check", "passing*")).
+				With(daggerExec("--progress=report", "check", "passing-*")).
 				CombinedOutput(ctx)
 			require.NoError(t, err)
 			require.Regexp(t, `passing-check.*OK`, out)
 			require.Regexp(t, `passing-container.*OK`, out)
 			// run a specific failing check
 			out, err = modGen.
-				With(daggerExecFail("--progress=report", "check", "failing*")).
+				With(daggerExecFail("--progress=report", "check", "failing-*")).
 				CombinedOutput(ctx)
 			require.Regexp(t, "failing-check.*ERROR", out)
 			require.Regexp(t, "failing-container.*ERROR", out)
