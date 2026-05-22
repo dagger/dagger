@@ -62,6 +62,15 @@ func (db *DB) AllSpans() iter.Seq[*Span] {
 	return db.Spans.Iter()
 }
 
+func (db *DB) HasChecks() bool {
+	for _, span := range db.Spans.Order {
+		if span.CheckName != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	view := &RowsView{
 		BySpan: make(map[SpanID]*TraceTree),
