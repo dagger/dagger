@@ -78,6 +78,40 @@ type Myapp {
 		require.Error(t, err, "preview should not write migrated module config")
 	})
 
+	t.Run("preview does not write planned lockfile", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		source := "github.com/dagger/dagger/modules/wolfi@main"
+		pin := strings.Repeat("1", 40)
+
+		ctr := legacyWorkspaceBase(t, c, `{
+  "name": "myapp",
+  "toolchains": [
+    {"name": "wolfi", "source": "`+source+`", "pin": "`+pin+`"}
+  ]
+}`)
+
+		preview := ctr.WithExec([]string{"dagger", "--progress=report", "query"}, dagger.ContainerWithExecOpts{
+			Stdin: `{
+  currentWorkspace {
+    migrate(force: true) {
+      changes {
+        diffStats {
+          path
+        }
+      }
+    }
+  }
+}`,
+			ExperimentalPrivilegedNesting: true,
+		})
+		out, err := preview.Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, `"path": ".dagger/lock"`)
+
+		_, err = preview.WithExec([]string{"test", "-f", ".dagger/lock"}).Sync(ctx)
+		require.Error(t, err, "preview should not write the planned lockfile")
+	})
+
 	t.Run("apply writes workspace config and migrated modules", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		migrateApply := daggerExec("migrate", "-y")
@@ -684,6 +718,32 @@ type Api {
 		djson, err := ctr.WithExec([]string{"cat", "services/api/.dagger/modules/api/dagger.json"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, djson, `"source": "../../../src"`)
+	})
+
+	t.Run("migrates nested pinned refs into nested lockfile", func(ctx context.Context, t *testctx.T) {
+		source := "github.com/dagger/dagger/modules/wolfi@main"
+		pin := strings.Repeat("2", 40)
+
+		ctr := workspaceBase(t, c).
+			WithNewFile("services/api/dagger.json", `{
+  "name": "api",
+  "toolchains": [
+    {"name": "wolfi", "source": "`+source+`", "pin": "`+pin+`"}
+  ]
+}`).
+			WithExec([]string{"git", "add", "."}).
+			WithExec([]string{"git", "commit", "-m", "initial"}).
+			With(daggerExec("migrate", "-f", "-y"))
+
+		_, err := ctr.WithExec([]string{"test", "-f", "services/api/.dagger/lock"}).Sync(ctx)
+		require.NoError(t, err, "nested migration should write a nested workspace lock")
+
+		lockOut, err := ctr.File("/work/services/api/.dagger/lock").Contents(ctx)
+		require.NoError(t, err)
+		assertModuleResolveLockEntry(t, []byte(lockOut), source, workspace.PolicyPin)
+
+		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/lock"}).Sync(ctx)
+		require.Error(t, err, "nested lock entries should not be staged into the root workspace lock")
 	})
 
 	t.Run("plain child modules create root parent workspace", func(ctx context.Context, t *testctx.T) {
