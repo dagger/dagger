@@ -19,6 +19,12 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
+// ModuleIntrospectionEmitter produces the module's own types as
+// introspection JSON, for merging into the dependency schema.
+type ModuleIntrospectionEmitter interface {
+	ModuleIntrospectionJSON(moduleName string) ([]byte, error)
+}
+
 func GoTemplateFuncs(
 	ctx context.Context,
 	schema *introspection.Schema,
@@ -43,6 +49,30 @@ func GoTemplateFuncs(
 		schemaVersion:   schemaVersion,
 		pass:            pass,
 	}.FuncMap()
+}
+
+// NewModuleIntrospectionEmitter constructs a minimal emitter suitable for
+// calling ModuleIntrospectionJSON. The schema and schemaVersion are the current
+// (deps) schema; pkg and fset are from packages.Load on the module source.
+func NewModuleIntrospectionEmitter(
+	ctx context.Context,
+	schema *introspection.Schema,
+	schemaVersion string,
+	cfg generator.Config,
+	pkg *packages.Package,
+	fset *token.FileSet,
+) ModuleIntrospectionEmitter {
+	return goTemplateFuncs{
+		CommonFunctions: generator.NewCommonFunctions(schemaVersion, &FormatTypeFunc{}),
+		ctx:             ctx,
+		cfg:             cfg,
+		modulePkg:       pkg,
+		moduleFset:      fset,
+		schema:          schema,
+		fullSchema:      schema,
+		schemaVersion:   schemaVersion,
+		pass:            1,
+	}
 }
 
 type goTemplateFuncs struct {
