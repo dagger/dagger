@@ -781,10 +781,26 @@ func (EngineSuite) TestLocalCachePruneDoesNotBreakRunningNestedEngineService(ctx
 func (EngineSuite) TestLocalCachePruneReclaimsStoppedServiceSnapshots(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
+	engine := devEngineContainer(c, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
+	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true}) })
+
+	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+
+	cacheClient, err := dagger.Connect(
+		ctx,
+		dagger.WithRunnerHost(endpoint),
+		dagger.WithLogOutput(testutil.NewTWriter(t)),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = cacheClient.Close() })
+
 	pruneAll := func() {
 		t.Helper()
 
-		err := c.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+		err := cacheClient.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
 			UseDefaultPolicy: false,
 			MaxUsedSpace:     "1",
 			ReservedSpace:    "0",
@@ -794,10 +810,22 @@ func (EngineSuite) TestLocalCachePruneReclaimsStoppedServiceSnapshots(ctx contex
 		require.NoError(t, err)
 	}
 
-	pruneAll()
-	baselineAvailable := getEngineAvailableBytes(ctx, t, c)
+	getUsedBytes := func() int {
+		t.Helper()
 
-	seedClient, err := dagger.Connect(ctx, dagger.WithLogOutput(testutil.NewTWriter(t)))
+		usedBytes, err := cacheClient.Engine().LocalCache().EntrySet().DiskSpaceBytes(ctx)
+		require.NoError(t, err)
+		return usedBytes
+	}
+
+	pruneAll()
+	baselineUsedBytes := getUsedBytes()
+
+	seedClient, err := dagger.Connect(
+		ctx,
+		dagger.WithRunnerHost(endpoint),
+		dagger.WithLogOutput(testutil.NewTWriter(t)),
+	)
 	require.NoError(t, err)
 	seedClientClosed := false
 	t.Cleanup(func() {
@@ -835,9 +863,9 @@ func (EngineSuite) TestLocalCachePruneReclaimsStoppedServiceSnapshots(ctx contex
 	require.NoError(t, err)
 	require.Equal(t, "ok", out)
 
-	serviceAvailable := getEngineAvailableBytes(ctx, t, c)
+	serviceUsedBytes := getUsedBytes()
 	const servicePayloadSignalBytes = 128 * 1024 * 1024
-	require.Less(t, serviceAvailable, baselineAvailable-servicePayloadSignalBytes, "service payload should consume enough engine disk space to make pruning observable")
+	require.GreaterOrEqual(t, serviceUsedBytes, baselineUsedBytes+servicePayloadSignalBytes, "service payload should contribute enough engine local cache usage to make pruning observable")
 
 	_, err = runningSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
 	require.NoError(t, err)
@@ -846,21 +874,21 @@ func (EngineSuite) TestLocalCachePruneReclaimsStoppedServiceSnapshots(ctx contex
 	require.NoError(t, seedClient.Close())
 	seedClientClosed = true
 
-	var availableAfterPrune int
+	var usedAfterPrune int
 	for i := range 10 {
 		pruneAll()
 
-		availableAfterPrune = getEngineAvailableBytes(ctx, t, c)
-		if availableAfterPrune >= serviceAvailable+servicePayloadSignalBytes {
+		usedAfterPrune = getUsedBytes()
+		if usedAfterPrune <= serviceUsedBytes-servicePayloadSignalBytes {
 			return
 		}
 
-		t.Logf("engine available bytes %d did not increase enough from %d after stopped service prune, retrying", availableAfterPrune, serviceAvailable)
+		t.Logf("engine local cache used bytes %d did not decrease enough from %d after stopped service prune, retrying", usedAfterPrune, serviceUsedBytes)
 		if i < 9 {
 			time.Sleep(1 * time.Second)
 		}
 	}
-	require.GreaterOrEqual(t, availableAfterPrune, serviceAvailable+servicePayloadSignalBytes, "stopped service snapshots should be released by explicit prune")
+	require.LessOrEqual(t, usedAfterPrune, serviceUsedBytes-servicePayloadSignalBytes, "stopped service snapshots should be released by explicit prune")
 }
 
 func (EngineSuite) TestLocalCacheEntryRecordType(ctx context.Context, t *testctx.T) {
@@ -931,27 +959,6 @@ func getEngineBytesFromSpec(ctx context.Context, t *testctx.T, c *dagger.Client,
 	keepBytes, err := strconv.Atoi(amount)
 	require.NoError(t, err)
 	return keepBytes
-}
-
-func getEngineAvailableBytes(ctx context.Context, t *testctx.T, c *dagger.Client) int {
-	t.Helper()
-
-	dfOut, err := c.
-		Container().
-		From(alpineImage).
-		WithEnvVariable("DF_BUST", fmt.Sprint(time.Now().UnixNano())).
-		WithExec([]string{"df", "-B", "1", "/"}).
-		Stdout(ctx)
-	require.NoError(t, err)
-
-	dfLines := strings.Split(strings.TrimSpace(dfOut), "\n")
-	require.Len(t, dfLines, 2)
-	dfFields := strings.Fields(dfLines[1])
-	require.Len(t, dfFields, 6)
-
-	availableBytes, err := strconv.Atoi(dfFields[3])
-	require.NoError(t, err)
-	return availableBytes
 }
 
 type cacheEntryVals struct {
