@@ -39,7 +39,7 @@ func workspaceMigrationParentPlansForPlainModules(
 	if err != nil {
 		return nil, err
 	}
-	if parentPlans, err = workspaceMigrationInstallParentSDKModules(workspacePlans, parentPlans, assignments); err != nil {
+	if parentPlans, err = workspaceMigrationInstallParentSDKModules(ws, workspacePlans, parentPlans, assignments); err != nil {
 		return nil, err
 	}
 	return workspaceMigrationWarnExplicitModuleLoading(ws, workspacePlans, parentPlans, assignments)
@@ -147,6 +147,7 @@ func workspaceMigrationPlannedProjectRoots(plans []*workspace.MigrationPlan) map
 }
 
 func workspaceMigrationInstallParentSDKModules(
+	ws *core.Workspace,
 	workspacePlans []*workspace.MigrationPlan,
 	parentPlans []workspaceMigrationParentPlan,
 	assignments []workspaceMigrationParentAssignment,
@@ -155,18 +156,26 @@ func workspaceMigrationInstallParentSDKModules(
 	// workspace configs without refreshing lock entries during migration. Future
 	// workspace commands can resolve them through the normal lock refresh path.
 	modulesByParent := map[string][]coresdk.WorkspaceModule{}
+	skippedByParent := map[string][]workspaceMigrationSkippedSDKInstall{}
 	for _, assignment := range assignments {
 		mod, ok, err := workspaceMigrationSDKModule(assignment.CompatWorkspace)
 		if err != nil {
 			return nil, err
 		}
+		parentRoot := assignment.ParentProjectRoot
 		if !ok {
+			skipped, ok, err := workspaceMigrationSkippedSDKInstallForAssignment(ws, assignment)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				skippedByParent[parentRoot] = append(skippedByParent[parentRoot], skipped)
+			}
 			continue
 		}
-		parentRoot := assignment.ParentProjectRoot
 		modulesByParent[parentRoot] = append(modulesByParent[parentRoot], mod)
 	}
-	if len(modulesByParent) == 0 {
+	if len(modulesByParent) == 0 && len(skippedByParent) == 0 {
 		return parentPlans, nil
 	}
 
@@ -182,15 +191,23 @@ func workspaceMigrationInstallParentSDKModules(
 		parentPlanIndexes[plan.ProjectRoot] = i
 	}
 
-	parentRoots := make([]string, 0, len(modulesByParent))
+	parentRootSet := map[string]struct{}{}
 	for parentRoot := range modulesByParent {
+		parentRootSet[parentRoot] = struct{}{}
+	}
+	for parentRoot := range skippedByParent {
+		parentRootSet[parentRoot] = struct{}{}
+	}
+	parentRoots := make([]string, 0, len(parentRootSet))
+	for parentRoot := range parentRootSet {
 		parentRoots = append(parentRoots, parentRoot)
 	}
 	sort.Strings(parentRoots)
 
 	for _, parentRoot := range parentRoots {
 		mods := workspaceMigrationDedupSDKModules(modulesByParent[parentRoot])
-		if len(mods) == 0 {
+		skipped := workspaceMigrationDedupSkippedSDKInstalls(skippedByParent[parentRoot])
+		if len(mods) == 0 && len(skipped) == 0 {
 			continue
 		}
 
@@ -199,7 +216,9 @@ func workspaceMigrationInstallParentSDKModules(
 			if err != nil {
 				return nil, fmt.Errorf("install SDK modules in migrated workspace config at %s: %w", parentRoot, err)
 			}
+			updated = workspaceMigrationConfigWithSkippedSDKComments(updated, skipped)
 			plan.WorkspaceConfigData = updated
+			workspaceMigrationAppendSkippedSDKReports(plan, skipped)
 			continue
 		}
 
@@ -211,10 +230,16 @@ func workspaceMigrationInstallParentSDKModules(
 		if err != nil {
 			return nil, fmt.Errorf("install SDK modules in parent workspace config at %s: %w", parentRoot, err)
 		}
-		parentPlans[parentIndex].WorkspaceConfigData = updated
+		parentPlans[parentIndex].WorkspaceConfigData = workspaceMigrationConfigWithSkippedSDKComments(updated, skipped)
+		workspaceMigrationAppendSkippedSDKParentReports(&parentPlans[parentIndex], skipped)
 	}
 
 	return parentPlans, nil
+}
+
+type workspaceMigrationSkippedSDKInstall struct {
+	ModuleDir string
+	Runtime   string
 }
 
 func workspaceMigrationSDKModule(compatWorkspace *workspace.CompatWorkspace) (coresdk.WorkspaceModule, bool, error) {
@@ -222,6 +247,24 @@ func workspaceMigrationSDKModule(compatWorkspace *workspace.CompatWorkspace) (co
 		return coresdk.WorkspaceModule{}, false, nil
 	}
 	return coresdk.WorkspaceModuleForRuntime(compatWorkspace.Config.SDK.Source)
+}
+
+func workspaceMigrationSkippedSDKInstallForAssignment(
+	ws *core.Workspace,
+	assignment workspaceMigrationParentAssignment,
+) (workspaceMigrationSkippedSDKInstall, bool, error) {
+	compatWorkspace := assignment.CompatWorkspace
+	if compatWorkspace == nil || compatWorkspace.Config == nil || compatWorkspace.Config.SDK == nil || compatWorkspace.Config.SDK.Source == "" {
+		return workspaceMigrationSkippedSDKInstall{}, false, nil
+	}
+	moduleDir, err := workspaceMigrationProjectRootRelPath(ws, compatWorkspace.ProjectRoot)
+	if err != nil {
+		return workspaceMigrationSkippedSDKInstall{}, false, err
+	}
+	return workspaceMigrationSkippedSDKInstall{
+		ModuleDir: workspaceMigrationDisplayPath(moduleDir),
+		Runtime:   compatWorkspace.Config.SDK.Source,
+	}, true, nil
 }
 
 func workspaceMigrationDedupSDKModules(mods []coresdk.WorkspaceModule) []coresdk.WorkspaceModule {
@@ -245,6 +288,31 @@ func workspaceMigrationDedupSDKModules(mods []coresdk.WorkspaceModule) []coresdk
 			return deduped[i].Source < deduped[j].Source
 		}
 		return deduped[i].Name < deduped[j].Name
+	})
+	return deduped
+}
+
+func workspaceMigrationDedupSkippedSDKInstalls(skipped []workspaceMigrationSkippedSDKInstall) []workspaceMigrationSkippedSDKInstall {
+	if len(skipped) == 0 {
+		return nil
+	}
+	seen := map[workspaceMigrationSkippedSDKInstall]struct{}{}
+	deduped := make([]workspaceMigrationSkippedSDKInstall, 0, len(skipped))
+	for _, skip := range skipped {
+		if skip.ModuleDir == "" || skip.Runtime == "" {
+			continue
+		}
+		if _, ok := seen[skip]; ok {
+			continue
+		}
+		seen[skip] = struct{}{}
+		deduped = append(deduped, skip)
+	}
+	sort.Slice(deduped, func(i, j int) bool {
+		if deduped[i].ModuleDir == deduped[j].ModuleDir {
+			return deduped[i].Runtime < deduped[j].Runtime
+		}
+		return deduped[i].ModuleDir < deduped[j].ModuleDir
 	})
 	return deduped
 }
@@ -292,6 +360,67 @@ func workspaceMigrationInstallSDKModule(
 		Source: mod.Source,
 	}
 	return true
+}
+
+func workspaceMigrationConfigWithSkippedSDKComments(
+	configData []byte,
+	skipped []workspaceMigrationSkippedSDKInstall,
+) []byte {
+	if len(skipped) == 0 {
+		return configData
+	}
+	var b strings.Builder
+	b.Write(configData)
+	if len(configData) > 0 && !strings.HasSuffix(string(configData), "\n") {
+		b.WriteString("\n")
+	}
+	for _, skip := range skipped {
+		b.WriteString("# ")
+		b.WriteString(workspaceMigrationSkippedSDKInstallMessage(skip))
+		b.WriteString("\n")
+	}
+	return []byte(b.String())
+}
+
+func workspaceMigrationAppendSkippedSDKReports(plan *workspace.MigrationPlan, skipped []workspaceMigrationSkippedSDKInstall) {
+	if plan == nil || len(skipped) == 0 {
+		return
+	}
+	warnings := make([]string, 0, len(skipped))
+	for _, skip := range skipped {
+		warnings = append(warnings, workspaceMigrationSkippedSDKInstallMessage(skip))
+		workspaceMigrationAppendPlanReport(plan, workspaceMigrationSkippedSDKInstallReportEntry(skip))
+	}
+	appendWorkspaceMigrationNonGapWarnings(plan, warnings)
+}
+
+func workspaceMigrationAppendSkippedSDKParentReports(
+	plan *workspaceMigrationParentPlan,
+	skipped []workspaceMigrationSkippedSDKInstall,
+) {
+	if plan == nil || len(skipped) == 0 {
+		return
+	}
+	for _, skip := range skipped {
+		plan.Warnings = append(plan.Warnings, workspaceMigrationSkippedSDKInstallMessage(skip))
+		plan.MigrationReportPath = workspaceMigrationReportPath
+		plan.MigrationReportData = workspaceMigrationAppendReportEntry(plan.MigrationReportData, workspaceMigrationSkippedSDKInstallReportEntry(skip))
+	}
+}
+
+func workspaceMigrationSkippedSDKInstallMessage(skip workspaceMigrationSkippedSDKInstall) string {
+	return fmt.Sprintf("Skipped SDK install when migrating module %s: no known SDK for runtime %q", skip.ModuleDir, skip.Runtime)
+}
+
+func workspaceMigrationSkippedSDKInstallReportEntry(skip workspaceMigrationSkippedSDKInstall) string {
+	return fmt.Sprintf(
+		"## Skipped SDK install for %s\n\n"+
+			"No workspace SDK module is known for runtime `%s`, so migration did not install one automatically.\n\n"+
+			"ACTION: Install the SDK module manually if `%s` needs runtime helpers from the parent workspace.\n",
+		skip.ModuleDir,
+		skip.Runtime,
+		skip.ModuleDir,
+	)
 }
 
 func workspaceMigrationUniqueSDKModuleName(modules map[string]workspace.ModuleEntry, base string) string {

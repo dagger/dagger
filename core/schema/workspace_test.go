@@ -311,6 +311,38 @@ func TestWorkspaceMigrationParentPlans(t *testing.T) {
 		require.Contains(t, string(plans[0].MigrationReportData), "**This no longer works**: `dagger call --help`")
 	})
 
+	t.Run("plain module installs dang SDK module", func(t *testing.T) {
+		plain := testRuntimeCompatWorkspace(t, filepath.Join(root, "modules", "video"), `{
+  "name": "video",
+  "sdk": {"source": "dang"}
+}`)
+
+		plans, err := workspaceMigrationParentPlansForPlainModules(ws, []*workspace.CompatWorkspace{plain}, nil)
+		require.NoError(t, err)
+		require.Len(t, plans, 1)
+		cfg, err := workspace.ParseConfig(plans[0].WorkspaceConfigData)
+		require.NoError(t, err)
+		require.Equal(t, "github.com/dagger/dang-sdk", cfg.Modules["dang-sdk"].Source)
+		require.NotContains(t, string(plans[0].WorkspaceConfigData), "Skipped SDK install")
+	})
+
+	t.Run("plain module outside migrated workspaces reports unmapped SDK", func(t *testing.T) {
+		plain := testRuntimeCompatWorkspace(t, filepath.Join(root, "modules", "video"), `{
+  "name": "video",
+  "sdk": {"source": "github.com/acme/custom-sdk"}
+}`)
+
+		plans, err := workspaceMigrationParentPlansForPlainModules(ws, []*workspace.CompatWorkspace{plain}, nil)
+		require.NoError(t, err)
+		require.Len(t, plans, 1)
+		require.Contains(t, string(plans[0].WorkspaceConfigData), `# Skipped SDK install when migrating module modules/video: no known SDK for runtime "github.com/acme/custom-sdk"`)
+		require.Contains(t, string(plans[0].MigrationReportData), "## Skipped SDK install for modules/video")
+		require.Equal(t, []string{
+			`Skipped SDK install when migrating module modules/video: no known SDK for runtime "github.com/acme/custom-sdk"`,
+			"modules/video requires explicit loading. If your scripts rely on implicit loading, change them to `dagger -m modules/video ...`.",
+		}, plans[0].Warnings)
+	})
+
 	t.Run("plain module under migrated workspace installs SDK in migrated workspace", func(t *testing.T) {
 		plain := testRuntimeCompatWorkspace(t, filepath.Join(root, "services", "api", "modules", "video"), `{
   "name": "video",
@@ -332,6 +364,28 @@ func TestWorkspaceMigrationParentPlans(t *testing.T) {
 		}, workspaceMigrationWarnings(migrated))
 		require.Equal(t, filepath.Join(workspace.LockDirName, "migration-report.md"), migrated.MigrationReportPath)
 		require.Contains(t, string(migrated.MigrationReportData), "## services/api/modules/video requires explicit loading")
+	})
+
+	t.Run("plain module under migrated workspace reports unmapped SDK", func(t *testing.T) {
+		plain := testRuntimeCompatWorkspace(t, filepath.Join(root, "services", "api", "modules", "video"), `{
+  "name": "video",
+  "sdk": {"source": "github.com/acme/custom-sdk"}
+}`)
+		migrated := &workspace.MigrationPlan{
+			ProjectRoot:         filepath.Join(root, "services", "api"),
+			WorkspaceConfigData: []byte(minimalWorkspaceConfig),
+		}
+
+		plans, err := workspaceMigrationParentPlansForPlainModules(ws, []*workspace.CompatWorkspace{plain}, []*workspace.MigrationPlan{migrated})
+		require.NoError(t, err)
+		require.Empty(t, plans)
+		require.Contains(t, string(migrated.WorkspaceConfigData), `# Skipped SDK install when migrating module services/api/modules/video: no known SDK for runtime "github.com/acme/custom-sdk"`)
+		require.Contains(t, string(migrated.MigrationReportData), "## Skipped SDK install for services/api/modules/video")
+		require.Contains(t, string(migrated.MigrationReportData), "No workspace SDK module is known for runtime `github.com/acme/custom-sdk`")
+		require.Equal(t, []string{
+			`Skipped SDK install when migrating module services/api/modules/video: no known SDK for runtime "github.com/acme/custom-sdk"`,
+			"services/api/modules/video requires explicit loading. If your scripts rely on implicit loading, change them to `dagger -m services/api/modules/video ...`.",
+		}, workspaceMigrationWarnings(migrated))
 	})
 
 	t.Run("plain module beside migrated workspace creates root parent", func(t *testing.T) {
