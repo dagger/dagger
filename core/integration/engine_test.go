@@ -30,9 +30,19 @@ import (
 )
 
 type EngineSuite struct{}
+type CachePersistenceSuite struct{}
+type LocalCacheSuite struct{}
 
 func TestEngine(t *testing.T) {
 	testctx.New(t, Middleware()...).RunTests(EngineSuite{})
+}
+
+func TestCachePersistence(t *testing.T) {
+	testctx.New(t, Middleware()...).RunTests(CachePersistenceSuite{})
+}
+
+func TestLocalCache(t *testing.T) {
+	testctx.New(t, Middleware()...).RunTests(LocalCacheSuite{})
 }
 
 func devEngineContainerAsService(ctr *dagger.Container) *dagger.Service {

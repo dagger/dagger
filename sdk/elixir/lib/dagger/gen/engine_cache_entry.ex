@@ -38,6 +38,17 @@ defmodule Dagger.EngineCacheEntry do
   end
 
   @doc """
+  The DagQL call that produced this cache entry.
+  """
+  @spec dagql_call(t()) :: {:ok, String.t()} | {:error, term()}
+  def dagql_call(%__MODULE__{} = engine_cache_entry) do
+    query_builder =
+      engine_cache_entry.query_builder |> QB.select("dagqlCall")
+
+    Client.execute(engine_cache_entry.client, query_builder)
+  end
+
+  @doc """
   The description of the cache entry.
   """
   @spec description(t()) :: {:ok, String.t()} | {:error, term()}
@@ -88,6 +99,17 @@ defmodule Dagger.EngineCacheEntry do
   def record_type(%__MODULE__{} = engine_cache_entry) do
     query_builder =
       engine_cache_entry.query_builder |> QB.select("recordType")
+
+    Client.execute(engine_cache_entry.client, query_builder)
+  end
+
+  @doc """
+  The storage record types represented by this cache entry.
+  """
+  @spec record_types(t()) :: {:ok, [String.t()]} | {:error, term()}
+  def record_types(%__MODULE__{} = engine_cache_entry) do
+    query_builder =
+      engine_cache_entry.query_builder |> QB.select("recordTypes")
 
     Client.execute(engine_cache_entry.client, query_builder)
   end

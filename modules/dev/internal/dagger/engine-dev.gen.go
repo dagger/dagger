@@ -1002,19 +1002,19 @@ func (r *EngineDev) Tests(ctx context.Context) (string, error) { // engine-dev (
 	return response, q.Execute(ctx)
 }
 
-func (r *EngineDev) WithBuildkitConfig(key string, value string) *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:89:1)
-	q := r.query.Select("withBuildkitConfig")
-	q = q.Arg("key", key)
-	q = q.Arg("value", value)
+func (r *EngineDev) WithEbpfprogs(names []string) *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:84:1)
+	q := r.query.Select("withEbpfprogs")
+	q = q.Arg("names", names)
 
 	return &EngineDev{
 		query: q,
 	}
 }
 
-func (r *EngineDev) WithEbpfprogs(names []string) *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:84:1)
-	q := r.query.Select("withEbpfprogs")
-	q = q.Arg("names", names)
+func (r *EngineDev) WithEngineConfig(key string, value string) *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:89:1)
+	q := r.query.Select("withEngineConfig")
+	q = q.Arg("key", key)
+	q = q.Arg("value", value)
 
 	return &EngineDev{
 		query: q,

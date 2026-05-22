@@ -8,6 +8,7 @@ import (
 	"time"
 
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -18,7 +19,7 @@ import (
 	"github.com/dagger/testctx"
 )
 
-func (EngineSuite) TestLocalCacheGCDisabled(ctx context.Context, t *testctx.T) {
+func (LocalCacheSuite) TestLocalCacheGCDisabled(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	f := false
 	engine := devEngineContainer(c, engineWithConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg config.Config) config.Config {
@@ -52,7 +53,7 @@ func (EngineSuite) TestLocalCacheGCDisabled(ctx context.Context, t *testctx.T) {
 	assert.Zero(t, rs)
 }
 
-func (EngineSuite) TestLocalCacheGCKeepBytesConfig(ctx context.Context, t *testctx.T) {
+func (LocalCacheSuite) TestLocalCacheGCKeepBytesConfig(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	for _, tc := range []struct {
@@ -141,7 +142,7 @@ func (EngineSuite) TestLocalCacheGCKeepBytesConfig(ctx context.Context, t *testc
 	}
 }
 
-func (EngineSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
+func (LocalCacheSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	for _, tc := range []struct {
@@ -375,7 +376,7 @@ func (EngineSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 	}
 }
 
-func (EngineSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t *testctx.T) {
+func (LocalCacheSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	setup := func(ctx context.Context, t *testctx.T) (endpoint string, c2 *dagger.Client, addCacheBlock func(*testctx.T, string, int), getUsedBytes func(*testctx.T) int) {
 		t.Helper()
@@ -585,7 +586,7 @@ func (EngineSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t *tes
 	})
 }
 
-func (EngineSuite) TestLocalCachePruneRemoteGitSnapshot(ctx context.Context, t *testctx.T) {
+func (LocalCacheSuite) TestLocalCachePruneRemoteGitSnapshot(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	engine := devEngineContainer(c, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
@@ -662,7 +663,7 @@ func (EngineSuite) TestLocalCachePruneRemoteGitSnapshot(ctx context.Context, t *
 	require.Equal(t, readmeBeforePrune, readmeAfterPrune)
 }
 
-func (EngineSuite) TestLocalCachePruneDoesNotBreakRunningNestedEngineService(ctx context.Context, t *testctx.T) {
+func (LocalCacheSuite) TestLocalCachePruneDoesNotBreakRunningNestedEngineService(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	nestedEngine := devEngineContainer(c)
@@ -778,7 +779,7 @@ func (EngineSuite) TestLocalCachePruneDoesNotBreakRunningNestedEngineService(ctx
 	require.NoError(t, runNestedTmpProbe(ctx, finalClient, 99, 0))
 }
 
-func (EngineSuite) TestLocalCachePruneReclaimsStoppedServiceSnapshots(ctx context.Context, t *testctx.T) {
+func (LocalCacheSuite) TestLocalCachePruneReclaimsStoppedServiceSnapshots(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	engine := devEngineContainer(c, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
@@ -891,21 +892,47 @@ func (EngineSuite) TestLocalCachePruneReclaimsStoppedServiceSnapshots(ctx contex
 	require.LessOrEqual(t, usedAfterPrune, serviceUsedBytes-servicePayloadSignalBytes, "stopped service snapshots should be released by explicit prune")
 }
 
-func (EngineSuite) TestLocalCacheEntryRecordType(ctx context.Context, t *testctx.T) {
+func (LocalCacheSuite) TestLocalCacheEntryRecordType(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	// create some cache content so entries exist
-	_, err := c.Container().From(alpineImage).WithExec([]string{"echo", "hello"}).Sync(ctx)
+	_, err := c.Container().
+		From(alpineImage).
+		WithMountedCache("/cache", c.CacheVolume("record-type-"+identity.NewID())).
+		WithExec([]string{"sh", "-c", "echo cache mount > /cache/output.txt"}).
+		Sync(ctx)
 	require.NoError(t, err)
+
+	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", "git source"))
+	gitContent, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+		Branch("main").
+		Tree().
+		File("README.md").
+		Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "git source", gitContent)
 
 	ents, err := c.Engine().LocalCache().EntrySet().Entries(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, ents)
 
+	recordTypes := map[string]bool{}
 	for _, ent := range ents {
 		entVal := getCacheEntryVals(ctx, t, ent)
-		assert.NotEmpty(t, entVal.RecordType, "RecordType should be populated for entry %q", entVal.Description)
+		assert.NotEmpty(t, entVal.RecordType, "RecordType should be populated")
+
+		for _, recordType := range entVal.RecordTypes {
+			recordTypes[recordType] = true
+		}
+		if len(entVal.RecordTypes) == 1 {
+			require.Equal(t, entVal.RecordTypes[0], entVal.RecordType)
+		}
+
+		if entVal.RecordType == "exec.cachemount" || entVal.RecordType == "source.git.checkout" {
+			assert.NotEmpty(t, entVal.DagqlCall, "DagqlCall should be populated for entry %q", entVal.Description)
+		}
 	}
+	require.True(t, recordTypes["exec.cachemount"], "expected cache volume cache entry")
+	require.True(t, recordTypes["source.git.checkout"], "expected remote git cache entry")
 }
 
 func engineConfigWithEnabled(enabled bool) func(context.Context, *testctx.T, config.Config) config.Config {
@@ -968,6 +995,8 @@ type cacheEntryVals struct {
 	MostRecentUseTimeUnixNano int
 	ActivelyUsed              bool
 	RecordType                string
+	RecordTypes               []string
+	DagqlCall                 string
 }
 
 func getCacheEntryVals(ctx context.Context, t *testctx.T, ent dagger.EngineCacheEntry) *cacheEntryVals {
@@ -992,6 +1021,12 @@ func getCacheEntryVals(ctx context.Context, t *testctx.T, ent dagger.EngineCache
 	require.NoError(t, err)
 
 	vals.RecordType, err = ent.RecordType(ctx)
+	require.NoError(t, err)
+
+	vals.RecordTypes, err = ent.RecordTypes(ctx)
+	require.NoError(t, err)
+
+	vals.DagqlCall, err = ent.DagqlCall(ctx)
 	require.NoError(t, err)
 
 	return vals

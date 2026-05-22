@@ -1002,8 +1002,8 @@ func (r *EngineDev) Tests(ctx context.Context) (string, error) { // engine-dev (
 	return response, q.Execute(ctx)
 }
 
-func (r *EngineDev) WithBuildkitConfig(key string, value string) *EngineDev { // engine-dev (../../../toolchains/engine-dev/main.go:84:1)
-	q := r.query.Select("withBuildkitConfig")
+func (r *EngineDev) WithEngineConfig(key string, value string) *EngineDev { // engine-dev (../../../toolchains/engine-dev/main.go:84:1)
+	q := r.query.Select("withEngineConfig")
 	q = q.Arg("key", key)
 	q = q.Arg("value", value)
 

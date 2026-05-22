@@ -5327,6 +5327,24 @@ func TestCachePruneThresholdTargetSpace(t *testing.T) {
 	assert.Equal(t, cacheTestSharedResultEntryID(results[1]), report.Entries[1].ID)
 }
 
+func TestCachePruneMinFreeSpaceUsesCurrentFreeSpace(t *testing.T) {
+	t.Parallel()
+
+	target, triggered := pruneTargetBytes(CachePrunePolicy{
+		MinFreeSpace:     200,
+		CurrentFreeSpace: 150,
+	}, 50)
+	assert.Assert(t, triggered)
+	assert.Equal(t, int64(50), target)
+
+	target, triggered = pruneTargetBytes(CachePrunePolicy{
+		MinFreeSpace:     200,
+		CurrentFreeSpace: 250,
+	}, 50)
+	assert.Assert(t, !triggered)
+	assert.Equal(t, int64(0), target)
+}
+
 func TestCachePruneSessionOwnedEntriesAreNeverPruned(t *testing.T) {
 	t.Parallel()
 
