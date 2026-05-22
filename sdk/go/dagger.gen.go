@@ -15445,7 +15445,6 @@ type Workspace struct {
 	envRemove   *string
 	findUp      *string
 	id          *WorkspaceID
-	init        *string
 	install     *string
 	moduleInit  *string
 }
@@ -15796,31 +15795,6 @@ func (r *Workspace) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
-}
-
-// WorkspaceInitOpts contains options for Workspace.Init
-type WorkspaceInitOpts struct {
-	// Create the workspace config directory at the workspace cwd instead of using the default write target.
-	Here bool
-}
-
-// Initialize workspace config, creating .dagger/config.toml.
-func (r *Workspace) Init(ctx context.Context, opts ...WorkspaceInitOpts) (string, error) {
-	if r.init != nil {
-		return *r.init, nil
-	}
-	q := r.query.Select("init")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `here` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Here) {
-			q = q.Arg("here", opts[i].Here)
-		}
-	}
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
 // WorkspaceInstallOpts contains options for Workspace.Install

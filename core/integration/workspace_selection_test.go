@@ -313,7 +313,7 @@ func (WorkspaceSelectionSuite) TestWorkspaceSelectionCommandPolicy(ctx context.C
 		ctr := workspaceBase(t, c).
 			WithExec([]string{"mkdir", "-p", "/work/caller", "/work/selected"}).
 			WithWorkdir("/work/caller").
-			With(workspaceSelectionDaggerExec("-W", "../selected", "workspace", "init", "--here"))
+			With(workspaceSelectionDaggerExec("-W", "../selected", "workspace", "config", "modules.foo.source", "../foo", "--here"))
 
 		_, err := ctr.WithExec([]string{"test", "-f", "/work/selected/.dagger/config.toml"}).Sync(ctx)
 		require.NoError(t, err)
@@ -328,10 +328,10 @@ func (WorkspaceSelectionSuite) TestWorkspaceSelectionCommandPolicy(ctx context.C
 		out, err := c.Container().From(alpineImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/empty").
-			With(workspaceSelectionDaggerQueryFail(`{currentWorkspace{init}}`, "-W", remoteRef)).
+			With(workspaceSelectionDaggerQueryFail(`{currentWorkspace{configWrite(key:"modules.foo.source", value:"x")}}`, "-W", remoteRef)).
 			CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "workspace init is local-only")
+		require.Contains(t, out, "workspace has no host path")
 		require.NotContains(t, out, "--workspace must be a local path")
 	})
 }
@@ -734,7 +734,6 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceBindingPropagation(ctx conte
 			WithExec([]string{"mkdir", "-p", "/work/caller", "/work/selected"}).
 			With(workspaceSelectionEnvWorkspace("/work/ambient", "ambient-base", "ambient-ci")).
 			WithWorkdir("/work/selected").
-			With(workspaceSelectionDaggerExec("workspace", "init", "--here")).
 			With(withModuleFixture(t, c, "/work/selected/.dagger/modules/nester", "go/workspace-selection-nester")).
 			WithNewFile("/work/selected/.dagger/config.toml", `[modules.nester]
 source = "modules/nester"
@@ -761,7 +760,6 @@ greeting = "selected-ci"
 			WithExec([]string{"mkdir", "-p", "/work/caller", "/work/selected"}).
 			With(workspaceSelectionEnvWorkspace("/work/ambient", "ambient-base", "ambient-ci")).
 			WithWorkdir("/work/selected").
-			With(workspaceSelectionDaggerExec("workspace", "init", "--here")).
 			With(withModuleFixture(t, c, "/work/selected/.dagger/modules/nester", "go/workspace-selection-nester")).
 			WithNewFile("/work/selected/.dagger/config.toml", `[modules.nester]
 source = "modules/nester"

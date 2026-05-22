@@ -18,6 +18,12 @@ var workspaceCmd = &cobra.Command{
 	Use:     "workspace",
 	Short:   "Manage the current workspace",
 	GroupID: workspaceGroup.ID,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) > 0 {
+			return fmt.Errorf("unknown command %q for %q%s", args[0], cmd.CommandPath(), findSuggestions(cmd, args[0]))
+		}
+		return cmd.Help()
+	},
 }
 
 var workspaceRootCmd = &cobra.Command{
@@ -86,14 +92,6 @@ var workspaceConfigFileCmd = &cobra.Command{
 	},
 }
 
-var workspaceInitCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Create workspace config",
-	Long:  "Create .dagger/config.toml for the current workspace.",
-	Args:  cobra.NoArgs,
-	RunE:  runWorkspaceInit,
-}
-
 var workspaceConfigCmd = &cobra.Command{
 	Use:   "config [key] [value]",
 	Short: "Get or set workspace configuration",
@@ -115,31 +113,13 @@ func init() {
 	workspaceCmd.AddCommand(workspaceConfigCmd)
 	workspaceCmd.AddCommand(workspaceConfigFileCmd)
 	workspaceCmd.AddCommand(workspaceCwdCmd)
-	workspaceCmd.AddCommand(workspaceInitCmd)
 	workspaceCmd.AddCommand(workspaceRootCmd)
 
 	addWorkspaceHereFlag(workspaceConfigCmd)
-	addWorkspaceHereFlag(workspaceInitCmd)
-
-	setWorkspaceFlagPolicy(workspaceInitCmd, workspaceFlagPolicyLocalOnly)
 }
 
 func addWorkspaceHereFlag(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&workspaceHere, "here", false, "Write workspace config at the selected workspace cwd")
-}
-
-func runWorkspaceInit(cmd *cobra.Command, _ []string) error {
-	return withEngine(cmd.Context(), client.Params{
-		SkipWorkspaceModules: true,
-	}, func(ctx context.Context, engineClient *client.Client) error {
-		configDir, err := initWorkspace(ctx, engineClient.Dagger())
-		if err != nil {
-			return err
-		}
-
-		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Created workspace config in %s\n", configDir)
-		return err
-	})
 }
 
 func runWorkspaceConfig(cmd *cobra.Command, args []string) error {
@@ -160,10 +140,6 @@ func runWorkspaceConfig(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("expected 0-2 arguments, got %d", len(args))
 		}
 	})
-}
-
-func initWorkspace(ctx context.Context, dag *dagger.Client) (string, error) {
-	return dag.CurrentWorkspace().Init(ctx, dagger.WorkspaceInitOpts{Here: workspaceHere})
 }
 
 func printWorkspaceConfig(ctx context.Context, out io.Writer, ws *dagger.Workspace, key string) error {

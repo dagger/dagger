@@ -66,12 +66,6 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc(`The name of the file or directory to search for.`),
 				dagql.Arg("from").Doc(`Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root.`),
 			),
-		dagql.Func("init", s.workspaceInit).
-			DoNotCache("Mutates workspace on host").
-			Doc("Initialize workspace config, creating .dagger/config.toml.").
-			Args(
-				dagql.Arg("here").Doc("Create the workspace config directory at the workspace cwd instead of using the default write target."),
-			),
 		dagql.Func("install", s.install).
 			DoNotCache("Mutates workspace config on host").
 			Doc("Install a module into the workspace, writing config.toml to the host.").

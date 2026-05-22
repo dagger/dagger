@@ -39,9 +39,14 @@ func TestWorkspaceCommandGrouping(t *testing.T) {
 
 func TestRemovedWorkspaceCommands(t *testing.T) {
 	for _, cmd := range workspaceCmd.Commands() {
+		require.NotEqual(t, "init", cmd.Name())
 		require.NotEqual(t, "list", cmd.Name())
 		require.NotEqual(t, "info", cmd.Name())
 	}
+}
+
+func TestWorkspaceInitCommandRemoved(t *testing.T) {
+	require.ErrorContains(t, workspaceCmd.RunE(workspaceCmd, []string{"init"}), `unknown command "init"`)
 }
 
 func TestExecutionCommandGrouping(t *testing.T) {
@@ -170,7 +175,6 @@ func TestWorkspaceFlagPolicy(t *testing.T) {
 	})
 
 	workspaceRef = "github.com/acme/ws"
-	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceInitCmd, nil), "must be a local path")
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(migrateCmd, nil), "not supported")
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(configCmd, []string{"modules.foo.source", "x"}), "must be a local path")
 	require.NoError(t, validateWorkspaceFlagPolicy(configCmd, []string{"modules.foo.source"}))
@@ -182,7 +186,6 @@ func TestWorkspaceFlagPolicy(t *testing.T) {
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(envRmCmd, []string{"ci"}), "must be a local path")
 
 	workspaceRef = "./local-workspace"
-	require.NoError(t, validateWorkspaceFlagPolicy(workspaceInitCmd, nil))
 	require.NoError(t, validateWorkspaceFlagPolicy(callModCmd.Command(), nil))
 	require.NoError(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar", "baz"}))
 	require.NoError(t, validateWorkspaceFlagPolicy(envCreateCmd, []string{"ci"}))

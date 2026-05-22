@@ -869,7 +869,7 @@ func moduleResolveClientContainer(
 	return engineClientContainer(ctx, t, c, devEngine).WithWorkdir("/work").
 		WithExec([]string{"apk", "add", "git"}).
 		WithExec([]string{"git", "init"}).
-		WithExec([]string{"dagger", "workspace", "init"})
+		WithNewFile(".dagger/config.toml", "[modules]\n")
 }
 
 func moduleResolveServiceHost(t *testctx.T, rawURL string) string {

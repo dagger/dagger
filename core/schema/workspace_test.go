@@ -279,6 +279,7 @@ func TestWorkspaceMigrationParentPlans(t *testing.T) {
 		cfg, err := workspace.ParseConfig(plans[0].WorkspaceConfigData)
 		require.NoError(t, err)
 		require.Equal(t, "github.com/dagger/go-sdk", cfg.Modules["go-sdk"].Source)
+		require.NotContains(t, string(plans[0].WorkspaceConfigData), "# Dagger workspace configuration")
 		require.Equal(t, []string{
 			"modules/video requires explicit loading. If your scripts rely on implicit loading, change them to `dagger -m modules/video ...`.",
 		}, plans[0].Warnings)
@@ -317,7 +318,7 @@ func TestWorkspaceMigrationParentPlans(t *testing.T) {
 }`)
 		migrated := &workspace.MigrationPlan{
 			ProjectRoot:         filepath.Join(root, "services", "api"),
-			WorkspaceConfigData: []byte(initialWorkspaceConfig),
+			WorkspaceConfigData: []byte(minimalWorkspaceConfig),
 		}
 
 		plans, err := workspaceMigrationParentPlansForPlainModules(ws, []*workspace.CompatWorkspace{plain}, []*workspace.MigrationPlan{migrated})
@@ -340,7 +341,7 @@ func TestWorkspaceMigrationParentPlans(t *testing.T) {
 }`)
 		migrated := &workspace.MigrationPlan{
 			ProjectRoot:         filepath.Join(root, "services", "api"),
-			WorkspaceConfigData: []byte(initialWorkspaceConfig),
+			WorkspaceConfigData: []byte(minimalWorkspaceConfig),
 		}
 
 		plans, err := workspaceMigrationParentPlansForPlainModules(ws, []*workspace.CompatWorkspace{plain}, []*workspace.MigrationPlan{migrated})

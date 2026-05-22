@@ -178,11 +178,9 @@ entrypoint = true
 
 		require.NoError(t, os.MkdirAll(emptyDir, 0o755))
 		initGitRepo(ctx, t, workdir)
+		writeWorkspaceConfigFile(t, workdir, "[modules]\n")
 
-		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "workspace", "init")
-		require.NoError(t, err)
-
-		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./empty")
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./empty")
 		require.Error(t, err)
 		requireErrOut(t, err, `ref "./empty" does not point to an initialized module`)
 

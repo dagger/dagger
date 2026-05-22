@@ -14,50 +14,7 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 )
 
-const initialWorkspaceConfig = `# Dagger workspace configuration
-# Install modules with: dagger install <module>
-# Example:
-#   dagger install github.com/dagger/dagger/modules/wolfi
-
-[modules]
-`
-
-func (s *workspaceSchema) workspaceInit(
-	ctx context.Context,
-	parent *core.Workspace,
-	args struct {
-		Here bool `default:"false"`
-	},
-) (dagql.String, error) {
-	if parent.HostPath() == "" {
-		return "", fmt.Errorf("workspace init is local-only")
-	}
-	if parent.CompatWorkspace() != nil {
-		return "", fmt.Errorf("workspace is using legacy dagger.json config; run dagger migrate first")
-	}
-
-	configDirRel := workspaceConfigDirectoryForWrite(parent, args.Here)
-	configPath, err := workspaceHostPath(parent, configDirRel, workspace.ConfigFileName)
-	if err != nil {
-		return "", err
-	}
-	configDir := filepath.Dir(configPath)
-
-	if parent.ConfigFile != "" && workspaceSameConfigDirectory(parent, configDirRel) {
-		return "", fmt.Errorf("workspace config already exists at %s", configDir)
-	}
-
-	bk, err := workspaceBuildkit(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	if err := ensureWorkspaceInitialized(ctx, bk, parent, args.Here); err != nil {
-		return "", fmt.Errorf("initialize workspace: %w", err)
-	}
-
-	return dagql.String(configDir), nil
-}
+const minimalWorkspaceConfig = "[modules]\n"
 
 func workspaceBuildkit(ctx context.Context) (*engineutil.Client, error) {
 	query, err := core.CurrentQuery(ctx)
@@ -120,7 +77,7 @@ func ensureWorkspaceInitialized(ctx context.Context, bk *engineutil.Client, ws *
 	if err != nil {
 		return err
 	}
-	if err := exportWorkspaceFileToHost(ctx, bk, configPath, []byte(initialWorkspaceConfig)); err != nil {
+	if err := exportWorkspaceFileToHost(ctx, bk, configPath, []byte(minimalWorkspaceConfig)); err != nil {
 		return err
 	}
 

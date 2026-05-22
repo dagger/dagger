@@ -106,7 +106,7 @@ func workspaceMigrationParentPlans(
 	for _, parentRoot := range parentRoots {
 		parentPlans = append(parentPlans, workspaceMigrationParentPlan{
 			ProjectRoot:         parentRoot,
-			WorkspaceConfigData: []byte(initialWorkspaceConfig),
+			WorkspaceConfigData: []byte(minimalWorkspaceConfig),
 		})
 	}
 	return parentPlans, nil

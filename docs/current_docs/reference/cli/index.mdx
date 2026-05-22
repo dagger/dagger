@@ -1025,7 +1025,6 @@ Manage the current workspace
 * [dagger workspace config](#dagger-workspace-config)	 - Get or set workspace configuration
 * [dagger workspace config-file](#dagger-workspace-config-file)	 - Print the selected workspace config file
 * [dagger workspace cwd](#dagger-workspace-cwd)	 - Print the workspace cwd
-* [dagger workspace init](#dagger-workspace-init)	 - Create workspace config
 * [dagger workspace root](#dagger-workspace-root)	 - Print the workspace root
 
 ## dagger workspace config
@@ -1140,47 +1139,6 @@ dagger workspace cwd [flags]
 
 * [dagger workspace](#dagger-workspace)	 - Manage the current workspace
 
-## dagger workspace init
-
-Create workspace config
-
-### Synopsis
-
-Create .dagger/config.toml for the current workspace.
-
-```
-dagger workspace init [flags]
-```
-
-### Options
-
-```
-      --here   Write workspace config at the selected workspace cwd
-```
-
-### Options inherited from parent commands
-
-```
-  -y, --auto-apply                   Automatically apply changes when a changeset is returned
-  -d, --debug                        Show debug logs and full verbosity
-      --env string                   Apply the named workspace environment overlay
-  -i, --interactive                  Spawn a terminal on container exec failure
-      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
-  -E, --no-exit                      Leave the TUI running after completion
-      --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
-  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
-  -s, --silent                       Do not show progress at all
-  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
-  -w, --web                          Open trace URL in a web browser
-  -W, --workspace string             Select the workspace location to load from (local path or git ref)
-      --x-release string             Run an experimental release from a Dagger git ref
-```
-
-### SEE ALSO
-
-* [dagger workspace](#dagger-workspace)	 - Manage the current workspace
-
 ## dagger workspace root
 
 Print the workspace root
@@ -1211,4 +1169,3 @@ dagger workspace root [flags]
 ### SEE ALSO
 
 * [dagger workspace](#dagger-workspace)	 - Manage the current workspace
-

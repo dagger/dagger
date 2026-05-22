@@ -16337,12 +16337,6 @@ pub struct WorkspaceGeneratorsOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceInitOpts {
-    /// Create the workspace config directory at the workspace cwd instead of using the default write target.
-    #[builder(setter(into, strip_option), default)]
-    pub here: Option<bool>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceInstallOpts<'a> {
     /// Write to the workspace config directory at the workspace cwd.
     #[builder(setter(into, strip_option), default)]
@@ -16703,27 +16697,6 @@ impl Workspace {
     /// A unique identifier for this Workspace.
     pub async fn id(&self) -> Result<WorkspaceId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Initialize workspace config, creating .dagger/config.toml.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn init(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("init");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Initialize workspace config, creating .dagger/config.toml.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn init_opts(&self, opts: WorkspaceInitOpts) -> Result<String, DaggerError> {
-        let mut query = self.selection.select("init");
-        if let Some(here) = opts.here {
-            query = query.arg("here", here);
-        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Install a module into the workspace, writing config.toml to the host.

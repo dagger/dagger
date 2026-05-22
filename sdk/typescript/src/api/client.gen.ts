@@ -2958,13 +2958,6 @@ export type WorkspaceGeneratorsOpts = {
   include?: string[]
 }
 
-export type WorkspaceInitOpts = {
-  /**
-   * Create the workspace config directory at the workspace cwd instead of using the default write target.
-   */
-  here?: boolean
-}
-
 export type WorkspaceInstallOpts = {
   /**
    * Override name for the installed module entry.
@@ -14959,7 +14952,6 @@ export class Workspace extends BaseClient {
   private readonly _envCreate?: string = undefined
   private readonly _envRemove?: string = undefined
   private readonly _findUp?: string = undefined
-  private readonly _init?: string = undefined
   private readonly _install?: string = undefined
   private readonly _moduleInit?: string = undefined
 
@@ -14978,7 +14970,6 @@ export class Workspace extends BaseClient {
     _envCreate?: string,
     _envRemove?: string,
     _findUp?: string,
-    _init?: string,
     _install?: string,
     _moduleInit?: string,
   ) {
@@ -14994,7 +14985,6 @@ export class Workspace extends BaseClient {
     this._envCreate = _envCreate
     this._envRemove = _envRemove
     this._findUp = _findUp
-    this._init = _init
     this._install = _install
     this._moduleInit = _moduleInit
   }
@@ -15237,22 +15227,6 @@ export class Workspace extends BaseClient {
   generators = (opts?: WorkspaceGeneratorsOpts): GeneratorGroup => {
     const ctx = this._ctx.select("generators", { ...opts })
     return new GeneratorGroup(ctx)
-  }
-
-  /**
-   * Initialize workspace config, creating .dagger/config.toml.
-   * @param opts.here Create the workspace config directory at the workspace cwd instead of using the default write target.
-   */
-  init = async (opts?: WorkspaceInitOpts): Promise<string> => {
-    if (this._init) {
-      return this._init
-    }
-
-    const ctx = this._ctx.select("init", { ...opts })
-
-    const response: Awaited<string> = await ctx.execute()
-
-    return response
   }
 
   /**

@@ -36,11 +36,10 @@ func workspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
 	return gitRepoBase(t, c)
 }
 
-// nativeWorkspaceBase adds the native workspace state created by
-// `dagger workspace init`: a .dagger/config.toml inside the git root.
+// nativeWorkspaceBase adds a native workspace config inside the git root.
 func nativeWorkspaceBase(t testing.TB, c *dagger.Client) *dagger.Container {
 	t.Helper()
-	return workspaceBase(t, c).With(daggerExec("workspace", "init"))
+	return workspaceBase(t, c).WithNewFile(".dagger/config.toml", "[modules]\n")
 }
 
 func workspaceFixture(t testing.TB, c *dagger.Client, fixture string) *dagger.Container {
