@@ -37,9 +37,29 @@ var logoutCmd = &cobra.Command{
 	RunE:    cloudCLI.Logout,
 }
 
+var cloudCmd = &cobra.Command{
+	Use:     "cloud",
+	Aliases: []string{"c"},
+	Short:   "Manage Dagger Cloud",
+	GroupID: cloudGroup.ID,
+}
+
+var cloudLoginCmd = &cobra.Command{
+	Use:   "login [options] [org]",
+	Short: "Log in to Dagger Cloud",
+	RunE:  cloudCLI.Login,
+}
+
+var cloudLogoutCmd = &cobra.Command{
+	Use:   "logout",
+	Short: "Log out from Dagger Cloud",
+	RunE:  cloudCLI.Logout,
+}
+
 func init() {
 	rootCmd.AddGroup(cloudGroup)
-	rootCmd.AddCommand(loginCmd, logoutCmd)
+	cloudCmd.AddCommand(cloudLoginCmd, cloudLogoutCmd)
+	rootCmd.AddCommand(cloudCmd, loginCmd, logoutCmd)
 }
 
 type CloudCLI struct{}
