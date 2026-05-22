@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
 
 	"github.com/containerd/containerd/v2/core/content"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
@@ -32,6 +33,9 @@ type Query struct {
 	// constructor. Set by the `with` field on Query so that entrypoint
 	// proxy resolvers can forward them to the constructor.
 	ConstructorArgs map[string]dagql.Input
+
+	cacheVolumeStoreMu sync.Mutex
+	cacheVolumeStore   *cacheVolumeStore
 }
 
 var (
