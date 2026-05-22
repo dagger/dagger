@@ -127,6 +127,73 @@ func (EngineSuite) TestDiskPersistenceAcrossRestart(ctx context.Context, t *test
 		require.Greater(t, entryCount, 0)
 	})
 
+	t.Run("lazy imported snapshot links count toward local cache usage and max-used prune", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-lazy-import-cache-usage-state-" + identity.NewID()
+
+		runWorkload := func(ctx context.Context, t *testctx.T, client *dagger.Client) string {
+			t.Helper()
+			out, err := client.
+				Container().
+				From(alpineImage).
+				WithExec([]string{
+					"sh",
+					"-ec",
+					`token="$(dd if=/dev/urandom bs=32 count=1 status=none | base64)"
+dd if=/dev/urandom of=/bigfile bs=1M count=64 status=none
+printf "%s" "$token"`,
+				}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			return out
+		}
+
+		localCacheDiskBytes := func(ctx context.Context, t *testctx.T, client *dagger.Client) int {
+			t.Helper()
+			used, err := client.Engine().LocalCache().EntrySet().DiskSpaceBytes(ctx)
+			require.NoError(t, err)
+			return used
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		outA := runWorkload(ctx, t, engineClientA)
+		usedA := localCacheDiskBytes(ctx, t, engineClientA)
+		require.Greater(t, usedA, 32*1024*1024)
+
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		usedB := localCacheDiskBytes(ctx, t, engineClientB)
+		require.Greater(t, usedB, 32*1024*1024)
+
+		stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB)
+		upstreamSvcB = nil
+		engineSvcB = nil
+		engineClientB = nil
+
+		upstreamSvcC, engineSvcC, engineClientC := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcC, engineSvcC, engineClientC) })
+
+		err := engineClientC.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+			UseDefaultPolicy: false,
+			MaxUsedSpace:     "1",
+			ReservedSpace:    "0",
+			MinFreeSpace:     "0",
+			TargetSpace:      "1",
+		})
+		require.NoError(t, err)
+
+		outC := runWorkload(ctx, t, engineClientC)
+		require.NotEqual(t, outA, outC, "max-used prune should evict lazy imported snapshot-backed results before they are cache-hit")
+	})
+
 	t.Run("unclean shutdown discards local cache state and recovers", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "phase7-unclean-reset-state-" + identity.NewID()
@@ -230,6 +297,55 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 			Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, newFileContents, contents)
+	})
+
+	t.Run("container selector lazy dependencies survive restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-container-selector-lazy-state-" + identity.NewID()
+		const fileContents = "selector lazy persisted\n"
+
+		buildRetainedGraph := func(engineClient *dagger.Client) *dagger.Directory {
+			source := engineClient.
+				Directory().
+				WithNewFile("file.txt", fileContents)
+			ctr := engineClient.
+				Container().
+				WithDirectory("/work", source)
+
+			return engineClient.
+				Directory().
+				WithDirectory("rootfs", ctr.Rootfs()).
+				WithDirectory("selected-dir", ctr.Directory("/work")).
+				WithFile("selected-file.txt", ctr.File("/work/file.txt"))
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		dirID, err := buildRetainedGraph(engineClientA).ID(ctx)
+		require.NoError(t, err)
+
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		loaded := engineClientB.LoadDirectoryFromID(dirID)
+
+		selectedFile, err := loaded.File("selected-file.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fileContents, selectedFile)
+
+		selectedDirFile, err := loaded.File("selected-dir/file.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fileContents, selectedDirFile)
+
+		rootfsFile, err := loaded.File("rootfs/work/file.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fileContents, rootfsFile)
 	})
 
 	t.Run("directory search result list survives restart", func(ctx context.Context, t *testctx.T) {

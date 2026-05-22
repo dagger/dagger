@@ -88,8 +88,10 @@ type RunningService struct {
 	// The runc container ID, if any
 	ContainerID string
 
-	refsMu sync.Mutex
-	refs   []bkcache.Ref
+	refsMu                sync.Mutex
+	refs                  []bkcache.Ref
+	resourceSnapshotCache bkcache.SnapshotManager
+	resourceLeaseID       string
 
 	workspaceMu sync.Mutex
 
@@ -757,24 +759,59 @@ func (svc *RunningService) waitDependencyExitPropagationUnsuppressed(ctx context
 	}
 }
 
-func (svc *RunningService) TrackRef(ref bkcache.Ref) {
+func (svc *RunningService) setResourceLease(snapshotManager bkcache.SnapshotManager, leaseID string) {
+	svc.refsMu.Lock()
+	defer svc.refsMu.Unlock()
+	svc.resourceSnapshotCache = snapshotManager
+	svc.resourceLeaseID = leaseID
+}
+
+func (svc *RunningService) ProtectRef(ctx context.Context, ref bkcache.Ref) error {
 	if ref == nil {
-		return
+		return nil
+	}
+
+	svc.refsMu.Lock()
+	snapshotManager := svc.resourceSnapshotCache
+	leaseID := svc.resourceLeaseID
+	svc.refsMu.Unlock()
+
+	if snapshotManager == nil || leaseID == "" {
+		return fmt.Errorf("service resource lease not initialized")
+	}
+
+	return snapshotManager.AttachLease(context.WithoutCancel(ctx), leaseID, ref.SnapshotID())
+}
+
+func (svc *RunningService) TrackRef(ctx context.Context, ref bkcache.Ref) error {
+	if ref == nil {
+		return nil
+	}
+	if err := svc.ProtectRef(ctx, ref); err != nil {
+		return err
 	}
 	svc.refsMu.Lock()
 	defer svc.refsMu.Unlock()
 	svc.refs = append(svc.refs, ref)
+	return nil
 }
 
 func (svc *RunningService) ReleaseTrackedRefs(ctx context.Context) error {
 	svc.refsMu.Lock()
 	refs := svc.refs
 	svc.refs = nil
+	snapshotManager := svc.resourceSnapshotCache
+	svc.resourceSnapshotCache = nil
+	leaseID := svc.resourceLeaseID
+	svc.resourceLeaseID = ""
 	svc.refsMu.Unlock()
 
 	var errs error
 	for _, ref := range refs {
 		errs = stderrors.Join(errs, ref.Release(context.WithoutCancel(ctx)))
+	}
+	if snapshotManager != nil && leaseID != "" {
+		errs = stderrors.Join(errs, snapshotManager.RemoveLease(context.WithoutCancel(ctx), leaseID))
 	}
 	return errs
 }

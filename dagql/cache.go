@@ -83,7 +83,7 @@ type persistedEdge struct {
 	unpruneable       bool
 }
 
-const cachePersistenceSchemaVersion = "15"
+const cachePersistenceSchemaVersion = "16"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrPersistStateNotReady = errors.New("persist state not ready")
@@ -3041,6 +3041,7 @@ func (c *Cache) usageEntriesLocked(activeRoots map[sharedResultID]struct{}) []Ca
 type cacheUsageMeasurementInput struct {
 	resultID         sharedResultID
 	self             Typed
+	snapshotLinks    []PersistedSnapshotRefLink
 	identities       []string
 	existingSizeByID map[string]int64
 	sizeMayChange    bool
@@ -3051,7 +3052,7 @@ func (c *Cache) measureAllResultSizes(ctx context.Context) {
 	if len(inputs) == 0 {
 		return
 	}
-	sizes := buildCacheUsageMeasurements(ctx, inputs)
+	sizes := buildCacheUsageMeasurements(ctx, c.snapshotManager, inputs)
 	c.publishUsageMeasurements(sizes)
 }
 
@@ -3064,26 +3065,40 @@ func (c *Cache) collectUsageMeasurementInputs() []cacheUsageMeasurementInput {
 			continue
 		}
 		state := res.loadPayloadState()
-		if !state.hasValue || state.self == nil {
+		var (
+			self          Typed
+			snapshotLinks []PersistedSnapshotRefLink
+			identities    []string
+			sizeMayChange bool
+		)
+		if state.hasValue && state.self != nil {
+			self = state.self
+			identities = cacheUsageIdentitiesFromSelf(state.self)
+			sizeMayChange = cacheUsageSizeMayChangeFromSelf(state.self)
+		} else {
+			snapshotLinks = slices.Clone(state.snapshotOwnerLinks)
+			identities = cacheUsageIdentitiesFromSnapshotLinks(snapshotLinks)
+		}
+		if len(identities) == 0 {
 			continue
 		}
-		identities := cacheUsageIdentitiesFromSelf(state.self)
 		existing := make(map[string]int64, len(res.cacheUsageSizeByIdentity))
 		for identity, sizeBytes := range res.cacheUsageSizeByIdentity {
 			existing[identity] = sizeBytes
 		}
 		inputs = append(inputs, cacheUsageMeasurementInput{
 			resultID:         resID,
-			self:             state.self,
+			self:             self,
+			snapshotLinks:    snapshotLinks,
 			identities:       identities,
 			existingSizeByID: existing,
-			sizeMayChange:    cacheUsageSizeMayChangeFromSelf(state.self),
+			sizeMayChange:    sizeMayChange,
 		})
 	}
 	return inputs
 }
 
-func buildCacheUsageMeasurements(ctx context.Context, inputs []cacheUsageMeasurementInput) map[sharedResultID]map[string]int64 {
+func buildCacheUsageMeasurements(ctx context.Context, snapshotManager bkcache.SnapshotManager, inputs []cacheUsageMeasurementInput) map[sharedResultID]map[string]int64 {
 	if len(inputs) == 0 {
 		return nil
 	}
@@ -3117,7 +3132,16 @@ func buildCacheUsageMeasurements(ctx context.Context, inputs []cacheUsageMeasure
 			}
 		}
 
-		sizeBytes, ok, err := cacheUsageSizeBytesFromSelf(ctx, input.self, identity)
+		var (
+			sizeBytes int64
+			ok        bool
+			err       error
+		)
+		if input.self != nil {
+			sizeBytes, ok, err = cacheUsageSizeBytesFromSelf(ctx, input.self, identity)
+		} else if len(input.snapshotLinks) > 0 {
+			sizeBytes, ok, err = cacheUsageSizeBytesFromSnapshotLink(ctx, snapshotManager, identity)
+		}
 		if err != nil {
 			slog.Warn("failed to determine cache usage size",
 				"resultID", ownerID,
@@ -4081,6 +4105,17 @@ func cacheUsageSizeBytesFromSelf(ctx context.Context, self Typed, identity strin
 	return sizer.CacheUsageSize(ctx, identity)
 }
 
+func cacheUsageSizeBytesFromSnapshotLink(ctx context.Context, snapshotManager bkcache.SnapshotManager, identity string) (int64, bool, error) {
+	if snapshotManager == nil || identity == "" {
+		return 0, false, nil
+	}
+	sizeBytes, err := snapshotManager.SnapshotSize(ctx, identity)
+	if err != nil {
+		return 0, false, err
+	}
+	return sizeBytes, true, nil
+}
+
 func cacheUsageIdentitiesFromSelf(self Typed) []string {
 	if self == nil {
 		return nil
@@ -4094,12 +4129,33 @@ func cacheUsageIdentitiesFromSelf(self Typed) []string {
 	return slices.Compact(ids)
 }
 
-func cacheUsageIdentities(res *sharedResult) []string {
-	state := res.loadPayloadState()
-	if res == nil || !state.hasValue || state.self == nil {
+func cacheUsageIdentitiesFromSnapshotLinks(links []PersistedSnapshotRefLink) []string {
+	if len(links) == 0 {
 		return nil
 	}
-	return cacheUsageIdentitiesFromSelf(state.self)
+	ids := make([]string, 0, len(links))
+	for _, link := range links {
+		if link.RefKey == "" {
+			continue
+		}
+		ids = append(ids, link.RefKey)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	slices.Sort(ids)
+	return slices.Compact(ids)
+}
+
+func cacheUsageIdentities(res *sharedResult) []string {
+	if res == nil {
+		return nil
+	}
+	state := res.loadPayloadState()
+	if state.hasValue && state.self != nil {
+		return cacheUsageIdentitiesFromSelf(state.self)
+	}
+	return cacheUsageIdentitiesFromSnapshotLinks(state.snapshotOwnerLinks)
 }
 
 func cacheUsageSizeMayChangeFromSelf(self Typed) bool {

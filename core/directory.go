@@ -195,11 +195,30 @@ const (
 	persistedDirectoryFormLazy     = "lazy"
 )
 
+const (
+	persistedDirectoryLazyKindContainerRootFS               = "container.rootfs"
+	persistedDirectoryLazyKindContainerDirectory            = "container.directory"
+	persistedDirectoryLazyKindWithDirectory                 = "directory.withDirectory"
+	persistedDirectoryLazyKindWithDirectoryDockerfileCompat = "directory.__withDirectoryDockerfileCompat"
+	persistedDirectoryLazyKindWithPatchFile                 = "directory.withPatchFile"
+	persistedDirectoryLazyKindWithNewFile                   = "directory.withNewFile"
+	persistedDirectoryLazyKindWithFile                      = "directory.withFile"
+	persistedDirectoryLazyKindWithTimestamps                = "directory.withTimestamps"
+	persistedDirectoryLazyKindWithNewDirectory              = "directory.withNewDirectory"
+	persistedDirectoryLazyKindSubdirectory                  = "directory.directory"
+	persistedDirectoryLazyKindDiff                          = "directory.diff"
+	persistedDirectoryLazyKindWithChanges                   = "directory.withChanges"
+	persistedDirectoryLazyKindWithout                       = "directory.without"
+	persistedDirectoryLazyKindWithSymlink                   = "directory.withSymlink"
+	persistedDirectoryLazyKindChown                         = "directory.chown"
+)
+
 type persistedDirectoryPayload struct {
 	Form     string                    `json:"form"`
 	Dir      string                    `json:"dir,omitempty"`
 	Platform Platform                  `json:"platform"`
 	Services []persistedServiceBinding `json:"services,omitempty"`
+	LazyKind string                    `json:"lazyKind,omitempty"`
 	LazyJSON json.RawMessage           `json:"lazyJSON,omitempty"`
 }
 
@@ -240,10 +259,11 @@ func (dir *Directory) EncodePersistedObject(ctx context.Context, cache dagql.Per
 	}
 	if dir.Lazy != nil {
 		payload.Form = persistedDirectoryFormLazy
-		lazyJSON, err := dir.Lazy.EncodePersisted(ctx, cache)
+		lazyKind, lazyJSON, err := encodePersistedDirectoryLazy(ctx, cache, dir.Lazy)
 		if err != nil {
 			return dagql.PersistedObjectEncoding{}, err
 		}
+		payload.LazyKind = lazyKind
 		payload.LazyJSON = lazyJSON
 		payloadJSON, err := json.Marshal(payload)
 		if err != nil {
@@ -261,7 +281,7 @@ func (dir *Directory) EncodePersistedObject(ctx context.Context, cache dagql.Per
 }
 
 //nolint:dupl // symmetric with decodePersistedFileWithSnapshotRole in file.go; sharing hides type specifics
-func decodePersistedDirectoryWithSnapshotRole(ctx context.Context, dag *dagql.Server, resultID uint64, call *dagql.ResultCall, payload json.RawMessage, snapshotRole string) (*Directory, error) {
+func decodePersistedDirectoryWithSnapshotRole(ctx context.Context, dag *dagql.Server, resultID uint64, payload json.RawMessage, snapshotRole string) (*Directory, error) {
 	var persisted persistedDirectoryPayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted directory payload: %w", err)
@@ -289,10 +309,10 @@ func decodePersistedDirectoryWithSnapshotRole(ctx context.Context, dag *dagql.Se
 		dir.Snapshot.setValue(snapshot)
 		return dir, nil
 	case persistedDirectoryFormLazy:
-		if call == nil {
-			return nil, fmt.Errorf("decode persisted directory payload: missing call for lazy form")
+		if persisted.LazyKind == "" {
+			return nil, fmt.Errorf("decode persisted directory payload: missing lazy kind")
 		}
-		lazy, err := decodePersistedDirectoryLazy(ctx, dag, call, persisted.LazyJSON)
+		lazy, err := decodePersistedDirectoryLazy(ctx, dag, persisted.LazyKind, persisted.LazyJSON)
 		if err != nil {
 			return nil, err
 		}
@@ -303,8 +323,8 @@ func decodePersistedDirectoryWithSnapshotRole(ctx context.Context, dag *dagql.Se
 	}
 }
 
-func (*Directory) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, call *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
-	return decodePersistedDirectoryWithSnapshotRole(ctx, dag, resultID, call, payload, "snapshot")
+func (*Directory) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	return decodePersistedDirectoryWithSnapshotRole(ctx, dag, resultID, payload, "snapshot")
 }
 
 func loadCanonicalScratchDirectory(ctx context.Context) (string, bkcache.ImmutableRef, error) {
@@ -580,10 +600,82 @@ func attachFileResult(attach func(dagql.AnyResult) (dagql.AnyResult, error), res
 	return typed, nil
 }
 
+func encodePersistedDirectoryLazy(ctx context.Context, cache dagql.PersistedObjectCache, lazy Lazy[*Directory]) (string, json.RawMessage, error) {
+	switch lazy := lazy.(type) {
+	case *ContainerRootFSLazy:
+		payload, err := lazy.EncodePersisted(ctx, cache)
+		return persistedDirectoryLazyKindContainerRootFS, payload, err
+	case *ContainerDirectoryLazy:
+		payload, err := lazy.EncodePersisted(ctx, cache)
+		return persistedDirectoryLazyKindContainerDirectory, payload, err
+	case *DirectoryWithDirectoryLazy:
+		payload, err := lazy.EncodePersisted(ctx, cache)
+		return persistedDirectoryLazyKindWithDirectory, payload, err
+	case *DirectoryWithDirectoryDockerfileCompatLazy:
+		payload, err := lazy.EncodePersisted(ctx, cache)
+		return persistedDirectoryLazyKindWithDirectoryDockerfileCompat, payload, err
+	case *DirectoryWithPatchFileLazy:
+		payload, err := lazy.EncodePersisted(ctx, cache)
+		return persistedDirectoryLazyKindWithPatchFile, payload, err
+	case *DirectoryWithNewFileLazy:
+		payload, err := lazy.EncodePersisted(ctx, cache)
+		return persistedDirectoryLazyKindWithNewFile, payload, err
+	case *DirectoryWithFileLazy:
+		payload, err := lazy.EncodePersisted(ctx, cache)
+		return persistedDirectoryLazyKindWithFile, payload, err
+	case *DirectoryWithTimestampsLazy:
+		payload, err := lazy.EncodePersisted(ctx, cache)
+		return persistedDirectoryLazyKindWithTimestamps, payload, err
+	case *DirectoryWithNewDirectoryLazy:
+		payload, err := lazy.EncodePersisted(ctx, cache)
+		return persistedDirectoryLazyKindWithNewDirectory, payload, err
+	case *DirectorySubdirectoryLazy:
+		payload, err := lazy.EncodePersisted(ctx, cache)
+		return persistedDirectoryLazyKindSubdirectory, payload, err
+	case *DirectoryDiffLazy:
+		payload, err := lazy.EncodePersisted(ctx, cache)
+		return persistedDirectoryLazyKindDiff, payload, err
+	case *DirectoryWithChangesLazy:
+		payload, err := lazy.EncodePersisted(ctx, cache)
+		return persistedDirectoryLazyKindWithChanges, payload, err
+	case *DirectoryWithoutLazy:
+		payload, err := lazy.EncodePersisted(ctx, cache)
+		return persistedDirectoryLazyKindWithout, payload, err
+	case *DirectoryWithSymlinkLazy:
+		payload, err := lazy.EncodePersisted(ctx, cache)
+		return persistedDirectoryLazyKindWithSymlink, payload, err
+	case *DirectoryChownLazy:
+		payload, err := lazy.EncodePersisted(ctx, cache)
+		return persistedDirectoryLazyKindChown, payload, err
+	default:
+		return "", nil, fmt.Errorf("encode persisted directory lazy: unsupported lazy type %T", lazy)
+	}
+}
+
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
-func decodePersistedDirectoryLazy(ctx context.Context, dag *dagql.Server, call *dagql.ResultCall, payload json.RawMessage) (Lazy[*Directory], error) {
-	switch call.Field {
-	case "withDirectory":
+func decodePersistedDirectoryLazy(ctx context.Context, dag *dagql.Server, lazyKind string, payload json.RawMessage) (Lazy[*Directory], error) {
+	switch lazyKind {
+	case persistedDirectoryLazyKindContainerRootFS:
+		var persisted persistedContainerRootFSLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return nil, fmt.Errorf("decode persisted container rootfs lazy: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container rootfs parent")
+		if err != nil {
+			return nil, err
+		}
+		return &ContainerRootFSLazy{LazyState: NewLazyState(), Parent: parent}, nil
+	case persistedDirectoryLazyKindContainerDirectory:
+		var persisted persistedContainerDirectoryLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return nil, fmt.Errorf("decode persisted container directory lazy: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container directory parent")
+		if err != nil {
+			return nil, err
+		}
+		return &ContainerDirectoryLazy{LazyState: NewLazyState(), Parent: parent, Path: persisted.Path}, nil
+	case persistedDirectoryLazyKindWithDirectory:
 		var persisted persistedDirectoryWithDirectoryLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted directory withDirectory lazy: %w", err)
@@ -605,7 +697,7 @@ func decodePersistedDirectoryLazy(ctx context.Context, dag *dagql.Server, call *
 			Owner:       persisted.Owner,
 			Permissions: persisted.Permissions,
 		}, nil
-	case "__withDirectoryDockerfileCompat":
+	case persistedDirectoryLazyKindWithDirectoryDockerfileCompat:
 		var persisted persistedDirectoryWithDirectoryDockerfileCompatLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted directory __withDirectoryDockerfileCompat lazy: %w", err)
@@ -635,21 +727,7 @@ func decodePersistedDirectoryLazy(ctx context.Context, dag *dagql.Server, call *
 			AllowEmptyWildcard:               persisted.AllowEmptyWildcard,
 			AlwaysReplaceExistingDestPaths:   persisted.AlwaysReplaceExistingDestPaths,
 		}, nil
-	case "withPatch":
-		var persisted persistedDirectoryWithPatchFileLazy
-		if err := json.Unmarshal(payload, &persisted); err != nil {
-			return nil, fmt.Errorf("decode persisted directory withPatch lazy: %w", err)
-		}
-		parent, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.ParentResultID, "directory withPatch parent")
-		if err != nil {
-			return nil, err
-		}
-		patch, err := loadPersistedObjectResultByResultID[*File](ctx, dag, persisted.PatchResultID, "directory withPatch patch")
-		if err != nil {
-			return nil, err
-		}
-		return &DirectoryWithPatchFileLazy{LazyState: NewLazyState(), Parent: parent, Patch: patch}, nil
-	case "withPatchFile":
+	case persistedDirectoryLazyKindWithPatchFile:
 		var persisted persistedDirectoryWithPatchFileLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted directory withPatchFile lazy: %w", err)
@@ -663,7 +741,7 @@ func decodePersistedDirectoryLazy(ctx context.Context, dag *dagql.Server, call *
 			return nil, err
 		}
 		return &DirectoryWithPatchFileLazy{LazyState: NewLazyState(), Parent: parent, Patch: patch}, nil
-	case "withNewFile":
+	case persistedDirectoryLazyKindWithNewFile:
 		var persisted persistedDirectoryWithNewFileLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted directory withNewFile lazy: %w", err)
@@ -680,7 +758,7 @@ func decodePersistedDirectoryLazy(ctx context.Context, dag *dagql.Server, call *
 			Permissions: persisted.Permissions,
 			Ownership:   persisted.Ownership,
 		}, nil
-	case "withFile":
+	case persistedDirectoryLazyKindWithFile:
 		var persisted persistedDirectoryWithFileLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted directory withFile lazy: %w", err)
@@ -703,7 +781,7 @@ func decodePersistedDirectoryLazy(ctx context.Context, dag *dagql.Server, call *
 			DoNotCreateDestPath:              persisted.DoNotCreateDestPath,
 			AttemptUnpackDockerCompatibility: persisted.AttemptUnpackDockerCompatibility,
 		}, nil
-	case "withTimestamps":
+	case persistedDirectoryLazyKindWithTimestamps:
 		var persisted persistedDirectoryWithTimestampsLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted directory withTimestamps lazy: %w", err)
@@ -713,7 +791,7 @@ func decodePersistedDirectoryLazy(ctx context.Context, dag *dagql.Server, call *
 			return nil, err
 		}
 		return &DirectoryWithTimestampsLazy{LazyState: NewLazyState(), Parent: parent, Timestamp: persisted.Timestamp}, nil
-	case "withNewDirectory":
+	case persistedDirectoryLazyKindWithNewDirectory:
 		var persisted persistedDirectoryWithNewDirectoryLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted directory withNewDirectory lazy: %w", err)
@@ -723,7 +801,7 @@ func decodePersistedDirectoryLazy(ctx context.Context, dag *dagql.Server, call *
 			return nil, err
 		}
 		return &DirectoryWithNewDirectoryLazy{LazyState: NewLazyState(), Parent: parent, Dest: persisted.Dest, Permissions: persisted.Permissions}, nil
-	case "directory":
+	case persistedDirectoryLazyKindSubdirectory:
 		var persisted persistedDirectorySubdirectoryLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted directory directory lazy: %w", err)
@@ -733,7 +811,7 @@ func decodePersistedDirectoryLazy(ctx context.Context, dag *dagql.Server, call *
 			return nil, err
 		}
 		return &DirectorySubdirectoryLazy{LazyState: NewLazyState(), Parent: parent, Subdir: persisted.Subdir}, nil
-	case "diff":
+	case persistedDirectoryLazyKindDiff:
 		var persisted persistedDirectoryDiffLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted directory diff lazy: %w", err)
@@ -747,7 +825,7 @@ func decodePersistedDirectoryLazy(ctx context.Context, dag *dagql.Server, call *
 			return nil, err
 		}
 		return &DirectoryDiffLazy{LazyState: NewLazyState(), Parent: parent, Other: other}, nil
-	case "withChanges":
+	case persistedDirectoryLazyKindWithChanges:
 		var persisted persistedDirectoryWithChangesLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted directory withChanges lazy: %w", err)
@@ -761,7 +839,7 @@ func decodePersistedDirectoryLazy(ctx context.Context, dag *dagql.Server, call *
 			return nil, err
 		}
 		return &DirectoryWithChangesLazy{LazyState: NewLazyState(), Parent: parent, Changes: changes}, nil
-	case "withoutDirectory", "withoutFile", "withoutFiles":
+	case persistedDirectoryLazyKindWithout:
 		var persisted persistedDirectoryWithoutLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted directory without lazy: %w", err)
@@ -771,7 +849,7 @@ func decodePersistedDirectoryLazy(ctx context.Context, dag *dagql.Server, call *
 			return nil, err
 		}
 		return &DirectoryWithoutLazy{LazyState: NewLazyState(), Parent: parent, Paths: persisted.Paths}, nil
-	case "withSymlink":
+	case persistedDirectoryLazyKindWithSymlink:
 		var persisted persistedDirectoryWithSymlinkLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted directory withSymlink lazy: %w", err)
@@ -781,7 +859,7 @@ func decodePersistedDirectoryLazy(ctx context.Context, dag *dagql.Server, call *
 			return nil, err
 		}
 		return &DirectoryWithSymlinkLazy{LazyState: NewLazyState(), Parent: parent, Target: persisted.Target, LinkName: persisted.LinkName}, nil
-	case "chown":
+	case persistedDirectoryLazyKindChown:
 		var persisted persistedDirectoryChownLazy
 		if err := json.Unmarshal(payload, &persisted); err != nil {
 			return nil, fmt.Errorf("decode persisted directory chown lazy: %w", err)
@@ -792,7 +870,7 @@ func decodePersistedDirectoryLazy(ctx context.Context, dag *dagql.Server, call *
 		}
 		return &DirectoryChownLazy{LazyState: NewLazyState(), Parent: parent, ChownPath: persisted.ChownPath, Owner: persisted.Owner}, nil
 	default:
-		return nil, fmt.Errorf("decode persisted directory lazy payload: unsupported field %q", call.Field)
+		return nil, fmt.Errorf("decode persisted directory lazy payload: unsupported lazy kind %q", lazyKind)
 	}
 }
 

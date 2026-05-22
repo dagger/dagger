@@ -451,21 +451,25 @@ For `Container`, the persisted payload distinguishes:
 
 Nested directory/file values inside containers are also encoded explicitly.
 
-Each lazy type that supports persistence implements `EncodePersisted`, and the corresponding object decoder reconstructs the right lazy type by inspecting the authoritative `call.Field`.
+Each lazy type that supports persistence implements `EncodePersisted`, and the corresponding object decoder reconstructs the right lazy type from an explicit persisted lazy kind.
 
 So persistence does not serialize "a function pointer." It serializes an explicit, typed lazy recipe plus references to the attached dependency results it needs.
 
-## Not Every Lazy Shape Is a Standalone Top-Level Persisted Form
+## Selector Lazies as Standalone Persisted Forms
 
-One important nuance is that some selector-style container lazies are not supported as standalone top-level persisted forms.
+Selector-style container lazies are supported as standalone top-level persisted forms.
 
-For example:
+The persisted directory/file payload carries a `lazyKind` alongside the lazy recipe JSON. This is necessary because some field names are ambiguous across parent types. For example, `file` can mean `Directory.file` or `Container.file`; decoding from the retained call field alone is not enough to know which lazy recipe to reconstruct.
 
-- `ContainerRootFSLazy.EncodePersisted` returns unsupported
-- `ContainerDirectoryLazy.EncodePersisted` returns unsupported
-- `ContainerFileLazy.EncodePersisted` returns unsupported
+The supported selector lazy kinds are:
 
-That is a real current limitation of the implementation, not a general property of the lazy model.
+- `container.rootfs`
+- `container.directory`
+- `container.file`
+
+These recipes store the parent container result ID, plus the selected path for `container.directory` and `container.file`. They do not evaluate the container or materialize snapshots during shutdown persistence.
+
+Directory and File decoders require `lazyKind` for lazy forms. This is a hard persistence schema cut: older persisted lazy payloads without `lazyKind` are not decoded.
 
 ## Performance and Correctness Notes
 

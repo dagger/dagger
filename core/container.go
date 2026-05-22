@@ -671,6 +671,10 @@ type persistedContainerWithRootFSLazy struct {
 	SourceResultID uint64 `json:"sourceResultID"`
 }
 
+type persistedContainerRootFSLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+}
+
 type persistedContainerWithDirectoryLazy struct {
 	ParentResultID uint64     `json:"parentResultID"`
 	Path           string     `json:"path"`
@@ -679,12 +683,22 @@ type persistedContainerWithDirectoryLazy struct {
 	Owner          string     `json:"owner,omitempty"`
 }
 
+type persistedContainerDirectoryLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Path           string `json:"path"`
+}
+
 type persistedContainerWithFileLazy struct {
 	ParentResultID uint64 `json:"parentResultID"`
 	Path           string `json:"path"`
 	SourceResultID uint64 `json:"sourceResultID"`
 	Permissions    *int   `json:"permissions,omitempty"`
 	Owner          string `json:"owner,omitempty"`
+}
+
+type persistedContainerFileLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Path           string `json:"path"`
 }
 
 type persistedContainerWithMountedDirectoryLazy struct {
@@ -1366,7 +1380,7 @@ func decodePersistedContainerDirectoryValue(ctx context.Context, dag *dagql.Serv
 	case persistedContainerValueFormPending:
 		return decodedContainerDirectoryValue{Dir: nil, Kind: wrapped.Form}, nil
 	case persistedContainerValueFormMaterialized:
-		dir, err := decodePersistedDirectoryWithSnapshotRole(ctx, dag, resultID, nil, wrapped.Value, role)
+		dir, err := decodePersistedDirectoryWithSnapshotRole(ctx, dag, resultID, wrapped.Value, role)
 		if err != nil {
 			return decodedContainerDirectoryValue{}, err
 		}
@@ -1390,7 +1404,7 @@ func decodePersistedContainerFileValue(ctx context.Context, dag *dagql.Server, r
 	case persistedContainerValueFormPending:
 		return decodedContainerFileValue{File: nil, Kind: wrapped.Form}, nil
 	case persistedContainerValueFormMaterialized:
-		file, err := decodePersistedFileWithSnapshotRole(ctx, dag, resultID, nil, wrapped.Value, role)
+		file, err := decodePersistedFileWithSnapshotRole(ctx, dag, resultID, wrapped.Value, role)
 		if err != nil {
 			return decodedContainerFileValue{}, err
 		}
@@ -2982,8 +2996,12 @@ func (lazy *ContainerRootFSLazy) AttachDependencies(ctx context.Context, attach 
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (*ContainerRootFSLazy) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
-	return nil, fmt.Errorf("encode persisted container rootfs lazy: unsupported top-level form")
+func (lazy *ContainerRootFSLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container rootfs parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerRootFSLazy{ParentResultID: parentID})
 }
 
 func (lazy *ContainerWithRootFSLazy) Evaluate(ctx context.Context, container *Container) error {
@@ -3181,8 +3199,15 @@ func (lazy *ContainerDirectoryLazy) AttachDependencies(ctx context.Context, atta
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (*ContainerDirectoryLazy) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
-	return nil, fmt.Errorf("encode persisted container directory lazy: unsupported top-level form")
+func (lazy *ContainerDirectoryLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container directory parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerDirectoryLazy{
+		ParentResultID: parentID,
+		Path:           lazy.Path,
+	})
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
@@ -3330,8 +3355,15 @@ func (lazy *ContainerFileLazy) AttachDependencies(ctx context.Context, attach fu
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (*ContainerFileLazy) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
-	return nil, fmt.Errorf("encode persisted container file lazy: unsupported top-level form")
+func (lazy *ContainerFileLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container file parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerFileLazy{
+		ParentResultID: parentID,
+		Path:           lazy.Path,
+	})
 }
 
 func containerWithDirectoryOpFromLazy(lazy *ContainerWithDirectoryLazy) containerWithDirectoryOp {
