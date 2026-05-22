@@ -1247,6 +1247,20 @@ defmodule Dagger.Client do
   end
 
   @doc """
+  Load a Schema from its ID.
+  """
+  @spec load_schema_from_id(t(), Dagger.SchemaID.t()) :: Dagger.Schema.t()
+  def load_schema_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadSchemaFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Schema{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
   Load a SearchResult from its ID.
   """
   @spec load_search_result_from_id(t(), Dagger.SearchResultID.t()) :: Dagger.SearchResult.t()
@@ -1555,6 +1569,20 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("node") |> QB.put_arg("id", id)
 
     %Dagger.Node{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc """
+  Load a GraphQL introspection schema for merging.
+  """
+  @spec schema(t(), Dagger.JSON.t()) :: Dagger.Schema.t()
+  def schema(%__MODULE__{} = client, json) do
+    query_builder =
+      client.query_builder |> QB.select("schema") |> QB.put_arg("json", json)
+
+    %Dagger.Schema{
       query_builder: query_builder,
       client: client.client
     }

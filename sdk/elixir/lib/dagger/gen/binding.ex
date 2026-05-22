@@ -310,6 +310,20 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type Schema
+  """
+  @spec as_schema(t()) :: Dagger.Schema.t()
+  def as_schema(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asSchema")
+
+    %Dagger.Schema{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Retrieve the binding value, as type SearchResult
   """
   @spec as_search_result(t()) :: Dagger.SearchResult.t()
