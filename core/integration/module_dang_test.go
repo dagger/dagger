@@ -160,6 +160,17 @@ func (DangSuite) TestCoreTypeShadowing(_ context.Context, t *testctx.T) {
 	})
 }
 
+func (DangSuite) TestWorkspaceArg(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := moduleEntrypointFixture(t, c, "workspace-arg", "dang/workspace-arg").
+		WithNewFile("marker.txt", "hello from workspace").
+		With(daggerCall("read")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello from workspace", strings.TrimSpace(out))
+}
+
 func (DangSuite) TestPrivateArg(_ context.Context, t *testctx.T) {
 	t.Run("default private value", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
