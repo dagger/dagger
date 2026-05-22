@@ -319,16 +319,14 @@ func (cli *CloudCLI) RepoAutocheck(cmd *cobra.Command, args []string) error {
 
 	client, cloudAuth, err := cli.cloudClient(ctx)
 	if err != nil {
-		state := map[string]any{
-			"repository": repo,
-			"autocheck":  true,
-			"status":     "not_logged_in",
-			"next":       "dagger login",
-		}
 		if cloudJSON {
-			return writeCloudJSON(cmd, state)
+			return writeCloudJSON(cmd, map[string]any{
+				"repository": repo,
+				"status":     "not_logged_in",
+				"next":       "dagger login",
+			})
 		}
-		printAutocheckGuide(cmd, repo, "", "not logged in", "dagger login")
+		fmt.Fprintln(cmd.OutOrStdout(), "Not logged into cloud. Run: dagger login")
 		return nil
 	}
 
@@ -341,17 +339,31 @@ func (cli *CloudCLI) RepoAutocheck(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	next := autocheckNextStep(state)
+	if state.Status != "linked" {
+		if cloudJSON {
+			return writeCloudJSON(cmd, map[string]any{
+				"repository": repo,
+				"org":        org.Name,
+				"status":     "not_linked",
+				"next":       "dagger repo link",
+			})
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), "repository not linked to this dagger cloud org. Run: dagger repo link")
+		return nil
+	}
+
 	if cloudJSON {
 		return writeCloudJSON(cmd, map[string]any{
 			"repository": repo,
-			"org":        org,
-			"autocheck":  true,
-			"status":     state.Status,
-			"next":       next,
+			"org":        org.Name,
+			"autocheck":  state.Autocheck,
 		})
 	}
-	printAutocheckGuide(cmd, repo, org.Name, state.Status, next)
+	if state.Autocheck {
+		fmt.Fprintln(cmd.OutOrStdout(), "on")
+		return nil
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), "off")
 	return nil
 }
 
@@ -741,39 +753,6 @@ func repoVisibilityError(state *repoCloudState) error {
 	default:
 		return fmt.Errorf("%s Run `dagger integration github connect` or install the Dagger GitHub App for the repo owner", repoStatusMessage(state))
 	}
-}
-
-func autocheckNextStep(state *repoCloudState) string {
-	switch state.Status {
-	case "linked":
-		return "none"
-	case "available":
-		return "dagger repo link"
-	case "blocked":
-		return "transfer or unlink the repo from " + stringValue(state.Repo.ClaimedByOrgName)
-	case "not_visible":
-		if state.ActionURL != "" {
-			return "open " + state.ActionURL
-		}
-		return "grant the Dagger GitHub App access to this repo"
-	default:
-		return "dagger integration github connect"
-	}
-}
-
-func printAutocheckGuide(cmd *cobra.Command, repo string, org string, status string, next string) {
-	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "Repository: %s\n", repo)
-	if org != "" {
-		fmt.Fprintf(out, "Org:        %s\n", org)
-	}
-	fmt.Fprintln(out, "Autocheck: on (read-only)")
-	fmt.Fprintf(out, "Status:     %s\n", status)
-	if next != "" && next != "none" {
-		fmt.Fprintf(out, "Next:       %s\n", next)
-		return
-	}
-	fmt.Fprintln(out, "Next:       already configured")
 }
 
 func appendUniqueRepository(repos []string, repo string) []string {
