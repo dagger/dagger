@@ -144,6 +144,7 @@ type repoCloudState struct {
 	Org          *cloudapi.OrgResponse      `json:"org"`
 	Repository   string                     `json:"repository"`
 	Status       string                     `json:"status"`
+	Autocheck    bool                       `json:"autocheck"`
 	Source       *cloudapi.Source           `json:"source,omitempty"`
 	MappedSource *cloudapi.MappedSource     `json:"mappedSource,omitempty"`
 	Repo         *cloudapi.SourceRepository `json:"repo,omitempty"`
@@ -310,13 +311,21 @@ func (cli *CloudCLI) RepoTransfer(cmd *cobra.Command, args []string) error {
 }
 
 func (cli *CloudCLI) RepoAutocheckOn(cmd *cobra.Command, args []string) error {
-	if err := cli.RepoLink(cmd, args); err != nil {
+	repo, err := repoFromArgOrGit(cmd.Context(), args)
+	if err != nil {
 		return err
 	}
-	if !cloudJSON {
-		fmt.Fprintln(cmd.OutOrStdout(), "Automatic GitHub checks are driven by the repo link plus the org Cloud Checks feature.")
+	if cloudJSON {
+		if err := writeCloudJSON(cmd, map[string]any{
+			"repository": repo,
+			"autocheck":  true,
+			"readOnly":   true,
+			"error":      "autocheck is a read-only mock setting and is always on",
+		}); err != nil {
+			return err
+		}
 	}
-	return nil
+	return fmt.Errorf("autocheck is always on and cannot be changed")
 }
 
 func (cli *CloudCLI) RepoAutocheckOff(cmd *cobra.Command, args []string) error {
@@ -326,14 +335,16 @@ func (cli *CloudCLI) RepoAutocheckOff(cmd *cobra.Command, args []string) error {
 	}
 	msg := map[string]any{
 		"repository": repo,
-		"supported":  false,
-		"reason":     "Dagger Cloud does not expose a separate repo-level autocheck toggle today; automatic checks are enabled by linking the repo and the org Cloud Checks feature.",
-		"workaround": "dagger repo unlink " + repo,
+		"autocheck":  true,
+		"readOnly":   true,
+		"error":      "autocheck is a read-only mock setting and is always on",
 	}
 	if cloudJSON {
-		return writeCloudJSON(cmd, msg)
+		if err := writeCloudJSON(cmd, msg); err != nil {
+			return err
+		}
 	}
-	return fmt.Errorf("%s\nUse `dagger repo unlink %s` to stop Dagger Cloud from handling GitHub events for this repo", msg["reason"], repo)
+	return fmt.Errorf("autocheck is always on and cannot be changed")
 }
 
 func (cli *CloudCLI) IntegrationGitHubInfo(cmd *cobra.Command, args []string) error {
@@ -434,6 +445,7 @@ func (cli *CloudCLI) inspectRepo(ctx context.Context, client *cloudapi.Client, o
 		Org:        org,
 		Repository: repo,
 		Status:     "not_installed",
+		Autocheck:  true,
 	}
 
 	gitSources, err := client.GitSources(ctx, org.Name)
@@ -446,6 +458,30 @@ func (cli *CloudCLI) inspectRepo(ctx context.Context, client *cloudapi.Client, o
 	}
 
 	owner := repoOwner(repo)
+	for i := range gitSources.Org.MappedSources {
+		mapped := &gitSources.Org.MappedSources[i]
+		repos, err := client.SourceRepositories(ctx, mapped.InstallationID, org.ID)
+		if err != nil {
+			return nil, err
+		}
+		for j := range repos {
+			if !sameRepository(repos[j].Repository, repo) {
+				continue
+			}
+			state.MappedSource = mapped
+			state.Repo = &repos[j]
+			state.Source = matchSource(sources, mapped.InstallationID)
+			if state.Source != nil {
+				state.ActionURL = state.Source.ConfigURL
+			}
+			state.Status = repoStatus(state.Repo)
+			if state.Status != "linked" && state.Source != nil {
+				return state, nil
+			}
+			return state, nil
+		}
+	}
+
 	for i := range sources {
 		source := &sources[i]
 		if state.Source == nil && sourceMatchesOwner(source, owner) {
@@ -463,7 +499,6 @@ func (cli *CloudCLI) inspectRepo(ctx context.Context, client *cloudapi.Client, o
 			}
 			state.Source = source
 			state.Repo = &repos[j]
-			state.MappedSource = matchMappedSource(gitSources.Org.MappedSources, source.ID)
 			state.ActionURL = source.ConfigURL
 			state.Status = repoStatus(state.Repo)
 			return state, nil
@@ -712,7 +747,7 @@ func printRepoInfo(cmd *cobra.Command, state *repoCloudState) {
 		fmt.Fprintf(out, "GitHub URL: %s\n", state.ActionURL)
 	}
 	fmt.Fprintf(out, "\n%s\n", state.Message)
-	fmt.Fprintln(out, "Autocheck: automatic checks follow the repo link plus the org Cloud Checks feature; no separate repo-level toggle is exposed yet.")
+	fmt.Fprintln(out, "Autocheck: on (read-only mock setting)")
 }
 
 func printGitHubIntegration(cmd *cobra.Command, conn *cloudapi.GitHubConnection, sources []cloudapi.Source, org *cloudapi.OrgResponse, integrations []cloudapi.Integration) {
