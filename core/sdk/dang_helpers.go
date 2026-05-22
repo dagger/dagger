@@ -176,7 +176,10 @@ func callDangFunction(ctx context.Context, env dang.EvalEnv, fnCall *core.Functi
 		inputArgs[arg.Name] = []byte(arg.Value)
 	}
 
-	parentModBase, found := env.Get(fnCall.ParentName)
+	parentModBase, found, err := env.Lookup(ctx, fnCall.ParentName)
+	if err != nil {
+		return nil, fmt.Errorf("lookup parent type %s: %w", fnCall.ParentName, err)
+	}
 	if !found {
 		return nil, fmt.Errorf("unknown parent type: %s", fnCall.ParentName)
 	}
@@ -243,7 +246,6 @@ func callDangFunction(ctx context.Context, env dang.EvalEnv, fnCall *core.Functi
 	}
 
 	parentModEnv := dang.NewModuleValue(parentModType)
-	parentModEnv.SetDynamicScope(parentModEnv)
 
 	for name, value := range parentState {
 		scheme, found := parentModType.SchemeOf(name)
@@ -258,11 +260,12 @@ func callDangFunction(ctx context.Context, env dang.EvalEnv, fnCall *core.Functi
 		if err != nil {
 			return nil, fmt.Errorf("convert field %s: %w", name, err)
 		}
-		parentModEnv.Set(name, dangVal)
+		parentModEnv.Bind(name, dangVal, dang.PrivateVisibility)
 	}
 
 	bodyEnv := dang.CreateCompositeEnv(parentModEnv, env)
-	_, err := dang.EvaluateFormsWithPhases(ctx, parentConstructor.ClassBodyForms, bodyEnv)
+	bodyEnv.EnterSelf(parentModEnv)
+	_, err = dang.EvaluateFormsWithPhases(ctx, parentConstructor.ClassBodyForms, bodyEnv)
 	if err != nil {
 		return nil, fmt.Errorf("evaluating class body for %s: %w", parentConstructor.ClassName, err)
 	}
@@ -1015,9 +1018,15 @@ func anyToDang(ctx context.Context, env dang.EvalEnv, val any, fieldType hm.Type
 	case string:
 		if modType, ok := fieldType.(*dang.Module); ok && modType != dang.StringType {
 			if modType.Kind == dang.EnumKind {
-				if enumVal, found := env.Get(modType.Named); found {
+				enumVal, found, err := env.Lookup(ctx, modType.Named)
+				if err != nil {
+					return nil, fmt.Errorf("lookup enum type %s: %w", modType.Named, err)
+				}
+				if found {
 					if enumMod, ok := enumVal.(*dang.ModuleValue); ok {
-						if val, found := enumMod.Get(v); found {
+						if val, found, err := enumMod.Lookup(ctx, v); err != nil {
+							return nil, fmt.Errorf("lookup enum value %s.%s: %w", modType.Named, v, err)
+						} else if found {
 							return val, nil
 						}
 						return nil, fmt.Errorf("unknown enum value %s.%s", modType.Named, v)
@@ -1076,7 +1085,6 @@ func anyToDang(ctx context.Context, env dang.EvalEnv, val any, fieldType hm.Type
 			return nil, fmt.Errorf("expected module type, got %T", fieldType)
 		}
 		modVal := dang.NewModuleValue(mod)
-		modVal.SetDynamicScope(modVal)
 		for name, val := range v {
 			expectedT, found := mod.SchemeOf(name)
 			if !found {
@@ -1090,13 +1098,17 @@ func anyToDang(ctx context.Context, env dang.EvalEnv, val any, fieldType hm.Type
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert map item %q: %w", name, err)
 			}
-			modVal.Set(name, dangVal)
+			modVal.Bind(name, dangVal, dang.PrivateVisibility)
 		}
 		if mod.Name() != "" {
-			constructor, ok := env.Get(mod.Name())
-			if ok {
+			constructor, found, err := env.Lookup(ctx, mod.Name())
+			if err != nil {
+				return nil, fmt.Errorf("lookup constructor %s: %w", mod.Name(), err)
+			}
+			if found {
 				if constructorFn, ok := constructor.(*dang.ConstructorFunction); ok {
 					bodyEnv := dang.CreateCompositeEnv(modVal, env)
+					bodyEnv.EnterSelf(modVal)
 					_, err := dang.EvaluateFormsWithPhases(ctx, constructorFn.ClassBodyForms, bodyEnv)
 					if err != nil {
 						return nil, fmt.Errorf("evaluating class body for %s: %w", mod.Name(), err)
