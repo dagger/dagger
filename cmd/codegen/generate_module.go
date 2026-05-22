@@ -14,6 +14,7 @@ var (
 	moduleName string
 	isInit     bool
 	libVersion string
+	selfCalls  bool
 )
 
 var generateModuleCmd = &cobra.Command{
@@ -32,7 +33,7 @@ func GenerateModule(cmd *cobra.Command, args []string) error {
 	ctx = telemetry.InitEmbedded(ctx, nil)
 	defer telemetry.Close()
 
-	cfg, err := getGlobalConfig(ctx, false)
+	cfg, err := getGlobalConfig(ctx, true)
 	if err != nil {
 		return fmt.Errorf("failed to get global configuration: %w", err)
 	}
@@ -41,6 +42,7 @@ func GenerateModule(cmd *cobra.Command, args []string) error {
 	moduleConfig := &generator.ModuleGeneratorConfig{
 		IsInit:     isInit,
 		LibVersion: libVersion,
+		SelfCalls:  selfCalls,
 	}
 
 	moduleConfig.ModuleName = moduleName
@@ -78,4 +80,5 @@ func init() {
 
 	generateModuleCmd.Flags().BoolVar(&isInit, "is-init", false, "whether this command is initializing a new module")
 	generateModuleCmd.Flags().StringVar(&libVersion, "lib-version", "", "if set, use the given version of dagger.io/dagger in the generated client")
+	generateModuleCmd.Flags().BoolVar(&selfCalls, "self-calls", false, "merge the module's own types into the schema for self-call bindings")
 }

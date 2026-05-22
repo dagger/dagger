@@ -2,7 +2,6 @@ package sdk
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,7 +13,6 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	telemetry "github.com/dagger/otel-go"
 	"github.com/mitchellh/mapstructure"
-	"github.com/opencontainers/go-digest"
 )
 
 const (
@@ -22,15 +20,12 @@ const (
 	goSDKRuntimePath            = "/runtime"
 	goSDKIntrospectionJSONPath  = "/schema.json"
 	goSDKDependenciesConfigPath = "/dependencies.json"
-	GoSDKModuleIDPath           = "typedefs.json"
 
 	// Set to a commit on https://github.com/dagger/dagger-go-sdk if an unreleased
 	// change is needed in the generated library.
 	// Otherwise, update it to the latest known commit during release.
 	goSDKLibVersion = "fedae8c6cc63771edf096310967725004d82ec88" // v0.21.3
 )
-
-var goSDKExecMDDigest = digest.FromString("go-sdk-with-exec-execmd")
 
 /*
 goSDK is the one special sdk not implemented as module, instead the
@@ -55,7 +50,12 @@ func (sdk *goSDK) AsRuntime() (core.Runtime, bool) {
 }
 
 func (sdk *goSDK) AsModuleTypes() (core.ModuleTypes, bool) {
-	return sdk, true
+	// Go SDK no longer implements moduleTypes; type discovery happens
+	// via the generated invoke() dispatcher's empty-parentName arm
+	// (see cmd/codegen/generator/go/templates/modules.go). The engine
+	// falls through to the Runtime + empty-function-name path in
+	// runModuleDefInSDK automatically when AsModuleTypes returns false.
+	return nil, false
 }
 
 func (sdk *goSDK) AsCodeGenerator() (core.CodeGenerator, bool) {
@@ -250,210 +250,6 @@ func (sdk *goSDK) Codegen(
 			".env", // this is here because the Go SDK does not use WithVCSIgnoredPaths on core/codegen/GeneratedCode
 		},
 	}, nil
-}
-
-func (sdk *goSDK) ModuleTypes(
-	ctx context.Context,
-	deps *core.SchemaBuilder,
-	src dagql.ObjectResult[*core.ModuleSource],
-	partiallyInitializedMod *core.Module,
-) (inst dagql.ObjectResult[*core.Module], rerr error) {
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get dag for go module sdk codegen: %w", err)
-	}
-
-	src, err = scopeSourceForSDKOperation(ctx, src, "moduleTypes", dag)
-	if err != nil {
-		return inst, fmt.Errorf("failed to scope module source for go module sdk module types: %w", err)
-	}
-
-	schemaJSONFile, err := deps.SchemaIntrospectionJSONFileForModule(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get schema introspection json during module client generation: %w", err)
-	}
-	scopedMod, err := ScopeModuleForSDKOperation(ctx, partiallyInitializedMod, "goSDK", dag)
-	if err != nil {
-		return inst, fmt.Errorf("failed to scope module for go module sdk module types: %w", err)
-	}
-	moduleContextID, err := core.ResultIDInput(scopedMod)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get module context ID for go module sdk module types: %w", err)
-	}
-
-	var ctr dagql.ObjectResult[*core.Container]
-
-	modName := src.Self().ModuleOriginalName
-	contextDir := src.Self().ContextDirectory
-	srcSubpath := src.Self().SourceSubpath
-	schemaJSONFileID, err := schemaJSONFile.ID()
-	if err != nil {
-		return inst, fmt.Errorf("failed to get schema introspection json ID: %w", err)
-	}
-	contextDirID, err := contextDir.ID()
-	if err != nil {
-		return inst, fmt.Errorf("failed to get module context directory ID: %w", err)
-	}
-
-	ctr, err = sdk.base(ctx)
-	if err != nil {
-		return inst, err
-	}
-
-	execMD := engineutil.ExecutionMetadata{
-		Internal:              true,
-		UseRecipeIDsByDefault: true,
-	}
-	if curCall := dagql.CurrentCall(ctx); curCall != nil {
-		callDigest, err := curCall.RecipeDigest(ctx)
-		if err != nil {
-			return inst, fmt.Errorf("compute Go SDK exec call digest: %w", err)
-		}
-		execMD.CallDigest = callDigest
-	}
-	err = dag.Select(ctx, ctr, &ctr,
-		dagql.Selector{
-			Field: "withMountedFile",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.NewString(goSDKIntrospectionJSONPath),
-				},
-				{
-					Name:  "source",
-					Value: dagql.NewID[*core.File](schemaJSONFileID),
-				},
-			},
-		},
-		dagql.Selector{
-			Field: "withMountedDirectory",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.NewString(goSDKUserModContextDirPath),
-				},
-				{
-					Name:  "source",
-					Value: dagql.NewID[*core.Directory](contextDirID),
-				},
-			},
-		},
-		dagql.Selector{
-			Field: "withoutFile",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath, "dagger.gen.go")),
-				},
-			},
-		},
-		dagql.Selector{
-			Field: "withoutDirectory",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath, "internal")),
-				},
-			},
-		},
-		dagql.Selector{
-			Field: "withWorkdir",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.NewString(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
-				},
-			},
-		},
-		dagql.Selector{
-			Field: "withExec",
-			Args: []dagql.NamedInput{
-				{
-					Name: "args",
-					Value: dagql.ArrayInput[dagql.String]{
-						"codegen",
-						"generate-typedefs",
-						"--module-source-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
-						"--module-name", dagql.String(modName),
-						"--introspection-json-path", goSDKIntrospectionJSONPath,
-						"--lib-version", dagql.String(goSDKLibVersion),
-						"--output", GoSDKModuleIDPath,
-					},
-				},
-				{
-					Name:  "experimentalPrivilegedNesting",
-					Value: dagql.Boolean(true),
-				},
-				{
-					Name:  "execMD",
-					Value: dagql.NewDigestedSerializedString(&execMD, goSDKExecMDDigest),
-				},
-				{
-					Name:  "moduleContext",
-					Value: dagql.Opt(moduleContextID),
-				},
-			},
-		},
-	)
-	if err != nil {
-		return inst, fmt.Errorf("failed to run go module type defs generation: %w", err)
-	}
-
-	var syncedCtrID dagql.ID[*core.Container]
-	if err = dag.Select(ctx, ctr, &syncedCtrID, dagql.Selector{
-		Field: "sync",
-	}); err != nil {
-		return inst, fmt.Errorf("failed to sync go module type defs generation container: %w", err)
-	}
-
-	ctr, err = syncedCtrID.Load(ctx, dag)
-	if err != nil {
-		return inst, fmt.Errorf("failed to load synced go module type defs generation container: %w", err)
-	}
-
-	var modDefsID string
-	err = dag.Select(ctx, ctr, &modDefsID,
-		dagql.Selector{
-			Field: "file",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "path",
-					Value: dagql.NewString(GoSDKModuleIDPath),
-				},
-			},
-		},
-		dagql.Selector{
-			Field: "contents",
-		},
-	)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get type defs json during module sdk codegen: %w", err)
-	}
-
-	var modID core.ModuleID
-	if err = json.Unmarshal([]byte(modDefsID), &modID); err != nil {
-		return inst, fmt.Errorf("failed to decode module ID from type defs json: %w", err)
-	}
-
-	modCallID, err := modID.ID()
-	if err != nil {
-		return inst, fmt.Errorf("failed to get module ID from type defs json: %w", err)
-	}
-	inst, err = dagql.NewID[*core.Module](modCallID).Load(ctx, dag)
-	if err != nil {
-		return inst, fmt.Errorf("failed to load module from type defs json: %w", err)
-	}
-	if modCallID.IsHandle() {
-		cache, err := dagql.EngineCache(ctx)
-		if err != nil {
-			return inst, fmt.Errorf("failed to get engine cache for go type defs dependency: %w", err)
-		}
-		if err := cache.AddExplicitDependency(ctx, ctr, inst, "go_sdk_generate_typedefs"); err != nil {
-			return inst, fmt.Errorf("failed to retain generated module result from go type defs exec: %w", err)
-		}
-	}
-
-	return inst, nil
 }
 
 func (sdk *goSDK) Runtime(
@@ -790,6 +586,10 @@ func (sdk *goSDK) baseWithCodegen(
 	if !src.Self().ConfigExists {
 		codegenArgs = append(codegenArgs, "--is-init")
 	}
+	if sdkCfg := src.Self().SDK; sdkCfg != nil &&
+		sdkCfg.ExperimentalFeatureEnabled(core.ModuleSourceExperimentalFeatureSelfCalls) {
+		codegenArgs = append(codegenArgs, "--self-calls")
+	}
 
 	selectors := []dagql.Selector{
 		{
@@ -887,6 +687,10 @@ func (sdk *goSDK) baseWithCodegen(
 					Value: append(dagql.ArrayInput[dagql.String]{
 						"codegen",
 					}, codegenArgs...),
+				},
+				{
+					Name:  "experimentalPrivilegedNesting",
+					Value: dagql.NewBoolean(true),
 				},
 			},
 		},

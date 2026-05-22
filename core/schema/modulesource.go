@@ -941,6 +941,9 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	src.ModuleName = modCfg.Name
 	src.ModuleOriginalName = modCfg.Name
 	src.IncludePaths = modCfg.Include
+	if err := modCfg.Codegen.Validate(); err != nil {
+		return fmt.Errorf("invalid codegen config in dagger.json: %w", err)
+	}
 	src.CodegenConfig = modCfg.Codegen
 	src.ModuleConfigUserFields = modCfg.ModuleConfigUserFields
 	src.ConfigDependencies = modCfg.Dependencies
@@ -2417,20 +2420,21 @@ func (s *moduleSourceSchema) runCodegen(
 	// part of the code generation.
 	// This is not really a dependency as it's the module itself, but that will allow to generate
 	// the types.
-	if srcInst.Self().SDK != nil {
-		// Only if the SDK implements a specific function to get module type definitions.
-		// If not, we will have circular dependency issues.
-		if _, ok := srcInst.Self().SDKImpl.AsModuleTypes(); ok && isSelfCallsEnabled(srcInst) {
-			var mod dagql.ObjectResult[*core.Module]
-			err = dag.Select(ctx, srcInst, &mod, dagql.Selector{
-				Field: "asModule",
-			})
-			if err != nil {
-				return res, fmt.Errorf("failed to transform module source into module: %w", err)
-			}
-
-			deps = mod.Self().Deps.Append(core.NewUserMod(mod))
+	// SDKs that implement moduleTypes (Python, TypeScript, ...) get the engine-side self-append
+	// via asModule build+run to discover their types. Go no longer implements moduleTypes and
+	// instead merges its own types into the schema codegen-side (see generate-module /
+	// schemaTools.merge), so the engine must not build+run the module via asModule just to
+	// discover them. That keeps generate-module to a single pass for Go.
+	if _, ok := srcInst.Self().SDKImpl.AsModuleTypes(); ok && isSelfCallsEnabled(srcInst) {
+		var mod dagql.ObjectResult[*core.Module]
+		err = dag.Select(ctx, srcInst, &mod, dagql.Selector{
+			Field: "asModule",
+		})
+		if err != nil {
+			return res, fmt.Errorf("failed to transform module source into module: %w", err)
 		}
+
+		deps = mod.Self().Deps.Append(core.NewUserMod(mod))
 	}
 
 	// run codegen to get the generated context directory
