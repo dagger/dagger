@@ -242,15 +242,22 @@ func (*Query) TypeDescription() string {
 	return "The root of the DAG."
 }
 
-func (q Query) Clone() *Query {
-	cp := q
+func (q *Query) Clone() *Query {
+	cp := &Query{
+		Server: q.Server,
+	}
 	if q.ConstructorArgs != nil {
 		cp.ConstructorArgs = make(map[string]dagql.Input, len(q.ConstructorArgs))
 		for k, v := range q.ConstructorArgs {
 			cp.ConstructorArgs[k] = v
 		}
 	}
-	return &cp
+
+	q.cacheVolumeStoreMu.Lock()
+	cp.cacheVolumeStore = q.cacheVolumeStore
+	q.cacheVolumeStoreMu.Unlock()
+
+	return cp
 }
 
 func (q *Query) WithPipeline(name, desc string) *Query {
