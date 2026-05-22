@@ -129,6 +129,9 @@ func (opts FrontendOpts) ShouldShow(db *DB, span *Span) bool {
 	if span.IsRunningOrEffectsRunning() {
 		return true
 	}
+	if span.CheckName != "" {
+		return true
+	}
 	// TODO: avoid breaking chains
 	// if opts.TooFastThreshold > 0 &&
 	// 	span.ActiveDuration(time.Now()) < opts.TooFastThreshold &&
