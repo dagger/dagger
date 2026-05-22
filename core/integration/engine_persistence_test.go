@@ -18,7 +18,7 @@ import (
 	"dagger.io/dagger"
 )
 
-func (EngineSuite) TestDiskPersistenceAcrossRestart(ctx context.Context, t *testctx.T) {
+func (CachePersistenceSuite) TestDiskPersistenceAcrossRestart(ctx context.Context, t *testctx.T) {
 	const persistenceTestGCThresholdBytes = "1000000000000000"
 
 	engineWithPersistenceTestGC := func(ctx context.Context, t *testctx.T) func(*dagger.Container) *dagger.Container {

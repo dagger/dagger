@@ -19,7 +19,7 @@ import (
 	"github.com/dagger/testctx"
 )
 
-func (EngineSuite) TestLocalCacheGCDisabled(ctx context.Context, t *testctx.T) {
+func (LocalCacheSuite) TestLocalCacheGCDisabled(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	f := false
 	engine := devEngineContainer(c, engineWithConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg config.Config) config.Config {
@@ -53,7 +53,7 @@ func (EngineSuite) TestLocalCacheGCDisabled(ctx context.Context, t *testctx.T) {
 	assert.Zero(t, rs)
 }
 
-func (EngineSuite) TestLocalCacheGCKeepBytesConfig(ctx context.Context, t *testctx.T) {
+func (LocalCacheSuite) TestLocalCacheGCKeepBytesConfig(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	for _, tc := range []struct {
@@ -142,7 +142,7 @@ func (EngineSuite) TestLocalCacheGCKeepBytesConfig(ctx context.Context, t *testc
 	}
 }
 
-func (EngineSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
+func (LocalCacheSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	for _, tc := range []struct {
@@ -376,7 +376,7 @@ func (EngineSuite) TestLocalCacheGC(ctx context.Context, t *testctx.T) {
 	}
 }
 
-func (EngineSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t *testctx.T) {
+func (LocalCacheSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	setup := func(ctx context.Context, t *testctx.T) (endpoint string, c2 *dagger.Client, addCacheBlock func(*testctx.T, string, int), getUsedBytes func(*testctx.T) int) {
 		t.Helper()
@@ -586,7 +586,7 @@ func (EngineSuite) TestLocalCachePruneSpaceOverrides(ctx context.Context, t *tes
 	})
 }
 
-func (EngineSuite) TestLocalCachePruneRemoteGitSnapshot(ctx context.Context, t *testctx.T) {
+func (LocalCacheSuite) TestLocalCachePruneRemoteGitSnapshot(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	engine := devEngineContainer(c, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
@@ -663,7 +663,7 @@ func (EngineSuite) TestLocalCachePruneRemoteGitSnapshot(ctx context.Context, t *
 	require.Equal(t, readmeBeforePrune, readmeAfterPrune)
 }
 
-func (EngineSuite) TestLocalCachePruneDoesNotBreakRunningNestedEngineService(ctx context.Context, t *testctx.T) {
+func (LocalCacheSuite) TestLocalCachePruneDoesNotBreakRunningNestedEngineService(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	nestedEngine := devEngineContainer(c)
@@ -779,7 +779,7 @@ func (EngineSuite) TestLocalCachePruneDoesNotBreakRunningNestedEngineService(ctx
 	require.NoError(t, runNestedTmpProbe(ctx, finalClient, 99, 0))
 }
 
-func (EngineSuite) TestLocalCachePruneReclaimsStoppedServiceSnapshots(ctx context.Context, t *testctx.T) {
+func (LocalCacheSuite) TestLocalCachePruneReclaimsStoppedServiceSnapshots(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	engine := devEngineContainer(c, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
@@ -892,7 +892,7 @@ func (EngineSuite) TestLocalCachePruneReclaimsStoppedServiceSnapshots(ctx contex
 	require.LessOrEqual(t, usedAfterPrune, serviceUsedBytes-servicePayloadSignalBytes, "stopped service snapshots should be released by explicit prune")
 }
 
-func (EngineSuite) TestLocalCacheEntryRecordType(ctx context.Context, t *testctx.T) {
+func (LocalCacheSuite) TestLocalCacheEntryRecordType(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	_, err := c.Container().

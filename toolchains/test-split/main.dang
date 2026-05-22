@@ -14,6 +14,20 @@ type TestSplit {
     engineDev.test(race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
   }
 
+  let testCliEngineSpecific(
+    run: [String!]!,
+    ebpfProgs: [String!],
+    pkg: String! = "./core/integration",
+    race: Boolean,
+  ): Void {
+    engineDev
+      .withEngineConfig("worker.oci", [
+        "minFreeSpace = \"30%\"",
+        "maxUsedSpace = \"50%\"",
+      ].join("\n"))
+      .test(race: race, run: run.join("|"), ebpfProgs: ebpfProgs, pkg: pkg)
+  }
+
   let testSkip(
     skip: [String!]!,
     ebpfProgs: [String!],
@@ -28,7 +42,7 @@ type TestSplit {
   """
   pub testBase: Void @check {
     testSkip(
-      skip: ["TestProvision", "TestTelemetry", "TestModule", "TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava", "TestContainer", "TestDockerfile", "TestLLM", "TestCLI", "TestEngine", "TestClientGenerator", "TestInterface", "TestCall", "TestShell", "TestDaggerCMD", "TestWorkspace"],
+      skip: ["TestProvision", "TestTelemetry", "TestModule", "TestGo", "TestPython", "TestTypescript", "TestElixir", "TestPHP", "TestJava", "TestContainer", "TestDockerfile", "TestLLM", "TestCLI", "TestEngine", "TestCachePersistence", "TestLocalCache", "TestClientGenerator", "TestInterface", "TestCall", "TestShell", "TestDaggerCMD", "TestWorkspace"],
       pkg: "./...",
       race: true,
     )
@@ -59,7 +73,21 @@ type TestSplit {
   Test CLI Engine
   """
   pub testCliEngine: Void @check {
-    testSpecific(["TestCLI", "TestEngine"])
+    testCliEngineSpecific(["TestCLI", "TestEngine"])
+  }
+
+  """
+  Test cache persistence
+  """
+  pub testCachePersistence: Void @check {
+    testCliEngineSpecific(["TestCachePersistence"])
+  }
+
+  """
+  Test local cache
+  """
+  pub testLocalCache: Void @check {
+    testCliEngineSpecific(["TestLocalCache"])
   }
 
   """
