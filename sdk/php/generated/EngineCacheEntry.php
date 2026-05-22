@@ -32,6 +32,15 @@ class EngineCacheEntry extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The DagQL call that produced this cache entry.
+     */
+    public function dagqlCall(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('dagqlCall');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'dagqlCall');
+    }
+
+    /**
      * The description of the cache entry.
      */
     public function description(): string
@@ -74,5 +83,14 @@ class EngineCacheEntry extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('recordType');
         return (string)$this->queryLeaf($leafQueryBuilder, 'recordType');
+    }
+
+    /**
+     * The storage record types represented by this cache entry.
+     */
+    public function recordTypes(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('recordTypes');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'recordTypes');
     }
 }

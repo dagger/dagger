@@ -185,6 +185,39 @@ func TestGetDagqlGCPolicyFallsBackToBuildkitGCPolicy(t *testing.T) {
 	}, policies[0])
 }
 
+func TestGetDagqlGCPolicyDefaultPolicies(t *testing.T) {
+	cfg := config.Config{
+		GC: config.GCConfig{
+			GCSpace: config.GCSpace{
+				ReservedSpace: config.DiskSpace{Bytes: 100},
+				MaxUsedSpace:  config.DiskSpace{Bytes: 1000},
+				MinFreeSpace:  config.DiskSpace{Bytes: 200},
+			},
+		},
+	}
+
+	policies := getDagqlGCPolicy(cfg, bkconfig.GCConfig{}, t.TempDir())
+	require.Equal(t, []dagqlCachePrunePolicy{
+		{
+			Filters:      []string{"type==source.local,type==exec.cachemount,type==source.git.checkout"},
+			KeepDuration: 48 * time.Hour,
+			MaxUsedSpace: 512 * 1e6,
+		},
+		{
+			KeepDuration:  60 * 24 * time.Hour,
+			ReservedSpace: 100,
+			MaxUsedSpace:  1000,
+			MinFreeSpace:  200,
+		},
+		{
+			All:           true,
+			ReservedSpace: 100,
+			MaxUsedSpace:  1000,
+			MinFreeSpace:  200,
+		},
+	}, policies)
+}
+
 func mustParseDiskSpace(t *testing.T, value string, dstat disk.DiskStat) int64 {
 	t.Helper()
 	var parsed bkconfig.DiskSpace

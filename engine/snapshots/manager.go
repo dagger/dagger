@@ -65,12 +65,18 @@ type Accessor interface {
 type SnapshotManager interface {
 	Accessor
 	SnapshotSize(ctx context.Context, snapshotID string) (int64, error)
+	SnapshotRecordMetadata(ctx context.Context, snapshotID string) (SnapshotRecordMetadata, bool, error)
 	AttachLease(ctx context.Context, leaseID, snapshotID string) error
 	RemoveLease(ctx context.Context, leaseID string) error
 	LoadPersistentMetadata(rows PersistentMetadataRows) error
 	PersistentMetadataRows() PersistentMetadataRows
 	DeleteStaleDaggerOwnerLeases(ctx context.Context, keep map[string]struct{}) error
 	Close() error
+}
+
+type SnapshotRecordMetadata struct {
+	RecordType  client.UsageRecordType
+	Description string
 }
 
 type snapshotManager struct {
@@ -201,6 +207,25 @@ func (cm *snapshotManager) SnapshotSize(ctx context.Context, snapshotID string) 
 	}
 
 	return usage.Size, nil
+}
+
+func (cm *snapshotManager) SnapshotRecordMetadata(ctx context.Context, snapshotID string) (SnapshotRecordMetadata, bool, error) {
+	_ = ctx
+	if snapshotID == "" {
+		return SnapshotRecordMetadata{}, false, errors.New("snapshot record metadata: empty snapshot ID")
+	}
+
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	md, ok := cm.getMetadata(snapshotID)
+	if !ok {
+		return SnapshotRecordMetadata{}, false, nil
+	}
+	return SnapshotRecordMetadata{
+		RecordType:  md.GetRecordType(),
+		Description: md.GetDescription(),
+	}, true, nil
 }
 
 // get requires manager lock to be taken

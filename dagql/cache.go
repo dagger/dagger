@@ -50,6 +50,8 @@ type CacheUsageEntry struct {
 	ID                        string
 	Description               string
 	RecordType                string
+	RecordTypes               []string
+	DagqlCall                 string
 	SizeBytes                 int64
 	CreatedTimeUnixNano       int64
 	MostRecentUseTimeUnixNano int64
@@ -1399,6 +1401,7 @@ type sharedResult struct {
 	createdAtUnixNano        int64
 	lastUsedAtUnixNano       int64
 	cacheUsageSizeByIdentity map[string]int64
+	cacheUsageRecordTypeByID map[string]string
 	description              string
 	recordType               string
 
@@ -2297,6 +2300,16 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 			}
 			return cp
 		}(),
+		cacheUsageRecordTypeByID: func() map[string]string {
+			if len(r.shared.cacheUsageRecordTypeByID) == 0 {
+				return nil
+			}
+			cp := make(map[string]string, len(r.shared.cacheUsageRecordTypeByID))
+			for id, recordType := range r.shared.cacheUsageRecordTypeByID {
+				cp[id] = recordType
+			}
+			return cp
+		}(),
 		description: r.shared.description,
 		recordType:  r.shared.recordType,
 	}
@@ -2378,6 +2391,16 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 			cp := make(map[string]int64, len(r.shared.cacheUsageSizeByIdentity))
 			for id, sz := range r.shared.cacheUsageSizeByIdentity {
 				cp[id] = sz
+			}
+			return cp
+		}(),
+		cacheUsageRecordTypeByID: func() map[string]string {
+			if len(r.shared.cacheUsageRecordTypeByID) == 0 {
+				return nil
+			}
+			cp := make(map[string]string, len(r.shared.cacheUsageRecordTypeByID))
+			for id, recordType := range r.shared.cacheUsageRecordTypeByID {
+				cp[id] = recordType
 			}
 			return cp
 		}(),
@@ -3000,10 +3023,9 @@ func (c *Cache) usageEntriesLocked(activeRoots map[sharedResultID]struct{}) []Ca
 		if lastUsedAt == 0 {
 			lastUsedAt = createdAt
 		}
-		recordType := res.recordType
-		if recordType == "" {
-			recordType = "dagql.unknown"
-		}
+		recordTypes := cacheUsageRecordTypesFromMap(res.cacheUsageRecordTypeByID)
+		recordType := cacheUsagePrimaryRecordType(recordTypes, res.recordType)
+		dagqlCall := c.cacheUsageDagqlCallLocked(res)
 		description := res.description
 		if description == "" {
 			description = fmt.Sprintf("dagql cache result %d", resID)
@@ -3018,6 +3040,8 @@ func (c *Cache) usageEntriesLocked(activeRoots map[sharedResultID]struct{}) []Ca
 			ID:                        fmt.Sprintf("dagql.result.%d", resID),
 			Description:               description,
 			RecordType:                recordType,
+			RecordTypes:               recordTypes,
+			DagqlCall:                 dagqlCall,
 			SizeBytes:                 sizeBytes,
 			CreatedTimeUnixNano:       createdAt,
 			MostRecentUseTimeUnixNano: lastUsedAt,
@@ -3038,6 +3062,81 @@ func (c *Cache) usageEntriesLocked(activeRoots map[sharedResultID]struct{}) []Ca
 	return entries
 }
 
+func (c *Cache) cacheUsageDagqlCallLocked(res *sharedResult) string {
+	if c == nil || res == nil {
+		return ""
+	}
+	frame := res.loadResultCall()
+	if frame == nil {
+		return ""
+	}
+
+	fieldName := ""
+	if identityField, err := resultCallIdentityField(frame); err == nil {
+		fieldName = identityField
+	}
+
+	receiverTypeName := ""
+	if frame.Receiver != nil {
+		if receiverRes := c.resultsByID[sharedResultID(frame.Receiver.ResultID)]; receiverRes != nil {
+			receiverFrame := receiverRes.loadResultCall()
+			switch {
+			case receiverFrame != nil && receiverFrame.Type != nil && receiverFrame.Type.NamedType != "":
+				receiverTypeName = receiverFrame.Type.NamedType
+			default:
+				receiverState := receiverRes.loadPayloadState()
+				receiverTypeName = sharedResultObjectTypeName(receiverRes, receiverState)
+			}
+		}
+	}
+
+	switch {
+	case receiverTypeName != "" && fieldName != "":
+		return receiverTypeName + "." + fieldName
+	case fieldName != "":
+		if frame.Kind == ResultCallKindField {
+			return "Query." + fieldName
+		}
+		return fieldName
+	default:
+		return ""
+	}
+}
+
+func cacheUsageRecordTypesFromMap(recordTypeByID map[string]string) []string {
+	if len(recordTypeByID) == 0 {
+		return nil
+	}
+	recordTypes := make([]string, 0, len(recordTypeByID))
+	seen := make(map[string]struct{}, len(recordTypeByID))
+	for _, recordType := range recordTypeByID {
+		if recordType == "" {
+			continue
+		}
+		if _, ok := seen[recordType]; ok {
+			continue
+		}
+		seen[recordType] = struct{}{}
+		recordTypes = append(recordTypes, recordType)
+	}
+	slices.Sort(recordTypes)
+	return recordTypes
+}
+
+func cacheUsagePrimaryRecordType(recordTypes []string, fallback string) string {
+	switch len(recordTypes) {
+	case 0:
+		if fallback != "" {
+			return fallback
+		}
+		return "dagql.unknown"
+	case 1:
+		return recordTypes[0]
+	default:
+		return "mixed"
+	}
+}
+
 type cacheUsageMeasurementInput struct {
 	resultID         sharedResultID
 	self             Typed
@@ -3047,13 +3146,18 @@ type cacheUsageMeasurementInput struct {
 	sizeMayChange    bool
 }
 
+type cacheUsageIdentityMeasurement struct {
+	sizeBytes  int64
+	recordType string
+}
+
 func (c *Cache) measureAllResultSizes(ctx context.Context) {
 	inputs := c.collectUsageMeasurementInputs()
 	if len(inputs) == 0 {
 		return
 	}
-	sizes := buildCacheUsageMeasurements(ctx, c.snapshotManager, inputs)
-	c.publishUsageMeasurements(sizes)
+	measurements := buildCacheUsageMeasurements(ctx, c.snapshotManager, inputs)
+	c.publishUsageMeasurements(measurements)
 }
 
 func (c *Cache) collectUsageMeasurementInputs() []cacheUsageMeasurementInput {
@@ -3098,7 +3202,7 @@ func (c *Cache) collectUsageMeasurementInputs() []cacheUsageMeasurementInput {
 	return inputs
 }
 
-func buildCacheUsageMeasurements(ctx context.Context, snapshotManager bkcache.SnapshotManager, inputs []cacheUsageMeasurementInput) map[sharedResultID]map[string]int64 {
+func buildCacheUsageMeasurements(ctx context.Context, snapshotManager bkcache.SnapshotManager, inputs []cacheUsageMeasurementInput) map[sharedResultID]map[string]cacheUsageIdentityMeasurement {
 	if len(inputs) == 0 {
 		return nil
 	}
@@ -3121,82 +3225,106 @@ func buildCacheUsageMeasurements(ctx context.Context, snapshotManager bkcache.Sn
 	}
 	slices.Sort(identities)
 
-	sizeByIdentity := make(map[string]int64, len(ownerByIdentity))
+	measurementByIdentity := make(map[string]cacheUsageIdentityMeasurement, len(ownerByIdentity))
 	for _, identity := range identities {
 		ownerID := ownerByIdentity[identity]
 		input := inputByResultID[ownerID]
-		if !input.sizeMayChange {
-			if sizeBytes, ok := input.existingSizeByID[identity]; ok {
-				sizeByIdentity[identity] = sizeBytes
-				continue
-			}
-		}
-
 		var (
 			sizeBytes int64
 			ok        bool
 			err       error
 		)
-		if input.self != nil {
-			sizeBytes, ok, err = cacheUsageSizeBytesFromSelf(ctx, input.self, identity)
-		} else if len(input.snapshotLinks) > 0 {
-			sizeBytes, ok, err = cacheUsageSizeBytesFromSnapshotLink(ctx, snapshotManager, identity)
+		if !input.sizeMayChange {
+			if existingSizeBytes, found := input.existingSizeByID[identity]; found {
+				sizeBytes = existingSizeBytes
+				ok = true
+			}
 		}
+
+		if !ok {
+			if input.self != nil {
+				sizeBytes, ok, err = cacheUsageSizeBytesFromSelf(ctx, input.self, identity)
+			} else if len(input.snapshotLinks) > 0 {
+				sizeBytes, ok, err = cacheUsageSizeBytesFromSnapshotLink(ctx, snapshotManager, identity)
+			}
+			if err != nil {
+				slog.Warn("failed to determine cache usage size",
+					"resultID", ownerID,
+					"usageIdentity", identity,
+					"err", err)
+				continue
+			}
+			if !ok {
+				continue
+			}
+		}
+
+		recordType, _, err := cacheUsageRecordTypeFromSnapshotMetadata(ctx, snapshotManager, identity)
 		if err != nil {
-			slog.Warn("failed to determine cache usage size",
+			slog.Warn("failed to determine cache usage record type",
 				"resultID", ownerID,
 				"usageIdentity", identity,
 				"err", err)
-			continue
-		}
-		if !ok {
-			continue
 		}
 		if sizeBytes < 0 {
 			sizeBytes = 0
 		}
-		sizeByIdentity[identity] = sizeBytes
+		measurementByIdentity[identity] = cacheUsageIdentityMeasurement{
+			sizeBytes:  sizeBytes,
+			recordType: recordType,
+		}
 	}
 
-	published := make(map[sharedResultID]map[string]int64, len(inputs))
+	published := make(map[sharedResultID]map[string]cacheUsageIdentityMeasurement, len(inputs))
 	for _, input := range inputs {
-		resultSizes := make(map[string]int64)
+		resultMeasurements := make(map[string]cacheUsageIdentityMeasurement)
 		for _, identity := range input.identities {
 			if ownerByIdentity[identity] != input.resultID {
 				continue
 			}
-			sizeBytes, ok := sizeByIdentity[identity]
+			measurement, ok := measurementByIdentity[identity]
 			if !ok {
 				continue
 			}
-			resultSizes[identity] = sizeBytes
+			resultMeasurements[identity] = measurement
 		}
-		if len(resultSizes) == 0 {
+		if len(resultMeasurements) == 0 {
 			continue
 		}
-		published[input.resultID] = resultSizes
+		published[input.resultID] = resultMeasurements
 	}
 
 	return published
 }
 
-func (c *Cache) publishUsageMeasurements(sizes map[sharedResultID]map[string]int64) {
+func (c *Cache) publishUsageMeasurements(measurements map[sharedResultID]map[string]cacheUsageIdentityMeasurement) {
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	for resultID, res := range c.resultsByID {
 		if res == nil {
 			continue
 		}
-		resultSizes, ok := sizes[resultID]
+		resultMeasurements, ok := measurements[resultID]
 		if !ok {
 			res.cacheUsageSizeByIdentity = nil
+			res.cacheUsageRecordTypeByID = nil
 			continue
 		}
-		cp := make(map[string]int64, len(resultSizes))
-		for identity, sizeBytes := range resultSizes {
-			cp[identity] = sizeBytes
+		sizeByIdentity := make(map[string]int64, len(resultMeasurements))
+		recordTypeByIdentity := make(map[string]string, len(resultMeasurements))
+		for identity, measurement := range resultMeasurements {
+			sizeByIdentity[identity] = measurement.sizeBytes
+			if measurement.recordType != "" {
+				recordTypeByIdentity[identity] = measurement.recordType
+			}
 		}
-		res.cacheUsageSizeByIdentity = cp
+		res.cacheUsageSizeByIdentity = sizeByIdentity
+		res.cacheUsageRecordTypeByID = recordTypeByIdentity
+
+		recordTypes := cacheUsageRecordTypesFromMap(recordTypeByIdentity)
+		if len(recordTypes) > 0 {
+			res.recordType = cacheUsagePrimaryRecordType(recordTypes, "")
+		}
 	}
 }
 
@@ -4114,6 +4242,17 @@ func cacheUsageSizeBytesFromSnapshotLink(ctx context.Context, snapshotManager bk
 		return 0, false, err
 	}
 	return sizeBytes, true, nil
+}
+
+func cacheUsageRecordTypeFromSnapshotMetadata(ctx context.Context, snapshotManager bkcache.SnapshotManager, identity string) (string, bool, error) {
+	if snapshotManager == nil || identity == "" {
+		return "", false, nil
+	}
+	md, ok, err := snapshotManager.SnapshotRecordMetadata(ctx, identity)
+	if err != nil || !ok || md.RecordType == "" {
+		return "", ok, err
+	}
+	return string(md.RecordType), true, nil
 }
 
 func cacheUsageIdentitiesFromSelf(self Typed) []string {

@@ -6333,6 +6333,7 @@ export class EngineCacheEntry extends BaseClient {
   private readonly _id?: EngineCacheEntryID = undefined
   private readonly _activelyUsed?: boolean = undefined
   private readonly _createdTimeUnixNano?: number = undefined
+  private readonly _dagqlCall?: string = undefined
   private readonly _description?: string = undefined
   private readonly _diskSpaceBytes?: number = undefined
   private readonly _mostRecentUseTimeUnixNano?: number = undefined
@@ -6346,6 +6347,7 @@ export class EngineCacheEntry extends BaseClient {
     _id?: EngineCacheEntryID,
     _activelyUsed?: boolean,
     _createdTimeUnixNano?: number,
+    _dagqlCall?: string,
     _description?: string,
     _diskSpaceBytes?: number,
     _mostRecentUseTimeUnixNano?: number,
@@ -6356,6 +6358,7 @@ export class EngineCacheEntry extends BaseClient {
     this._id = _id
     this._activelyUsed = _activelyUsed
     this._createdTimeUnixNano = _createdTimeUnixNano
+    this._dagqlCall = _dagqlCall
     this._description = _description
     this._diskSpaceBytes = _diskSpaceBytes
     this._mostRecentUseTimeUnixNano = _mostRecentUseTimeUnixNano
@@ -6403,6 +6406,21 @@ export class EngineCacheEntry extends BaseClient {
     const ctx = this._ctx.select("createdTimeUnixNano")
 
     const response: Awaited<number> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The DagQL call that produced this cache entry.
+   */
+  dagqlCall = async (): Promise<string> => {
+    if (this._dagqlCall) {
+      return this._dagqlCall
+    }
+
+    const ctx = this._ctx.select("dagqlCall")
+
+    const response: Awaited<string> = await ctx.execute()
 
     return response
   }
@@ -6463,6 +6481,17 @@ export class EngineCacheEntry extends BaseClient {
     const ctx = this._ctx.select("recordType")
 
     const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The storage record types represented by this cache entry.
+   */
+  recordTypes = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("recordTypes")
+
+    const response: Awaited<string[]> = await ctx.execute()
 
     return response
   }
