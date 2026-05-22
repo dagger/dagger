@@ -27,13 +27,13 @@ They're now workspace modules marked as `entrypoint = true` in `.dagger/config.t
 
 ## What happened to customizations?
 
-The `customizations` array in `dagger.json` is deprecated. Module configuration now uses `config.*` in your workspace config:
+The `customizations` array in `dagger.json` is deprecated. Module configuration now uses `settings.*` in your workspace config:
 
 ```toml
 [modules.go]
 source = "github.com/dagger/go"
 
-[modules.go.config]
+[modules.go.settings]
 goVersion = "1.22"
 ```
 
@@ -56,5 +56,5 @@ This automatically converts your `dagger.json` workspace fields into `.dagger/co
 | `dagger install <dep>` (code dependency) | `dagger module install <dep>` |
 | `toolchains` array in `dagger.json` | `[modules.*]` in `.dagger/config.toml` |
 | `blueprint` in `dagger.json` | `entrypoint = true` in `.dagger/config.toml` |
-| `customizations` in `dagger.json` | `[modules.*.config]` in `.dagger/config.toml` |
-| `.env` for constructor defaults | `[modules.*.config]` in `.dagger/config.toml` |
+| `customizations` in `dagger.json` | `[modules.*.settings]` in `.dagger/config.toml` |
+| `.env` for constructor defaults | `[modules.*.settings]` in `.dagger/config.toml` |

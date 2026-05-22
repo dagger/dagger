@@ -80,7 +80,6 @@ func (s *workspaceSchema) migrate(
 		return nil, err
 	}
 	plans := make([]*workspace.MigrationPlan, 0, len(compatWorkspaces))
-	locks := make([]*workspace.Lock, 0, len(compatWorkspaces))
 	for _, compatWorkspace := range compatWorkspaces {
 		if !compatWorkspace.MustMigrateToWorkspaceConfig() {
 			continue
@@ -92,13 +91,11 @@ func (s *workspaceSchema) migrate(
 		}
 		plans = append(plans, plan)
 
-		lock, err := s.workspaceMigrationLock(workspaceCtx, query, plan)
+		lockData, err := s.workspaceMigrationLockData(workspaceCtx, query, ws, plan)
 		if err != nil {
 			return nil, err
 		}
-		if lock != nil {
-			locks = append(locks, lock)
-		}
+		plan.LockData = lockData
 	}
 
 	parentPlans, err := workspaceMigrationParentPlansForPlainModules(ws, compatWorkspaces, plans)
@@ -121,11 +118,6 @@ func (s *workspaceSchema) migrate(
 	changes, err := s.workspaceMigrationChangeset(ctx, ws, planBundle)
 	if err != nil {
 		return nil, err
-	}
-	for _, lock := range locks {
-		if err := s.stageWorkspaceMigrationLock(workspaceCtx, query, lock); err != nil {
-			return nil, err
-		}
 	}
 
 	return &core.WorkspaceMigration{
@@ -313,28 +305,29 @@ func workspaceMigrationHasExplicitConfigAncestor(
 	}
 }
 
-func (s *workspaceSchema) workspaceMigrationLock(
+func (s *workspaceSchema) workspaceMigrationLockData(
 	ctx context.Context,
 	query *core.Query,
+	ws *core.Workspace,
 	plan *workspace.MigrationPlan,
-) (_ *workspace.Lock, rerr error) {
+) (_ []byte, rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "refresh workspace lock", telemetry.Internal())
 	defer telemetry.EndWithCause(span, &rerr)
 
-	var lock *workspace.Lock
+	var planned *workspace.Lock
 	if len(plan.LockData) > 0 {
 		parsed, err := workspace.ParseLock(plan.LockData)
 		if err != nil {
 			return nil, fmt.Errorf("parse planned workspace lock: %w", err)
 		}
-		lock = parsed
+		planned = parsed
 	} else {
-		lock = workspace.NewLock()
+		planned = workspace.NewLock()
 	}
 
 	refreshMods := make([]workspaceRefreshModule, 0, len(plan.LookupSources))
 	for _, source := range plan.LookupSources {
-		if _, ok, err := lock.GetModuleResolve(source); err != nil {
+		if _, ok, err := planned.GetModuleResolve(source); err != nil {
 			return nil, err
 		} else if ok {
 			continue
@@ -345,46 +338,52 @@ func (s *workspaceSchema) workspaceMigrationLock(
 		})
 	}
 	if len(refreshMods) > 0 {
-		if err := refreshWorkspaceModuleLookups(ctx, query, lock, workspace.LockDirName, refreshMods); err != nil {
+		if err := refreshWorkspaceModuleLookups(ctx, query, planned, workspace.LockDirName, refreshMods); err != nil {
 			return nil, fmt.Errorf("refresh migrated module lookups: %w", err)
 		}
 	}
 
-	entries, err := lock.Entries()
+	entries, err := planned.Entries()
 	if err != nil {
 		return nil, err
 	}
 	if len(entries) == 0 {
 		return nil, nil
 	}
-	return lock, nil
+
+	existing, err := s.workspaceMigrationExistingLock(ctx, query, ws, plan)
+	if err != nil {
+		return nil, err
+	}
+	if err := existing.Merge(planned); err != nil {
+		return nil, fmt.Errorf("merge migrated workspace lock: %w", err)
+	}
+	lockBytes, err := existing.Marshal()
+	if err != nil {
+		return nil, fmt.Errorf("serialize migrated workspace lock: %w", err)
+	}
+	return lockBytes, nil
 }
 
-func (s *workspaceSchema) stageWorkspaceMigrationLock(
+func (s *workspaceSchema) workspaceMigrationExistingLock(
 	ctx context.Context,
 	query *core.Query,
-	lock *workspace.Lock,
-) (rerr error) {
-	if lock == nil {
-		return nil
-	}
+	ws *core.Workspace,
+	plan *workspace.MigrationPlan,
+) (*workspace.Lock, error) {
+	projectWs := ws.Clone()
+	projectWs.SetHostPath(plan.ProjectRoot)
+	projectWs.LockFile = filepath.Join(workspace.LockDirName, workspace.LockFileName)
 
-	ctx, span := core.Tracer(ctx).Start(ctx, "stage workspace lock", telemetry.Internal())
-	defer telemetry.EndWithCause(span, &rerr)
-
-	entries, err := lock.Entries()
+	bk, err := query.Engine(ctx)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("engine client: %w", err)
 	}
-	for _, entry := range entries {
-		// FIXME(workspace-migrate): Entries are staged through the current
-		// workspace lock binding. Add coverage for multi-config migrations with
-		// remote refs before changing this to per-plan lock staging.
-		if err := query.SetCurrentWorkspaceLookup(ctx, entry.Namespace, entry.Operation, entry.Inputs, entry.Result); err != nil {
-			return fmt.Errorf("stage workspace lock entry for %s: %w", entry.Operation, err)
-		}
+	lock, _, err := readWorkspaceLockState(ctx, bk, projectWs)
+	if err != nil {
+		return nil, fmt.Errorf("read existing workspace lock: %w", err)
 	}
-	return nil
+	return lock, nil
 }
 
 func (s *workspaceSchema) workspaceMigrationChangeset(
@@ -436,6 +435,17 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 				return nil, err
 			}
 			updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, migrationReportPath, plan.MigrationReportData, "migration report: "+workspaceMigrationDisplayPath(migrationReportPath))
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		if len(plan.LockData) > 0 {
+			lockPath, err := workspaceMigrationRootPath(ws, plan, filepath.Join(workspace.LockDirName, workspace.LockFileName))
+			if err != nil {
+				return nil, err
+			}
+			updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, lockPath, plan.LockData, "workspace lock: "+workspaceMigrationDisplayPath(lockPath))
 			if err != nil {
 				return nil, err
 			}
