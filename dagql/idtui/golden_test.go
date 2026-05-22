@@ -75,12 +75,18 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 	}
 
 	// These goldens cover progress rendering, not legacy workspace compat.
-	// Seed an empty native workspace so local module calls below do not fall
-	// back to the repository-level dagger.json and print migration warnings.
+	// Register viztest in a native workspace so local module calls and check
+	// discovery exercise this fixture without falling back to the repository-level
+	// dagger.json and printing migration warnings.
 	if err := os.MkdirAll(".dagger", 0o755); err != nil {
 		t.Fatalf("failed to initialize viztest workspace: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(".dagger", "config.toml"), []byte("# Dagger workspace configuration\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(".dagger", "config.toml"), []byte(`# Dagger workspace configuration
+
+[modules.viztest]
+source = "../viztest"
+entrypoint = true
+`), 0o644); err != nil {
 		t.Fatalf("failed to initialize viztest workspace config: %v", err)
 	}
 
