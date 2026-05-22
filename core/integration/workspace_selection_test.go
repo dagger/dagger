@@ -407,16 +407,20 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, 
 			WithNewFile(moduleDir+"/main.go", workspaceSelectionFilesModuleSource))
 	}
 
-	newStandaloneFixture := func(ctx context.Context, t *testctx.T) string {
+	newNoWorkspaceFixture := func(ctx context.Context, t *testctx.T) (string, []string) {
 		t.Helper()
 
-		workdir := t.TempDir()
-		copyTestdataFixture(ctx, t, workdir, "modules", "go", "workspace-selection-files-standalone")
-		require.NoError(t, os.WriteFile(filepath.Join(workdir, "marker.txt"), []byte("cwd marker"), 0o644))
+		root := t.TempDir()
+		workdir := filepath.Join(root, "caller")
+		moduleDir := filepath.Join(root, "module")
+		require.NoError(t, os.MkdirAll(workdir, 0o755))
+		copyTestdataFixture(ctx, t, moduleDir, "modules", "go", "workspace-selection-files-standalone")
 
-		_, err := os.Stat(filepath.Join(workdir, ".git"))
+		_, err := os.Stat(filepath.Join(root, ".git"))
 		require.ErrorIs(t, err, os.ErrNotExist)
-		return workdir
+		_, err = os.Stat(filepath.Join(workdir, "dagger.json"))
+		require.ErrorIs(t, err, os.ErrNotExist)
+		return workdir, []string{"-m", "../module"}
 	}
 
 	requireFileContents := func(t *testctx.T, path, contents string) {
@@ -665,11 +669,11 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, 
 	})
 
 	t.Run("no workspace keeps host writes on the CLI cwd", func(ctx context.Context, t *testctx.T) {
-		workdir := newStandaloneFixture(ctx, t)
-		selection := []string{"-m", "."}
+		workdir, selection := newNoWorkspaceFixture(ctx, t)
 
-		// No git root means no workspace. Select the standalone module with
-		// -m . so the assertions stay about host I/O, not module discovery.
+		// Keep the CLI cwd free of both .dagger/config.toml and dagger.json.
+		// The sibling module is selected explicitly so this stays about host
+		// I/O without creating ambient workspace context from compat fallback.
 		assertNoWorkspaceReads(ctx, t, workdir, selection)
 		assertHostWritesUseCWD(ctx, t, workdir, selection, "")
 		assertAbsoluteExportsUseExplicitPath(ctx, t, workdir, selection, "")
