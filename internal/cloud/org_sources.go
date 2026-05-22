@@ -73,6 +73,18 @@ type Integration struct {
 	EnabledAt   *string `json:"enabledAt"`
 }
 
+type RepoSetting struct {
+	Repo      string `json:"repo"`
+	IsPublic  bool   `json:"isPublic"`
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
+}
+
+type RepoSettingInput struct {
+	Repo     string `json:"repo"`
+	IsPublic bool   `json:"isPublic"`
+}
+
 const getSourcesOperation = `
 query GetSources {
 	sources {
@@ -293,4 +305,108 @@ func (c *Client) Integrations(ctx context.Context, orgID string) ([]Integration,
 		return nil, err
 	}
 	return data.OrgIntegrations, nil
+}
+
+const getRepoSettingsOperation = `
+query GetRepoSettings($org: String!, $repo: String) {
+	org(name: $org) {
+		repoSettings(repo: $repo) {
+			repo
+			isPublic
+			createdAt
+			updatedAt
+		}
+	}
+}
+`
+
+func (c *Client) RepoSettings(ctx context.Context, orgName string, repo string) ([]RepoSetting, error) {
+	var repoVar any
+	if repo != "" {
+		repoVar = repo
+	}
+	var data struct {
+		Org struct {
+			RepoSettings []RepoSetting `json:"repoSettings"`
+		} `json:"org"`
+	}
+	if err := c.doGraphQL(ctx, "GetRepoSettings", getRepoSettingsOperation, map[string]any{
+		"org":  orgName,
+		"repo": repoVar,
+	}, &data); err != nil {
+		return nil, err
+	}
+	return data.Org.RepoSettings, nil
+}
+
+const updateRepoSettingOperation = `
+mutation UpdateRepoSetting($org: ID!, $setting: RepoSettingInput!) {
+	updateOrgRepoSetting(org: $org, setting: $setting)
+}
+`
+
+func (c *Client) UpdateRepoSetting(ctx context.Context, orgID string, setting RepoSettingInput) (bool, error) {
+	var data struct {
+		UpdateOrgRepoSetting bool `json:"updateOrgRepoSetting"`
+	}
+	if err := c.doGraphQL(ctx, "UpdateRepoSetting", updateRepoSettingOperation, map[string]any{
+		"org":     orgID,
+		"setting": setting,
+	}, &data); err != nil {
+		return false, err
+	}
+	return data.UpdateOrgRepoSetting, nil
+}
+
+const deleteRepoSettingOperation = `
+mutation DeleteRepoSetting($org: ID!, $repoName: String!) {
+	deleteOrgRepoSetting(org: $org, repoName: $repoName)
+}
+`
+
+func (c *Client) DeleteRepoSetting(ctx context.Context, orgID string, repo string) (bool, error) {
+	var data struct {
+		DeleteOrgRepoSetting bool `json:"deleteOrgRepoSetting"`
+	}
+	if err := c.doGraphQL(ctx, "DeleteRepoSetting", deleteRepoSettingOperation, map[string]any{
+		"org":      orgID,
+		"repoName": repo,
+	}, &data); err != nil {
+		return false, err
+	}
+	return data.DeleteOrgRepoSetting, nil
+}
+
+const getGithubOAuthURLOperation = `
+query GetGithubOAuthURL($redirectURI: String!) {
+	githubOAuthURL(redirectURI: $redirectURI)
+}
+`
+
+func (c *Client) GitHubOAuthURL(ctx context.Context, redirectURI string) (string, error) {
+	var data struct {
+		GitHubOAuthURL string `json:"githubOAuthURL"`
+	}
+	if err := c.doGraphQL(ctx, "GetGithubOAuthURL", getGithubOAuthURLOperation, map[string]any{
+		"redirectURI": redirectURI,
+	}, &data); err != nil {
+		return "", err
+	}
+	return data.GitHubOAuthURL, nil
+}
+
+const disconnectGitHubOperation = `
+mutation DisconnectGitHub {
+	disconnectGitHub
+}
+`
+
+func (c *Client) DisconnectGitHub(ctx context.Context) (bool, error) {
+	var data struct {
+		DisconnectGitHub bool `json:"disconnectGitHub"`
+	}
+	if err := c.doGraphQL(ctx, "DisconnectGitHub", disconnectGitHubOperation, nil, &data); err != nil {
+		return false, err
+	}
+	return data.DisconnectGitHub, nil
 }
