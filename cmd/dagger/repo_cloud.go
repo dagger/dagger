@@ -77,9 +77,28 @@ var repoAutocheckOffCmd = &cobra.Command{
 	RunE:  cloudCLI.RepoAutocheckOff,
 }
 
+var repoEnableCmd = &cobra.Command{
+	Use:   "enable",
+	Short: "Enable Dagger Cloud features for a repository",
+}
+
+var repoEnableAutocheckCmd = &cobra.Command{
+	Use:   "autocheck [repo]",
+	Short: "Enable automatic GitHub checks for a repository",
+	Args:  cobra.MaximumNArgs(1),
+	RunE:  cloudCLI.RepoLink,
+}
+
 var integrationCmd = &cobra.Command{
 	Use:   "integration",
 	Short: "Manage Dagger Cloud integrations",
+}
+
+var integrationAddCmd = &cobra.Command{
+	Use:   "add <provider>",
+	Short: "Add a Dagger Cloud integration",
+	Args:  cobra.ExactArgs(1),
+	RunE:  cloudCLI.IntegrationAdd,
 }
 
 var integrationGithubCmd = &cobra.Command{
@@ -124,9 +143,12 @@ func init() {
 	_ = repoTransferCmd.MarkFlagRequired("to")
 
 	repoAutocheckCmd.AddCommand(repoAutocheckOnCmd, repoAutocheckOffCmd)
-	repoCmd.AddCommand(repoInfoCmd, repoLinkCmd, repoUnlinkCmd, repoTransferCmd, repoAutocheckCmd)
+	repoEnableCmd.AddCommand(repoEnableAutocheckCmd)
+	repoCmd.AddCommand(repoInfoCmd, repoLinkCmd, repoUnlinkCmd, repoTransferCmd, repoAutocheckCmd, repoEnableCmd)
 
 	integrationCmd.PersistentFlags().BoolVar(&cloudJSON, "json", false, "Print JSON output")
+	integrationAddCmd.Flags().StringVar(&githubRedirect, "redirect-uri", "https://dagger.cloud/github/callback", "OAuth redirect URI")
+	integrationAddCmd.Flags().BoolVar(&githubOpen, "open", false, "Open the OAuth URL in a browser")
 	integrationGithubConnectCmd.Flags().StringVar(&githubRedirect, "redirect-uri", "https://dagger.cloud/github/callback", "OAuth redirect URI")
 	integrationGithubConnectCmd.Flags().BoolVar(&githubOpen, "open", false, "Open the OAuth URL in a browser")
 	integrationGithubCmd.AddCommand(
@@ -135,7 +157,7 @@ func init() {
 		integrationGithubDisconnectCmd,
 		integrationGithubInstallationsCmd,
 	)
-	integrationCmd.AddCommand(integrationGithubCmd)
+	integrationCmd.AddCommand(integrationAddCmd, integrationGithubCmd)
 
 	rootCmd.AddCommand(repoCmd, integrationCmd)
 }
@@ -402,6 +424,15 @@ func (cli *CloudCLI) RepoAutocheckOff(cmd *cobra.Command, args []string) error {
 		}
 	}
 	return fmt.Errorf("autocheck is always on and cannot be changed")
+}
+
+func (cli *CloudCLI) IntegrationAdd(cmd *cobra.Command, args []string) error {
+	switch strings.ToLower(args[0]) {
+	case "github":
+		return cli.IntegrationGitHubConnect(cmd, nil)
+	default:
+		return fmt.Errorf("unsupported integration %q; supported integrations: github", args[0])
+	}
 }
 
 func (cli *CloudCLI) IntegrationGitHubInfo(cmd *cobra.Command, args []string) error {

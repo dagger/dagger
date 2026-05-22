@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/pkg/browser"
@@ -74,6 +75,9 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		orgName = args[0]
 	}
+	if orgName == "" {
+		orgName = cloudOrgFlag
+	}
 
 	if err := auth.Login(ctx, outW); err != nil {
 		return err
@@ -134,8 +138,38 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Fprintln(outW, "Success.")
+	cli.printPostLoginRepoSetupHint(ctx, client, selectedOrg, outW)
 
 	return nil
+}
+
+func (cli *CloudCLI) printPostLoginRepoSetupHint(ctx context.Context, client *cloud.Client, org *auth.Org, out io.Writer) {
+	if org == nil {
+		return
+	}
+	if _, err := repoFromArgOrGit(ctx, nil); err != nil {
+		return
+	}
+	integrations, err := client.Integrations(ctx, org.ID)
+	if err != nil {
+		return
+	}
+	for _, integration := range integrations {
+		if strings.EqualFold(integration.Name, "GitHub") && integrationEnabled(integration) {
+			return
+		}
+	}
+
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "next:")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "1. add a github integration")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "  dagger integration add github")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "2. enable autocheck for this repo")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "  dagger repo enable autocheck")
 }
 
 func createNewOrg(ctx context.Context, cli *cloud.Client, w io.Writer) (*auth.Org, error) {
