@@ -143,16 +143,29 @@ def runtime_introspect_package(
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
 
+        # A caller-supplied ``package_name`` is the corpus module's real
+        # name, which can collide with a package already imported in this
+        # test session — a module literally named ``tests`` shadows the
+        # SDK's own ``tests`` package. ``importlib.import_module`` would
+        # then return the cached package instead of our materialised copy.
+        # Evict any colliding entries first and restore them afterwards.
+        shadowed = {
+            name: sys.modules.pop(name)
+            for name in list(sys.modules)
+            if name == package_name or name.startswith(package_name + ".")
+        }
         sys.path.insert(0, str(tmp_root))
         try:
             package = importlib.import_module(package_name)
             return _build_package_metadata(package, main_object_name)
         finally:
             # Drop every cached module under our package so a follow-up
-            # call starts clean even if it reuses a name.
+            # call starts clean even if it reuses a name, then restore any
+            # pre-existing package we shadowed.
             for mod_name in list(sys.modules):
                 if mod_name == package_name or mod_name.startswith(package_name + "."):
                     sys.modules.pop(mod_name, None)
+            sys.modules.update(shadowed)
             with contextlib.suppress(ValueError):
                 sys.path.remove(str(tmp_root))
     finally:

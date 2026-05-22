@@ -386,6 +386,50 @@ func TestCaptureSessionLazySpanContextFirstWriterWinsAndRelease(t *testing.T) {
 	assert.Assert(t, !ok)
 }
 
+func TestSessionResultInstallSpanContextsSorted(t *testing.T) {
+	t.Parallel()
+
+	c := &Cache{}
+	spanCtxB := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{2},
+		SpanID:  trace.SpanID{2},
+	})
+	spanCtxA := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{1},
+		SpanID:  trace.SpanID{1},
+	})
+
+	c.recordSessionResultInstallSpanLocked("test-session", 1, spanCtxB)
+	c.recordSessionResultInstallSpanLocked("test-session", 1, spanCtxA)
+	c.recordSessionResultInstallSpanLocked("test-session", 1, spanCtxB)
+
+	got := c.sessionResultInstallSpanContexts("test-session", 1)
+	assert.DeepEqual(t, got, []trace.SpanContext{spanCtxA, spanCtxB})
+}
+
+func TestTransitiveDepIDsLockedUpdatesAncestors(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}
+	parent := &sharedResult{id: 1}
+	child := &sharedResult{id: 2}
+	grandchild := &sharedResult{id: 3}
+	c.resultsByID[parent.id] = parent
+	c.resultsByID[child.id] = child
+	c.resultsByID[grandchild.id] = grandchild
+
+	c.egraphMu.Lock()
+	assert.NilError(t, c.addExplicitDependencyLocked(ctx, parent, child, "test"))
+	assert.NilError(t, c.addExplicitDependencyLocked(ctx, child, grandchild, "test"))
+	parentDeps := c.transitiveDepIDsLocked(parent.id)
+	childDeps := c.transitiveDepIDsLocked(child.id)
+	c.egraphMu.Unlock()
+
+	assert.DeepEqual(t, parentDeps, []sharedResultID{child.id, grandchild.id})
+	assert.DeepEqual(t, childDeps, []sharedResultID{grandchild.id})
+}
+
 func TestEvaluateLazyUsesOriginalSpanForLogsAndNestedSpans(t *testing.T) {
 	t.Parallel()
 
@@ -6105,4 +6149,33 @@ func TestCacheArbitraryRecursiveCall(t *testing.T) {
 		return nil, err
 	})
 	assert.Assert(t, is.ErrorIs(err, ErrCacheRecursiveCall))
+}
+
+func TestResolveSessionResourceCandidatesOrdering(t *testing.T) {
+	ctx := t.Context()
+	cache, err := NewCache(ctx, "", nil, nil)
+	assert.NilError(t, err)
+
+	const sessionID = "test-session"
+	const preferredClientID = "preferred-client"
+	const latestClientID = "latest-client"
+	handle := SessionResourceHandle("test-resource")
+
+	assert.NilError(t, cache.BindSessionResource(ctx, sessionID, "alpha-client", handle, "alpha"))
+	assert.NilError(t, cache.BindSessionResource(ctx, sessionID, preferredClientID, handle, "preferred"))
+	assert.NilError(t, cache.BindSessionResource(ctx, sessionID, latestClientID, handle, "latest"))
+
+	resolved, err := cache.ResolveSessionResource(ctx, sessionID, preferredClientID, handle)
+	assert.NilError(t, err)
+	assert.Equal(t, resolved, "preferred")
+
+	candidates, err := cache.ResolveSessionResourceCandidates(ctx, sessionID, preferredClientID, handle)
+	assert.NilError(t, err)
+	assert.Assert(t, is.Len(candidates, 3))
+	assert.Equal(t, candidates[0].ClientID, preferredClientID)
+	assert.Equal(t, candidates[0].Value, "preferred")
+	assert.Equal(t, candidates[1].ClientID, latestClientID)
+	assert.Equal(t, candidates[1].Value, "latest")
+	assert.Equal(t, candidates[2].ClientID, "alpha-client")
+	assert.Equal(t, candidates[2].Value, "alpha")
 }

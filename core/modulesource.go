@@ -616,9 +616,9 @@ func (sdk persistedModuleSourceLazyClientGenerator) GenerateClient(
 	return clientSDK.GenerateClient(ctx, modSource, schemaJSONFile, outputDir)
 }
 
-func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	if src == nil {
-		return nil, fmt.Errorf("encode persisted module source: nil module source")
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted module source: nil module source")
 	}
 	payload := persistedModuleSourcePayload{
 		ConfigExists:                  src.ConfigExists,
@@ -646,7 +646,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 	}
 	if src.SDK != nil {
 		if src.SDKImpl == nil {
-			return nil, fmt.Errorf("encode persisted module source: sdk config is set but sdk impl is not initialized")
+			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted module source: sdk config is set but sdk impl is not initialized")
 		}
 		_, hasRuntime := src.SDKImpl.AsRuntime()
 		_, hasModuleTypes := src.SDKImpl.AsModuleTypes()
@@ -662,7 +662,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 	if src.ContextDirectory.Self() != nil {
 		contextDirID, err := encodePersistedObjectRef(cache, src.ContextDirectory, "module source context directory")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		payload.ContextDirectoryResultID = contextDirID
 	}
@@ -673,14 +673,14 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 		}
 		depID, err := encodePersistedObjectRef(cache, dep, "module source dependency")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		payload.DependencyResultIDs = append(payload.DependencyResultIDs, depID)
 	}
 	if src.Blueprint.Self() != nil {
 		blueprintID, err := encodePersistedObjectRef(cache, src.Blueprint, "module source blueprint")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		payload.BlueprintResultID = blueprintID
 	}
@@ -691,14 +691,14 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 		}
 		toolchainID, err := encodePersistedObjectRef(cache, toolchain, "module source toolchain")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		payload.ToolchainResultIDs = append(payload.ToolchainResultIDs, toolchainID)
 	}
 	if src.ToolchainContextSource.Valid && src.ToolchainContextSource.Value.Self() != nil {
 		toolchainContextSourceID, err := encodePersistedObjectRef(cache, src.ToolchainContextSource.Value, "module source toolchain context source")
 		if err != nil {
-			return nil, err
+			return dagql.PersistedObjectEncoding{}, err
 		}
 		payload.ToolchainContextSourceResultID = toolchainContextSourceID
 	}
@@ -716,7 +716,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 		if src.Git.UnfilteredContextDir.Self() != nil {
 			unfilteredID, err := encodePersistedObjectRef(cache, src.Git.UnfilteredContextDir, "module source git unfiltered context dir")
 			if err != nil {
-				return nil, err
+				return dagql.PersistedObjectEncoding{}, err
 			}
 			payload.GitUnfilteredContextDirResultID = unfilteredID
 		}
@@ -728,12 +728,12 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 		if src.DirSrc.OriginalContextDir.Self() != nil {
 			originalContextDirID, err := encodePersistedObjectRef(cache, src.DirSrc.OriginalContextDir, "module source dir original context dir")
 			if err != nil {
-				return nil, err
+				return dagql.PersistedObjectEncoding{}, err
 			}
 			payload.DirSrc.OriginalContextDirResultID = originalContextDirID
 		}
 	}
-	return json.Marshal(payload)
+	return encodePersistedObjectPayload(payload)
 }
 
 func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {

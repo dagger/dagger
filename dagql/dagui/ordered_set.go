@@ -110,14 +110,15 @@ func (set *OrderedSet[K, V]) Iter() iter.Seq[V] {
 }
 
 func insert[T any](slice []T, value T, less func(a, b T) bool) []T {
-	// Find insertion point using binary search
+	// Find insertion point using binary search. Insert after existing values that
+	// compare equal so callers keep insertion order for ties.
 	left, right := 0, len(slice)
 	for left < right {
 		mid := (left + right) / 2
-		if less(slice[mid], value) {
-			left = mid + 1
-		} else {
+		if less(value, slice[mid]) {
 			right = mid
+		} else {
+			left = mid + 1
 		}
 	}
 

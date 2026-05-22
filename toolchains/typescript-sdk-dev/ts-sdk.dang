@@ -22,7 +22,7 @@ type TypescriptSdkDev {
   """
   Check the formatting of the SDK
   """
-  pub lintTypescript: Void! @check {
+  pub lintTypescript: Void @check {
     nodejsDevContainer
       .withExec(["yarn", "--cwd", sourcePath, "lint"])
       .sync
@@ -43,7 +43,7 @@ type TypescriptSdkDev {
       "!**/*prettier*",
       "!**/*eslint*",
     ]),
-  ): Void! @check {
+  ): Void @check {
     let path = "docs/current_docs"
     nodejsDevContainer
       # Add docs snippets on top of the already-mounted SDK source
@@ -57,21 +57,21 @@ type TypescriptSdkDev {
   """
   Test the SDK with LTS version of Node
   """
-  pub testNodejsLts: Void! @check {
+  pub testNodejsLts: Void @check {
     testNodejs(nodeVersionLts)
   }
 
   """
   Test the SDK with previous LTS version of Node
   """
-  pub testNodejsPrevLts: Void! @check {
+  pub testNodejsPrevLts: Void @check {
     testNodejs(nodeVersionPrevLts)
   }
 
   """
   Test the SDK with the given version of NodeJS
   """
-  pub testNodejs(nodeVersion: String!): Void! {
+  pub testNodejs(nodeVersion: String!): Void {
     daggerEngine
       .installClient(nodejsDevContainer(nodeVersion))
       .withWorkdir(sourcePath)
@@ -85,7 +85,7 @@ type TypescriptSdkDev {
   """
   Test the SDK with BunJS
   """
-  pub testBunjs: Void! @check {
+  pub testBunjs: Void @check {
     daggerEngine
       .installClient(bunjsDevContainer)
       .withWorkdir(sourcePath)
@@ -114,7 +114,7 @@ type TypescriptSdkDev {
       .changes(workspace)
   }
 
-  pub releaseDryRun: Void! @check {
+  pub releaseDryRun: Void @check {
     release(
       dryRun: true,
       sourceTag: "HEAD",
@@ -130,12 +130,12 @@ type TypescriptSdkDev {
     """
     NPM authentication token
     """
-    npmToken: Secret!,
+    npmToken: Secret,
     """
     Execute a dry-run release, with no side effects
     """
     dryRun: Boolean,
-  ): Void! {
+  ): Void {
     let version = versionFromTag(sourceTag)
     let versionFlag = if (isSemver(version)) {
       version.trimPrefix("v")
@@ -149,19 +149,21 @@ type TypescriptSdkDev {
     # Check that dist/ exists in the build
     build.directory("dist").entries
     let publishArgs = ["npm", "publish", "--access", "public"]
-    let publish = if (dryRun == true) {
-      build.withExec(publishArgs + ["--dry-run"])
-    } else {
+    if (dryRun == true) {
+      publishArgs += ["--dry-run"]
+      # TODO(vito): in dang, if exprs have to have same return type on all
+      # branches, which gets awkward here
+      null
+    } else if (npmToken != null) {
       let npmrc = [
         "//registry.npmjs.org/:_authToken=" + npmToken.plaintext,
         "registry=https://registry.npmjs.org/",
         "always-auth=true",
       ].join("\n")
-      build
-        .withMountedSecret(".npmrc", setSecret("npmrc", npmrc))
-        .withExec(publishArgs)
+      build = build.withMountedSecret(".npmrc", setSecret("npmrc", npmrc))
+      null
     }
-    publish.sync
+    build.withExec(publishArgs).sync
     null
   }
 
@@ -199,7 +201,11 @@ type TypescriptSdkDev {
     container
       # ⚠️  Keep this in sync with the engine version defined in package.json
       .from("node:" + nodeVersion + "-alpine")
-      .withMountedCache("/usr/local/share/.cache/yarn", cacheVolume("yarn_cache:" + nodeVersion))
+      .withMountedCache(
+        path: "/usr/local/share/.cache/yarn",
+        cache: cacheVolume("yarn_cache:" + nodeVersion),
+        sharing: CacheSharingMode.LOCKED,
+      )
       .withWorkdir("/app")
       .withFile(sourcePath + "/package.json", source.file("package.json"))
       .withFile(sourcePath + "/yarn.lock", source.file("yarn.lock"))
@@ -212,7 +218,11 @@ type TypescriptSdkDev {
   pub nodejsBase(nodeVersion: String! = nodeVersionPrevLts): Container! {
     container
       .from("node:" + nodeVersion + "-alpine")
-      .withMountedCache("/usr/local/share/.cache/yarn", cacheVolume("yarn_cache:" + nodeVersion))
+      .withMountedCache(
+        path: "/usr/local/share/.cache/yarn",
+        cache: cacheVolume("yarn_cache:" + nodeVersion),
+        sharing: CacheSharingMode.LOCKED,
+      )
       .withWorkdir("/app")
   }
 

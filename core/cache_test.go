@@ -57,6 +57,10 @@ func (m *cacheVolumeTestSnapshotManager) GetBySnapshotID(ctx context.Context, sn
 	return ref, nil
 }
 
+func (*cacheVolumeTestSnapshotManager) SnapshotSize(context.Context, string) (int64, error) {
+	panic("unexpected SnapshotSize call")
+}
+
 func (m *cacheVolumeTestSnapshotManager) New(_ context.Context, parent bkcache.ImmutableRef, _ ...bkcache.RefOption) (bkcache.MutableRef, error) {
 	m.newCalls = append(m.newCalls, parent)
 	if m.newResult == nil {
@@ -298,10 +302,10 @@ func TestCacheVolumeEncodeDecodePersistsSourceID(t *testing.T) {
 	require.NoError(t, err)
 
 	var raw persistedCacheVolumePayload
-	require.NoError(t, json.Unmarshal(payload, &raw))
+	require.NoError(t, json.Unmarshal(payload.JSON, &raw))
 	require.NotEmpty(t, raw.SourceID)
 
-	decodedAny, err := (&CacheVolume{}).DecodePersistedObject(context.Background(), nil, 0, nil, payload)
+	decodedAny, err := (&CacheVolume{}).DecodePersistedObject(context.Background(), nil, 0, nil, payload.JSON)
 	require.NoError(t, err)
 	decoded := decodedAny.(*CacheVolume)
 	require.True(t, decoded.Source.Valid)

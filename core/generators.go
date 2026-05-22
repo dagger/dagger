@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/dagger/dagger/dagql"
@@ -13,7 +14,7 @@ import (
 type Generator struct {
 	Node      *ModTreeNode `json:"node"`
 	Completed bool         `field:"true" doc:"Whether the generator complete"`
-	Changes   *Changeset   `json:"changes"`
+	Changes   dagql.ObjectResult[*Changeset]
 }
 
 func (*Generator) Type() *ast.Type {
@@ -36,7 +37,7 @@ func (g *Generator) Name() string {
 }
 
 func (g *Generator) OriginalModule() *Module {
-	return g.Node.OriginalModule
+	return g.Node.OriginalModule.Self()
 }
 
 func (g *Generator) Clone() *Generator {
@@ -54,19 +55,51 @@ func (g *Generator) Run(ctx context.Context) (*Generator, error) {
 	return g, nil
 }
 
-func (g *Generator) RequireChanges(field string) (*Changeset, error) {
+func (g *Generator) RequireChangesResult(field string) (dagql.ObjectResult[*Changeset], error) {
 	if !g.Completed {
-		return nil, fmt.Errorf("generator %q must be run before querying %s", g.Name(), field)
+		return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("generator %q must be run before querying %s", g.Name(), field)
 	}
-	if g.Changes == nil {
-		return nil, fmt.Errorf("generator %q did not produce a changeset result", g.Name())
+	if g.Changes.Self() == nil {
+		return dagql.ObjectResult[*Changeset]{}, fmt.Errorf("generator %q did not produce a changeset result", g.Name())
 	}
 	return g.Changes, nil
+}
+
+func (g *Generator) RequireChanges(field string) (*Changeset, error) {
+	changes, err := g.RequireChangesResult(field)
+	if err != nil {
+		return nil, err
+	}
+	return changes.Self(), nil
 }
 
 type GeneratorGroup struct {
 	Node       *ModTreeNode `json:"node"`
 	Generators []*Generator `json:"generators"`
+}
+
+var _ dagql.PersistedObject = (*Generator)(nil)
+var _ dagql.PersistedObjectDecoder = (*Generator)(nil)
+var _ dagql.HasDependencyResults = (*Generator)(nil)
+var _ dagql.PersistedObject = (*GeneratorGroup)(nil)
+var _ dagql.PersistedObjectDecoder = (*GeneratorGroup)(nil)
+var _ dagql.HasDependencyResults = (*GeneratorGroup)(nil)
+
+type persistedGeneratorPayload struct {
+	NodeID          int    `json:"nodeID,omitempty"`
+	Completed       bool   `json:"completed,omitempty"`
+	ChangesResultID uint64 `json:"changesResultID,omitempty"`
+}
+
+type persistedGeneratorObjectPayload struct {
+	Tree      persistedModTree          `json:"tree"`
+	Generator persistedGeneratorPayload `json:"generator"`
+}
+
+type persistedGeneratorGroupPayload struct {
+	Tree       persistedModTree            `json:"tree"`
+	NodeID     int                         `json:"nodeID,omitempty"`
+	Generators []persistedGeneratorPayload `json:"generators,omitempty"`
 }
 
 func NewGeneratorGroup(ctx context.Context, mod dagql.ObjectResult[*Module], include []string) (*GeneratorGroup, error) {
@@ -110,7 +143,7 @@ func (gg *GeneratorGroup) Run(ctx context.Context) (*GeneratorGroup, error) {
 	for _, generator := range gg.Generators {
 		// Reset output fields, in case we're re-running
 		generator.Completed = false
-		generator.Changes = nil
+		generator.Changes = dagql.ObjectResult[*Changeset]{}
 		jobs = jobs.WithJob(generator.Name(), func(ctx context.Context) error {
 			cs, err := generator.Node.RunGenerator(ctx, nil, nil)
 			generator.Completed = true
@@ -165,4 +198,209 @@ func (gg *GeneratorGroup) Clone() *GeneratorGroup {
 		c.Generators[i] = gg.Generators[i].Clone()
 	}
 	return &c
+}
+
+func encodePersistedGeneratorPayload(
+	cache dagql.PersistedObjectCache,
+	tree *persistedModTreeEncoder,
+	g *Generator,
+) (persistedGeneratorPayload, error) {
+	if g == nil {
+		return persistedGeneratorPayload{}, fmt.Errorf("encode persisted generator: nil generator")
+	}
+	nodeID, err := tree.Add(g.Node)
+	if err != nil {
+		return persistedGeneratorPayload{}, err
+	}
+	payload := persistedGeneratorPayload{
+		NodeID:    nodeID,
+		Completed: g.Completed,
+	}
+	if g.Completed && g.Changes.Self() != nil {
+		changesID, err := encodePersistedObjectRef(cache, g.Changes, "generator changes")
+		if err != nil {
+			return persistedGeneratorPayload{}, err
+		}
+		payload.ChangesResultID = changesID
+	}
+	return payload, nil
+}
+
+func decodePersistedGeneratorPayload(
+	ctx context.Context,
+	dag *dagql.Server,
+	nodes map[int]*ModTreeNode,
+	payload persistedGeneratorPayload,
+) (*Generator, error) {
+	if payload.NodeID == 0 {
+		return nil, fmt.Errorf("decode persisted generator: missing node ID")
+	}
+	node, ok := nodes[payload.NodeID]
+	if !ok {
+		return nil, fmt.Errorf("decode persisted generator: unknown node ID %d", payload.NodeID)
+	}
+	g := &Generator{
+		Node:      node,
+		Completed: payload.Completed,
+	}
+	if payload.ChangesResultID != 0 {
+		changes, err := loadPersistedObjectResultByResultID[*Changeset](ctx, dag, payload.ChangesResultID, "generator changes")
+		if err != nil {
+			return nil, err
+		}
+		g.Changes = changes
+	}
+	return g, nil
+}
+
+func (g *Generator) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	_ = ctx
+	tree := newPersistedModTreeEncoder(cache)
+	generatorPayload, err := encodePersistedGeneratorPayload(cache, tree, g)
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, err
+	}
+	payload, err := json.Marshal(persistedGeneratorObjectPayload{
+		Tree:      tree.tree,
+		Generator: generatorPayload,
+	})
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted generator payload: %w", err)
+	}
+	return encodePersistedObjectRawJSON(payload), nil
+}
+
+func (*Generator) DecodePersistedObject(
+	ctx context.Context,
+	dag *dagql.Server,
+	_ uint64,
+	_ *dagql.ResultCall,
+	payload json.RawMessage,
+) (dagql.Typed, error) {
+	var persisted persistedGeneratorObjectPayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted generator payload: %w", err)
+	}
+	nodes, err := decodePersistedModTree(ctx, dag, persisted.Tree)
+	if err != nil {
+		return nil, err
+	}
+	return decodePersistedGeneratorPayload(ctx, dag, nodes, persisted.Generator)
+}
+
+func (g *Generator) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	_ = ctx
+	if g == nil {
+		return nil, nil
+	}
+	owned, err := attachModTreeNodeDependencyResults(g.Node, attach)
+	if err != nil {
+		return nil, err
+	}
+	if g.Changes.Self() != nil {
+		attached, err := attach(g.Changes)
+		if err != nil {
+			return nil, fmt.Errorf("attach generator changes: %w", err)
+		}
+		typed, ok := attached.(dagql.ObjectResult[*Changeset])
+		if !ok {
+			return nil, fmt.Errorf("attach generator changes: unexpected result %T", attached)
+		}
+		g.Changes = typed
+		owned = append(owned, typed)
+	}
+	return owned, nil
+}
+
+func (gg *GeneratorGroup) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	_ = ctx
+	if gg == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted generator group: nil generator group")
+	}
+	tree := newPersistedModTreeEncoder(cache)
+	nodeID, err := tree.Add(gg.Node)
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, err
+	}
+	generatorPayloads := make([]persistedGeneratorPayload, 0, len(gg.Generators))
+	for _, generator := range gg.Generators {
+		generatorPayload, err := encodePersistedGeneratorPayload(cache, tree, generator)
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
+		}
+		generatorPayloads = append(generatorPayloads, generatorPayload)
+	}
+	payload, err := json.Marshal(persistedGeneratorGroupPayload{
+		Tree:       tree.tree,
+		NodeID:     nodeID,
+		Generators: generatorPayloads,
+	})
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted generator group payload: %w", err)
+	}
+	return encodePersistedObjectRawJSON(payload), nil
+}
+
+func (*GeneratorGroup) DecodePersistedObject(
+	ctx context.Context,
+	dag *dagql.Server,
+	_ uint64,
+	_ *dagql.ResultCall,
+	payload json.RawMessage,
+) (dagql.Typed, error) {
+	var persisted persistedGeneratorGroupPayload
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted generator group payload: %w", err)
+	}
+	nodes, err := decodePersistedModTree(ctx, dag, persisted.Tree)
+	if err != nil {
+		return nil, err
+	}
+	var node *ModTreeNode
+	if persisted.NodeID != 0 {
+		var ok bool
+		node, ok = nodes[persisted.NodeID]
+		if !ok {
+			return nil, fmt.Errorf("decode persisted generator group: unknown node ID %d", persisted.NodeID)
+		}
+	}
+	generators := make([]*Generator, 0, len(persisted.Generators))
+	for _, generatorPayload := range persisted.Generators {
+		generator, err := decodePersistedGeneratorPayload(ctx, dag, nodes, generatorPayload)
+		if err != nil {
+			return nil, err
+		}
+		generators = append(generators, generator)
+	}
+	return &GeneratorGroup{
+		Node:       node,
+		Generators: generators,
+	}, nil
+}
+
+func (gg *GeneratorGroup) AttachDependencyResults(
+	ctx context.Context,
+	_ dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	_ = ctx
+	if gg == nil {
+		return nil, nil
+	}
+	owned, err := attachModTreeNodeDependencyResults(gg.Node, attach)
+	if err != nil {
+		return nil, err
+	}
+	for _, generator := range gg.Generators {
+		generatorDeps, err := generator.AttachDependencyResults(ctx, nil, attach)
+		if err != nil {
+			return nil, err
+		}
+		owned = append(owned, generatorDeps...)
+	}
+	return owned, nil
 }

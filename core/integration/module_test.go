@@ -6411,6 +6411,23 @@ func (m *Test) PrintDefault(ctx context.Context) (string, error) {
 }
 `,
 		},
+		{
+			sdk: "dang",
+			source: `type Test {
+  pub containerEcho(stringArg: String! = "Hello Self Calls"): Container! {
+    Dagger.container.from("alpine:latest").withExec(["echo", stringArg])
+  }
+
+  pub print(stringArg: String!): String! {
+    test.containerEcho(stringArg: stringArg).stdout
+  }
+
+  pub printDefault: String! {
+    test.containerEcho.stdout
+  }
+}
+`,
+		},
 		//		{
 		//			sdk: "typescript",
 		//			source: `import { dag, Container, object, func } from "@dagger.io/dagger"
@@ -8260,6 +8277,19 @@ func hostDaggerExec(ctx context.Context, t testing.TB, workdir string, args ...s
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		err = fmt.Errorf("%s: %w", string(output), err)
+	}
+	return output, err
+}
+
+// runs a dagger cli command directly on the host and captures only stdout
+func hostDaggerOutput(ctx context.Context, t testing.TB, workdir string, args ...string) ([]byte, error) {
+	t.Helper()
+	var stderr bytes.Buffer
+	cmd := hostDaggerCommand(ctx, t, workdir, args...)
+	cmd.Stderr = io.MultiWriter(testutil.NewTWriter(t), &stderr)
+	output, err := cmd.Output()
+	if err != nil {
+		err = fmt.Errorf("stdout: %s\nstderr: %s: %w", string(output), stderr.String(), err)
 	}
 	return output, err
 }

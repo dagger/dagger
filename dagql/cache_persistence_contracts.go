@@ -32,9 +32,11 @@ type persistResultSnapshot struct {
 	resultID              sharedResultID
 	frame                 *ResultCall
 	self                  Typed
+	isObject              bool
 	hasValue              bool
 	sessionResourceHandle SessionResourceHandle
 	persistedEnvelope     *PersistedResultEnvelope
+	snapshotOwnerLinks    []PersistedSnapshotRefLink
 	row                   persistdb.MirrorResult
 	resultDeps            []persistdb.MirrorResultDep
 	resultSnapshotLinks   []persistdb.MirrorResultSnapshotLink

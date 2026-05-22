@@ -105,15 +105,31 @@ type persistedRemoteGitMirrorPayload struct {
 	RemoteURL string `json:"remoteURL"`
 }
 
-func (mirror *RemoteGitMirror) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (mirror *RemoteGitMirror) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	_ = cache
 	if mirror == nil {
-		return nil, fmt.Errorf("encode persisted remote git mirror: nil mirror")
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted remote git mirror: nil mirror")
 	}
-	return json.Marshal(persistedRemoteGitMirrorPayload{
+	mirror.mu.Lock()
+	var links []dagql.PersistedSnapshotRefLink
+	if mirror.snapshot != nil {
+		links = []dagql.PersistedSnapshotRefLink{{
+			RefKey: mirror.snapshot.SnapshotID(),
+			Role:   "bare_repo",
+		}}
+	}
+	mirror.mu.Unlock()
+	payload, err := json.Marshal(persistedRemoteGitMirrorPayload{
 		RemoteURL: mirror.RemoteURL,
 	})
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, err
+	}
+	return dagql.PersistedObjectEncoding{
+		JSON:          payload,
+		SnapshotLinks: links,
+	}, nil
 }
 
 func (*RemoteGitMirror) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {

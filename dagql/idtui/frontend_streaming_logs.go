@@ -23,6 +23,7 @@ type streamingLogExporter struct {
 	out         TermOutput
 	prefixW     *multiprefixw.Writer
 	pendingLogs map[dagui.SpanID][]sdklog.Record
+	testLogs    map[dagui.SpanID]*Vterm
 }
 
 // Export processes log records: exports to the DB, groups by span, and either
@@ -65,6 +66,8 @@ func (s *streamingLogExporter) Export(ctx context.Context, records []sdklog.Reco
 // flushLogsForSpan writes logs for a specific span with proper prefix.
 // The caller must hold the mutex.
 func (s *streamingLogExporter) flushLogsForSpan(spanID dagui.SpanID, records []sdklog.Record) {
+	appendTestSummaryLogRecords(s.testLogs, s.profile, spanID, records)
+
 	// Get span info from DB
 	dbSpan := s.db.Spans.Map[spanID]
 	if dbSpan == nil {

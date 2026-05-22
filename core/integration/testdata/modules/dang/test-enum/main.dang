@@ -1,0 +1,47 @@
+enum Status {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum LogLevel {
+  DEBUG
+  INFO
+  WARN
+  ERROR
+}
+
+"""
+Test module for enum support in Dagger SDK.
+"""
+type TestEnum {
+  """
+  Returns the status value
+  """
+  pub getStatus(status: Status!): String! {
+    toJSON(status)
+  }
+
+  """
+  Checks if the status is completed
+  """
+  pub isCompleted(status: Status!): Boolean! {
+    status == Status.COMPLETED
+  }
+
+  """
+  Gets log level priority
+  """
+  pub getLevelPriority(level: LogLevel!): Int! {
+    if (level == LogLevel.DEBUG) {
+      0
+    } else if (level == LogLevel.INFO) {
+      1
+    } else if (level == LogLevel.WARN) {
+      2
+    } else {
+      3
+    }
+  }
+}

@@ -1084,6 +1084,7 @@ func (ServiceSuite) TestExecServiceExitShortCircuits(ctx context.Context, t *tes
 	require.Error(t, err)
 	requireErrOut(t, err, "bound service "+host+" (aliased as www) exited")
 	requireErrOut(t, err, "exit code: 42")
+	requireErrOut(t, err, "[traceparent:")
 }
 
 func (ServiceSuite) TestServiceDependencyExitShortCircuits(ctx context.Context, t *testctx.T) {
@@ -1116,6 +1117,7 @@ func (ServiceSuite) TestServiceDependencyExitShortCircuits(ctx context.Context, 
 	requireErrOut(t, err, "bound service "+host+" (aliased as app) exited")
 	requireErrOut(t, err, "bound service "+depHost+" (aliased as dep) exited")
 	requireErrOut(t, err, "exit code: 42")
+	requireErrOut(t, err, "[traceparent:")
 }
 
 func (ServiceSuite) TestStartExecError(ctx context.Context, t *testctx.T) {

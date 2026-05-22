@@ -7,6 +7,7 @@ classes, functions, and fields for Dagger module registration.
 from __future__ import annotations
 
 import ast
+import copy
 import json
 import logging
 from pathlib import Path
@@ -110,6 +111,152 @@ def _parse_docstring_deprecated(raw_doc: str) -> tuple[str | None, str | None]:
     return doc_part or None, deprecated_msg or ""
 
 
+class _AliasExpander(ast.NodeTransformer):
+    """Expand module-level aliases inside type positions of an annotation.
+
+    Sister to ``ModuleParser._expand_alias``. The transformer walks an
+    annotation as a type expression, replacing each ``Name`` that resolves to
+    a known type alias with the alias's right-hand side. ``Annotated`` is the
+    important boundary: only its first argument is a type. Metadata arguments
+    such as ``Name("Alias")`` or ``DefaultPath(".")`` are value positions and
+    must not be alias-expanded.
+
+    String forward references are parsed only while walking those type
+    positions, so ``"Alias"``, ``"Optional[Alias]"``, and nested quoted
+    references still resolve, without rewriting metadata string literals that
+    merely happen to match an alias name.
+
+    Cross-file aliases (``from .types import Source``) are followed by
+    switching ``current_file`` while expanding inside the imported alias's
+    right-hand side, so chained foreign aliases resolve correctly. A
+    per-(file, name) seen-set prevents infinite recursion on cycles.
+    """
+
+    def __init__(
+        self,
+        aliases_by_file: dict[Path, dict[str, ast.expr]],
+        origins_by_file: dict[Path, dict[str, tuple[Path, str]]],
+        current_file: Path,
+    ):
+        super().__init__()
+        self.aliases_by_file = aliases_by_file
+        self.origins_by_file = origins_by_file
+        self.current_file = current_file
+        self.seen: set[tuple[Path, str]] = set()
+
+    def visit_Name(self, node: ast.Name) -> ast.expr:
+        return self._expand_name(node.id, node)
+
+    def visit_Call(self, node: ast.Call) -> ast.expr:
+        # Calls in supported annotations are Annotated metadata values
+        # (Doc(...), Name(...), Ignore(...), etc.), not type expressions.
+        return node
+
+    def visit_Subscript(self, node: ast.Subscript) -> ast.expr:
+        base_name = self._subscript_base_name(node)
+        if base_name == "Annotated":
+            self._visit_annotated_base(node)
+            return node
+        if base_name == "Literal":
+            # Literal[...] arguments are values rather than type positions.
+            # Dagger rejects Literal later; keep the original expression intact.
+            return node
+
+        node.value = self.visit(node.value)
+        node.slice = self.visit(node.slice)  # type: ignore[assignment]
+        return node
+
+    @staticmethod
+    def _subscript_base_name(node: ast.Subscript) -> str | None:
+        value = node.value
+        if isinstance(value, ast.Name):
+            return value.id
+        if isinstance(value, ast.Attribute):
+            return value.attr
+        return None
+
+    def _visit_annotated_base(self, node: ast.Subscript) -> None:
+        slice_node = node.slice
+        if isinstance(slice_node, ast.Tuple):
+            if slice_node.elts:
+                slice_node.elts[0] = self.visit(slice_node.elts[0])
+            return
+        if isinstance(slice_node, ast.Index):
+            value = slice_node.value  # type: ignore[attr-defined]
+            if isinstance(value, ast.Tuple):
+                if value.elts:
+                    value.elts[0] = self.visit(value.elts[0])
+                return
+            slice_node.value = self.visit(value)  # type: ignore[attr-defined]
+            return
+        node.slice = self.visit(slice_node)  # type: ignore[assignment]
+
+    def _expand_name(self, name: str, original: ast.expr) -> ast.expr:
+        target = self._alias_target(name)
+        if target is None:
+            return original
+
+        origin, origin_name, value = target
+        key = (origin, origin_name)
+        if key in self.seen:
+            return original
+
+        self.seen.add(key)
+        saved_file = self.current_file
+        self.current_file = origin
+        try:
+            expanded = self.visit(copy.deepcopy(value))
+            return ast.copy_location(expanded, original)
+        finally:
+            self.current_file = saved_file
+            self.seen.discard(key)
+
+    def _alias_target(self, name: str) -> tuple[Path, str, ast.expr] | None:
+        local_aliases = self.aliases_by_file.get(self.current_file, {})
+        if name in local_aliases:
+            return self.current_file, name, local_aliases[name]
+
+        # Follow import chain, handling re-exports through __init__.py
+        current_file = self.current_file
+        current_name = name
+        visited: set[tuple[Path, str]] = set()
+        while True:
+            key = (current_file, current_name)
+            if key in visited:
+                return None
+            visited.add(key)
+            entry = self.origins_by_file.get(current_file, {}).get(current_name)
+            if entry is None:
+                return None
+            origin_file, origin_name = entry
+            origin_aliases = self.aliases_by_file.get(origin_file, {})
+            if origin_name in origin_aliases:
+                return origin_file, origin_name, origin_aliases[origin_name]
+            current_file = origin_file
+            current_name = origin_name
+
+    def visit_Constant(self, node: ast.Constant) -> ast.expr:
+        # String forward references — re-parse the string, recursively
+        # expand any aliases inside it, then return the expanded AST
+        # directly (not re-wrapped in a Constant). The resolver walks
+        # arbitrary AST nodes natively; round-tripping through
+        # ast.unparse + Constant would force the resolver to parse the
+        # string again as a single name, which fails for compound
+        # expressions like ``Optional[str]``.
+        #
+        # Non-string Constants (None, True, numbers used in Literal[…])
+        # pass through untouched.
+        if not isinstance(node.value, str):
+            return node
+        try:
+            inner = ast.parse(node.value, mode="eval").body
+        except SyntaxError:
+            return node
+        expanded = self.visit(inner)
+        ast.copy_location(expanded, node)
+        return expanded
+
+
 class ModuleParser:
     """Parser for extracting declarations from Python source files.
 
@@ -161,11 +308,13 @@ class ModuleParser:
         # type-aliases can't bleed into each other's resolution paths.
         self._module_type_aliases: dict[Path, dict[str, ast.expr]] = {}
 
-        # Per-file map of names brought in by relative imports to the parsed
-        # file they came from. Populated in ``_collect_relative_imports``
-        # and consumed by ``_expand_alias`` (cross-file alias resolution)
-        # and ``_eval_constant`` (cross-file constant resolution).
-        self._relative_import_origins: dict[Path, dict[str, Path]] = {}
+        # Per-file map of names brought in by a relative import or an
+        # absolute self-package import to the parsed file and original name
+        # they came from.
+        # Populated in ``_collect_cross_file_imports`` and consumed by
+        # ``_expand_alias`` (cross-file alias resolution) and
+        # ``_eval_constant`` (cross-file constant resolution).
+        self._cross_file_import_origins: dict[Path, dict[str, tuple[Path, str]]] = {}
 
         # File currently being extracted. Set by ``_extract_declarations`` so
         # ``_eval_constant`` can scope name lookups to the containing file.
@@ -208,9 +357,10 @@ class ModuleParser:
         # Phase 2.5: Collect module-level constants for default resolution
         self._collect_module_constants()
 
-        # Phase 2.6: Map relative-import names to the file that defines them
-        # (so cross-file aliases and constants can be resolved).
-        self._collect_relative_imports()
+        # Phase 2.6: Map relative- and absolute-self-import names to the
+        # file that defines them (so cross-file aliases and constants can
+        # be resolved).
+        self._collect_cross_file_imports()
 
         # Record per-file origin of the unqualified ``field`` name.
         self._track_field_origins()
@@ -460,14 +610,41 @@ class ModuleParser:
                 constants[item.target.id] = item.value
         self._class_constants[key] = constants
 
-    def _collect_relative_imports(self) -> None:
-        """Map relative-import names to the parsed file they were defined in.
+    def _detect_package_root(self) -> tuple[Path, str] | None:
+        """Locate the analyzed module's package root directory and name.
 
-        For ``from .types import Source`` in ``pkg/main.py``, record
-        ``(pkg/main.py, "Source") -> pkg/types.py`` provided ``pkg/types.py``
-        is also in the parsed file set. ``_expand_alias`` consults this map
-        to follow aliases across files; ``_eval_constant`` can do the same
-        for constants.
+        The root is the parent of the shallowest ``__init__.py`` among the
+        parsed files; its directory name is what the module imports itself
+        by (``from <pkg>.helpers import X``). Returns ``None`` for a
+        single-file module or when no ``__init__.py`` was parsed — neither
+        can carry an absolute self-import.
+        """
+        init_files = [
+            file_path.resolve()
+            for file_path in self._asts
+            if file_path.name == "__init__.py"
+        ]
+        if not init_files:
+            return None
+        shallowest = min(init_files, key=lambda p: len(p.parts))
+        root = shallowest.parent
+        return root, root.name
+
+    def _collect_cross_file_imports(self) -> None:
+        """Map imported names to the parsed file they were defined in.
+
+        Two import shapes both bind a name from a sibling file of the same
+        module, and both are recorded here:
+
+        * relative imports — ``from .types import Source`` in
+          ``pkg/main.py`` records
+          ``(pkg/main.py, "Source") -> (pkg/types.py, "Source")``;
+        * absolute self-imports — ``from pkg.types import Source as Src``
+          records ``(pkg/main.py, "Src") -> (pkg/types.py, "Source")``,
+          when ``pkg`` is the module's own package name.
+
+        ``_expand_alias`` consults this map to follow aliases across files;
+        ``_eval_constant`` does the same for constants.
 
         The mapping is best-effort — when the target file isn't in the
         parsed set (third-party package, dynamic ``__path__``, etc.), the
@@ -480,23 +657,60 @@ class ModuleParser:
         path_index: dict[Path, Path] = {
             resolved: original for original, resolved in resolved_paths.items()
         }
+        package_root = self._detect_package_root()
 
         for file_path, tree in self._asts.items():
-            mapping = self._relative_import_origins.setdefault(file_path, {})
+            mapping = self._cross_file_import_origins.setdefault(file_path, {})
             current_resolved = resolved_paths[file_path]
             for node in ast.iter_child_nodes(tree):
-                if not isinstance(node, ast.ImportFrom) or node.level <= 0:
+                if not isinstance(node, ast.ImportFrom):
                     continue
-                target = self._resolve_relative_import_target(
-                    current_resolved, node.level, node.module, path_index
-                )
+                if node.level > 0:
+                    target = self._resolve_relative_import_target(
+                        current_resolved, node.level, node.module, path_index
+                    )
+                else:
+                    target = self._resolve_absolute_import_target(
+                        node.module, package_root, path_index
+                    )
                 if target is None:
                     continue
                 for alias in node.names:
                     if alias.name == "*":
                         continue
                     bound = alias.asname or alias.name
-                    mapping[bound] = target
+                    mapping[bound] = (target, alias.name)
+
+    def _resolve_cross_file_import_origin(
+        self, file_path: Path, name: str
+    ) -> tuple[Path, str] | None:
+        """Return the final parsed-file/name origin for an imported name.
+
+        ``_collect_cross_file_imports`` stores one import edge at a time:
+        local bound name -> (origin file, original exported name). This
+        helper follows those edges so package-root re-exports like
+        ``main.py: from pkg import Count`` plus
+        ``pkg/__init__.py: from .params import Count`` resolve to
+        ``(params.py, "Count")``.
+        """
+        current_file = file_path
+        current_name = name
+        seen: set[tuple[Path, str]] = set()
+
+        while True:
+            key = (current_file, current_name)
+            if key in seen:
+                return None
+            seen.add(key)
+
+            origin = self._cross_file_import_origins.get(current_file, {}).get(
+                current_name
+            )
+            if origin is None:
+                if current_file == file_path and current_name == name:
+                    return None
+                return current_file, current_name
+            current_file, current_name = origin
 
     @staticmethod
     def _resolve_relative_import_target(
@@ -525,10 +739,44 @@ class ModuleParser:
         # Bare ``from . import x`` — no module to resolve to a file.
         return None
 
+    @staticmethod
+    def _resolve_absolute_import_target(
+        module: str | None,
+        package_root: tuple[Path, str] | None,
+        path_index: dict[Path, Path],
+    ) -> Path | None:
+        """Return the parsed-file path for an absolute self-package import.
+
+        ``from <pkg>.sub.mod import X`` resolves to ``<root>/sub/mod.py``
+        (or its ``__init__.py``) when ``<pkg>`` is the analyzed module's
+        own package name. A package-root import (``from <pkg> import X``)
+        resolves to ``<root>/__init__.py``. Anything whose first component
+        isn't that name — third-party packages, the stdlib — returns
+        ``None`` and keeps its existing stub behavior.
+        """
+        if module is None or package_root is None:
+            return None
+        root, package_name = package_root
+        head, _, submodule = module.partition(".")
+        if head != package_name:
+            return None
+        if not submodule:
+            cand = root / "__init__.py"
+            resolved = cand.resolve() if cand.exists() else cand
+            return path_index.get(resolved)
+        target_dir = root
+        for part in submodule.split("."):
+            target_dir = target_dir / part
+        for cand in (target_dir.with_suffix(".py"), target_dir / "__init__.py"):
+            resolved = cand.resolve() if cand.exists() else cand
+            if resolved in path_index:
+                return path_index[resolved]
+        return None
+
     def _looks_like_type_expr(self, node: ast.expr) -> bool:
         """Return True when ``node`` looks like a type expression.
 
-        We restrict alias expansion to RHS shapes that can plausibly be a
+        We restrict alias expansion to right-hand-side shapes that can plausibly be a
         type — ``Annotated[...]``, generics, ``T | None``, attribute access,
         and bare names — so plain string/number constants stay out of the
         type-resolution path.
@@ -542,64 +790,45 @@ class ModuleParser:
         annotation: ast.expr,
         file_path: Path,
     ) -> ast.expr:
-        """Expand a module-level type alias to its underlying expression.
+        """Expand every module-level type alias anywhere in the annotation.
 
-        Walks chained aliases (``B = A``, ``A = dagger.Directory``) and
-        protects against cycles by tracking the names already seen. Also
-        follows aliases across files — when a name was imported via
-        ``from .types import Source``, expansion continues using
-        ``types.py``'s alias map so the foreign file's
-        ``Source = Annotated[...]`` is honored.
+        Walks the annotation AST via ``_AliasExpander`` and substitutes each
+        type-position ``Name`` that resolves to a known alias with the alias's
+        right-hand side. Chained aliases (``B = A``, ``A = dagger.Directory``)
+        collapse to their final form, and cross-file aliases imported via
+        ``from .types import Source`` (or the absolute ``from pkg.types
+        import Source``) are followed by switching the active file context
+        while expanding the foreign alias body.
 
-        If the annotation isn't a known alias (or expansion hits a cycle),
-        returns the most recently expanded node — which may be the
-        original input.
+        The traversal deliberately stops at value positions inside annotations,
+        especially ``Annotated`` metadata arguments, so ``Name("Alias")`` keeps
+        the literal API name even when ``Alias`` is also a type alias.
+
+        - ``Alias | None`` (BinOp.left/right) — PR #13149's symptom
+        - ``Optional[Alias]``, ``list[Alias]``, ``Annotated[Alias, …]``
+          (only the first ``Annotated`` argument is a type position)
+        - ``def f(x: "Alias")`` and forward refs nested inside other
+          types (Constant value when the constant is a string —
+          re-parsed and recursively expanded by ``visit_Constant``)
+        - ``def f(x: "Optional[Alias]")`` where the parsed root node may stay
+          the same while one of its children is expanded in place
+
+        Cycle protection is preserved via a per-(file, name) seen-set
+        so recursive aliases (``A = list[A]``) stop at the first revisit
+        rather than infinite-looping.
         """
-        seen: set[tuple[Path, str]] = set()
-        current = annotation
-        current_file = file_path
-        while isinstance(current, ast.Name):
-            name = current.id
-            local_aliases = self._module_type_aliases.get(current_file, {})
-            if name in local_aliases:
-                key = (current_file, name)
-                if key in seen:
-                    break
-                seen.add(key)
-                current = local_aliases[name]
-                continue
-            origin = self._relative_import_origins.get(current_file, {}).get(name)
-            if origin is not None:
-                origin_aliases = self._module_type_aliases.get(origin, {})
-                if name in origin_aliases:
-                    key = (origin, name)
-                    if key in seen:
-                        break
-                    seen.add(key)
-                    # Switch context: continue expanding inside the origin file
-                    # so any further chained aliases use that file's map.
-                    current_file = origin
-                    current = origin_aliases[name]
-                    continue
-            break
-
-        # Expand aliases inside ``X | Y`` union expressions so that
-        # ``Name | None`` (where ``Name: TypeAlias = str``) reaches the
-        # resolver as ``str | None`` instead of an unresolved "Name" object.
-        # The while loop only handles a bare Name at the top level, so
-        # compound annotations with aliased sub-expressions pass through
-        # unexpanded without this recursion.
-        if isinstance(current, ast.BinOp) and isinstance(current.op, ast.BitOr):
-            expanded_left = self._expand_alias(current.left, current_file)
-            expanded_right = self._expand_alias(current.right, current_file)
-            if expanded_left is not current.left or expanded_right is not current.right:
-                new_node = ast.BinOp(
-                    left=expanded_left, op=current.op, right=expanded_right
-                )
-                ast.copy_location(new_node, current)
-                return new_node
-
-        return current
+        # Deep-copy the annotation tree before transforming. NodeTransformer
+        # mutates the nodes it walks (replacing children in-place), and the
+        # alias-target nodes are stored in self._module_type_aliases — we
+        # don't want the cached alias map to develop expanded versions of
+        # itself across calls.
+        cloned = copy.deepcopy(annotation)
+        expander = _AliasExpander(
+            aliases_by_file=self._module_type_aliases,
+            origins_by_file=self._cross_file_import_origins,
+            current_file=file_path,
+        )
+        return expander.visit(cloned)
 
     def _build_namespace(self) -> None:
         """Build the namespace for type resolution."""
@@ -1910,7 +2139,8 @@ class ModuleParser:
             #   1. Class body — closest scope when evaluating a default
             #      inside a method.
             #   2. Current file's module-level constants.
-            #   3. Any file that bound this name via a relative import.
+            #   3. Any file that bound this name via a relative or
+            #      absolute self-package import.
             current = self._current_file
             if current is not None and self._current_class_name is not None:
                 class_constants = self._class_constants.get(
@@ -1922,17 +2152,18 @@ class ModuleParser:
                 file_constants = self._module_constants.get(current, {})
                 if node.id in file_constants:
                     return self._eval_constant(file_constants[node.id])
-                origin = self._relative_import_origins.get(current, {}).get(node.id)
+                origin = self._resolve_cross_file_import_origin(current, node.id)
                 if origin is not None:
-                    origin_constants = self._module_constants.get(origin, {})
-                    if node.id in origin_constants:
+                    origin_file, origin_name = origin
+                    origin_constants = self._module_constants.get(origin_file, {})
+                    if origin_name in origin_constants:
                         # Switch the current-file scope so any nested name
                         # references inside the constant resolve against the
                         # foreign file's own constants.
                         previous = self._current_file
-                        self._current_file = origin
+                        self._current_file = origin_file
                         try:
-                            return self._eval_constant(origin_constants[node.id])
+                            return self._eval_constant(origin_constants[origin_name])
                         finally:
                             self._current_file = previous
             logger.warning(

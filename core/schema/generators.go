@@ -99,8 +99,9 @@ func (s generatorsSchema) originalModule(_ context.Context, parent *core.Generat
 	return parent.OriginalModule(), nil
 }
 
-func (s generatorsSchema) changes(ctx context.Context, parent dagql.ObjectResult[*core.Generator], args struct{}) (*core.Changeset, error) {
-	return parent.Self().RequireChanges("changes")
+func (s generatorsSchema) changes(ctx context.Context, parent dagql.ObjectResult[*core.Generator], args struct{}) (dagql.ObjectResult[*core.Changeset], error) {
+	_ = ctx
+	return parent.Self().RequireChangesResult("changes")
 }
 
 func (s generatorsSchema) runSingleGenerator(ctx context.Context, parent *core.Generator, args struct{}) (*core.Generator, error) {

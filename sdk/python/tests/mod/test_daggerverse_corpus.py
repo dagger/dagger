@@ -1,16 +1,17 @@
 """Differential test against real Daggerverse Python modules.
 
-Pulls the modules from `https://github.com/telchak/daggerverse`, walks
-every top-level module that declares ``sdk: python``, and runs the AST
-analyzer + runtime introspector on each. This is the "what users
-actually write" half of the confidence story — if a single module
-differs between the two paths, the test fails with the module name and
-the path of the divergent member.
+Pulls the modules from a daggerverse repo (``telchak/daggerverse`` by
+default), walks every top-level module that declares ``sdk: python``,
+and runs the AST analyzer + runtime introspector on each. This is the
+"what users actually write" half of the confidence story — if a single
+module differs between the two paths, the test fails with the module
+name and the path of the divergent member.
 
 The corpus is cloned once per session (network required). Set
-``DAGGERVERSE_CORPUS_REF`` to pin to a specific commit/branch; default
-is the repo's current ``main`` branch. Skip the whole file by setting
-``SKIP_DAGGERVERSE_CORPUS=1`` (useful for offline development).
+``DAGGERVERSE_CORPUS_URL`` to point at a different daggerverse repo and
+``DAGGERVERSE_CORPUS_REF`` to pin to a specific commit/branch; the ref
+defaults to the repo's current ``main`` branch. Skip the whole file by
+setting ``SKIP_DAGGERVERSE_CORPUS=1`` (useful for offline development).
 """
 
 from __future__ import annotations
@@ -31,7 +32,9 @@ from dagger.mod._analyzer.analyze import analyze_module
 from ._differential import assert_metadata_equivalent
 from ._runtime_introspect import runtime_introspect_package
 
-CORPUS_URL = "https://github.com/telchak/daggerverse.git"
+CORPUS_URL = os.environ.get(
+    "DAGGERVERSE_CORPUS_URL", "https://github.com/telchak/daggerverse.git"
+)
 CORPUS_REF = os.environ.get("DAGGERVERSE_CORPUS_REF", "main")
 
 
@@ -119,26 +122,30 @@ def _module_id(module_dir: Path) -> str:
     return module_dir.name
 
 
-def _read_module_files(module_dir: Path) -> dict[str, str]:
+def _read_module_files(module_dir: Path) -> tuple[str, dict[str, str]]:
     """Collect ``.py`` files under ``src/<package>/`` keyed by relative path.
 
     Daggerverse modules live in ``<module>/src/<package_name>/``. We treat
-    that subdirectory as the package root the runtime will import.
+    that subdirectory as the package root the runtime will import, and
+    return ``(package_name, files)`` — the package name matters because
+    modules commonly import their own siblings absolutely
+    (``from my_pkg.helpers import X``), which only resolves when the
+    package is materialised under its real name.
     """
     src_root = module_dir / "src"
     if not src_root.is_dir():
-        return {}
+        return "", {}
     # Daggerverse always has exactly one package directory inside src/.
     package_dirs = [p for p in sorted(src_root.iterdir()) if p.is_dir()]
     if not package_dirs:
-        return {}
+        return "", {}
     package_dir = package_dirs[0]
 
     files: dict[str, str] = {}
     for py_file in sorted(package_dir.rglob("*.py")):
         rel = py_file.relative_to(package_dir).as_posix()
         files[rel] = py_file.read_text(encoding="utf-8")
-    return files
+    return package_dir.name, files
 
 
 def _main_object_name(module_dir: Path) -> str:
@@ -153,13 +160,19 @@ def _main_object_name(module_dir: Path) -> str:
 
 
 def _materialise_for_ast(
-    module_dir: Path, files: dict[str, str], tmp_path: Path
+    package_name: str, files: dict[str, str], dest: Path
 ) -> list[Path]:
-    """Write the module files under ``tmp_path`` for the AST analyzer.
+    """Write the module files under ``dest/<package_name>/`` for the analyzer.
+
+    The package directory is named after the real Python package — not the
+    daggerverse module directory, which may contain hyphens — so the AST
+    analyzer sees the same layout ``dagger develop`` would. That match
+    matters for absolute self-imports (``from <package_name>.x import Y``),
+    which only resolve when the package root carries its real name.
 
     The AST analyzer takes a list of file paths, not a string dict.
     """
-    pkg_root = tmp_path / module_dir.name
+    pkg_root = dest / package_name
     pkg_root.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
     for rel, content in files.items():
@@ -207,23 +220,29 @@ def test_daggerverse_module_diff(
 
     failures: list[tuple[str, str]] = []
     for module_dir in modules:
-        files = _read_module_files(module_dir)
+        package_name, files = _read_module_files(module_dir)
         if not files:
             failures.append((module_dir.name, "no .py files under src/<pkg>/"))
             continue
         main = _main_object_name(module_dir)
 
         # AST side — uses the real file paths for accurate location info.
-        ast_paths = _materialise_for_ast(module_dir, files, tmp_path / module_dir.name)
+        ast_paths = _materialise_for_ast(
+            package_name, files, tmp_path / module_dir.name
+        )
         try:
             ast_md = analyze_module(source_files=ast_paths, main_object_name=main)
         except Exception as exc:  # noqa: BLE001 — surface any analyzer crash
             failures.append((module_dir.name, f"AST analyze raised: {exc!r}"))
             continue
 
-        # Runtime side — imports the package via importlib.
+        # Runtime side — imports the package via importlib. The package
+        # must be materialised under its real name so the module's own
+        # absolute self-imports (``from <pkg>.x import Y``) resolve.
         try:
-            runtime_md = runtime_introspect_package(files, main)
+            runtime_md = runtime_introspect_package(
+                files, main, package_name=package_name
+            )
         except Exception as exc:  # noqa: BLE001 — surface any import crash
             failures.append((module_dir.name, f"runtime import raised: {exc!r}"))
             continue

@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"crypto/rand"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
 )
@@ -34,11 +36,12 @@ func (EngineSuite) TestDiskPersistenceAcrossRestart(ctx context.Context, t *test
 		)
 	}
 
-	startEngine := func(
+	startEngineWithClientOpts := func(
 		client *dagger.Client,
 		ctx context.Context,
 		t *testctx.T,
 		stateKey string,
+		clientOpts []dagger.ClientOpt,
 		opts ...func(*dagger.Container) *dagger.Container,
 	) (*dagger.Service, *dagger.Service, *dagger.Client) {
 		t.Helper()
@@ -51,13 +54,25 @@ func (EngineSuite) TestDiskPersistenceAcrossRestart(ctx context.Context, t *test
 		endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
 		require.NoError(t, err)
 
-		engineClient, err := dagger.Connect(
-			ctx,
+		connectOpts := []dagger.ClientOpt{
 			dagger.WithRunnerHost(endpoint),
 			dagger.WithLogOutput(testutil.NewTWriter(t)),
-		)
+		}
+		connectOpts = append(connectOpts, clientOpts...)
+		engineClient, err := dagger.Connect(ctx, connectOpts...)
 		require.NoError(t, err)
 		return upstreamSvc, engineSvc, engineClient
+	}
+
+	startEngine := func(
+		client *dagger.Client,
+		ctx context.Context,
+		t *testctx.T,
+		stateKey string,
+		opts ...func(*dagger.Container) *dagger.Container,
+	) (*dagger.Service, *dagger.Service, *dagger.Client) {
+		t.Helper()
+		return startEngineWithClientOpts(client, ctx, t, stateKey, nil, opts...)
 	}
 
 	stopEngine := func(
@@ -110,6 +125,489 @@ func (EngineSuite) TestDiskPersistenceAcrossRestart(ctx context.Context, t *test
 		entryCount, err := engineClientB.Engine().LocalCache().EntrySet().EntryCount(ctx)
 		require.NoError(t, err)
 		require.Greater(t, entryCount, 0)
+	})
+
+	t.Run("lazy imported snapshot links count toward local cache usage and max-used prune", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-lazy-import-cache-usage-state-" + identity.NewID()
+
+		runWorkload := func(ctx context.Context, t *testctx.T, client *dagger.Client) string {
+			t.Helper()
+			out, err := client.
+				Container().
+				From(alpineImage).
+				WithExec([]string{
+					"sh",
+					"-ec",
+					`token="$(dd if=/dev/urandom bs=32 count=1 status=none | base64)"
+dd if=/dev/urandom of=/bigfile bs=1M count=64 status=none
+printf "%s" "$token"`,
+				}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			return out
+		}
+
+		localCacheDiskBytes := func(ctx context.Context, t *testctx.T, client *dagger.Client) int {
+			t.Helper()
+			used, err := client.Engine().LocalCache().EntrySet().DiskSpaceBytes(ctx)
+			require.NoError(t, err)
+			return used
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		outA := runWorkload(ctx, t, engineClientA)
+		usedA := localCacheDiskBytes(ctx, t, engineClientA)
+		require.Greater(t, usedA, 32*1024*1024)
+
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		usedB := localCacheDiskBytes(ctx, t, engineClientB)
+		require.Greater(t, usedB, 32*1024*1024)
+
+		stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB)
+		upstreamSvcB = nil
+		engineSvcB = nil
+		engineClientB = nil
+
+		upstreamSvcC, engineSvcC, engineClientC := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcC, engineSvcC, engineClientC) })
+
+		err := engineClientC.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+			UseDefaultPolicy: false,
+			MaxUsedSpace:     "1",
+			ReservedSpace:    "0",
+			MinFreeSpace:     "0",
+			TargetSpace:      "1",
+		})
+		require.NoError(t, err)
+
+		outC := runWorkload(ctx, t, engineClientC)
+		require.NotEqual(t, outA, outC, "max-used prune should evict lazy imported snapshot-backed results before they are cache-hit")
+	})
+
+	t.Run("unclean shutdown discards local cache state and recovers", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-unclean-reset-state-" + identity.NewID()
+		const sentinelPath = "/state/worker/reset-sentinel"
+		randomScript := `
+set -eu
+mkdir -p /work
+head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
+`
+
+		runRandom := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) string {
+			t.Helper()
+
+			randomContents, err := engineClient.
+				Container().
+				From(alpineImage).
+				WithExec([]string{"sh", "-ec", randomScript}).
+				Directory("/work").
+				File("random.txt").
+				Contents(ctx)
+			require.NoError(t, err)
+			random := strings.TrimSpace(randomContents)
+			require.NotEmpty(t, random)
+			return random
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		randomA := runRandom(ctx, t, engineClientA)
+
+		_, err := upstreamSvcA.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+		require.NoError(t, err)
+		upstreamSvcA = nil
+		_, err = engineSvcA.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+		require.NoError(t, err)
+		engineSvcA = nil
+		engineClientA = nil
+
+		_, err = c.
+			Container().
+			From(alpineImage).
+			WithMountedCache("/state", c.CacheVolume(stateKey)).
+			WithExec([]string{"sh", "-ec", "test -d /state/worker && touch " + sentinelPath}).
+			Sync(ctx)
+		require.NoError(t, err)
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		randomB := runRandom(ctx, t, engineClientB)
+		require.NotEqual(t, randomA, randomB, "cache state from before the unclean shutdown should be discarded")
+
+		stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB)
+		upstreamSvcB = nil
+		engineSvcB = nil
+		engineClientB = nil
+
+		_, err = c.
+			Container().
+			From(alpineImage).
+			WithMountedCache("/state", c.CacheVolume(stateKey)).
+			WithExec([]string{"sh", "-ec", "test ! -e " + sentinelPath}).
+			Sync(ctx)
+		require.NoError(t, err)
+
+		upstreamSvcC, engineSvcC, engineClientC := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcC, engineSvcC, engineClientC) })
+
+		randomC := runRandom(ctx, t, engineClientC)
+		require.Equal(t, randomB, randomC, "cache state produced after reset should survive a later clean restart")
+	})
+
+	t.Run("container withNewFile hit survives restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-container-with-new-file-state-" + identity.NewID()
+		const newFilePath = "/tmp/persisted-new-file.txt"
+		const newFileContents = "persisted withNewFile\n"
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		ctrID, err := engineClientA.
+			Container().
+			From(alpineImage).
+			WithNewFile(newFilePath, newFileContents).
+			ID(ctx)
+		require.NoError(t, err)
+
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		contents, err := engineClientB.
+			LoadContainerFromID(ctrID).
+			File(newFilePath).
+			Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, newFileContents, contents)
+	})
+
+	t.Run("container selector lazy dependencies survive restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-container-selector-lazy-state-" + identity.NewID()
+		const fileContents = "selector lazy persisted\n"
+
+		buildRetainedGraph := func(engineClient *dagger.Client) *dagger.Directory {
+			source := engineClient.
+				Directory().
+				WithNewFile("file.txt", fileContents)
+			ctr := engineClient.
+				Container().
+				WithDirectory("/work", source)
+
+			return engineClient.
+				Directory().
+				WithDirectory("rootfs", ctr.Rootfs()).
+				WithDirectory("selected-dir", ctr.Directory("/work")).
+				WithFile("selected-file.txt", ctr.File("/work/file.txt"))
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		dirID, err := buildRetainedGraph(engineClientA).ID(ctx)
+		require.NoError(t, err)
+
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		loaded := engineClientB.LoadDirectoryFromID(dirID)
+
+		selectedFile, err := loaded.File("selected-file.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fileContents, selectedFile)
+
+		selectedDirFile, err := loaded.File("selected-dir/file.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fileContents, selectedDirFile)
+
+		rootfsFile, err := loaded.File("rootfs/work/file.txt").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, fileContents, rootfsFile)
+	})
+
+	t.Run("directory search result list survives restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-directory-search-result-state-" + identity.NewID()
+		const pattern = `^\s*//\s*workspace:include\s+\S+\s*$`
+
+		runSearch := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) []string {
+			t.Helper()
+
+			results, err := engineClient.
+				Directory().
+				WithNewFile("one.go", "package main\n// workspace:include ./one\n").
+				WithNewFile("two.go", "package main\n// workspace:include ./two\n").
+				Search(ctx, pattern, dagger.DirectorySearchOpts{
+					Paths: []string{"one.go", "two.go"},
+				})
+			require.NoError(t, err)
+			require.Len(t, results, 2)
+
+			matches := make([]string, 0, len(results))
+			for _, result := range results {
+				filePath, err := result.FilePath(ctx)
+				require.NoError(t, err)
+
+				matchedLines, err := result.MatchedLines(ctx)
+				require.NoError(t, err)
+
+				submatches, err := result.Submatches(ctx)
+				require.NoError(t, err)
+				require.NotEmpty(t, submatches)
+				submatchText, err := submatches[0].Text(ctx)
+				require.NoError(t, err)
+				require.Contains(t, submatchText, "workspace:include")
+
+				matches = append(matches, filePath+":"+strings.TrimSpace(matchedLines))
+			}
+			require.ElementsMatch(t, []string{
+				"one.go:// workspace:include ./one",
+				"two.go:// workspace:include ./two",
+			}, matches)
+
+			return matches
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		matchesA := runSearch(ctx, t, engineClientA)
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		matchesB := runSearch(ctx, t, engineClientB)
+		require.ElementsMatch(t, matchesA, matchesB)
+	})
+
+	t.Run("changeset diff stat list survives restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-changeset-diff-stat-state-" + identity.NewID()
+
+		runDiffStats := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) []string {
+			t.Helper()
+
+			before := engineClient.
+				Directory().
+				WithNewFile("same.txt", "same\n").
+				WithNewFile("changed.txt", "old\n").
+				WithNewFile("removed.txt", "gone\n")
+			after := engineClient.
+				Directory().
+				WithNewFile("same.txt", "same\n").
+				WithNewFile("changed.txt", "new\n").
+				WithNewFile("added.txt", "new\n")
+
+			stats, err := after.Changes(before).DiffStats(ctx)
+			require.NoError(t, err)
+			require.Len(t, stats, 3)
+
+			got := make([]string, 0, len(stats))
+			for _, stat := range stats {
+				path, err := stat.Path(ctx)
+				require.NoError(t, err)
+				kind, err := stat.Kind(ctx)
+				require.NoError(t, err)
+				added, err := stat.AddedLines(ctx)
+				require.NoError(t, err)
+				removed, err := stat.RemovedLines(ctx)
+				require.NoError(t, err)
+				got = append(got, fmt.Sprintf("%s:%s:%d:%d", path, kind, added, removed))
+			}
+			require.ElementsMatch(t, []string{
+				"added.txt:ADDED:1:0",
+				"changed.txt:MODIFIED:1:1",
+				"removed.txt:REMOVED:0:1",
+			}, got)
+
+			return got
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		statsA := runDiffStats(ctx, t, engineClientA)
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		statsB := runDiffStats(ctx, t, engineClientB)
+		require.ElementsMatch(t, statsA, statsB)
+	})
+
+	t.Run("service-bound graph does not break disk persistence", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-service-binding-state-" + identity.NewID()
+		serviceScript := "#!/bin/sh\nwhile true; do cat /work/service-random.txt | nc -l -p 8080; done\n"
+		serviceSetupScript := `
+set -eu
+mkdir -p /work
+head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/service-random.txt
+`
+		serviceRunScript := `
+set -eu
+mkdir -p /work
+nc sidecar 8080 > /work/service.txt
+head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/client-random.txt
+`
+
+		type serviceBoundOutput struct {
+			serviceRandom string
+			clientRandom  string
+		}
+
+		runServiceBound := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client, clientBust string) serviceBoundOutput {
+			t.Helper()
+
+			service := engineClient.
+				Container().
+				From(alpineImage).
+				WithExec([]string{"sh", "-ec", serviceSetupScript}).
+				WithNewFile("/bin/app", serviceScript, dagger.ContainerWithNewFileOpts{Permissions: 0o755}).
+				WithExposedPort(8080).
+				WithDefaultArgs([]string{"/bin/app"}).
+				AsService()
+
+			clientCtr := engineClient.
+				Container().
+				From(alpineImage).
+				WithServiceBinding("sidecar", service)
+			if clientBust != "" {
+				clientCtr = clientCtr.WithEnvVariable("CLIENT_BUST", clientBust)
+			}
+			workDir := clientCtr.
+				WithExec([]string{"sh", "-ec", serviceRunScript}).
+				Directory("/work")
+
+			serviceContents, err := workDir.File("service.txt").Contents(ctx)
+			require.NoError(t, err)
+			serviceRandom := strings.TrimSpace(serviceContents)
+			require.NotEmpty(t, serviceRandom)
+
+			clientContents, err := workDir.File("client-random.txt").Contents(ctx)
+			require.NoError(t, err)
+			clientRandom := strings.TrimSpace(clientContents)
+			require.NotEmpty(t, clientRandom)
+
+			return serviceBoundOutput{
+				serviceRandom: serviceRandom,
+				clientRandom:  clientRandom,
+			}
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		outA := runServiceBound(ctx, t, engineClientA, "")
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		outB := runServiceBound(ctx, t, engineClientB, "")
+		require.Equal(t, outA.serviceRandom, outB.serviceRandom, "service container output should survive engine restart")
+		require.Equal(t, outA.clientRandom, outB.clientRandom, "service-bound client output should survive engine restart")
+
+		outC := runServiceBound(ctx, t, engineClientB, identity.NewID())
+		require.Equal(t, outA.serviceRandom, outC.serviceRandom, "service container output should still be cached when only the client container is invalidated")
+		require.NotEqual(t, outA.clientRandom, outC.clientRandom, "client container output should be recomputed after invalidation")
+	})
+
+	t.Run("generator group graph does not break disk persistence", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-generator-group-state-" + identity.NewID()
+		generatorWorkdir, err := filepath.Abs("testdata/generators/hello-with-generators")
+		require.NoError(t, err)
+		clientOpts := []dagger.ClientOpt{
+			dagger.WithWorkdir(generatorWorkdir),
+			dagger.WithLoadWorkspaceModules(),
+		}
+		randomScript := `
+set -eu
+mkdir -p /work
+head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
+`
+
+		runRandom := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) string {
+			t.Helper()
+
+			randomContents, err := engineClient.
+				Container().
+				From(alpineImage).
+				WithExec([]string{"sh", "-ec", randomScript}).
+				Directory("/work").
+				File("random.txt").
+				Contents(ctx)
+			require.NoError(t, err)
+			return strings.TrimSpace(randomContents)
+		}
+
+		runGeneratorGroup := func(ctx context.Context, t *testctx.T, engineClient *dagger.Client) {
+			t.Helper()
+
+			run := engineClient.
+				CurrentWorkspace().
+				Generators(dagger.WorkspaceGeneratorsOpts{Include: []string{"generate-files"}}).
+				Run()
+
+			empty, err := run.IsEmpty(ctx)
+			require.NoError(t, err)
+			require.False(t, empty)
+
+			changesEmpty, err := run.Changes().IsEmpty(ctx)
+			require.NoError(t, err)
+			require.False(t, changesEmpty)
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngineWithClientOpts(c, ctx, t, stateKey, clientOpts, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		randomA := runRandom(ctx, t, engineClientA)
+		runGeneratorGroup(ctx, t, engineClientA)
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngineWithClientOpts(c, ctx, t, stateKey, clientOpts, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		randomB := runRandom(ctx, t, engineClientB)
+		require.Equal(t, randomA, randomB, "unrelated withExec output should survive engine restart after a generator group graph")
 	})
 
 	t.Run("function cache control survives restart", func(ctx context.Context, t *testctx.T) {
@@ -646,5 +1144,65 @@ printf 'layered\n' > /work/layered.txt
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, cacheValue+"\n", outB)
+	})
+
+	t.Run("source-backed cache volume supports concurrent mounts after restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-source-cache-volume-state-" + identity.NewID()
+		cacheKey := "phase7-source-cache-volume-data-" + identity.NewID()
+
+		cacheSource := func(client *dagger.Client) *dagger.Directory {
+			return client.
+				Container().
+				From(alpineImage).
+				WithNewFile("/cache-source/seed.txt", "seed\n").
+				Directory("/cache-source")
+		}
+
+		mountSourceCache := func(client *dagger.Client) *dagger.Container {
+			return client.
+				Container().
+				From(alpineImage).
+				WithMountedCache(
+					"/mnt/cache",
+					client.CacheVolume(cacheKey),
+					dagger.ContainerWithMountedCacheOpts{Source: cacheSource(client)},
+				)
+		}
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		outA, err := mountSourceCache(engineClientA).
+			WithExec([]string{"sh", "-ec", "cat /mnt/cache/seed.txt; echo initialized >> /mnt/cache/log.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "seed\n", outA)
+
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		var eg errgroup.Group
+		for i := range 8 {
+			eg.Go(func() error {
+				out, err := mountSourceCache(engineClientB).
+					WithEnvVariable("WORKER", fmt.Sprint(i)).
+					WithExec([]string{"sh", "-ec", "cat /mnt/cache/seed.txt; sleep 2; echo \"$WORKER\" >> /mnt/cache/log.txt"}).
+					Stdout(ctx)
+				if err != nil {
+					return fmt.Errorf("worker %d: %w", i, err)
+				}
+				if out != "seed\n" {
+					return fmt.Errorf("worker %d: expected seed output, got %q", i, out)
+				}
+				return nil
+			})
+		}
+		require.NoError(t, eg.Wait())
 	})
 }

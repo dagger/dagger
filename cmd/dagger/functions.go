@@ -361,15 +361,71 @@ func (fc *FuncCommand) loadCommand(c *cobra.Command, a []string) (rcmd *cobra.Co
 
 	cmd, args, err := fc.traverse(c, a, builder)
 	if err != nil {
+		fc.logCommandParseSchemaSummary(ctx, "traverse_error", a, cmd, args, err)
 		return cmd, args, err
 	}
 
 	// There should be no args left, if there are it's an unknown command.
 	if err := cobra.NoArgs(cmd, args); err != nil {
+		fc.logCommandParseSchemaSummary(ctx, "remaining_args", a, cmd, args, err)
 		return cmd, args, err
 	}
 
 	return cmd, args, nil
+}
+
+func (fc *FuncCommand) logCommandParseSchemaSummary(ctx context.Context, reason string, requestedArgs []string, cmd *cobra.Command, remainingArgs []string, parseErr error) {
+	if fc == nil || fc.mod == nil {
+		return
+	}
+
+	mainObjectName := ""
+	var rootFns []string
+	if fc.mod.MainObject != nil && fc.mod.MainObject.AsObject != nil {
+		mainObjectName = fc.mod.MainObject.AsObject.Name
+		for _, fn := range fc.mod.MainObject.AsObject.GetFunctions() {
+			if fn == nil {
+				continue
+			}
+			rootFns = append(rootFns, fn.CmdName())
+		}
+	}
+	sort.Strings(rootFns)
+
+	cmdPath := ""
+	if cmd != nil {
+		cmdPath = cmd.CommandPath()
+	}
+	errMsg := ""
+	if parseErr != nil {
+		errMsg = parseErr.Error()
+	}
+
+	slog.InfoContext(ctx, "dagger call parse schema summary",
+		"reason", reason,
+		"error", errMsg,
+		"requested_args", limitFuncLogStrings(requestedArgs, 40),
+		"remaining_args", limitFuncLogStrings(remainingArgs, 40),
+		"command_path", cmdPath,
+		"main_object", mainObjectName,
+		"object_count", len(fc.mod.Objects),
+		"interface_count", len(fc.mod.Interfaces),
+		"enum_count", len(fc.mod.Enums),
+		"input_count", len(fc.mod.Inputs),
+		"query_function_count", len(rootFns),
+		"query_functions", limitFuncLogStrings(rootFns, 40),
+	)
+}
+
+func limitFuncLogStrings(vals []string, limit int) []string {
+	if len(vals) == 0 || limit <= 0 {
+		return nil
+	}
+	cp := append([]string(nil), vals...)
+	if len(cp) > limit {
+		cp = cp[:limit]
+	}
+	return cp
 }
 
 // traverse recursively builds the command tree, until the leaf command is found.

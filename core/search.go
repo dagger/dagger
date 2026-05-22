@@ -26,11 +26,71 @@ type SearchResult struct {
 	Submatches     []*SearchSubmatch `field:"true" doc:"Sub-match positions and content within the matched lines."`
 }
 
+var _ dagql.PersistedObject = (*SearchResult)(nil)
+var _ dagql.PersistedObjectDecoder = (*SearchResult)(nil)
+
 func (*SearchResult) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "SearchResult",
 		NonNull:   true,
 	}
+}
+
+type persistedSearchResult struct {
+	FilePath       string                     `json:"filePath"`
+	LineNumber     int                        `json:"lineNumber"`
+	AbsoluteOffset int                        `json:"absoluteOffset"`
+	MatchedLines   string                     `json:"matchedLines"`
+	Submatches     []*persistedSearchSubmatch `json:"submatches,omitempty"`
+}
+
+func (r *SearchResult) EncodePersistedObject(context.Context, dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	if r == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted search result: nil search result")
+	}
+	payload := persistedSearchResult{
+		FilePath:       r.FilePath,
+		LineNumber:     r.LineNumber,
+		AbsoluteOffset: r.AbsoluteOffset,
+		MatchedLines:   r.MatchedLines,
+		Submatches:     make([]*persistedSearchSubmatch, 0, len(r.Submatches)),
+	}
+	for _, submatch := range r.Submatches {
+		if submatch == nil {
+			continue
+		}
+		payload.Submatches = append(payload.Submatches, &persistedSearchSubmatch{
+			Text:  submatch.Text,
+			Start: submatch.Start,
+			End:   submatch.End,
+		})
+	}
+	return encodePersistedObjectPayload(payload)
+}
+
+func (*SearchResult) DecodePersistedObject(_ context.Context, _ *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedSearchResult
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted search result payload: %w", err)
+	}
+	result := &SearchResult{
+		FilePath:       persisted.FilePath,
+		LineNumber:     persisted.LineNumber,
+		AbsoluteOffset: persisted.AbsoluteOffset,
+		MatchedLines:   persisted.MatchedLines,
+		Submatches:     make([]*SearchSubmatch, 0, len(persisted.Submatches)),
+	}
+	for _, submatch := range persisted.Submatches {
+		if submatch == nil {
+			continue
+		}
+		result.Submatches = append(result.Submatches, &SearchSubmatch{
+			Text:  submatch.Text,
+			Start: submatch.Start,
+			End:   submatch.End,
+		})
+	}
+	return result, nil
 }
 
 type SearchSubmatch struct {
@@ -39,11 +99,43 @@ type SearchSubmatch struct {
 	End   int    `field:"true" doc:"The match's end offset within the matched lines."`
 }
 
+var _ dagql.PersistedObject = (*SearchSubmatch)(nil)
+var _ dagql.PersistedObjectDecoder = (*SearchSubmatch)(nil)
+
 func (*SearchSubmatch) Type() *ast.Type {
 	return &ast.Type{
 		NamedType: "SearchSubmatch",
 		NonNull:   true,
 	}
+}
+
+type persistedSearchSubmatch struct {
+	Text  string `json:"text"`
+	Start int    `json:"start"`
+	End   int    `json:"end"`
+}
+
+func (m *SearchSubmatch) EncodePersistedObject(context.Context, dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
+	if m == nil {
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted search submatch: nil search submatch")
+	}
+	return encodePersistedObjectPayload(persistedSearchSubmatch{
+		Text:  m.Text,
+		Start: m.Start,
+		End:   m.End,
+	})
+}
+
+func (*SearchSubmatch) DecodePersistedObject(_ context.Context, _ *dagql.Server, _ uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
+	var persisted persistedSearchSubmatch
+	if err := json.Unmarshal(payload, &persisted); err != nil {
+		return nil, fmt.Errorf("decode persisted search submatch payload: %w", err)
+	}
+	return &SearchSubmatch{
+		Text:  persisted.Text,
+		Start: persisted.Start,
+		End:   persisted.End,
+	}, nil
 }
 
 type SearchOpts struct {

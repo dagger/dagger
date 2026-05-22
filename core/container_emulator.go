@@ -45,7 +45,7 @@ type staticEmulatorMount struct {
 }
 
 func (m *staticEmulatorMount) Mount() ([]mount.Mount, func() error, error) {
-	tmpdir, err := os.MkdirTemp("", "buildkit-qemu-emulator")
+	tmpdir, err := os.MkdirTemp("", "dagger-qemu-emulator")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -56,7 +56,7 @@ func (m *staticEmulatorMount) Mount() ([]mount.Mount, func() error, error) {
 		}
 	}()
 
-	if err := copy.Copy(context.TODO(), filepath.Dir(m.path), filepath.Base(m.path), tmpdir, engineutil.BuildkitQemuEmulatorMountPoint, func(ci *copy.CopyInfo) {
+	if err := copy.Copy(context.TODO(), filepath.Dir(m.path), filepath.Base(m.path), tmpdir, engineutil.DaggerQemuEmulatorMountPoint, func(ci *copy.CopyInfo) {
 		m := 0555
 		ci.Mode = &m
 	}); err != nil {
@@ -66,7 +66,7 @@ func (m *staticEmulatorMount) Mount() ([]mount.Mount, func() error, error) {
 	ret = true
 	return []mount.Mount{{
 			Type:    "bind",
-			Source:  filepath.Join(tmpdir, engineutil.BuildkitQemuEmulatorMountPoint),
+			Source:  filepath.Join(tmpdir, engineutil.DaggerQemuEmulatorMountPoint),
 			Options: []string{"ro", "bind"},
 		}}, func() error {
 			return os.RemoveAll(tmpdir)

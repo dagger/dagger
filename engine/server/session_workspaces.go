@@ -15,6 +15,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
@@ -820,26 +821,13 @@ func pendingRelatedModule(
 		if cfg.Name != "" {
 			mod.Name = cfg.Name
 		}
-		mod.ConfigDefaults = legacyConfigDefaults(cfg.Customizations)
+		mod.ConfigDefaults = workspace.ExtractConfigDefaults(cfg.Customizations)
 		mod.ArgCustomizations = cfg.Customizations
 	}
 	if entrypoint && defaultPathContextSrc.Self() != nil && defaultPathContextSrc.Self().Kind == core.ModuleSourceKindLocal {
 		mod.LegacyCallerModuleDir = defaultPathContextSrc.Self().AsString()
 	}
 	return mod
-}
-
-func legacyConfigDefaults(customizations []*modules.ModuleConfigArgument) map[string]any {
-	config := make(map[string]any)
-	for _, cust := range customizations {
-		if cust != nil && len(cust.Function) == 0 && cust.Default != "" {
-			config[cust.Argument] = cust.Default
-		}
-	}
-	if len(config) == 0 {
-		return nil
-	}
-	return config
 }
 
 func (srv *Server) resolveModuleSourceAsModule(
@@ -876,53 +864,22 @@ func (srv *Server) resolveModuleSourceAsModule(
 }
 
 func asModuleArgsForPendingModule(mod pendingModule) ([]dagql.NamedInput, error) {
-	// Build asModule args so legacy settings flow through dagql and are applied
-	// before Install runs inside moduleSourceAsModule.
-	asModuleArgs := []dagql.NamedInput{}
-	if mod.Name != "" {
-		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
-			Name: "legacyNameOverride", Value: dagql.String(mod.Name),
-		})
+	// Delegates to the shared builder so the workspace entrypoint path and the
+	// dependency-graph toolchain load path (loadDependencyModules) produce a
+	// byte-identical AsModuleVariantDigest salt for the same logical module.
+	args, err := schema.BuildLegacyAsModuleArgs(
+		mod.Name,
+		mod.LegacyDefaultPath,
+		mod.DefaultPathContextSourceRef,
+		mod.DefaultPathContextSourcePin,
+		mod.ConfigDefaults,
+		mod.DefaultsFromDotEnv,
+		mod.ArgCustomizations,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("build asModule args for %q: %w", mod.Ref, err)
 	}
-	if mod.LegacyDefaultPath {
-		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
-			Name: "legacyDefaultPath", Value: dagql.Boolean(true),
-		})
-	}
-	if mod.DefaultPathContextSourceRef != "" {
-		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
-			Name: "defaultPathContextSourceRef", Value: dagql.String(mod.DefaultPathContextSourceRef),
-		})
-		if mod.DefaultPathContextSourcePin != "" {
-			asModuleArgs = append(asModuleArgs, dagql.NamedInput{
-				Name: "defaultPathContextSourcePin", Value: dagql.String(mod.DefaultPathContextSourcePin),
-			})
-		}
-	}
-	if len(mod.ConfigDefaults) > 0 {
-		wsJSON, err := json.Marshal(mod.ConfigDefaults)
-		if err != nil {
-			return nil, fmt.Errorf("encoding workspace config for %q: %w", mod.Ref, err)
-		}
-		asModuleArgs = append(asModuleArgs,
-			dagql.NamedInput{Name: "legacyWorkspaceConfigJson", Value: dagql.String(string(wsJSON))},
-		)
-		if mod.DefaultsFromDotEnv {
-			asModuleArgs = append(asModuleArgs, dagql.NamedInput{
-				Name: "legacyDefaultsFromDotEnv", Value: dagql.Boolean(true),
-			})
-		}
-	}
-	if len(mod.ArgCustomizations) > 0 {
-		custJSON, err := json.Marshal(mod.ArgCustomizations)
-		if err != nil {
-			return nil, fmt.Errorf("encoding arg customizations for %q: %w", mod.Ref, err)
-		}
-		asModuleArgs = append(asModuleArgs, dagql.NamedInput{
-			Name: "legacyArgCustomizationsJson", Value: dagql.String(string(custJSON)),
-		})
-	}
-	return asModuleArgs, nil
+	return args, nil
 }
 
 // serveAllResolvedModuleLoads serves all resolved primary modules and their
