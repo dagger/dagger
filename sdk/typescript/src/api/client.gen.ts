@@ -2532,6 +2532,11 @@ export type ScalarTypeDefID = string & { __ScalarTypeDefID: never }
 /**
  * A unique identifier for an object.
  */
+export type SchemaID = string & { __SchemaID: never }
+
+/**
+ * A unique identifier for an object.
+ */
 export type SearchResultID = string & { __SearchResultID: never }
 
 /**
@@ -3440,6 +3445,14 @@ export class Binding extends BaseClient {
   asModuleSource = (): ModuleSource => {
     const ctx = this._ctx.select("asModuleSource")
     return new ModuleSource(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type Schema
+   */
+  asSchema = (): Schema => {
+    const ctx = this._ctx.select("asSchema")
+    return new Schema(ctx)
   }
 
   /**
@@ -7788,6 +7801,31 @@ export class Env extends BaseClient {
       name,
       description,
     })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type Schema in the environment
+   * @param name The name of the binding
+   * @param value The Schema value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withSchemaInput = (name: string, value: Schema, description: string): Env => {
+    const ctx = this._ctx.select("withSchemaInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired Schema output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withSchemaOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withSchemaOutput", { name, description })
     return new Env(ctx)
   }
 
@@ -13546,6 +13584,14 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a Schema from its ID.
+   */
+  loadSchemaFromID = (id: SchemaID): Schema => {
+    const ctx = this._ctx.select("loadSchemaFromID", { id })
+    return new Schema(ctx)
+  }
+
+  /**
    * Load a SearchResult from its ID.
    */
   loadSearchResultFromID = (id: SearchResultID): SearchResult => {
@@ -13736,6 +13782,15 @@ export class Client extends BaseClient {
   node = (id: ID): Node => {
     const ctx = this._ctx.select("node", { id })
     return new _NodeClient(ctx)
+  }
+
+  /**
+   * Load a GraphQL introspection schema for merging.
+   * @param json The introspection schema JSON to load.
+   */
+  schema = (json: JSON): Schema => {
+    const ctx = this._ctx.select("schema", { json })
+    return new Schema(ctx)
   }
 
   /**
@@ -13976,6 +14031,73 @@ export class ScalarTypeDef extends BaseClient {
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+}
+
+/**
+ * A GraphQL introspection schema that can be inspected and merged.
+ */
+export class Schema extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _contents?: JSON = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _contents?: JSON) {
+    super(ctx)
+
+    this._id = _id
+    this._contents = _contents
+  }
+
+  /**
+   * A unique identifier for this Schema.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Serialize the schema back to introspection JSON.
+   */
+  contents = async (): Promise<JSON> => {
+    if (this._contents) {
+      return this._contents
+    }
+
+    const ctx = this._ctx.select("contents")
+
+    const response: Awaited<JSON> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Merge a module's introspection-shaped type definitions into the schema, returning the combined schema.
+   * @param moduleTypes Introspection JSON describing the types the module defines. Object, interface and enum types are appended to the schema, and a constructor field for the module is added to the Query type.
+   * @param moduleName The name of the module whose types are being merged. Used to stamp the @sourceModuleName directive and to derive the module's constructor field.
+   */
+  merge = (moduleTypes: JSON, moduleName: string): Schema => {
+    const ctx = this._ctx.select("merge", { moduleTypes, moduleName })
+    return new Schema(ctx)
+  }
+
+  /**
+   * Call the provided function with current Schema.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Schema) => Schema) => {
+    return arg(this)
   }
 }
 

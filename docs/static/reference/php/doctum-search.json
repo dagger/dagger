@@ -1388,6 +1388,26 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\Schema",
+			"p": "Dagger/Schema.html",
+			"d": "<p>A GraphQL introspection schema that can be inspected and merged.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\SchemaId",
+			"p": "Dagger/SchemaId.html",
+			"d": "<p>A unique identifier for an object.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\SearchResult",
 			"p": "Dagger/SearchResult.html",
 			"d": null,
@@ -2013,6 +2033,12 @@
 			"n": "Dagger\\Binding::asPhpSdk",
 			"p": "Dagger/Binding.html#method_asPhpSdk",
 			"d": "<p>Retrieve the binding value, as type PhpSdk</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asSchema",
+			"p": "Dagger/Binding.html#method_asSchema",
+			"d": "<p>Retrieve the binding value, as type Schema</p>"
 		},
 		{
 			"t": "M",
@@ -2838,6 +2864,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::loadSchemaFromID",
+			"p": "Dagger/Client.html#method_loadSchemaFromID",
+			"d": "<p>Load a Schema from its ID.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::loadSearchResultFromID",
 			"p": "Dagger/Client.html#method_loadSearchResultFromID",
 			"d": "<p>Load a SearchResult from its ID.</p>"
@@ -2967,6 +2999,12 @@
 			"n": "Dagger\\Client::node",
 			"p": "Dagger/Client.html#method_node",
 			"d": "<p>Load any object by its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::schema",
+			"p": "Dagger/Client.html#method_schema",
+			"d": "<p>Load a GraphQL introspection schema for merging.</p>"
 		},
 		{
 			"t": "M",
@@ -4497,6 +4535,18 @@
 			"n": "Dagger\\Env::withPhpSdkOutput",
 			"p": "Dagger/Env.html#method_withPhpSdkOutput",
 			"d": "<p>Declare a desired PhpSdk output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withSchemaInput",
+			"p": "Dagger/Env.html#method_withSchemaInput",
+			"d": "<p>Create or update a binding of type Schema in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withSchemaOutput",
+			"p": "Dagger/Env.html#method_withSchemaOutput",
+			"d": "<p>Declare a desired Schema output to be assigned in the environment</p>"
 		},
 		{
 			"t": "M",
@@ -6501,6 +6551,24 @@
 			"n": "Dagger\\ScalarTypeDef::sourceModuleName",
 			"p": "Dagger/ScalarTypeDef.html#method_sourceModuleName",
 			"d": "<p>If this ScalarTypeDef is associated with a Module, the name of the module. Unset otherwise.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Schema::contents",
+			"p": "Dagger/Schema.html#method_contents",
+			"d": "<p>Serialize the schema back to introspection JSON.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Schema::id",
+			"p": "Dagger/Schema.html#method_id",
+			"d": "<p>A unique identifier for this Schema.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Schema::merge",
+			"p": "Dagger/Schema.html#method_merge",
+			"d": "<p>Merge a module's introspection-shaped type definitions into the schema, returning the combined schema.</p>"
 		},
 		{
 			"t": "M",
