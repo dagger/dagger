@@ -116,7 +116,6 @@ var integrationGithubInstallationsCmd = &cobra.Command{
 }
 
 func init() {
-	repoCmd.PersistentFlags().StringVar(&cloudOrgFlag, "org", "", "Dagger Cloud org name (defaults to current org)")
 	repoCmd.PersistentFlags().BoolVar(&cloudJSON, "json", false, "Print JSON output")
 	repoTransferCmd.Flags().StringVar(&repoTransferFrom, "from", "", "Source Dagger Cloud org (defaults to current or claimed org)")
 	repoTransferCmd.Flags().StringVar(&repoTransferTo, "to", "", "Destination Dagger Cloud org")
@@ -125,7 +124,6 @@ func init() {
 	repoAutocheckCmd.AddCommand(repoAutocheckOnCmd, repoAutocheckOffCmd)
 	repoCmd.AddCommand(repoInfoCmd, repoLinkCmd, repoUnlinkCmd, repoTransferCmd, repoAutocheckCmd)
 
-	integrationCmd.PersistentFlags().StringVar(&cloudOrgFlag, "org", "", "Dagger Cloud org name (defaults to current org)")
 	integrationCmd.PersistentFlags().BoolVar(&cloudJSON, "json", false, "Print JSON output")
 	integrationGithubConnectCmd.Flags().StringVar(&githubRedirect, "redirect-uri", "https://dagger.cloud/github/callback", "OAuth redirect URI")
 	integrationGithubConnectCmd.Flags().BoolVar(&githubOpen, "open", false, "Open the OAuth URL in a browser")

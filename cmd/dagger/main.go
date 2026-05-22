@@ -177,6 +177,8 @@ func init() {
 	rootCmd.AddGroup(moduleGroup)
 	rootCmd.AddGroup(execGroup)
 
+	rootCmd.PersistentFlags().StringVar(&cloudOrgFlag, "org", "", "Dagger Cloud org name for Cloud-scoped commands")
+
 	cobra.AddTemplateFunc("isExperimental", isExperimental)
 	cobra.AddTemplateFunc("flagUsagesWrapped", flagUsagesWrapped)
 	cobra.AddTemplateFunc("hasInheritedFlags", hasInheritedFlags)

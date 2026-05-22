@@ -147,7 +147,6 @@ var cloudIntegrationsListCmd = &cobra.Command{
 func init() {
 	cloudCmd.PersistentFlags().BoolVar(&cloudJSON, "json", false, "Print JSON output")
 
-	cloudGitSourcesCmd.PersistentFlags().StringVar(&cloudOrgFlag, "org", "", "Dagger Cloud org name (defaults to current org)")
 	cloudGitSourcesCmd.Flags().BoolVar(&gitSourcesListAvailable, "available", false, "Also show GitHub App installations available to your account")
 	cloudGitSourcesListCmd.Flags().BoolVar(&gitSourcesListAvailable, "available", false, "Also show GitHub App installations available to your account")
 	cloudGitSourcesEnableCmd.Flags().StringArrayVar(&gitSourceEnableRepos, "repo", nil, "Repository to scan, in owner/name form (repeatable)")
@@ -173,7 +172,6 @@ func init() {
 		cloudGithubInstallationsCmd,
 	)
 
-	cloudIntegrationsCmd.PersistentFlags().StringVar(&cloudOrgFlag, "org", "", "Dagger Cloud org name (defaults to current org)")
 	cloudIntegrationsListCmd.Flags().StringVar(&integrationsCategory, "category", "", "Only show integrations in this category")
 	cloudIntegrationsListCmd.Flags().BoolVar(&integrationsEnabledOnly, "enabled", false, "Only show enabled integrations")
 	cloudIntegrationsCmd.AddCommand(cloudIntegrationsListCmd)
