@@ -101,7 +101,7 @@ func resolveEngineLocalCachePrunePolicies(defaultPolicy []dagqlCachePrunePolicy,
 		}
 	}
 	for i := range prunePolicies {
-		prunePolicies[i].CurrentFreeSpace = dstat.Free
+		prunePolicies[i].CurrentFreeSpace = dstat.Available
 	}
 	return prunePolicies, nil
 }
@@ -196,7 +196,7 @@ func (srv *Server) gc() {
 	// static and must not be mutated in place.
 	prunePolicies := cloneDagqlCachePrunePolicies(srv.workerGCPolicies)
 	for i := range prunePolicies {
-		prunePolicies[i].CurrentFreeSpace = dstat.Free
+		prunePolicies[i].CurrentFreeSpace = dstat.Available
 	}
 
 	report, err := srv.engineCache.Prune(context.Background(), prunePolicies)

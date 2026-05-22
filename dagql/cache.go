@@ -65,7 +65,7 @@ type CachePrunePolicy struct {
 	MinFreeSpace  int64
 	TargetSpace   int64
 
-	// CurrentFreeSpace is optional free-disk bytes at prune start used to
+	// CurrentFreeSpace is optional available-disk bytes at prune start used to
 	// evaluate MinFreeSpace. When unset, MinFreeSpace behaves as if free space
 	// were zero.
 	CurrentFreeSpace int64
