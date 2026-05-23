@@ -85,8 +85,11 @@ func (m *PhpSdk) CodegenBase(
 	 * Mounts PHP SDK code and installs it
 	 * Runs codegen using the schema json provided by the dagger engine
 	 */
+	repoSource := dag.CurrentModule().Source()
 	ctr := base.
 		WithDirectory("/sdk", m.SourceDir).
+		WithDirectory("/sdk/go", repoSource.Directory("sdk/go")).
+		WithDirectory("/engine/distconsts", repoSource.Directory("engine/distconsts")).
 		WithWorkdir("/sdk").
 		// Needed to run codegen
 		WithExec([]string{"composer", "install", "--no-dev"})
