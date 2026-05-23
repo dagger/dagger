@@ -17,13 +17,15 @@ import (
 var (
 	repoTransferFrom string
 	repoTransferTo   string
+	repoListEnabled  bool
+	repoListFeature  string
 	githubRedirect   string
 	githubOpen       bool
 )
 
 var repoCmd = &cobra.Command{
 	Use:   "repo [repo]",
-	Short: "Link repositories to Dagger Cloud",
+	Short: "Manage Dagger Cloud repositories",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  cloudCLI.RepoInfo,
 }
@@ -35,46 +37,18 @@ var repoInfoCmd = &cobra.Command{
 	RunE:  cloudCLI.RepoInfo,
 }
 
-var repoLinkCmd = &cobra.Command{
-	Use:   "link [repo]",
-	Short: "Link a repository to a Dagger Cloud org",
-	Args:  cobra.MaximumNArgs(1),
-	RunE:  cloudCLI.RepoLink,
-}
-
-var repoUnlinkCmd = &cobra.Command{
-	Use:   "unlink [repo]",
-	Short: "Unlink a repository from a Dagger Cloud org",
-	Args:  cobra.MaximumNArgs(1),
-	RunE:  cloudCLI.RepoUnlink,
+var repoListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List repositories visible to this Dagger Cloud org",
+	Args:  cobra.NoArgs,
+	RunE:  cloudCLI.RepoList,
 }
 
 var repoTransferCmd = &cobra.Command{
 	Use:   "transfer [repo]",
-	Short: "Move a repository link from one Dagger Cloud org to another",
+	Short: "Move repository enablement from one Dagger Cloud org to another",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  cloudCLI.RepoTransfer,
-}
-
-var repoAutocheckCmd = &cobra.Command{
-	Use:   "autocheck [repo]",
-	Short: "Manage automatic GitHub checks for a repository",
-	Args:  cobra.MaximumNArgs(1),
-	RunE:  cloudCLI.RepoAutocheck,
-}
-
-var repoAutocheckOnCmd = &cobra.Command{
-	Use:   "on [repo]",
-	Short: "Turn automatic GitHub checks on for a repository",
-	Args:  cobra.MaximumNArgs(1),
-	RunE:  cloudCLI.RepoAutocheckOn,
-}
-
-var repoAutocheckOffCmd = &cobra.Command{
-	Use:   "off [repo]",
-	Short: "Turn automatic GitHub checks off for a repository",
-	Args:  cobra.MaximumNArgs(1),
-	RunE:  cloudCLI.RepoAutocheckOff,
 }
 
 var repoEnableCmd = &cobra.Command{
@@ -86,7 +60,7 @@ var repoEnableAutocheckCmd = &cobra.Command{
 	Use:   "autocheck [repo]",
 	Short: "Enable automatic GitHub checks for a repository",
 	Args:  cobra.MaximumNArgs(1),
-	RunE:  cloudCLI.RepoLink,
+	RunE:  cloudCLI.RepoEnableAutocheck,
 }
 
 var integrationCmd = &cobra.Command{
@@ -138,13 +112,14 @@ var integrationGithubInstallationsCmd = &cobra.Command{
 
 func init() {
 	repoCmd.PersistentFlags().BoolVar(&cloudJSON, "json", false, "Print JSON output")
+	repoListCmd.Flags().BoolVar(&repoListEnabled, "enabled", false, "Only show enabled repositories")
+	repoListCmd.Flags().StringVar(&repoListFeature, "feature", "", "Filter by feature (currently only autocheck)")
 	repoTransferCmd.Flags().StringVar(&repoTransferFrom, "from", "", "Source Dagger Cloud org (defaults to current or claimed org)")
 	repoTransferCmd.Flags().StringVar(&repoTransferTo, "to", "", "Destination Dagger Cloud org")
 	_ = repoTransferCmd.MarkFlagRequired("to")
 
-	repoAutocheckCmd.AddCommand(repoAutocheckOnCmd, repoAutocheckOffCmd)
 	repoEnableCmd.AddCommand(repoEnableAutocheckCmd)
-	repoCmd.AddCommand(repoInfoCmd, repoLinkCmd, repoUnlinkCmd, repoTransferCmd, repoAutocheckCmd, repoEnableCmd)
+	repoCmd.AddCommand(repoInfoCmd, repoListCmd, repoTransferCmd, repoEnableCmd)
 
 	integrationCmd.PersistentFlags().BoolVar(&cloudJSON, "json", false, "Print JSON output")
 	integrationAddCmd.Flags().StringVar(&githubRedirect, "redirect-uri", "https://dagger.cloud/github/callback", "OAuth redirect URI")
@@ -166,7 +141,7 @@ type repoCloudState struct {
 	Org          *cloudapi.OrgResponse      `json:"org"`
 	Repository   string                     `json:"repository"`
 	Status       string                     `json:"status"`
-	Autocheck    bool                       `json:"autocheck"`
+	Features     repoFeatureSet             `json:"features"`
 	Source       *cloudapi.Source           `json:"source,omitempty"`
 	MappedSource *cloudapi.MappedSource     `json:"mappedSource,omitempty"`
 	Repo         *cloudapi.SourceRepository `json:"repo,omitempty"`
@@ -174,6 +149,23 @@ type repoCloudState struct {
 	Message      string                     `json:"message,omitempty"`
 	ActionURL    string                     `json:"actionUrl,omitempty"`
 	Mutation     string                     `json:"mutation,omitempty"`
+}
+
+type repoFeatureSet struct {
+	Autocheck repoFeature `json:"autocheck"`
+}
+
+type repoFeature struct {
+	Enabled bool `json:"enabled"`
+}
+
+type repoListEntry struct {
+	Repository  string         `json:"repository"`
+	Status      string         `json:"status"`
+	Integration string         `json:"integration,omitempty"`
+	SourceID    string         `json:"sourceId,omitempty"`
+	URL         string         `json:"url,omitempty"`
+	Features    repoFeatureSet `json:"features"`
 }
 
 func (cli *CloudCLI) RepoInfo(cmd *cobra.Command, args []string) error {
@@ -184,6 +176,9 @@ func (cli *CloudCLI) RepoInfo(cmd *cobra.Command, args []string) error {
 	}
 	org, err := cli.resolveCloudOrg(ctx, client, cloudAuth)
 	if err != nil {
+		return err
+	}
+	if err := removedRepoCommand(args); err != nil {
 		return err
 	}
 	repo, err := repoFromArgOrGit(ctx, args)
@@ -202,13 +197,60 @@ func (cli *CloudCLI) RepoInfo(cmd *cobra.Command, args []string) error {
 	state.Message = repoStatusMessage(state)
 
 	if cloudJSON {
-		return writeCloudJSON(cmd, state)
+		return writeRepoStateJSON(cmd, state)
 	}
 	printRepoInfo(cmd, state)
 	return nil
 }
 
-func (cli *CloudCLI) RepoLink(cmd *cobra.Command, args []string) error {
+func removedRepoCommand(args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	switch strings.ToLower(strings.TrimSpace(args[0])) {
+	case "autocheck":
+		return fmt.Errorf("`dagger repo autocheck` was removed; use `dagger repo info` to read repo features or `dagger repo enable autocheck` to enable autocheck")
+	case "link", "unlink":
+		return fmt.Errorf("`dagger repo %s` was removed; use `dagger repo enable autocheck` to enable the repo feature", args[0])
+	default:
+		return nil
+	}
+}
+
+func (cli *CloudCLI) RepoList(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+	client, cloudAuth, err := cli.cloudClient(ctx)
+	if err != nil {
+		return err
+	}
+	org, err := cli.resolveCloudOrg(ctx, client, cloudAuth)
+	if err != nil {
+		return err
+	}
+	if repoListFeature != "" && !strings.EqualFold(repoListFeature, "autocheck") {
+		return fmt.Errorf("unsupported repo feature %q; supported features: autocheck", repoListFeature)
+	}
+	entries, err := cli.listRepos(ctx, client, org)
+	if err != nil {
+		return err
+	}
+	if repoListEnabled {
+		filtered := entries[:0]
+		for _, entry := range entries {
+			if entry.Features.Autocheck.Enabled {
+				filtered = append(filtered, entry)
+			}
+		}
+		entries = filtered
+	}
+	if cloudJSON {
+		return writeCloudJSON(cmd, entries)
+	}
+	printRepoList(cmd, entries)
+	return nil
+}
+
+func (cli *CloudCLI) RepoEnableAutocheck(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	client, cloudAuth, err := cli.cloudClient(ctx)
 	if err != nil {
@@ -227,32 +269,7 @@ func (cli *CloudCLI) RepoLink(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if cloudJSON {
-		return writeCloudJSON(cmd, state)
-	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s\n", state.Message)
-	return nil
-}
-
-func (cli *CloudCLI) RepoUnlink(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
-	client, cloudAuth, err := cli.cloudClient(ctx)
-	if err != nil {
-		return err
-	}
-	org, err := cli.resolveCloudOrg(ctx, client, cloudAuth)
-	if err != nil {
-		return err
-	}
-	repo, err := repoFromArgOrGit(ctx, args)
-	if err != nil {
-		return err
-	}
-	state, err := cli.unlinkRepo(ctx, client, org, repo)
-	if err != nil {
-		return err
-	}
-	if cloudJSON {
-		return writeCloudJSON(cmd, state)
+		return writeRepoStateJSON(cmd, state)
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s\n", state.Message)
 	return nil
@@ -330,100 +347,6 @@ func (cli *CloudCLI) RepoTransfer(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Transferred %s from %s to %s.\n", repo, fromOrg.Name, toOrg.Name)
 	return nil
-}
-
-func (cli *CloudCLI) RepoAutocheck(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
-	repo, err := repoFromArgOrGit(ctx, args)
-	if err != nil {
-		return err
-	}
-
-	client, cloudAuth, err := cli.cloudClient(ctx)
-	if err != nil {
-		if cloudJSON {
-			return writeCloudJSON(cmd, map[string]any{
-				"repository": repo,
-				"status":     "not_logged_in",
-				"next":       "dagger login",
-			})
-		}
-		fmt.Fprintln(cmd.OutOrStdout(), "Not logged into cloud. Run: dagger login")
-		return nil
-	}
-
-	org, err := cli.resolveCloudOrg(ctx, client, cloudAuth)
-	if err != nil {
-		return err
-	}
-	state, err := cli.inspectRepo(ctx, client, org, repo)
-	if err != nil {
-		return err
-	}
-
-	if state.Status != "linked" {
-		if cloudJSON {
-			return writeCloudJSON(cmd, map[string]any{
-				"repository": repo,
-				"org":        org.Name,
-				"status":     "not_linked",
-				"next":       "dagger repo link",
-			})
-		}
-		fmt.Fprintln(cmd.OutOrStdout(), "repository not linked to this dagger cloud org. Run: dagger repo link")
-		return nil
-	}
-
-	if cloudJSON {
-		return writeCloudJSON(cmd, map[string]any{
-			"repository": repo,
-			"org":        org.Name,
-			"autocheck":  state.Autocheck,
-		})
-	}
-	if state.Autocheck {
-		fmt.Fprintln(cmd.OutOrStdout(), "on")
-		return nil
-	}
-	fmt.Fprintln(cmd.OutOrStdout(), "off")
-	return nil
-}
-
-func (cli *CloudCLI) RepoAutocheckOn(cmd *cobra.Command, args []string) error {
-	repo, err := repoFromArgOrGit(cmd.Context(), args)
-	if err != nil {
-		return err
-	}
-	if cloudJSON {
-		if err := writeCloudJSON(cmd, map[string]any{
-			"repository": repo,
-			"autocheck":  true,
-			"readOnly":   true,
-			"error":      "autocheck is a read-only mock setting and is always on",
-		}); err != nil {
-			return err
-		}
-	}
-	return fmt.Errorf("autocheck is always on and cannot be changed")
-}
-
-func (cli *CloudCLI) RepoAutocheckOff(cmd *cobra.Command, args []string) error {
-	repo, err := repoFromArgOrGit(cmd.Context(), args)
-	if err != nil {
-		return err
-	}
-	msg := map[string]any{
-		"repository": repo,
-		"autocheck":  true,
-		"readOnly":   true,
-		"error":      "autocheck is a read-only mock setting and is always on",
-	}
-	if cloudJSON {
-		if err := writeCloudJSON(cmd, msg); err != nil {
-			return err
-		}
-	}
-	return fmt.Errorf("autocheck is always on and cannot be changed")
 }
 
 func (cli *CloudCLI) IntegrationAdd(cmd *cobra.Command, args []string) error {
@@ -533,7 +456,6 @@ func (cli *CloudCLI) inspectRepo(ctx context.Context, client *cloudapi.Client, o
 		Org:        org,
 		Repository: repo,
 		Status:     "not_installed",
-		Autocheck:  true,
 	}
 
 	gitSources, err := client.GitSources(ctx, org.Name)
@@ -563,6 +485,7 @@ func (cli *CloudCLI) inspectRepo(ctx context.Context, client *cloudapi.Client, o
 				state.ActionURL = state.Source.ConfigURL
 			}
 			state.Status = repoStatus(state.Repo)
+			state.Features = repoFeatures(state.Status)
 			if state.Status != "linked" && state.Source != nil {
 				return state, nil
 			}
@@ -589,10 +512,70 @@ func (cli *CloudCLI) inspectRepo(ctx context.Context, client *cloudapi.Client, o
 			state.Repo = &repos[j]
 			state.ActionURL = source.ConfigURL
 			state.Status = repoStatus(state.Repo)
+			state.Features = repoFeatures(state.Status)
 			return state, nil
 		}
 	}
+	state.Features = repoFeatures(state.Status)
 	return state, nil
+}
+
+func (cli *CloudCLI) listRepos(ctx context.Context, client *cloudapi.Client, org *cloudapi.OrgResponse) ([]repoListEntry, error) {
+	gitSources, err := client.GitSources(ctx, org.Name)
+	if err != nil {
+		return nil, err
+	}
+	sources, err := client.Sources(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	mappedByInstallation := map[string]*cloudapi.MappedSource{}
+	for i := range gitSources.Org.MappedSources {
+		mapped := &gitSources.Org.MappedSources[i]
+		mappedByInstallation[mapped.InstallationID] = mapped
+	}
+
+	byRepo := map[string]repoListEntry{}
+	for i := range sources {
+		source := &sources[i]
+		repos, err := client.SourceRepositories(ctx, source.ID, org.ID)
+		if err != nil {
+			return nil, err
+		}
+		mapped := mappedByInstallation[source.ID]
+		for j := range repos {
+			repo := &repos[j]
+			status := repoStatus(repo)
+			entry := repoListEntry{
+				Repository:  repo.Repository,
+				Status:      repoDisplayStatus(status),
+				Integration: source.Name,
+				SourceID:    source.ID,
+				Features:    repoFeatures(status),
+			}
+			if repo.HTMLURL != nil {
+				entry.URL = *repo.HTMLURL
+			}
+			if mapped != nil {
+				entry.Integration = mapped.SourceName
+			}
+			key := strings.ToLower(repo.Repository)
+			existing, ok := byRepo[key]
+			if !ok || (!existing.Features.Autocheck.Enabled && entry.Features.Autocheck.Enabled) {
+				byRepo[key] = entry
+			}
+		}
+	}
+
+	entries := make([]repoListEntry, 0, len(byRepo))
+	for _, entry := range byRepo {
+		entries = append(entries, entry)
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return strings.ToLower(entries[i].Repository) < strings.ToLower(entries[j].Repository)
+	})
+	return entries, nil
 }
 
 func (cli *CloudCLI) linkRepo(ctx context.Context, client *cloudapi.Client, org *cloudapi.OrgResponse, repo string) (*repoCloudState, error) {
@@ -608,7 +591,7 @@ func (cli *CloudCLI) linkRepo(ctx context.Context, client *cloudapi.Client, org 
 	}
 	if state.Repo.Selected {
 		state.Mutation = "noop"
-		state.Message = fmt.Sprintf("%s is already linked to %s.", repo, org.Name)
+		state.Message = fmt.Sprintf("Autocheck is already enabled for %s.", repo)
 		return state, nil
 	}
 
@@ -627,8 +610,9 @@ func (cli *CloudCLI) linkRepo(ctx context.Context, client *cloudapi.Client, org 
 	}
 	state.MappedSource = mapped
 	state.Status = "linked"
+	state.Features = repoFeatures(state.Status)
 	state.Mutation = "configureOrgSource"
-	state.Message = fmt.Sprintf("Linked %s to %s. Module scan queued.", repo, org.Name)
+	state.Message = fmt.Sprintf("Enabled autocheck for %s. Module scan queued.", repo)
 	return state, nil
 }
 
@@ -653,6 +637,8 @@ func (cli *CloudCLI) unlinkRepo(ctx context.Context, client *cloudapi.Client, or
 		if err != nil {
 			return nil, err
 		}
+		state.Status = "available"
+		state.Features = repoFeatures(state.Status)
 		state.Mutation = "unmapSourceFromOrg"
 		state.Message = fmt.Sprintf("Unlinked %s from %s and removed empty source mapping (ok=%t).", repo, org.Name, ok)
 		return state, nil
@@ -667,6 +653,8 @@ func (cli *CloudCLI) unlinkRepo(ctx context.Context, client *cloudapi.Client, or
 		return nil, err
 	}
 	state.MappedSource = mapped
+	state.Status = "available"
+	state.Features = repoFeatures(state.Status)
 	state.Mutation = "configureOrgSource"
 	state.Message = fmt.Sprintf("Unlinked %s from %s; %d repos remain linked from %s.", repo, org.Name, len(selected), mapped.SourceName)
 	return state, nil
@@ -762,12 +750,25 @@ func repoStatus(repo *cloudapi.SourceRepository) string {
 	return "available"
 }
 
+func repoDisplayStatus(status string) string {
+	if status == "linked" {
+		return "enabled"
+	}
+	return status
+}
+
+func repoFeatures(status string) repoFeatureSet {
+	return repoFeatureSet{
+		Autocheck: repoFeature{Enabled: status == "linked"},
+	}
+}
+
 func repoStatusMessage(state *repoCloudState) string {
 	switch state.Status {
 	case "linked":
-		return "Repo is linked to this Dagger Cloud org."
+		return "Repo is enabled for this Dagger Cloud org."
 	case "available":
-		return "Repo is visible and can be linked to this Dagger Cloud org."
+		return "Repo is visible and autocheck can be enabled for this Dagger Cloud org."
 	case "blocked":
 		return "Repo is visible, but claimed by another Dagger Cloud org."
 	case "not_visible":
@@ -782,7 +783,7 @@ func repoVisibilityError(state *repoCloudState) error {
 	case "not_visible":
 		return fmt.Errorf("%s Configure GitHub App access: %s", repoStatusMessage(state), state.ActionURL)
 	default:
-		return fmt.Errorf("%s Run `dagger integration github connect` or install the Dagger GitHub App for the repo owner", repoStatusMessage(state))
+		return fmt.Errorf("%s Run `dagger integration add github` or install the Dagger GitHub App for the repo owner", repoStatusMessage(state))
 	}
 }
 
@@ -811,7 +812,7 @@ func printRepoInfo(cmd *cobra.Command, state *repoCloudState) {
 	out := cmd.OutOrStdout()
 	fmt.Fprintf(out, "Repository: %s\n", state.Repository)
 	fmt.Fprintf(out, "Org:        %s\n", state.Org.Name)
-	fmt.Fprintf(out, "Status:     %s\n", state.Status)
+	fmt.Fprintf(out, "Status:     %s\n", repoDisplayStatus(state.Status))
 	if state.Source != nil {
 		fmt.Fprintf(out, "Source:     %s (%s)\n", state.Source.Name, state.Source.ID)
 	}
@@ -835,7 +836,40 @@ func printRepoInfo(cmd *cobra.Command, state *repoCloudState) {
 		fmt.Fprintf(out, "GitHub URL: %s\n", state.ActionURL)
 	}
 	fmt.Fprintf(out, "\n%s\n", state.Message)
-	fmt.Fprintln(out, "Autocheck: on (read-only mock setting)")
+	fmt.Fprintf(out, "Autocheck: %s\n", onOff(state.Features.Autocheck.Enabled))
+}
+
+func writeRepoStateJSON(cmd *cobra.Command, state *repoCloudState) error {
+	display := *state
+	display.Status = repoDisplayStatus(state.Status)
+	return writeCloudJSON(cmd, &display)
+}
+
+func printRepoList(cmd *cobra.Command, entries []repoListEntry) {
+	out := cmd.OutOrStdout()
+	if len(entries) == 0 {
+		fmt.Fprintln(out, "No repositories found.")
+		return
+	}
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "REPOSITORY\tINTEGRATION\tSTATUS\tAUTOCHECK\tURL")
+	for _, entry := range entries {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+			entry.Repository,
+			entry.Integration,
+			entry.Status,
+			onOff(entry.Features.Autocheck.Enabled),
+			entry.URL,
+		)
+	}
+	_ = w.Flush()
+}
+
+func onOff(enabled bool) string {
+	if enabled {
+		return "on"
+	}
+	return "off"
 }
 
 func printGitHubIntegration(cmd *cobra.Command, conn *cloudapi.GitHubConnection, sources []cloudapi.Source, org *cloudapi.OrgResponse, integrations []cloudapi.Integration) {
