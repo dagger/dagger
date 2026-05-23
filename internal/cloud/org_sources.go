@@ -90,13 +90,6 @@ type RepoSettingInput struct {
 	IsPublic bool   `json:"isPublic"`
 }
 
-type SubscriptionItem struct {
-	ItemPriceID string `json:"itemPriceID"`
-	ItemType    string `json:"itemType"`
-	ItemID      string `json:"itemID"`
-	Quantity    *int   `json:"quantity,omitempty"`
-}
-
 type SubscriptionInfo struct {
 	Status         string  `json:"status"`
 	TrialStart     *string `json:"trialStart,omitempty"`
@@ -527,67 +520,6 @@ func (c *Client) Plans(ctx context.Context) (*PlansResponse, error) {
 		return nil, err
 	}
 	return &plans, nil
-}
-
-const createQuickstartOrgOperation = `
-mutation CreateQuickstartOrg($name: String!) {
-	createQuickstartOrg(name: $name) {
-		id
-		name
-	}
-}
-`
-
-func (c *Client) CreateQuickstartOrg(ctx context.Context, name string) (*OrgResponse, error) {
-	var data struct {
-		CreateQuickstartOrg OrgResponse `json:"createQuickstartOrg"`
-	}
-	if err := c.doGraphQL(ctx, "CreateQuickstartOrg", createQuickstartOrgOperation, map[string]any{
-		"name": name,
-	}, &data); err != nil {
-		return nil, err
-	}
-	return &data.CreateQuickstartOrg, nil
-}
-
-const createQuickstartOrgWithSourceSelectionsOperation = `
-mutation CreateQuickstartOrgWithSourceSelections($name: String!, $sources: [SourceSelectionInput!]!) {
-	createQuickstartOrgWithSourceSelections(name: $name, sources: $sources) {
-		id
-		name
-	}
-}
-`
-
-func (c *Client) CreateQuickstartOrgWithSourceSelections(ctx context.Context, name string, sources []SourceSelectionInput) (*OrgResponse, error) {
-	var data struct {
-		CreateQuickstartOrgWithSourceSelections OrgResponse `json:"createQuickstartOrgWithSourceSelections"`
-	}
-	if err := c.doGraphQL(ctx, "CreateQuickstartOrgWithSourceSelections", createQuickstartOrgWithSourceSelectionsOperation, map[string]any{
-		"name":    name,
-		"sources": sources,
-	}, &data); err != nil {
-		return nil, err
-	}
-	return &data.CreateQuickstartOrgWithSourceSelections, nil
-}
-
-const enableCloudModulesTrialOperation = `
-mutation EnableCloudModulesTrial($org: ID!) {
-	enableCloudModulesTrial(org: $org)
-}
-`
-
-func (c *Client) EnableCloudModulesTrial(ctx context.Context, orgID string) (bool, error) {
-	var data struct {
-		EnableCloudModulesTrial bool `json:"enableCloudModulesTrial"`
-	}
-	if err := c.doGraphQL(ctx, "EnableCloudModulesTrial", enableCloudModulesTrialOperation, map[string]any{
-		"org": orgID,
-	}, &data); err != nil {
-		return false, err
-	}
-	return data.EnableCloudModulesTrial, nil
 }
 
 const createPortalSessionOperation = `
