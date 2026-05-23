@@ -332,7 +332,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
 
-		loaded := engineClientB.LoadDirectoryFromID(dirID)
+		loaded := dagger.Ref[*dagger.Directory](engineClientB, dirID)
 
 		selectedFile, err := loaded.File("selected-file.txt").Contents(ctx)
 		require.NoError(t, err)
