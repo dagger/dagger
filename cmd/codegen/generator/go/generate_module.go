@@ -158,6 +158,12 @@ func (g *GoGenerator) bootstrapMod(mfs *memfs.FS, genSt *generator.GeneratedStat
 		return nil, false, fmt.Errorf("existing go.mod has unsupported version %v (highest supported version is %v)", goMod.Go.Version, goVersion)
 	}
 
+	// Keep dagger.io/dagger pinned in the generated module so we don't need a
+	// networked `go get -u` during release-style checks.
+	if !isDaggerPkgCustomReplaced(goMod.Replace) {
+		goMod.AddRequire(daggerImportPath, g.Config.ModuleConfig.LibVersion)
+	}
+
 	if !noTidy {
 		if err := g.syncModReplaceAndTidy(goMod, genSt, daggerModPath); err != nil {
 			return nil, false, err
@@ -243,14 +249,6 @@ func (g *GoGenerator) syncModReplaceAndTidy(mod *modfile.File, genSt *generator.
 			genSt.PostCommands = append(genSt.PostCommands,
 				exec.Command("go", "work", "edit", "-replace", minReq.Old.Path+"="+minReq.New.Path+"@"+minReq.New.Version))
 		}
-	}
-
-	// Check if the module go.mod replaces the dagger.io/dagger library with a custom path.
-	// If so, we keep it as is.
-	// Otherwise, we install the given dagger.io/dagger package version.
-	if !isDaggerPkgCustomReplaced(mod.Replace) {
-		genSt.PostCommands = append(genSt.PostCommands,
-			exec.Command("go", "get", "-u", daggerImportPath+"@"+g.Config.ModuleConfig.LibVersion))
 	}
 
 	genSt.PostCommands = append(genSt.PostCommands,
