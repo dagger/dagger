@@ -5183,14 +5183,6 @@ func (r *EngineCacheEntry) RecordType(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// AsNode returns this EngineCacheEntry as a Node.
-// This is a local type conversion — no GraphQL call.
-func (r *EngineCacheEntry) AsNode() Node {
-	return &NodeClient{
-		query: r.query,
-	}
-}
-
 // The storage record types represented by this cache entry.
 func (r *EngineCacheEntry) RecordTypes(ctx context.Context) ([]string, error) {
 	q := r.query.Select("recordTypes")
@@ -5199,6 +5191,14 @@ func (r *EngineCacheEntry) RecordTypes(ctx context.Context) ([]string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// AsNode returns this EngineCacheEntry as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EngineCacheEntry) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }
 
 // A set of cache entries returned by a query to a cache
