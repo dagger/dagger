@@ -178,9 +178,6 @@ func (cli *CloudCLI) RepoInfo(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := removedRepoCommand(args); err != nil {
-		return err
-	}
 	repo, err := repoFromArgOrGit(ctx, args)
 	if err != nil {
 		return err
@@ -201,20 +198,6 @@ func (cli *CloudCLI) RepoInfo(cmd *cobra.Command, args []string) error {
 	}
 	printRepoInfo(cmd, state)
 	return nil
-}
-
-func removedRepoCommand(args []string) error {
-	if len(args) == 0 {
-		return nil
-	}
-	switch strings.ToLower(strings.TrimSpace(args[0])) {
-	case "autocheck":
-		return fmt.Errorf("`dagger repo autocheck` was removed; use `dagger repo info` to read repo features or `dagger repo enable autocheck` to enable autocheck")
-	case "link", "unlink":
-		return fmt.Errorf("`dagger repo %s` was removed; use `dagger repo enable autocheck` to enable the repo feature", args[0])
-	default:
-		return nil
-	}
 }
 
 func (cli *CloudCLI) RepoList(cmd *cobra.Command, args []string) error {
