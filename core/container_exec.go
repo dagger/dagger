@@ -36,6 +36,7 @@ import (
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/network"
+	telemetry "github.com/dagger/otel-go"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -320,6 +321,10 @@ func execNetMode(opts ContainerExecOpts) (pb.NetMode, error) {
 type serviceBindingExitError struct {
 	binding ServiceBinding
 	err     error
+	// origins are the install-span contexts of the API calls that returned the
+	// bound service. Embedded in the error message as traceparents so the
+	// consuming exec span links its failure back to those API calls.
+	origins []trace.SpanContext
 }
 
 func (e *serviceBindingExitError) Error() string {
@@ -330,10 +335,30 @@ func (e *serviceBindingExitError) Error() string {
 	if name == "" {
 		name = "unknown"
 	}
+	var msg string
 	if e.err == nil {
-		return fmt.Sprintf("bound service %s (%s) exited", name, e.binding.Aliases)
+		msg = fmt.Sprintf("bound service %s (%s) exited", name, e.binding.Aliases)
+	} else {
+		msg = fmt.Sprintf("bound service %s (%s) exited: %v", name, e.binding.Aliases, e.err)
 	}
-	return fmt.Sprintf("bound service %s (%s) exited: %v", name, e.binding.Aliases, e.err)
+	// Append traceparents so the consuming exec span EndWithCause adds
+	// LinkPurposeErrorOrigin links to the service's install spans. The inner
+	// service error may already carry the service starter's origin; keep it, but
+	// still add any missing current origins so reused services attribute failures
+	// to every API call that installed/bound them.
+	tracked := telemetry.ParseErrorOrigins(msg)
+	trackedKeys := make(map[string]struct{}, len(tracked))
+	for _, origin := range tracked {
+		trackedKeys[spanContextKey(origin)] = struct{}{}
+	}
+	for _, origin := range normalizeSpanContexts(e.origins) {
+		if _, alreadyTracked := trackedKeys[spanContextKey(origin)]; alreadyTracked {
+			continue
+		}
+		msg = telemetry.TrackOrigin(errors.New(msg), origin).Error()
+		trackedKeys[spanContextKey(origin)] = struct{}{}
+	}
+	return msg
 }
 
 func (e *serviceBindingExitError) Unwrap() error {
@@ -346,6 +371,18 @@ func (e *serviceBindingExitError) Unwrap() error {
 func isServiceBindingExitError(err error) bool {
 	var svcErr *serviceBindingExitError
 	return errors.As(err, &svcErr)
+}
+
+func serviceBindingErrorOrigins(ctx context.Context, binding ServiceBinding, running *RunningService) []trace.SpanContext {
+	if origins := lookupServiceOriginSpanContexts(ctx, binding.Service); len(origins) > 0 {
+		return origins
+	}
+	if running != nil {
+		if origin := running.errorOriginSpanContext(); origin.IsValid() {
+			return []trace.SpanContext{origin}
+		}
+	}
+	return nil
 }
 
 // monitorServiceBindings reports the first bound service that exits while a
@@ -374,6 +411,8 @@ func monitorServiceBindings(
 			binding.Hostname = runningSvc.Host
 		}
 
+		origins := serviceBindingErrorOrigins(ctx, binding, runningSvc)
+
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -386,6 +425,7 @@ func monitorServiceBindings(
 			svcErr := &serviceBindingExitError{
 				binding: binding,
 				err:     err,
+				origins: origins,
 			}
 			select {
 			case serviceErrCh <- svcErr:
@@ -485,7 +525,7 @@ func lockMountedCaches(ctx context.Context, mounts []ContainerMount) (func(), er
 		if err != nil {
 			return nil, fmt.Errorf("encode cache lock key for mount %d: %w", i, err)
 		}
-		lockSet["cache-volume:"+string(payload)] = struct{}{}
+		lockSet["cache-volume:"+string(payload.JSON)] = struct{}{}
 	}
 	if len(lockSet) == 0 {
 		return func() {}, nil
@@ -927,7 +967,7 @@ type execSecretMountInstance struct {
 }
 
 func (secret *execSecretMountInstance) Mount() ([]ctrdmount.Mount, func() error, error) {
-	dir, err := os.MkdirTemp("", "buildkit-secrets")
+	dir, err := os.MkdirTemp("", "dagger-secrets")
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create temp dir: %w", err)
 	}
@@ -1955,11 +1995,11 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			return err
 		}
 		if emu != nil {
-			metaSpec.Args = append([]string{engineutil.BuildkitQemuEmulatorMountPoint}, metaSpec.Args...)
+			metaSpec.Args = append([]string{engineutil.DaggerQemuEmulatorMountPoint}, metaSpec.Args...)
 			execMounts = append(execMounts, executor.Mount{
 				Readonly: true,
 				Src:      emu,
-				Dest:     engineutil.BuildkitQemuEmulatorMountPoint,
+				Dest:     engineutil.DaggerQemuEmulatorMountPoint,
 			})
 		}
 

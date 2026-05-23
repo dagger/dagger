@@ -96,7 +96,7 @@ func GetOverlayLayers(m mount.Mount) ([]string, error) {
 }
 
 func WriteUpperdir(ctx context.Context, w io.Writer, upperdir string, lower []mount.Mount) error {
-	emptyLower, err := os.MkdirTemp("", "buildkit")
+	emptyLower, err := os.MkdirTemp("", "dagger")
 	if err != nil {
 		return errors.Wrapf(err, "failed to create temp dir")
 	}

@@ -84,6 +84,31 @@ func TestResolveEngineLocalCachePrunePoliciesOverridesReservedAndMinFree(t *test
 	require.Equal(t, originalPolicy, defaultPolicy)
 }
 
+func TestResolveEngineLocalCachePrunePoliciesUsesAvailableSpaceForMinFree(t *testing.T) {
+	dstat := disk.DiskStat{
+		Total:     100 * 1e9,
+		Free:      25 * 1e9,
+		Available: 15 * 1e9,
+	}
+	defaultPolicy := []dagqlCachePrunePolicy{
+		{
+			All:           true,
+			ReservedSpace: 10 * 1e9,
+			MaxUsedSpace:  75 * 1e9,
+			MinFreeSpace:  20 * 1e9,
+		},
+	}
+
+	prunePolicies, err := resolveEngineLocalCachePrunePolicies(defaultPolicy, core.EngineCachePruneOptions{
+		UseDefaultPolicy: true,
+	}, dstat)
+	require.NoError(t, err)
+	require.Len(t, prunePolicies, 1)
+	require.Equal(t, dstat.Available, prunePolicies[0].CurrentFreeSpace)
+	require.Less(t, prunePolicies[0].CurrentFreeSpace, prunePolicies[0].MinFreeSpace)
+	require.GreaterOrEqual(t, dstat.Free, prunePolicies[0].MinFreeSpace)
+}
+
 func TestResolveEngineLocalCachePrunePoliciesInvalidSpaceValue(t *testing.T) {
 	dstat := disk.DiskStat{Total: 100 * 1e9}
 
@@ -158,6 +183,39 @@ func TestGetDagqlGCPolicyFallsBackToBuildkitGCPolicy(t *testing.T) {
 		MinFreeSpace:  200,
 		TargetSpace:   0,
 	}, policies[0])
+}
+
+func TestGetDagqlGCPolicyDefaultPolicies(t *testing.T) {
+	cfg := config.Config{
+		GC: config.GCConfig{
+			GCSpace: config.GCSpace{
+				ReservedSpace: config.DiskSpace{Bytes: 100},
+				MaxUsedSpace:  config.DiskSpace{Bytes: 1000},
+				MinFreeSpace:  config.DiskSpace{Bytes: 200},
+			},
+		},
+	}
+
+	policies := getDagqlGCPolicy(cfg, bkconfig.GCConfig{}, t.TempDir())
+	require.Equal(t, []dagqlCachePrunePolicy{
+		{
+			Filters:      []string{"type==source.local,type==exec.cachemount,type==source.git.checkout"},
+			KeepDuration: 48 * time.Hour,
+			MaxUsedSpace: 512 * 1e6,
+		},
+		{
+			KeepDuration:  60 * 24 * time.Hour,
+			ReservedSpace: 100,
+			MaxUsedSpace:  1000,
+			MinFreeSpace:  200,
+		},
+		{
+			All:           true,
+			ReservedSpace: 100,
+			MaxUsedSpace:  1000,
+			MinFreeSpace:  200,
+		},
+	}, policies)
 }
 
 func mustParseDiskSpace(t *testing.T, value string, dstat disk.DiskStat) int64 {

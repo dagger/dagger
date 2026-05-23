@@ -334,8 +334,10 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			if parent.deps == nil {
 				parent.deps = make(map[sharedResultID]struct{})
 			}
+			dep := c.resultsByID[depID]
 			parent.deps[depID] = struct{}{}
-			c.incrementIncomingOwnershipLocked(ctx, c.resultsByID[depID])
+			c.rememberDependencyEdgeLocked(parent, dep)
+			c.incrementIncomingOwnershipLocked(ctx, dep)
 			c.traceImportResultDepLoaded(ctx, importRunID, parentID, depID)
 			c.traceExplicitDepAdded(ctx, parentID, depID, "import")
 		}
@@ -346,10 +348,12 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			if res == nil {
 				return fmt.Errorf("import result_snapshot_link: missing result %d", row.ResultID)
 			}
+			res.payloadMu.Lock()
 			res.snapshotOwnerLinks = append(res.snapshotOwnerLinks, PersistedSnapshotRefLink{
 				RefKey: row.RefKey,
 				Role:   row.Role,
 			})
+			res.payloadMu.Unlock()
 			c.traceImportResultSnapshotLinkLoaded(ctx, importRunID, resultID, row.RefKey, row.Role)
 		}
 

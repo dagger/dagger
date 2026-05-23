@@ -64,7 +64,7 @@ type persistedSocketPayload struct {
 	PortForward PortForward                 `json:"portForward,omitempty"`
 }
 
-func (socket *Socket) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (socket *Socket) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	payload := persistedSocketPayload{}
 	if socket != nil {
 		payload.Kind = socket.Kind
@@ -73,7 +73,7 @@ func (socket *Socket) EncodePersistedObject(ctx context.Context, cache dagql.Per
 			payload.PortForward = socket.PortForwardVal
 		}
 	}
-	return json.Marshal(payload)
+	return encodePersistedObjectPayload(payload)
 }
 
 func (*Socket) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, call *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {

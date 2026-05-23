@@ -265,7 +265,9 @@ func (r *Release) Publish( //nolint:gocyclo
 			tag:  "sdk/typescript/",
 			link: "https://www.npmjs.com/package/@dagger.io/dagger/v/" + strings.TrimPrefix(version, "v"),
 			release: func(ctx context.Context) error {
-				return dag.TypescriptSDKDev().Release(ctx, tag, npmToken)
+				return dag.TypescriptSDKDev().Release(ctx, tag, dagger.TypescriptSDKDevReleaseOpts{
+					NpmToken: npmToken,
+				})
 			},
 			dryRun: func(ctx context.Context) error {
 				return dag.TypescriptSDKDev().ReleaseDryRun(ctx)
@@ -277,7 +279,9 @@ func (r *Release) Publish( //nolint:gocyclo
 			tag:  "sdk/elixir/",
 			link: "https://hex.pm/packages/dagger/" + strings.TrimPrefix(version, "v"),
 			release: func(ctx context.Context) error {
-				return dag.ElixirSDKDev().Publish(ctx, tag, hexAPIKey)
+				return dag.ElixirSDKDev().Publish(ctx, tag, dagger.ElixirSDKDevPublishOpts{
+					HexAPIKey: hexAPIKey,
+				})
 			},
 			dryRun: func(ctx context.Context) error {
 				return dag.ElixirSDKDev().ReleaseDryRun(ctx)

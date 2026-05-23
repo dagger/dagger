@@ -386,6 +386,50 @@ func TestCaptureSessionLazySpanContextFirstWriterWinsAndRelease(t *testing.T) {
 	assert.Assert(t, !ok)
 }
 
+func TestSessionResultInstallSpanContextsSorted(t *testing.T) {
+	t.Parallel()
+
+	c := &Cache{}
+	spanCtxB := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{2},
+		SpanID:  trace.SpanID{2},
+	})
+	spanCtxA := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{1},
+		SpanID:  trace.SpanID{1},
+	})
+
+	c.recordSessionResultInstallSpanLocked("test-session", 1, spanCtxB)
+	c.recordSessionResultInstallSpanLocked("test-session", 1, spanCtxA)
+	c.recordSessionResultInstallSpanLocked("test-session", 1, spanCtxB)
+
+	got := c.sessionResultInstallSpanContexts("test-session", 1)
+	assert.DeepEqual(t, got, []trace.SpanContext{spanCtxA, spanCtxB})
+}
+
+func TestTransitiveDepIDsLockedUpdatesAncestors(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	c := &Cache{resultsByID: map[sharedResultID]*sharedResult{}}
+	parent := &sharedResult{id: 1}
+	child := &sharedResult{id: 2}
+	grandchild := &sharedResult{id: 3}
+	c.resultsByID[parent.id] = parent
+	c.resultsByID[child.id] = child
+	c.resultsByID[grandchild.id] = grandchild
+
+	c.egraphMu.Lock()
+	assert.NilError(t, c.addExplicitDependencyLocked(ctx, parent, child, "test"))
+	assert.NilError(t, c.addExplicitDependencyLocked(ctx, child, grandchild, "test"))
+	parentDeps := c.transitiveDepIDsLocked(parent.id)
+	childDeps := c.transitiveDepIDsLocked(child.id)
+	c.egraphMu.Unlock()
+
+	assert.DeepEqual(t, parentDeps, []sharedResultID{child.id, grandchild.id})
+	assert.DeepEqual(t, childDeps, []sharedResultID{grandchild.id})
+}
+
 func TestEvaluateLazyUsesOriginalSpanForLogsAndNestedSpans(t *testing.T) {
 	t.Parallel()
 
@@ -5281,6 +5325,24 @@ func TestCachePruneThresholdTargetSpace(t *testing.T) {
 	assert.Equal(t, int64(200), report.ReclaimedBytes)
 	assert.Equal(t, cacheTestSharedResultEntryID(results[0]), report.Entries[0].ID)
 	assert.Equal(t, cacheTestSharedResultEntryID(results[1]), report.Entries[1].ID)
+}
+
+func TestCachePruneMinFreeSpaceUsesCurrentFreeSpace(t *testing.T) {
+	t.Parallel()
+
+	target, triggered := pruneTargetBytes(CachePrunePolicy{
+		MinFreeSpace:     200,
+		CurrentFreeSpace: 150,
+	}, 50)
+	assert.Assert(t, triggered)
+	assert.Equal(t, int64(50), target)
+
+	target, triggered = pruneTargetBytes(CachePrunePolicy{
+		MinFreeSpace:     200,
+		CurrentFreeSpace: 250,
+	}, 50)
+	assert.Assert(t, !triggered)
+	assert.Equal(t, int64(0), target)
 }
 
 func TestCachePruneSessionOwnedEntriesAreNeverPruned(t *testing.T) {

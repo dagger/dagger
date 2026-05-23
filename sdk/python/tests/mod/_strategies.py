@@ -83,17 +83,32 @@ base_type_strategy = st.sampled_from(ALL_BASES)
 # ---------------------------------------------------------------------------
 
 
-def _doc_meta() -> st.SearchStrategy[str]:
-    return st.text(min_size=1, max_size=20, alphabet="abcdefghijk ").map(
-        lambda s: f"Doc({s!r})"
-    )
+def _metadata_text(
+    *,
+    max_size: int,
+    alphabet: str,
+    extra_values: tuple[str, ...] = (),
+) -> st.SearchStrategy[str]:
+    generated = st.text(min_size=1, max_size=max_size, alphabet=alphabet)
+    if not extra_values:
+        return generated
+    return st.one_of(generated, st.sampled_from(extra_values))
 
 
-def _name_meta() -> st.SearchStrategy[str]:
-    alphabet = "abcdefghijkl"
-    return st.text(min_size=1, max_size=8, alphabet=alphabet).map(
-        lambda s: f"Name({s!r})"
-    )
+def _doc_meta(extra_values: tuple[str, ...] = ()) -> st.SearchStrategy[str]:
+    return _metadata_text(
+        max_size=20,
+        alphabet="abcdefghijk ",
+        extra_values=extra_values,
+    ).map(lambda s: f"Doc({s!r})")
+
+
+def _name_meta(extra_values: tuple[str, ...] = ()) -> st.SearchStrategy[str]:
+    return _metadata_text(
+        max_size=8,
+        alphabet="abcdefghijkl",
+        extra_values=extra_values,
+    ).map(lambda s: f"Name({s!r})")
 
 
 def _default_path_meta() -> st.SearchStrategy[str]:
@@ -127,12 +142,109 @@ class GeneratedType:
 _FORWARD_REF_NAMES = {"Foo"}  # the always-defined class in render_module
 
 
+@dataclasses.dataclass(frozen=True)
+class _AliasLeaf:
+    """A module-level alias that ``_type_expr`` may pick as a leaf."""
+
+    name: str
+    base: _BaseType
+    is_list: bool
+
+
+def _alias_as_leaf(alias: _AliasLeaf, *, quote: bool = False) -> GeneratedType:
+    return GeneratedType(
+        source=f'"{alias.name}"' if quote else alias.name,
+        base=alias.base,
+        is_optional=False,
+        is_list=alias.is_list,
+        has_annotated_outer=False,
+    )
+
+
+def _quote_whole_annotation(type_expr: GeneratedType) -> GeneratedType:
+    """Render the whole annotation as a forward-reference string."""
+    return dataclasses.replace(type_expr, source=repr(type_expr.source))
+
+
+def _base_as_type(base: _BaseType) -> GeneratedType:
+    return GeneratedType(
+        source=base.annotation,
+        base=base,
+        is_optional=False,
+        is_list=False,
+        has_annotated_outer=False,
+    )
+
+
+def _forward_ref_type(name: str) -> GeneratedType:
+    return GeneratedType(
+        source=f'"{name}"',
+        base=_BaseType(name, None),
+        is_optional=False,
+        is_list=False,
+        has_annotated_outer=False,
+    )
+
+
+def _self_type() -> GeneratedType:
+    return GeneratedType(
+        source="Self",
+        base=_BaseType("Foo", None),
+        is_optional=False,
+        is_list=False,
+        has_annotated_outer=False,
+    )
+
+
+def _optional_type(inner: GeneratedType) -> GeneratedType:
+    return GeneratedType(
+        source=f"Optional[{inner.source}]",
+        base=inner.base,
+        is_optional=True,
+        is_list=inner.is_list,
+        has_annotated_outer=False,
+    )
+
+
+def _pipe_none_type(inner: GeneratedType) -> GeneratedType:
+    return GeneratedType(
+        source=f"{inner.source} | None",
+        base=inner.base,
+        is_optional=True,
+        is_list=inner.is_list,
+        has_annotated_outer=False,
+    )
+
+
+def _list_type(inner: GeneratedType) -> GeneratedType:
+    return GeneratedType(
+        source=f"list[{inner.source}]",
+        base=inner.base,
+        is_optional=False,
+        is_list=True,
+        has_annotated_outer=False,
+    )
+
+
+def _annotated_type(inner: GeneratedType, metadata: str) -> GeneratedType:
+    return GeneratedType(
+        source=f"Annotated[{inner.source}, {metadata}]",
+        base=inner.base,
+        is_optional=inner.is_optional,
+        is_list=inner.is_list,
+        has_annotated_outer=True,
+    )
+
+
 @st.composite
 def _annotated_meta_list(  # type: ignore[no-untyped-def]
-    draw, base: _BaseType, max_items: int = 2
+    draw,
+    base: _BaseType,
+    max_items: int = 2,
+    extra_strings: tuple[str, ...] = (),
 ) -> str:
     """Generate one or more metadata expressions for ``Annotated[…]``."""
-    options = [_doc_meta(), _name_meta()]
+    options = [_doc_meta(extra_strings), _name_meta(extra_strings)]
     if base.accepts_default_path:
         options.append(_default_path_meta())
     if base.accepts_ignore:
@@ -143,13 +255,62 @@ def _annotated_meta_list(  # type: ignore[no-untyped-def]
     return ", ".join(metas)
 
 
+def _type_rules() -> tuple[str, ...]:
+    return ("leaf", "optional", "pipe-none", "list", "annotated")
+
+
 @st.composite
-def _type_expr(  # type: ignore[no-untyped-def]  # noqa: PLR0911 — wrapper dispatch
+def _type_leaf(  # type: ignore[no-untyped-def]
+    draw,
+    *,
+    depth: int,
+    allow_forward_ref: bool,
+    aliases: tuple[_AliasLeaf, ...] = (),
+) -> GeneratedType:
+    if aliases and draw(st.booleans()):
+        # Keep aliases bare inside larger expressions. Python 3.10's
+        # get_type_hints leaves nested strings in PEP 585 generics unresolved
+        # (e.g. list["Alias"]), while newer Pythons resolve them. Whole-string
+        # annotations still cover quoted aliases in a version-stable way.
+        return _alias_as_leaf(draw(st.sampled_from(aliases)))
+    if depth > 0 and draw(st.booleans()):
+        return _self_type()
+    if allow_forward_ref and depth > 0 and draw(st.booleans()):
+        return _forward_ref_type(draw(st.sampled_from(sorted(_FORWARD_REF_NAMES))))
+    return _base_as_type(draw(base_type_strategy))
+
+
+@st.composite
+def _type_expr(  # type: ignore[no-untyped-def]
+    draw,
+    *,
+    max_depth: int = 3,
+    allow_forward_ref: bool = True,
+    allow_whole_string: bool = False,
+    aliases: tuple[_AliasLeaf, ...] = (),
+) -> GeneratedType:
+    """Generate a type expression, optionally quoted as one string."""
+    expr = draw(
+        _type_expr_unquoted(
+            depth=0,
+            max_depth=max_depth,
+            allow_forward_ref=allow_forward_ref,
+            aliases=aliases,
+        )
+    )
+    if allow_whole_string and draw(st.booleans()):
+        return _quote_whole_annotation(expr)
+    return expr
+
+
+@st.composite
+def _type_expr_unquoted(  # type: ignore[no-untyped-def]
     draw,
     *,
     depth: int = 0,
     max_depth: int = 3,
     allow_forward_ref: bool = True,
+    aliases: tuple[_AliasLeaf, ...] = (),
 ) -> GeneratedType:
     """Generate a (possibly wrapped) type expression.
 
@@ -158,113 +319,78 @@ def _type_expr(  # type: ignore[no-untyped-def]  # noqa: PLR0911 — wrapper dis
     forward reference. Recursion is bounded by ``max_depth`` so the
     generator always terminates in finite time.
     """
-    # Leaf — pick a base type, optionally as a forward reference.
     if depth >= max_depth:
-        if (
-            allow_forward_ref
-            and depth > 0  # don't wrap the very top level in a string
-            and draw(st.booleans())
-        ):
-            name = draw(st.sampled_from(sorted(_FORWARD_REF_NAMES)))
-            base = _BaseType(name, None)
-            return GeneratedType(
-                source=f'"{name}"',
-                base=base,
-                is_optional=False,
-                is_list=False,
-                has_annotated_outer=False,
+        return draw(
+            _type_leaf(
+                depth=depth,
+                allow_forward_ref=allow_forward_ref,
+                aliases=aliases,
             )
-        base = draw(base_type_strategy)
-        return GeneratedType(
-            source=base.annotation,
-            base=base,
-            is_optional=False,
-            is_list=False,
-            has_annotated_outer=False,
         )
 
-    # Recursive case — pick a wrapper.
-    wrapper = draw(
-        st.sampled_from(["base", "optional", "pipe-none", "list", "annotated"])
-    )
+    wrapper = draw(st.sampled_from(_type_rules()))
 
-    if wrapper == "base":
-        base = draw(base_type_strategy)
-        return GeneratedType(
-            source=base.annotation,
-            base=base,
-            is_optional=False,
-            is_list=False,
-            has_annotated_outer=False,
+    if wrapper == "leaf":
+        return draw(
+            _type_leaf(
+                depth=depth,
+                allow_forward_ref=allow_forward_ref,
+                aliases=aliases,
+            )
         )
 
     if wrapper == "optional":
         inner = draw(
-            _type_expr(
+            _type_expr_unquoted(
                 depth=depth + 1,
                 max_depth=max_depth,
                 allow_forward_ref=allow_forward_ref,
+                aliases=aliases,
             )
         )
-        return GeneratedType(
-            source=f"Optional[{inner.source}]",
-            base=inner.base,
-            is_optional=True,
-            is_list=inner.is_list,
-            has_annotated_outer=False,
-        )
+        return _optional_type(inner)
 
     if wrapper == "pipe-none":
         # ``"Foo" | None`` is invalid even under ``from __future__``
         # annotations because typing won't accept a bare string literal
         # as an operand of ``|``. Force the inner to be a real type.
         inner = draw(
-            _type_expr(
+            _type_expr_unquoted(
                 depth=depth + 1,
                 max_depth=max_depth,
                 allow_forward_ref=False,
+                aliases=aliases,
             )
         )
-        return GeneratedType(
-            source=f"{inner.source} | None",
-            base=inner.base,
-            is_optional=True,
-            is_list=inner.is_list,
-            has_annotated_outer=False,
-        )
+        return _pipe_none_type(inner)
 
     if wrapper == "list":
         inner = draw(
-            _type_expr(
+            _type_expr_unquoted(
                 depth=depth + 1,
                 max_depth=max_depth,
                 allow_forward_ref=allow_forward_ref,
+                aliases=aliases,
             )
         )
-        return GeneratedType(
-            source=f"list[{inner.source}]",
-            base=inner.base,
-            is_optional=False,
-            is_list=True,
-            has_annotated_outer=False,
-        )
+        return _list_type(inner)
 
     # Annotated wrapper — last branch.
     inner = draw(
-        _type_expr(
+        _type_expr_unquoted(
             depth=depth + 1,
             max_depth=max_depth,
             allow_forward_ref=allow_forward_ref,
+            aliases=aliases,
         )
     )
-    metas = draw(_annotated_meta_list(inner.base))
-    return GeneratedType(
-        source=f"Annotated[{inner.source}, {metas}]",
-        base=inner.base,
-        is_optional=inner.is_optional,
-        is_list=inner.is_list,
-        has_annotated_outer=True,
+    metas = draw(
+        _annotated_meta_list(
+            inner.base,
+            extra_strings=tuple(alias.name for alias in aliases),
+        )
     )
+    return _annotated_type(inner, metas)
 
 
 # ---------------------------------------------------------------------------
@@ -280,7 +406,33 @@ class GeneratedParam:
 
 
 _PARAM_NAME_ALPHABET = "abcdefghijklmnopqr"
-_RESERVED = {"self", "cls", "this", "msg"}
+_RESERVED = {
+    "self",
+    "cls",
+    "this",
+    "msg",
+    # Keep generated class members from shadowing names that the same class
+    # body may later use as annotations. Python evaluates annotations in the
+    # class-body scope, so e.g. ``bool: str = dagger.field(...)`` followed by
+    # ``def f(self) -> bool`` resolves the return annotation to the field
+    # object/default, not the builtin ``bool``.
+    "str",
+    "int",
+    "float",
+    "bool",
+    "bytes",
+    "list",
+    # Imported typing / Dagger metadata symbols used by rendered fixtures.
+    "Annotated",
+    "Optional",
+    "Self",
+    "TypeAlias",
+    "DefaultPath",
+    "Deprecated",
+    "Doc",
+    "Ignore",
+    "Name",
+}
 
 
 def param_name_strategy() -> st.SearchStrategy[str]:
@@ -291,11 +443,21 @@ def param_name_strategy() -> st.SearchStrategy[str]:
 
 @st.composite
 def param_strategy(  # type: ignore[no-untyped-def]
-    draw, *, max_depth: int = 3, allow_forward_ref: bool = True
+    draw,
+    *,
+    max_depth: int = 3,
+    allow_forward_ref: bool = True,
+    aliases: tuple[_AliasLeaf, ...] = (),
+    constants: tuple[_RenderedConstant, ...] = (),
 ) -> GeneratedParam:
     """Generate a single function parameter."""
     type_expr = draw(
-        _type_expr(max_depth=max_depth, allow_forward_ref=allow_forward_ref)
+        _type_expr(
+            max_depth=max_depth,
+            allow_forward_ref=allow_forward_ref,
+            allow_whole_string=bool(aliases),
+            aliases=aliases,
+        )
     )
 
     # Default expression — must be compatible with the (innermost) base.
@@ -311,7 +473,13 @@ def param_strategy(  # type: ignore[no-untyped-def]
         and type_expr.base.default_strategy is not None
         and draw(st.booleans())
     ):
-        default_expr = draw(type_expr.base.default_strategy)
+        matching_consts = [
+            c for c in constants if c.base.annotation == type_expr.base.annotation
+        ]
+        if matching_consts and draw(st.booleans()):
+            default_expr = draw(st.sampled_from(matching_consts)).name
+        else:
+            default_expr = draw(type_expr.base.default_strategy)
 
     return GeneratedParam(
         name=draw(param_name_strategy()),
@@ -326,6 +494,7 @@ class GeneratedFunction:
     params: tuple[GeneratedParam, ...]
     return_annotation: str
     body: str
+    method_kind: str = "instance"  # "instance" | "staticmethod" | "classmethod"
 
 
 def _function_name_strategy() -> st.SearchStrategy[str]:
@@ -341,15 +510,28 @@ def _function_name_strategy() -> st.SearchStrategy[str]:
 
 @st.composite
 def function_strategy(  # type: ignore[no-untyped-def]
-    draw, *, allow_forward_ref: bool = True
+    draw,
+    *,
+    allow_forward_ref: bool = True,
+    aliases: tuple[_AliasLeaf, ...] = (),
+    constants: tuple[_RenderedConstant, ...] = (),
 ) -> GeneratedFunction:
     name = draw(_function_name_strategy())
+    method_kind = draw(
+        st.sampled_from(["instance", "instance", "staticmethod", "classmethod"])
+    )
     param_count = draw(st.integers(min_value=0, max_value=3))
     params: list[GeneratedParam] = []
     used_names: set[str] = set()
     attempts = 0
     while len(params) < param_count and attempts < 20:
-        p = draw(param_strategy(allow_forward_ref=allow_forward_ref))
+        p = draw(
+            param_strategy(
+                allow_forward_ref=allow_forward_ref,
+                aliases=aliases,
+                constants=constants,
+            )
+        )
         if p.name not in used_names:
             params.append(p)
             used_names.add(p.name)
@@ -357,7 +539,14 @@ def function_strategy(  # type: ignore[no-untyped-def]
     # Required params must come before defaulted ones (Python rule).
     params.sort(key=lambda p: p.default_expr is not None)
 
-    return_type = draw(_type_expr(max_depth=2, allow_forward_ref=allow_forward_ref))
+    return_type = draw(
+        _type_expr(
+            max_depth=2,
+            allow_forward_ref=allow_forward_ref,
+            allow_whole_string=bool(aliases),
+            aliases=aliases,
+        )
+    )
     # Avoid bytes return — rendering ``return b""`` everywhere is awkward.
     if return_type.base.annotation == "bytes":
         return_type = GeneratedType(
@@ -373,6 +562,7 @@ def function_strategy(  # type: ignore[no-untyped-def]
         params=tuple(params),
         return_annotation=return_type.source,
         body="        ...",
+        method_kind=method_kind,
     )
 
 
@@ -382,15 +572,45 @@ def function_strategy(  # type: ignore[no-untyped-def]
 
 
 @dataclasses.dataclass(frozen=True)
+class _RenderedAlias:
+    """A module-level alias as it should appear in source."""
+
+    name: str
+    target_source: str
+    explicit_typealias: bool
+
+
+@dataclasses.dataclass(frozen=True)
+class _RenderedConstant:
+    """A module-level constant declaration like ``MAX = 100``."""
+
+    name: str
+    value_expr: str
+    base: _BaseType
+
+
+@dataclasses.dataclass(frozen=True)
+class _GeneratedField:
+    """A class-level ``dagger.field(default=...)`` declaration on Foo."""
+
+    name: str
+    annotation: str
+    default_expr: str
+
+
+@dataclasses.dataclass(frozen=True)
 class GeneratedModule:
     """Everything needed to render a complete module source string."""
 
     use_future_annotations: bool
-    aliases: tuple[tuple[str, str], ...]  # (alias_name, alias_target_source)
+    aliases: tuple[_RenderedAlias, ...]
     pep695_aliases: tuple[tuple[str, str], ...]  # 3.12+ ``type X = …``
     has_helper_class: bool
     foo_inherits_helper: bool
     functions: tuple[GeneratedFunction, ...]
+    constants: tuple[_RenderedConstant, ...] = ()
+    dagger_alias: str | None = None
+    fields: tuple[_GeneratedField, ...] = ()
 
 
 def _alias_name_strategy(prefix: str = "Alias") -> st.SearchStrategy[str]:
@@ -400,14 +620,16 @@ def _alias_name_strategy(prefix: str = "Alias") -> st.SearchStrategy[str]:
 
 
 @st.composite
-def _alias_target(draw) -> str:  # type: ignore[no-untyped-def]
-    """Generate a type expression suitable as the RHS of an alias."""
+def _alias_target(draw) -> GeneratedType:  # type: ignore[no-untyped-def]
+    """Generate a type expression suitable as the right-hand side of an alias."""
     expr = draw(_type_expr(max_depth=2, allow_forward_ref=False))
-    return expr.source
+    while expr.has_annotated_outer:
+        expr = draw(_type_expr(max_depth=2, allow_forward_ref=False))
+    return expr
 
 
 @st.composite
-def module_strategy(  # type: ignore[no-untyped-def]
+def module_strategy(  # type: ignore[no-untyped-def]  # noqa: C901, PLR0915
     draw, *, max_functions: int = 4
 ) -> str:
     """Strategy that produces a complete Dagger module source string."""
@@ -420,16 +642,30 @@ def module_strategy(  # type: ignore[no-untyped-def]
     # keep the property test on legal-Python territory.
     allow_forward_ref = use_future_annotations
 
-    # Module-level type aliases — ``Source = Annotated[…]``.
+    # Module-level type aliases — both implicit (``X = T``) and
+    # explicit PEP 613 (``X: TypeAlias = T``). Each alias is also
+    # exposed as an ``_AliasLeaf`` that ``_type_expr`` can pick.
     alias_count = draw(st.integers(min_value=0, max_value=2))
-    aliases: list[tuple[str, str]] = []
+    aliases: list[_RenderedAlias] = []
+    alias_leaves: list[_AliasLeaf] = []
     used_alias_names: set[str] = set()
     while len(aliases) < alias_count:
         name = draw(_alias_name_strategy())
         if name in used_alias_names:
             continue
         used_alias_names.add(name)
-        aliases.append((name, draw(_alias_target())))
+        target = draw(_alias_target())
+        explicit = draw(st.booleans())
+        aliases.append(
+            _RenderedAlias(
+                name=name,
+                target_source=target.source,
+                explicit_typealias=explicit,
+            )
+        )
+        alias_leaves.append(
+            _AliasLeaf(name=name, base=target.base, is_list=target.is_list)
+        )
 
     # PEP 695 ``type X = …`` aliases — only when the runtime can parse them.
     pep695_aliases: list[tuple[str, str]] = []
@@ -440,21 +676,77 @@ def module_strategy(  # type: ignore[no-untyped-def]
             if name in used_alias_names:
                 continue
             used_alias_names.add(name)
-            pep695_aliases.append((name, draw(_alias_target())))
+            target = draw(_alias_target())
+            pep695_aliases.append((name, target.source))
+            alias_leaves.append(
+                _AliasLeaf(name=name, base=target.base, is_list=target.is_list)
+            )
 
     has_helper_class = draw(st.booleans())
     foo_inherits_helper = has_helper_class and draw(st.booleans())
+
+    constants: list[_RenderedConstant] = []
+    used_const_names: set[str] = set()
+    const_count = draw(st.integers(min_value=0, max_value=2))
+    while len(constants) < const_count:
+        cname = draw(
+            st.text(min_size=2, max_size=6, alphabet="ABCDEFGH").map(
+                lambda s: f"CONST_{s}"
+            )
+        )
+        if cname in used_const_names:
+            continue
+        used_const_names.add(cname)
+        c_base = draw(
+            st.sampled_from(
+                [b for b in _PRIMITIVE_BASES if b.default_strategy is not None]
+            )
+        )
+        c_value = draw(c_base.default_strategy)
+        constants.append(_RenderedConstant(name=cname, value_expr=c_value, base=c_base))
 
     n = draw(st.integers(min_value=1, max_value=max_functions))
     fns: list[GeneratedFunction] = []
     used_fn_names: set[str] = set()
     attempts = 0
     while len(fns) < n and attempts < 30:
-        f = draw(function_strategy(allow_forward_ref=allow_forward_ref))
+        f = draw(
+            function_strategy(
+                allow_forward_ref=allow_forward_ref,
+                aliases=tuple(alias_leaves),
+                constants=tuple(constants),
+            )
+        )
         if f.name not in used_fn_names:
             fns.append(f)
             used_fn_names.add(f.name)
         attempts += 1
+
+    dagger_alias = draw(st.sampled_from([None, None, "dgr", "dgmod"]))
+
+    field_count = draw(st.integers(min_value=0, max_value=2))
+    fields: list[_GeneratedField] = []
+    used_field_names = {dagger_alias or "dagger", *used_fn_names}
+    field_attempts = 0
+    while len(fields) < field_count and field_attempts < 20:
+        fname = draw(param_name_strategy())
+        field_attempts += 1
+        if fname in used_field_names:
+            continue
+        used_field_names.add(fname)
+        base = draw(
+            st.sampled_from(
+                [b for b in _PRIMITIVE_BASES if b.default_strategy is not None]
+            )
+        )
+        default = draw(base.default_strategy)
+        fields.append(
+            _GeneratedField(
+                name=fname,
+                annotation=base.annotation,
+                default_expr=default,
+            )
+        )
 
     return _render_module(
         GeneratedModule(
@@ -464,6 +756,9 @@ def module_strategy(  # type: ignore[no-untyped-def]
             has_helper_class=has_helper_class,
             foo_inherits_helper=foo_inherits_helper,
             functions=tuple(fns),
+            constants=tuple(constants),
+            dagger_alias=dagger_alias,
+            fields=tuple(fields),
         )
     )
 
@@ -473,21 +768,33 @@ def module_strategy(  # type: ignore[no-untyped-def]
 # ---------------------------------------------------------------------------
 
 
-def _render_module(mod: GeneratedModule) -> str:  # noqa: C901 — straight rendering
+def _render_module(mod: GeneratedModule) -> str:  # noqa: C901, PLR0912
     lines: list[str] = []
     if mod.use_future_annotations:
         lines.append("from __future__ import annotations")
         lines.append("")
+    dpkg = mod.dagger_alias or "dagger"
+    if mod.dagger_alias:
+        lines.append("import dagger")
+        lines.append(f"import dagger as {mod.dagger_alias}")
+    else:
+        lines.append("import dagger")
     lines.extend(
         [
-            "import dagger",
-            "from typing import Annotated, Optional",
+            "from typing import Annotated, Optional, TypeAlias",
+            "from typing_extensions import Self",
             "from dagger import DefaultPath, Deprecated, Doc, Ignore, Name",
             "",
         ]
     )
-    for name, target in mod.aliases:
-        lines.append(f"{name} = {target}")
+    lines.extend(f"{c.name} = {c.value_expr}" for c in mod.constants)
+    if mod.constants:
+        lines.append("")
+    for alias in mod.aliases:
+        if alias.explicit_typealias:
+            lines.append(f"{alias.name}: TypeAlias = {alias.target_source}")
+        else:
+            lines.append(f"{alias.name} = {alias.target_source}")
     if mod.aliases:
         lines.append("")
     for name, target in mod.pep695_aliases:
@@ -498,23 +805,35 @@ def _render_module(mod: GeneratedModule) -> str:  # noqa: C901 — straight rend
     if mod.has_helper_class:
         lines.extend(
             [
-                "@dagger.object_type",
+                f"@{dpkg}.object_type",
                 "class Helper:",
-                '    name: str = dagger.field(default="h")',
+                f'    name: str = {dpkg}.field(default="h")',
                 "",
-                "    @dagger.function",
+                f"    @{dpkg}.function",
                 "    def hello(self) -> str:",
                 "        return self.name",
                 "",
             ]
         )
 
-    lines.append("@dagger.object_type")
+    lines.append(f"@{dpkg}.object_type")
     base_clause = "(Helper)" if mod.foo_inherits_helper else ""
     lines.append(f"class Foo{base_clause}:")
 
-    if not mod.functions:
+    lines.extend(
+        (
+            f"    {field.name}: {field.annotation} = "
+            f"{dpkg}.field(default={field.default_expr})"
+        )
+        for field in mod.fields
+    )
+    if mod.fields:
+        lines.append("")
+
+    if not mod.functions and not mod.fields:
         lines.append("    pass")
+        return "\n".join(lines) + "\n"
+    if not mod.functions:
         return "\n".join(lines) + "\n"
 
     for fn in mod.functions:
@@ -524,10 +843,18 @@ def _render_module(mod: GeneratedModule) -> str:  # noqa: C901 — straight rend
                 param_strs.append(f"{p.name}: {p.annotation}")
             else:
                 param_strs.append(f"{p.name}: {p.annotation} = {p.default_expr}")
-        params_rendered = ", ".join(["self", *param_strs])
+        if fn.method_kind == "staticmethod":
+            decorator_lines = ["    @staticmethod", f"    @{dpkg}.function"]
+            params_rendered = ", ".join(param_strs)
+        elif fn.method_kind == "classmethod":
+            decorator_lines = ["    @classmethod", f"    @{dpkg}.function"]
+            params_rendered = ", ".join(["cls", *param_strs])
+        else:
+            decorator_lines = [f"    @{dpkg}.function"]
+            params_rendered = ", ".join(["self", *param_strs])
         lines.extend(
             [
-                "    @dagger.function",
+                *decorator_lines,
                 f"    def {fn.name}({params_rendered}) -> {fn.return_annotation}:",
                 fn.body,
                 "",

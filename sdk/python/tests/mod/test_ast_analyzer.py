@@ -1471,6 +1471,49 @@ class Foo:
     assert param.resolved_type.is_optional is True
 
 
+def test_ast_type_alias_does_not_rewrite_annotated_metadata_strings():
+    """``Name("Alias")`` metadata remains a value even when Alias is a type alias."""
+    metadata = _analyze("""
+from typing import Annotated, TypeAlias
+
+import dagger
+from dagger import Name
+
+Alias: TypeAlias = str
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def greet(self, name: Annotated[Alias, Name("Alias")]) -> str:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.kind == "primitive"
+    assert param.resolved_type.name == "str"
+    assert param.api_name == "Alias"
+
+
+def test_ast_type_alias_inside_quoted_compound_annotation():
+    """``"Optional[Alias]"`` expands aliases inside the parsed forward ref."""
+    metadata = _analyze("""
+from typing import Optional, TypeAlias
+
+import dagger
+
+Alias: TypeAlias = str
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def greet(self, name: "Optional[Alias]" = None) -> str:
+        ...
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.kind == "primitive"
+    assert param.resolved_type.name == "str"
+    assert param.resolved_type.is_optional is True
+
+
 def test_ast_optional_type_alias():
     """``MaybeDir = dagger.Directory | None`` resolves to optional Directory."""
     metadata = _analyze("""
@@ -1849,6 +1892,145 @@ def test_ast_cross_file_type_alias_with_default_path(tmp_path):
     assert param.resolved_type.kind == "object"
     assert param.resolved_type.name == "Directory"
     assert param.default_path == "."
+
+
+def test_ast_absolute_self_import_type_alias(tmp_path):
+    """Alias imported via an absolute self-package import resolves cross-file.
+
+    Real modules commonly import their own siblings absolutely
+    (``from my_pkg.params import Count``) rather than relatively. The
+    analyzer must recognise the leading component as its own package name
+    and follow the import to the parsed sibling file, just as it does for
+    ``from .params import Count``.
+    """
+    pkg = tmp_path / "my_pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "params.py").write_text(
+        "from typing import Annotated, TypeAlias\n"
+        "from dagger import Doc\n"
+        'Count: TypeAlias = Annotated[int, Doc("how many")]\n',
+        encoding="utf-8",
+    )
+    (pkg / "main.py").write_text(
+        "import dagger\n"
+        "from my_pkg.params import Count\n"
+        "\n"
+        "@dagger.object_type\n"
+        "class Foo:\n"
+        "    @dagger.function\n"
+        "    def run(self, n: Count) -> str: ...\n",
+        encoding="utf-8",
+    )
+    metadata = analyze_module(
+        source_files=[pkg / "__init__.py", pkg / "params.py", pkg / "main.py"],
+        main_object_name="Foo",
+    )
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.kind == "primitive"
+    assert param.resolved_type.name == "int"
+    assert param.doc == "how many"
+
+
+def test_ast_absolute_self_import_aliased_original_name(tmp_path):
+    """``from my_pkg.params import Count as C`` looks up ``Count`` in params."""
+    pkg = tmp_path / "my_pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "params.py").write_text(
+        "from typing import Annotated, TypeAlias\n"
+        "from dagger import Doc\n"
+        'Count: TypeAlias = Annotated[int, Doc("how many")]\n'
+        "DEFAULT_COUNT = 7\n",
+        encoding="utf-8",
+    )
+    (pkg / "main.py").write_text(
+        "import dagger\n"
+        "from my_pkg.params import Count as C, DEFAULT_COUNT as D\n"
+        "\n"
+        "@dagger.object_type\n"
+        "class Foo:\n"
+        "    @dagger.function\n"
+        "    def run(self, n: C = D) -> str: ...\n",
+        encoding="utf-8",
+    )
+    metadata = analyze_module(
+        source_files=[pkg / "__init__.py", pkg / "params.py", pkg / "main.py"],
+        main_object_name="Foo",
+    )
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.kind == "primitive"
+    assert param.resolved_type.name == "int"
+    assert param.doc == "how many"
+    assert param.default_value == 7
+
+
+def test_ast_absolute_package_root_self_import_metadata(tmp_path):
+    """``from my_pkg import X`` resolves aliases and constants from ``__init__``."""
+    pkg = tmp_path / "my_pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text(
+        "from typing import Annotated, TypeAlias\n"
+        "from dagger import Doc\n"
+        'Count: TypeAlias = Annotated[int, Doc("how many")]\n'
+        "DEFAULT_COUNT = 7\n",
+        encoding="utf-8",
+    )
+    (pkg / "main.py").write_text(
+        "import dagger\n"
+        "from my_pkg import Count, DEFAULT_COUNT\n"
+        "\n"
+        "@dagger.object_type\n"
+        "class Foo:\n"
+        "    @dagger.function\n"
+        "    def run(self, n: Count = DEFAULT_COUNT) -> str: ...\n",
+        encoding="utf-8",
+    )
+    metadata = analyze_module(
+        source_files=[pkg / "__init__.py", pkg / "main.py"],
+        main_object_name="Foo",
+    )
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.kind == "primitive"
+    assert param.resolved_type.name == "int"
+    assert param.doc == "how many"
+    assert param.default_value == 7
+
+
+def test_ast_absolute_package_root_self_import_reexport_metadata(tmp_path):
+    """``from my_pkg import X`` follows re-exports from ``__init__``."""
+    pkg = tmp_path / "my_pkg"
+    pkg.mkdir()
+    (pkg / "params.py").write_text(
+        "from typing import Annotated, TypeAlias\n"
+        "from dagger import Doc\n"
+        'Count: TypeAlias = Annotated[int, Doc("how many")]\n'
+        "DEFAULT_COUNT = 7\n",
+        encoding="utf-8",
+    )
+    (pkg / "__init__.py").write_text(
+        "from .params import Count as PublicCount, DEFAULT_COUNT as PUBLIC_DEFAULT\n",
+        encoding="utf-8",
+    )
+    (pkg / "main.py").write_text(
+        "import dagger\n"
+        "from my_pkg import PublicCount as C, PUBLIC_DEFAULT as D\n"
+        "\n"
+        "@dagger.object_type\n"
+        "class Foo:\n"
+        "    @dagger.function\n"
+        "    def run(self, n: C = D) -> str: ...\n",
+        encoding="utf-8",
+    )
+    metadata = analyze_module(
+        source_files=[pkg / "__init__.py", pkg / "params.py", pkg / "main.py"],
+        main_object_name="Foo",
+    )
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.resolved_type.kind == "primitive"
+    assert param.resolved_type.name == "int"
+    assert param.doc == "how many"
+    assert param.default_value == 7
 
 
 # -- Annotated metadata recursion -------------------------------------------

@@ -1,6 +1,8 @@
 package core
 
 import (
+	"context"
+	"fmt"
 	"slices"
 
 	"github.com/vektah/gqlparser/v2/ast"
@@ -13,6 +15,32 @@ type GeneratedCode struct {
 
 	VCSGeneratedPaths []string `field:"true" name:"vcsGeneratedPaths" doc:"List of paths to mark generated in version control (i.e. .gitattributes)."`
 	VCSIgnoredPaths   []string `field:"true" name:"vcsIgnoredPaths" doc:"List of paths to ignore in version control (i.e. .gitignore)."`
+}
+
+var _ dagql.HasDependencyResults = (*GeneratedCode)(nil)
+
+// AttachDependencyResults exposes the embedded Code directory as an owned
+// dependency. This wires GeneratedCode -> Code into the cache liveness graph
+// and lets failures in Code's lazy work (e.g. uv lock during Python codegen)
+// be attributed back to the API span that returned this GeneratedCode.
+func (code *GeneratedCode) AttachDependencyResults(
+	ctx context.Context,
+	self dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	if code == nil || code.Code.Self() == nil {
+		return nil, nil
+	}
+	attached, err := attach(code.Code)
+	if err != nil {
+		return nil, fmt.Errorf("attach generated code directory: %w", err)
+	}
+	dir, ok := attached.(dagql.ObjectResult[*Directory])
+	if !ok {
+		return nil, fmt.Errorf("attach generated code directory: unexpected result %T", attached)
+	}
+	code.Code = dir
+	return []dagql.AnyResult{dir}, nil
 }
 
 func NewGeneratedCode(code dagql.ObjectResult[*Directory]) *GeneratedCode {

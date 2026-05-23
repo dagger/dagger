@@ -24,6 +24,10 @@ type persistCodecObj struct {
 	Name string
 }
 
+type persistCodecNonPersistedObj struct {
+	Name string
+}
+
 type persistedPersistCodecObj struct {
 	Name string `json:"name"`
 }
@@ -35,10 +39,21 @@ func (*persistCodecObj) Type() *ast.Type {
 	}
 }
 
-func (obj *persistCodecObj) EncodePersistedObject(ctx context.Context, cache PersistedObjectCache) (json.RawMessage, error) {
+func (*persistCodecNonPersistedObj) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "PersistCodecNonPersistedObj",
+		NonNull:   true,
+	}
+}
+
+func (obj *persistCodecObj) EncodePersistedObject(ctx context.Context, cache PersistedObjectCache) (PersistedObjectEncoding, error) {
 	_ = ctx
 	_ = cache
-	return json.Marshal(persistedPersistCodecObj{Name: obj.Name})
+	payload, err := json.Marshal(persistedPersistCodecObj{Name: obj.Name})
+	if err != nil {
+		return PersistedObjectEncoding{}, err
+	}
+	return PersistedObjectEncoding{JSON: payload}, nil
 }
 
 func (*persistCodecObj) DecodePersistedObject(ctx context.Context, dag *Server, _ uint64, _ *ResultCall, payload json.RawMessage) (Typed, error) {
@@ -86,8 +101,9 @@ func TestPersistedSelfCodecScalarRoundTrip(t *testing.T) {
 	original, err := NewResultForCall(String("hello"), originalCall)
 	assert.NilError(t, err)
 
-	env, err := DefaultPersistedSelfCodec.EncodeResult(ctx, nil, original)
+	encoding, err := DefaultPersistedSelfCodec.EncodeResult(ctx, nil, original)
 	assert.NilError(t, err)
+	env := encoding.Envelope
 	assert.Check(t, is.Equal(env.Kind, persistedResultKindScalar))
 
 	decoded, err := DefaultPersistedSelfCodec.DecodeResult(ctx, CurrentDagqlServer(ctx), 0, original.cacheSharedResult().resultCall.clone(), env)
@@ -111,8 +127,9 @@ func TestPersistedSelfCodecObjectIDRoundTrip(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, original != nil)
 
-	env, err := DefaultPersistedSelfCodec.EncodeResult(ctx, nil, original)
+	encoding, err := DefaultPersistedSelfCodec.EncodeResult(ctx, nil, original)
 	assert.NilError(t, err)
+	env := encoding.Envelope
 	assert.Check(t, is.Equal(env.Kind, persistedResultKindObject))
 	assert.Check(t, is.Equal(string(env.ObjectJSON), `{"name":"x"}`))
 
@@ -124,6 +141,29 @@ func TestPersistedSelfCodecObjectIDRoundTrip(t *testing.T) {
 	originalRecipeEnc, err := cacheTestMustRecipeID(t, ctx, original).Encode()
 	assert.NilError(t, err)
 	assert.Check(t, is.Equal(decodedRecipeEnc, originalRecipeEnc))
+}
+
+func TestPersistedSelfCodecUsesSharedObjectClassification(t *testing.T) {
+	t.Parallel()
+	ctx := setupPersistCodecTest(t)
+
+	call := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&persistCodecObj{}).Type()),
+		Field: "obj",
+	}
+	shared := &sharedResult{
+		self:     &persistCodecObj{Name: "x"},
+		isObject: true,
+		hasValue: true,
+	}
+	shared.storeResultCall(call)
+
+	encoding, err := DefaultPersistedSelfCodec.EncodeResult(ctx, nil, Result[Typed]{shared: shared})
+	assert.NilError(t, err)
+	env := encoding.Envelope
+	assert.Check(t, is.Equal(env.Kind, persistedResultKindObject))
+	assert.Check(t, is.Equal(string(env.ObjectJSON), `{"name":"x"}`))
 }
 
 func TestObjectCacheHitPreservesObjectResultShape(t *testing.T) {
@@ -206,8 +246,9 @@ func TestPersistedSelfCodecNestedListRoundTrip(t *testing.T) {
 	})
 	assert.NilError(t, err)
 
-	env, err := DefaultPersistedSelfCodec.EncodeResult(ctx, nil, outer)
+	encoding, err := DefaultPersistedSelfCodec.EncodeResult(ctx, nil, outer)
 	assert.NilError(t, err)
+	env := encoding.Envelope
 	assert.Check(t, is.Equal(env.Kind, persistedResultKindList))
 	assert.Check(t, is.Equal(len(env.Items), 2))
 
@@ -223,4 +264,65 @@ func TestPersistedSelfCodecNestedListRoundTrip(t *testing.T) {
 	list, ok := decoded.Unwrap().(Enumerable)
 	assert.Assert(t, ok)
 	assert.Check(t, is.Equal(list.Len(), 2))
+}
+
+func TestPersistedSelfCodecRawObjectArrayRoundTrip(t *testing.T) {
+	t.Parallel()
+	ctx := setupPersistCodecTest(t)
+	srv := CurrentDagqlServer(ctx)
+	assert.Assert(t, srv != nil)
+
+	arrVal := Array[*persistCodecObj]{
+		{Name: "a"},
+		{Name: "b"},
+	}
+	original, err := NewResultForCall(arrVal, &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(arrVal.Type()),
+		Field: "persist-raw-object-array",
+	})
+	assert.NilError(t, err)
+
+	encoding, err := DefaultPersistedSelfCodec.EncodeResult(ctx, nil, original)
+	assert.NilError(t, err)
+	env := encoding.Envelope
+	assert.Check(t, is.Equal(env.Kind, persistedResultKindList))
+	assert.Check(t, is.Equal(len(env.Items), 2))
+	assert.Check(t, is.Equal(env.Items[0].Kind, persistedResultKindObject))
+	assert.Check(t, is.Equal(env.Items[1].Kind, persistedResultKindObject))
+
+	decoded, err := DefaultPersistedSelfCodec.DecodeResult(ctx, srv, 0, original.cacheSharedResult().resultCall.clone(), env)
+	assert.NilError(t, err)
+
+	list, ok := decoded.Unwrap().(Enumerable)
+	assert.Assert(t, ok)
+	assert.Check(t, is.Equal(list.Len(), 2))
+
+	first, err := list.NthValue(1, nil)
+	assert.NilError(t, err)
+	firstObj, ok := first.(ObjectResult[*persistCodecObj])
+	assert.Assert(t, ok)
+	assert.Check(t, is.Equal(firstObj.Self().Name, "a"))
+
+	second, err := list.NthValue(2, nil)
+	assert.NilError(t, err)
+	secondObj, ok := second.(ObjectResult[*persistCodecObj])
+	assert.Assert(t, ok)
+	assert.Check(t, is.Equal(secondObj.Self().Name, "b"))
+}
+
+func TestPersistedSelfCodecRejectsNonPersistedObjectLikeScalar(t *testing.T) {
+	t.Parallel()
+	ctx := setupPersistCodecTest(t)
+
+	obj := &persistCodecNonPersistedObj{Name: "x"}
+	original, err := NewResultForCall(obj, &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType(obj.Type()),
+		Field: "persist-non-persisted-object",
+	})
+	assert.NilError(t, err)
+
+	_, err = DefaultPersistedSelfCodec.EncodeResult(ctx, nil, original)
+	assert.ErrorContains(t, err, `type "PersistCodecNonPersistedObj" does not implement persisted object encoding or scalar input encoding`)
 }

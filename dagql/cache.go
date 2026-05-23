@@ -1,6 +1,7 @@
 package dagql
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -16,6 +17,7 @@ import (
 
 	telemetry "github.com/dagger/otel-go"
 	set "github.com/hashicorp/go-set/v3"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	_ "modernc.org/sqlite"
@@ -48,6 +50,8 @@ type CacheUsageEntry struct {
 	ID                        string
 	Description               string
 	RecordType                string
+	RecordTypes               []string
+	DagqlCall                 string
 	SizeBytes                 int64
 	CreatedTimeUnixNano       int64
 	MostRecentUseTimeUnixNano int64
@@ -63,7 +67,7 @@ type CachePrunePolicy struct {
 	MinFreeSpace  int64
 	TargetSpace   int64
 
-	// CurrentFreeSpace is optional free-disk bytes at prune start used to
+	// CurrentFreeSpace is optional available-disk bytes at prune start used to
 	// evaluate MinFreeSpace. When unset, MinFreeSpace behaves as if free space
 	// were zero.
 	CurrentFreeSpace int64
@@ -81,10 +85,19 @@ type persistedEdge struct {
 	unpruneable       bool
 }
 
-const cachePersistenceSchemaVersion = "13"
+const cachePersistenceSchemaVersion = "16"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrPersistStateNotReady = errors.New("persist state not ready")
+
+type CachePersistenceResetReason string
+
+const (
+	CachePersistenceResetNone            CachePersistenceResetReason = ""
+	CachePersistenceResetSchemaMismatch  CachePersistenceResetReason = "schema_mismatch"
+	CachePersistenceResetUncleanShutdown CachePersistenceResetReason = "unclean_shutdown"
+	CachePersistenceResetImportFailure   CachePersistenceResetReason = "import_failure"
+)
 
 func NewCache(
 	ctx context.Context,
@@ -117,6 +130,7 @@ func NewCache(
 		return nil, fmt.Errorf("read schema_version metadata: %w", err)
 	}
 	if found && schemaVersionVal != cachePersistenceSchemaVersion {
+		c.persistenceResetReason = CachePersistenceResetSchemaMismatch
 		c.tracePersistStoreWipedSchemaMismatch(ctx, cachePersistenceSchemaVersion, schemaVersionVal)
 		slog.Warn("dagql persistence store schema version mismatch; wiping and cold-starting", "expected", cachePersistenceSchemaVersion, "actual", schemaVersionVal)
 		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
@@ -142,6 +156,7 @@ func NewCache(
 		return nil, fmt.Errorf("read clean_shutdown metadata: %w", err)
 	}
 	if found && cleanShutdownVal != "1" {
+		c.persistenceResetReason = CachePersistenceResetUncleanShutdown
 		c.tracePersistStoreWipedUncleanShutdown(ctx, cleanShutdownVal)
 		slog.Warn("dagql persistence store marked unclean; wiping and cold-starting", "cleanShutdown", cleanShutdownVal)
 		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
@@ -159,6 +174,7 @@ func NewCache(
 		c.pdb = persistDB
 	}
 	if err := c.importPersistedState(ctx); err != nil {
+		c.persistenceResetReason = CachePersistenceResetImportFailure
 		c.tracePersistStoreWipedImportFailure(ctx, err)
 		slog.Warn("dagql persistence import failed; wiping and cold-starting", "err", err)
 		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
@@ -428,6 +444,148 @@ func (c *Cache) sessionLazySpanContext(sessionID string, resultID sharedResultID
 	return spanCtx, true
 }
 
+// captureSessionResultInstallSpan records the current span context as an
+// install site for res in the given session. This wires explicit provenance
+// for lazy failure attribution: the resume span of a later-failing lazy value
+// looks up its install spans here and adds them as cause links.
+//
+// Trivial fields (auto-generated unwrap accessors) skip capture so they don't
+// claim ownership of values they merely return.
+func (c *Cache) captureSessionResultInstallSpan(ctx context.Context, sessionID string, res AnyResult) {
+	if c == nil || sessionID == "" || res == nil {
+		return
+	}
+	if CurrentFieldIsTrivial(ctx) {
+		return
+	}
+	shared := res.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		return
+	}
+	spanCtx := trace.SpanContextFromContext(ctx)
+	if !spanCtx.IsValid() {
+		return
+	}
+
+	// Direct install: this call returned this result.
+	c.recordSessionResultInstallSpanLocked(sessionID, shared.id, spanCtx)
+
+	// If this is a module API call return, propagate the install span to the
+	// entire transitive liveness closure. Module-returned values are typically
+	// constructed by inner SDK calls whose own install spans aren't visible to
+	// the user; attributing failures anywhere in the construction chain back to
+	// the module API span is the right thing.
+	call := CurrentCall(ctx)
+	if call == nil || call.Module == nil {
+		return
+	}
+
+	c.egraphMu.RLock()
+	depIDs := c.transitiveDepIDsLocked(shared.id)
+	c.egraphMu.RUnlock()
+
+	for _, depID := range depIDs {
+		c.recordSessionResultInstallSpanLocked(sessionID, depID, spanCtx)
+	}
+}
+
+func (c *Cache) recordSessionResultInstallSpanLocked(sessionID string, resultID sharedResultID, spanCtx trace.SpanContext) {
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+	if c.sessionResultInstallSpans == nil {
+		c.sessionResultInstallSpans = make(map[string]map[sharedResultID]map[string]trace.SpanContext)
+	}
+	bySession := c.sessionResultInstallSpans[sessionID]
+	if bySession == nil {
+		bySession = make(map[sharedResultID]map[string]trace.SpanContext)
+		c.sessionResultInstallSpans[sessionID] = bySession
+	}
+	byResult := bySession[resultID]
+	if byResult == nil {
+		byResult = make(map[string]trace.SpanContext)
+		bySession[resultID] = byResult
+	}
+	byResult[spanContextKey(spanCtx)] = spanCtx
+}
+
+// transitiveDepIDsLocked returns the cached liveness closure of rootID via
+// parent.deps, excluding rootID itself. Caller must hold egraphMu at least for
+// read. The returned IDs are sorted for deterministic install-span recording.
+func (c *Cache) transitiveDepIDsLocked(rootID sharedResultID) []sharedResultID {
+	if rootID == 0 {
+		return nil
+	}
+	res := c.resultsByID[rootID]
+	if res == nil || res.transitiveDeps == nil || res.transitiveDeps.Empty() {
+		return nil
+	}
+	return res.transitiveDeps.Slice()
+}
+
+// ResultInstallSpans returns install span contexts recorded for res in the
+// given session — i.e. the API spans whose call returned (or owns) this
+// result. Used to attribute later runtime failures (e.g. a service exiting
+// early) back to the API span that installed the value.
+func (c *Cache) ResultInstallSpans(sessionID string, res AnyResult) []trace.SpanContext {
+	if c == nil || sessionID == "" || res == nil {
+		return nil
+	}
+	shared := res.cacheSharedResult()
+	if shared == nil || shared.id == 0 {
+		return nil
+	}
+	return c.sessionResultInstallSpanContexts(sessionID, shared.id)
+}
+
+// sessionResultInstallSpanContexts returns the install span contexts for
+// resultID in the given session. Direct map lookup — no graph walk.
+func (c *Cache) sessionResultInstallSpanContexts(sessionID string, resultID sharedResultID) []trace.SpanContext {
+	if c == nil || sessionID == "" || resultID == 0 {
+		return nil
+	}
+
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+	byResult := c.sessionResultInstallSpans[sessionID]
+	if byResult == nil {
+		return nil
+	}
+	spans := byResult[resultID]
+	if len(spans) == 0 {
+		return nil
+	}
+	out := make([]trace.SpanContext, 0, len(spans))
+	for _, spanCtx := range spans {
+		if spanCtx.IsValid() {
+			out = append(out, spanCtx)
+		}
+	}
+	slices.SortFunc(out, compareSpanContexts)
+	return out
+}
+
+func lazyResumeLinks(originalSpanCtx trace.SpanContext, installSpanContexts []trace.SpanContext) []trace.Link {
+	links := []trace.Link{{SpanContext: originalSpanCtx}}
+	seen := map[string]struct{}{spanContextKey(originalSpanCtx): {}}
+	for _, installCtx := range installSpanContexts {
+		if !installCtx.IsValid() {
+			continue
+		}
+		key := spanContextKey(installCtx)
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		links = append(links, trace.Link{
+			SpanContext: installCtx,
+			Attributes: []attribute.KeyValue{
+				attribute.String(telemetry.LinkPurposeAttr, telemetry.LinkPurposeCause),
+			},
+		})
+	}
+	return links
+}
+
 func HasPendingLazyEvaluation(res AnyResult) bool {
 	if res == nil {
 		return false
@@ -492,6 +650,7 @@ func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 	delete(c.sessionResultIDsBySession, sessionID)
 	delete(c.sessionArbitraryCallKeysBySession, sessionID)
 	delete(c.sessionLazySpansBySession, sessionID)
+	delete(c.sessionResultInstallSpans, sessionID)
 	delete(c.sessionResourcesBySession, sessionID)
 	delete(c.sessionHandlesBySession, sessionID)
 	c.sessionMu.Unlock()
@@ -712,8 +871,11 @@ func (c *Cache) collectUnownedResultsLocked(ctx context.Context, queue []*shared
 			onReleases = append(onReleases, res.onRelease)
 		}
 		res.deps = nil
+		res.depParents = nil
+		res.transitiveDeps = nil
 
 		for _, depID := range depIDs {
+			c.forgetDependencyEdgeLocked(res.id, depID)
 			depRes := c.resultsByID[depID]
 			if depRes == nil {
 				continue
@@ -770,14 +932,10 @@ func desiredSnapshotLinksForResult(res *sharedResult) []PersistedSnapshotRefLink
 		return snapshotOwnerLinksFromTyped(state.self)
 	}
 
-	res.payloadMu.RLock()
-	defer res.payloadMu.RUnlock()
-	if len(res.snapshotOwnerLinks) == 0 {
+	if len(state.snapshotOwnerLinks) == 0 {
 		return nil
 	}
-	links := make([]PersistedSnapshotRefLink, len(res.snapshotOwnerLinks))
-	copy(links, res.snapshotOwnerLinks)
-	return links
+	return slices.Clone(state.snapshotOwnerLinks)
 }
 
 func (c *Cache) resultSnapshotLeaseCleanup(res *sharedResult) OnReleaseFunc {
@@ -790,9 +948,7 @@ func (c *Cache) resultSnapshotLeaseCleanup(res *sharedResult) OnReleaseFunc {
 			return nil
 		}
 
-		res.payloadMu.RLock()
-		links := append([]PersistedSnapshotRefLink(nil), res.snapshotOwnerLinks...)
-		res.payloadMu.RUnlock()
+		links := res.loadSnapshotOwnerLinks()
 
 		seen := make(map[snapshotOwnerKey]struct{}, len(links))
 		var rerr error
@@ -818,9 +974,7 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 
 	links := desiredSnapshotLinksForResult(res)
 
-	res.payloadMu.RLock()
-	oldLinks := append([]PersistedSnapshotRefLink(nil), res.snapshotOwnerLinks...)
-	res.payloadMu.RUnlock()
+	oldLinks := res.loadSnapshotOwnerLinks()
 
 	oldByKey := make(map[snapshotOwnerKey]PersistedSnapshotRefLink, len(oldLinks))
 	newByKey := make(map[snapshotOwnerKey]PersistedSnapshotRefLink, len(links))
@@ -867,12 +1021,11 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 		}
 	}
 
-	res.payloadMu.Lock()
-	res.snapshotOwnerLinks = make([]PersistedSnapshotRefLink, 0, len(newByKey))
+	newLinks := make([]PersistedSnapshotRefLink, 0, len(newByKey))
 	for _, link := range newByKey {
-		res.snapshotOwnerLinks = append(res.snapshotOwnerLinks, link)
+		newLinks = append(newLinks, link)
 	}
-	res.payloadMu.Unlock()
+	res.storeSnapshotOwnerLinks(newLinks)
 
 	return nil
 }
@@ -969,6 +1122,10 @@ func closeCacheDBs(db *sql.DB, persistDB *persistdb.Queries) error {
 	return err
 }
 
+func RemoveCachePersistenceStore(dbPath string) error {
+	return wipeSQLiteFiles(dbPath)
+}
+
 func wipeSQLiteFiles(dbPath string) error {
 	removeIfExists := func(path string) error {
 		err := os.Remove(path)
@@ -996,6 +1153,8 @@ type Cache struct {
 	sessionMu sync.Mutex
 	// egraphMu protects all e-graph state and indexes.
 	egraphMu sync.RWMutex
+
+	persistenceResetReason CachePersistenceResetReason
 
 	// calls that are in progress, keyed by a combination of the call key and the concurrency key
 	// two calls with the same call+concurrency key will be "single-flighted" (only one will actually run)
@@ -1084,8 +1243,16 @@ type Cache struct {
 	sessionResultIDsBySession         map[string]map[sharedResultID]struct{}
 	sessionArbitraryCallKeysBySession map[string]map[string]struct{}
 	sessionLazySpansBySession         map[string]map[sharedResultID]trace.SpanContext
-	sessionResourcesBySession         map[string]map[SessionResourceHandle]*sessionResourceBindings
-	sessionHandlesBySession           map[string]*set.TreeSet[SessionResourceHandle]
+	// sessionResultInstallSpans records which API spans returned/own which
+	// results in a session. On lazy failure, the resume span cause-links the
+	// install spans of the failed result so dagui marks them caused-failed.
+	// Membership is expanded eagerly at install time over the owned-dependency
+	// closure (HasDependencyResults / HasDependencyResultsKinds with Owned=true),
+	// and over the cached transitive parent.deps closure for module API call
+	// returns — no graph walk at install or failure time.
+	sessionResultInstallSpans map[string]map[sharedResultID]map[string]trace.SpanContext
+	sessionResourcesBySession map[string]map[SessionResourceHandle]*sessionResourceBindings
+	sessionHandlesBySession   map[string]*set.TreeSet[SessionResourceHandle]
 
 	sqlDB *sql.DB
 	// persistent normalized cache store (disk persistence/import).
@@ -1140,13 +1307,24 @@ func compareSharedResults(a, b *sharedResult) int {
 		return -1
 	case b == nil:
 		return 1
-	case a.id < b.id:
-		return -1
-	case a.id > b.id:
-		return 1
 	default:
-		return 0
+		return compareSharedResultID(a.id, b.id)
 	}
+}
+
+func compareSpanContexts(a, b trace.SpanContext) int {
+	aTraceID := a.TraceID()
+	bTraceID := b.TraceID()
+	if cmp := bytes.Compare(aTraceID[:], bTraceID[:]); cmp != 0 {
+		return cmp
+	}
+	aSpanID := a.SpanID()
+	bSpanID := b.SpanID()
+	return bytes.Compare(aSpanID[:], bSpanID[:])
+}
+
+func spanContextKey(ctx trace.SpanContext) string {
+	return ctx.TraceID().String() + "/" + ctx.SpanID().String()
 }
 
 type cacheUsageSizer interface {
@@ -1195,15 +1373,21 @@ type sharedResult struct {
 	// explicit out-of-band deps and exact resultCall refs mirrored into deps
 	// during materialization.
 	deps map[sharedResultID]struct{}
+	// depParents is the reverse index for direct deps. transitiveDeps caches the
+	// full parent.deps closure so module-return install-span propagation can copy
+	// a sorted set instead of re-walking the egraph under lock on every return.
+	depParents     *set.TreeSet[sharedResultID]
+	transitiveDeps *set.TreeSet[sharedResultID]
 	// sessionResourceHandle is set when this result is itself an attached
 	// session-resource handle leaf. requiredSessionResources is the flattened
 	// transitive set of handle requirements for cache-hit validation.
 	sessionResourceHandle    SessionResourceHandle
 	requiredSessionResources *set.TreeSet[SessionResourceHandle]
 	// snapshotOwnerLinks are the exact direct snapshot-owner links currently
-	// attached for this result. They are the single source of truth for owner
-	// lease cleanup, debug output, and persistence export. They are not
-	// child-result deps.
+	// attached for this result. They are the source of truth for owner lease
+	// cleanup and debug output. Persistence export for newly encoded objects
+	// derives links from the same object encode pass that produced the payload.
+	// They are not child-result deps.
 	snapshotOwnerLinks []PersistedSnapshotRefLink
 
 	// expiresAtUnix is the in-memory TTL deadline for cache-hit eligibility.
@@ -1217,6 +1401,7 @@ type sharedResult struct {
 	createdAtUnixNano        int64
 	lastUsedAtUnixNano       int64
 	cacheUsageSizeByIdentity map[string]int64
+	cacheUsageRecordTypeByID map[string]string
 	description              string
 	recordType               string
 
@@ -1246,6 +1431,7 @@ type sharedResultPayloadState struct {
 	isObject           bool
 	hasValue           bool
 	persistedEnvelope  *PersistedResultEnvelope
+	snapshotOwnerLinks []PersistedSnapshotRefLink
 	createdAtUnixNano  int64
 	lastUsedAtUnixNano int64
 }
@@ -1279,11 +1465,31 @@ func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 		isObject:           res.isObject,
 		hasValue:           res.hasValue,
 		persistedEnvelope:  res.persistedEnvelope,
+		snapshotOwnerLinks: slices.Clone(res.snapshotOwnerLinks),
 		createdAtUnixNano:  res.createdAtUnixNano,
 		lastUsedAtUnixNano: res.lastUsedAtUnixNano,
 	}
 	res.payloadMu.RUnlock()
 	return state
+}
+
+func (res *sharedResult) loadSnapshotOwnerLinks() []PersistedSnapshotRefLink {
+	if res == nil {
+		return nil
+	}
+	res.payloadMu.RLock()
+	links := slices.Clone(res.snapshotOwnerLinks)
+	res.payloadMu.RUnlock()
+	return links
+}
+
+func (res *sharedResult) storeSnapshotOwnerLinks(links []PersistedSnapshotRefLink) {
+	if res == nil {
+		return
+	}
+	res.payloadMu.Lock()
+	res.snapshotOwnerLinks = slices.Clone(links)
+	res.payloadMu.Unlock()
 }
 
 func resultIsObject(val AnyResult, resolver TypeResolver) (bool, error) {
@@ -1690,6 +1896,7 @@ func (c *Cache) addExplicitDependencyLocked(
 	}
 
 	parentRes.deps[depRes.id] = struct{}{}
+	c.rememberDependencyEdgeLocked(parentRes, depRes)
 	c.incrementIncomingOwnershipLocked(ctx, depRes)
 	c.traceExplicitDepAdded(ctx, parentRes.id, depRes.id, reason)
 	if err := c.recomputeRequiredSessionResourcesLocked(parentRes); err != nil {
@@ -1697,6 +1904,62 @@ func (c *Cache) addExplicitDependencyLocked(
 	}
 
 	return nil
+}
+
+func (c *Cache) rememberDependencyEdgeLocked(parentRes *sharedResult, depRes *sharedResult) {
+	if parentRes == nil || depRes == nil || parentRes.id == 0 || depRes.id == 0 || parentRes.id == depRes.id {
+		return
+	}
+	if depRes.depParents == nil {
+		depRes.depParents = newSharedResultIDSet()
+	}
+	depRes.depParents.Insert(parentRes.id)
+
+	delta := newSharedResultIDSet()
+	delta.Insert(depRes.id)
+	if depRes.transitiveDeps != nil {
+		delta.InsertSet(depRes.transitiveDeps)
+	}
+	c.propagateTransitiveDepDeltaLocked(parentRes, delta)
+}
+
+func (c *Cache) propagateTransitiveDepDeltaLocked(res *sharedResult, delta *set.TreeSet[sharedResultID]) {
+	if res == nil || delta == nil || delta.Empty() {
+		return
+	}
+	if res.transitiveDeps == nil {
+		res.transitiveDeps = newSharedResultIDSet()
+	}
+	inserted := newSharedResultIDSet()
+	for depID := range delta.Items() {
+		if depID == 0 || depID == res.id {
+			continue
+		}
+		if res.transitiveDeps.Insert(depID) {
+			inserted.Insert(depID)
+		}
+	}
+	if inserted.Empty() || res.depParents == nil || res.depParents.Empty() {
+		return
+	}
+	for parentID := range res.depParents.Items() {
+		parent := c.resultsByID[parentID]
+		if parent == nil {
+			continue
+		}
+		c.propagateTransitiveDepDeltaLocked(parent, inserted)
+	}
+}
+
+func (c *Cache) forgetDependencyEdgeLocked(parentID sharedResultID, depID sharedResultID) {
+	depRes := c.resultsByID[depID]
+	if depRes == nil || depRes.depParents == nil {
+		return
+	}
+	depRes.depParents.Remove(parentID)
+	if depRes.depParents.Empty() {
+		depRes.depParents = nil
+	}
 }
 
 type Result[T Typed] struct {
@@ -2024,7 +2287,7 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 			return r.shared.requiredSessionResources.Copy()
 		}(),
 		persistedEnvelope:  state.persistedEnvelope,
-		snapshotOwnerLinks: slices.Clone(r.shared.snapshotOwnerLinks),
+		snapshotOwnerLinks: state.snapshotOwnerLinks,
 		createdAtUnixNano:  state.createdAtUnixNano,
 		lastUsedAtUnixNano: state.lastUsedAtUnixNano,
 		cacheUsageSizeByIdentity: func() map[string]int64 {
@@ -2034,6 +2297,16 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 			cp := make(map[string]int64, len(r.shared.cacheUsageSizeByIdentity))
 			for id, sz := range r.shared.cacheUsageSizeByIdentity {
 				cp[id] = sz
+			}
+			return cp
+		}(),
+		cacheUsageRecordTypeByID: func() map[string]string {
+			if len(r.shared.cacheUsageRecordTypeByID) == 0 {
+				return nil
+			}
+			cp := make(map[string]string, len(r.shared.cacheUsageRecordTypeByID))
+			for id, recordType := range r.shared.cacheUsageRecordTypeByID {
+				cp[id] = recordType
 			}
 			return cp
 		}(),
@@ -2108,7 +2381,7 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 		sessionResourceHandle:    handle,
 		requiredSessionResources: reqs,
 		persistedEnvelope:        state.persistedEnvelope,
-		snapshotOwnerLinks:       slices.Clone(r.shared.snapshotOwnerLinks),
+		snapshotOwnerLinks:       state.snapshotOwnerLinks,
 		createdAtUnixNano:        state.createdAtUnixNano,
 		lastUsedAtUnixNano:       state.lastUsedAtUnixNano,
 		cacheUsageSizeByIdentity: func() map[string]int64 {
@@ -2118,6 +2391,16 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 			cp := make(map[string]int64, len(r.shared.cacheUsageSizeByIdentity))
 			for id, sz := range r.shared.cacheUsageSizeByIdentity {
 				cp[id] = sz
+			}
+			return cp
+		}(),
+		cacheUsageRecordTypeByID: func() map[string]string {
+			if len(r.shared.cacheUsageRecordTypeByID) == 0 {
+				return nil
+			}
+			cp := make(map[string]string, len(r.shared.cacheUsageRecordTypeByID))
+			for id, recordType := range r.shared.cacheUsageRecordTypeByID {
+				cp[id] = recordType
 			}
 			return cp
 		}(),
@@ -2407,6 +2690,39 @@ func (c *Cache) waitForLazyEvaluation(ctx context.Context, shared *sharedResult,
 	return waitErr
 }
 
+// evaluateLivenessDeps forces all of resultID's parent.deps before its own
+// lazy callback fires. This keeps chained downstream calls pending instead
+// of firing redundant resume spans when an upstream prerequisite fails:
+// the failing dep's resume span attributes via its install_spans, and our
+// own resume span never starts to forward the cascaded error.
+func (c *Cache) evaluateLivenessDeps(ctx context.Context, resultID sharedResultID) error {
+	if c == nil || resultID == 0 {
+		return nil
+	}
+	c.egraphMu.RLock()
+	res := c.resultsByID[resultID]
+	if res == nil || len(res.deps) == 0 {
+		c.egraphMu.RUnlock()
+		return nil
+	}
+	deps := make([]AnyResult, 0, len(res.deps))
+	for depID := range res.deps {
+		dep := c.resultsByID[depID]
+		if dep == nil {
+			c.egraphMu.RUnlock()
+			return fmt.Errorf("evaluate liveness dep: result %d depends on missing result %d", resultID, depID)
+		}
+		deps = append(deps, Result[Typed]{shared: dep})
+	}
+	c.egraphMu.RUnlock()
+	for _, dep := range deps {
+		if err := c.evaluateOne(ctx, dep); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (c *Cache) Evaluate(ctx context.Context, results ...AnyResult) error {
 	switch len(results) {
 	case 0:
@@ -2448,6 +2764,25 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 		id:     shared.id,
 		parent: stack,
 	})
+
+	// Fast path: if evaluation is already complete or there is nothing to do,
+	// skip preflight entirely.
+	shared.lazyMu.Lock()
+	if shared.lazyEvalComplete || lazyEvalFuncOfResult(res) == nil {
+		shared.lazyMu.Unlock()
+		return nil
+	}
+	shared.lazyMu.Unlock()
+
+	// Preflight liveness deps before claiming the lazy state. Each parent.deps
+	// edge is a prerequisite: if it fails, our lazy callback shouldn't fire
+	// (and shouldn't create a resume span that mis-attributes the cascade).
+	// Attribution is direct lookup against install_spans, so the failing dep
+	// is responsible for cause-linking its own owners — no need to fire a
+	// resume span here just to forward the same error.
+	if err := c.evaluateLivenessDeps(stackCtx, shared.id); err != nil {
+		return err
+	}
 
 	shared.lazyMu.Lock()
 	currentLazyEval := lazyEvalFuncOfResult(res)
@@ -2495,11 +2830,17 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 				if resultCall != nil && resultCall.Field != "" {
 					spanName = "resume " + resultCall.Field
 				}
+				// Lazy failure attribution: link the resume span back to all
+				// API spans that installed/own this result in the session.
+				// dagui interprets cause-purpose links as "this resume is the
+				// cause of those installs failing" and propagates failure.
+				installCtxs := c.sessionResultInstallSpanContexts(clientMD.SessionID, shared.id)
+				links := lazyResumeLinks(originalSpanCtx, installCtxs)
 				var resumeCtx context.Context
 				resumeCtx, resumeSpan = Tracer(evalCtx).Start(
 					evalCtx,
 					spanName,
-					telemetry.Resume(trace.ContextWithSpanContext(evalCtx, originalSpanCtx)),
+					trace.WithLinks(links...),
 					telemetry.Passthrough(),
 				)
 				callbackCtx = trace.ContextWithSpan(resumeCtx, resumedCallbackSpan{
@@ -2510,33 +2851,32 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 			}
 		}
 
-		leaseCtx, release, leaseErr := withOperationLease(withoutOperationLease(callbackCtx))
-		if leaseErr != nil {
-			shared.lazyMu.Lock()
-			shared.lazyEvalErr = fmt.Errorf("acquire operation lease: %w", leaseErr)
-			clearState := shared.lazyEvalWaiters == 0 && shared.lazyEvalWaitCh == waitCh
-			if clearState {
-				shared.lazyEvalWaitCh = nil
-				shared.lazyEvalCancel = nil
-				shared.lazyEvalErr = nil
-			}
-			shared.lazyMu.Unlock()
-			close(waitCh)
-			return
-		}
-		callbackCtx = leaseCtx
-
 		var err error
-		if resumeSpan != nil {
-			defer telemetry.EndWithCause(resumeSpan, &err)
+		// End resumeSpan before close(waitCh) so that callers awaiting
+		// evaluation observe the span as ended (and exported, via sync
+		// processors). Deferring would fire only after close(waitCh) and
+		// race with the caller's flush/read of exported spans.
+		runEval := func() {
+			if resumeSpan != nil {
+				defer telemetry.EndWithCause(resumeSpan, &err)
+			}
+
+			leaseCtx, release, leaseErr := withOperationLease(withoutOperationLease(callbackCtx))
+			if leaseErr != nil {
+				err = fmt.Errorf("acquire operation lease: %w", leaseErr)
+				return
+			}
+			callbackCtx = leaseCtx
+
+			err = lazyEval(callbackCtx)
+			if err == nil {
+				err = c.syncResultSnapshotLeases(callbackCtx, shared)
+			}
+			if releaseErr := release(context.WithoutCancel(callbackCtx)); releaseErr != nil && err == nil {
+				err = releaseErr
+			}
 		}
-		err = lazyEval(callbackCtx)
-		if err == nil {
-			err = c.syncResultSnapshotLeases(callbackCtx, shared)
-		}
-		if releaseErr := release(context.WithoutCancel(callbackCtx)); releaseErr != nil && err == nil {
-			err = releaseErr
-		}
+		runEval()
 
 		shared.lazyMu.Lock()
 		shared.lazyEvalErr = err
@@ -2595,6 +2935,30 @@ func (c *Cache) Close(ctx context.Context) error {
 		slog.Info("completed dagql cache close successfully")
 	})
 	return c.closeErr
+}
+
+func (c *Cache) CloseDiscardingPersistence() error {
+	c.closeOnce.Do(func() {
+		slog.Info(
+			"discarding dagql cache without persistence",
+			"hasSQLDB", c.sqlDB != nil,
+			"hasPersistDB", c.pdb != nil,
+		)
+		if closeErr := closeCacheDBs(c.sqlDB, c.pdb); closeErr != nil {
+			slog.Error("failed to close discarded dagql persistence databases", "err", closeErr)
+			c.closeErr = errors.Join(c.closeErr, closeErr)
+		}
+		c.sqlDB = nil
+		c.pdb = nil
+	})
+	return c.closeErr
+}
+
+func (c *Cache) PersistenceResetReason() CachePersistenceResetReason {
+	if c == nil {
+		return CachePersistenceResetNone
+	}
+	return c.persistenceResetReason
 }
 
 func (c *Cache) Size() int {
@@ -2659,10 +3023,9 @@ func (c *Cache) usageEntriesLocked(activeRoots map[sharedResultID]struct{}) []Ca
 		if lastUsedAt == 0 {
 			lastUsedAt = createdAt
 		}
-		recordType := res.recordType
-		if recordType == "" {
-			recordType = "dagql.unknown"
-		}
+		recordTypes := cacheUsageRecordTypesFromMap(res.cacheUsageRecordTypeByID)
+		recordType := cacheUsagePrimaryRecordType(recordTypes, res.recordType)
+		dagqlCall := c.cacheUsageDagqlCallLocked(res)
 		description := res.description
 		if description == "" {
 			description = fmt.Sprintf("dagql cache result %d", resID)
@@ -2677,6 +3040,8 @@ func (c *Cache) usageEntriesLocked(activeRoots map[sharedResultID]struct{}) []Ca
 			ID:                        fmt.Sprintf("dagql.result.%d", resID),
 			Description:               description,
 			RecordType:                recordType,
+			RecordTypes:               recordTypes,
+			DagqlCall:                 dagqlCall,
 			SizeBytes:                 sizeBytes,
 			CreatedTimeUnixNano:       createdAt,
 			MostRecentUseTimeUnixNano: lastUsedAt,
@@ -2697,12 +3062,93 @@ func (c *Cache) usageEntriesLocked(activeRoots map[sharedResultID]struct{}) []Ca
 	return entries
 }
 
+func (c *Cache) cacheUsageDagqlCallLocked(res *sharedResult) string {
+	if c == nil || res == nil {
+		return ""
+	}
+	frame := res.loadResultCall()
+	if frame == nil {
+		return ""
+	}
+
+	fieldName := ""
+	if identityField, err := resultCallIdentityField(frame); err == nil {
+		fieldName = identityField
+	}
+
+	receiverTypeName := ""
+	if frame.Receiver != nil {
+		if receiverRes := c.resultsByID[sharedResultID(frame.Receiver.ResultID)]; receiverRes != nil {
+			receiverFrame := receiverRes.loadResultCall()
+			switch {
+			case receiverFrame != nil && receiverFrame.Type != nil && receiverFrame.Type.NamedType != "":
+				receiverTypeName = receiverFrame.Type.NamedType
+			default:
+				receiverState := receiverRes.loadPayloadState()
+				receiverTypeName = sharedResultObjectTypeName(receiverRes, receiverState)
+			}
+		}
+	}
+
+	switch {
+	case receiverTypeName != "" && fieldName != "":
+		return receiverTypeName + "." + fieldName
+	case fieldName != "":
+		if frame.Kind == ResultCallKindField {
+			return "Query." + fieldName
+		}
+		return fieldName
+	default:
+		return ""
+	}
+}
+
+func cacheUsageRecordTypesFromMap(recordTypeByID map[string]string) []string {
+	if len(recordTypeByID) == 0 {
+		return nil
+	}
+	recordTypes := make([]string, 0, len(recordTypeByID))
+	seen := make(map[string]struct{}, len(recordTypeByID))
+	for _, recordType := range recordTypeByID {
+		if recordType == "" {
+			continue
+		}
+		if _, ok := seen[recordType]; ok {
+			continue
+		}
+		seen[recordType] = struct{}{}
+		recordTypes = append(recordTypes, recordType)
+	}
+	slices.Sort(recordTypes)
+	return recordTypes
+}
+
+func cacheUsagePrimaryRecordType(recordTypes []string, fallback string) string {
+	switch len(recordTypes) {
+	case 0:
+		if fallback != "" {
+			return fallback
+		}
+		return "dagql.unknown"
+	case 1:
+		return recordTypes[0]
+	default:
+		return "mixed"
+	}
+}
+
 type cacheUsageMeasurementInput struct {
 	resultID         sharedResultID
 	self             Typed
+	snapshotLinks    []PersistedSnapshotRefLink
 	identities       []string
 	existingSizeByID map[string]int64
 	sizeMayChange    bool
+}
+
+type cacheUsageIdentityMeasurement struct {
+	sizeBytes  int64
+	recordType string
 }
 
 func (c *Cache) measureAllResultSizes(ctx context.Context) {
@@ -2710,8 +3156,8 @@ func (c *Cache) measureAllResultSizes(ctx context.Context) {
 	if len(inputs) == 0 {
 		return
 	}
-	sizes := buildCacheUsageMeasurements(ctx, inputs)
-	c.publishUsageMeasurements(sizes)
+	measurements := buildCacheUsageMeasurements(ctx, c.snapshotManager, inputs)
+	c.publishUsageMeasurements(measurements)
 }
 
 func (c *Cache) collectUsageMeasurementInputs() []cacheUsageMeasurementInput {
@@ -2723,26 +3169,40 @@ func (c *Cache) collectUsageMeasurementInputs() []cacheUsageMeasurementInput {
 			continue
 		}
 		state := res.loadPayloadState()
-		if !state.hasValue || state.self == nil {
+		var (
+			self          Typed
+			snapshotLinks []PersistedSnapshotRefLink
+			identities    []string
+			sizeMayChange bool
+		)
+		if state.hasValue && state.self != nil {
+			self = state.self
+			identities = cacheUsageIdentitiesFromSelf(state.self)
+			sizeMayChange = cacheUsageSizeMayChangeFromSelf(state.self)
+		} else {
+			snapshotLinks = slices.Clone(state.snapshotOwnerLinks)
+			identities = cacheUsageIdentitiesFromSnapshotLinks(snapshotLinks)
+		}
+		if len(identities) == 0 {
 			continue
 		}
-		identities := cacheUsageIdentitiesFromSelf(state.self)
 		existing := make(map[string]int64, len(res.cacheUsageSizeByIdentity))
 		for identity, sizeBytes := range res.cacheUsageSizeByIdentity {
 			existing[identity] = sizeBytes
 		}
 		inputs = append(inputs, cacheUsageMeasurementInput{
 			resultID:         resID,
-			self:             state.self,
+			self:             self,
+			snapshotLinks:    snapshotLinks,
 			identities:       identities,
 			existingSizeByID: existing,
-			sizeMayChange:    cacheUsageSizeMayChangeFromSelf(state.self),
+			sizeMayChange:    sizeMayChange,
 		})
 	}
 	return inputs
 }
 
-func buildCacheUsageMeasurements(ctx context.Context, inputs []cacheUsageMeasurementInput) map[sharedResultID]map[string]int64 {
+func buildCacheUsageMeasurements(ctx context.Context, snapshotManager bkcache.SnapshotManager, inputs []cacheUsageMeasurementInput) map[sharedResultID]map[string]cacheUsageIdentityMeasurement {
 	if len(inputs) == 0 {
 		return nil
 	}
@@ -2765,73 +3225,106 @@ func buildCacheUsageMeasurements(ctx context.Context, inputs []cacheUsageMeasure
 	}
 	slices.Sort(identities)
 
-	sizeByIdentity := make(map[string]int64, len(ownerByIdentity))
+	measurementByIdentity := make(map[string]cacheUsageIdentityMeasurement, len(ownerByIdentity))
 	for _, identity := range identities {
 		ownerID := ownerByIdentity[identity]
 		input := inputByResultID[ownerID]
+		var (
+			sizeBytes int64
+			ok        bool
+			err       error
+		)
 		if !input.sizeMayChange {
-			if sizeBytes, ok := input.existingSizeByID[identity]; ok {
-				sizeByIdentity[identity] = sizeBytes
+			if existingSizeBytes, found := input.existingSizeByID[identity]; found {
+				sizeBytes = existingSizeBytes
+				ok = true
+			}
+		}
+
+		if !ok {
+			if input.self != nil {
+				sizeBytes, ok, err = cacheUsageSizeBytesFromSelf(ctx, input.self, identity)
+			} else if len(input.snapshotLinks) > 0 {
+				sizeBytes, ok, err = cacheUsageSizeBytesFromSnapshotLink(ctx, snapshotManager, identity)
+			}
+			if err != nil {
+				slog.Warn("failed to determine cache usage size",
+					"resultID", ownerID,
+					"usageIdentity", identity,
+					"err", err)
+				continue
+			}
+			if !ok {
 				continue
 			}
 		}
 
-		sizeBytes, ok, err := cacheUsageSizeBytesFromSelf(ctx, input.self, identity)
+		recordType, _, err := cacheUsageRecordTypeFromSnapshotMetadata(ctx, snapshotManager, identity)
 		if err != nil {
-			slog.Warn("failed to determine cache usage size",
+			slog.Warn("failed to determine cache usage record type",
 				"resultID", ownerID,
 				"usageIdentity", identity,
 				"err", err)
-			continue
-		}
-		if !ok {
-			continue
 		}
 		if sizeBytes < 0 {
 			sizeBytes = 0
 		}
-		sizeByIdentity[identity] = sizeBytes
+		measurementByIdentity[identity] = cacheUsageIdentityMeasurement{
+			sizeBytes:  sizeBytes,
+			recordType: recordType,
+		}
 	}
 
-	published := make(map[sharedResultID]map[string]int64, len(inputs))
+	published := make(map[sharedResultID]map[string]cacheUsageIdentityMeasurement, len(inputs))
 	for _, input := range inputs {
-		resultSizes := make(map[string]int64)
+		resultMeasurements := make(map[string]cacheUsageIdentityMeasurement)
 		for _, identity := range input.identities {
 			if ownerByIdentity[identity] != input.resultID {
 				continue
 			}
-			sizeBytes, ok := sizeByIdentity[identity]
+			measurement, ok := measurementByIdentity[identity]
 			if !ok {
 				continue
 			}
-			resultSizes[identity] = sizeBytes
+			resultMeasurements[identity] = measurement
 		}
-		if len(resultSizes) == 0 {
+		if len(resultMeasurements) == 0 {
 			continue
 		}
-		published[input.resultID] = resultSizes
+		published[input.resultID] = resultMeasurements
 	}
 
 	return published
 }
 
-func (c *Cache) publishUsageMeasurements(sizes map[sharedResultID]map[string]int64) {
+func (c *Cache) publishUsageMeasurements(measurements map[sharedResultID]map[string]cacheUsageIdentityMeasurement) {
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	for resultID, res := range c.resultsByID {
 		if res == nil {
 			continue
 		}
-		resultSizes, ok := sizes[resultID]
+		resultMeasurements, ok := measurements[resultID]
 		if !ok {
 			res.cacheUsageSizeByIdentity = nil
+			res.cacheUsageRecordTypeByID = nil
 			continue
 		}
-		cp := make(map[string]int64, len(resultSizes))
-		for identity, sizeBytes := range resultSizes {
-			cp[identity] = sizeBytes
+		sizeByIdentity := make(map[string]int64, len(resultMeasurements))
+		recordTypeByIdentity := make(map[string]string, len(resultMeasurements))
+		for identity, measurement := range resultMeasurements {
+			sizeByIdentity[identity] = measurement.sizeBytes
+			if measurement.recordType != "" {
+				recordTypeByIdentity[identity] = measurement.recordType
+			}
 		}
-		res.cacheUsageSizeByIdentity = cp
+		res.cacheUsageSizeByIdentity = sizeByIdentity
+		res.cacheUsageRecordTypeByID = recordTypeByIdentity
+
+		recordTypes := cacheUsageRecordTypesFromMap(recordTypeByIdentity)
+		if len(recordTypes) > 0 {
+			res.recordType = cacheUsagePrimaryRecordType(recordTypes, "")
+		}
 	}
 }
 
@@ -2885,6 +3378,7 @@ func (c *Cache) getOrInitCall(
 				return nil, fmt.Errorf("normalize do-not-cache attached result: %w", err)
 			}
 			c.trackSessionResult(ctx, sessionID, normalized, false)
+			c.captureSessionResultInstallSpan(ctx, sessionID, normalized)
 			return normalized, nil
 		}
 		if lazyEval := lazyEvalFuncOfResult(val); lazyEval != nil {
@@ -2950,6 +3444,7 @@ func (c *Cache) getOrInitCall(
 	}
 	if hit {
 		c.captureSessionLazySpanContext(ctx, sessionID, hitRes)
+		c.captureSessionResultInstallSpan(ctx, sessionID, hitRes)
 		return hitRes, nil
 	}
 
@@ -3263,6 +3758,7 @@ func (c *Cache) wait(
 	}
 	c.trackSessionResult(ctx, sessionID, retRes, false)
 	c.captureSessionLazySpanContext(ctx, sessionID, retRes)
+	c.captureSessionResultInstallSpan(ctx, sessionID, retRes)
 	c.callsMu.Lock()
 	oc.waiters--
 	lastWaiter := oc.waiters == 0
@@ -3575,6 +4071,7 @@ func (c *Cache) initCompletedResult(ctx context.Context, resolver TypeResolver, 
 			continue
 		}
 		oc.res.deps[depID] = struct{}{}
+		c.rememberDependencyEdgeLocked(oc.res, depRes)
 		c.incrementIncomingOwnershipLocked(ctx, depRes)
 		c.traceResultCallDepAdded(ctx, oc.res.id, depID, dep.path)
 	}
@@ -3625,8 +4122,9 @@ func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, r
 	if parent == nil || val == nil {
 		return nil
 	}
-	withDeps, ok := UnwrapAs[HasDependencyResults](val)
-	if !ok {
+	withKinds, hasKinds := UnwrapAs[HasDependencyResultsKinds](val)
+	withDeps, hasDeps := UnwrapAs[HasDependencyResults](val)
+	if !hasKinds && !hasDeps {
 		return nil
 	}
 	self := Result[Typed]{shared: parent}
@@ -3639,38 +4137,63 @@ func (c *Cache) attachDependencyResults(ctx context.Context, sessionID string, r
 		}
 		attachedSelf = objSelf
 	}
-	deps, err := withDeps.AttachDependencyResults(ctx, attachedSelf, func(child AnyResult) (AnyResult, error) {
-		attached, err := c.attachResult(ctx, sessionID, resolver, child)
+	attach := func(child AnyResult) (AnyResult, error) {
+		return c.attachResult(ctx, sessionID, resolver, child)
+	}
+	var deps []DependencyResult
+	if hasKinds {
+		var err error
+		deps, err = withKinds.AttachDependencyResultsKinds(ctx, attachedSelf, attach)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		return attached, nil
-	})
-	if err != nil {
-		return err
+	} else {
+		attached, err := withDeps.AttachDependencyResults(ctx, attachedSelf, attach)
+		if err != nil {
+			return err
+		}
+		// Default: a value implementing only HasDependencyResults treats every
+		// returned dep as owned (failure attribution propagates).
+		deps = make([]DependencyResult, 0, len(attached))
+		for _, a := range attached {
+			deps = append(deps, DependencyResult{Result: a, Owned: true})
+		}
 	}
 	if len(deps) == 0 || parent.id == 0 {
 		return nil
 	}
 
-	seen := make(map[sharedResultID]struct{}, len(deps))
+	seen := make(map[sharedResultID]bool, len(deps))
 	for _, dep := range deps {
-		if dep == nil {
+		if dep.Result == nil {
 			continue
 		}
-		attachedDepRes := dep.cacheSharedResult()
+		attachedDepRes := dep.Result.cacheSharedResult()
 		if attachedDepRes == nil || attachedDepRes.id == 0 {
-			return fmt.Errorf("attach dependency result %T: unexpected detached result", dep)
+			return fmt.Errorf("attach dependency result %T: unexpected detached result", dep.Result)
 		}
 		if attachedDepRes.id == parent.id {
 			continue
 		}
-		if _, ok := seen[attachedDepRes.id]; ok {
+		if alreadyOwned, ok := seen[attachedDepRes.id]; ok {
+			// Already linked. If the previous edge was non-owned and this one is
+			// owned, propagate the install span now; otherwise nothing to do.
+			if !alreadyOwned && dep.Owned {
+				c.captureSessionResultInstallSpan(ctx, sessionID, dep.Result)
+				seen[attachedDepRes.id] = true
+			}
 			continue
 		}
-		seen[attachedDepRes.id] = struct{}{}
-		if err := c.AddExplicitDependency(ctx, attachedSelf, dep, "attached_dependency_result"); err != nil {
+		seen[attachedDepRes.id] = dep.Owned
+		if err := c.AddExplicitDependency(ctx, attachedSelf, dep.Result, "attached_dependency_result"); err != nil {
 			return err
+		}
+		// Owned deps inherit the parent's install span — failures in their
+		// lazy work will mark the parent's API span caused-failed via the
+		// resume span's cause links. Liveness-only deps (e.g. lazy parents
+		// in receiver chains) keep their original install spans only.
+		if dep.Owned {
+			c.captureSessionResultInstallSpan(ctx, sessionID, dep.Result)
 		}
 	}
 
@@ -3710,6 +4233,28 @@ func cacheUsageSizeBytesFromSelf(ctx context.Context, self Typed, identity strin
 	return sizer.CacheUsageSize(ctx, identity)
 }
 
+func cacheUsageSizeBytesFromSnapshotLink(ctx context.Context, snapshotManager bkcache.SnapshotManager, identity string) (int64, bool, error) {
+	if snapshotManager == nil || identity == "" {
+		return 0, false, nil
+	}
+	sizeBytes, err := snapshotManager.SnapshotSize(ctx, identity)
+	if err != nil {
+		return 0, false, err
+	}
+	return sizeBytes, true, nil
+}
+
+func cacheUsageRecordTypeFromSnapshotMetadata(ctx context.Context, snapshotManager bkcache.SnapshotManager, identity string) (string, bool, error) {
+	if snapshotManager == nil || identity == "" {
+		return "", false, nil
+	}
+	md, ok, err := snapshotManager.SnapshotRecordMetadata(ctx, identity)
+	if err != nil || !ok || md.RecordType == "" {
+		return "", ok, err
+	}
+	return string(md.RecordType), true, nil
+}
+
 func cacheUsageIdentitiesFromSelf(self Typed) []string {
 	if self == nil {
 		return nil
@@ -3723,12 +4268,33 @@ func cacheUsageIdentitiesFromSelf(self Typed) []string {
 	return slices.Compact(ids)
 }
 
-func cacheUsageIdentities(res *sharedResult) []string {
-	state := res.loadPayloadState()
-	if res == nil || !state.hasValue || state.self == nil {
+func cacheUsageIdentitiesFromSnapshotLinks(links []PersistedSnapshotRefLink) []string {
+	if len(links) == 0 {
 		return nil
 	}
-	return cacheUsageIdentitiesFromSelf(state.self)
+	ids := make([]string, 0, len(links))
+	for _, link := range links {
+		if link.RefKey == "" {
+			continue
+		}
+		ids = append(ids, link.RefKey)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	slices.Sort(ids)
+	return slices.Compact(ids)
+}
+
+func cacheUsageIdentities(res *sharedResult) []string {
+	if res == nil {
+		return nil
+	}
+	state := res.loadPayloadState()
+	if state.hasValue && state.self != nil {
+		return cacheUsageIdentitiesFromSelf(state.self)
+	}
+	return cacheUsageIdentitiesFromSnapshotLinks(state.snapshotOwnerLinks)
 }
 
 func cacheUsageSizeMayChangeFromSelf(self Typed) bool {

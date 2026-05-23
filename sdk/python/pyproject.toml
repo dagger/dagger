@@ -30,6 +30,8 @@ dependencies = [
     "anyio>=3.6.2",
     "cattrs>=25.1.0",
     "gql[httpx]>=4.0",
+    # Avoid a broken release with only cp310 wheels.
+    "yarl!=1.24.1",
     "httpcore>=1.0.8",
     "beartype>=0.22.0",
     "platformdirs>=2.6.2",
@@ -80,7 +82,11 @@ source-include = ["tests/**", "docs/**", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/"]
-addopts = ["--import-mode=importlib"]
+addopts = [
+    "--import-mode=importlib",
+    # Show Hypothesis example counts for generated module-source tests.
+    "--hypothesis-show-statistics",
+]
 markers = [
     "slow: mark test as slow (integration)",
     "provision: mark provisioning tests",
