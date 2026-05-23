@@ -8,6 +8,7 @@ import { type AddressInfo } from "net"
 import * as os from "os"
 import * as path from "path"
 import * as tar from "tar"
+import { fileURLToPath } from "url"
 
 import { dag } from "../api/client.gen.js"
 import { GraphQLRequestError } from "../common/errors/index.js"
@@ -345,7 +346,9 @@ function findExecutableOnPath(binaryName: string): string | undefined {
 }
 
 function buildLocalDaggerBinary(tempDir: string): string {
-  const repoRoot = path.resolve(process.cwd(), "../..")
+  const __filename = fileURLToPath(import.meta.url)
+  const __dirname = path.dirname(__filename)
+  const repoRoot = path.resolve(__dirname, "../../../..")
   const binaryPath = path.join(tempDir, "dagger")
 
   try {

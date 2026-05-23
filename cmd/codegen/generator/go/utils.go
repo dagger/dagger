@@ -2,6 +2,7 @@ package gogenerator
 
 import (
 	"os"
+	"strings"
 
 	"golang.org/x/mod/modfile"
 )
@@ -18,9 +19,21 @@ func isDaggerPkgCustomReplaced(replaces []*modfile.Replace) bool {
 
 func goCommandEnv() []string {
 	env := append([]string{}, os.Environ()...)
-	env = append(env,
-		"GOPROXY=direct",
-		"GOSUMDB=off",
-	)
+	hasProxy := false
+	hasSumDB := false
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "GOPROXY=") {
+			hasProxy = true
+		}
+		if strings.HasPrefix(kv, "GOSUMDB=") {
+			hasSumDB = true
+		}
+	}
+	if !hasProxy {
+		env = append(env, "GOPROXY=direct")
+	}
+	if !hasSumDB {
+		env = append(env, "GOSUMDB=off")
+	}
 	return env
 }
