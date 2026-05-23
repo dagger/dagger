@@ -51,29 +51,68 @@ var authConfig = &oauth2.Config{
 	},
 }
 
+type LoginOption func(*loginOptions)
+
+type loginOptions struct {
+	signup        bool
+	switchAccount bool
+}
+
+func WithSignup() LoginOption {
+	return func(opts *loginOptions) {
+		opts.signup = true
+		opts.switchAccount = true
+	}
+}
+
+func WithSwitchAccount() LoginOption {
+	return func(opts *loginOptions) {
+		opts.switchAccount = true
+	}
+}
+
 // Login logs the user in and stores the credentials for later use.
 // Interactive messages are printed to w.
-func Login(ctx context.Context, out io.Writer) error {
+func Login(ctx context.Context, out io.Writer, loginOpts ...LoginOption) error {
+	opts := loginOptions{}
+	for _, opt := range loginOpts {
+		opt(&opts)
+	}
+
 	// If the user is already authenticated, skip the login process.
-	if _, err := Token(ctx); err == nil {
+	if _, err := Token(ctx); err == nil && !opts.switchAccount {
 		return nil
 	}
 
-	deviceAuth, err := authConfig.DeviceAuth(ctx)
+	authCodeOpts := []oauth2.AuthCodeOption{}
+	if opts.signup {
+		authCodeOpts = append(authCodeOpts, oauth2.SetAuthURLParam("screen_hint", "signup"))
+	}
+	if opts.switchAccount {
+		authCodeOpts = append(authCodeOpts, oauth2.SetAuthURLParam("prompt", "login"))
+	}
+
+	deviceAuth, err := authConfig.DeviceAuth(ctx, authCodeOpts...)
 	if err != nil {
 		return err
 	}
 
 	authURL := deviceAuth.VerificationURIComplete
+	action := "Log in or sign up"
+	if opts.signup {
+		action = "Sign up"
+	} else if opts.switchAccount {
+		action = "Choose an account"
+	}
 
 	browserBuf := new(strings.Builder)
 	browser.Stdout = browserBuf
 	browser.Stderr = browserBuf
 	if err := browser.OpenURL(authURL); err != nil {
 		fmt.Fprintf(out, "Failed to open browser: %s\n\n%s\n", err, browserBuf.String())
-		fmt.Fprintf(out, "Log in or sign up here: %s\n", authURL)
+		fmt.Fprintf(out, "%s here: %s\n", action, authURL)
 	} else {
-		fmt.Fprintf(out, "Browser opened for Dagger Cloud login/signup: %s\n", authURL)
+		fmt.Fprintf(out, "Browser opened for Dagger Cloud %s: %s\n", strings.ToLower(action), authURL)
 	}
 
 	fmt.Fprintf(out, "Confirmation code: %s\n\n", termenv.String(deviceAuth.UserCode).Bold())

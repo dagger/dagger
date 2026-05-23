@@ -24,6 +24,8 @@ var cloudGroup = &cobra.Group{
 
 var cloudCLI = &CloudCLI{}
 
+var loginSwitchAccount bool
+
 var loginCmd = &cobra.Command{
 	Use:     "login [options] [org]",
 	Aliases: []string{"signup"},
@@ -60,6 +62,8 @@ var cloudLogoutCmd = &cobra.Command{
 }
 
 func init() {
+	loginCmd.Flags().BoolVar(&loginSwitchAccount, "switch-account", false, "Choose a different Dagger Cloud account")
+	cloudLoginCmd.Flags().BoolVar(&loginSwitchAccount, "switch-account", false, "Choose a different Dagger Cloud account")
 	rootCmd.AddGroup(cloudGroup)
 	cloudCmd.AddCommand(cloudLoginCmd, cloudLogoutCmd)
 	rootCmd.AddCommand(cloudCmd, loginCmd, logoutCmd)
@@ -81,7 +85,15 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 		orgName = cloudOrgFlag
 	}
 
-	if err := auth.Login(ctx, outW); err != nil {
+	signup := strings.EqualFold(cmd.CalledAs(), "signup")
+	loginOpts := []auth.LoginOption{}
+	if signup {
+		loginOpts = append(loginOpts, auth.WithSignup())
+	}
+	if loginSwitchAccount {
+		loginOpts = append(loginOpts, auth.WithSwitchAccount())
+	}
+	if err := auth.Login(ctx, outW, loginOpts...); err != nil {
 		return err
 	}
 
