@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -180,12 +181,32 @@ func init() {
 }
 
 func (cli *CloudCLI) cloudClient(ctx context.Context) (*cloudapi.Client, *cloudauth.Cloud, error) {
+	return cli.cloudClientWithLogin(ctx, true)
+}
+
+func (cli *CloudCLI) cloudClientNoLogin(ctx context.Context) (*cloudapi.Client, *cloudauth.Cloud, error) {
+	return cli.cloudClientWithLogin(ctx, false)
+}
+
+func (cli *CloudCLI) cloudClientWithLogin(ctx context.Context, login bool) (*cloudapi.Client, *cloudauth.Cloud, error) {
 	cloudAuth, err := cloudauth.GetCloudAuth(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("cloud auth: %w", err)
 	}
 	if cloudAuth == nil || cloudAuth.Token == nil {
-		return nil, nil, fmt.Errorf("not authenticated; run 'dagger cloud login' or set DAGGER_CLOUD_TOKEN")
+		if !login {
+			return nil, nil, fmt.Errorf("not authenticated; run 'dagger login' or set DAGGER_CLOUD_TOKEN")
+		}
+		if err := cloudauth.Login(ctx, os.Stdout); err != nil {
+			return nil, nil, err
+		}
+		cloudAuth, err = cloudauth.GetCloudAuth(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("cloud auth: %w", err)
+		}
+		if cloudAuth == nil || cloudAuth.Token == nil {
+			return nil, nil, fmt.Errorf("not authenticated; run 'dagger login' or set DAGGER_CLOUD_TOKEN")
+		}
 	}
 
 	client, err := cloudapi.NewClient(ctx, cloudAuth)
@@ -206,7 +227,17 @@ func (cli *CloudCLI) resolveCloudOrg(ctx context.Context, client *cloudapi.Clien
 		}
 	}
 	if orgName == "" {
-		return nil, fmt.Errorf("no org specified; use --org or run 'dagger cloud login <org>'")
+		user, err := client.User(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if len(user.Orgs) == 1 {
+			orgName = user.Orgs[0].Name
+			_ = cloudauth.SetCurrentOrg(&user.Orgs[0])
+		}
+	}
+	if orgName == "" {
+		return nil, fmt.Errorf("no org specified; use --org or run 'dagger login <org>'")
 	}
 
 	org, err := client.OrgByName(ctx, orgName)

@@ -140,6 +140,8 @@ func init() {
 type repoCloudState struct {
 	Org          *cloudapi.OrgResponse      `json:"org"`
 	Repository   string                     `json:"repository"`
+	Remote       string                     `json:"remote,omitempty"`
+	Local        string                     `json:"local,omitempty"`
 	Status       string                     `json:"status"`
 	Features     repoFeatureSet             `json:"features"`
 	Source       *cloudapi.Source           `json:"source,omitempty"`
@@ -170,15 +172,26 @@ type repoListEntry struct {
 
 func (cli *CloudCLI) RepoInfo(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	client, cloudAuth, err := cli.cloudClient(ctx)
+	repo, remote, err := repoAndRemote(ctx, args)
 	if err != nil {
 		return err
+	}
+	local := "."
+	client, cloudAuth, err := cli.cloudClientNoLogin(ctx)
+	if err != nil {
+		if cloudJSON {
+			return writeCloudJSON(cmd, map[string]any{
+				"repository":             repo,
+				"remote":                 remote,
+				"local":                  local,
+				"fieldsRequireLogin":     []string{"org", "integration", "autocheck"},
+				"recommendedNextCommand": "dagger login",
+			})
+		}
+		printRepoInfoLoggedOut(cmd, remote, local)
+		return nil
 	}
 	org, err := cli.resolveCloudOrg(ctx, client, cloudAuth)
-	if err != nil {
-		return err
-	}
-	repo, err := repoFromArgOrGit(ctx, args)
 	if err != nil {
 		return err
 	}
@@ -186,6 +199,8 @@ func (cli *CloudCLI) RepoInfo(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	state.Remote = remote
+	state.Local = local
 	settings, err := client.RepoSettings(ctx, org.Name, repo)
 	if err != nil {
 		return err
@@ -659,14 +674,29 @@ func (cli *CloudCLI) selectedReposForSource(ctx context.Context, client *cloudap
 }
 
 func repoFromArgOrGit(ctx context.Context, args []string) (string, error) {
+	repo, _, err := repoAndRemote(ctx, args)
+	return repo, err
+}
+
+func repoAndRemote(ctx context.Context, args []string) (string, string, error) {
 	if len(args) > 0 && strings.TrimSpace(args[0]) != "" {
-		return normalizeGitHubRepo(args[0])
+		repo, err := normalizeGitHubRepo(args[0])
+		return repo, args[0], err
 	}
+	remote, err := gitRemoteOriginURL(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	repo, err := normalizeGitHubRepo(remote)
+	return repo, remote, err
+}
+
+func gitRemoteOriginURL(ctx context.Context) (string, error) {
 	out, err := exec.CommandContext(ctx, "git", "config", "--get", "remote.origin.url").Output()
 	if err != nil {
 		return "", fmt.Errorf("no repo specified and git remote.origin.url could not be read")
 	}
-	return normalizeGitHubRepo(strings.TrimSpace(string(out)))
+	return strings.TrimSpace(string(out)), nil
 }
 
 func normalizeGitHubRepo(ref string) (string, error) {
@@ -793,6 +823,12 @@ func removeRepository(repos []string, repo string) []string {
 
 func printRepoInfo(cmd *cobra.Command, state *repoCloudState) {
 	out := cmd.OutOrStdout()
+	if state.Remote != "" {
+		fmt.Fprintf(out, "remote=%q\n", state.Remote)
+	}
+	if state.Local != "" {
+		fmt.Fprintf(out, "local=%q\n", state.Local)
+	}
 	fmt.Fprintf(out, "Repository: %s\n", state.Repository)
 	fmt.Fprintf(out, "Org:        %s\n", state.Org.Name)
 	fmt.Fprintf(out, "Status:     %s\n", repoDisplayStatus(state.Status))
@@ -820,6 +856,16 @@ func printRepoInfo(cmd *cobra.Command, state *repoCloudState) {
 	}
 	fmt.Fprintf(out, "\n%s\n", state.Message)
 	fmt.Fprintf(out, "Autocheck: %s\n", onOff(state.Features.Autocheck.Enabled))
+}
+
+func printRepoInfoLoggedOut(cmd *cobra.Command, remote string, local string) {
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "remote=%q\n", remote)
+	fmt.Fprintf(out, "local=%q\n", local)
+	fmt.Fprintln(out, "# Fields below require \"dagger login\":")
+	fmt.Fprintln(out, "# org")
+	fmt.Fprintln(out, "# integration")
+	fmt.Fprintln(out, "# autocheck")
 }
 
 func writeRepoStateJSON(cmd *cobra.Command, state *repoCloudState) error {
