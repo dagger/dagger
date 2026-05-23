@@ -26,7 +26,8 @@ var cloudCLI = &CloudCLI{}
 
 var loginCmd = &cobra.Command{
 	Use:     "login [options] [org]",
-	Short:   "Log in to Dagger Cloud",
+	Aliases: []string{"signup"},
+	Short:   "Log in or sign up to Dagger Cloud",
 	GroupID: cloudGroup.ID,
 	RunE:    cloudCLI.Login,
 }
@@ -46,9 +47,10 @@ var cloudCmd = &cobra.Command{
 }
 
 var cloudLoginCmd = &cobra.Command{
-	Use:   "login [options] [org]",
-	Short: "Log in to Dagger Cloud",
-	RunE:  cloudCLI.Login,
+	Use:     "login [options] [org]",
+	Aliases: []string{"signup"},
+	Short:   "Log in or sign up to Dagger Cloud",
+	RunE:    cloudCLI.Login,
 }
 
 var cloudLogoutCmd = &cobra.Command{
