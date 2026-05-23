@@ -1,6 +1,11 @@
 package cloud
 
-import "context"
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+)
 
 type SourceMode string
 
@@ -83,6 +88,60 @@ type RepoSetting struct {
 type RepoSettingInput struct {
 	Repo     string `json:"repo"`
 	IsPublic bool   `json:"isPublic"`
+}
+
+type SubscriptionItem struct {
+	ItemPriceID string `json:"itemPriceID"`
+	ItemType    string `json:"itemType"`
+	ItemID      string `json:"itemID"`
+	Quantity    *int   `json:"quantity,omitempty"`
+}
+
+type SubscriptionInfo struct {
+	Status         string  `json:"status"`
+	TrialStart     *string `json:"trialStart,omitempty"`
+	TrialEnd       *string `json:"trialEnd,omitempty"`
+	SubscriptionID string  `json:"subscriptionID"`
+	PlanID         string  `json:"planID"`
+	HasCaching     bool    `json:"hasCaching"`
+}
+
+type Feature struct {
+	Name       string  `json:"name"`
+	Status     string  `json:"status"`
+	TrialStart *string `json:"trialStart,omitempty"`
+	TrialEnd   *string `json:"trialEnd,omitempty"`
+}
+
+type OrgDetails struct {
+	ID           string           `json:"id"`
+	Name         string           `json:"name"`
+	CreatedAt    string           `json:"createdAt"`
+	Subscription SubscriptionInfo `json:"subscription"`
+	Features     []Feature        `json:"features"`
+}
+
+type PlanItem struct {
+	ID           string `json:"id"`
+	ExternalName string `json:"external_name"`
+}
+
+type PlanPrice struct {
+	ID           string `json:"id"`
+	ItemID       string `json:"item_id"`
+	ExternalName string `json:"external_name"`
+	Unit         string `json:"unit"`
+	Price        uint   `json:"price"`
+	PeriodUnit   string `json:"period_unit"`
+}
+
+type Plan struct {
+	Item  PlanItem    `json:"item"`
+	Price []PlanPrice `json:"price"`
+}
+
+type PlansResponse struct {
+	Plans []Plan `json:"plans"`
 }
 
 const getSourcesOperation = `
@@ -409,4 +468,142 @@ func (c *Client) DisconnectGitHub(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	return data.DisconnectGitHub, nil
+}
+
+const getOrgDetailsOperation = `
+query GetOrgDetails($org: String!) {
+	org(name: $org) {
+		id
+		name
+		createdAt
+		subscription {
+			status
+			trialStart
+			trialEnd
+			subscriptionID
+			planID
+			hasCaching
+		}
+		features {
+			name
+			status
+			trialStart
+			trialEnd
+		}
+	}
+}
+`
+
+func (c *Client) OrgDetails(ctx context.Context, orgName string) (*OrgDetails, error) {
+	var data struct {
+		Org *OrgDetails `json:"org"`
+	}
+	if err := c.doGraphQL(ctx, "GetOrgDetails", getOrgDetailsOperation, map[string]any{
+		"org": orgName,
+	}, &data); err != nil {
+		return nil, err
+	}
+	if data.Org == nil {
+		return nil, fmt.Errorf("org %q not found", orgName)
+	}
+	return data.Org, nil
+}
+
+func (c *Client) Plans(ctx context.Context) (*PlansResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.u.JoinPath("/plans").String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.h.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("list plans: %s", resp.Status)
+	}
+	var plans PlansResponse
+	if err := json.NewDecoder(resp.Body).Decode(&plans); err != nil {
+		return nil, err
+	}
+	return &plans, nil
+}
+
+const createQuickstartOrgOperation = `
+mutation CreateQuickstartOrg($name: String!) {
+	createQuickstartOrg(name: $name) {
+		id
+		name
+	}
+}
+`
+
+func (c *Client) CreateQuickstartOrg(ctx context.Context, name string) (*OrgResponse, error) {
+	var data struct {
+		CreateQuickstartOrg OrgResponse `json:"createQuickstartOrg"`
+	}
+	if err := c.doGraphQL(ctx, "CreateQuickstartOrg", createQuickstartOrgOperation, map[string]any{
+		"name": name,
+	}, &data); err != nil {
+		return nil, err
+	}
+	return &data.CreateQuickstartOrg, nil
+}
+
+const createQuickstartOrgWithSourceSelectionsOperation = `
+mutation CreateQuickstartOrgWithSourceSelections($name: String!, $sources: [SourceSelectionInput!]!) {
+	createQuickstartOrgWithSourceSelections(name: $name, sources: $sources) {
+		id
+		name
+	}
+}
+`
+
+func (c *Client) CreateQuickstartOrgWithSourceSelections(ctx context.Context, name string, sources []SourceSelectionInput) (*OrgResponse, error) {
+	var data struct {
+		CreateQuickstartOrgWithSourceSelections OrgResponse `json:"createQuickstartOrgWithSourceSelections"`
+	}
+	if err := c.doGraphQL(ctx, "CreateQuickstartOrgWithSourceSelections", createQuickstartOrgWithSourceSelectionsOperation, map[string]any{
+		"name":    name,
+		"sources": sources,
+	}, &data); err != nil {
+		return nil, err
+	}
+	return &data.CreateQuickstartOrgWithSourceSelections, nil
+}
+
+const enableCloudModulesTrialOperation = `
+mutation EnableCloudModulesTrial($org: ID!) {
+	enableCloudModulesTrial(org: $org)
+}
+`
+
+func (c *Client) EnableCloudModulesTrial(ctx context.Context, orgID string) (bool, error) {
+	var data struct {
+		EnableCloudModulesTrial bool `json:"enableCloudModulesTrial"`
+	}
+	if err := c.doGraphQL(ctx, "EnableCloudModulesTrial", enableCloudModulesTrialOperation, map[string]any{
+		"org": orgID,
+	}, &data); err != nil {
+		return false, err
+	}
+	return data.EnableCloudModulesTrial, nil
+}
+
+const createPortalSessionOperation = `
+mutation CreatePortalSession($org: ID!) {
+	createPortalSession(org: $org)
+}
+`
+
+func (c *Client) CreatePortalSession(ctx context.Context, orgID string) (string, error) {
+	var data struct {
+		CreatePortalSession string `json:"createPortalSession"`
+	}
+	if err := c.doGraphQL(ctx, "CreatePortalSession", createPortalSessionOperation, map[string]any{
+		"org": orgID,
+	}, &data); err != nil {
+		return "", err
+	}
+	return data.CreatePortalSession, nil
 }
