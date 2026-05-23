@@ -93,7 +93,7 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 		return &generator.GeneratedState{
 			Overlay: layerfs.New(layers...),
 			PostCommands: []*exec.Cmd{
-				exec.Command("go", "mod", "tidy"),
+				goCommand("mod", "tidy"),
 			},
 		}, nil
 	}
@@ -187,7 +187,7 @@ func (g *GoGenerator) GenerateClient(ctx context.Context, schema *introspection.
 	// Always run `go mod tidy` in the client directory so that newly-generated
 	// imports (e.g. from a freshly-added dependency file) are resolved and
 	// recorded in go.mod / go.sum, and stale entries are pruned.
-	tidyCmd := exec.Command("go", "mod", "tidy")
+	tidyCmd := goCommand("mod", "tidy")
 	tidyCmd.Dir = clientAbsPath
 	postCmds = append(postCmds, tidyCmd)
 
@@ -227,6 +227,12 @@ func (g *GoGenerator) writeClientGoMod(mfs *memfs.FS, clientGoModFilePath string
 	}
 
 	return nil
+}
+
+func goCommand(args ...string) *exec.Cmd {
+	cmd := exec.Command("go", args...)
+	cmd.Env = goCommandEnv()
+	return cmd
 }
 
 // findParentGoModDir walks up from OutputDir to find the parent go.mod directory

@@ -244,10 +244,10 @@ func (g *GoGenerator) syncModReplaceAndTidy(mod *modfile.File, genSt *generator.
 			continue
 		}
 		genSt.PostCommands = append(genSt.PostCommands,
-			exec.Command("go", "mod", "edit", "-replace", minReq.Old.Path+"="+minReq.New.Path+"@"+minReq.New.Version))
+			goCommand("mod", "edit", "-replace", minReq.Old.Path+"="+minReq.New.Path+"@"+minReq.New.Version))
 		if goWork != "" {
 			genSt.PostCommands = append(genSt.PostCommands,
-				exec.Command("go", "work", "edit", "-replace", minReq.Old.Path+"="+minReq.New.Path+"@"+minReq.New.Version))
+				goCommand("work", "edit", "-replace", minReq.Old.Path+"="+minReq.New.Path+"@"+minReq.New.Version))
 		}
 	}
 
@@ -256,12 +256,12 @@ func (g *GoGenerator) syncModReplaceAndTidy(mod *modfile.File, genSt *generator.
 		//
 		// NOTE: this has to happen before 'go work use' to synchronize Go version
 		// bumps
-		exec.Command("go", "mod", "tidy"),
+		goCommand("mod", "tidy"),
 	)
 
 	if goWork != "" {
 		// run "go work use ." after generating if we had a go.work at the root
-		genSt.PostCommands = append(genSt.PostCommands, exec.Command("go", "work", "use", "."))
+		genSt.PostCommands = append(genSt.PostCommands, goCommand("work", "use", "."))
 	}
 
 	return nil

@@ -1,6 +1,8 @@
 package gogenerator
 
 import (
+	"os"
+
 	"golang.org/x/mod/modfile"
 )
 
@@ -12,4 +14,13 @@ func isDaggerPkgCustomReplaced(replaces []*modfile.Replace) bool {
 	}
 
 	return false
+}
+
+func goCommandEnv() []string {
+	env := append([]string{}, os.Environ()...)
+	env = append(env,
+		"GOPROXY=direct",
+		"GOSUMDB=off",
+	)
+	return env
 }
