@@ -300,8 +300,11 @@ func TestParseIncusPortMapping(t *testing.T) {
 func TestParseIncusPortMappingRejectsUnknownProtocol(t *testing.T) {
 	t.Parallel()
 
-	_, _, _, err := parseIncusPortMapping("8080:80/sctp")
+	host, backend, protocol, err := parseIncusPortMapping("8080:80/sctp")
 	require.Error(t, err)
+	require.Empty(t, host)
+	require.Empty(t, backend)
+	require.Empty(t, protocol)
 }
 
 func TestIncusLaunchArgsRejectsGPU(t *testing.T) {

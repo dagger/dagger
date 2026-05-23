@@ -499,100 +499,116 @@ func untarInto(rootfs string, r io.Reader) error {
 		if err != nil {
 			return err
 		}
-		base := filepath.Base(hdr.Name)
-		dir := filepath.Dir(target)
-
-		switch {
-		case strings.HasPrefix(base, ".wh.") && base != ".wh..wh..opq":
-			whTarget, err := safeArchiveTarget(rootfs, filepath.Join(filepath.Dir(hdr.Name), strings.TrimPrefix(base, ".wh.")))
-			if err != nil {
-				return err
-			}
-			resolvedWhDir, err := resolvePathWithinRoot(rootfs, filepath.Dir(whTarget), false)
-			if err != nil && !errors.Is(err, os.ErrNotExist) {
-				return err
-			}
-			if resolvedWhDir != "" {
-				whTarget = filepath.Join(resolvedWhDir, filepath.Base(whTarget))
-			}
-			if err := os.RemoveAll(whTarget); err != nil {
-				return err
-			}
-			continue
-		case base == ".wh..wh..opq":
-			entries, err := os.ReadDir(dir)
-			if err != nil {
-				return err
-			}
-			for _, entry := range entries {
-				if err := os.RemoveAll(filepath.Join(dir, entry.Name())); err != nil {
-					return err
-				}
-			}
+		handled, err := handleTarWhiteout(rootfs, hdr, target)
+		if err != nil {
+			return err
+		}
+		if handled {
 			continue
 		}
 
-		switch hdr.Typeflag {
-		case tar.TypeDir:
-			resolvedDir, err := resolvePathWithinRoot(rootfs, target, true)
-			if err != nil {
-				return err
-			}
-			if err := os.MkdirAll(resolvedDir, os.FileMode(hdr.Mode)); err != nil {
-				return err
-			}
-		case tar.TypeSymlink:
-			resolvedDir, err := resolvePathWithinRoot(rootfs, dir, true)
-			if err != nil {
-				return err
-			}
-			if err := safeSymlinkTarget(rootfs, resolvedDir, hdr.Linkname); err != nil {
-				return err
-			}
-			linkTarget := filepath.Join(resolvedDir, filepath.Base(target))
-			if err := os.RemoveAll(linkTarget); err != nil {
-				return err
-			}
-			if err := os.Symlink(hdr.Linkname, linkTarget); err != nil {
-				return err
-			}
-		case tar.TypeLink:
-			resolvedDir, err := resolvePathWithinRoot(rootfs, dir, true)
-			if err != nil {
-				return err
-			}
-			linkTarget, err := safeResolvedPath(rootfs, dir, hdr.Linkname)
-			if err != nil {
-				return err
-			}
-			targetPath := filepath.Join(resolvedDir, filepath.Base(target))
-			if err := os.RemoveAll(targetPath); err != nil {
-				return err
-			}
-			if err := os.Link(linkTarget, targetPath); err != nil {
-				return err
-			}
-		case tar.TypeReg, tar.TypeRegA:
-			resolvedDir, err := resolvePathWithinRoot(rootfs, dir, true)
-			if err != nil {
-				return err
-			}
-			filePath := filepath.Join(resolvedDir, filepath.Base(target))
-			f, err := safeOpenFile(rootfs, filePath, os.FileMode(hdr.Mode))
-			if err != nil {
-				return err
-			}
-			if _, err := io.Copy(f, tr); err != nil {
-				_ = f.Close()
-				return err
-			}
-			if err := f.Close(); err != nil {
-				return err
-			}
-		default:
-			continue
+		if err := handleTarEntry(rootfs, tr, hdr, target); err != nil {
+			return err
 		}
 	}
+}
+
+func handleTarWhiteout(rootfs string, hdr *tar.Header, target string) (bool, error) {
+	base := filepath.Base(hdr.Name)
+	dir := filepath.Dir(target)
+
+	switch {
+	case strings.HasPrefix(base, ".wh.") && base != ".wh..wh..opq":
+		whTarget, err := safeArchiveTarget(rootfs, filepath.Join(filepath.Dir(hdr.Name), strings.TrimPrefix(base, ".wh.")))
+		if err != nil {
+			return false, err
+		}
+		resolvedWhDir, err := resolvePathWithinRoot(rootfs, filepath.Dir(whTarget), false)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
+		if resolvedWhDir != "" {
+			whTarget = filepath.Join(resolvedWhDir, filepath.Base(whTarget))
+		}
+		if err := os.RemoveAll(whTarget); err != nil {
+			return false, err
+		}
+		return true, nil
+	case base == ".wh..wh..opq":
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return false, err
+		}
+		for _, entry := range entries {
+			if err := os.RemoveAll(filepath.Join(dir, entry.Name())); err != nil {
+				return false, err
+			}
+		}
+		return true, nil
+	default:
+		return false, nil
+	}
+}
+
+func handleTarEntry(rootfs string, tr *tar.Reader, hdr *tar.Header, target string) error {
+	dir := filepath.Dir(target)
+
+	switch hdr.Typeflag {
+	case tar.TypeDir:
+		resolvedDir, err := resolvePathWithinRoot(rootfs, target, true)
+		if err != nil {
+			return err
+		}
+		return os.MkdirAll(resolvedDir, os.FileMode(hdr.Mode))
+	case tar.TypeSymlink:
+		resolvedDir, err := resolvePathWithinRoot(rootfs, dir, true)
+		if err != nil {
+			return err
+		}
+		if err := safeSymlinkTarget(rootfs, resolvedDir, hdr.Linkname); err != nil {
+			return err
+		}
+		linkTarget := filepath.Join(resolvedDir, filepath.Base(target))
+		if err := os.RemoveAll(linkTarget); err != nil {
+			return err
+		}
+		return os.Symlink(hdr.Linkname, linkTarget)
+	case tar.TypeLink:
+		resolvedDir, err := resolvePathWithinRoot(rootfs, dir, true)
+		if err != nil {
+			return err
+		}
+		linkTarget, err := safeResolvedPath(rootfs, dir, hdr.Linkname)
+		if err != nil {
+			return err
+		}
+		targetPath := filepath.Join(resolvedDir, filepath.Base(target))
+		if err := os.RemoveAll(targetPath); err != nil {
+			return err
+		}
+		return os.Link(linkTarget, targetPath)
+	case tar.TypeReg:
+		return writeTarRegularFile(rootfs, dir, target, hdr, tr)
+	default:
+		return nil
+	}
+}
+
+func writeTarRegularFile(rootfs, dir, target string, hdr *tar.Header, tr *tar.Reader) error {
+	resolvedDir, err := resolvePathWithinRoot(rootfs, dir, true)
+	if err != nil {
+		return err
+	}
+	filePath := filepath.Join(resolvedDir, filepath.Base(target))
+	f, err := safeOpenFile(rootfs, filePath, os.FileMode(hdr.Mode))
+	if err != nil {
+		return err
+	}
+	if _, err := io.CopyN(f, tr, hdr.Size); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 func buildMetadataYAML(alias string, cfg dockerImageConfig) (string, error) {
@@ -757,7 +773,7 @@ func extractArchiveFile(sourcePath, target, outPath string) (rerr error) {
 		if err != nil {
 			return err
 		}
-		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != tar.TypeRegA {
+		if hdr.Typeflag != tar.TypeReg {
 			continue
 		}
 		if !archiveEntryMatches(hdr.Name, target, normalizedTarget) {
@@ -770,7 +786,7 @@ func extractArchiveFile(sourcePath, target, outPath string) (rerr error) {
 		if _, err := out.Seek(0, io.SeekStart); err != nil {
 			return err
 		}
-		written, err := io.Copy(out, tr)
+		written, err := io.CopyN(out, tr, hdr.Size)
 		if err != nil {
 			return err
 		}
@@ -1010,17 +1026,6 @@ func splitPath(p string) []string {
 		return nil
 	}
 	return strings.Split(p, string(os.PathSeparator))
-}
-
-func hasParentTraversal(name string) bool {
-	trimmed := strings.TrimSpace(strings.TrimPrefix(name, "./"))
-	trimmed = strings.TrimPrefix(trimmed, "/")
-	for _, part := range strings.Split(trimmed, "/") {
-		if part == ".." {
-			return true
-		}
-	}
-	return false
 }
 
 func writeFileToTar(tw *tar.Writer, sourcePath, targetName string) error {

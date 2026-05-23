@@ -39,6 +39,7 @@ export class Bin implements EngineConn {
 
   private binPath?: string
   private cliVersion?: string
+  private readonly providedBinPath: boolean
 
   private readonly cacheDir = envPaths("dagger", { suffix: "" }).cache
 
@@ -47,6 +48,7 @@ export class Bin implements EngineConn {
   constructor(binPath?: string, cliVersion?: string) {
     this.binPath = binPath
     this.cliVersion = cliVersion
+    this.providedBinPath = binPath !== undefined
   }
 
   Addr(): string {
@@ -70,7 +72,25 @@ export class Bin implements EngineConn {
       }
     }
 
-    return this.runEngineSession(this.binPath, opts)
+    try {
+      return await this.runEngineSession(this.binPath, opts)
+    } catch (err) {
+      if (!this.providedBinPath) {
+        throw err
+      }
+
+      if (opts.LogOutput) {
+        opts.LogOutput.write("Falling back to downloaded CLI... ")
+      }
+
+      this.binPath = await this.downloadCLI()
+
+      if (opts.LogOutput) {
+        opts.LogOutput.write("OK!\n")
+      }
+
+      return this.runEngineSession(this.binPath, opts)
+    }
   }
 
   private async downloadCLI(): Promise<string> {
