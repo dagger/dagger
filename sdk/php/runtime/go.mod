@@ -2,10 +2,6 @@ module php-sdk
 
 go 1.25.0
 
-replace dagger.io/dagger => ../../../sdk/go
-
-replace github.com/dagger/dagger/engine/distconsts => ../../../engine/distconsts
-
 replace go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc => go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.16.0
 
 replace go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp => go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.16.0
