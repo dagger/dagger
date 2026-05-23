@@ -63,10 +63,10 @@ func New(
 type EngineDev struct {
 	Source *dagger.Directory
 
-	BuildkitConfig []string // +private
-	LogLevel       string   // +private
-	SubnetNumber   int      // +private
-	EBPFProgs      []string // +private
+	EngineConfig []string // +private
+	LogLevel     string   // +private
+	SubnetNumber int      // +private
+	EBPFProgs    []string // +private
 
 	Race               bool // +private
 	ClientDockerConfig *dagger.Secret
@@ -86,8 +86,8 @@ func (dev *EngineDev) WithEBPFProgs(names []string) *EngineDev {
 	return dev
 }
 
-func (dev *EngineDev) WithBuildkitConfig(key, value string) *EngineDev {
-	dev.BuildkitConfig = append(dev.BuildkitConfig, key+"="+value)
+func (dev *EngineDev) WithEngineConfig(key, value string) *EngineDev {
+	dev.EngineConfig = append(dev.EngineConfig, key+"="+value)
 	return dev
 }
 
@@ -156,7 +156,7 @@ func (dev *EngineDev) Container(
 	if err != nil {
 		return nil, err
 	}
-	bkcfg, err := generateBKConfig(dev.BuildkitConfig)
+	engineTOML, err := generateEngineTOML(dev.EngineConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +188,7 @@ func (dev *EngineDev) Container(
 
 	ctr = ctr.
 		WithFile(engineJSONPath, cfg).
-		WithFile(engineTOMLPath, bkcfg).
+		WithFile(engineTOMLPath, engineTOML).
 		WithFile(engineEntrypointPath, entrypoint).
 		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
 

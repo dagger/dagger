@@ -64,12 +64,19 @@ type Accessor interface {
 
 type SnapshotManager interface {
 	Accessor
+	SnapshotSize(ctx context.Context, snapshotID string) (int64, error)
+	SnapshotRecordMetadata(ctx context.Context, snapshotID string) (SnapshotRecordMetadata, bool, error)
 	AttachLease(ctx context.Context, leaseID, snapshotID string) error
 	RemoveLease(ctx context.Context, leaseID string) error
 	LoadPersistentMetadata(rows PersistentMetadataRows) error
 	PersistentMetadataRows() PersistentMetadataRows
 	DeleteStaleDaggerOwnerLeases(ctx context.Context, keep map[string]struct{}) error
 	Close() error
+}
+
+type SnapshotRecordMetadata struct {
+	RecordType  client.UsageRecordType
+	Description string
 }
 
 type snapshotManager struct {
@@ -150,6 +157,75 @@ func (cm *snapshotManager) GetBySnapshotID(ctx context.Context, snapshotID strin
 		return nil, err
 	}
 	return cm.get(ctx, snapshotID, opts...)
+}
+
+func (cm *snapshotManager) SnapshotSize(ctx context.Context, snapshotID string) (int64, error) {
+	if snapshotID == "" {
+		return 0, errors.New("snapshot size: empty snapshot ID")
+	}
+
+	usage, err := cm.Snapshotter.Usage(ctx, snapshotID)
+	if err != nil {
+		if cerrdefs.IsNotFound(err) {
+			return 0, errors.Wrap(errNotFound, snapshotID)
+		}
+		return 0, errors.Wrapf(err, "failed to get usage for %s", snapshotID)
+	}
+
+	cm.mu.Lock()
+	contentDigests := make([]digest.Digest, 0, len(cm.snapshotContentDigests[snapshotID]))
+	for dgst := range cm.snapshotContentDigests[snapshotID] {
+		contentDigests = append(contentDigests, dgst)
+	}
+	cm.mu.Unlock()
+
+	if cm.ContentStore == nil {
+		return usage.Size, nil
+	}
+
+	added := make(map[digest.Digest]struct{}, len(contentDigests))
+	for _, dgst := range contentDigests {
+		if dgst == "" {
+			continue
+		}
+		if _, ok := added[dgst]; !ok {
+			if info, err := cm.ContentStore.Info(ctx, dgst); err == nil {
+				usage.Size += info.Size
+				added[dgst] = struct{}{}
+			}
+		}
+		walkBlobVariantsOnly(ctx, cm.ContentStore, dgst, func(desc ocispecs.Descriptor) bool {
+			if _, ok := added[desc.Digest]; ok {
+				return true
+			}
+			if info, err := cm.ContentStore.Info(ctx, desc.Digest); err == nil {
+				usage.Size += info.Size
+				added[desc.Digest] = struct{}{}
+			}
+			return true
+		}, nil)
+	}
+
+	return usage.Size, nil
+}
+
+func (cm *snapshotManager) SnapshotRecordMetadata(ctx context.Context, snapshotID string) (SnapshotRecordMetadata, bool, error) {
+	_ = ctx
+	if snapshotID == "" {
+		return SnapshotRecordMetadata{}, false, errors.New("snapshot record metadata: empty snapshot ID")
+	}
+
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	md, ok := cm.getMetadata(snapshotID)
+	if !ok {
+		return SnapshotRecordMetadata{}, false, nil
+	}
+	return SnapshotRecordMetadata{
+		RecordType:  md.GetRecordType(),
+		Description: md.GetDescription(),
+	}, true, nil
 }
 
 // get requires manager lock to be taken

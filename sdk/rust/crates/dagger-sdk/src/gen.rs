@@ -5856,6 +5856,11 @@ impl EngineCacheEntry {
         let query = self.selection.select("createdTimeUnixNano");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The DagQL call that produced this cache entry.
+    pub async fn dagql_call(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("dagqlCall");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The description of the cache entry.
     pub async fn description(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("description");
@@ -5879,6 +5884,11 @@ impl EngineCacheEntry {
     /// The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount).
     pub async fn record_type(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("recordType");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The storage record types represented by this cache entry.
+    pub async fn record_types(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("recordTypes");
         query.execute(self.graphql_client.clone()).await
     }
 }

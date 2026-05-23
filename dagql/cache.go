@@ -50,6 +50,8 @@ type CacheUsageEntry struct {
 	ID                        string
 	Description               string
 	RecordType                string
+	RecordTypes               []string
+	DagqlCall                 string
 	SizeBytes                 int64
 	CreatedTimeUnixNano       int64
 	MostRecentUseTimeUnixNano int64
@@ -65,7 +67,7 @@ type CachePrunePolicy struct {
 	MinFreeSpace  int64
 	TargetSpace   int64
 
-	// CurrentFreeSpace is optional free-disk bytes at prune start used to
+	// CurrentFreeSpace is optional available-disk bytes at prune start used to
 	// evaluate MinFreeSpace. When unset, MinFreeSpace behaves as if free space
 	// were zero.
 	CurrentFreeSpace int64
@@ -83,10 +85,19 @@ type persistedEdge struct {
 	unpruneable       bool
 }
 
-const cachePersistenceSchemaVersion = "13"
+const cachePersistenceSchemaVersion = "16"
 
 var ErrCacheRecursiveCall = fmt.Errorf("recursive call detected")
 var ErrPersistStateNotReady = errors.New("persist state not ready")
+
+type CachePersistenceResetReason string
+
+const (
+	CachePersistenceResetNone            CachePersistenceResetReason = ""
+	CachePersistenceResetSchemaMismatch  CachePersistenceResetReason = "schema_mismatch"
+	CachePersistenceResetUncleanShutdown CachePersistenceResetReason = "unclean_shutdown"
+	CachePersistenceResetImportFailure   CachePersistenceResetReason = "import_failure"
+)
 
 func NewCache(
 	ctx context.Context,
@@ -119,6 +130,7 @@ func NewCache(
 		return nil, fmt.Errorf("read schema_version metadata: %w", err)
 	}
 	if found && schemaVersionVal != cachePersistenceSchemaVersion {
+		c.persistenceResetReason = CachePersistenceResetSchemaMismatch
 		c.tracePersistStoreWipedSchemaMismatch(ctx, cachePersistenceSchemaVersion, schemaVersionVal)
 		slog.Warn("dagql persistence store schema version mismatch; wiping and cold-starting", "expected", cachePersistenceSchemaVersion, "actual", schemaVersionVal)
 		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
@@ -144,6 +156,7 @@ func NewCache(
 		return nil, fmt.Errorf("read clean_shutdown metadata: %w", err)
 	}
 	if found && cleanShutdownVal != "1" {
+		c.persistenceResetReason = CachePersistenceResetUncleanShutdown
 		c.tracePersistStoreWipedUncleanShutdown(ctx, cleanShutdownVal)
 		slog.Warn("dagql persistence store marked unclean; wiping and cold-starting", "cleanShutdown", cleanShutdownVal)
 		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
@@ -161,6 +174,7 @@ func NewCache(
 		c.pdb = persistDB
 	}
 	if err := c.importPersistedState(ctx); err != nil {
+		c.persistenceResetReason = CachePersistenceResetImportFailure
 		c.tracePersistStoreWipedImportFailure(ctx, err)
 		slog.Warn("dagql persistence import failed; wiping and cold-starting", "err", err)
 		if closeErr := closeCacheDBs(db, c.pdb); closeErr != nil {
@@ -918,14 +932,10 @@ func desiredSnapshotLinksForResult(res *sharedResult) []PersistedSnapshotRefLink
 		return snapshotOwnerLinksFromTyped(state.self)
 	}
 
-	res.payloadMu.RLock()
-	defer res.payloadMu.RUnlock()
-	if len(res.snapshotOwnerLinks) == 0 {
+	if len(state.snapshotOwnerLinks) == 0 {
 		return nil
 	}
-	links := make([]PersistedSnapshotRefLink, len(res.snapshotOwnerLinks))
-	copy(links, res.snapshotOwnerLinks)
-	return links
+	return slices.Clone(state.snapshotOwnerLinks)
 }
 
 func (c *Cache) resultSnapshotLeaseCleanup(res *sharedResult) OnReleaseFunc {
@@ -938,9 +948,7 @@ func (c *Cache) resultSnapshotLeaseCleanup(res *sharedResult) OnReleaseFunc {
 			return nil
 		}
 
-		res.payloadMu.RLock()
-		links := append([]PersistedSnapshotRefLink(nil), res.snapshotOwnerLinks...)
-		res.payloadMu.RUnlock()
+		links := res.loadSnapshotOwnerLinks()
 
 		seen := make(map[snapshotOwnerKey]struct{}, len(links))
 		var rerr error
@@ -966,9 +974,7 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 
 	links := desiredSnapshotLinksForResult(res)
 
-	res.payloadMu.RLock()
-	oldLinks := append([]PersistedSnapshotRefLink(nil), res.snapshotOwnerLinks...)
-	res.payloadMu.RUnlock()
+	oldLinks := res.loadSnapshotOwnerLinks()
 
 	oldByKey := make(map[snapshotOwnerKey]PersistedSnapshotRefLink, len(oldLinks))
 	newByKey := make(map[snapshotOwnerKey]PersistedSnapshotRefLink, len(links))
@@ -1015,12 +1021,11 @@ func (c *Cache) syncResultSnapshotLeases(ctx context.Context, res *sharedResult)
 		}
 	}
 
-	res.payloadMu.Lock()
-	res.snapshotOwnerLinks = make([]PersistedSnapshotRefLink, 0, len(newByKey))
+	newLinks := make([]PersistedSnapshotRefLink, 0, len(newByKey))
 	for _, link := range newByKey {
-		res.snapshotOwnerLinks = append(res.snapshotOwnerLinks, link)
+		newLinks = append(newLinks, link)
 	}
-	res.payloadMu.Unlock()
+	res.storeSnapshotOwnerLinks(newLinks)
 
 	return nil
 }
@@ -1117,6 +1122,10 @@ func closeCacheDBs(db *sql.DB, persistDB *persistdb.Queries) error {
 	return err
 }
 
+func RemoveCachePersistenceStore(dbPath string) error {
+	return wipeSQLiteFiles(dbPath)
+}
+
 func wipeSQLiteFiles(dbPath string) error {
 	removeIfExists := func(path string) error {
 		err := os.Remove(path)
@@ -1144,6 +1153,8 @@ type Cache struct {
 	sessionMu sync.Mutex
 	// egraphMu protects all e-graph state and indexes.
 	egraphMu sync.RWMutex
+
+	persistenceResetReason CachePersistenceResetReason
 
 	// calls that are in progress, keyed by a combination of the call key and the concurrency key
 	// two calls with the same call+concurrency key will be "single-flighted" (only one will actually run)
@@ -1373,9 +1384,10 @@ type sharedResult struct {
 	sessionResourceHandle    SessionResourceHandle
 	requiredSessionResources *set.TreeSet[SessionResourceHandle]
 	// snapshotOwnerLinks are the exact direct snapshot-owner links currently
-	// attached for this result. They are the single source of truth for owner
-	// lease cleanup, debug output, and persistence export. They are not
-	// child-result deps.
+	// attached for this result. They are the source of truth for owner lease
+	// cleanup and debug output. Persistence export for newly encoded objects
+	// derives links from the same object encode pass that produced the payload.
+	// They are not child-result deps.
 	snapshotOwnerLinks []PersistedSnapshotRefLink
 
 	// expiresAtUnix is the in-memory TTL deadline for cache-hit eligibility.
@@ -1389,6 +1401,7 @@ type sharedResult struct {
 	createdAtUnixNano        int64
 	lastUsedAtUnixNano       int64
 	cacheUsageSizeByIdentity map[string]int64
+	cacheUsageRecordTypeByID map[string]string
 	description              string
 	recordType               string
 
@@ -1418,6 +1431,7 @@ type sharedResultPayloadState struct {
 	isObject           bool
 	hasValue           bool
 	persistedEnvelope  *PersistedResultEnvelope
+	snapshotOwnerLinks []PersistedSnapshotRefLink
 	createdAtUnixNano  int64
 	lastUsedAtUnixNano int64
 }
@@ -1451,11 +1465,31 @@ func (res *sharedResult) loadPayloadState() sharedResultPayloadState {
 		isObject:           res.isObject,
 		hasValue:           res.hasValue,
 		persistedEnvelope:  res.persistedEnvelope,
+		snapshotOwnerLinks: slices.Clone(res.snapshotOwnerLinks),
 		createdAtUnixNano:  res.createdAtUnixNano,
 		lastUsedAtUnixNano: res.lastUsedAtUnixNano,
 	}
 	res.payloadMu.RUnlock()
 	return state
+}
+
+func (res *sharedResult) loadSnapshotOwnerLinks() []PersistedSnapshotRefLink {
+	if res == nil {
+		return nil
+	}
+	res.payloadMu.RLock()
+	links := slices.Clone(res.snapshotOwnerLinks)
+	res.payloadMu.RUnlock()
+	return links
+}
+
+func (res *sharedResult) storeSnapshotOwnerLinks(links []PersistedSnapshotRefLink) {
+	if res == nil {
+		return
+	}
+	res.payloadMu.Lock()
+	res.snapshotOwnerLinks = slices.Clone(links)
+	res.payloadMu.Unlock()
 }
 
 func resultIsObject(val AnyResult, resolver TypeResolver) (bool, error) {
@@ -2286,7 +2320,7 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 			return r.shared.requiredSessionResources.Copy()
 		}(),
 		persistedEnvelope:  state.persistedEnvelope,
-		snapshotOwnerLinks: slices.Clone(r.shared.snapshotOwnerLinks),
+		snapshotOwnerLinks: state.snapshotOwnerLinks,
 		createdAtUnixNano:  state.createdAtUnixNano,
 		lastUsedAtUnixNano: state.lastUsedAtUnixNano,
 		cacheUsageSizeByIdentity: func() map[string]int64 {
@@ -2296,6 +2330,16 @@ func (r Result[T]) WithContentDigest(ctx context.Context, contentDigest digest.D
 			cp := make(map[string]int64, len(r.shared.cacheUsageSizeByIdentity))
 			for id, sz := range r.shared.cacheUsageSizeByIdentity {
 				cp[id] = sz
+			}
+			return cp
+		}(),
+		cacheUsageRecordTypeByID: func() map[string]string {
+			if len(r.shared.cacheUsageRecordTypeByID) == 0 {
+				return nil
+			}
+			cp := make(map[string]string, len(r.shared.cacheUsageRecordTypeByID))
+			for id, recordType := range r.shared.cacheUsageRecordTypeByID {
+				cp[id] = recordType
 			}
 			return cp
 		}(),
@@ -2370,7 +2414,7 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 		sessionResourceHandle:    handle,
 		requiredSessionResources: reqs,
 		persistedEnvelope:        state.persistedEnvelope,
-		snapshotOwnerLinks:       slices.Clone(r.shared.snapshotOwnerLinks),
+		snapshotOwnerLinks:       state.snapshotOwnerLinks,
 		createdAtUnixNano:        state.createdAtUnixNano,
 		lastUsedAtUnixNano:       state.lastUsedAtUnixNano,
 		cacheUsageSizeByIdentity: func() map[string]int64 {
@@ -2380,6 +2424,16 @@ func (r Result[T]) WithSessionResourceHandle(ctx context.Context, handle Session
 			cp := make(map[string]int64, len(r.shared.cacheUsageSizeByIdentity))
 			for id, sz := range r.shared.cacheUsageSizeByIdentity {
 				cp[id] = sz
+			}
+			return cp
+		}(),
+		cacheUsageRecordTypeByID: func() map[string]string {
+			if len(r.shared.cacheUsageRecordTypeByID) == 0 {
+				return nil
+			}
+			cp := make(map[string]string, len(r.shared.cacheUsageRecordTypeByID))
+			for id, recordType := range r.shared.cacheUsageRecordTypeByID {
+				cp[id] = recordType
 			}
 			return cp
 		}(),
@@ -2830,33 +2884,32 @@ func (c *Cache) evaluateOne(ctx context.Context, res AnyResult) error {
 			}
 		}
 
-		leaseCtx, release, leaseErr := withOperationLease(withoutOperationLease(callbackCtx))
-		if leaseErr != nil {
-			shared.lazyMu.Lock()
-			shared.lazyEvalErr = fmt.Errorf("acquire operation lease: %w", leaseErr)
-			clearState := shared.lazyEvalWaiters == 0 && shared.lazyEvalWaitCh == waitCh
-			if clearState {
-				shared.lazyEvalWaitCh = nil
-				shared.lazyEvalCancel = nil
-				shared.lazyEvalErr = nil
-			}
-			shared.lazyMu.Unlock()
-			close(waitCh)
-			return
-		}
-		callbackCtx = leaseCtx
-
 		var err error
-		if resumeSpan != nil {
-			defer telemetry.EndWithCause(resumeSpan, &err)
+		// End resumeSpan before close(waitCh) so that callers awaiting
+		// evaluation observe the span as ended (and exported, via sync
+		// processors). Deferring would fire only after close(waitCh) and
+		// race with the caller's flush/read of exported spans.
+		runEval := func() {
+			if resumeSpan != nil {
+				defer telemetry.EndWithCause(resumeSpan, &err)
+			}
+
+			leaseCtx, release, leaseErr := withOperationLease(withoutOperationLease(callbackCtx))
+			if leaseErr != nil {
+				err = fmt.Errorf("acquire operation lease: %w", leaseErr)
+				return
+			}
+			callbackCtx = leaseCtx
+
+			err = lazyEval(callbackCtx)
+			if err == nil {
+				err = c.syncResultSnapshotLeases(callbackCtx, shared)
+			}
+			if releaseErr := release(context.WithoutCancel(callbackCtx)); releaseErr != nil && err == nil {
+				err = releaseErr
+			}
 		}
-		err = lazyEval(callbackCtx)
-		if err == nil {
-			err = c.syncResultSnapshotLeases(callbackCtx, shared)
-		}
-		if releaseErr := release(context.WithoutCancel(callbackCtx)); releaseErr != nil && err == nil {
-			err = releaseErr
-		}
+		runEval()
 
 		shared.lazyMu.Lock()
 		shared.lazyEvalErr = err
@@ -2915,6 +2968,30 @@ func (c *Cache) Close(ctx context.Context) error {
 		slog.Info("completed dagql cache close successfully")
 	})
 	return c.closeErr
+}
+
+func (c *Cache) CloseDiscardingPersistence() error {
+	c.closeOnce.Do(func() {
+		slog.Info(
+			"discarding dagql cache without persistence",
+			"hasSQLDB", c.sqlDB != nil,
+			"hasPersistDB", c.pdb != nil,
+		)
+		if closeErr := closeCacheDBs(c.sqlDB, c.pdb); closeErr != nil {
+			slog.Error("failed to close discarded dagql persistence databases", "err", closeErr)
+			c.closeErr = errors.Join(c.closeErr, closeErr)
+		}
+		c.sqlDB = nil
+		c.pdb = nil
+	})
+	return c.closeErr
+}
+
+func (c *Cache) PersistenceResetReason() CachePersistenceResetReason {
+	if c == nil {
+		return CachePersistenceResetNone
+	}
+	return c.persistenceResetReason
 }
 
 func (c *Cache) Size() int {
@@ -2979,10 +3056,9 @@ func (c *Cache) usageEntriesLocked(activeRoots map[sharedResultID]struct{}) []Ca
 		if lastUsedAt == 0 {
 			lastUsedAt = createdAt
 		}
-		recordType := res.recordType
-		if recordType == "" {
-			recordType = "dagql.unknown"
-		}
+		recordTypes := cacheUsageRecordTypesFromMap(res.cacheUsageRecordTypeByID)
+		recordType := cacheUsagePrimaryRecordType(recordTypes, res.recordType)
+		dagqlCall := c.cacheUsageDagqlCallLocked(res)
 		description := res.description
 		if description == "" {
 			description = fmt.Sprintf("dagql cache result %d", resID)
@@ -2997,6 +3073,8 @@ func (c *Cache) usageEntriesLocked(activeRoots map[sharedResultID]struct{}) []Ca
 			ID:                        fmt.Sprintf("dagql.result.%d", resID),
 			Description:               description,
 			RecordType:                recordType,
+			RecordTypes:               recordTypes,
+			DagqlCall:                 dagqlCall,
 			SizeBytes:                 sizeBytes,
 			CreatedTimeUnixNano:       createdAt,
 			MostRecentUseTimeUnixNano: lastUsedAt,
@@ -3017,12 +3095,93 @@ func (c *Cache) usageEntriesLocked(activeRoots map[sharedResultID]struct{}) []Ca
 	return entries
 }
 
+func (c *Cache) cacheUsageDagqlCallLocked(res *sharedResult) string {
+	if c == nil || res == nil {
+		return ""
+	}
+	frame := res.loadResultCall()
+	if frame == nil {
+		return ""
+	}
+
+	fieldName := ""
+	if identityField, err := resultCallIdentityField(frame); err == nil {
+		fieldName = identityField
+	}
+
+	receiverTypeName := ""
+	if frame.Receiver != nil {
+		if receiverRes := c.resultsByID[sharedResultID(frame.Receiver.ResultID)]; receiverRes != nil {
+			receiverFrame := receiverRes.loadResultCall()
+			switch {
+			case receiverFrame != nil && receiverFrame.Type != nil && receiverFrame.Type.NamedType != "":
+				receiverTypeName = receiverFrame.Type.NamedType
+			default:
+				receiverState := receiverRes.loadPayloadState()
+				receiverTypeName = sharedResultObjectTypeName(receiverRes, receiverState)
+			}
+		}
+	}
+
+	switch {
+	case receiverTypeName != "" && fieldName != "":
+		return receiverTypeName + "." + fieldName
+	case fieldName != "":
+		if frame.Kind == ResultCallKindField {
+			return "Query." + fieldName
+		}
+		return fieldName
+	default:
+		return ""
+	}
+}
+
+func cacheUsageRecordTypesFromMap(recordTypeByID map[string]string) []string {
+	if len(recordTypeByID) == 0 {
+		return nil
+	}
+	recordTypes := make([]string, 0, len(recordTypeByID))
+	seen := make(map[string]struct{}, len(recordTypeByID))
+	for _, recordType := range recordTypeByID {
+		if recordType == "" {
+			continue
+		}
+		if _, ok := seen[recordType]; ok {
+			continue
+		}
+		seen[recordType] = struct{}{}
+		recordTypes = append(recordTypes, recordType)
+	}
+	slices.Sort(recordTypes)
+	return recordTypes
+}
+
+func cacheUsagePrimaryRecordType(recordTypes []string, fallback string) string {
+	switch len(recordTypes) {
+	case 0:
+		if fallback != "" {
+			return fallback
+		}
+		return "dagql.unknown"
+	case 1:
+		return recordTypes[0]
+	default:
+		return "mixed"
+	}
+}
+
 type cacheUsageMeasurementInput struct {
 	resultID         sharedResultID
 	self             Typed
+	snapshotLinks    []PersistedSnapshotRefLink
 	identities       []string
 	existingSizeByID map[string]int64
 	sizeMayChange    bool
+}
+
+type cacheUsageIdentityMeasurement struct {
+	sizeBytes  int64
+	recordType string
 }
 
 func (c *Cache) measureAllResultSizes(ctx context.Context) {
@@ -3030,8 +3189,8 @@ func (c *Cache) measureAllResultSizes(ctx context.Context) {
 	if len(inputs) == 0 {
 		return
 	}
-	sizes := buildCacheUsageMeasurements(ctx, inputs)
-	c.publishUsageMeasurements(sizes)
+	measurements := buildCacheUsageMeasurements(ctx, c.snapshotManager, inputs)
+	c.publishUsageMeasurements(measurements)
 }
 
 func (c *Cache) collectUsageMeasurementInputs() []cacheUsageMeasurementInput {
@@ -3043,26 +3202,40 @@ func (c *Cache) collectUsageMeasurementInputs() []cacheUsageMeasurementInput {
 			continue
 		}
 		state := res.loadPayloadState()
-		if !state.hasValue || state.self == nil {
+		var (
+			self          Typed
+			snapshotLinks []PersistedSnapshotRefLink
+			identities    []string
+			sizeMayChange bool
+		)
+		if state.hasValue && state.self != nil {
+			self = state.self
+			identities = cacheUsageIdentitiesFromSelf(state.self)
+			sizeMayChange = cacheUsageSizeMayChangeFromSelf(state.self)
+		} else {
+			snapshotLinks = slices.Clone(state.snapshotOwnerLinks)
+			identities = cacheUsageIdentitiesFromSnapshotLinks(snapshotLinks)
+		}
+		if len(identities) == 0 {
 			continue
 		}
-		identities := cacheUsageIdentitiesFromSelf(state.self)
 		existing := make(map[string]int64, len(res.cacheUsageSizeByIdentity))
 		for identity, sizeBytes := range res.cacheUsageSizeByIdentity {
 			existing[identity] = sizeBytes
 		}
 		inputs = append(inputs, cacheUsageMeasurementInput{
 			resultID:         resID,
-			self:             state.self,
+			self:             self,
+			snapshotLinks:    snapshotLinks,
 			identities:       identities,
 			existingSizeByID: existing,
-			sizeMayChange:    cacheUsageSizeMayChangeFromSelf(state.self),
+			sizeMayChange:    sizeMayChange,
 		})
 	}
 	return inputs
 }
 
-func buildCacheUsageMeasurements(ctx context.Context, inputs []cacheUsageMeasurementInput) map[sharedResultID]map[string]int64 {
+func buildCacheUsageMeasurements(ctx context.Context, snapshotManager bkcache.SnapshotManager, inputs []cacheUsageMeasurementInput) map[sharedResultID]map[string]cacheUsageIdentityMeasurement {
 	if len(inputs) == 0 {
 		return nil
 	}
@@ -3085,73 +3258,106 @@ func buildCacheUsageMeasurements(ctx context.Context, inputs []cacheUsageMeasure
 	}
 	slices.Sort(identities)
 
-	sizeByIdentity := make(map[string]int64, len(ownerByIdentity))
+	measurementByIdentity := make(map[string]cacheUsageIdentityMeasurement, len(ownerByIdentity))
 	for _, identity := range identities {
 		ownerID := ownerByIdentity[identity]
 		input := inputByResultID[ownerID]
+		var (
+			sizeBytes int64
+			ok        bool
+			err       error
+		)
 		if !input.sizeMayChange {
-			if sizeBytes, ok := input.existingSizeByID[identity]; ok {
-				sizeByIdentity[identity] = sizeBytes
+			if existingSizeBytes, found := input.existingSizeByID[identity]; found {
+				sizeBytes = existingSizeBytes
+				ok = true
+			}
+		}
+
+		if !ok {
+			if input.self != nil {
+				sizeBytes, ok, err = cacheUsageSizeBytesFromSelf(ctx, input.self, identity)
+			} else if len(input.snapshotLinks) > 0 {
+				sizeBytes, ok, err = cacheUsageSizeBytesFromSnapshotLink(ctx, snapshotManager, identity)
+			}
+			if err != nil {
+				slog.Warn("failed to determine cache usage size",
+					"resultID", ownerID,
+					"usageIdentity", identity,
+					"err", err)
+				continue
+			}
+			if !ok {
 				continue
 			}
 		}
 
-		sizeBytes, ok, err := cacheUsageSizeBytesFromSelf(ctx, input.self, identity)
+		recordType, _, err := cacheUsageRecordTypeFromSnapshotMetadata(ctx, snapshotManager, identity)
 		if err != nil {
-			slog.Warn("failed to determine cache usage size",
+			slog.Warn("failed to determine cache usage record type",
 				"resultID", ownerID,
 				"usageIdentity", identity,
 				"err", err)
-			continue
-		}
-		if !ok {
-			continue
 		}
 		if sizeBytes < 0 {
 			sizeBytes = 0
 		}
-		sizeByIdentity[identity] = sizeBytes
+		measurementByIdentity[identity] = cacheUsageIdentityMeasurement{
+			sizeBytes:  sizeBytes,
+			recordType: recordType,
+		}
 	}
 
-	published := make(map[sharedResultID]map[string]int64, len(inputs))
+	published := make(map[sharedResultID]map[string]cacheUsageIdentityMeasurement, len(inputs))
 	for _, input := range inputs {
-		resultSizes := make(map[string]int64)
+		resultMeasurements := make(map[string]cacheUsageIdentityMeasurement)
 		for _, identity := range input.identities {
 			if ownerByIdentity[identity] != input.resultID {
 				continue
 			}
-			sizeBytes, ok := sizeByIdentity[identity]
+			measurement, ok := measurementByIdentity[identity]
 			if !ok {
 				continue
 			}
-			resultSizes[identity] = sizeBytes
+			resultMeasurements[identity] = measurement
 		}
-		if len(resultSizes) == 0 {
+		if len(resultMeasurements) == 0 {
 			continue
 		}
-		published[input.resultID] = resultSizes
+		published[input.resultID] = resultMeasurements
 	}
 
 	return published
 }
 
-func (c *Cache) publishUsageMeasurements(sizes map[sharedResultID]map[string]int64) {
+func (c *Cache) publishUsageMeasurements(measurements map[sharedResultID]map[string]cacheUsageIdentityMeasurement) {
 	c.egraphMu.Lock()
 	defer c.egraphMu.Unlock()
 	for resultID, res := range c.resultsByID {
 		if res == nil {
 			continue
 		}
-		resultSizes, ok := sizes[resultID]
+		resultMeasurements, ok := measurements[resultID]
 		if !ok {
 			res.cacheUsageSizeByIdentity = nil
+			res.cacheUsageRecordTypeByID = nil
 			continue
 		}
-		cp := make(map[string]int64, len(resultSizes))
-		for identity, sizeBytes := range resultSizes {
-			cp[identity] = sizeBytes
+		sizeByIdentity := make(map[string]int64, len(resultMeasurements))
+		recordTypeByIdentity := make(map[string]string, len(resultMeasurements))
+		for identity, measurement := range resultMeasurements {
+			sizeByIdentity[identity] = measurement.sizeBytes
+			if measurement.recordType != "" {
+				recordTypeByIdentity[identity] = measurement.recordType
+			}
 		}
-		res.cacheUsageSizeByIdentity = cp
+		res.cacheUsageSizeByIdentity = sizeByIdentity
+		res.cacheUsageRecordTypeByID = recordTypeByIdentity
+
+		recordTypes := cacheUsageRecordTypesFromMap(recordTypeByIdentity)
+		if len(recordTypes) > 0 {
+			res.recordType = cacheUsagePrimaryRecordType(recordTypes, "")
+		}
 	}
 }
 
@@ -4060,6 +4266,28 @@ func cacheUsageSizeBytesFromSelf(ctx context.Context, self Typed, identity strin
 	return sizer.CacheUsageSize(ctx, identity)
 }
 
+func cacheUsageSizeBytesFromSnapshotLink(ctx context.Context, snapshotManager bkcache.SnapshotManager, identity string) (int64, bool, error) {
+	if snapshotManager == nil || identity == "" {
+		return 0, false, nil
+	}
+	sizeBytes, err := snapshotManager.SnapshotSize(ctx, identity)
+	if err != nil {
+		return 0, false, err
+	}
+	return sizeBytes, true, nil
+}
+
+func cacheUsageRecordTypeFromSnapshotMetadata(ctx context.Context, snapshotManager bkcache.SnapshotManager, identity string) (string, bool, error) {
+	if snapshotManager == nil || identity == "" {
+		return "", false, nil
+	}
+	md, ok, err := snapshotManager.SnapshotRecordMetadata(ctx, identity)
+	if err != nil || !ok || md.RecordType == "" {
+		return "", ok, err
+	}
+	return string(md.RecordType), true, nil
+}
+
 func cacheUsageIdentitiesFromSelf(self Typed) []string {
 	if self == nil {
 		return nil
@@ -4073,12 +4301,33 @@ func cacheUsageIdentitiesFromSelf(self Typed) []string {
 	return slices.Compact(ids)
 }
 
-func cacheUsageIdentities(res *sharedResult) []string {
-	state := res.loadPayloadState()
-	if res == nil || !state.hasValue || state.self == nil {
+func cacheUsageIdentitiesFromSnapshotLinks(links []PersistedSnapshotRefLink) []string {
+	if len(links) == 0 {
 		return nil
 	}
-	return cacheUsageIdentitiesFromSelf(state.self)
+	ids := make([]string, 0, len(links))
+	for _, link := range links {
+		if link.RefKey == "" {
+			continue
+		}
+		ids = append(ids, link.RefKey)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	slices.Sort(ids)
+	return slices.Compact(ids)
+}
+
+func cacheUsageIdentities(res *sharedResult) []string {
+	if res == nil {
+		return nil
+	}
+	state := res.loadPayloadState()
+	if state.hasValue && state.self != nil {
+		return cacheUsageIdentitiesFromSelf(state.self)
+	}
+	return cacheUsageIdentitiesFromSnapshotLinks(state.snapshotOwnerLinks)
 }
 
 func cacheUsageSizeMayChangeFromSelf(self Typed) bool {

@@ -52,13 +52,13 @@ type persistedSecretPayload struct {
 	Name   string                      `json:"name,omitempty"`
 }
 
-func (secret *Secret) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (secret *Secret) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	payload := persistedSecretPayload{}
 	if secret != nil {
 		payload.Handle = secret.Handle
 		payload.Name = secret.NameVal
 	}
-	return json.Marshal(payload)
+	return encodePersistedObjectPayload(payload)
 }
 
 func (*Secret) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ uint64, call *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {

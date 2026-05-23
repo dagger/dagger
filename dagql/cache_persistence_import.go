@@ -348,10 +348,12 @@ func (c *Cache) importPersistedState(ctx context.Context) error {
 			if res == nil {
 				return fmt.Errorf("import result_snapshot_link: missing result %d", row.ResultID)
 			}
+			res.payloadMu.Lock()
 			res.snapshotOwnerLinks = append(res.snapshotOwnerLinks, PersistedSnapshotRefLink{
 				RefKey: row.RefKey,
 				Role:   row.Role,
 			})
+			res.payloadMu.Unlock()
 			c.traceImportResultSnapshotLinkLoaded(ctx, importRunID, resultID, row.RefKey, row.Role)
 		}
 

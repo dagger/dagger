@@ -2258,6 +2258,9 @@ type EngineCacheEntry implements Node {
   """The time the cache entry was created, in Unix nanoseconds."""
   createdTimeUnixNano: Int!
 
+  """The DagQL call that produced this cache entry."""
+  dagqlCall: String!
+
   """The description of the cache entry."""
   description: String!
 
@@ -2274,6 +2277,9 @@ type EngineCacheEntry implements Node {
   The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount).
   """
   recordType: String!
+
+  """The storage record types represented by this cache entry."""
+  recordTypes: [String!]!
 }
 
 """A set of cache entries returned by a query to a cache"""

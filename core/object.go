@@ -654,9 +654,9 @@ func persistedModuleObjectValueHasCallID(val persistedModuleObjectValue) bool {
 	return false
 }
 
-func (obj *ModuleObject) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (obj *ModuleObject) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	if obj == nil || len(obj.Fields) == 0 {
-		return json.Marshal(persistedModuleObjectPayload{})
+		return encodePersistedObjectPayload(persistedModuleObjectPayload{})
 	}
 	payload := persistedModuleObjectPayload{
 		Fields: make(map[string]persistedModuleObjectValue, len(obj.Fields)),
@@ -666,14 +666,14 @@ func (obj *ModuleObject) EncodePersistedObject(ctx context.Context, cache dagql.
 	for _, name := range fieldNames {
 		encoded, err := encodePersistedModuleObjectValue(cache, obj.Fields[name])
 		if err != nil {
-			return nil, fmt.Errorf("encode persisted module object field %q: %w", name, err)
+			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted module object field %q: %w", name, err)
 		}
 		if _, ok := obj.TypeDef.FieldByOriginalName(name); ok && persistedModuleObjectValueHasCallID(encoded) {
-			return nil, fmt.Errorf("encode persisted module object field %q: unexpected raw call ID in semantic field", name)
+			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted module object field %q: unexpected raw call ID in semantic field", name)
 		}
 		payload.Fields[name] = encoded
 	}
-	return json.Marshal(payload)
+	return encodePersistedObjectPayload(payload)
 }
 
 func (obj *ModuleObject) DecodePersistedObject(

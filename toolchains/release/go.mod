@@ -7,7 +7,7 @@ replace github.com/dagger/dagger => ../..
 require (
 	dagger.io/dagger v0.20.6
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
-	github.com/dagger/otel-go v1.43.1-0.20260430151612-605cceb9dbaa
+	github.com/dagger/otel-go v1.43.1-0.20260515012101-af7cd0684887
 	github.com/go-task/slim-sprig/v3 v3.0.0
 	go.opentelemetry.io/otel/sdk v1.43.0
 	golang.org/x/mod v0.34.0
@@ -54,7 +54,7 @@ require (
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.43.0
-	golang.org/x/sys v0.44.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 )
 
 replace (

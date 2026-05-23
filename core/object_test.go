@@ -259,7 +259,7 @@ func TestModulePersistedTypeDefsRoundTripPreservesNullableValidity(t *testing.T)
 	payload, err := mod.EncodePersistedObject(ctx, sc)
 	assert.NilError(t, err)
 
-	decodedTyped, err := (&Module{}).DecodePersistedObject(ctx, dag, 0, nil, payload)
+	decodedTyped, err := (&Module{}).DecodePersistedObject(ctx, dag, 0, nil, payload.JSON)
 	assert.NilError(t, err)
 	decoded, ok := decodedTyped.(*Module)
 	assert.Assert(t, ok)
@@ -515,10 +515,10 @@ func TestModuleObjectPersistedResultRefsRoundTrip(t *testing.T) {
 	assert.NilError(t, err)
 
 	var persisted persistedModuleObjectPayload
-	assert.NilError(t, json.Unmarshal(payload, &persisted))
+	assert.NilError(t, json.Unmarshal(payload.JSON, &persisted))
 	assert.Equal(t, persistedModuleObjectValueKindResultRef, persisted.Fields["child"].Kind)
 
-	decodedTyped, err := obj.DecodePersistedObject(ctx, dag, 0, nil, payload)
+	decodedTyped, err := obj.DecodePersistedObject(ctx, dag, 0, nil, payload.JSON)
 	assert.NilError(t, err)
 	decoded, ok := decodedTyped.(*ModuleObject)
 	assert.Assert(t, ok)
@@ -575,7 +575,7 @@ func TestModuleObjectEncodeAllowsRawCallIDInPrivateField(t *testing.T) {
 	assert.NilError(t, err)
 
 	var persisted persistedModuleObjectPayload
-	assert.NilError(t, json.Unmarshal(payload, &persisted))
+	assert.NilError(t, json.Unmarshal(payload.JSON, &persisted))
 	assert.Equal(t, persistedModuleObjectValueKindCallID, persisted.Fields["private"].Kind)
 }
 

@@ -1002,19 +1002,19 @@ func (r *DaggerEngine) Tests(ctx context.Context) (string, error) { // dagger-en
 	return response, q.Execute(ctx)
 }
 
-func (r *DaggerEngine) WithBuildkitConfig(key string, value string) *DaggerEngine { // dagger-engine (../../../../toolchains/engine-dev/main.go:89:1)
-	q := r.query.Select("withBuildkitConfig")
-	q = q.Arg("key", key)
-	q = q.Arg("value", value)
+func (r *DaggerEngine) WithEbpfprogs(names []string) *DaggerEngine { // dagger-engine (../../../../toolchains/engine-dev/main.go:84:1)
+	q := r.query.Select("withEbpfprogs")
+	q = q.Arg("names", names)
 
 	return &DaggerEngine{
 		query: q,
 	}
 }
 
-func (r *DaggerEngine) WithEbpfprogs(names []string) *DaggerEngine { // dagger-engine (../../../../toolchains/engine-dev/main.go:84:1)
-	q := r.query.Select("withEbpfprogs")
-	q = q.Arg("names", names)
+func (r *DaggerEngine) WithEngineConfig(key string, value string) *DaggerEngine { // dagger-engine (../../../../toolchains/engine-dev/main.go:89:1)
+	q := r.query.Select("withEngineConfig")
+	q = q.Arg("key", key)
+	q = q.Arg("value", value)
 
 	return &DaggerEngine{
 		query: q,

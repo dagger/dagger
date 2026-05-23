@@ -72,7 +72,7 @@ wipe it and cold-start.
 If no DB path is configured, the cache is just in-memory and persistence is
 effectively disabled.
 
-If a DB path is configured, startup does this:
+If a DB path is configured, dagql startup does this:
 
 1. open the SQLite DB
 2. ensure the schema exists
@@ -88,6 +88,15 @@ If a DB path is configured, startup does this:
 That `clean_shutdown=0` write at startup is important: it means the store is
 considered dirty until a later successful graceful close explicitly marks it
 clean.
+
+At the engine level, the dagql persisted graph is the source of truth for
+restartable local cache state. If dagql startup discards persistence, or if the
+dagql cache cannot be opened at all, `engine/server.NewServer` also discards
+the local worker/containerd state before retrying startup. That reset removes
+the worker state directory and dagql SQLite files, then recreates the
+containerd metadata DB, content store, snapshotter, snapshot manager, and dagql
+cache from empty state. Root-level non-cache state such as the engine secret
+salt is preserved.
 
 ## 2. Runtime
 
@@ -147,8 +156,11 @@ If any of these happen:
 - schema mismatch
 - `clean_shutdown != 1`
 - import failure
+- dagql persistence open failure
 
-the persistence DB is wiped and the engine starts from an empty cache.
+the persistence DB is wiped. During full engine startup, the corresponding
+worker/containerd state is wiped too, because those snapshots and content are
+only meaningful if the dagql graph that owns them is trusted.
 
 ### On Shutdown
 

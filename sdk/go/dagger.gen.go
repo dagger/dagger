@@ -5038,6 +5038,7 @@ type EngineCacheEntry struct {
 
 	activelyUsed              *bool
 	createdTimeUnixNano       *int
+	dagqlCall                 *string
 	description               *string
 	diskSpaceBytes            *int
 	id                        *ID
@@ -5072,6 +5073,19 @@ func (r *EngineCacheEntry) CreatedTimeUnixNano(ctx context.Context) (int, error)
 	q := r.query.Select("createdTimeUnixNano")
 
 	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The DagQL call that produced this cache entry.
+func (r *EngineCacheEntry) DagqlCall(ctx context.Context) (string, error) {
+	if r.dagqlCall != nil {
+		return *r.dagqlCall, nil
+	}
+	q := r.query.Select("dagqlCall")
+
+	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -5175,6 +5189,16 @@ func (r *EngineCacheEntry) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}
+}
+
+// The storage record types represented by this cache entry.
+func (r *EngineCacheEntry) RecordTypes(ctx context.Context) ([]string, error) {
+	q := r.query.Select("recordTypes")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A set of cache entries returned by a query to a cache

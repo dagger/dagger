@@ -26,7 +26,7 @@ type ElixirSdkDev {
   """
   Lint the SDK
   """
-  pub lint: Void! @check {
+  pub lint: Void @check {
     devContainer
       .withExec(["mix", "credo"])
       .sync
@@ -37,7 +37,7 @@ type ElixirSdkDev {
   """
   Regenerate the Elixir SDK API
   """
-  pub clientLibrary(): Changeset! @generate {
+  pub clientLibrary: Changeset! @generate {
     # Make sure everything is relative to git root
     let before = directory
       .withDirectory(sourcePath, source)
@@ -59,7 +59,7 @@ type ElixirSdkDev {
   """
   Run the SDK tests
   """
-  pub sdkTest: Void! @check {
+  pub sdkTest: Void @check {
     devContainer
       .withoutFile("dagger.json")
       .withExec(["mix", "test"])
@@ -71,7 +71,7 @@ type ElixirSdkDev {
   """
   Run dagger_codegen tests
   """
-  pub codegenTest: Void! @check {
+  pub codegenTest: Void @check {
     withCodegen(devContainer)
       .withEnvVariable("CI", "true")
       .withExec(["mix", "test"])
@@ -98,7 +98,7 @@ type ElixirSdkDev {
   """
   Test the publishing process
   """
-  pub releaseDryRun: Void! @check {
+  pub releaseDryRun: Void @check {
     publish(
       tag: "HEAD",
       dryRun: true,
@@ -117,12 +117,12 @@ type ElixirSdkDev {
     """
     Hex.pm API key for publishing
     """
-    hexApiKey: Secret!,
+    hexApiKey: Secret,
     """
     Execute a dry-run release, with no side effects
     """
-    dryRun: Boolean,
-  ): Void! {
+    dryRun: Boolean! = false,
+  ): Void {
     let version = versionFromTag(tag)
     let ctr = devContainer
 
@@ -138,17 +138,14 @@ type ElixirSdkDev {
     }
 
     # Publish or dry-run
-    if (dryRun == true) {
-      ctr = ctr
-        .withEnvVariable("HEX_API_KEY", "")
-        .withExec(["mix", "hex.publish", "--yes", "--dry-run"])
-    } else {
-      ctr = ctr
-        .withSecretVariable("HEX_API_KEY", hexApiKey)
-        .withExec(["mix", "hex.publish", "--yes"])
+    let mix = ["mix", "hex.publish", "--yes"]
+    if (dryRun) {
+      mix += ["--dry-run"]
+      ctr = ctr.withEnvVariable("HEX_API_KEY", "")
+    } else if (hexApiKey != null) {
+      ctr = ctr.withSecretVariable("HEX_API_KEY", hexApiKey)
     }
-
-    ctr.sync
+    ctr.withExec(mix).sync
     null
   }
 

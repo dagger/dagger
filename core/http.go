@@ -168,18 +168,38 @@ func (state *HTTPState) CacheUsageSize(ctx context.Context, identity string) (in
 	return size, true, nil
 }
 
-func (state *HTTPState) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+func (state *HTTPState) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
 	_ = cache
 	if state == nil {
-		return nil, fmt.Errorf("encode persisted http state: nil state")
+		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted http state: nil state")
 	}
-	return json.Marshal(persistedHTTPStatePayload{
+	state.mu.Lock()
+	snapshotID := state.snapshotID
+	if snapshotID == "" && state.snapshot != nil {
+		snapshotID = state.snapshot.SnapshotID()
+	}
+	state.mu.Unlock()
+	var links []dagql.PersistedSnapshotRefLink
+	if snapshotID != "" {
+		links = []dagql.PersistedSnapshotRefLink{{
+			RefKey: snapshotID,
+			Role:   "snapshot",
+		}}
+	}
+	payload, err := json.Marshal(persistedHTTPStatePayload{
 		URL:           state.URL,
 		ETag:          state.ETag,
 		LastModified:  state.LastModified,
 		ContentDigest: state.ContentDigest.String(),
 	})
+	if err != nil {
+		return dagql.PersistedObjectEncoding{}, err
+	}
+	return dagql.PersistedObjectEncoding{
+		JSON:          payload,
+		SnapshotLinks: links,
+	}, nil
 }
 
 func (*HTTPState) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {

@@ -184,7 +184,7 @@ func (c *Check) Description() string {
 }
 
 func (c *Check) OriginalModule() *Module {
-	return c.Node.OriginalModule
+	return c.Node.OriginalModule.Self()
 }
 
 func (*Check) Type() *ast.Type {

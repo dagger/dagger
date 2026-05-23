@@ -3426,6 +3426,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\EngineCacheEntry::dagqlCall",
+			"p": "Dagger/EngineCacheEntry.html#method_dagqlCall",
+			"d": "<p>The DagQL call that produced this cache entry.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\EngineCacheEntry::description",
 			"p": "Dagger/EngineCacheEntry.html#method_description",
 			"d": "<p>The description of the cache entry.</p>"
@@ -3453,6 +3459,12 @@
 			"n": "Dagger\\EngineCacheEntry::recordType",
 			"p": "Dagger/EngineCacheEntry.html#method_recordType",
 			"d": "<p>The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount).</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\EngineCacheEntry::recordTypes",
+			"p": "Dagger/EngineCacheEntry.html#method_recordTypes",
+			"d": "<p>The storage record types represented by this cache entry.</p>"
 		},
 		{
 			"t": "M",

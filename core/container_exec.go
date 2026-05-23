@@ -525,7 +525,7 @@ func lockMountedCaches(ctx context.Context, mounts []ContainerMount) (func(), er
 		if err != nil {
 			return nil, fmt.Errorf("encode cache lock key for mount %d: %w", i, err)
 		}
-		lockSet["cache-volume:"+string(payload)] = struct{}{}
+		lockSet["cache-volume:"+string(payload.JSON)] = struct{}{}
 	}
 	if len(lockSet) == 0 {
 		return func() {}, nil
@@ -967,7 +967,7 @@ type execSecretMountInstance struct {
 }
 
 func (secret *execSecretMountInstance) Mount() ([]ctrdmount.Mount, func() error, error) {
-	dir, err := os.MkdirTemp("", "buildkit-secrets")
+	dir, err := os.MkdirTemp("", "dagger-secrets")
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create temp dir: %w", err)
 	}
@@ -1995,11 +1995,11 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			return err
 		}
 		if emu != nil {
-			metaSpec.Args = append([]string{engineutil.BuildkitQemuEmulatorMountPoint}, metaSpec.Args...)
+			metaSpec.Args = append([]string{engineutil.DaggerQemuEmulatorMountPoint}, metaSpec.Args...)
 			execMounts = append(execMounts, executor.Mount{
 				Readonly: true,
 				Src:      emu,
-				Dest:     engineutil.BuildkitQemuEmulatorMountPoint,
+				Dest:     engineutil.DaggerQemuEmulatorMountPoint,
 			})
 		}
 
