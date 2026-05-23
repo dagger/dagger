@@ -1,4 +1,5 @@
 import assert, { AssertionError } from "assert"
+import { execFileSync } from "child_process"
 import * as crypto from "crypto"
 import * as fs from "fs"
 import * as http from "http"
@@ -210,15 +211,29 @@ describe("TypeScript sdk Connect", function () {
         bin._overrideCLIChecksumsURL(checksumsUrl)
       }
 
-      // Otherwise if _EXPERIMENTAL_DAGGER_CLI_BIN is set, create a mock http server for it
+      // Otherwise, prefer a local CLI binary so standalone runs do not depend
+      // on a live release download, but only if there is a runnable local
+      // container backend available for the engine to use.
       const cliBin = process.env._EXPERIMENTAL_DAGGER_CLI_BIN
-      if (cliBin && !cliURL) {
-        delete process.env._EXPERIMENTAL_DAGGER_CLI_BIN
+      if (!cliURL && !cliBin) {
+        if (
+          !findExecutableOnPath("docker") &&
+          !findExecutableOnPath("podman")
+        ) {
+          this.skip()
+        }
+
+        process.env._EXPERIMENTAL_DAGGER_RUNNER_HOST =
+          "docker-image://registry.dagger.io/engine:main"
+      }
+
+      const localCliBin = cliBin ?? buildLocalDaggerBinary(tempDir)
+      if (localCliBin && !cliURL) {
         // create a temporary dir and write a tar.gz with the cli_bin in it
         const tempArchivePath = path.join(tempDir, "cli.tar.gz")
         // also write the cli bin there in case it's not named "dagger"
         const tempCliBinPath = path.join(tempDir, "dagger")
-        fs.writeFileSync(tempCliBinPath, fs.readFileSync(cliBin))
+        fs.writeFileSync(tempCliBinPath, fs.readFileSync(localCliBin))
         tar.create(
           {
             gzip: true,
@@ -304,4 +319,45 @@ function normalizedOS(): string {
     default:
       return os.platform()
   }
+}
+
+function findExecutableOnPath(binaryName: string): string | undefined {
+  const pathEnv = process.env.PATH
+  if (!pathEnv) {
+    return undefined
+  }
+
+  for (const entry of pathEnv.split(path.delimiter)) {
+    if (!entry) {
+      continue
+    }
+
+    const candidate = path.join(entry, binaryName)
+    try {
+      fs.accessSync(candidate, fs.constants.X_OK)
+      return candidate
+    } catch {
+      // keep looking
+    }
+  }
+
+  return undefined
+}
+
+function buildLocalDaggerBinary(tempDir: string): string {
+  const repoRoot = path.resolve(process.cwd(), "../..")
+  const binaryPath = path.join(tempDir, "dagger")
+
+  try {
+    execFileSync("go", ["build", "-o", binaryPath, "./cmd/dagger"], {
+      cwd: repoRoot,
+      stdio: "pipe",
+    })
+  } catch (error) {
+    throw new Error("failed to build local dagger CLI binary", {
+      cause: error,
+    })
+  }
+
+  return binaryPath
 }
