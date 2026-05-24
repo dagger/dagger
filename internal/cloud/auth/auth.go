@@ -60,6 +60,7 @@ type loginOptions struct {
 type deviceAuthAttempt struct {
 	action string
 	auth   *oauth2.DeviceAuthResponse
+	signup bool
 }
 
 func WithSignup() LoginOption {
@@ -107,11 +108,11 @@ func Login(ctx context.Context, out io.Writer, loginOpts ...LoginOption) error {
 		fmt.Fprintf(out, "Failed to open browser: %s\n\n%s\n", err, browserBuf.String())
 	} else {
 		fmt.Fprintf(out, "Browser opened for Dagger Cloud %s: %s\n", strings.ToLower(openAttempt.action), deviceAuthURL(openAttempt.auth))
-		if len(attempts) > 1 {
-			fmt.Fprintln(out, "New users can use the Sign up link below.")
-		}
 	}
 	fmt.Fprintln(out, "Open one link, confirm the matching code, then return here.")
+	if hasSignupAttempt(attempts) {
+		fmt.Fprintln(out, "To create an account, open the account creation link and choose Sign up on the web page.")
+	}
 	fmt.Fprintln(out)
 	for _, attempt := range attempts {
 		fmt.Fprintf(out, "%s here: %s\n", attempt.action, deviceAuthURL(attempt.auth))
@@ -151,13 +152,14 @@ func deviceAuthAttempts(ctx context.Context, opts loginOptions) ([]deviceAuthAtt
 			return nil, err
 		}
 
-		action := "Log in"
+		attempt := deviceAuthAttempt{action: "Log in", auth: deviceAuth}
 		if opts.signup {
-			action = "Sign up"
+			attempt.action = "Create account"
+			attempt.signup = true
 		} else if opts.switchAccount {
-			action = "Choose an account"
+			attempt.action = "Choose an account"
 		}
-		return []deviceAuthAttempt{{action: action, auth: deviceAuth}}, nil
+		return []deviceAuthAttempt{attempt}, nil
 	}
 
 	loginAuth, err := authConfig.DeviceAuth(ctx)
@@ -174,8 +176,17 @@ func deviceAuthAttempts(ctx context.Context, opts loginOptions) ([]deviceAuthAtt
 
 	return []deviceAuthAttempt{
 		{action: "Log in", auth: loginAuth},
-		{action: "Sign up", auth: signupAuth},
+		{action: "Create account", auth: signupAuth, signup: true},
 	}, nil
+}
+
+func hasSignupAttempt(attempts []deviceAuthAttempt) bool {
+	for _, attempt := range attempts {
+		if attempt.signup {
+			return true
+		}
+	}
+	return false
 }
 
 func deviceAuthURL(deviceAuth *oauth2.DeviceAuthResponse) string {
