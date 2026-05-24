@@ -105,25 +105,21 @@ func Login(ctx context.Context, out io.Writer, loginOpts ...LoginOption) error {
 			fmt.Fprintf(out, "Browser opened for Dagger Cloud %s: %s\n", strings.ToLower(openAttempt.action), deviceAuthURL(openAttempt.auth))
 		}
 	}
-	fmt.Fprintln(out, "Open this link, confirm the code, then finish the browser login.")
-	if hasSignupAttempt(attempts) {
-		fmt.Fprintln(out, "To create an account, choose Sign up when the login page appears.")
-	}
-	fmt.Fprintln(out, "Return here after the browser flow completes.")
-	fmt.Fprintln(out)
 	for _, attempt := range attempts {
-		fmt.Fprintf(out, "%s here: %s\n", attempt.action, deviceAuthURL(attempt.auth))
+		fmt.Fprintf(out, "%s: %s\n", attempt.action, deviceAuthURL(attempt.auth))
 	}
 
 	if len(attempts) == 1 {
-		fmt.Fprintf(out, "Confirmation code: %s\n\n", attempts[0].auth.UserCode)
+		fmt.Fprintf(out, "Code: %s\n", attempts[0].auth.UserCode)
 	} else {
-		fmt.Fprintln(out, "Confirmation codes:")
 		for _, attempt := range attempts {
-			fmt.Fprintf(out, "  %s: %s\n", attempt.action, attempt.auth.UserCode)
+			fmt.Fprintf(out, "%s code: %s\n", attempt.action, attempt.auth.UserCode)
 		}
-		fmt.Fprintln(out)
 	}
+	if hasSignupAttempt(attempts) {
+		fmt.Fprintln(out, "New account? Choose Sign up in the browser.")
+	}
+	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Waiting for authentication. Press Ctrl-C to cancel.")
 
 	token, err := deviceAccessToken(ctx, attempts)
