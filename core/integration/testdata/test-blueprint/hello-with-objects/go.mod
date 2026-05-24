@@ -3,7 +3,7 @@ module dagger/hello-with-objects
 go 1.25.2
 
 require (
-	dagger.io/dagger v0.20.6-0.20260415192040-7058e9313c72
+	dagger.io/dagger v0.20.7-0.20260522154811-5dde81db2f77
 	github.com/Khan/genqlient v0.8.1
 	github.com/vektah/gqlparser/v2 v2.5.33
 	go.opentelemetry.io/otel v1.43.0
