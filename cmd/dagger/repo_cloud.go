@@ -623,31 +623,49 @@ func gitRemoteOriginURL(ctx context.Context) (string, error) {
 }
 
 func normalizeGitHubRepo(ref string) (string, error) {
-	ref = strings.TrimSpace(strings.TrimSuffix(ref, ".git"))
+	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		return "", fmt.Errorf("empty repository")
 	}
-	if strings.HasPrefix(ref, "git@github.com:") {
-		return normalizeGitHubRepo(strings.TrimPrefix(ref, "git@github.com:"))
+
+	ref, _, _ = strings.Cut(ref, "?")
+	ref, _, _ = strings.Cut(ref, "#")
+	host, path, err := splitGitRepoRef(ref)
+	if err != nil {
+		return "", err
 	}
+	if !strings.EqualFold(host, "github.com") {
+		return "", fmt.Errorf("only GitHub repositories are supported, got %s", host)
+	}
+	path = strings.Trim(path, "/")
+	path = strings.TrimSuffix(path, ".git")
+	parts := strings.Split(path, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", fmt.Errorf("repository must be github.com/owner/name")
+	}
+	return "github.com/" + parts[0] + "/" + parts[1], nil
+}
+
+func splitGitRepoRef(ref string) (string, string, error) {
 	if strings.Contains(ref, "://") {
 		u, err := url.Parse(ref)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
-		if !strings.EqualFold(u.Hostname(), "github.com") {
-			return "", fmt.Errorf("only GitHub repositories are supported, got %s", u.Hostname())
-		}
-		ref = strings.TrimPrefix(u.Path, "/")
+		return u.Hostname(), strings.TrimPrefix(u.Path, "/"), nil
 	}
-	ref, _, _ = strings.Cut(ref, "?")
-	ref, _, _ = strings.Cut(ref, "#")
-	ref = strings.Trim(strings.TrimPrefix(ref, "github.com/"), "/")
-	parts := strings.Split(ref, "/")
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return "", fmt.Errorf("repository must be github.com/owner/name or owner/name")
+
+	before, after, ok := strings.Cut(ref, ":")
+	if ok && strings.Contains(before, "@") && !strings.Contains(before, "/") {
+		_, host, _ := strings.Cut(before, "@")
+		return host, after, nil
 	}
-	return "github.com/" + parts[0] + "/" + strings.TrimSuffix(parts[1], ".git"), nil
+
+	parts := strings.SplitN(strings.TrimPrefix(ref, "/"), "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" || !strings.Contains(parts[0], ".") {
+		return "", "", fmt.Errorf("repository must include a git host, e.g. github.com/owner/name")
+	}
+	return parts[0], parts[1], nil
 }
 
 func redactGitRemote(ref string) string {

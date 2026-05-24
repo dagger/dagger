@@ -13,11 +13,6 @@ func TestNormalizeGitHubRepo(t *testing.T) {
 		want string
 	}{
 		{
-			name: "owner repo",
-			ref:  "dagger/dagger",
-			want: "github.com/dagger/dagger",
-		},
-		{
 			name: "github host",
 			ref:  "github.com/dagger/dagger",
 			want: "github.com/dagger/dagger",
@@ -35,6 +30,11 @@ func TestNormalizeGitHubRepo(t *testing.T) {
 		{
 			name: "trailing slash",
 			ref:  "https://github.com/dagger/dagger/",
+			want: "github.com/dagger/dagger",
+		},
+		{
+			name: "git suffix with trailing slash",
+			ref:  "https://github.com/dagger/dagger.git/",
 			want: "github.com/dagger/dagger",
 		},
 		{
@@ -61,9 +61,11 @@ func TestNormalizeGitHubRepo(t *testing.T) {
 func TestNormalizeGitHubRepoRejectsInvalidRefs(t *testing.T) {
 	tests := []string{
 		"",
+		"dagger/dagger",
 		"github.com/dagger",
 		"github.com/dagger/dagger/tree/main",
 		"https://gitlab.com/dagger/dagger",
+		"git@gitlab.com:dagger/dagger.git",
 		"git@github.com:dagger/dagger/tree/main",
 	}
 
