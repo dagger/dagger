@@ -4,6 +4,8 @@ namespace Dagger\Tests\Unit\Service;
 
 use Dagger\Client;
 use Dagger\Service\DecodesValue;
+use Dagger\Tests\Unit\Fixture\Enums\Priority;
+use Dagger\Tests\Unit\Fixture\Enums\Status;
 use Dagger\ValueObject\ListOfType;
 use Dagger\ValueObject\Type;
 use Generator;
@@ -20,6 +22,7 @@ class DecodesValueTest extends TestCase
     #[Test]
     #[DataProvider('provideScalars')]
     #[DataProvider('provideLists')]
+    #[DataProvider('provideEnums')]
     public function itDecodesScalarsAndLists(
         mixed $expected,
         string $value,
@@ -127,5 +130,37 @@ class DecodesValueTest extends TestCase
             new ListOfType(new Type('string', false), false),
         ];
 
+    }
+
+    /**
+     * @return \Generator<array{0: mixed, 1: string, 2: Type}>
+     */
+    public static function provideEnums(): Generator
+    {
+        // Engine sends back the PHP case name (registered via withEnumValue($case->name))
+        yield 'string-backed enum by case name' => [
+            Status::Active,
+            '"Active"',
+            new Type(Status::class),
+        ];
+
+        yield 'int-backed enum by case name' => [
+            Priority::Medium,
+            '"Medium"',
+            new Type(Priority::class),
+        ];
+
+        // Fallback: engine sends the backing value (built-in Dagger enums or other SDKs)
+        yield 'string-backed enum by backing value' => [
+            Status::Active,
+            '"active"',
+            new Type(Status::class),
+        ];
+
+        yield 'int-backed enum by backing value' => [
+            Priority::Medium,
+            '2',
+            new Type(Priority::class),
+        ];
     }
 }

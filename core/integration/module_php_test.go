@@ -106,6 +106,35 @@ func (PHPSuite) TestDefaultValue(_ context.Context, t *testctx.T) {
 	})
 }
 
+func (PHPSuite) TestEnumKind(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	module := phpModule(t, c, "enum-kind")
+
+	t.Run("built-in (string-backed)", func(ctx context.Context, t *testctx.T) {
+		out, err := module.
+			With(daggerCall("opposite-network-protocol", "--arg=TCP")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "UDP", out)
+	})
+
+	t.Run("custom (int-backed)", func(ctx context.Context, t *testctx.T) {
+		out, err := module.
+			With(daggerCall("increase-priority", "--arg=1")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "2", out)
+	})
+
+	t.Run("custom (string-backed)", func(ctx context.Context, t *testctx.T) {
+		out, err := module.
+			With(daggerCall("toggle-todo", "--arg=todo")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "done", out)
+	})
+}
+
 func (PHPSuite) TestScalarKind(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	module := phpModule(t, c, "scalar-kind")
