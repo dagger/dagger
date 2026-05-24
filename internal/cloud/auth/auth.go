@@ -109,10 +109,11 @@ func Login(ctx context.Context, out io.Writer, loginOpts ...LoginOption) error {
 	} else {
 		fmt.Fprintf(out, "Browser opened for Dagger Cloud %s: %s\n", strings.ToLower(openAttempt.action), deviceAuthURL(openAttempt.auth))
 	}
-	fmt.Fprintln(out, "Open one link, confirm the matching code, then return here.")
+	fmt.Fprintln(out, "Open one link, confirm the matching code, then finish the browser login.")
 	if hasSignupAttempt(attempts) {
-		fmt.Fprintln(out, "To create an account, open the account creation link and choose Sign up on the web page.")
+		fmt.Fprintln(out, "To create an account, choose Sign up when the login page appears.")
 	}
+	fmt.Fprintln(out, "Return here after the browser flow completes.")
 	fmt.Fprintln(out)
 	for _, attempt := range attempts {
 		fmt.Fprintf(out, "%s here: %s\n", attempt.action, deviceAuthURL(attempt.auth))
