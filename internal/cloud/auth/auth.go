@@ -58,6 +58,11 @@ type loginOptions struct {
 	switchAccount bool
 }
 
+type deviceAuthAttempt struct {
+	action string
+	auth   *oauth2.DeviceAuthResponse
+}
+
 func WithSignup() LoginOption {
 	return func(opts *loginOptions) {
 		opts.signup = true
@@ -84,6 +89,43 @@ func Login(ctx context.Context, out io.Writer, loginOpts ...LoginOption) error {
 		return nil
 	}
 
+	attempts, err := deviceAuthAttempts(ctx, opts)
+	if err != nil {
+		return err
+	}
+
+	openAttempt := attempts[0]
+	browserBuf := new(strings.Builder)
+	browser.Stdout = browserBuf
+	browser.Stderr = browserBuf
+	if err := browser.OpenURL(deviceAuthURL(openAttempt.auth)); err != nil {
+		fmt.Fprintf(out, "Failed to open browser: %s\n\n%s\n", err, browserBuf.String())
+	} else {
+		fmt.Fprintf(out, "Browser opened for Dagger Cloud %s: %s\n", strings.ToLower(openAttempt.action), deviceAuthURL(openAttempt.auth))
+	}
+	for _, attempt := range attempts {
+		fmt.Fprintf(out, "%s here: %s\n", attempt.action, deviceAuthURL(attempt.auth))
+	}
+
+	if len(attempts) == 1 {
+		fmt.Fprintf(out, "Confirmation code: %s\n\n", termenv.String(attempts[0].auth.UserCode).Bold())
+	} else {
+		fmt.Fprintln(out, "Confirmation codes:")
+		for _, attempt := range attempts {
+			fmt.Fprintf(out, "  %s: %s\n", attempt.action, termenv.String(attempt.auth.UserCode).Bold())
+		}
+		fmt.Fprintln(out)
+	}
+
+	token, err := deviceAccessToken(ctx, attempts)
+	if err != nil {
+		return err
+	}
+
+	return saveToken(token)
+}
+
+func deviceAuthAttempts(ctx context.Context, opts loginOptions) ([]deviceAuthAttempt, error) {
 	authCodeOpts := []oauth2.AuthCodeOption{}
 	if opts.signup {
 		authCodeOpts = append(authCodeOpts, oauth2.SetAuthURLParam("screen_hint", "signup"))
@@ -92,40 +134,78 @@ func Login(ctx context.Context, out io.Writer, loginOpts ...LoginOption) error {
 		authCodeOpts = append(authCodeOpts, oauth2.SetAuthURLParam("prompt", "login"))
 	}
 
-	deviceAuth, err := authConfig.DeviceAuth(ctx, authCodeOpts...)
+	if opts.signup || opts.switchAccount {
+		deviceAuth, err := authConfig.DeviceAuth(ctx, authCodeOpts...)
+		if err != nil {
+			return nil, err
+		}
+
+		action := "Log in"
+		if opts.signup {
+			action = "Sign up"
+		} else if opts.switchAccount {
+			action = "Choose an account"
+		}
+		return []deviceAuthAttempt{{action: action, auth: deviceAuth}}, nil
+	}
+
+	loginAuth, err := authConfig.DeviceAuth(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	authURL := deviceAuth.VerificationURIComplete
-	action := "Log in"
-	if opts.signup {
-		action = "Sign up"
-	} else if opts.switchAccount {
-		action = "Choose an account"
-	}
-
-	browserBuf := new(strings.Builder)
-	browser.Stdout = browserBuf
-	browser.Stderr = browserBuf
-	if err := browser.OpenURL(authURL); err != nil {
-		fmt.Fprintf(out, "Failed to open browser: %s\n\n%s\n", err, browserBuf.String())
-		fmt.Fprintf(out, "%s here: %s\n", action, authURL)
-	} else {
-		fmt.Fprintf(out, "Browser opened for Dagger Cloud %s: %s\n", strings.ToLower(action), authURL)
-	}
-	if !opts.signup && !opts.switchAccount {
-		fmt.Fprintln(out, "Need an account? Run: dagger signup")
-	}
-
-	fmt.Fprintf(out, "Confirmation code: %s\n\n", termenv.String(deviceAuth.UserCode).Bold())
-
-	token, err := authConfig.DeviceAccessToken(ctx, deviceAuth)
+	signupAuth, err := authConfig.DeviceAuth(ctx,
+		oauth2.SetAuthURLParam("screen_hint", "signup"),
+		oauth2.SetAuthURLParam("prompt", "login"),
+	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return saveToken(token)
+	return []deviceAuthAttempt{
+		{action: "Log in", auth: loginAuth},
+		{action: "Sign up", auth: signupAuth},
+	}, nil
+}
+
+func deviceAuthURL(deviceAuth *oauth2.DeviceAuthResponse) string {
+	if deviceAuth.VerificationURIComplete != "" {
+		return deviceAuth.VerificationURIComplete
+	}
+	return deviceAuth.VerificationURI
+}
+
+func deviceAccessToken(ctx context.Context, attempts []deviceAuthAttempt) (*oauth2.Token, error) {
+	if len(attempts) == 1 {
+		return authConfig.DeviceAccessToken(ctx, attempts[0].auth)
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	type result struct {
+		attempt deviceAuthAttempt
+		token   *oauth2.Token
+		err     error
+	}
+	results := make(chan result, len(attempts))
+	for _, attempt := range attempts {
+		go func() {
+			token, err := authConfig.DeviceAccessToken(ctx, attempt.auth)
+			results <- result{attempt: attempt, token: token, err: err}
+		}()
+	}
+
+	var errs []string
+	for range attempts {
+		result := <-results
+		if result.err == nil {
+			cancel()
+			return result.token, nil
+		}
+		errs = append(errs, fmt.Sprintf("%s: %s", result.attempt.action, result.err))
+	}
+
+	return nil, fmt.Errorf("login failed: %s", strings.Join(errs, "; "))
 }
 
 // Logout deletes the client credentials
