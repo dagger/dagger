@@ -37,6 +37,16 @@ func TestNormalizeGitHubRepo(t *testing.T) {
 			ref:  "https://github.com/dagger/dagger/",
 			want: "github.com/dagger/dagger",
 		},
+		{
+			name: "https url with query",
+			ref:  "https://github.com/dagger/dagger.git?access_token=secret#fragment",
+			want: "github.com/dagger/dagger",
+		},
+		{
+			name: "github host with query",
+			ref:  "github.com/dagger/dagger?access_token=secret",
+			want: "github.com/dagger/dagger",
+		},
 	}
 
 	for _, tt := range tests {
@@ -68,4 +78,12 @@ func TestNormalizeGitHubRepoRejectsInvalidRefs(t *testing.T) {
 func TestRedactGitRemote(t *testing.T) {
 	got := redactGitRemote("https://token:x-oauth-basic@github.com/dagger/dagger.git")
 	require.Equal(t, "https://github.com/dagger/dagger.git", got)
+}
+
+func TestRedactGitRemoteDropsQueryAndFragment(t *testing.T) {
+	got := redactGitRemote("https://token:x-oauth-basic@github.com/dagger/dagger.git?access_token=secret#fragment")
+	require.Equal(t, "https://github.com/dagger/dagger.git", got)
+
+	got = redactGitRemote("github.com/dagger/dagger?access_token=secret#fragment")
+	require.Equal(t, "github.com/dagger/dagger", got)
 }

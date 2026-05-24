@@ -28,8 +28,15 @@ var loginSwitchAccount bool
 
 var loginCmd = &cobra.Command{
 	Use:     "login [options] [org]",
-	Aliases: []string{"signup"},
-	Short:   "Log in or sign up to Dagger Cloud",
+	Short:   "Log in to Dagger Cloud",
+	Args:    cobra.MaximumNArgs(1),
+	GroupID: cloudGroup.ID,
+	RunE:    cloudCLI.Login,
+}
+
+var signupCmd = &cobra.Command{
+	Use:     "signup [org]",
+	Short:   "Sign up for Dagger Cloud",
 	Args:    cobra.MaximumNArgs(1),
 	GroupID: cloudGroup.ID,
 	RunE:    cloudCLI.Login,
@@ -55,11 +62,17 @@ var cloudCmd = &cobra.Command{
 }
 
 var cloudLoginCmd = &cobra.Command{
-	Use:     "login [options] [org]",
-	Aliases: []string{"signup"},
-	Short:   "Log in or sign up to Dagger Cloud",
-	Args:    cobra.MaximumNArgs(1),
-	RunE:    cloudCLI.Login,
+	Use:   "login [options] [org]",
+	Short: "Log in to Dagger Cloud",
+	Args:  cobra.MaximumNArgs(1),
+	RunE:  cloudCLI.Login,
+}
+
+var cloudSignupCmd = &cobra.Command{
+	Use:   "signup [org]",
+	Short: "Sign up for Dagger Cloud",
+	Args:  cobra.MaximumNArgs(1),
+	RunE:  cloudCLI.Login,
 }
 
 var cloudLogoutCmd = &cobra.Command{
@@ -73,8 +86,8 @@ func init() {
 	loginCmd.Flags().BoolVar(&loginSwitchAccount, "switch-account", false, "Choose a different Dagger Cloud account")
 	cloudLoginCmd.Flags().BoolVar(&loginSwitchAccount, "switch-account", false, "Choose a different Dagger Cloud account")
 	rootCmd.AddGroup(cloudGroup)
-	cloudCmd.AddCommand(cloudLoginCmd, cloudLogoutCmd)
-	rootCmd.AddCommand(cloudCmd, loginCmd, logoutCmd)
+	cloudCmd.AddCommand(cloudLoginCmd, cloudSignupCmd, cloudLogoutCmd)
+	rootCmd.AddCommand(cloudCmd, loginCmd, signupCmd, logoutCmd)
 }
 
 type CloudCLI struct{}
@@ -93,7 +106,7 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 		orgName = cloudOrgFlag
 	}
 
-	signup := strings.EqualFold(cmd.CalledAs(), "signup")
+	signup := strings.EqualFold(cmd.Name(), "signup") || strings.EqualFold(cmd.CalledAs(), "signup")
 	loginOpts := []auth.LoginOption{}
 	if signup {
 		loginOpts = append(loginOpts, auth.WithSignup())

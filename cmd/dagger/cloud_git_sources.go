@@ -208,6 +208,9 @@ func (cli *CloudCLI) cloudClientWithLogin(ctx context.Context, login bool) (*clo
 		if !login {
 			return nil, nil, fmt.Errorf("not authenticated; run 'dagger login' or set DAGGER_CLOUD_TOKEN")
 		}
+		if cloudJSON {
+			return nil, nil, fmt.Errorf("not authenticated; run 'dagger login' or set DAGGER_CLOUD_TOKEN")
+		}
 		if err := cloudauth.Login(ctx, os.Stderr); err != nil {
 			return nil, nil, err
 		}
@@ -241,11 +244,8 @@ func (cli *CloudCLI) resolveCloudOrg(ctx context.Context, client *cloudapi.Clien
 			orgName = currentOrgName
 		}
 	}
-	if orgName == "" {
-		user, err := client.User(ctx)
-		if err != nil {
-			return nil, err
-		}
+	user, userErr := client.User(ctx)
+	if orgName == "" && userErr == nil {
 		if len(user.Orgs) == 1 {
 			orgName = user.Orgs[0].Name
 			_ = cloudauth.SetCurrentOrg(&user.Orgs[0])
@@ -255,11 +255,24 @@ func (cli *CloudCLI) resolveCloudOrg(ctx context.Context, client *cloudapi.Clien
 		return nil, fmt.Errorf("no org specified; use --org or run 'dagger login <org>'")
 	}
 
+	if userErr == nil && !userHasOrg(user, orgName) {
+		return nil, fmt.Errorf("org %q is not available for the current account; use --org or run 'dagger login <org>'", orgName)
+	}
+
 	org, err := client.OrgByName(ctx, orgName)
 	if err != nil {
 		return nil, fmt.Errorf("resolve org %q: %w", orgName, err)
 	}
 	return org, nil
+}
+
+func userHasOrg(user *cloudapi.UserResponse, orgName string) bool {
+	for _, org := range user.Orgs {
+		if strings.EqualFold(org.Name, orgName) {
+			return true
+		}
+	}
+	return false
 }
 
 func (cli *CloudCLI) ListGitSources(cmd *cobra.Command, args []string) error {

@@ -16,7 +16,6 @@ import (
 
 	"github.com/adrg/xdg"
 	"github.com/gofrs/flock"
-	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
 	"golang.org/x/oauth2"
 )
@@ -96,26 +95,38 @@ func Login(ctx context.Context, out io.Writer, loginOpts ...LoginOption) error {
 
 	openAttempt := attempts[0]
 	browserBuf := new(strings.Builder)
+	browserStdout := browser.Stdout
+	browserStderr := browser.Stderr
+	defer func() {
+		browser.Stdout = browserStdout
+		browser.Stderr = browserStderr
+	}()
 	browser.Stdout = browserBuf
 	browser.Stderr = browserBuf
 	if err := browser.OpenURL(deviceAuthURL(openAttempt.auth)); err != nil {
 		fmt.Fprintf(out, "Failed to open browser: %s\n\n%s\n", err, browserBuf.String())
 	} else {
 		fmt.Fprintf(out, "Browser opened for Dagger Cloud %s: %s\n", strings.ToLower(openAttempt.action), deviceAuthURL(openAttempt.auth))
+		if len(attempts) > 1 {
+			fmt.Fprintln(out, "New users can use the Sign up link below.")
+		}
 	}
+	fmt.Fprintln(out, "Open one link, confirm the matching code, then return here.")
+	fmt.Fprintln(out)
 	for _, attempt := range attempts {
 		fmt.Fprintf(out, "%s here: %s\n", attempt.action, deviceAuthURL(attempt.auth))
 	}
 
 	if len(attempts) == 1 {
-		fmt.Fprintf(out, "Confirmation code: %s\n\n", termenv.String(attempts[0].auth.UserCode).Bold())
+		fmt.Fprintf(out, "Confirmation code: %s\n\n", attempts[0].auth.UserCode)
 	} else {
 		fmt.Fprintln(out, "Confirmation codes:")
 		for _, attempt := range attempts {
-			fmt.Fprintf(out, "  %s: %s\n", attempt.action, termenv.String(attempt.auth.UserCode).Bold())
+			fmt.Fprintf(out, "  %s: %s\n", attempt.action, attempt.auth.UserCode)
 		}
 		fmt.Fprintln(out)
 	}
+	fmt.Fprintln(out, "Waiting for authentication. Press Ctrl-C to cancel.")
 
 	token, err := deviceAccessToken(ctx, attempts)
 	if err != nil {
@@ -210,11 +221,13 @@ func deviceAccessToken(ctx context.Context, attempts []deviceAuthAttempt) (*oaut
 
 // Logout deletes the client credentials
 func Logout() error {
-	err := os.Remove(credentialsFile)
-	if os.IsNotExist(err) {
-		return nil
+	for _, path := range []string{credentialsFile, orgFile} {
+		err := os.Remove(path)
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
 	}
-	return err
+	return nil
 }
 
 func TokenSource(ctx context.Context, token *oauth2.Token) (oauth2.TokenSource, error) {

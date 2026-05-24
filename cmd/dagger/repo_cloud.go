@@ -23,10 +23,11 @@ var (
 const githubOAuthRedirect = "https://dagger.cloud/github/callback"
 
 var repoCmd = &cobra.Command{
-	Use:   "repo [repo]",
-	Short: "Manage Dagger Cloud repositories",
-	Args:  cobra.MaximumNArgs(1),
-	RunE:  cloudCLI.RepoInfo,
+	Use:     "repo [repo]",
+	Short:   "Manage Dagger Cloud repositories",
+	Args:    cobra.MaximumNArgs(1),
+	GroupID: cloudGroup.ID,
+	RunE:    cloudCLI.RepoInfo,
 }
 
 var repoInfoCmd = &cobra.Command{
@@ -60,9 +61,10 @@ var repoEnableAutocheckCmd = &cobra.Command{
 }
 
 var integrationCmd = &cobra.Command{
-	Use:   "integration",
-	Short: "Manage Dagger Cloud integrations",
-	Args:  cobra.NoArgs,
+	Use:     "integration",
+	Short:   "Manage Dagger Cloud integrations",
+	Args:    cobra.NoArgs,
+	GroupID: cloudGroup.ID,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},
@@ -166,38 +168,52 @@ type repoListEntry struct {
 	Features    repoFeatureSet `json:"features"`
 }
 
+type repoRef struct {
+	Repository string
+	Input      string
+	Remote     string
+	Local      string
+}
+
 func (cli *CloudCLI) RepoInfo(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	repo, remote, err := repoAndRemote(ctx, args)
+	ref, err := resolveRepoRef(ctx, args)
 	if err != nil {
 		return err
 	}
-	local := "."
 	client, cloudAuth, err := cli.cloudClientNoLogin(ctx)
 	if err != nil {
 		if cloudJSON {
-			return writeCloudJSON(cmd, map[string]any{
-				"repository":             repo,
-				"remote":                 remote,
-				"local":                  local,
+			response := map[string]any{
+				"repository":             ref.Repository,
 				"fieldsRequireLogin":     []string{"org", "integration", "autocheck"},
 				"recommendedNextCommand": "dagger login",
-			})
+			}
+			if ref.Input != "" {
+				response["input"] = ref.Input
+			}
+			if ref.Remote != "" {
+				response["remote"] = ref.Remote
+			}
+			if ref.Local != "" {
+				response["local"] = ref.Local
+			}
+			return writeCloudJSON(cmd, response)
 		}
-		printRepoInfoLoggedOut(cmd, remote, local)
+		printRepoInfoLoggedOut(cmd, ref)
 		return nil
 	}
 	org, err := cli.resolveCloudOrg(ctx, client, cloudAuth)
 	if err != nil {
 		return err
 	}
-	state, err := cli.inspectRepo(ctx, client, org, repo)
+	state, err := cli.inspectRepo(ctx, client, org, ref.Repository)
 	if err != nil {
 		return err
 	}
-	state.Remote = remote
-	state.Local = local
-	settings, err := client.RepoSettings(ctx, org.Name, repo)
+	state.Remote = ref.Remote
+	state.Local = ref.Local
+	settings, err := client.RepoSettings(ctx, org.Name, ref.Repository)
 	if err != nil {
 		return err
 	}
@@ -213,6 +229,9 @@ func (cli *CloudCLI) RepoInfo(cmd *cobra.Command, args []string) error {
 
 func (cli *CloudCLI) RepoList(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+	if repoListFeature != "" && !strings.EqualFold(repoListFeature, "autocheck") {
+		return fmt.Errorf("unsupported repo feature %q; supported features: autocheck", repoListFeature)
+	}
 	client, cloudAuth, err := cli.cloudClient(ctx)
 	if err != nil {
 		return err
@@ -220,9 +239,6 @@ func (cli *CloudCLI) RepoList(cmd *cobra.Command, args []string) error {
 	org, err := cli.resolveCloudOrg(ctx, client, cloudAuth)
 	if err != nil {
 		return err
-	}
-	if repoListFeature != "" && !strings.EqualFold(repoListFeature, "autocheck") {
-		return fmt.Errorf("unsupported repo feature %q; supported features: autocheck", repoListFeature)
 	}
 	entries, err := cli.listRepos(ctx, client, org)
 	if err != nil {
@@ -246,15 +262,15 @@ func (cli *CloudCLI) RepoList(cmd *cobra.Command, args []string) error {
 
 func (cli *CloudCLI) RepoEnableAutocheck(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+	repo, err := repoFromArgOrGit(ctx, args)
+	if err != nil {
+		return err
+	}
 	client, cloudAuth, err := cli.cloudClient(ctx)
 	if err != nil {
 		return err
 	}
 	org, err := cli.resolveCloudOrg(ctx, client, cloudAuth)
-	if err != nil {
-		return err
-	}
-	repo, err := repoFromArgOrGit(ctx, args)
 	if err != nil {
 		return err
 	}
@@ -351,7 +367,12 @@ func (cli *CloudCLI) IntegrationGitHubConnect(cmd *cobra.Command, args []string)
 	if cloudJSON {
 		return writeCloudJSON(cmd, map[string]string{"url": oauthURL, "redirectURI": githubOAuthRedirect})
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), oauthURL)
+	out := cmd.OutOrStdout()
+	fmt.Fprintln(out, "Open this URL to connect your GitHub account:")
+	fmt.Fprintln(out, oauthURL)
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "After connecting GitHub, rerun:")
+	fmt.Fprintln(out, "  dagger repo enable autocheck")
 	return nil
 }
 
@@ -515,13 +536,18 @@ func (cli *CloudCLI) linkRepo(ctx context.Context, client *cloudapi.Client, org 
 		return state, nil
 	}
 
-	selected, err := cli.selectedReposForSource(ctx, client, org, state.Source.ID)
+	sourceID := repoStateSourceID(state)
+	if sourceID == "" {
+		return nil, fmt.Errorf("repo %s is visible, but its GitHub integration could not be resolved; run 'dagger integration github installations'", repo)
+	}
+
+	selected, err := cli.selectedReposForSource(ctx, client, org, sourceID)
 	if err != nil {
 		return nil, err
 	}
 	selected = appendUniqueRepository(selected, repo)
 	mapped, err := client.ConfigureOrgSource(ctx, org.ID, cloudapi.SourceSelectionInput{
-		InstallationID: state.Source.ID,
+		InstallationID: sourceID,
 		Mode:           cloudapi.SourceModeSelected,
 		Repositories:   selected,
 	})
@@ -534,6 +560,16 @@ func (cli *CloudCLI) linkRepo(ctx context.Context, client *cloudapi.Client, org 
 	state.Mutation = "configureOrgSource"
 	state.Message = fmt.Sprintf("Enabled autocheck for %s. Module scan queued.", repo)
 	return state, nil
+}
+
+func repoStateSourceID(state *repoCloudState) string {
+	if state.Source != nil {
+		return state.Source.ID
+	}
+	if state.MappedSource != nil {
+		return state.MappedSource.InstallationID
+	}
+	return ""
 }
 
 func (cli *CloudCLI) selectedReposForSource(ctx context.Context, client *cloudapi.Client, org *cloudapi.OrgResponse, installationID string) ([]string, error) {
@@ -552,21 +588,30 @@ func (cli *CloudCLI) selectedReposForSource(ctx context.Context, client *cloudap
 }
 
 func repoFromArgOrGit(ctx context.Context, args []string) (string, error) {
-	repo, _, err := repoAndRemote(ctx, args)
-	return repo, err
+	ref, err := resolveRepoRef(ctx, args)
+	if err != nil {
+		return "", err
+	}
+	return ref.Repository, nil
 }
 
-func repoAndRemote(ctx context.Context, args []string) (string, string, error) {
+func resolveRepoRef(ctx context.Context, args []string) (repoRef, error) {
 	if len(args) > 0 && strings.TrimSpace(args[0]) != "" {
 		repo, err := normalizeGitHubRepo(args[0])
-		return repo, redactGitRemote(args[0]), err
+		if err != nil {
+			return repoRef{}, err
+		}
+		return repoRef{Repository: repo, Input: redactGitRemote(args[0])}, nil
 	}
 	remote, err := gitRemoteOriginURL(ctx)
 	if err != nil {
-		return "", "", err
+		return repoRef{}, err
 	}
 	repo, err := normalizeGitHubRepo(remote)
-	return repo, redactGitRemote(remote), err
+	if err != nil {
+		return repoRef{}, err
+	}
+	return repoRef{Repository: repo, Remote: redactGitRemote(remote), Local: "."}, nil
 }
 
 func gitRemoteOriginURL(ctx context.Context) (string, error) {
@@ -595,6 +640,8 @@ func normalizeGitHubRepo(ref string) (string, error) {
 		}
 		ref = strings.TrimPrefix(u.Path, "/")
 	}
+	ref, _, _ = strings.Cut(ref, "?")
+	ref, _, _ = strings.Cut(ref, "#")
 	ref = strings.Trim(strings.TrimPrefix(ref, "github.com/"), "/")
 	parts := strings.Split(ref, "/")
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
@@ -605,10 +652,14 @@ func normalizeGitHubRepo(ref string) (string, error) {
 
 func redactGitRemote(ref string) string {
 	u, err := url.Parse(ref)
-	if err != nil || u.User == nil {
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		ref, _, _ = strings.Cut(ref, "?")
+		ref, _, _ = strings.Cut(ref, "#")
 		return ref
 	}
 	u.User = nil
+	u.RawQuery = ""
+	u.Fragment = ""
 	return u.String()
 }
 
@@ -731,10 +782,18 @@ func printRepoInfo(cmd *cobra.Command, state *repoCloudState) {
 	fmt.Fprintf(out, "Autocheck: %s\n", onOff(state.Features.Autocheck.Enabled))
 }
 
-func printRepoInfoLoggedOut(cmd *cobra.Command, remote string, local string) {
+func printRepoInfoLoggedOut(cmd *cobra.Command, ref repoRef) {
 	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "remote=%q\n", remote)
-	fmt.Fprintf(out, "local=%q\n", local)
+	fmt.Fprintf(out, "Repository: %s\n", ref.Repository)
+	if ref.Input != "" {
+		fmt.Fprintf(out, "Input:      %s\n", ref.Input)
+	}
+	if ref.Remote != "" {
+		fmt.Fprintf(out, "Git remote: %s\n", ref.Remote)
+	}
+	if ref.Local != "" {
+		fmt.Fprintf(out, "Local:      %s\n", ref.Local)
+	}
 	fmt.Fprintln(out, "# Fields below require \"dagger login\":")
 	fmt.Fprintln(out, "# org")
 	fmt.Fprintln(out, "# integration")

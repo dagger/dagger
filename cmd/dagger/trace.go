@@ -128,11 +128,15 @@ func Trace(cmd *cobra.Command, args []string) error {
 }
 
 func resolveOrgID(ctx context.Context, client *cloud.Client, cloudAuth *auth.Cloud) (string, error) {
-	if traceOrgFlag != "" {
+	orgName := traceOrgFlag
+	if orgName == "" {
+		orgName = cloudOrgFlag
+	}
+	if orgName != "" {
 		// Resolve org name to ID via GraphQL
-		org, err := client.OrgByName(ctx, traceOrgFlag)
+		org, err := client.OrgByName(ctx, orgName)
 		if err != nil {
-			return "", fmt.Errorf("resolve org %q: %w", traceOrgFlag, err)
+			return "", fmt.Errorf("resolve org %q: %w", orgName, err)
 		}
 		return org.ID, nil
 	}

@@ -11,9 +11,10 @@ import (
 )
 
 var orgCmd = &cobra.Command{
-	Use:   "org",
-	Short: "Manage Dagger Cloud organizations",
-	Args:  cobra.NoArgs,
+	Use:     "org",
+	Short:   "Manage Dagger Cloud organizations",
+	Args:    cobra.NoArgs,
+	GroupID: cloudGroup.ID,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},
