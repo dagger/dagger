@@ -107,9 +107,13 @@ func Login(ctx context.Context, out io.Writer, loginOpts ...LoginOption) error {
 	if err := browser.OpenURL(deviceAuthURL(openAttempt.auth)); err != nil {
 		fmt.Fprintf(out, "Failed to open browser: %s\n\n%s\n", err, browserBuf.String())
 	} else {
-		fmt.Fprintf(out, "Browser opened for Dagger Cloud %s: %s\n", strings.ToLower(openAttempt.action), deviceAuthURL(openAttempt.auth))
+		if openAttempt.action == "Authenticate" {
+			fmt.Fprintf(out, "Browser opened for Dagger Cloud: %s\n", deviceAuthURL(openAttempt.auth))
+		} else {
+			fmt.Fprintf(out, "Browser opened for Dagger Cloud %s: %s\n", strings.ToLower(openAttempt.action), deviceAuthURL(openAttempt.auth))
+		}
 	}
-	fmt.Fprintln(out, "Open one link, confirm the matching code, then finish the browser login.")
+	fmt.Fprintln(out, "Open this link, confirm the code, then finish the browser login.")
 	if hasSignupAttempt(attempts) {
 		fmt.Fprintln(out, "To create an account, choose Sign up when the login page appears.")
 	}
@@ -163,21 +167,13 @@ func deviceAuthAttempts(ctx context.Context, opts loginOptions) ([]deviceAuthAtt
 		return []deviceAuthAttempt{attempt}, nil
 	}
 
-	loginAuth, err := authConfig.DeviceAuth(ctx)
-	if err != nil {
-		return nil, err
-	}
-	signupAuth, err := authConfig.DeviceAuth(ctx,
-		oauth2.SetAuthURLParam("screen_hint", "signup"),
-		oauth2.SetAuthURLParam("prompt", "login"),
-	)
+	deviceAuth, err := authConfig.DeviceAuth(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	return []deviceAuthAttempt{
-		{action: "Log in", auth: loginAuth},
-		{action: "Create account", auth: signupAuth, signup: true},
+		{action: "Authenticate", auth: deviceAuth, signup: true},
 	}, nil
 }
 
