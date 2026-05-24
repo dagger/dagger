@@ -98,7 +98,7 @@ func Login(ctx context.Context, out io.Writer, loginOpts ...LoginOption) error {
 	}
 
 	authURL := deviceAuth.VerificationURIComplete
-	action := "Log in or sign up"
+	action := "Log in"
 	if opts.signup {
 		action = "Sign up"
 	} else if opts.switchAccount {
@@ -113,6 +113,9 @@ func Login(ctx context.Context, out io.Writer, loginOpts ...LoginOption) error {
 		fmt.Fprintf(out, "%s here: %s\n", action, authURL)
 	} else {
 		fmt.Fprintf(out, "Browser opened for Dagger Cloud %s: %s\n", strings.ToLower(action), authURL)
+	}
+	if !opts.signup && !opts.switchAccount {
+		fmt.Fprintln(out, "Need an account? Run: dagger signup")
 	}
 
 	fmt.Fprintf(out, "Confirmation code: %s\n\n", termenv.String(deviceAuth.UserCode).Bold())
