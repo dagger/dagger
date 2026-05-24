@@ -123,7 +123,7 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 	var selectedOrg *auth.Org
 	switch len(user.Orgs) {
 	case 0:
-		fmt.Fprintln(errW, "You are not a member of any organizations, creating a new one...")
+		fmt.Fprintln(errW, "You are not a member of any Dagger Cloud organizations.")
 		selectedOrg, err = createNewOrg(ctx, client, errW)
 		if err != nil {
 			// logging out user here so terminal is not filled with 403
@@ -196,12 +196,13 @@ func (cli *CloudCLI) printPostLoginRepoSetupHint(ctx context.Context, client *cl
 
 func createNewOrg(ctx context.Context, cli *cloud.Client, w io.Writer) (*auth.Org, error) {
 	url := "https://dagger.cloud/traces/setup"
+	fmt.Fprintf(w, "Create or select an organization here: %s\n", url)
 	err := browser.OpenURL(url)
 	if err != nil {
-		fmt.Fprintf(w, "Unable to open browser automatically, please visit %s to create an organization.\n", url)
+		fmt.Fprintf(w, "Unable to open browser automatically; open the URL above to continue.\n")
 	}
 
-	timer := time.After(15 * time.Second)
+	timer := time.After(5 * time.Minute)
 	t := time.NewTicker(1 * time.Second)
 
 	defer t.Stop()
