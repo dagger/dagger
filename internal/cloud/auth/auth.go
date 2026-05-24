@@ -53,7 +53,6 @@ var authConfig = &oauth2.Config{
 type LoginOption func(*loginOptions)
 
 type loginOptions struct {
-	signup        bool
 	switchAccount bool
 }
 
@@ -61,13 +60,6 @@ type deviceAuthAttempt struct {
 	action string
 	auth   *oauth2.DeviceAuthResponse
 	signup bool
-}
-
-func WithSignup() LoginOption {
-	return func(opts *loginOptions) {
-		opts.signup = true
-		opts.switchAccount = true
-	}
 }
 
 func WithSwitchAccount() LoginOption {
@@ -143,28 +135,13 @@ func Login(ctx context.Context, out io.Writer, loginOpts ...LoginOption) error {
 }
 
 func deviceAuthAttempts(ctx context.Context, opts loginOptions) ([]deviceAuthAttempt, error) {
-	authCodeOpts := []oauth2.AuthCodeOption{}
-	if opts.signup {
-		authCodeOpts = append(authCodeOpts, oauth2.SetAuthURLParam("screen_hint", "signup"))
-	}
 	if opts.switchAccount {
-		authCodeOpts = append(authCodeOpts, oauth2.SetAuthURLParam("prompt", "login"))
-	}
-
-	if opts.signup || opts.switchAccount {
-		deviceAuth, err := authConfig.DeviceAuth(ctx, authCodeOpts...)
+		deviceAuth, err := authConfig.DeviceAuth(ctx, oauth2.SetAuthURLParam("prompt", "login"))
 		if err != nil {
 			return nil, err
 		}
 
-		attempt := deviceAuthAttempt{action: "Log in", auth: deviceAuth}
-		if opts.signup {
-			attempt.action = "Create account"
-			attempt.signup = true
-		} else if opts.switchAccount {
-			attempt.action = "Choose an account"
-		}
-		return []deviceAuthAttempt{attempt}, nil
+		return []deviceAuthAttempt{{action: "Choose an account", auth: deviceAuth}}, nil
 	}
 
 	deviceAuth, err := authConfig.DeviceAuth(ctx)

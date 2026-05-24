@@ -36,7 +36,7 @@ var loginCmd = &cobra.Command{
 
 var signupCmd = &cobra.Command{
 	Use:     "signup [org]",
-	Short:   "Sign up for Dagger Cloud",
+	Short:   "Start Dagger Cloud login; choose Sign up in the browser",
 	Args:    cobra.MaximumNArgs(1),
 	GroupID: cloudGroup.ID,
 	RunE:    cloudCLI.Login,
@@ -70,7 +70,7 @@ var cloudLoginCmd = &cobra.Command{
 
 var cloudSignupCmd = &cobra.Command{
 	Use:   "signup [org]",
-	Short: "Sign up for Dagger Cloud",
+	Short: "Start Dagger Cloud login; choose Sign up in the browser",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  cloudCLI.Login,
 }
@@ -106,11 +106,7 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 		orgName = cloudOrgFlag
 	}
 
-	signup := strings.EqualFold(cmd.Name(), "signup") || strings.EqualFold(cmd.CalledAs(), "signup")
 	loginOpts := []auth.LoginOption{}
-	if signup {
-		loginOpts = append(loginOpts, auth.WithSignup())
-	}
 	if loginSwitchAccount {
 		loginOpts = append(loginOpts, auth.WithSwitchAccount())
 	}
