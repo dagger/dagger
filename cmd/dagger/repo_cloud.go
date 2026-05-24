@@ -15,13 +15,12 @@ import (
 )
 
 var (
-	repoTransferFrom string
-	repoTransferTo   string
-	repoListEnabled  bool
-	repoListFeature  string
-	githubRedirect   string
-	githubOpen       bool
+	repoListEnabled bool
+	repoListFeature string
+	githubOpen      bool
 )
+
+const githubOAuthRedirect = "https://dagger.cloud/github/callback"
 
 var repoCmd = &cobra.Command{
 	Use:   "repo [repo]",
@@ -44,16 +43,13 @@ var repoListCmd = &cobra.Command{
 	RunE:  cloudCLI.RepoList,
 }
 
-var repoTransferCmd = &cobra.Command{
-	Use:   "transfer [repo]",
-	Short: "Move repository enablement from one Dagger Cloud org to another",
-	Args:  cobra.MaximumNArgs(1),
-	RunE:  cloudCLI.RepoTransfer,
-}
-
 var repoEnableCmd = &cobra.Command{
 	Use:   "enable",
 	Short: "Enable Dagger Cloud features for a repository",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return cmd.Help()
+	},
 }
 
 var repoEnableAutocheckCmd = &cobra.Command{
@@ -66,6 +62,10 @@ var repoEnableAutocheckCmd = &cobra.Command{
 var integrationCmd = &cobra.Command{
 	Use:   "integration",
 	Short: "Manage Dagger Cloud integrations",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return cmd.Help()
+	},
 }
 
 var integrationAddCmd = &cobra.Command{
@@ -78,6 +78,7 @@ var integrationAddCmd = &cobra.Command{
 var integrationGithubCmd = &cobra.Command{
 	Use:   "github",
 	Short: "Inspect the GitHub integration used by Dagger Cloud",
+	Args:  cobra.NoArgs,
 	RunE:  cloudCLI.IntegrationGitHubInfo,
 }
 
@@ -113,18 +114,13 @@ var integrationGithubInstallationsCmd = &cobra.Command{
 func init() {
 	repoCmd.PersistentFlags().BoolVar(&cloudJSON, "json", false, "Print JSON output")
 	repoListCmd.Flags().BoolVar(&repoListEnabled, "enabled", false, "Only show enabled repositories")
-	repoListCmd.Flags().StringVar(&repoListFeature, "feature", "", "Filter by feature (currently only autocheck)")
-	repoTransferCmd.Flags().StringVar(&repoTransferFrom, "from", "", "Source Dagger Cloud org (defaults to current or claimed org)")
-	repoTransferCmd.Flags().StringVar(&repoTransferTo, "to", "", "Destination Dagger Cloud org")
-	_ = repoTransferCmd.MarkFlagRequired("to")
+	repoListCmd.Flags().StringVar(&repoListFeature, "feature", "", "Only show repositories with this feature enabled (currently only autocheck)")
 
 	repoEnableCmd.AddCommand(repoEnableAutocheckCmd)
-	repoCmd.AddCommand(repoInfoCmd, repoListCmd, repoTransferCmd, repoEnableCmd)
+	repoCmd.AddCommand(repoInfoCmd, repoListCmd, repoEnableCmd)
 
 	integrationCmd.PersistentFlags().BoolVar(&cloudJSON, "json", false, "Print JSON output")
-	integrationAddCmd.Flags().StringVar(&githubRedirect, "redirect-uri", "https://dagger.cloud/github/callback", "OAuth redirect URI")
 	integrationAddCmd.Flags().BoolVar(&githubOpen, "open", false, "Open the OAuth URL in a browser")
-	integrationGithubConnectCmd.Flags().StringVar(&githubRedirect, "redirect-uri", "https://dagger.cloud/github/callback", "OAuth redirect URI")
 	integrationGithubConnectCmd.Flags().BoolVar(&githubOpen, "open", false, "Open the OAuth URL in a browser")
 	integrationGithubCmd.AddCommand(
 		integrationGithubInfoCmd,
@@ -232,7 +228,7 @@ func (cli *CloudCLI) RepoList(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if repoListEnabled {
+	if repoListEnabled || repoListFeature != "" {
 		filtered := entries[:0]
 		for _, entry := range entries {
 			if entry.Features.Autocheck.Enabled {
@@ -270,80 +266,6 @@ func (cli *CloudCLI) RepoEnableAutocheck(cmd *cobra.Command, args []string) erro
 		return writeRepoStateJSON(cmd, state)
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s\n", state.Message)
-	return nil
-}
-
-func (cli *CloudCLI) RepoTransfer(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
-	client, cloudAuth, err := cli.cloudClient(ctx)
-	if err != nil {
-		return err
-	}
-	currentOrg, err := cli.resolveCloudOrg(ctx, client, cloudAuth)
-	if err != nil {
-		return err
-	}
-	repo, err := repoFromArgOrGit(ctx, args)
-	if err != nil {
-		return err
-	}
-
-	toOrg, err := client.OrgByName(ctx, repoTransferTo)
-	if err != nil {
-		return err
-	}
-
-	fromName := repoTransferFrom
-	if fromName == "" {
-		state, err := cli.inspectRepo(ctx, client, currentOrg, repo)
-		if err != nil {
-			return err
-		}
-		if state.Repo != nil && state.Repo.ClaimedByOrgName != nil && *state.Repo.ClaimedByOrgName != "" {
-			fromName = *state.Repo.ClaimedByOrgName
-		} else {
-			fromName = currentOrg.Name
-		}
-	}
-	fromOrg, err := client.OrgByName(ctx, fromName)
-	if err != nil {
-		return err
-	}
-	if fromOrg.ID == toOrg.ID {
-		return fmt.Errorf("--from and --to resolve to the same org %q", fromOrg.Name)
-	}
-
-	targetState, err := cli.inspectRepo(ctx, client, toOrg, repo)
-	if err != nil {
-		return err
-	}
-	if targetState.Repo == nil {
-		return fmt.Errorf("repo %s is not visible to a GitHub installation available to this user", repo)
-	}
-	if !targetState.Repo.Eligible && !sameString(targetState.Repo.ClaimedByOrgName, fromOrg.Name) {
-		return fmt.Errorf("repo %s is claimed by %s, not %s", repo, stringValue(targetState.Repo.ClaimedByOrgName), fromOrg.Name)
-	}
-
-	unlinked, err := cli.unlinkRepo(ctx, client, fromOrg, repo)
-	if err != nil {
-		return err
-	}
-	linked, err := cli.linkRepo(ctx, client, toOrg, repo)
-	if err != nil {
-		return err
-	}
-
-	result := map[string]any{
-		"repository": repo,
-		"from":       fromOrg,
-		"to":         toOrg,
-		"unlink":     unlinked,
-		"link":       linked,
-	}
-	if cloudJSON {
-		return writeCloudJSON(cmd, result)
-	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Transferred %s from %s to %s.\n", repo, fromOrg.Name, toOrg.Name)
 	return nil
 }
 
@@ -417,7 +339,7 @@ func (cli *CloudCLI) IntegrationGitHubConnect(cmd *cobra.Command, args []string)
 	if err != nil {
 		return err
 	}
-	oauthURL, err := client.GitHubOAuthURL(cmd.Context(), githubRedirect)
+	oauthURL, err := client.GitHubOAuthURL(cmd.Context(), githubOAuthRedirect)
 	if err != nil {
 		return err
 	}
@@ -427,7 +349,7 @@ func (cli *CloudCLI) IntegrationGitHubConnect(cmd *cobra.Command, args []string)
 		}
 	}
 	if cloudJSON {
-		return writeCloudJSON(cmd, map[string]string{"url": oauthURL, "redirectURI": githubRedirect})
+		return writeCloudJSON(cmd, map[string]string{"url": oauthURL, "redirectURI": githubOAuthRedirect})
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), oauthURL)
 	return nil
@@ -614,50 +536,6 @@ func (cli *CloudCLI) linkRepo(ctx context.Context, client *cloudapi.Client, org 
 	return state, nil
 }
 
-func (cli *CloudCLI) unlinkRepo(ctx context.Context, client *cloudapi.Client, org *cloudapi.OrgResponse, repo string) (*repoCloudState, error) {
-	state, err := cli.inspectRepo(ctx, client, org, repo)
-	if err != nil {
-		return nil, err
-	}
-	if state.Repo == nil || !state.Repo.Selected || state.Source == nil {
-		state.Mutation = "noop"
-		state.Message = fmt.Sprintf("%s is not linked to %s.", repo, org.Name)
-		return state, nil
-	}
-
-	selected, err := cli.selectedReposForSource(ctx, client, org, state.Source.ID)
-	if err != nil {
-		return nil, err
-	}
-	selected = removeRepository(selected, repo)
-	if len(selected) == 0 {
-		ok, err := client.UnmapSource(ctx, org.ID, state.Source.ID)
-		if err != nil {
-			return nil, err
-		}
-		state.Status = "available"
-		state.Features = repoFeatures(state.Status)
-		state.Mutation = "unmapSourceFromOrg"
-		state.Message = fmt.Sprintf("Unlinked %s from %s and removed empty source mapping (ok=%t).", repo, org.Name, ok)
-		return state, nil
-	}
-
-	mapped, err := client.ConfigureOrgSource(ctx, org.ID, cloudapi.SourceSelectionInput{
-		InstallationID: state.Source.ID,
-		Mode:           cloudapi.SourceModeSelected,
-		Repositories:   selected,
-	})
-	if err != nil {
-		return nil, err
-	}
-	state.MappedSource = mapped
-	state.Status = "available"
-	state.Features = repoFeatures(state.Status)
-	state.Mutation = "configureOrgSource"
-	state.Message = fmt.Sprintf("Unlinked %s from %s; %d repos remain linked from %s.", repo, org.Name, len(selected), mapped.SourceName)
-	return state, nil
-}
-
 func (cli *CloudCLI) selectedReposForSource(ctx context.Context, client *cloudapi.Client, org *cloudapi.OrgResponse, installationID string) ([]string, error) {
 	repos, err := client.SourceRepositories(ctx, installationID, org.ID)
 	if err != nil {
@@ -681,14 +559,14 @@ func repoFromArgOrGit(ctx context.Context, args []string) (string, error) {
 func repoAndRemote(ctx context.Context, args []string) (string, string, error) {
 	if len(args) > 0 && strings.TrimSpace(args[0]) != "" {
 		repo, err := normalizeGitHubRepo(args[0])
-		return repo, args[0], err
+		return repo, redactGitRemote(args[0]), err
 	}
 	remote, err := gitRemoteOriginURL(ctx)
 	if err != nil {
 		return "", "", err
 	}
 	repo, err := normalizeGitHubRepo(remote)
-	return repo, remote, err
+	return repo, redactGitRemote(remote), err
 }
 
 func gitRemoteOriginURL(ctx context.Context) (string, error) {
@@ -717,12 +595,21 @@ func normalizeGitHubRepo(ref string) (string, error) {
 		}
 		ref = strings.TrimPrefix(u.Path, "/")
 	}
-	ref = strings.TrimPrefix(ref, "github.com/")
+	ref = strings.Trim(strings.TrimPrefix(ref, "github.com/"), "/")
 	parts := strings.Split(ref, "/")
-	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return "", fmt.Errorf("repository must be github.com/owner/name or owner/name")
 	}
 	return "github.com/" + parts[0] + "/" + strings.TrimSuffix(parts[1], ".git"), nil
+}
+
+func redactGitRemote(ref string) string {
+	u, err := url.Parse(ref)
+	if err != nil || u.User == nil {
+		return ref
+	}
+	u.User = nil
+	return u.String()
 }
 
 func repoOwner(repo string) string {
@@ -744,10 +631,6 @@ func sameRepository(a, b string) bool {
 		return strings.EqualFold(a, b)
 	}
 	return strings.EqualFold(na, nb)
-}
-
-func sameString(value *string, want string) bool {
-	return value != nil && strings.EqualFold(*value, want)
 }
 
 func repoStatus(repo *cloudapi.SourceRepository) string {
@@ -809,16 +692,6 @@ func appendUniqueRepository(repos []string, repo string) []string {
 	repos = append(repos, repo)
 	sort.Slice(repos, func(i, j int) bool { return strings.ToLower(repos[i]) < strings.ToLower(repos[j]) })
 	return repos
-}
-
-func removeRepository(repos []string, repo string) []string {
-	filtered := repos[:0]
-	for _, existing := range repos {
-		if !sameRepository(existing, repo) {
-			filtered = append(filtered, existing)
-		}
-	}
-	return filtered
 }
 
 func printRepoInfo(cmd *cobra.Command, state *repoCloudState) {

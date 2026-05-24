@@ -30,6 +30,7 @@ var cloudGitSourcesCmd = &cobra.Command{
 	Use:     "git-sources",
 	Aliases: []string{"git-source", "sources"},
 	Short:   "Manage Git sources for Dagger Cloud Modules",
+	Args:    cobra.NoArgs,
 	RunE:    cloudCLI.ListGitSources,
 }
 
@@ -61,9 +62,9 @@ var cloudGitSourcesEnableCmd = &cobra.Command{
 	Short:   "Enable or update a Git source for an org",
 	Long: `Enable or update a Git source for Dagger Cloud Modules.
 
-Pass a GitHub installation ID, source name, or owner. Without --repo, all
-repositories visible to the installation are scanned. With one or more --repo
-flags, only those repositories are scanned.`,
+	Pass a GitHub installation ID, source name, or owner. Use one or more --repo
+	flags to scan selected repositories, or pass --all to scan every repository
+	visible to the installation.`,
 	Args: cobra.ExactArgs(1),
 	RunE: cloudCLI.EnableGitSource,
 }
@@ -87,6 +88,10 @@ var cloudGitSourcesIgnoreCmd = &cobra.Command{
 	Use:     "ignore-patterns",
 	Aliases: []string{"ignore"},
 	Short:   "Manage module ignore patterns for Git source scans",
+	Args:    cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return cmd.Help()
+	},
 }
 
 var cloudGitSourcesIgnoreListCmd = &cobra.Command{
@@ -114,6 +119,7 @@ var cloudGitSourcesIgnoreRemoveCmd = &cobra.Command{
 var cloudGithubCmd = &cobra.Command{
 	Use:   "github",
 	Short: "Inspect your GitHub connection and installations",
+	Args:  cobra.NoArgs,
 	RunE:  cloudCLI.GitHubStatus,
 }
 
@@ -135,6 +141,7 @@ var cloudGithubInstallationsCmd = &cobra.Command{
 var cloudIntegrationsCmd = &cobra.Command{
 	Use:   "integrations",
 	Short: "List Dagger Cloud org integrations",
+	Args:  cobra.NoArgs,
 	RunE:  cloudCLI.ListIntegrations,
 }
 
@@ -191,18 +198,26 @@ func (cli *CloudCLI) cloudClientNoLogin(ctx context.Context) (*cloudapi.Client, 
 func (cli *CloudCLI) cloudClientWithLogin(ctx context.Context, login bool) (*cloudapi.Client, *cloudauth.Cloud, error) {
 	cloudAuth, err := cloudauth.GetCloudAuth(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("cloud auth: %w", err)
+		token, tokenErr := cloudauth.Token(ctx)
+		if tokenErr != nil {
+			return nil, nil, fmt.Errorf("cloud auth: %w", err)
+		}
+		cloudAuth = &cloudauth.Cloud{Token: token}
 	}
 	if cloudAuth == nil || cloudAuth.Token == nil {
 		if !login {
 			return nil, nil, fmt.Errorf("not authenticated; run 'dagger login' or set DAGGER_CLOUD_TOKEN")
 		}
-		if err := cloudauth.Login(ctx, os.Stdout); err != nil {
+		if err := cloudauth.Login(ctx, os.Stderr); err != nil {
 			return nil, nil, err
 		}
 		cloudAuth, err = cloudauth.GetCloudAuth(ctx)
 		if err != nil {
-			return nil, nil, fmt.Errorf("cloud auth: %w", err)
+			token, tokenErr := cloudauth.Token(ctx)
+			if tokenErr != nil {
+				return nil, nil, fmt.Errorf("cloud auth: %w", err)
+			}
+			cloudAuth = &cloudauth.Cloud{Token: token}
 		}
 		if cloudAuth == nil || cloudAuth.Token == nil {
 			return nil, nil, fmt.Errorf("not authenticated; run 'dagger login' or set DAGGER_CLOUD_TOKEN")
@@ -339,6 +354,9 @@ func (cli *CloudCLI) EnableGitSource(cmd *cobra.Command, args []string) error {
 	if gitSourceEnableAll && len(gitSourceEnableRepos) > 0 {
 		return fmt.Errorf("--all cannot be combined with --repo")
 	}
+	if !gitSourceEnableAll && len(gitSourceEnableRepos) == 0 {
+		return fmt.Errorf("refusing to enable all repositories implicitly; pass --repo owner/name or --all")
+	}
 
 	ctx := cmd.Context()
 	client, cloudAuth, err := cli.cloudClient(ctx)
@@ -354,10 +372,11 @@ func (cli *CloudCLI) EnableGitSource(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	mode := cloudapi.SourceModeAll
+	mode := cloudapi.SourceModeSelected
 	repos := []string{}
-	if len(gitSourceEnableRepos) > 0 {
-		mode = cloudapi.SourceModeSelected
+	if gitSourceEnableAll {
+		mode = cloudapi.SourceModeAll
+	} else {
 		repos = gitSourceEnableRepos
 	}
 

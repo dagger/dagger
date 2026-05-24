@@ -15,6 +15,10 @@ var billingOpen bool
 var billingCmd = &cobra.Command{
 	Use:   "billing",
 	Short: "Manage Dagger Cloud billing",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return cmd.Help()
+	},
 }
 
 var billingPlansCmd = &cobra.Command{

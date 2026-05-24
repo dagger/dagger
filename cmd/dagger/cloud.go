@@ -30,6 +30,7 @@ var loginCmd = &cobra.Command{
 	Use:     "login [options] [org]",
 	Aliases: []string{"signup"},
 	Short:   "Log in or sign up to Dagger Cloud",
+	Args:    cobra.MaximumNArgs(1),
 	GroupID: cloudGroup.ID,
 	RunE:    cloudCLI.Login,
 }
@@ -37,6 +38,7 @@ var loginCmd = &cobra.Command{
 var logoutCmd = &cobra.Command{
 	Use:     "logout",
 	Short:   "Log out from Dagger Cloud",
+	Args:    cobra.NoArgs,
 	GroupID: cloudGroup.ID,
 	RunE:    cloudCLI.Logout,
 }
@@ -45,19 +47,25 @@ var cloudCmd = &cobra.Command{
 	Use:     "cloud",
 	Aliases: []string{"c"},
 	Short:   "Manage Dagger Cloud",
+	Args:    cobra.NoArgs,
 	GroupID: cloudGroup.ID,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return cmd.Help()
+	},
 }
 
 var cloudLoginCmd = &cobra.Command{
 	Use:     "login [options] [org]",
 	Aliases: []string{"signup"},
 	Short:   "Log in or sign up to Dagger Cloud",
+	Args:    cobra.MaximumNArgs(1),
 	RunE:    cloudCLI.Login,
 }
 
 var cloudLogoutCmd = &cobra.Command{
 	Use:   "logout",
 	Short: "Log out from Dagger Cloud",
+	Args:  cobra.NoArgs,
 	RunE:  cloudCLI.Logout,
 }
 

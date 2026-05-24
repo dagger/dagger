@@ -13,6 +13,10 @@ import (
 var orgCmd = &cobra.Command{
 	Use:   "org",
 	Short: "Manage Dagger Cloud organizations",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return cmd.Help()
+	},
 }
 
 var orgListCmd = &cobra.Command{
