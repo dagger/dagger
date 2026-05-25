@@ -117,6 +117,7 @@ func init() {
 	repoCmd.PersistentFlags().BoolVar(&cloudJSON, "json", false, "Print JSON output")
 	repoListCmd.Flags().BoolVar(&repoListEnabled, "enabled", false, "Only show enabled repositories")
 	repoListCmd.Flags().StringVar(&repoListFeature, "feature", "", "Only show repositories with this feature enabled (currently only autocheck)")
+	repoEnableAutocheckCmd.Flags().BoolVar(&githubOpen, "open", false, "Open setup URL in a browser")
 
 	repoEnableCmd.AddCommand(repoEnableAutocheckCmd)
 	repoCmd.AddCommand(repoInfoCmd, repoListCmd, repoEnableCmd)
@@ -276,6 +277,20 @@ func (cli *CloudCLI) RepoEnableAutocheck(cmd *cobra.Command, args []string) erro
 	}
 	state, err := cli.linkRepo(ctx, client, org, repo)
 	if err != nil {
+		if state != nil && state.Repo == nil {
+			setupLabel, setupErr := cli.prepareRepoGitHubSetup(cmd.Context(), client, state)
+			if setupErr != nil {
+				return fmt.Errorf("%w\nfailed to start GitHub setup: %v", err, setupErr)
+			}
+			state.Message = fmt.Sprintf("%s required. Complete setup, then rerun `dagger repo enable autocheck %s`.", setupLabel, repo)
+			if cloudJSON {
+				if jsonErr := writeRepoStateJSON(cmd, state); jsonErr != nil {
+					return jsonErr
+				}
+			} else {
+				cli.printRepoGitHubSetup(cmd, setupLabel, state.ActionURL, repo)
+			}
+		}
 		return err
 	}
 	if cloudJSON {
@@ -525,7 +540,7 @@ func (cli *CloudCLI) linkRepo(ctx context.Context, client *cloudapi.Client, org 
 		return nil, err
 	}
 	if state.Repo == nil {
-		return nil, repoVisibilityError(state)
+		return state, repoVisibilityError(state)
 	}
 	if !state.Repo.Eligible {
 		return nil, fmt.Errorf("repo %s is claimed by %s", repo, stringValue(state.Repo.ClaimedByOrgName))
@@ -560,6 +575,32 @@ func (cli *CloudCLI) linkRepo(ctx context.Context, client *cloudapi.Client, org 
 	state.Mutation = "configureOrgSource"
 	state.Message = fmt.Sprintf("Enabled autocheck for %s. Module scan queued.", repo)
 	return state, nil
+}
+
+func (cli *CloudCLI) prepareRepoGitHubSetup(ctx context.Context, client *cloudapi.Client, state *repoCloudState) (string, error) {
+	label := "Configure GitHub App access"
+	if state.ActionURL == "" {
+		oauthURL, err := client.GitHubOAuthURL(ctx, githubOAuthRedirect)
+		if err != nil {
+			return "", err
+		}
+		state.ActionURL = oauthURL
+		label = "Connect GitHub"
+	}
+	return label, nil
+}
+
+func (cli *CloudCLI) printRepoGitHubSetup(cmd *cobra.Command, label, setupURL, repo string) {
+	if githubOpen {
+		if err := browser.OpenURL(setupURL); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Failed to open browser: %s\n", err)
+		}
+	}
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "%s: %s\n", label, setupURL)
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "After setup, rerun:")
+	fmt.Fprintf(out, "  dagger repo enable autocheck %s\n", repo)
 }
 
 func repoStateSourceID(state *repoCloudState) string {
