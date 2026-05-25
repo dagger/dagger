@@ -176,6 +176,12 @@ type repoRef struct {
 	Local      string
 }
 
+type githubSetupHandoff struct {
+	Label       string
+	URL         string
+	RedirectURI string
+}
+
 func (cli *CloudCLI) RepoInfo(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	ref, err := resolveRepoRef(ctx, args)
@@ -370,21 +376,17 @@ func (cli *CloudCLI) IntegrationGitHubConnect(cmd *cobra.Command, args []string)
 	if err != nil {
 		return err
 	}
-	oauthURL, err := client.GitHubOAuthURL(cmd.Context(), githubOAuthRedirect)
+	setup, err := cli.githubConnectHandoff(cmd.Context(), client)
 	if err != nil {
 		return err
 	}
-	if githubOpen {
-		if err := browser.OpenURL(oauthURL); err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Failed to open browser: %s\n", err)
-		}
-	}
+	openGitHubSetupURL(cmd, setup.URL)
 	if cloudJSON {
-		return writeCloudJSON(cmd, map[string]string{"url": oauthURL, "redirectURI": githubOAuthRedirect})
+		return writeCloudJSON(cmd, map[string]string{"url": setup.URL, "redirectURI": setup.RedirectURI})
 	}
 	out := cmd.OutOrStdout()
 	fmt.Fprintln(out, "Open this URL to connect your GitHub account:")
-	fmt.Fprintln(out, oauthURL)
+	fmt.Fprintln(out, setup.URL)
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "After connecting GitHub, rerun:")
 	fmt.Fprintln(out, "  dagger repo enable autocheck")
@@ -580,27 +582,43 @@ func (cli *CloudCLI) linkRepo(ctx context.Context, client *cloudapi.Client, org 
 func (cli *CloudCLI) prepareRepoGitHubSetup(ctx context.Context, client *cloudapi.Client, state *repoCloudState) (string, error) {
 	label := "Configure GitHub App access"
 	if state.ActionURL == "" {
-		oauthURL, err := client.GitHubOAuthURL(ctx, githubOAuthRedirect)
+		setup, err := cli.githubConnectHandoff(ctx, client)
 		if err != nil {
 			return "", err
 		}
-		state.ActionURL = oauthURL
-		label = "Connect GitHub"
+		state.ActionURL = setup.URL
+		label = setup.Label
 	}
 	return label, nil
 }
 
 func (cli *CloudCLI) printRepoGitHubSetup(cmd *cobra.Command, label, setupURL, repo string) {
-	if githubOpen {
-		if err := browser.OpenURL(setupURL); err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Failed to open browser: %s\n", err)
-		}
-	}
+	openGitHubSetupURL(cmd, setupURL)
 	out := cmd.OutOrStdout()
 	fmt.Fprintf(out, "%s: %s\n", label, setupURL)
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "After setup, rerun:")
 	fmt.Fprintf(out, "  dagger repo enable autocheck %s\n", repo)
+}
+
+func (cli *CloudCLI) githubConnectHandoff(ctx context.Context, client *cloudapi.Client) (*githubSetupHandoff, error) {
+	oauthURL, err := client.GitHubOAuthURL(ctx, githubOAuthRedirect)
+	if err != nil {
+		return nil, err
+	}
+	return &githubSetupHandoff{
+		Label:       "Connect GitHub",
+		URL:         oauthURL,
+		RedirectURI: githubOAuthRedirect,
+	}, nil
+}
+
+func openGitHubSetupURL(cmd *cobra.Command, setupURL string) {
+	if githubOpen {
+		if err := browser.OpenURL(setupURL); err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Failed to open browser: %s\n", err)
+		}
+	}
 }
 
 func repoStateSourceID(state *repoCloudState) string {
