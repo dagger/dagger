@@ -131,6 +131,12 @@ type Params struct {
 	LoadWorkspaceModules bool
 	SingleQuery          bool
 
+	// WorkspaceModulesInclude narrows workspace module loading to the modules
+	// named by these patterns (the segment before ':'), e.g. ["go-sdk:generate"]
+	// loads only the "go-sdk" module. Used by `dagger generate` so an unrelated
+	// broken module does not block generation.
+	WorkspaceModulesInclude []string
+
 	SkipWorkspaceModules bool
 
 	SuppressCompatWorkspaceWarning bool
@@ -1454,6 +1460,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	}
 	if c.Module == "" && c.LoadWorkspaceModules {
 		md.LoadWorkspaceModules = true
+		md.WorkspaceModulesInclude = c.WorkspaceModulesInclude
 	}
 	if c.LockMode != "" {
 		md.LockMode = c.LockMode

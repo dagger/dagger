@@ -43,6 +43,11 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		params := client.Params{
 			LoadWorkspaceModules: true,
+			// Narrow workspace module loading to the requested generators'
+			// modules, so an unrelated broken/stale module doesn't block
+			// generation. Bare patterns (no "module:") disable the narrowing
+			// engine-side.
+			WorkspaceModulesInclude: args,
 		}
 		return withEngine(
 			cmd.Context(),
