@@ -417,6 +417,79 @@ func TestInterfaceConvertIDMethodConstructsClient(t *testing.T) {
 	require.NotContains(t, got, `return new Syncer(`)
 }
 
+func TestInterfaceListReturnUsesClientWrapper(t *testing.T) {
+	var schemaJSON = `
+[
+  {
+    "kind": "SCALAR",
+    "name": "ID",
+    "description": "",
+    "fields": null,
+    "inputFields": null,
+    "interfaces": [],
+    "enumValues": null,
+    "possibleTypes": null
+  },
+  {
+    "kind": "INTERFACE",
+    "name": "Syncer",
+    "description": "",
+    "fields": [
+      {
+        "name": "id",
+        "description": "",
+        "args": [],
+        "type": { "kind": "NON_NULL", "ofType": { "kind": "SCALAR", "name": "ID" } },
+        "isDeprecated": false,
+        "deprecationReason": null
+      }
+    ],
+    "inputFields": null,
+    "interfaces": [],
+    "enumValues": null,
+    "possibleTypes": null
+  },
+  {
+    "kind": "OBJECT",
+    "name": "Query",
+    "description": "",
+    "fields": [
+      {
+        "name": "syncers",
+        "description": "",
+        "args": [],
+        "type": {
+          "kind": "NON_NULL",
+          "ofType": {
+            "kind": "LIST",
+            "ofType": {
+              "kind": "NON_NULL",
+              "ofType": { "kind": "INTERFACE", "name": "Syncer" }
+            }
+          }
+        },
+        "isDeprecated": false,
+        "deprecationReason": null
+      }
+    ],
+    "inputFields": null,
+    "interfaces": [],
+    "enumValues": null,
+    "possibleTypes": null
+  }
+]
+`
+	schema := objectsInit(t, schemaJSON)
+	generator.SetSchema(&schema)
+	t.Cleanup(func() { generator.SetSchema(nil) })
+
+	got := renderAPI(t, &schema, "v0.21.0-dev")
+
+	require.Contains(t, got, "syncers = async (): Promise<Syncer[]> => {")
+	require.Contains(t, got, `return response.map((r) => new _SyncerClient(ctx.copy().selectNode(r.id, "Syncer")))`)
+	require.NotContains(t, got, `new Syncer(`)
+}
+
 func objectInit(t *testing.T, jsonString string) *introspection.Type {
 	t.Helper()
 	var object introspection.Type

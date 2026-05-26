@@ -68,6 +68,7 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"ConvertID":                 commonFunc.ConvertID,
 		"IsSelfChainable":           commonFunc.IsSelfChainable,
 		"IsListOfObject":            commonFunc.IsListOfObject,
+		"IsListOfInterface":         funcs.isListOfInterface,
 		"IsListOfEnum":              commonFunc.IsListOfEnum,
 		"GetArrayField":             commonFunc.GetArrayField,
 		"ToLowerCase":               commonFunc.ToLowerCase,
@@ -132,6 +133,21 @@ func (funcs typescriptTemplateFuncs) formatInputType(
 		}
 		return commonFunc.FormatInputType(arg.TypeRef, scopes...)
 	}
+}
+
+func (funcs typescriptTemplateFuncs) isListOfInterface(t *introspection.TypeRef) bool {
+	if t == nil || !t.IsList() {
+		return false
+	}
+	for ref := t; ref != nil; ref = ref.OfType {
+		switch ref.Kind {
+		case introspection.TypeKindNonNull, introspection.TypeKindList:
+			continue
+		default:
+			return ref.Kind == introspection.TypeKindInterface
+		}
+	}
+	return false
 }
 
 // formatFieldOutputType returns the raw response value type for a field. Legacy
