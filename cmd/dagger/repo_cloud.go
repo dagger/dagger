@@ -55,7 +55,7 @@ var repoEnableCmd = &cobra.Command{
 
 var repoEnableAutocheckCmd = &cobra.Command{
 	Use:   "autocheck [repo]",
-	Short: "Enable automatic Dagger Cloud checks for a repository",
+	Short: "Run checks on every push",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  cloudCLI.RepoEnableAutocheck,
 }
