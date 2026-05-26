@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-April%2015,%202026-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-May%2026,%202026-success?style=flat-square)
 
 This document describes the process for releasing Dagger.
 
@@ -103,7 +103,7 @@ to dagger.
   ```console
   export RELEASE_BRANCH=main
   export DAGGER_REPO_REMOTE=$(git remote -v | grep -E "(github.com.dagger/dagger)" | head -n 1 | awk '{print $1}')
-  export OLD_ENGINE_VERSION="$(git tag -l 'v*' | sort -V | tail -1)"
+  export OLD_ENGINE_VERSION=$(git log --oneline --decorate --decorate-refs=refs/tags $RELEASE_BRANCH | grep -E '^[0-9a-f]+ \(tag: v[0-9]+' | sed -E 's/^[0-9a-f]+ \(tag: (v[0-9]+\.[0-9]+\.[0-9]+[^\),]*).*/\1/' | sort -V | tail -1)
   ```
 
 > [!NOTE]
@@ -185,7 +185,7 @@ to dagger.
 
   ```console
   git push $DAGGER_REPO_REMOTE prep-$ENGINE_VERSION
-  gh pr create --draft --title "chore: prep for $ENGINE_VERSION" --body "" | tee /tmp/prep-pr.txt
+  gh pr create -B "$RELEASE_BRANCH" --draft --title "chore: prep for $ENGINE_VERSION" --body "" | tee /tmp/prep-pr.txt
   export RELEASE_PREP_PR=$(cat /tmp/prep-pr.txt | sed -r 's/^[^0-9]*([0-9]+).*/\1/')
   ```
 
@@ -363,6 +363,9 @@ This will also kick off [`.github/workflows/evals.yml`], which is currently brok
   # update deps and run go mod tidy on all go modules that were updated
   find . -name go.mod \( -path "./docs/recorder*" -o -not -path "./docs/*" \) -not -path '*/tests/*' -not -path '*/testdata/*' -not -path '*/viztest/*' -not -path './core/integration/*' -execdir sh -c 'for dep in dagger.io/dagger github.com/dagger/dagger/engine/distconsts; do git grep -qF "$dep " go.mod && go get "${dep}@${ENGINE_VERSION}"; done; go mod tidy' \;
 
+  # generate
+  dagger generate go:generate-dagger-runtimes markdown-lint:fix -y
+
   # add, commit and push the changes to the branch
   git commit -a -s -m "chore: bump internal tooling to $ENGINE_VERSION"
   ```
@@ -381,7 +384,7 @@ This will also kick off [`.github/workflows/evals.yml`], which is currently brok
 
   ```console
   git push "$DAGGER_REPO_REMOTE" "post-release-$ENGINE_VERSION"
-  gh pr create --title "chore: post-release during $ENGINE_VERSION" --body ""
+  gh pr create -B "$RELEASE_BRANCH" --title "chore: post-release during $ENGINE_VERSION" --body ""
   ```
 
 - [ ] If the git remote url was changed to ssh, now is a good time to revert it to https.
