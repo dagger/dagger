@@ -104,6 +104,12 @@ func TestSourceMatchesRepo(t *testing.T) {
 	require.True(t, sourceMatchesRepo(genericSource, "gitlab.com/dagger/dagger"))
 }
 
+func TestIntegrationSupportsAutocheck(t *testing.T) {
+	require.True(t, integrationSupportsAutocheck(cloudapi.Integration{Name: "GitHub"}))
+	require.False(t, integrationSupportsAutocheck(cloudapi.Integration{Name: "GitLab"}))
+	require.False(t, integrationSupportsAutocheck(cloudapi.Integration{Name: "Bitbucket"}))
+}
+
 func TestRedactGitRemote(t *testing.T) {
 	got := redactGitRemote("https://token:x-oauth-basic@github.com/dagger/dagger.git")
 	require.Equal(t, "https://github.com/dagger/dagger.git", got)

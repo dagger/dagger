@@ -77,6 +77,13 @@ var integrationAddCmd = &cobra.Command{
 	RunE:  cloudCLI.IntegrationAdd,
 }
 
+var integrationListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List Dagger Cloud integrations",
+	Args:  cobra.NoArgs,
+	RunE:  cloudCLI.IntegrationList,
+}
+
 var integrationGithubCmd = &cobra.Command{
 	Use:   "github",
 	Short: "Inspect the GitHub integration used by Dagger Cloud",
@@ -131,7 +138,7 @@ func init() {
 		integrationGithubDisconnectCmd,
 		integrationGithubInstallationsCmd,
 	)
-	integrationCmd.AddCommand(integrationAddCmd, integrationGithubCmd)
+	integrationCmd.AddCommand(integrationAddCmd, integrationListCmd, integrationGithubCmd)
 
 	rootCmd.AddCommand(repoCmd, integrationCmd)
 }
@@ -167,6 +174,15 @@ type repoListEntry struct {
 	SourceID    string         `json:"sourceId,omitempty"`
 	URL         string         `json:"url,omitempty"`
 	Features    repoFeatureSet `json:"features"`
+}
+
+type integrationListEntry struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Category    string `json:"category"`
+	Enabled     bool   `json:"enabled"`
+	Autocheck   bool   `json:"autocheck"`
+	Description string `json:"description"`
 }
 
 type repoRef struct {
@@ -315,6 +331,40 @@ func (cli *CloudCLI) IntegrationAdd(cmd *cobra.Command, args []string) error {
 	default:
 		return fmt.Errorf("unsupported integration %q; supported integrations: github", args[0])
 	}
+}
+
+func (cli *CloudCLI) IntegrationList(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+	client, cloudAuth, err := cli.cloudClient(ctx)
+	if err != nil {
+		return err
+	}
+	org, err := cli.resolveCloudOrg(ctx, client, cloudAuth)
+	if err != nil {
+		return err
+	}
+	integrations, err := client.Integrations(ctx, org.ID)
+	if err != nil {
+		return err
+	}
+
+	entries := make([]integrationListEntry, 0, len(integrations))
+	for _, integration := range integrations {
+		entries = append(entries, integrationListEntry{
+			ID:          integration.ID,
+			Name:        integration.Name,
+			Category:    integration.Category,
+			Enabled:     integrationEnabled(integration),
+			Autocheck:   integrationSupportsAutocheck(integration),
+			Description: integration.Description,
+		})
+	}
+
+	if cloudJSON {
+		return writeCloudJSON(cmd, entries)
+	}
+	printIntegrationList(cmd, entries)
+	return nil
 }
 
 func (cli *CloudCLI) IntegrationGitHubInfo(cmd *cobra.Command, args []string) error {
@@ -941,6 +991,33 @@ func printRepoList(cmd *cobra.Command, entries []repoListEntry) {
 		)
 	}
 	_ = w.Flush()
+}
+
+func printIntegrationList(cmd *cobra.Command, entries []integrationListEntry) {
+	out := cmd.OutOrStdout()
+	if len(entries) == 0 {
+		fmt.Fprintln(out, "No integrations found.")
+		return
+	}
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "INTEGRATION\tCATEGORY\tENABLED\tAUTOCHECK\tDESCRIPTION")
+	for _, entry := range entries {
+		fmt.Fprintf(w, "%s\t%s\t%t\t%t\t%s\n",
+			entry.Name,
+			entry.Category,
+			entry.Enabled,
+			entry.Autocheck,
+			entry.Description,
+		)
+	}
+	_ = w.Flush()
+}
+
+func integrationSupportsAutocheck(integration cloudapi.Integration) bool {
+	// The Cloud integration catalog does not expose capability metadata yet.
+	// Keep this explicit so listing integrations does not imply every git
+	// provider can be used with `repo enable autocheck`.
+	return strings.EqualFold(integration.Name, "GitHub")
 }
 
 func onOff(enabled bool) string {
