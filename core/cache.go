@@ -114,7 +114,7 @@ func (cache *CacheVolume) getSnapshotSelector() string {
 	return cache.selector
 }
 
-func (cache *CacheVolume) CacheUsageSize(ctx context.Context, identity string) (int64, bool, error) {
+func (cache *CacheVolume) CacheUsageSize(ctx context.Context, sizeProvider dagql.CacheUsageSizeProvider, identity string) (int64, bool, error) {
 	cache.mu.Lock()
 	snapshot := cache.snapshot
 	snapshotID := cache.snapshotID
@@ -132,11 +132,10 @@ func (cache *CacheVolume) CacheUsageSize(ctx context.Context, identity string) (
 	if snapshotID == "" || snapshotID != identity {
 		return 0, false, nil
 	}
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return 0, false, err
+	if sizeProvider == nil {
+		return 0, false, nil
 	}
-	size, err := query.SnapshotManager().SnapshotSize(ctx, snapshotID)
+	size, err := sizeProvider.SnapshotSize(ctx, snapshotID)
 	if err != nil {
 		return 0, false, err
 	}

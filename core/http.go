@@ -126,7 +126,7 @@ func (state *HTTPState) CacheUsageIdentities() []string {
 	return []string{state.snapshotID}
 }
 
-func (state *HTTPState) CacheUsageSize(ctx context.Context, identity string) (int64, bool, error) {
+func (state *HTTPState) CacheUsageSize(ctx context.Context, sizeProvider dagql.CacheUsageSizeProvider, identity string) (int64, bool, error) {
 	if state == nil {
 		return 0, false, nil
 	}
@@ -150,18 +150,10 @@ func (state *HTTPState) CacheUsageSize(ctx context.Context, identity string) (in
 	if snapshotID == "" {
 		return 0, false, nil
 	}
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return 0, false, err
+	if sizeProvider == nil {
+		return 0, false, nil
 	}
-	ref, err := query.SnapshotManager().GetBySnapshotID(ctx, snapshotID, bkcache.NoUpdateLastUsed)
-	if err != nil {
-		return 0, false, err
-	}
-	defer func() {
-		_ = ref.Release(context.WithoutCancel(ctx))
-	}()
-	size, err := ref.Size(ctx)
+	size, err := sizeProvider.SnapshotSize(ctx, snapshotID)
 	if err != nil {
 		return 0, false, err
 	}

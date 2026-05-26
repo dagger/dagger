@@ -131,7 +131,7 @@ type cacheTestSizedInt struct {
 	sizeMayChange        bool
 }
 
-func (v cacheTestSizedInt) CacheUsageSize(_ context.Context, identity string) (int64, bool, error) {
+func (v cacheTestSizedInt) CacheUsageSize(_ context.Context, _ CacheUsageSizeProvider, identity string) (int64, bool, error) {
 	if v.sizeCalls != nil {
 		v.sizeCalls.Add(1)
 	}

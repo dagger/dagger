@@ -365,7 +365,7 @@ func TestCacheVolumeUsageSizeUsesLiveSnapshotID(t *testing.T) {
 	cache := NewCache("cache-key", "ns", dagql.Null[dagql.ObjectResult[*Directory]](), CacheSharingModeShared, "")
 	cache.snapshot = &cacheVolumeTestMutableRef{cacheVolumeTestImmutableRef: *ref}
 
-	size, ok, err := cache.CacheUsageSize(context.Background(), "snapshot-123")
+	size, ok, err := cache.CacheUsageSize(context.Background(), nil, "snapshot-123")
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, int64(42), size)
@@ -379,21 +379,33 @@ func TestCacheVolumeUsageSizeUsesPersistedSnapshotID(t *testing.T) {
 			"snapshot-123": 42,
 		},
 	}
-	query := &Query{
-		Server: &cacheVolumeTestQueryServer{
-			mockServer:   &mockServer{},
-			cacheManager: manager,
-		},
-	}
-	ctx := ContextWithQuery(context.Background(), query)
-
 	cache := NewCache("cache-key", "ns", dagql.Null[dagql.ObjectResult[*Directory]](), CacheSharingModeShared, "")
 	cache.snapshotID = "snapshot-123"
 
-	size, ok, err := cache.CacheUsageSize(ctx, "snapshot-123")
+	size, ok, err := cache.CacheUsageSize(context.Background(), manager, "snapshot-123")
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, int64(42), size)
+	require.Equal(t, []string{"snapshot-123"}, manager.snapshotSizeCalls)
+}
+
+func TestHTTPStateUsageSizeUsesPersistedSnapshotID(t *testing.T) {
+	t.Parallel()
+
+	manager := &cacheVolumeTestSnapshotManager{
+		snapshotSizes: map[string]int64{
+			"snapshot-123": 42,
+		},
+	}
+	state := &HTTPState{
+		snapshotID: "snapshot-123",
+	}
+
+	size, ok, err := state.CacheUsageSize(context.Background(), manager, "snapshot-123")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, int64(42), size)
+	require.Empty(t, manager.getBySnapshotIDCalls)
 	require.Equal(t, []string{"snapshot-123"}, manager.snapshotSizeCalls)
 }
 

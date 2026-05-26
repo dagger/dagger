@@ -1327,10 +1327,15 @@ func spanContextKey(ctx trace.SpanContext) string {
 	return ctx.TraceID().String() + "/" + ctx.SpanID().String()
 }
 
+// CacheUsageSizeProvider resolves concrete snapshot sizes for cache usage accounting.
+type CacheUsageSizeProvider interface {
+	SnapshotSize(context.Context, string) (int64, error)
+}
+
 type cacheUsageSizer interface {
 	// CacheUsageSize returns the concrete size of the cached payload when known.
 	// ok=false means "size is currently unknown/not available".
-	CacheUsageSize(context.Context, string) (sizeBytes int64, ok bool, err error)
+	CacheUsageSize(context.Context, CacheUsageSizeProvider, string) (sizeBytes int64, ok bool, err error)
 }
 
 type hasCacheUsageIdentity interface {
@@ -3336,7 +3341,7 @@ func buildCacheUsageMeasurements(ctx context.Context, snapshotManager bkcache.Sn
 
 		if !ok {
 			if input.self != nil {
-				sizeBytes, ok, err = cacheUsageSizeBytesFromSelf(ctx, input.self, identity)
+				sizeBytes, ok, err = cacheUsageSizeBytesFromSelf(ctx, snapshotManager, input.self, identity)
 			} else if len(input.snapshotLinks) > 0 {
 				sizeBytes, ok, err = cacheUsageSizeBytesFromSnapshotLink(ctx, snapshotManager, identity)
 			}
@@ -4319,7 +4324,7 @@ func mergeSharedResultExpiryUnix(existingExpiresAtUnix, candidateExpiresAtUnix i
 	}
 }
 
-func cacheUsageSizeBytesFromSelf(ctx context.Context, self Typed, identity string) (int64, bool, error) {
+func cacheUsageSizeBytesFromSelf(ctx context.Context, sizeProvider CacheUsageSizeProvider, self Typed, identity string) (int64, bool, error) {
 	if self == nil {
 		return 0, false, nil
 	}
@@ -4327,14 +4332,14 @@ func cacheUsageSizeBytesFromSelf(ctx context.Context, self Typed, identity strin
 	if !ok {
 		return 0, false, nil
 	}
-	return sizer.CacheUsageSize(ctx, identity)
+	return sizer.CacheUsageSize(ctx, sizeProvider, identity)
 }
 
-func cacheUsageSizeBytesFromSnapshotLink(ctx context.Context, snapshotManager bkcache.SnapshotManager, identity string) (int64, bool, error) {
-	if snapshotManager == nil || identity == "" {
+func cacheUsageSizeBytesFromSnapshotLink(ctx context.Context, sizeProvider CacheUsageSizeProvider, identity string) (int64, bool, error) {
+	if sizeProvider == nil || identity == "" {
 		return 0, false, nil
 	}
-	sizeBytes, err := snapshotManager.SnapshotSize(ctx, identity)
+	sizeBytes, err := sizeProvider.SnapshotSize(ctx, identity)
 	if err != nil {
 		return 0, false, err
 	}
