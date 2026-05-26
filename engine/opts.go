@@ -134,6 +134,16 @@ type ClientMetadata struct {
 	// when a legacy dagger.json is projected into a compat workspace.
 	SuppressCompatWorkspaceWarning bool `json:"suppress_compat_workspace_warning,omitempty"`
 
+	// WorkspaceModulesInclude, when non-empty, narrows workspace module loading
+	// to the modules named by these patterns, plus their dependencies. A pattern
+	// names a module as "module:generator" (the segment before ':') or as a bare
+	// "module" token that matches a known workspace module name. Unrelated
+	// workspace modules are not loaded, so a broken/stale one does not block the
+	// operation. Used by `dagger generate`. A bare token that is not a module
+	// name (e.g. an entrypoint generator), or a pattern matching no module,
+	// disables the narrowing (all modules are loaded). Empty means load all.
+	WorkspaceModulesInclude []string `json:"workspace_modules_include,omitempty"`
+
 	// LockMode controls lockfile behavior for lookup resolution.
 	// Valid values: "live", "pinned", "frozen", "update".
 	// Legacy aliases "disabled", "auto", and "strict" are also accepted.

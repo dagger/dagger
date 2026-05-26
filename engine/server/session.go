@@ -1389,6 +1389,9 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	if peekRootFieldsOK {
 		client.narrowPendingWorkspaceModulesForSingleQuery(peekRootFields)
 	}
+	if client.clientMetadata != nil && len(client.clientMetadata.WorkspaceModulesInclude) > 0 {
+		client.narrowPendingWorkspaceModulesForInclude(client.clientMetadata.WorkspaceModulesInclude)
+	}
 	if err := srv.ensureModulesLoaded(ctx, client); err != nil {
 		return gqlErr(fmt.Errorf("loading modules: %w", err), http.StatusInternalServerError)
 	}
