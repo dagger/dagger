@@ -93,7 +93,7 @@ var integrationGithubCmd = &cobra.Command{
 
 var integrationGithubInfoCmd = &cobra.Command{
 	Use:   "info",
-	Short: "Show GitHub connection and installation status",
+	Short: "Show GitHub connection and integration status",
 	Args:  cobra.NoArgs,
 	RunE:  cloudCLI.IntegrationGitHubInfo,
 }
@@ -112,14 +112,6 @@ var integrationGithubDisconnectCmd = &cobra.Command{
 	RunE:  cloudCLI.IntegrationGitHubDisconnect,
 }
 
-var integrationGithubInstallationsCmd = &cobra.Command{
-	Use:     "installations",
-	Aliases: []string{"sources"},
-	Short:   "List GitHub App installations visible to this user",
-	Args:    cobra.NoArgs,
-	RunE:    cloudCLI.IntegrationGitHubInstallations,
-}
-
 func init() {
 	repoCmd.PersistentFlags().BoolVar(&cloudJSON, "json", false, "Print JSON output")
 	repoListCmd.Flags().BoolVar(&repoListEnabled, "enabled", false, "Only show enabled repositories")
@@ -136,7 +128,6 @@ func init() {
 		integrationGithubInfoCmd,
 		integrationGithubConnectCmd,
 		integrationGithubDisconnectCmd,
-		integrationGithubInstallationsCmd,
 	)
 	integrationCmd.AddCommand(integrationAddCmd, integrationListCmd, integrationGithubCmd)
 
@@ -177,12 +168,14 @@ type repoListEntry struct {
 }
 
 type integrationListEntry struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Category    string `json:"category"`
-	Enabled     bool   `json:"enabled"`
-	Autocheck   bool   `json:"autocheck"`
-	Description string `json:"description"`
+	ID           string `json:"id"`
+	Provider     string `json:"provider"`
+	Account      string `json:"account"`
+	Type         string `json:"type"`
+	Org          string `json:"org,omitempty"`
+	ConfiguredAt string `json:"configuredAt,omitempty"`
+	Autocheck    bool   `json:"autocheck"`
+	ConfigURL    string `json:"configUrl,omitempty"`
 }
 
 type repoRef struct {
@@ -335,30 +328,15 @@ func (cli *CloudCLI) IntegrationAdd(cmd *cobra.Command, args []string) error {
 
 func (cli *CloudCLI) IntegrationList(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	client, cloudAuth, err := cli.cloudClient(ctx)
+	client, _, err := cli.cloudClient(ctx)
 	if err != nil {
 		return err
 	}
-	org, err := cli.resolveCloudOrg(ctx, client, cloudAuth)
+	sources, err := client.Sources(ctx)
 	if err != nil {
 		return err
 	}
-	integrations, err := client.Integrations(ctx, org.ID)
-	if err != nil {
-		return err
-	}
-
-	entries := make([]integrationListEntry, 0, len(integrations))
-	for _, integration := range integrations {
-		entries = append(entries, integrationListEntry{
-			ID:          integration.ID,
-			Name:        integration.Name,
-			Category:    integration.Category,
-			Enabled:     integrationEnabled(integration),
-			Autocheck:   integrationSupportsAutocheck(integration),
-			Description: integration.Description,
-		})
-	}
+	entries := integrationEntriesFromSources(sources)
 
 	if cloudJSON {
 		return writeCloudJSON(cmd, entries)
@@ -397,29 +375,13 @@ func (cli *CloudCLI) IntegrationGitHubInfo(cmd *cobra.Command, args []string) er
 
 	if cloudJSON {
 		return writeCloudJSON(cmd, map[string]any{
-			"githubConnection": conn,
-			"installations":    sources,
-			"org":              org,
-			"integrations":     integrations,
+			"githubConnection":   conn,
+			"githubIntegrations": integrationEntriesFromSources(sources),
+			"org":                org,
+			"catalog":            integrations,
 		})
 	}
 	printGitHubIntegration(cmd, conn, sources, org, integrations)
-	return nil
-}
-
-func (cli *CloudCLI) IntegrationGitHubInstallations(cmd *cobra.Command, args []string) error {
-	client, _, err := cli.cloudClient(cmd.Context())
-	if err != nil {
-		return err
-	}
-	sources, err := client.Sources(cmd.Context())
-	if err != nil {
-		return err
-	}
-	if cloudJSON {
-		return writeCloudJSON(cmd, sources)
-	}
-	printAvailableSources(cmd, sources)
 	return nil
 }
 
@@ -606,7 +568,7 @@ func (cli *CloudCLI) linkRepo(ctx context.Context, client *cloudapi.Client, org 
 
 	sourceID := repoStateSourceID(state)
 	if sourceID == "" {
-		return nil, fmt.Errorf("repo %s is visible, but its GitHub integration could not be resolved; run 'dagger integration github installations'", repo)
+		return nil, fmt.Errorf("repo %s is visible, but its GitHub integration could not be resolved; run 'dagger integration list'", repo)
 	}
 
 	selected, err := cli.selectedReposForSource(ctx, client, org, sourceID)
@@ -883,7 +845,7 @@ func repoStatusMessage(state *repoCloudState) string {
 		return "A git source exists, but this repo is not visible to it."
 	default:
 		if isGitHubRepository(state.Repository) {
-			return "No GitHub App installation for this repo owner is visible to this user."
+			return "No GitHub integration for this repo owner is visible to this user."
 		}
 		return "No Cloud git source for this repo is visible to this user."
 	}
@@ -996,28 +958,59 @@ func printRepoList(cmd *cobra.Command, entries []repoListEntry) {
 func printIntegrationList(cmd *cobra.Command, entries []integrationListEntry) {
 	out := cmd.OutOrStdout()
 	if len(entries) == 0 {
-		fmt.Fprintln(out, "No integrations found.")
+		fmt.Fprintln(out, "No integrations found. Add one with: dagger integration add github")
 		return
 	}
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "INTEGRATION\tCATEGORY\tENABLED\tAUTOCHECK\tDESCRIPTION")
+	fmt.Fprintln(w, "INTEGRATION\tACCOUNT\tTYPE\tDAGGER ORG\tAUTOCHECK\tCONFIG URL")
 	for _, entry := range entries {
-		fmt.Fprintf(w, "%s\t%s\t%t\t%t\t%s\n",
-			entry.Name,
-			entry.Category,
-			entry.Enabled,
-			entry.Autocheck,
-			entry.Description,
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			entry.Provider,
+			entry.Account,
+			entry.Type,
+			entry.Org,
+			onOff(entry.Autocheck),
+			entry.ConfigURL,
 		)
 	}
 	_ = w.Flush()
 }
 
-func integrationSupportsAutocheck(integration cloudapi.Integration) bool {
-	// The Cloud integration catalog does not expose capability metadata yet.
-	// Keep this explicit so listing integrations does not imply every git
-	// provider can be used with `repo enable autocheck`.
-	return strings.EqualFold(integration.Name, "GitHub")
+func integrationEntriesFromSources(sources []cloudapi.Source) []integrationListEntry {
+	entries := make([]integrationListEntry, 0, len(sources))
+	for _, source := range sources {
+		provider := sourceIntegrationProvider(source)
+		entries = append(entries, integrationListEntry{
+			ID:           source.ID,
+			Provider:     provider,
+			Account:      source.Name,
+			Type:         source.Type,
+			Org:          stringValue(source.OrgName),
+			ConfiguredAt: source.ConfiguredAt,
+			Autocheck:    integrationProviderSupportsAutocheck(provider),
+			ConfigURL:    source.ConfigURL,
+		})
+	}
+	return entries
+}
+
+func sourceIntegrationProvider(source cloudapi.Source) string {
+	configURL, err := url.Parse(source.ConfigURL)
+	if err == nil {
+		switch strings.ToLower(configURL.Hostname()) {
+		case "github.com":
+			return "GitHub"
+		case "gitlab.com":
+			return "GitLab"
+		case "bitbucket.org":
+			return "Bitbucket"
+		}
+	}
+	return "Git"
+}
+
+func integrationProviderSupportsAutocheck(provider string) bool {
+	return strings.EqualFold(provider, "GitHub")
 }
 
 func onOff(enabled bool) string {
@@ -1043,12 +1036,12 @@ func printGitHubIntegration(cmd *cobra.Command, conn *cloudapi.GitHubConnection,
 		}
 	}
 	if len(sources) == 0 {
-		fmt.Fprintln(out, "Installations: none visible")
+		fmt.Fprintln(out, "GitHub integrations: none visible")
 		return
 	}
-	fmt.Fprintln(out, "\nInstallations:")
+	fmt.Fprintln(out, "\nGitHub integrations:")
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "SOURCE\tINSTALLATION\tTYPE\tDAGGER ORG\tCONFIG URL")
+	fmt.Fprintln(w, "ACCOUNT\tID\tTYPE\tDAGGER ORG\tCONFIG URL")
 	for _, source := range sources {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", source.Name, source.ID, source.Type, stringValue(source.OrgName), source.ConfigURL)
 	}
