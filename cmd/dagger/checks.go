@@ -57,7 +57,7 @@ Examples:
 			EnableCloudScaleOut:  enableScaleOut,
 			LoadWorkspaceModules: true,
 		}
-		return withEngine(
+		err := withEngine(
 			cmd.Context(),
 			params,
 			func(ctx context.Context, engineClient *client.Client) error {
@@ -73,6 +73,10 @@ Examples:
 				return runChecks(ctx, dag, checks, cmd)
 			},
 		)
+		if err == nil && !checksListMode {
+			maybeHintAutocheckAfterCheck(cmd.Context())
+		}
+		return err
 	},
 }
 
