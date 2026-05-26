@@ -108,32 +108,27 @@ func (funcs typescriptTemplateFuncs) isInterface(t *introspection.Type) bool {
 	return t.Kind == introspection.TypeKindInterface
 }
 
-// formatInputType returns a function that formats input values. Arguments
-// named id stay on the ID scalar surface in modern mode, and become typed
-// legacy FooID aliases in legacy mode when @expectedType identifies a concrete
-// object/interface.
+// formatInputType returns a function that formats input values.
 func (funcs typescriptTemplateFuncs) formatInputType(
 	commonFunc *generator.CommonFunctions,
 ) func(arg introspection.InputValue, scopes ...string) (string, error) {
 	return func(arg introspection.InputValue, scopes ...string) (string, error) {
-		if arg.Name == "id" {
-			if funcs.legacyTypeScriptSDKCompat() {
-				if expectedType := arg.Directives.ExpectedType(); expectedType != "" && expectedType != "Node" && !strings.HasPrefix(expectedType, "_") {
-					representation := funcs.scoped(scopes...) + funcs.legacyIDName(expectedType)
-					if arg.TypeRef != nil && arg.TypeRef.IsList() {
-						representation += "[]"
-					}
-					return representation, nil
-				}
-			}
-			return commonFunc.FormatOutputType(arg.TypeRef, scopes...)
-		}
 		if expectedType := arg.Directives.ExpectedType(); expectedType != "" {
+			if arg.Name == "id" && funcs.legacyTypeScriptSDKCompat() && expectedType != "Node" && !strings.HasPrefix(expectedType, "_") {
+				representation := funcs.scoped(scopes...) + funcs.legacyIDName(expectedType)
+				if arg.TypeRef != nil && arg.TypeRef.IsList() {
+					representation += "[]"
+				}
+				return representation, nil
+			}
 			representation := funcs.scoped(scopes...) + funcs.formatName(expectedType)
 			if arg.TypeRef != nil && arg.TypeRef.IsList() {
 				representation += "[]"
 			}
 			return representation, nil
+		}
+		if arg.Name == "id" {
+			return commonFunc.FormatOutputType(arg.TypeRef, scopes...)
 		}
 		return commonFunc.FormatInputType(arg.TypeRef, scopes...)
 	}

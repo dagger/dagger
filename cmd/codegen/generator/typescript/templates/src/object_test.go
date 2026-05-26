@@ -335,6 +335,17 @@ func TestModernTypeScriptIDSurface(t *testing.T) {
 	require.Contains(t, got, "const response: Awaited<ID> = await ctx.execute()")
 }
 
+func TestModernTypeScriptFileInputNamedIDUsesFileType(t *testing.T) {
+	schema := objectsInit(t, legacyUnifiedIDSchemaJSON)
+	generator.SetSchema(&schema)
+	t.Cleanup(func() { generator.SetSchema(nil) })
+
+	got := renderAPI(t, &schema, "v0.21.0-dev")
+
+	require.Contains(t, got, "file = (id: File): File => {")
+	require.NotContains(t, got, "file = (id: ID): File => {")
+}
+
 func renderAPI(t *testing.T, schema *introspection.Schema, schemaVersion string) string {
 	t.Helper()
 	tmpl := templates.New(schemaVersion, generator.Config{})
