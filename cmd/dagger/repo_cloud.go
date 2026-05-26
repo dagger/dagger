@@ -55,7 +55,7 @@ var repoEnableCmd = &cobra.Command{
 
 var repoEnableAutocheckCmd = &cobra.Command{
 	Use:   "autocheck [repo]",
-	Short: "Enable automatic GitHub checks for a repository",
+	Short: "Enable automatic Dagger Cloud checks for a repository",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  cloudCLI.RepoEnableAutocheck,
 }
@@ -284,17 +284,19 @@ func (cli *CloudCLI) RepoEnableAutocheck(cmd *cobra.Command, args []string) erro
 	state, err := cli.linkRepo(ctx, client, org, repo)
 	if err != nil {
 		if state != nil && state.Repo == nil {
-			setupLabel, setupErr := cli.prepareRepoGitHubSetup(cmd.Context(), client, state)
+			setupLabel, setupErr := cli.prepareRepoSetup(cmd.Context(), client, state)
 			if setupErr != nil {
-				return fmt.Errorf("%w\nfailed to start GitHub setup: %v", err, setupErr)
+				return fmt.Errorf("%w\nfailed to start setup: %v", err, setupErr)
 			}
-			state.Message = fmt.Sprintf("%s required. Complete setup, then rerun `dagger repo enable autocheck %s`.", setupLabel, repo)
-			if cloudJSON {
-				if jsonErr := writeRepoStateJSON(cmd, state); jsonErr != nil {
-					return jsonErr
+			if setupLabel != "" && state.ActionURL != "" {
+				state.Message = fmt.Sprintf("%s required. Complete setup, then rerun `dagger repo enable autocheck %s`.", setupLabel, repo)
+				if cloudJSON {
+					if jsonErr := writeRepoStateJSON(cmd, state); jsonErr != nil {
+						return jsonErr
+					}
+				} else {
+					cli.printRepoSetup(cmd, setupLabel, state.ActionURL, repo)
 				}
-			} else {
-				cli.printRepoGitHubSetup(cmd, setupLabel, state.ActionURL, repo)
 			}
 		}
 		return err
@@ -425,7 +427,6 @@ func (cli *CloudCLI) inspectRepo(ctx context.Context, client *cloudapi.Client, o
 		return nil, err
 	}
 
-	owner := repoOwner(repo)
 	for i := range gitSources.Org.MappedSources {
 		mapped := &gitSources.Org.MappedSources[i]
 		repos, err := client.SourceRepositories(ctx, mapped.InstallationID, org.ID)
@@ -453,7 +454,7 @@ func (cli *CloudCLI) inspectRepo(ctx context.Context, client *cloudapi.Client, o
 
 	for i := range sources {
 		source := &sources[i]
-		if state.Source == nil && sourceMatchesOwner(source, owner) {
+		if state.Source == nil && sourceMatchesRepo(source, repo) {
 			state.Source = source
 			state.ActionURL = source.ConfigURL
 			state.Status = "not_visible"
@@ -579,9 +580,15 @@ func (cli *CloudCLI) linkRepo(ctx context.Context, client *cloudapi.Client, org 
 	return state, nil
 }
 
-func (cli *CloudCLI) prepareRepoGitHubSetup(ctx context.Context, client *cloudapi.Client, state *repoCloudState) (string, error) {
-	label := "Configure GitHub App access"
+func (cli *CloudCLI) prepareRepoSetup(ctx context.Context, client *cloudapi.Client, state *repoCloudState) (string, error) {
+	label := "Configure git source access"
+	if state.Source != nil && sourceIsGitHub(state.Source) {
+		label = "Configure GitHub App access"
+	}
 	if state.ActionURL == "" {
+		if !isGitHubRepository(state.Repository) {
+			return "", nil
+		}
 		setup, err := cli.githubConnectHandoff(ctx, client)
 		if err != nil {
 			return "", err
@@ -592,7 +599,7 @@ func (cli *CloudCLI) prepareRepoGitHubSetup(ctx context.Context, client *cloudap
 	return label, nil
 }
 
-func (cli *CloudCLI) printRepoGitHubSetup(cmd *cobra.Command, label, setupURL, repo string) {
+func (cli *CloudCLI) printRepoSetup(cmd *cobra.Command, label, setupURL, repo string) {
 	openGitHubSetupURL(cmd, setupURL)
 	out := cmd.OutOrStdout()
 	fmt.Fprintf(out, "%s: %s\n", label, setupURL)
@@ -656,7 +663,7 @@ func repoFromArgOrGit(ctx context.Context, args []string) (string, error) {
 
 func resolveRepoRef(ctx context.Context, args []string) (repoRef, error) {
 	if len(args) > 0 && strings.TrimSpace(args[0]) != "" {
-		repo, err := normalizeGitHubRepo(args[0])
+		repo, err := normalizeGitRepo(args[0])
 		if err != nil {
 			return repoRef{}, err
 		}
@@ -666,7 +673,7 @@ func resolveRepoRef(ctx context.Context, args []string) (repoRef, error) {
 	if err != nil {
 		return repoRef{}, err
 	}
-	repo, err := normalizeGitHubRepo(remote)
+	repo, err := normalizeGitRepo(remote)
 	if err != nil {
 		return repoRef{}, err
 	}
@@ -681,7 +688,7 @@ func gitRemoteOriginURL(ctx context.Context) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-func normalizeGitHubRepo(ref string) (string, error) {
+func normalizeGitRepo(ref string) (string, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		return "", fmt.Errorf("empty repository")
@@ -693,16 +700,26 @@ func normalizeGitHubRepo(ref string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !strings.EqualFold(host, "github.com") {
-		return "", fmt.Errorf("only GitHub repositories are supported, got %s", host)
-	}
 	path = strings.Trim(path, "/")
-	path = strings.TrimSuffix(path, ".git")
 	parts := strings.Split(path, "/")
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+	if strings.EqualFold(host, "github.com") && (len(parts) != 2 || parts[0] == "" || parts[1] == "") {
 		return "", fmt.Errorf("repository must be github.com/owner/name")
 	}
-	return "github.com/" + parts[0] + "/" + parts[1], nil
+	if len(parts) < 2 {
+		return "", fmt.Errorf("repository must include a git host and repository path, e.g. github.com/owner/name")
+	}
+	for i := range parts {
+		if parts[i] == "" {
+			return "", fmt.Errorf("repository must include a git host and repository path, e.g. github.com/owner/name")
+		}
+	}
+	for i := range parts {
+		if parts[i] == "-" {
+			return "", fmt.Errorf("repository must be a git remote URL, not a web URL")
+		}
+	}
+	parts[len(parts)-1] = strings.TrimSuffix(parts[len(parts)-1], ".git")
+	return strings.ToLower(host) + "/" + strings.Join(parts, "/"), nil
 }
 
 func splitGitRepoRef(ref string) (string, string, error) {
@@ -748,13 +765,30 @@ func repoOwner(repo string) string {
 	return ""
 }
 
+func isGitHubRepository(repo string) bool {
+	parts := strings.Split(repo, "/")
+	return len(parts) >= 1 && strings.EqualFold(parts[0], "github.com")
+}
+
 func sourceMatchesOwner(source *cloudapi.Source, owner string) bool {
 	return strings.EqualFold(source.Owner, owner) || strings.EqualFold(source.Name, owner)
 }
 
+func sourceMatchesRepo(source *cloudapi.Source, repo string) bool {
+	if sourceIsGitHub(source) && !isGitHubRepository(repo) {
+		return false
+	}
+	return sourceMatchesOwner(source, repoOwner(repo))
+}
+
+func sourceIsGitHub(source *cloudapi.Source) bool {
+	host, _, err := splitGitRepoRef(source.ConfigURL)
+	return err == nil && strings.EqualFold(host, "github.com")
+}
+
 func sameRepository(a, b string) bool {
-	na, errA := normalizeGitHubRepo(a)
-	nb, errB := normalizeGitHubRepo(b)
+	na, errA := normalizeGitRepo(a)
+	nb, errB := normalizeGitRepo(b)
 	if errA != nil || errB != nil {
 		return strings.EqualFold(a, b)
 	}
@@ -796,18 +830,24 @@ func repoStatusMessage(state *repoCloudState) string {
 	case "blocked":
 		return "Repo is visible, but claimed by another Dagger Cloud org."
 	case "not_visible":
-		return "GitHub App installation exists, but this repo is not visible to it."
+		return "A git source exists, but this repo is not visible to it."
 	default:
-		return "No GitHub App installation for this repo owner is visible to this user."
+		if isGitHubRepository(state.Repository) {
+			return "No GitHub App installation for this repo owner is visible to this user."
+		}
+		return "No Cloud git source for this repo is visible to this user."
 	}
 }
 
 func repoVisibilityError(state *repoCloudState) error {
 	switch state.Status {
 	case "not_visible":
-		return fmt.Errorf("%s Configure GitHub App access: %s", repoStatusMessage(state), state.ActionURL)
+		return fmt.Errorf("%s Configure git source access: %s", repoStatusMessage(state), state.ActionURL)
 	default:
-		return fmt.Errorf("%s Run `dagger integration add github` or install the Dagger GitHub App for the repo owner", repoStatusMessage(state))
+		if isGitHubRepository(state.Repository) {
+			return fmt.Errorf("%s Run `dagger integration add github` or install the Dagger GitHub App for the repo owner", repoStatusMessage(state))
+		}
+		return fmt.Errorf("%s Configure a git source/integration for this repository before enabling autocheck", repoStatusMessage(state))
 	}
 }
 
