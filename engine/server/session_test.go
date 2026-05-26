@@ -200,6 +200,66 @@ func TestWorkspaceConfigPendingModules(t *testing.T) {
 	require.Equal(t, map[string]any{"message": "hello"}, pending[1].ConfigDefaults)
 }
 
+func TestFilterPendingWorkspaceModulesByInclude(t *testing.T) {
+	t.Parallel()
+
+	mods := []pendingModule{
+		{Kind: moduleLoadKindAmbient, Name: "go-sdk"},
+		{Kind: moduleLoadKindAmbient, Name: "rust-sdk"},
+		{Kind: moduleLoadKindAmbient, Name: "php-sdk"},
+	}
+
+	t.Run("single module:generator keeps only that module", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesByInclude(mods, []string{"go-sdk:generate"})
+		require.Equal(t, []pendingModule{mods[0]}, filtered)
+	})
+
+	t.Run("multiple patterns keep each named module", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesByInclude(mods, []string{"go-sdk:generate", "php-sdk:api"})
+		require.Equal(t, []pendingModule{mods[0], mods[2]}, filtered)
+	})
+
+	t.Run("bare token matching a module name keeps only that module", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesByInclude(mods, []string{"go-sdk"})
+		require.Equal(t, []pendingModule{mods[0]}, filtered)
+	})
+
+	t.Run("bare token not matching a module loads all", func(t *testing.T) {
+		t.Parallel()
+
+		// e.g. a generator served by the entrypoint module.
+		filtered := filterPendingWorkspaceModulesByInclude(mods, []string{"generate"})
+		require.Equal(t, mods, filtered)
+	})
+
+	t.Run("mixed bare-module and module:generator", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesByInclude(mods, []string{"go-sdk", "php-sdk:api"})
+		require.Equal(t, []pendingModule{mods[0], mods[2]}, filtered)
+	})
+
+	t.Run("no matching module loads all", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesByInclude(mods, []string{"typo-sdk:generate"})
+		require.Equal(t, mods, filtered)
+	})
+
+	t.Run("empty include loads all", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesByInclude(mods, nil)
+		require.Equal(t, mods, filtered)
+	})
+}
+
 // TestModuleResolutionFromSubdirectory verifies that module source paths from
 // dagger.json are resolved relative to the config file location, not the
 // client's working directory. When a client connects from sdk/go/, a module
