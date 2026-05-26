@@ -273,6 +273,14 @@ func argsCompatible(ifaceArgs, objArgs InputSpecs, view call.View, checker Imple
 			return false
 		}
 	}
+	for _, objArg := range objArgs.Inputs(view) {
+		if _, ok := ifaceArgs.Input(objArg.Name, view); ok {
+			continue
+		}
+		if objArg.Default == nil && objArg.Type.Type().NonNull {
+			return false
+		}
+	}
 	return true
 }
 

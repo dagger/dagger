@@ -3582,7 +3582,7 @@ func TestInterfaces(t *testing.T) {
 		assert.Assert(t, foundSpatial, "Point should declare Spatial interface")
 	})
 
-	t.Run("Satisfies checks", func(t *testing.T) {
+	t.Run("object must have every field required by the interface", func(t *testing.T) {
 		srv := newExternalDagqlServerForTest(t, Query{})
 		points.Install[Query](srv)
 
@@ -3612,7 +3612,7 @@ func TestInterfaces(t *testing.T) {
 		}(), "Implements should panic for unsatisfied interface")
 	})
 
-	t.Run("Satisfies checks argument compatibility", func(t *testing.T) {
+	t.Run("object method args must match the interface method", func(t *testing.T) {
 		srv := newExternalDagqlServerForTest(t, Query{})
 		points.Install[Query](srv)
 
@@ -3680,7 +3680,30 @@ func TestInterfaces(t *testing.T) {
 		assert.Assert(t, !wrongArgType.Satisfies(pointType, ""), "Point should NOT satisfy WrongArgType")
 	})
 
-	t.Run("SatisfiedByInterface checks argument compatibility", func(t *testing.T) {
+	t.Run("object method cannot require an arg missing from the interface", func(t *testing.T) {
+		srv := newExternalDagqlServerForTest(t, Query{})
+
+		dagql.Fields[Query]{
+			dagql.Func("run", func(ctx context.Context, self Query, args struct {
+				Target string
+			}) (string, error) {
+				return "ok", nil
+			}),
+		}.Install(srv)
+
+		runnable := dagql.NewInterface("Runnable", "Can run.")
+		runnable.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "run",
+				Type: dagql.String(""),
+			},
+		})
+		srv.InstallInterface(runnable)
+
+		assert.Assert(t, !runnable.Satisfies(srv.Root().ObjectType(), ""), "run(target:) cannot be used where run() is required")
+	})
+
+	t.Run("interface method args must match the interface it claims to support", func(t *testing.T) {
 		srv := newExternalDagqlServerForTest(t, Query{})
 
 		// Interface A: transform(x: Int!, y: Int!): String!
@@ -3715,7 +3738,7 @@ func TestInterfaces(t *testing.T) {
 		assert.Assert(t, ifaceA.SatisfiedByInterface(ifaceB, ""), "B should satisfy A")
 		assert.Assert(t, ifaceB.SatisfiedByInterface(ifaceA, ""), "A should satisfy B")
 
-		// Interface C: transform(x: Int!, y: Int!, z: Int!): String! — extra arg
+		// Interface C: transform(x: Int!, y: Int!, z: Int!): String! — extra required arg
 		ifaceC := dagql.NewInterface("TransformC", "Transform interface C with extra arg.")
 		ifaceC.AddField(dagql.InterfaceFieldSpec{
 			FieldSpec: dagql.FieldSpec{
@@ -3730,10 +3753,26 @@ func TestInterfaces(t *testing.T) {
 		})
 		srv.InstallInterface(ifaceC)
 
-		// C satisfies A (has all of A's args plus more)
-		assert.Assert(t, ifaceA.SatisfiedByInterface(ifaceC, ""), "C should satisfy A (superset of args)")
+		// C cannot stand in for A because z is required and callers through A cannot provide it.
+		assert.Assert(t, !ifaceA.SatisfiedByInterface(ifaceC, ""), "TransformC cannot be used where TransformA is expected")
 		// A does NOT satisfy C (missing z arg)
 		assert.Assert(t, !ifaceC.SatisfiedByInterface(ifaceA, ""), "A should NOT satisfy C (missing arg)")
+
+		// Interface CDefault: extra arg with a default is allowed.
+		ifaceCDefault := dagql.NewInterface("TransformCDefault", "Transform interface C with defaulted extra arg.")
+		ifaceCDefault.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "transform",
+				Type: dagql.String(""),
+				Args: dagql.NewInputSpecs(
+					dagql.InputSpec{Name: "x", Type: dagql.Int(0)},
+					dagql.InputSpec{Name: "y", Type: dagql.Int(0)},
+					dagql.InputSpec{Name: "z", Type: dagql.Int(0), Default: dagql.Int(0)},
+				),
+			},
+		})
+		srv.InstallInterface(ifaceCDefault)
+		assert.Assert(t, ifaceA.SatisfiedByInterface(ifaceCDefault, ""), "TransformCDefault can be used where TransformA is expected")
 
 		// Interface D: transform(x: String!): String! — different arg type
 		ifaceD := dagql.NewInterface("TransformD", "Transform interface D with wrong arg type.")
