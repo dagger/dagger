@@ -3791,6 +3791,80 @@ func TestInterfaces(t *testing.T) {
 		assert.Assert(t, !ifaceA.SatisfiedByInterface(ifaceD, ""), "D should NOT satisfy A (arg type mismatch)")
 	})
 
+	t.Run("nullable list result cannot replace non-null list result", func(t *testing.T) {
+		srv := newExternalDagqlServerForTest(t, Query{})
+		dagql.Fields[Query]{
+			dagql.Func("namesOrNull", func(ctx context.Context, self Query, args struct{}) (dagql.Nullable[dagql.Array[dagql.String]], error) {
+				return dagql.Null[dagql.Array[dagql.String]](), nil
+			}),
+			dagql.Func("names", func(ctx context.Context, self Query, args struct{}) (dagql.Array[dagql.String], error) {
+				return dagql.NewStringArray("a"), nil
+			}),
+		}.Install(srv)
+
+		nonNullListIface := dagql.NewInterface("NonNullList", "Requires a non-null list.")
+		nonNullListIface.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "namesOrNull",
+				Type: dagql.Array[dagql.String]{},
+			},
+		})
+		srv.InstallInterface(nonNullListIface)
+		assert.Assert(t, !nonNullListIface.Satisfies(srv.Root().ObjectType(), ""), "nullable list cannot be used where the interface promises a list")
+
+		nullableListIface := dagql.NewInterface("NullableList", "Allows a nullable list.")
+		nullableListIface.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "names",
+				Type: dagql.Null[dagql.Array[dagql.String]](),
+			},
+		})
+		srv.InstallInterface(nullableListIface)
+		assert.Assert(t, nullableListIface.Satisfies(srv.Root().ObjectType(), ""), "non-null list can be used where the interface allows null")
+	})
+
+	t.Run("method cannot require non-null list when interface allows null", func(t *testing.T) {
+		srv := newExternalDagqlServerForTest(t, Query{})
+		dagql.Fields[Query]{
+			dagql.Func("acceptsNamesOrNull", func(ctx context.Context, self Query, args struct {
+				Names dagql.Optional[dagql.ArrayInput[dagql.String]]
+			}) (string, error) {
+				return "ok", nil
+			}),
+			dagql.Func("acceptsNames", func(ctx context.Context, self Query, args struct {
+				Names dagql.ArrayInput[dagql.String]
+			}) (string, error) {
+				return "ok", nil
+			}),
+		}.Install(srv)
+
+		nullableListArgIface := dagql.NewInterface("NullableListArg", "Allows a nullable list argument.")
+		nullableListArgIface.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "acceptsNames",
+				Type: dagql.String(""),
+				Args: dagql.NewInputSpecs(
+					dagql.InputSpec{Name: "names", Type: dagql.Optional[dagql.ArrayInput[dagql.String]]{}},
+				),
+			},
+		})
+		srv.InstallInterface(nullableListArgIface)
+		assert.Assert(t, !nullableListArgIface.Satisfies(srv.Root().ObjectType(), ""), "method cannot require names when the interface allows names to be null")
+
+		nonNullListArgIface := dagql.NewInterface("NonNullListArg", "Requires a non-null list argument.")
+		nonNullListArgIface.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "acceptsNamesOrNull",
+				Type: dagql.String(""),
+				Args: dagql.NewInputSpecs(
+					dagql.InputSpec{Name: "names", Type: dagql.ArrayInput[dagql.String]{}},
+				),
+			},
+		})
+		srv.InstallInterface(nonNullListArgIface)
+		assert.Assert(t, nonNullListArgIface.Satisfies(srv.Root().ObjectType(), ""), "method accepting names or null can be used when the interface always passes names")
+	})
+
 	t.Run("auto Node interface", func(t *testing.T) {
 		srv := newExternalDagqlServerForTest(t, Query{})
 		introspection.Install[Query](srv)

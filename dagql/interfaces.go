@@ -301,6 +301,9 @@ func argTypeCompatible(ifaceArgType, objArgType *ast.Type, checker ImplementsChe
 		if ifaceArgType.Elem == nil || objArgType.Elem == nil {
 			return false
 		}
+		if objArgType.NonNull && !ifaceArgType.NonNull {
+			return false
+		}
 		return argTypeCompatible(ifaceArgType.Elem, objArgType.Elem, checker)
 	}
 	// named types: exact match
@@ -337,6 +340,9 @@ func typeCompatible(ifaceType, objType *ast.Type, checker ImplementsChecker) boo
 	// list types
 	if ifaceType.Elem != nil || objType.Elem != nil {
 		if ifaceType.Elem == nil || objType.Elem == nil {
+			return false
+		}
+		if ifaceType.NonNull && !objType.NonNull {
 			return false
 		}
 		return typeCompatible(ifaceType.Elem, objType.Elem, checker)
