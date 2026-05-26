@@ -370,6 +370,8 @@ type GolangOpts struct {
 	// Single Go module path glob to include when legacy callers cannot pass arrays.
 	// Ignored when selectModules is set.
 	//
+	//
+	// Default: "e2e/*"
 	SelectModule string // golang (../../../:0:0)
 }
 
