@@ -54,6 +54,7 @@ type LoginOption func(*loginOptions)
 
 type loginOptions struct {
 	switchAccount bool
+	authGate      bool
 }
 
 type deviceAuthAttempt struct {
@@ -65,6 +66,12 @@ type deviceAuthAttempt struct {
 func WithSwitchAccount() LoginOption {
 	return func(opts *loginOptions) {
 		opts.switchAccount = true
+	}
+}
+
+func WithAuthGate() LoginOption {
+	return func(opts *loginOptions) {
+		opts.authGate = true
 	}
 }
 
@@ -98,29 +105,9 @@ func Login(ctx context.Context, out io.Writer, loginOpts ...LoginOption) error {
 	browser.Stderr = browserBuf
 	if err := browser.OpenURL(deviceAuthURL(openAttempt.auth)); err != nil {
 		fmt.Fprintf(out, "Failed to open browser: %s\n\n%s\n", err, browserBuf.String())
-	} else {
-		if openAttempt.action == "Authenticate" {
-			fmt.Fprintf(out, "Browser opened for Dagger Cloud: %s\n", deviceAuthURL(openAttempt.auth))
-		} else {
-			fmt.Fprintf(out, "Browser opened for Dagger Cloud %s: %s\n", strings.ToLower(openAttempt.action), deviceAuthURL(openAttempt.auth))
-		}
-	}
-	for _, attempt := range attempts {
-		fmt.Fprintf(out, "%s: %s\n", attempt.action, deviceAuthURL(attempt.auth))
 	}
 
-	if len(attempts) == 1 {
-		fmt.Fprintf(out, "Code: %s\n", attempts[0].auth.UserCode)
-	} else {
-		for _, attempt := range attempts {
-			fmt.Fprintf(out, "%s code: %s\n", attempt.action, attempt.auth.UserCode)
-		}
-	}
-	if hasSignupAttempt(attempts) {
-		fmt.Fprintln(out, "New account? Choose Sign up in the browser.")
-	}
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "Waiting for authentication. Press Ctrl-C to cancel.")
+	writeDeviceAuthPrompt(out, attempts, opts)
 
 	token, err := deviceAccessToken(ctx, attempts)
 	if err != nil {
@@ -128,6 +115,35 @@ func Login(ctx context.Context, out io.Writer, loginOpts ...LoginOption) error {
 	}
 
 	return saveToken(token)
+}
+
+func writeDeviceAuthPrompt(out io.Writer, attempts []deviceAuthAttempt, opts loginOptions) {
+	if opts.authGate {
+		fmt.Fprintln(out, "This command requires authentication.")
+		fmt.Fprintln(out)
+	}
+	for _, attempt := range attempts {
+		fmt.Fprintf(out, "%s: %s\n", deviceAuthPromptAction(attempt, opts), deviceAuthURL(attempt.auth))
+	}
+	if len(attempts) == 1 {
+		fmt.Fprintf(out, "Verification code: %s\n", attempts[0].auth.UserCode)
+	} else {
+		for _, attempt := range attempts {
+			fmt.Fprintf(out, "%s verification code: %s\n", deviceAuthPromptAction(attempt, opts), attempt.auth.UserCode)
+		}
+	}
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Waiting for authentication. Press Ctrl-C to cancel.")
+}
+
+func deviceAuthPromptAction(attempt deviceAuthAttempt, opts loginOptions) string {
+	if attempt.signup {
+		if opts.authGate {
+			return "Login or sign up to continue"
+		}
+		return "Login or sign up"
+	}
+	return attempt.action
 }
 
 func deviceAuthAttempts(ctx context.Context, opts loginOptions) ([]deviceAuthAttempt, error) {
@@ -148,15 +164,6 @@ func deviceAuthAttempts(ctx context.Context, opts loginOptions) ([]deviceAuthAtt
 	return []deviceAuthAttempt{
 		{action: "Authenticate", auth: deviceAuth, signup: true},
 	}, nil
-}
-
-func hasSignupAttempt(attempts []deviceAuthAttempt) bool {
-	for _, attempt := range attempts {
-		if attempt.signup {
-			return true
-		}
-	}
-	return false
 }
 
 func deviceAuthURL(deviceAuth *oauth2.DeviceAuthResponse) string {

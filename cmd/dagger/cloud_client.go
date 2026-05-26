@@ -39,7 +39,7 @@ func (cli *CloudCLI) cloudClientWithLogin(ctx context.Context, login bool) (*clo
 		if cloudJSON {
 			return nil, nil, fmt.Errorf("not authenticated; run 'dagger login' or set DAGGER_CLOUD_TOKEN")
 		}
-		if err := cloudauth.Login(ctx, os.Stderr); err != nil {
+		if err := cloudauth.Login(ctx, os.Stderr, cloudauth.WithAuthGate()); err != nil {
 			return nil, nil, err
 		}
 		cloudAuth, err = cloudauth.GetCloudAuth(ctx)
