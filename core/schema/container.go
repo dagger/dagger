@@ -2422,7 +2422,14 @@ func (s *containerSchema) withMountedCacheDynamicInputs(
 
 	source := cacheSelf.Source
 	if hasSourceArg {
-		source = args.Source
+		source = dagql.Null[dagql.ObjectResult[*core.Directory]]()
+		if args.Source.Valid {
+			loaded, err := args.Source.Value.Load(ctx, srv)
+			if err != nil {
+				return err
+			}
+			source = dagql.NonNull(loaded)
+		}
 	}
 	if !needsRewrite {
 		return nil

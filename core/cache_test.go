@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkconfig "github.com/dagger/dagger/engine/snapshots/config"
 	"github.com/dagger/dagger/internal/buildkit/client"
@@ -310,6 +309,27 @@ func (*cacheVolumeTestMutableRef) InvalidateSize(context.Context) error {
 	return nil
 }
 
+type cacheVolumeTestPersistedObjectCache struct {
+	resultID uint64
+	seen     []dagql.AnyResult
+}
+
+func (c *cacheVolumeTestPersistedObjectCache) PersistedResultID(res dagql.AnyResult) (uint64, error) {
+	c.seen = append(c.seen, res)
+	return c.resultID, nil
+}
+
+func cacheVolumeTestDirectoryResult(t *testing.T, srv *dagql.Server, op string) dagql.ObjectResult[*Directory] {
+	t.Helper()
+	res, err := dagql.NewObjectResultForCall(&Directory{}, srv, &dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
+		SyntheticOp: op,
+		Type:        dagql.NewResultCallType((&Directory{}).Type()),
+	})
+	require.NoError(t, err)
+	return res
+}
+
 func TestCacheVolumeUsageIdentityUsesLiveSnapshotID(t *testing.T) {
 	t.Parallel()
 
@@ -319,7 +339,7 @@ func TestCacheVolumeUsageIdentityUsesLiveSnapshotID(t *testing.T) {
 			snapshotID: "snapshot-123",
 		},
 	}
-	cache := NewCache("cache-key", "ns", dagql.Optional[DirectoryID]{}, CacheSharingModeShared, "")
+	cache := NewCache("cache-key", "ns", dagql.Null[dagql.ObjectResult[*Directory]](), CacheSharingModeShared, "")
 	cache.snapshot = ref
 
 	require.Equal(t, []string{"snapshot-123"}, cache.CacheUsageIdentities())
@@ -333,7 +353,7 @@ func TestCacheVolumeUsageSizeUsesLiveSnapshotID(t *testing.T) {
 		snapshotID: "snapshot-123",
 		size:       42,
 	}
-	cache := NewCache("cache-key", "ns", dagql.Optional[DirectoryID]{}, CacheSharingModeShared, "")
+	cache := NewCache("cache-key", "ns", dagql.Null[dagql.ObjectResult[*Directory]](), CacheSharingModeShared, "")
 	cache.snapshot = &cacheVolumeTestMutableRef{cacheVolumeTestImmutableRef: *ref}
 
 	size, ok, err := cache.CacheUsageSize(context.Background(), "snapshot-123")
@@ -358,7 +378,7 @@ func TestCacheVolumeUsageSizeUsesPersistedSnapshotID(t *testing.T) {
 	}
 	ctx := ContextWithQuery(context.Background(), query)
 
-	cache := NewCache("cache-key", "ns", dagql.Optional[DirectoryID]{}, CacheSharingModeShared, "")
+	cache := NewCache("cache-key", "ns", dagql.Null[dagql.ObjectResult[*Directory]](), CacheSharingModeShared, "")
 	cache.snapshotID = "snapshot-123"
 
 	size, ok, err := cache.CacheUsageSize(ctx, "snapshot-123")
@@ -368,38 +388,93 @@ func TestCacheVolumeUsageSizeUsesPersistedSnapshotID(t *testing.T) {
 	require.Equal(t, []string{"snapshot-123"}, manager.snapshotSizeCalls)
 }
 
-func TestCacheVolumeEncodeDecodePersistsSourceID(t *testing.T) {
+func TestCacheVolumeEncodePersistsSourceResultID(t *testing.T) {
 	t.Parallel()
 
-	sourceCallID := call.NewEngineResultID(17, call.NewType((&Directory{}).Type()))
-	sourceID := dagql.NewID[*Directory](sourceCallID)
+	query := &Query{Server: &cacheVolumeTestQueryServer{mockServer: &mockServer{}}}
+	srv := newCoreDagqlServerForTest(t, query)
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Directory]{}))
+	source := cacheVolumeTestDirectoryResult(t, srv, "cache-volume-source")
+	persisted := &cacheVolumeTestPersistedObjectCache{resultID: 17}
 
 	cache := NewCache(
 		"cache-key",
 		"ns",
-		dagql.Optional[DirectoryID]{
-			Valid: true,
-			Value: sourceID,
-		},
+		dagql.NonNull(source),
 		CacheSharingModeLocked,
 		"1000:1000",
 	)
 
-	payload, err := cache.EncodePersistedObject(context.Background(), nil)
+	payload, err := cache.EncodePersistedObject(context.Background(), persisted)
 	require.NoError(t, err)
 
 	var raw persistedCacheVolumePayload
 	require.NoError(t, json.Unmarshal(payload.JSON, &raw))
-	require.NotEmpty(t, raw.SourceID)
+	require.Equal(t, uint64(17), raw.SourceResultID)
+	require.Len(t, persisted.seen, 1)
 
-	decodedAny, err := (&CacheVolume{}).DecodePersistedObject(context.Background(), nil, 0, nil, payload.JSON)
-	require.NoError(t, err)
-	decoded := decodedAny.(*CacheVolume)
-	require.True(t, decoded.Source.Valid)
+	seenSource, ok := persisted.seen[0].(dagql.ObjectResult[*Directory])
+	require.True(t, ok)
+	require.Same(t, source.Self(), seenSource.Self())
+}
 
-	encodedSource, err := decoded.Source.Value.Encode()
+func TestCacheVolumeAttachDependencyResultsAttachesSource(t *testing.T) {
+	t.Parallel()
+
+	query := &Query{Server: &cacheVolumeTestQueryServer{mockServer: &mockServer{}}}
+	srv := newCoreDagqlServerForTest(t, query)
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Directory]{}))
+	source := cacheVolumeTestDirectoryResult(t, srv, "cache-volume-source")
+	attachedSource := cacheVolumeTestDirectoryResult(t, srv, "cache-volume-attached-source")
+	cache := NewCache("cache-key", "ns", dagql.NonNull(source), CacheSharingModeShared, "")
+
+	deps, err := cache.AttachDependencyResults(context.Background(), nil, func(res dagql.AnyResult) (dagql.AnyResult, error) {
+		seenSource, ok := res.(dagql.ObjectResult[*Directory])
+		require.True(t, ok)
+		require.Same(t, source.Self(), seenSource.Self())
+		return attachedSource, nil
+	})
 	require.NoError(t, err)
-	require.Equal(t, raw.SourceID, encodedSource)
+	require.Len(t, deps, 1)
+	require.Same(t, attachedSource.Self(), deps[0].(dagql.ObjectResult[*Directory]).Self())
+	require.Same(t, attachedSource.Self(), cache.Source.Value.Self())
+}
+
+func TestCacheVolumeLockKeyUsesSourceID(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	query := &Query{Server: &cacheVolumeTestQueryServer{mockServer: &mockServer{}}}
+	srv := newCoreDagqlServerForTest(t, query)
+	srv.InstallObject(dagql.NewClass(srv, dagql.ClassOpts[*Directory]{}))
+	dagCache, err := dagql.NewCache(ctx, "", nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, dagCache.Close(context.Background()))
+	})
+	ctx = ContextWithQuery(dagql.ContextWithCache(ctx, dagCache), query)
+
+	sourceCall := &dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
+		SyntheticOp: "cache-volume-source",
+		Type:        dagql.NewResultCallType((&Directory{}).Type()),
+	}
+	initialSource := cacheVolumeTestDirectoryResult(t, srv, "cache-volume-source")
+	sourceAny, err := dagCache.GetOrInitCall(ctx, "session", srv, &dagql.CallRequest{
+		ResultCall: sourceCall,
+	}, dagql.ValueFunc(initialSource))
+	require.NoError(t, err)
+	source, ok := sourceAny.(dagql.ObjectResult[*Directory])
+	require.True(t, ok)
+	sourceID, err := source.ID()
+	require.NoError(t, err)
+	encodedSourceID, err := sourceID.Encode()
+	require.NoError(t, err)
+
+	cache := NewCache("cache-key", "ns", dagql.NonNull(source), CacheSharingModeLocked, "")
+	lockKey, err := cache.lockKey()
+	require.NoError(t, err)
+	require.Contains(t, lockKey, encodedSourceID)
 }
 
 func TestCacheVolumeInitializeSnapshotCreatesMutableSnapshot(t *testing.T) {
@@ -422,7 +497,7 @@ func TestCacheVolumeInitializeSnapshotCreatesMutableSnapshot(t *testing.T) {
 	}
 	ctx := ContextWithQuery(context.Background(), query)
 
-	cache := NewCache("cache-key", "ns", dagql.Optional[DirectoryID]{}, CacheSharingModeShared, "")
+	cache := NewCache("cache-key", "ns", dagql.Null[dagql.ObjectResult[*Directory]](), CacheSharingModeShared, "")
 
 	require.NoError(t, cache.InitializeSnapshot(ctx))
 	require.Len(t, manager.newCalls, 1)
@@ -447,7 +522,7 @@ func TestCacheVolumeDecodeDistinctPersistedResultsSharingSnapshot(t *testing.T) 
 	}
 	cacheResult := func(t *testing.T, srv *dagql.Server, call *dagql.ResultCall, key string) dagql.ObjectResult[*CacheVolume] {
 		t.Helper()
-		cache := NewCache(key, "ns", dagql.Optional[DirectoryID]{}, CacheSharingModeLocked, "")
+		cache := NewCache(key, "ns", dagql.Null[dagql.ObjectResult[*Directory]](), CacheSharingModeLocked, "")
 		cache.snapshot = &cacheVolumeTestMutableRef{
 			cacheVolumeTestImmutableRef: cacheVolumeTestImmutableRef{
 				id:         key + "-mutable",
