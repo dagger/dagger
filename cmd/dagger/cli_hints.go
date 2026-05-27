@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/adrg/xdg"
+	"github.com/gofrs/flock"
 )
 
 const cliHintsFileVersion = 1
@@ -56,11 +57,22 @@ func readCliHints() *cliHintsState {
 // for different repos do not silently drop each other's records. All errors
 // are swallowed; worst case the hint shows twice.
 func writeCliHints(state *cliHintsState) {
+	if state == nil {
+		return
+	}
 	path := cliHintsPathFn()
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return
 	}
+
+	lock := flock.New(path + ".lock")
+	locked, err := lock.TryLock()
+	if err != nil || !locked {
+		return
+	}
+	defer lock.Unlock()
+
 	mergeWithDisk(state)
 
 	tmp, err := os.CreateTemp(dir, "cli-hints.json.*")
