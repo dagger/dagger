@@ -328,25 +328,31 @@ func (r *TypescriptSDK) NodejsDevContainer(opts ...TypescriptSDKNodejsDevContain
 // TypescriptSDKReleaseOpts contains options for TypescriptSDK.Release
 type TypescriptSDKReleaseOpts struct {
 	//
+	// NPM authentication token
+	//
+	NpmToken *Secret // typescript-sdk (../../../:0:0)
+	//
 	// Execute a dry-run release, with no side effects
 	//
 	DryRun bool // typescript-sdk (../../../:0:0)
 }
 
-func (r *TypescriptSDK) Release(ctx context.Context, sourceTag string, npmToken *Secret, opts ...TypescriptSDKReleaseOpts) error { // typescript-sdk (../../../:0:0)
-	assertNotNil("npmToken", npmToken)
+func (r *TypescriptSDK) Release(ctx context.Context, sourceTag string, opts ...TypescriptSDKReleaseOpts) error { // typescript-sdk (../../../:0:0)
 	if r.release != nil {
 		return nil
 	}
 	q := r.query.Select("release")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `npmToken` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NpmToken) {
+			q = q.Arg("npmToken", opts[i].NpmToken)
+		}
 		// `dryRun` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DryRun) {
 			q = q.Arg("dryRun", opts[i].DryRun)
 		}
 	}
 	q = q.Arg("sourceTag", sourceTag)
-	q = q.Arg("npmToken", npmToken)
 
 	return q.Execute(ctx)
 }

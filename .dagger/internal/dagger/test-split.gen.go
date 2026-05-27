@@ -68,20 +68,22 @@ func (r *Query) TestSplit() *TestSplit { // test-split (../../../:0:0)
 type TestSplit struct { // test-split (../../../:0:0)
 	query *querybuilder.Selection
 
-	id                  *TestSplitID
-	testBase            *Void
-	testCallAndShell    *Void
-	testCliEngine       *Void
-	testClientGenerator *Void
-	testContainer       *Void
-	testInterface       *Void
-	testLlm             *Void
-	testModuleRuntimes  *Void
-	testModules         *Void
-	testProvision       *Void
-	testSpecific        *Void
-	testTelemetry       *Void
-	testWorkspaces      *Void
+	id                   *TestSplitID
+	testBase             *Void
+	testCachePersistence *Void
+	testCallAndShell     *Void
+	testCliEngine        *Void
+	testClientGenerator  *Void
+	testContainer        *Void
+	testInterface        *Void
+	testLlm              *Void
+	testLocalCache       *Void
+	testModuleRuntimes   *Void
+	testModules          *Void
+	testProvision        *Void
+	testSpecific         *Void
+	testTelemetry        *Void
+	testWorkspaces       *Void
 }
 
 func (r *TestSplit) WithGraphQLQuery(q *querybuilder.Selection) *TestSplit {
@@ -149,6 +151,16 @@ func (r *TestSplit) TestBase(ctx context.Context) error { // test-split (../../.
 	return q.Execute(ctx)
 }
 
+// Test cache persistence
+func (r *TestSplit) TestCachePersistence(ctx context.Context) error { // test-split (../../../:0:0)
+	if r.testCachePersistence != nil {
+		return nil
+	}
+	q := r.query.Select("testCachePersistence")
+
+	return q.Execute(ctx)
+}
+
 // Test Call and Shell
 func (r *TestSplit) TestCallAndShell(ctx context.Context) error { // test-split (../../../:0:0)
 	if r.testCallAndShell != nil {
@@ -205,6 +217,16 @@ func (r *TestSplit) TestLLM(ctx context.Context) error { // test-split (../../..
 		return nil
 	}
 	q := r.query.Select("testLlm")
+
+	return q.Execute(ctx)
+}
+
+// Test local cache
+func (r *TestSplit) TestLocalCache(ctx context.Context) error { // test-split (../../../:0:0)
+	if r.testLocalCache != nil {
+		return nil
+	}
+	q := r.query.Select("testLocalCache")
 
 	return q.Execute(ctx)
 }
