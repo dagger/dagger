@@ -103,7 +103,7 @@ The query is still validated and executed by the normal GraphQL handler after pl
 `dagger query` is the first target.
 
 ```bash
-$ dagger query --doc query.graphql
+dagger query --doc query.graphql
 ```
 
 It should connect with:

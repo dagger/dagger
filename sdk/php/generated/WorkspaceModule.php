@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A module entry in the workspace configuration.
  */
-class WorkspaceModule extends Client\AbstractObject implements Client\IdAble
+class WorkspaceModule extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Whether the module is the workspace entrypoint (functions aliased to Query root).
@@ -25,10 +25,10 @@ class WorkspaceModule extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this WorkspaceModule.
      */
-    public function id(): WorkspaceModuleId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\WorkspaceModuleId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
@@ -38,6 +38,15 @@ class WorkspaceModule extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('name');
         return (string)$this->queryLeaf($leafQueryBuilder, 'name');
+    }
+
+    /**
+     * List constructor-backed settings for this module.
+     */
+    public function settings(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('settings');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'settings');
     }
 
     /**
