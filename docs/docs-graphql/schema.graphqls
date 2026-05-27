@@ -182,6 +182,18 @@ type Binding implements Node {
   """Retrieve the binding value, as type Workspace"""
   asWorkspace: Workspace!
 
+  """Retrieve the binding value, as type WorkspaceMigration"""
+  asWorkspaceMigration: WorkspaceMigration!
+
+  """Retrieve the binding value, as type WorkspaceMigrationStep"""
+  asWorkspaceMigrationStep: WorkspaceMigrationStep!
+
+  """Retrieve the binding value, as type WorkspaceModule"""
+  asWorkspaceModule: WorkspaceModule!
+
+  """Retrieve the binding value, as type WorkspaceModuleSetting"""
+  asWorkspaceModuleSetting: WorkspaceModuleSetting!
+
   """Returns the digest of the binding value"""
   digest: String!
 
@@ -3068,6 +3080,104 @@ type Env implements Node {
     description: String!
   ): Env!
 
+  """
+  Create or update a binding of type WorkspaceMigration in the environment
+  """
+  withWorkspaceMigrationInput(
+    """The name of the binding"""
+    name: String!
+
+    """The WorkspaceMigration value to assign to the binding"""
+    value: ID! @expectedType(name: "WorkspaceMigration")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired WorkspaceMigration output to be assigned in the environment
+  """
+  withWorkspaceMigrationOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """
+  Create or update a binding of type WorkspaceMigrationStep in the environment
+  """
+  withWorkspaceMigrationStepInput(
+    """The name of the binding"""
+    name: String!
+
+    """The WorkspaceMigrationStep value to assign to the binding"""
+    value: ID! @expectedType(name: "WorkspaceMigrationStep")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired WorkspaceMigrationStep output to be assigned in the environment
+  """
+  withWorkspaceMigrationStepOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """Create or update a binding of type WorkspaceModule in the environment"""
+  withWorkspaceModuleInput(
+    """The name of the binding"""
+    name: String!
+
+    """The WorkspaceModule value to assign to the binding"""
+    value: ID! @expectedType(name: "WorkspaceModule")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired WorkspaceModule output to be assigned in the environment
+  """
+  withWorkspaceModuleOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
+  """
+  Create or update a binding of type WorkspaceModuleSetting in the environment
+  """
+  withWorkspaceModuleSettingInput(
+    """The name of the binding"""
+    name: String!
+
+    """The WorkspaceModuleSetting value to assign to the binding"""
+    value: ID! @expectedType(name: "WorkspaceModuleSetting")
+
+    """The purpose of the input"""
+    description: String!
+  ): Env!
+
+  """
+  Declare a desired WorkspaceModuleSetting output to be assigned in the environment
+  """
+  withWorkspaceModuleSettingOutput(
+    """The name of the binding"""
+    name: String!
+
+    """A description of the desired value of the binding"""
+    description: String!
+  ): Env!
+
   """Declare a desired Workspace output to be assigned in the environment"""
   withWorkspaceOutput(
     """The name of the binding"""
@@ -4373,7 +4483,7 @@ type ModuleSource implements Node & Syncer {
   asString: String!
 
   """The blueprint referenced by the module source."""
-  blueprint: ModuleSource!
+  blueprint: ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.")
 
   """
   The ref to clone the root of the git repo from. Only valid for git sources.
@@ -4497,7 +4607,7 @@ type ModuleSource implements Node & Syncer {
   sync: ID! @expectedType(name: "ModuleSource")
 
   """The toolchains referenced by the module source."""
-  toolchains: [ModuleSource!]!
+  toolchains: [ModuleSource!]! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.")
 
   """User-defined defaults read from local .env files"""
   userDefaults: EnvFile!
@@ -4509,7 +4619,7 @@ type ModuleSource implements Node & Syncer {
   withBlueprint(
     """The blueprint module to set."""
     blueprint: ID! @expectedType(name: "ModuleSource")
-  ): ModuleSource!
+  ): ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.")
 
   """Update the module source with a new client to generate."""
   withClient(
@@ -4573,10 +4683,10 @@ type ModuleSource implements Node & Syncer {
   withToolchains(
     """The toolchain modules to add."""
     toolchains: [ID!]! @expectedType(name: "ModuleSource")
-  ): ModuleSource!
+  ): ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.")
 
   """Update the blueprint module to the latest version."""
-  withUpdateBlueprint: ModuleSource!
+  withUpdateBlueprint: ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.")
 
   """Update one or more module dependencies."""
   withUpdateDependencies(
@@ -4588,7 +4698,7 @@ type ModuleSource implements Node & Syncer {
   withUpdateToolchains(
     """The toolchains to update."""
     toolchains: [String!]!
-  ): ModuleSource!
+  ): ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.")
 
   """Update one or more clients."""
   withUpdatedClients(
@@ -4597,7 +4707,7 @@ type ModuleSource implements Node & Syncer {
   ): ModuleSource!
 
   """Remove the current blueprint from the module source."""
-  withoutBlueprint: ModuleSource!
+  withoutBlueprint: ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.")
 
   """Remove a client from the module source."""
   withoutClient(
@@ -4623,7 +4733,7 @@ type ModuleSource implements Node & Syncer {
   withoutToolchains(
     """The toolchains to remove."""
     toolchains: [String!]!
-  ): ModuleSource!
+  ): ModuleSource! @deprecated(reason: "Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.")
 }
 
 """Experimental features of a module"""
@@ -5602,7 +5712,7 @@ scalar Void
 
 """A Dagger workspace detected from the current working directory."""
 type Workspace implements Node {
-  """Canonical Dagger address of the workspace directory."""
+  """Canonical Dagger address of the workspace location."""
   address: String!
 
   """Return all checks from modules loaded in the workspace."""
@@ -5625,20 +5735,53 @@ type Workspace implements Node {
   clientId: String!
 
   """
-  Path to config.toml relative to the workspace boundary (empty if not initialized).
+  Selected native workspace config file relative to the workspace root, if any.
   """
-  configPath: String!
+  configFile: String!
+
+  """
+  Read a configuration value from config.toml.
+
+  If key is empty, returns the full config.
+
+  If key points to a scalar, returns the value.
+
+  If key points to a table, returns flattened dotted-key output.
+  """
+  configRead(
+    """Dotted key path (e.g. modules.greeter.source). Empty for full config."""
+    key: String = ""
+  ): String!
+
+  """Write a configuration value to config.toml."""
+  configWrite(
+    """Dotted key path (e.g. modules.greeter.source)."""
+    key: String!
+
+    """
+    Value to set. Bools, integers, and comma-separated arrays are auto-detected.
+    """
+    value: String!
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+  ): String!
+
+  """
+  Current location within the workspace root. Relative paths in workspace APIs resolve from here.
+  """
+  cwd: String!
 
   """
   Returns a Directory from the workspace.
 
-  Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+  Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
   """
   directory(
     """
     Location of the directory to retrieve. Relative paths (e.g., "src") resolve
-    from the workspace directory; absolute paths (e.g., "/src") resolve from the
-    workspace boundary.
+    from the workspace cwd; absolute paths (e.g., "/src") resolve from the
+    workspace root.
     """
     path: String!
 
@@ -5656,16 +5799,37 @@ type Workspace implements Node {
     gitignore: Boolean = false
   ): Directory!
 
+  """Create a named workspace environment if it does not already exist."""
+  envCreate(
+    """Environment name."""
+    name: String!
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+  ): String!
+
+  """List named environments defined in the workspace configuration."""
+  envList: [String!]!
+
+  """Remove a named workspace environment."""
+  envRemove(
+    """Environment name."""
+    name: String!
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+  ): String!
+
   """
   Returns a File from the workspace.
 
-  Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+  Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
   """
   file(
     """
     Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve
-    from the workspace directory; absolute paths (e.g., "/go.mod") resolve from
-    the workspace boundary.
+    from the workspace cwd; absolute paths (e.g., "/go.mod") resolve from the
+    workspace root.
     """
     path: String!
   ): File!
@@ -5675,9 +5839,9 @@ type Workspace implements Node {
 
   Returns the absolute workspace path if found, or null if not found.
 
-  Relative start paths resolve from the workspace directory.
+  Relative start paths resolve from the workspace cwd.
 
-  The search stops at the workspace boundary and will not traverse above it.
+  The search stops at the workspace root and will not traverse above it.
   """
   findUp(
     """The name of the file or directory to search for."""
@@ -5685,7 +5849,7 @@ type Workspace implements Node {
 
     """
     Path to start the search from. Relative paths resolve from the workspace
-    directory; absolute paths resolve from the workspace boundary.
+    cwd; absolute paths resolve from the workspace root.
     """
     from: String = "."
   ): String
@@ -5696,17 +5860,74 @@ type Workspace implements Node {
     include: [String!]
   ): GeneratorGroup!
 
-  """Whether a config.toml file exists in the workspace."""
-  hasConfig: Boolean!
-
   """A unique identifier for this Workspace."""
   id: ID!
 
-  """Whether .dagger/config.toml exists."""
-  initialized: Boolean!
+  """Initialize workspace config, creating .dagger/config.toml."""
+  init(
+    """
+    Create the workspace config directory at the workspace cwd instead of using the default write target.
+    """
+    here: Boolean = false
+  ): String!
 
-  """Workspace directory path relative to the workspace boundary."""
-  path: String!
+  """Install a module into the workspace, writing config.toml to the host."""
+  install(
+    """Module reference to install."""
+    ref: String!
+
+    """Override name for the installed module entry."""
+    name: String = ""
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+  ): String!
+
+  """
+  Plan the explicit migration needed for the current workspace.
+
+  The returned plan has an empty changeset and no steps when no migration is needed.
+  """
+  migrate(force: Boolean = false): WorkspaceMigration!
+
+  """
+  Create a new module owned by the workspace and auto-install it in config.toml.
+  """
+  moduleInit(
+    """Name of the new module."""
+    name: String!
+
+    """SDK to use for the new module."""
+    sdk: String = ""
+
+    """Source subpath within the new module."""
+    source: String = ""
+
+    """Additional include patterns for the module."""
+    include: [String!] = []
+
+    """Enable the self-calls experimental feature for the new module."""
+    selfCalls: Boolean = false
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+  ): String!
+
+  """List modules defined in the workspace configuration."""
+  moduleList(
+    """Optional module alias to inspect."""
+    module: String = ""
+  ): [WorkspaceModule!]!
+
+  """
+  Refresh lock entries for selected workspace-config modules.
+
+  This layers selective workspace refresh on top of the lockfile base.
+  """
+  refreshModules(
+    """Workspace module names to refresh."""
+    moduleNames: [String!] = []
+  ): Changeset! @experimental(reason: "Experimental selective workspace lock refresh API.")
 
   """Return all services from modules loaded in the workspace."""
   services(
@@ -5720,6 +5941,73 @@ type Workspace implements Node {
   Currently this refreshes existing lockfile entries only.
   """
   update: Changeset! @experimental(reason: "Experimental workspace update API currently refreshes existing lockfile entries only.")
+}
+
+"""A planned workspace migration."""
+type WorkspaceMigration implements Node {
+  """Filesystem changes for the full migration plan."""
+  changes: Changeset!
+
+  """A unique identifier for this WorkspaceMigration."""
+  id: ID!
+
+  """Logical migration steps, each identified by a stable code."""
+  steps: [WorkspaceMigrationStep!]!
+}
+
+"""A single logical part of a workspace migration."""
+type WorkspaceMigrationStep implements Node {
+  """Filesystem changes for this step."""
+  changes: Changeset!
+
+  """Stable code identifying this logical migration step."""
+  code: String!
+
+  """Generic summary of this step's purpose and impact."""
+  description: String!
+
+  """A unique identifier for this WorkspaceMigrationStep."""
+  id: ID!
+
+  """Non-fatal warnings raised while planning this step."""
+  warnings: [String!]!
+}
+
+"""A module entry in the workspace configuration."""
+type WorkspaceModule implements Node {
+  """
+  Whether the module is the workspace entrypoint (functions aliased to Query root).
+  """
+  entrypoint: Boolean!
+
+  """A unique identifier for this WorkspaceModule."""
+  id: ID!
+
+  """The module name."""
+  name: String!
+
+  """List constructor-backed settings for this module."""
+  settings: [WorkspaceModuleSetting!]!
+
+  """The module source path."""
+  source: String!
+}
+
+"""A constructor-backed module setting."""
+type WorkspaceModuleSetting implements Node {
+  """The constructor argument description."""
+  description: String!
+
+  """A unique identifier for this WorkspaceModuleSetting."""
+  id: ID!
+
+  """The setting key."""
+  key: String!
+
+  """
+  The configured value after applying the selected workspace environment, or empty when unset.
+  """
+  value: String!
 }
 
 
