@@ -196,7 +196,11 @@ class Test:
 func (LegacySuite) TestLegacyTypeScriptSDKLoadFromIDCompat(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := modInit(t, c, "typescript", `
+	modGen := daggerCliBase(t, c).
+		With(daggerExec("init", "--name=test", "--sdk=typescript", "--source=."))
+	modGen = modGen.
+		WithNewFile("dagger.json", `{"name":"test","engineVersion":"v0.20.6","sdk":{"source":"typescript"}}`).
+		With(sdkSource("typescript", `
 import { ContainerID, dag, func, object } from "@dagger.io/dagger"
 
 @object()
@@ -207,7 +211,7 @@ export class Test {
     return await dag.loadContainerFromID(id as ContainerID).withExec(["echo", "ok"]).stdout()
   }
 }
-`).WithNewFile("dagger.json", `{"name":"test","engineVersion":"v0.20.6","sdk":{"source":"typescript"}}`)
+`))
 
 	out, err := modGen.
 		With(daggerCall("round-trip")).
