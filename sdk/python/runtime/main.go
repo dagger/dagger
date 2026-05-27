@@ -154,6 +154,11 @@ func (m *PythonSdk) Codegen(
 		return nil, err
 	}
 
+	// Install the module so it can be imported and introspected at generate
+	// time. This is what lets the static entrypoint carry runtime-resolved
+	// values (e.g. `logging.INFO` -> 20) instead of an AST guess.
+	m = m.WithInstall()
+
 	ignorePaths := []string{".venv", "**/__pycache__"}
 	genPaths := []string{
 		// TODO: uncomment when we start generating client bindings outside the library
@@ -165,10 +170,26 @@ func (m *PythonSdk) Codegen(
 		genPaths = []string{m.VendorPath + "/**"}
 	}
 
+	genDir := m.Container.Directory(m.ContextDirPath).
+		WithoutDirectory("sdk/runtime")
+
+	// Generate the static runtime entrypoint by introspecting the live module
+	// (replaces the AST analyzer). Empty introspection is allowed for terminal
+	// debugging, in which case there's nothing to generate.
+	if introspectionJSON != nil {
+		entrypointFile := m.Container.
+			WithExec([]string{
+				"python", "-m", "dagger.mod._introspect", "entrypoint",
+				"--output", "/_dagger_main.py",
+			}).
+			File("/_dagger_main.py")
+		rel := path.Join("src", m.PackageName, "_dagger_main.py")
+		genDir = genDir.WithFile(path.Join(m.SubPath, rel), entrypointFile)
+		genPaths = append(genPaths, rel)
+	}
+
 	return dag.
-		GeneratedCode(
-			m.Container.Directory(m.ContextDirPath).
-				WithoutDirectory("sdk/runtime")).
+		GeneratedCode(genDir).
 		WithVCSGeneratedPaths(genPaths).
 		WithVCSIgnoredPaths(ignorePaths), nil
 }
