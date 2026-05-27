@@ -203,7 +203,7 @@ func (env *Env) Checks(ctx context.Context, include []string, noGenerate bool) (
 	if env.MainModule.Self() == nil {
 		return nil, fmt.Errorf("no main module set on environment")
 	}
-	return NewCheckGroup(ctx, env.MainModule, include, noGenerate)
+	return NewCheckGroup(ctx, env.MainModule, include, noGenerate, false)
 }
 
 // Services returns an UpGroup from the main module

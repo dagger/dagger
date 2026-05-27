@@ -2629,7 +2629,7 @@ func (s *moduleSchema) moduleChecks(
 			include = append(include, pattern.String())
 		}
 	}
-	return core.NewCheckGroup(ctx, mod, include, args.NoGenerate.GetOr(false).Bool())
+	return core.NewCheckGroup(ctx, mod, include, args.NoGenerate.GetOr(false).Bool(), false)
 }
 
 func (s *moduleSchema) moduleCheck(
@@ -2639,7 +2639,7 @@ func (s *moduleSchema) moduleCheck(
 		Name string
 	},
 ) (*core.Check, error) {
-	checkGroup, err := core.NewCheckGroup(ctx, mod, []string{args.Name}, false)
+	checkGroup, err := core.NewCheckGroup(ctx, mod, []string{args.Name}, false, false)
 	if err != nil {
 		return nil, err
 	}
