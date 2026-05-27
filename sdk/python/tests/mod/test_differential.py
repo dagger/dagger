@@ -487,6 +487,44 @@ class Foo:
     assert_metadata_equivalent(ast_md, runtime_md)
 
 
+def test_diff_enum_with_object_member_values_uses_name():
+    """An enum whose members hold non-scalar objects renders by member name.
+
+    A Dagger enum member value must be a scalar the schema can carry. The
+    AST analyzer (the production registration path) records the literal for
+    simple scalar values and falls back to the member *name* for values it
+    can't express as a constant — here ``NamedTuple`` instances. The runtime
+    oracle must mirror that instead of stringifying the live object's repr.
+    """
+    source = """
+import dagger
+from enum import Enum
+from typing import NamedTuple
+
+class Props(NamedTuple):
+    name: str
+    rank: int
+
+@dagger.enum_type
+class WorkflowId(Enum):
+    \"\"\"workflow ids\"\"\"
+    DEPLOY = Props("deploy", 1)
+    QUALITY = Props("quality", 2)
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def run(self) -> str:
+        return WorkflowId.DEPLOY.name
+"""
+    ast_md, runtime_md = _both(source)
+    assert {m.name: m.value for m in ast_md.enums["WorkflowId"].members} == {
+        "DEPLOY": "DEPLOY",
+        "QUALITY": "QUALITY",
+    }
+    assert_metadata_equivalent(ast_md, runtime_md)
+
+
 # ---------------------------------------------------------------------------
 # Decorator metadata: name override, doc, deprecated.
 # ---------------------------------------------------------------------------

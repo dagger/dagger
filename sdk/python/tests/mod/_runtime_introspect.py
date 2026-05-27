@@ -389,9 +389,7 @@ def _build_function_metadata(owner: type, func: Any, meta: Any) -> FunctionMetad
             )
 
         has_default = param.default is not inspect.Parameter.empty
-        default_value = (
-            _default_as_engine_value(param.default) if has_default else None
-        )
+        default_value = _default_as_engine_value(param.default) if has_default else None
         api_name = alt_name or _normalize_name(param_name)
 
         parameters.append(
@@ -431,17 +429,34 @@ def _build_function_metadata(owner: type, func: Any, meta: Any) -> FunctionMetad
     )
 
 
+def _enum_member_value(member: enum_module.Enum) -> str:
+    """Render an enum member's value the way the AST analyzer (and engine) do.
+
+    A Dagger enum member value must be a scalar the schema can carry. The
+    AST analyzer records the literal for simple scalar values and falls
+    back to the member *name* for anything it can't express as a constant
+    (``DEPLOY = SomeNamedTuple(...)``) — see ``_extract_enum_member_value``
+    in the parser. The runtime path *is* the AST path now, so the oracle
+    must mirror that: keep ``str(value)`` for the literal kinds an
+    ``ast.Constant`` can hold (str/bytes/int/float/complex/bool/None), and
+    use the member name otherwise. Without this, an object-valued enum
+    surfaces its ``repr`` here while the analyzer (correctly) uses the name.
+    """
+    value = member.value
+    if value is None or isinstance(value, (str, bytes, int, float, complex)):
+        return str(value)
+    return member.name
+
+
 def _build_enum_metadata(cls: type) -> EnumTypeMetadata:
-    members: list[EnumMemberMetadata] = []
-    for member in cls.__members__.values():
-        value = member.value
-        members.append(
-            EnumMemberMetadata(
-                name=member.name,
-                value=str(value),
-                doc=inspect.getdoc(member) if hasattr(member, "__doc__") else None,
-            )
+    members = [
+        EnumMemberMetadata(
+            name=member.name,
+            value=_enum_member_value(member),
+            doc=inspect.getdoc(member) if hasattr(member, "__doc__") else None,
         )
+        for member in cls.__members__.values()
+    ]
     return EnumTypeMetadata(
         name=cls.__name__,
         doc=inspect.getdoc(cls),
