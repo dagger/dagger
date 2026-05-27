@@ -326,6 +326,15 @@ class Binding extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Retrieve the binding value, as type WorkspaceModuleSetting
+     */
+    public function asWorkspaceModuleSetting(): WorkspaceModuleSetting
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asWorkspaceModuleSetting');
+        return new \Dagger\WorkspaceModuleSetting($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Returns the digest of the binding value
      */
     public function digest(): string

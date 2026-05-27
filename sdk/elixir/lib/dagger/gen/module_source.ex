@@ -453,6 +453,9 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
+  @deprecated """
+  Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
+  """
   @doc """
   Set a blueprint for the module source.
   """
@@ -591,6 +594,9 @@ defmodule Dagger.ModuleSource do
     }
   end
 
+  @deprecated """
+  Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
+  """
   @doc """
   Add toolchains to the module source.
   """
@@ -607,6 +613,9 @@ defmodule Dagger.ModuleSource do
     }
   end
 
+  @deprecated """
+  Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
+  """
   @doc """
   Update the blueprint module to the latest version.
   """
@@ -637,6 +646,9 @@ defmodule Dagger.ModuleSource do
     }
   end
 
+  @deprecated """
+  Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
+  """
   @doc """
   Update one or more toolchains.
   """
@@ -669,6 +681,9 @@ defmodule Dagger.ModuleSource do
     }
   end
 
+  @deprecated """
+  Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
+  """
   @doc """
   Remove the current blueprint from the module source.
   """
@@ -730,6 +745,9 @@ defmodule Dagger.ModuleSource do
     }
   end
 
+  @deprecated """
+  Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
+  """
   @doc """
   Remove the provided toolchains from the module source.
   """

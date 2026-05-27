@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="robots" content="index, follow, all" />
-    <title>Dagger\WorkspaceMigrationStep | API</title>
+    <title>Dagger\WorkspaceModuleSetting | API</title>
 
             <link rel="stylesheet" type="text/css" href="../css/bootstrap.min.css">
         <link rel="stylesheet" type="text/css" href="../css/bootstrap-theme.min.css">
@@ -19,7 +19,7 @@
 
     </head>
 
-    <body id="class" data-name="class:Dagger_WorkspaceMigrationStep" data-root-path="../" data-search-index-url="../doctum-search.json">
+    <body id="class" data-name="class:Dagger_WorkspaceModuleSetting" data-root-path="../" data-search-index-url="../doctum-search.json">
             <div id="content">
         <div id="left-column">
                 <div id="control-panel">
@@ -75,18 +75,18 @@
                         <div class="namespace-breadcrumbs">
             <ol class="breadcrumb">
                 <li><span class="label label-default">class</span></li>
-                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>WorkspaceMigrationStep</li>
+                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>WorkspaceModuleSetting</li>
             </ol>
         </div>
                 <div id="page-content">
     <div class="page-header">
-        <h1>WorkspaceMigrationStep    
+        <h1>WorkspaceModuleSetting    
             </h1>
     </div>
 
     
     <p>        class
-    <strong>WorkspaceMigrationStep</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
+    <strong>WorkspaceModuleSetting</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
 </p>
 
         
@@ -94,7 +94,7 @@
         
 
             <div class="description">
-            <p><p>A single logical part of a workspace migration.</p></p>                    </div>
+            <p><p>A constructor-backed module setting.</p></p>                    </div>
             
         
     
@@ -143,32 +143,12 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_changes">changes</a>()
-        
-                                            <p><p>Filesystem changes for this step.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_code">code</a>()
-        
-                                            <p><p>Stable code identifying this logical migration step.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
                     string
                 </div>
                 <div class="col-md-8">
                     <a href="#method_description">description</a>()
         
-                                            <p><p>Generic summary of this step's purpose and impact.</p></p>                </div>
+                                            <p><p>The constructor argument description.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -178,17 +158,27 @@
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
         
-                                            <p><p>A unique identifier for this WorkspaceMigrationStep.</p></p>                </div>
+                                            <p><p>A unique identifier for this WorkspaceModuleSetting.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    array
+                    string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_warnings">warnings</a>()
+                    <a href="#method_key">key</a>()
         
-                                            <p><p>Non-fatal warnings raised while planning this step.</p></p>                </div>
+                                            <p><p>The setting key.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_value">value</a>()
+        
+                                            <p><p>The configured value after applying the selected workspace environment, or empty when unset.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -287,72 +277,8 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_changes">
-        <div class="location">at line 19</div>
-        <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
-    <strong>changes</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Filesystem changes for this step.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_code">
-        <div class="location">at line 28</div>
-        <code>                    string
-    <strong>code</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Stable code identifying this logical migration step.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
                     <h3 id="method_description">
-        <div class="location">at line 37</div>
+        <div class="location">at line 19</div>
         <code>                    string
     <strong>description</strong>()
         </code>
@@ -362,7 +288,7 @@
             
 
         <div class="method-description">
-                            <p><p>Generic summary of this step's purpose and impact.</p></p>                        
+                            <p><p>The constructor argument description.</p></p>                        
         </div>
         <div class="tags">
             
@@ -384,7 +310,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_id">
-        <div class="location">at line 46</div>
+        <div class="location">at line 28</div>
         <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
@@ -394,7 +320,7 @@
             
 
         <div class="method-description">
-                            <p><p>A unique identifier for this WorkspaceMigrationStep.</p></p>                        
+                            <p><p>A unique identifier for this WorkspaceModuleSetting.</p></p>                        
         </div>
         <div class="tags">
             
@@ -415,10 +341,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_warnings">
-        <div class="location">at line 55</div>
-        <code>                    array
-    <strong>warnings</strong>()
+                    <h3 id="method_key">
+        <div class="location">at line 37</div>
+        <code>                    string
+    <strong>key</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -426,7 +352,7 @@
             
 
         <div class="method-description">
-                            <p><p>Non-fatal warnings raised while planning this step.</p></p>                        
+                            <p><p>The setting key.</p></p>                        
         </div>
         <div class="tags">
             
@@ -434,7 +360,39 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td>array</td>
+            <td>string</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_value">
+        <div class="location">at line 46</div>
+        <code>                    string
+    <strong>value</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>The configured value after applying the selected workspace environment, or empty when unset.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>string</td>
             <td></td>
         </tr>
     </table>
