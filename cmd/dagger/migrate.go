@@ -41,7 +41,7 @@ var migrateCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("migration failed: %w", err)
 			}
-			changes = dag.LoadChangesetFromID(changesID)
+			changes = dagger.Ref[*dagger.Changeset](dag, changesID)
 
 			isEmpty, err := changes.IsEmpty(ctx)
 			if err != nil {
