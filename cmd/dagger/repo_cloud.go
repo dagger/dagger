@@ -23,11 +23,13 @@ var (
 const githubOAuthRedirect = "https://dagger.cloud/github/callback"
 
 var repoCmd = &cobra.Command{
-	Use:     "repo [repo]",
+	Use:     "repo",
 	Short:   "Manage Dagger Cloud repositories",
-	Args:    cobra.MaximumNArgs(1),
+	Args:    cobra.NoArgs,
 	GroupID: cloudGroup.ID,
-	RunE:    cloudCLI.RepoInfo,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return cmd.Help()
+	},
 }
 
 var repoInfoCmd = &cobra.Command{
