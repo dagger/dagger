@@ -6,7 +6,13 @@ import (
 	"dagger/test/internal/dagger"
 )
 
-type Test struct{}
+type Test struct {
+	Message string
+}
+
+func New() *Test {
+	return &Test{Message: "hello from field"}
+}
 
 func (m *Test) ContainerEcho(
 	// +optional

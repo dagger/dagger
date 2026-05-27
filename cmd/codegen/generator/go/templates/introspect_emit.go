@@ -154,7 +154,7 @@ func introspectObject(spec *parsedObjectType) *introspection.Type {
 			continue
 		}
 		field := &introspection.Field{
-			Name:        f.name,
+			Name:        strcase.ToLowerCamel(f.name),
 			Description: strings.TrimSpace(f.doc),
 			TypeRef:     introspectTypeRef(f.typeSpec),
 			Args:        introspection.InputValues{},
