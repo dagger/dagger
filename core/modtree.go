@@ -531,7 +531,7 @@ func (node *ModTreeNode) buildScaleOutModuleQuery(query *querybuilder.Selection)
 		if err != nil {
 			return nil, fmt.Errorf("encode dir ID: %w", err)
 		}
-		query = query.Select("node").Arg("id", dirIDEnc)
+		query = query.Select("node").Arg("id", dirIDEnc).InlineFragment("Directory")
 		query = query.Select("asModuleSource").
 			Arg("sourceRootPath", modSrc.DirSrc.OriginalSourceRootSubpath)
 	}

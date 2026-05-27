@@ -3582,7 +3582,7 @@ func TestInterfaces(t *testing.T) {
 		assert.Assert(t, foundSpatial, "Point should declare Spatial interface")
 	})
 
-	t.Run("Satisfies checks", func(t *testing.T) {
+	t.Run("object must have every field required by the interface", func(t *testing.T) {
 		srv := newExternalDagqlServerForTest(t, Query{})
 		points.Install[Query](srv)
 
@@ -3612,7 +3612,7 @@ func TestInterfaces(t *testing.T) {
 		}(), "Implements should panic for unsatisfied interface")
 	})
 
-	t.Run("Satisfies checks argument compatibility", func(t *testing.T) {
+	t.Run("object method args must match the interface method", func(t *testing.T) {
 		srv := newExternalDagqlServerForTest(t, Query{})
 		points.Install[Query](srv)
 
@@ -3680,7 +3680,30 @@ func TestInterfaces(t *testing.T) {
 		assert.Assert(t, !wrongArgType.Satisfies(pointType, ""), "Point should NOT satisfy WrongArgType")
 	})
 
-	t.Run("SatisfiedByInterface checks argument compatibility", func(t *testing.T) {
+	t.Run("object method cannot require an arg missing from the interface", func(t *testing.T) {
+		srv := newExternalDagqlServerForTest(t, Query{})
+
+		dagql.Fields[Query]{
+			dagql.Func("run", func(ctx context.Context, self Query, args struct {
+				Target string
+			}) (string, error) {
+				return "ok", nil
+			}),
+		}.Install(srv)
+
+		runnable := dagql.NewInterface("Runnable", "Can run.")
+		runnable.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "run",
+				Type: dagql.String(""),
+			},
+		})
+		srv.InstallInterface(runnable)
+
+		assert.Assert(t, !runnable.Satisfies(srv.Root().ObjectType(), ""), "run(target:) cannot be used where run() is required")
+	})
+
+	t.Run("interface method args must match the interface it claims to support", func(t *testing.T) {
 		srv := newExternalDagqlServerForTest(t, Query{})
 
 		// Interface A: transform(x: Int!, y: Int!): String!
@@ -3715,7 +3738,7 @@ func TestInterfaces(t *testing.T) {
 		assert.Assert(t, ifaceA.SatisfiedByInterface(ifaceB, ""), "B should satisfy A")
 		assert.Assert(t, ifaceB.SatisfiedByInterface(ifaceA, ""), "A should satisfy B")
 
-		// Interface C: transform(x: Int!, y: Int!, z: Int!): String! — extra arg
+		// Interface C: transform(x: Int!, y: Int!, z: Int!): String! — extra required arg
 		ifaceC := dagql.NewInterface("TransformC", "Transform interface C with extra arg.")
 		ifaceC.AddField(dagql.InterfaceFieldSpec{
 			FieldSpec: dagql.FieldSpec{
@@ -3730,10 +3753,26 @@ func TestInterfaces(t *testing.T) {
 		})
 		srv.InstallInterface(ifaceC)
 
-		// C satisfies A (has all of A's args plus more)
-		assert.Assert(t, ifaceA.SatisfiedByInterface(ifaceC, ""), "C should satisfy A (superset of args)")
+		// C cannot stand in for A because z is required and callers through A cannot provide it.
+		assert.Assert(t, !ifaceA.SatisfiedByInterface(ifaceC, ""), "TransformC cannot be used where TransformA is expected")
 		// A does NOT satisfy C (missing z arg)
 		assert.Assert(t, !ifaceC.SatisfiedByInterface(ifaceA, ""), "A should NOT satisfy C (missing arg)")
+
+		// Interface CDefault: extra arg with a default is allowed.
+		ifaceCDefault := dagql.NewInterface("TransformCDefault", "Transform interface C with defaulted extra arg.")
+		ifaceCDefault.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "transform",
+				Type: dagql.String(""),
+				Args: dagql.NewInputSpecs(
+					dagql.InputSpec{Name: "x", Type: dagql.Int(0)},
+					dagql.InputSpec{Name: "y", Type: dagql.Int(0)},
+					dagql.InputSpec{Name: "z", Type: dagql.Int(0), Default: dagql.Int(0)},
+				),
+			},
+		})
+		srv.InstallInterface(ifaceCDefault)
+		assert.Assert(t, ifaceA.SatisfiedByInterface(ifaceCDefault, ""), "TransformCDefault can be used where TransformA is expected")
 
 		// Interface D: transform(x: String!): String! — different arg type
 		ifaceD := dagql.NewInterface("TransformD", "Transform interface D with wrong arg type.")
@@ -3750,6 +3789,80 @@ func TestInterfaces(t *testing.T) {
 
 		// D does NOT satisfy A (arg type mismatch)
 		assert.Assert(t, !ifaceA.SatisfiedByInterface(ifaceD, ""), "D should NOT satisfy A (arg type mismatch)")
+	})
+
+	t.Run("nullable list result cannot replace non-null list result", func(t *testing.T) {
+		srv := newExternalDagqlServerForTest(t, Query{})
+		dagql.Fields[Query]{
+			dagql.Func("namesOrNull", func(ctx context.Context, self Query, args struct{}) (dagql.Nullable[dagql.Array[dagql.String]], error) {
+				return dagql.Null[dagql.Array[dagql.String]](), nil
+			}),
+			dagql.Func("names", func(ctx context.Context, self Query, args struct{}) (dagql.Array[dagql.String], error) {
+				return dagql.NewStringArray("a"), nil
+			}),
+		}.Install(srv)
+
+		nonNullListIface := dagql.NewInterface("NonNullList", "Requires a non-null list.")
+		nonNullListIface.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "namesOrNull",
+				Type: dagql.Array[dagql.String]{},
+			},
+		})
+		srv.InstallInterface(nonNullListIface)
+		assert.Assert(t, !nonNullListIface.Satisfies(srv.Root().ObjectType(), ""), "nullable list cannot be used where the interface promises a list")
+
+		nullableListIface := dagql.NewInterface("NullableList", "Allows a nullable list.")
+		nullableListIface.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "names",
+				Type: dagql.Null[dagql.Array[dagql.String]](),
+			},
+		})
+		srv.InstallInterface(nullableListIface)
+		assert.Assert(t, nullableListIface.Satisfies(srv.Root().ObjectType(), ""), "non-null list can be used where the interface allows null")
+	})
+
+	t.Run("method cannot require non-null list when interface allows null", func(t *testing.T) {
+		srv := newExternalDagqlServerForTest(t, Query{})
+		dagql.Fields[Query]{
+			dagql.Func("acceptsNamesOrNull", func(ctx context.Context, self Query, args struct {
+				Names dagql.Optional[dagql.ArrayInput[dagql.String]]
+			}) (string, error) {
+				return "ok", nil
+			}),
+			dagql.Func("acceptsNames", func(ctx context.Context, self Query, args struct {
+				Names dagql.ArrayInput[dagql.String]
+			}) (string, error) {
+				return "ok", nil
+			}),
+		}.Install(srv)
+
+		nullableListArgIface := dagql.NewInterface("NullableListArg", "Allows a nullable list argument.")
+		nullableListArgIface.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "acceptsNames",
+				Type: dagql.String(""),
+				Args: dagql.NewInputSpecs(
+					dagql.InputSpec{Name: "names", Type: dagql.Optional[dagql.ArrayInput[dagql.String]]{}},
+				),
+			},
+		})
+		srv.InstallInterface(nullableListArgIface)
+		assert.Assert(t, !nullableListArgIface.Satisfies(srv.Root().ObjectType(), ""), "method cannot require names when the interface allows names to be null")
+
+		nonNullListArgIface := dagql.NewInterface("NonNullListArg", "Requires a non-null list argument.")
+		nonNullListArgIface.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "acceptsNamesOrNull",
+				Type: dagql.String(""),
+				Args: dagql.NewInputSpecs(
+					dagql.InputSpec{Name: "names", Type: dagql.ArrayInput[dagql.String]{}},
+				),
+			},
+		})
+		srv.InstallInterface(nonNullListArgIface)
+		assert.Assert(t, nonNullListArgIface.Satisfies(srv.Root().ObjectType(), ""), "method accepting names or null can be used when the interface always passes names")
 	})
 
 	t.Run("auto Node interface", func(t *testing.T) {

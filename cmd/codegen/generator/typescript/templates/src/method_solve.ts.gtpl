@@ -98,7 +98,11 @@
       {{- end }}
     {{- else if not .TypeRef.IsVoid -}}
         {{- if and .TypeRef.IsList (IsListOfObject .TypeRef) }}
+          {{- if IsListOfInterface .TypeRef }}
+    return response.map((r) => new _{{ . | FormatReturnType | ToSingleType | FormatProtected | FormatName }}Client(ctx.copy().selectNode(r.id, "{{ . | FormatReturnType | ToSingleType | FormatProtected }}")))
+          {{- else }}
     return response.map((r) => new {{ . | FormatReturnType | ToSingleType | FormatProtected | FormatName }}(ctx.copy().selectNode(r.id, "{{ . | FormatReturnType | ToSingleType | FormatProtected }}")))
+          {{- end }}
         {{- else if and .TypeRef.IsList (IsListOfEnum .TypeRef) -}}
     return response.map((r) => {{ . | FormatReturnType | ToSingleType }}NameToValue(r))
         {{- else if .TypeRef.IsEnum }}

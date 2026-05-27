@@ -273,6 +273,14 @@ func argsCompatible(ifaceArgs, objArgs InputSpecs, view call.View, checker Imple
 			return false
 		}
 	}
+	for _, objArg := range objArgs.Inputs(view) {
+		if _, ok := ifaceArgs.Input(objArg.Name, view); ok {
+			continue
+		}
+		if objArg.Default == nil && objArg.Type.Type().NonNull {
+			return false
+		}
+	}
 	return true
 }
 
@@ -291,6 +299,9 @@ func argTypeCompatible(ifaceArgType, objArgType *ast.Type, checker ImplementsChe
 	// list types
 	if ifaceArgType.Elem != nil || objArgType.Elem != nil {
 		if ifaceArgType.Elem == nil || objArgType.Elem == nil {
+			return false
+		}
+		if objArgType.NonNull && !ifaceArgType.NonNull {
 			return false
 		}
 		return argTypeCompatible(ifaceArgType.Elem, objArgType.Elem, checker)
@@ -329,6 +340,9 @@ func typeCompatible(ifaceType, objType *ast.Type, checker ImplementsChecker) boo
 	// list types
 	if ifaceType.Elem != nil || objType.Elem != nil {
 		if ifaceType.Elem == nil || objType.Elem == nil {
+			return false
+		}
+		if ifaceType.NonNull && !objType.NonNull {
 			return false
 		}
 		return typeCompatible(ifaceType.Elem, objType.Elem, checker)
