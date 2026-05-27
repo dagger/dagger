@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -15,6 +16,8 @@ var (
 	cloudJSON    bool
 )
 
+var errCloudNotAuthenticated = errors.New("not authenticated; run 'dagger login' or set DAGGER_CLOUD_TOKEN")
+
 func (cli *CloudCLI) cloudClient(ctx context.Context) (*cloudapi.Client, *cloudauth.Cloud, error) {
 	return cli.cloudClientWithLogin(ctx, true)
 }
@@ -26,32 +29,30 @@ func (cli *CloudCLI) cloudClientNoLogin(ctx context.Context) (*cloudapi.Client, 
 func (cli *CloudCLI) cloudClientWithLogin(ctx context.Context, login bool) (*cloudapi.Client, *cloudauth.Cloud, error) {
 	cloudAuth, err := cloudauth.GetCloudAuth(ctx)
 	if err != nil {
-		token, tokenErr := cloudauth.Token(ctx)
-		if tokenErr != nil {
-			return nil, nil, fmt.Errorf("cloud auth: %w", err)
+		cloudAuth, err = cloudAuthFromLocalTokenWithoutOrg(ctx, err)
+		if err != nil {
+			return nil, nil, err
 		}
-		cloudAuth = &cloudauth.Cloud{Token: token}
 	}
 	if cloudAuth == nil || cloudAuth.Token == nil {
 		if !login {
-			return nil, nil, fmt.Errorf("not authenticated; run 'dagger login' or set DAGGER_CLOUD_TOKEN")
+			return nil, nil, errCloudNotAuthenticated
 		}
 		if cloudJSON {
-			return nil, nil, fmt.Errorf("not authenticated; run 'dagger login' or set DAGGER_CLOUD_TOKEN")
+			return nil, nil, errCloudNotAuthenticated
 		}
 		if err := cloudauth.Login(ctx, os.Stderr, cloudauth.WithAuthGate()); err != nil {
 			return nil, nil, err
 		}
 		cloudAuth, err = cloudauth.GetCloudAuth(ctx)
 		if err != nil {
-			token, tokenErr := cloudauth.Token(ctx)
-			if tokenErr != nil {
-				return nil, nil, fmt.Errorf("cloud auth: %w", err)
+			cloudAuth, err = cloudAuthFromLocalTokenWithoutOrg(ctx, err)
+			if err != nil {
+				return nil, nil, err
 			}
-			cloudAuth = &cloudauth.Cloud{Token: token}
 		}
 		if cloudAuth == nil || cloudAuth.Token == nil {
-			return nil, nil, fmt.Errorf("not authenticated; run 'dagger login' or set DAGGER_CLOUD_TOKEN")
+			return nil, nil, errCloudNotAuthenticated
 		}
 	}
 
@@ -60,6 +61,17 @@ func (cli *CloudCLI) cloudClientWithLogin(ctx context.Context, login bool) (*clo
 		return nil, nil, fmt.Errorf("cloud client: %w", err)
 	}
 	return client, cloudAuth, nil
+}
+
+func cloudAuthFromLocalTokenWithoutOrg(ctx context.Context, err error) (*cloudauth.Cloud, error) {
+	if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("cloud auth: %w", err)
+	}
+	token, tokenErr := cloudauth.Token(ctx)
+	if tokenErr != nil {
+		return nil, fmt.Errorf("cloud auth: %w", tokenErr)
+	}
+	return &cloudauth.Cloud{Token: token}, nil
 }
 
 func (cli *CloudCLI) resolveCloudOrg(ctx context.Context, client *cloudapi.Client, cloudAuth *cloudauth.Cloud) (*cloudapi.OrgResponse, error) {

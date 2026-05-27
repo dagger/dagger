@@ -143,6 +143,10 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 			return idtui.Fail
 		}
 	case 1:
+		if orgName != "" && user.Orgs[0].Name != orgName {
+			fmt.Fprintln(errW, "Organization", orgName, "not found.")
+			return idtui.Fail
+		}
 		selectedOrg = &user.Orgs[0]
 	default:
 		if orgName == "" {

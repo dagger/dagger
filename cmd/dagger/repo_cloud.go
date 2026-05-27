@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os/exec"
@@ -201,6 +202,9 @@ func (cli *CloudCLI) RepoInfo(cmd *cobra.Command, args []string) error {
 	}
 	client, cloudAuth, err := cli.cloudClientNoLogin(ctx)
 	if err != nil {
+		if !errors.Is(err, errCloudNotAuthenticated) {
+			return err
+		}
 		if cloudJSON {
 			response := map[string]any{
 				"repository":             ref.Repository,
@@ -587,6 +591,9 @@ func (cli *CloudCLI) linkRepo(ctx context.Context, client *cloudapi.Client, org 
 		return nil, err
 	}
 	state.MappedSource = mapped
+	if state.Repo != nil {
+		state.Repo.Selected = true
+	}
 	state.Status = "linked"
 	state.Features = repoFeatures(state.Status)
 	state.Mutation = "configureOrgSource"
