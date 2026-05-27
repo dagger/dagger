@@ -32,7 +32,7 @@ defmodule Dagger.WorkspaceMigration do
   @doc """
   A unique identifier for this WorkspaceMigration.
   """
-  @spec id(t()) :: {:ok, Dagger.WorkspaceMigrationID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = workspace_migration) do
     query_builder =
       workspace_migration.query_builder |> QB.select("id")
@@ -54,8 +54,9 @@ defmodule Dagger.WorkspaceMigration do
          %Dagger.WorkspaceMigrationStep{
            query_builder:
              QB.query()
-             |> QB.select("loadWorkspaceMigrationStepFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("WorkspaceMigrationStep"),
            client: workspace_migration.client
          }
        end}
@@ -72,6 +73,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.WorkspaceMigration do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_workspace_migration_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.WorkspaceMigration{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("WorkspaceMigration"),
+       client: dag.client
+     }}
   end
 end

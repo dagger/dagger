@@ -29,7 +29,7 @@ defmodule Dagger.WorkspaceModule do
   @doc """
   A unique identifier for this WorkspaceModule.
   """
-  @spec id(t()) :: {:ok, Dagger.WorkspaceModuleID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = workspace_module) do
     query_builder =
       workspace_module.query_builder |> QB.select("id")
@@ -46,6 +46,29 @@ defmodule Dagger.WorkspaceModule do
       workspace_module.query_builder |> QB.select("name")
 
     Client.execute(workspace_module.client, query_builder)
+  end
+
+  @doc """
+  List constructor-backed settings for this module.
+  """
+  @spec settings(t()) :: {:ok, [Dagger.WorkspaceModuleSetting.t()]} | {:error, term()}
+  def settings(%__MODULE__{} = workspace_module) do
+    query_builder =
+      workspace_module.query_builder |> QB.select("settings") |> QB.select("id")
+
+    with {:ok, items} <- Client.execute(workspace_module.client, query_builder) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.WorkspaceModuleSetting{
+           query_builder:
+             QB.query()
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("WorkspaceModuleSetting"),
+           client: workspace_module.client
+         }
+       end}
+    end
   end
 
   @doc """
@@ -69,6 +92,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.WorkspaceModule do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_workspace_module_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.WorkspaceModule{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("WorkspaceModule"),
+       client: dag.client
+     }}
   end
 end
