@@ -13,6 +13,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/parser"
 	"github.com/vektah/gqlparser/v2/validator"
+	"github.com/vektah/gqlparser/v2/validator/rules"
 )
 
 type ModTreePathTestSuite struct {
@@ -89,7 +90,10 @@ func (s *ModTreeNodeTestSuite) TestBuildScaleOutModuleQueryForModuleLoadedFromDi
 
 	doc, err := parser.ParseQuery(&ast.Source{Input: generated})
 	require.NoError(t, err)
-	require.Empty(t, validator.Validate(schema, doc), "generated query should validate:\n%s", generated)
+	require.Empty(t,
+		validator.ValidateWithRules(schema, doc, rules.NewDefaultRules()),
+		"generated query should validate:\n%s", generated,
+	)
 }
 
 func (s *ModTreePathTestSuite) TestIsParentOf(ctx context.Context, t *testctx.T) {
