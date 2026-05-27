@@ -74,6 +74,35 @@ _DAGGER_SCALAR_TYPES = {
 _PRIMITIVES = {str: "str", int: "int", float: "float", bool: "bool", bytes: "bytes"}
 
 
+def _default_as_engine_value(value: Any) -> Any:
+    """Render a captured Python default the way the engine receives it.
+
+    Dagger serialises every enum member by its *name*, including primitive
+    (``StrEnum`` / ``IntEnum``) enums: ``@dagger.enum_type`` registers a
+    per-class name hook that overrides the str/int subclass behaviour (see
+    ``configure_converter_enum`` use in ``dagger.mod._module``). The AST
+    analyzer records the member name too, so a default captured here as a
+    live enum member (``<SCM.GITLAB: 'gitlab'>``) must be normalised to its
+    name (``"GITLAB"``) before diffing — otherwise a ``StrEnum`` member,
+    which compares equal to its value, spuriously differs from the
+    analyzer's ``"GITLAB"``.
+
+    Recurse through the containers the analyzer's ``_eval_constant`` also
+    produces (list / tuple / dict) so nested enum defaults match too. The
+    ``enum.Enum`` check must come first: primitive enum members are also
+    ``str``/``int`` instances.
+    """
+    if isinstance(value, enum_module.Enum):
+        return value.name
+    if isinstance(value, list):
+        return [_default_as_engine_value(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_default_as_engine_value(v) for v in value)
+    if isinstance(value, dict):
+        return {k: _default_as_engine_value(v) for k, v in value.items()}
+    return value
+
+
 def runtime_introspect(source: str, main_object_name: str) -> ModuleMetadata:
     """Import ``source`` as a fresh module and produce ModuleMetadata.
 
@@ -266,7 +295,7 @@ def _build_object_metadata(cls: type) -> ObjectTypeMetadata:  # noqa: C901
                 field.default_factory is not dataclasses.MISSING
             )
             if field.default is not dataclasses.MISSING:
-                default_value = field.default
+                default_value = _default_as_engine_value(field.default)
             elif field.default_factory is not dataclasses.MISSING:
                 # ``dagger.field(default=list)`` is rewritten to
                 # ``default_factory=list`` by the dagger decorator.
@@ -274,7 +303,7 @@ def _build_object_metadata(cls: type) -> ObjectTypeMetadata:  # noqa: C901
                 # value (``[]`` / ``{}`` / …), matching the AST analyzer's
                 # name_map which special-cases ``list``/``dict``.
                 try:
-                    default_value = field.default_factory()
+                    default_value = _default_as_engine_value(field.default_factory())
                 except Exception:  # noqa: BLE001 — user factory may raise
                     default_value = None
             else:
@@ -360,7 +389,9 @@ def _build_function_metadata(owner: type, func: Any, meta: Any) -> FunctionMetad
             )
 
         has_default = param.default is not inspect.Parameter.empty
-        default_value = param.default if has_default else None
+        default_value = (
+            _default_as_engine_value(param.default) if has_default else None
+        )
         api_name = alt_name or _normalize_name(param_name)
 
         parameters.append(

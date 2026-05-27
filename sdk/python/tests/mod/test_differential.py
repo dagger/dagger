@@ -442,6 +442,51 @@ class Foo:
     assert_metadata_equivalent(ast_md, runtime_md)
 
 
+def test_diff_enum_member_default_uses_member_name():
+    """An enum-member default matches between AST and runtime.
+
+    Dagger serialises enum defaults by member *name* — even for primitive
+    (``StrEnum`` / ``IntEnum``) enums, where ``@dagger.enum_type`` registers
+    a per-class name hook so the str/int subclass value isn't used. The AST
+    analyzer records the member name; the runtime introspector must do the
+    same rather than retaining the live member (a ``StrEnum`` member equals
+    its value, so an unnormalised ``<SCM.GITLAB: 'gitlab'>`` would differ
+    from the analyzer's ``"GITLAB"``).
+    """
+    # ``str, Enum`` rather than ``StrEnum`` so the runtime oracle (which
+    # *executes* this source) imports cleanly on Python 3.10, where
+    # ``enum.StrEnum`` doesn't exist yet. Both are primitive str-backed
+    # enums and exercise the same name-vs-value serialisation path.
+    source = """
+import dagger
+from enum import Enum
+from typing import Annotated
+
+@dagger.enum_type
+class SCM(str, Enum):
+    GITHUB = "github"
+    GITLAB = "gitlab"
+
+SCMList = Annotated[list[SCM], dagger.Doc("scms")]
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def run(self, scm: SCM = SCM.GITLAB, scms: SCMList = [SCM.GITLAB]) -> str:
+        return scm
+"""
+    ast_md, runtime_md = _both(source)
+    # The scalar default is the member name, and the list default is a list
+    # of member names — identical on both sides.
+    params = {
+        p.python_name: p.default_value
+        for p in ast_md.objects["Foo"].functions[0].parameters
+    }
+    assert params["scm"] == "GITLAB"
+    assert params["scms"] == ["GITLAB"]
+    assert_metadata_equivalent(ast_md, runtime_md)
+
+
 # ---------------------------------------------------------------------------
 # Decorator metadata: name override, doc, deprecated.
 # ---------------------------------------------------------------------------
