@@ -42,7 +42,7 @@ defmodule Dagger.FieldTypeDef do
   @doc """
   A unique identifier for this FieldTypeDef.
   """
-  @spec id(t()) :: {:ok, Dagger.FieldTypeDefID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = field_type_def) do
     query_builder =
       field_type_def.query_builder |> QB.select("id")
@@ -99,6 +99,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.FieldTypeDef do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_field_type_def_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.FieldTypeDef{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("FieldTypeDef"),
+       client: dag.client
+     }}
   end
 end

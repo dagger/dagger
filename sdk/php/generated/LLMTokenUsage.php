@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace Dagger;
 
-class LLMTokenUsage extends Client\AbstractObject implements Client\IdAble
+class LLMTokenUsage extends Client\AbstractObject implements Client\IdAble, Node
 {
     public function cachedTokenReads(): int
     {
@@ -25,10 +25,10 @@ class LLMTokenUsage extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this LLMTokenUsage.
      */
-    public function id(): LLMTokenUsageId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\LLMTokenUsageId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     public function inputTokens(): int

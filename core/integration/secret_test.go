@@ -27,7 +27,7 @@ func TestSecret(t *testing.T) {
 
 func (SecretSuite) TestEnvFromFile(ctx context.Context, t *testctx.T) {
 	_, err := testutil.Query[any](t,
-		`query Test($secret: SecretID!) {
+		`query Test($secret: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withSecretVariable(name: "SECRET", secret: $secret) {
@@ -45,7 +45,7 @@ func (SecretSuite) TestEnvFromFile(ctx context.Context, t *testctx.T) {
 
 func (SecretSuite) TestMountFromFile(ctx context.Context, t *testctx.T) {
 	_, err := testutil.Query[any](t,
-		`query Test($secret: SecretID!) {
+		`query Test($secret: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedSecret(path: "/sekret", source: $secret) {
@@ -78,7 +78,7 @@ func (SecretSuite) TestMountFromFileWithOverridingMount(ctx context.Context, t *
 			}
 		}
 	}](t,
-		`query Test($secret: SecretID!, $file: FileID!) {
+		`query Test($secret: ID!, $file: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedSecret(path: "/sekret", source: $secret) {

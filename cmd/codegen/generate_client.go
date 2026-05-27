@@ -64,7 +64,7 @@ func GenerateClient(cmd *cobra.Command, args []string) error {
 				Query:  loadModuleSourceDepsQuery,
 				OpName: "ModuleSourceDependencies",
 				Variables: map[string]any{
-					"source": dagger.ModuleSourceID(moduleSourceID),
+					"source": dagger.ID(moduleSourceID),
 				},
 			},
 			&dagger.Response{

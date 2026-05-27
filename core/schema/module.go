@@ -2427,7 +2427,7 @@ func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectRe
 	}
 
 	for _, introspectionField := range codeGenType.Fields {
-		rtType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionField.TypeRef, false, false)
+		rtType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionField.TypeRef, false)
 		if err != nil {
 			return dagql.ObjectResult[*core.TypeDef]{}, fmt.Errorf("failed to convert return type: %w", err)
 		}
@@ -2473,9 +2473,9 @@ func currentQueryTypeDef(ctx context.Context, dag *dagql.Server) (dagql.ObjectRe
 		}
 
 		for _, introspectionArg := range introspectionField.Args {
-			argType, ok, err := introspectionRefToTypeDef(ctx, dag, introspectionArg.TypeRef, false, true)
+			argType, ok, err := resolveArgTypeDef(ctx, dag, introspectionArg)
 			if err != nil {
-				return dagql.ObjectResult[*core.TypeDef]{}, fmt.Errorf("failed to convert argument type: %w", err)
+				return dagql.ObjectResult[*core.TypeDef]{}, fmt.Errorf("failed to convert argument type for %s.%s(%s): %w", codeGenType.Name, introspectionField.Name, introspectionArg.Name, err)
 			}
 			if !ok {
 				continue

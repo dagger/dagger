@@ -45,6 +45,7 @@ type __Field {
   type: __Type!
   isDeprecated: Boolean!
   deprecationReason: String
+  directives: [_DirectiveApplication!]
 }
 
 type __InputValue {
@@ -52,6 +53,7 @@ type __InputValue {
   description: String
   type: __Type!
   defaultValue: String
+  directives: [_DirectiveApplication!]
 }
 
 type __EnumValue {
@@ -77,6 +79,16 @@ type __Directive {
   description: String
   locations: [__DirectiveLocation!]!
   args: [__InputValue!]!
+}
+
+type _DirectiveApplication {
+  name: String!
+  args: [_DirectiveApplicationArg!]!
+}
+
+type _DirectiveApplicationArg {
+  name: String!
+  value: String
 }
 
 enum __DirectiveLocation {

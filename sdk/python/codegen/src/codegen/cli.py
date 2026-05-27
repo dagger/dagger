@@ -47,7 +47,7 @@ def codegen(introspection: pathlib.Path, output: pathlib.Path | None):
     result = json.loads(introspection.read_text())
     schema = graphql.build_client_schema(result)
     ast.insert_stubs(result["__schema"], schema)
-    code = generator.generate(schema)
+    code = generator.generate(schema, schema_version=result.get("__schemaVersion", ""))
 
     if output:
         output.write_text(code)

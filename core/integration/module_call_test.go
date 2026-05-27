@@ -1449,7 +1449,7 @@ type Test struct{}
 func (m *Test) Fn(ctx context.Context, sockID string) error {
 	_, err := dag.Container().From("`+alpineImage+`").
 		WithExec([]string{"apk", "add", "netcat-openbsd"}).
-		WithUnixSocket("/var/run/host.sock", dag.LoadSocketFromID(dagger.SocketID(sockID))).
+		WithUnixSocket("/var/run/host.sock", dagger.Ref[*dagger.Socket](dag, dagger.ID(sockID))).
 		WithExec([]string{"nc", "-w", "5", "-U", "/var/run/host.sock"}).
 		Stdout(ctx)
 	if err == nil {

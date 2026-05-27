@@ -39,7 +39,7 @@ defmodule Dagger.GeneratorGroup do
   @doc """
   A unique identifier for this GeneratorGroup.
   """
-  @spec id(t()) :: {:ok, Dagger.GeneratorGroupID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = generator_group) do
     query_builder =
       generator_group.query_builder |> QB.select("id")
@@ -72,8 +72,9 @@ defmodule Dagger.GeneratorGroup do
          %Dagger.Generator{
            query_builder:
              QB.query()
-             |> QB.select("loadGeneratorFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Generator"),
            client: generator_group.client
          }
        end}
@@ -104,6 +105,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.GeneratorGroup do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_generator_group_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.GeneratorGroup{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("GeneratorGroup"),
+       client: dag.client
+     }}
   end
 end

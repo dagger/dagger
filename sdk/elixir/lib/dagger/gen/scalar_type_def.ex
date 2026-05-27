@@ -29,7 +29,7 @@ defmodule Dagger.ScalarTypeDef do
   @doc """
   A unique identifier for this ScalarTypeDef.
   """
-  @spec id(t()) :: {:ok, Dagger.ScalarTypeDefID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = scalar_type_def) do
     query_builder =
       scalar_type_def.query_builder |> QB.select("id")
@@ -69,6 +69,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.ScalarTypeDef do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_scalar_type_def_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.ScalarTypeDef{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("ScalarTypeDef"),
+       client: dag.client
+     }}
   end
 end

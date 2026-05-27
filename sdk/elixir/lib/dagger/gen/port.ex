@@ -40,7 +40,7 @@ defmodule Dagger.Port do
   @doc """
   A unique identifier for this Port.
   """
-  @spec id(t()) :: {:ok, Dagger.PortID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = port) do
     query_builder =
       port.query_builder |> QB.select("id")
@@ -83,6 +83,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.Port do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_port_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.Port{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("Port"),
+       client: dag.client
+     }}
   end
 end

@@ -32,8 +32,9 @@ defmodule Dagger.InputTypeDef do
          %Dagger.FieldTypeDef{
            query_builder:
              QB.query()
-             |> QB.select("loadFieldTypeDefFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("FieldTypeDef"),
            client: input_type_def.client
          }
        end}
@@ -43,7 +44,7 @@ defmodule Dagger.InputTypeDef do
   @doc """
   A unique identifier for this InputTypeDef.
   """
-  @spec id(t()) :: {:ok, Dagger.InputTypeDefID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = input_type_def) do
     query_builder =
       input_type_def.query_builder |> QB.select("id")
@@ -72,6 +73,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.InputTypeDef do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_input_type_def_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.InputTypeDef{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("InputTypeDef"),
+       client: dag.client
+     }}
   end
 end

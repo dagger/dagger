@@ -12,6 +12,7 @@ from graphql import (
     GraphQLEnumType,
     GraphQLEnumValue,
     GraphQLID,
+    build_schema,
 )
 from graphql import (
     GraphQLField as Field,
@@ -55,6 +56,7 @@ from codegen.generator import (
     format_input_type,
     format_name,
     format_output_type,
+    generate,
 )
 from codegen.generator import (
     Enum as EnumHandler,
@@ -66,11 +68,26 @@ from codegen.generator import (
     Scalar as ScalarHandler,
 )
 
+# Schema with @expectedType directive for testing unified ID behavior.
+_EXPECTED_TYPE_SCHEMA = build_schema("""
+    directive @expectedType(name: String!)
+        on FIELD_DEFINITION
+        | ARGUMENT_DEFINITION
+        | INPUT_FIELD_DEFINITION
+    type Foo { sync: ID! @expectedType(name: "Foo") }
+    type Secret { plaintext: String! }
+    type Query {
+        fn(secret: ID! @expectedType(name: "Secret")): String
+        fn2(secret: ID @expectedType(name: "Secret")): String
+    }
+""")
+
 
 @pytest.fixture
 def ctx():
     return Context(
-        ids=frozenset({}),
+        schema=_EXPECTED_TYPE_SCHEMA,
+        ids=frozenset({"ID"}),
         remaining={"Secret"},
     )
 
@@ -99,23 +116,23 @@ opts = InputObject(
 
 
 @pytest.mark.parametrize(
-    ("graphql", "expected"),
+    ("graphql", "expected", "expected_type"),
     [
-        (NonNull(List(NonNull(String))), "list[str]"),
-        (List(String), "list[str | None] | None"),
-        (List(NonNull(String)), "list[str] | None"),
-        (NonNull(Scalar("FileID")), "File"),
-        (Scalar("FileID"), "File | None"),
-        (NonNull(opts), "Options"),
-        (opts, "Options | None"),
-        (NonNull(List(NonNull(opts))), "list[Options]"),
-        (NonNull(List(opts)), "list[Options | None]"),
-        (List(NonNull(opts)), "list[Options] | None"),
-        (List(opts), "list[Options | None] | None"),
+        (NonNull(List(NonNull(String))), "list[str]", None),
+        (List(String), "list[str | None] | None", None),
+        (List(NonNull(String)), "list[str] | None", None),
+        (NonNull(GraphQLID), "File", "File"),
+        (GraphQLID, "File | None", "File"),
+        (NonNull(opts), "Options", None),
+        (opts, "Options | None", None),
+        (NonNull(List(NonNull(opts))), "list[Options]", None),
+        (NonNull(List(opts)), "list[Options | None]", None),
+        (List(NonNull(opts)), "list[Options] | None", None),
+        (List(opts), "list[Options | None] | None", None),
     ],
 )
-def test_format_input_type(graphql, expected):
-    assert format_input_type(graphql) == expected
+def test_format_input_type(graphql, expected, expected_type):
+    assert format_input_type(graphql, expected_type=expected_type) == expected
 
 
 cache_volume = Object(
@@ -156,8 +173,8 @@ def _(type_: graphql.GraphQLInputType, default_value: str):
     ("name", "args", "expected"),
     [
         ("args", (NonNull(List(String)),), "args: list[str | None]"),
-        ("secret", (NonNull(Scalar("SecretID")),), "secret: Secret"),
-        ("secret", (Scalar("SecretID"),), "secret: Secret | None = None"),
+        # Secret ID test cases moved to test_input_field_param_expected_type
+        # since they require @expectedType directive on the AST node.
         ("from", _(String, "null"), "from_: str | None = None"),
         ("lines", _(Int, "1"), "lines: int | None = 1"),
         (
@@ -180,6 +197,18 @@ def _(type_: graphql.GraphQLInputType, default_value: str):
 @pytest.mark.parametrize("cls", [Argument, Input])
 def test_input_field_param(cls, name: str, args, expected: str, ctx: Context):
     assert _InputField(ctx, name, cls(*args)).as_param() == expected
+
+
+def test_input_field_param_expected_type(ctx: Context):
+    """Test that ID args with @expectedType resolve to the object type name."""
+    query_type = _EXPECTED_TYPE_SCHEMA.type_map["Query"]
+    # Required: secret: ID! @expectedType(name: "Secret")
+    required_arg = query_type.fields["fn"].args["secret"]
+    assert _InputField(ctx, "secret", required_arg).as_param() == "secret: Secret"
+    # Optional: secret: ID @expectedType(name: "Secret")
+    optional_arg = query_type.fields["fn2"].args["secret"]
+    result = _InputField(ctx, "secret", optional_arg).as_param()
+    assert result == "secret: Secret | None = None"
 
 
 @pytest.mark.parametrize(
@@ -240,11 +269,14 @@ def test_input_object_field_deprecated():
 
 
 def test_core_sync(ctx: Context):
+    # Use the field from the parsed schema so it has the @expectedType AST node.
+    foo_type = _EXPECTED_TYPE_SCHEMA.type_map["Foo"]
+    sync_field = foo_type.fields["sync"]
     handler = _ObjectField(
         ctx,
         "sync",
-        Field(NonNull(Scalar("FooID")), {}),
-        Object("Foo", {}),
+        sync_field,
+        foo_type,
     )
 
     assert handler.func_signature() == "async def sync(self) -> Self:"
@@ -252,6 +284,86 @@ def test_core_sync(ctx: Context):
     assert str(handler.func_body()).endswith(
         'return await self._ctx.execute_sync(self, "sync", _args)'
     )
+
+
+def test_generate_legacy_id_facade():
+    schema = build_schema(
+        """
+        directive @expectedType(name: String!)
+            on FIELD_DEFINITION
+            | ARGUMENT_DEFINITION
+            | INPUT_FIELD_DEFINITION
+
+        interface Node { id: ID! @expectedType(name: "Node") }
+
+        interface DepCustomIface {
+            id: ID! @expectedType(name: "DepCustomIface")
+            str: String!
+        }
+
+        type Impl implements DepCustomIface {
+            id: ID! @expectedType(name: "Impl")
+            str: String!
+        }
+
+        type Container {
+            id: ID! @expectedType(name: "Container")
+            stdout: String!
+        }
+
+        type File {
+            id: ID! @expectedType(name: "File")
+        }
+
+        type Query {
+            id: ID! @expectedType(name: "Query")
+            file(id: ID! @expectedType(name: "File")): File!
+            node(id: ID!): Node
+            container: Container!
+        }
+        """
+    )
+
+    code = generate(schema, schema_version="v0.20.6")
+
+    assert "class ContainerID(Scalar):" in code
+    assert "class DepCustomIfaceID(Scalar):" in code
+    assert "class NodeID(Scalar):" not in code
+    assert "async def id(self) -> ContainerID:" in code
+    assert "return await _ctx.execute(ContainerID)" in code
+    assert "def file(self, id: FileID) -> File:" in code
+    assert "def load_container_from_id(self, id: ContainerID) -> Container:" in code
+    assert '_ctx = self._ctx.select_id("Container", id)' in code
+    assert "return Container(_ctx)" in code
+    assert (
+        "def load_dep_custom_iface_from_id("
+        "self, id: DepCustomIfaceID"
+        ") -> DepCustomIface:"
+    ) in code.replace("\n", "")
+    assert '_ctx = self._ctx.select_id("DepCustomIface", id)' in code
+    assert "return _DepCustomIfaceClient(_ctx)" in code
+    assert 'self._select("loadContainerFromID"' not in code
+
+
+def test_generate_modern_id_surface():
+    schema = build_schema(
+        """
+        directive @expectedType(name: String!)
+            on FIELD_DEFINITION
+            | ARGUMENT_DEFINITION
+            | INPUT_FIELD_DEFINITION
+
+        type Container { id: ID! @expectedType(name: "Container") }
+        type Query { container: Container! }
+        """
+    )
+
+    code = generate(schema, schema_version="v0.21.0-dev")
+
+    assert "class ContainerID(Scalar):" not in code
+    assert "load_container_from_id" not in code
+    assert "async def id(self) -> str:" in code
+    assert "return await _ctx.execute(str)" in code
 
 
 def test_user_sync_leaf(ctx: Context):

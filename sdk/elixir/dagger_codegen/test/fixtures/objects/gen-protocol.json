@@ -99,7 +99,7 @@
         "name": null,
         "ofType": {
           "kind": "SCALAR",
-          "name": "ModuleID",
+          "name": "ID",
           "ofType": null
         }
       }
@@ -179,13 +179,9 @@
       "isDeprecated": false,
       "name": "runtime",
       "type": {
-        "kind": "NON_NULL",
-        "name": null,
-        "ofType": {
-          "kind": "OBJECT",
-          "name": "Container",
-          "ofType": null
-        }
+        "kind": "OBJECT",
+        "name": "Container",
+        "ofType": null
       }
     },
     {
@@ -202,7 +198,34 @@
       }
     },
     {
-      "args": [],
+      "args": [
+        {
+          "defaultValue": null,
+          "deprecationReason": null,
+          "description": "Expose the dependencies of this module to the client",
+          "directives": [],
+          "isDeprecated": false,
+          "name": "includeDependencies",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Boolean",
+            "ofType": null
+          }
+        },
+        {
+          "defaultValue": null,
+          "deprecationReason": null,
+          "description": "Install the module as the entrypoint, promoting its main-object methods onto the Query root",
+          "directives": [],
+          "isDeprecated": false,
+          "name": "entrypoint",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Boolean",
+            "ofType": null
+          }
+        }
+      ],
       "deprecationReason": null,
       "description": "Serve a module's API in the current session.\n\nNote: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.",
       "directives": [],
@@ -222,20 +245,26 @@
       "isDeprecated": false,
       "name": "source",
       "type": {
-        "kind": "NON_NULL",
-        "name": null,
-        "ofType": {
-          "kind": "OBJECT",
-          "name": "ModuleSource",
-          "ofType": null
-        }
+        "kind": "OBJECT",
+        "name": "ModuleSource",
+        "ofType": null
       }
     },
     {
       "args": [],
       "deprecationReason": null,
       "description": "Forces evaluation of the module, including any loading into the engine and associated validation.",
-      "directives": [],
+      "directives": [
+        {
+          "args": [
+            {
+              "name": "name",
+              "value": "\"Module\""
+            }
+          ],
+          "name": "expectedType"
+        }
+      ],
       "isDeprecated": false,
       "name": "sync",
       "type": {
@@ -243,7 +272,7 @@
         "name": null,
         "ofType": {
           "kind": "SCALAR",
-          "name": "ModuleID",
+          "name": "ID",
           "ofType": null
         }
       }
@@ -289,7 +318,17 @@
           "defaultValue": null,
           "deprecationReason": null,
           "description": "",
-          "directives": [],
+          "directives": [
+            {
+              "args": [
+                {
+                  "name": "name",
+                  "value": "\"TypeDef\""
+                }
+              ],
+              "name": "expectedType"
+            }
+          ],
           "isDeprecated": false,
           "name": "enum",
           "type": {
@@ -297,7 +336,7 @@
             "name": null,
             "ofType": {
               "kind": "SCALAR",
-              "name": "TypeDefID",
+              "name": "ID",
               "ofType": null
             }
           }
@@ -324,7 +363,17 @@
           "defaultValue": null,
           "deprecationReason": null,
           "description": "",
-          "directives": [],
+          "directives": [
+            {
+              "args": [
+                {
+                  "name": "name",
+                  "value": "\"TypeDef\""
+                }
+              ],
+              "name": "expectedType"
+            }
+          ],
           "isDeprecated": false,
           "name": "iface",
           "type": {
@@ -332,7 +381,7 @@
             "name": null,
             "ofType": {
               "kind": "SCALAR",
-              "name": "TypeDefID",
+              "name": "ID",
               "ofType": null
             }
           }
@@ -359,7 +408,17 @@
           "defaultValue": null,
           "deprecationReason": null,
           "description": "",
-          "directives": [],
+          "directives": [
+            {
+              "args": [
+                {
+                  "name": "name",
+                  "value": "\"TypeDef\""
+                }
+              ],
+              "name": "expectedType"
+            }
+          ],
           "isDeprecated": false,
           "name": "object",
           "type": {
@@ -367,7 +426,7 @@
             "name": null,
             "ofType": {
               "kind": "SCALAR",
-              "name": "TypeDefID",
+              "name": "ID",
               "ofType": null
             }
           }
@@ -390,7 +449,13 @@
     }
   ],
   "inputFields": [],
-  "interfaces": [],
+  "interfaces": [
+    {
+      "kind": "INTERFACE",
+      "name": "Node",
+      "ofType": null
+    }
+  ],
   "kind": "OBJECT",
   "name": "Module",
   "possibleTypes": []

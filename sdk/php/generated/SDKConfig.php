@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * The SDK config of the module.
  */
-class SDKConfig extends Client\AbstractObject implements Client\IdAble
+class SDKConfig extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Whether to start the SDK runtime in debug mode with an interactive terminal.
@@ -25,10 +25,10 @@ class SDKConfig extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this SDKConfig.
      */
-    public function id(): SDKConfigId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\SDKConfigId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

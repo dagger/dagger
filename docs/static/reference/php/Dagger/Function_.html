@@ -86,7 +86,7 @@
 
     
     <p>        class
-    <strong>Function_</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>
+    <strong>Function_</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
 </p>
 
         
@@ -173,7 +173,7 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
+                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
                 </div>
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
@@ -226,7 +226,7 @@
                     <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withArg">withArg</a>(string $name, <abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $typeDef, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\Json">Json</abbr>|null $defaultValue = null, string|null $defaultPath = &#039;&#039;, array|null $ignore = null, <abbr title="Dagger\Dagger\SourceMapId|Dagger\SourceMap|null">SourceMap|null</abbr> $sourceMap = null, string|null $deprecated = null, string|null $defaultAddress = &#039;&#039;)
+                    <a href="#method_withArg">withArg</a>(string $name, <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a> $typeDef, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\Json">Json</abbr>|null $defaultValue = null, string|null $defaultPath = &#039;&#039;, array|null $ignore = [], <abbr title="Dagger\Dagger\SourceMap">SourceMap</abbr>|null $sourceMap = null, string|null $deprecated = null, string|null $defaultAddress = &#039;&#039;)
         
                                             <p><p>Returns the function with the provided argument</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -286,7 +286,7 @@
                     <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_withSourceMap">withSourceMap</a>(<abbr title="Dagger\SourceMapId|Dagger\SourceMap">SourceMap</abbr> $sourceMap)
+                    <a href="#method_withSourceMap">withSourceMap</a>(<a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a> $sourceMap)
         
                                             <p><p>Returns the function with the given source map.</p></p>                </div>
                 <div class="col-md-2"></div>
@@ -495,7 +495,7 @@
                     <div class="method-item">
                     <h3 id="method_id">
         <div class="location">at line 48</div>
-        <code>                    <a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a>
+        <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
     <strong>id</strong>()
         </code>
     </h3>
@@ -512,7 +512,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Client/AbstractId.html"><abbr title="Dagger\Client\AbstractId">AbstractId</abbr></a></td>
+            <td><a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -656,7 +656,7 @@
                     <h3 id="method_withArg">
         <div class="location">at line 93</div>
         <code>                    <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
-    <strong>withArg</strong>(string $name, <abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr> $typeDef, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\Json">Json</abbr>|null $defaultValue = null, string|null $defaultPath = &#039;&#039;, array|null $ignore = null, <abbr title="Dagger\Dagger\SourceMapId|Dagger\SourceMap|null">SourceMap|null</abbr> $sourceMap = null, string|null $deprecated = null, string|null $defaultAddress = &#039;&#039;)
+    <strong>withArg</strong>(string $name, <a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a> $typeDef, string|null $description = &#039;&#039;, <abbr title="Dagger\Dagger\Json">Json</abbr>|null $defaultValue = null, string|null $defaultPath = &#039;&#039;, array|null $ignore = [], <abbr title="Dagger\Dagger\SourceMap">SourceMap</abbr>|null $sourceMap = null, string|null $deprecated = null, string|null $defaultAddress = &#039;&#039;)
         </code>
     </h3>
     <div class="details">    
@@ -676,7 +676,7 @@
                 <td></td>
             </tr>
                     <tr>
-                <td><abbr title="Dagger\TypeDefId|Dagger\TypeDef">TypeDef</abbr></td>
+                <td><a href="../Dagger/TypeDef.html"><abbr title="Dagger\TypeDef">TypeDef</abbr></a></td>
                 <td>$typeDef</td>
                 <td></td>
             </tr>
@@ -701,7 +701,7 @@
                 <td></td>
             </tr>
                     <tr>
-                <td><abbr title="Dagger\Dagger\SourceMapId|Dagger\SourceMap|null">SourceMap|null</abbr></td>
+                <td><abbr title="Dagger\Dagger\SourceMap">SourceMap</abbr>|null</td>
                 <td>$sourceMap</td>
                 <td></td>
             </tr>
@@ -933,7 +933,7 @@
                     <h3 id="method_withSourceMap">
         <div class="location">at line 187</div>
         <code>                    <a href="../Dagger/Function_.html"><abbr title="Dagger\Function_">Function_</abbr></a>
-    <strong>withSourceMap</strong>(<abbr title="Dagger\SourceMapId|Dagger\SourceMap">SourceMap</abbr> $sourceMap)
+    <strong>withSourceMap</strong>(<a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a> $sourceMap)
         </code>
     </h3>
     <div class="details">    
@@ -948,7 +948,7 @@
 
                     <table class="table table-condensed">
                     <tr>
-                <td><abbr title="Dagger\SourceMapId|Dagger\SourceMap">SourceMap</abbr></td>
+                <td><a href="../Dagger/SourceMap.html"><abbr title="Dagger\SourceMap">SourceMap</abbr></a></td>
                 <td>$sourceMap</td>
                 <td></td>
             </tr>

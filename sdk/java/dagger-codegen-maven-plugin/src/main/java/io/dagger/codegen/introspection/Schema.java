@@ -35,7 +35,7 @@ public class Schema {
     schema.types.forEach(
         type -> {
           if (type.getFields() != null) {
-            type.getFields().stream().forEach(field -> field.setParentObject(type));
+            type.getFields().forEach(field -> field.setParentObject(type));
           }
         });
     schema.version = version;
@@ -82,14 +82,16 @@ public class Schema {
     filteredTypes.stream()
         .filter(t -> t.getKind() == TypeKind.SCALAR)
         .filter(
-            t ->
-                !List.of("Boolean", "String", "Float", "Int", "DateTime", "ID")
-                    .contains(t.getName()))
+            t -> !List.of("Boolean", "String", "Float", "Int", "DateTime").contains(t.getName()))
         .forEach(visitor::visitScalar);
 
     filteredTypes.stream()
         .filter(t -> t.getKind() == TypeKind.INPUT_OBJECT)
         .forEach(visitor::visitInput);
+
+    filteredTypes.stream()
+        .filter(t -> t.getKind() == TypeKind.INTERFACE)
+        .forEach(visitor::visitInterface);
 
     filteredTypes.stream()
         .filter(t -> t.getKind() == TypeKind.OBJECT)

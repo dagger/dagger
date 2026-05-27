@@ -89,6 +89,11 @@ _FALLBACK_DAGGER_ENUM_TYPES = frozenset(
     }
 )
 
+DAGGER_SCALAR_TYPES = {
+    "Platform",
+    "JSON",
+}
+
 
 def _load_known_dagger_types() -> tuple[set[str], set[str], set[str]]:
     """Discover known dagger types from the live ``dagger`` package.

@@ -23,7 +23,7 @@ from dagger.mod._analyzer.metadata import (
 logger = logging.getLogger(__name__)
 
 
-async def register_from_metadata(metadata: ModuleMetadata) -> dagger.ModuleID:
+async def register_from_metadata(metadata: ModuleMetadata) -> str:
     """Register a module with the Dagger engine from AST-derived metadata.
 
     Args:
