@@ -346,14 +346,14 @@ type ReleaseNotifyOpts struct {
 	//
 	// Discord webhook
 	//
-	DiscordWebhook *Secret // release (../../../toolchains/release/main.go:439:2)
+	DiscordWebhook *Secret // release (../../../toolchains/release/main.go:443:2)
 	//
 	// Whether to perform a dry run without creating the release
 	//
-	DryRun bool // release (../../../toolchains/release/main.go:443:2)
+	DryRun bool // release (../../../toolchains/release/main.go:447:2)
 }
 
-func (r *Release) Notify(ctx context.Context, repository string, target string, name string, opts ...ReleaseNotifyOpts) error { // release (../../../toolchains/release/main.go:428:1)
+func (r *Release) Notify(ctx context.Context, repository string, target string, name string, opts ...ReleaseNotifyOpts) error { // release (../../../toolchains/release/main.go:432:1)
 	if r.notify != nil {
 		return nil
 	}

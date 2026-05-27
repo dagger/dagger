@@ -8,7 +8,7 @@ replace (
 )
 
 require (
-	dagger.io/dagger v0.20.7-0.20260522154811-5dde81db2f77
+	dagger.io/dagger v0.21.0
 	github.com/Khan/genqlient v0.8.1
 	github.com/containerd/platforms v1.0.0-rc.2
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
