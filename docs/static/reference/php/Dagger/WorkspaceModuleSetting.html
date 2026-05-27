@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="robots" content="index, follow, all" />
-    <title>Dagger\WorkspaceModule | API</title>
+    <title>Dagger\WorkspaceModuleSetting | API</title>
 
             <link rel="stylesheet" type="text/css" href="../css/bootstrap.min.css">
         <link rel="stylesheet" type="text/css" href="../css/bootstrap-theme.min.css">
@@ -19,7 +19,7 @@
 
     </head>
 
-    <body id="class" data-name="class:Dagger_WorkspaceModule" data-root-path="../" data-search-index-url="../doctum-search.json">
+    <body id="class" data-name="class:Dagger_WorkspaceModuleSetting" data-root-path="../" data-search-index-url="../doctum-search.json">
             <div id="content">
         <div id="left-column">
                 <div id="control-panel">
@@ -75,18 +75,18 @@
                         <div class="namespace-breadcrumbs">
             <ol class="breadcrumb">
                 <li><span class="label label-default">class</span></li>
-                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>WorkspaceModule</li>
+                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>WorkspaceModuleSetting</li>
             </ol>
         </div>
                 <div id="page-content">
     <div class="page-header">
-        <h1>WorkspaceModule
+        <h1>WorkspaceModuleSetting
             </h1>
     </div>
 
 
     <p>        class
-    <strong>WorkspaceModule</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
+    <strong>WorkspaceModuleSetting</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
 </p>
 
 
@@ -94,7 +94,7 @@
 
 
             <div class="description">
-            <p><p>A module entry in the workspace configuration.</p></p>                    </div>
+            <p><p>A constructor-backed module setting.</p></p>                    </div>
 
 
 
@@ -143,12 +143,12 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    bool
+                    string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_entrypoint">entrypoint</a>()
+                    <a href="#method_description">description</a>()
 
-                                            <p><p>Whether the module is the workspace entrypoint (functions aliased to Query root).</p></p>                </div>
+                                            <p><p>The constructor argument description.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -158,7 +158,7 @@
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
 
-                                            <p><p>A unique identifier for this WorkspaceModule.</p></p>                </div>
+                                            <p><p>A unique identifier for this WorkspaceModuleSetting.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -166,19 +166,9 @@
                     string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_name">name</a>()
+                    <a href="#method_key">key</a>()
 
-                                            <p><p>The module name.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    array
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_settings">settings</a>()
-
-                                            <p><p>List constructor-backed settings for this module.</p></p>                </div>
+                                            <p><p>The setting key.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -186,9 +176,9 @@
                     string
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_source">source</a>()
+                    <a href="#method_value">value</a>()
 
-                                            <p><p>The module source path.</p></p>                </div>
+                                            <p><p>The configured value after applying the selected workspace environment, or empty when unset.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -287,10 +277,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_entrypoint">
+                    <h3 id="method_description">
         <div class="location">at line 19</div>
-        <code>                    bool
-    <strong>entrypoint</strong>()
+        <code>                    string
+    <strong>description</strong>()
         </code>
     </h3>
     <div class="details">
@@ -298,7 +288,7 @@
 
 
         <div class="method-description">
-                            <p><p>Whether the module is the workspace entrypoint (functions aliased to Query root).</p></p>
+                            <p><p>The constructor argument description.</p></p>
         </div>
         <div class="tags">
 
@@ -306,7 +296,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td>bool</td>
+            <td>string</td>
             <td></td>
         </tr>
     </table>
@@ -330,7 +320,7 @@
 
 
         <div class="method-description">
-                            <p><p>A unique identifier for this WorkspaceModule.</p></p>
+                            <p><p>A unique identifier for this WorkspaceModuleSetting.</p></p>
         </div>
         <div class="tags">
 
@@ -351,10 +341,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_name">
+                    <h3 id="method_key">
         <div class="location">at line 37</div>
         <code>                    string
-    <strong>name</strong>()
+    <strong>key</strong>()
         </code>
     </h3>
     <div class="details">
@@ -362,7 +352,7 @@
 
 
         <div class="method-description">
-                            <p><p>The module name.</p></p>
+                            <p><p>The setting key.</p></p>
         </div>
         <div class="tags">
 
@@ -383,42 +373,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_settings">
+                    <h3 id="method_value">
         <div class="location">at line 46</div>
-        <code>                    array
-    <strong>settings</strong>()
-        </code>
-    </h3>
-    <div class="details">
-
-
-
-        <div class="method-description">
-                            <p><p>List constructor-backed settings for this module.</p></p>
-        </div>
-        <div class="tags">
-
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>array</td>
-            <td></td>
-        </tr>
-    </table>
-
-
-
-
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_source">
-        <div class="location">at line 55</div>
         <code>                    string
-    <strong>source</strong>()
+    <strong>value</strong>()
         </code>
     </h3>
     <div class="details">
@@ -426,7 +384,7 @@
 
 
         <div class="method-description">
-                            <p><p>The module source path.</p></p>
+                            <p><p>The configured value after applying the selected workspace environment, or empty when unset.</p></p>
         </div>
         <div class="tags">
 

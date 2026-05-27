@@ -16,7 +16,7 @@ defmodule Dagger.Workspace do
   @type t() :: %__MODULE__{}
 
   @doc """
-  Canonical Dagger address of the workspace directory.
+  Canonical Dagger address of the workspace location.
   """
   @spec address(t()) :: {:ok, String.t()} | {:error, term()}
   def address(%__MODULE__{} = workspace) do
@@ -60,12 +60,12 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Path to config.toml relative to the workspace boundary (empty if not initialized).
+  Selected native workspace config file relative to the workspace root, if any.
   """
-  @spec config_path(t()) :: {:ok, String.t()} | {:error, term()}
-  def config_path(%__MODULE__{} = workspace) do
+  @spec config_file(t()) :: {:ok, String.t()} | {:error, term()}
+  def config_file(%__MODULE__{} = workspace) do
     query_builder =
-      workspace.query_builder |> QB.select("configPath")
+      workspace.query_builder |> QB.select("configFile")
 
     Client.execute(workspace.client, query_builder)
   end
@@ -92,13 +92,26 @@ defmodule Dagger.Workspace do
   @doc """
   Write a configuration value to config.toml.
   """
-  @spec config_write(t(), String.t(), String.t()) :: {:ok, String.t()} | {:error, term()}
-  def config_write(%__MODULE__{} = workspace, key, value) do
+  @spec config_write(t(), String.t(), String.t(), [{:here, boolean() | nil}]) ::
+          {:ok, String.t()} | {:error, term()}
+  def config_write(%__MODULE__{} = workspace, key, value, optional_args \\ []) do
     query_builder =
       workspace.query_builder
       |> QB.select("configWrite")
       |> QB.put_arg("key", key)
       |> QB.put_arg("value", value)
+      |> QB.maybe_put_arg("here", optional_args[:here])
+
+    Client.execute(workspace.client, query_builder)
+  end
+
+  @doc """
+  Current location within the workspace root. Relative paths in workspace APIs resolve from here.
+  """
+  @spec cwd(t()) :: {:ok, String.t()} | {:error, term()}
+  def cwd(%__MODULE__{} = workspace) do
+    query_builder =
+      workspace.query_builder |> QB.select("cwd")
 
     Client.execute(workspace.client, query_builder)
   end
@@ -106,7 +119,7 @@ defmodule Dagger.Workspace do
   @doc """
   Returns a Directory from the workspace.
 
-  Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+  Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
   """
   @spec directory(t(), String.t(), [
           {:exclude, [String.t()]},
@@ -131,10 +144,14 @@ defmodule Dagger.Workspace do
   @doc """
   Create a named workspace environment if it does not already exist.
   """
-  @spec env_create(t(), String.t()) :: {:ok, String.t()} | {:error, term()}
-  def env_create(%__MODULE__{} = workspace, name) do
+  @spec env_create(t(), String.t(), [{:here, boolean() | nil}]) ::
+          {:ok, String.t()} | {:error, term()}
+  def env_create(%__MODULE__{} = workspace, name, optional_args \\ []) do
     query_builder =
-      workspace.query_builder |> QB.select("envCreate") |> QB.put_arg("name", name)
+      workspace.query_builder
+      |> QB.select("envCreate")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("here", optional_args[:here])
 
     Client.execute(workspace.client, query_builder)
   end
@@ -153,10 +170,14 @@ defmodule Dagger.Workspace do
   @doc """
   Remove a named workspace environment.
   """
-  @spec env_remove(t(), String.t()) :: {:ok, String.t()} | {:error, term()}
-  def env_remove(%__MODULE__{} = workspace, name) do
+  @spec env_remove(t(), String.t(), [{:here, boolean() | nil}]) ::
+          {:ok, String.t()} | {:error, term()}
+  def env_remove(%__MODULE__{} = workspace, name, optional_args \\ []) do
     query_builder =
-      workspace.query_builder |> QB.select("envRemove") |> QB.put_arg("name", name)
+      workspace.query_builder
+      |> QB.select("envRemove")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("here", optional_args[:here])
 
     Client.execute(workspace.client, query_builder)
   end
@@ -164,7 +185,7 @@ defmodule Dagger.Workspace do
   @doc """
   Returns a File from the workspace.
 
-  Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
+  Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
   """
   @spec file(t(), String.t()) :: Dagger.File.t()
   def file(%__MODULE__{} = workspace, path) do
@@ -182,9 +203,9 @@ defmodule Dagger.Workspace do
 
   Returns the absolute workspace path if found, or null if not found.
 
-  Relative start paths resolve from the workspace directory.
+  Relative start paths resolve from the workspace cwd.
 
-  The search stops at the workspace boundary and will not traverse above it.
+  The search stops at the workspace root and will not traverse above it.
   """
   @spec find_up(t(), String.t(), [{:from, String.t() | nil}]) ::
           {:ok, String.t() | nil} | {:error, term()}
@@ -215,17 +236,6 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Whether a config.toml file exists in the workspace.
-  """
-  @spec has_config(t()) :: {:ok, boolean()} | {:error, term()}
-  def has_config(%__MODULE__{} = workspace) do
-    query_builder =
-      workspace.query_builder |> QB.select("hasConfig")
-
-    Client.execute(workspace.client, query_builder)
-  end
-
-  @doc """
   A unique identifier for this Workspace.
   """
   @spec id(t()) :: {:ok, String.t()} | {:error, term()}
@@ -237,23 +247,14 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Initialize a new workspace, creating .dagger/config.toml.
+  Initialize workspace config, creating .dagger/config.toml.
   """
-  @spec init(t()) :: {:ok, String.t()} | {:error, term()}
-  def init(%__MODULE__{} = workspace) do
+  @spec init(t(), [{:here, boolean() | nil}]) :: {:ok, String.t()} | {:error, term()}
+  def init(%__MODULE__{} = workspace, optional_args \\ []) do
     query_builder =
-      workspace.query_builder |> QB.select("init")
-
-    Client.execute(workspace.client, query_builder)
-  end
-
-  @doc """
-  Whether .dagger/config.toml exists.
-  """
-  @spec initialized(t()) :: {:ok, boolean()} | {:error, term()}
-  def initialized(%__MODULE__{} = workspace) do
-    query_builder =
-      workspace.query_builder |> QB.select("initialized")
+      workspace.query_builder
+      |> QB.select("init")
+      |> QB.maybe_put_arg("here", optional_args[:here])
 
     Client.execute(workspace.client, query_builder)
   end
@@ -261,7 +262,7 @@ defmodule Dagger.Workspace do
   @doc """
   Install a module into the workspace, writing config.toml to the host.
   """
-  @spec install(t(), String.t(), [{:name, String.t() | nil}]) ::
+  @spec install(t(), String.t(), [{:name, String.t() | nil}, {:here, boolean() | nil}]) ::
           {:ok, String.t()} | {:error, term()}
   def install(%__MODULE__{} = workspace, ref, optional_args \\ []) do
     query_builder =
@@ -269,6 +270,7 @@ defmodule Dagger.Workspace do
       |> QB.select("install")
       |> QB.put_arg("ref", ref)
       |> QB.maybe_put_arg("name", optional_args[:name])
+      |> QB.maybe_put_arg("here", optional_args[:here])
 
     Client.execute(workspace.client, query_builder)
   end
@@ -298,8 +300,8 @@ defmodule Dagger.Workspace do
           {:sdk, String.t() | nil},
           {:source, String.t() | nil},
           {:include, [String.t()]},
-          {:blueprint, String.t() | nil},
-          {:self_calls, boolean() | nil}
+          {:self_calls, boolean() | nil},
+          {:here, boolean() | nil}
         ]) :: {:ok, String.t()} | {:error, term()}
   def module_init(%__MODULE__{} = workspace, name, optional_args \\ []) do
     query_builder =
@@ -309,8 +311,8 @@ defmodule Dagger.Workspace do
       |> QB.maybe_put_arg("sdk", optional_args[:sdk])
       |> QB.maybe_put_arg("source", optional_args[:source])
       |> QB.maybe_put_arg("include", optional_args[:include])
-      |> QB.maybe_put_arg("blueprint", optional_args[:blueprint])
       |> QB.maybe_put_arg("selfCalls", optional_args[:self_calls])
+      |> QB.maybe_put_arg("here", optional_args[:here])
 
     Client.execute(workspace.client, query_builder)
   end
@@ -318,10 +320,14 @@ defmodule Dagger.Workspace do
   @doc """
   List modules defined in the workspace configuration.
   """
-  @spec module_list(t()) :: {:ok, [Dagger.WorkspaceModule.t()]} | {:error, term()}
-  def module_list(%__MODULE__{} = workspace) do
+  @spec module_list(t(), [{:module, String.t() | nil}]) ::
+          {:ok, [Dagger.WorkspaceModule.t()]} | {:error, term()}
+  def module_list(%__MODULE__{} = workspace, optional_args \\ []) do
     query_builder =
-      workspace.query_builder |> QB.select("moduleList") |> QB.select("id")
+      workspace.query_builder
+      |> QB.select("moduleList")
+      |> QB.maybe_put_arg("module", optional_args[:module])
+      |> QB.select("id")
 
     with {:ok, items} <- Client.execute(workspace.client, query_builder) do
       {:ok,
@@ -329,23 +335,13 @@ defmodule Dagger.Workspace do
          %Dagger.WorkspaceModule{
            query_builder:
              QB.query()
-             |> QB.select("loadWorkspaceModuleFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("WorkspaceModule"),
            client: workspace.client
          }
        end}
     end
-  end
-
-  @doc """
-  Workspace directory path relative to the workspace boundary.
-  """
-  @spec path(t()) :: {:ok, String.t()} | {:error, term()}
-  def path(%__MODULE__{} = workspace) do
-    query_builder =
-      workspace.query_builder |> QB.select("path")
-
-    Client.execute(workspace.client, query_builder)
   end
 
   @doc """

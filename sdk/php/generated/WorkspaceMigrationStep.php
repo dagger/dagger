@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A single logical part of a workspace migration.
  */
-class WorkspaceMigrationStep extends Client\AbstractObject implements Client\IdAble
+class WorkspaceMigrationStep extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Filesystem changes for this step.
@@ -43,10 +43,10 @@ class WorkspaceMigrationStep extends Client\AbstractObject implements Client\IdA
     /**
      * A unique identifier for this WorkspaceMigrationStep.
      */
-    public function id(): WorkspaceMigrationStepId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\WorkspaceMigrationStepId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
