@@ -37,6 +37,24 @@ def _emit(args: argparse.Namespace) -> None:
         sys.stdout.write(output)
 
 
+def _entrypoint(args: argparse.Namespace) -> None:
+    from dagger.mod._introspect.entrypoint import render_entrypoint
+    from dagger.mod._module import MAIN_OBJECT, MODULE_NAME
+    from dagger.mod.cli import load_module
+
+    module = load_module()
+    source = render_entrypoint(
+        module,
+        main_object_name=args.main_object or MAIN_OBJECT,
+        module_name=args.module_name or MODULE_NAME,
+    )
+
+    if args.output:
+        Path(args.output).write_text(source, encoding="utf-8")
+    else:
+        sys.stdout.write(source)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="dagger.mod._introspect")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -50,6 +68,20 @@ def main(argv: list[str] | None = None) -> None:
     emit.add_argument("--module-name", default=None, help="Module name (default: env).")
     emit.add_argument("--output", default=None, help="Output path (default: stdout).")
     emit.set_defaults(func=_emit)
+
+    entrypoint = subparsers.add_parser(
+        "entrypoint", help="Emit the static _dagger_main.py entrypoint."
+    )
+    entrypoint.add_argument(
+        "--main-object", default=None, help="Main object name (default: env)."
+    )
+    entrypoint.add_argument(
+        "--module-name", default=None, help="Module name (default: env)."
+    )
+    entrypoint.add_argument(
+        "--output", default=None, help="Output path (default: stdout)."
+    )
+    entrypoint.set_defaults(func=_entrypoint)
 
     args = parser.parse_args(argv)
     args.func(args)
