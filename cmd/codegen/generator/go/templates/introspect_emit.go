@@ -39,7 +39,7 @@ func introspectTypeRef(spec ParsedType) *introspection.TypeRef {
 	case *parsedObjectTypeReference:
 		inner := &introspection.TypeRef{
 			Kind: introspection.TypeKindObject,
-			Name: s.name,
+			Name: strcase.ToCamel(s.name),
 		}
 		if s.isPtr {
 			return inner
@@ -52,14 +52,14 @@ func introspectTypeRef(spec ParsedType) *introspection.TypeRef {
 			Kind: introspection.TypeKindNonNull,
 			OfType: &introspection.TypeRef{
 				Kind: introspection.TypeKindInterface,
-				Name: s.name,
+				Name: strcase.ToCamel(s.name),
 			},
 		}
 
 	case *parsedEnumTypeReference:
 		inner := &introspection.TypeRef{
 			Kind: introspection.TypeKindEnum,
-			Name: s.name,
+			Name: strcase.ToCamel(s.name),
 		}
 		if s.isPtr {
 			return inner
@@ -138,7 +138,7 @@ func introspectVoidRef() *introspection.TypeRef {
 func introspectObject(spec *parsedObjectType) *introspection.Type {
 	t := &introspection.Type{
 		Kind:        introspection.TypeKindObject,
-		Name:        spec.name,
+		Name:        strcase.ToCamel(spec.name),
 		Description: strings.TrimSpace(spec.doc),
 		Interfaces:  []*introspection.Type{},
 	}
@@ -222,7 +222,7 @@ func introspectArg(arg paramSpec) introspection.InputValue {
 	}
 
 	iv := introspection.InputValue{
-		Name:        arg.name,
+		Name:        strcase.ToLowerCamel(arg.name),
 		Description: strings.TrimSpace(arg.description),
 		TypeRef:     typeRef,
 	}
@@ -264,7 +264,7 @@ func introspectArg(arg paramSpec) introspection.InputValue {
 func introspectInterface(spec *parsedIfaceType) *introspection.Type {
 	t := &introspection.Type{
 		Kind:        introspection.TypeKindInterface,
-		Name:        spec.name,
+		Name:        strcase.ToCamel(spec.name),
 		Description: strings.TrimSpace(spec.doc),
 		Interfaces:  []*introspection.Type{},
 	}
@@ -279,13 +279,13 @@ func introspectInterface(spec *parsedIfaceType) *introspection.Type {
 func introspectEnum(spec *parsedEnumType) *introspection.Type {
 	t := &introspection.Type{
 		Kind:        introspection.TypeKindEnum,
-		Name:        spec.name,
+		Name:        strcase.ToCamel(spec.name),
 		Description: strings.TrimSpace(spec.doc),
 		Interfaces:  []*introspection.Type{},
 	}
 	for _, v := range spec.values {
 		ev := introspection.EnumValue{
-			Name:        v.name,
+			Name:        strcase.ToScreamingSnake(v.name),
 			Description: strings.TrimSpace(v.doc),
 		}
 		if v.deprecated != nil {
@@ -354,7 +354,7 @@ func (funcs goTemplateFuncs) ModuleIntrospectionJSON(moduleName string) ([]byte,
 			Kind: introspection.TypeKindNonNull,
 			OfType: &introspection.TypeRef{
 				Kind: introspection.TypeKindObject,
-				Name: mainObject.name,
+				Name: strcase.ToCamel(mainObject.name),
 			},
 		}
 		field := &introspection.Field{

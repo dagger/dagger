@@ -269,9 +269,9 @@ func TestIntrospectEnum_Basic(t *testing.T) {
 	require.Equal(t, introspection.TypeKindEnum, it.Kind)
 	require.Equal(t, "Status", it.Name)
 	require.Len(t, it.EnumValues, 2)
-	require.Equal(t, "Active", it.EnumValues[0].Name)
+	require.Equal(t, "ACTIVE", it.EnumValues[0].Name)
 	require.Equal(t, "An active status.", it.EnumValues[0].Description)
-	require.Equal(t, "Inactive", it.EnumValues[1].Name)
+	require.Equal(t, "INACTIVE", it.EnumValues[1].Name)
 }
 
 // ---------------------------------------------------------------------------
