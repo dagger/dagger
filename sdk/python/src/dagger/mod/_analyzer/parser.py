@@ -25,7 +25,7 @@ from dagger.mod._analyzer.metadata import (
     ResolvedType,
 )
 from dagger.mod._analyzer.namespace import StubNamespace
-from dagger.mod._analyzer.resolver import TypeResolver
+from dagger.mod._analyzer.resolver import DAGGER_SCALAR_TYPES, TypeResolver
 from dagger.mod._analyzer.visitors.annotations import (
     extract_annotated_metadata,
     get_annotation_string,
@@ -2189,6 +2189,26 @@ class ModuleParser:
             val = self._eval_constant(node.operand)
             if isinstance(val, (int, float)):
                 return -val
+        if isinstance(node, ast.Call):
+            # Dagger scalar types subclass ``str`` (``Scalar(str)``), so a
+            # constructor call wrapping a single literal — written inline as
+            # ``dagger.Platform("linux/amd64")`` or behind a ``Final``
+            # constant — evaluates to that literal at runtime. Unwrap it so
+            # the recorded default matches; other calls (factories,
+            # ``os.environ.get(...)``) stay unevaluable and fall through.
+            func = node.func
+            if isinstance(func, ast.Attribute):
+                callee = func.attr
+            elif isinstance(func, ast.Name):
+                callee = func.id
+            else:
+                callee = None
+            if (
+                callee in DAGGER_SCALAR_TYPES
+                and len(node.args) == 1
+                and not node.keywords
+            ):
+                return self._eval_constant(node.args[0])
 
         # Can't evaluate. Warn so the user sees that the default they wrote
         # didn't survive static analysis — without a warning, the parameter

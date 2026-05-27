@@ -2404,6 +2404,62 @@ class Foo:
     assert any("could not be evaluated statically" in m for m in msgs), msgs
 
 
+def test_ast_scalar_constructor_default_inline():
+    """``platform: dagger.Platform = dagger.Platform("linux/amd64")`` → "linux/amd64".
+
+    Dagger scalar types subclass ``str`` (``Scalar(str)``), so calling the
+    constructor with a string literal yields that literal at runtime. The
+    analyzer must unwrap it instead of recording ``None``.
+    """
+    metadata = _analyze("""
+import dagger
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self, platform: dagger.Platform = dagger.Platform("linux/amd64")) -> str:
+        return platform
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.has_default is True
+    assert param.default_value == "linux/amd64"
+
+
+def test_ast_scalar_constructor_default_via_constant():
+    """A ``Final`` constant whose value is a scalar constructor call resolves."""
+    metadata = _analyze("""
+import dagger
+from typing import Final
+
+PLATFORM_DEFAULT: Final = dagger.Platform("linux/amd64")
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self, platform: dagger.Platform = PLATFORM_DEFAULT) -> str:
+        return platform
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.has_default is True
+    assert param.default_value == "linux/amd64"
+
+
+def test_ast_scalar_constructor_default_bare_name():
+    """The unqualified ``Platform("...")`` form resolves too."""
+    metadata = _analyze("""
+import dagger
+from dagger import Platform
+
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def hello(self, platform: Platform = Platform("linux/arm64")) -> str:
+        return platform
+""")
+    param = metadata.objects["Foo"].functions[0].parameters[0]
+    assert param.default_value == "linux/arm64"
+
+
 def test_ast_subscript_default_warns(caplog):
     """``def f(name = D["k"])`` warns; default is None."""
     import logging
