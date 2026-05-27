@@ -5,7 +5,9 @@ module (no engine connection) and emits artifacts the codegen pipeline
 consumes.
 
 Subcommands:
-    emit    Write the module's schematool ModuleTypes JSON.
+    emit        Write the module's schematool ModuleTypes JSON.
+    merge       Merge module types into the base schema (engine schematool).
+    entrypoint  Write the static _dagger_main.py entrypoint.
 """
 
 from __future__ import annotations
@@ -55,6 +57,28 @@ def _entrypoint(args: argparse.Namespace) -> None:
         sys.stdout.write(source)
 
 
+async def _merge_async(base: str, module_types: str, module_name: str) -> str:
+    import dagger
+    from dagger import dag
+
+    async with await dagger.connect():
+        merged = await (
+            dag.schema(dagger.JSON(base))
+            .merge(dagger.JSON(module_types), module_name)
+            .contents()
+        )
+    return str(merged)
+
+
+def _merge(args: argparse.Namespace) -> None:
+    import anyio
+
+    base = Path(args.introspection_json).read_text(encoding="utf-8")
+    module_types = Path(args.module_types).read_text(encoding="utf-8")
+    merged = anyio.run(_merge_async, base, module_types, args.module_name)
+    Path(args.output).write_text(merged, encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="dagger.mod._introspect")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -82,6 +106,16 @@ def main(argv: list[str] | None = None) -> None:
         "--output", default=None, help="Output path (default: stdout)."
     )
     entrypoint.set_defaults(func=_entrypoint)
+
+    merge = subparsers.add_parser(
+        "merge",
+        help="Merge module types into the base schema via the engine schematool.",
+    )
+    merge.add_argument("--introspection-json", required=True, help="Base schema JSON.")
+    merge.add_argument("--module-types", required=True, help="ModuleTypes JSON path.")
+    merge.add_argument("--module-name", required=True, help="Module name.")
+    merge.add_argument("--output", required=True, help="Merged schema output path.")
+    merge.set_defaults(func=_merge)
 
     args = parser.parse_args(argv)
     args.func(args)
