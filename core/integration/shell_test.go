@@ -553,39 +553,9 @@ func (ShellSuite) TestPassingID(ctx context.Context, t *testctx.T) {
 func (ShellSuite) TestInterfaceReturnConcreteFunction(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	depSource := `package main
-
-type Mallard struct{}
-
-func (m *Mallard) Quack() string {
-	return "quack"
-}
-
-func (m *Mallard) Fly() string {
-	return "fly"
-}
-`
-	source := `package main
-
-import "context"
-
-type Test struct{}
-
-type Duck interface {
-	DaggerObject
-	Quack(ctx context.Context) (string, error)
-}
-
-func (m *Test) GetDuck() Duck {
-	return dag.Mallard()
-}
-`
-	script := "get-duck | fly"
-
-	out, err := modInit(t, c, "go", source).
-		With(withModInitAt("mallard", "go", depSource)).
-		With(daggerExec("install", "./mallard")).
-		With(daggerShell(script)).
+	out, err := moduleFixture(t, c, "go/shell-iface-test").
+		With(withModuleFixture(t, c, "mallard", "go/shell-iface-mallard")).
+		With(daggerShell("get-duck | fly")).
 		Stdout(ctx)
 
 	require.NoError(t, err)
