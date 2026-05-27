@@ -1865,13 +1865,38 @@ class ModuleParser:
             location=location,
         )
 
-    def _parse_parameters(  # noqa: C901, PLR0915 — parameter dispatch
+    def _parse_parameters(
         self,
         node: ast.FunctionDef | ast.AsyncFunctionDef,
         file_path: Path,
         skip_first: bool = True,  # Skip 'self' or 'cls'
     ) -> list[ParameterMetadata]:
         """Parse function parameters."""
+        assert self._resolver is not None
+
+        # Default expressions (and ``Annotated`` metadata like ``Doc(NAME)``)
+        # must be evaluated in the scope of the file where this function is
+        # *defined*, which is ``file_path``. For a method inherited from a
+        # base class in another file, that differs from the child class's
+        # file that the visitor is currently positioned on — without this,
+        # ``_eval_constant`` would look up the base method's default constants
+        # in the child's namespace and miss the ones the child doesn't import.
+        # For non-inherited functions ``file_path`` already equals
+        # ``_current_file``, so this is a no-op.
+        previous_file = self._current_file
+        self._current_file = file_path
+        try:
+            return self._parse_parameters_in_scope(node, file_path, skip_first)
+        finally:
+            self._current_file = previous_file
+
+    def _parse_parameters_in_scope(  # noqa: C901, PLR0915 — parameter dispatch
+        self,
+        node: ast.FunctionDef | ast.AsyncFunctionDef,
+        file_path: Path,
+        skip_first: bool,
+    ) -> list[ParameterMetadata]:
+        """Parse parameters with ``_current_file`` already scoped to the def."""
         assert self._resolver is not None
 
         parameters: list[ParameterMetadata] = []

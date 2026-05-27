@@ -2621,6 +2621,47 @@ class Foo:
     assert param.default_value == "x"
 
 
+def test_ast_inherited_function_default_resolves_in_base_file(tmp_path):
+    """An inherited method's constant default resolves in the base's file.
+
+    The default ``GREETING_DEFAULT`` is a module-level constant in
+    ``base.py``. The child class in ``main.py`` inherits ``greet`` but
+    does *not* import the constant. The analyzer must evaluate the
+    default in the file where the method is defined (``base.py``), not
+    in the child's file — otherwise the name is unresolvable and falls
+    back to the literal string ``"GREETING_DEFAULT"``.
+    """
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "base.py").write_text(
+        "import dagger\n"
+        '\nGREETING_DEFAULT = "hello-from-base"\n'
+        "\n"
+        "class Base:\n"
+        "    @dagger.function\n"
+        "    def greet(self, msg: str = GREETING_DEFAULT) -> str:\n"
+        "        return msg\n",
+        encoding="utf-8",
+    )
+    (pkg / "main.py").write_text(
+        "import dagger\n"
+        "from .base import Base\n"
+        "\n"
+        "@dagger.object_type\n"
+        "class Foo(Base):\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    metadata = analyze_module(
+        source_files=[pkg / "__init__.py", pkg / "base.py", pkg / "main.py"],
+        main_object_name="Foo",
+    )
+    fn = metadata.objects["Foo"].functions[0]
+    assert fn.python_name == "greet"
+    assert fn.parameters[0].default_value == "hello-from-base"
+
+
 def test_ast_class_level_constant_does_not_leak():
     """A class constant on Foo must not resolve inside Bar's defaults."""
     metadata = _analyze(
