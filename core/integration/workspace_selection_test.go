@@ -156,6 +156,9 @@ const workspaceSelectionFilesModuleSource = `package main
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 
 	"dagger/files/internal/dagger"
 )
@@ -200,6 +203,25 @@ func (m *Files) ReturnedContainer() *dagger.Container {
 	return dag.Container().
 		From("` + alpineImage + `").
 		WithExec([]string{"sh", "-c", "printf 'returned container' > /returned-container.txt"})
+}
+
+func (m *Files) ExportFromModule(ctx context.Context) (string, error) {
+	const (
+		dest     = "runtime-export"
+		filename = "from-module.txt"
+		contents = "exported from module runtime"
+	)
+
+	_, err := dag.Directory().WithNewFile(filename, contents).Export(ctx, dest)
+	if err != nil {
+		return "", err
+	}
+
+	out, err := os.ReadFile(filepath.Join(dest, filename))
+	if err != nil {
+		return "", fmt.Errorf("exported directory was not readable from the module runtime: %w", err)
+	}
+	return string(out), nil
 }
 `
 
@@ -636,6 +658,18 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, 
 		}
 	}
 
+	assertModuleRuntimeExportDoesNotWriteHost := func(ctx context.Context, t *testctx.T, workdir string, selection []string, noWriteDirs ...string) {
+		t.Helper()
+
+		out, err := hostDaggerExec(ctx, t, workdir, daggerCallArgs(selection, false, "export-from-module")...)
+		require.NoError(t, err)
+		require.Equal(t, "exported from module runtime", strings.TrimSpace(string(out)))
+
+		for _, noWriteDir := range noWriteDirs {
+			requireNoPath(t, filepath.Join(noWriteDir, "runtime-export", "from-module.txt"))
+		}
+	}
+
 	t.Run("local selected workspace is also the CLI cwd", func(ctx context.Context, t *testctx.T) {
 		callerDir, selectedDir := newLocalFixture(ctx, t)
 		selection := []string{"-W", "."}
@@ -677,6 +711,13 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, 
 		assertNoWorkspaceReads(ctx, t, workdir, selection)
 		assertHostWritesUseCWD(ctx, t, workdir, selection, "")
 		assertAbsoluteExportsUseExplicitPath(ctx, t, workdir, selection, "")
+	})
+
+	t.Run("Directory.Export inside module uses the module runtime filesystem", func(ctx context.Context, t *testctx.T) {
+		callerDir, selectedDir := newLocalFixture(ctx, t)
+		selection := []string{"-W", "../selected"}
+
+		assertModuleRuntimeExportDoesNotWriteHost(ctx, t, callerDir, selection, callerDir, selectedDir)
 	})
 }
 
