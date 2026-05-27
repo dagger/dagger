@@ -172,12 +172,6 @@ type ModuleSource struct {
 	ConfigToolchains []*modules.ModuleConfigDependency
 	Toolchains       dagql.ObjectResultArray[*ModuleSource] `field:"true" name:"toolchains" doc:"The toolchains referenced by the module source."`
 
-	// Internal-only projection metadata used by schema helpers to load this
-	// module source as a toolchain in the context of a parent module source.
-	ToolchainContextSource dagql.Nullable[dagql.ObjectResult[*ModuleSource]]
-	ToolchainConfigIndex   int
-	ToolchainProjection    bool
-
 	UserDefaults *EnvFile `field:"true" name:"userDefaults" doc:"User-defined defaults read from local .env files"`
 	// Clients are the clients generated for the module.
 	ConfigClients []*modules.ModuleConfigClient `field:"true" name:"configClients" doc:"The clients generated for the module."`
@@ -339,18 +333,6 @@ func (src *ModuleSource) AttachDependencyResults(
 		owned = append(owned, typed)
 	}
 
-	if src.ToolchainContextSource.Valid && src.ToolchainContextSource.Value.Self() != nil {
-		attached, err := attach(src.ToolchainContextSource.Value)
-		if err != nil {
-			return nil, fmt.Errorf("attach module source toolchain context source: %w", err)
-		}
-		typed, ok := attached.(dagql.ObjectResult[*ModuleSource])
-		if !ok {
-			return nil, fmt.Errorf("attach module source toolchain context source: unexpected result %T", attached)
-		}
-		src.ToolchainContextSource = dagql.NonNull(typed)
-	}
-
 	if src.Git != nil && src.Git.UnfilteredContextDir.Self() != nil {
 		attached, err := attach(src.Git.UnfilteredContextDir)
 		if err != nil {
@@ -420,9 +402,6 @@ type persistedModuleSourcePayload struct {
 	BlueprintResultID               uint64                                `json:"blueprintResultID,omitempty"`
 	ConfigToolchains                []*modules.ModuleConfigDependency     `json:"configToolchains,omitempty"`
 	ToolchainResultIDs              []uint64                              `json:"toolchainResultIDs,omitempty"`
-	ToolchainContextSourceResultID  uint64                                `json:"toolchainContextSourceResultID,omitempty"`
-	ToolchainConfigIndex            int                                   `json:"toolchainConfigIndex,omitempty"`
-	ToolchainProjection             bool                                  `json:"toolchainProjection,omitempty"`
 	UserDefaults                    *EnvFile                              `json:"userDefaults,omitempty"`
 	ConfigClients                   []*modules.ModuleConfigClient         `json:"configClients,omitempty"`
 	SourceRootSubpath               string                                `json:"sourceRootSubpath,omitempty"`
@@ -634,8 +613,6 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 		ConfigDependencies:            slices.Clone(src.ConfigDependencies),
 		ConfigBlueprint:               src.ConfigBlueprint,
 		ConfigToolchains:              slices.Clone(src.ConfigToolchains),
-		ToolchainConfigIndex:          src.ToolchainConfigIndex,
-		ToolchainProjection:           src.ToolchainProjection,
 		UserDefaults:                  src.UserDefaults,
 		ConfigClients:                 slices.Clone(src.ConfigClients),
 		SourceRootSubpath:             src.SourceRootSubpath,
@@ -694,13 +671,6 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 			return dagql.PersistedObjectEncoding{}, err
 		}
 		payload.ToolchainResultIDs = append(payload.ToolchainResultIDs, toolchainID)
-	}
-	if src.ToolchainContextSource.Valid && src.ToolchainContextSource.Value.Self() != nil {
-		toolchainContextSourceID, err := encodePersistedObjectRef(cache, src.ToolchainContextSource.Value, "module source toolchain context source")
-		if err != nil {
-			return dagql.PersistedObjectEncoding{}, err
-		}
-		payload.ToolchainContextSourceResultID = toolchainContextSourceID
 	}
 	if src.Git != nil {
 		payload.Git = &persistedGitModuleSourcePayload{
@@ -765,10 +735,6 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 		}
 		toolchains = append(toolchains, toolchainRes)
 	}
-	toolchainContextSource, err := loadPersistedObjectResultByResultID[*ModuleSource](ctx, dag, persisted.ToolchainContextSourceResultID, "module source toolchain context source")
-	if err != nil {
-		return nil, err
-	}
 	src := &ModuleSource{
 		ConfigExists:                  persisted.ConfigExists,
 		ModuleName:                    persisted.ModuleName,
@@ -786,8 +752,6 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 		Blueprint:                     blueprint,
 		ConfigToolchains:              slices.Clone(persisted.ConfigToolchains),
 		Toolchains:                    toolchains,
-		ToolchainConfigIndex:          persisted.ToolchainConfigIndex,
-		ToolchainProjection:           persisted.ToolchainProjection,
 		UserDefaults:                  persisted.UserDefaults,
 		ConfigClients:                 slices.Clone(persisted.ConfigClients),
 		SourceRootSubpath:             persisted.SourceRootSubpath,
@@ -796,9 +760,6 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 		ContextDirectory:              contextDirectory,
 		Kind:                          persisted.Kind,
 		Local:                         persisted.Local,
-	}
-	if toolchainContextSource.Self() != nil {
-		src.ToolchainContextSource = dagql.NonNull(toolchainContextSource)
 	}
 	if persisted.Git != nil {
 		src.Git = &GitModuleSource{
