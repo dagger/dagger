@@ -62,6 +62,17 @@ func (ModuleSuite) TestSelfCalls(ctx context.Context, t *testctx.T) {
 					require.NoError(t, err)
 					require.JSONEq(t, `{"message":"hello from field"}`, out)
 				})
+
+				t.Run("can self-call with enum arguments", func(ctx context.Context, t *testctx.T) {
+					// The engine exposes enum values in SCREAMING_SNAKE; the
+					// self-call schema emitter must match, or the generated
+					// self-client sends an unknown wire value and this fails.
+					out, err := modGen.
+						With(daggerQueryAt(".", `{describeSelf}`)).
+						Stdout(ctx)
+					require.NoError(t, err)
+					require.JSONEq(t, `{"describeSelf":"got green"}`, out)
+				})
 			}
 		})
 	}
