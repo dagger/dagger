@@ -684,11 +684,23 @@ func repoFromArgOrGit(ctx context.Context, args []string) (string, error) {
 
 func resolveRepoRef(ctx context.Context, args []string) (repoRef, error) {
 	if len(args) > 0 && strings.TrimSpace(args[0]) != "" {
-		repo, err := normalizeGitRepo(args[0])
+		arg := strings.TrimSpace(args[0])
+		if isLocalRefArg(arg) {
+			remote, err := gitRemoteOriginURLAt(ctx, arg)
+			if err != nil {
+				return repoRef{}, err
+			}
+			repo, err := normalizeGitRepo(remote)
+			if err != nil {
+				return repoRef{}, err
+			}
+			return repoRef{Repository: repo, Remote: redactGitRemote(remote), Local: arg}, nil
+		}
+		repo, err := normalizeGitRepo(arg)
 		if err != nil {
 			return repoRef{}, err
 		}
-		return repoRef{Repository: repo, Input: redactGitRemote(args[0])}, nil
+		return repoRef{Repository: repo, Input: redactGitRemote(arg)}, nil
 	}
 	remote, err := gitRemoteOriginURL(ctx)
 	if err != nil {
@@ -707,6 +719,34 @@ func gitRemoteOriginURL(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("no repo specified and git remote.origin.url could not be read")
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+func gitRemoteOriginURLAt(ctx context.Context, dir string) (string, error) {
+	out, err := exec.CommandContext(ctx, "git", "-C", dir, "config", "--get", "remote.origin.url").Output()
+	if err != nil {
+		return "", fmt.Errorf("could not read git remote.origin.url from %q", dir)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// isLocalRefArg classifies a positional repo arg as a local filesystem path
+// vs a git ref. Trimmed copy of core.FastModuleSourceKindCheck — keep them in
+// sync (core/modulerefs.go).
+func isLocalRefArg(s string) bool {
+	if s == "" {
+		return false
+	}
+	switch {
+	case s[0] == '/' || s[0] == '.':
+		return true
+	case strings.HasPrefix(s, "http://"), strings.HasPrefix(s, "https://"), strings.HasPrefix(s, "ssh://"):
+		return false
+	case !strings.Contains(s, "."):
+		// dot-free strings are assumed local (matches engine heuristic);
+		// users can pass a scheme:// to disambiguate exotic hosts.
+		return true
+	}
+	return false
 }
 
 func normalizeGitRepo(ref string) (string, error) {
@@ -885,57 +925,57 @@ func appendUniqueRepository(repos []string, repo string) []string {
 
 func printRepoInfo(cmd *cobra.Command, state *repoCloudState) {
 	out := cmd.OutOrStdout()
-	if state.Remote != "" {
-		fmt.Fprintf(out, "remote=%q\n", state.Remote)
-	}
+	fmt.Fprintf(out, "remote: %s\n", state.Repository)
 	if state.Local != "" {
-		fmt.Fprintf(out, "local=%q\n", state.Local)
+		fmt.Fprintf(out, "local:  %s\n", state.Local)
 	}
-	fmt.Fprintf(out, "Repository: %s\n", state.Repository)
-	fmt.Fprintf(out, "Org:        %s\n", state.Org.Name)
-	fmt.Fprintf(out, "Status:     %s\n", repoDisplayStatus(state.Status))
-	if state.Source != nil {
-		fmt.Fprintf(out, "Source:     %s (%s)\n", state.Source.Name, state.Source.ID)
+	fmt.Fprintln(out)
+	fmt.Fprintf(out, "Dagger org: %s\n", state.Org.Name)
+	fmt.Fprintf(out, "Autocheck:  %s\n", autocheckLabel(state))
+	if line := repoInfoNextLine(state); line != "" {
+		fmt.Fprintln(out)
+		fmt.Fprintln(out, line)
 	}
-	if state.MappedSource != nil {
-		fmt.Fprintf(out, "Mode:       %s\n", state.MappedSource.Mode)
+}
+
+func autocheckLabel(state *repoCloudState) string {
+	if state.Features.Autocheck.Enabled {
+		return "enabled"
 	}
-	if state.Repo != nil {
-		visibility := "public"
-		if state.Repo.Private != nil && *state.Repo.Private {
-			visibility = "private"
+	return "not enabled"
+}
+
+// repoInfoNextLine returns a one-line action hint for non-enabled states, or
+// "" when there is nothing useful to say beyond the field block.
+func repoInfoNextLine(state *repoCloudState) string {
+	switch state.Status {
+	case "linked":
+		return ""
+	case "available":
+		return "Next: dagger repo enable autocheck"
+	case "not_visible":
+		if state.ActionURL != "" {
+			return "Next: add this repo at " + state.ActionURL
 		}
-		fmt.Fprintf(out, "Visibility: %s\n", visibility)
-		if state.Repo.ClaimedByOrgName != nil {
-			fmt.Fprintf(out, "Claimed by: %s\n", *state.Repo.ClaimedByOrgName)
+		return "Next: add this repo to the configured git source"
+	case "blocked":
+		return "Claimed by another Dagger Cloud org."
+	default:
+		if isGitHubRepository(state.Repository) {
+			return "Next: dagger integration add github"
 		}
+		return "No Dagger Cloud git source supports this repo yet."
 	}
-	if len(state.RepoSettings) > 0 {
-		fmt.Fprintf(out, "Public:     %t\n", state.RepoSettings[0].IsPublic)
-	}
-	if state.ActionURL != "" && state.Status != "linked" {
-		fmt.Fprintf(out, "GitHub URL: %s\n", state.ActionURL)
-	}
-	fmt.Fprintf(out, "\n%s\n", state.Message)
-	fmt.Fprintf(out, "Autocheck: %s\n", onOff(state.Features.Autocheck.Enabled))
 }
 
 func printRepoInfoLoggedOut(cmd *cobra.Command, ref repoRef) {
 	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "Repository: %s\n", ref.Repository)
-	if ref.Input != "" {
-		fmt.Fprintf(out, "Input:      %s\n", ref.Input)
-	}
-	if ref.Remote != "" {
-		fmt.Fprintf(out, "Git remote: %s\n", ref.Remote)
-	}
+	fmt.Fprintf(out, "remote: %s\n", ref.Repository)
 	if ref.Local != "" {
-		fmt.Fprintf(out, "Local:      %s\n", ref.Local)
+		fmt.Fprintf(out, "local:  %s\n", ref.Local)
 	}
-	fmt.Fprintln(out, "# Fields below require \"dagger login\":")
-	fmt.Fprintln(out, "# org")
-	fmt.Fprintln(out, "# integration")
-	fmt.Fprintln(out, "# autocheck")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Next: dagger login")
 }
 
 func writeRepoStateJSON(cmd *cobra.Command, state *repoCloudState) error {

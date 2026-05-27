@@ -20,6 +20,9 @@ import (
 // FastModuleSourceKindCheck performs a quick heuristic check to determine
 // whether a module ref string refers to a local path or a git source.
 // Returns "" if the kind cannot be determined without further inspection.
+//
+// A trimmed copy lives in cmd/dagger/repo_cloud.go as isLocalRefArg.
+// Keep them in sync.
 func FastModuleSourceKindCheck(
 	refString string,
 	refPin string,
