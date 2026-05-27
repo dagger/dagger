@@ -525,6 +525,40 @@ class Foo:
     assert_metadata_equivalent(ast_md, runtime_md)
 
 
+def test_diff_namespace_package_submodule_is_discovered(tmp_path):
+    """A class in a PEP 420 namespace subpackage (no ``__init__.py``) is found.
+
+    ``pkgutil.walk_packages`` skips namespace-package directories, so the
+    oracle used to miss everything under them while the AST analyzer — handed
+    every file explicitly — saw it (a class "only in AST"). The oracle now
+    walks the source tree so its discovery matches.
+    """
+    files = {
+        "__init__.py": "",
+        # ``helpers/`` deliberately has no __init__.py → namespace package.
+        "helpers/extra.py": (
+            "import dagger\n"
+            "\n"
+            "@dagger.object_type\n"
+            "class Widget:\n"
+            '    name: str = dagger.field(default="w")\n'
+        ),
+        "main.py": (
+            "import dagger\n"
+            "from .helpers.extra import Widget\n"
+            "\n"
+            "@dagger.object_type\n"
+            "class Foo:\n"
+            "    @dagger.function\n"
+            "    def widget(self) -> Widget: ...\n"
+        ),
+    }
+    ast_md, runtime_md = _both_pkg(files, "Foo", tmp_path=tmp_path)
+    # Pre-fix the oracle missed the namespace-package class entirely.
+    assert "Widget" in runtime_md.objects
+    assert_metadata_equivalent(ast_md, runtime_md)
+
+
 # ---------------------------------------------------------------------------
 # Decorator metadata: name override, doc, deprecated.
 # ---------------------------------------------------------------------------

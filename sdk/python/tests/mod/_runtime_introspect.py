@@ -22,6 +22,7 @@ import inspect
 import sys
 import tempfile
 import typing
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, get_args, get_origin
 
@@ -201,19 +202,41 @@ def runtime_introspect_package(
         shutil.rmtree(tmp_root, ignore_errors=True)
 
 
+def _iter_submodule_names(package: Any) -> Iterator[str]:
+    """Yield dotted names for every ``.py`` module under ``package``.
+
+    ``pkgutil.walk_packages`` only descends into *regular* packages (those
+    with an ``__init__.py``); it silently skips PEP 420 namespace-package
+    directories. Real modules split code across such directories (shiryu's
+    ``utils/`` has no ``__init__.py``), so walking the filesystem under each
+    ``__path__`` root catches both kinds and matches the AST analyzer, which
+    is handed every file explicitly. Without this the oracle under-reports
+    whole subtrees, which can also mask genuine analyzer divergences there.
+    """
+    for root in package.__path__:
+        root_path = Path(root)
+        for py_file in sorted(root_path.rglob("*.py")):
+            rel_parts = py_file.relative_to(root_path).with_suffix("").parts
+            if "__pycache__" in rel_parts:
+                continue
+            if rel_parts and rel_parts[-1] == "__init__":
+                rel_parts = rel_parts[:-1]
+            if not rel_parts:
+                continue  # the package's own __init__, already ingested
+            yield package.__name__ + "." + ".".join(rel_parts)
+
+
 def _build_package_metadata(  # noqa: C901 — submodule walking dispatch
     package: Any, main_object_name: str
 ) -> ModuleMetadata:
     """Walk a package's submodules and merge their decorated classes.
 
-    Submodules are discovered via ``pkgutil.walk_packages`` rather than
-    importing everything from the ``__init__`` namespace — that way we
+    Submodules are discovered by walking the package's source tree rather
+    than importing everything from the ``__init__`` namespace — that way we
     pick up classes a user split across files even if the ``__init__``
     didn't re-export them (the AST analyzer also walks files directly,
     so this matches its discovery model).
     """
-    import pkgutil
-
     objects: dict[str, ObjectTypeMetadata] = {}
     enums: dict[str, EnumTypeMetadata] = {}
 
@@ -237,11 +260,9 @@ def _build_package_metadata(  # noqa: C901 — submodule walking dispatch
 
     _ingest(package)
     if hasattr(package, "__path__"):
-        for info in pkgutil.walk_packages(
-            package.__path__, prefix=package.__name__ + "."
-        ):
+        for name in _iter_submodule_names(package):
             try:
-                submodule = importlib.import_module(info.name)
+                submodule = importlib.import_module(name)
             except Exception:  # noqa: BLE001 — third-party submodules may fail
                 continue
             _ingest(submodule)
