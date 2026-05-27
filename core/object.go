@@ -52,11 +52,25 @@ func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) 
 		}
 		return value, nil
 	case map[string]any:
-		return dagql.NewResultForCurrentCall(ctx, &ModuleObject{
+		res, err := dagql.NewResultForCurrentCall(ctx, &ModuleObject{
 			Module:  t.mod,
 			TypeDef: t.typeDef,
 			Fields:  value,
 		})
+		if err != nil {
+			return nil, err
+		}
+		// Best-effort upgrade to a selectable ObjectResult so the cache
+		// preserves the concrete ObjectType across module boundaries; without
+		// this it would normalize to Result[Typed] and lose toSelectable info.
+		// Falling through if the current server can't see the type is fine —
+		// the cache's lazy reconstruction handles cross-module lookup later.
+		if dag, err := CurrentDagqlServer(ctx); err == nil {
+			if selectable, err := dag.ToSelectable(res); err == nil {
+				return selectable, nil
+			}
+		}
+		return res, nil
 	default:
 		return nil, fmt.Errorf("unexpected result value type %T for object %q", value, t.typeDef.Name)
 	}
