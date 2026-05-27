@@ -427,6 +427,7 @@ func (class Class[T]) New(val AnyResult) (AnyObjectResult, error) {
 		return objResult, nil
 	}
 	if inst, ok := val.(Result[T]); ok {
+		inst.shared.setObjClass(class)
 		return ObjectResult[T]{
 			Result: inst,
 			class:  class,
@@ -440,6 +441,7 @@ func (class Class[T]) New(val AnyResult) (AnyObjectResult, error) {
 						if _, ok := UnwrapAs[T](inner); ok {
 							derefVal := derefCapable.withDerefViewAny()
 							if derefInst, ok := derefVal.(Result[Typed]); ok {
+								derefInst.shared.setObjClass(class)
 								return ObjectResult[T]{
 									Result: Result[T](derefInst),
 									class:  class,
@@ -451,6 +453,7 @@ func (class Class[T]) New(val AnyResult) (AnyObjectResult, error) {
 			}
 			return nil, fmt.Errorf("cannot instantiate %T with %T", class, val)
 		}
+		inst.shared.setObjClass(class)
 		return ObjectResult[T]{
 			Result: Result[T](inst),
 			class:  class,
@@ -464,6 +467,7 @@ func (class Class[T]) New(val AnyResult) (AnyObjectResult, error) {
 	if shared == nil {
 		return nil, fmt.Errorf("cannot instantiate %T with %T: missing shared result", class, val)
 	}
+	shared.setObjClass(class)
 
 	return ObjectResult[T]{
 		Result: Result[T]{

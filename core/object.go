@@ -66,7 +66,7 @@ func (t *ModuleObjectType) ConvertFromSDKResult(ctx context.Context, value any) 
 		// Falling through if the current server can't see the type is fine —
 		// the cache's lazy reconstruction handles cross-module lookup later.
 		if dag, err := CurrentDagqlServer(ctx); err == nil {
-			if selectable, err := dag.ToSelectable(res); err == nil {
+			if selectable, err := dag.ToSelectable(ctx, res); err == nil {
 				return selectable, nil
 			}
 		}

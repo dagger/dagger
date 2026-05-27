@@ -36,10 +36,11 @@ func InstallCoreSchemaLoaders(dag *dagql.Server) {
 		return resultServer, nil
 	}
 
-	// Set up cache-result and node(id:) loaders to resolve cached objects through
-	// a server that has all module dependencies required by the result call. Without
-	// this, reconstructing a cached dependency-module object would be limited to the
-	// current server's schema, which may only contain core types.
+	// Fallback resolver for cache reconstruction and persisted-envelope decoding
+	// when the current schema does not have the referenced object type
+	// installed. Cache hits normally short-circuit via the class captured on
+	// the shared result, so this hook only fires on the cold path (decode, or
+	// loads that bypassed class capture).
 	dag.SetResultServerForCall(serverForResultCall)
 	dag.SetNodeLoader(func(ctx context.Context, id *call.ID) (dagql.AnyObjectResult, error) {
 		if id == nil || !id.IsHandle() || id.EngineResultID() == 0 {

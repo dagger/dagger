@@ -72,10 +72,14 @@ type Server struct {
 	// current server's schema.
 	nodeLoader func(ctx context.Context, id *call.ID) (AnyObjectResult, error)
 
-	// resultServerForCall, if set, returns a server capable of reconstructing
-	// cached or persisted results produced by a call. This lets the Dagger core
-	// layer rebuild module-aware schemas for cache hits whose object type belongs
-	// to a dependency module that is not installed in the current server.
+	// resultServerForCall, if set, rebuilds a dependency-aware server from a
+	// result's call graph so the cache can resolve an object class that is not
+	// installed in the current server's schema. Reconstruction normally uses
+	// the class captured on the shared result at construction time
+	// (sharedResult.objClass); this hook is the fallback when capture missed
+	// the path (e.g., persisted-envelope decode, or imports loaded by ID
+	// before any class-bearing wrap). Resolved classes are cached back onto
+	// the shared so subsequent reconstructions skip the hook.
 	resultServerForCall func(ctx context.Context, resultCall *ResultCall) (*Server, error)
 }
 
@@ -97,9 +101,10 @@ func (s *Server) SetNodeLoader(loader func(ctx context.Context, id *call.ID) (An
 	s.nodeLoader = loader
 }
 
-// SetResultServerForCall sets a custom schema resolver for cached result
-// reconstruction. The returned server must be able to resolve object types
-// referenced by the result call.
+// SetResultServerForCall installs the fallback resolver used when cache
+// reconstruction or persisted-envelope decoding encounters an object type the
+// current server's schema does not have installed. See the field doc on
+// Server.resultServerForCall for the full role.
 func (s *Server) SetResultServerForCall(loader func(ctx context.Context, resultCall *ResultCall) (*Server, error)) {
 	s.resultServerForCall = loader
 }
@@ -997,7 +1002,7 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (AnyObjectResult, error)
 	if err != nil {
 		return nil, err
 	}
-	return s.toSelectable(res)
+	return s.toSelectable(ctx, res)
 }
 
 func (s *Server) loadNthValue(
@@ -1195,7 +1200,7 @@ func (state *recipeLoadState) loadRecipeVertex(id *call.ID) (AnyResult, error) {
 		base = state.srv.root
 	}
 
-	baseObj, err := state.srv.toSelectable(base)
+	baseObj, err := state.srv.toSelectable(state.ctx, base)
 	if err != nil {
 		return nil, fmt.Errorf("load %s: instantiate base: %w", idInputDebugString(id), err)
 	}
@@ -1577,7 +1582,7 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 					continue
 				}
 				if isObj {
-					val, err = s.toSelectable(val)
+					val, err = s.toSelectable(ctx, val)
 					if err != nil {
 						return fmt.Errorf("select %dth array element: %w", nth, err)
 					}
@@ -1590,7 +1595,7 @@ func (s *Server) Select(ctx context.Context, self AnyObjectResult, dest any, sel
 		} else if s.isObjectType(res.Type().Name()) {
 			// if the result is an Object, set it as the next selection target, and
 			// assign res to the "hydrated" Object
-			self, err = s.toSelectable(res)
+			self, err = s.toSelectable(ctx, res)
 			if err != nil {
 				return err
 			}
@@ -1786,6 +1791,7 @@ func NewObjectResultForCall[T Typed](
 	if err != nil {
 		return res, err
 	}
+	inst.shared.setObjClass(class)
 
 	return ObjectResult[T]{
 		Result: inst,
@@ -1917,7 +1923,7 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 						results[nth-1] = nil
 						return nil
 					}
-					node, err := s.toSelectable(elemVal)
+					node, err := s.toSelectable(ctx, elemVal)
 					if err != nil {
 						return fmt.Errorf("instantiate %dth array element: %w", nth, err)
 					}
@@ -1951,7 +1957,7 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 	}
 
 	// instantiate the return value so we can sub-select
-	node, err := s.toSelectable(val)
+	node, err := s.toSelectable(ctx, val)
 	if err != nil {
 		return nil, fmt.Errorf("instantiate: %w", err)
 	}
@@ -1960,11 +1966,11 @@ func (s *Server) resolvePath(ctx context.Context, self AnyObjectResult, sel Sele
 }
 
 // ToSelectable converts an AnyResult to an AnyObjectResult if possible.
-func (s *Server) ToSelectable(val AnyResult) (AnyObjectResult, error) {
-	return s.toSelectable(val)
+func (s *Server) ToSelectable(ctx context.Context, val AnyResult) (AnyObjectResult, error) {
+	return s.toSelectable(ctx, val)
 }
 
-func (s *Server) toSelectable(val AnyResult) (AnyObjectResult, error) {
+func (s *Server) toSelectable(ctx context.Context, val AnyResult) (AnyObjectResult, error) {
 	if sel, ok := val.(AnyObjectResult); ok {
 		// We always support returning something that's already Selectable, e.g. an
 		// object loaded from its ID.
@@ -1972,12 +1978,31 @@ func (s *Server) toSelectable(val AnyResult) (AnyObjectResult, error) {
 	}
 
 	className := val.Type().Name()
-	class, ok := s.ObjectType(className)
-	if ok {
+	if class, ok := s.ObjectType(className); ok {
 		return class.New(val)
 	}
-
-	return nil, fmt.Errorf("toSelectable: unknown type %q", val.Type().Name())
+	// Current server doesn't know the type; fall back to the class captured on
+	// the result's shared payload when it was first wrapped. This handles
+	// cross-module cases where the concrete type lives in a module not
+	// installed in this server's schema.
+	shared := val.cacheSharedResult()
+	if shared != nil {
+		if state := shared.loadPayloadState(); state.objClass != nil && state.objClass.TypeName() == className {
+			return state.objClass.New(val)
+		}
+	}
+	// Last resort: rebuild a dep-aware resolver from the result's call frame.
+	// Reached when class capture missed a path; once we resolve here we
+	// remember the class on the shared so subsequent hits skip this branch.
+	if shared != nil && s.resultServerForCall != nil {
+		if depResolver, err := resolverForSharedResultObject(ctx, s, shared, className); err == nil && depResolver != nil {
+			if class, ok := depResolver.ObjectType(className); ok {
+				shared.setObjClass(class)
+				return class.New(val)
+			}
+		}
+	}
+	return nil, fmt.Errorf("toSelectable: unknown type %q", className)
 }
 
 // typeConditionMatches returns true if the given type condition (from a
