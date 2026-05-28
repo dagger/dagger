@@ -162,24 +162,6 @@ func TestParseLockMode(t *testing.T) {
 		require.Equal(t, LockModeFrozen, mode)
 	})
 
-	t.Run("legacy update alias", func(t *testing.T) {
-		mode, err := ParseLockMode("update")
-		require.NoError(t, err)
-		require.Equal(t, LockModeLive, mode)
-	})
-
-	t.Run("legacy auto alias", func(t *testing.T) {
-		mode, err := ParseLockMode("auto")
-		require.NoError(t, err)
-		require.Equal(t, LockModePinned, mode)
-	})
-
-	t.Run("legacy strict alias", func(t *testing.T) {
-		mode, err := ParseLockMode("strict")
-		require.NoError(t, err)
-		require.Equal(t, LockModeFrozen, mode)
-	})
-
 	t.Run("invalid", func(t *testing.T) {
 		_, err := ParseLockMode("weird")
 		require.Error(t, err)
@@ -190,5 +172,5 @@ func TestParseLockMode(t *testing.T) {
 func TestResolveLockMode(t *testing.T) {
 	mode, err := ResolveLockMode("")
 	require.NoError(t, err)
-	require.Equal(t, DefaultLockMode, mode)
+	require.Equal(t, LockModePinned, mode)
 }

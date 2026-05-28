@@ -22,7 +22,7 @@ dagger [options] [subcommand | file...]
       --eager-runtime                load module runtime eagerly
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -m, --mod string                   Module reference to load, either a local path or a remote git repo (defaults to current directory)
       --model string                 LLM model to use (e.g., 'claude-sonnet-4-5', 'gpt-4.1')
   -E, --no-exit                      Leave the TUI running after completion
@@ -80,7 +80,7 @@ dagger call [options]
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -129,7 +129,7 @@ dagger config -m github.com/dagger/hello-dagger
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -165,7 +165,7 @@ dagger core [options]
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -229,7 +229,7 @@ dagger develop [options]
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -274,7 +274,7 @@ dagger functions [options] [function]...
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -340,7 +340,7 @@ dagger init --sdk=go
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -389,7 +389,7 @@ dagger install github.com/shykes/daggerverse/hello@v0.3.0
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -414,7 +414,7 @@ Manage workspace lockfiles
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -450,7 +450,7 @@ dagger lock update
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -479,7 +479,7 @@ dagger login [options] [org]
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -508,7 +508,7 @@ dagger logout
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -576,7 +576,7 @@ EOF
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -638,7 +638,7 @@ dagger run python main.py
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -663,7 +663,7 @@ Manage toolchains
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -716,7 +716,7 @@ dagger toolchain install github.com/dagger/dagger/toolchains/go
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -763,7 +763,7 @@ dagger toolchain list
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -811,7 +811,7 @@ dagger toolchain uninstall mytoolchain
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -859,7 +859,7 @@ dagger toolchain update
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -907,7 +907,7 @@ dagger uninstall hello
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -960,7 +960,7 @@ dagger update [options] [<DEPENDENCY>...]
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
@@ -995,7 +995,7 @@ dagger version
   -d, --debug                        Show debug logs and full verbosity
   -i, --interactive                  Spawn a terminal on container exec failure
       --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
-      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to disabled.
+      --lock string                  Lock lookup mode (disabled, live, pinned, frozen). Defaults to pinned.
   -E, --no-exit                      Leave the TUI running after completion
       --progress string              Progress output format (auto, plain, tty, dots, logs) (default "auto")
   -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)

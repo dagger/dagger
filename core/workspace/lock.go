@@ -22,12 +22,8 @@ const (
 	LockModePinned   LockMode = "pinned"
 	LockModeFrozen   LockMode = "frozen"
 
-	// Backward-compatible aliases for the previous experimental names.
-	LockModeAuto   = LockModePinned
-	LockModeStrict = LockModeFrozen
-
 	// DefaultLockMode is used when no mode is explicitly set.
-	DefaultLockMode = LockModeDisabled
+	DefaultLockMode = LockModePinned
 )
 
 // LockPolicy controls update intent for a lock entry.
@@ -210,15 +206,6 @@ func moduleResolveInputs(source string) []any {
 
 // ParseLockMode validates an explicitly configured lock mode.
 func ParseLockMode(mode string) (LockMode, error) {
-	switch mode {
-	case "update":
-		return LockModeLive, nil
-	case "auto":
-		return LockModePinned, nil
-	case "strict":
-		return LockModeFrozen, nil
-	}
-
 	lockMode := LockMode(mode)
 	if !isValidLockMode(lockMode) {
 		return "", fmt.Errorf("invalid lock mode %q", mode)
