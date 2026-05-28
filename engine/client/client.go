@@ -133,7 +133,7 @@ type Params struct {
 	SkipWorkspaceModules bool
 
 	// LockMode controls lockfile behavior for lookup resolution.
-	// Valid values: "disabled", "live", "pinned", "frozen".
+	// Valid values: "disabled", "strict", "auto", "update".
 	LockMode string
 
 	// Workspace explicitly declares workspace binding for this client.
