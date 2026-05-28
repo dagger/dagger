@@ -2299,6 +2299,40 @@ func copyDirectorySourceToScratch(
 	return ref, nil
 }
 
+// mkdirAllChown is like os.MkdirAll but, when ownership is non-nil, applies it
+// to every directory level that this call newly creates. Pre-existing parents
+// are left untouched, matching Docker/BuildKit COPY --chown semantics (only the
+// directories materialised by the COPY get the requested owner). Without this,
+// os.MkdirAll creates parents as root:root (the engine process uid), so a later
+// non-root RUN (e.g. USER node; RUN npm i) cannot write into its own WORKDIR.
+func mkdirAllChown(dir string, perm os.FileMode, ownership *Ownership) error {
+	// Walk up to the first existing ancestor, recording the dirs we must create.
+	var toCreate []string
+	for p := dir; ; p = filepath.Dir(p) {
+		if _, err := os.Stat(p); err == nil {
+			break
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		toCreate = append(toCreate, p)
+		if parent := filepath.Dir(p); parent == p {
+			break // reached filesystem root
+		}
+	}
+	if err := os.MkdirAll(dir, perm); err != nil {
+		return err
+	}
+	if ownership == nil {
+		return nil
+	}
+	for _, p := range toCreate {
+		if err := os.Chown(p, ownership.UID, ownership.GID); err != nil {
+			return fmt.Errorf("failed to set chown %s: %w", p, err)
+		}
+	}
+	return nil
+}
+
 //nolint:gocyclo
 func (dir *Directory) WithDirectoryDockerfileCompat(
 	ctx context.Context,
@@ -2393,7 +2427,7 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 				return err
 			}
 			if srcRef == nil {
-				if err := os.MkdirAll(resolvedCopyDest, 0o755); err != nil {
+				if err := mkdirAllChown(resolvedCopyDest, 0o755, ownership); err != nil {
 					return err
 				}
 				if permissions != nil {
@@ -2509,7 +2543,7 @@ func (dir *Directory) WithDirectoryDockerfileCompat(
 					if strings.HasSuffix(copyDestPath, "/") {
 						destDirPath = resolvedDestPath
 					}
-					if err := os.MkdirAll(destDirPath, 0o755); err != nil {
+					if err := mkdirAllChown(destDirPath, 0o755, ownership); err != nil {
 						return err
 					}
 				} else {

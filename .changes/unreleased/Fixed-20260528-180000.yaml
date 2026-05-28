@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  `dockerBuild` now applies `COPY --chown` ownership to parent directories it newly creates.
+
+  Previously, WORKDIR and COPY destination parent directories were created as `root:root` even when `USER <nonroot>` was active and `COPY --chown=<user>:<group>` was specified, causing a subsequent non-root `RUN` to fail with `EACCES` writing into its own WORKDIR (e.g. `npm i` -> `mkdir node_modules: permission denied`). This regressed in v0.21.0 with the DagQL solver migration; plain `docker build` and Dagger <= v0.20.8 were unaffected.
+time: 2026-05-28T18:00:00.000000000+05:30
+custom:
+    Author: rajdeepsignzy
+    PR: "13248"
