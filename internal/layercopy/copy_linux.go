@@ -197,6 +197,17 @@ func (c *Copier) copyEntry(
 			childPending = append(childPending, pendingDir{entry: ent, destPath: destPath})
 		}
 
+		if !matcher.shouldDescend(ent.Rel) {
+			if include {
+				realPath, err := c.dest.realPath(destPath)
+				if err != nil {
+					return err
+				}
+				return c.dest.applyMetadataPath(realPath, &ent, opts)
+			}
+			return nil
+		}
+
 		children, err := src.readDir(ent.Rel)
 		if err != nil {
 			return err
@@ -277,20 +288,22 @@ func (c *Copier) copyRegular(ent sourceEntry, realPath string, opts CopyOptions)
 	if !ok {
 		return fmt.Errorf("unexpected stat type %T", ent.Info.Sys())
 	}
-	ino := statInode(st)
-
-	if linkSrc, ok := c.dest.sourceLinks[ino]; ok {
-		if err := os.RemoveAll(realPath); err != nil {
-			return err
-		}
-		if err := os.Link(linkSrc, realPath); err != nil && !isHardlinkFallback(err) {
-			return err
-		} else if err == nil {
-			return c.dest.applyMetadataPath(realPath, &ent, opts)
+	var ino inode
+	if !opts.DisableHardlinks {
+		ino = statInode(st)
+		if linkSrc, ok := c.dest.sourceLinks[ino]; ok {
+			if err := os.RemoveAll(realPath); err != nil {
+				return err
+			}
+			if err := os.Link(linkSrc, realPath); err != nil && !isHardlinkFallback(err) {
+				return err
+			} else if err == nil {
+				return c.dest.applyMetadataPath(realPath, &ent, opts)
+			}
 		}
 	}
 
-	if opts.Chown == nil && opts.Mode == nil {
+	if !opts.DisableHardlinks && opts.Chown == nil && opts.Mode == nil {
 		if err := os.RemoveAll(realPath); err != nil {
 			return err
 		}
@@ -306,7 +319,9 @@ func (c *Copier) copyRegular(ent sourceEntry, realPath string, opts CopyOptions)
 	if err := copyFileContent(realPath, ent.RealPath); err != nil {
 		return err
 	}
-	c.dest.sourceLinks[ino] = realPath
+	if !opts.DisableHardlinks {
+		c.dest.sourceLinks[ino] = realPath
+	}
 	return c.dest.applyMetadataPath(realPath, &ent, opts)
 }
 

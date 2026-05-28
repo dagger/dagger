@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dagger/dagger/core/internal/layercopy"
+	"github.com/dagger/dagger/internal/layercopy"
 	"github.com/stretchr/testify/require"
 )
 

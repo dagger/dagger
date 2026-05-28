@@ -16,7 +16,10 @@ type Ownership struct {
 	GID int
 }
 
+type XAttrErrorHandler func(dst, src, xattrKey string, err error) error
+
 type Filter struct {
+	Only      map[string]struct{}
 	Include   []string
 	Exclude   []string
 	Gitignore bool
@@ -26,9 +29,11 @@ type CopyOptions struct {
 	Filter            Filter
 	Chown             *Ownership
 	Mode              *os.FileMode
+	XAttrErrorHandler XAttrErrorHandler
 	CopyDirContents   bool
 	ReplaceExisting   bool
 	DestPathHintIsDir bool
+	DisableHardlinks  bool
 }
 
 type Copier struct {

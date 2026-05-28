@@ -172,7 +172,7 @@ func (d *destination) materializeExistingDir(rel, viewPath string) (string, bool
 	if err := os.Mkdir(realPath, info.Mode().Perm()); err != nil && !os.IsExist(err) {
 		return "", false, err
 	}
-	if err := copyMetadata(realPath, viewPath, info, nil, nil, false); err != nil {
+	if err := copyMetadata(realPath, viewPath, info, nil, nil, false, nil); err != nil {
 		return "", false, err
 	}
 	return realPath, true, nil
@@ -241,7 +241,7 @@ func (d *destination) applyMetadataPath(dstPath string, src *sourceEntry, opts C
 		info = src.Info
 		srcPath = src.RealPath
 	}
-	return copyMetadata(dstPath, srcPath, info, opts.Chown, opts.Mode, d.userxattr)
+	return copyMetadata(dstPath, srcPath, info, opts.Chown, opts.Mode, d.userxattr, opts.XAttrErrorHandler)
 }
 
 func (d *destination) flush() error {
@@ -278,7 +278,7 @@ func (d *destination) usage() (snapshots.Usage, error) {
 	return usage, err
 }
 
-func copyMetadata(dstPath, srcPath string, srcInfo os.FileInfo, chown *Ownership, modeOverride *os.FileMode, userxattr bool) error {
+func copyMetadata(dstPath, srcPath string, srcInfo os.FileInfo, chown *Ownership, modeOverride *os.FileMode, userxattr bool, xattrErrorHandler XAttrErrorHandler) error {
 	if srcInfo != nil {
 		st, ok := srcInfo.Sys().(*syscall.Stat_t)
 		if !ok {
@@ -303,7 +303,7 @@ func copyMetadata(dstPath, srcPath string, srcInfo os.FileInfo, chown *Ownership
 		}
 
 		if srcPath != "" {
-			if err := copyXattrs(dstPath, srcPath, userxattr); err != nil {
+			if err := copyXattrs(dstPath, srcPath, userxattr, xattrErrorHandler); err != nil {
 				return err
 			}
 		}
@@ -329,11 +329,14 @@ func copyMetadata(dstPath, srcPath string, srcInfo os.FileInfo, chown *Ownership
 	return nil
 }
 
-func copyXattrs(dstPath, srcPath string, _ bool) error {
+func copyXattrs(dstPath, srcPath string, _ bool, xattrErrorHandler XAttrErrorHandler) error {
 	xattrs, err := sysx.LListxattr(srcPath)
 	if err != nil {
 		if errors.Is(err, unix.ENOTSUP) || errors.Is(err, unix.ENODATA) {
 			return nil
+		}
+		if xattrErrorHandler != nil {
+			return xattrErrorHandler(dstPath, srcPath, "", err)
 		}
 		return fmt.Errorf("failed to list xattrs on %s: %w", srcPath, err)
 	}
@@ -346,9 +349,19 @@ func copyXattrs(dstPath, srcPath string, _ bool) error {
 			if errors.Is(err, unix.ENODATA) {
 				continue
 			}
+			if xattrErrorHandler != nil {
+				if err := xattrErrorHandler(dstPath, srcPath, xattr, err); err != nil {
+					return err
+				}
+				continue
+			}
 			return fmt.Errorf("failed to get xattr %q on %s: %w", xattr, srcPath, err)
 		}
-		_ = sysx.LSetxattr(dstPath, xattr, val, 0)
+		if err := sysx.LSetxattr(dstPath, xattr, val, 0); err != nil && xattrErrorHandler != nil {
+			if err := xattrErrorHandler(dstPath, srcPath, xattr, err); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

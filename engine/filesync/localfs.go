@@ -17,8 +17,8 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/fsutil"
-	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
 	"github.com/dagger/dagger/internal/fsutil/types"
+	"github.com/dagger/dagger/internal/layercopy"
 	"github.com/dagger/dagger/util/hashutil"
 	digest "github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/attribute"
@@ -105,6 +105,35 @@ func newLocalFS(sharedState *MirrorSharedState, subdir string, includes, exclude
 		excludes:           excludes,
 		copyPath:           copyPath,
 	}, nil
+}
+
+func localCopyOnlyPaths(only map[string]struct{}, basePath string) map[string]struct{} {
+	filtered := make(map[string]struct{}, len(only))
+	basePath = cleanLocalCopyPath(basePath)
+	for p := range only {
+		p = cleanLocalCopyPath(p)
+		if basePath != "" {
+			if p == basePath {
+				filtered[""] = struct{}{}
+				continue
+			}
+			prefix := basePath + string(filepath.Separator)
+			if !strings.HasPrefix(p, prefix) {
+				continue
+			}
+			p = strings.TrimPrefix(p, prefix)
+		}
+		filtered[p] = struct{}{}
+	}
+	return filtered
+}
+
+func cleanLocalCopyPath(p string) string {
+	p = filepath.Clean(p)
+	if p == "." || p == string(filepath.Separator) {
+		return ""
+	}
+	return strings.TrimPrefix(p, string(filepath.Separator))
 }
 
 // Sync the given remote fs into the local fs, returning an immutable cache ref containing the files+dirs
@@ -508,7 +537,30 @@ func (local *localFS) Sync( //nolint:gocyclo
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to get mountable: %w", err)
 	}
-	copyRefMnter := bkcache.LocalMounter(copyRefMntable)
+	copyRefMounts, copyRefRelease, err := copyRefMntable.Mount()
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get mounts: %w", err)
+	}
+	if len(copyRefMounts) == 0 {
+		if copyRefRelease != nil {
+			if err := copyRefRelease(); err != nil {
+				return nil, "", fmt.Errorf("failed to release copy ref mount: %w", err)
+			}
+		}
+		return nil, "", fmt.Errorf("copy ref mountable returned no mounts")
+	}
+	var copyRefReleaseFn func() error
+	if copyRefRelease != nil {
+		copyRefReleaseFn = copyRefRelease
+		defer func() {
+			if copyRefReleaseFn != nil {
+				if err := copyRefReleaseFn(); err != nil {
+					rerr = errors.Join(rerr, fmt.Errorf("failed to release copy ref mount: %w", err))
+				}
+			}
+		}()
+	}
+	copyRefMnter := bkcache.LocalMounterWithMounts(copyRefMounts)
 	copyRefMntPath, err := copyRefMnter.Mount()
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to mount: %w", err)
@@ -521,33 +573,62 @@ func (local *localFS) Sync( //nolint:gocyclo
 		}
 	}()
 
-	copyOpts := []fscopy.Opt{
-		func(ci *fscopy.CopyInfo) {
-			// only copy files that we know about changes for
-			ci.Only = only
-			ci.CopyDirContents = true
-			ci.BaseCopyPath = local.copyPath
-		},
-		fscopy.WithXAttrErrorHandler(func(dst, src, key string, err error) error {
-			bklog.G(ctx).Debugf("xattr error during local import copy: %v", err)
-			return nil
-		}),
+	copier, err := layercopy.NewCopier(layercopy.Mount{
+		Root:  copyRefMntPath,
+		Mount: &copyRefMounts[0],
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to create copier: %w", err)
 	}
+	defer func() {
+		if copier != nil {
+			if err := copier.Close(); err != nil {
+				rerr = errors.Join(rerr, fmt.Errorf("failed to close copier: %w", err))
+			}
+		}
+	}()
 
-	if err := fscopy.Copy(ctx,
-		local.rootPath,
-		filepath.Join(local.subdir, local.copyPath),
-		copyRefMntPath, "/",
-		copyOpts...,
+	if err := copier.Copy(ctx,
+		layercopy.Mount{Root: filepath.Join(local.rootPath, local.subdir)},
+		local.copyPath,
+		"/",
+		layercopy.CopyOptions{
+			Filter: layercopy.Filter{
+				// Only copy files that we know about changes for.
+				Only: localCopyOnlyPaths(only, local.copyPath),
+			},
+			CopyDirContents:  true,
+			DisableHardlinks: true,
+			XAttrErrorHandler: func(dst, src, key string, err error) error {
+				if key != "" {
+					bklog.G(ctx).Debugf("xattr %q error during local import copy from %q to %q: %v", key, src, dst, err)
+				} else {
+					bklog.G(ctx).Debugf("xattr error during local import copy from %q to %q: %v", src, dst, err)
+				}
+				return nil
+			},
+		},
 	); err != nil {
 		return nil, "", fmt.Errorf("failed to copy %q: %w", local.subdir, err)
 	}
+	if err := copier.Close(); err != nil {
+		copier = nil
+		return nil, "", fmt.Errorf("failed to close copier: %w", err)
+	}
+	copier = nil
 
 	if err := copyRefMnter.Unmount(); err != nil {
 		copyRefMnter = nil
 		return nil, "", fmt.Errorf("failed to unmount: %w", err)
 	}
 	copyRefMnter = nil
+	if copyRefReleaseFn != nil {
+		if err := copyRefReleaseFn(); err != nil {
+			copyRefReleaseFn = nil
+			return nil, "", fmt.Errorf("failed to release copy ref mount: %w", err)
+		}
+		copyRefReleaseFn = nil
+	}
 
 	finalRef, err := newCopyRef.Commit(ctx)
 	if err != nil {

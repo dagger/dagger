@@ -20,11 +20,10 @@ import (
 	"github.com/containerd/containerd/v2/core/mount"
 	"github.com/containerd/containerd/v2/core/snapshots"
 	containerdfs "github.com/containerd/continuity/fs"
-	"github.com/dagger/dagger/core/internal/layercopy"
 	bkcontenthash "github.com/dagger/dagger/engine/contenthash"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
-	fscopy "github.com/dagger/dagger/internal/fsutil/copy"
+	"github.com/dagger/dagger/internal/layercopy"
 	"github.com/dagger/dagger/util/patternmatcher"
 	"github.com/dustin/go-humanize"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -1682,7 +1681,7 @@ func (dir *Directory) withoutPathsFromSnapshot(ctx context.Context, parentSnapsh
 			var matches []string
 			if strings.Contains(p, "*") {
 				var err error
-				matches, err = fscopy.ResolveWildcards(root, p, true)
+				matches, err = layercopy.ResolveWildcards(root, p, true)
 				if err != nil {
 					return err
 				}

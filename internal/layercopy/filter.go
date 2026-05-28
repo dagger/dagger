@@ -10,9 +10,11 @@ import (
 )
 
 type matcher struct {
-	include   *patternmatcher.PatternMatcher
-	exclude   *patternmatcher.PatternMatcher
-	gitignore *fsxutil.GitignoreMatcher
+	only        map[string]struct{}
+	onlyParents map[string]struct{}
+	include     *patternmatcher.PatternMatcher
+	exclude     *patternmatcher.PatternMatcher
+	gitignore   *fsxutil.GitignoreMatcher
 }
 
 type matchState struct {
@@ -22,6 +24,20 @@ type matchState struct {
 
 func newMatcher(_ string, filter Filter) (*matcher, error) {
 	m := &matcher{}
+	if filter.Only != nil {
+		m.only = map[string]struct{}{}
+		m.onlyParents = map[string]struct{}{
+			"": {},
+		}
+		for p := range filter.Only {
+			p = filepath.ToSlash(cleanRel(p))
+			m.only[p] = struct{}{}
+			for parent := filepath.Dir(p); parent != "." && parent != string(filepath.Separator); parent = filepath.Dir(parent) {
+				parent = filepath.ToSlash(cleanRel(parent))
+				m.onlyParents[parent] = struct{}{}
+			}
+		}
+	}
 	if len(filter.Include) > 0 {
 		pm, err := patternmatcher.New(filter.Include)
 		if err != nil {
@@ -46,20 +62,32 @@ func newMatcher(_ string, filter Filter) (*matcher, error) {
 	return m, nil
 }
 
+func (m *matcher) shouldDescend(rel string) bool {
+	if m.only == nil {
+		return true
+	}
+	_, ok := m.onlyParents[cleanRel(rel)]
+	return ok
+}
+
 func (m *matcher) includePath(rel string, abs string, info os.FileInfo, parent matchState) (bool, matchState, error) {
 	if rel == "" {
 		return true, parent, nil
 	}
-	rel = filepath.ToSlash(rel)
+	rel = filepath.ToSlash(cleanRel(rel))
 
 	include := true
 	state := parent
+	if m.only != nil {
+		_, include = m.only[rel]
+	}
 	if m.include != nil {
-		var err error
-		include, state.include, err = m.include.MatchesUsingParentResults(rel, parent.include)
+		matched, includeInfo, err := m.include.MatchesUsingParentResults(rel, parent.include)
 		if err != nil {
 			return false, state, err
 		}
+		state.include = includeInfo
+		include = include && matched
 	}
 	if m.exclude != nil {
 		excluded, excludeInfo, err := m.exclude.MatchesUsingParentResults(rel, parent.exclude)
