@@ -205,6 +205,8 @@ func (m *Files) ReturnedContainer() *dagger.Container {
 		WithExec([]string{"sh", "-c", "printf 'returned container' > /returned-container.txt"})
 }
 
+// ExportFromModule checks that Directory.Export writes to the module runtime by
+// reading the exported file from the module process after the export completes.
 func (m *Files) ExportFromModule(ctx context.Context) (string, error) {
 	const (
 		dest     = "runtime-export"
@@ -661,6 +663,8 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, 
 	assertModuleRuntimeExportDoesNotWriteHost := func(ctx context.Context, t *testctx.T, workdir string, selection []string, noWriteDirs ...string) {
 		t.Helper()
 
+		// The module must read its own export, while host directories stay clean;
+		// this catches nested clients attaching exports to the wrong session.
 		out, err := hostDaggerExec(ctx, t, workdir, daggerCallArgs(selection, false, "export-from-module")...)
 		require.NoError(t, err)
 		require.Equal(t, "exported from module runtime", strings.TrimSpace(string(out)))
@@ -713,6 +717,8 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, 
 		assertAbsoluteExportsUseExplicitPath(ctx, t, workdir, selection, "")
 	})
 
+	// Directory.Export from module code must use the module runtime filesystem
+	// even when the selected workspace and CLI cwd are different host dirs.
 	t.Run("Directory.Export inside module uses the module runtime filesystem", func(ctx context.Context, t *testctx.T) {
 		callerDir, selectedDir := newLocalFixture(ctx, t)
 		selection := []string{"-W", "../selected"}
