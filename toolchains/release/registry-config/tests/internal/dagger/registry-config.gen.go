@@ -98,7 +98,7 @@ func (r *Query) RegistryConfig() *RegistryConfig { // registry-config (../../../
 type RegistryConfig struct { // registry-config (../../../../../../toolchains/release/registry-config/main.go:22:6)
 	query *querybuilder.Selection
 
-	id *RegistryConfigID
+	id *ID
 }
 type WithRegistryConfigFunc func(r *RegistryConfig) *RegistryConfig
 
@@ -115,14 +115,20 @@ func (r *RegistryConfig) WithGraphQLQuery(q *querybuilder.Selection) *RegistryCo
 	}
 }
 
+type RegistryConfigID = ID
+
+func (r *Query) LoadRegistryConfigFromID(id RegistryConfigID) *RegistryConfig {
+	return &RegistryConfig{query: selectNode(r.query, ID(id), "RegistryConfig")}
+}
+
 // A unique identifier for this RegistryConfig.
-func (r *RegistryConfig) ID(ctx context.Context) (RegistryConfigID, error) {
+func (r *RegistryConfig) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response RegistryConfigID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -275,7 +281,7 @@ func (r *RegistryConfig) AsNode() Node {
 type RegistryConfigSecretMount struct { // registry-config (../../../../../../toolchains/release/registry-config/main.go:111:6)
 	query *querybuilder.Selection
 
-	id          *RegistryConfigSecretMountID
+	id          *ID
 	mode        *int
 	owner       *string
 	path        *string
@@ -289,14 +295,20 @@ func (r *RegistryConfigSecretMount) WithGraphQLQuery(q *querybuilder.Selection) 
 	}
 }
 
+type RegistryConfigSecretMountID = ID
+
+func (r *Query) LoadRegistryConfigSecretMountFromID(id RegistryConfigSecretMountID) *RegistryConfigSecretMount {
+	return &RegistryConfigSecretMount{query: selectNode(r.query, ID(id), "RegistryConfigSecretMount")}
+}
+
 // A unique identifier for this RegistryConfigSecretMount.
-func (r *RegistryConfigSecretMount) ID(ctx context.Context) (RegistryConfigSecretMountID, error) {
+func (r *RegistryConfigSecretMount) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response RegistryConfigSecretMountID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)

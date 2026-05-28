@@ -6972,6 +6972,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Workspace::uninstall",
+			"p": "Dagger/Workspace.html#method_uninstall",
+			"d": "<p>Uninstall a module from the workspace, writing config.toml to the host.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Workspace::update",
 			"p": "Dagger/Workspace.html#method_update",
 			"d": "<p>Refresh workspace-managed state and return the resulting changeset.</p>"

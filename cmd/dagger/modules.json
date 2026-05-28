@@ -1,0 +1,42 @@
+[
+  {
+    "name": "go",
+    "description": "Build, test, and lint Go projects with the Go toolchain",
+    "repo": "github.com/dagger/go"
+  },
+  {
+    "name": "eslint",
+    "description": "Lint JavaScript and TypeScript with ESLint",
+    "repo": "github.com/dagger/eslint"
+  },
+  {
+    "name": "prettier",
+    "description": "Format code with Prettier",
+    "repo": "github.com/dagger/prettier"
+  },
+  {
+    "name": "jest",
+    "description": "Run JavaScript and TypeScript tests with Jest",
+    "repo": "github.com/dagger/jest"
+  },
+  {
+    "name": "vitest",
+    "description": "Run JavaScript and TypeScript tests with Vitest",
+    "repo": "github.com/dagger/vitest"
+  },
+  {
+    "name": "pytest",
+    "description": "Run Python tests with pytest",
+    "repo": "github.com/dagger/pytest"
+  },
+  {
+    "name": "biomejs",
+    "description": "Format and lint JavaScript and TypeScript with Biome",
+    "repo": "github.com/dagger/biomejs"
+  },
+  {
+    "name": "playwright",
+    "description": "Run end-to-end browser tests with Playwright",
+    "repo": "github.com/dagger/playwright"
+  }
+]
