@@ -3462,17 +3462,21 @@ func (ContainerSuite) TestWithRegistryAuth(ctx context.Context, t *testctx.T) {
 	_, err := container.Publish(ctx, testRef)
 	require.Error(t, err)
 
-	pushedRef, err := container.
-		WithRegistryAuth(
-			privateRegistryHost,
-			"john",
-			c.SetSecret("this-secret", "xFlejaPdjrt25Dvr"),
-		).
-		Publish(ctx, testRef)
-
-	require.NoError(t, err)
-	require.NotEqual(t, testRef, pushedRef)
-	require.Contains(t, pushedRef, "@sha256:")
+	for range 2 {
+		c := connect(ctx, t)
+		container := c.Container().From(alpineImage)
+		pushedRef, err := container.
+			WithRegistryAuth(
+				privateRegistryHost,
+				"john",
+				c.SetSecret("this-secret", "xFlejaPdjrt25Dvr"),
+			).
+			WithEnvVariable("CACHE", time.Now().String()).
+			Publish(ctx, testRef)
+		require.NoError(t, err)
+		require.NotEqual(t, testRef, pushedRef)
+		require.Contains(t, pushedRef, "@sha256:")
+	}
 }
 
 // Regression test for #11667: Directory/File access on private registry images

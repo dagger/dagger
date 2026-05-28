@@ -768,6 +768,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.Func("withRegistryAuth", s.withRegistryAuth).
+			WithInput(dagql.PerSessionInput).
 			Doc(`Attach credentials for future publishing to a registry. Use in combination with publish`).
 			Args(
 				dagql.Arg("address").Doc(`The image address that needs authentication. Same format as "docker push". Example: "registry.dagger.io/dagger:latest"`),
