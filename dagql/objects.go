@@ -326,20 +326,6 @@ func (class Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
 	}
 }
 
-func (class Class[T]) ExtendLoadByID(spec FieldSpec, fun LoadByIDFunc) {
-	class.fieldsL.Lock()
-	spec.BuiltinLoadByIDFunc = fun
-	f := &Field[T]{
-		Spec: &spec,
-	}
-	class.fields[spec.Name] = append(class.fields[spec.Name], f)
-	class.fieldsL.Unlock()
-
-	if class.invalidateSchemaCache != nil {
-		class.invalidateSchemaCache()
-	}
-}
-
 // TypeDefinition returns the schema definition of the class.
 //
 // The definition is derived from the type name, description, and fields. The
@@ -640,9 +626,6 @@ func (r ObjectResult[T]) call(
 	if field.Spec.Trivial {
 		ctx = ContextWithTrivialField(ctx)
 	}
-	if field.Spec.BuiltinLoadByIDFunc != nil {
-		return field.Spec.BuiltinLoadByIDFunc(ctx, r, inputArgs)
-	}
 	var (
 		res AnyResult
 		err error
@@ -885,10 +868,6 @@ type FieldSpec struct {
 	Module *ResultCallModule
 	// Directives is the list of GraphQL directives attached to this field.
 	Directives []*ast.Directive
-	// BuiltinLoadByIDFunc is the execution path for schema-generated
-	// load<Type>FromID fields, which re-enter the graph from an object ID
-	// rather than behaving like normal field resolvers.
-	BuiltinLoadByIDFunc LoadByIDFunc
 
 	// ViewFilter is filter that specifies under which views this field is
 	// accessible. If not view is present, the default is the "global" view.

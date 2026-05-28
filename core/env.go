@@ -485,6 +485,9 @@ func (s EnvHook) ExtendEnvType(targetType dagql.ObjectType, directives ...*ast.D
 	return nil
 }
 
+func (s EnvHook) InstallInterface(_ *dagql.Interface, _ ...*ast.Directive) {
+}
+
 func (s EnvHook) InstallObject(targetType dagql.ObjectType, directives ...*ast.Directive) {
 	typename := targetType.TypeName()
 	if strings.HasPrefix(typename, "_") {

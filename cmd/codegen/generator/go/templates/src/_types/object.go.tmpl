@@ -5,7 +5,7 @@ type {{ .Name | FormatName }} struct {
 
     {{ range $field := .Fields }}
         {{- if $field.TypeRef.IsScalar }}
-        {{ $field.Name }} *{{ $field.TypeRef | FormatOutputType }}
+        {{ $field.Name }} *{{ FormatFieldOutputType $field }}
         {{- end }}
 	{{- end }}
 }
@@ -29,13 +29,6 @@ func (r *{{ .Name | FormatName }}) WithGraphQLQuery(q *querybuilder.Selection) *
 	}
 }
 
-{{- if and (LegacyGoSDKCompat) (HasIDField .) }}
-type {{ .Name | FormatName }}ID = ID
-
-func (r *Query) Load{{ .Name | FormatName }}FromID(id {{ .Name | FormatName }}ID) *{{ .Name | FormatName }} {
-	return &{{ .Name | FormatName }}{query: selectNode(r.query, ID(id), "{{ .Name }}")}
-}
-{{- end }}
 
 {{ range $field := .Fields }}
 {{- if HasOptionals $field.Args }}
@@ -166,7 +159,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 
     type {{ $field.Name | ToLowerCase }} struct {
       {{ range $v := $field | GetArrayField }}
-      {{ $v.Name | ToUpperCase }} {{ $v.TypeRef | FormatOutputType }}
+      {{ $v.Name | ToUpperCase }} {{ FormatFieldOutputType $v }}
       {{- end }}
     }
 
@@ -189,7 +182,7 @@ type {{ $field | FieldOptionsStructName }} struct {
     {{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
 	var response []{{ $field.Name | ToLowerCase }}
     {{- else }}
-	var response {{ $field.TypeRef | FormatOutputType }}
+	var response {{ FormatFieldOutputType $field }}
     {{- end  }}
 
 	q = q.Bind(&response)

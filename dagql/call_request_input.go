@@ -262,7 +262,7 @@ func resultCallLiteralFromInput(ctx context.Context, input Input) (*ResultCallLi
 	if input == nil {
 		return &ResultCallLiteral{Kind: ResultCallLiteralKindNull}, nil
 	}
-	if idable, ok := input.(IDable); ok {
+	if idable, ok := UnwrapAs[IDable](input); ok {
 		id, err := idable.ID()
 		if err != nil {
 			return nil, fmt.Errorf("ID input %T is invalid: %w", input, err)

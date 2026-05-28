@@ -297,30 +297,6 @@ var legacyUnifiedIDSchemaJSON = `
 ]
 `
 
-func TestLegacyTypeScriptIDFacade(t *testing.T) {
-	schema := objectsInit(t, legacyUnifiedIDSchemaJSON)
-	generator.SetSchema(&schema)
-	t.Cleanup(func() { generator.SetSchema(nil) })
-
-	got := renderAPI(t, &schema, "v0.20.6")
-
-	require.Contains(t, got, "export type ContainerID = string & { __ContainerID: never }")
-	require.Contains(t, got, "export type DepCustomIfaceID = string & { __DepCustomIfaceID: never }")
-	require.NotContains(t, got, "export type NodeID")
-	require.Contains(t, got, "id(): Promise<ID>")
-	require.Contains(t, got, "private readonly _id?: ContainerID = undefined")
-	require.Contains(t, got, "id = async (): Promise<ContainerID> => {")
-	require.Contains(t, got, "const response: Awaited<ContainerID> = await ctx.execute()")
-	require.Contains(t, got, "file = (id: FileID): File => {")
-	require.Contains(t, got, "loadContainerFromID = (id: ContainerID): Container => {")
-	require.Contains(t, got, `const ctx = this._ctx.selectNode(id, "Container")`)
-	require.Contains(t, got, "return new Container(ctx)")
-	require.Contains(t, got, "loadDepCustomIfaceFromID = (id: DepCustomIfaceID): DepCustomIface => {")
-	require.Contains(t, got, `const ctx = this._ctx.selectNode(id, "DepCustomIface")`)
-	require.Contains(t, got, "return new _DepCustomIfaceClient(ctx)")
-	require.NotContains(t, got, `this._ctx.select("loadContainerFromID"`)
-}
-
 func TestModernTypeScriptIDSurface(t *testing.T) {
 	schema := objectsInit(t, legacyUnifiedIDSchemaJSON)
 	generator.SetSchema(&schema)

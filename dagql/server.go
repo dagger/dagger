@@ -39,6 +39,7 @@ type Server struct {
 	interfaces     map[string]*Interface
 	autoInterfaces []*Interface // core interfaces auto-implemented by qualifying types
 	scalars        map[string]ScalarType
+	scalarFilters  map[string]ViewFilter
 	typeDefs       map[string]TypeDef
 	directives     map[string]DirectiveSpec
 
@@ -111,6 +112,7 @@ func (s *Server) SetResultServerForCall(loader func(ctx context.Context, resultC
 
 type InstallHook interface {
 	InstallObject(ObjectType, ...*ast.Directive)
+	InstallInterface(*Interface, ...*ast.Directive)
 	// FIXME: add support for other install functions
 }
 
@@ -213,6 +215,7 @@ func newBlankServer() *Server {
 		objects:       map[string]ObjectType{},
 		interfaces:    map[string]*Interface{},
 		scalars:       map[string]ScalarType{},
+		scalarFilters: map[string]ViewFilter{},
 		typeDefs:      map[string]TypeDef{},
 		directives:    map[string]DirectiveSpec{},
 		installLock:   &sync.RWMutex{},
@@ -243,6 +246,9 @@ func (s *Server) Fork(_ context.Context, root Typed) (*Server, error) {
 	out.autoInterfaces = append(out.autoInterfaces, s.autoInterfaces...)
 	for name, scalar := range s.scalars {
 		out.scalars[name] = scalar
+	}
+	for name, filter := range s.scalarFilters {
+		out.scalarFilters[name] = filter
 	}
 	for name, typeDef := range s.typeDefs {
 		out.typeDefs[name] = typeDef
@@ -573,11 +579,17 @@ func (s *Server) AutoImplementInterfaces(class ObjectType) {
 // If an interface with the same name is already installed, it is returned.
 func (s *Server) InstallInterface(iface *Interface, directives ...*ast.Directive) *Interface {
 	s.installLock.Lock()
-	defer s.installLock.Unlock()
 	if len(directives) > 0 {
 		iface.addDirectives(directives...)
 	}
-	return s.installInterfaceLocked(iface)
+	installed := s.installInterfaceLocked(iface)
+	s.installLock.Unlock()
+
+	for _, hook := range s.installHooks {
+		hook.InstallInterface(installed, directives...)
+	}
+
+	return installed
 }
 
 // installInterfaceLocked is the lock-held implementation of InstallInterface.
@@ -608,17 +620,32 @@ func (s *Server) installInterfaceLocked(iface *Interface) *Interface {
 // AutoImplementInterfaces to re-check specific types.
 func (s *Server) AddAutoInterface(iface *Interface) {
 	s.installLock.Lock()
-	defer s.installLock.Unlock()
 	iface = s.installInterfaceLocked(iface)
-	s.autoInterfaces = append(s.autoInterfaces, iface)
-
-	// Resolve interface-implements-interface among all auto-interfaces.
-	for _, other := range s.autoInterfaces {
-		if other.TypeName() == iface.TypeName() {
-			continue
+	newlyAdded := true
+	for _, existing := range s.autoInterfaces {
+		if existing.TypeName() == iface.TypeName() {
+			newlyAdded = false
+			break
 		}
-		if other.SatisfiedByInterface(iface, "") {
-			iface.ImplementInterface(other)
+	}
+	if newlyAdded {
+		s.autoInterfaces = append(s.autoInterfaces, iface)
+
+		// Resolve interface-implements-interface among all auto-interfaces.
+		for _, other := range s.autoInterfaces {
+			if other.TypeName() == iface.TypeName() {
+				continue
+			}
+			if other.SatisfiedByInterface(iface, "") {
+				iface.ImplementInterface(other)
+			}
+		}
+	}
+	s.installLock.Unlock()
+
+	if newlyAdded {
+		for _, hook := range s.installHooks {
+			hook.InstallInterface(iface)
 		}
 	}
 }
@@ -632,8 +659,13 @@ func (s *Server) InterfaceType(name string) (*Interface, bool) {
 }
 
 // InstallScalar installs the given Scalar type into the schema, or returns the
-// previously installed type if it was already present
-func (s *Server) InstallScalar(scalar ScalarType) ScalarType {
+// previously installed type if it was already present.
+//
+// If a ViewFilter is supplied, the scalar is only emitted in the schema for
+// views that match the filter. The scalar is always available for input
+// decoding, regardless of view — this lets a view-gated field accept the
+// scalar as an argument value at runtime.
+func (s *Server) InstallScalar(scalar ScalarType, filter ...ViewFilter) ScalarType {
 	s.installLock.Lock()
 	defer s.installLock.Unlock()
 	if scalar, ok := s.scalars[scalar.TypeName()]; ok {
@@ -641,6 +673,9 @@ func (s *Server) InstallScalar(scalar ScalarType) ScalarType {
 	}
 	s.invalidateSchemaCache()
 	s.scalars[scalar.TypeName()] = scalar
+	if len(filter) > 0 && filter[0] != nil {
+		s.scalarFilters[scalar.TypeName()] = filter[0]
+	}
 	return scalar
 }
 
@@ -742,7 +777,10 @@ func (s *Server) SchemaForView(view call.View) *ast.Schema {
 			def := iface.Definition(view)
 			schema.AddTypes(def)
 		})
-		sortutil.RangeSorted(s.scalars, func(_ string, t ScalarType) {
+		sortutil.RangeSorted(s.scalars, func(name string, t ScalarType) {
+			if filter, ok := s.scalarFilters[name]; ok && !filter.Contains(view) {
+				return
+			}
 			def := definition(ast.Scalar, t, view)
 			schema.AddTypes(def)
 			schema.AddPossibleType(def.Name, def)

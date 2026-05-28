@@ -1089,25 +1089,3 @@ class Object(ObjectHandler[GraphQLObjectType]):
                     return cb(self)
                 '''  # noqa: E501
             )
-
-        if t.name == "Query" and self.ctx.legacy_sdk_compat:
-            for target in legacy_idable_types(self.ctx.schema):
-                method = format_name(f"load{target.name}FromID")
-                id_name = legacy_id_name(target.name)
-                return_type = "Self" if target.name == "Query" else target.name
-                constructor = (
-                    f"_{target.name}Client"
-                    if is_interface_type(target)
-                    else target.name
-                )
-                signature = self.ctx.render_types(
-                    f"def {method}(self, id: {id_name}) -> {return_type}:"
-                )
-                yield textwrap.dedent(
-                    f'''
-                    {signature}
-                        """Load a {target.name} from its ID."""
-                        _ctx = self._ctx.select_id("{target.name}", id)
-                        return {constructor}(_ctx)
-                    '''
-                )

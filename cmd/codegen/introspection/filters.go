@@ -1,8 +1,6 @@
 package introspection
 
-import (
-	"slices"
-)
+import "slices"
 
 // Core types that can be extended by the engine itself when
 // installing a dependency.

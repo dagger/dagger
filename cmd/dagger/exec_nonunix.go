@@ -19,8 +19,8 @@ func execCLI(binPath string, args, env []string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err := cmd.Run()
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			os.Exit(exitErr.ExitCode())
-		} 
-    return err
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		os.Exit(exitErr.ExitCode())
+	}
+	return err
 }
