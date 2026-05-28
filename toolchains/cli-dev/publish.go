@@ -170,6 +170,7 @@ func (cli *CliDev) PublishMetadata(
 			Stdin: strings.TrimPrefix(version, "v"),
 		}
 		if semver.Prerelease(version) == "" {
+			// update version pointers
 			ctr = ctr.
 				WithExec([]string{"aws", "s3", "cp", "-", s3Path(awsBucket, "dagger/latest_version")}, cpOpts).
 				WithExec([]string{"aws", "s3", "cp", "-", s3Path(awsBucket, "dagger/versions/latest")}, cpOpts).
