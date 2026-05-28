@@ -1932,7 +1932,17 @@ func layercopyMode(permissions *int) *os.FileMode {
 	if permissions == nil {
 		return nil
 	}
-	mode := os.FileMode(*permissions)
+	raw := *permissions
+	mode := os.FileMode(raw) & os.ModePerm
+	if raw&syscall.S_ISUID != 0 {
+		mode |= os.ModeSetuid
+	}
+	if raw&syscall.S_ISGID != 0 {
+		mode |= os.ModeSetgid
+	}
+	if raw&syscall.S_ISVTX != 0 {
+		mode |= os.ModeSticky
+	}
 	return &mode
 }
 
