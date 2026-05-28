@@ -52,6 +52,7 @@ type ImmutableRef interface {
 type MutableRef interface {
 	Ref
 	Commit(context.Context) (ImmutableRef, error)
+	CommitWithUsage(context.Context, snapshots.Usage) (ImmutableRef, error)
 	InvalidateSize(context.Context) error
 }
 
@@ -682,7 +683,7 @@ func (sr *immutableRef) release(ctx context.Context) (rerr error) {
 	return nil
 }
 
-func (sr *mutableRef) commit(ctx context.Context) (_ *immutableRef, rerr error) {
+func (sr *mutableRef) commit(ctx context.Context, usage *snapshots.Usage) (_ *immutableRef, rerr error) {
 	if sr.released {
 		return nil, errors.Wrapf(errInvalid, "invalid mutable ref %p", sr)
 	}
@@ -694,7 +695,11 @@ func (sr *mutableRef) commit(ctx context.Context) (_ *immutableRef, rerr error) 
 	id := identity.NewID()
 	md := sr.cm.ensureMetadata(id)
 	committed := &cacheRecord{cm: sr.cm, md: md}
-	if err := sr.cm.Snapshotter.Commit(ctx, id, sr.SnapshotID()); err != nil {
+	var commitOpts []snapshots.Opt
+	if usage != nil {
+		commitOpts = append(commitOpts, withMergeUsage(*usage))
+	}
+	if err := sr.cm.Snapshotter.Commit(ctx, id, sr.SnapshotID(), commitOpts...); err != nil {
 		return nil, errors.Wrapf(err, "failed to commit %s to immutable %s", sr.SnapshotID(), id)
 	}
 
@@ -796,7 +801,22 @@ func (sr *mutableRef) Commit(ctx context.Context) (ImmutableRef, error) {
 	sr.mu.Lock()
 	defer sr.mu.Unlock()
 
-	return sr.commit(ctx)
+	return sr.commit(ctx, nil)
+}
+
+func (sr *mutableRef) CommitWithUsage(ctx context.Context, usage snapshots.Usage) (ImmutableRef, error) {
+	ctx, err := EnsureLease(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "ensure lease for snapshot commit")
+	}
+
+	sr.cm.mu.Lock()
+	defer sr.cm.mu.Unlock()
+
+	sr.mu.Lock()
+	defer sr.mu.Unlock()
+
+	return sr.commit(ctx, &usage)
 }
 
 func (sr *mutableRef) Release(ctx context.Context) error {

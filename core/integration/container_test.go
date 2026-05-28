@@ -2770,6 +2770,57 @@ func (ContainerSuite) TestPublish(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "im-a-default-arg\n", output)
 }
 
+func (ContainerSuite) TestPublishWithDirectoryPreservesLayers(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	const expectedLayers = 10
+	sources := []struct {
+		path     string
+		file     string
+		contents string
+	}{}
+	for i := 1; i <= expectedLayers; i++ {
+		name := fmt.Sprintf("layer-%02d", i)
+		sources = append(sources, struct {
+			path     string
+			file     string
+			contents string
+		}{
+			path:     "/layers/" + name,
+			file:     name + ".txt",
+			contents: name,
+		})
+	}
+
+	ctr := c.Container()
+	for _, source := range sources {
+		dir := c.Directory().WithNewFile(source.file, source.contents)
+		ctr = ctr.WithDirectory(source.path, dir)
+	}
+
+	pushedRef, err := ctr.Publish(ctx, registryRef("container-publish-with-directory-layers"))
+	require.NoError(t, err)
+
+	pulledCtr := c.Container().From(pushedRef)
+	for _, source := range sources {
+		contents, err := pulledCtr.File(path.Join(source.path, source.file)).Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, source.contents, contents)
+	}
+
+	parsedRef, err := name.ParseReference(pushedRef, name.Insecure)
+	require.NoError(t, err)
+
+	imgDesc, err := remote.Get(parsedRef, remote.WithTransport(http.DefaultTransport))
+	require.NoError(t, err)
+	img, err := imgDesc.Image()
+	require.NoError(t, err)
+	manifest, err := img.Manifest()
+	require.NoError(t, err)
+
+	require.Len(t, manifest.Layers, expectedLayers+1, "published image should preserve one layer per WithDirectory call plus the current scratch empty layer")
+}
+
 func (ContainerSuite) TestAnnotations(ctx context.Context, t *testctx.T) {
 	build := func(c *dagger.Client, platform dagger.Platform) *dagger.Container {
 		return c.Container(dagger.ContainerOpts{Platform: platform}).

@@ -1,10 +1,12 @@
 package core
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/dagger/dagger/core/internal/layercopy"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,19 +19,25 @@ func TestCopyAttemptUnpackNonArchiveSingleFileDestDirHintCreatesDestDir(t *testi
 	require.NoError(t, os.WriteFile(srcPath, []byte("#!/bin/sh\necho ok\n"), 0o755))
 
 	destRoot := t.TempDir()
-	destPath := filepath.Join(destRoot, "usr", "local", "bin")
+	copier, err := layercopy.NewCopier(layercopy.Mount{Root: destRoot})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, copier.Close())
+	})
 
 	copied, err := copyAttemptUnpackNonArchiveSingleFile(
-		srcPath,
-		"git-checkout-tag-with-hash.sh",
-		destPath,
-		nil,
-		nil,
+		context.Background(),
+		copier,
+		layercopy.Mount{Root: srcRoot},
+		"hack/git-checkout-tag-with-hash.sh",
+		"/usr/local/bin",
+		layercopy.CopyOptions{ReplaceExisting: true},
 		true,
 	)
 	require.NoError(t, err)
 	require.True(t, copied)
 
+	destPath := filepath.Join(destRoot, "usr", "local", "bin")
 	destInfo, err := os.Stat(destPath)
 	require.NoError(t, err)
 	require.True(t, destInfo.IsDir())
@@ -42,21 +50,30 @@ func TestCopyAttemptUnpackNonArchiveSingleFileDestDirHintCreatesDestDir(t *testi
 func TestCopyAttemptUnpackNonArchiveSingleFileNoDestDirHintCopiesToExactPath(t *testing.T) {
 	t.Parallel()
 
-	srcPath := filepath.Join(t.TempDir(), "archive.tar")
+	srcRoot := t.TempDir()
+	srcPath := filepath.Join(srcRoot, "archive.tar")
 	require.NoError(t, os.WriteFile(srcPath, []byte("not an archive"), 0o644))
 
-	destPath := filepath.Join(t.TempDir(), "out")
+	destRoot := t.TempDir()
+	copier, err := layercopy.NewCopier(layercopy.Mount{Root: destRoot})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, copier.Close())
+	})
+
 	copied, err := copyAttemptUnpackNonArchiveSingleFile(
-		srcPath,
+		context.Background(),
+		copier,
+		layercopy.Mount{Root: srcRoot},
 		"archive.tar",
-		destPath,
-		nil,
-		nil,
+		"/out",
+		layercopy.CopyOptions{ReplaceExisting: true},
 		false,
 	)
 	require.NoError(t, err)
 	require.True(t, copied)
 
+	destPath := filepath.Join(destRoot, "out")
 	destInfo, err := os.Stat(destPath)
 	require.NoError(t, err)
 	require.False(t, destInfo.IsDir())
