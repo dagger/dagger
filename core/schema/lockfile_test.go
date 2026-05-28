@@ -144,13 +144,13 @@ func TestResolveLookupFromLock(t *testing.T) {
 func TestCurrentLookupLockMode(t *testing.T) {
 	t.Parallel()
 
-	t.Run("defaults to disabled", func(t *testing.T) {
+	t.Run("defaults to pinned", func(t *testing.T) {
 		t.Parallel()
 
 		ctx := engine.ContextWithClientMetadata(context.Background(), &engine.ClientMetadata{})
 		mode, err := currentLookupLockMode(ctx)
 		require.NoError(t, err)
-		require.Equal(t, workspace.LockModeDisabled, mode)
+		require.Equal(t, workspace.LockModePinned, mode)
 	})
 
 	t.Run("uses explicit mode", func(t *testing.T) {
