@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path"
 	"python-sdk/internal/dagger"
@@ -186,6 +187,7 @@ func (d *Discovery) Load(ctx context.Context, m *PythonSdk) error {
 		d.loadModInfo,
 		d.loadFiles,
 		d.loadConfig,
+		d.loadSelfCalls,
 	}
 
 	for _, task := range tasks {
@@ -398,6 +400,50 @@ func (d *Discovery) loadConfig(ctx context.Context, m *PythonSdk) error {
 	}
 
 	return nil
+}
+
+// loadSelfCalls reads the self-calls experimental feature flag from the
+// module's dagger.json. The runtime ModuleSource client doesn't expose
+// experimentalFeatureEnabled, so we parse the config directly to gate the
+// codegen-side self-types merge.
+func (d *Discovery) loadSelfCalls(ctx context.Context, m *PythonSdk) error {
+	if m.IsInit {
+		// No committed dagger.json yet (dagger init): self-calls can't be set.
+		return nil
+	}
+	root, err := m.ModSource.SourceRootSubpath(ctx)
+	if err != nil {
+		return fmt.Errorf("get source root subpath: %w", err)
+	}
+	contents, err := m.ContextDir.File(path.Join(root, "dagger.json")).Contents(ctx)
+	if err != nil {
+		// Best effort: a missing or unreadable config means no self-calls.
+		return nil
+	}
+	d.mu.Lock()
+	m.SelfCallsEnabled = parseSelfCalls([]byte(contents))
+	d.mu.Unlock()
+	return nil
+}
+
+// parseSelfCalls reports whether dagger.json enables the SELF_CALLS
+// experimental feature. The "sdk" field may be a bare string (no experimental
+// features) or an object carrying an `experimental` map.
+func parseSelfCalls(daggerJSON []byte) bool {
+	var cfg struct {
+		SDK json.RawMessage `json:"sdk"`
+	}
+	if err := json.Unmarshal(daggerJSON, &cfg); err != nil {
+		return false
+	}
+	var sdk struct {
+		Experimental map[string]bool `json:"experimental"`
+	}
+	if err := json.Unmarshal(cfg.SDK, &sdk); err != nil {
+		// "sdk" was a bare string: no experimental features.
+		return false
+	}
+	return sdk.Experimental["SELF_CALLS"]
 }
 
 // findPythonVersion looks for a Python version pin in either `.python-version`

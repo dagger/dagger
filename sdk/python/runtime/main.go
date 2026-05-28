@@ -138,6 +138,14 @@ type PythonSdk struct {
 	// It's assumed that this is the case if there's no pyproject.toml file.
 	IsInit bool
 
+	// SelfCallsEnabled is true when the module opts into the self-calls
+	// experimental feature (dagger.json `sdk.experimental.SELF_CALLS`).
+	//
+	// The module's runtime client (ModuleSource) doesn't expose
+	// experimentalFeatureEnabled, so we read it from the config ourselves to
+	// gate the codegen-side self-types merge.
+	SelfCallsEnabled bool
+
 	// Discovery holds the logic for getting more information from the target module.
 	// +private
 	Discovery *Discovery
@@ -158,6 +166,10 @@ func (m *PythonSdk) Codegen(
 	// time. This is what lets the static entrypoint carry runtime-resolved
 	// values (e.g. `logging.INFO` -> 20) instead of an AST guess.
 	m = m.WithInstall()
+
+	// Self-calls modules merge their own types into the schema and regenerate
+	// the client bindings so they can reference their own API.
+	m = m.WithSelfTypes(introspectionJSON)
 
 	ignorePaths := []string{".venv", "**/__pycache__"}
 	genPaths := []string{
@@ -421,40 +433,89 @@ func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
 	// Allow empty introspection to facilitate debugging the container with a
 	// `dagger call module-runtime terminal` command.
 	if introspectionJSON != nil {
-		ctr := m.Container
-		cmd := []string{"codegen"}
-
-		// When not using the bundled codegen executable we can revert to executing directly
-		if m.Discovery.SdkHasFile("dist/codegen") {
-			ctr = ctr.
-				WithMountedCache("/root/.shiv", dag.CacheVolume("shiv")).
-				WithMountedFile("/usr/local/bin/codegen", m.SdkSourceDir.File("dist/codegen"))
-		} else {
-			ctr = ctr.
-				WithWorkdir("/sdk").
-				WithMountedDirectory("", m.SdkSourceDir)
-			cmd = []string{
-				"uv", "run", "--isolated", "--frozen", "--package", "codegen",
-				"python", "-m", "codegen",
-			}
-		}
-
-		genFile := ctr.
-			// mounted schema as late as possible because it varies more often
-			WithMountedFile(SchemaPath, introspectionJSON).
-			WithExec(append(cmd, "generate", "-i", SchemaPath, "-o", "/gen.py")).
-			File("/gen.py")
-
-		genPath := UserGenPath
-
-		// For now, patch vendored client library with generated bindings.
-		// TODO: Always generate outside library, even if vendored.
-		if m.VendorPath != "" {
-			genPath = path.Join(m.VendorPath, SDKGenPath)
-		}
-
-		m.AddFile(genPath, genFile)
+		m.AddFile(m.genPath(), m.genBindings(introspectionJSON))
 	}
+
+	return m
+}
+
+// genPath is where the generated client bindings (gen.py) are written in the
+// module's source.
+func (m *PythonSdk) genPath() string {
+	// For now, patch vendored client library with generated bindings.
+	// TODO: Always generate outside library, even if vendored.
+	if m.VendorPath != "" {
+		return path.Join(m.VendorPath, SDKGenPath)
+	}
+	return UserGenPath
+}
+
+// genBindings runs codegen to produce the client bindings (gen.py) for the
+// given schema.
+func (m *PythonSdk) genBindings(introspectionJSON *dagger.File) *dagger.File {
+	ctr := m.Container
+	cmd := []string{"codegen"}
+
+	// When not using the bundled codegen executable we can revert to executing directly
+	if m.Discovery.SdkHasFile("dist/codegen") {
+		ctr = ctr.
+			WithMountedCache("/root/.shiv", dag.CacheVolume("shiv")).
+			WithMountedFile("/usr/local/bin/codegen", m.SdkSourceDir.File("dist/codegen"))
+	} else {
+		ctr = ctr.
+			WithWorkdir("/sdk").
+			WithMountedDirectory("", m.SdkSourceDir)
+		cmd = []string{
+			"uv", "run", "--isolated", "--frozen", "--package", "codegen",
+			"python", "-m", "codegen",
+		}
+	}
+
+	return ctr.
+		// mounted schema as late as possible because it varies more often
+		WithMountedFile(SchemaPath, introspectionJSON).
+		WithExec(append(cmd, "generate", "-i", SchemaPath, "-o", "/gen.py")).
+		File("/gen.py")
+}
+
+// WithSelfTypes merges the module's own types into the schema and regenerates
+// the client bindings, so a self-calls module can reference its own API.
+//
+// Mirrors the Go SDK's codegen-side self-types merge, but the schematool merge
+// runs in Python (the API is in the generated user client, not the runtime's
+// own Go client). Must run after WithInstall (emit imports the live module) and
+// after WithSDK (which produced the base bindings the module imports).
+//
+// The merged bindings are written into the container's source so they end up in
+// the generated context directory.
+func (m *PythonSdk) WithSelfTypes(introspectionJSON *dagger.File) *PythonSdk {
+	if introspectionJSON == nil || !m.SelfCallsEnabled {
+		return m
+	}
+
+	extended := m.Container.
+		WithMountedFile(SchemaPath, introspectionJSON).
+		// Emit the module's own types (imports the live module, no engine).
+		WithExec([]string{
+			"python", "-m", "dagger.mod._introspect", "emit",
+			"--output", "/module-types.json",
+		}).
+		// Merge them into the base schema via the engine schematool. Needs a
+		// nested session to reach the engine.
+		WithExec([]string{
+			"python", "-m", "dagger.mod._introspect", "merge",
+			"--introspection-json", SchemaPath,
+			"--module-types", "/module-types.json",
+			"--module-name", m.ModName,
+			"--output", "/extended.json",
+		}, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
+		File("/extended.json")
+
+	genFile := m.genBindings(extended)
+	m.Container = m.Container.WithFile(
+		path.Join(m.ContextDirPath, m.SubPath, m.genPath()),
+		genFile,
+	)
 
 	return m
 }

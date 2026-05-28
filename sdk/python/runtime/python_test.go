@@ -49,3 +49,42 @@ func TestPackageNameNormalization(t *testing.T) {
 	}
 	require.Equal(t, "friendly_2", NormalizePackageName("friendly-2"))
 }
+
+func TestParseSelfCalls(t *testing.T) {
+	cases := []struct {
+		name string
+		json string
+		want bool
+	}{
+		{
+			name: "object sdk with SELF_CALLS true",
+			json: `{"name":"t","sdk":{"source":"python","experimental":{"SELF_CALLS":true}}}`,
+			want: true,
+		},
+		{
+			name: "object sdk with SELF_CALLS false",
+			json: `{"name":"t","sdk":{"source":"python","experimental":{"SELF_CALLS":false}}}`,
+			want: false,
+		},
+		{
+			name: "object sdk without experimental",
+			json: `{"name":"t","sdk":{"source":"python"}}`,
+			want: false,
+		},
+		{
+			name: "bare string sdk",
+			json: `{"name":"t","sdk":"python"}`,
+			want: false,
+		},
+		{
+			name: "malformed json",
+			json: `{not json`,
+			want: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, parseSelfCalls([]byte(tc.json)))
+		})
+	}
+}
