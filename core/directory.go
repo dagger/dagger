@@ -23,7 +23,7 @@ import (
 	bkcontenthash "github.com/dagger/dagger/engine/contenthash"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkclient "github.com/dagger/dagger/internal/buildkit/client"
-	"github.com/dagger/dagger/internal/layercopy"
+	"github.com/dagger/dagger/util/layercopy"
 	"github.com/dagger/dagger/util/patternmatcher"
 	"github.com/dustin/go-humanize"
 	"github.com/vektah/gqlparser/v2/ast"
