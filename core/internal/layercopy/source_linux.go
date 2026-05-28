@@ -89,7 +89,7 @@ func (s *source) selectBase(srcPath string, followFinalSymlink bool) error {
 	s.baseView = baseView
 	s.baseRel = baseRel
 	s.baseInfo = info
-	realPath, realInfo, err := s.realPath("", info)
+	realPath, realInfo, err := s.realPath("")
 	if err != nil {
 		return err
 	}
@@ -97,36 +97,6 @@ func (s *source) selectBase(srcPath string, followFinalSymlink bool) error {
 	s.baseInfo = realInfo
 	s.baseCached = true
 	return nil
-}
-
-func (s *source) entry(rel string) (sourceEntry, error) {
-	if err := s.selectBase(".", false); err != nil {
-		return sourceEntry{}, err
-	}
-	if rel == "" || rel == "." {
-		return sourceEntry{
-			Rel:      "",
-			ViewPath: s.baseView,
-			RealPath: s.baseReal,
-			Info:     s.baseInfo,
-		}, nil
-	}
-
-	viewPath := filepath.Join(s.baseView, rel)
-	info, err := os.Lstat(viewPath)
-	if err != nil {
-		return sourceEntry{}, err
-	}
-	realPath, realInfo, err := s.realPath(rel, info)
-	if err != nil {
-		return sourceEntry{}, err
-	}
-	return sourceEntry{
-		Rel:      filepath.Clean(rel),
-		ViewPath: viewPath,
-		RealPath: realPath,
-		Info:     realInfo,
-	}, nil
 }
 
 func (s *source) readDir(rel string) ([]sourceEntry, error) {
@@ -243,7 +213,7 @@ func (s *source) readOverlayDir(rel string) ([]sourceEntry, error) {
 	return entries, nil
 }
 
-func (s *source) realPath(rel string, viewInfo os.FileInfo) (string, os.FileInfo, error) {
+func (s *source) realPath(rel string) (string, os.FileInfo, error) {
 	rel = cleanRel(filepath.Join(s.baseRel, rel))
 	if !s.overlay {
 		realPath := filepath.Join(s.realRoot, rel)
@@ -254,10 +224,6 @@ func (s *source) realPath(rel string, viewInfo os.FileInfo) (string, os.FileInfo
 		return realPath, realInfo, nil
 	}
 
-	if viewInfo != nil && viewInfo.IsDir() {
-		// Directory contents are walked from the mounted view; metadata can be
-		// copied from any visible instance, with uppermost preferred.
-	}
 	for i := len(s.layers) - 1; i >= 0; i-- {
 		realPath := filepath.Join(s.layers[i], rel)
 		realInfo, err := os.Lstat(realPath)
@@ -299,7 +265,7 @@ func isWhiteout(info os.FileInfo) bool {
 	if st.Mode&syscall.S_IFMT != syscall.S_IFCHR {
 		return false
 	}
-	return unix.Major(uint64(st.Rdev)) == 0 && unix.Minor(uint64(st.Rdev)) == 0
+	return unix.Major(st.Rdev) == 0 && unix.Minor(st.Rdev) == 0
 }
 
 func isOpaqueDir(path string) (bool, error) {

@@ -3,6 +3,7 @@
 package layercopy
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -177,14 +178,14 @@ func (d *destination) materializeExistingDir(rel, viewPath string) (string, bool
 	return realPath, true, nil
 }
 
-func (d *destination) realPath(destPath string) (string, string, error) {
+func (d *destination) realPath(destPath string) (string, error) {
 	destPath = cleanContainerPath(destPath)
 	parentRel, err := d.ensureParent(destPath)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 	rel := filepath.Join(parentRel, filepath.Base(destPath))
-	return filepath.Join(d.writeRoot, rel), rel, nil
+	return filepath.Join(d.writeRoot, rel), nil
 }
 
 func (d *destination) statView(destPath string) (os.FileInfo, bool, error) {
@@ -218,7 +219,7 @@ func (d *destination) removeForReplace(destPath string, srcInfo os.FileInfo, opt
 		return nil
 	}
 
-	realPath, _, err := d.realPath(destPath)
+	realPath, err := d.realPath(destPath)
 	if err != nil {
 		return err
 	}
@@ -331,7 +332,10 @@ func copyMetadata(dstPath, srcPath string, srcInfo os.FileInfo, chown *Ownership
 func copyXattrs(dstPath, srcPath string, _ bool) error {
 	xattrs, err := sysx.LListxattr(srcPath)
 	if err != nil {
-		return nil
+		if errors.Is(err, unix.ENOTSUP) || errors.Is(err, unix.ENODATA) {
+			return nil
+		}
+		return fmt.Errorf("failed to list xattrs on %s: %w", srcPath, err)
 	}
 	for _, xattr := range xattrs {
 		if xattr == "trusted.overlay.opaque" || xattr == "user.overlay.opaque" {
@@ -339,7 +343,10 @@ func copyXattrs(dstPath, srcPath string, _ bool) error {
 		}
 		val, err := sysx.LGetxattr(srcPath, xattr)
 		if err != nil {
-			continue
+			if errors.Is(err, unix.ENODATA) {
+				continue
+			}
+			return fmt.Errorf("failed to get xattr %q on %s: %w", xattr, srcPath, err)
 		}
 		_ = sysx.LSetxattr(dstPath, xattr, val, 0)
 	}
@@ -381,7 +388,7 @@ func statInode(st *syscall.Stat_t) inode {
 	if st == nil {
 		return inode{}
 	}
-	return inode{dev: uint64(st.Dev), ino: uint64(st.Ino)}
+	return inode{dev: st.Dev, ino: st.Ino}
 }
 
 func cleanContainerPath(p string) string {

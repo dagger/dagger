@@ -2320,7 +2320,7 @@ func attemptCopyArchiveUnpack(
 			if err != nil {
 				return false, err
 			}
-			if _, err := unpackArchiveFile(resolvedSrcPath, resolvedDestPath, ownership); err != nil {
+			if err := unpackArchiveFile(resolvedSrcPath, resolvedDestPath, ownership); err != nil {
 				return false, err
 			}
 			continue
@@ -2393,23 +2393,23 @@ func resolveAttemptUnpackMatches(srcRoot string, includePatterns []string) ([]st
 	return out, true, nil
 }
 
-func unpackArchiveFile(srcPath string, destPath string, ownership *Ownership) (bool, error) {
+func unpackArchiveFile(srcPath string, destPath string, ownership *Ownership) error {
 	if !isArchivePath(srcPath) {
-		return false, nil
+		return nil
 	}
 
 	if err := os.MkdirAll(destPath, 0o755); err != nil {
-		return false, err
+		return err
 	}
 	if ownership != nil {
 		if err := os.Chown(destPath, ownership.UID, ownership.GID); err != nil {
-			return false, err
+			return err
 		}
 	}
 
 	file, err := os.Open(srcPath)
 	if err != nil {
-		return false, err
+		return err
 	}
 	defer file.Close()
 
@@ -2417,9 +2417,9 @@ func unpackArchiveFile(srcPath string, destPath string, ownership *Ownership) (b
 		BestEffortXattrs: true,
 	}
 	if err := chrootarchive.Untar(file, destPath, opts); err != nil {
-		return false, err
+		return err
 	}
-	return true, nil
+	return nil
 }
 
 func isArchivePath(path string) bool {
@@ -2471,7 +2471,6 @@ func ensureCopyDestParentExists(ctx context.Context, baseRef bkcache.ImmutableRe
 	})
 }
 
-//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (dir *Directory) WithFile(
 	ctx context.Context,
 	parent dagql.ObjectResult[*Directory],
@@ -2565,7 +2564,7 @@ func (dir *Directory) WithFile(
 					if err != nil {
 						return err
 					}
-					if _, err := unpackArchiveFile(resolvedSrcPath, realUnpackDestPath, ownership); err != nil {
+					if err := unpackArchiveFile(resolvedSrcPath, realUnpackDestPath, ownership); err != nil {
 						return fmt.Errorf("failed to unpack source archive: %w", err)
 					}
 					return nil

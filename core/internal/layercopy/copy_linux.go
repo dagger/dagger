@@ -127,6 +127,12 @@ func (c *Copier) copy(ctx context.Context, src *source, matcher *matcher, srcPat
 }
 
 func (c *Copier) copyFile(ctx context.Context, src *source, srcPath, destPath string, opts CopyOptions) error {
+	select {
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	default:
+	}
+
 	if err := src.selectBase(srcPath, true); err != nil {
 		return err
 	}
@@ -151,7 +157,7 @@ func (c *Copier) copyFile(ctx context.Context, src *source, srcPath, destPath st
 		RealPath: src.baseReal,
 		Info:     src.baseInfo,
 	}
-	return c.copyNode(ctx, ent, destPath, opts)
+	return c.copyNode(ent, destPath, opts)
 }
 
 func (c *Copier) copyEntry(
@@ -202,7 +208,7 @@ func (c *Copier) copyEntry(
 			}
 		}
 		if include {
-			realPath, _, err := c.dest.realPath(destPath)
+			realPath, err := c.dest.realPath(destPath)
 			if err != nil {
 				return err
 			}
@@ -217,7 +223,7 @@ func (c *Copier) copyEntry(
 	if err := c.ensurePending(pending, opts); err != nil {
 		return err
 	}
-	return c.copyNode(ctx, ent, destPath, opts)
+	return c.copyNode(ent, destPath, opts)
 }
 
 func (c *Copier) ensurePending(pending []pendingDir, opts CopyOptions) error {
@@ -229,11 +235,11 @@ func (c *Copier) ensurePending(pending []pendingDir, opts CopyOptions) error {
 	return nil
 }
 
-func (c *Copier) copyNode(ctx context.Context, ent sourceEntry, destPath string, opts CopyOptions) error {
+func (c *Copier) copyNode(ent sourceEntry, destPath string, opts CopyOptions) error {
 	if err := c.dest.removeForReplace(destPath, ent.Info, opts); err != nil {
 		return err
 	}
-	realPath, _, err := c.dest.realPath(destPath)
+	realPath, err := c.dest.realPath(destPath)
 	if err != nil {
 		return err
 	}
@@ -241,7 +247,7 @@ func (c *Copier) copyNode(ctx context.Context, ent sourceEntry, destPath string,
 	mode := ent.Info.Mode()
 	switch {
 	case mode.Type() == 0:
-		return c.copyRegular(ctx, ent, realPath, opts)
+		return c.copyRegular(ent, realPath, opts)
 	case mode&os.ModeSymlink != 0:
 		target, err := os.Readlink(ent.RealPath)
 		if err != nil {
@@ -266,7 +272,7 @@ func (c *Copier) copyNode(ctx context.Context, ent sourceEntry, destPath string,
 	return c.dest.applyMetadataPath(realPath, &ent, opts)
 }
 
-func (c *Copier) copyRegular(ctx context.Context, ent sourceEntry, realPath string, opts CopyOptions) error {
+func (c *Copier) copyRegular(ent sourceEntry, realPath string, opts CopyOptions) error {
 	st, ok := ent.Info.Sys().(*syscall.Stat_t)
 	if !ok {
 		return fmt.Errorf("unexpected stat type %T", ent.Info.Sys())

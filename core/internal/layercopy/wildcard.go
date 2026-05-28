@@ -5,7 +5,6 @@ package layercopy
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
 
@@ -53,12 +52,12 @@ func splitWildcards(p string) (d1, d2 string) {
 }
 
 func containsWildcards(name string) bool {
-	isWindows := runtime.GOOS == "windows"
 	for i := 0; i < len(name); i++ {
 		ch := name[i]
-		if ch == '\\' && !isWindows {
+		switch ch {
+		case '\\':
 			i++
-		} else if ch == '*' || ch == '?' || ch == '[' {
+		case '*', '?', '[':
 			return true
 		}
 	}
