@@ -1,3 +1,7 @@
 {{ .Description | Comment }}
+{{- if IsLegacyIDAlias . }}
+type {{ .Name | FormatName }} = ID
+{{- else }}
 type {{ .Name | FormatName }} string
+{{- end }}
 {{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}

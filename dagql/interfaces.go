@@ -64,6 +64,12 @@ func (iface *Interface) TypeName() string {
 	return iface.name
 }
 
+// Typed returns a Typed marker for this interface, suitable for use as a
+// field return type.
+func (iface *Interface) Typed() Typed {
+	return &interfaceTyped{name: iface.name, nonNull: true}
+}
+
 // TypeDescription returns the description of the interface type.
 func (iface *Interface) TypeDescription() string {
 	return iface.description

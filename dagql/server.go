@@ -112,6 +112,7 @@ func (s *Server) SetResultServerForCall(loader func(ctx context.Context, resultC
 
 type InstallHook interface {
 	InstallObject(ObjectType, ...*ast.Directive)
+	InstallInterface(*Interface, ...*ast.Directive)
 	// FIXME: add support for other install functions
 }
 
@@ -578,11 +579,17 @@ func (s *Server) AutoImplementInterfaces(class ObjectType) {
 // If an interface with the same name is already installed, it is returned.
 func (s *Server) InstallInterface(iface *Interface, directives ...*ast.Directive) *Interface {
 	s.installLock.Lock()
-	defer s.installLock.Unlock()
 	if len(directives) > 0 {
 		iface.addDirectives(directives...)
 	}
-	return s.installInterfaceLocked(iface)
+	installed := s.installInterfaceLocked(iface)
+	s.installLock.Unlock()
+
+	for _, hook := range s.installHooks {
+		hook.InstallInterface(installed, directives...)
+	}
+
+	return installed
 }
 
 // installInterfaceLocked is the lock-held implementation of InstallInterface.
@@ -613,17 +620,32 @@ func (s *Server) installInterfaceLocked(iface *Interface) *Interface {
 // AutoImplementInterfaces to re-check specific types.
 func (s *Server) AddAutoInterface(iface *Interface) {
 	s.installLock.Lock()
-	defer s.installLock.Unlock()
 	iface = s.installInterfaceLocked(iface)
-	s.autoInterfaces = append(s.autoInterfaces, iface)
-
-	// Resolve interface-implements-interface among all auto-interfaces.
-	for _, other := range s.autoInterfaces {
-		if other.TypeName() == iface.TypeName() {
-			continue
+	newlyAdded := true
+	for _, existing := range s.autoInterfaces {
+		if existing.TypeName() == iface.TypeName() {
+			newlyAdded = false
+			break
 		}
-		if other.SatisfiedByInterface(iface, "") {
-			iface.ImplementInterface(other)
+	}
+	if newlyAdded {
+		s.autoInterfaces = append(s.autoInterfaces, iface)
+
+		// Resolve interface-implements-interface among all auto-interfaces.
+		for _, other := range s.autoInterfaces {
+			if other.TypeName() == iface.TypeName() {
+				continue
+			}
+			if other.SatisfiedByInterface(iface, "") {
+				iface.ImplementInterface(other)
+			}
+		}
+	}
+	s.installLock.Unlock()
+
+	if newlyAdded {
+		for _, hook := range s.installHooks {
+			hook.InstallInterface(iface)
 		}
 	}
 }

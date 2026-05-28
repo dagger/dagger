@@ -25,7 +25,7 @@ type {{ .Name | InterfaceClientName }} struct {
 	query *querybuilder.Selection
 {{ range $field := .Fields }}
 	{{- if $field.TypeRef.IsScalar }}
-	{{ $field.Name }} *{{ $field.TypeRef | FormatOutputType }}
+	{{ $field.Name }} *{{ FormatFieldOutputType $field }}
 	{{- end }}
 {{- end }}
 }
@@ -156,7 +156,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 
     type {{ $field.Name | ToLowerCase }} struct {
       {{ range $v := $field | GetArrayField }}
-      {{ $v.Name | ToUpperCase }} {{ $v.TypeRef | FormatOutputType }}
+      {{ $v.Name | ToUpperCase }} {{ FormatFieldOutputType $v }}
       {{- end }}
     }
 
@@ -183,7 +183,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 	}
 	return convert(response), nil
 		{{- else }}
-	var response {{ $field.TypeRef | FormatOutputType }}
+	var response {{ FormatFieldOutputType $field }}
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
 		{{- end }}

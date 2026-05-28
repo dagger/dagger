@@ -4,12 +4,10 @@ type {{ .Name | FormatName }} struct {
 	query *querybuilder.Selection
 {{ range $field := .Fields }}
 	{{- if $field.TypeRef.IsScalar }}
-	{{ $field.Name }} *{{ if eq $field.Name "id" }}{{ $.Name | FormatName }}ID{{ else }}{{ $field.TypeRef | FormatOutputType }}{{ end }}
+	{{ $field.Name }} *{{ FormatFieldOutputType $field }}
 	{{- end }}
 {{- end }}
 }
-
-type {{ .Name | FormatName }}ID = ID
 
 type {{ .Name | FormatName }}Client = {{ .Name | FormatName }}
 
@@ -166,11 +164,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 	}
 	return convert(response), nil
 		{{- else }}
-	{{- if eq $field.Name "id" }}
-	var response {{ $.Name | FormatName }}ID
-	{{- else }}
-	var response {{ $field.TypeRef | FormatOutputType }}
-	{{- end }}
+	var response {{ FormatFieldOutputType $field }}
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
 		{{- end }}
