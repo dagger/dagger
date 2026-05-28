@@ -15,37 +15,26 @@ const Filename = "dagger.json"
 // EngineVersionLatest is replaced by the current engine.Version during module init.
 const EngineVersionLatest string = "latest"
 
-// ParseModuleConfig decodes a dagger.json into a ModuleConfigWithUserFields.
-//
-// It is intentionally permissive about the declared engineVersion — the
-// max-version compatibility check that used to live here is now enforced at
-// the load path (moduleSourceAsModule), so callers that only inspect metadata
-// (e.g. dagger mod engine required, listing dependencies) can still read a
-// module that declares an engineVersion newer than the running engine.
-// Actually loading or serving such a module still errors. Callers that want
-// to fail early at parse time can use ParseAndValidateModuleConfig.
 func ParseModuleConfig(src []byte) (*ModuleConfigWithUserFields, error) {
+	// before attempting to parse the entire config, just read the
+	// engineVersion field, to perform version checks to see if it's even
+	// possible
+	var meta struct {
+		EngineVersion string `json:"engineVersion"`
+	}
+	if err := json.Unmarshal(src, &meta); err != nil {
+		return nil, fmt.Errorf("failed to decode module config: %w", err)
+	}
+	meta.EngineVersion = engine.NormalizeVersion(meta.EngineVersion)
+	if !engine.CheckMaxVersionCompatibility(meta.EngineVersion, engine.BaseVersion(engine.Version)) {
+		return nil, fmt.Errorf("module requires dagger %s, but you have %s", meta.EngineVersion, engine.Version)
+	}
+
 	var modCfg ModuleConfigWithUserFields
 	if err := json.Unmarshal(src, &modCfg); err != nil {
 		return nil, fmt.Errorf("failed to decode module config: %w", err)
 	}
 	return &modCfg, nil
-}
-
-// ParseAndValidateModuleConfig parses dagger.json and additionally enforces
-// that the declared engineVersion is loadable by the running engine. The same
-// gate also fires at moduleSourceAsModule, so this is for callers that want
-// to fail early before materializing a ModuleSource.
-func ParseAndValidateModuleConfig(src []byte) (*ModuleConfigWithUserFields, error) {
-	modCfg, err := ParseModuleConfig(src)
-	if err != nil {
-		return nil, err
-	}
-	engineVersion := engine.NormalizeVersion(modCfg.EngineVersion)
-	if !engine.CheckMaxVersionCompatibility(engineVersion, engine.BaseVersion(engine.Version)) {
-		return nil, fmt.Errorf("module requires dagger %s, but you have %s", modCfg.EngineVersion, engine.Version)
-	}
-	return modCfg, nil
 }
 
 // ModuleConfigWithUserFields is the config for a single module as loaded from a dagger.json file.

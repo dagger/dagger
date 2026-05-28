@@ -3,7 +3,6 @@ package main
 import (
 	"testing"
 
-	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
 
@@ -51,7 +50,7 @@ func TestParseModuleRegistry(t *testing.T) {
 	require.Equal(t, "github.com/dagger/pytest", mods[1].Repo)
 }
 
-func TestEmbeddedModuleRegistryFallbackParses(t *testing.T) {
+func TestEmbeddedModuleRegistryParses(t *testing.T) {
 	mods, err := parseModuleRegistry(embeddedModuleRegistry)
 	require.NoError(t, err)
 	require.NotEmpty(t, mods)
@@ -62,27 +61,7 @@ func TestModSubcommandsRegistered(t *testing.T) {
 	for _, c := range modCmd.Commands() {
 		got[c.Name()] = true
 	}
-	for _, want := range []string{"install", "uninstall", "list", "search", "deps", "engine"} {
+	for _, want := range []string{"install", "uninstall", "list", "search"} {
 		require.Truef(t, got[want], "expected `dagger mod %s` to be registered", want)
-	}
-}
-
-func TestModDepsAndEngineSubcommands(t *testing.T) {
-	subNames := func(parent *cobra.Command) map[string]bool {
-		got := map[string]bool{}
-		for _, c := range parent.Commands() {
-			got[c.Name()] = true
-		}
-		return got
-	}
-
-	deps := subNames(modDepsCmd)
-	for _, want := range []string{"add", "rm", "list"} {
-		require.Truef(t, deps[want], "expected `dagger mod deps %s` to be registered", want)
-	}
-
-	engine := subNames(modEngineCmd)
-	for _, want := range []string{"required", "require", "require-latest", "require-current"} {
-		require.Truef(t, engine[want], "expected `dagger mod engine %s` to be registered", want)
 	}
 }
