@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
@@ -649,54 +650,91 @@ func replayCloudChecks(cmd *cobra.Command, client *cloudapi.Client, orgID string
 		}
 		var rootStart, rootEnd time.Time
 
+		bulkReplay := len(checks) > 3
+		var mu sync.Mutex
+		eg, ctx := errgroup.WithContext(ctx)
+		eg.SetLimit(16)
 		for _, check := range checks {
+			check := check
 			if check.TraceID == "" {
 				continue
 			}
-			var spans []cloudapi.SpanData
-			if err := client.StreamSpans(ctx, orgID, check.TraceID, func(batch []cloudapi.SpanData) {
-				spans = append(spans, batch...)
-			}); err != nil {
-				return nil, err
-			}
-			if len(spans) == 0 {
-				continue
-			}
-			checkSpanID, err := randomHexID(8)
-			if err != nil {
-				return nil, err
-			}
-			start, end := cloudSpanBounds(spans)
-			rootStart, rootEnd = extendBounds(rootStart, rootEnd, start, end)
-			statusCode := "STATUS_CODE_OK"
-			if cloudResultForStatus(check.Status) == "red" {
-				statusCode = "STATUS_CODE_ERROR"
-			}
-			checkSpan := cloudapi.SpanData{
-				ID:        checkSpanID,
-				TraceID:   traceID,
-				Name:      check.Name,
-				Timestamp: start,
-				EndTime:   &end,
-				Status: cloudapi.SpanStatus{
-					Code:    statusCode,
-					Message: check.Status,
-				},
-			}
-			for i := range spans {
-				if spans[i].ParentID == nil {
-					originalRootID := spans[i].ID
-					logBatches = append(logBatches, struct {
-						OriginalTraceID string
-						RootSpanID      string
-					}{OriginalTraceID: check.TraceID, RootSpanID: originalRootID})
-					parentID := checkSpanID
-					spans[i].ParentID = &parentID
+			eg.Go(func() error {
+				if bulkReplay {
+					checkSpanID, err := randomHexID(8)
+					if err != nil {
+						return err
+					}
+					checkSpan, start, end := syntheticCloudCheckSpan(traceID, checkSpanID, check, commit.Timestamp)
+					mu.Lock()
+					rootStart, rootEnd = extendBounds(rootStart, rootEnd, start, end)
+					allSpans = append(allSpans, checkSpan)
+					mu.Unlock()
+					return nil
 				}
-				spans[i].TraceID = traceID
-			}
-			allSpans = append(allSpans, checkSpan)
-			allSpans = append(allSpans, spans...)
+
+				var spans []cloudapi.SpanData
+				traceCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+				defer cancel()
+				if err := client.StreamSpans(traceCtx, orgID, check.TraceID, func(batch []cloudapi.SpanData) {
+					spans = append(spans, batch...)
+				}); err != nil {
+					if len(spans) == 0 {
+						slog.Warn("error streaming Cloud check trace", "check", check.Name, "trace", check.TraceID, "err", err)
+						return nil
+					}
+					slog.Warn("using partial Cloud check trace", "check", check.Name, "trace", check.TraceID, "err", err)
+				}
+				if len(spans) == 0 {
+					return nil
+				}
+				checkSpanID, err := randomHexID(8)
+				if err != nil {
+					return err
+				}
+				start, end := cloudSpanBounds(spans)
+				statusCode := "STATUS_CODE_OK"
+				if cloudResultForStatus(check.Status) == "red" {
+					statusCode = "STATUS_CODE_ERROR"
+				}
+				checkSpan := cloudapi.SpanData{
+					ID:        checkSpanID,
+					TraceID:   traceID,
+					Name:      check.Name,
+					Timestamp: start,
+					EndTime:   &end,
+					Status: cloudapi.SpanStatus{
+						Code:    statusCode,
+						Message: check.Status,
+					},
+				}
+				var checkLogBatches []struct {
+					OriginalTraceID string
+					RootSpanID      string
+				}
+				for i := range spans {
+					if spans[i].ParentID == nil {
+						originalRootID := spans[i].ID
+						checkLogBatches = append(checkLogBatches, struct {
+							OriginalTraceID string
+							RootSpanID      string
+						}{OriginalTraceID: check.TraceID, RootSpanID: originalRootID})
+						parentID := checkSpanID
+						spans[i].ParentID = &parentID
+					}
+					spans[i].TraceID = traceID
+				}
+				mu.Lock()
+				rootStart, rootEnd = extendBounds(rootStart, rootEnd, start, end)
+				allSpans = append(allSpans, checkSpan)
+				allSpans = append(allSpans, spans...)
+				logBatches = append(logBatches, checkLogBatches...)
+				mu.Unlock()
+				return nil
+			})
+		}
+		if err := eg.Wait(); err != nil {
+			return nil, err
 		}
 
 		if len(allSpans) == 0 {
@@ -734,27 +772,67 @@ func replayCloudChecks(cmd *cobra.Command, client *cloudapi.Client, orgID string
 		}
 		Frontend.SetPrimary(dagui.SpanID{SpanID: spans[0].SpanContext().SpanID()})
 
-		eg, ctx := errgroup.WithContext(ctx)
-		for _, logs := range logBatches {
-			logs := logs
-			eg.Go(func() error {
-				return client.StreamLogs(ctx, orgID, logs.OriginalTraceID, logs.RootSpanID, func(messages []cloudapi.LogMessage) {
-					records := cloudapi.LogMessagesToRecords(traceID, messages)
-					if len(records) == 0 {
-						return
-					}
-					if err := logExp.Export(ctx, records); err != nil {
-						slog.Warn("error exporting logs", "err", err)
-					}
+		if len(checks) <= 3 {
+			eg, ctx := errgroup.WithContext(ctx)
+			for _, logs := range logBatches {
+				logs := logs
+				eg.Go(func() error {
+					return client.StreamLogs(ctx, orgID, logs.OriginalTraceID, logs.RootSpanID, func(messages []cloudapi.LogMessage) {
+						records := cloudapi.LogMessagesToRecords(traceID, messages)
+						if len(records) == 0 {
+							return
+						}
+						if err := logExp.Export(ctx, records); err != nil {
+							slog.Warn("error exporting logs", "err", err)
+						}
+					})
 				})
-			})
-		}
-		if err := eg.Wait(); err != nil {
-			return nil, err
+			}
+			if err := eg.Wait(); err != nil {
+				return nil, err
+			}
 		}
 
 		return func() error { return nil }, nil
 	})
+}
+
+func syntheticCloudCheckSpan(traceID, spanID string, check cloudapi.Check, fallback time.Time) (cloudapi.SpanData, time.Time, time.Time) {
+	start := cloudCheckStart(check)
+	if start.IsZero() {
+		start = fallback
+	}
+	if start.IsZero() {
+		start = time.Now()
+	}
+	end := start
+	if check.EndTime != nil {
+		end = *check.EndTime
+	} else if d := check.DurationAsTime(); d > 0 {
+		end = start.Add(d)
+	}
+	if end.Before(start) {
+		end = start
+	}
+	statusCode := "STATUS_CODE_OK"
+	if cloudResultForStatus(check.Status) == "red" {
+		statusCode = "STATUS_CODE_ERROR"
+	}
+	return cloudapi.SpanData{
+		ID:        spanID,
+		TraceID:   traceID,
+		Name:      check.Name,
+		Timestamp: start,
+		EndTime:   &end,
+		Attributes: map[string]any{
+			"dagger.io/replay.summary": true,
+			"dagger.io/original.trace": check.TraceID,
+		},
+		Status: cloudapi.SpanStatus{
+			Code:    statusCode,
+			Message: check.Status,
+		},
+	}, start, end
 }
 
 func cloudSpanBounds(spans []cloudapi.SpanData) (time.Time, time.Time) {
