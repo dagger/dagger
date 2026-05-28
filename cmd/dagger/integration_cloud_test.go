@@ -7,9 +7,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestIntegrationEntriesFromSources(t *testing.T) {
+func TestIntegrationAccountEntriesFromSources(t *testing.T) {
 	orgName := "dagger"
-	entries := integrationEntriesFromSources([]cloudapi.Source{
+	entries := integrationAccountEntriesFromSources([]cloudapi.Source{
 		{
 			Name:         "dagger",
 			ID:           "123",
@@ -26,7 +26,7 @@ func TestIntegrationEntriesFromSources(t *testing.T) {
 		},
 	})
 
-	require.Equal(t, []integrationListEntry{
+	require.Equal(t, []integrationAccountEntry{
 		{
 			ID:           "123",
 			Provider:     "GitHub",
@@ -46,4 +46,6 @@ func TestIntegrationEntriesFromSources(t *testing.T) {
 			ConfigURL: "https://gitlab.com/acme",
 		},
 	}, entries)
+
+	require.Equal(t, entries[:1], filterIntegrationAccountEntries(entries, "github"))
 }

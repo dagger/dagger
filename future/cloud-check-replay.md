@@ -19,6 +19,19 @@ flags, and listing is a projection over matching rows.
 
 There is no public `gate` object and no public `matrix` object in this design.
 
+Companion integration commands are provider-first singleton operations. GitHub
+is the integration target; accounts and source states are coordinates under it:
+
+```console
+$ dagger integration setup github
+$ dagger integration accounts github
+$ dagger integration sync github --repo=acme/hello --pr=4242
+```
+
+`setup` connects the provider, `accounts` lists visible GitHub accounts, and
+`sync` is manual repair for history ingestion. Normal ingestion comes from
+GitHub webhooks.
+
 ## Coordinate Model
 
 Dagger Cloud Checks history is a table of workspace-state check results.

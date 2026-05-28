@@ -33,9 +33,8 @@ dagger check
 dagger check go:lint
 
 # Org admin — capability provider
-dagger integration add github
-dagger integration list
-dagger integration config <id> auto_gate true     # auto-create gates for new visible repos
+dagger integration setup github
+dagger integration accounts github
 
 # Gates — the managed object
 dagger gate add [NAME]                            # current repo, default policy
@@ -168,8 +167,9 @@ Default for non-SCM consumers should be `red-edge` — otherwise long outages sp
 
 ```bash
 # 1. Org admin (one-time)
-$ dagger integration add github
-> Added integration github:acme
+$ dagger integration setup github
+> Open this URL to set up the GitHub integration:
+> https://dagger.cloud/...
 
 # 2. Developer in repo
 $ dagger config cloud.checks.enabled true

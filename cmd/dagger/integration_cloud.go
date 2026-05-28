@@ -13,12 +13,18 @@ import (
 )
 
 var githubOpen bool
+var integrationSyncAccount string
+var integrationSyncRepo string
+var integrationSyncPR string
+var integrationSyncTag string
+var integrationSyncBranch string
+var integrationSyncHead bool
 
 const githubOAuthRedirect = "https://dagger.cloud/github/callback"
 
 var integrationCmd = &cobra.Command{
 	Use:     "integration",
-	Short:   "Manage Dagger Cloud integrations",
+	Short:   "Manage Dagger Cloud integration providers",
 	Args:    cobra.NoArgs,
 	GroupID: cloudGroup.ID,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -26,62 +32,41 @@ var integrationCmd = &cobra.Command{
 	},
 }
 
-var integrationAddCmd = &cobra.Command{
-	Use:   "add <provider>",
-	Short: "Add a Dagger Cloud integration",
+var integrationSetupCmd = &cobra.Command{
+	Use:   "setup <provider>",
+	Short: "Set up a Dagger Cloud integration provider",
 	Args:  cobra.ExactArgs(1),
-	RunE:  cloudCLI.IntegrationAdd,
+	RunE:  cloudCLI.IntegrationSetup,
 }
 
-var integrationListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List Dagger Cloud integrations",
-	Args:  cobra.NoArgs,
-	RunE:  cloudCLI.IntegrationList,
+var integrationAccountsCmd = &cobra.Command{
+	Use:   "accounts <provider>",
+	Short: "List accounts visible to a Dagger Cloud integration provider",
+	Args:  cobra.ExactArgs(1),
+	RunE:  cloudCLI.IntegrationAccounts,
 }
 
-var integrationGithubCmd = &cobra.Command{
-	Use:   "github",
-	Short: "Inspect the GitHub integration used by Dagger Cloud",
-	Args:  cobra.NoArgs,
-	RunE:  cloudCLI.IntegrationGitHubInfo,
-}
-
-var integrationGithubInfoCmd = &cobra.Command{
-	Use:   "info",
-	Short: "Show GitHub connection and integration status",
-	Args:  cobra.NoArgs,
-	RunE:  cloudCLI.IntegrationGitHubInfo,
-}
-
-var integrationGithubConnectCmd = &cobra.Command{
-	Use:   "connect",
-	Short: "Print the GitHub OAuth URL for this Dagger Cloud user",
-	Args:  cobra.NoArgs,
-	RunE:  cloudCLI.IntegrationGitHubConnect,
-}
-
-var integrationGithubDisconnectCmd = &cobra.Command{
-	Use:   "disconnect",
-	Short: "Disconnect GitHub OAuth from this Dagger Cloud user",
-	Args:  cobra.NoArgs,
-	RunE:  cloudCLI.IntegrationGitHubDisconnect,
+var integrationSyncCmd = &cobra.Command{
+	Use:   "sync <provider>",
+	Short: "Manually sync source states for a Dagger Cloud integration provider",
+	Args:  cobra.ExactArgs(1),
+	RunE:  cloudCLI.IntegrationSync,
 }
 
 func init() {
 	integrationCmd.PersistentFlags().BoolVar(&cloudJSON, "json", false, "Print JSON output")
-	integrationAddCmd.Flags().BoolVar(&githubOpen, "open", false, "Open the OAuth URL in a browser")
-	integrationGithubConnectCmd.Flags().BoolVar(&githubOpen, "open", false, "Open the OAuth URL in a browser")
-	integrationGithubCmd.AddCommand(
-		integrationGithubInfoCmd,
-		integrationGithubConnectCmd,
-		integrationGithubDisconnectCmd,
-	)
-	integrationCmd.AddCommand(integrationAddCmd, integrationListCmd, integrationGithubCmd)
+	integrationSetupCmd.Flags().BoolVar(&githubOpen, "open", false, "Open the setup URL in a browser")
+	integrationSyncCmd.Flags().StringVar(&integrationSyncAccount, "account", "", "GitHub account name")
+	integrationSyncCmd.Flags().StringVar(&integrationSyncRepo, "repo", "", "GitHub repository, e.g. acme/hello")
+	integrationSyncCmd.Flags().StringVar(&integrationSyncPR, "pr", "", "GitHub pull request number")
+	integrationSyncCmd.Flags().StringVar(&integrationSyncTag, "tag", "", "Git tag name")
+	integrationSyncCmd.Flags().StringVar(&integrationSyncBranch, "branch", "", "Git branch name")
+	integrationSyncCmd.Flags().BoolVar(&integrationSyncHead, "head", false, "Sync the default branch head")
+	integrationCmd.AddCommand(integrationSetupCmd, integrationAccountsCmd, integrationSyncCmd)
 	rootCmd.AddCommand(integrationCmd)
 }
 
-type integrationListEntry struct {
+type integrationAccountEntry struct {
 	ID           string `json:"id"`
 	Provider     string `json:"provider"`
 	Account      string `json:"account"`
@@ -93,21 +78,38 @@ type integrationListEntry struct {
 }
 
 type githubSetupHandoff struct {
-	Label       string
 	URL         string
 	RedirectURI string
 }
 
-func (cli *CloudCLI) IntegrationAdd(cmd *cobra.Command, args []string) error {
+func (cli *CloudCLI) IntegrationSetup(cmd *cobra.Command, args []string) error {
 	switch strings.ToLower(args[0]) {
 	case "github":
-		return cli.IntegrationGitHubConnect(cmd, nil)
+		return cli.integrationSetupGitHub(cmd)
 	default:
-		return fmt.Errorf("unsupported integration %q; supported integrations: github", args[0])
+		return unsupportedIntegrationProvider(args[0])
 	}
 }
 
-func (cli *CloudCLI) IntegrationList(cmd *cobra.Command, args []string) error {
+func (cli *CloudCLI) IntegrationAccounts(cmd *cobra.Command, args []string) error {
+	switch strings.ToLower(args[0]) {
+	case "github":
+		return cli.integrationAccountsGitHub(cmd)
+	default:
+		return unsupportedIntegrationProvider(args[0])
+	}
+}
+
+func (cli *CloudCLI) IntegrationSync(cmd *cobra.Command, args []string) error {
+	switch strings.ToLower(args[0]) {
+	case "github":
+		return cli.integrationSyncGitHub()
+	default:
+		return unsupportedIntegrationProvider(args[0])
+	}
+}
+
+func (cli *CloudCLI) integrationAccountsGitHub(cmd *cobra.Command) error {
 	client, _, err := cli.cloudClient(cmd.Context())
 	if err != nil {
 		return err
@@ -116,56 +118,17 @@ func (cli *CloudCLI) IntegrationList(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	entries := integrationEntriesFromSources(sources)
+	entries := integrationAccountEntriesFromSources(sources)
+	entries = filterIntegrationAccountEntries(entries, "GitHub")
 
 	if cloudJSON {
 		return writeCloudJSON(cmd, entries)
 	}
-	printIntegrationList(cmd, entries)
+	printIntegrationAccounts(cmd, "GitHub", entries)
 	return nil
 }
 
-func (cli *CloudCLI) IntegrationGitHubInfo(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
-	client, cloudAuth, err := cli.cloudClient(ctx)
-	if err != nil {
-		return err
-	}
-	conn, err := client.GitHubConnection(ctx)
-	if err != nil {
-		return err
-	}
-	sources, err := client.Sources(ctx)
-	if err != nil {
-		return err
-	}
-
-	var org *cloudapi.OrgResponse
-	var integrations []cloudapi.Integration
-	if cloudOrgFlag != "" || cloudAuth.Org != nil {
-		org, err = cli.resolveCloudOrg(ctx, client, cloudAuth)
-		if err != nil {
-			return err
-		}
-		integrations, err = client.Integrations(ctx, org.ID)
-		if err != nil {
-			return err
-		}
-	}
-
-	if cloudJSON {
-		return writeCloudJSON(cmd, map[string]any{
-			"githubConnection":   conn,
-			"githubIntegrations": integrationEntriesFromSources(sources),
-			"org":                org,
-			"catalog":            integrations,
-		})
-	}
-	printGitHubIntegration(cmd, conn, sources, org, integrations)
-	return nil
-}
-
-func (cli *CloudCLI) IntegrationGitHubConnect(cmd *cobra.Command, args []string) error {
+func (cli *CloudCLI) integrationSetupGitHub(cmd *cobra.Command) error {
 	client, _, err := cli.cloudClient(cmd.Context())
 	if err != nil {
 		return err
@@ -179,25 +142,28 @@ func (cli *CloudCLI) IntegrationGitHubConnect(cmd *cobra.Command, args []string)
 		return writeCloudJSON(cmd, map[string]string{"url": setup.URL, "redirectURI": setup.RedirectURI})
 	}
 	out := cmd.OutOrStdout()
-	fmt.Fprintln(out, "Open this URL to connect your GitHub account:")
+	fmt.Fprintln(out, "Open this URL to set up the GitHub integration:")
 	fmt.Fprintln(out, setup.URL)
 	return nil
 }
 
-func (cli *CloudCLI) IntegrationGitHubDisconnect(cmd *cobra.Command, args []string) error {
-	client, _, err := cli.cloudClient(cmd.Context())
-	if err != nil {
-		return err
+func (cli *CloudCLI) integrationSyncGitHub() error {
+	targets := 0
+	for _, value := range []string{integrationSyncPR, integrationSyncTag, integrationSyncBranch} {
+		if value != "" {
+			targets++
+		}
 	}
-	ok, err := client.DisconnectGitHub(cmd.Context())
-	if err != nil {
-		return err
+	if integrationSyncHead {
+		targets++
 	}
-	if cloudJSON {
-		return writeCloudJSON(cmd, map[string]bool{"ok": ok})
+	if targets > 1 {
+		return fmt.Errorf("--pr, --tag, --branch, and --head are mutually exclusive")
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), "Disconnected GitHub from this Dagger Cloud user.")
-	return nil
+	if targets > 0 && integrationSyncRepo == "" {
+		return fmt.Errorf("--repo is required with --pr, --tag, --branch, or --head")
+	}
+	return fmt.Errorf("dagger integration sync github is not supported by this CLI prototype yet; normal GitHub ingest comes from Cloud webhooks")
 }
 
 func (cli *CloudCLI) githubConnectHandoff(ctx context.Context, client *cloudapi.Client) (*githubSetupHandoff, error) {
@@ -206,7 +172,6 @@ func (cli *CloudCLI) githubConnectHandoff(ctx context.Context, client *cloudapi.
 		return nil, err
 	}
 	return &githubSetupHandoff{
-		Label:       "Connect GitHub",
 		URL:         oauthURL,
 		RedirectURI: githubOAuthRedirect,
 	}, nil
@@ -220,17 +185,16 @@ func openGitHubSetupURL(cmd *cobra.Command, setupURL string) {
 	}
 }
 
-func printIntegrationList(cmd *cobra.Command, entries []integrationListEntry) {
+func printIntegrationAccounts(cmd *cobra.Command, provider string, entries []integrationAccountEntry) {
 	out := cmd.OutOrStdout()
 	if len(entries) == 0 {
-		fmt.Fprintln(out, "No integrations found. Add one with: dagger integration add github")
+		fmt.Fprintf(out, "No %s accounts found. Set up %s with: dagger integration setup %s\n", provider, provider, strings.ToLower(provider))
 		return
 	}
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "INTEGRATION\tACCOUNT\tTYPE\tDAGGER ORG\tAUTOCHECK\tCONFIG URL")
+	fmt.Fprintln(w, "ACCOUNT\tTYPE\tDAGGER ORG\tAUTOCHECK\tCONFIG URL")
 	for _, entry := range entries {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			entry.Provider,
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
 			entry.Account,
 			entry.Type,
 			entry.Org,
@@ -241,11 +205,11 @@ func printIntegrationList(cmd *cobra.Command, entries []integrationListEntry) {
 	_ = w.Flush()
 }
 
-func integrationEntriesFromSources(sources []cloudapi.Source) []integrationListEntry {
-	entries := make([]integrationListEntry, 0, len(sources))
+func integrationAccountEntriesFromSources(sources []cloudapi.Source) []integrationAccountEntry {
+	entries := make([]integrationAccountEntry, 0, len(sources))
 	for _, source := range sources {
 		provider := sourceIntegrationProvider(source)
-		entries = append(entries, integrationListEntry{
+		entries = append(entries, integrationAccountEntry{
 			ID:           source.ID,
 			Provider:     provider,
 			Account:      source.Name,
@@ -257,6 +221,20 @@ func integrationEntriesFromSources(sources []cloudapi.Source) []integrationListE
 		})
 	}
 	return entries
+}
+
+func filterIntegrationAccountEntries(entries []integrationAccountEntry, provider string) []integrationAccountEntry {
+	filtered := make([]integrationAccountEntry, 0, len(entries))
+	for _, entry := range entries {
+		if strings.EqualFold(entry.Provider, provider) {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
+}
+
+func unsupportedIntegrationProvider(provider string) error {
+	return fmt.Errorf("unsupported integration %q; supported integrations: github", provider)
 }
 
 func sourceIntegrationProvider(source cloudapi.Source) string {
@@ -283,32 +261,4 @@ func onOff(enabled bool) string {
 		return "on"
 	}
 	return "off"
-}
-
-func printGitHubIntegration(cmd *cobra.Command, conn *cloudapi.GitHubConnection, sources []cloudapi.Source, org *cloudapi.OrgResponse, integrations []cloudapi.Integration) {
-	out := cmd.OutOrStdout()
-	if conn == nil {
-		fmt.Fprintln(out, "GitHub account: not connected")
-	} else {
-		fmt.Fprintf(out, "GitHub account: @%s since %s\n", conn.GitHubLogin, conn.ConnectedAt)
-	}
-	if org != nil {
-		for _, integration := range integrations {
-			if strings.EqualFold(integration.Name, "GitHub") {
-				fmt.Fprintf(out, "Org integration: %s enabled=%t\n", org.Name, integrationEnabled(integration))
-				break
-			}
-		}
-	}
-	if len(sources) == 0 {
-		fmt.Fprintln(out, "GitHub integrations: none visible")
-		return
-	}
-	fmt.Fprintln(out, "\nGitHub integrations:")
-	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ACCOUNT\tID\tTYPE\tDAGGER ORG\tCONFIG URL")
-	for _, source := range sources {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", source.Name, source.ID, source.Type, stringValue(source.OrgName), source.ConfigURL)
-	}
-	_ = w.Flush()
 }
