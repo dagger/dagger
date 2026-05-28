@@ -2818,7 +2818,27 @@ func (ContainerSuite) TestPublishWithDirectoryPreservesLayers(ctx context.Contex
 	manifest, err := img.Manifest()
 	require.NoError(t, err)
 
-	require.Len(t, manifest.Layers, expectedLayers+1, "published image should preserve one layer per WithDirectory call plus the current scratch empty layer")
+	require.Len(t, manifest.Layers, expectedLayers, "published image should preserve one layer per WithDirectory call")
+}
+
+func (ContainerSuite) TestPublishScratchRootFSHasNoLayers(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().WithRootfs(c.Directory())
+	pushedRef, err := ctr.Publish(ctx, registryRef("container-publish-scratch-rootfs"))
+	require.NoError(t, err)
+
+	parsedRef, err := name.ParseReference(pushedRef, name.Insecure)
+	require.NoError(t, err)
+
+	imgDesc, err := remote.Get(parsedRef, remote.WithTransport(http.DefaultTransport))
+	require.NoError(t, err)
+	img, err := imgDesc.Image()
+	require.NoError(t, err)
+	manifest, err := img.Manifest()
+	require.NoError(t, err)
+
+	require.Empty(t, manifest.Layers, "published scratch rootfs should not include an empty layer")
 }
 
 func (ContainerSuite) TestAnnotations(ctx context.Context, t *testctx.T) {

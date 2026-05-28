@@ -68,6 +68,10 @@ func (m *cacheVolumeTestSnapshotManager) GetBySnapshotID(ctx context.Context, sn
 	return ref, nil
 }
 
+func (*cacheVolumeTestSnapshotManager) Scratch(context.Context) (bkcache.ImmutableRef, error) {
+	panic("unexpected Scratch call")
+}
+
 func (m *cacheVolumeTestSnapshotManager) SnapshotSize(ctx context.Context, snapshotID string) (int64, error) {
 	_ = ctx
 	m.snapshotSizeCalls = append(m.snapshotSizeCalls, snapshotID)

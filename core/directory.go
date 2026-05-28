@@ -329,42 +329,15 @@ func (*Directory) DecodePersistedObject(ctx context.Context, dag *dagql.Server, 
 }
 
 func loadCanonicalScratchDirectory(ctx context.Context) (string, bkcache.ImmutableRef, error) {
-	srv, err := CurrentDagqlServer(ctx)
+	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return "", nil, fmt.Errorf("load canonical scratch directory: %w", err)
 	}
-
-	var scratch dagql.ObjectResult[*Directory]
-	if err := srv.Select(ctx, srv.Root(), &scratch, dagql.Selector{Field: "directory"}); err != nil {
-		return "", nil, fmt.Errorf("select canonical scratch directory: %w", err)
-	}
-	if scratch.Self() == nil {
-		return "", nil, fmt.Errorf("select canonical scratch directory: nil directory")
-	}
-
-	scratchDir, err := scratch.Self().Dir.GetOrEval(ctx, scratch.Result)
-	if err != nil {
-		return "", nil, fmt.Errorf("get canonical scratch directory path: %w", err)
-	}
-	scratchSnapshot, err := scratch.Self().Snapshot.GetOrEval(ctx, scratch.Result)
-	if err != nil {
-		return "", nil, fmt.Errorf("get canonical scratch directory snapshot: %w", err)
-	}
-	if scratchSnapshot == nil {
-		return "", nil, fmt.Errorf("get canonical scratch directory snapshot: nil snapshot")
-	}
-
-	// Reopen the canonical scratch snapshot so this directory owns its own
-	// releasable ref instead of aliasing the dagql-loaded one.
-	query, err := CurrentQuery(ctx)
+	scratchSnapshot, err := query.SnapshotManager().Scratch(ctx)
 	if err != nil {
 		return "", nil, err
 	}
-	reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, scratchSnapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
-	if err != nil {
-		return "", nil, err
-	}
-	return scratchDir, reopened, nil
+	return "/", scratchSnapshot, nil
 }
 
 type DirectoryWithDirectoryLazy struct {
