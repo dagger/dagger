@@ -25,11 +25,19 @@ func expandRepoForms(repos []string) []string {
 	}
 	for _, r := range repos {
 		add(r)
+		withoutScheme := strings.TrimPrefix(strings.TrimPrefix(r, "https://"), "http://")
+		add(withoutScheme)
+		add("https://" + withoutScheme)
+
+		parts := strings.Split(withoutScheme, "/")
 		switch {
-		case strings.HasPrefix(r, "https://"), strings.HasPrefix(r, "http://"):
-			add(strings.TrimPrefix(strings.TrimPrefix(r, "https://"), "http://"))
-		default:
-			add("https://" + r)
+		case len(parts) == 2:
+			add("github.com/" + withoutScheme)
+			add("https://github.com/" + withoutScheme)
+		case len(parts) >= 3 && parts[0] == "github.com":
+			ownerRepo := strings.Join(parts[1:3], "/")
+			add(ownerRepo)
+			add("https://github.com/" + ownerRepo)
 		}
 	}
 	return out
