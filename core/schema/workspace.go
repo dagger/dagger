@@ -80,6 +80,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("name").Doc("Override name for the installed module entry."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
+		dagql.Func("uninstall", s.uninstall).
+			DoNotCache("Mutates workspace config on host").
+			Doc("Uninstall a module from the workspace, writing config.toml to the host.").
+			Args(
+				dagql.Arg("name").Doc("Name of the installed module entry to remove."),
+				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
+			),
 		dagql.Func("moduleInit", s.moduleInit).
 			DoNotCache("Mutates workspace config and host filesystem").
 			Doc("Create a new module owned by the workspace and auto-install it in config.toml.").

@@ -320,6 +320,19 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
+     * Uninstall a module from the workspace, writing config.toml to the host.
+     */
+    public function uninstall(string $name, ?bool $here = false): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('uninstall');
+        $leafQueryBuilder->setArgument('name', $name);
+        if (null !== $here) {
+        $leafQueryBuilder->setArgument('here', $here);
+        }
+        return (string)$this->queryLeaf($leafQueryBuilder, 'uninstall');
+    }
+
+    /**
      * Refresh workspace-managed state and return the resulting changeset.
      *
      * Currently this refreshes existing lockfile entries only.

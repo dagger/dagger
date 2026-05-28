@@ -19,7 +19,7 @@ import (
 
 	"dagger/workspace/internal/dagger"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
 
 var dag = dagger.Connect()
@@ -37,7 +37,10 @@ func setMarshalContext(ctx context.Context) {
 	dagger.SetMarshalContext(ctx)
 }
 
-type DaggerObject = querybuilder.GraphQLMarshaller
+type DaggerObject interface {
+	querybuilder.GraphQLMarshaller
+	ID(ctx context.Context) (dagger.ID, error)
+}
 
 type ExecError = dagger.ExecError
 
@@ -142,17 +145,8 @@ func (r *AttemptsReport) UnmarshalJSON(bs []byte) error {
 
 type evalImpl struct {
 	query *querybuilder.Selection
-	id    *EvalID
+	id    *dagger.ID
 	name  *string
-}
-
-type EvalID string
-
-func LoadEvalFromID(r *dagger.Client, id EvalID) Eval {
-	q := querybuilder.Query().Client(r.GraphQLClient())
-	q = q.Select("loadEvalWorkspaceEvalFromID")
-	q = q.Arg("id", id)
-	return &evalImpl{query: q}
 }
 
 func (r *evalImpl) WithGraphQLQuery(q *querybuilder.Selection) Eval {
@@ -160,11 +154,11 @@ func (r *evalImpl) WithGraphQLQuery(q *querybuilder.Selection) Eval {
 }
 
 func (r *evalImpl) XXX_GraphQLType() string {
-	return "Eval"
+	return "EvalWorkspaceEval"
 }
 
 func (r *evalImpl) XXX_GraphQLIDType() string {
-	return "EvalID"
+	return "ID"
 }
 
 func (r *evalImpl) XXX_GraphQLID(ctx context.Context) (string, error) {
@@ -187,12 +181,12 @@ func (r *evalImpl) MarshalJSON() ([]byte, error) {
 }
 
 func (r *evalImpl) UnmarshalJSON(bs []byte) error {
-	var id EvalID
+	var id dagger.ID
 	err := json.Unmarshal(bs, &id)
 	if err != nil {
 		return err
 	}
-	*r = *LoadEvalFromID(dag, id).(*evalImpl)
+	*r = evalImpl{query: dag.QueryBuilder().Select("node").Arg("id", id).InlineFragment("EvalWorkspaceEval")}
 	return nil
 }
 
@@ -203,12 +197,12 @@ func (r *evalImpl) toIface() Eval {
 	return r
 }
 
-func (r *evalImpl) ID(ctx context.Context) (EvalID, error) {
+func (r *evalImpl) ID(ctx context.Context) (dagger.ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
-	var response EvalID
+	var response dagger.ID
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
 }

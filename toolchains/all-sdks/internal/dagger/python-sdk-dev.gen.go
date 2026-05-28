@@ -6,17 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `PythonSdkDevDocsID` scalar type represents an identifier for an object of type PythonSdkDevDocs.
-type PythonSDKDevDocsID string // python-sdk-dev (../../../../toolchains/python-sdk-dev/docs.go:9:6)
-
-// The `PythonSdkDevID` scalar type represents an identifier for an object of type PythonSdkDev.
-type PythonSDKDevID string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:15:6)
-
-// The `PythonSdkDevTestForPythonVersionID` scalar type represents an identifier for an object of type PythonSdkDevTestForPythonVersion.
-type PythonSDKDevTestForPythonVersionID string // python-sdk-dev (../../../../toolchains/python-sdk-dev/test.go:9:6)
 
 // Retrieve the binding value, as type PythonSdkDev
 func (r *Binding) AsPythonSDKDev() *PythonSDKDev { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:15:6)
@@ -121,7 +112,7 @@ func (r *Env) WithPythonSDKDevTestForPythonVersionOutput(name string, descriptio
 type PythonSDKDev struct { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:15:6)
 	query *querybuilder.Selection
 
-	id            *PythonSDKDevID
+	id            *ID
 	release       *Void
 	releaseDryRun *Void
 	sourcePath    *string
@@ -228,13 +219,13 @@ func (r *PythonSDKDev) Format(opts ...PythonSDKDevFormatOpts) *Changeset { // py
 }
 
 // A unique identifier for this PythonSdkDev.
-func (r *PythonSDKDev) ID(ctx context.Context) (PythonSDKDevID, error) {
+func (r *PythonSDKDev) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response PythonSDKDevID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -247,7 +238,7 @@ func (r *PythonSDKDev) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *PythonSDKDev) XXX_GraphQLIDType() string {
-	return "PythonSDKDevID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -272,7 +263,7 @@ func (r *PythonSDKDev) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadPythonSDKDevFromID(PythonSDKDevID(id))
+	*r = PythonSDKDev{query: selectNode(dag.query, id, "PythonSdkDev")}
 	return nil
 }
 
@@ -546,10 +537,18 @@ func (r *PythonSDKDev) Workspace() *Directory { // python-sdk-dev (../../../../t
 	}
 }
 
+// AsNode returns this PythonSDKDev as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *PythonSDKDev) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type PythonSDKDevDocs struct { // python-sdk-dev (../../../../toolchains/python-sdk-dev/docs.go:9:6)
 	query *querybuilder.Selection
 
-	id *PythonSDKDevDocsID
+	id *ID
 }
 
 func (r *PythonSDKDevDocs) WithGraphQLQuery(q *querybuilder.Selection) *PythonSDKDevDocs {
@@ -568,13 +567,13 @@ func (r *PythonSDKDevDocs) Build() *Directory { // python-sdk-dev (../../../../t
 }
 
 // A unique identifier for this PythonSdkDevDocs.
-func (r *PythonSDKDevDocs) ID(ctx context.Context) (PythonSDKDevDocsID, error) {
+func (r *PythonSDKDevDocs) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response PythonSDKDevDocsID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -587,7 +586,7 @@ func (r *PythonSDKDevDocs) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *PythonSDKDevDocs) XXX_GraphQLIDType() string {
-	return "PythonSDKDevDocsID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -612,7 +611,7 @@ func (r *PythonSDKDevDocs) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadPythonSDKDevDocsFromID(PythonSDKDevDocsID(id))
+	*r = PythonSDKDevDocs{query: selectNode(dag.query, id, "PythonSdkDevDocs")}
 	return nil
 }
 
@@ -641,10 +640,18 @@ func (r *PythonSDKDevDocs) Preview(opts ...PythonSDKDevDocsPreviewOpts) *Service
 	}
 }
 
+// AsNode returns this PythonSDKDevDocs as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *PythonSDKDevDocs) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type PythonSDKDevTestForPythonVersion struct { // python-sdk-dev (../../../../toolchains/python-sdk-dev/test.go:9:6)
 	query *querybuilder.Selection
 
-	id   *PythonSDKDevTestForPythonVersionID
+	id   *ID
 	run  *Void
 	slow *Void
 	unit *Void
@@ -657,13 +664,13 @@ func (r *PythonSDKDevTestForPythonVersion) WithGraphQLQuery(q *querybuilder.Sele
 }
 
 // A unique identifier for this PythonSdkDevTestForPythonVersion.
-func (r *PythonSDKDevTestForPythonVersion) ID(ctx context.Context) (PythonSDKDevTestForPythonVersionID, error) {
+func (r *PythonSDKDevTestForPythonVersion) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response PythonSDKDevTestForPythonVersionID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -676,7 +683,7 @@ func (r *PythonSDKDevTestForPythonVersion) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *PythonSDKDevTestForPythonVersion) XXX_GraphQLIDType() string {
-	return "PythonSDKDevTestForPythonVersionID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -701,7 +708,7 @@ func (r *PythonSDKDevTestForPythonVersion) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadPythonSDKDevTestForPythonVersionFromID(PythonSDKDevTestForPythonVersionID(id))
+	*r = PythonSDKDevTestForPythonVersion{query: selectNode(dag.query, id, "PythonSdkDevTestForPythonVersion")}
 	return nil
 }
 
@@ -736,33 +743,11 @@ func (r *PythonSDKDevTestForPythonVersion) Unit(ctx context.Context) error { // 
 	return q.Execute(ctx)
 }
 
-// Load a PythonSdkDevDocs from its ID.
-func (r *Query) LoadPythonSDKDevDocsFromID(id PythonSDKDevDocsID) *PythonSDKDevDocs { // python-sdk-dev (../../../../toolchains/python-sdk-dev/docs.go:9:6)
-	q := r.query.Select("loadPythonSdkDevDocsFromID")
-	q = q.Arg("id", id)
-
-	return &PythonSDKDevDocs{
-		query: q,
-	}
-}
-
-// Load a PythonSdkDev from its ID.
-func (r *Query) LoadPythonSDKDevFromID(id PythonSDKDevID) *PythonSDKDev { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:15:6)
-	q := r.query.Select("loadPythonSdkDevFromID")
-	q = q.Arg("id", id)
-
-	return &PythonSDKDev{
-		query: q,
-	}
-}
-
-// Load a PythonSdkDevTestForPythonVersion from its ID.
-func (r *Query) LoadPythonSDKDevTestForPythonVersionFromID(id PythonSDKDevTestForPythonVersionID) *PythonSDKDevTestForPythonVersion { // python-sdk-dev (../../../../toolchains/python-sdk-dev/test.go:9:6)
-	q := r.query.Select("loadPythonSdkDevTestForPythonVersionFromID")
-	q = q.Arg("id", id)
-
-	return &PythonSDKDevTestForPythonVersion{
-		query: q,
+// AsNode returns this PythonSDKDevTestForPythonVersion as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *PythonSDKDevTestForPythonVersion) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }
 
