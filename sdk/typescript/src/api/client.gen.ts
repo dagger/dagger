@@ -2710,6 +2710,13 @@ export type WorkspaceServicesOpts = {
   include?: string[]
 }
 
+export type WorkspaceUninstallOpts = {
+  /**
+   * Write to the workspace config directory at the workspace cwd.
+   */
+  here?: boolean
+}
+
 export type __DirectiveArgsOpts = {
   includeDeprecated?: boolean
 }
@@ -14200,6 +14207,7 @@ export class Workspace extends BaseClient {
   private readonly _init?: string = undefined
   private readonly _install?: string = undefined
   private readonly _moduleInit?: string = undefined
+  private readonly _uninstall?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -14219,6 +14227,7 @@ export class Workspace extends BaseClient {
     _init?: string,
     _install?: string,
     _moduleInit?: string,
+    _uninstall?: string,
   ) {
     super(ctx)
 
@@ -14235,6 +14244,7 @@ export class Workspace extends BaseClient {
     this._init = _init
     this._install = _install
     this._moduleInit = _moduleInit
+    this._uninstall = _uninstall
   }
 
   /**
@@ -14588,6 +14598,26 @@ export class Workspace extends BaseClient {
   services = (opts?: WorkspaceServicesOpts): UpGroup => {
     const ctx = this._ctx.select("services", { ...opts })
     return new UpGroup(ctx)
+  }
+
+  /**
+   * Uninstall a module from the workspace, writing config.toml to the host.
+   * @param name Name of the installed module entry to remove.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  uninstall = async (
+    name: string,
+    opts?: WorkspaceUninstallOpts,
+  ): Promise<string> => {
+    if (this._uninstall) {
+      return this._uninstall
+    }
+
+    const ctx = this._ctx.select("uninstall", { name, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 
   /**

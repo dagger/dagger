@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `ToyWorkspaceID` scalar type represents an identifier for an object of type ToyWorkspace.
-type ToyWorkspaceID string // toy-workspace (../../../../../../core/integration/llmtest/go-programmer/toy-workspace/main.go:9:6)
 
 // Retrieve the binding value, as type ToyWorkspace
 func (r *Binding) AsToyWorkspace() *ToyWorkspace { // toy-workspace (../../../../../../core/integration/llmtest/go-programmer/toy-workspace/main.go:9:6)
@@ -45,16 +42,6 @@ func (r *Env) WithToyWorkspaceOutput(name string, description string) *Env { // 
 	}
 }
 
-// Load a ToyWorkspace from its ID.
-func (r *Query) LoadToyWorkspaceFromID(id ToyWorkspaceID) *ToyWorkspace { // toy-workspace (../../../../../../core/integration/llmtest/go-programmer/toy-workspace/main.go:9:6)
-	q := r.query.Select("loadToyWorkspaceFromID")
-	q = q.Arg("id", id)
-
-	return &ToyWorkspace{
-		query: q,
-	}
-}
-
 // A toy workspace that can edit files and run 'go build'
 func (r *Query) ToyWorkspace() *ToyWorkspace { // toy-workspace (../../../../../../core/integration/llmtest/go-programmer/toy-workspace/main.go:15:1)
 	q := r.query.Select("toyWorkspace")
@@ -69,7 +56,7 @@ type ToyWorkspace struct { // toy-workspace (../../../../../../core/integration/
 	query *querybuilder.Selection
 
 	build *Void
-	id    *ToyWorkspaceID
+	id    *ID
 	read  *string
 }
 type WithToyWorkspaceFunc func(r *ToyWorkspace) *ToyWorkspace
@@ -85,6 +72,12 @@ func (r *ToyWorkspace) WithGraphQLQuery(q *querybuilder.Selection) *ToyWorkspace
 	return &ToyWorkspace{
 		query: q,
 	}
+}
+
+type ToyWorkspaceID = ID
+
+func (r *Query) LoadToyWorkspaceFromID(id ToyWorkspaceID) *ToyWorkspace {
+	return &ToyWorkspace{query: selectNode(r.query, ID(id), "ToyWorkspace")}
 }
 
 // Build the code at the current directory in the workspace
@@ -107,13 +100,13 @@ func (r *ToyWorkspace) Container() *Container { // toy-workspace (../../../../..
 }
 
 // A unique identifier for this ToyWorkspace.
-func (r *ToyWorkspace) ID(ctx context.Context) (ToyWorkspaceID, error) {
+func (r *ToyWorkspace) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ToyWorkspaceID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -126,7 +119,7 @@ func (r *ToyWorkspace) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *ToyWorkspace) XXX_GraphQLIDType() string {
-	return "ToyWorkspaceID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -151,7 +144,7 @@ func (r *ToyWorkspace) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadToyWorkspaceFromID(ToyWorkspaceID(id))
+	*r = ToyWorkspace{query: selectNode(dag.query, id, "ToyWorkspace")}
 	return nil
 }
 
@@ -175,5 +168,13 @@ func (r *ToyWorkspace) Write(content string) *ToyWorkspace { // toy-workspace (.
 
 	return &ToyWorkspace{
 		query: q,
+	}
+}
+
+// AsNode returns this ToyWorkspace as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ToyWorkspace) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }

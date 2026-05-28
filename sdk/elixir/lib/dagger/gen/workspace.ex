@@ -379,6 +379,21 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
+  Uninstall a module from the workspace, writing config.toml to the host.
+  """
+  @spec uninstall(t(), String.t(), [{:here, boolean() | nil}]) ::
+          {:ok, String.t()} | {:error, term()}
+  def uninstall(%__MODULE__{} = workspace, name, optional_args \\ []) do
+    query_builder =
+      workspace.query_builder
+      |> QB.select("uninstall")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("here", optional_args[:here])
+
+    Client.execute(workspace.client, query_builder)
+  end
+
+  @doc """
   Refresh workspace-managed state and return the resulting changeset.
 
   Currently this refreshes existing lockfile entries only.

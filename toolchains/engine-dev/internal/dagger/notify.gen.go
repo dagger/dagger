@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `NotifyID` scalar type represents an identifier for an object of type Notify.
-type NotifyID string // notify (../../../../toolchains/engine-dev/notify/main.go:18:6)
 
 // Retrieve the binding value, as type Notify
 func (r *Binding) AsNotify() *Notify { // notify (../../../../toolchains/engine-dev/notify/main.go:18:6)
@@ -50,7 +47,7 @@ type Notify struct { // notify (../../../../toolchains/engine-dev/notify/main.go
 
 	daggerCloudTraceUrl *string
 	discord             *string
-	id                  *NotifyID
+	id                  *ID
 	slack               *string
 }
 
@@ -91,13 +88,13 @@ func (r *Notify) Discord(ctx context.Context, webhookUrl *Secret, message string
 }
 
 // A unique identifier for this Notify.
-func (r *Notify) ID(ctx context.Context) (NotifyID, error) {
+func (r *Notify) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response NotifyID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -110,7 +107,7 @@ func (r *Notify) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Notify) XXX_GraphQLIDType() string {
-	return "NotifyID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -135,7 +132,7 @@ func (r *Notify) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadNotifyFromID(NotifyID(id))
+	*r = Notify{query: selectNode(dag.query, id, "Notify")}
 	return nil
 }
 
@@ -203,13 +200,11 @@ func (r *Notify) Slack(ctx context.Context, token *Secret, color string, message
 	return response, q.Execute(ctx)
 }
 
-// Load a Notify from its ID.
-func (r *Query) LoadNotifyFromID(id NotifyID) *Notify { // notify (../../../../toolchains/engine-dev/notify/main.go:18:6)
-	q := r.query.Select("loadNotifyFromID")
-	q = q.Arg("id", id)
-
-	return &Notify{
-		query: q,
+// AsNode returns this Notify as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Notify) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }
 

@@ -19,7 +19,7 @@ import (
 
 	"dagger/main/internal/dagger"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
 
 var dag = dagger.Connect()
@@ -37,7 +37,10 @@ func setMarshalContext(ctx context.Context) {
 	dagger.SetMarshalContext(ctx)
 }
 
-type DaggerObject = querybuilder.GraphQLMarshaller
+type DaggerObject interface {
+	querybuilder.GraphQLMarshaller
+	ID(ctx context.Context) (dagger.ID, error)
+}
 
 type ExecError = dagger.ExecError
 
@@ -112,19 +115,16 @@ func (r *Impl) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
+type LocalOtherIfaceID = dagger.ID
+
+func LoadLocalOtherIfaceFromID(r *dagger.Client, id LocalOtherIfaceID) LocalOtherIface {
+	return &localOtherIfaceImpl{query: r.QueryBuilder().Select("node").Arg("id", id).InlineFragment("ImplLocalOtherIface")}
+}
+
 type localOtherIfaceImpl struct {
 	query *querybuilder.Selection
 	id    *LocalOtherIfaceID
 	foo   *string
-}
-
-type LocalOtherIfaceID string
-
-func LoadLocalOtherIfaceFromID(r *dagger.Client, id LocalOtherIfaceID) LocalOtherIface {
-	q := querybuilder.Query().Client(r.GraphQLClient())
-	q = q.Select("loadImplLocalOtherIfaceFromID")
-	q = q.Arg("id", id)
-	return &localOtherIfaceImpl{query: q}
 }
 
 func (r *localOtherIfaceImpl) WithGraphQLQuery(q *querybuilder.Selection) LocalOtherIface {
@@ -132,11 +132,11 @@ func (r *localOtherIfaceImpl) WithGraphQLQuery(q *querybuilder.Selection) LocalO
 }
 
 func (r *localOtherIfaceImpl) XXX_GraphQLType() string {
-	return "LocalOtherIface"
+	return "ImplLocalOtherIface"
 }
 
 func (r *localOtherIfaceImpl) XXX_GraphQLIDType() string {
-	return "LocalOtherIfaceID"
+	return "ID"
 }
 
 func (r *localOtherIfaceImpl) XXX_GraphQLID(ctx context.Context) (string, error) {
@@ -164,7 +164,7 @@ func (r *localOtherIfaceImpl) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *LoadLocalOtherIfaceFromID(dag, id).(*localOtherIfaceImpl)
+	*r = localOtherIfaceImpl{query: dag.QueryBuilder().Select("node").Arg("id", id).InlineFragment("ImplLocalOtherIface")}
 	return nil
 }
 

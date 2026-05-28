@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `NestedContextLeafID` scalar type represents an identifier for an object of type NestedContextLeaf.
-type NestedContextLeafID string // nested-context-leaf (../../../../../../modules/evals/testdata/nested-context-middle/nested-context-leaf/main.go:10:6)
 
 // Retrieve the binding value, as type NestedContextLeaf
 func (r *Binding) AsNestedContextLeaf() *NestedContextLeaf { // nested-context-leaf (../../../../../../modules/evals/testdata/nested-context-middle/nested-context-leaf/main.go:10:6)
@@ -48,7 +45,7 @@ func (r *Env) WithNestedContextLeafOutput(name string, description string) *Env 
 type NestedContextLeaf struct { // nested-context-leaf (../../../../../../modules/evals/testdata/nested-context-middle/nested-context-leaf/main.go:10:6)
 	query *querybuilder.Selection
 
-	id         *NestedContextLeafID
+	id         *ID
 	readMarker *string
 }
 
@@ -58,14 +55,20 @@ func (r *NestedContextLeaf) WithGraphQLQuery(q *querybuilder.Selection) *NestedC
 	}
 }
 
+type NestedContextLeafID = ID
+
+func (r *Query) LoadNestedContextLeafFromID(id NestedContextLeafID) *NestedContextLeaf {
+	return &NestedContextLeaf{query: selectNode(r.query, ID(id), "NestedContextLeaf")}
+}
+
 // A unique identifier for this NestedContextLeaf.
-func (r *NestedContextLeaf) ID(ctx context.Context) (NestedContextLeafID, error) {
+func (r *NestedContextLeaf) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response NestedContextLeafID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -78,7 +81,7 @@ func (r *NestedContextLeaf) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *NestedContextLeaf) XXX_GraphQLIDType() string {
-	return "NestedContextLeafID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -103,7 +106,7 @@ func (r *NestedContextLeaf) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadNestedContextLeafFromID(NestedContextLeafID(id))
+	*r = NestedContextLeaf{query: selectNode(dag.query, id, "NestedContextLeaf")}
 	return nil
 }
 
@@ -120,13 +123,11 @@ func (r *NestedContextLeaf) ReadMarker(ctx context.Context) (string, error) { //
 	return response, q.Execute(ctx)
 }
 
-// Load a NestedContextLeaf from its ID.
-func (r *Query) LoadNestedContextLeafFromID(id NestedContextLeafID) *NestedContextLeaf { // nested-context-leaf (../../../../../../modules/evals/testdata/nested-context-middle/nested-context-leaf/main.go:10:6)
-	q := r.query.Select("loadNestedContextLeafFromID")
-	q = q.Arg("id", id)
-
-	return &NestedContextLeaf{
-		query: q,
+// AsNode returns this NestedContextLeaf as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *NestedContextLeaf) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }
 

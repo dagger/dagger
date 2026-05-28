@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `CodegenID` scalar type represents an identifier for an object of type Codegen.
-type CodegenID string // codegen (../../../../:0:0)
 
 // Retrieve the binding value, as type Codegen
 func (r *Binding) AsCodegen() *Codegen { // codegen (../../../../:0:0)
@@ -24,7 +21,7 @@ func (r *Binding) AsCodegen() *Codegen { // codegen (../../../../:0:0)
 type Codegen struct { // codegen (../../../../:0:0)
 	query *querybuilder.Selection
 
-	id *CodegenID
+	id *ID
 }
 
 func (r *Codegen) WithGraphQLQuery(q *querybuilder.Selection) *Codegen {
@@ -42,13 +39,13 @@ func (r *Codegen) Binary() *File { // codegen (../../../../:0:0)
 }
 
 // A unique identifier for this Codegen.
-func (r *Codegen) ID(ctx context.Context) (CodegenID, error) {
+func (r *Codegen) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response CodegenID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -61,7 +58,7 @@ func (r *Codegen) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Codegen) XXX_GraphQLIDType() string {
-	return "CodegenID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -86,7 +83,7 @@ func (r *Codegen) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadCodegenFromID(CodegenID(id))
+	*r = Codegen{query: selectNode(dag.query, id, "Codegen")}
 	return nil
 }
 
@@ -95,6 +92,14 @@ func (r *Codegen) Source() *Directory { // codegen (../../../../:0:0)
 
 	return &Directory{
 		query: q,
+	}
+}
+
+// AsNode returns this Codegen as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Codegen) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }
 
@@ -135,16 +140,6 @@ func (r *Query) Codegen(opts ...CodegenOpts) *Codegen { // codegen (../../../../
 			q = q.Arg("source", opts[i].Source)
 		}
 	}
-
-	return &Codegen{
-		query: q,
-	}
-}
-
-// Load a Codegen from its ID.
-func (r *Query) LoadCodegenFromID(id CodegenID) *Codegen { // codegen (../../../../:0:0)
-	q := r.query.Select("loadCodegenFromID")
-	q = q.Arg("id", id)
 
 	return &Codegen{
 		query: q,
