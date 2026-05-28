@@ -3479,6 +3479,196 @@ func (ContainerSuite) TestWithRegistryAuth(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func (ContainerSuite) TestWithRegistryAuthAfterAnonymousBearerPull(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	const (
+		registryPassword = "xFlejaPdjrt25Dvr"
+		registryConfig   = `version: 0.1
+log:
+  level: debug
+storage:
+  filesystem:
+    rootdirectory: /var/lib/registry
+http:
+  addr: :5000
+auth:
+  silly:
+    realm: http://tokenauth:5001/token
+    service: registry:5000
+`
+		tokenAuthServer = `package main
+
+import (
+	"encoding/json"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+)
+
+const (
+	username = "john"
+	password = "` + registryPassword + `"
+)
+
+func main() {
+	if err := os.MkdirAll("/logs", 0o755); err != nil {
+		log.Fatal(err)
+	}
+	f, err := os.OpenFile("/logs/token.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+	log.SetOutput(f)
+
+	http.HandleFunc("/token", token)
+	log.Fatal(http.ListenAndServe(":5001", nil))
+}
+
+func token(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	scopes := append([]string{}, r.URL.Query()["scope"]...)
+	scopes = append(scopes, r.PostForm["scope"]...)
+	scope := strings.Join(scopes, " ")
+
+	gotUser, gotPassword, presentedCredentials := credentials(r)
+	authenticated := gotUser == username && gotPassword == password
+
+	log.Printf("method=%s scope=%q user=%q presentedCredentials=%t authenticated=%t", r.Method, scope, gotUser, presentedCredentials, authenticated)
+
+	if presentedCredentials && !authenticated {
+		http.Error(w, "invalid credentials", http.StatusUnauthorized)
+		return
+	}
+	if !authenticated && strings.Contains(scope, "private") {
+		http.Error(w, "private scope requires credentials", http.StatusUnauthorized)
+		return
+	}
+
+	token := "anonymous-token"
+	if authenticated {
+		token = "authenticated-token"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"token":        token,
+		"access_token": token,
+		"expires_in":   3600,
+		"issued_at":    time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+func credentials(r *http.Request) (string, string, bool) {
+	if user, pass, ok := r.BasicAuth(); ok {
+		return user, pass, true
+	}
+	if r.Method == http.MethodPost {
+		if r.Form.Get("grant_type") == "password" {
+			return r.Form.Get("username"), r.Form.Get("password"), true
+		}
+		if refreshToken := r.Form.Get("refresh_token"); refreshToken != "" {
+			return "", refreshToken, true
+		}
+	}
+	return "", "", false
+}
+`
+	)
+
+	tokenLogs := c.CacheVolume("bearer-token-auth-logs-" + identity.NewID())
+	tokenAuthSvc := c.Container().
+		From("golang:1.26-alpine").
+		WithNewFile("/src/main.go", tokenAuthServer).
+		WithMountedCache("/logs", tokenLogs).
+		WithEnvVariable("GOCACHE", "/tmp/go-cache").
+		WithExposedPort(5001, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithDefaultArgs([]string{"go", "run", "/src/main.go"}).
+		AsService()
+
+	registryLogs := c.CacheVolume("bearer-registry-logs-" + identity.NewID())
+	registrySvc := c.Container().
+		From("registry:3").
+		WithNewFile("/etc/distribution/config.yml", registryConfig).
+		WithMountedCache("/cache/logs", registryLogs).
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithDefaultArgs([]string{"sh", "-c", "registry serve /etc/distribution/config.yml | tee /cache/logs/registry.log"}).
+		AsService()
+
+	devEngine := devEngineContainer(c,
+		func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithServiceBinding("registry", registrySvc).
+				WithServiceBinding("tokenauth", tokenAuthSvc)
+		},
+		engineWithBkConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg bkconfig.Config) bkconfig.Config {
+			cfg.Registries = map[string]resolverconfig.RegistryConfig{
+				"registry:5000": {PlainHTTP: ptr(true)},
+			}
+			return cfg
+		}),
+	)
+
+	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx) })
+
+	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+
+	emptyDockerConfig := t.TempDir()
+	connectNested := func() *dagger.Client {
+		return connect(ctx, t,
+			dagger.WithRunnerHost(endpoint),
+			dagger.WithEnvironmentVariable("DOCKER_CONFIG", emptyDockerConfig),
+			dagger.WithLogOutput(testutil.NewTWriter(t)),
+		)
+	}
+
+	publicRef := "registry:5000/public:" + identity.NewID()
+	seedClient := connectNested()
+	_, err = seedClient.Container().
+		From(alpineImage).
+		WithNewFile("/public.txt", "public").
+		WithRegistryAuth("registry:5000", "john", seedClient.SetSecret("seed-registry-password", registryPassword)).
+		Publish(ctx, publicRef)
+	require.NoError(t, err)
+
+	reproClient := connectNested()
+	out, err := reproClient.Container().
+		From(publicRef).
+		WithExec([]string{"cat", "/public.txt"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "public", strings.TrimSpace(out))
+
+	privateRef := "registry:5000/private:" + identity.NewID()
+	_, err = reproClient.Container().
+		From(alpineImage).
+		WithNewFile("/private.txt", "private").
+		WithRegistryAuth("registry:5000", "john", reproClient.SetSecret("repro-registry-password", registryPassword)).
+		Publish(ctx, privateRef)
+	if err != nil {
+		tokenLog, logErr := c.Container().
+			From(alpineImage).
+			WithMountedCache("/logs", tokenLogs).
+			WithExec([]string{"sh", "-c", "cat /logs/token.log 2>/dev/null || true"}).
+			Stdout(ctx)
+		if logErr != nil {
+			t.Logf("failed to read token auth log: %v", logErr)
+		} else {
+			t.Logf("token auth log:\n%s", tokenLog)
+		}
+	}
+	require.NoError(t, err)
+}
+
 // Regression test for #11667: Directory/File access on private registry images
 // requires auth credentials to be passed through when fetching uncached blobs.
 func (ContainerSuite) TestWithRegistryAuthFileAndDirectoryAccess(ctx context.Context, t *testctx.T) {
