@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/pkg/browser"
@@ -50,44 +49,10 @@ var logoutCmd = &cobra.Command{
 	RunE:    cloudCLI.Logout,
 }
 
-var cloudCmd = &cobra.Command{
-	Use:     "cloud",
-	Aliases: []string{"c"},
-	Short:   "Manage Dagger Cloud",
-	Args:    cobra.NoArgs,
-	GroupID: cloudGroup.ID,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return cmd.Help()
-	},
-}
-
-var cloudLoginCmd = &cobra.Command{
-	Use:   "login [options] [org]",
-	Short: "Log in to Dagger Cloud",
-	Args:  cobra.MaximumNArgs(1),
-	RunE:  cloudCLI.Login,
-}
-
-var cloudSignupCmd = &cobra.Command{
-	Use:   "signup [org]",
-	Short: "Start Dagger Cloud login; choose Sign up in the browser",
-	Args:  cobra.MaximumNArgs(1),
-	RunE:  cloudCLI.Login,
-}
-
-var cloudLogoutCmd = &cobra.Command{
-	Use:   "logout",
-	Short: "Log out from Dagger Cloud",
-	Args:  cobra.NoArgs,
-	RunE:  cloudCLI.Logout,
-}
-
 func init() {
 	loginCmd.Flags().BoolVar(&loginSwitchAccount, "switch-account", false, "Choose a different Dagger Cloud account")
-	cloudLoginCmd.Flags().BoolVar(&loginSwitchAccount, "switch-account", false, "Choose a different Dagger Cloud account")
 	rootCmd.AddGroup(cloudGroup)
-	cloudCmd.AddCommand(cloudLoginCmd, cloudSignupCmd, cloudLogoutCmd)
-	rootCmd.AddCommand(cloudCmd, loginCmd, signupCmd, logoutCmd)
+	rootCmd.AddCommand(loginCmd, signupCmd, logoutCmd)
 }
 
 type CloudCLI struct{}
@@ -173,38 +138,8 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Fprintln(outW, "Success.")
-	cli.printPostLoginRepoSetupHint(ctx, client, selectedOrg, outW)
 
 	return nil
-}
-
-func (cli *CloudCLI) printPostLoginRepoSetupHint(ctx context.Context, client *cloud.Client, org *auth.Org, out io.Writer) {
-	if org == nil {
-		return
-	}
-	if _, err := repoFromArgOrGit(ctx, nil); err != nil {
-		return
-	}
-	integrations, err := client.Integrations(ctx, org.ID)
-	if err != nil {
-		return
-	}
-	for _, integration := range integrations {
-		if strings.EqualFold(integration.Name, "GitHub") && integrationEnabled(integration) {
-			return
-		}
-	}
-
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "next:")
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "1. add a github integration")
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "  dagger integration add github")
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "2. enable autocheck for this repo")
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "  dagger repo enable autocheck")
 }
 
 func createNewOrg(ctx context.Context, cli *cloud.Client, w io.Writer) (*auth.Org, error) {

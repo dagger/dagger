@@ -41,9 +41,6 @@ var checksCmd = &cobra.Command{
 	Short:   "Check the state of your project by running tests, linters, etc.",
 	Long: `Check the state of your project by running tests, linters, etc.
 
-Run checks on every push:
-  dagger repo enable autocheck
-
 Examples:
   dagger check                    # Run all checks
   dagger check -l                 # List all available checks
@@ -73,9 +70,6 @@ Examples:
 				return runChecks(ctx, dag, checks, cmd)
 			},
 		)
-		if err == nil && !checksListMode {
-			maybeHintAutocheckAfterCheck(cmd.Context())
-		}
 		return err
 	},
 }
