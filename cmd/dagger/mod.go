@@ -262,11 +262,13 @@ var modDepsAddCmd = &cobra.Command{
 				deps[i] = dag.ModuleSource(ref)
 			}
 
-			if _, err := modSrc.WithDependencies(deps).GeneratedContextDirectory().Export(ctx, contextDir); err != nil {
+			if _, err := modSrc.WithDependencies(deps).UpdatedConfigDirectory().Export(ctx, contextDir); err != nil {
 				return fmt.Errorf("add dependencies: %w", err)
 			}
 
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Added dependencies: %s\n", strings.Join(args, ", "))
+			_, err = fmt.Fprintf(cmd.OutOrStdout(),
+				"Added dependencies: %s\nRun 'dagger generate' to refresh generated bindings.\n",
+				strings.Join(args, ", "))
 			return err
 		})
 	},
@@ -285,11 +287,13 @@ var modDepsRmCmd = &cobra.Command{
 				return err
 			}
 
-			if _, err := modSrc.WithoutDependencies(args).GeneratedContextDirectory().Export(ctx, contextDir); err != nil {
+			if _, err := modSrc.WithoutDependencies(args).UpdatedConfigDirectory().Export(ctx, contextDir); err != nil {
 				return fmt.Errorf("remove dependencies: %w", err)
 			}
 
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Removed dependencies: %s\n", strings.Join(args, ", "))
+			_, err = fmt.Fprintf(cmd.OutOrStdout(),
+				"Removed dependencies: %s\nRun 'dagger generate' to refresh generated bindings.\n",
+				strings.Join(args, ", "))
 			return err
 		})
 	},
