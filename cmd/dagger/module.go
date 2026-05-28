@@ -78,9 +78,11 @@ func init() {
 	shellAddFlags(rootCmd)
 
 	addWorkspaceInstallFlags(moduleDepInstallCmd)
+	addWorkspaceHereFlag(moduleDepUninstallCmd)
 
 	setWorkspaceFlagPolicy(moduleUpdateCmd, workspaceFlagPolicyLocalOnly)
 	setWorkspaceFlagPolicy(moduleDepInstallCmd, workspaceFlagPolicyLocalOnly)
+	setWorkspaceFlagPolicy(moduleDepUninstallCmd, workspaceFlagPolicyLocalOnly)
 }
 
 var moduleUpdateCmd = &cobra.Command{
@@ -107,14 +109,33 @@ Use --here to create the workspace config at the workspace cwd instead.`,
 	Example: "dagger install github.com/shykes/daggerverse/hello@v0.3.0",
 	GroupID: workspaceGroup.ID,
 	Args:    cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
-		ctx := cmd.Context()
-		return withEngine(ctx, client.Params{
-			SkipWorkspaceModules: true,
-		}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			return installWorkspaceModule(ctx, cmd.OutOrStdout(), engineClient.Dagger(), extraArgs[0], installName, workspaceHere)
-		})
-	},
+	RunE:    runWorkspaceInstall,
+}
+
+var moduleDepUninstallCmd = &cobra.Command{
+	Use:     "uninstall [options] <module>",
+	Short:   "Uninstall a module",
+	Long:    `Uninstall a module from the current workspace, removing it from .dagger/config.toml.`,
+	Example: "dagger uninstall hello",
+	GroupID: workspaceGroup.ID,
+	Args:    cobra.ExactArgs(1),
+	RunE:    runWorkspaceUninstall,
+}
+
+func runWorkspaceInstall(cmd *cobra.Command, extraArgs []string) error {
+	return withEngine(cmd.Context(), client.Params{
+		SkipWorkspaceModules: true,
+	}, func(ctx context.Context, engineClient *client.Client) error {
+		return installWorkspaceModule(ctx, cmd.OutOrStdout(), engineClient.Dagger(), extraArgs[0], installName, workspaceHere)
+	})
+}
+
+func runWorkspaceUninstall(cmd *cobra.Command, extraArgs []string) error {
+	return withEngine(cmd.Context(), client.Params{
+		SkipWorkspaceModules: true,
+	}, func(ctx context.Context, engineClient *client.Client) error {
+		return uninstallWorkspaceModule(ctx, cmd.OutOrStdout(), engineClient.Dagger(), extraArgs[0], workspaceHere)
+	})
 }
 
 func getExplicitModuleSourceRef() (string, bool) {
