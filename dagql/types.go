@@ -51,10 +51,6 @@ type ObjectType interface {
 	// Object interface.
 	// cacheConfigFunc is optional, if not set the default dagql ID cache key will be used.
 	Extend(spec FieldSpec, fun FieldFunc)
-	// ExtendLoadByID registers a builtin load<Type>FromID field that re-enters
-	// the graph from an object ID instead of behaving like a normal field
-	// resolver.
-	ExtendLoadByID(spec FieldSpec, fun LoadByIDFunc)
 	// FieldSpec looks up a field spec by name.
 	FieldSpec(name string, view call.View) (FieldSpec, bool)
 	// FieldSpecs returns all field specs visible under the given view.
@@ -842,6 +838,15 @@ func (s Scalar[T]) DecodeInput(val any) (Input, error) {
 }
 
 var _ Input = Scalar[ScalarValue]{}
+
+var _ Wrapper = Scalar[ScalarValue]{}
+
+// Unwrap exposes the inner scalar value so callers (e.g. UnwrapAs) can
+// reach interfaces implemented by T — for instance, when T is AnyID,
+// IDable is reachable through the wrapped value.
+func (s Scalar[T]) Unwrap() Typed {
+	return s.Value
+}
 
 func (s Scalar[T]) Decoder() InputDecoder {
 	return s

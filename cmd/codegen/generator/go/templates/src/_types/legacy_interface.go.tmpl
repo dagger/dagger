@@ -13,10 +13,6 @@ type {{ .Name | FormatName }}ID = ID
 
 type {{ .Name | FormatName }}Client = {{ .Name | FormatName }}
 
-func (r *Query) Load{{ .Name | FormatName }}FromID(id {{ .Name | FormatName }}ID) *{{ .Name | FormatName }} {
-	return &{{ .Name | FormatName }}{query: selectNode(r.query, ID(id), "{{ .Name }}")}
-}
-
 func (r *{{ .Name | FormatName }}) WithGraphQLQuery(q *querybuilder.Selection) *{{ .Name | FormatName }} {
 	return &{{ .Name | FormatName }}{
 		query: q,
