@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -122,9 +123,113 @@ func (SecretProvider) TestCmd(ctx context.Context, t *testctx.T) {
 	requireErrOut(t, err, "failed to run secret command")
 }
 
-// TODO: implement - but ideally without being dependent on an external service
-// func (SecretProvider) TestOnePassword(ctx context.Context, t *testctx.T) {
-// }
+func (SecretProvider) TestOnePasswordCache(ctx context.Context, t *testctx.T) {
+	fakeOp := `#!/bin/sh
+set -eu
+if [ "$1" != "read" ] || [ "$2" != "-n" ]; then
+	echo "unexpected op invocation: $*" >&2
+	exit 1
+fi
+case "$3" in
+	*ttl=*)
+		echo "ttl query leaked to op ref: $3" >&2
+		exit 1
+		;;
+esac
+count_dir=/tmp/op-counts/$3
+mkdir -p "$count_dir"
+count_file=$count_dir/count
+count=0
+if [ -f "$count_file" ]; then
+	count=$(cat "$count_file")
+fi
+count=$((count + 1))
+printf '%s' "$count" > "$count_file"
+printf 'secret%s' "$count"
+`
+
+	baseContainer := func(c *dagger.Client) *dagger.Container {
+		return c.Container().
+			From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithNewFile("/usr/local/bin/op", fakeOp, dagger.ContainerWithNewFileOpts{Permissions: 0o755}).
+			WithEnvVariable("OP_SERVICE_ACCOUNT_TOKEN", "")
+	}
+
+	verifySecretFromOnePassword := func(ctx context.Context, base *dagger.Container, secretURL string) (string, error) {
+		return base.
+			WithWorkdir("/work").
+			With(daggerExec("init", "--sdk=go", "--name=foo", "--source=.")).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"dagger/foo/internal/dagger"
+	"fmt"
+	"time"
+)
+
+type Foo struct{}
+
+func (m *Foo) VerifySecret(ctx context.Context, secret *dagger.Secret) (string, error) {
+	original, err := secret.Plaintext(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	time.Sleep(3 * time.Second)
+
+	updated, err := secret.Plaintext(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("original: %s\nupdated: %s", original, updated), nil
+}
+`).
+			With(daggerCall("-vvv", "verify-secret", fmt.Sprintf("--secret=%s", secretURL))).Stdout(ctx)
+	}
+
+	testcases := []struct {
+		name         string
+		secret       string
+		shouldUpdate bool
+	}{
+		{
+			name:   "without-ttl",
+			secret: "op://vault/without-ttl/field",
+		},
+		{
+			name:         "with-ttl",
+			secret:       "op://vault/with-ttl/field?ttl=2s",
+			shouldUpdate: true,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			base := baseContainer(c).
+				WithEnvVariable("CACHE_BUSTER", tc.name)
+
+			output, err := verifySecretFromOnePassword(ctx, base, tc.secret)
+			require.NoError(t, err)
+
+			lines := strings.Split(strings.TrimSpace(output), "\n")
+			require.Len(t, lines, 2)
+			original := strings.TrimPrefix(lines[0], "original: ")
+			updated := strings.TrimPrefix(lines[1], "updated: ")
+			require.NotEmpty(t, original)
+			require.NotEmpty(t, updated)
+			if tc.shouldUpdate {
+				require.NotEqual(t, original, updated)
+			} else {
+				require.Equal(t, original, updated)
+			}
+		})
+	}
+}
 
 func (SecretProvider) TestVault(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
