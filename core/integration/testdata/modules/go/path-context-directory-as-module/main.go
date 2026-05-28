@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"dagger/test/internal/dagger"
+
 	"github.com/Khan/genqlient/graphql"
 )
 
@@ -33,7 +34,7 @@ func (m *Test) GetDepSource(ctx context.Context, src *dagger.Directory) (*dagger
 		return nil, err
 	}
 
-	return dag.LoadDirectoryFromID(dagger.DirectoryID(directoryIDRes.Dep.GetSource.ID)), nil
+	return dagger.Ref[*dagger.Directory](dag, dagger.ID(directoryIDRes.Dep.GetSource.ID)), nil
 }
 
 func (m *Test) GetRelDepSource(ctx context.Context, src *dagger.Directory) (*dagger.Directory, error) {
@@ -60,5 +61,5 @@ func (m *Test) GetRelDepSource(ctx context.Context, src *dagger.Directory) (*dag
 		return nil, err
 	}
 
-	return dag.LoadDirectoryFromID(dagger.DirectoryID(directoryIDRes.Dep.GetRelSource.ID)), nil
+	return dagger.Ref[*dagger.Directory](dag, dagger.ID(directoryIDRes.Dep.GetRelSource.ID)), nil
 }
