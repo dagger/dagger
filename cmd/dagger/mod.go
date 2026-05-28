@@ -86,7 +86,7 @@ func init() {
 	setWorkspaceFlagPolicy(modListCmd, workspaceFlagPolicyLocalOnly)
 
 	modDepsCmd.AddCommand(modDepsAddCmd, modDepsRmCmd, modDepsListCmd)
-	modEngineCmd.AddCommand(modEngineRequiredCmd, modEngineRequireCmd, modEngineRequireCurrentCmd)
+	modEngineCmd.AddCommand(modEngineRequiredCmd, modEngineRequireCmd, modEngineRequireLatestCmd, modEngineRequireCurrentCmd)
 
 	// These operate on a single module's dagger.json; --mod selects which module
 	// (defaults to the current directory).
@@ -389,6 +389,21 @@ var modEngineRequireCmd = &cobra.Command{
 	},
 }
 
+var modEngineRequireLatestCmd = &cobra.Command{
+	Use:   "require-latest",
+	Short: "Set the module's required engine version to the latest released version",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		latest, err := latestVersion(cmd.Context())
+		if err != nil {
+			return fmt.Errorf("determine latest released version: %w", err)
+		}
+		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
+			return setModuleEngineVersion(ctx, cmd.OutOrStdout(), engineClient.Dagger(), latest)
+		})
+	},
+}
+
 var modEngineRequireCurrentCmd = &cobra.Command{
 	Use:   "require-current",
 	Short: "Set the module's required engine version to the currently running engine version",
@@ -411,7 +426,10 @@ func setModuleEngineVersion(ctx context.Context, out io.Writer, dag *dagger.Clie
 		return err
 	}
 
-	if _, err := modSrc.WithEngineVersion(version).GeneratedContextDirectory().Export(ctx, contextDir); err != nil {
+	// UpdatedConfigDirectory writes dagger.json without running codegen and
+	// without validating the engine version against the running engine, so a
+	// requirement newer than the engine we're running can be declared.
+	if _, err := modSrc.WithEngineVersion(version).UpdatedConfigDirectory().Export(ctx, contextDir); err != nil {
 		return fmt.Errorf("set engine version: %w", err)
 	}
 
@@ -419,9 +437,9 @@ func setModuleEngineVersion(ctx context.Context, out io.Writer, dag *dagger.Clie
 	return err
 }
 
-// currentModuleSourceForEdit resolves the local module selected by --mod (or the
-// current directory) for in-place edits to its dagger.json, returning the source
-// and the host context directory to export the result back to.
+// currentModuleSourceForEdit resolves the local module selected by --mod (or
+// the current directory) for in-place edits to its dagger.json, returning the
+// source and the host context directory to export the result back to.
 func currentModuleSourceForEdit(ctx context.Context, dag *dagger.Client) (*dagger.ModuleSource, string, error) {
 	ref, err := getModuleSourceRefWithDefault()
 	if err != nil {

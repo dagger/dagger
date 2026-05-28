@@ -82,7 +82,7 @@ func TestModDepsAndEngineSubcommands(t *testing.T) {
 	}
 
 	engine := subNames(modEngineCmd)
-	for _, want := range []string{"required", "require", "require-current"} {
+	for _, want := range []string{"required", "require", "require-latest", "require-current"} {
 		require.Truef(t, engine[want], "expected `dagger mod engine %s` to be registered", want)
 	}
 }
