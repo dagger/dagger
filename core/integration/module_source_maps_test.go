@@ -49,9 +49,9 @@ func (ModuleSuite) TestTypedefSourceMaps(ctx context.Context, t *testctx.T) {
 					`\n\s*DepMyEnumA DepMyEnum = "MyEnumA" // dep \(../../dep/main.go:19:2\)\n`,
 
 					// interface
-					`\ntype DepMyInterface struct { // dep \(../../dep/main.go:23:6\)\n`,
+					`\ntype DepMyInterface interface { // dep \(../../dep/main.go:23:6\)\n`,
 					// interface func
-					`\nfunc \(.* \*DepMyInterface\) Do\(.* // dep \(../../dep/main.go:25:4\)\n`,
+					`\nfunc \(.* \*DepMyInterfaceClient\) Do\(.* // dep \(../../dep/main.go:25:4\)\n`,
 				},
 				typescript: []string{
 					// struct
