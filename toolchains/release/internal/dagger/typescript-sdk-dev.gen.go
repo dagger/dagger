@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `TypescriptSdkDevID` scalar type represents an identifier for an object of type TypescriptSdkDev.
-type TypescriptSDKDevID string // typescript-sdk-dev (../../../../:0:0)
 
 // Retrieve the binding value, as type TypescriptSdkDev
 func (r *Binding) AsTypescriptSDKDev() *TypescriptSDKDev { // typescript-sdk-dev (../../../../:0:0)
@@ -41,16 +38,6 @@ func (r *Env) WithTypescriptSDKDevOutput(name string, description string) *Env {
 	q = q.Arg("description", description)
 
 	return &Env{
-		query: q,
-	}
-}
-
-// Load a TypescriptSdkDev from its ID.
-func (r *Query) LoadTypescriptSDKDevFromID(id TypescriptSDKDevID) *TypescriptSDKDev { // typescript-sdk-dev (../../../../:0:0)
-	q := r.query.Select("loadTypescriptSdkDevFromID")
-	q = q.Arg("id", id)
-
-	return &TypescriptSDKDev{
 		query: q,
 	}
 }
@@ -102,7 +89,7 @@ type TypescriptSDKDev struct { // typescript-sdk-dev (../../../../:0:0)
 	query *querybuilder.Selection
 
 	bunVersion         *string
-	id                 *TypescriptSDKDevID
+	id                 *ID
 	isSemver           *bool
 	lintDocsSnippets   *Void
 	lintTypescript     *Void
@@ -180,13 +167,13 @@ func (r *TypescriptSDKDev) Format() *Changeset { // typescript-sdk-dev (../../..
 }
 
 // A unique identifier for this TypescriptSdkDev.
-func (r *TypescriptSDKDev) ID(ctx context.Context) (TypescriptSDKDevID, error) {
+func (r *TypescriptSDKDev) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response TypescriptSDKDevID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -199,7 +186,7 @@ func (r *TypescriptSDKDev) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *TypescriptSDKDev) XXX_GraphQLIDType() string {
-	return "TypescriptSDKDevID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -224,7 +211,7 @@ func (r *TypescriptSDKDev) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadTypescriptSDKDevFromID(TypescriptSDKDevID(id))
+	*r = TypescriptSDKDev{query: selectNode(dag.query, id, "TypescriptSdkDev")}
 	return nil
 }
 
@@ -441,5 +428,13 @@ func (r *TypescriptSDKDev) Workspace() *Directory { // typescript-sdk-dev (../..
 
 	return &Directory{
 		query: q,
+	}
+}
+
+// AsNode returns this TypescriptSDKDev as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *TypescriptSDKDev) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }

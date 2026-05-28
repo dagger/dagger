@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `DougID` scalar type represents an identifier for an object of type Doug.
-type DougID string // doug (../../../../../modules/doug/main.go:24:6)
 
 // Retrieve the binding value, as type Doug
 func (r *Binding) AsDoug() *Doug { // doug (../../../../../modules/doug/main.go:24:6)
@@ -27,7 +24,7 @@ type Doug struct { // doug (../../../../../modules/doug/main.go:24:6)
 
 	glob     *Void
 	grep     *string
-	id       *DougID
+	id       *ID
 	readFile *string
 	task     *string
 }
@@ -293,13 +290,13 @@ func (r *Doug) Grep(ctx context.Context, pattern string, paths []string, glob []
 }
 
 // A unique identifier for this Doug.
-func (r *Doug) ID(ctx context.Context) (DougID, error) {
+func (r *Doug) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response DougID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -312,7 +309,7 @@ func (r *Doug) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Doug) XXX_GraphQLIDType() string {
-	return "DougID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -337,7 +334,7 @@ func (r *Doug) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadDougFromID(DougID(id))
+	*r = Doug{query: selectNode(dag.query, id, "Doug")}
 	return nil
 }
 
@@ -485,6 +482,14 @@ func (r *Doug) Write(filePath string, contents string) *Changeset { // doug (../
 	}
 }
 
+// AsNode returns this Doug as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Doug) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // Create or update a binding of type Doug in the environment
 func (r *Env) WithDougInput(name string, value *Doug, description string) *Env { // doug (../../../../../modules/doug/main.go:24:6)
 	assertNotNil("value", value)
@@ -523,16 +528,6 @@ func (r *Query) Doug(opts ...DougOpts) *Doug { // doug (../../../../../modules/d
 			q = q.Arg("source", opts[i].Source)
 		}
 	}
-
-	return &Doug{
-		query: q,
-	}
-}
-
-// Load a Doug from its ID.
-func (r *Query) LoadDougFromID(id DougID) *Doug { // doug (../../../../../modules/doug/main.go:24:6)
-	q := r.query.Select("loadDougFromID")
-	q = q.Arg("id", id)
 
 	return &Doug{
 		query: q,

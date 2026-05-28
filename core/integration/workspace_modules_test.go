@@ -196,6 +196,59 @@ entrypoint = true
 	})
 }
 
+// TestWorkspaceModuleUninstall should cover removing modules from a workspace,
+// via both `dagger uninstall` and the `dagger mod uninstall` alias.
+func (WorkspaceModulesSuite) TestWorkspaceModuleUninstall(ctx context.Context, t *testctx.T) {
+	t.Run("uninstall removes a module from config", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		depDir := filepath.Join(workdir, "dep")
+
+		require.NoError(t, os.MkdirAll(depDir, 0o755))
+		initGitRepo(ctx, t, workdir)
+		copyTestdataFixture(ctx, t, depDir, "modules", "go", "minimal-dep")
+
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
+		require.NoError(t, err)
+		require.Contains(t, readInstalledWorkspaceConfig(t, workdir).Modules, "dep")
+
+		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "uninstall", "dep")
+		require.NoError(t, err)
+		require.Contains(t, strings.TrimSpace(string(out)),
+			`Uninstalled module "dep" from `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName))
+
+		require.NotContains(t, readInstalledWorkspaceConfig(t, workdir).Modules, "dep")
+	})
+
+	t.Run("mod uninstall alias removes a module", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		depDir := filepath.Join(workdir, "dep")
+
+		require.NoError(t, os.MkdirAll(depDir, 0o755))
+		initGitRepo(ctx, t, workdir)
+		copyTestdataFixture(ctx, t, depDir, "modules", "go", "minimal-dep")
+
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "mod", "install", "./dep")
+		require.NoError(t, err)
+		require.Contains(t, readInstalledWorkspaceConfig(t, workdir).Modules, "dep")
+
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "mod", "uninstall", "dep")
+		require.NoError(t, err)
+		require.NotContains(t, readInstalledWorkspaceConfig(t, workdir).Modules, "dep")
+	})
+
+	t.Run("uninstalling an unknown module errors", func(ctx context.Context, t *testctx.T) {
+		workdir := t.TempDir()
+		initGitRepo(ctx, t, workdir)
+
+		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "workspace", "init")
+		require.NoError(t, err)
+
+		_, err = hostDaggerExecRaw(ctx, t, workdir, "--silent", "uninstall", "ghost")
+		require.Error(t, err)
+		requireErrOut(t, err, `module "ghost" is not installed in the workspace`)
+	})
+}
+
 // TestWorkspaceModuleMutation should cover updates and config-level conflicts
 // around configured modules.
 func (WorkspaceModulesSuite) TestWorkspaceModuleMutation(ctx context.Context, t *testctx.T) {

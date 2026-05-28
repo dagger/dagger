@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `DocsDevID` scalar type represents an identifier for an object of type DocsDev.
-type DocsDevID string // docs-dev (../../../../toolchains/docs-dev/main.go:36:6)
 
 // Retrieve the binding value, as type DocsDev
 func (r *Binding) AsDocsDev() *DocsDev { // docs-dev (../../../../toolchains/docs-dev/main.go:36:6)
@@ -25,7 +22,7 @@ type DocsDev struct { // docs-dev (../../../../toolchains/docs-dev/main.go:36:6)
 	query *querybuilder.Selection
 
 	deploy  *string
-	id      *DocsDevID
+	id      *ID
 	publish *Void
 }
 
@@ -62,13 +59,13 @@ func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secr
 }
 
 // A unique identifier for this DocsDev.
-func (r *DocsDev) ID(ctx context.Context) (DocsDevID, error) {
+func (r *DocsDev) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response DocsDevID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -81,7 +78,7 @@ func (r *DocsDev) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *DocsDev) XXX_GraphQLIDType() string {
-	return "DocsDevID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -106,7 +103,7 @@ func (r *DocsDev) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadDocsDevFromID(DocsDevID(id))
+	*r = DocsDev{query: selectNode(dag.query, id, "DocsDev")}
 	return nil
 }
 
@@ -182,6 +179,14 @@ func (r *DocsDev) Source() *Directory { // docs-dev (../../../../toolchains/docs
 	}
 }
 
+// AsNode returns this DocsDev as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *DocsDev) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // Create or update a binding of type DocsDev in the environment
 func (r *Env) WithDocsDevInput(name string, value *DocsDev, description string) *Env { // docs-dev (../../../../toolchains/docs-dev/main.go:36:6)
 	assertNotNil("value", value)
@@ -226,16 +231,6 @@ func (r *Query) DocsDev(opts ...DocsDevOpts) *DocsDev { // docs-dev (../../../..
 			q = q.Arg("nginxConfig", opts[i].NginxConfig)
 		}
 	}
-
-	return &DocsDev{
-		query: q,
-	}
-}
-
-// Load a DocsDev from its ID.
-func (r *Query) LoadDocsDevFromID(id DocsDevID) *DocsDev { // docs-dev (../../../../toolchains/docs-dev/main.go:36:6)
-	q := r.query.Select("loadDocsDevFromID")
-	q = q.Arg("id", id)
 
 	return &DocsDev{
 		query: q,

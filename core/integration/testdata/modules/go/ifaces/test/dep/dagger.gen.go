@@ -19,7 +19,7 @@ import (
 
 	"dagger/dep/internal/dagger"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
 
 var dag = dagger.Connect()
@@ -37,7 +37,10 @@ func setMarshalContext(ctx context.Context) {
 	dagger.SetMarshalContext(ctx)
 }
 
-type DaggerObject = querybuilder.GraphQLMarshaller
+type DaggerObject interface {
+	querybuilder.GraphQLMarshaller
+	ID(ctx context.Context) (dagger.ID, error)
+}
 
 type ExecError = dagger.ExecError
 
@@ -76,6 +79,12 @@ func (r *Dep) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
+type CustomIfaceID = dagger.ID
+
+func LoadCustomIfaceFromID(r *dagger.Client, id CustomIfaceID) CustomIface {
+	return &customIfaceImpl{query: r.QueryBuilder().Select("node").Arg("id", id).InlineFragment("DepCustomIface")}
+}
+
 type customIfaceImpl struct {
 	query *querybuilder.Selection
 	id    *CustomIfaceID
@@ -84,25 +93,16 @@ type customIfaceImpl struct {
 	str   *string
 }
 
-type CustomIfaceID string
-
-func LoadCustomIfaceFromID(r *dagger.Client, id CustomIfaceID) CustomIface {
-	q := querybuilder.Query().Client(r.GraphQLClient())
-	q = q.Select("loadDepCustomIfaceFromID")
-	q = q.Arg("id", id)
-	return &customIfaceImpl{query: q}
-}
-
 func (r *customIfaceImpl) WithGraphQLQuery(q *querybuilder.Selection) CustomIface {
 	return &customIfaceImpl{query: q}
 }
 
 func (r *customIfaceImpl) XXX_GraphQLType() string {
-	return "CustomIface"
+	return "DepCustomIface"
 }
 
 func (r *customIfaceImpl) XXX_GraphQLIDType() string {
-	return "CustomIfaceID"
+	return "ID"
 }
 
 func (r *customIfaceImpl) XXX_GraphQLID(ctx context.Context) (string, error) {
@@ -130,7 +130,7 @@ func (r *customIfaceImpl) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *LoadCustomIfaceFromID(dag, id).(*customIfaceImpl)
+	*r = customIfaceImpl{query: dag.QueryBuilder().Select("node").Arg("id", id).InlineFragment("DepCustomIface")}
 	return nil
 }
 
@@ -172,7 +172,7 @@ func (r *customIfaceImpl) DynamicOtherIfaceByIfaceList(ctx context.Context) ([]O
 	q := r.query.Select("dynamicOtherIfaceByIfaceList")
 	q = q.Select("id")
 	var idResults []struct {
-		Id OtherIfaceID
+		Id dagger.ID
 	}
 	q = q.Bind(&idResults)
 	err := q.Execute(ctx)
@@ -182,7 +182,7 @@ func (r *customIfaceImpl) DynamicOtherIfaceByIfaceList(ctx context.Context) ([]O
 	var results []OtherIface
 	for _, idResult := range idResults {
 		id := idResult.Id
-		results = append(results, (&otherIfaceImpl{}).WithGraphQLQuery(r.query.Root().Select("loadDepOtherIfaceFromID").Arg("id", id)))
+		results = append(results, (&otherIfaceImpl{}).WithGraphQLQuery(r.query.Root().Select("node").Arg("id", id).InlineFragment("DepOtherIface")))
 	}
 	return results, nil
 }
@@ -191,7 +191,7 @@ func (r *customIfaceImpl) DynamicOtherIfaceList(ctx context.Context) ([]OtherIfa
 	q := r.query.Select("dynamicOtherIfaceList")
 	q = q.Select("id")
 	var idResults []struct {
-		Id OtherIfaceID
+		Id dagger.ID
 	}
 	q = q.Bind(&idResults)
 	err := q.Execute(ctx)
@@ -201,7 +201,7 @@ func (r *customIfaceImpl) DynamicOtherIfaceList(ctx context.Context) ([]OtherIfa
 	var results []OtherIface
 	for _, idResult := range idResults {
 		id := idResult.Id
-		results = append(results, (&otherIfaceImpl{}).WithGraphQLQuery(r.query.Root().Select("loadDepOtherIfaceFromID").Arg("id", id)))
+		results = append(results, (&otherIfaceImpl{}).WithGraphQLQuery(r.query.Root().Select("node").Arg("id", id).InlineFragment("DepOtherIface")))
 	}
 	return results, nil
 }
@@ -232,7 +232,7 @@ func (r *customIfaceImpl) ObjList(ctx context.Context) ([]*dagger.Directory, err
 	q := r.query.Select("objList")
 	q = q.Select("id")
 	var idResults []struct {
-		Id dagger.DirectoryID
+		Id dagger.ID
 	}
 	q = q.Bind(&idResults)
 	err := q.Execute(ctx)
@@ -242,7 +242,7 @@ func (r *customIfaceImpl) ObjList(ctx context.Context) ([]*dagger.Directory, err
 	var results []*dagger.Directory
 	for _, idResult := range idResults {
 		id := idResult.Id
-		results = append(results, (&dagger.Directory{}).WithGraphQLQuery(r.query.Root().Select("loadDirectoryFromID").Arg("id", id)))
+		results = append(results, (&dagger.Directory{}).WithGraphQLQuery(r.query.Root().Select("node").Arg("id", id).InlineFragment("Directory")))
 	}
 	return results, nil
 }
@@ -261,7 +261,7 @@ func (r *customIfaceImpl) SelfIfaceList(ctx context.Context) ([]CustomIface, err
 	q := r.query.Select("selfIfaceList")
 	q = q.Select("id")
 	var idResults []struct {
-		Id CustomIfaceID
+		Id dagger.ID
 	}
 	q = q.Bind(&idResults)
 	err := q.Execute(ctx)
@@ -271,7 +271,7 @@ func (r *customIfaceImpl) SelfIfaceList(ctx context.Context) ([]CustomIface, err
 	var results []CustomIface
 	for _, idResult := range idResults {
 		id := idResult.Id
-		results = append(results, (&customIfaceImpl{}).WithGraphQLQuery(r.query.Root().Select("loadDepCustomIfaceFromID").Arg("id", id)))
+		results = append(results, (&customIfaceImpl{}).WithGraphQLQuery(r.query.Root().Select("node").Arg("id", id).InlineFragment("DepCustomIface")))
 	}
 	return results, nil
 }
@@ -280,7 +280,7 @@ func (r *customIfaceImpl) StaticOtherIfaceList(ctx context.Context) ([]OtherIfac
 	q := r.query.Select("staticOtherIfaceList")
 	q = q.Select("id")
 	var idResults []struct {
-		Id OtherIfaceID
+		Id dagger.ID
 	}
 	q = q.Bind(&idResults)
 	err := q.Execute(ctx)
@@ -290,7 +290,7 @@ func (r *customIfaceImpl) StaticOtherIfaceList(ctx context.Context) ([]OtherIfac
 	var results []OtherIface
 	for _, idResult := range idResults {
 		id := idResult.Id
-		results = append(results, (&otherIfaceImpl{}).WithGraphQLQuery(r.query.Root().Select("loadDepOtherIfaceFromID").Arg("id", id)))
+		results = append(results, (&otherIfaceImpl{}).WithGraphQLQuery(r.query.Root().Select("node").Arg("id", id).InlineFragment("DepOtherIface")))
 	}
 	return results, nil
 }
@@ -403,19 +403,16 @@ func (r *customIfaceImpl) WithStrList(ctx context.Context, strListArg []string) 
 	return (&customIfaceImpl{}).WithGraphQLQuery(q)
 }
 
+type OtherIfaceID = dagger.ID
+
+func LoadOtherIfaceFromID(r *dagger.Client, id OtherIfaceID) OtherIface {
+	return &otherIfaceImpl{query: r.QueryBuilder().Select("node").Arg("id", id).InlineFragment("DepOtherIface")}
+}
+
 type otherIfaceImpl struct {
 	query *querybuilder.Selection
 	id    *OtherIfaceID
 	foo   *string
-}
-
-type OtherIfaceID string
-
-func LoadOtherIfaceFromID(r *dagger.Client, id OtherIfaceID) OtherIface {
-	q := querybuilder.Query().Client(r.GraphQLClient())
-	q = q.Select("loadDepOtherIfaceFromID")
-	q = q.Arg("id", id)
-	return &otherIfaceImpl{query: q}
 }
 
 func (r *otherIfaceImpl) WithGraphQLQuery(q *querybuilder.Selection) OtherIface {
@@ -423,11 +420,11 @@ func (r *otherIfaceImpl) WithGraphQLQuery(q *querybuilder.Selection) OtherIface 
 }
 
 func (r *otherIfaceImpl) XXX_GraphQLType() string {
-	return "OtherIface"
+	return "DepOtherIface"
 }
 
 func (r *otherIfaceImpl) XXX_GraphQLIDType() string {
-	return "OtherIfaceID"
+	return "ID"
 }
 
 func (r *otherIfaceImpl) XXX_GraphQLID(ctx context.Context) (string, error) {
@@ -455,7 +452,7 @@ func (r *otherIfaceImpl) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *LoadOtherIfaceFromID(dag, id).(*otherIfaceImpl)
+	*r = otherIfaceImpl{query: dag.QueryBuilder().Select("node").Arg("id", id).InlineFragment("DepOtherIface")}
 	return nil
 }
 
