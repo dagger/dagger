@@ -16506,6 +16506,12 @@ pub struct WorkspaceServicesOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct WorkspaceUninstallOpts {
+    /// Write to the workspace config directory at the workspace cwd.
+    #[builder(setter(into, strip_option), default)]
+    pub here: Option<bool>,
+}
 impl IntoID<Id> for Workspace {
     fn into_id(
         self,
@@ -17074,6 +17080,35 @@ impl Workspace {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+    /// Uninstall a module from the workspace, writing config.toml to the host.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the installed module entry to remove.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn uninstall(&self, name: impl Into<String>) -> Result<String, DaggerError> {
+        let mut query = self.selection.select("uninstall");
+        query = query.arg("name", name.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Uninstall a module from the workspace, writing config.toml to the host.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the installed module entry to remove.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn uninstall_opts(
+        &self,
+        name: impl Into<String>,
+        opts: WorkspaceUninstallOpts,
+    ) -> Result<String, DaggerError> {
+        let mut query = self.selection.select("uninstall");
+        query = query.arg("name", name.into());
+        if let Some(here) = opts.here {
+            query = query.arg("here", here);
+        }
+        query.execute(self.graphql_client.clone()).await
     }
     /// Refresh workspace-managed state and return the resulting changeset.
     /// Currently this refreshes existing lockfile entries only.

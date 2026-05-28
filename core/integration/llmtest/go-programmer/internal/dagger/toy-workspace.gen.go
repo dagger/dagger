@@ -56,7 +56,7 @@ type ToyWorkspace struct { // toy-workspace (../../../../../../core/integration/
 	query *querybuilder.Selection
 
 	build *Void
-	id    *ToyWorkspaceID
+	id    *ID
 	read  *string
 }
 type WithToyWorkspaceFunc func(r *ToyWorkspace) *ToyWorkspace
@@ -72,6 +72,12 @@ func (r *ToyWorkspace) WithGraphQLQuery(q *querybuilder.Selection) *ToyWorkspace
 	return &ToyWorkspace{
 		query: q,
 	}
+}
+
+type ToyWorkspaceID = ID
+
+func (r *Query) LoadToyWorkspaceFromID(id ToyWorkspaceID) *ToyWorkspace {
+	return &ToyWorkspace{query: selectNode(r.query, ID(id), "ToyWorkspace")}
 }
 
 // Build the code at the current directory in the workspace
@@ -94,13 +100,13 @@ func (r *ToyWorkspace) Container() *Container { // toy-workspace (../../../../..
 }
 
 // A unique identifier for this ToyWorkspace.
-func (r *ToyWorkspace) ID(ctx context.Context) (ToyWorkspaceID, error) {
+func (r *ToyWorkspace) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ToyWorkspaceID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
