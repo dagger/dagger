@@ -249,7 +249,9 @@ func (g *GoGenerator) syncModReplaceAndTidy(mod *modfile.File, genSt *generator.
 	// Otherwise, we install the given dagger.io/dagger package version.
 	if !isDaggerPkgCustomReplaced(mod.Replace) {
 		genSt.PostCommands = append(genSt.PostCommands,
-			exec.Command("go", "get", "-u", daggerImportPath+"@"+g.Config.ModuleConfig.LibVersion))
+			// Do not pass -u here: LibVersion pins dagger.io/dagger, while -u also
+			// asks Go to upgrade transitive dependencies during generation.
+			exec.Command("go", "get", daggerImportPath+"@"+g.Config.ModuleConfig.LibVersion))
 	}
 
 	genSt.PostCommands = append(genSt.PostCommands,
