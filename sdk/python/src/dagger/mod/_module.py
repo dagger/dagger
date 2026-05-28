@@ -9,7 +9,6 @@ import typing
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, TypeVar, cast
 
-import anyio
 import cattrs
 import cattrs.gen
 from cattrs.preconf import is_primitive_enum
@@ -19,7 +18,8 @@ from typing_extensions import dataclass_transform, overload
 import dagger
 from dagger import dag
 from dagger.client._core import configure_converter_enum
-from dagger.mod._converter import make_converter, to_typedef
+from dagger.mod._converter import make_converter
+from dagger.mod._discovery import IMPORT_PKG
 from dagger.mod._exceptions import (
     BadUsageError,
     FunctionError,
@@ -40,13 +40,7 @@ from dagger.mod._resolver import (
     R,
 )
 from dagger.mod._types import APIName, FieldDefinition, FunctionDefinition, PythonName
-from dagger.mod._utils import (
-    asyncify,
-    extract_enum_member_doc,
-    get_doc,
-    get_parent_module_doc,
-    is_annotated,
-)
+from dagger.mod._utils import asyncify, is_annotated
 
 logger = logging.getLogger(__package__)
 
@@ -61,6 +55,27 @@ MAIN_OBJECT: typing.Final[str] = os.getenv("DAGGER_MAIN_OBJECT", "")
 TYPE_DEF_FILE: typing.Final[str] = os.getenv("DAGGER_MODULE_FILE", "/module.json")
 
 T = TypeVar("T", bound=type)
+
+
+def _import_static_entrypoint(import_pkg: str) -> Any | None:
+    """Import the committed ``<import_pkg>/_dagger_main.py`` if present.
+
+    Returns the imported module (exposing ``typedefs()``), or ``None`` when it
+    hasn't been generated yet — e.g. the first ``generate`` of a module, before
+    the static entrypoint is committed, where the def phase falls back to live
+    introspection.
+    """
+    import importlib
+    import importlib.util
+
+    name = f"{import_pkg}._dagger_main"
+    try:
+        spec = importlib.util.find_spec(name)
+    except ImportError:
+        return None
+    if spec is None:
+        return None
+    return importlib.import_module(name)
 
 
 class Module:
@@ -113,162 +128,30 @@ class Module:
 
         await dag.current_function_call().return_value(dagger.JSON(output))
 
-    async def register(self):
-        """Register the module and its types with the Dagger API."""
+    async def _typedefs(self) -> dagger.ModuleID:
+        """Return the module's TypeDefs for the def phase.
+
+        Prefers the committed static entrypoint (a pure replay of the values
+        resolved at generate time); otherwise introspects the live module that
+        was just imported. Either path executes real code — never static source
+        analysis — so runtime-resolved defaults (e.g. ``logging.INFO`` -> 20)
+        reach the engine intact.
+        """
+        from dagger.mod._introspect._runtime import typedefs_from_json
+        from dagger.mod._introspect.serialize import live_to_introspection_json
+
+        entrypoint = _import_static_entrypoint(IMPORT_PKG)
         try:
-            result = await self._typedefs()
-            output = json.dumps(result)
+            if entrypoint is not None:
+                return await entrypoint.typedefs()
+            module_types = live_to_introspection_json(
+                self,
+                main_object_name=self._main_name,
+                module_name=MODULE_NAME,
+            )
+            return await typedefs_from_json(module_types)
         except TypeError as e:
-            raise RegistrationError(str(e), e) from e
-        await anyio.Path(TYPE_DEF_FILE).write_text(output)
-
-    async def _typedefs(self) -> str:  # noqa: C901, PLR0912, PLR0915
-        if not self._main_name:
-            msg = "Main object name can't be empty"
-            raise ValueError(msg)
-        try:
-            self.get_object(self._main_name)
-        except ObjectNotFoundError as e:
-            msg = (
-                f"Main object with name '{self._main_name}' not found or class not "
-                "decorated with '@dagger.object_type'\n"
-                f"If you believe the module name '{MODULE_NAME}' is incorrectly "
-                "being converted into PascalCase, please file a bug report."
-            )
-            raise ObjectNotFoundError(msg, extra=e.extra) from None
-
-        mod = dag.module()
-
-        # Object types
-        for obj_name, obj_type in self._objects.items():
-            if self.is_main(obj_type):
-                # Only the main object's constructor is needed.
-                # It's the entrypoint to the module.
-                obj_type.get_constructor(self._converter)
-
-                # Module description from main object's parent module
-                if desc := get_parent_module_doc(obj_type.cls):
-                    mod = mod.with_description(desc)
-
-            # Object/interface type
-            type_def = dag.type_def()
-            if obj_type.interface:
-                type_def = type_def.with_interface(
-                    obj_name,
-                    description=get_doc(obj_type.cls),
-                )
-            else:
-                type_def = type_def.with_object(
-                    obj_name,
-                    description=get_doc(obj_type.cls),
-                    deprecated=obj_type.deprecated,
-                )
-
-            # Object fields
-            if obj_type.fields:
-                types = typing.get_type_hints(obj_type.cls)
-
-                for field_name, field in obj_type.fields.items():
-                    ctx = f"type for field '{field.original_name}' in {obj_type}"
-                    type_def = type_def.with_field(
-                        field_name,
-                        to_typedef(types[field.original_name], ctx),
-                        description=get_doc(field.return_type),
-                        deprecated=field.meta.deprecated,
-                    )
-
-            # Object/interface functions
-            for func_name, func in obj_type.functions.items():
-                what = f"function '{func_name}'" if func_name else "constructor"
-
-                func_def = dag.function(
-                    func_name,
-                    to_typedef(
-                        func.return_type,
-                        f"return type for {what} in {obj_type}",
-                    ),
-                )
-
-                if doc := func.doc:
-                    func_def = func_def.with_description(doc)
-
-                if func.cache_policy is not None:
-                    if func.cache_policy == "never":
-                        func_def = func_def.with_cache_policy(
-                            dagger.FunctionCachePolicy.Never,
-                        )
-                    elif func.cache_policy == "session":
-                        func_def = func_def.with_cache_policy(
-                            dagger.FunctionCachePolicy.PerSession,
-                        )
-                    elif func.cache_policy != "":
-                        func_def = func_def.with_cache_policy(
-                            dagger.FunctionCachePolicy.Default,
-                            time_to_live=func.cache_policy,
-                        )
-                if deprecated := func.deprecated:
-                    func_def = func_def.with_deprecated(reason=deprecated)
-                if func.check:
-                    func_def = func_def.with_check()
-                if func.generate:
-                    func_def = func_def.with_generator()
-                if func.service:
-                    func_def = func_def.with_up()
-
-                for param in func.parameters.values():
-                    arg_def = to_typedef(
-                        param.resolved_type,
-                        f"parameter type for '{param.name}' in {what} and {obj_type}",
-                    )
-
-                    if param.is_nullable:
-                        arg_def = arg_def.with_optional(True)
-
-                    func_def = func_def.with_arg(
-                        param.name,
-                        arg_def,
-                        description=param.doc,
-                        default_value=param.default_value,
-                        default_path=param.default_path,
-                        default_address=param.default_address,
-                        ignore=param.ignore,
-                        deprecated=param.deprecated,
-                    )
-
-                type_def = (
-                    type_def.with_constructor(func_def)
-                    if func_name == ""
-                    else type_def.with_function(func_def)
-                )
-
-            # Add object/interface to module
-            mod = (
-                mod.with_interface(type_def)
-                if obj_type.interface
-                else mod.with_object(type_def)
-            )
-
-        # Enum types
-        for name, cls in self._enums.items():
-            enum_def = dag.type_def().with_enum(name, description=get_doc(cls))
-            member_docs = extract_enum_member_doc(cls)
-
-            for member in cls:
-                description = getattr(member, "description", None)
-                meta = member_docs.get(member.name)
-
-                if description is None and meta and meta.description is not None:
-                    description = meta.description
-
-                enum_def = enum_def.with_enum_member(
-                    member.name,
-                    value=str(member.value),
-                    description=description,
-                    deprecated=meta.deprecated if meta else None,
-                )
-            mod = mod.with_enum(enum_def)
-
-        return await mod.id()
+            raise RegistrationError(str(e)) from e
 
     async def invoke(self) -> str:
         """Invoke a function and return its result.

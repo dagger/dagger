@@ -4,13 +4,13 @@ import importlib
 import importlib.metadata
 import importlib.util
 import logging
-import os
 import typing
 
 import anyio
 
 import dagger
 from dagger import telemetry
+from dagger.mod._discovery import IMPORT_PKG
 from dagger.mod._exceptions import ModuleError, ModuleLoadError, record_exception
 from dagger.mod._module import MAIN_OBJECT, Module
 
@@ -18,19 +18,18 @@ logger = logging.getLogger(__package__)
 
 ENTRY_POINT_NAME: typing.Final[str] = "main_object"
 ENTRY_POINT_GROUP: typing.Final[str] = typing.cast(str, __package__)
-IMPORT_PKG: typing.Final[str] = os.getenv("DAGGER_DEFAULT_PYTHON_PACKAGE", "main")
 
 
-def app(mod: Module | None = None, register: bool = False) -> int | None:
+def app(mod: Module | None = None) -> int | None:
     """Entrypoint for a Python Dagger module."""
     telemetry.initialize()
     try:
-        return anyio.run(main, mod, register)
+        return anyio.run(main, mod)
     finally:
         telemetry.shutdown()
 
 
-async def main(mod: Module | None = None, register: bool = False) -> int | None:
+async def main(mod: Module | None = None) -> int | None:
     """Async entrypoint for a Dagger module."""
     # Establishing connection early on to allow returning dag.error().
     # Note: if there's a connection error dag.error() won't be sent but
@@ -39,8 +38,6 @@ async def main(mod: Module | None = None, register: bool = False) -> int | None:
         try:
             if mod is None:
                 mod = load_module()
-            if register:
-                return await mod.register()
             return await mod.serve()
         except (ModuleError, dagger.QueryError) as e:
             await record_exception(e)
