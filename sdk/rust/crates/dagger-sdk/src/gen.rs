@@ -1617,6 +1617,9 @@ pub struct ContainerWithDirectoryOpts<'a> {
     /// If the group is omitted, it defaults to the same as the user.
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
+    /// Set the owner to the container's current user.
+    #[builder(setter(into, strip_option), default)]
+    pub inherit_owner: Option<bool>,
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
 }
@@ -1710,6 +1713,9 @@ pub struct ContainerWithFileOpts<'a> {
     /// If the group is omitted, it defaults to the same as the user.
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
+    /// Set the owner to the container's current user.
+    #[builder(setter(into, strip_option), default)]
+    pub inherit_owner: Option<bool>,
     /// Permissions of the new file. Example: 0600
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
@@ -1724,6 +1730,9 @@ pub struct ContainerWithFilesOpts<'a> {
     /// If the group is omitted, it defaults to the same as the user.
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
+    /// Set the owner to the container's current user.
+    #[builder(setter(into, strip_option), default)]
+    pub inherit_owner: Option<bool>,
     /// Permission given to the copied files (e.g., 0600).
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
@@ -1739,6 +1748,9 @@ pub struct ContainerWithMountedCacheOpts<'a> {
     /// If the group is omitted, it defaults to the same as the user.
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
+    /// Set the owner to the container's current user.
+    #[builder(setter(into, strip_option), default)]
+    pub inherit_owner: Option<bool>,
     /// Sharing mode of the cache volume.
     #[builder(setter(into, strip_option), default)]
     pub sharing: Option<CacheSharingMode>,
@@ -1756,6 +1768,9 @@ pub struct ContainerWithMountedDirectoryOpts<'a> {
     /// If the group is omitted, it defaults to the same as the user.
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
+    /// Set the owner to the container's current user.
+    #[builder(setter(into, strip_option), default)]
+    pub inherit_owner: Option<bool>,
     /// Mount the directory read-only.
     #[builder(setter(into, strip_option), default)]
     pub read_only: Option<bool>,
@@ -1770,6 +1785,9 @@ pub struct ContainerWithMountedFileOpts<'a> {
     /// If the group is omitted, it defaults to the same as the user.
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
+    /// Set the owner to the container's current user.
+    #[builder(setter(into, strip_option), default)]
+    pub inherit_owner: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedSecretOpts<'a> {
@@ -1785,6 +1803,9 @@ pub struct ContainerWithMountedSecretOpts<'a> {
     /// If the group is omitted, it defaults to the same as the user.
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
+    /// Set the owner to the container's current user.
+    #[builder(setter(into, strip_option), default)]
+    pub inherit_owner: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedTempOpts {
@@ -1805,6 +1826,9 @@ pub struct ContainerWithNewFileOpts<'a> {
     /// If the group is omitted, it defaults to the same as the user.
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
+    /// Set the owner to the container's current user.
+    #[builder(setter(into, strip_option), default)]
+    pub inherit_owner: Option<bool>,
     /// Permissions of the new file. Example: 0600
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
@@ -1825,6 +1849,9 @@ pub struct ContainerWithUnixSocketOpts<'a> {
     /// If the group is omitted, it defaults to the same as the user.
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
+    /// Set the owner to the container's current user.
+    #[builder(setter(into, strip_option), default)]
+    pub inherit_owner: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithWorkdirOpts {
@@ -2725,6 +2752,9 @@ impl Container {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
+        if let Some(inherit_owner) = opts.inherit_owner {
+            query = query.arg("inheritOwner", inherit_owner);
+        }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
         }
@@ -3099,6 +3129,9 @@ impl Container {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
+        if let Some(inherit_owner) = opts.inherit_owner {
+            query = query.arg("inheritOwner", inherit_owner);
+        }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
         }
@@ -3146,6 +3179,9 @@ impl Container {
         }
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
+        }
+        if let Some(inherit_owner) = opts.inherit_owner {
+            query = query.arg("inheritOwner", inherit_owner);
         }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
@@ -3226,6 +3262,9 @@ impl Container {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
+        if let Some(inherit_owner) = opts.inherit_owner {
+            query = query.arg("inheritOwner", inherit_owner);
+        }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
         }
@@ -3287,6 +3326,9 @@ impl Container {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
+        if let Some(inherit_owner) = opts.inherit_owner {
+            query = query.arg("inheritOwner", inherit_owner);
+        }
         if let Some(read_only) = opts.read_only {
             query = query.arg("readOnly", read_only);
         }
@@ -3346,6 +3388,9 @@ impl Container {
         );
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
+        }
+        if let Some(inherit_owner) = opts.inherit_owner {
+            query = query.arg("inheritOwner", inherit_owner);
         }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
@@ -3407,6 +3452,9 @@ impl Container {
         );
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
+        }
+        if let Some(inherit_owner) = opts.inherit_owner {
+            query = query.arg("inheritOwner", inherit_owner);
         }
         if let Some(mode) = opts.mode {
             query = query.arg("mode", mode);
@@ -3498,6 +3546,9 @@ impl Container {
         }
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
+        }
+        if let Some(inherit_owner) = opts.inherit_owner {
+            query = query.arg("inheritOwner", inherit_owner);
         }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
@@ -3705,6 +3756,9 @@ impl Container {
         );
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
+        }
+        if let Some(inherit_owner) = opts.inherit_owner {
+            query = query.arg("inheritOwner", inherit_owner);
         }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);

@@ -1853,6 +1853,21 @@ func (ContainerSuite) TestWithFiles(ctx context.Context, t *testctx.T) {
 			WithFiles("myfiles/", files)
 		check(ctx, t, ctr)
 	})
+
+	t.Run("inherit owner", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().From(alpineImage).
+			WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
+			WithExec([]string{"addgroup", "-g", "4321", "agroup"}).
+			WithUser("auser:agroup").
+			WithFiles("/myfiles", files, dagger.ContainerWithFilesOpts{InheritOwner: true})
+
+		out, err := ctr.
+			WithUser("root").
+			WithExec([]string{"stat", "-c", "%U %G", "/myfiles/first-file", "/myfiles/second-file"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "auser agroup\nauser agroup\n", out)
+	})
 }
 
 func (ContainerSuite) TestWithFilesAbsolute(ctx context.Context, t *testctx.T) {
@@ -3707,6 +3722,11 @@ func (ContainerSuite) TestWithMountedFileOwner(ctx context.Context, t *testctx.T
 				Owner: owner,
 			})
 		})
+		testInheritOwnership(ctx, t, c, func(ctr *dagger.Container, name string) *dagger.Container {
+			return ctr.WithMountedFile(name, file, dagger.ContainerWithMountedFileOpts{
+				InheritOwner: true,
+			})
+		})
 	})
 
 	t.Run("file from subdirectory", func(ctx context.Context, t *testctx.T) {
@@ -3742,6 +3762,11 @@ func (ContainerSuite) TestWithMountedDirectoryOwner(ctx context.Context, t *test
 		testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
 			return ctr.WithMountedDirectory(name, dir, dagger.ContainerWithMountedDirectoryOpts{
 				Owner: owner,
+			})
+		})
+		testInheritOwnership(ctx, t, c, func(ctr *dagger.Container, name string) *dagger.Container {
+			return ctr.WithMountedDirectory(name, dir, dagger.ContainerWithMountedDirectoryOpts{
+				InheritOwner: true,
 			})
 		})
 	})
@@ -3809,6 +3834,11 @@ func (ContainerSuite) TestWithFileOwner(ctx context.Context, t *testctx.T) {
 				Owner: owner,
 			})
 		})
+		testInheritOwnership(ctx, t, c, func(ctr *dagger.Container, name string) *dagger.Container {
+			return ctr.WithFile(name, file, dagger.ContainerWithFileOpts{
+				InheritOwner: true,
+			})
+		})
 	})
 
 	t.Run("file from subdirectory", func(ctx context.Context, t *testctx.T) {
@@ -3846,6 +3876,11 @@ func (ContainerSuite) TestWithDirectoryOwner(ctx context.Context, t *testctx.T) 
 				Owner: owner,
 			})
 		})
+		testInheritOwnership(ctx, t, c, func(ctr *dagger.Container, name string) *dagger.Container {
+			return ctr.WithDirectory(name, dir, dagger.ContainerWithDirectoryOpts{
+				InheritOwner: true,
+			})
+		})
 	})
 
 	t.Run("subdirectory", func(ctx context.Context, t *testctx.T) {
@@ -3873,6 +3908,9 @@ func (ContainerSuite) TestWithNewFileOwner(ctx context.Context, t *testctx.T) {
 	testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
 		return ctr.WithNewFile(name, "", dagger.ContainerWithNewFileOpts{Owner: owner})
 	})
+	testInheritOwnership(ctx, t, c, func(ctr *dagger.Container, name string) *dagger.Container {
+		return ctr.WithNewFile(name, "", dagger.ContainerWithNewFileOpts{InheritOwner: true})
+	})
 }
 
 func (ContainerSuite) TestWithMountedCacheOwner(ctx context.Context, t *testctx.T) {
@@ -3883,6 +3921,11 @@ func (ContainerSuite) TestWithMountedCacheOwner(ctx context.Context, t *testctx.
 	testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
 		return ctr.WithMountedCache(name, cache, dagger.ContainerWithMountedCacheOpts{
 			Owner: owner,
+		})
+	})
+	testInheritOwnership(ctx, t, c, func(ctr *dagger.Container, name string) *dagger.Container {
+		return ctr.WithMountedCache(name, cache, dagger.ContainerWithMountedCacheOpts{
+			InheritOwner: true,
 		})
 	})
 
@@ -3939,6 +3982,11 @@ func (ContainerSuite) TestWithMountedSecretOwner(ctx context.Context, t *testctx
 	testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
 		return ctr.WithMountedSecret(name, secret, dagger.ContainerWithMountedSecretOpts{
 			Owner: owner,
+		})
+	})
+	testInheritOwnership(ctx, t, c, func(ctr *dagger.Container, name string) *dagger.Container {
+		return ctr.WithMountedSecret(name, secret, dagger.ContainerWithMountedSecretOpts{
+			InheritOwner: true,
 		})
 	})
 }

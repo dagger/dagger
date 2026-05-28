@@ -516,6 +516,11 @@ export type ContainerWithDirectoryOpts = {
   owner?: string
 
   /**
+   * Set the owner to the container's current user.
+   */
+  inheritOwner?: boolean
+
+  /**
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
@@ -657,6 +662,11 @@ export type ContainerWithFileOpts = {
   owner?: string
 
   /**
+   * Set the owner to the container's current user.
+   */
+  inheritOwner?: boolean
+
+  /**
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   expand?: boolean
@@ -676,6 +686,11 @@ export type ContainerWithFilesOpts = {
    * If the group is omitted, it defaults to the same as the user.
    */
   owner?: string
+
+  /**
+   * Set the owner to the container's current user.
+   */
+  inheritOwner?: boolean
 
   /**
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
@@ -706,6 +721,11 @@ export type ContainerWithMountedCacheOpts = {
   owner?: string
 
   /**
+   * Set the owner to the container's current user.
+   */
+  inheritOwner?: boolean
+
+  /**
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
@@ -720,6 +740,11 @@ export type ContainerWithMountedDirectoryOpts = {
    * If the group is omitted, it defaults to the same as the user.
    */
   owner?: string
+
+  /**
+   * Set the owner to the container's current user.
+   */
+  inheritOwner?: boolean
 
   /**
    * Mount the directory read-only.
@@ -743,6 +768,11 @@ export type ContainerWithMountedFileOpts = {
   owner?: string
 
   /**
+   * Set the owner to the container's current user.
+   */
+  inheritOwner?: boolean
+
+  /**
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   expand?: boolean
@@ -757,6 +787,11 @@ export type ContainerWithMountedSecretOpts = {
    * If the group is omitted, it defaults to the same as the user.
    */
   owner?: string
+
+  /**
+   * Set the owner to the container's current user.
+   */
+  inheritOwner?: boolean
 
   /**
    * Permission given to the mounted secret (e.g., 0600).
@@ -799,6 +834,11 @@ export type ContainerWithNewFileOpts = {
   owner?: string
 
   /**
+   * Set the owner to the container's current user.
+   */
+  inheritOwner?: boolean
+
+  /**
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   expand?: boolean
@@ -820,6 +860,11 @@ export type ContainerWithUnixSocketOpts = {
    * If the group is omitted, it defaults to the same as the user.
    */
   owner?: string
+
+  /**
+   * Set the owner to the container's current user.
+   */
+  inheritOwner?: boolean
 
   /**
    * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
@@ -4404,6 +4449,7 @@ export class Container extends BaseClient {
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
+   * @param opts.inheritOwner Set the owner to the container's current user.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   withDirectory = (
@@ -4553,6 +4599,7 @@ export class Container extends BaseClient {
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
+   * @param opts.inheritOwner Set the owner to the container's current user.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   withFile = (
@@ -4574,6 +4621,7 @@ export class Container extends BaseClient {
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
+   * @param opts.inheritOwner Set the owner to the container's current user.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   withFiles = (
@@ -4608,6 +4656,7 @@ export class Container extends BaseClient {
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
+   * @param opts.inheritOwner Set the owner to the container's current user.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   withMountedCache = (
@@ -4637,6 +4686,7 @@ export class Container extends BaseClient {
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
+   * @param opts.inheritOwner Set the owner to the container's current user.
    * @param opts.readOnly Mount the directory read-only.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
@@ -4662,6 +4712,7 @@ export class Container extends BaseClient {
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
+   * @param opts.inheritOwner Set the owner to the container's current user.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   withMountedFile = (
@@ -4682,6 +4733,7 @@ export class Container extends BaseClient {
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
+   * @param opts.inheritOwner Set the owner to the container's current user.
    * @param opts.mode Permission given to the mounted secret (e.g., 0600).
    *
    * This option requires an owner to be set to be active.
@@ -4720,6 +4772,7 @@ export class Container extends BaseClient {
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
+   * @param opts.inheritOwner Set the owner to the container's current user.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   withNewFile = (
@@ -4809,6 +4862,7 @@ export class Container extends BaseClient {
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
+   * @param opts.inheritOwner Set the owner to the container's current user.
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   withUnixSocket = (

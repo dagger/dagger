@@ -2525,6 +2525,8 @@ type ContainerWithDirectoryOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 
@@ -2551,6 +2553,10 @@ func (r *Container) WithDirectory(path string, source *Directory, opts ...Contai
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
 		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
@@ -2821,6 +2827,8 @@ type ContainerWithFileOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
 	Expand bool
 }
@@ -2837,6 +2845,10 @@ func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFil
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
 		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
@@ -2861,6 +2873,8 @@ type ContainerWithFilesOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
 	Expand bool
 }
@@ -2876,6 +2890,10 @@ func (r *Container) WithFiles(path string, sources []*File, opts ...ContainerWit
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
 		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
@@ -2917,6 +2935,8 @@ type ContainerWithMountedCacheOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
@@ -2937,6 +2957,10 @@ func (r *Container) WithMountedCache(path string, cache *CacheVolume, opts ...Co
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
 		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
@@ -2959,6 +2983,8 @@ type ContainerWithMountedDirectoryOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Mount the directory read-only.
 	ReadOnly bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
@@ -2973,6 +2999,10 @@ func (r *Container) WithMountedDirectory(path string, source *Directory, opts ..
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
 		}
 		// `readOnly` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ReadOnly) {
@@ -2999,6 +3029,8 @@ type ContainerWithMountedFileOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
 	Expand bool
 }
@@ -3011,6 +3043,10 @@ func (r *Container) WithMountedFile(path string, source *File, opts ...Container
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
 		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
@@ -3033,6 +3069,8 @@ type ContainerWithMountedSecretOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Permission given to the mounted secret (e.g., 0600).
 	//
 	// This option requires an owner to be set to be active.
@@ -3051,6 +3089,10 @@ func (r *Container) WithMountedSecret(path string, source *Secret, opts ...Conta
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
 		}
 		// `mode` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Mode) {
@@ -3109,6 +3151,8 @@ type ContainerWithNewFileOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
 	Expand bool
 }
@@ -3124,6 +3168,10 @@ func (r *Container) WithNewFile(path string, contents string, opts ...ContainerW
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
 		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
@@ -3223,6 +3271,8 @@ type ContainerWithUnixSocketOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
+	// Set the owner to the container's current user.
+	InheritOwner bool
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
@@ -3235,6 +3285,10 @@ func (r *Container) WithUnixSocket(path string, source *Socket, opts ...Containe
 		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
+		}
+		// `inheritOwner` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InheritOwner) {
+			q = q.Arg("inheritOwner", opts[i].InheritOwner)
 		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
