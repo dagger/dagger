@@ -14,13 +14,17 @@ type module struct {
 	// The module implementing the SDK.
 	mod dagql.ObjectResult[*core.Module]
 
-	// The SDK object retrieved from the server, for calling functions against.
-	sdk dagql.AnyObjectResult
+	root *core.Query
 
-	// A server that the SDK module has been installed to.
-	server *dagql.Server
+	optionalFullSDKSourceDir dagql.ObjectResult[*core.Directory]
+	rawConfig                map[string]any
 
 	funcs map[string]*core.Function
+}
+
+type moduleInstance struct {
+	dag *dagql.Server
+	sdk dagql.AnyObjectResult
 }
 
 func newModuleSDK(
@@ -30,31 +34,47 @@ func newModuleSDK(
 	optionalFullSDKSourceDir dagql.ObjectResult[*core.Directory],
 	rawConfig map[string]any,
 ) (*module, error) {
-	dag, err := dagql.NewServer(ctx, root)
+	sdk := &module{
+		root:                     root,
+		mod:                      sdkModMeta,
+		optionalFullSDKSourceDir: optionalFullSDKSourceDir,
+		rawConfig:                rawConfig,
+		funcs:                    listImplementedFunctions(sdkModMeta.Self()),
+	}
+
+	if _, err := sdk.instantiate(ctx); err != nil {
+		return nil, err
+	}
+
+	return sdk, nil
+}
+
+func (sdk *module) instantiate(ctx context.Context) (*moduleInstance, error) {
+	dag, err := dagql.NewServer(ctx, sdk.root)
 	if err != nil {
 		return nil, fmt.Errorf("create sdk module server: %w", err)
 	}
 	dag.Around(core.AroundFunc)
 	core.InstallCoreSchemaLoaders(dag)
 
-	if err := core.NewUserMod(sdkModMeta).Install(ctx, dag); err != nil {
-		return nil, fmt.Errorf("failed to install sdk module %s: %w", sdkModMeta.Self().Name(), err)
+	if err := core.NewUserMod(sdk.mod).Install(ctx, dag); err != nil {
+		return nil, fmt.Errorf("failed to install sdk module %s: %w", sdk.mod.Self().Name(), err)
 	}
 
-	defaultDeps, err := root.DefaultDeps(ctx)
+	defaultDeps, err := sdk.root.DefaultDeps(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get default deps for sdk module %s: %w", sdkModMeta.Self().Name(), err)
+		return nil, fmt.Errorf("failed to get default deps for sdk module %s: %w", sdk.mod.Self().Name(), err)
 	}
 	for _, defaultDep := range defaultDeps.Mods() {
 		if err := defaultDep.Install(ctx, dag); err != nil {
-			return nil, fmt.Errorf("failed to install default dep %s for sdk module %s: %w", defaultDep.Name(), sdkModMeta.Self().Name(), err)
+			return nil, fmt.Errorf("failed to install default dep %s for sdk module %s: %w", defaultDep.Name(), sdk.mod.Self().Name(), err)
 		}
 	}
 
-	var sdk dagql.AnyObjectResult
+	var sdkObj dagql.AnyObjectResult
 	var constructorArgs []dagql.NamedInput
-	if optionalFullSDKSourceDir.Self() != nil {
-		sdkSourceDirID, err := optionalFullSDKSourceDir.ID()
+	if sdk.optionalFullSDKSourceDir.Self() != nil {
+		sdkSourceDirID, err := sdk.optionalFullSDKSourceDir.ID()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get full sdk source directory ID: %w", err)
 		}
@@ -63,25 +83,21 @@ func newModuleSDK(
 		}
 	}
 
-	if err := dag.Select(ctx, dag.Root(), &sdk,
+	if err := dag.Select(ctx, dag.Root(), &sdkObj,
 		dagql.Selector{
-			Field: gqlFieldName(sdkModMeta.Self().Name()),
+			Field: gqlFieldName(sdk.mod.Self().Name()),
 			Args:  constructorArgs,
 		},
 	); err != nil {
-		return nil, fmt.Errorf("failed to get sdk object for sdk module %s: %w", sdkModMeta.Self().Name(), err)
+		return nil, fmt.Errorf("failed to get sdk object for sdk module %s: %w", sdk.mod.Self().Name(), err)
 	}
 
-	return (&module{
-		mod:    sdkModMeta,
-		server: dag,
-		sdk:    sdk,
-		funcs:  listImplementedFunctions(sdkModMeta.Self()),
-	}).withConfig(ctx, rawConfig)
-}
+	sdkObj, err = sdk.configuredSDK(ctx, dag, sdkObj)
+	if err != nil {
+		return nil, err
+	}
 
-func (sdk *module) dag() *dagql.Server {
-	return sdk.server
+	return &moduleInstance{dag: dag, sdk: sdkObj}, nil
 }
 
 // withConfig function checks if the moduleSDK exposes a function with name `WithConfig`.
@@ -91,17 +107,18 @@ func (sdk *module) dag() *dagql.Server {
 //
 // Further, if the value for a specific arg for that function is not specified in dagger.json -> sdk.config object,
 // the default value as specified in the moduleSource is used for that argument.
-func (sdk *module) withConfig(
+func (sdk *module) configuredSDK(
 	ctx context.Context,
-	rawConfig map[string]any,
-) (*module, error) {
+	dag *dagql.Server,
+	sdkObj dagql.AnyObjectResult,
+) (dagql.AnyObjectResult, error) {
 	withConfigFn, ok := sdk.funcs["withConfig"]
-	if !ok && len(rawConfig) > 0 {
-		return sdk, fmt.Errorf("sdk does not currently support specifying config")
+	if !ok && len(sdk.rawConfig) > 0 {
+		return nil, fmt.Errorf("sdk does not currently support specifying config")
 	}
 
 	if !ok {
-		return sdk, nil
+		return sdkObj, nil
 	}
 
 	fieldspec, err := withConfigFn.FieldSpec(ctx, core.NewUserMod(sdk.mod))
@@ -109,11 +126,11 @@ func (sdk *module) withConfig(
 		return nil, err
 	}
 
-	inputs := fieldspec.Args.Inputs(sdk.server.View)
+	inputs := fieldspec.Args.Inputs(dag.View)
 
 	// check if there are any unknown config keys provided
 	var unusedKeys = []string{}
-	for configKey := range rawConfig {
+	for configKey := range sdk.rawConfig {
 		found := false
 		for _, input := range inputs {
 			if input.Name == configKey {
@@ -135,7 +152,7 @@ func (sdk *module) withConfig(
 		var valInput = input.Default
 
 		// override if the argument with same name exists in dagger.json -> sdk.config
-		val, ok := rawConfig[input.Name]
+		val, ok := sdk.rawConfig[input.Name]
 		if ok && !input.Internal {
 			valInput, err = input.Type.Decoder().DecodeInput(val)
 			if err != nil {
@@ -149,10 +166,8 @@ func (sdk *module) withConfig(
 		})
 	}
 
-	dag := sdk.dag()
-
 	var sdkwithconfig dagql.AnyObjectResult
-	err = dag.Select(ctx, sdk.sdk, &sdkwithconfig, []dagql.Selector{
+	err = dag.Select(ctx, sdkObj, &sdkwithconfig, []dagql.Selector{
 		{
 			Field: "withConfig",
 			Args:  args,
@@ -162,9 +177,48 @@ func (sdk *module) withConfig(
 		return nil, fmt.Errorf("failed to call withConfig on the sdk module: %w", err)
 	}
 
-	sdk.sdk = sdkwithconfig
+	return sdkwithconfig, nil
+}
 
-	return sdk, nil
+func (sdk *module) AttachDependencyResults(
+	ctx context.Context,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	_ = ctx
+	if sdk == nil {
+		return nil, nil
+	}
+
+	deps := make([]dagql.AnyResult, 0, 2)
+
+	if sdk.mod.Self() != nil {
+		attached, err := attach(sdk.mod)
+		if err != nil {
+			return nil, fmt.Errorf("attach sdk implementation module: %w", err)
+		}
+		mod, ok := attached.(dagql.ObjectResult[*core.Module])
+		if !ok {
+			return nil, fmt.Errorf("attach sdk implementation module: unexpected result %T", attached)
+		}
+		sdk.mod = mod
+		sdk.funcs = listImplementedFunctions(mod.Self())
+		deps = append(deps, mod)
+	}
+
+	if sdk.optionalFullSDKSourceDir.Self() != nil {
+		attached, err := attach(sdk.optionalFullSDKSourceDir)
+		if err != nil {
+			return nil, fmt.Errorf("attach sdk source directory: %w", err)
+		}
+		dir, ok := attached.(dagql.ObjectResult[*core.Directory])
+		if !ok {
+			return nil, fmt.Errorf("attach sdk source directory: unexpected result %T", attached)
+		}
+		sdk.optionalFullSDKSourceDir = dir
+		deps = append(deps, dir)
+	}
+
+	return deps, nil
 }
 
 func (sdk *module) AsRuntime() (core.Runtime, bool) {

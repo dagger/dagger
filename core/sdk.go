@@ -474,4 +474,9 @@ type SDK interface {
 
 	// Transform the SDK into a ClientGenerator if it implements it.
 	AsClientGenerator() (ClientGenerator, bool)
+
+	// AttachDependencyResults attaches any cache-backed results embedded in the
+	// SDK implementation and returns the results the owning ModuleSource must
+	// retain.
+	AttachDependencyResults(context.Context, func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error)
 }

@@ -66,6 +66,13 @@ func (sdk *goSDK) AsClientGenerator() (core.ClientGenerator, bool) {
 	return sdk, true
 }
 
+func (sdk *goSDK) AttachDependencyResults(
+	context.Context,
+	func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	return nil, nil
+}
+
 func (sdk *goSDK) RequiredClientGenerationFiles(_ context.Context) (dagql.Array[dagql.String], error) {
 	return dagql.NewStringArray("./go.mod", "./go.sum", "main.go"), nil
 }

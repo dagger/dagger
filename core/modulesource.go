@@ -14,7 +14,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
@@ -288,6 +287,14 @@ func (src *ModuleSource) AttachDependencyResults(
 		owned = append(owned, typed)
 	}
 
+	if src.SDKImpl != nil {
+		sdkDeps, err := src.SDKImpl.AttachDependencyResults(ctx, attach)
+		if err != nil {
+			return nil, fmt.Errorf("attach module source sdk implementation: %w", err)
+		}
+		owned = append(owned, sdkDeps...)
+	}
+
 	for i, dep := range src.Dependencies {
 		if dep.Self() == nil {
 			continue
@@ -420,23 +427,13 @@ type persistedModuleSourceLazySDK struct {
 	config       *SDKConfig
 	src          *ModuleSource
 	capabilities persistedModuleSourceSDKCapabilities
-
-	mu     sync.Mutex
-	loaded SDK
 }
 
 var _ SDK = (*persistedModuleSourceLazySDK)(nil)
 
-func (sdk *persistedModuleSourceLazySDK) ensure(ctx context.Context) (SDK, error) {
+func (sdk *persistedModuleSourceLazySDK) load(ctx context.Context) (SDK, error) {
 	if sdk == nil || sdk.config == nil {
 		return nil, fmt.Errorf("load persisted module source sdk: missing sdk config")
-	}
-
-	sdk.mu.Lock()
-	loaded := sdk.loaded
-	sdk.mu.Unlock()
-	if loaded != nil {
-		return loaded, nil
 	}
 
 	if moduleSourceSDKLoader == nil {
@@ -446,21 +443,19 @@ func (sdk *persistedModuleSourceLazySDK) ensure(ctx context.Context) (SDK, error
 	if err != nil {
 		return nil, fmt.Errorf("load persisted module source sdk query: %w", err)
 	}
-	loaded, err = moduleSourceSDKLoader(ctx, query, sdk.config, sdk.src)
+	loaded, err := moduleSourceSDKLoader(ctx, query, sdk.config, sdk.src)
 	if err != nil {
 		return nil, fmt.Errorf("load persisted module source sdk: %w", err)
 	}
 
-	sdk.mu.Lock()
-	if sdk.loaded == nil {
-		sdk.loaded = loaded
-		if sdk.src != nil {
-			sdk.src.SDKImpl = loaded
-		}
-	}
-	loaded = sdk.loaded
-	sdk.mu.Unlock()
 	return loaded, nil
+}
+
+func (sdk *persistedModuleSourceLazySDK) AttachDependencyResults(
+	context.Context,
+	func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	return nil, nil
 }
 
 func (sdk *persistedModuleSourceLazySDK) AsRuntime() (Runtime, bool) {
@@ -502,7 +497,7 @@ func (sdk persistedModuleSourceLazyRuntime) Runtime(
 	deps *SchemaBuilder,
 	src dagql.ObjectResult[*ModuleSource],
 ) (ModuleRuntime, error) {
-	loaded, err := sdk.sdk.ensure(ctx)
+	loaded, err := sdk.sdk.load(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -525,7 +520,7 @@ func (sdk persistedModuleSourceLazyModuleTypes) ModuleTypes(
 	src dagql.ObjectResult[*ModuleSource],
 	mod *Module,
 ) (dagql.ObjectResult[*Module], error) {
-	loaded, err := sdk.sdk.ensure(ctx)
+	loaded, err := sdk.sdk.load(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*Module]{}, err
 	}
@@ -547,7 +542,7 @@ func (sdk persistedModuleSourceLazyCodeGenerator) Codegen(
 	deps *SchemaBuilder,
 	src dagql.ObjectResult[*ModuleSource],
 ) (*GeneratedCode, error) {
-	loaded, err := sdk.sdk.ensure(ctx)
+	loaded, err := sdk.sdk.load(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -567,7 +562,7 @@ var _ ClientGenerator = persistedModuleSourceLazyClientGenerator{}
 func (sdk persistedModuleSourceLazyClientGenerator) RequiredClientGenerationFiles(
 	ctx context.Context,
 ) (dagql.Array[dagql.String], error) {
-	loaded, err := sdk.sdk.ensure(ctx)
+	loaded, err := sdk.sdk.load(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -584,7 +579,7 @@ func (sdk persistedModuleSourceLazyClientGenerator) GenerateClient(
 	schemaJSONFile dagql.Result[*File],
 	outputDir string,
 ) (dagql.ObjectResult[*Directory], error) {
-	loaded, err := sdk.sdk.ensure(ctx)
+	loaded, err := sdk.sdk.load(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*Directory]{}, err
 	}
