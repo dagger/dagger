@@ -64,7 +64,6 @@ dev = [
     "pytest-httpx>=0.30.0",
     "pytest-mock>=3.12.0",
     "pytest-subprocess>=1.5.0",
-    "hypothesis>=6.100",
     # docs
     "sphinx>=7.2.6",
     "sphinx-rtd-theme>=2.0.0",
@@ -82,11 +81,7 @@ source-include = ["tests/**", "docs/**", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/"]
-addopts = [
-    "--import-mode=importlib",
-    # Show Hypothesis example counts for generated module-source tests.
-    "--hypothesis-show-statistics",
-]
+addopts = ["--import-mode=importlib"]
 markers = [
     "slow: mark test as slow (integration)",
     "provision: mark provisioning tests",
