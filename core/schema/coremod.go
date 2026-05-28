@@ -3,8 +3,6 @@ package schema
 import (
 	"context"
 	"fmt"
-	"maps"
-	"slices"
 	"sync"
 
 	"github.com/dagger/dagger/cmd/codegen/introspection"
@@ -47,6 +45,7 @@ func NewCoreSchemaBase(ctx context.Context, rootSrv core.Server) (*CoreSchemaBas
 		return nil, err
 	}
 	base.Around(core.AroundFunc)
+	base.AddInstallHook(&legacyIDHook{server: base})
 	coreMod := &CoreMod{}
 	if err := coreMod.Install(ctx, base); err != nil {
 		return nil, err
@@ -203,51 +202,6 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, _ ...core.Inst
 		&workspaceSchema{},
 	} {
 		schema.Install(dag)
-	}
-
-	rootObj := dag.Root().ObjectType()
-	for _, objName := range slices.Sorted(maps.Keys(dag.Schema().Types)) {
-		objType, ok := dag.ObjectType(objName)
-		if !ok {
-			continue
-		}
-		if _, ok := objType.IDType(); !ok {
-			continue
-		}
-		view := BeforeVersion("v0.21.1")
-		legacyIDScalar := dagql.NewScalar(objName+"ID", dagql.AnyID{})
-		dag.InstallScalar(legacyIDScalar, view)
-		rootObj.Extend(dagql.FieldSpec{
-			Name:        fmt.Sprintf("load%sFromID", objName),
-			Description: fmt.Sprintf("Load a %s from its ID.", objName),
-			Type:        objType.Typed(),
-			Args: dagql.NewInputSpecs(dagql.InputSpec{
-				Name: "id",
-				Type: legacyIDScalar,
-			}),
-			ViewFilter: view,
-		}, func(ctx context.Context, _ dagql.AnyResult, args map[string]dagql.Input) (dagql.AnyResult, error) {
-			idable, ok := dagql.UnwrapAs[dagql.IDable](args["id"])
-			if !ok {
-				return nil, fmt.Errorf("expected IDable, got %T", args["id"])
-			}
-			id, err := idable.ID()
-			if err != nil {
-				return nil, fmt.Errorf("expected valid ID: %w", err)
-			}
-			srv := dagql.CurrentDagqlServer(ctx)
-			if srv == nil {
-				return nil, fmt.Errorf("current dagql server not found")
-			}
-			res, err := srv.Load(ctx, id)
-			if err != nil {
-				return nil, fmt.Errorf("load %s: %w", objName, err)
-			}
-			if res.Type().Name() != objName {
-				return nil, fmt.Errorf("load %s: expected %s, got %s", objName, objName, res.Type().Name())
-			}
-			return res, nil
-		})
 	}
 
 	return nil
