@@ -5936,6 +5936,17 @@ type Workspace implements Node {
   ): UpGroup!
 
   """
+  Uninstall a module from the workspace, writing config.toml to the host.
+  """
+  uninstall(
+    """Name of the installed module entry to remove."""
+    name: String!
+
+    """Write to the workspace config directory at the workspace cwd."""
+    here: Boolean = false
+  ): String!
+
+  """
   Refresh workspace-managed state and return the resulting changeset.
 
   Currently this refreshes existing lockfile entries only.

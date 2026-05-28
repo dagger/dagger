@@ -196,6 +196,16 @@ func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Clie
 	return err
 }
 
+func uninstallWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client, name string, here bool) error {
+	msg, err := dag.CurrentWorkspace().Uninstall(ctx, name, dagger.WorkspaceUninstallOpts{Here: here})
+	if err != nil {
+		return err
+	}
+
+	_, err = fmt.Fprintln(out, msg)
+	return err
+}
+
 //nolint:unparam
 func workspaceRootFromAddress(address, cwd string) (string, error) {
 	if cwd == "" || cwd == "." {

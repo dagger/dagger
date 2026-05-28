@@ -54,13 +54,19 @@ type Versioned struct { // versioned (https://github.com/dagger/dagger-test-modu
 	query *querybuilder.Selection
 
 	hello *string
-	id    *VersionedID
+	id    *ID
 }
 
 func (r *Versioned) WithGraphQLQuery(q *querybuilder.Selection) *Versioned {
 	return &Versioned{
 		query: q,
 	}
+}
+
+type VersionedID = ID
+
+func (r *Query) LoadVersionedFromID(id VersionedID) *Versioned {
+	return &Versioned{query: selectNode(r.query, ID(id), "Versioned")}
 }
 
 func (r *Versioned) Hello(ctx context.Context) (string, error) { // versioned (https://github.com/dagger/dagger-test-modules/tree/73670b0338c02cdd190f56b34c6e25066c7c8875/versioned/main.go#L5)
@@ -76,13 +82,13 @@ func (r *Versioned) Hello(ctx context.Context) (string, error) { // versioned (h
 }
 
 // A unique identifier for this Versioned.
-func (r *Versioned) ID(ctx context.Context) (VersionedID, error) {
+func (r *Versioned) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response VersionedID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
