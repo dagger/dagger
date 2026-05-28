@@ -682,10 +682,10 @@ func (funcs goTemplateFuncs) isPartial() bool {
 	return funcs.pass == 0
 }
 
-// legacyIDName returns the per-type ID name (e.g. "ContainerID") used
-// by pre-cutover Go SDK code.
+// legacyIDName returns the Go identifier for the per-type ID name
+// (e.g. "ContainerID") used by pre-cutover Go SDK code.
 func (funcs goTemplateFuncs) legacyIDName(typeName string) string {
-	return typeName + "ID"
+	return formatName(typeName + "ID")
 }
 
 // isLegacyIDAlias returns true when a scalar should be emitted as a Go
