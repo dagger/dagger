@@ -597,8 +597,8 @@ func (local *localFS) Sync( //nolint:gocyclo
 				// Only copy files that we know about changes for.
 				Only: localCopyOnlyPaths(only, local.copyPath),
 			},
-			CopyDirContents:  true,
-			DisableHardlinks: true,
+			CopyDirContents:        true,
+			DisableSourceHardlinks: true,
 			XAttrErrorHandler: func(dst, src, key string, err error) error {
 				if key != "" {
 					bklog.G(ctx).Debugf("xattr %q error during local import copy from %q to %q: %v", key, src, dst, err)

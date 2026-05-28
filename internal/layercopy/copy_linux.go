@@ -303,7 +303,7 @@ func (c *Copier) copyRegular(ent sourceEntry, realPath string, opts CopyOptions)
 		}
 	}
 
-	if !opts.DisableHardlinks && opts.Chown == nil && opts.Mode == nil {
+	if !opts.DisableHardlinks && !opts.DisableSourceHardlinks && opts.Chown == nil && opts.Mode == nil {
 		if err := os.RemoveAll(realPath); err != nil {
 			return err
 		}

@@ -33,7 +33,14 @@ type CopyOptions struct {
 	CopyDirContents   bool
 	ReplaceExisting   bool
 	DestPathHintIsDir bool
-	DisableHardlinks  bool
+
+	// DisableHardlinks disables all hardlink creation, including hardlink
+	// preservation between entries created by this copy.
+	DisableHardlinks bool
+
+	// DisableSourceHardlinks disables hardlinking from source paths into the
+	// destination while still preserving hardlinks within this copy.
+	DisableSourceHardlinks bool
 }
 
 type Copier struct {
