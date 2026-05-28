@@ -5585,7 +5585,8 @@ func (ContainerSuite) TestFileCaching(ctx context.Context, t *testctx.T) {
 
 		fn := func() (string, string, error) {
 			c := connect(ctx, t)
-			defer c.Close()
+			// Keep each session open until test cleanup so automatic pruning can't
+			// evict the producer result between these cross-client cache checks.
 
 			// This is used to test selecting a file different way, e.g. c.Host().File() vs c.Host().Directory().File()
 			// has no effect on the expected caching behavior
