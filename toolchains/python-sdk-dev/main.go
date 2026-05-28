@@ -5,6 +5,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"net/http"
 	"runtime"
 	"strings"
 
@@ -251,8 +252,20 @@ func (t PythonSdkDev) Release(
 		ctr = t.Build("0.0.0") // no default arg in Go, without self call just replicate the default value
 	} else {
 		var url string
+		var indexURL string
 		if pypiRepo == "test" {
 			url = "https://test.pypi.org/legacy/"
+			indexURL = fmt.Sprintf("https://test.pypi.org/pypi/dagger-io/%s/json", strings.TrimPrefix(version, "v"))
+		} else {
+			indexURL = fmt.Sprintf("https://pypi.org/pypi/dagger-io/%s/json", strings.TrimPrefix(version, "v"))
+		}
+		exists, err := packageVersionExists(indexURL)
+		if err != nil {
+			return err
+		}
+		if exists {
+			fmt.Printf("found existing Python SDK package dagger-io %s; skipping publish\n", strings.TrimPrefix(version, "v"))
+			return nil
 		}
 		ctr = t.Publish(pypiToken, strings.TrimPrefix(version, "v"), url)
 	}
@@ -262,6 +275,23 @@ func (t PythonSdkDev) Release(
 	}
 
 	return nil
+}
+
+func packageVersionExists(url string) (bool, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return true, nil
+	case http.StatusNotFound:
+		return false, nil
+	default:
+		return false, fmt.Errorf("unexpected package lookup status %s from %s", resp.Status, url)
+	}
 }
 
 // Bump the Python SDK's Engine dependency

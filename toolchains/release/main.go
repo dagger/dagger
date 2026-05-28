@@ -173,7 +173,7 @@ func (r *Release) Publish( //nolint:gocyclo
 		Tag:  tag,
 	}
 	if !dryRun {
-		_, err := dag.CliDev().
+		_, err = dag.CliDev().
 			Publish(tag, goreleaserKey, githubOrgName, dagger.CliDevPublishOpts{
 				GithubToken:        githubToken,
 				AwsAccessKeyID:     awsAccessKeyID,

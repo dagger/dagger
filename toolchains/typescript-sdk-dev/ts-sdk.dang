@@ -153,29 +153,40 @@ type TypescriptSdkDev {
     } else {
       "prepatch"
     }
-    let build = nodejsDevContainer
-      .withWorkdir(sourcePath)
-      .withExec(["npm", "run", "build"])
-      .withExec(["npm", "version", versionFlag])
-    # Check that dist/ exists in the build
-    build.directory("dist").entries
-    let publishArgs = ["npm", "publish", "--access", "public"]
-    if (dryRun == true) {
-      publishArgs += ["--dry-run"]
-      # TODO(vito): in dang, if exprs have to have same return type on all
-      # branches, which gets awkward here
-      null
-    } else if (npmToken != null) {
-      let npmrc = [
-        "//registry.npmjs.org/:_authToken=" + npmToken.plaintext,
-        "registry=https://registry.npmjs.org/",
-        "always-auth=true",
-      ].join("\n")
-      build = build.withMountedSecret(".npmrc", setSecret("npmrc", npmrc))
-      null
+    if (dryRun == false and isSemver(version) and npmVersionExists(versionFlag)) {
+      print("found existing TypeScript SDK package @dagger.io/dagger " + versionFlag + "; skipping publish")
+    } else {
+      let build = nodejsDevContainer
+        .withWorkdir(sourcePath)
+        .withExec(["npm", "run", "build"])
+        .withExec(["npm", "version", versionFlag])
+      # Check that dist/ exists in the build
+      build.directory("dist").entries
+      let publishArgs = ["npm", "publish", "--access", "public"]
+      if (dryRun == true) {
+        publishArgs += ["--dry-run"]
+        # TODO(vito): in dang, if exprs have to have same return type on all
+        # branches, which gets awkward here
+        null
+      } else if (npmToken != null) {
+        let npmrc = [
+          "//registry.npmjs.org/:_authToken=" + npmToken.plaintext,
+          "registry=https://registry.npmjs.org/",
+          "always-auth=true",
+        ].join("\n")
+        build = build.withMountedSecret(".npmrc", setSecret("npmrc", npmrc))
+        null
+      }
+      build.withExec(publishArgs).sync
     }
-    build.withExec(publishArgs).sync
     null
+  }
+
+  let npmVersionExists(version: String!): Boolean! {
+    let exitCode = nodejsBase
+      .withExec(["npm", "view", "@dagger.io/dagger@" + version, "version"], expect: ReturnType.ANY)
+      .exitCode
+    exitCode == 0
   }
 
   pub isSemver(version: String!): Boolean! {
