@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `FoobarID` scalar type represents an identifier for an object of type Foobar.
-type FoobarID string // foobar (../../../../../../../../core/integration/testdata/modules/go/defaults/foobar/main.go:3:6)
 
 // Retrieve the binding value, as type Foobar
 func (r *Binding) AsFoobar() *Foobar { // foobar (../../../../../../../../core/integration/testdata/modules/go/defaults/foobar/main.go:3:6)
@@ -49,13 +46,19 @@ type Foobar struct { // foobar (../../../../../../../../core/integration/testdat
 	query *querybuilder.Selection
 
 	exclaim *string
-	id      *FoobarID
+	id      *ID
 }
 
 func (r *Foobar) WithGraphQLQuery(q *querybuilder.Selection) *Foobar {
 	return &Foobar{
 		query: q,
 	}
+}
+
+type FoobarID = ID
+
+func (r *Query) LoadFoobarFromID(id FoobarID) *Foobar {
+	return &Foobar{query: selectNode(r.query, ID(id), "Foobar")}
 }
 
 // FoobarExclaimOpts contains options for Foobar.Exclaim
@@ -85,13 +88,13 @@ func (r *Foobar) Exclaim(ctx context.Context, message string, opts ...FoobarExcl
 }
 
 // A unique identifier for this Foobar.
-func (r *Foobar) ID(ctx context.Context) (FoobarID, error) {
+func (r *Foobar) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response FoobarID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -104,7 +107,7 @@ func (r *Foobar) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Foobar) XXX_GraphQLIDType() string {
-	return "FoobarID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -129,22 +132,20 @@ func (r *Foobar) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadFoobarFromID(FoobarID(id))
+	*r = Foobar{query: selectNode(dag.query, id, "Foobar")}
 	return nil
+}
+
+// AsNode returns this Foobar as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Foobar) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }
 
 func (r *Query) Foobar() *Foobar { // foobar (../../../../../../../../core/integration/testdata/modules/go/defaults/foobar/main.go:3:6)
 	q := r.query.Select("foobar")
-
-	return &Foobar{
-		query: q,
-	}
-}
-
-// Load a Foobar from its ID.
-func (r *Query) LoadFoobarFromID(id FoobarID) *Foobar { // foobar (../../../../../../../../core/integration/testdata/modules/go/defaults/foobar/main.go:3:6)
-	q := r.query.Select("loadFoobarFromID")
-	q = q.Arg("id", id)
 
 	return &Foobar{
 		query: q,

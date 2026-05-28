@@ -6,22 +6,13 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `ApkoBuildResultID` scalar type represents an identifier for an object of type ApkoBuildResult.
-type ApkoBuildResultID string // apko (../../../../../../toolchains/release/apko/main.go:251:6)
-
-// The `ApkoConfigID` scalar type represents an identifier for an object of type ApkoConfig.
-type ApkoConfigID string // apko (../../../../../../toolchains/release/apko/config.go:31:6)
-
-// The `ApkoID` scalar type represents an identifier for an object of type Apko.
-type ApkoID string // apko (../../../../../../toolchains/release/apko/main.go:16:6)
 
 type Apko struct { // apko (../../../../../../toolchains/release/apko/main.go:16:6)
 	query *querybuilder.Selection
 
-	id      *ApkoID
+	id      *ID
 	publish *Void
 }
 type WithApkoFunc func(r *Apko) *Apko
@@ -37,6 +28,12 @@ func (r *Apko) WithGraphQLQuery(q *querybuilder.Selection) *Apko {
 	return &Apko{
 		query: q,
 	}
+}
+
+type ApkoID = ID
+
+func (r *Query) LoadApkoFromID(id ApkoID) *Apko {
+	return &Apko{query: selectNode(r.query, ID(id), "Apko")}
 }
 
 // Load the Alpine base configuration.
@@ -152,13 +149,13 @@ func (r *Apko) Config(file *File) *ApkoConfig { // apko (../../../../../../toolc
 }
 
 // A unique identifier for this Apko.
-func (r *Apko) ID(ctx context.Context) (ApkoID, error) {
+func (r *Apko) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ApkoID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -171,7 +168,7 @@ func (r *Apko) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Apko) XXX_GraphQLIDType() string {
-	return "ApkoID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -196,7 +193,7 @@ func (r *Apko) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadApkoFromID(ApkoID(id))
+	*r = Apko{query: selectNode(dag.query, id, "Apko")}
 	return nil
 }
 
@@ -360,10 +357,18 @@ func (r *Apko) Wolfi() *ApkoConfig { // apko (../../../../../../toolchains/relea
 	}
 }
 
+// AsNode returns this Apko as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Apko) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type ApkoBuildResult struct { // apko (../../../../../../toolchains/release/apko/main.go:251:6)
 	query *querybuilder.Selection
 
-	id  *ApkoBuildResultID
+	id  *ID
 	tag *string
 }
 
@@ -371,6 +376,12 @@ func (r *ApkoBuildResult) WithGraphQLQuery(q *querybuilder.Selection) *ApkoBuild
 	return &ApkoBuildResult{
 		query: q,
 	}
+}
+
+type ApkoBuildResultID = ID
+
+func (r *Query) LoadApkoBuildResultFromID(id ApkoBuildResultID) *ApkoBuildResult {
+	return &ApkoBuildResult{query: selectNode(r.query, ID(id), "ApkoBuildResult")}
 }
 
 // Import the image into a container.
@@ -391,13 +402,13 @@ func (r *ApkoBuildResult) File() *File { // apko (../../../../../../toolchains/r
 }
 
 // A unique identifier for this ApkoBuildResult.
-func (r *ApkoBuildResult) ID(ctx context.Context) (ApkoBuildResultID, error) {
+func (r *ApkoBuildResult) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ApkoBuildResultID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -410,7 +421,7 @@ func (r *ApkoBuildResult) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *ApkoBuildResult) XXX_GraphQLIDType() string {
-	return "ApkoBuildResultID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -435,7 +446,7 @@ func (r *ApkoBuildResult) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadApkoBuildResultFromID(ApkoBuildResultID(id))
+	*r = ApkoBuildResult{query: selectNode(dag.query, id, "ApkoBuildResult")}
 	return nil
 }
 
@@ -451,10 +462,18 @@ func (r *ApkoBuildResult) Tag(ctx context.Context) (string, error) { // apko (..
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this ApkoBuildResult as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ApkoBuildResult) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type ApkoConfig struct { // apko (../../../../../../toolchains/release/apko/config.go:31:6)
 	query *querybuilder.Selection
 
-	id *ApkoConfigID
+	id *ID
 }
 type WithApkoConfigFunc func(r *ApkoConfig) *ApkoConfig
 
@@ -469,6 +488,12 @@ func (r *ApkoConfig) WithGraphQLQuery(q *querybuilder.Selection) *ApkoConfig {
 	return &ApkoConfig{
 		query: q,
 	}
+}
+
+type ApkoConfigID = ID
+
+func (r *Query) LoadApkoConfigFromID(id ApkoConfigID) *ApkoConfig {
+	return &ApkoConfig{query: selectNode(r.query, ID(id), "ApkoConfig")}
 }
 
 func (r *ApkoConfig) Archs(ctx context.Context) ([]string, error) { // apko (../../../../../../toolchains/release/apko/config.go:36:2)
@@ -508,13 +533,13 @@ func (r *ApkoConfig) File() *File { // apko (../../../../../../toolchains/releas
 }
 
 // A unique identifier for this ApkoConfig.
-func (r *ApkoConfig) ID(ctx context.Context) (ApkoConfigID, error) {
+func (r *ApkoConfig) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ApkoConfigID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -527,7 +552,7 @@ func (r *ApkoConfig) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *ApkoConfig) XXX_GraphQLIDType() string {
-	return "ApkoConfigID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -552,7 +577,7 @@ func (r *ApkoConfig) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadApkoConfigFromID(ApkoConfigID(id))
+	*r = ApkoConfig{query: selectNode(dag.query, id, "ApkoConfig")}
 	return nil
 }
 
@@ -630,6 +655,14 @@ func (r *ApkoConfig) WithRepository(url string) *ApkoConfig { // apko (../../../
 
 	return &ApkoConfig{
 		query: q,
+	}
+}
+
+// AsNode returns this ApkoConfig as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ApkoConfig) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }
 
@@ -757,36 +790,6 @@ func (r *Query) Apko(opts ...ApkoOpts) *Apko { // apko (../../../../../../toolch
 			q = q.Arg("withoutCache", opts[i].WithoutCache)
 		}
 	}
-
-	return &Apko{
-		query: q,
-	}
-}
-
-// Load a ApkoBuildResult from its ID.
-func (r *Query) LoadApkoBuildResultFromID(id ApkoBuildResultID) *ApkoBuildResult { // apko (../../../../../../toolchains/release/apko/main.go:251:6)
-	q := r.query.Select("loadApkoBuildResultFromID")
-	q = q.Arg("id", id)
-
-	return &ApkoBuildResult{
-		query: q,
-	}
-}
-
-// Load a ApkoConfig from its ID.
-func (r *Query) LoadApkoConfigFromID(id ApkoConfigID) *ApkoConfig { // apko (../../../../../../toolchains/release/apko/config.go:31:6)
-	q := r.query.Select("loadApkoConfigFromID")
-	q = q.Arg("id", id)
-
-	return &ApkoConfig{
-		query: q,
-	}
-}
-
-// Load a Apko from its ID.
-func (r *Query) LoadApkoFromID(id ApkoID) *Apko { // apko (../../../../../../toolchains/release/apko/main.go:16:6)
-	q := r.query.Select("loadApkoFromID")
-	q = q.Arg("id", id)
 
 	return &Apko{
 		query: q,

@@ -15545,6 +15545,43 @@ class Workspace(Type):
         _ctx = self._select("services", _args)
         return UpGroup(_ctx)
 
+    async def uninstall(
+        self,
+        name: str,
+        *,
+        here: bool | None = False,
+    ) -> str:
+        """Uninstall a module from the workspace, writing config.toml to the
+        host.
+
+        Parameters
+        ----------
+        name:
+            Name of the installed module entry to remove.
+        here:
+            Write to the workspace config directory at the workspace cwd.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("here", here, False),
+        ]
+        _ctx = self._select("uninstall", _args)
+        return await _ctx.execute(str)
+
     def update(self) -> Changeset:
         """Refresh workspace-managed state and return the resulting changeset.
 

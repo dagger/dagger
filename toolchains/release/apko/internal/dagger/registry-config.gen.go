@@ -6,14 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `RegistryConfigID` scalar type represents an identifier for an object of type RegistryConfig.
-type RegistryConfigID string // registry-config (../../../../../toolchains/release/registry-config/main.go:22:6)
-
-// The `RegistryConfigSecretMountID` scalar type represents an identifier for an object of type RegistryConfigSecretMount.
-type RegistryConfigSecretMountID string // registry-config (../../../../../toolchains/release/registry-config/main.go:111:6)
 
 // Retrieve the binding value, as type RegistryConfig
 func (r *Binding) AsRegistryConfig() *RegistryConfig { // registry-config (../../../../../toolchains/release/registry-config/main.go:22:6)
@@ -81,26 +75,6 @@ func (r *Env) WithRegistryConfigSecretMountOutput(name string, description strin
 	}
 }
 
-// Load a RegistryConfig from its ID.
-func (r *Query) LoadRegistryConfigFromID(id RegistryConfigID) *RegistryConfig { // registry-config (../../../../../toolchains/release/registry-config/main.go:22:6)
-	q := r.query.Select("loadRegistryConfigFromID")
-	q = q.Arg("id", id)
-
-	return &RegistryConfig{
-		query: q,
-	}
-}
-
-// Load a RegistryConfigSecretMount from its ID.
-func (r *Query) LoadRegistryConfigSecretMountFromID(id RegistryConfigSecretMountID) *RegistryConfigSecretMount { // registry-config (../../../../../toolchains/release/registry-config/main.go:111:6)
-	q := r.query.Select("loadRegistryConfigSecretMountFromID")
-	q = q.Arg("id", id)
-
-	return &RegistryConfigSecretMount{
-		query: q,
-	}
-}
-
 // Create an OCI registry configuration file and use it safely with tools, like Helm or Oras.
 //
 // Tools interacting with an OCI registry usually have their own way to authenticate.
@@ -124,7 +98,7 @@ func (r *Query) RegistryConfig() *RegistryConfig { // registry-config (../../../
 type RegistryConfig struct { // registry-config (../../../../../toolchains/release/registry-config/main.go:22:6)
 	query *querybuilder.Selection
 
-	id *RegistryConfigID
+	id *ID
 }
 type WithRegistryConfigFunc func(r *RegistryConfig) *RegistryConfig
 
@@ -142,13 +116,13 @@ func (r *RegistryConfig) WithGraphQLQuery(q *querybuilder.Selection) *RegistryCo
 }
 
 // A unique identifier for this RegistryConfig.
-func (r *RegistryConfig) ID(ctx context.Context) (RegistryConfigID, error) {
+func (r *RegistryConfig) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response RegistryConfigID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -161,7 +135,7 @@ func (r *RegistryConfig) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *RegistryConfig) XXX_GraphQLIDType() string {
-	return "RegistryConfigID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -186,7 +160,7 @@ func (r *RegistryConfig) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadRegistryConfigFromID(RegistryConfigID(id))
+	*r = RegistryConfig{query: selectNode(dag.query, id, "RegistryConfig")}
 	return nil
 }
 
@@ -290,10 +264,18 @@ func (r *RegistryConfig) WithoutRegistryAuth(address string) *RegistryConfig { /
 	}
 }
 
+// AsNode returns this RegistryConfig as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *RegistryConfig) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type RegistryConfigSecretMount struct { // registry-config (../../../../../toolchains/release/registry-config/main.go:111:6)
 	query *querybuilder.Selection
 
-	id          *RegistryConfigSecretMountID
+	id          *ID
 	mode        *int
 	owner       *string
 	path        *string
@@ -308,13 +290,13 @@ func (r *RegistryConfigSecretMount) WithGraphQLQuery(q *querybuilder.Selection) 
 }
 
 // A unique identifier for this RegistryConfigSecretMount.
-func (r *RegistryConfigSecretMount) ID(ctx context.Context) (RegistryConfigSecretMountID, error) {
+func (r *RegistryConfigSecretMount) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response RegistryConfigSecretMountID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -327,7 +309,7 @@ func (r *RegistryConfigSecretMount) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *RegistryConfigSecretMount) XXX_GraphQLIDType() string {
-	return "RegistryConfigSecretMountID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -352,7 +334,7 @@ func (r *RegistryConfigSecretMount) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadRegistryConfigSecretMountFromID(RegistryConfigSecretMountID(id))
+	*r = RegistryConfigSecretMount{query: selectNode(dag.query, id, "RegistryConfigSecretMount")}
 	return nil
 }
 
@@ -440,4 +422,12 @@ func (r *RegistryConfigSecretMount) SkipOnEmpty(ctx context.Context) (bool, erro
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// AsNode returns this RegistryConfigSecretMount as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *RegistryConfigSecretMount) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }

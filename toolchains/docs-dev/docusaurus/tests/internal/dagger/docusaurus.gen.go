@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `DocusaurusID` scalar type represents an identifier for an object of type Docusaurus.
-type DocusaurusID string // docusaurus (../../../../../../toolchains/docs-dev/docusaurus/dagger/main.go:59:6)
 
 // Retrieve the binding value, as type Docusaurus
 func (r *Binding) AsDocusaurus() *Docusaurus { // docusaurus (../../../../../../toolchains/docs-dev/docusaurus/dagger/main.go:59:6)
@@ -28,7 +25,7 @@ type Docusaurus struct { // docusaurus (../../../../../../toolchains/docs-dev/do
 	cacheVolumeName *string
 	dir             *string
 	disableCache    *bool
-	id              *DocusaurusID
+	id              *ID
 	yarn            *bool
 }
 
@@ -36,6 +33,12 @@ func (r *Docusaurus) WithGraphQLQuery(q *querybuilder.Selection) *Docusaurus {
 	return &Docusaurus{
 		query: q,
 	}
+}
+
+type DocusaurusID = ID
+
+func (r *Query) LoadDocusaurusFromID(id DocusaurusID) *Docusaurus {
+	return &Docusaurus{query: selectNode(r.query, ID(id), "Docusaurus")}
 }
 
 // Return base container for running docusaurus with docs mounted and docusaurus
@@ -94,13 +97,13 @@ func (r *Docusaurus) DisableCache(ctx context.Context) (bool, error) { // docusa
 }
 
 // A unique identifier for this Docusaurus.
-func (r *Docusaurus) ID(ctx context.Context) (DocusaurusID, error) {
+func (r *Docusaurus) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response DocusaurusID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -113,7 +116,7 @@ func (r *Docusaurus) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Docusaurus) XXX_GraphQLIDType() string {
-	return "DocusaurusID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -138,7 +141,7 @@ func (r *Docusaurus) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadDocusaurusFromID(DocusaurusID(id))
+	*r = Docusaurus{query: selectNode(dag.query, id, "Docusaurus")}
 	return nil
 }
 
@@ -178,6 +181,14 @@ func (r *Docusaurus) Yarn(ctx context.Context) (bool, error) { // docusaurus (..
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// AsNode returns this Docusaurus as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Docusaurus) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }
 
 // Create or update a binding of type Docusaurus in the environment
@@ -253,16 +264,6 @@ func (r *Query) Docusaurus(src *Directory, opts ...DocusaurusOpts) *Docusaurus {
 		}
 	}
 	q = q.Arg("src", src)
-
-	return &Docusaurus{
-		query: q,
-	}
-}
-
-// Load a Docusaurus from its ID.
-func (r *Query) LoadDocusaurusFromID(id DocusaurusID) *Docusaurus { // docusaurus (../../../../../../toolchains/docs-dev/docusaurus/dagger/main.go:59:6)
-	q := r.query.Select("loadDocusaurusFromID")
-	q = q.Arg("id", id)
 
 	return &Docusaurus{
 		query: q,

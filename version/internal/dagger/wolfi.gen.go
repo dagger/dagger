@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `WolfiID` scalar type represents an identifier for an object of type Wolfi.
-type WolfiID string // wolfi (../../../modules/wolfi/main.go:10:6)
 
 // Retrieve the binding value, as type Wolfi
 func (r *Binding) AsWolfi() *Wolfi { // wolfi (../../../modules/wolfi/main.go:10:6)
@@ -45,16 +42,6 @@ func (r *Env) WithWolfiOutput(name string, description string) *Env { // wolfi (
 	}
 }
 
-// Load a Wolfi from its ID.
-func (r *Query) LoadWolfiFromID(id WolfiID) *Wolfi { // wolfi (../../../modules/wolfi/main.go:10:6)
-	q := r.query.Select("loadWolfiFromID")
-	q = q.Arg("id", id)
-
-	return &Wolfi{
-		query: q,
-	}
-}
-
 // A Wolfi Linux configuration
 func (r *Query) Wolfi() *Wolfi { // wolfi (../../../modules/wolfi/main.go:10:6)
 	q := r.query.Select("wolfi")
@@ -68,7 +55,7 @@ func (r *Query) Wolfi() *Wolfi { // wolfi (../../../modules/wolfi/main.go:10:6)
 type Wolfi struct { // wolfi (../../../modules/wolfi/main.go:10:6)
 	query *querybuilder.Selection
 
-	id *WolfiID
+	id *ID
 }
 
 func (r *Wolfi) WithGraphQLQuery(q *querybuilder.Selection) *Wolfi {
@@ -134,13 +121,13 @@ func (r *Wolfi) Container(opts ...WolfiContainerOpts) *Container { // wolfi (../
 }
 
 // A unique identifier for this Wolfi.
-func (r *Wolfi) ID(ctx context.Context) (WolfiID, error) {
+func (r *Wolfi) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response WolfiID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -153,7 +140,7 @@ func (r *Wolfi) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Wolfi) XXX_GraphQLIDType() string {
-	return "WolfiID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -178,6 +165,14 @@ func (r *Wolfi) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadWolfiFromID(WolfiID(id))
+	*r = Wolfi{query: selectNode(dag.query, id, "Wolfi")}
 	return nil
+}
+
+// AsNode returns this Wolfi as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Wolfi) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }

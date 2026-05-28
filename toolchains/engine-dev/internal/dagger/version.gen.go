@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `VersionID` scalar type represents an identifier for an object of type Version.
-type VersionID string // version (../../../../version/main.go:57:6)
 
 // Retrieve the binding value, as type Version
 func (r *Binding) AsVersion() *Version { // version (../../../../version/main.go:57:6)
@@ -41,16 +38,6 @@ func (r *Env) WithVersionOutput(name string, description string) *Env { // versi
 	q = q.Arg("description", description)
 
 	return &Env{
-		query: q,
-	}
-}
-
-// Load a Version from its ID.
-func (r *Query) LoadVersionFromID(id VersionID) *Version { // version (../../../../version/main.go:57:6)
-	q := r.query.Select("loadVersionFromID")
-	q = q.Arg("id", id)
-
-	return &Version{
 		query: q,
 	}
 }
@@ -106,7 +93,7 @@ type Version struct { // version (../../../../version/main.go:57:6)
 
 	currentTag         *string
 	dirty              *bool
-	id                 *VersionID
+	id                 *ID
 	imageTag           *string
 	nextReleaseVersion *string
 	version            *string
@@ -151,13 +138,13 @@ func (r *Version) GitDir() *Directory { // version (../../../../version/main.go:
 }
 
 // A unique identifier for this Version.
-func (r *Version) ID(ctx context.Context) (VersionID, error) {
+func (r *Version) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response VersionID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -170,7 +157,7 @@ func (r *Version) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Version) XXX_GraphQLIDType() string {
-	return "VersionID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -195,7 +182,7 @@ func (r *Version) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadVersionFromID(VersionID(id))
+	*r = Version{query: selectNode(dag.query, id, "Version")}
 	return nil
 }
 
@@ -236,4 +223,12 @@ func (r *Version) Version(ctx context.Context) (string, error) { // version (../
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// AsNode returns this Version as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Version) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }

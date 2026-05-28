@@ -15199,6 +15199,7 @@ type Workspace struct {
 	init        *string
 	install     *string
 	moduleInit  *string
+	uninstall   *string
 }
 
 func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
@@ -15767,6 +15768,32 @@ func (r *Workspace) Services(opts ...WorkspaceServicesOpts) *UpGroup {
 	return &UpGroup{
 		query: q,
 	}
+}
+
+// WorkspaceUninstallOpts contains options for Workspace.Uninstall
+type WorkspaceUninstallOpts struct {
+	// Write to the workspace config directory at the workspace cwd.
+	Here bool
+}
+
+// Uninstall a module from the workspace, writing config.toml to the host.
+func (r *Workspace) Uninstall(ctx context.Context, name string, opts ...WorkspaceUninstallOpts) (string, error) {
+	if r.uninstall != nil {
+		return *r.uninstall, nil
+	}
+	q := r.query.Select("uninstall")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `here` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Here) {
+			q = q.Arg("here", opts[i].Here)
+		}
+	}
+	q = q.Arg("name", name)
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Refresh workspace-managed state and return the resulting changeset.

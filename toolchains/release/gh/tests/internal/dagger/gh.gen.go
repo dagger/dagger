@@ -7,23 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `GhID` scalar type represents an identifier for an object of type Gh.
-type GhID string // gh (../../../../../../toolchains/release/gh/main.go:12:6)
-
-// The `GhPullRequestID` scalar type represents an identifier for an object of type GhPullRequest.
-type GhPullRequestID string // gh (../../../../../../toolchains/release/gh/pull-request.go:16:6)
-
-// The `GhPullRequestReviewID` scalar type represents an identifier for an object of type GhPullRequestReview.
-type GhPullRequestReviewID string // gh (../../../../../../toolchains/release/gh/pull-request.go:266:6)
-
-// The `GhReleaseID` scalar type represents an identifier for an object of type GhRelease.
-type GhReleaseID string // gh (../../../../../../toolchains/release/gh/release.go:14:6)
-
-// The `GhRepoID` scalar type represents an identifier for an object of type GhRepo.
-type GhRepoID string // gh (../../../../../../toolchains/release/gh/repo.go:10:6)
 
 // Retrieve the binding value, as type Gh
 func (r *Binding) AsGh() *Gh { // gh (../../../../../../toolchains/release/gh/main.go:12:6)
@@ -193,7 +178,7 @@ func (r *Env) WithGhRepoOutput(name string, description string) *Env { // gh (..
 type Gh struct { // gh (../../../../../../toolchains/release/gh/main.go:12:6)
 	query *querybuilder.Selection
 
-	id *GhID
+	id *ID
 }
 type WithGhFunc func(r *Gh) *Gh
 
@@ -208,6 +193,12 @@ func (r *Gh) WithGraphQLQuery(q *querybuilder.Selection) *Gh {
 	return &Gh{
 		query: q,
 	}
+}
+
+type GhID = ID
+
+func (r *Query) LoadGhFromID(id GhID) *Gh {
+	return &Gh{query: selectNode(r.query, ID(id), "Gh")}
 }
 
 // GhCloneOpts contains options for Gh.Clone
@@ -266,13 +257,13 @@ func (r *Gh) Exec(args []string, opts ...GhExecOpts) *Container { // gh (../../.
 }
 
 // A unique identifier for this Gh.
-func (r *Gh) ID(ctx context.Context) (GhID, error) {
+func (r *Gh) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GhID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -285,7 +276,7 @@ func (r *Gh) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Gh) XXX_GraphQLIDType() string {
-	return "GhID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -310,7 +301,7 @@ func (r *Gh) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadGhFromID(GhID(id))
+	*r = Gh{query: selectNode(dag.query, id, "Gh")}
 	return nil
 }
 
@@ -455,18 +446,32 @@ func (r *Gh) WithToken(token *Secret) *Gh { // gh (../../../../../../toolchains/
 	}
 }
 
+// AsNode returns this Gh as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Gh) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type GhPullRequest struct { // gh (../../../../../../toolchains/release/gh/pull-request.go:16:6)
 	query *querybuilder.Selection
 
 	create *Void
 	exists *bool
-	id     *GhPullRequestID
+	id     *ID
 }
 
 func (r *GhPullRequest) WithGraphQLQuery(q *querybuilder.Selection) *GhPullRequest {
 	return &GhPullRequest{
 		query: q,
 	}
+}
+
+type GhPullRequestID = ID
+
+func (r *Query) LoadGhPullRequestFromID(id GhPullRequestID) *GhPullRequest {
+	return &GhPullRequest{query: selectNode(r.query, ID(id), "GhPullRequest")}
 }
 
 // GhPullRequestCreateOpts contains options for GhPullRequest.Create
@@ -666,13 +671,13 @@ func (r *GhPullRequest) Exists(ctx context.Context, pullRequest string, opts ...
 }
 
 // A unique identifier for this GhPullRequest.
-func (r *GhPullRequest) ID(ctx context.Context) (GhPullRequestID, error) {
+func (r *GhPullRequest) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GhPullRequestID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -685,7 +690,7 @@ func (r *GhPullRequest) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *GhPullRequest) XXX_GraphQLIDType() string {
-	return "GhPullRequestID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -710,7 +715,7 @@ func (r *GhPullRequest) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadGhPullRequestFromID(GhPullRequestID(id))
+	*r = GhPullRequest{query: selectNode(dag.query, id, "GhPullRequest")}
 	return nil
 }
 
@@ -746,13 +751,21 @@ func (r *GhPullRequest) Review(pullRequest string, opts ...GhPullRequestReviewOp
 	}
 }
 
+// AsNode returns this GhPullRequest as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GhPullRequest) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // TODO: revisit if these should be private
 type GhPullRequestReview struct { // gh (../../../../../../toolchains/release/gh/pull-request.go:266:6)
 	query *querybuilder.Selection
 
 	approve        *Void
 	comment        *Void
-	id             *GhPullRequestReviewID
+	id             *ID
 	requestChanges *Void
 }
 
@@ -760,6 +773,12 @@ func (r *GhPullRequestReview) WithGraphQLQuery(q *querybuilder.Selection) *GhPul
 	return &GhPullRequestReview{
 		query: q,
 	}
+}
+
+type GhPullRequestReviewID = ID
+
+func (r *Query) LoadGhPullRequestReviewFromID(id GhPullRequestReviewID) *GhPullRequestReview {
+	return &GhPullRequestReview{query: selectNode(r.query, ID(id), "GhPullRequestReview")}
 }
 
 // Approve a pull request.
@@ -783,13 +802,13 @@ func (r *GhPullRequestReview) Comment(ctx context.Context) error { // gh (../../
 }
 
 // A unique identifier for this GhPullRequestReview.
-func (r *GhPullRequestReview) ID(ctx context.Context) (GhPullRequestReviewID, error) {
+func (r *GhPullRequestReview) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GhPullRequestReviewID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -802,7 +821,7 @@ func (r *GhPullRequestReview) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *GhPullRequestReview) XXX_GraphQLIDType() string {
-	return "GhPullRequestReviewID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -827,7 +846,7 @@ func (r *GhPullRequestReview) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadGhPullRequestReviewFromID(GhPullRequestReviewID(id))
+	*r = GhPullRequestReview{query: selectNode(dag.query, id, "GhPullRequestReview")}
 	return nil
 }
 
@@ -841,17 +860,31 @@ func (r *GhPullRequestReview) RequestChanges(ctx context.Context) error { // gh 
 	return q.Execute(ctx)
 }
 
+// AsNode returns this GhPullRequestReview as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GhPullRequestReview) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type GhRelease struct { // gh (../../../../../../toolchains/release/gh/release.go:14:6)
 	query *querybuilder.Selection
 
 	create *Void
-	id     *GhReleaseID
+	id     *ID
 }
 
 func (r *GhRelease) WithGraphQLQuery(q *querybuilder.Selection) *GhRelease {
 	return &GhRelease{
 		query: q,
 	}
+}
+
+type GhReleaseID = ID
+
+func (r *Query) LoadGhReleaseFromID(id GhReleaseID) *GhRelease {
+	return &GhRelease{query: selectNode(r.query, ID(id), "GhRelease")}
 }
 
 // GhReleaseCreateOpts contains options for GhRelease.Create
@@ -987,13 +1020,13 @@ func (r *GhRelease) Create(ctx context.Context, tag string, title string, opts .
 }
 
 // A unique identifier for this GhRelease.
-func (r *GhRelease) ID(ctx context.Context) (GhReleaseID, error) {
+func (r *GhRelease) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GhReleaseID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1006,7 +1039,7 @@ func (r *GhRelease) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *GhRelease) XXX_GraphQLIDType() string {
-	return "GhReleaseID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1031,20 +1064,34 @@ func (r *GhRelease) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadGhReleaseFromID(GhReleaseID(id))
+	*r = GhRelease{query: selectNode(dag.query, id, "GhRelease")}
 	return nil
+}
+
+// AsNode returns this GhRelease as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GhRelease) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }
 
 type GhRepo struct { // gh (../../../../../../toolchains/release/gh/repo.go:10:6)
 	query *querybuilder.Selection
 
-	id *GhRepoID
+	id *ID
 }
 
 func (r *GhRepo) WithGraphQLQuery(q *querybuilder.Selection) *GhRepo {
 	return &GhRepo{
 		query: q,
 	}
+}
+
+type GhRepoID = ID
+
+func (r *Query) LoadGhRepoFromID(id GhRepoID) *GhRepo {
+	return &GhRepo{query: selectNode(r.query, ID(id), "GhRepo")}
 }
 
 // GhRepoCloneOpts contains options for GhRepo.Clone
@@ -1080,13 +1127,13 @@ func (r *GhRepo) Clone(repository string, opts ...GhRepoCloneOpts) *Directory { 
 }
 
 // A unique identifier for this GhRepo.
-func (r *GhRepo) ID(ctx context.Context) (GhRepoID, error) {
+func (r *GhRepo) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GhRepoID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1099,7 +1146,7 @@ func (r *GhRepo) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *GhRepo) XXX_GraphQLIDType() string {
-	return "GhRepoID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1124,8 +1171,16 @@ func (r *GhRepo) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadGhRepoFromID(GhRepoID(id))
+	*r = GhRepo{query: selectNode(dag.query, id, "GhRepo")}
 	return nil
+}
+
+// AsNode returns this GhRepo as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GhRepo) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }
 
 // GhOpts contains options for Query.Gh
@@ -1163,56 +1218,6 @@ func (r *Query) Gh(opts ...GhOpts) *Gh { // gh (../../../../../../toolchains/rel
 	}
 
 	return &Gh{
-		query: q,
-	}
-}
-
-// Load a Gh from its ID.
-func (r *Query) LoadGhFromID(id GhID) *Gh { // gh (../../../../../../toolchains/release/gh/main.go:12:6)
-	q := r.query.Select("loadGhFromID")
-	q = q.Arg("id", id)
-
-	return &Gh{
-		query: q,
-	}
-}
-
-// Load a GhPullRequest from its ID.
-func (r *Query) LoadGhPullRequestFromID(id GhPullRequestID) *GhPullRequest { // gh (../../../../../../toolchains/release/gh/pull-request.go:16:6)
-	q := r.query.Select("loadGhPullRequestFromID")
-	q = q.Arg("id", id)
-
-	return &GhPullRequest{
-		query: q,
-	}
-}
-
-// Load a GhPullRequestReview from its ID.
-func (r *Query) LoadGhPullRequestReviewFromID(id GhPullRequestReviewID) *GhPullRequestReview { // gh (../../../../../../toolchains/release/gh/pull-request.go:266:6)
-	q := r.query.Select("loadGhPullRequestReviewFromID")
-	q = q.Arg("id", id)
-
-	return &GhPullRequestReview{
-		query: q,
-	}
-}
-
-// Load a GhRelease from its ID.
-func (r *Query) LoadGhReleaseFromID(id GhReleaseID) *GhRelease { // gh (../../../../../../toolchains/release/gh/release.go:14:6)
-	q := r.query.Select("loadGhReleaseFromID")
-	q = q.Arg("id", id)
-
-	return &GhRelease{
-		query: q,
-	}
-}
-
-// Load a GhRepo from its ID.
-func (r *Query) LoadGhRepoFromID(id GhRepoID) *GhRepo { // gh (../../../../../../toolchains/release/gh/repo.go:10:6)
-	q := r.query.Select("loadGhRepoFromID")
-	q = q.Arg("id", id)
-
-	return &GhRepo{
 		query: q,
 	}
 }

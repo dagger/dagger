@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `DockerdID` scalar type represents an identifier for an object of type Dockerd.
-type DockerdID string // dockerd (../../../../toolchains/python-sdk-dev/dockerd/main.go:14:6)
 
 // Retrieve the binding value, as type Dockerd
 func (r *Binding) AsDockerd() *Dockerd { // dockerd (../../../../toolchains/python-sdk-dev/dockerd/main.go:14:6)
@@ -25,7 +22,7 @@ func (r *Binding) AsDockerd() *Dockerd { // dockerd (../../../../toolchains/pyth
 type Dockerd struct { // dockerd (../../../../toolchains/python-sdk-dev/dockerd/main.go:14:6)
 	query *querybuilder.Selection
 
-	id *DockerdID
+	id *ID
 }
 
 func (r *Dockerd) WithGraphQLQuery(q *querybuilder.Selection) *Dockerd {
@@ -59,13 +56,13 @@ func (r *Dockerd) Attach(container *Container, opts ...DockerdAttachOpts) *Conta
 }
 
 // A unique identifier for this Dockerd.
-func (r *Dockerd) ID(ctx context.Context) (DockerdID, error) {
+func (r *Dockerd) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response DockerdID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -78,7 +75,7 @@ func (r *Dockerd) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Dockerd) XXX_GraphQLIDType() string {
-	return "DockerdID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -103,7 +100,7 @@ func (r *Dockerd) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadDockerdFromID(DockerdID(id))
+	*r = Dockerd{query: selectNode(dag.query, id, "Dockerd")}
 	return nil
 }
 
@@ -126,6 +123,14 @@ func (r *Dockerd) Service(opts ...DockerdServiceOpts) *Service { // dockerd (../
 
 	return &Service{
 		query: q,
+	}
+}
+
+// AsNode returns this Dockerd as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Dockerd) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }
 
@@ -156,16 +161,6 @@ func (r *Env) WithDockerdOutput(name string, description string) *Env { // docke
 // Module for running docker in dagger
 func (r *Query) Dockerd() *Dockerd { // dockerd (../../../../toolchains/python-sdk-dev/dockerd/main.go:14:6)
 	q := r.query.Select("dockerd")
-
-	return &Dockerd{
-		query: q,
-	}
-}
-
-// Load a Dockerd from its ID.
-func (r *Query) LoadDockerdFromID(id DockerdID) *Dockerd { // dockerd (../../../../toolchains/python-sdk-dev/dockerd/main.go:14:6)
-	q := r.query.Select("loadDockerdFromID")
-	q = q.Arg("id", id)
 
 	return &Dockerd{
 		query: q,

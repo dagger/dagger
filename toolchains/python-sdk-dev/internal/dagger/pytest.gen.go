@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `PytestID` scalar type represents an identifier for an object of type Pytest.
-type PytestID string // pytest (../../../../:0:0)
 
 // Retrieve the binding value, as type Pytest
 func (r *Binding) AsPytest() *Pytest { // pytest (../../../../:0:0)
@@ -48,7 +45,7 @@ func (r *Env) WithPytestOutput(name string, description string) *Env { // pytest
 type Pytest struct { // pytest (../../../../:0:0)
 	query *querybuilder.Selection
 
-	id   *PytestID
+	id   *ID
 	test *Void
 }
 
@@ -69,13 +66,13 @@ func (r *Pytest) Container() *Container { // pytest (../../../../:0:0)
 }
 
 // A unique identifier for this Pytest.
-func (r *Pytest) ID(ctx context.Context) (PytestID, error) {
+func (r *Pytest) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response PytestID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -88,7 +85,7 @@ func (r *Pytest) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Pytest) XXX_GraphQLIDType() string {
-	return "PytestID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -113,7 +110,7 @@ func (r *Pytest) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadPytestFromID(PytestID(id))
+	*r = Pytest{query: selectNode(dag.query, id, "Pytest")}
 	return nil
 }
 
@@ -167,13 +164,11 @@ func (r *Pytest) Test(ctx context.Context, opts ...PytestTestOpts) error { // py
 	return q.Execute(ctx)
 }
 
-// Load a Pytest from its ID.
-func (r *Query) LoadPytestFromID(id PytestID) *Pytest { // pytest (../../../../:0:0)
-	q := r.query.Select("loadPytestFromID")
-	q = q.Arg("id", id)
-
-	return &Pytest{
-		query: q,
+// AsNode returns this Pytest as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Pytest) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }
 

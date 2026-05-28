@@ -6,14 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `EngineDevID` scalar type represents an identifier for an object of type EngineDev.
-type EngineDevID string // engine-dev (../../../../toolchains/engine-dev/main.go:63:6)
-
-// The `EngineDevLoadedEngineID` scalar type represents an identifier for an object of type EngineDevLoadedEngine.
-type EngineDevLoadedEngineID string // engine-dev (../../../../toolchains/engine-dev/docker.go:77:6)
 
 // Retrieve the binding value, as type EngineDev
 func (r *Binding) AsEngineDev() *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:63:6)
@@ -37,7 +31,7 @@ type EngineDev struct { // engine-dev (../../../../toolchains/engine-dev/main.go
 	query *querybuilder.Selection
 
 	benchmark     *Void
-	id            *EngineDevID
+	id            *ID
 	networkCidr   *string
 	publish       *Void
 	releaseDryRun *Void
@@ -363,13 +357,13 @@ func (r *EngineDev) GraphqlSchema(opts ...EngineDevGraphqlSchemaOpts) *File { //
 }
 
 // A unique identifier for this EngineDev.
-func (r *EngineDev) ID(ctx context.Context) (EngineDevID, error) {
+func (r *EngineDev) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EngineDevID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -382,7 +376,7 @@ func (r *EngineDev) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EngineDev) XXX_GraphQLIDType() string {
-	return "EngineDevID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -407,7 +401,7 @@ func (r *EngineDev) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadEngineDevFromID(EngineDevID(id))
+	*r = EngineDev{query: selectNode(dag.query, id, "EngineDev")}
 	return nil
 }
 
@@ -1038,10 +1032,18 @@ func (r *EngineDev) WithRace() *EngineDev { // engine-dev (../../../../toolchain
 	}
 }
 
+// AsNode returns this EngineDev as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EngineDev) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type EngineDevLoadedEngine struct { // engine-dev (../../../../toolchains/engine-dev/docker.go:77:6)
 	query *querybuilder.Selection
 
-	id    *EngineDevLoadedEngineID
+	id    *ID
 	image *string
 	start *Void
 }
@@ -1053,13 +1055,13 @@ func (r *EngineDevLoadedEngine) WithGraphQLQuery(q *querybuilder.Selection) *Eng
 }
 
 // A unique identifier for this EngineDevLoadedEngine.
-func (r *EngineDevLoadedEngine) ID(ctx context.Context) (EngineDevLoadedEngineID, error) {
+func (r *EngineDevLoadedEngine) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EngineDevLoadedEngineID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1072,7 +1074,7 @@ func (r *EngineDevLoadedEngine) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EngineDevLoadedEngine) XXX_GraphQLIDType() string {
-	return "EngineDevLoadedEngineID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1097,7 +1099,7 @@ func (r *EngineDevLoadedEngine) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadEngineDevLoadedEngineFromID(EngineDevLoadedEngineID(id))
+	*r = EngineDevLoadedEngine{query: selectNode(dag.query, id, "EngineDevLoadedEngine")}
 	return nil
 }
 
@@ -1158,6 +1160,14 @@ func (r *EngineDevLoadedEngine) Start(ctx context.Context, opts ...EngineDevLoad
 	}
 
 	return q.Execute(ctx)
+}
+
+// AsNode returns this EngineDevLoadedEngine as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EngineDevLoadedEngine) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }
 
 // Create or update a binding of type EngineDev in the environment
@@ -1244,26 +1254,6 @@ func (r *Query) EngineDev(opts ...EngineDevOpts) *EngineDev { // engine-dev (../
 	}
 
 	return &EngineDev{
-		query: q,
-	}
-}
-
-// Load a EngineDev from its ID.
-func (r *Query) LoadEngineDevFromID(id EngineDevID) *EngineDev { // engine-dev (../../../../toolchains/engine-dev/main.go:63:6)
-	q := r.query.Select("loadEngineDevFromID")
-	q = q.Arg("id", id)
-
-	return &EngineDev{
-		query: q,
-	}
-}
-
-// Load a EngineDevLoadedEngine from its ID.
-func (r *Query) LoadEngineDevLoadedEngineFromID(id EngineDevLoadedEngineID) *EngineDevLoadedEngine { // engine-dev (../../../../toolchains/engine-dev/docker.go:77:6)
-	q := r.query.Select("loadEngineDevLoadedEngineFromID")
-	q = q.Arg("id", id)
-
-	return &EngineDevLoadedEngine{
 		query: q,
 	}
 }

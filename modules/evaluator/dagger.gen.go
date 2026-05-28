@@ -19,7 +19,7 @@ import (
 
 	"dagger/botsbuildingbots/internal/dagger"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
 
 var dag = dagger.Connect()
@@ -37,7 +37,10 @@ func setMarshalContext(ctx context.Context) {
 	dagger.SetMarshalContext(ctx)
 }
 
-type DaggerObject = querybuilder.GraphQLMarshaller
+type DaggerObject interface {
+	querybuilder.GraphQLMarshaller
+	ID(ctx context.Context) (dagger.ID, error)
+}
 
 type ExecError = dagger.ExecError
 
@@ -62,7 +65,7 @@ func (r Evaluator) MarshalJSON() ([]byte, error) {
 		SystemPrompt               *dagger.File
 		DisableDefaultSystemPrompt bool
 		EvaluatorModel             string
-		Evals                      []*dagger.EvalWorkspaceEval
+		Evals                      any
 	}
 	concrete.Docs = r.Docs
 	concrete.SystemPrompt = r.SystemPrompt
@@ -78,7 +81,7 @@ func (r *Evaluator) UnmarshalJSON(bs []byte) error {
 		SystemPrompt               *dagger.File
 		DisableDefaultSystemPrompt bool
 		EvaluatorModel             string
-		Evals                      []*dagger.EvalWorkspaceEval
+		Evals                      []*dagger.EvalWorkspaceEvalClient
 	}
 	err := json.Unmarshal(bs, &concrete)
 	if err != nil {
@@ -88,7 +91,12 @@ func (r *Evaluator) UnmarshalJSON(bs []byte) error {
 	r.SystemPrompt = concrete.SystemPrompt
 	r.DisableDefaultSystemPrompt = concrete.DisableDefaultSystemPrompt
 	r.EvaluatorModel = concrete.EvaluatorModel
-	r.Evals = concrete.Evals
+	r.Evals = convertSlice(concrete.Evals, func(v *dagger.EvalWorkspaceEvalClient) dagger.EvalWorkspaceEval {
+		if v == nil {
+			return nil
+		}
+		return v
+	})
 	return nil
 }
 
@@ -122,17 +130,8 @@ func (r *EvalsAcrossModels) UnmarshalJSON(bs []byte) error {
 
 type evalImpl struct {
 	query *querybuilder.Selection
-	id    *EvalID
+	id    *dagger.ID
 	name  *string
-}
-
-type EvalID string
-
-func LoadEvalFromID(r *dagger.Client, id EvalID) Eval {
-	q := querybuilder.Query().Client(r.GraphQLClient())
-	q = q.Select("loadEvaluatorEvalFromID")
-	q = q.Arg("id", id)
-	return &evalImpl{query: q}
 }
 
 func (r *evalImpl) WithGraphQLQuery(q *querybuilder.Selection) Eval {
@@ -140,11 +139,11 @@ func (r *evalImpl) WithGraphQLQuery(q *querybuilder.Selection) Eval {
 }
 
 func (r *evalImpl) XXX_GraphQLType() string {
-	return "Eval"
+	return "EvaluatorEval"
 }
 
 func (r *evalImpl) XXX_GraphQLIDType() string {
-	return "EvalID"
+	return "ID"
 }
 
 func (r *evalImpl) XXX_GraphQLID(ctx context.Context) (string, error) {
@@ -167,12 +166,12 @@ func (r *evalImpl) MarshalJSON() ([]byte, error) {
 }
 
 func (r *evalImpl) UnmarshalJSON(bs []byte) error {
-	var id EvalID
+	var id dagger.ID
 	err := json.Unmarshal(bs, &id)
 	if err != nil {
 		return err
 	}
-	*r = *LoadEvalFromID(dag, id).(*evalImpl)
+	*r = evalImpl{query: dag.QueryBuilder().Select("node").Arg("id", id).InlineFragment("EvaluatorEval")}
 	return nil
 }
 
@@ -183,12 +182,12 @@ func (r *evalImpl) toIface() Eval {
 	return r
 }
 
-func (r *evalImpl) ID(ctx context.Context) (EvalID, error) {
+func (r *evalImpl) ID(ctx context.Context) (dagger.ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
-	var response EvalID
+	var response dagger.ID
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
 }
