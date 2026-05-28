@@ -2,10 +2,9 @@ package schema
 
 import "github.com/dagger/dagger/dagql"
 
-// installCoreInterfaces registers Dagger-specific interfaces that core types
-// auto-implement based on structural conformance. These are installed as
-// auto-interfaces so that any object with the matching fields automatically
-// declares conformance.
+// installCoreInterfaces registers Dagger-specific interfaces. Like all dagql
+// interfaces, these are matched structurally: any object whose fields line up
+// automatically declares conformance, with no explicit implements declaration.
 //
 // Unlike Node (which lives in dagql and is pure GraphQL infrastructure),
 // these interfaces encode Dagger-specific semantics.
@@ -26,7 +25,7 @@ func installCoreInterfaces(srv *dagql.Server) {
 			Type: dagql.AnyID{},
 		},
 	})
-	srv.AddAutoInterface(syncer)
+	srv.InstallInterface(syncer)
 
 	exportable := dagql.NewInterface("Exportable", dagql.FormatDescription(
 		`An object that can be exported to the host.`,
@@ -47,5 +46,5 @@ func installCoreInterfaces(srv *dagql.Server) {
 			),
 		},
 	})
-	srv.AddAutoInterface(exportable)
+	srv.InstallInterface(exportable)
 }

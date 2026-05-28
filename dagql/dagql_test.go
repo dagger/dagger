@@ -3529,14 +3529,12 @@ func TestInterfaces(t *testing.T) {
 		})
 		srv.InstallInterface(spatial)
 
-		// Point should satisfy Spatial (it has x and y fields)
+		// Point should satisfy Spatial (it has x and y fields) and the
+		// relationship should be inferred retroactively when Spatial is installed.
 		pointType, ok := srv.ObjectType("Point")
 		assert.Assert(t, ok, "Point type not found")
 		assert.Assert(t, spatial.Satisfies(pointType, ""), "Point should satisfy Spatial")
-
-		// Declare that Point implements Spatial
-		pointClass := pointType.(dagql.Class[*points.Point])
-		pointClass.Implements(spatial)
+		assert.Assert(t, spatial.HasImplementor("Point"), "Point should auto-implement Spatial")
 
 		// Verify the interface shows up in introspection
 		gql := newTestClient(srv)
@@ -3583,6 +3581,77 @@ func TestInterfaces(t *testing.T) {
 			}
 		}
 		assert.Assert(t, foundSpatial, "Point should declare Spatial interface")
+	})
+
+	t.Run("recursive covariant return types are inferred", func(t *testing.T) {
+		srv := newExternalDagqlServerForTest(t, Query{})
+		introspection.Install[Query](srv)
+
+		selfer := dagql.NewInterface("Selfer", "Something that returns itself.")
+		selfer.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "id",
+				Type: dagql.AnyID{},
+			},
+		})
+		selfer.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "self",
+				Type: selfer.Typed(),
+			},
+		})
+		srv.InstallInterface(selfer)
+
+		points.Install[Query](srv)
+
+		gql := newTestClient(srv)
+		var res struct {
+			Type struct {
+				Interfaces []struct{ Name string }
+			} `json:"__type"`
+		}
+		req(t, gql, `{ __type(name: "Point") { interfaces { name } } }`, &res)
+		var names []string
+		for _, iface := range res.Type.Interfaces {
+			names = append(names, iface.Name)
+		}
+		assert.Assert(t, slices.Contains(names, "Selfer"), "Point interfaces should include Selfer, got: %v", names)
+		assert.Assert(t, selfer.HasImplementor("Point"), "Point.self returning Point should satisfy Selfer.self returning Selfer")
+	})
+
+	t.Run("interface-to-interface relationships are inferred", func(t *testing.T) {
+		srv := newExternalDagqlServerForTest(t, Query{})
+
+		hasX := dagql.NewInterface("HasX", "Something with an X coordinate.")
+		hasX.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "x",
+				Type: dagql.Int(0),
+			},
+		})
+		srv.InstallInterface(hasX)
+
+		spatial := dagql.NewInterface("Spatial", "Something with spatial coordinates.")
+		spatial.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "x",
+				Type: dagql.Int(0),
+			},
+		})
+		spatial.AddField(dagql.InterfaceFieldSpec{
+			FieldSpec: dagql.FieldSpec{
+				Name: "y",
+				Type: dagql.Int(0),
+			},
+		})
+		srv.InstallInterface(spatial)
+
+		// Reading the type back through the server triggers lazy reconciliation.
+		spatialType, ok := srv.InterfaceType("Spatial")
+		assert.Assert(t, ok, "Spatial type not found")
+		_, ok = spatialType.Interfaces()["HasX"]
+		assert.Assert(t, ok, "Spatial should auto-implement HasX")
+		assert.Assert(t, hasX.HasImplementor("Spatial"), "HasX should list Spatial as an implementor")
 	})
 
 	t.Run("object must have every field required by the interface", func(t *testing.T) {
@@ -3906,11 +3975,11 @@ func TestInterfaces(t *testing.T) {
 		assert.Assert(t, foundPoint, "Node interface should include Point in possibleTypes")
 	})
 
-	t.Run("AddAutoInterface and AutoImplementInterfaces", func(t *testing.T) {
+	t.Run("fields added after install are inferred", func(t *testing.T) {
 		srv := newExternalDagqlServerForTest(t, Query{})
 		introspection.Install[Query](srv)
 
-		// Register a custom auto-interface with a "sync" field.
+		// Register a custom interface with a "sync" field.
 		syncable := dagql.NewInterface("Syncable", "Can be synced.")
 		syncable.AddField(dagql.InterfaceFieldSpec{
 			FieldSpec: dagql.FieldSpec{
@@ -3924,7 +3993,7 @@ func TestInterfaces(t *testing.T) {
 				Type: dagql.AnyID{},
 			},
 		})
-		srv.AddAutoInterface(syncable)
+		srv.InstallInterface(syncable)
 
 		gql := newTestClient(srv)
 
@@ -3958,7 +4027,7 @@ func TestInterfaces(t *testing.T) {
 		}
 
 		// Line with sync added via Fields[T].Install SHOULD implement it
-		// (AutoImplementInterfaces is called at the end of Install).
+		// (Fields.Install flags inference stale once the sync field is added).
 		dagql.Fields[*points.Line]{
 			dagql.Func("sync", func(ctx context.Context, self *points.Line, _ struct{}) (dagql.ID[*points.Line], error) {
 				return dagql.ID[*points.Line]{}, nil

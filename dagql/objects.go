@@ -1323,9 +1323,12 @@ func (fields Fields[T]) Install(server *Server) {
 	}
 	class.Install(fields...)
 
-	// Re-check auto-interfaces now that all fields (including sync, etc.)
-	// have been installed. InstallObject only sees the id field.
-	server.AutoImplementInterfaces(class)
+	// Flag interface inference stale now that every field is installed. At
+	// InstallObject time only the id field was present, so fields like sync
+	// weren't yet visible to the structural checks. (Done here, after
+	// class.Install releases the field lock, to preserve installLock -> fieldsL
+	// ordering.)
+	server.markInterfacesDirty()
 }
 
 type GenericDynamicInputFunc func(

@@ -110,151 +110,29 @@ func buildSchema(
 
 	InstallCoreSchemaLoaders(dag)
 
-	objects, ifaces, err := installModules(ctx, dag, mods, coreMod)
-	if err != nil {
+	if err := installModules(ctx, dag, mods, coreMod); err != nil {
 		return nil, err
 	}
-
-	if err := registerInterfaceImpls(dag, objects, ifaces); err != nil {
-		return nil, err
-	}
-
-	registerInterfaceToInterfaceImpls(dag, objects, ifaces)
 
 	return dag, nil
 }
 
-// installModules installs each module into the server and collects object/interface type defs.
+// installModules installs each module into the server.
 func installModules(
 	ctx context.Context,
 	dag *dagql.Server,
 	mods []modInstall,
 	coreMod coreSchemaForker,
-) ([]*ModuleObjectType, []*InterfaceType, error) {
-	var objects []*ModuleObjectType
-	var ifaces []*InterfaceType
+) error {
 	for _, mod := range mods {
 		if _, ok := mod.mod.(coreSchemaForker); ok && coreMod != nil {
 			continue
 		}
 		if err := mod.mod.Install(ctx, dag, mod.opts); err != nil {
-			return nil, nil, fmt.Errorf("failed to get schema for module %q: %w", mod.mod.Name(), err)
-		}
-
-		userMod, ok := mod.mod.(*userMod)
-		if !ok {
-			continue
-		}
-		defs, err := mod.mod.TypeDefs(ctx, dag)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get type defs for module %q: %w", mod.mod.Name(), err)
-		}
-		for _, def := range defs {
-			switch def.Self().Kind {
-			case TypeDefKindObject:
-				objects = append(objects, &ModuleObjectType{
-					typeDef: def.Self().AsObject.Value.Self(),
-					mod:     userMod.res,
-				})
-			case TypeDefKindInterface:
-				ifaces = append(ifaces, &InterfaceType{
-					typeDef: def.Self().AsInterface.Value.Self(),
-					mod:     userMod.res,
-				})
-			}
-		}
-	}
-	return objects, ifaces, nil
-}
-
-// makeImplementsChecker returns a function that checks whether a type implements an interface,
-// considering both object-implements-interface and interface-satisfies-interface relationships.
-func makeImplementsChecker(
-	dag *dagql.Server,
-	objects []*ModuleObjectType,
-	ifaces []*InterfaceType,
-) func(typeName, ifaceName string) bool {
-	return func(typeName, ifaceName string) bool {
-		// Check if typeName (an object) implements ifaceName (an interface).
-		for _, ot := range objects {
-			if ot.typeDef.Name == typeName {
-				for _, it := range ifaces {
-					if it.typeDef.Name == ifaceName {
-						return ot.typeDef.IsSubtypeOf(it.typeDef)
-					}
-				}
-			}
-		}
-		// Check if typeName is an interface that structurally satisfies ifaceName.
-		// This handles cases like ImplLocalOtherIface satisfying TestOtherIface.
-		typeIface, typeOK := dag.InterfaceType(typeName)
-		targetIface, targetOK := dag.InterfaceType(ifaceName)
-		if typeOK && targetOK {
-			return targetIface.SatisfiedByInterface(typeIface, dag.View)
-		}
-		return false
-	}
-}
-
-// registerInterfaceImpls registers object types as implementations of interfaces they satisfy.
-func registerInterfaceImpls(
-	dag *dagql.Server,
-	objects []*ModuleObjectType,
-	ifaces []*InterfaceType,
-) error {
-	checker := makeImplementsChecker(dag, objects, ifaces)
-	for _, objType := range objects {
-		class, found := dag.ObjectType(objType.typeDef.Name)
-		if !found {
-			return fmt.Errorf("failed to find object %q in schema", objType.typeDef.Name)
-		}
-		for _, ifaceType := range ifaces {
-			dagqlIface, ok := dag.InterfaceType(ifaceType.typeDef.Name)
-			if !ok {
-				continue
-			}
-			impl, ok := class.(dagql.InterfaceImplementor)
-			if !ok {
-				continue
-			}
-			if dagqlIface.Satisfies(class, dag.View, checker) {
-				impl.ImplementInterfaceUnchecked(dagqlIface)
-			}
+			return fmt.Errorf("failed to get schema for module %q: %w", mod.mod.Name(), err)
 		}
 	}
 	return nil
-}
-
-// registerInterfaceToInterfaceImpls registers interface-implements-interface
-// relationships via duck typing.
-func registerInterfaceToInterfaceImpls(
-	dag *dagql.Server,
-	objects []*ModuleObjectType,
-	ifaces []*InterfaceType,
-) {
-	checker := makeImplementsChecker(dag, objects, ifaces)
-	for _, ifaceTypeA := range ifaces {
-		dagqlIfaceA, okA := dag.InterfaceType(ifaceTypeA.typeDef.Name)
-		if !okA {
-			continue
-		}
-		for _, ifaceTypeB := range ifaces {
-			if ifaceTypeA.typeDef.Name == ifaceTypeB.typeDef.Name {
-				continue
-			}
-			dagqlIfaceB, okB := dag.InterfaceType(ifaceTypeB.typeDef.Name)
-			if !okB {
-				continue
-			}
-			// Avoid circular references: don't declare A implements B if B already implements A.
-			if _, alreadyReverse := dagqlIfaceB.Interfaces()[dagqlIfaceA.TypeName()]; alreadyReverse {
-				continue
-			}
-			if dagqlIfaceB.SatisfiedByInterface(dagqlIfaceA, dag.View, checker) {
-				dagqlIfaceA.ImplementInterface(dagqlIfaceB)
-			}
-		}
-	}
 }
 
 func schemaJSONFileFromServer(ctx context.Context, dag *dagql.Server, hiddenTypes []string) (dagql.Result[*File], error) {
