@@ -882,8 +882,13 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     /**
      * Retrieves this container plus a file mounted at the given path.
      */
-    public function withMountedFile(string $path, File $source, ?string $owner = '', ?bool $inheritOwner = false, ?bool $expand = false): Container
-    {
+    public function withMountedFile(
+        string $path,
+        File $source,
+        ?string $owner = '',
+        ?bool $inheritOwner = false,
+        ?bool $expand = false,
+    ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedFile');
         $innerQueryBuilder->setArgument('path', $path);
         $innerQueryBuilder->setArgument('source', $source);
