@@ -196,6 +196,33 @@ func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Clie
 	return err
 }
 
+func uninstallWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client, name string, here bool) error {
+	// Raw GraphQL (like the env commands) so cmd/dagger builds against the base
+	// SDK without first regenerating the Workspace.uninstall binding. The
+	// uninstall resolver still ships in core/schema; the SDK binding lands in
+	// the follow-up regenerate but the CLI does not depend on it.
+	var res struct {
+		CurrentWorkspace struct {
+			Uninstall string
+		}
+	}
+	err := dag.Do(ctx, &dagger.Request{
+		Query: `query($name: String!, $here: Boolean!) { currentWorkspace { uninstall(name: $name, here: $here) } }`,
+		Variables: map[string]any{
+			"name": name,
+			"here": here,
+		},
+	}, &dagger.Response{
+		Data: &res,
+	})
+	if err != nil {
+		return err
+	}
+
+	_, err = fmt.Fprintln(out, res.CurrentWorkspace.Uninstall)
+	return err
+}
+
 //nolint:unparam
 func workspaceRootFromAddress(address, cwd string) (string, error) {
 	if cwd == "" || cwd == "." {
