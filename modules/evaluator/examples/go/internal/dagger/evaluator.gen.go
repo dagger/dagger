@@ -20,7 +20,7 @@ func (r *Binding) AsEvaluator() *Evaluator { // evaluator (../../../../../../mod
 }
 
 // Retrieve the binding value, as type EvaluatorEvalResult
-func (r *Binding) AsEvaluatorEvalResult() *EvaluatorEvalResult { // evaluator (../../../../../../modules/evaluator/main.go:297:6)
+func (r *Binding) AsEvaluatorEvalResult() *EvaluatorEvalResult { // evaluator (../../../../../../modules/evaluator/main.go:274:6)
 	q := r.query.Select("asEvaluatorEvalResult")
 
 	return &EvaluatorEvalResult{
@@ -29,7 +29,7 @@ func (r *Binding) AsEvaluatorEvalResult() *EvaluatorEvalResult { // evaluator (.
 }
 
 // Retrieve the binding value, as type EvaluatorEvalsAcrossModels
-func (r *Binding) AsEvaluatorEvalsAcrossModels() *EvaluatorEvalsAcrossModels { // evaluator (../../../../../../modules/evaluator/main.go:281:6)
+func (r *Binding) AsEvaluatorEvalsAcrossModels() *EvaluatorEvalsAcrossModels { // evaluator (../../../../../../modules/evaluator/main.go:258:6)
 	q := r.query.Select("asEvaluatorEvalsAcrossModels")
 
 	return &EvaluatorEvalsAcrossModels{
@@ -38,7 +38,7 @@ func (r *Binding) AsEvaluatorEvalsAcrossModels() *EvaluatorEvalsAcrossModels { /
 }
 
 // Retrieve the binding value, as type EvaluatorModelResult
-func (r *Binding) AsEvaluatorModelResult() *EvaluatorModelResult { // evaluator (../../../../../../modules/evaluator/main.go:290:6)
+func (r *Binding) AsEvaluatorModelResult() *EvaluatorModelResult { // evaluator (../../../../../../modules/evaluator/main.go:267:6)
 	q := r.query.Select("asEvaluatorModelResult")
 
 	return &EvaluatorModelResult{
@@ -47,7 +47,7 @@ func (r *Binding) AsEvaluatorModelResult() *EvaluatorModelResult { // evaluator 
 }
 
 // Create or update a binding of type EvaluatorEvalResult in the environment
-func (r *Env) WithEvaluatorEvalResultInput(name string, value *EvaluatorEvalResult, description string) *Env { // evaluator (../../../../../../modules/evaluator/main.go:297:6)
+func (r *Env) WithEvaluatorEvalResultInput(name string, value *EvaluatorEvalResult, description string) *Env { // evaluator (../../../../../../modules/evaluator/main.go:274:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withEvaluatorEvalResultInput")
 	q = q.Arg("name", name)
@@ -60,7 +60,7 @@ func (r *Env) WithEvaluatorEvalResultInput(name string, value *EvaluatorEvalResu
 }
 
 // Declare a desired EvaluatorEvalResult output to be assigned in the environment
-func (r *Env) WithEvaluatorEvalResultOutput(name string, description string) *Env { // evaluator (../../../../../../modules/evaluator/main.go:297:6)
+func (r *Env) WithEvaluatorEvalResultOutput(name string, description string) *Env { // evaluator (../../../../../../modules/evaluator/main.go:274:6)
 	q := r.query.Select("withEvaluatorEvalResultOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -71,7 +71,7 @@ func (r *Env) WithEvaluatorEvalResultOutput(name string, description string) *En
 }
 
 // Create or update a binding of type EvaluatorEvalsAcrossModels in the environment
-func (r *Env) WithEvaluatorEvalsAcrossModelsInput(name string, value *EvaluatorEvalsAcrossModels, description string) *Env { // evaluator (../../../../../../modules/evaluator/main.go:281:6)
+func (r *Env) WithEvaluatorEvalsAcrossModelsInput(name string, value *EvaluatorEvalsAcrossModels, description string) *Env { // evaluator (../../../../../../modules/evaluator/main.go:258:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withEvaluatorEvalsAcrossModelsInput")
 	q = q.Arg("name", name)
@@ -84,7 +84,7 @@ func (r *Env) WithEvaluatorEvalsAcrossModelsInput(name string, value *EvaluatorE
 }
 
 // Declare a desired EvaluatorEvalsAcrossModels output to be assigned in the environment
-func (r *Env) WithEvaluatorEvalsAcrossModelsOutput(name string, description string) *Env { // evaluator (../../../../../../modules/evaluator/main.go:281:6)
+func (r *Env) WithEvaluatorEvalsAcrossModelsOutput(name string, description string) *Env { // evaluator (../../../../../../modules/evaluator/main.go:258:6)
 	q := r.query.Select("withEvaluatorEvalsAcrossModelsOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -108,7 +108,7 @@ func (r *Env) WithEvaluatorInput(name string, value *Evaluator, description stri
 }
 
 // Create or update a binding of type EvaluatorModelResult in the environment
-func (r *Env) WithEvaluatorModelResultInput(name string, value *EvaluatorModelResult, description string) *Env { // evaluator (../../../../../../modules/evaluator/main.go:290:6)
+func (r *Env) WithEvaluatorModelResultInput(name string, value *EvaluatorModelResult, description string) *Env { // evaluator (../../../../../../modules/evaluator/main.go:267:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withEvaluatorModelResultInput")
 	q = q.Arg("name", name)
@@ -121,7 +121,7 @@ func (r *Env) WithEvaluatorModelResultInput(name string, value *EvaluatorModelRe
 }
 
 // Declare a desired EvaluatorModelResult output to be assigned in the environment
-func (r *Env) WithEvaluatorModelResultOutput(name string, description string) *Env { // evaluator (../../../../../../modules/evaluator/main.go:290:6)
+func (r *Env) WithEvaluatorModelResultOutput(name string, description string) *Env { // evaluator (../../../../../../modules/evaluator/main.go:267:6)
 	q := r.query.Select("withEvaluatorModelResultOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -219,22 +219,22 @@ type EvaluatorEvalsAcrossModelsOpts struct {
 	//
 	// Evals to run. Defaults to all.
 	//
-	Evals []string // evaluator (../../../../../../modules/evaluator/main.go:183:2)
+	Evals []string // evaluator (../../../../../../modules/evaluator/main.go:160:2)
 	//
 	// Models to run evals across. Defaults to all.
 	//
-	Models []string // evaluator (../../../../../../modules/evaluator/main.go:186:2)
+	Models []string // evaluator (../../../../../../modules/evaluator/main.go:163:2)
 	//
 	// Attempts to run each eval. Defaults to a per-provider value.
 	//
-	Attempts int // evaluator (../../../../../../modules/evaluator/main.go:189:2)
+	Attempts int // evaluator (../../../../../../modules/evaluator/main.go:166:2)
 }
 
 // Run evals across models.
 //
 // Models run in parallel, and evals run in series, with all attempts in
 // parallel.
-func (r *Evaluator) EvalsAcrossModels(opts ...EvaluatorEvalsAcrossModelsOpts) *EvaluatorEvalsAcrossModels { // evaluator (../../../../../../modules/evaluator/main.go:179:1)
+func (r *Evaluator) EvalsAcrossModels(opts ...EvaluatorEvalsAcrossModelsOpts) *EvaluatorEvalsAcrossModels { // evaluator (../../../../../../modules/evaluator/main.go:156:1)
 	q := r.query.Select("evalsAcrossModels")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `evals` optional argument
@@ -280,7 +280,7 @@ func (r *Evaluator) EvaluatorModel(ctx context.Context) (string, error) { // eva
 // The agent will avoid re-running evaluations that fail consistently across
 // all models, but will retry evaluations that show partial success to gather
 // more insights.
-func (r *Evaluator) Explore(ctx context.Context) ([]string, error) { // evaluator (../../../../../../modules/evaluator/main.go:413:1)
+func (r *Evaluator) Explore(ctx context.Context) ([]string, error) { // evaluator (../../../../../../modules/evaluator/main.go:390:1)
 	q := r.query.Select("explore")
 
 	var response []string
@@ -299,7 +299,7 @@ func (r *Evaluator) Explore(ctx context.Context) ([]string, error) { // evaluato
 //
 // The generated prompt aims to establish foundation and context while allowing
 // the model flexibility to apply the guidelines appropriately.
-func (r *Evaluator) GenerateSystemPrompt(ctx context.Context) (string, error) { // evaluator (../../../../../../modules/evaluator/main.go:437:1)
+func (r *Evaluator) GenerateSystemPrompt(ctx context.Context) (string, error) { // evaluator (../../../../../../modules/evaluator/main.go:414:1)
 	if r.generateSystemPrompt != nil {
 		return *r.generateSystemPrompt, nil
 	}
@@ -363,7 +363,7 @@ func (r *Evaluator) UnmarshalJSON(bs []byte) error {
 // Iterate runs all evals across all models in a loop until all of the evals
 // succeed, analyzing the failures and generating a new system prompt to
 // course-correct.
-func (r *Evaluator) Iterate(ctx context.Context) (string, error) { // evaluator (../../../../../../modules/evaluator/main.go:454:1)
+func (r *Evaluator) Iterate(ctx context.Context) (string, error) { // evaluator (../../../../../../modules/evaluator/main.go:431:1)
 	if r.iterate != nil {
 		return *r.iterate, nil
 	}
@@ -424,7 +424,7 @@ func (r *Evaluator) WithEval(eval EvaluatorEval) *Evaluator { // evaluator (../.
 }
 
 // WithEvals adds multiple evaluations to the evaluator.
-func (r *Evaluator) WithEvals(evals []EvaluatorEval) *Evaluator { // evaluator (../../../../../../modules/evaluator/main.go:160:1)
+func (r *Evaluator) WithEvals(evals []EvaluatorEval) *Evaluator { // evaluator (../../../../../../modules/evaluator/main.go:145:1)
 	q := r.query.Select("withEvals")
 	q = q.Arg("evals", evals)
 
@@ -485,7 +485,7 @@ func (r *Evaluator) AsNode() Node {
 }
 
 // EvalResult represents the results of a single evaluation.
-type EvaluatorEvalResult struct { // evaluator (../../../../../../modules/evaluator/main.go:297:6)
+type EvaluatorEvalResult struct { // evaluator (../../../../../../modules/evaluator/main.go:274:6)
 	query *querybuilder.Selection
 
 	check         *Void
@@ -506,7 +506,7 @@ func (r *EvaluatorEvalResult) WithGraphQLQuery(q *querybuilder.Selection) *Evalu
 	}
 }
 
-func (r *EvaluatorEvalResult) Check(ctx context.Context) error { // evaluator (../../../../../../modules/evaluator/main.go:308:1)
+func (r *EvaluatorEvalResult) Check(ctx context.Context) error { // evaluator (../../../../../../modules/evaluator/main.go:285:1)
 	if r.check != nil {
 		return nil
 	}
@@ -515,7 +515,7 @@ func (r *EvaluatorEvalResult) Check(ctx context.Context) error { // evaluator (.
 	return q.Execute(ctx)
 }
 
-func (r *EvaluatorEvalResult) Error(ctx context.Context) (string, error) { // evaluator (../../../../../../modules/evaluator/main.go:300:2)
+func (r *EvaluatorEvalResult) Error(ctx context.Context) (string, error) { // evaluator (../../../../../../modules/evaluator/main.go:277:2)
 	if r.error != nil {
 		return *r.error, nil
 	}
@@ -576,7 +576,7 @@ func (r *EvaluatorEvalResult) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *EvaluatorEvalResult) InputTokens(ctx context.Context) (int, error) { // evaluator (../../../../../../modules/evaluator/main.go:304:2)
+func (r *EvaluatorEvalResult) InputTokens(ctx context.Context) (int, error) { // evaluator (../../../../../../modules/evaluator/main.go:281:2)
 	if r.inputTokens != nil {
 		return *r.inputTokens, nil
 	}
@@ -588,7 +588,7 @@ func (r *EvaluatorEvalResult) InputTokens(ctx context.Context) (int, error) { //
 	return response, q.Execute(ctx)
 }
 
-func (r *EvaluatorEvalResult) Name(ctx context.Context) (string, error) { // evaluator (../../../../../../modules/evaluator/main.go:298:2)
+func (r *EvaluatorEvalResult) Name(ctx context.Context) (string, error) { // evaluator (../../../../../../modules/evaluator/main.go:275:2)
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -600,7 +600,7 @@ func (r *EvaluatorEvalResult) Name(ctx context.Context) (string, error) { // eva
 	return response, q.Execute(ctx)
 }
 
-func (r *EvaluatorEvalResult) OutputTokens(ctx context.Context) (int, error) { // evaluator (../../../../../../modules/evaluator/main.go:305:2)
+func (r *EvaluatorEvalResult) OutputTokens(ctx context.Context) (int, error) { // evaluator (../../../../../../modules/evaluator/main.go:282:2)
 	if r.outputTokens != nil {
 		return *r.outputTokens, nil
 	}
@@ -612,7 +612,7 @@ func (r *EvaluatorEvalResult) OutputTokens(ctx context.Context) (int, error) { /
 	return response, q.Execute(ctx)
 }
 
-func (r *EvaluatorEvalResult) Report(ctx context.Context) (string, error) { // evaluator (../../../../../../modules/evaluator/main.go:301:2)
+func (r *EvaluatorEvalResult) Report(ctx context.Context) (string, error) { // evaluator (../../../../../../modules/evaluator/main.go:278:2)
 	if r.report != nil {
 		return *r.report, nil
 	}
@@ -624,7 +624,7 @@ func (r *EvaluatorEvalResult) Report(ctx context.Context) (string, error) { // e
 	return response, q.Execute(ctx)
 }
 
-func (r *EvaluatorEvalResult) SpanID(ctx context.Context) (string, error) { // evaluator (../../../../../../modules/evaluator/main.go:299:2)
+func (r *EvaluatorEvalResult) SpanID(ctx context.Context) (string, error) { // evaluator (../../../../../../modules/evaluator/main.go:276:2)
 	if r.spanId != nil {
 		return *r.spanId, nil
 	}
@@ -636,7 +636,7 @@ func (r *EvaluatorEvalResult) SpanID(ctx context.Context) (string, error) { // e
 	return response, q.Execute(ctx)
 }
 
-func (r *EvaluatorEvalResult) SuccessRate(ctx context.Context) (float64, error) { // evaluator (../../../../../../modules/evaluator/main.go:302:2)
+func (r *EvaluatorEvalResult) SuccessRate(ctx context.Context) (float64, error) { // evaluator (../../../../../../modules/evaluator/main.go:279:2)
 	if r.successRate != nil {
 		return *r.successRate, nil
 	}
@@ -648,7 +648,7 @@ func (r *EvaluatorEvalResult) SuccessRate(ctx context.Context) (float64, error) 
 	return response, q.Execute(ctx)
 }
 
-func (r *EvaluatorEvalResult) TotalAttempts(ctx context.Context) (int, error) { // evaluator (../../../../../../modules/evaluator/main.go:303:2)
+func (r *EvaluatorEvalResult) TotalAttempts(ctx context.Context) (int, error) { // evaluator (../../../../../../modules/evaluator/main.go:280:2)
 	if r.totalAttempts != nil {
 		return *r.totalAttempts, nil
 	}
@@ -669,7 +669,7 @@ func (r *EvaluatorEvalResult) AsNode() Node {
 }
 
 // EvalsAcrossModels represents the results of running evaluations across multiple models.
-type EvaluatorEvalsAcrossModels struct { // evaluator (../../../../../../modules/evaluator/main.go:281:6)
+type EvaluatorEvalsAcrossModels struct { // evaluator (../../../../../../modules/evaluator/main.go:258:6)
 	query *querybuilder.Selection
 
 	analyzeAndGenerateSystemPrompt *string
@@ -711,7 +711,7 @@ func (r *EvaluatorEvalsAcrossModels) WithGraphQLQuery(q *querybuilder.Selection)
 // The process emphasizes finding general, root-cause issues over specific evaluation
 // failures, ensuring that improvements help broadly rather than just fixing individual
 // test cases.
-func (r *EvaluatorEvalsAcrossModels) AnalyzeAndGenerateSystemPrompt(ctx context.Context) (string, error) { // evaluator (../../../../../../modules/evaluator/main.go:364:1)
+func (r *EvaluatorEvalsAcrossModels) AnalyzeAndGenerateSystemPrompt(ctx context.Context) (string, error) { // evaluator (../../../../../../modules/evaluator/main.go:341:1)
 	if r.analyzeAndGenerateSystemPrompt != nil {
 		return *r.analyzeAndGenerateSystemPrompt, nil
 	}
@@ -723,7 +723,7 @@ func (r *EvaluatorEvalsAcrossModels) AnalyzeAndGenerateSystemPrompt(ctx context.
 	return response, q.Execute(ctx)
 }
 
-func (r *EvaluatorEvalsAcrossModels) Check(ctx context.Context) error { // evaluator (../../../../../../modules/evaluator/main.go:328:1)
+func (r *EvaluatorEvalsAcrossModels) Check(ctx context.Context) error { // evaluator (../../../../../../modules/evaluator/main.go:305:1)
 	if r.check != nil {
 		return nil
 	}
@@ -825,7 +825,7 @@ func (r *EvaluatorEvalsAcrossModels) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *EvaluatorEvalsAcrossModels) ModelResults(ctx context.Context) ([]EvaluatorModelResult, error) { // evaluator (../../../../../../modules/evaluator/main.go:283:2)
+func (r *EvaluatorEvalsAcrossModels) ModelResults(ctx context.Context) ([]EvaluatorModelResult, error) { // evaluator (../../../../../../modules/evaluator/main.go:260:2)
 	q := r.query.Select("modelResults")
 
 	q = q.Select("id")
@@ -857,7 +857,7 @@ func (r *EvaluatorEvalsAcrossModels) ModelResults(ctx context.Context) ([]Evalua
 	return convert(response), nil
 }
 
-func (r *EvaluatorEvalsAcrossModels) TraceID(ctx context.Context) (string, error) { // evaluator (../../../../../../modules/evaluator/main.go:282:2)
+func (r *EvaluatorEvalsAcrossModels) TraceID(ctx context.Context) (string, error) { // evaluator (../../../../../../modules/evaluator/main.go:259:2)
 	if r.traceId != nil {
 		return *r.traceId, nil
 	}
@@ -878,7 +878,7 @@ func (r *EvaluatorEvalsAcrossModels) AsNode() Node {
 }
 
 // ModelResult represents the evaluation results for a single model.
-type EvaluatorModelResult struct { // evaluator (../../../../../../modules/evaluator/main.go:290:6)
+type EvaluatorModelResult struct { // evaluator (../../../../../../modules/evaluator/main.go:267:6)
 	query *querybuilder.Selection
 
 	check     *Void
@@ -893,7 +893,7 @@ func (r *EvaluatorModelResult) WithGraphQLQuery(q *querybuilder.Selection) *Eval
 	}
 }
 
-func (r *EvaluatorModelResult) Check(ctx context.Context) error { // evaluator (../../../../../../modules/evaluator/main.go:315:1)
+func (r *EvaluatorModelResult) Check(ctx context.Context) error { // evaluator (../../../../../../modules/evaluator/main.go:292:1)
 	if r.check != nil {
 		return nil
 	}
@@ -902,7 +902,7 @@ func (r *EvaluatorModelResult) Check(ctx context.Context) error { // evaluator (
 	return q.Execute(ctx)
 }
 
-func (r *EvaluatorModelResult) EvalReports(ctx context.Context) ([]EvaluatorEvalResult, error) { // evaluator (../../../../../../modules/evaluator/main.go:293:2)
+func (r *EvaluatorModelResult) EvalReports(ctx context.Context) ([]EvaluatorEvalResult, error) { // evaluator (../../../../../../modules/evaluator/main.go:270:2)
 	q := r.query.Select("evalReports")
 
 	q = q.Select("id")
@@ -983,7 +983,7 @@ func (r *EvaluatorModelResult) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-func (r *EvaluatorModelResult) ModelName(ctx context.Context) (string, error) { // evaluator (../../../../../../modules/evaluator/main.go:291:2)
+func (r *EvaluatorModelResult) ModelName(ctx context.Context) (string, error) { // evaluator (../../../../../../modules/evaluator/main.go:268:2)
 	if r.modelName != nil {
 		return *r.modelName, nil
 	}
@@ -995,7 +995,7 @@ func (r *EvaluatorModelResult) ModelName(ctx context.Context) (string, error) { 
 	return response, q.Execute(ctx)
 }
 
-func (r *EvaluatorModelResult) SpanID(ctx context.Context) (string, error) { // evaluator (../../../../../../modules/evaluator/main.go:292:2)
+func (r *EvaluatorModelResult) SpanID(ctx context.Context) (string, error) { // evaluator (../../../../../../modules/evaluator/main.go:269:2)
 	if r.spanId != nil {
 		return *r.spanId, nil
 	}
