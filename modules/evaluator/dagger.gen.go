@@ -569,7 +569,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg eval", err))
 				}
 			}
-			return (*Evaluator).WithEval(&parent, ctx, eval.toIface())
+			return (*Evaluator).WithEval(&parent, eval.toIface()), nil
 		case "WithEvals":
 			var parent Evaluator
 			err = json.Unmarshal(parentJSON, &parent)
@@ -583,7 +583,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg evals", err))
 				}
 			}
-			return (*Evaluator).WithEvals(&parent, ctx, convertSlice(evals, (*evalImpl).toIface))
+			return (*Evaluator).WithEvals(&parent, convertSlice(evals, (*evalImpl).toIface)), nil
 		case "WithSystemPrompt":
 			var parent Evaluator
 			err = json.Unmarshal(parentJSON, &parent)
