@@ -18,9 +18,7 @@ type ElixirSdkDev {
 
   pub devContainer: Container! {
     daggerEngine
-      .installClient(
-        withBase(source),
-      )
+      .installClient(withBase(source))
   }
 
   """
@@ -126,26 +124,32 @@ type ElixirSdkDev {
     let version = versionFromTag(tag)
     let ctr = devContainer
 
-    # Update version in mix.exs if this is a valid semver
-    if (isSemver(version)) {
-      let mixFile = "/sdk/elixir/mix.exs"
-      let mixExs = workspace.file(sourcePath + "/mix.exs")
-      let newMixExs = mixExs.withReplaced(
-        "@version \"0.0.0\"",
-        "@version \"" + version.trimPrefix("v") + "\"",
-      )
-      ctr = ctr.withFile(mixFile, newMixExs)
-    }
+    if (dryRun == false and isSemver(version) and hexVersionExists(
+      version.trimPrefix("v"),
+    )) {
+      print("found existing Elixir SDK package dagger " + version.trimPrefix("v") + "; skipping publish")
+    } else {
+      # Update version in mix.exs if this is a valid semver
+      if (isSemver(version)) {
+        let mixFile = "/sdk/elixir/mix.exs"
+        let mixExs = workspace.file(sourcePath + "/mix.exs")
+        let newMixExs = mixExs.withReplaced(
+          "@version \"0.0.0\"",
+          "@version \"" + version.trimPrefix("v") + "\"",
+        )
+        ctr = ctr.withFile(mixFile, newMixExs)
+      }
 
-    # Publish or dry-run
-    let mix = ["mix", "hex.publish", "--yes"]
-    if (dryRun) {
-      mix += ["--dry-run"]
-      ctr = ctr.withEnvVariable("HEX_API_KEY", "")
-    } else if (hexApiKey != null) {
-      ctr = ctr.withSecretVariable("HEX_API_KEY", hexApiKey)
+      # Publish or dry-run
+      let mix = ["mix", "hex.publish", "--yes"]
+      if (dryRun) {
+        mix += ["--dry-run"]
+        ctr = ctr.withEnvVariable("HEX_API_KEY", "")
+      } else if (hexApiKey != null) {
+        ctr = ctr.withSecretVariable("HEX_API_KEY", hexApiKey)
+      }
+      ctr.withExec(mix).sync
     }
-    ctr.withExec(mix).sync
     null
   }
 
@@ -206,6 +210,15 @@ type ElixirSdkDev {
       .from("alpine:3")
       .withFile("/bin/is-semver", binary)
       .withExec(["is-semver", version], expect: ReturnType.ANY)
+      .exitCode
+    exitCode == 0
+  }
+
+  let hexVersionExists(version: String!): Boolean! {
+    let exitCode = container
+      .from(baseImage)
+      .withExec(["mix", "local.hex", "--force"])
+      .withExec(["mix", "hex.info", "dagger", version], expect: ReturnType.ANY)
       .exitCode
     exitCode == 0
   }
