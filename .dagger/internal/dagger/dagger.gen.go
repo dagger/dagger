@@ -158,9 +158,6 @@ type BindingID string
 type CacheVolumeID string
 
 // A unique identifier for an object.
-type ChangelogID string
-
-// A unique identifier for an object.
 type ChangesetID string
 
 // A unique identifier for an object.
@@ -168,12 +165,6 @@ type CheckGroupID string
 
 // A unique identifier for an object.
 type CheckID string
-
-// A unique identifier for an object.
-type CiID string
-
-// A unique identifier for an object.
-type CliID string
 
 // A unique identifier for an object.
 type ClientFilesyncMirrorID string
@@ -192,18 +183,6 @@ type DiffStatID string
 
 // A unique identifier for an object.
 type DirectoryID string
-
-// A unique identifier for an object.
-type DocsID string
-
-// A unique identifier for an object.
-type ElixirSDKID string
-
-// A unique identifier for an object.
-type EngineDevID string
-
-// A unique identifier for an object.
-type EngineDevLoadedEngineID string
 
 // A unique identifier for an object.
 type EnumTypeDefID string
@@ -263,31 +242,10 @@ type GitRefID string
 type GitRepositoryID string
 
 // A unique identifier for an object.
-type GoID string
-
-// A unique identifier for an object.
-type GoSDKID string
-
-// A unique identifier for an object.
-type GolangID string
-
-// A unique identifier for an object.
-type GolangModuleID string
-
-// A unique identifier for an object.
 type HTTPStateID string
 
 // A unique identifier for an object.
 type HealthcheckConfigID string
-
-// A unique identifier for an object.
-type HelmChartID string
-
-// A unique identifier for an object.
-type HelmChartValuesID string
-
-// A unique identifier for an object.
-type HelmID string
 
 // A unique identifier for an object.
 type ID string
@@ -305,9 +263,6 @@ type JSON string
 type JSONValueID string
 
 // A unique identifier for an object.
-type JavaSDKID string
-
-// A unique identifier for an object.
 type LLMID string
 
 // A unique identifier for an object.
@@ -318,9 +273,6 @@ type LabelID string
 
 // A unique identifier for an object.
 type ListTypeDefID string
-
-// A unique identifier for an object.
-type MarkdownLintID string
 
 // A unique identifier for an object.
 type ModuleConfigClientID string
@@ -334,9 +286,6 @@ type ModuleSourceID string
 // A unique identifier for an object.
 type ObjectTypeDefID string
 
-// A unique identifier for an object.
-type PhpSDKID string
-
 // The platform config OS and architecture in a Container.
 //
 // The format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7", "windows/amd64", "linux/arm64").
@@ -346,46 +295,13 @@ type Platform string
 type PortID string
 
 // A unique identifier for an object.
-type PsAnalyzerID string
-
-// A unique identifier for an object.
-type PythonSDKDocsID string
-
-// A unique identifier for an object.
-type PythonSDKID string
-
-// A unique identifier for an object.
-type PythonSDKTestForPythonVersionID string
-
-// A unique identifier for an object.
-type ReleaseID string
-
-// A unique identifier for an object.
-type ReleaseReportArtifactID string
-
-// A unique identifier for an object.
-type ReleaseReportFollowUpID string
-
-// A unique identifier for an object.
-type ReleaseReportID string
-
-// A unique identifier for an object.
-type ReleaseTestID string
-
-// A unique identifier for an object.
 type RemoteGitMirrorID string
-
-// A unique identifier for an object.
-type RustSDKID string
 
 // A unique identifier for an object.
 type SDKConfigID string
 
 // A unique identifier for an object.
 type ScalarTypeDefID string
-
-// A unique identifier for an object.
-type SdksID string
 
 // A unique identifier for an object.
 type SearchResultID string
@@ -397,16 +313,7 @@ type SearchSubmatchID string
 type SecretID string
 
 // A unique identifier for an object.
-type SecurityID string
-
-// A unique identifier for an object.
 type ServiceID string
-
-// A unique identifier for an object.
-type ShellcheckID string
-
-// A unique identifier for an object.
-type ShellcheckScriptID string
 
 // A unique identifier for an object.
 type SocketID string
@@ -424,13 +331,7 @@ type SyncerID string
 type TerminalID string
 
 // A unique identifier for an object.
-type TestSplitID string
-
-// A unique identifier for an object.
 type TypeDefID string
-
-// A unique identifier for an object.
-type TypescriptSDKID string
 
 // A unique identifier for an object.
 type UpGroupID string
@@ -12858,16 +12759,6 @@ func (r *Query) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
 	}
 }
 
-// Load a Changelog from its ID.
-func (r *Query) LoadChangelogFromID(id ChangelogID) *Changelog {
-	q := r.query.Select("loadChangelogFromID")
-	q = q.Arg("id", id)
-
-	return &Changelog{
-		query: q,
-	}
-}
-
 // Load a Changeset from its ID.
 func (r *Query) LoadChangesetFromID(id ChangesetID) *Changeset {
 	q := r.query.Select("loadChangesetFromID")
@@ -12894,26 +12785,6 @@ func (r *Query) LoadCheckGroupFromID(id CheckGroupID) *CheckGroup {
 	q = q.Arg("id", id)
 
 	return &CheckGroup{
-		query: q,
-	}
-}
-
-// Load a Ci from its ID.
-func (r *Query) LoadCiFromID(id CiID) *Ci {
-	q := r.query.Select("loadCiFromID")
-	q = q.Arg("id", id)
-
-	return &Ci{
-		query: q,
-	}
-}
-
-// Load a Cli from its ID.
-func (r *Query) LoadCliFromID(id CliID) *Cli {
-	q := r.query.Select("loadCliFromID")
-	q = q.Arg("id", id)
-
-	return &Cli{
 		query: q,
 	}
 }
@@ -12974,46 +12845,6 @@ func (r *Query) LoadDirectoryFromID(id DirectoryID) *Directory {
 	q = q.Arg("id", id)
 
 	return &Directory{
-		query: q,
-	}
-}
-
-// Load a Docs from its ID.
-func (r *Query) LoadDocsFromID(id DocsID) *Docs {
-	q := r.query.Select("loadDocsFromID")
-	q = q.Arg("id", id)
-
-	return &Docs{
-		query: q,
-	}
-}
-
-// Load a ElixirSdk from its ID.
-func (r *Query) LoadElixirSDKFromID(id ElixirSDKID) *ElixirSDK {
-	q := r.query.Select("loadElixirSdkFromID")
-	q = q.Arg("id", id)
-
-	return &ElixirSDK{
-		query: q,
-	}
-}
-
-// Load a EngineDev from its ID.
-func (r *Query) LoadEngineDevFromID(id EngineDevID) *EngineDev {
-	q := r.query.Select("loadEngineDevFromID")
-	q = q.Arg("id", id)
-
-	return &EngineDev{
-		query: q,
-	}
-}
-
-// Load a EngineDevLoadedEngine from its ID.
-func (r *Query) LoadEngineDevLoadedEngineFromID(id EngineDevLoadedEngineID) *EngineDevLoadedEngine {
-	q := r.query.Select("loadEngineDevLoadedEngineFromID")
-	q = q.Arg("id", id)
-
-	return &EngineDevLoadedEngine{
 		query: q,
 	}
 }
@@ -13207,46 +13038,6 @@ func (r *Query) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
 	}
 }
 
-// Load a Go from its ID.
-func (r *Query) LoadGoFromID(id GoID) *Go {
-	q := r.query.Select("loadGoFromID")
-	q = q.Arg("id", id)
-
-	return &Go{
-		query: q,
-	}
-}
-
-// Load a GoSdk from its ID.
-func (r *Query) LoadGoSDKFromID(id GoSDKID) *GoSDK {
-	q := r.query.Select("loadGoSdkFromID")
-	q = q.Arg("id", id)
-
-	return &GoSDK{
-		query: q,
-	}
-}
-
-// Load a Golang from its ID.
-func (r *Query) LoadGolangFromID(id GolangID) *Golang {
-	q := r.query.Select("loadGolangFromID")
-	q = q.Arg("id", id)
-
-	return &Golang{
-		query: q,
-	}
-}
-
-// Load a GolangModule from its ID.
-func (r *Query) LoadGolangModuleFromID(id GolangModuleID) *GolangModule {
-	q := r.query.Select("loadGolangModuleFromID")
-	q = q.Arg("id", id)
-
-	return &GolangModule{
-		query: q,
-	}
-}
-
 // Load a HTTPState from its ID.
 func (r *Query) LoadHTTPStateFromID(id HTTPStateID) *HTTPState {
 	q := r.query.Select("loadHTTPStateFromID")
@@ -13263,36 +13054,6 @@ func (r *Query) LoadHealthcheckConfigFromID(id HealthcheckConfigID) *Healthcheck
 	q = q.Arg("id", id)
 
 	return &HealthcheckConfig{
-		query: q,
-	}
-}
-
-// Load a HelmChart from its ID.
-func (r *Query) LoadHelmChartFromID(id HelmChartID) *HelmChart {
-	q := r.query.Select("loadHelmChartFromID")
-	q = q.Arg("id", id)
-
-	return &HelmChart{
-		query: q,
-	}
-}
-
-// Load a HelmChartValues from its ID.
-func (r *Query) LoadHelmChartValuesFromID(id HelmChartValuesID) *HelmChartValues {
-	q := r.query.Select("loadHelmChartValuesFromID")
-	q = q.Arg("id", id)
-
-	return &HelmChartValues{
-		query: q,
-	}
-}
-
-// Load a Helm from its ID.
-func (r *Query) LoadHelmFromID(id HelmID) *Helm {
-	q := r.query.Select("loadHelmFromID")
-	q = q.Arg("id", id)
-
-	return &Helm{
 		query: q,
 	}
 }
@@ -13323,16 +13084,6 @@ func (r *Query) LoadJSONValueFromID(id JSONValueID) *JSONValue {
 	q = q.Arg("id", id)
 
 	return &JSONValue{
-		query: q,
-	}
-}
-
-// Load a JavaSdk from its ID.
-func (r *Query) LoadJavaSDKFromID(id JavaSDKID) *JavaSDK {
-	q := r.query.Select("loadJavaSdkFromID")
-	q = q.Arg("id", id)
-
-	return &JavaSDK{
 		query: q,
 	}
 }
@@ -13377,16 +13128,6 @@ func (r *Query) LoadListTypeDefFromID(id ListTypeDefID) *ListTypeDef {
 	}
 }
 
-// Load a MarkdownLint from its ID.
-func (r *Query) LoadMarkdownLintFromID(id MarkdownLintID) *MarkdownLint {
-	q := r.query.Select("loadMarkdownLintFromID")
-	q = q.Arg("id", id)
-
-	return &MarkdownLint{
-		query: q,
-	}
-}
-
 // Load a ModuleConfigClient from its ID.
 func (r *Query) LoadModuleConfigClientFromID(id ModuleConfigClientID) *ModuleConfigClient {
 	q := r.query.Select("loadModuleConfigClientFromID")
@@ -13427,16 +13168,6 @@ func (r *Query) LoadObjectTypeDefFromID(id ObjectTypeDefID) *ObjectTypeDef {
 	}
 }
 
-// Load a PhpSdk from its ID.
-func (r *Query) LoadPhpSDKFromID(id PhpSDKID) *PhpSDK {
-	q := r.query.Select("loadPhpSdkFromID")
-	q = q.Arg("id", id)
-
-	return &PhpSDK{
-		query: q,
-	}
-}
-
 // Load a Port from its ID.
 func (r *Query) LoadPortFromID(id PortID) *Port {
 	q := r.query.Select("loadPortFromID")
@@ -13447,112 +13178,12 @@ func (r *Query) LoadPortFromID(id PortID) *Port {
 	}
 }
 
-// Load a PsAnalyzer from its ID.
-func (r *Query) LoadPsAnalyzerFromID(id PsAnalyzerID) *PsAnalyzer {
-	q := r.query.Select("loadPsAnalyzerFromID")
-	q = q.Arg("id", id)
-
-	return &PsAnalyzer{
-		query: q,
-	}
-}
-
-// Load a PythonSdkDocs from its ID.
-func (r *Query) LoadPythonSDKDocsFromID(id PythonSDKDocsID) *PythonSDKDocs {
-	q := r.query.Select("loadPythonSdkDocsFromID")
-	q = q.Arg("id", id)
-
-	return &PythonSDKDocs{
-		query: q,
-	}
-}
-
-// Load a PythonSdk from its ID.
-func (r *Query) LoadPythonSDKFromID(id PythonSDKID) *PythonSDK {
-	q := r.query.Select("loadPythonSdkFromID")
-	q = q.Arg("id", id)
-
-	return &PythonSDK{
-		query: q,
-	}
-}
-
-// Load a PythonSdkTestForPythonVersion from its ID.
-func (r *Query) LoadPythonSDKTestForPythonVersionFromID(id PythonSDKTestForPythonVersionID) *PythonSDKTestForPythonVersion {
-	q := r.query.Select("loadPythonSdkTestForPythonVersionFromID")
-	q = q.Arg("id", id)
-
-	return &PythonSDKTestForPythonVersion{
-		query: q,
-	}
-}
-
-// Load a Release from its ID.
-func (r *Query) LoadReleaseFromID(id ReleaseID) *Release {
-	q := r.query.Select("loadReleaseFromID")
-	q = q.Arg("id", id)
-
-	return &Release{
-		query: q,
-	}
-}
-
-// Load a ReleaseReportArtifact from its ID.
-func (r *Query) LoadReleaseReportArtifactFromID(id ReleaseReportArtifactID) *ReleaseReportArtifact {
-	q := r.query.Select("loadReleaseReportArtifactFromID")
-	q = q.Arg("id", id)
-
-	return &ReleaseReportArtifact{
-		query: q,
-	}
-}
-
-// Load a ReleaseReportFollowUp from its ID.
-func (r *Query) LoadReleaseReportFollowUpFromID(id ReleaseReportFollowUpID) *ReleaseReportFollowUp {
-	q := r.query.Select("loadReleaseReportFollowUpFromID")
-	q = q.Arg("id", id)
-
-	return &ReleaseReportFollowUp{
-		query: q,
-	}
-}
-
-// Load a ReleaseReport from its ID.
-func (r *Query) LoadReleaseReportFromID(id ReleaseReportID) *ReleaseReport {
-	q := r.query.Select("loadReleaseReportFromID")
-	q = q.Arg("id", id)
-
-	return &ReleaseReport{
-		query: q,
-	}
-}
-
-// Load a ReleaseTest from its ID.
-func (r *Query) LoadReleaseTestFromID(id ReleaseTestID) *ReleaseTest {
-	q := r.query.Select("loadReleaseTestFromID")
-	q = q.Arg("id", id)
-
-	return &ReleaseTest{
-		query: q,
-	}
-}
-
 // Load a RemoteGitMirror from its ID.
 func (r *Query) LoadRemoteGitMirrorFromID(id RemoteGitMirrorID) *RemoteGitMirror {
 	q := r.query.Select("loadRemoteGitMirrorFromID")
 	q = q.Arg("id", id)
 
 	return &RemoteGitMirror{
-		query: q,
-	}
-}
-
-// Load a RustSdk from its ID.
-func (r *Query) LoadRustSDKFromID(id RustSDKID) *RustSDK {
-	q := r.query.Select("loadRustSdkFromID")
-	q = q.Arg("id", id)
-
-	return &RustSDK{
 		query: q,
 	}
 }
@@ -13573,16 +13204,6 @@ func (r *Query) LoadScalarTypeDefFromID(id ScalarTypeDefID) *ScalarTypeDef {
 	q = q.Arg("id", id)
 
 	return &ScalarTypeDef{
-		query: q,
-	}
-}
-
-// Load a Sdks from its ID.
-func (r *Query) LoadSdksFromID(id SdksID) *Sdks {
-	q := r.query.Select("loadSdksFromID")
-	q = q.Arg("id", id)
-
-	return &Sdks{
 		query: q,
 	}
 }
@@ -13617,42 +13238,12 @@ func (r *Query) LoadSecretFromID(id SecretID) *Secret {
 	}
 }
 
-// Load a Security from its ID.
-func (r *Query) LoadSecurityFromID(id SecurityID) *Security {
-	q := r.query.Select("loadSecurityFromID")
-	q = q.Arg("id", id)
-
-	return &Security{
-		query: q,
-	}
-}
-
 // Load a Service from its ID.
 func (r *Query) LoadServiceFromID(id ServiceID) *Service {
 	q := r.query.Select("loadServiceFromID")
 	q = q.Arg("id", id)
 
 	return &Service{
-		query: q,
-	}
-}
-
-// Load a Shellcheck from its ID.
-func (r *Query) LoadShellcheckFromID(id ShellcheckID) *Shellcheck {
-	q := r.query.Select("loadShellcheckFromID")
-	q = q.Arg("id", id)
-
-	return &Shellcheck{
-		query: q,
-	}
-}
-
-// Load a ShellcheckScript from its ID.
-func (r *Query) LoadShellcheckScriptFromID(id ShellcheckScriptID) *ShellcheckScript {
-	q := r.query.Select("loadShellcheckScriptFromID")
-	q = q.Arg("id", id)
-
-	return &ShellcheckScript{
 		query: q,
 	}
 }
@@ -13706,32 +13297,12 @@ func (r *Query) LoadTerminalFromID(id TerminalID) *Terminal {
 	}
 }
 
-// Load a TestSplit from its ID.
-func (r *Query) LoadTestSplitFromID(id TestSplitID) *TestSplit {
-	q := r.query.Select("loadTestSplitFromID")
-	q = q.Arg("id", id)
-
-	return &TestSplit{
-		query: q,
-	}
-}
-
 // Load a TypeDef from its ID.
 func (r *Query) LoadTypeDefFromID(id TypeDefID) *TypeDef {
 	q := r.query.Select("loadTypeDefFromID")
 	q = q.Arg("id", id)
 
 	return &TypeDef{
-		query: q,
-	}
-}
-
-// Load a TypescriptSdk from its ID.
-func (r *Query) LoadTypescriptSDKFromID(id TypescriptSDKID) *TypescriptSDK {
-	q := r.query.Select("loadTypescriptSdkFromID")
-	q = q.Arg("id", id)
-
-	return &TypescriptSDK{
 		query: q,
 	}
 }
