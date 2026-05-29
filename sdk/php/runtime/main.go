@@ -25,15 +25,16 @@ type PhpSdk struct {
 }
 
 func New(
-	// Directory with the PHP SDK source code.
-	// +optional
-	// +defaultPath="/sdk/php"
-	// +ignore=["**", "!generated/", "!src/", "!scripts/", "!composer.json", "!composer.lock", "!LICENSE", "!README.md"]
-	sdkSourceDir *dagger.Directory,
+	// Workspace with the PHP SDK source code.
+	workspace *dagger.Workspace,
 ) (*PhpSdk, error) {
-	if sdkSourceDir == nil {
-		return nil, fmt.Errorf("sdk source directory not provided")
+	if workspace == nil {
+		return nil, fmt.Errorf("workspace not provided")
 	}
+	sdkSourceDir := workspace.Directory("/sdk/php", dagger.WorkspaceDirectoryOpts{
+		Exclude: []string{"**", "!generated/", "!src/", "!scripts/", "!composer.json", "!composer.lock", "!LICENSE", "!README.md"},
+	})
+
 	return &PhpSdk{
 		SourceDir: sdkSourceDir,
 	}, nil

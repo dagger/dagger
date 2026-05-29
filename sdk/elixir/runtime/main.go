@@ -31,15 +31,16 @@ var mainModuleEx string
 var moduleReadme string
 
 func New(
-	// Directory with the Elixir SDK source code.
-	// +optional
-	// +defaultPath="/sdk/elixir"
-	// +ignore=["**","!LICENSE","!lib/**/*.ex","!.formatter.exs","!mix.exs","!mix.lock","!dagger_codegen/lib/**/*.ex","!dagger_codegen/mix.exs","!dagger_codegen/mix.lock"]
-	sdkSourceDir *dagger.Directory,
+	// Workspace with the Elixir SDK source code.
+	workspace *dagger.Workspace,
 ) (*ElixirSdk, error) {
-	if sdkSourceDir == nil {
-		return nil, fmt.Errorf("sdk source directory not provided")
+	if workspace == nil {
+		return nil, fmt.Errorf("workspace not provided")
 	}
+	sdkSourceDir := workspace.Directory("/sdk/elixir", dagger.WorkspaceDirectoryOpts{
+		Exclude: []string{"**", "!LICENSE", "!lib/**/*.ex", "!.formatter.exs", "!mix.exs", "!mix.lock", "!dagger_codegen/lib/**/*.ex", "!dagger_codegen/mix.exs", "!dagger_codegen/mix.lock"},
+	})
+
 	return &ElixirSdk{
 		SdkSourceDir: sdkSourceDir,
 		Container:    dag.Container(),

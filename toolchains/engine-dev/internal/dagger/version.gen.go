@@ -57,6 +57,7 @@ func (r *Query) LoadVersionFromID(id VersionID) *Version { // version (../../../
 
 // VersionOpts contains options for Query.Version
 type VersionOpts struct {
+	Workspace *Workspace // version (../../../../version/main.go:20:2)
 	//
 	// A git repository containing the source code of the artifact to be versioned.
 	//
@@ -82,6 +83,10 @@ type VersionOpts struct {
 func (r *Query) Version(opts ...VersionOpts) *Version { // version (../../../../version/main.go:17:1)
 	q := r.query.Select("version")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `workspace` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Workspace) {
+			q = q.Arg("workspace", opts[i].Workspace)
+		}
 		// `gitParent` optional argument
 		if !querybuilder.IsZeroValue(opts[i].GitParent) {
 			q = q.Arg("gitParent", opts[i].GitParent)

@@ -18,32 +18,7 @@ import (
 
 // TODO: updating filter for engine restart test, probably go back to original
 func New(
-	// +defaultPath="/"
-	// +ignore=[
-	// "*",
-	// "!.git",
-	// "!dagger.json",
-	// "!**/dagger.json",
-	// "!**/go.*",
-	// "!**/*.dang",
-	// "!version",
-	// "!core",
-	// "!engine",
-	// "!util",
-	// "!network",
-	// "!dagql",
-	// "!analytics",
-	// "!auth",
-	// "!cmd",
-	// "!internal",
-	// "!sdk",
-	// "sdk/**/examples",
-	// "!cmd",
-	// "!modules",
-	// "!toolchains",
-	// "!.changes"
-	// ]
-	source *dagger.Directory,
+	workspace *dagger.Workspace,
 	// A configurable part of the IP subnet managed by the engine
 	// Change this to allow nested dagger engines
 	// +default=89
@@ -53,6 +28,33 @@ func New(
 	// +optional
 	clientDockerConfig *dagger.Secret,
 ) *EngineDev {
+	source := workspace.Directory("/", dagger.WorkspaceDirectoryOpts{
+		Exclude: []string{
+			"*",
+			"!.git",
+			"!dagger.json",
+			"!**/dagger.json",
+			"!**/go.*",
+			"!**/*.dang",
+			"!version",
+			"!core",
+			"!engine",
+			"!util",
+			"!network",
+			"!dagql",
+			"!analytics",
+			"!auth",
+			"!cmd",
+			"!internal",
+			"!sdk",
+			"sdk/**/examples",
+			"!cmd",
+			"!modules",
+			"!toolchains",
+			"!.changes",
+		},
+	})
+
 	return &EngineDev{
 		Source:             source,
 		SubnetNumber:       subnetNumber,

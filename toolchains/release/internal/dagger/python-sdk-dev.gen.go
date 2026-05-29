@@ -301,7 +301,7 @@ func (r *PythonSDKDev) Lint(opts ...PythonSDKDevLintOpts) *Container { // python
 
 // PythonSDKDevLintDocsSnippetsOpts contains options for PythonSDKDev.LintDocsSnippets
 type PythonSDKDevLintDocsSnippetsOpts struct {
-	Workspace *Directory // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:81:2)
+	Workspace *Workspace // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:77:2)
 }
 
 // Lint the Python snippets in the documentation
@@ -771,7 +771,7 @@ type PythonSDKDevOpts struct {
 	//
 	// A workspace containing the SDK source code and other relevant files
 	//
-	Workspace *Directory // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:45:2)
+	Workspace *Workspace // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:26:2)
 
 	// Default: "sdk/python"
 	SourcePath string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:48:2)

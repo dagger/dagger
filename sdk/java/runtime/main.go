@@ -44,16 +44,18 @@ func (c *moduleConfig) modulePath() string {
 }
 
 func New(
-	// Directory with the Java SDK source code.
+	// Workspace with the Java SDK source code.
 	// dagger-java-samples is not necessary to build, but as it's referenced in the root pom.xml maven
 	// will check if it's there. So we keep the pom.xml to fake it.
-	// +defaultPath="/sdk/java"
-	// +ignore=["**", "!dagger-codegen-maven-plugin/", "!dagger-java-annotation-processor/", "!dagger-java-sdk/", "!dagger-java-samples/pom.xml", "!LICENSE", "!README.md", "!pom.xml", "**/src/test", "**/target"]
-	sdkSourceDir *dagger.Directory,
+	workspace *dagger.Workspace,
 ) (*JavaSdk, error) {
-	if sdkSourceDir == nil {
-		return nil, fmt.Errorf("sdk source directory not provided")
+	if workspace == nil {
+		return nil, fmt.Errorf("workspace not provided")
 	}
+	sdkSourceDir := workspace.Directory("/sdk/java", dagger.WorkspaceDirectoryOpts{
+		Exclude: []string{"**", "!dagger-codegen-maven-plugin/", "!dagger-java-annotation-processor/", "!dagger-java-sdk/", "!dagger-java-samples/pom.xml", "!LICENSE", "!README.md", "!pom.xml", "**/src/test", "**/target"},
+	})
+
 	return &JavaSdk{
 		SDKSourceDir: sdkSourceDir,
 		MavenErrors:  false,

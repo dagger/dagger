@@ -357,7 +357,7 @@ type PhpSDKDevOpts struct {
 	//
 	// A directory with all the files needed to develop the SDK
 	//
-	Workspace *Directory // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:37:2)
+	Workspace *Workspace // php-sdk-dev (../../../../toolchains/php-sdk-dev/main.go:35:2)
 	//
 	// The path of the SDK source in the workspace
 	//

@@ -15,26 +15,27 @@ type Dev struct {
 var prompt string
 
 func New(
-	// +optional
-	// +defaultPath="/"
-	// +ignore=[
-	//   "bin",
-	//   "**/node_modules",
-	//   "**/.venv",
-	//   "**/__pycache__",
-	//   "docs/node_modules",
-	//   "sdk/typescript/node_modules",
-	//   "sdk/typescript/dist",
-	//   "sdk/rust/examples/backend/target",
-	//   "sdk/rust/target",
-	//   "sdk/php/vendor"
-	// ]
-	source *dagger.Directory,
+	workspace *dagger.Workspace,
 
 	// GitHub token to use for fetching issue/PR comments
 	// +optional
 	githubToken *dagger.Secret,
 ) *Dev {
+	source := workspace.Directory("/", dagger.WorkspaceDirectoryOpts{
+		Exclude: []string{
+			"bin",
+			"**/node_modules",
+			"**/.venv",
+			"**/__pycache__",
+			"docs/node_modules",
+			"sdk/typescript/node_modules",
+			"sdk/typescript/dist",
+			"sdk/rust/examples/backend/target",
+			"sdk/rust/target",
+			"sdk/php/vendor",
+		},
+	})
+
 	return &Dev{
 		Source:      source,
 		GithubToken: githubToken,

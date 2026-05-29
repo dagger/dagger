@@ -47,15 +47,16 @@ type UserConfig struct {
 }
 
 func New(
-	// Directory with the Python SDK source code.
-	// +defaultPath=".."
-	// +ignore=["**", "!pyproject.toml", "!uv.lock", "!src/**/*.py", "!src/**/*.typed", "!codegen/pyproject.toml", "!codegen/**/*.py", "!LICENSE", "!README.md", "!dist/*"]
-	sdkSourceDir *dagger.Directory,
+	// Workspace with the Python SDK source code.
+	workspace *dagger.Workspace,
 ) (*PythonSdk, error) {
-	// Shouldn't happen due to defaultPath, but just in case.
-	if sdkSourceDir == nil {
-		return nil, fmt.Errorf("sdk source directory not provided")
+	if workspace == nil {
+		return nil, fmt.Errorf("workspace not provided")
 	}
+	sdkSourceDir := workspace.Directory("..", dagger.WorkspaceDirectoryOpts{
+		Exclude: []string{"**", "!pyproject.toml", "!uv.lock", "!src/**/*.py", "!src/**/*.typed", "!codegen/pyproject.toml", "!codegen/**/*.py", "!LICENSE", "!README.md", "!dist/*"},
+	})
+
 	d, err := NewDiscovery(UserConfig{
 		UseUv: true,
 	})

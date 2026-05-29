@@ -299,7 +299,7 @@ func (r *Env) WithDaggerCliOutput(name string, description string) *Env { // dag
 type DaggerCliOpts struct {
 	RunnerHost string // dagger-cli (../../../../toolchains/cli-dev/main.go:16:2)
 
-	Source *Directory // dagger-cli (../../../../toolchains/cli-dev/main.go:37:2)
+	Workspace *Workspace // dagger-cli (../../../../toolchains/cli-dev/main.go:18:2)
 	//
 	// Base image for go build environment
 	//
@@ -318,9 +318,9 @@ func (r *Query) DaggerCli(opts ...DaggerCliOpts) *DaggerCli { // dagger-cli (../
 		if !querybuilder.IsZeroValue(opts[i].RunnerHost) {
 			q = q.Arg("runnerHost", opts[i].RunnerHost)
 		}
-		// `source` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Source) {
-			q = q.Arg("source", opts[i].Source)
+		// `workspace` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Workspace) {
+			q = q.Arg("workspace", opts[i].Workspace)
 		}
 		// `base` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Base) {

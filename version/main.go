@@ -17,10 +17,10 @@ import (
 func New(
 	ctx context.Context,
 
+	workspace *dagger.Workspace,
+
 	// A git repository containing the source code of the artifact to be versioned.
 	// +optional
-	// +defaultPath="/"
-	// +ignore=["*", "!.git"]
 	gitParent *dagger.Directory,
 
 	// A directory containing all the inputs of the artifact to be versioned.
@@ -29,15 +29,47 @@ func New(
 	// - To avoid false positives, only include actual inputs
 	// - To avoid false negatives, include *all* inputs
 	// +optional
-	// +defaultPath="/"
-	// +ignore=["**_test.go", "**/.git*", "**/.venv", "**/.dagger", ".*", "bin", "**/node_modules", "**/testdata/**", "**/.changes", ".changes", "docs", "helm", "release", "version", "modules", "*.md", "LICENSE", "NOTICE", "hack", "!**/.gitignore"]
 	inputs *dagger.Directory,
 
 	// File containing the next release version (e.g. .changes/.next)
 	// +optional
-	// +defaultPath="/.changes/.next"
 	nextVersionFile *dagger.File,
 ) *Version {
+	if gitParent == nil {
+		gitParent = workspace.Directory("/", dagger.WorkspaceDirectoryOpts{
+			Exclude: []string{"*", "!.git"},
+		})
+	}
+	if inputs == nil {
+		inputs = workspace.Directory("/", dagger.WorkspaceDirectoryOpts{
+			Exclude: []string{
+				"**_test.go",
+				"**/.git*",
+				"**/.venv",
+				"**/.dagger",
+				".*",
+				"bin",
+				"**/node_modules",
+				"**/testdata/**",
+				"**/.changes",
+				".changes",
+				"docs",
+				"helm",
+				"release",
+				"version",
+				"modules",
+				"*.md",
+				"LICENSE",
+				"NOTICE",
+				"hack",
+				"!**/.gitignore",
+			},
+		})
+	}
+	if nextVersionFile == nil {
+		nextVersionFile = workspace.File("/.changes/.next")
+	}
+
 	v := &Version{
 		Inputs:          inputs.Filter(dagger.DirectoryFilterOpts{Gitignore: true}),
 		NextVersionFile: nextVersionFile,
