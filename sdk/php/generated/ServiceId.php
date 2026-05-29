@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `ServiceID` scalar type represents an identifier for an object of type Service.
+ * A unique identifier for an object.
  */
-readonly class ServiceId extends Client\AbstractId
+readonly class ServiceId extends Client\AbstractScalar
 {
 }

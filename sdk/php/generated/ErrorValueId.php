@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `ErrorValueID` scalar type represents an identifier for an object of type ErrorValue.
+ * A unique identifier for an object.
  */
-readonly class ErrorValueId extends Client\AbstractId
+readonly class ErrorValueId extends Client\AbstractScalar
 {
 }

@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `CacheVolumeID` scalar type represents an identifier for an object of type CacheVolume.
+ * A unique identifier for an object.
  */
-readonly class CacheVolumeId extends Client\AbstractId
+readonly class CacheVolumeId extends Client\AbstractScalar
 {
 }

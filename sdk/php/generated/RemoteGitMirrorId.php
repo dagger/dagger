@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `RemoteGitMirrorID` scalar type represents an identifier for an object of type RemoteGitMirror.
+ * A unique identifier for an object.
  */
-readonly class RemoteGitMirrorId extends Client\AbstractId
+readonly class RemoteGitMirrorId extends Client\AbstractScalar
 {
 }

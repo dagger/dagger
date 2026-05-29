@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `ChangesetID` scalar type represents an identifier for an object of type Changeset.
+ * A unique identifier for an object.
  */
-readonly class ChangesetId extends Client\AbstractId
+readonly class ChangesetId extends Client\AbstractScalar
 {
 }

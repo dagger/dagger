@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `InputTypeDefID` scalar type represents an identifier for an object of type InputTypeDef.
+ * A unique identifier for an object.
  */
-readonly class InputTypeDefId extends Client\AbstractId
+readonly class InputTypeDefId extends Client\AbstractScalar
 {
 }

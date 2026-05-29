@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `TerminalID` scalar type represents an identifier for an object of type Terminal.
+ * A unique identifier for an object.
  */
-readonly class TerminalId extends Client\AbstractId
+readonly class TerminalId extends Client\AbstractScalar
 {
 }

@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `HostID` scalar type represents an identifier for an object of type Host.
+ * A unique identifier for an object.
  */
-readonly class HostId extends Client\AbstractId
+readonly class HostId extends Client\AbstractScalar
 {
 }

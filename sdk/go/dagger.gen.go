@@ -135,20 +135,218 @@ func (e *ExecError) Unwrap() error {
 }
 
 // A unique identifier for an object.
+type AddressID string
+
+// A unique identifier for an object.
+type BindingID string
+
+// A unique identifier for an object.
+type CacheVolumeID string
+
+// A unique identifier for an object.
+type ChangesetID string
+
+// A unique identifier for an object.
+type CheckGroupID string
+
+// A unique identifier for an object.
+type CheckID string
+
+// A unique identifier for an object.
+type ClientFilesyncMirrorID string
+
+// A unique identifier for an object.
+type CloudID string
+
+// A unique identifier for an object.
+type ContainerID string
+
+// A unique identifier for an object.
+type CurrentModuleID string
+
+// A unique identifier for an object.
+type DiffStatID string
+
+// A unique identifier for an object.
+type DirectoryID string
+
+// A unique identifier for an object.
+type EngineCacheEntryID string
+
+// A unique identifier for an object.
+type EngineCacheEntrySetID string
+
+// A unique identifier for an object.
+type EngineCacheID string
+
+// A unique identifier for an object.
+type EngineID string
+
+// A unique identifier for an object.
+type EnumTypeDefID string
+
+// A unique identifier for an object.
+type EnumValueTypeDefID string
+
+// A unique identifier for an object.
+type EnvFileID string
+
+// A unique identifier for an object.
+type EnvID string
+
+// A unique identifier for an object.
+type EnvVariableID string
+
+// A unique identifier for an object.
+type ErrorID string
+
+// A unique identifier for an object.
+type ErrorValueID string
+
+// A unique identifier for an object.
+type ExportableID string
+
+// A unique identifier for an object.
+type FieldTypeDefID string
+
+// A unique identifier for an object.
+type FileID string
+
+// A unique identifier for an object.
+type FunctionArgID string
+
+// A unique identifier for an object.
+type FunctionCallArgValueID string
+
+// A unique identifier for an object.
+type FunctionCallID string
+
+// A unique identifier for an object.
+type FunctionID string
+
+// A unique identifier for an object.
+type GeneratedCodeID string
+
+// A unique identifier for an object.
+type GeneratorGroupID string
+
+// A unique identifier for an object.
+type GeneratorID string
+
+// A unique identifier for an object.
+type GitRefID string
+
+// A unique identifier for an object.
+type GitRepositoryID string
+
+// A unique identifier for an object.
+type HTTPStateID string
+
+// A unique identifier for an object.
+type HealthcheckConfigID string
+
+// A unique identifier for an object.
+type HostID string
+
+// A unique identifier for an object.
 type ID string
+
+// A unique identifier for an object.
+type InputTypeDefID string
+
+// A unique identifier for an object.
+type InterfaceTypeDefID string
 
 // An arbitrary JSON-encoded value.
 type JSON string
+
+// A unique identifier for an object.
+type JSONValueID string
+
+// A unique identifier for an object.
+type LLMID string
+
+// A unique identifier for an object.
+type LLMTokenUsageID string
+
+// A unique identifier for an object.
+type LabelID string
+
+// A unique identifier for an object.
+type ListTypeDefID string
+
+// A unique identifier for an object.
+type ModuleConfigClientID string
+
+// A unique identifier for an object.
+type ModuleID string
+
+// A unique identifier for an object.
+type ModuleSourceID string
+
+// A unique identifier for an object.
+type ObjectTypeDefID string
 
 // The platform config OS and architecture in a Container.
 //
 // The format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7", "windows/amd64", "linux/arm64").
 type Platform string
 
+// A unique identifier for an object.
+type PortID string
+
+// A unique identifier for an object.
+type RemoteGitMirrorID string
+
+// A unique identifier for an object.
+type SDKConfigID string
+
+// A unique identifier for an object.
+type ScalarTypeDefID string
+
+// A unique identifier for an object.
+type SearchResultID string
+
+// A unique identifier for an object.
+type SearchSubmatchID string
+
+// A unique identifier for an object.
+type SecretID string
+
+// A unique identifier for an object.
+type ServiceID string
+
+// A unique identifier for an object.
+type SocketID string
+
+// A unique identifier for an object.
+type SourceMapID string
+
+// A unique identifier for an object.
+type StatID string
+
+// A unique identifier for an object.
+type SyncerID string
+
+// A unique identifier for an object.
+type TerminalID string
+
+// A unique identifier for an object.
+type TypeDefID string
+
+// A unique identifier for an object.
+type UpGroupID string
+
+// A unique identifier for an object.
+type UpID string
+
 // The absence of a value.
 //
 // A Null Void is used as a placeholder for resolvers that do not return anything.
 type Void string
+
+// A unique identifier for an object.
+type WorkspaceID string
 
 // Key value object that represents a build argument.
 type BuildArg struct {
@@ -12940,6 +13138,664 @@ func (r *Query) LLM(opts ...LLMOpts) *LLM {
 	}
 
 	return &LLM{
+		query: q,
+	}
+}
+
+// Load a Address from its ID.
+func (r *Query) LoadAddressFromID(id AddressID) *Address {
+	q := r.query.Select("loadAddressFromID")
+	q = q.Arg("id", id)
+
+	return &Address{
+		query: q,
+	}
+}
+
+// Load a Binding from its ID.
+func (r *Query) LoadBindingFromID(id BindingID) *Binding {
+	q := r.query.Select("loadBindingFromID")
+	q = q.Arg("id", id)
+
+	return &Binding{
+		query: q,
+	}
+}
+
+// Load a CacheVolume from its ID.
+func (r *Query) LoadCacheVolumeFromID(id CacheVolumeID) *CacheVolume {
+	q := r.query.Select("loadCacheVolumeFromID")
+	q = q.Arg("id", id)
+
+	return &CacheVolume{
+		query: q,
+	}
+}
+
+// Load a Changeset from its ID.
+func (r *Query) LoadChangesetFromID(id ChangesetID) *Changeset {
+	q := r.query.Select("loadChangesetFromID")
+	q = q.Arg("id", id)
+
+	return &Changeset{
+		query: q,
+	}
+}
+
+// Load a Check from its ID.
+func (r *Query) LoadCheckFromID(id CheckID) *Check {
+	q := r.query.Select("loadCheckFromID")
+	q = q.Arg("id", id)
+
+	return &Check{
+		query: q,
+	}
+}
+
+// Load a CheckGroup from its ID.
+func (r *Query) LoadCheckGroupFromID(id CheckGroupID) *CheckGroup {
+	q := r.query.Select("loadCheckGroupFromID")
+	q = q.Arg("id", id)
+
+	return &CheckGroup{
+		query: q,
+	}
+}
+
+// Load a ClientFilesyncMirror from its ID.
+func (r *Query) LoadClientFilesyncMirrorFromID(id ClientFilesyncMirrorID) *ClientFilesyncMirror {
+	q := r.query.Select("loadClientFilesyncMirrorFromID")
+	q = q.Arg("id", id)
+
+	return &ClientFilesyncMirror{
+		query: q,
+	}
+}
+
+// Load a Cloud from its ID.
+func (r *Query) LoadCloudFromID(id CloudID) *Cloud {
+	q := r.query.Select("loadCloudFromID")
+	q = q.Arg("id", id)
+
+	return &Cloud{
+		query: q,
+	}
+}
+
+// Load a Container from its ID.
+func (r *Query) LoadContainerFromID(id ContainerID) *Container {
+	q := r.query.Select("loadContainerFromID")
+	q = q.Arg("id", id)
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Load a CurrentModule from its ID.
+func (r *Query) LoadCurrentModuleFromID(id CurrentModuleID) *CurrentModule {
+	q := r.query.Select("loadCurrentModuleFromID")
+	q = q.Arg("id", id)
+
+	return &CurrentModule{
+		query: q,
+	}
+}
+
+// Load a DiffStat from its ID.
+func (r *Query) LoadDiffStatFromID(id DiffStatID) *DiffStat {
+	q := r.query.Select("loadDiffStatFromID")
+	q = q.Arg("id", id)
+
+	return &DiffStat{
+		query: q,
+	}
+}
+
+// Load a Directory from its ID.
+func (r *Query) LoadDirectoryFromID(id DirectoryID) *Directory {
+	q := r.query.Select("loadDirectoryFromID")
+	q = q.Arg("id", id)
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Load a EngineCacheEntry from its ID.
+func (r *Query) LoadEngineCacheEntryFromID(id EngineCacheEntryID) *EngineCacheEntry {
+	q := r.query.Select("loadEngineCacheEntryFromID")
+	q = q.Arg("id", id)
+
+	return &EngineCacheEntry{
+		query: q,
+	}
+}
+
+// Load a EngineCacheEntrySet from its ID.
+func (r *Query) LoadEngineCacheEntrySetFromID(id EngineCacheEntrySetID) *EngineCacheEntrySet {
+	q := r.query.Select("loadEngineCacheEntrySetFromID")
+	q = q.Arg("id", id)
+
+	return &EngineCacheEntrySet{
+		query: q,
+	}
+}
+
+// Load a EngineCache from its ID.
+func (r *Query) LoadEngineCacheFromID(id EngineCacheID) *EngineCache {
+	q := r.query.Select("loadEngineCacheFromID")
+	q = q.Arg("id", id)
+
+	return &EngineCache{
+		query: q,
+	}
+}
+
+// Load a Engine from its ID.
+func (r *Query) LoadEngineFromID(id EngineID) *Engine {
+	q := r.query.Select("loadEngineFromID")
+	q = q.Arg("id", id)
+
+	return &Engine{
+		query: q,
+	}
+}
+
+// Load a EnumTypeDef from its ID.
+func (r *Query) LoadEnumTypeDefFromID(id EnumTypeDefID) *EnumTypeDef {
+	q := r.query.Select("loadEnumTypeDefFromID")
+	q = q.Arg("id", id)
+
+	return &EnumTypeDef{
+		query: q,
+	}
+}
+
+// Load a EnumValueTypeDef from its ID.
+func (r *Query) LoadEnumValueTypeDefFromID(id EnumValueTypeDefID) *EnumValueTypeDef {
+	q := r.query.Select("loadEnumValueTypeDefFromID")
+	q = q.Arg("id", id)
+
+	return &EnumValueTypeDef{
+		query: q,
+	}
+}
+
+// Load a EnvFile from its ID.
+func (r *Query) LoadEnvFileFromID(id EnvFileID) *EnvFile {
+	q := r.query.Select("loadEnvFileFromID")
+	q = q.Arg("id", id)
+
+	return &EnvFile{
+		query: q,
+	}
+}
+
+// Load a Env from its ID.
+func (r *Query) LoadEnvFromID(id EnvID) *Env {
+	q := r.query.Select("loadEnvFromID")
+	q = q.Arg("id", id)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Load a EnvVariable from its ID.
+func (r *Query) LoadEnvVariableFromID(id EnvVariableID) *EnvVariable {
+	q := r.query.Select("loadEnvVariableFromID")
+	q = q.Arg("id", id)
+
+	return &EnvVariable{
+		query: q,
+	}
+}
+
+// Load a Error from its ID.
+func (r *Query) LoadErrorFromID(id ErrorID) *Error {
+	q := r.query.Select("loadErrorFromID")
+	q = q.Arg("id", id)
+
+	return &Error{
+		query: q,
+	}
+}
+
+// Load a ErrorValue from its ID.
+func (r *Query) LoadErrorValueFromID(id ErrorValueID) *ErrorValue {
+	q := r.query.Select("loadErrorValueFromID")
+	q = q.Arg("id", id)
+
+	return &ErrorValue{
+		query: q,
+	}
+}
+
+// Load a Exportable from its ID.
+func (r *Query) LoadExportableFromID(id ExportableID) Exportable {
+	q := r.query.Select("loadExportableFromID")
+	q = q.Arg("id", id)
+	return &ExportableClient{
+		query: q,
+	}
+}
+
+// Load a FieldTypeDef from its ID.
+func (r *Query) LoadFieldTypeDefFromID(id FieldTypeDefID) *FieldTypeDef {
+	q := r.query.Select("loadFieldTypeDefFromID")
+	q = q.Arg("id", id)
+
+	return &FieldTypeDef{
+		query: q,
+	}
+}
+
+// Load a File from its ID.
+func (r *Query) LoadFileFromID(id FileID) *File {
+	q := r.query.Select("loadFileFromID")
+	q = q.Arg("id", id)
+
+	return &File{
+		query: q,
+	}
+}
+
+// Load a FunctionArg from its ID.
+func (r *Query) LoadFunctionArgFromID(id FunctionArgID) *FunctionArg {
+	q := r.query.Select("loadFunctionArgFromID")
+	q = q.Arg("id", id)
+
+	return &FunctionArg{
+		query: q,
+	}
+}
+
+// Load a FunctionCallArgValue from its ID.
+func (r *Query) LoadFunctionCallArgValueFromID(id FunctionCallArgValueID) *FunctionCallArgValue {
+	q := r.query.Select("loadFunctionCallArgValueFromID")
+	q = q.Arg("id", id)
+
+	return &FunctionCallArgValue{
+		query: q,
+	}
+}
+
+// Load a FunctionCall from its ID.
+func (r *Query) LoadFunctionCallFromID(id FunctionCallID) *FunctionCall {
+	q := r.query.Select("loadFunctionCallFromID")
+	q = q.Arg("id", id)
+
+	return &FunctionCall{
+		query: q,
+	}
+}
+
+// Load a Function from its ID.
+func (r *Query) LoadFunctionFromID(id FunctionID) *Function {
+	q := r.query.Select("loadFunctionFromID")
+	q = q.Arg("id", id)
+
+	return &Function{
+		query: q,
+	}
+}
+
+// Load a GeneratedCode from its ID.
+func (r *Query) LoadGeneratedCodeFromID(id GeneratedCodeID) *GeneratedCode {
+	q := r.query.Select("loadGeneratedCodeFromID")
+	q = q.Arg("id", id)
+
+	return &GeneratedCode{
+		query: q,
+	}
+}
+
+// Load a Generator from its ID.
+func (r *Query) LoadGeneratorFromID(id GeneratorID) *Generator {
+	q := r.query.Select("loadGeneratorFromID")
+	q = q.Arg("id", id)
+
+	return &Generator{
+		query: q,
+	}
+}
+
+// Load a GeneratorGroup from its ID.
+func (r *Query) LoadGeneratorGroupFromID(id GeneratorGroupID) *GeneratorGroup {
+	q := r.query.Select("loadGeneratorGroupFromID")
+	q = q.Arg("id", id)
+
+	return &GeneratorGroup{
+		query: q,
+	}
+}
+
+// Load a GitRef from its ID.
+func (r *Query) LoadGitRefFromID(id GitRefID) *GitRef {
+	q := r.query.Select("loadGitRefFromID")
+	q = q.Arg("id", id)
+
+	return &GitRef{
+		query: q,
+	}
+}
+
+// Load a GitRepository from its ID.
+func (r *Query) LoadGitRepositoryFromID(id GitRepositoryID) *GitRepository {
+	q := r.query.Select("loadGitRepositoryFromID")
+	q = q.Arg("id", id)
+
+	return &GitRepository{
+		query: q,
+	}
+}
+
+// Load a HTTPState from its ID.
+func (r *Query) LoadHTTPStateFromID(id HTTPStateID) *HTTPState {
+	q := r.query.Select("loadHTTPStateFromID")
+	q = q.Arg("id", id)
+
+	return &HTTPState{
+		query: q,
+	}
+}
+
+// Load a HealthcheckConfig from its ID.
+func (r *Query) LoadHealthcheckConfigFromID(id HealthcheckConfigID) *HealthcheckConfig {
+	q := r.query.Select("loadHealthcheckConfigFromID")
+	q = q.Arg("id", id)
+
+	return &HealthcheckConfig{
+		query: q,
+	}
+}
+
+// Load a Host from its ID.
+func (r *Query) LoadHostFromID(id HostID) *Host {
+	q := r.query.Select("loadHostFromID")
+	q = q.Arg("id", id)
+
+	return &Host{
+		query: q,
+	}
+}
+
+// Load a InputTypeDef from its ID.
+func (r *Query) LoadInputTypeDefFromID(id InputTypeDefID) *InputTypeDef {
+	q := r.query.Select("loadInputTypeDefFromID")
+	q = q.Arg("id", id)
+
+	return &InputTypeDef{
+		query: q,
+	}
+}
+
+// Load a InterfaceTypeDef from its ID.
+func (r *Query) LoadInterfaceTypeDefFromID(id InterfaceTypeDefID) *InterfaceTypeDef {
+	q := r.query.Select("loadInterfaceTypeDefFromID")
+	q = q.Arg("id", id)
+
+	return &InterfaceTypeDef{
+		query: q,
+	}
+}
+
+// Load a JSONValue from its ID.
+func (r *Query) LoadJSONValueFromID(id JSONValueID) *JSONValue {
+	q := r.query.Select("loadJSONValueFromID")
+	q = q.Arg("id", id)
+
+	return &JSONValue{
+		query: q,
+	}
+}
+
+// Load a LLM from its ID.
+func (r *Query) LoadLLMFromID(id LLMID) *LLM {
+	q := r.query.Select("loadLLMFromID")
+	q = q.Arg("id", id)
+
+	return &LLM{
+		query: q,
+	}
+}
+
+// Load a LLMTokenUsage from its ID.
+func (r *Query) LoadLLMTokenUsageFromID(id LLMTokenUsageID) *LLMTokenUsage {
+	q := r.query.Select("loadLLMTokenUsageFromID")
+	q = q.Arg("id", id)
+
+	return &LLMTokenUsage{
+		query: q,
+	}
+}
+
+// Load a Label from its ID.
+func (r *Query) LoadLabelFromID(id LabelID) *Label {
+	q := r.query.Select("loadLabelFromID")
+	q = q.Arg("id", id)
+
+	return &Label{
+		query: q,
+	}
+}
+
+// Load a ListTypeDef from its ID.
+func (r *Query) LoadListTypeDefFromID(id ListTypeDefID) *ListTypeDef {
+	q := r.query.Select("loadListTypeDefFromID")
+	q = q.Arg("id", id)
+
+	return &ListTypeDef{
+		query: q,
+	}
+}
+
+// Load a ModuleConfigClient from its ID.
+func (r *Query) LoadModuleConfigClientFromID(id ModuleConfigClientID) *ModuleConfigClient {
+	q := r.query.Select("loadModuleConfigClientFromID")
+	q = q.Arg("id", id)
+
+	return &ModuleConfigClient{
+		query: q,
+	}
+}
+
+// Load a Module from its ID.
+func (r *Query) LoadModuleFromID(id ModuleID) *Module {
+	q := r.query.Select("loadModuleFromID")
+	q = q.Arg("id", id)
+
+	return &Module{
+		query: q,
+	}
+}
+
+// Load a ModuleSource from its ID.
+func (r *Query) LoadModuleSourceFromID(id ModuleSourceID) *ModuleSource {
+	q := r.query.Select("loadModuleSourceFromID")
+	q = q.Arg("id", id)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
+// Load a ObjectTypeDef from its ID.
+func (r *Query) LoadObjectTypeDefFromID(id ObjectTypeDefID) *ObjectTypeDef {
+	q := r.query.Select("loadObjectTypeDefFromID")
+	q = q.Arg("id", id)
+
+	return &ObjectTypeDef{
+		query: q,
+	}
+}
+
+// Load a Port from its ID.
+func (r *Query) LoadPortFromID(id PortID) *Port {
+	q := r.query.Select("loadPortFromID")
+	q = q.Arg("id", id)
+
+	return &Port{
+		query: q,
+	}
+}
+
+// Load a RemoteGitMirror from its ID.
+func (r *Query) LoadRemoteGitMirrorFromID(id RemoteGitMirrorID) *RemoteGitMirror {
+	q := r.query.Select("loadRemoteGitMirrorFromID")
+	q = q.Arg("id", id)
+
+	return &RemoteGitMirror{
+		query: q,
+	}
+}
+
+// Load a SDKConfig from its ID.
+func (r *Query) LoadSDKConfigFromID(id SDKConfigID) *SDKConfig {
+	q := r.query.Select("loadSDKConfigFromID")
+	q = q.Arg("id", id)
+
+	return &SDKConfig{
+		query: q,
+	}
+}
+
+// Load a ScalarTypeDef from its ID.
+func (r *Query) LoadScalarTypeDefFromID(id ScalarTypeDefID) *ScalarTypeDef {
+	q := r.query.Select("loadScalarTypeDefFromID")
+	q = q.Arg("id", id)
+
+	return &ScalarTypeDef{
+		query: q,
+	}
+}
+
+// Load a SearchResult from its ID.
+func (r *Query) LoadSearchResultFromID(id SearchResultID) *SearchResult {
+	q := r.query.Select("loadSearchResultFromID")
+	q = q.Arg("id", id)
+
+	return &SearchResult{
+		query: q,
+	}
+}
+
+// Load a SearchSubmatch from its ID.
+func (r *Query) LoadSearchSubmatchFromID(id SearchSubmatchID) *SearchSubmatch {
+	q := r.query.Select("loadSearchSubmatchFromID")
+	q = q.Arg("id", id)
+
+	return &SearchSubmatch{
+		query: q,
+	}
+}
+
+// Load a Secret from its ID.
+func (r *Query) LoadSecretFromID(id SecretID) *Secret {
+	q := r.query.Select("loadSecretFromID")
+	q = q.Arg("id", id)
+
+	return &Secret{
+		query: q,
+	}
+}
+
+// Load a Service from its ID.
+func (r *Query) LoadServiceFromID(id ServiceID) *Service {
+	q := r.query.Select("loadServiceFromID")
+	q = q.Arg("id", id)
+
+	return &Service{
+		query: q,
+	}
+}
+
+// Load a Socket from its ID.
+func (r *Query) LoadSocketFromID(id SocketID) *Socket {
+	q := r.query.Select("loadSocketFromID")
+	q = q.Arg("id", id)
+
+	return &Socket{
+		query: q,
+	}
+}
+
+// Load a SourceMap from its ID.
+func (r *Query) LoadSourceMapFromID(id SourceMapID) *SourceMap {
+	q := r.query.Select("loadSourceMapFromID")
+	q = q.Arg("id", id)
+
+	return &SourceMap{
+		query: q,
+	}
+}
+
+// Load a Stat from its ID.
+func (r *Query) LoadStatFromID(id StatID) *Stat {
+	q := r.query.Select("loadStatFromID")
+	q = q.Arg("id", id)
+
+	return &Stat{
+		query: q,
+	}
+}
+
+// Load a Syncer from its ID.
+func (r *Query) LoadSyncerFromID(id SyncerID) Syncer {
+	q := r.query.Select("loadSyncerFromID")
+	q = q.Arg("id", id)
+	return &SyncerClient{
+		query: q,
+	}
+}
+
+// Load a Terminal from its ID.
+func (r *Query) LoadTerminalFromID(id TerminalID) *Terminal {
+	q := r.query.Select("loadTerminalFromID")
+	q = q.Arg("id", id)
+
+	return &Terminal{
+		query: q,
+	}
+}
+
+// Load a TypeDef from its ID.
+func (r *Query) LoadTypeDefFromID(id TypeDefID) *TypeDef {
+	q := r.query.Select("loadTypeDefFromID")
+	q = q.Arg("id", id)
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// Load a Up from its ID.
+func (r *Query) LoadUpFromID(id UpID) *Up {
+	q := r.query.Select("loadUpFromID")
+	q = q.Arg("id", id)
+
+	return &Up{
+		query: q,
+	}
+}
+
+// Load a UpGroup from its ID.
+func (r *Query) LoadUpGroupFromID(id UpGroupID) *UpGroup {
+	q := r.query.Select("loadUpGroupFromID")
+	q = q.Arg("id", id)
+
+	return &UpGroup{
+		query: q,
+	}
+}
+
+// Load a Workspace from its ID.
+func (r *Query) LoadWorkspaceFromID(id WorkspaceID) *Workspace {
+	q := r.query.Select("loadWorkspaceFromID")
+	q = q.Arg("id", id)
+
+	return &Workspace{
 		query: q,
 	}
 }

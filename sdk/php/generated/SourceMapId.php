@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
+ * A unique identifier for an object.
  */
-readonly class SourceMapId extends Client\AbstractId
+readonly class SourceMapId extends Client\AbstractScalar
 {
 }
