@@ -67,10 +67,23 @@ func (s *cacheSchema) cacheVolumeCacheKey(
 }
 
 func (s *cacheSchema) cacheVolume(ctx context.Context, parent dagql.ObjectResult[*core.Query], args cacheArgs) (dagql.Result[*core.CacheVolume], error) {
+	source := dagql.Nullable[dagql.ObjectResult[*core.Directory]]{}
+	if args.Source.Valid {
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return dagql.Result[*core.CacheVolume]{}, err
+		}
+		loaded, err := args.Source.Value.Load(ctx, srv)
+		if err != nil {
+			return dagql.Result[*core.CacheVolume]{}, err
+		}
+		source = dagql.NonNull(loaded)
+	}
+
 	cache := core.NewCache(
 		args.Key,
 		args.Namespace,
-		args.Source,
+		source,
 		args.Sharing,
 		args.Owner,
 	)

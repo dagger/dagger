@@ -649,6 +649,48 @@ func (m *Test) TestAlwaysCache() string {
 		require.Equal(t, outA, outB, "always-cached function result should survive engine restart")
 	})
 
+	t.Run("typescript function cache control survives restart", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-typescript-function-cache-state-" + identity.NewID()
+		moduleSrc := `import crypto from "crypto"
+
+import { object, func } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+	@func()
+	testAlwaysCache(): string {
+		return crypto.randomBytes(16).toString("hex")
+	}
+}
+`
+
+		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
+
+		modA := modInit(t, engineClientA, "typescript", moduleSrc)
+		outA, err := modA.
+			WithEnvVariable("CACHE_BUST", identity.NewID()).
+			With(daggerCall("test-always-cache")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
+		upstreamSvcA = nil
+		engineSvcA = nil
+		engineClientA = nil
+
+		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
+		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
+
+		modB := modInit(t, engineClientB, "typescript", moduleSrc)
+		outB, err := modB.
+			WithEnvVariable("CACHE_BUST", identity.NewID()).
+			With(daggerCall("test-always-cache")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, outA, outB, "always-cached TypeScript function result should survive engine restart")
+	})
+
 	t.Run("contextual function cache survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "phase7-contextual-function-cache-state-" + identity.NewID()

@@ -22,9 +22,13 @@ func (sdk *runtimeModule) Runtime(
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load runtime")
 	defer telemetry.EndWithCause(span, &rerr)
 
-	dag := sdk.mod.dag()
+	sdkInst, err := sdk.mod.instantiate(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize sdk module %s runtime: %w", sdk.mod.mod.Self().Name(), err)
+	}
+	dag := sdkInst.dag
 
-	source, err := scopeSourceForSDKOperation(ctx, source, "runtime", dag)
+	source, err = scopeSourceForSDKOperation(ctx, source, "runtime", dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scope module source for sdk module %s runtime: %w", sdk.mod.mod.Self().Name(), err)
 	}
@@ -43,7 +47,7 @@ func (sdk *runtimeModule) Runtime(
 	}
 
 	var inst dagql.ObjectResult[*core.Container]
-	err = dag.Select(ctx, sdk.mod.sdk, &inst,
+	err = dag.Select(ctx, sdkInst.sdk, &inst,
 		dagql.Selector{
 			Field: "moduleRuntime",
 			Args: []dagql.NamedInput{

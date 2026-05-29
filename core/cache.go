@@ -19,7 +19,7 @@ import (
 type CacheVolume struct {
 	Key       string
 	Namespace string
-	Source    dagql.Optional[DirectoryID]
+	Source    dagql.Nullable[dagql.ObjectResult[*Directory]]
 	Sharing   CacheSharingMode
 	Owner     string
 
@@ -44,7 +44,7 @@ func (*CacheVolume) TypeDescription() string {
 func NewCache(
 	key string,
 	namespace string,
-	source dagql.Optional[DirectoryID],
+	source dagql.Nullable[dagql.ObjectResult[*Directory]],
 	sharing CacheSharingMode,
 	owner string,
 ) *CacheVolume {
@@ -58,6 +58,29 @@ func NewCache(
 }
 
 var _ dagql.OnReleaser = (*CacheVolume)(nil)
+var _ dagql.HasDependencyResults = (*CacheVolume)(nil)
+
+func (cache *CacheVolume) AttachDependencyResults(
+	ctx context.Context,
+	self dagql.AnyResult,
+	attach func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	_ = ctx
+	_ = self
+	if cache == nil || !cache.Source.Valid || cache.Source.Value.Self() == nil {
+		return nil, nil
+	}
+	attached, err := attach(cache.Source.Value)
+	if err != nil {
+		return nil, fmt.Errorf("attach cache volume source: %w", err)
+	}
+	typed, ok := attached.(dagql.ObjectResult[*Directory])
+	if !ok {
+		return nil, fmt.Errorf("attach cache volume source: unexpected result %T", attached)
+	}
+	cache.Source = dagql.NonNull(typed)
+	return []dagql.AnyResult{typed}, nil
+}
 
 func (cache *CacheVolume) OnRelease(ctx context.Context) error {
 	cache.mu.Lock()
@@ -274,27 +297,26 @@ func (s *cacheVolumeStore) release(ctx context.Context, snapshotID string) error
 }
 
 type persistedCacheVolumePayload struct {
-	Key       string           `json:"key"`
-	Namespace string           `json:"namespace,omitempty"`
-	SourceID  string           `json:"sourceID,omitempty"`
-	Sharing   CacheSharingMode `json:"sharing,omitempty"`
-	Owner     string           `json:"owner,omitempty"`
-	Selector  string           `json:"selector,omitempty"`
+	Key            string           `json:"key"`
+	Namespace      string           `json:"namespace,omitempty"`
+	SourceResultID uint64           `json:"sourceResultID,omitempty"`
+	Sharing        CacheSharingMode `json:"sharing,omitempty"`
+	Owner          string           `json:"owner,omitempty"`
+	Selector       string           `json:"selector,omitempty"`
 }
 
 func (cache *CacheVolume) EncodePersistedObject(ctx context.Context, persistedCache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
 	_ = ctx
-	_ = persistedCache
 	if cache == nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted cache volume: nil cache volume")
 	}
-	sourceID := ""
+	var sourceResultID uint64
 	if cache.Source.Valid {
-		encoded, err := cache.Source.Value.Encode()
+		encoded, err := encodePersistedObjectRef(persistedCache, cache.Source.Value, "cache volume source")
 		if err != nil {
-			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted cache volume source: %w", err)
+			return dagql.PersistedObjectEncoding{}, err
 		}
-		sourceID = encoded
+		sourceResultID = encoded
 	}
 	cache.mu.Lock()
 	selector := cache.selector
@@ -314,12 +336,12 @@ func (cache *CacheVolume) EncodePersistedObject(ctx context.Context, persistedCa
 	}
 	cache.mu.Unlock()
 	payload, err := json.Marshal(persistedCacheVolumePayload{
-		Key:       cache.Key,
-		Namespace: cache.Namespace,
-		SourceID:  sourceID,
-		Sharing:   cache.Sharing,
-		Owner:     cache.Owner,
-		Selector:  selector,
+		Key:            cache.Key,
+		Namespace:      cache.Namespace,
+		SourceResultID: sourceResultID,
+		Sharing:        cache.Sharing,
+		Owner:          cache.Owner,
+		Selector:       selector,
 	})
 	if err != nil {
 		return dagql.PersistedObjectEncoding{}, fmt.Errorf("marshal persisted cache volume payload: %w", err)
@@ -330,21 +352,64 @@ func (cache *CacheVolume) EncodePersistedObject(ctx context.Context, persistedCa
 	}, nil
 }
 
+func (cache *CacheVolume) lockKey() (string, error) {
+	if cache == nil {
+		return "", fmt.Errorf("cache volume lock key: nil cache volume")
+	}
+	sourceID := ""
+	if cache.Source.Valid {
+		id, err := cache.Source.Value.ID()
+		if err != nil {
+			return "", fmt.Errorf("cache volume lock key source ID: %w", err)
+		}
+		if id != nil {
+			sourceID, err = id.Encode()
+			if err != nil {
+				return "", fmt.Errorf("cache volume lock key source ID: %w", err)
+			}
+		}
+	}
+	cache.mu.Lock()
+	selector := cache.selector
+	cache.mu.Unlock()
+	if selector == "" {
+		selector = "/"
+	}
+	payload, err := json.Marshal(struct {
+		Key       string           `json:"key"`
+		Namespace string           `json:"namespace,omitempty"`
+		SourceID  string           `json:"sourceID,omitempty"`
+		Sharing   CacheSharingMode `json:"sharing,omitempty"`
+		Owner     string           `json:"owner,omitempty"`
+		Selector  string           `json:"selector,omitempty"`
+	}{
+		Key:       cache.Key,
+		Namespace: cache.Namespace,
+		SourceID:  sourceID,
+		Sharing:   cache.Sharing,
+		Owner:     cache.Owner,
+		Selector:  selector,
+	})
+	if err != nil {
+		return "", fmt.Errorf("marshal cache volume lock key: %w", err)
+	}
+	return "cache-volume:" + string(payload), nil
+}
+
 func (*CacheVolume) DecodePersistedObject(ctx context.Context, dag *dagql.Server, resultID uint64, _ *dagql.ResultCall, payload json.RawMessage) (dagql.Typed, error) {
 	var persisted persistedCacheVolumePayload
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return nil, fmt.Errorf("decode persisted cache volume payload: %w", err)
 	}
 
-	source := dagql.Optional[DirectoryID]{}
-	if persisted.SourceID != "" {
-		var sourceID DirectoryID
-		if err := sourceID.Decode(persisted.SourceID); err != nil {
-			return nil, fmt.Errorf("decode persisted cache volume source: %w", err)
+	source := dagql.Nullable[dagql.ObjectResult[*Directory]]{}
+	if persisted.SourceResultID != 0 {
+		sourceRes, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.SourceResultID, "cache volume source")
+		if err != nil {
+			return nil, err
 		}
-		source = dagql.Optional[DirectoryID]{
-			Valid: true,
-			Value: sourceID,
+		if sourceRes.Self() != nil {
+			source = dagql.NonNull(sourceRes)
 		}
 	}
 
@@ -431,14 +496,7 @@ func (cache *CacheVolume) InitializeSnapshot(ctx context.Context) error {
 
 	var source dagql.ObjectResult[*Directory]
 	if cache.Source.Valid {
-		srv, err := CurrentDagqlServer(ctx)
-		if err != nil {
-			return err
-		}
-		source, err = cache.Source.Value.Load(ctx, srv)
-		if err != nil {
-			return fmt.Errorf("failed to load cache volume source: %w", err)
-		}
+		source = cache.Source.Value
 	}
 
 	if cache.Owner != "" {
