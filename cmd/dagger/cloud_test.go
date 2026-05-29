@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,14 +13,23 @@ import (
 )
 
 func daggerCloudWithEnv(t *testing.T, env []string, args []string, testCommandFn func(*testing.T, error, *bytes.Buffer, *bytes.Buffer)) {
+	t.Helper()
+
 	daggerBin := "dagger" // $PATH
 	if bin := os.Getenv("_EXPERIMENTAL_DAGGER_CLI_BIN"); bin != "" {
 		daggerBin = bin
 	}
 	cmd := exec.Command(daggerBin, args...)
 
+	home := t.TempDir()
 	cmd.Env = env
-	cmd.Env = append(cmd.Env, "PATH="+os.Getenv("PATH"), "HOME="+os.Getenv("HOME"))
+	cmd.Env = append(cmd.Env,
+		"PATH="+os.Getenv("PATH"),
+		"HOME="+home,
+		"XDG_CACHE_HOME="+filepath.Join(home, ".cache"),
+		"XDG_CONFIG_HOME="+filepath.Join(home, ".config"),
+		"XDG_STATE_HOME="+filepath.Join(home, ".local", "state"),
+	)
 
 	stdout := &bytes.Buffer{}
 	cmd.Stdout = stdout
