@@ -142,7 +142,7 @@ func (dir *Directory) LazyEvalFunc() dagql.LazyEvalFunc {
 	}
 }
 
-func (dir *Directory) CacheUsageSize(ctx context.Context, identity string) (int64, bool, error) {
+func (dir *Directory) CacheUsageSize(ctx context.Context, _ dagql.CacheUsageSizeProvider, identity string) (int64, bool, error) {
 	if dir == nil {
 		return 0, false, nil
 	}

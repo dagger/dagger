@@ -137,7 +137,7 @@ func ParseFileOwner(owner string) (*Ownership, error) {
 	return ParseDirectoryOwner(owner)
 }
 
-func (file *File) CacheUsageSize(ctx context.Context, identity string) (int64, bool, error) {
+func (file *File) CacheUsageSize(ctx context.Context, _ dagql.CacheUsageSizeProvider, identity string) (int64, bool, error) {
 	if file == nil {
 		return 0, false, nil
 	}

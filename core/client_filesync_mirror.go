@@ -79,7 +79,7 @@ func (m *ClientFilesyncMirror) CacheUsageIdentities() []string {
 	return []string{m.snapshot.SnapshotID()}
 }
 
-func (m *ClientFilesyncMirror) CacheUsageSize(ctx context.Context, identity string) (int64, bool, error) {
+func (m *ClientFilesyncMirror) CacheUsageSize(ctx context.Context, _ dagql.CacheUsageSizeProvider, identity string) (int64, bool, error) {
 	if m == nil {
 		return 0, false, nil
 	}
