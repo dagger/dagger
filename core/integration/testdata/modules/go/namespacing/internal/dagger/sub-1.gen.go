@@ -86,19 +86,13 @@ func (r *Query) Sub1() *Sub1 { // sub1 (../../../../../../../../core/integration
 type Sub1 struct { // sub1 (../../../../../../../../core/integration/testdata/modules/go/namespacing/sub1/main.go:3:6)
 	query *querybuilder.Selection
 
-	id *ID
+	id *Sub1ID
 }
 
 func (r *Sub1) WithGraphQLQuery(q *querybuilder.Selection) *Sub1 {
 	return &Sub1{
 		query: q,
 	}
-}
-
-type Sub1ID = ID
-
-func (r *Query) LoadSub1FromID(id Sub1ID) *Sub1 {
-	return &Sub1{query: selectNode(r.query, ID(id), "Sub1")}
 }
 
 func (r *Sub1) Fn(s string) *Sub1Obj { // sub1 (../../../../../../../../core/integration/testdata/modules/go/namespacing/sub1/main.go:5:1)
@@ -111,13 +105,13 @@ func (r *Sub1) Fn(s string) *Sub1Obj { // sub1 (../../../../../../../../core/int
 }
 
 // A unique identifier for this Sub1.
-func (r *Sub1) ID(ctx context.Context) (ID, error) {
+func (r *Sub1) ID(ctx context.Context) (Sub1ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ID
+	var response Sub1ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -172,19 +166,13 @@ type Sub1Obj struct { // sub1 (../../../../../../../../core/integration/testdata
 
 	foo    *string
 	getFoo *string
-	id     *ID
+	id     *Sub1ObjID
 }
 
 func (r *Sub1Obj) WithGraphQLQuery(q *querybuilder.Selection) *Sub1Obj {
 	return &Sub1Obj{
 		query: q,
 	}
-}
-
-type Sub1ObjID = ID
-
-func (r *Query) LoadSub1ObjFromID(id Sub1ObjID) *Sub1Obj {
-	return &Sub1Obj{query: selectNode(r.query, ID(id), "Sub1Obj")}
 }
 
 func (r *Sub1Obj) Foo(ctx context.Context) (string, error) { // sub1 (../../../../../../../../core/integration/testdata/modules/go/namespacing/sub1/main.go:10:2)
@@ -212,13 +200,13 @@ func (r *Sub1Obj) GetFoo(ctx context.Context) (string, error) { // sub1 (../../.
 }
 
 // A unique identifier for this Sub1Obj.
-func (r *Sub1Obj) ID(ctx context.Context) (ID, error) {
+func (r *Sub1Obj) ID(ctx context.Context) (Sub1ObjID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ID
+	var response Sub1ObjID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)

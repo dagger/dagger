@@ -348,6 +348,18 @@ type Void string
 // A unique identifier for an object.
 type WorkspaceID string
 
+// A unique identifier for an object.
+type WorkspaceMigrationID string
+
+// A unique identifier for an object.
+type WorkspaceMigrationStepID string
+
+// A unique identifier for an object.
+type WorkspaceModuleID string
+
+// A unique identifier for an object.
+type WorkspaceModuleSettingID string
+
 // Key value object that represents a build argument.
 type BuildArg struct {
 	// The build argument name.
@@ -13944,6 +13956,46 @@ func (r *Query) LoadWorkspaceFromID(id WorkspaceID) *Workspace {
 	q = q.Arg("id", id)
 
 	return &Workspace{
+		query: q,
+	}
+}
+
+// Load a WorkspaceMigration from its ID.
+func (r *Query) LoadWorkspaceMigrationFromID(id WorkspaceMigrationID) *WorkspaceMigration {
+	q := r.query.Select("loadWorkspaceMigrationFromID")
+	q = q.Arg("id", id)
+
+	return &WorkspaceMigration{
+		query: q,
+	}
+}
+
+// Load a WorkspaceMigrationStep from its ID.
+func (r *Query) LoadWorkspaceMigrationStepFromID(id WorkspaceMigrationStepID) *WorkspaceMigrationStep {
+	q := r.query.Select("loadWorkspaceMigrationStepFromID")
+	q = q.Arg("id", id)
+
+	return &WorkspaceMigrationStep{
+		query: q,
+	}
+}
+
+// Load a WorkspaceModule from its ID.
+func (r *Query) LoadWorkspaceModuleFromID(id WorkspaceModuleID) *WorkspaceModule {
+	q := r.query.Select("loadWorkspaceModuleFromID")
+	q = q.Arg("id", id)
+
+	return &WorkspaceModule{
+		query: q,
+	}
+}
+
+// Load a WorkspaceModuleSetting from its ID.
+func (r *Query) LoadWorkspaceModuleSettingFromID(id WorkspaceModuleSettingID) *WorkspaceModuleSetting {
+	q := r.query.Select("loadWorkspaceModuleSettingFromID")
+	q = q.Arg("id", id)
+
+	return &WorkspaceModuleSetting{
 		query: q,
 	}
 }
