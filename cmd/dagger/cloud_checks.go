@@ -37,10 +37,8 @@ var cloudListCmd = &cobra.Command{
 }
 
 func init() {
-	checkCloudSelectors.addFlags(checksCmd)
-	cloudListCmd.Flags().BoolVar(&cloudJSON, "json", false, "Print JSON output")
-	listCloudSelectors.addFlags(cloudListCmd)
-	rootCmd.AddCommand(cloudListCmd)
+	// Cloud Checks are selected through the current workspace, not through
+	// typed Cloud coordinate flags on dagger check/list.
 }
 
 type cloudCheckSelectorFlags struct {
@@ -188,8 +186,28 @@ func (cli *CloudCLI) CheckCloud(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	return cli.replayCloudCheckResult(cmd, res, selectors, true)
+}
+
+func (cli *CloudCLI) TryReplayCloudChecksForWorkspace(cmd *cobra.Command, address string, checks []string) (bool, error) {
+	res, selectors, err := cli.loadCloudCheckRowsForWorkspace(cmd.Context(), address, checks, false)
+	if err != nil {
+		return false, err
+	}
 	if len(res.Rows) == 0 {
-		renderCloudCheckMiss(cmd, selectors)
+		return false, nil
+	}
+	if err := cli.replayCloudCheckResult(cmd, res, selectors, false); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
+func (cli *CloudCLI) replayCloudCheckResult(cmd *cobra.Command, res *cloudCheckQueryResult, selectors cloudCheckSelectorFlags, renderMiss bool) error {
+	if len(res.Rows) == 0 {
+		if renderMiss {
+			renderCloudCheckMiss(cmd, selectors)
+		}
 		return idtui.ExitError{OriginalCode: 1, Original: fmt.Errorf("no Cloud check result found")}
 	}
 
@@ -200,7 +218,9 @@ func (cli *CloudCLI) CheckCloud(cmd *cobra.Command, args []string) error {
 	}
 	checks := checksFromRows(rows)
 	if len(checks) == 0 {
-		renderCloudCheckMiss(cmd, selectors)
+		if renderMiss {
+			renderCloudCheckMiss(cmd, selectors)
+		}
 		return idtui.ExitError{OriginalCode: 1, Original: fmt.Errorf("no Cloud check result found")}
 	}
 
@@ -223,7 +243,15 @@ func (cli *CloudCLI) CheckCloud(cmd *cobra.Command, args []string) error {
 }
 
 func (cli *CloudCLI) loadCloudCheckRows(ctx context.Context, selectors cloudCheckSelectorFlags) (*cloudCheckQueryResult, error) {
-	client, cloudAuth, err := cli.cloudClient(ctx)
+	return cli.loadCloudCheckRowsWithLogin(ctx, selectors, true)
+}
+
+func (cli *CloudCLI) loadCloudCheckRowsNoLogin(ctx context.Context, selectors cloudCheckSelectorFlags) (*cloudCheckQueryResult, error) {
+	return cli.loadCloudCheckRowsWithLogin(ctx, selectors, false)
+}
+
+func (cli *CloudCLI) loadCloudCheckRowsWithLogin(ctx context.Context, selectors cloudCheckSelectorFlags, login bool) (*cloudCheckQueryResult, error) {
+	client, cloudAuth, err := cli.cloudClientWithLogin(ctx, login)
 	if err != nil {
 		return nil, err
 	}
@@ -243,6 +271,121 @@ func (cli *CloudCLI) loadCloudCheckRows(ctx context.Context, selectors cloudChec
 		Client:  client,
 		Rows:    rows,
 	}, nil
+}
+
+func (cli *CloudCLI) loadCloudCheckRowsForWorkspace(ctx context.Context, address string, checks []string, login bool) (*cloudCheckQueryResult, cloudCheckSelectorFlags, error) {
+	remote, ok, err := parseWorkspaceRemoteAddress(ctx, address)
+	if err != nil {
+		return nil, cloudCheckSelectorFlags{}, err
+	}
+	if !ok {
+		return nil, cloudCheckSelectorFlags{}, fmt.Errorf("workspace %q is not remote", address)
+	}
+
+	baseSelectors := cloudCheckSelectorFlags{
+		GitHubRepo: []string{remote.CloneRef},
+		Workspace:  []string{remote.BaseAddress},
+		Check:      checks,
+	}
+	res, err := cli.loadCloudCheckRowsWithLogin(ctx, cloudCheckSelectorFlags{
+		GitHubRepo: []string{remote.CloneRef},
+	}, login)
+	if err != nil {
+		return nil, cloudCheckSelectorFlags{}, err
+	}
+	rows, selectors, err := cloudRowsForWorkspaceAddress(ctx, res.Rows, address, checks)
+	if err != nil {
+		return nil, cloudCheckSelectorFlags{}, err
+	}
+	res.Rows = rows
+	if !selectors.hasCloudSelector() {
+		selectors = baseSelectors
+	}
+	return res, selectors, nil
+}
+
+func cloudRowsForWorkspaceAddress(ctx context.Context, rows []cloudCheckRow, address string, checks []string) ([]cloudCheckRow, cloudCheckSelectorFlags, error) {
+	remote, ok, err := parseWorkspaceRemoteAddress(ctx, address)
+	if err != nil {
+		return nil, cloudCheckSelectorFlags{}, err
+	}
+	if !ok {
+		return nil, cloudCheckSelectorFlags{}, nil
+	}
+	baseSelectors := cloudCheckSelectorFlags{
+		GitHubRepo: []string{remote.CloneRef},
+		Workspace:  []string{remote.BaseAddress},
+		Check:      checks,
+	}
+	selectors := cloudWorkspaceSelectors(baseSelectors, remote.Version)
+	var out []cloudCheckRow
+	for _, selector := range selectors {
+		out = append(out, filterCloudCheckRows(rows, selector)...)
+	}
+	return dedupeCloudCheckRows(out), firstNonEmptyCloudSelector(selectors), nil
+}
+
+func cloudWorkspaceSelectors(base cloudCheckSelectorFlags, version string) []cloudCheckSelectorFlags {
+	if version == "" {
+		return []cloudCheckSelectorFlags{base}
+	}
+	var selectors []cloudCheckSelectorFlags
+	if prNumber := cloudPullRequestNumber(version); prNumber != "" {
+		sel := base
+		sel.GitHubPR = []string{prNumber}
+		selectors = append(selectors, sel)
+	}
+	branch := base
+	branch.GitBranch = []string{version}
+	selectors = append(selectors, branch)
+
+	tag := base
+	tag.GitTag = []string{version}
+	selectors = append(selectors, tag)
+
+	sha := base
+	sha.GitSHA = []string{version}
+	selectors = append(selectors, sha)
+	return selectors
+}
+
+func cloudPullRequestNumber(version string) string {
+	if rest, ok := strings.CutPrefix(version, "pull/"); ok {
+		number, suffix, ok := strings.Cut(rest, "/")
+		if ok && suffix == "head" {
+			return number
+		}
+	}
+	return ""
+}
+
+func dedupeCloudCheckRows(rows []cloudCheckRow) []cloudCheckRow {
+	seen := map[string]struct{}{}
+	out := make([]cloudCheckRow, 0, len(rows))
+	for _, row := range rows {
+		key := cloudCommitKey(row.Commit) + "\x00" +
+			row.Check.Name + "\x00" +
+			row.Dimensions["github-pr"] + "\x00" +
+			row.Dimensions["git-branch"] + "\x00" +
+			row.Dimensions["git-tag"] + "\x00" +
+			row.Dimensions["git-sha"] + "\x00" +
+			row.Dimensions["workspace"]
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, row)
+	}
+	return out
+}
+
+func firstNonEmptyCloudSelector(selectors []cloudCheckSelectorFlags) cloudCheckSelectorFlags {
+	for _, selector := range selectors {
+		if selector.hasCloudSelector() {
+			return selector
+		}
+	}
+	return cloudCheckSelectorFlags{}
 }
 
 func cloudCheckRows(orgName string, commits []cloudapi.CheckCommit) []cloudCheckRow {
@@ -373,6 +516,10 @@ func cloudDimensionMatches(dim, got string, values []string) bool {
 	for _, want := range values {
 		switch dim {
 		case "github-repo":
+			if strings.EqualFold(normalizeGitHubRepo(got), normalizeGitHubRepo(want)) {
+				return true
+			}
+		case "workspace":
 			if strings.EqualFold(normalizeGitHubRepo(got), normalizeGitHubRepo(want)) {
 				return true
 			}
@@ -938,6 +1085,68 @@ func aggregateCloudResult(rows []cloudCheckRow) string {
 		result = stricterCloudResult(result, row.Result)
 	}
 	return result
+}
+
+func cloudChecksSummary(rows []cloudCheckRow) string {
+	if len(rows) == 0 {
+		return "-"
+	}
+	byCheck := map[string]string{}
+	for _, row := range rows {
+		name := row.Dimensions["check"]
+		if name == "" {
+			name = row.Check.Name
+		}
+		if name == "" {
+			continue
+		}
+		byCheck[name] = stricterCloudResult(byCheck[name], row.Result)
+	}
+	if len(byCheck) == 0 {
+		return "-"
+	}
+	result := "green"
+	passed := 0
+	for _, checkResult := range byCheck {
+		result = stricterCloudResult(result, checkResult)
+		if checkResult == "green" {
+			passed++
+		}
+	}
+	return fmt.Sprintf("%s %d/%d", result, passed, len(byCheck))
+}
+
+func cloudCheckWorkspaceAddress(row cloudCheckRow) (string, string) {
+	base := cloudCheckWorkspaceBase(row)
+	if base == "" {
+		return "", ""
+	}
+	switch {
+	case row.Dimensions["github-pr"] != "":
+		return "pr", base + "@pull/" + row.Dimensions["github-pr"] + "/head"
+	case row.Dimensions["git-branch"] != "":
+		return "branch", base + "@" + row.Dimensions["git-branch"]
+	case row.Dimensions["git-tag"] != "":
+		return "tag", base + "@" + row.Dimensions["git-tag"]
+	case row.Dimensions["git-sha"] != "":
+		return "sha", base + "@" + shortCloudSHA(row.Dimensions["git-sha"])
+	default:
+		return "remote", base
+	}
+}
+
+func cloudCheckWorkspaceBase(row cloudCheckRow) string {
+	if workspace := row.Dimensions["workspace"]; workspace != "" {
+		return workspace
+	}
+	repo := normalizeGitHubRepo(row.Dimensions["github-repo"])
+	if repo == "" {
+		return ""
+	}
+	if strings.Count(repo, "/") == 1 {
+		return "github.com/" + repo
+	}
+	return repo
 }
 
 func checkUpdatedAt(commit cloudapi.CheckCommit, check cloudapi.Check) time.Time {

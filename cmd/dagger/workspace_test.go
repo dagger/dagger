@@ -258,3 +258,35 @@ func TestApplyWorkspaceClientParamsResolvesLocalWorkspaceAfterWorkdir(t *testing
 		})
 	}
 }
+
+func TestParseWorkspaceRemoteAddressPreservesSubdir(t *testing.T) {
+	remote, ok, err := parseWorkspaceRemoteAddress(t.Context(), "github.com/acme/mono/services/api@main")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "github.com/acme/mono", remote.CloneRef)
+	require.Equal(t, "services/api", remote.Path)
+	require.Equal(t, "main", remote.Version)
+	require.Equal(t, "github.com/acme/mono/services/api", remote.BaseAddress)
+
+	remote, ok, err = parseWorkspaceRemoteAddress(t.Context(), "https://github.com/acme/mono#release-1.2:services/api")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "https://github.com/acme/mono", remote.CloneRef)
+	require.Equal(t, "services/api", remote.Path)
+	require.Equal(t, "release-1.2", remote.Version)
+	require.Equal(t, "https://github.com/acme/mono/services/api", remote.BaseAddress)
+}
+
+func TestWorkspaceAddressLooksRemote(t *testing.T) {
+	require.True(t, workspaceAddressLooksRemote("github.com/acme/mono/services/api@main"))
+	require.True(t, workspaceAddressLooksRemote("https://github.com/acme/mono/services/api@main"))
+	require.False(t, workspaceAddressLooksRemote("."))
+	require.False(t, workspaceAddressLooksRemote("./services/api"))
+	require.False(t, workspaceAddressLooksRemote("file:///repo/services/api"))
+}
+
+func TestWorkspaceRemoteVersionKind(t *testing.T) {
+	require.Equal(t, "pr", workspaceRemoteVersionKind("pull/42/head"))
+	require.Equal(t, "sha", workspaceRemoteVersionKind("abcdef1"))
+	require.Equal(t, "ref", workspaceRemoteVersionKind("feature/name"))
+}
