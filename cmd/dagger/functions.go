@@ -552,9 +552,10 @@ func (fc *FuncCommand) selectWith(cmd *cobra.Command) error {
 	}
 	// Check if any with-args flags were changed.
 	anyChanged := false
+	flags := cmd.LocalNonPersistentFlags()
 	for _, a := range fc.withFn.SupportedArgs() {
-		flag, err := a.GetFlag(cmd.Flags())
-		if err != nil {
+		flag := flags.Lookup(a.FlagName())
+		if flag == nil {
 			continue
 		}
 		if flag.Changed {
@@ -686,10 +687,14 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 
 	p := pool.NewWithResults[flagResult]().WithErrors()
 
+	flags := cmd.LocalNonPersistentFlags()
 	for i, a := range fn.SupportedArgs() {
-		flag, err := a.GetFlag(cmd.Flags())
-		if err != nil {
-			return err
+		flag := flags.Lookup(a.FlagName())
+		if flag == nil {
+			if a.IsRequired() {
+				missingFlags = append(missingFlags, a.FlagName())
+			}
+			continue
 		}
 
 		if !flag.Changed {
