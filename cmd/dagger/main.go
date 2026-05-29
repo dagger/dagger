@@ -417,7 +417,7 @@ func execXRelease(ctx context.Context) error {
 		return fmt.Errorf("download experimental release CLI: %w", err)
 	}
 
-	msg := fmt.Sprintf("running build from %s", ref)
+	msg := fmt.Sprintf("running dagger from %s", ref)
 	if release {
 		msg += fmt.Sprintf("; using release %s", engineRef)
 	} else if resolved {
