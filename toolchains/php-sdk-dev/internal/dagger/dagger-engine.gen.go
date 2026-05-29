@@ -6,14 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `DaggerEngineID` scalar type represents an identifier for an object of type DaggerEngine.
-type DaggerEngineID string // dagger-engine (../../../../toolchains/engine-dev/main.go:63:6)
-
-// The `DaggerEngineLoadedEngineID` scalar type represents an identifier for an object of type DaggerEngineLoadedEngine.
-type DaggerEngineLoadedEngineID string // dagger-engine (../../../../toolchains/engine-dev/docker.go:77:6)
 
 // Retrieve the binding value, as type DaggerEngine
 func (r *Binding) AsDaggerEngine() *DaggerEngine { // dagger-engine (../../../../toolchains/engine-dev/main.go:63:6)
@@ -37,7 +31,7 @@ type DaggerEngine struct { // dagger-engine (../../../../toolchains/engine-dev/m
 	query *querybuilder.Selection
 
 	benchmark     *Void
-	id            *DaggerEngineID
+	id            *ID
 	networkCidr   *string
 	publish       *Void
 	releaseDryRun *Void
@@ -363,13 +357,13 @@ func (r *DaggerEngine) GraphqlSchema(opts ...DaggerEngineGraphqlSchemaOpts) *Fil
 }
 
 // A unique identifier for this DaggerEngine.
-func (r *DaggerEngine) ID(ctx context.Context) (DaggerEngineID, error) {
+func (r *DaggerEngine) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response DaggerEngineID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -382,7 +376,7 @@ func (r *DaggerEngine) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *DaggerEngine) XXX_GraphQLIDType() string {
-	return "DaggerEngineID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -407,7 +401,7 @@ func (r *DaggerEngine) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadDaggerEngineFromID(DaggerEngineID(id))
+	*r = DaggerEngine{query: selectNode(dag.query, id, "DaggerEngine")}
 	return nil
 }
 
@@ -1038,10 +1032,18 @@ func (r *DaggerEngine) WithRace() *DaggerEngine { // dagger-engine (../../../../
 	}
 }
 
+// AsNode returns this DaggerEngine as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *DaggerEngine) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type DaggerEngineLoadedEngine struct { // dagger-engine (../../../../toolchains/engine-dev/docker.go:77:6)
 	query *querybuilder.Selection
 
-	id    *DaggerEngineLoadedEngineID
+	id    *ID
 	image *string
 	start *Void
 }
@@ -1053,13 +1055,13 @@ func (r *DaggerEngineLoadedEngine) WithGraphQLQuery(q *querybuilder.Selection) *
 }
 
 // A unique identifier for this DaggerEngineLoadedEngine.
-func (r *DaggerEngineLoadedEngine) ID(ctx context.Context) (DaggerEngineLoadedEngineID, error) {
+func (r *DaggerEngineLoadedEngine) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response DaggerEngineLoadedEngineID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1072,7 +1074,7 @@ func (r *DaggerEngineLoadedEngine) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *DaggerEngineLoadedEngine) XXX_GraphQLIDType() string {
-	return "DaggerEngineLoadedEngineID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1097,7 +1099,7 @@ func (r *DaggerEngineLoadedEngine) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadDaggerEngineLoadedEngineFromID(DaggerEngineLoadedEngineID(id))
+	*r = DaggerEngineLoadedEngine{query: selectNode(dag.query, id, "DaggerEngineLoadedEngine")}
 	return nil
 }
 
@@ -1158,6 +1160,14 @@ func (r *DaggerEngineLoadedEngine) Start(ctx context.Context, opts ...DaggerEngi
 	}
 
 	return q.Execute(ctx)
+}
+
+// AsNode returns this DaggerEngineLoadedEngine as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *DaggerEngineLoadedEngine) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }
 
 // Create or update a binding of type DaggerEngine in the environment
@@ -1244,26 +1254,6 @@ func (r *Query) DaggerEngine(opts ...DaggerEngineOpts) *DaggerEngine { // dagger
 	}
 
 	return &DaggerEngine{
-		query: q,
-	}
-}
-
-// Load a DaggerEngine from its ID.
-func (r *Query) LoadDaggerEngineFromID(id DaggerEngineID) *DaggerEngine { // dagger-engine (../../../../toolchains/engine-dev/main.go:63:6)
-	q := r.query.Select("loadDaggerEngineFromID")
-	q = q.Arg("id", id)
-
-	return &DaggerEngine{
-		query: q,
-	}
-}
-
-// Load a DaggerEngineLoadedEngine from its ID.
-func (r *Query) LoadDaggerEngineLoadedEngineFromID(id DaggerEngineLoadedEngineID) *DaggerEngineLoadedEngine { // dagger-engine (../../../../toolchains/engine-dev/docker.go:77:6)
-	q := r.query.Select("loadDaggerEngineLoadedEngineFromID")
-	q = q.Arg("id", id)
-
-	return &DaggerEngineLoadedEngine{
 		query: q,
 	}
 }
