@@ -814,8 +814,8 @@ func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *test
 	c := connect(ctx, t)
 
 	const (
-		toolchainOldRef = "github.com/dagger/pytest@43bbd8a3daa3db19202eec22a93971e3c54d7670"
-		toolchainNewRef = "github.com/dagger/pytest@a6ae8e2911f9f0a7621b05bf25593bc51652f7d6"
+		toolchainOldRef = "github.com/dagger/pytest@d4de5238116484bf709971d277291878b9c96ab7"
+		toolchainNewRef = "github.com/dagger/pytest@7ad89dbaf2cdd6e09c4ff2be42ff554a63c81397"
 	)
 
 	// Test installing multiple versions of the same toolchain using different commits
@@ -945,6 +945,17 @@ func (ToolchainSuite) TestToolchainMultipleVersions(ctx context.Context, t *test
 
 func (ToolchainSuite) TestToolchainLocalModuleHints(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
+
+	ref, err := c.Host().Directory("../..").AsGit().Head().Ref(ctx)
+	require.NoError(t, err)
+	ref = strings.TrimPrefix(ref, "refs/heads/")
+	if ref != "main" {
+		// When we make an engine change that requires updates to module code, this
+		// test may start to fail and be unfixable on that branch. So, only run
+		// once we're already merged in to main.
+		t.Skipf("this test only runs against main")
+		return
+	}
 
 	t.Run("DAGGER_MODULE hint and --mod dot bypass", func(ctx context.Context, t *testctx.T) {
 		modGen := toolchainTestEnv(t, c).

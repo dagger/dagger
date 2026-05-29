@@ -48,7 +48,7 @@ defmodule Dagger.Service do
   @doc """
   A unique identifier for this Service.
   """
-  @spec id(t()) :: {:ok, Dagger.ServiceID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = service) do
     query_builder =
       service.query_builder |> QB.select("id")
@@ -70,8 +70,9 @@ defmodule Dagger.Service do
          %Dagger.Port{
            query_builder:
              QB.query()
-             |> QB.select("loadPortFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Port"),
            client: service.client
          }
        end}
@@ -93,8 +94,9 @@ defmodule Dagger.Service do
        %Dagger.Service{
          query_builder:
            QB.query()
-           |> QB.select("loadServiceFromID")
-           |> QB.put_arg("id", id),
+           |> QB.select("node")
+           |> QB.put_arg("id", id)
+           |> QB.inline_fragment("Service"),
          client: service.client
        }}
     end
@@ -113,8 +115,9 @@ defmodule Dagger.Service do
        %Dagger.Service{
          query_builder:
            QB.query()
-           |> QB.select("loadServiceFromID")
-           |> QB.put_arg("id", id),
+           |> QB.select("node")
+           |> QB.put_arg("id", id)
+           |> QB.inline_fragment("Service"),
          client: service.client
        }}
     end
@@ -133,8 +136,9 @@ defmodule Dagger.Service do
        %Dagger.Service{
          query_builder:
            QB.query()
-           |> QB.select("loadServiceFromID")
-           |> QB.put_arg("id", id),
+           |> QB.select("node")
+           |> QB.put_arg("id", id)
+           |> QB.inline_fragment("Service"),
          client: service.client
        }}
     end
@@ -195,6 +199,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.Service do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_service_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.Service{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("Service"),
+       client: dag.client
+     }}
   end
 end

@@ -59,7 +59,7 @@ func convertSlice[I any, O any](in []I, f func(I) O) []O {
 func (r EngineDev) MarshalJSON() ([]byte, error) {
 	var concrete struct {
 		Source             *dagger.Directory
-		BuildkitConfig     []string
+		EngineConfig       []string
 		LogLevel           string
 		SubnetNumber       int
 		EBPFProgs          []string
@@ -67,7 +67,7 @@ func (r EngineDev) MarshalJSON() ([]byte, error) {
 		ClientDockerConfig *dagger.Secret
 	}
 	concrete.Source = r.Source
-	concrete.BuildkitConfig = r.BuildkitConfig
+	concrete.EngineConfig = r.EngineConfig
 	concrete.LogLevel = r.LogLevel
 	concrete.SubnetNumber = r.SubnetNumber
 	concrete.EBPFProgs = r.EBPFProgs
@@ -79,7 +79,7 @@ func (r EngineDev) MarshalJSON() ([]byte, error) {
 func (r *EngineDev) UnmarshalJSON(bs []byte) error {
 	var concrete struct {
 		Source             *dagger.Directory
-		BuildkitConfig     []string
+		EngineConfig       []string
 		LogLevel           string
 		SubnetNumber       int
 		EBPFProgs          []string
@@ -91,7 +91,7 @@ func (r *EngineDev) UnmarshalJSON(bs []byte) error {
 		return err
 	}
 	r.Source = concrete.Source
-	r.BuildkitConfig = concrete.BuildkitConfig
+	r.EngineConfig = concrete.EngineConfig
 	r.LogLevel = concrete.LogLevel
 	r.SubnetNumber = concrete.SubnetNumber
 	r.EBPFProgs = concrete.EBPFProgs
@@ -996,7 +996,21 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
 			return (*EngineDev).Tests(&parent, ctx)
-		case "WithBuildkitConfig":
+		case "WithEBPFProgs":
+			var parent EngineDev
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var names []string
+			if inputArgs["names"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["names"]), &names)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg names", err))
+				}
+			}
+			return (*EngineDev).WithEBPFProgs(&parent, names), nil
+		case "WithEngineConfig":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
 			if err != nil {
@@ -1016,21 +1030,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg value", err))
 				}
 			}
-			return (*EngineDev).WithBuildkitConfig(&parent, key, value), nil
-		case "WithEBPFProgs":
-			var parent EngineDev
-			err = json.Unmarshal(parentJSON, &parent)
-			if err != nil {
-				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
-			}
-			var names []string
-			if inputArgs["names"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["names"]), &names)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg names", err))
-				}
-			}
-			return (*EngineDev).WithEBPFProgs(&parent, names), nil
+			return (*EngineDev).WithEngineConfig(&parent, key, value), nil
 		case "WithLogLevel":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)

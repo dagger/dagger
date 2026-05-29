@@ -17,13 +17,16 @@ type ElixirSdkDev {
   }
 
   pub devContainer: Container! {
-    withBase(source)
+    daggerEngine
+      .installClient(
+        withBase(source),
+      )
   }
 
   """
   Lint the SDK
   """
-  pub lint: Void! @check {
+  pub lint: Void @check {
     devContainer
       .withExec(["mix", "credo"])
       .sync
@@ -34,7 +37,7 @@ type ElixirSdkDev {
   """
   Regenerate the Elixir SDK API
   """
-  pub clientLibrary(): Changeset! @generate {
+  pub clientLibrary: Changeset! @generate {
     # Make sure everything is relative to git root
     let before = directory
       .withDirectory(sourcePath, source)
@@ -56,9 +59,10 @@ type ElixirSdkDev {
   """
   Run the SDK tests
   """
-  pub sdkTest: Void! @check {
+  pub sdkTest: Void @check {
     devContainer
-      .withExec(["mix", "test"], experimentalPrivilegedNesting: true)
+      .withoutFile("dagger.json")
+      .withExec(["mix", "test"])
       .sync
 
     null
@@ -67,8 +71,9 @@ type ElixirSdkDev {
   """
   Run dagger_codegen tests
   """
-  pub codegenTest: Void! @check {
+  pub codegenTest: Void @check {
     withCodegen(devContainer)
+      .withEnvVariable("CI", "true")
       .withExec(["mix", "test"])
       .sync
 
@@ -76,9 +81,24 @@ type ElixirSdkDev {
   }
 
   """
+  Update codegen test snapshots (auto-accept Mneme changes)
+  """
+  pub updateCodegenTests: Changeset! {
+    let ctr = withCodegen(devContainer)
+    let before = ctr.directory("/").filter(include: ["sdk/elixir/**"])
+    ctr
+      .withEnvVariable("MNEME_ACCEPT", "1")
+      .withExec(["mix", "test"])
+      .withoutDirectory("_build")
+      .directory("/")
+      .filter(include: ["sdk/elixir/**"])
+      .changes(before)
+  }
+
+  """
   Test the publishing process
   """
-  pub releaseDryRun: Void! @check {
+  pub releaseDryRun: Void @check {
     publish(
       tag: "HEAD",
       dryRun: true,
@@ -97,12 +117,12 @@ type ElixirSdkDev {
     """
     Hex.pm API key for publishing
     """
-    hexApiKey: Secret!,
+    hexApiKey: Secret,
     """
     Execute a dry-run release, with no side effects
     """
-    dryRun: Boolean,
-  ): Void! {
+    dryRun: Boolean! = false,
+  ): Void {
     let version = versionFromTag(tag)
     let ctr = devContainer
 
@@ -118,17 +138,14 @@ type ElixirSdkDev {
     }
 
     # Publish or dry-run
-    if (dryRun == true) {
-      ctr = ctr
-        .withEnvVariable("HEX_API_KEY", "")
-        .withExec(["mix", "hex.publish", "--yes", "--dry-run"])
-    } else {
-      ctr = ctr
-        .withSecretVariable("HEX_API_KEY", hexApiKey)
-        .withExec(["mix", "hex.publish", "--yes"])
+    let mix = ["mix", "hex.publish", "--yes"]
+    if (dryRun) {
+      mix += ["--dry-run"]
+      ctr = ctr.withEnvVariable("HEX_API_KEY", "")
+    } else if (hexApiKey != null) {
+      ctr = ctr.withSecretVariable("HEX_API_KEY", hexApiKey)
     }
-
-    ctr.sync
+    ctr.withExec(mix).sync
     null
   }
 

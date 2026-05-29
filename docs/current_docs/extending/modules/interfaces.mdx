@@ -4,24 +4,32 @@ slug: /extending/interfaces
 
 # Interfaces
 
-:::important
-The information on this page is only applicable to Go, Python, and TypeScript SDKs.
-Interfaces are not currently supported in Java and PHP SDKs.
-:::
+Dagger interfaces let a function accept or return any object that exposes a
+required set of functions, without coupling the function to a specific concrete
+object type or SDK language.
+
+Interfaces are supported across all Dagger SDKs. The examples below focus on Go,
+Python, and TypeScript because they use language-native interface/protocol syntax
+when authoring modules. When a module exposes an interface, every SDK can consume
+that interface in generated clients and pass compatible objects to interface-typed
+arguments.
 
 ## Declaration
+
+Declare an interface and use it as a function argument, return value, or object
+field. Dagger checks interfaces structurally: any object with compatible
+functions satisfies the interface, including objects from dependencies and
+objects written with another SDK. Interfaces can also satisfy other interfaces
+when their function sets are compatible.
 
 <Tabs groupId="language" queryString="sdk">
 <TabItem value="go" label="Go">
 
-The Go SDK supports interfaces, which allow you to define Go-style interface
-definitions so that your module can accept arbitrary values from other modules
-without being tightly coupled to the concrete type underneath.
+Define a Go interface that embeds `DaggerObject` and use it in your Dagger
+Function signature.
 
-To use an interface, define a Go interface that embeds `DaggerObject` and use
-it in a function argument.
-
-Here is an example of the definition of an interface `Fooer` with a single function `foo`:
+Here is an example of the definition of an interface `Fooer` with a single
+function `foo`:
 
 ```go file=./snippets/interfaces/declarations/go/main.go
 ```
@@ -29,8 +37,8 @@ Here is an example of the definition of an interface `Fooer` with a single funct
 Functions defined in interface definitions must match the client-side API
 signature style. If they return a scalar value or an array, they must accept a
 `context.Context` argument and return an `error` return value. If they return a
-chainable object value, they must not return an `error` value, and they do not need
-to include a `context.Context` argument.
+chainable object value, they must not return an `error` value, and they do not
+need to include a `context.Context` argument.
 
 Note that you must also provide argument names, since they directly translate
 to the GraphQL field argument names.
@@ -39,38 +47,30 @@ to the GraphQL field argument names.
 
 <TabItem value="python" label="Python">
 
-The Python SDK supports interfaces, which allow you to define protocol based
-subtypes so that your module can accept arbitrary values from other modules
-without being tightly coupled to the concrete type underneath.
+Define a Python protocol decorated with `@dagger.interface` and use it in your
+Dagger Function signature.
 
-To use an interface, define a Python protocol that decorates `@dagger.interface`
-and use it in a function argument.
-
-Here is an example of the definition of an interface `Fooer` with a single function `foo`:
+Here is an example of the definition of an interface `Fooer` with a single
+function `foo`:
 
 ```python file=./snippets/interfaces/declarations/python/main.py
 ```
 
 Functions defined in interface definitions must match the client-side API
-signature style. If they don't return a chainable object, they must be coroutines
-(`async`).
+signature style. If they don't return a chainable object, they must be
+coroutines (`async`).
 
-Note that function arguments need to be properly named, since they directly translate
-to the GraphQL field argument names.
+Note that function arguments need to be properly named, since they directly
+translate to the GraphQL field argument names.
 
 </TabItem>
 
 <TabItem value="typescript" label="TypeScript">
 
-The TypeScript SDK supports interfaces, which allow you to define a set of functions
-that an object must implement to be considered a valid instance of that interface.
-That way, your module can accept arbitrary values from other modules without being
-tightly coupled to the concrete type underneath.
+Define a TypeScript interface and use it in your Dagger Function signature.
 
-To use an interface, use the TypeScript `interface` keyword and use it
-as a function argument.
-
-Here is an example of the definition of an interface `Fooer` with a single function `foo`:
+Here is an example of the definition of an interface `Fooer` with a single
+function `foo`:
 
 ```ts file=./snippets/interfaces/declarations/typescript/index.ts
 ```
@@ -78,15 +78,24 @@ Here is an example of the definition of an interface `Fooer` with a single funct
 Functions defined in interface definitions must match the client-side API
 signature style:
 
-- Always define `async` functions in interfaces (wrap the return type in a `Promise<T>`).
-- Declare it as a method signature (e.g., `foo(): Promise<string>`) or a property signature (e.g., `foo: () => Promise<string>`).
-- Parameters must be properly named since they directly translate to the GraphQL field argument names.
+- Always define asynchronous functions in interfaces by wrapping the return type
+  in `Promise<T>`.
+- Declare the function as a method signature (for example,
+  `foo(bar: number): Promise<string>`) or a property signature (for example,
+  `foo: (bar: number) => Promise<string>`).
+- Parameters must be properly named since they directly translate to the
+  GraphQL field argument names.
 
 </TabItem>
 
 </Tabs>
 
 ## Implementation
+
+No Dagger-specific `implements` marker is required. A Dagger object implements an
+interface when it exposes every required function with compatible argument and
+return types. You may still use language-native `implements` declarations where
+they are useful for editor or compiler checks.
 
 Here is an example of a module `Example` that implements the `Fooer` interface:
 
@@ -99,7 +108,7 @@ Here is an example of a module `Example` that implements the `Fooer` interface:
 </TabItem>
 <TabItem value="python" label="Python">
 
-```go file=./snippets/interfaces/implementations/python/main.py
+```python file=./snippets/interfaces/implementations/python/main.py
 ```
 
 </TabItem>
@@ -113,13 +122,19 @@ Here is an example of a module `Example` that implements the `Fooer` interface:
 
 ## Usage
 
-Any object module that implements the interface method can be passed as an argument to the function
-that uses the interface.
+Any object that implements the interface can be passed as an argument to the
+function that uses the interface.
 
-Dagger automatically detects if an object coming from the module itself or one of its dependencies implements
-an interface defined in the module or its dependencies.
-If so, it will add new conversion functions to the object that implement the interface
-so it can be passed as argument.
+Dagger automatically detects whether an object from the current module or one of
+its dependencies implements an interface defined in the current module or its
+dependencies. The generated SDK code then uses the idiomatic pattern for that
+language:
+
+- Go generates local `As<Interface>()` adapter methods on compatible objects.
+  These are client-side type conversions only; they are not GraphQL schema
+  fields and do not make network calls.
+- Python and TypeScript use structural typing, so compatible objects can be
+  passed directly.
 
 Here is an example of a module that uses the `Example` module defined above and
 passes it as argument to the `foo` function of the `MyModule` object:
@@ -144,3 +159,27 @@ passes it as argument to the `foo` function of the `MyModule` object:
 
 </TabItem>
 </Tabs>
+
+## Interface values and object IDs
+
+Interfaces are first-class GraphQL interfaces in the Dagger API. Implementing
+objects are listed in the schema, and Dagger can use GraphQL fragments when it
+needs to resolve the concrete type behind an interface value.
+
+All object IDs now use the standard `ID` scalar. The schema uses
+`@expectedType` directives to preserve typed SDK signatures, and object loading
+uses the standard `node(id:)` field plus the built-in `Node` interface instead
+of per-type `loadFooFromID` fields. SDKs handle this internally in most cases,
+so module code can continue to pass typed SDK objects instead of raw IDs.
+
+If you do need to work with raw IDs:
+
+- Use SDK helpers for loading typed objects where available. For example, Go
+  clients can use `dagger.Ref[T](client, id)` for a lazy reference or
+  `dagger.Load[T](ctx, client, id)` to verify that the ID resolves to `T`.
+- In raw GraphQL, load an object through `node(id:)` and select concrete fields
+  with an inline fragment.
+
+In Go, generated interface clients also include a `Concrete(ctx)` method that
+loads the underlying object as a `Node`, which can then be handled with a type
+switch when concrete-type-specific methods are needed.

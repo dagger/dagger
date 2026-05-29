@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A definition of a custom interface defined in a Module.
  */
-class InterfaceTypeDef extends Client\AbstractObject implements Client\IdAble
+class InterfaceTypeDef extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The doc string for the interface, if any.
@@ -34,10 +34,10 @@ class InterfaceTypeDef extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this InterfaceTypeDef.
      */
-    public function id(): InterfaceTypeDefId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\InterfaceTypeDefId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

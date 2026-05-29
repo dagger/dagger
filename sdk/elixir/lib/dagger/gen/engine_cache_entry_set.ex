@@ -40,8 +40,9 @@ defmodule Dagger.EngineCacheEntrySet do
          %Dagger.EngineCacheEntry{
            query_builder:
              QB.query()
-             |> QB.select("loadEngineCacheEntryFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("EngineCacheEntry"),
            client: engine_cache_entry_set.client
          }
        end}
@@ -62,7 +63,7 @@ defmodule Dagger.EngineCacheEntrySet do
   @doc """
   A unique identifier for this EngineCacheEntrySet.
   """
-  @spec id(t()) :: {:ok, Dagger.EngineCacheEntrySetID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = engine_cache_entry_set) do
     query_builder =
       engine_cache_entry_set.query_builder |> QB.select("id")
@@ -80,6 +81,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.EngineCacheEntrySet do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_engine_cache_entry_set_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.EngineCacheEntrySet{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("EngineCacheEntrySet"),
+       client: dag.client
+     }}
   end
 end

@@ -180,6 +180,13 @@ func encodePersistedResultEnvelope(ctx context.Context, cache PersistedObjectCac
 		}, nil
 	}
 
+	if _, ok := res.Unwrap().(Input); !ok {
+		if _, ok := res.Unwrap().(ScalarType); !ok {
+			if _, ok := res.Unwrap().(Derefable); !ok {
+				return PersistedResultEncoding{}, fmt.Errorf("encode scalar_json payload: type %q does not implement persisted object encoding or scalar input encoding", res.Type().Name())
+			}
+		}
+	}
 	scalarJSON, err := json.Marshal(res.Unwrap())
 	if err != nil {
 		return PersistedResultEncoding{}, fmt.Errorf("encode scalar_json payload: %w", err)

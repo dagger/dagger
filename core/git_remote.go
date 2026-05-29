@@ -575,7 +575,7 @@ func (ref *RemoteGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGit
 		}
 
 		checkoutRef, err = cache.New(ctx, nil,
-			bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
+			bkcache.WithRecordType(bkclient.UsageRecordTypeGitCheckout),
 			bkcache.WithDescription(fmt.Sprintf("git checkout for %s (%s %s)", ref.repo.URL.Remote(), ref.Name, ref.SHA)))
 		if err != nil {
 			return err

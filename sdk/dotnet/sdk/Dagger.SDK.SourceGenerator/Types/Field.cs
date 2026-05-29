@@ -19,6 +19,9 @@ public class Field
     [JsonPropertyName("args")]
     public InputValue[] Args { get; set; } = [];
 
+    [JsonPropertyName("directives")]
+    public Directive[] Directives { get; set; } = [];
+
     [JsonPropertyName("isDeprecated")]
     public bool IsDeprecated { get; set; }
 
@@ -36,4 +39,17 @@ public class Field
     /// </summary>
     public ImmutableArray<InputValue> RequiredArgs() =>
         Args.Where(arg => arg.Type.Kind == "NON_NULL").ToImmutableArray();
+
+    /// <summary>
+    /// Get the @expectedType name from this field's directives, if present.
+    /// </summary>
+    public string? GetExpectedType()
+    {
+        foreach (var d in Directives)
+        {
+            var et = d.GetExpectedType();
+            if (et != null) return et;
+        }
+        return null;
+    }
 }

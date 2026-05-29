@@ -29,9 +29,13 @@ func (sdk *moduleTypes) ModuleTypes(
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: load typedefs object")
 	defer telemetry.EndWithCause(span, &rerr)
 
-	dag := sdk.mod.dag()
+	sdkInst, err := sdk.mod.instantiate(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to initialize sdk module %s moduleTypes: %w", sdk.mod.mod.Self().Name(), err)
+	}
+	dag := sdkInst.dag
 
-	source, err := scopeSourceForSDKOperation(ctx, source, "moduleTypes", dag)
+	source, err = scopeSourceForSDKOperation(ctx, source, "moduleTypes", dag)
 	if err != nil {
 		return inst, fmt.Errorf("failed to scope module source for sdk module %s moduleTypes: %w", sdk.mod.mod.Self().Name(), err)
 	}
@@ -69,7 +73,7 @@ func (sdk *moduleTypes) ModuleTypes(
 		execMD.CallDigest = callDigest
 	}
 	var ctr dagql.ObjectResult[*core.Container]
-	err = dag.Select(ctx, sdk.mod.sdk, &ctr,
+	err = dag.Select(ctx, sdkInst.sdk, &ctr,
 		dagql.Selector{
 			Field: "moduleTypes",
 			Args: []dagql.NamedInput{

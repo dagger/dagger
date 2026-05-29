@@ -307,13 +307,6 @@ type ContainerWithDirectoryLazy struct {
 	Owner  string
 }
 
-type containerWithDirectoryOp struct {
-	Path   string
-	Source dagql.ObjectResult[*Directory]
-	Filter CopyFilter
-	Owner  string
-}
-
 type ContainerWithFileLazy struct {
 	LazyState
 	Parent      dagql.ObjectResult[*Container]
@@ -671,6 +664,10 @@ type persistedContainerWithRootFSLazy struct {
 	SourceResultID uint64 `json:"sourceResultID"`
 }
 
+type persistedContainerRootFSLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+}
+
 type persistedContainerWithDirectoryLazy struct {
 	ParentResultID uint64     `json:"parentResultID"`
 	Path           string     `json:"path"`
@@ -679,12 +676,22 @@ type persistedContainerWithDirectoryLazy struct {
 	Owner          string     `json:"owner,omitempty"`
 }
 
+type persistedContainerDirectoryLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Path           string `json:"path"`
+}
+
 type persistedContainerWithFileLazy struct {
 	ParentResultID uint64 `json:"parentResultID"`
 	Path           string `json:"path"`
 	SourceResultID uint64 `json:"sourceResultID"`
 	Permissions    *int   `json:"permissions,omitempty"`
 	Owner          string `json:"owner,omitempty"`
+}
+
+type persistedContainerFileLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Path           string `json:"path"`
 }
 
 type persistedContainerWithMountedDirectoryLazy struct {
@@ -1210,7 +1217,7 @@ func (container *Container) CacheUsageIdentities() []string {
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
-func (container *Container) CacheUsageSize(ctx context.Context, identity string) (int64, bool, error) {
+func (container *Container) CacheUsageSize(ctx context.Context, sizeProvider dagql.CacheUsageSizeProvider, identity string) (int64, bool, error) {
 	if container == nil || identity == "" {
 		return 0, false, nil
 	}
@@ -1273,18 +1280,10 @@ func (container *Container) CacheUsageSize(ctx context.Context, identity string)
 		return 0, false, nil
 	}
 
-	query, err := CurrentQuery(ctx)
-	if err != nil {
-		return 0, false, err
+	if sizeProvider == nil {
+		return 0, false, nil
 	}
-	ref, err := query.SnapshotManager().GetBySnapshotID(ctx, identity, bkcache.NoUpdateLastUsed)
-	if err != nil {
-		return 0, false, err
-	}
-	defer func() {
-		_ = ref.Release(context.WithoutCancel(ctx))
-	}()
-	size, err := ref.Size(ctx)
+	size, err := sizeProvider.SnapshotSize(ctx, identity)
 	if err != nil {
 		return 0, false, err
 	}
@@ -1366,7 +1365,7 @@ func decodePersistedContainerDirectoryValue(ctx context.Context, dag *dagql.Serv
 	case persistedContainerValueFormPending:
 		return decodedContainerDirectoryValue{Dir: nil, Kind: wrapped.Form}, nil
 	case persistedContainerValueFormMaterialized:
-		dir, err := decodePersistedDirectoryWithSnapshotRole(ctx, dag, resultID, nil, wrapped.Value, role)
+		dir, err := decodePersistedDirectoryWithSnapshotRole(ctx, dag, resultID, wrapped.Value, role)
 		if err != nil {
 			return decodedContainerDirectoryValue{}, err
 		}
@@ -1390,7 +1389,7 @@ func decodePersistedContainerFileValue(ctx context.Context, dag *dagql.Server, r
 	case persistedContainerValueFormPending:
 		return decodedContainerFileValue{File: nil, Kind: wrapped.Form}, nil
 	case persistedContainerValueFormMaterialized:
-		file, err := decodePersistedFileWithSnapshotRole(ctx, dag, resultID, nil, wrapped.Value, role)
+		file, err := decodePersistedFileWithSnapshotRole(ctx, dag, resultID, wrapped.Value, role)
 		if err != nil {
 			return decodedContainerFileValue{}, err
 		}
@@ -2982,8 +2981,12 @@ func (lazy *ContainerRootFSLazy) AttachDependencies(ctx context.Context, attach 
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (*ContainerRootFSLazy) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
-	return nil, fmt.Errorf("encode persisted container rootfs lazy: unsupported top-level form")
+func (lazy *ContainerRootFSLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container rootfs parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerRootFSLazy{ParentResultID: parentID})
 }
 
 func (lazy *ContainerWithRootFSLazy) Evaluate(ctx context.Context, container *Container) error {
@@ -3181,8 +3184,15 @@ func (lazy *ContainerDirectoryLazy) AttachDependencies(ctx context.Context, atta
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (*ContainerDirectoryLazy) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
-	return nil, fmt.Errorf("encode persisted container directory lazy: unsupported top-level form")
+func (lazy *ContainerDirectoryLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container directory parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerDirectoryLazy{
+		ParentResultID: parentID,
+		Path:           lazy.Path,
+	})
 }
 
 //nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
@@ -3330,95 +3340,30 @@ func (lazy *ContainerFileLazy) AttachDependencies(ctx context.Context, attach fu
 	return []dagql.AnyResult{parent}, nil
 }
 
-func (*ContainerFileLazy) EncodePersisted(context.Context, dagql.PersistedObjectCache) (json.RawMessage, error) {
-	return nil, fmt.Errorf("encode persisted container file lazy: unsupported top-level form")
-}
-
-func containerWithDirectoryOpFromLazy(lazy *ContainerWithDirectoryLazy) containerWithDirectoryOp {
-	return containerWithDirectoryOp{
-		Path:   lazy.Path,
-		Source: lazy.Source,
-		Filter: lazy.Filter,
-		Owner:  lazy.Owner,
+func (lazy *ContainerFileLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container file parent")
+	if err != nil {
+		return nil, err
 	}
-}
-
-func containerWithDirectoryOwnerRequiresParentFS(owner string) bool {
-	if owner == "" {
-		return false
-	}
-
-	uidOrName, gidOrName, hasGroup := strings.Cut(owner, ":")
-	if _, err := parseUID(uidOrName); err != nil {
-		return true
-	}
-	if hasGroup {
-		if _, err := parseUID(gidOrName); err != nil {
-			return true
-		}
-	}
-	return false
-}
-
-func collectContainerWithDirectoryChain(lazy *ContainerWithDirectoryLazy) (dagql.ObjectResult[*Container], []containerWithDirectoryOp) {
-	ops := []containerWithDirectoryOp{containerWithDirectoryOpFromLazy(lazy)}
-	base := lazy.Parent
-
-	for {
-		parent := base.Self()
-		if parent == nil {
-			break
-		}
-		parentLazy, ok := parent.Lazy.(*ContainerWithDirectoryLazy)
-		if !ok || parentLazy.LazyInitComplete || containerWithDirectoryOwnerRequiresParentFS(parentLazy.Owner) {
-			break
-		}
-		ops = append(ops, containerWithDirectoryOpFromLazy(parentLazy))
-		base = parentLazy.Parent
-	}
-
-	slices.Reverse(ops)
-	return base, ops
+	return json.Marshal(persistedContainerFileLazy{
+		ParentResultID: parentID,
+		Path:           lazy.Path,
+	})
 }
 
 func (lazy *ContainerWithDirectoryLazy) Evaluate(ctx context.Context, container *Container) error {
 	return lazy.LazyState.Evaluate(ctx, "Container.withDirectory", func(ctx context.Context) error {
-		if containerWithDirectoryOwnerRequiresParentFS(lazy.Owner) {
-			cache, err := dagql.EngineCache(ctx)
-			if err != nil {
-				return err
-			}
-			if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
-				return err
-			}
-			if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
-				return err
-			}
-			_, err = container.WithDirectory(ctx, lazy.Parent, lazy.Path, lazy.Source, lazy.Filter, lazy.Owner)
-			if err != nil {
-				return err
-			}
-			container.Lazy = nil
-			return nil
-		}
-
-		base, ops := collectContainerWithDirectoryChain(lazy)
 		cache, err := dagql.EngineCache(ctx)
 		if err != nil {
 			return err
 		}
-		evaluate := make([]dagql.AnyResult, 0, 1+len(ops))
-		evaluate = append(evaluate, base)
-		for _, op := range ops {
-			evaluate = append(evaluate, op.Source)
-		}
-		if err := cache.Evaluate(ctx, evaluate...); err != nil {
+		if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
 			return err
 		}
-		if err := materializeContainerStateFromParent(ctx, container, base); err != nil {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
 			return err
 		}
-		if _, err := container.withDirectoryChainFromCurrentState(ctx, base, ops); err != nil {
+		if _, err := container.WithDirectory(ctx, lazy.Parent, lazy.Path, lazy.Source, lazy.Filter, lazy.Owner); err != nil {
 			return err
 		}
 		container.Lazy = nil
@@ -5110,190 +5055,6 @@ func (container *Container) WithDirectory(
 	}
 	container.ImageRef = ""
 	return container, nil
-}
-
-// mutates container caller must have handled cloning or creating a new child.
-func (container *Container) withDirectoryChainFromCurrentState(
-	ctx context.Context,
-	parentForOwnership dagql.ObjectResult[*Container],
-	ops []containerWithDirectoryOp,
-) (*Container, error) {
-	type batch struct {
-		target *LazyAccessor[*Directory, *Container]
-		path   string
-		ops    []directoryWithDirectoryOp
-	}
-
-	var current batch
-	flush := func() error {
-		if len(current.ops) == 0 {
-			return nil
-		}
-
-		targetParent, err := materializedTargetParentDirectoryForContainerPath(ctx, container, current.path)
-		if err != nil {
-			return err
-		}
-		if targetParentRef, ok := targetParent.Snapshot.Peek(); ok && targetParentRef != nil {
-			defer targetParentRef.Release(context.WithoutCancel(ctx))
-		}
-		dir, err := bareDirectoryForContainerPath(container, current.path)
-		if err != nil {
-			return err
-		}
-		if err := dir.evaluateWithDirectoryChainFromMaterializedBase(ctx, targetParent, current.ops); err != nil {
-			return err
-		}
-
-		current = batch{}
-		container.ImageRef = ""
-		return nil
-	}
-
-	for _, op := range ops {
-		mnt, mntSubpath, err := locatePath(container, op.Path)
-		if err != nil {
-			return nil, fmt.Errorf("failed to locate path %s: %w", op.Path, err)
-		}
-
-		if mnt != nil && mnt.FileSource != nil && (mntSubpath == "/" || mntSubpath == "" || mntSubpath == ".") {
-			if err := flush(); err != nil {
-				return nil, err
-			}
-			if _, err := container.withDirectoryFromCurrentState(ctx, parentForOwnership, op.Path, op.Source, op.Filter, op.Owner); err != nil {
-				return nil, err
-			}
-			continue
-		}
-
-		var target *LazyAccessor[*Directory, *Container]
-		switch {
-		case mnt == nil:
-			if err := container.ensureRootFS(ctx); err != nil {
-				return nil, err
-			}
-			target = container.FS
-		case mnt.DirectorySource != nil:
-			target = mnt.DirectorySource
-		default:
-			if err := flush(); err != nil {
-				return nil, err
-			}
-			if _, err := container.withDirectoryFromCurrentState(ctx, parentForOwnership, op.Path, op.Source, op.Filter, op.Owner); err != nil {
-				return nil, err
-			}
-			continue
-		}
-
-		resolvedOwner := op.Owner
-		if op.Owner != "" {
-			if containerWithDirectoryOwnerRequiresParentFS(op.Owner) {
-				return nil, fmt.Errorf("container withDirectory chain replay requires numeric owner, got %q", op.Owner)
-			}
-			ownership, err := container.ownership(ctx, parentForOwnership, op.Owner)
-			if err != nil {
-				return nil, fmt.Errorf("failed to resolve ownership for %s: %w", op.Owner, err)
-			}
-			resolvedOwner = strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID)
-		}
-
-		if len(current.ops) != 0 && current.target != target {
-			if err := flush(); err != nil {
-				return nil, err
-			}
-		}
-		if len(current.ops) == 0 {
-			current.target = target
-			current.path = op.Path
-		}
-		current.ops = append(current.ops, directoryWithDirectoryOp{
-			DestDir: mntSubpath,
-			Source:  op.Source,
-			Filter:  op.Filter,
-			Owner:   resolvedOwner,
-		})
-	}
-
-	if err := flush(); err != nil {
-		return nil, err
-	}
-	return container, nil
-}
-
-// mutates container caller must have handled cloning or creating a new child.
-func (container *Container) withDirectoryFromCurrentState(
-	ctx context.Context,
-	parentForOwnership dagql.ObjectResult[*Container],
-	subdir string,
-	src dagql.ObjectResult[*Directory],
-	filter CopyFilter,
-	owner string,
-) (*Container, error) {
-	mnt, mntSubpath, err := locatePath(container, subdir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to locate path %s: %w", subdir, err)
-	}
-
-	if mnt != nil && mnt.FileSource != nil && (mntSubpath == "/" || mntSubpath == "" || mntSubpath == ".") {
-		container, err = container.WithoutMount(ctx, mnt.Target)
-		if err != nil {
-			return nil, fmt.Errorf("failed to unmount %s: %w", mnt.Target, err)
-		}
-		return container.withDirectoryFromCurrentState(ctx, parentForOwnership, subdir, src, filter, owner)
-	}
-
-	resolvedOwner := owner
-	if owner != "" {
-		if containerWithDirectoryOwnerRequiresParentFS(owner) {
-			return nil, fmt.Errorf("container withDirectory chain replay requires numeric owner, got %q", owner)
-		}
-		ownership, err := container.ownership(ctx, parentForOwnership, owner)
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve ownership for %s: %w", owner, err)
-		}
-		resolvedOwner = strconv.Itoa(ownership.UID) + ":" + strconv.Itoa(ownership.GID)
-	}
-
-	if mnt == nil {
-		if err := container.ensureRootFS(ctx); err != nil {
-			return nil, err
-		}
-	}
-
-	targetParent, err := materializedTargetParentDirectoryForContainerPath(ctx, container, subdir)
-	if err != nil {
-		return nil, err
-	}
-	if targetParentRef, ok := targetParent.Snapshot.Peek(); ok && targetParentRef != nil {
-		defer targetParentRef.Release(context.WithoutCancel(ctx))
-	}
-	dir, err := bareDirectoryForContainerPath(container, subdir)
-	if err != nil {
-		return nil, err
-	}
-	if err := dir.evaluateWithDirectoryChainFromMaterializedBase(ctx, targetParent, []directoryWithDirectoryOp{
-		{
-			DestDir: mntSubpath,
-			Source:  src,
-			Filter:  filter,
-			Owner:   resolvedOwner,
-		},
-	}); err != nil {
-		return nil, err
-	}
-	container.ImageRef = ""
-	return container, nil
-}
-
-func materializedTargetParentDirectoryForContainerPath(ctx context.Context, current *Container, targetPath string) (*Directory, error) {
-	if current == nil {
-		return nil, fmt.Errorf("container lazy current state is nil")
-	}
-	dir, err := bareDirectoryForContainerPath(current, targetPath)
-	if err != nil {
-		return nil, err
-	}
-	return cloneDetachedDirectoryForContainerResult(ctx, dir)
 }
 
 // mutates container caller must have handled cloning or creating a new child.

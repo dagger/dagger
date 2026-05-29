@@ -190,8 +190,10 @@ func (ros *readOnlySpan) Resource() *resource.Resource {
 	return resource.NewSchemaless(telemetry.AttributesFromProto(res.Attributes)...)
 }
 
-// InstrumentationLibrary returns the instrumentation library
-func (ros *readOnlySpan) InstrumentationLibrary() instrumentation.Library { //nolint:staticcheck
+// InstrumentationLibrary returns the instrumentation library.
+//
+//nolint:staticcheck // sdktrace.ReadOnlySpan still requires this deprecated method.
+func (ros *readOnlySpan) InstrumentationLibrary() instrumentation.Library {
 	return ros.InstrumentationScope()
 }
 

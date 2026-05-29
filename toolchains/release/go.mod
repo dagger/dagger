@@ -1,12 +1,13 @@
 module toolchains/release
 
-go 1.25.6
+go 1.26.1
 
 replace github.com/dagger/dagger => ../..
 
 require (
+	dagger.io/dagger v0.21.0
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
-	github.com/dagger/otel-go v1.43.1-0.20260430151612-605cceb9dbaa
+	github.com/dagger/otel-go v1.43.1-0.20260515012101-af7cd0684887
 	github.com/go-task/slim-sprig/v3 v3.0.0
 	go.opentelemetry.io/otel/sdk v1.43.0
 	golang.org/x/mod v0.34.0
@@ -42,7 +43,6 @@ require (
 )
 
 require (
-	dagger.io/dagger v0.20.6
 	github.com/99designs/gqlgen v0.17.90 // indirect
 	github.com/Khan/genqlient v0.8.1
 	github.com/go-logr/logr v1.4.3 // indirect
@@ -51,10 +51,10 @@ require (
 	github.com/sosodev/duration v1.4.0 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.33
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/otel v1.43.0
-	go.opentelemetry.io/otel/metric v1.43.0 // indirect
-	go.opentelemetry.io/otel/trace v1.43.0
-	golang.org/x/sys v0.44.0 // indirect
+	go.opentelemetry.io/otel v1.44.0
+	go.opentelemetry.io/otel/metric v1.44.0 // indirect
+	go.opentelemetry.io/otel/trace v1.44.0
+	golang.org/x/sys v0.45.0 // indirect
 )
 
 replace (

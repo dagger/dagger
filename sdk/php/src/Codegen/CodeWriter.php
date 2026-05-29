@@ -4,6 +4,7 @@ namespace Dagger\Codegen;
 
 use Nette\PhpGenerator\ClassType;
 use Nette\PhpGenerator\EnumType;
+use Nette\PhpGenerator\InterfaceType;
 use Nette\PhpGenerator\PhpFile;
 use Nette\PhpGenerator\PsrPrinter;
 
@@ -15,7 +16,7 @@ class CodeWriter
     {
     }
 
-    public function write(EnumType|ClassType $classType): void
+    public function write(EnumType|ClassType|InterfaceType $classType): void
     {
         $phpFile = new PhpFile();
         $phpFile->setStrictTypes(true);

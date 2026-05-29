@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/config"
+	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/util/bklog"
 	"github.com/dagger/dagger/internal/buildkit/util/disk"
@@ -70,6 +72,8 @@ func engineCacheEntrySetFromUsage(entries []dagql.CacheUsageEntry) *core.EngineC
 			MostRecentUseTimeUnixNano: int(entry.MostRecentUseTimeUnixNano),
 			ActivelyUsed:              entry.ActivelyUsed,
 			RecordType:                entry.RecordType,
+			RecordTypes:               entry.RecordTypes,
+			DagqlCall:                 entry.DagqlCall,
 		}
 		set.EntriesList = append(set.EntriesList, ent)
 		set.DiskSpaceBytes += int(entry.SizeBytes)
@@ -101,7 +105,7 @@ func resolveEngineLocalCachePrunePolicies(defaultPolicy []dagqlCachePrunePolicy,
 		}
 	}
 	for i := range prunePolicies {
-		prunePolicies[i].CurrentFreeSpace = dstat.Free
+		prunePolicies[i].CurrentFreeSpace = dstat.Available
 	}
 	return prunePolicies, nil
 }
@@ -196,7 +200,7 @@ func (srv *Server) gc() {
 	// static and must not be mutated in place.
 	prunePolicies := cloneDagqlCachePrunePolicies(srv.workerGCPolicies)
 	for i := range prunePolicies {
-		prunePolicies[i].CurrentFreeSpace = dstat.Free
+		prunePolicies[i].CurrentFreeSpace = dstat.Available
 	}
 
 	report, err := srv.engineCache.Prune(context.Background(), prunePolicies)
@@ -266,16 +270,36 @@ func defaultGCPolicy(cfg config.Config, bkcfg bkconfig.GCConfig, dstat disk.Disk
 		space = DetectDefaultGCCap(dstat)
 	}
 
-	policies := convertBkPolicies(bkconfig.DefaultGCPolicy(bkconfig.GCConfig{
-		GCMinFreeSpace:  bkconfig.DiskSpace(space.MinFreeSpace),
-		GCReservedSpace: bkconfig.DiskSpace(space.ReservedSpace),
-		GCMaxUsedSpace:  bkconfig.DiskSpace(space.MaxUsedSpace),
-	}, dstat))
-	for i, policy := range policies {
-		policy.SweepSize = space.SweepSize
-		policies[i] = policy
+	defaultSpace := config.GCSpace{
+		ReservedSpace: space.ReservedSpace,
+		MaxUsedSpace:  space.MaxUsedSpace,
+		MinFreeSpace:  space.MinFreeSpace,
+		SweepSize:     space.SweepSize,
 	}
-	return policies
+
+	return []config.GCPolicy{
+		{
+			Filters: []string{fmt.Sprintf(
+				"type==%s,type==%s,type==%s",
+				bkclient.UsageRecordTypeLocalSource,
+				bkclient.UsageRecordTypeCacheMount,
+				bkclient.UsageRecordTypeGitCheckout,
+			)},
+			KeepDuration: config.Duration{Duration: 48 * time.Hour},
+			GCSpace: config.GCSpace{
+				MaxUsedSpace: config.DiskSpace{Bytes: 512 * 1e6},
+				SweepSize:    space.SweepSize,
+			},
+		},
+		{
+			KeepDuration: config.Duration{Duration: 60 * 24 * time.Hour},
+			GCSpace:      defaultSpace,
+		},
+		{
+			All:     true,
+			GCSpace: defaultSpace,
+		},
+	}
 }
 
 func DetectDefaultGCCap(dstat disk.DiskStat) config.GCSpace {

@@ -480,7 +480,7 @@ func (spec *parsedObjectType) concreteFieldTypeCode(typeSpec ParsedType) (*State
 		s.Id(typeName(typeSpec))
 
 	case *parsedIfaceTypeReference:
-		s.Op("*").Id(formatIfaceImplName(typeName(typeSpec)))
+		s.Op("*").Id(concreteIfaceImplName(typeSpec))
 
 	default:
 		return nil, fmt.Errorf("unsupported concrete field type %T", typeSpec)
@@ -504,16 +504,34 @@ func (spec *parsedObjectType) setFieldsFromUnmarshalStructCode(field *fieldSpec)
 	case *parsedSliceType:
 		switch underlyingTypeSpec := typeSpec.underlying.(type) {
 		case *parsedIfaceTypeReference:
-			s.Id("r").Dot(field.goName).Op("=").Id("convertSlice").Call(
-				Id("concrete").Dot(field.goName),
-				Parens(Op("*").Id(formatIfaceImplName(underlyingTypeSpec.name))).Dot("toIface"),
-			)
+			if underlyingTypeSpec.moduleName == "" {
+				s.Id("r").Dot(field.goName).Op("=").Id("convertSlice").Call(
+					Id("concrete").Dot(field.goName),
+					Func().Params(Id("v").Op("*").Id(concreteIfaceImplName(underlyingTypeSpec))).Params(Id(typeName(underlyingTypeSpec))).Block(
+						If(Id("v").Op("==").Nil()).Block(Return(Nil())),
+						Return(Id("v")),
+					),
+				)
+			} else {
+				s.Id("r").Dot(field.goName).Op("=").Id("convertSlice").Call(
+					Id("concrete").Dot(field.goName),
+					Parens(Op("*").Id(concreteIfaceImplName(underlyingTypeSpec))).Dot("toIface"),
+				)
+			}
 		default:
 			s.Id("r").Dot(field.goName).Op("=").Id("concrete").Dot(field.goName)
 		}
 
 	case *parsedIfaceTypeReference:
-		s.Id("r").Dot(field.goName).Op("=").Id("concrete").Dot(field.goName).Dot("toIface").Call()
+		if typeSpec.moduleName == "" {
+			s.If(Id("concrete").Dot(field.goName).Op("!=").Nil()).Block(
+				Id("r").Dot(field.goName).Op("=").Id("concrete").Dot(field.goName),
+			).Else().Block(
+				Id("r").Dot(field.goName).Op("=").Nil(),
+			)
+		} else {
+			s.Id("r").Dot(field.goName).Op("=").Id("concrete").Dot(field.goName).Dot("toIface").Call()
+		}
 
 	default:
 		return nil, fmt.Errorf("unsupported field type %T", typeSpec)

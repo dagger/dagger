@@ -170,6 +170,15 @@ func (r *TypescriptSDKDev) ClientLibrary() *Changeset { // typescript-sdk-dev (.
 	}
 }
 
+// Format the SDK source with prettier via eslint --fix
+func (r *TypescriptSDKDev) Format() *Changeset { // typescript-sdk-dev (../../../../:0:0)
+	q := r.query.Select("format")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // A unique identifier for this TypescriptSdkDev.
 func (r *TypescriptSDKDev) ID(ctx context.Context) (TypescriptSDKDevID, error) {
 	if r.id != nil {
@@ -328,25 +337,31 @@ func (r *TypescriptSDKDev) NodejsDevContainer(opts ...TypescriptSDKDevNodejsDevC
 // TypescriptSDKDevReleaseOpts contains options for TypescriptSDKDev.Release
 type TypescriptSDKDevReleaseOpts struct {
 	//
+	// NPM authentication token
+	//
+	NpmToken *Secret // typescript-sdk-dev (../../../../:0:0)
+	//
 	// Execute a dry-run release, with no side effects
 	//
 	DryRun bool // typescript-sdk-dev (../../../../:0:0)
 }
 
-func (r *TypescriptSDKDev) Release(ctx context.Context, sourceTag string, npmToken *Secret, opts ...TypescriptSDKDevReleaseOpts) error { // typescript-sdk-dev (../../../../:0:0)
-	assertNotNil("npmToken", npmToken)
+func (r *TypescriptSDKDev) Release(ctx context.Context, sourceTag string, opts ...TypescriptSDKDevReleaseOpts) error { // typescript-sdk-dev (../../../../:0:0)
 	if r.release != nil {
 		return nil
 	}
 	q := r.query.Select("release")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `npmToken` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NpmToken) {
+			q = q.Arg("npmToken", opts[i].NpmToken)
+		}
 		// `dryRun` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DryRun) {
 			q = q.Arg("dryRun", opts[i].DryRun)
 		}
 	}
 	q = q.Arg("sourceTag", sourceTag)
-	q = q.Arg("npmToken", npmToken)
 
 	return q.Execute(ctx)
 }

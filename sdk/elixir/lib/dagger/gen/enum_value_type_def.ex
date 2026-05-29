@@ -40,7 +40,7 @@ defmodule Dagger.EnumValueTypeDef do
   @doc """
   A unique identifier for this EnumValueTypeDef.
   """
-  @spec id(t()) :: {:ok, Dagger.EnumValueTypeDefID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = enum_value_type_def) do
     query_builder =
       enum_value_type_def.query_builder |> QB.select("id")
@@ -94,6 +94,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.EnumValueTypeDef do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_enum_value_type_def_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.EnumValueTypeDef{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("EnumValueTypeDef"),
+       client: dag.client
+     }}
   end
 end

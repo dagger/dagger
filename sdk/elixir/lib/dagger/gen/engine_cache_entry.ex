@@ -38,6 +38,17 @@ defmodule Dagger.EngineCacheEntry do
   end
 
   @doc """
+  The DagQL call that produced this cache entry.
+  """
+  @spec dagql_call(t()) :: {:ok, String.t()} | {:error, term()}
+  def dagql_call(%__MODULE__{} = engine_cache_entry) do
+    query_builder =
+      engine_cache_entry.query_builder |> QB.select("dagqlCall")
+
+    Client.execute(engine_cache_entry.client, query_builder)
+  end
+
+  @doc """
   The description of the cache entry.
   """
   @spec description(t()) :: {:ok, String.t()} | {:error, term()}
@@ -62,7 +73,7 @@ defmodule Dagger.EngineCacheEntry do
   @doc """
   A unique identifier for this EngineCacheEntry.
   """
-  @spec id(t()) :: {:ok, Dagger.EngineCacheEntryID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = engine_cache_entry) do
     query_builder =
       engine_cache_entry.query_builder |> QB.select("id")
@@ -91,6 +102,17 @@ defmodule Dagger.EngineCacheEntry do
 
     Client.execute(engine_cache_entry.client, query_builder)
   end
+
+  @doc """
+  The storage record types represented by this cache entry.
+  """
+  @spec record_types(t()) :: {:ok, [String.t()]} | {:error, term()}
+  def record_types(%__MODULE__{} = engine_cache_entry) do
+    query_builder =
+      engine_cache_entry.query_builder |> QB.select("recordTypes")
+
+    Client.execute(engine_cache_entry.client, query_builder)
+  end
 end
 
 defimpl Jason.Encoder, for: Dagger.EngineCacheEntry do
@@ -102,6 +124,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.EngineCacheEntry do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_engine_cache_entry_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.EngineCacheEntry{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("EngineCacheEntry"),
+       client: dag.client
+     }}
   end
 end

@@ -3,9 +3,9 @@
 namespace Dagger\Command;
 
 use Dagger\Codegen\Codegen;
+use Dagger\Codegen\Introspection\IntrospectionSchema;
 use Dagger\Codegen\SchemaGenerator;
 use Dagger\Connection;
-use GraphQL\Utils\BuildClientSchema;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -47,11 +47,10 @@ class CodegenCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
 
-
         if ($input->getOption('schema-file') !== null && file_exists($input->getOption('schema-file'))) {
             $fileContents = file_get_contents($input->getOption('schema-file'));
             $schemaArray = json_decode($fileContents, true);
-            $schema = BuildClientSchema::build($schemaArray);
+            $schema = IntrospectionSchema::fromArray($schemaArray);
         } else {
             $client = $this->daggerConnection->connect();
             $schema = (new SchemaGenerator($client))->getSchema();

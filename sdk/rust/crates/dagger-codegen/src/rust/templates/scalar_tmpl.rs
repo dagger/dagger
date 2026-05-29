@@ -15,6 +15,39 @@ pub fn render_scalar(t: &FullType) -> eyre::Result<rust::Tokens> {
 
     if let Some(original_name) = &t.name {
         if original_name.ends_with("ID") {
+            // For the bare "ID" scalar (unified ID), generate IntoID<Id> for Id
+            // (identity impl) so that raw Id values can be passed to ID args.
+            if original_name == "ID" {
+                return Ok(quote! {
+                    #[derive($serialize, $deserialize, PartialEq, Debug, Clone)]
+                    pub struct $(name)(pub String);
+
+                    impl From<&str> for $(name) {
+                        fn from(value: &str) -> Self {
+                            Self(value.to_string())
+                        }
+                    }
+
+                    impl From<String> for $(name) {
+                        fn from(value: String) -> Self {
+                            Self(value)
+                        }
+                    }
+
+                    impl $(into_id)<$(name)> for $(name) {
+                        fn into_id(self) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<$(name), DaggerError>> + Send>> {
+                            Box::pin(async move { Ok::<$(name), DaggerError>(self) })
+                        }
+                    }
+
+                    impl $(name) {
+                        fn quote(&self) -> String {
+                            format!(r#""{}""#, self.0.clone())
+                        }
+                    }
+                });
+            }
+
             let name_without_id = &name.expect("Name should be available")
                 [..name.expect("Name should be available").len() - 2];
 

@@ -23,7 +23,8 @@ import (
 )
 
 const (
-	daggerImportPath = "dagger.io/dagger"
+	daggerImportPath       = "dagger.io/dagger"
+	querybuilderImportPath = "github.com/dagger/querybuilder"
 )
 
 func (g *GoGenerator) GenerateModule(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
@@ -195,8 +196,6 @@ func (g *GoGenerator) bootstrapMod(mfs *memfs.FS, genSt *generator.GeneratedStat
 		// PackageName is unknown until we load the package
 		PackageImport: path.Join(goMod.Module.Mod.Path, packageImport),
 
-		// Set to the official dagger go SDK package.
-		UtilityPkgImport:  "dagger.io/dagger",
 		DaggerPkgReplaced: isDaggerPkgCustomReplaced(goMod.Replace),
 	}, needsRegen, nil
 }
@@ -250,7 +249,9 @@ func (g *GoGenerator) syncModReplaceAndTidy(mod *modfile.File, genSt *generator.
 	// Otherwise, we install the given dagger.io/dagger package version.
 	if !isDaggerPkgCustomReplaced(mod.Replace) {
 		genSt.PostCommands = append(genSt.PostCommands,
-			exec.Command("go", "get", "-u", daggerImportPath+"@"+g.Config.ModuleConfig.LibVersion))
+			// Do not pass -u here: LibVersion pins dagger.io/dagger, while -u also
+			// asks Go to upgrade transitive dependencies during generation.
+			exec.Command("go", "get", daggerImportPath+"@"+g.Config.ModuleConfig.LibVersion))
 	}
 
 	genSt.PostCommands = append(genSt.PostCommands,

@@ -52,7 +52,7 @@ defmodule Dagger.Container do
   Package the container state as an OCI image, and return it as a tar archive
   """
   @spec as_tarball(t(), [
-          {:platform_variants, [Dagger.ContainerID.t()]},
+          {:platform_variants, [Dagger.Container.t()]},
           {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
           {:media_types, Dagger.ImageMediaTypes.t() | nil}
         ]) :: Dagger.File.t()
@@ -169,8 +169,9 @@ defmodule Dagger.Container do
          %Dagger.EnvVariable{
            query_builder:
              QB.query()
-             |> QB.select("loadEnvVariableFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("EnvVariable"),
            client: container.client
          }
        end}
@@ -252,7 +253,7 @@ defmodule Dagger.Container do
   It can also export platform variants.
   """
   @spec export(t(), String.t(), [
-          {:platform_variants, [Dagger.ContainerID.t()]},
+          {:platform_variants, [Dagger.Container.t()]},
           {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
           {:media_types, Dagger.ImageMediaTypes.t() | nil},
           {:expand, boolean() | nil}
@@ -280,7 +281,7 @@ defmodule Dagger.Container do
   Exports the container as an image to the host's container image store.
   """
   @spec export_image(t(), String.t(), [
-          {:platform_variants, [Dagger.ContainerID.t()]},
+          {:platform_variants, [Dagger.Container.t()]},
           {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
           {:media_types, Dagger.ImageMediaTypes.t() | nil}
         ]) :: :ok | {:error, term()}
@@ -321,8 +322,9 @@ defmodule Dagger.Container do
          %Dagger.Port{
            query_builder:
              QB.query()
-             |> QB.select("loadPortFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Port"),
            client: container.client
          }
        end}
@@ -365,7 +367,7 @@ defmodule Dagger.Container do
   @doc """
   A unique identifier for this Container.
   """
-  @spec id(t()) :: {:ok, Dagger.ContainerID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = container) do
     query_builder =
       container.query_builder |> QB.select("id")
@@ -426,8 +428,9 @@ defmodule Dagger.Container do
          %Dagger.Label{
            query_builder:
              QB.query()
-             |> QB.select("loadLabelFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Label"),
            client: container.client
          }
        end}
@@ -462,7 +465,7 @@ defmodule Dagger.Container do
   Returns the fully qualified address of the published image, with digest
   """
   @spec publish(t(), String.t(), [
-          {:platform_variants, [Dagger.ContainerID.t()]},
+          {:platform_variants, [Dagger.Container.t()]},
           {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
           {:media_types, Dagger.ImageMediaTypes.t() | nil}
         ]) :: {:ok, String.t()} | {:error, term()}
@@ -557,8 +560,9 @@ defmodule Dagger.Container do
        %Dagger.Container{
          query_builder:
            QB.query()
-           |> QB.select("loadContainerFromID")
-           |> QB.put_arg("id", id),
+           |> QB.select("node")
+           |> QB.put_arg("id", id)
+           |> QB.inline_fragment("Container"),
          client: container.client
        }}
     end
@@ -917,7 +921,7 @@ defmodule Dagger.Container do
   @doc """
   Retrieves this container plus the contents of the given files copied to the given path.
   """
-  @spec with_files(t(), String.t(), [Dagger.FileID.t()], [
+  @spec with_files(t(), String.t(), [String.t()], [
           {:permissions, integer() | nil},
           {:owner, String.t() | nil},
           {:expand, boolean() | nil}
@@ -959,7 +963,7 @@ defmodule Dagger.Container do
   Retrieves this container plus a cache volume mounted at the given path.
   """
   @spec with_mounted_cache(t(), String.t(), Dagger.CacheVolume.t(), [
-          {:source, Dagger.DirectoryID.t() | nil},
+          {:source, Dagger.Directory.t() | nil},
           {:sharing, Dagger.CacheSharingMode.t() | nil},
           {:owner, String.t() | nil},
           {:expand, boolean() | nil}
@@ -970,7 +974,10 @@ defmodule Dagger.Container do
       |> QB.select("withMountedCache")
       |> QB.put_arg("path", path)
       |> QB.put_arg("cache", Dagger.ID.id!(cache))
-      |> QB.maybe_put_arg("source", optional_args[:source])
+      |> QB.maybe_put_arg(
+        "source",
+        if(optional_args[:source], do: Dagger.ID.id!(optional_args[:source]), else: nil)
+      )
       |> QB.maybe_put_arg("sharing", optional_args[:sharing])
       |> QB.maybe_put_arg("owner", optional_args[:owner])
       |> QB.maybe_put_arg("expand", optional_args[:expand])
@@ -1512,6 +1519,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.Container do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_container_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.Container{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("Container"),
+       client: dag.client
+     }}
   end
 end

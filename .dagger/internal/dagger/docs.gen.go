@@ -24,10 +24,9 @@ func (r *Binding) AsDocs() *Docs { // docs (../../../toolchains/docs-dev/main.go
 type Docs struct { // docs (../../../toolchains/docs-dev/main.go:36:6)
 	query *querybuilder.Selection
 
-	deploy       *string
-	id           *DocsID
-	lintMarkdown *Void
-	publish      *Void
+	deploy  *string
+	id      *DocsID
+	publish *Void
 }
 
 func (r *Docs) WithGraphQLQuery(q *querybuilder.Selection) *Docs {
@@ -37,7 +36,7 @@ func (r *Docs) WithGraphQLQuery(q *querybuilder.Selection) *Docs {
 }
 
 // Bump the Go SDK's Engine dependency
-func (r *Docs) Bump(engineVersion string) *Changeset { // docs (../../../toolchains/docs-dev/main.go:147:1)
+func (r *Docs) Bump(engineVersion string) *Changeset { // docs (../../../toolchains/docs-dev/main.go:120:1)
 	q := r.query.Select("bump")
 	q = q.Arg("engineVersion", engineVersion)
 
@@ -47,7 +46,7 @@ func (r *Docs) Bump(engineVersion string) *Changeset { // docs (../../../toolcha
 }
 
 // Deploys a current build of the docs.
-func (r *Docs) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs (../../../toolchains/docs-dev/main.go:162:1)
+func (r *Docs) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs (../../../toolchains/docs-dev/main.go:135:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.deploy != nil {
 		return *r.deploy, nil
@@ -111,34 +110,13 @@ func (r *Docs) UnmarshalJSON(bs []byte) error {
 	return nil
 }
 
-// DocsLintMarkdownOpts contains options for Docs.LintMarkdown
-type DocsLintMarkdownOpts struct {
-	MarkdownFiles *Directory // docs (../../../toolchains/docs-dev/main.go:86:2)
-}
-
-// Lint documentation files
-func (r *Docs) LintMarkdown(ctx context.Context, opts ...DocsLintMarkdownOpts) error { // docs (../../../toolchains/docs-dev/main.go:76:1)
-	if r.lintMarkdown != nil {
-		return nil
-	}
-	q := r.query.Select("lintMarkdown")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `markdownFiles` optional argument
-		if !querybuilder.IsZeroValue(opts[i].MarkdownFiles) {
-			q = q.Arg("markdownFiles", opts[i].MarkdownFiles)
-		}
-	}
-
-	return q.Execute(ctx)
-}
-
 // DocsPublishOpts contains options for Docs.Publish
 type DocsPublishOpts struct {
-	Deployment string // docs (../../../toolchains/docs-dev/main.go:195:2)
+	Deployment string // docs (../../../toolchains/docs-dev/main.go:168:2)
 }
 
 // Publish a previous deployment to production - defaults to the latest deployment on the main branch.
-func (r *Docs) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsPublishOpts) error { // docs (../../../toolchains/docs-dev/main.go:191:1)
+func (r *Docs) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsPublishOpts) error { // docs (../../../toolchains/docs-dev/main.go:164:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.publish != nil {
 		return nil
@@ -160,11 +138,11 @@ type DocsReferencesOpts struct {
 	//
 	// Dagger version to generate API docs for
 	//
-	Version string // docs (../../../toolchains/docs-dev/main.go:102:2)
+	Version string // docs (../../../toolchains/docs-dev/main.go:75:2)
 }
 
 // Regenerate the API schema and CLI reference docs
-func (r *Docs) References(opts ...DocsReferencesOpts) *Changeset { // docs (../../../toolchains/docs-dev/main.go:99:1)
+func (r *Docs) References(opts ...DocsReferencesOpts) *Changeset { // docs (../../../toolchains/docs-dev/main.go:72:1)
 	q := r.query.Select("references")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -179,7 +157,7 @@ func (r *Docs) References(opts ...DocsReferencesOpts) *Changeset { // docs (../.
 }
 
 // Build the docs server
-func (r *Docs) Server() *Container { // docs (../../../toolchains/docs-dev/main.go:63:1)
+func (r *Docs) Server() *Container { // docs (../../../toolchains/docs-dev/main.go:59:1)
 	q := r.query.Select("server")
 
 	return &Container{
@@ -188,7 +166,7 @@ func (r *Docs) Server() *Container { // docs (../../../toolchains/docs-dev/main.
 }
 
 // Build the docs website
-func (r *Docs) Site() *Directory { // docs (../../../toolchains/docs-dev/main.go:54:1)
+func (r *Docs) Site() *Directory { // docs (../../../toolchains/docs-dev/main.go:50:1)
 	q := r.query.Select("site")
 
 	return &Directory{

@@ -18,7 +18,7 @@ defmodule Dagger.FunctionCall do
   @doc """
   A unique identifier for this FunctionCall.
   """
-  @spec id(t()) :: {:ok, Dagger.FunctionCallID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = function_call) do
     query_builder =
       function_call.query_builder |> QB.select("id")
@@ -40,8 +40,9 @@ defmodule Dagger.FunctionCall do
          %Dagger.FunctionCallArgValue{
            query_builder:
              QB.query()
-             |> QB.select("loadFunctionCallArgValueFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("FunctionCallArgValue"),
            client: function_call.client
          }
        end}
@@ -121,6 +122,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.FunctionCall do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_function_call_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.FunctionCall{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("FunctionCall"),
+       client: dag.client
+     }}
   end
 end

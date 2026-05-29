@@ -40,8 +40,9 @@ defmodule Dagger.InterfaceTypeDef do
          %Dagger.Function{
            query_builder:
              QB.query()
-             |> QB.select("loadFunctionFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("Function"),
            client: interface_type_def.client
          }
        end}
@@ -51,7 +52,7 @@ defmodule Dagger.InterfaceTypeDef do
   @doc """
   A unique identifier for this InterfaceTypeDef.
   """
-  @spec id(t()) :: {:ok, Dagger.InterfaceTypeDefID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = interface_type_def) do
     query_builder =
       interface_type_def.query_builder |> QB.select("id")
@@ -105,6 +106,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.InterfaceTypeDef do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_interface_type_def_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.InterfaceTypeDef{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("InterfaceTypeDef"),
+       client: dag.client
+     }}
   end
 end

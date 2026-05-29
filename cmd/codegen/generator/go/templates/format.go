@@ -47,7 +47,9 @@ func (f *FormatTypeFunc) FormatKindScalarBoolean(representation string) string {
 }
 
 func (f *FormatTypeFunc) FormatKindScalarDefault(representation string, refName string, input bool) string {
-	if obj, ok := strings.CutSuffix(refName, "ID"); input && ok {
+	if obj, ok := strings.CutSuffix(refName, "ID"); input && ok && obj != "" {
+		// Legacy schemas used per-object FooID scalars. Keep accepting them
+		// as object inputs, but modern schemas use ID + @expectedType instead.
 		representation += "*" + f.scope + formatName(obj)
 	} else {
 		representation += f.scope + formatName(refName)

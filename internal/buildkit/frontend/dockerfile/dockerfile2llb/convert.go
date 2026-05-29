@@ -1670,7 +1670,7 @@ func dispatchHealthcheck(d *dispatchState, c *instructions.HealthCheckCommand, l
 		StartInterval: c.Health.StartInterval,
 		Retries:       c.Health.Retries,
 	}
-	return commitToHistory(&d.image, fmt.Sprintf("HEALTHCHECK %q", d.image.Config.Healthcheck), false, nil, d.epoch)
+	return commitToHistory(&d.image, fmt.Sprintf("HEALTHCHECK %+v", *d.image.Config.Healthcheck), false, nil, d.epoch)
 }
 
 func dispatchExpose(d *dispatchState, c *instructions.ExposeCommand, shlex *shell.Lex) error {

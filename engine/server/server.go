@@ -729,7 +729,7 @@ func (srv *Server) GracefulStop(ctx context.Context) error {
 		} else {
 			prunePolicies := cloneDagqlCachePrunePolicies(srv.workerGCPolicies)
 			for i := range prunePolicies {
-				prunePolicies[i].CurrentFreeSpace = dstat.Free
+				prunePolicies[i].CurrentFreeSpace = dstat.Available
 			}
 			_, pruneErr := srv.engineCache.Prune(ctx, prunePolicies)
 			if pruneErr != nil {

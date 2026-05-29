@@ -18,15 +18,19 @@ type clientGeneratorModule struct {
 func (sdk *clientGeneratorModule) RequiredClientGenerationFiles(
 	ctx context.Context,
 ) (res dagql.Array[dagql.String], err error) {
-	dag := sdk.mod.dag()
-
 	// Return an empty array if the SDK doesn't implement the
 	// `requiredClientGenerationFiles` function.
 	if _, ok := sdk.funcs["requiredClientGenerationFiles"]; !ok {
 		return dagql.NewStringArray(), nil
 	}
 
-	err = dag.Select(ctx, sdk.mod.sdk, &res, dagql.Selector{
+	sdkInst, err := sdk.mod.instantiate(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize sdk module %s required client generation files: %w", sdk.mod.mod.Self().Name(), err)
+	}
+	dag := sdkInst.dag
+
+	err = dag.Select(ctx, sdkInst.sdk, &res, dagql.Selector{
 		Field: "requiredClientGenerationFiles",
 	})
 
@@ -43,7 +47,16 @@ func (sdk *clientGeneratorModule) GenerateClient(
 	schemaJSONFile dagql.Result[*core.File],
 	outputDir string,
 ) (inst dagql.ObjectResult[*core.Directory], err error) {
-	dag := sdk.mod.dag()
+	_, ok := sdk.funcs["generateClient"]
+	if !ok {
+		return inst, fmt.Errorf("generateClient is not implemented by this SDK")
+	}
+
+	sdkInst, err := sdk.mod.instantiate(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to initialize sdk module %s generate client: %w", sdk.mod.mod.Self().Name(), err)
+	}
+	dag := sdkInst.dag
 
 	modSource, err = scopeSourceForSDKOperation(ctx, modSource, "generateClient", dag)
 	if err != nil {
@@ -56,10 +69,6 @@ func (sdk *clientGeneratorModule) GenerateClient(
 	schemaJSONFileID, err := schemaJSONFile.ID()
 	if err != nil {
 		return inst, fmt.Errorf("failed to get schema introspection json ID during module client generation: %w", err)
-	}
-	_, ok := sdk.funcs["generateClient"]
-	if !ok {
-		return inst, fmt.Errorf("generateClient is not implemented by this SDK")
 	}
 
 	generateClientsArgs := []dagql.NamedInput{
@@ -77,7 +86,7 @@ func (sdk *clientGeneratorModule) GenerateClient(
 		},
 	}
 
-	err = dag.Select(ctx, sdk.mod.sdk, &inst, dagql.Selector{
+	err = dag.Select(ctx, sdkInst.sdk, &inst, dagql.Selector{
 		Field: "generateClient",
 		Args:  generateClientsArgs,
 	})

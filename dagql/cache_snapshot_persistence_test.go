@@ -3,6 +3,7 @@ package dagql
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -56,6 +57,9 @@ func (v *persistSnapshotValue) PersistedSnapshotRefLinks() []PersistedSnapshotRe
 type fakeSnapshotManager struct {
 	persistentRows      bkcache.PersistentMetadataRows
 	loadedRows          bkcache.PersistentMetadataRows
+	snapshotSizes       map[string]int64
+	snapshotMetadata    map[string]bkcache.SnapshotRecordMetadata
+	snapshotSizeCalls   []string
 	attachCalls         []struct{ LeaseID, SnapshotID string }
 	removeCalls         []string
 	deleteStaleKeep     map[string]struct{}
@@ -72,6 +76,32 @@ func (*fakeSnapshotManager) Get(context.Context, string, ...bkcache.RefOption) (
 
 func (*fakeSnapshotManager) GetBySnapshotID(context.Context, string, ...bkcache.RefOption) (bkcache.ImmutableRef, error) {
 	panic("unexpected GetBySnapshotID call")
+}
+
+func (*fakeSnapshotManager) Scratch(context.Context) (bkcache.ImmutableRef, error) {
+	panic("unexpected Scratch call")
+}
+
+func (m *fakeSnapshotManager) SnapshotSize(ctx context.Context, snapshotID string) (int64, error) {
+	_ = ctx
+	if m.snapshotSizes == nil {
+		panic("unexpected SnapshotSize call")
+	}
+	sizeBytes, ok := m.snapshotSizes[snapshotID]
+	if !ok {
+		return 0, fmt.Errorf("snapshot %q not found", snapshotID)
+	}
+	m.snapshotSizeCalls = append(m.snapshotSizeCalls, snapshotID)
+	return sizeBytes, nil
+}
+
+func (m *fakeSnapshotManager) SnapshotRecordMetadata(ctx context.Context, snapshotID string) (bkcache.SnapshotRecordMetadata, bool, error) {
+	_ = ctx
+	if m.snapshotMetadata == nil {
+		return bkcache.SnapshotRecordMetadata{}, false, nil
+	}
+	md, ok := m.snapshotMetadata[snapshotID]
+	return md, ok, nil
 }
 
 func (*fakeSnapshotManager) New(context.Context, bkcache.ImmutableRef, ...bkcache.RefOption) (bkcache.MutableRef, error) {
@@ -257,6 +287,84 @@ func TestCachePersistenceImportHydratesSnapshotMetadataAndSyncsOwnerLeases(t *te
 	assert.Assert(t, snapshotManagerB.deleteStaleCallSeen)
 	_, keepFound := snapshotManagerB.deleteStaleKeep[resultSnapshotLeaseID(resultID, "snapshot")]
 	assert.Assert(t, keepFound)
+}
+
+func importedSnapshotLinkUsageTestCache(t *testing.T, ctx context.Context, snapshotID string, sizeBytes int64) (*Cache, *fakeSnapshotManager) {
+	t.Helper()
+
+	dbPath := filepath.Join(t.TempDir(), "cache.db")
+	cacheA, err := NewCache(ctx, dbPath, &fakeSnapshotManager{}, nil)
+	assert.NilError(t, err)
+	cA := cacheA
+
+	key := &ResultCall{
+		Kind:  ResultCallKindField,
+		Type:  NewResultCallType((&persistSnapshotValue{}).Type()),
+		Field: "persist-snapshot-owner",
+	}
+
+	_, err = cA.GetOrInitCall(ctx, "test-session", noopTypeResolver{}, &CallRequest{
+		ResultCall:    key,
+		IsPersistable: true,
+	}, func(context.Context) (AnyResult, error) {
+		return cacheTestPlainResult(&persistSnapshotValue{
+			Name:       "x",
+			SnapshotID: snapshotID,
+		}), nil
+	})
+	assert.NilError(t, err)
+
+	cacheTestReleaseSession(t, cA, ctx)
+	assert.NilError(t, cA.persistCurrentState(ctx))
+	assert.NilError(t, cA.Close(context.Background()))
+
+	snapshotManagerB := &fakeSnapshotManager{
+		snapshotSizes: map[string]int64{
+			snapshotID: sizeBytes,
+		},
+	}
+	cacheB, err := NewCache(ctx, dbPath, snapshotManagerB, nil)
+	assert.NilError(t, err)
+	return cacheB, snapshotManagerB
+}
+
+func TestCachePersistenceImportedSnapshotLinksContributeUsageBeforeDecode(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	cacheB, snapshotManagerB := importedSnapshotLinkUsageTestCache(t, ctx, "snapshot-a", 1234)
+	defer func() {
+		assert.NilError(t, cacheB.Close(context.Background()))
+	}()
+
+	entries := cacheB.UsageEntriesAll(ctx)
+	assert.Equal(t, 1, len(entries))
+	assert.Equal(t, int64(1234), entries[0].SizeBytes)
+	assert.DeepEqual(t, snapshotManagerB.snapshotSizeCalls, []string{"snapshot-a"})
+}
+
+func TestCachePruneThresholdUsesImportedSnapshotLinkUsage(t *testing.T) {
+	t.Parallel()
+
+	ctx := cacheTestContext(t.Context())
+	cacheB, snapshotManagerB := importedSnapshotLinkUsageTestCache(t, ctx, "snapshot-a", 1234)
+	defer func() {
+		assert.NilError(t, cacheB.Close(context.Background()))
+	}()
+
+	report, err := cacheB.Prune(ctx, []CachePrunePolicy{{
+		All:          true,
+		MaxUsedSpace: 100,
+		TargetSpace:  1,
+	}})
+	assert.NilError(t, err)
+	assert.Equal(t, 1, len(report.Entries))
+	assert.Equal(t, int64(1234), report.Entries[0].SizeBytes)
+	assert.Equal(t, int64(1234), report.ReclaimedBytes)
+	assert.DeepEqual(t, snapshotManagerB.snapshotSizeCalls, []string{"snapshot-a"})
+
+	entries := cacheB.UsageEntriesAll(ctx)
+	assert.Equal(t, 0, len(entries))
 }
 
 func TestCachePersistenceWorkerUsesEncodedSnapshotLinks(t *testing.T) {

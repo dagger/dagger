@@ -2,7 +2,9 @@
 
 namespace Dagger\Client;
 
+use Dagger\Id;
+
 interface IdAble
 {
-    public function id(): AbstractId;
+    public function id(): Id;
 }
