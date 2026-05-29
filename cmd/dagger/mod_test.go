@@ -3,6 +3,7 @@ package main
 import (
 	"testing"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/stretchr/testify/require"
 )
 
@@ -61,7 +62,23 @@ func TestModSubcommandsRegistered(t *testing.T) {
 	for _, c := range modCmd.Commands() {
 		got[c.Name()] = true
 	}
-	for _, want := range []string{"install", "uninstall", "list", "search"} {
+	for _, want := range []string{"install", "uninstall", "list", "search", "recommend"} {
 		require.Truef(t, got[want], "expected `dagger mod %s` to be registered", want)
+	}
+}
+
+// TestEmbeddedRegistryRecommendPatternsValid is a static smoke test on the
+// embedded registry: every populated recommend string must be a syntactically
+// valid glob. The runtime delegates matching to the engine via Directory.Glob,
+// so this catches typos in modules.json without requiring an engine.
+func TestEmbeddedRegistryRecommendPatternsValid(t *testing.T) {
+	mods, err := parseModuleRegistry(embeddedModuleRegistry)
+	require.NoError(t, err)
+	for _, m := range mods {
+		if m.Recommend == "" {
+			continue
+		}
+		_, err := doublestar.Match(m.Recommend, "probe")
+		require.NoErrorf(t, err, "module %q has invalid recommend glob %q", m.Name, m.Recommend)
 	}
 }
