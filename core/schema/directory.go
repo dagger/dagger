@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	bkcache "github.com/dagger/dagger/engine/snapshots"
-	bkclient "github.com/dagger/dagger/internal/buildkit/client"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
@@ -401,22 +400,9 @@ func (s *directorySchema) directory(ctx context.Context, parent dagql.ObjectResu
 	}
 	platform := parent.Self().Platform()
 
-	// TODO: should this just be lazyInit'd for consistency if nothing else?
-
-	// Make a scratch ref so that we don't have to treat "nil as scratch"
-	// TODO: could have a truly engine-wide shared "scratch" ref to save a little work. For now, as long as everyone uses this API they will
-	// share this ref
-
-	scratchRef, err := parent.Self().SnapshotManager().New(ctx, nil,
-		bkcache.WithRecordType(bkclient.UsageRecordTypeRegular),
-		bkcache.WithDescription("scratch"),
-	)
+	finalRef, err := parent.Self().SnapshotManager().Scratch(ctx)
 	if err != nil {
-		return inst, fmt.Errorf("failed to create scratch ref: %w", err)
-	}
-	finalRef, err := scratchRef.Commit(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to commit scratch ref: %w", err)
+		return inst, fmt.Errorf("failed to load scratch ref: %w", err)
 	}
 
 	dir := &core.Directory{

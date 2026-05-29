@@ -78,6 +78,10 @@ func (*fakeSnapshotManager) GetBySnapshotID(context.Context, string, ...bkcache.
 	panic("unexpected GetBySnapshotID call")
 }
 
+func (*fakeSnapshotManager) Scratch(context.Context) (bkcache.ImmutableRef, error) {
+	panic("unexpected Scratch call")
+}
+
 func (m *fakeSnapshotManager) SnapshotSize(ctx context.Context, snapshotID string) (int64, error) {
 	_ = ctx
 	if m.snapshotSizes == nil {

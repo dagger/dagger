@@ -53,6 +53,7 @@ type Accessor interface {
 
 	Get(ctx context.Context, id string, opts ...RefOption) (ImmutableRef, error)
 	GetBySnapshotID(ctx context.Context, snapshotID string, opts ...RefOption) (ImmutableRef, error)
+	Scratch(ctx context.Context) (ImmutableRef, error)
 
 	New(ctx context.Context, parent ImmutableRef, opts ...RefOption) (MutableRef, error)
 	GetMutable(ctx context.Context, id string, opts ...RefOption) (MutableRef, error) // Rebase?
@@ -82,6 +83,7 @@ type SnapshotRecordMetadata struct {
 type snapshotManager struct {
 	records       map[string]*cacheRecord
 	mu            sync.Mutex
+	scratchMu     sync.Mutex
 	Snapshotter   MergeSnapshotter
 	ContentStore  content.Store
 	LeaseManager  leases.Manager

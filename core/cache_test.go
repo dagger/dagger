@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/containerd/containerd/v2/core/snapshots"
 	"github.com/stretchr/testify/require"
 
 	"github.com/dagger/dagger/dagql"
@@ -65,6 +66,10 @@ func (m *cacheVolumeTestSnapshotManager) GetBySnapshotID(ctx context.Context, sn
 		return nil, context.Canceled
 	}
 	return ref, nil
+}
+
+func (*cacheVolumeTestSnapshotManager) Scratch(context.Context) (bkcache.ImmutableRef, error) {
+	panic("unexpected Scratch call")
 }
 
 func (m *cacheVolumeTestSnapshotManager) SnapshotSize(ctx context.Context, snapshotID string) (int64, error) {
@@ -304,6 +309,10 @@ type cacheVolumeTestMutableRef struct {
 
 func (*cacheVolumeTestMutableRef) Commit(context.Context) (bkcache.ImmutableRef, error) {
 	panic("unexpected Commit call")
+}
+
+func (*cacheVolumeTestMutableRef) CommitWithUsage(context.Context, snapshots.Usage) (bkcache.ImmutableRef, error) {
+	panic("unexpected CommitWithUsage call")
 }
 
 func (*cacheVolumeTestMutableRef) InvalidateSize(context.Context) error {
