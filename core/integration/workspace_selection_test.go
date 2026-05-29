@@ -447,6 +447,25 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, 
 		return workdir, []string{"-m", "../module"}
 	}
 
+	newBareGitWorkspaceFixture := func(ctx context.Context, t *testctx.T) (string, []string) {
+		t.Helper()
+
+		root := t.TempDir()
+		initGitRepo(ctx, t, root)
+
+		workdir := filepath.Join(root, "caller")
+		selectedDir := filepath.Join(root, "selected")
+		moduleDir := filepath.Join(root, "module")
+		require.NoError(t, os.MkdirAll(workdir, 0o755))
+		require.NoError(t, os.MkdirAll(selectedDir, 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(selectedDir, "marker.txt"), []byte("selected marker"), 0o644))
+		copyTestdataFixture(ctx, t, moduleDir, "modules", "go", "workspace-selection-files-standalone")
+
+		_, err := os.Stat(filepath.Join(root, ".dagger", "config.toml"))
+		require.ErrorIs(t, err, os.ErrNotExist)
+		return workdir, []string{"-W", "../selected", "-m", "../module"}
+	}
+
 	requireFileContents := func(t *testctx.T, path, contents string) {
 		t.Helper()
 
@@ -704,6 +723,22 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, 
 		assertWorkspaceChangesetsUseCWD(ctx, t, callerDir, selection, "")
 		assertHostWritesUseCWD(ctx, t, callerDir, selection, "")
 		assertAbsoluteExportsUseExplicitPath(ctx, t, callerDir, selection, "")
+	})
+
+	t.Run("selected remote workspace without config injects workspace args", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		remoteRef := workspaceSelectionRemoteRef(ctx, t, c, c.Directory().
+			WithNewFile("marker.txt", "remote marker"))
+		workdir, moduleSelection := newNoWorkspaceFixture(ctx, t)
+		selection := append([]string{"-W", remoteRef}, moduleSelection...)
+
+		assertWorkspaceReads(ctx, t, workdir, selection, "remote marker")
+	})
+
+	t.Run("selected local git workspace without config injects workspace args", func(ctx context.Context, t *testctx.T) {
+		workdir, selection := newBareGitWorkspaceFixture(ctx, t)
+
+		assertWorkspaceReads(ctx, t, workdir, selection, "selected marker")
 	})
 
 	t.Run("no workspace keeps host writes on the CLI cwd", func(ctx context.Context, t *testctx.T) {
