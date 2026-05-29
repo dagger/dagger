@@ -81,7 +81,7 @@ type Hello struct { // hello (../../../../../../../core/integration/testdata/tes
 	appConfig           *string
 	blueprintConfig     *string
 	configurableMessage *string
-	id                  *ID
+	id                  *HelloID
 	message             *string
 }
 
@@ -89,12 +89,6 @@ func (r *Hello) WithGraphQLQuery(q *querybuilder.Selection) *Hello {
 	return &Hello{
 		query: q,
 	}
-}
-
-type HelloID = ID
-
-func (r *Query) LoadHelloFromID(id HelloID) *Hello {
-	return &Hello{query: selectNode(r.query, ID(id), "Hello")}
 }
 
 // HelloAppConfigOpts contains options for Hello.AppConfig
@@ -168,13 +162,13 @@ func (r *Hello) Greet() *HelloGreetings { // hello (../../../../../../../core/in
 }
 
 // A unique identifier for this Hello.
-func (r *Hello) ID(ctx context.Context) (ID, error) {
+func (r *Hello) ID(ctx context.Context) (HelloID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ID
+	var response HelloID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -239,7 +233,7 @@ func (r *Hello) AsNode() Node {
 type HelloGreetings struct { // hello (../../../../../../../core/integration/testdata/test-blueprint/hello/main.go:40:6)
 	query *querybuilder.Selection
 
-	id     *ID
+	id     *HelloGreetingsID
 	planet *string
 }
 
@@ -249,20 +243,14 @@ func (r *HelloGreetings) WithGraphQLQuery(q *querybuilder.Selection) *HelloGreet
 	}
 }
 
-type HelloGreetingsID = ID
-
-func (r *Query) LoadHelloGreetingsFromID(id HelloGreetingsID) *HelloGreetings {
-	return &HelloGreetings{query: selectNode(r.query, ID(id), "HelloGreetings")}
-}
-
 // A unique identifier for this HelloGreetings.
-func (r *HelloGreetings) ID(ctx context.Context) (ID, error) {
+func (r *HelloGreetings) ID(ctx context.Context) (HelloGreetingsID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ID
+	var response HelloGreetingsID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)

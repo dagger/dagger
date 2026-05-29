@@ -45,7 +45,7 @@ func (r *Env) WithNestedContextLeafOutput(name string, description string) *Env 
 type NestedContextLeaf struct { // nested-context-leaf (../../../../../../modules/evals/testdata/nested-context-middle/nested-context-leaf/main.go:10:6)
 	query *querybuilder.Selection
 
-	id         *ID
+	id         *NestedContextLeafID
 	readMarker *string
 }
 
@@ -55,20 +55,14 @@ func (r *NestedContextLeaf) WithGraphQLQuery(q *querybuilder.Selection) *NestedC
 	}
 }
 
-type NestedContextLeafID = ID
-
-func (r *Query) LoadNestedContextLeafFromID(id NestedContextLeafID) *NestedContextLeaf {
-	return &NestedContextLeaf{query: selectNode(r.query, ID(id), "NestedContextLeaf")}
-}
-
 // A unique identifier for this NestedContextLeaf.
-func (r *NestedContextLeaf) ID(ctx context.Context) (ID, error) {
+func (r *NestedContextLeaf) ID(ctx context.Context) (NestedContextLeafID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ID
+	var response NestedContextLeafID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)

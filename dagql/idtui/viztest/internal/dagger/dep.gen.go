@@ -24,19 +24,13 @@ type Dep struct { // dep (../../../../../dagql/idtui/viztest/dep/main.go:9:6)
 	bubblingFunction *Void
 	failingFunction  *Void
 	fileContents     *string
-	id               *ID
+	id               *DepID
 }
 
 func (r *Dep) WithGraphQLQuery(q *querybuilder.Selection) *Dep {
 	return &Dep{
 		query: q,
 	}
-}
-
-type DepID = ID
-
-func (r *Query) LoadDepFromID(id DepID) *Dep {
-	return &Dep{query: selectNode(r.query, ID(id), "Dep")}
 }
 
 // FailingFunction returns a simple error to test error origin stamping
@@ -78,7 +72,7 @@ func (r *Dep) GetFiles(ctx context.Context) ([]File, error) { // dep (../../../.
 	q = q.Select("id")
 
 	type getFiles struct {
-		Id ID
+		Id FileID
 	}
 
 	convert := func(fields []getFiles) []File {
@@ -105,13 +99,13 @@ func (r *Dep) GetFiles(ctx context.Context) ([]File, error) { // dep (../../../.
 }
 
 // A unique identifier for this Dep.
-func (r *Dep) ID(ctx context.Context) (ID, error) {
+func (r *Dep) ID(ctx context.Context) (DepID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ID
+	var response DepID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
