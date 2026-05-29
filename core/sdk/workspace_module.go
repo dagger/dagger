@@ -29,6 +29,8 @@ func workspaceModuleForBuiltinSDK(sdkName sdk, suffix string) (WorkspaceModule, 
 	switch sdkName {
 	case sdkGo:
 		return WorkspaceModule{Name: "go-sdk", Source: "github.com/dagger/go-sdk"}, true
+	case sdkDang:
+		return WorkspaceModule{Name: "dang-sdk", Source: "github.com/dagger/dang-sdk"}, true
 	case sdkPython:
 		return WorkspaceModule{Name: "python-sdk", Source: "github.com/dagger/python-sdk"}, true
 	case sdkTypescript:
