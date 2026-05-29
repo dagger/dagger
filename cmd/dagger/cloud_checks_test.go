@@ -74,7 +74,6 @@ func TestCloudRowsForWorkspaceAddress(t *testing.T) {
 	})
 
 	filtered, _, err := cloudRowsForWorkspaceAddress(
-		t.Context(),
 		rows,
 		"github.com/acme/mono/services/api@main",
 		nil,

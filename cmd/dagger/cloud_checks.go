@@ -281,7 +281,7 @@ func (cli *CloudCLI) loadCloudCheckRowsForWorkspaceAcrossUserOrgs(ctx context.Co
 		if err != nil {
 			return nil, cloudCheckSelectorFlags{}, err
 		}
-		rows, selectors, err := cloudRowsForWorkspaceAddress(ctx, rows, address, checks)
+		rows, selectors, err := cloudRowsForWorkspaceAddress(rows, address, checks)
 		if err != nil {
 			return nil, cloudCheckSelectorFlags{}, err
 		}
@@ -325,7 +325,7 @@ func (cli *CloudCLI) loadCloudCheckRowsForWorkspaceAcrossUserOrgs(ctx context.Co
 			if err != nil {
 				return err
 			}
-			rows, selectors, err := cloudRowsForWorkspaceAddress(egctx, rows, address, checks)
+			rows, selectors, err := cloudRowsForWorkspaceAddress(rows, address, checks)
 			if err != nil {
 				return err
 			}
@@ -363,7 +363,7 @@ func (cli *CloudCLI) loadCloudCheckRowsForWorkspaceAcrossUserOrgs(ctx context.Co
 	}, baseSelectors, nil
 }
 
-func cloudRowsForWorkspaceAddress(ctx context.Context, rows []cloudCheckRow, address string, checks []string) ([]cloudCheckRow, cloudCheckSelectorFlags, error) {
+func cloudRowsForWorkspaceAddress(rows []cloudCheckRow, address string, checks []string) ([]cloudCheckRow, cloudCheckSelectorFlags, error) {
 	remote, ok, err := parseWorkspaceRemoteAddress(address)
 	if err != nil {
 		return nil, cloudCheckSelectorFlags{}, err
