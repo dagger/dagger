@@ -16,6 +16,17 @@ type Source struct {
 	ConfigURL    string  `json:"configUrl"`
 }
 
+type SourceRepository struct {
+	Repository string `json:"repository"`
+	Selected   bool   `json:"selected"`
+}
+
+type MappedSource struct {
+	SourceName     string `json:"sourceName"`
+	InstallationID string `json:"installationId"`
+	Mode           string `json:"mode"`
+}
+
 type SubscriptionInfo struct {
 	Status         string  `json:"status"`
 	TrialStart     *string `json:"trialStart,omitempty"`
@@ -84,6 +95,79 @@ func (c *Client) Sources(ctx context.Context) ([]Source, error) {
 		return nil, err
 	}
 	return data.Sources, nil
+}
+
+const getOrgMappedSourcesOperation = `
+query GetOrgMappedSources($org: String!) {
+	org(name: $org) {
+		mappedSources {
+			sourceName
+			installationId
+			mode
+		}
+	}
+}
+`
+
+func (c *Client) OrgMappedSources(ctx context.Context, orgName string) ([]MappedSource, error) {
+	var data struct {
+		Org struct {
+			MappedSources []MappedSource `json:"mappedSources"`
+		} `json:"org"`
+	}
+	if err := c.doGraphQL(ctx, "GetOrgMappedSources", getOrgMappedSourcesOperation, map[string]any{
+		"org": orgName,
+	}, &data); err != nil {
+		return nil, err
+	}
+	return data.Org.MappedSources, nil
+}
+
+const getSourceRepositoriesOperation = `
+query GetSourceRepositories($installationId: ID!, $org: ID) {
+	sourceRepositories(installationId: $installationId, org: $org) {
+		repository
+		selected
+	}
+}
+`
+
+func (c *Client) SourceRepositories(ctx context.Context, installationID, orgID string) ([]SourceRepository, error) {
+	var data struct {
+		SourceRepositories []SourceRepository `json:"sourceRepositories"`
+	}
+	if err := c.doGraphQL(ctx, "GetSourceRepositories", getSourceRepositoriesOperation, map[string]any{
+		"installationId": installationID,
+		"org":            orgID,
+	}, &data); err != nil {
+		return nil, err
+	}
+	return data.SourceRepositories, nil
+}
+
+const configureOrgSourceOperation = `
+mutation ConfigureOrgSource($org: ID!, $installationId: ID!, $mode: SourceMode!, $repositories: [String!]!) {
+	configureOrgSource(org: $org, source: { installationId: $installationId, mode: $mode, repositories: $repositories }) {
+		sourceName
+		installationId
+		mode
+	}
+}
+`
+
+func (c *Client) ConfigureOrgSource(ctx context.Context, orgID, installationID, mode string, repositories []string) (*MappedSource, error) {
+	var data struct {
+		ConfigureOrgSource MappedSource `json:"configureOrgSource"`
+	}
+	if err := c.doGraphQL(ctx, "ConfigureOrgSource", configureOrgSourceOperation, map[string]any{
+		"org":            orgID,
+		"installationId": installationID,
+		"mode":           mode,
+		"repositories":   repositories,
+	}, &data); err != nil {
+		return nil, err
+	}
+	return &data.ConfigureOrgSource, nil
 }
 
 const getGithubOAuthURLOperation = `
