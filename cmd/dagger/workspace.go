@@ -858,7 +858,7 @@ func findWorkspaceAutocheckState(ctx context.Context, client *cloudapi.Client, r
 	selected, enabled := workspaceSelectedSourceRepos(sourceRepos, repo)
 	setting, err := client.OrgRepoSetting(ctx, org.Name, repo)
 	if err != nil {
-		return workspaceAutocheckState{}, false, fmt.Errorf("fetch Cloud repo setting for org %q: %w", org.Name, err)
+		return workspaceAutocheckState{}, false, fmt.Errorf("fetch cloud repo setting for org %q: %w", org.Name, err)
 	}
 	isPublic := true
 	if setting != nil {
@@ -946,7 +946,7 @@ func setWorkspaceAutocheckRepoSelected(selected []string, repo string, enabled b
 func workspaceRemoteRepoExists(ctx context.Context, client *cloudapi.Client, repo string) (bool, error) {
 	repos, err := client.Repos(ctx)
 	if err != nil {
-		return false, fmt.Errorf("lookup Cloud repos: %w", err)
+		return false, fmt.Errorf("lookup cloud repos: %w", err)
 	}
 	repo = normalizeGitHubRepo(repo)
 	for _, candidate := range repos {
