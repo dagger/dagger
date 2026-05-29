@@ -50,11 +50,22 @@ Examples:
 	GroupID: execGroup.ID,
 	Args:    cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if !checksListMode && workspaceRef != "" && workspaceAddressLooksRemote(workspaceRef) {
+			replayed, err := cloudCLI.TryReplayCloudChecksForWorkspace(cmd, workspaceRef, args)
+			if err == nil && replayed {
+				return nil
+			}
+			if err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Cloud check lookup failed: %v; running checks now.\n\n", err)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "No Cloud Checks result found for %s; running checks now.\n\n", workspaceRef)
+			}
+		}
 		params := client.Params{
 			EnableCloudScaleOut:  enableScaleOut,
 			LoadWorkspaceModules: true,
 		}
-		return withEngine(
+		err := withEngine(
 			cmd.Context(),
 			params,
 			func(ctx context.Context, engineClient *client.Client) error {
@@ -70,6 +81,7 @@ Examples:
 				return runChecks(ctx, dag, checks, cmd)
 			},
 		)
+		return err
 	},
 }
 
