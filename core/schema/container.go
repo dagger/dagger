@@ -777,6 +777,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.Func("withoutRegistryAuth", s.withoutRegistryAuth).
+			WithInput(dagql.PerSessionInput).
 			Doc(`Retrieves this container without the registry authentication of a given address.`).
 			Args(
 				dagql.Arg("address").Doc(`Registry's address to remove the authentication from.`,
