@@ -178,7 +178,7 @@ func (r *Env) WithGhRepoOutput(name string, description string) *Env { // gh (..
 type Gh struct { // gh (../../../../../../toolchains/release/gh/main.go:12:6)
 	query *querybuilder.Selection
 
-	id *ID
+	id *GhID
 }
 type WithGhFunc func(r *Gh) *Gh
 
@@ -193,12 +193,6 @@ func (r *Gh) WithGraphQLQuery(q *querybuilder.Selection) *Gh {
 	return &Gh{
 		query: q,
 	}
-}
-
-type GhID = ID
-
-func (r *Query) LoadGhFromID(id GhID) *Gh {
-	return &Gh{query: selectNode(r.query, ID(id), "Gh")}
 }
 
 // GhCloneOpts contains options for Gh.Clone
@@ -257,13 +251,13 @@ func (r *Gh) Exec(args []string, opts ...GhExecOpts) *Container { // gh (../../.
 }
 
 // A unique identifier for this Gh.
-func (r *Gh) ID(ctx context.Context) (ID, error) {
+func (r *Gh) ID(ctx context.Context) (GhID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ID
+	var response GhID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -459,19 +453,13 @@ type GhPullRequest struct { // gh (../../../../../../toolchains/release/gh/pull-
 
 	create *Void
 	exists *bool
-	id     *ID
+	id     *GhPullRequestID
 }
 
 func (r *GhPullRequest) WithGraphQLQuery(q *querybuilder.Selection) *GhPullRequest {
 	return &GhPullRequest{
 		query: q,
 	}
-}
-
-type GhPullRequestID = ID
-
-func (r *Query) LoadGhPullRequestFromID(id GhPullRequestID) *GhPullRequest {
-	return &GhPullRequest{query: selectNode(r.query, ID(id), "GhPullRequest")}
 }
 
 // GhPullRequestCreateOpts contains options for GhPullRequest.Create
@@ -671,13 +659,13 @@ func (r *GhPullRequest) Exists(ctx context.Context, pullRequest string, opts ...
 }
 
 // A unique identifier for this GhPullRequest.
-func (r *GhPullRequest) ID(ctx context.Context) (ID, error) {
+func (r *GhPullRequest) ID(ctx context.Context) (GhPullRequestID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ID
+	var response GhPullRequestID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -765,7 +753,7 @@ type GhPullRequestReview struct { // gh (../../../../../../toolchains/release/gh
 
 	approve        *Void
 	comment        *Void
-	id             *ID
+	id             *GhPullRequestReviewID
 	requestChanges *Void
 }
 
@@ -773,12 +761,6 @@ func (r *GhPullRequestReview) WithGraphQLQuery(q *querybuilder.Selection) *GhPul
 	return &GhPullRequestReview{
 		query: q,
 	}
-}
-
-type GhPullRequestReviewID = ID
-
-func (r *Query) LoadGhPullRequestReviewFromID(id GhPullRequestReviewID) *GhPullRequestReview {
-	return &GhPullRequestReview{query: selectNode(r.query, ID(id), "GhPullRequestReview")}
 }
 
 // Approve a pull request.
@@ -802,13 +784,13 @@ func (r *GhPullRequestReview) Comment(ctx context.Context) error { // gh (../../
 }
 
 // A unique identifier for this GhPullRequestReview.
-func (r *GhPullRequestReview) ID(ctx context.Context) (ID, error) {
+func (r *GhPullRequestReview) ID(ctx context.Context) (GhPullRequestReviewID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ID
+	var response GhPullRequestReviewID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -872,19 +854,13 @@ type GhRelease struct { // gh (../../../../../../toolchains/release/gh/release.g
 	query *querybuilder.Selection
 
 	create *Void
-	id     *ID
+	id     *GhReleaseID
 }
 
 func (r *GhRelease) WithGraphQLQuery(q *querybuilder.Selection) *GhRelease {
 	return &GhRelease{
 		query: q,
 	}
-}
-
-type GhReleaseID = ID
-
-func (r *Query) LoadGhReleaseFromID(id GhReleaseID) *GhRelease {
-	return &GhRelease{query: selectNode(r.query, ID(id), "GhRelease")}
 }
 
 // GhReleaseCreateOpts contains options for GhRelease.Create
@@ -1020,13 +996,13 @@ func (r *GhRelease) Create(ctx context.Context, tag string, title string, opts .
 }
 
 // A unique identifier for this GhRelease.
-func (r *GhRelease) ID(ctx context.Context) (ID, error) {
+func (r *GhRelease) ID(ctx context.Context) (GhReleaseID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ID
+	var response GhReleaseID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1079,19 +1055,13 @@ func (r *GhRelease) AsNode() Node {
 type GhRepo struct { // gh (../../../../../../toolchains/release/gh/repo.go:10:6)
 	query *querybuilder.Selection
 
-	id *ID
+	id *GhRepoID
 }
 
 func (r *GhRepo) WithGraphQLQuery(q *querybuilder.Selection) *GhRepo {
 	return &GhRepo{
 		query: q,
 	}
-}
-
-type GhRepoID = ID
-
-func (r *Query) LoadGhRepoFromID(id GhRepoID) *GhRepo {
-	return &GhRepo{query: selectNode(r.query, ID(id), "GhRepo")}
 }
 
 // GhRepoCloneOpts contains options for GhRepo.Clone
@@ -1127,13 +1097,13 @@ func (r *GhRepo) Clone(repository string, opts ...GhRepoCloneOpts) *Directory { 
 }
 
 // A unique identifier for this GhRepo.
-func (r *GhRepo) ID(ctx context.Context) (ID, error) {
+func (r *GhRepo) ID(ctx context.Context) (GhRepoID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ID
+	var response GhRepoID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)

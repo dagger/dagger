@@ -11,6 +11,6 @@ namespace Dagger;
 /**
  * A unique identifier for an object.
  */
-readonly class WorkspaceMigrationId extends Client\AbstractScalar
+readonly class WorkspaceModuleSettingId extends Client\AbstractScalar
 {
 }

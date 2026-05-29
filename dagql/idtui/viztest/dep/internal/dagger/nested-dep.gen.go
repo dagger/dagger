@@ -46,19 +46,13 @@ type NestedDep struct { // nested-dep (../../../../../../dagql/idtui/viztest/dep
 	query *querybuilder.Selection
 
 	failingFunction *Void
-	id              *ID
+	id              *NestedDepID
 }
 
 func (r *NestedDep) WithGraphQLQuery(q *querybuilder.Selection) *NestedDep {
 	return &NestedDep{
 		query: q,
 	}
-}
-
-type NestedDepID = ID
-
-func (r *Query) LoadNestedDepFromID(id NestedDepID) *NestedDep {
-	return &NestedDep{query: selectNode(r.query, ID(id), "NestedDep")}
 }
 
 func (r *NestedDep) FailingFunction(ctx context.Context) error { // nested-dep (../../../../../../dagql/idtui/viztest/dep/nested-dep/main.go:10:1)
@@ -71,13 +65,13 @@ func (r *NestedDep) FailingFunction(ctx context.Context) error { // nested-dep (
 }
 
 // A unique identifier for this NestedDep.
-func (r *NestedDep) ID(ctx context.Context) (ID, error) {
+func (r *NestedDep) ID(ctx context.Context) (NestedDepID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ID
+	var response NestedDepID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)

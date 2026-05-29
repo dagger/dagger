@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `WorkspaceModuleID` scalar type represents an identifier for an object of type WorkspaceModule.
+ * A unique identifier for an object.
  */
-readonly class WorkspaceModuleId extends Client\AbstractId
+readonly class WorkspaceModuleId extends Client\AbstractScalar
 {
 }

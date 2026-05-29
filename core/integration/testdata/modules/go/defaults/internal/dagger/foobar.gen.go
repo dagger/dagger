@@ -46,19 +46,13 @@ type Foobar struct { // foobar (../../../../../../../../core/integration/testdat
 	query *querybuilder.Selection
 
 	exclaim *string
-	id      *ID
+	id      *FoobarID
 }
 
 func (r *Foobar) WithGraphQLQuery(q *querybuilder.Selection) *Foobar {
 	return &Foobar{
 		query: q,
 	}
-}
-
-type FoobarID = ID
-
-func (r *Query) LoadFoobarFromID(id FoobarID) *Foobar {
-	return &Foobar{query: selectNode(r.query, ID(id), "Foobar")}
 }
 
 // FoobarExclaimOpts contains options for Foobar.Exclaim
@@ -88,13 +82,13 @@ func (r *Foobar) Exclaim(ctx context.Context, message string, opts ...FoobarExcl
 }
 
 // A unique identifier for this Foobar.
-func (r *Foobar) ID(ctx context.Context) (ID, error) {
+func (r *Foobar) ID(ctx context.Context) (FoobarID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ID
+	var response FoobarID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)

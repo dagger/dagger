@@ -12,7 +12,7 @@ import (
 type Apko struct { // apko (../../../../../../toolchains/release/apko/main.go:16:6)
 	query *querybuilder.Selection
 
-	id      *ID
+	id      *ApkoID
 	publish *Void
 }
 type WithApkoFunc func(r *Apko) *Apko
@@ -28,12 +28,6 @@ func (r *Apko) WithGraphQLQuery(q *querybuilder.Selection) *Apko {
 	return &Apko{
 		query: q,
 	}
-}
-
-type ApkoID = ID
-
-func (r *Query) LoadApkoFromID(id ApkoID) *Apko {
-	return &Apko{query: selectNode(r.query, ID(id), "Apko")}
 }
 
 // Load the Alpine base configuration.
@@ -149,13 +143,13 @@ func (r *Apko) Config(file *File) *ApkoConfig { // apko (../../../../../../toolc
 }
 
 // A unique identifier for this Apko.
-func (r *Apko) ID(ctx context.Context) (ID, error) {
+func (r *Apko) ID(ctx context.Context) (ApkoID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ID
+	var response ApkoID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -368,7 +362,7 @@ func (r *Apko) AsNode() Node {
 type ApkoBuildResult struct { // apko (../../../../../../toolchains/release/apko/main.go:251:6)
 	query *querybuilder.Selection
 
-	id  *ID
+	id  *ApkoBuildResultID
 	tag *string
 }
 
@@ -376,12 +370,6 @@ func (r *ApkoBuildResult) WithGraphQLQuery(q *querybuilder.Selection) *ApkoBuild
 	return &ApkoBuildResult{
 		query: q,
 	}
-}
-
-type ApkoBuildResultID = ID
-
-func (r *Query) LoadApkoBuildResultFromID(id ApkoBuildResultID) *ApkoBuildResult {
-	return &ApkoBuildResult{query: selectNode(r.query, ID(id), "ApkoBuildResult")}
 }
 
 // Import the image into a container.
@@ -402,13 +390,13 @@ func (r *ApkoBuildResult) File() *File { // apko (../../../../../../toolchains/r
 }
 
 // A unique identifier for this ApkoBuildResult.
-func (r *ApkoBuildResult) ID(ctx context.Context) (ID, error) {
+func (r *ApkoBuildResult) ID(ctx context.Context) (ApkoBuildResultID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ID
+	var response ApkoBuildResultID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -473,7 +461,7 @@ func (r *ApkoBuildResult) AsNode() Node {
 type ApkoConfig struct { // apko (../../../../../../toolchains/release/apko/config.go:31:6)
 	query *querybuilder.Selection
 
-	id *ID
+	id *ApkoConfigID
 }
 type WithApkoConfigFunc func(r *ApkoConfig) *ApkoConfig
 
@@ -488,12 +476,6 @@ func (r *ApkoConfig) WithGraphQLQuery(q *querybuilder.Selection) *ApkoConfig {
 	return &ApkoConfig{
 		query: q,
 	}
-}
-
-type ApkoConfigID = ID
-
-func (r *Query) LoadApkoConfigFromID(id ApkoConfigID) *ApkoConfig {
-	return &ApkoConfig{query: selectNode(r.query, ID(id), "ApkoConfig")}
 }
 
 func (r *ApkoConfig) Archs(ctx context.Context) ([]string, error) { // apko (../../../../../../toolchains/release/apko/config.go:36:2)
@@ -533,13 +515,13 @@ func (r *ApkoConfig) File() *File { // apko (../../../../../../toolchains/releas
 }
 
 // A unique identifier for this ApkoConfig.
-func (r *ApkoConfig) ID(ctx context.Context) (ID, error) {
+func (r *ApkoConfig) ID(ctx context.Context) (ApkoConfigID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ID
+	var response ApkoConfigID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
