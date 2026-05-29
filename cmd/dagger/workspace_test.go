@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/engine/client"
+	cloudapi "github.com/dagger/dagger/internal/cloud"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
@@ -326,6 +327,34 @@ func TestValidateWorkspaceAutocheckArgs(t *testing.T) {
 	require.NoError(t, validateWorkspaceAutocheckArgs(nil, []string{"off"}))
 	require.ErrorContains(t, validateWorkspaceAutocheckArgs(nil, []string{"yes"}), "on or off")
 	require.ErrorContains(t, validateWorkspaceAutocheckArgs(nil, []string{"on", "off"}), "expected 0 or 1 arguments")
+}
+
+func TestWorkspaceAutocheckSelectedSourceRepos(t *testing.T) {
+	selected, enabled := workspaceSelectedSourceRepos([]cloudapi.SourceRepository{
+		{Repository: "github.com/acme/one", Selected: true},
+		{Repository: "https://github.com/acme/two", Selected: true},
+		{Repository: "github.com/acme/three", Selected: false},
+	}, "github.com/acme/two")
+
+	require.True(t, enabled)
+	require.Equal(t, []string{"github.com/acme/one", "github.com/acme/two"}, selected)
+}
+
+func TestSetWorkspaceAutocheckRepoSelected(t *testing.T) {
+	selected := []string{"github.com/acme/one", "https://github.com/acme/two"}
+
+	require.Equal(t,
+		[]string{"github.com/acme/one"},
+		setWorkspaceAutocheckRepoSelected(selected, "github.com/acme/two", false),
+	)
+	require.Equal(t,
+		[]string{"github.com/acme/one", "github.com/acme/three", "github.com/acme/two"},
+		setWorkspaceAutocheckRepoSelected(selected, "github.com/acme/three", true),
+	)
+	require.Equal(t,
+		[]string{"github.com/acme/one", "github.com/acme/two"},
+		setWorkspaceAutocheckRepoSelected(selected, "github.com/acme/two", true),
+	)
 }
 
 func TestSelectedRemoteWorkspaceAddressInfersLocalGitWorkspace(t *testing.T) {
