@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `HealthcheckConfigID` scalar type represents an identifier for an object of type HealthcheckConfig.
+ * A unique identifier for an object.
  */
-readonly class HealthcheckConfigId extends Client\AbstractId
+readonly class HealthcheckConfigId extends Client\AbstractScalar
 {
 }

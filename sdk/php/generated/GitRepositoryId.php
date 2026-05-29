@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `GitRepositoryID` scalar type represents an identifier for an object of type GitRepository.
+ * A unique identifier for an object.
  */
-readonly class GitRepositoryId extends Client\AbstractId
+readonly class GitRepositoryId extends Client\AbstractScalar
 {
 }

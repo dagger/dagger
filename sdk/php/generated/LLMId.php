@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `LLMID` scalar type represents an identifier for an object of type LLM.
+ * A unique identifier for an object.
  */
-readonly class LLMId extends Client\AbstractId
+readonly class LLMId extends Client\AbstractScalar
 {
 }

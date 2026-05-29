@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `EnumValueTypeDefID` scalar type represents an identifier for an object of type EnumValueTypeDef.
+ * A unique identifier for an object.
  */
-readonly class EnumValueTypeDefId extends Client\AbstractId
+readonly class EnumValueTypeDefId extends Client\AbstractScalar
 {
 }

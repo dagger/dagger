@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `CheckGroupID` scalar type represents an identifier for an object of type CheckGroup.
+ * A unique identifier for an object.
  */
-readonly class CheckGroupId extends Client\AbstractId
+readonly class CheckGroupId extends Client\AbstractScalar
 {
 }

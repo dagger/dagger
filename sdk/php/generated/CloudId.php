@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `CloudID` scalar type represents an identifier for an object of type Cloud.
+ * A unique identifier for an object.
  */
-readonly class CloudId extends Client\AbstractId
+readonly class CloudId extends Client\AbstractScalar
 {
 }

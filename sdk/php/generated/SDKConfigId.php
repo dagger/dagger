@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `SDKConfigID` scalar type represents an identifier for an object of type SDKConfig.
+ * A unique identifier for an object.
  */
-readonly class SDKConfigId extends Client\AbstractId
+readonly class SDKConfigId extends Client\AbstractScalar
 {
 }

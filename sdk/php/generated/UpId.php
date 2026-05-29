@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `UpID` scalar type represents an identifier for an object of type Up.
+ * A unique identifier for an object.
  */
-readonly class UpId extends Client\AbstractId
+readonly class UpId extends Client\AbstractScalar
 {
 }
