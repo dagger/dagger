@@ -206,17 +206,36 @@ func exportConfigToHost(ctx context.Context, bk *engineutil.Client, ws *core.Wor
 }
 
 func readConfigBytes(ctx context.Context, ws *core.Workspace) ([]byte, error) {
-	configPath, err := configHostPath(ws)
+	if ws == nil {
+		return nil, fmt.Errorf("workspace is required")
+	}
+	configFile, err := workspaceConfigFile(ws)
 	if err != nil {
 		return nil, err
 	}
 
-	bk, err := workspaceBuildkit(ctx)
-	if err != nil {
-		return nil, err
+	if ws.HostPath() != "" {
+		configPath, err := workspaceHostPath(ws, configFile)
+		if err != nil {
+			return nil, err
+		}
+		bk, err := workspaceBuildkit(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		data, err := bk.ReadCallerHostFile(ctx, configPath)
+		if err != nil {
+			return nil, fmt.Errorf("reading config: %w", err)
+		}
+		return data, nil
 	}
 
-	data, err := bk.ReadCallerHostFile(ctx, configPath)
+	rootfs := ws.Rootfs()
+	if rootfs.Self() == nil {
+		return nil, fmt.Errorf("workspace has no host path or rootfs")
+	}
+	data, err := core.DirectoryReadFile(ctx, rootfs, configFile)
 	if err != nil {
 		return nil, fmt.Errorf("reading config: %w", err)
 	}
