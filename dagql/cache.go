@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"net/url"
 	"os"
 	"reflect"
@@ -320,6 +321,32 @@ func (c *Cache) BindSessionResource(_ context.Context, sessionID string, clientI
 	c.sessionMu.Unlock()
 
 	return nil
+}
+
+func (c *Cache) SetVolatileVars(_ context.Context, sessionID, k, v string) {
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+
+	if c.sessionVolatileVarsBySession == nil {
+		c.sessionVolatileVarsBySession = make(map[string]map[string]string)
+	}
+	if c.sessionVolatileVarsBySession[sessionID] == nil {
+		c.sessionVolatileVarsBySession[sessionID] = make(map[string]string)
+	}
+	c.sessionVolatileVarsBySession[sessionID][k] = v
+}
+
+func (c *Cache) ResolveVolatileVars(_ context.Context, sessionID string) map[string]string {
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+
+	if c.sessionVolatileVarsBySession == nil {
+		return nil
+	}
+	if c.sessionVolatileVarsBySession[sessionID] == nil {
+		return nil
+	}
+	return maps.Clone(c.sessionVolatileVarsBySession[sessionID])
 }
 
 func (c *Cache) ResolveSessionResource(
@@ -652,6 +679,7 @@ func (c *Cache) ReleaseSession(ctx context.Context, sessionID string) error {
 	delete(c.sessionLazySpansBySession, sessionID)
 	delete(c.sessionResultInstallSpans, sessionID)
 	delete(c.sessionResourcesBySession, sessionID)
+	delete(c.sessionVolatileVarsBySession, sessionID)
 	delete(c.sessionHandlesBySession, sessionID)
 	c.sessionMu.Unlock()
 
@@ -1250,9 +1278,10 @@ type Cache struct {
 	// closure (HasDependencyResults / HasDependencyResultsKinds with Owned=true),
 	// and over the cached transitive parent.deps closure for module API call
 	// returns — no graph walk at install or failure time.
-	sessionResultInstallSpans map[string]map[sharedResultID]map[string]trace.SpanContext
-	sessionResourcesBySession map[string]map[SessionResourceHandle]*sessionResourceBindings
-	sessionHandlesBySession   map[string]*set.TreeSet[SessionResourceHandle]
+	sessionResultInstallSpans    map[string]map[sharedResultID]map[string]trace.SpanContext
+	sessionResourcesBySession    map[string]map[SessionResourceHandle]*sessionResourceBindings
+	sessionHandlesBySession      map[string]*set.TreeSet[SessionResourceHandle]
+	sessionVolatileVarsBySession map[string]map[string]string
 
 	sqlDB *sql.DB
 	// persistent normalized cache store (disk persistence/import).
@@ -3675,7 +3704,7 @@ func (c *Cache) lookupCacheForDigests(
 	nowUnix := now.Unix()
 	match := c.lookupMatchForDigestsLocked(recipeDigest, extraDigests, nowUnix)
 	c.traceLookupAttempt(ctx, recipeDigest.String(), "", nil, false)
-	hitRes := c.selectLookupCandidateForSessionAndRecipeLocked(sessionID, match.candidates, recipeDigest)
+	hitRes := c.selectLookupCandidateForSessionLocked(sessionID, match.candidates)
 	if hitRes == nil {
 		c.traceLookupMissNoMatch(ctx, recipeDigest.String(), false, -1, "", 0)
 		c.egraphMu.Unlock()

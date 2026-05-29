@@ -1913,7 +1913,7 @@ func targetParentDirectoryForContainerPath(ctx context.Context, parent dagql.Obj
 	}
 }
 
-func expandContainerInput(container *Container, input string, expand bool) (string, error) {
+func ExpandContainerInput(container *Container, input string, expand bool) (string, error) {
 	if !expand {
 		return input, nil
 	}
@@ -1948,7 +1948,7 @@ func expandContainerInput(container *Container, input string, expand bool) (stri
 }
 
 func resolveContainerInputPath(container *Container, rawPath string, expand bool) (string, error) {
-	path, err := expandContainerInput(container, rawPath, expand)
+	path, err := ExpandContainerInput(container, rawPath, expand)
 	if err != nil {
 		return "", err
 	}
@@ -2277,7 +2277,7 @@ func (lazy *ContainerWithEnvVariableLazy) Evaluate(ctx context.Context, containe
 		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
 			return err
 		}
-		value, err := expandContainerInput(container, lazy.Value, lazy.Expand)
+		value, err := ExpandContainerInput(container, lazy.Value, lazy.Expand)
 		if err != nil {
 			return err
 		}

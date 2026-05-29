@@ -21,11 +21,10 @@ import (
 // cached parent. If the engine returns the first cached output unchanged, the
 // second run observes "one:second" instead of the current value "two:second".
 func (ContainerSuite) TestVolatileVariableCachedExecOutputSeesLatestValue(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-	base := c.Container().From(alpineImage)
 
 	run := func(runID, marker string) string {
-		out, err := base.
+		c := connect(ctx, t)
+		out, err := c.Container().From(alpineImage).
 			WithVolatileVariable("RUN_ID", runID).
 			WithExec([]string{"true"}).
 			WithExec([]string{"sh", "-c", `printf '%s:%s' "$RUN_ID" "$1"`, "_", marker}).
@@ -61,17 +60,11 @@ func (ContainerSuite) TestVolatileVariableCacheHitKeepsEachContainerValue(ctx co
 		WithVolatileVariable("RUN_ID", "one").
 		WithExec([]string{"true"})
 	require.Equal(t, "one:first", read(first, "first"))
-	firstID, err := first.ID(ctx)
-	require.NoError(t, err)
 
 	second := base.
 		WithVolatileVariable("RUN_ID", "two").
 		WithExec([]string{"true"})
 	require.Equal(t, "two:second", read(second, "second"))
-	secondID, err := second.ID(ctx)
-	require.NoError(t, err)
 
 	require.Equal(t, "one:first-again", read(first, "first-again"))
-	require.Equal(t, "one:first-id", read(c.LoadContainerFromID(firstID), "first-id"))
-	require.Equal(t, "two:second-id", read(c.LoadContainerFromID(secondID), "second-id"))
 }

@@ -1233,6 +1233,16 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		}
 		defer releaseLockedCaches()
 
+		volatileEnvsFromSession := dagCache.ResolveVolatileVars(ctx, clientMetadata.SessionID)
+		var volatileEnvs []string
+		for _, k := range container.VolatileEnv {
+			k = strings.SplitN(k, "=", 2)[0]
+			if v, ok := volatileEnvsFromSession[k]; ok {
+				volatileEnvs = append(volatileEnvs, fmt.Sprintf("%s=%s", k, v))
+			}
+		}
+		container.VolatileEnv = volatileEnvs
+
 		secretEnv, err := container.secretEnvValues(ctx)
 		if err != nil {
 			return err
@@ -1241,7 +1251,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		opts := state.Opts
 		expandedArgs := make([]string, len(opts.Args))
 		for i, arg := range opts.Args {
-			expandedArg, err := expandContainerInput(container, arg, opts.Expand)
+			expandedArg, err := ExpandContainerInput(container, arg, opts.Expand)
 			if err != nil {
 				return err
 			}

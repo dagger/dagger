@@ -230,6 +230,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.NodeFunc("withVolatileVariable", s.withVolatileVariable).
+			WithInput(dagql.PerSessionInput).
 			Doc(`Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.`,
 				`This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.`).
 			Args(
@@ -585,7 +586,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("err").Doc(`Message of the error to raise. If empty, the error will be ignored.`),
 			),
 
-		dagql.NodeFuncWithDynamicInputs("withExec", s.withExec, s.withExecCacheKey).
+		dagql.NodeFunc("withExec", s.withExec).
 			IsPersistable().
 			View(AllVersion).
 			Doc(`Execute a command in the container, and return a new snapshot of the container state after execution.`).
@@ -2036,18 +2037,12 @@ func (s *containerSchema) withEnvVariable(ctx context.Context, parent dagql.Obje
 	if err != nil {
 		return nil, err
 	}
+	value, err := core.ExpandContainerInput(ctr, args.Value, args.Expand)
+	if err != nil {
+		return nil, err
+	}
 	ctr, err = ctr.UpdateImageConfig(ctx, func(cfg dockerspec.DockerOCIImageConfig) dockerspec.DockerOCIImageConfig {
-		value := args.Value
-
-		if args.Expand {
-			value = os.Expand(value, func(k string) string {
-				v, _ := core.LookupEnv(cfg.Env, k)
-				return v
-			})
-		}
-
 		cfg.Env = core.AddEnv(cfg.Env, args.Name, value)
-
 		return cfg
 	})
 	if err != nil {
@@ -2133,10 +2128,16 @@ func (s *containerSchema) withSystemEnvVariable(ctx context.Context, parent dagq
 	return ctr, nil
 }
 
-func (s *containerSchema) withVolatileVariable(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithVolatileVariableArgs) (*core.Container, error) {
+func (s *containerSchema) withVolatileVariable(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithVolatileVariableArgs) (inst dagql.ObjectResult[*core.Container], err error) {
+	curCall := dagql.CurrentCall(ctx)
+	if curCall == nil {
+		return inst, fmt.Errorf("current call is nil")
+	}
+
+	//fmt.Printf("ACB withVolatileVariable called with %+v; current call is %+v\n", args, curCall)
 	ctr, err := cloneContainerForSchemaChild(ctx, parent)
 	if err != nil {
-		return nil, err
+		return inst, err
 	}
 	ctr.WithVolatileVariable(args.Name, args.Value)
 	if parent.Self().Lazy != nil {
@@ -2147,7 +2148,37 @@ func (s *containerSchema) withVolatileVariable(ctx context.Context, parent dagql
 			Value:     args.Value,
 		}
 	}
-	return ctr, nil
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get server: %w", err)
+	}
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, ctr)
+	if err != nil {
+		return inst, err
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("resolve volatile variable %q: current client metadata: %w", args.Name, err)
+	}
+	if clientMetadata.SessionID == "" {
+		return inst, fmt.Errorf("resolve volatile variable %q: empty session ID", args.Name)
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("resolve volatile variable %q: current dagql cache: %w", args.Name, err)
+	}
+	cache.SetVolatileVars(ctx, clientMetadata.SessionID, args.Name, args.Value)
+
+	parentDig, err := parent.ContentPreferredDigest(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	return inst.WithContentDigest(ctx, hashutil.HashStrings(
+		string(parentDig),
+		fmt.Sprintf("with-volatile-variable-name-only:%s", args.Name),
+	))
 }
 
 type containerWithImageConfigMetadataArgs struct {
