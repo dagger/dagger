@@ -22,7 +22,6 @@ import (
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	cloudapi "github.com/dagger/dagger/internal/cloud"
-	cloudauth "github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/dagger/dagger/util/gitutil"
 )
 
@@ -755,27 +754,30 @@ func renderWorkspaceRemoteRows(cmd *cobra.Command, rows []*workspaceRemoteRow) {
 }
 
 type workspaceAutocheckState struct {
-	OrgName  string
-	OrgID    string
-	Repo     string
-	Enabled  bool
-	IsPublic bool
+	OrgName        string
+	OrgID          string
+	Repo           string
+	Enabled        bool
+	IsPublic       bool
+	InstallationID string
+	SourceMode     string
+	SelectedRepos  []string
 }
 
 func loadWorkspaceAutocheckState(ctx context.Context, remote workspaceRemoteAddress) (workspaceAutocheckState, bool, error) {
-	client, orgs, err := workspaceAutocheckClientOrgs(ctx, false)
+	client, err := workspaceAutocheckClient(ctx, false)
 	if err != nil {
 		return workspaceAutocheckState{}, false, err
 	}
-	return findWorkspaceAutocheckState(ctx, client, orgs, remote.CloneRef)
+	return findWorkspaceAutocheckState(ctx, client, remote.CloneRef)
 }
 
 func setWorkspaceAutocheckState(ctx context.Context, remote workspaceRemoteAddress, enabled bool) (workspaceAutocheckState, error) {
-	client, orgs, err := workspaceAutocheckClientOrgs(ctx, true)
+	client, err := workspaceAutocheckClient(ctx, true)
 	if err != nil {
 		return workspaceAutocheckState{}, err
 	}
-	current, ok, err := findWorkspaceAutocheckState(ctx, client, orgs, remote.CloneRef)
+	current, ok, err := findWorkspaceAutocheckState(ctx, client, remote.CloneRef)
 	if err != nil {
 		return workspaceAutocheckState{}, err
 	}
@@ -788,65 +790,152 @@ func setWorkspaceAutocheckState(ctx context.Context, remote workspaceRemoteAddre
 	if current.Enabled == enabled {
 		return current, nil
 	}
+	if current.OrgID == "" || current.InstallationID == "" {
+		return workspaceAutocheckState{}, fmt.Errorf("no Cloud source mapping found for %s", current.Repo)
+	}
+	selected := setWorkspaceAutocheckRepoSelected(current.SelectedRepos, current.Repo, enabled)
+	if !enabled && len(selected) == 0 {
+		return workspaceAutocheckState{}, fmt.Errorf("turn workspace autocheck off: Cloud requires at least one selected repository for source %s", current.InstallationID)
+	}
+	if _, err := client.ConfigureOrgSource(ctx, current.OrgID, current.InstallationID, "SELECTED", selected); err != nil {
+		return workspaceAutocheckState{}, fmt.Errorf("turn workspace autocheck %s: %w", onOff(enabled), err)
+	}
 	if enabled {
-		if current.OrgID == "" {
-			return enableWorkspaceAutocheckInAnyOrg(ctx, client, orgs, current)
-		}
 		if _, err := client.UpdateOrgRepoSetting(ctx, current.OrgID, current.Repo, current.IsPublic); err != nil {
-			return workspaceAutocheckState{}, fmt.Errorf("turn workspace autocheck on: %w", err)
+			return workspaceAutocheckState{}, fmt.Errorf("update Cloud repo setting for %s: %w", current.Repo, err)
 		}
-		current.Enabled = true
-		return current, nil
 	}
-	if current.OrgID == "" {
-		return current, nil
-	}
-	if _, err := client.DeleteOrgRepoSetting(ctx, current.OrgID, current.Repo); err != nil {
-		return workspaceAutocheckState{}, fmt.Errorf("turn workspace autocheck off: %w", err)
-	}
-	current.Enabled = false
+	current.Enabled = enabled
+	current.SourceMode = "SELECTED"
+	current.SelectedRepos = selected
 	return current, nil
 }
 
-func workspaceAutocheckClientOrgs(ctx context.Context, login bool) (*cloudapi.Client, []cloudauth.Org, error) {
+func workspaceAutocheckClient(ctx context.Context, login bool) (*cloudapi.Client, error) {
 	client, _, err := cloudCLI.cloudClientWithLogin(ctx, login)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	user, err := client.User(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	return client, user.Orgs, nil
+	return client, nil
 }
 
-func findWorkspaceAutocheckState(ctx context.Context, client *cloudapi.Client, orgs []cloudauth.Org, repo string) (workspaceAutocheckState, bool, error) {
-	ordered, _ := orderCloudOrgsForRepos(orgs, []string{repo})
-	for _, org := range ordered {
-		setting, err := client.OrgRepoSetting(ctx, org.Name, repo)
-		if err != nil {
-			return workspaceAutocheckState{}, false, fmt.Errorf("fetch Cloud repo setting for org %q: %w", org.Name, err)
-		}
-		if setting != nil {
+func findWorkspaceAutocheckState(ctx context.Context, client *cloudapi.Client, repo string) (workspaceAutocheckState, bool, error) {
+	repo = "github.com/" + normalizeGitHubRepo(repo)
+	sources, err := client.Sources(ctx)
+	if err != nil {
+		return workspaceAutocheckState{}, false, fmt.Errorf("lookup Cloud sources: %w", err)
+	}
+	source, ok := workspaceSourceForRepo(sources, repo)
+	if !ok || source.OrgName == nil {
+		if ok, err := workspaceRemoteRepoExists(ctx, client, repo); err != nil {
+			return workspaceAutocheckState{}, false, err
+		} else if ok {
 			return workspaceAutocheckState{
-				OrgName:  org.Name,
-				OrgID:    org.ID,
-				Repo:     setting.Repo,
-				Enabled:  true,
-				IsPublic: setting.IsPublic,
+				Repo:     repo,
+				Enabled:  false,
+				IsPublic: true,
 			}, true, nil
 		}
+		return workspaceAutocheckState{}, false, nil
 	}
-	if ok, err := workspaceRemoteRepoExists(ctx, client, repo); err != nil {
+	org, err := client.OrgByName(ctx, *source.OrgName)
+	if err != nil {
+		return workspaceAutocheckState{}, false, fmt.Errorf("lookup Cloud org %q: %w", *source.OrgName, err)
+	}
+	mapped, err := workspaceMappedSourceForInstallation(ctx, client, org.Name, source.ID)
+	if err != nil {
 		return workspaceAutocheckState{}, false, err
-	} else if ok {
+	}
+	sourceRepos, err := client.SourceRepositories(ctx, source.ID, org.ID)
+	if err != nil {
+		return workspaceAutocheckState{}, false, fmt.Errorf("lookup Cloud source repositories for %s: %w", repo, err)
+	}
+	selected, enabled := workspaceSelectedSourceRepos(sourceRepos, repo)
+	setting, err := client.OrgRepoSetting(ctx, org.Name, repo)
+	if err != nil {
+		return workspaceAutocheckState{}, false, fmt.Errorf("fetch Cloud repo setting for org %q: %w", org.Name, err)
+	}
+	isPublic := true
+	if setting != nil {
+		isPublic = setting.IsPublic
+	}
+	if len(selected) > 0 || setting != nil {
 		return workspaceAutocheckState{
-			Repo:     repo,
-			Enabled:  false,
-			IsPublic: true,
+			OrgName:        org.Name,
+			OrgID:          org.ID,
+			Repo:           repo,
+			Enabled:        enabled,
+			IsPublic:       isPublic,
+			InstallationID: source.ID,
+			SourceMode:     mapped.Mode,
+			SelectedRepos:  selected,
 		}, true, nil
 	}
 	return workspaceAutocheckState{}, false, nil
+}
+
+func workspaceSourceForRepo(sources []cloudapi.Source, repo string) (cloudapi.Source, bool) {
+	owner, _, ok := strings.Cut(normalizeGitHubRepo(repo), "/")
+	if !ok {
+		return cloudapi.Source{}, false
+	}
+	for _, source := range sources {
+		if strings.EqualFold(source.Name, owner) {
+			return source, true
+		}
+	}
+	return cloudapi.Source{}, false
+}
+
+func workspaceMappedSourceForInstallation(ctx context.Context, client *cloudapi.Client, orgName, installationID string) (cloudapi.MappedSource, error) {
+	sources, err := client.OrgMappedSources(ctx, orgName)
+	if err != nil {
+		return cloudapi.MappedSource{}, fmt.Errorf("lookup Cloud mapped sources for org %q: %w", orgName, err)
+	}
+	for _, source := range sources {
+		if source.InstallationID == installationID {
+			return source, nil
+		}
+	}
+	return cloudapi.MappedSource{}, fmt.Errorf("Cloud source %s is not mapped to org %q", installationID, orgName)
+}
+
+func workspaceSelectedSourceRepos(repos []cloudapi.SourceRepository, repo string) ([]string, bool) {
+	repo = normalizeGitHubRepo(repo)
+	selected := make([]string, 0, len(repos))
+	enabled := false
+	for _, candidate := range repos {
+		if !candidate.Selected {
+			continue
+		}
+		candidateRepo := "github.com/" + normalizeGitHubRepo(candidate.Repository)
+		selected = append(selected, candidateRepo)
+		if normalizeGitHubRepo(candidate.Repository) == repo {
+			enabled = true
+		}
+	}
+	return selected, enabled
+}
+
+func setWorkspaceAutocheckRepoSelected(selected []string, repo string, enabled bool) []string {
+	repo = "github.com/" + normalizeGitHubRepo(repo)
+	out := make([]string, 0, len(selected)+1)
+	found := false
+	for _, candidate := range selected {
+		candidate = "github.com/" + normalizeGitHubRepo(candidate)
+		if normalizeGitHubRepo(candidate) == normalizeGitHubRepo(repo) {
+			found = true
+			if !enabled {
+				continue
+			}
+		}
+		out = append(out, candidate)
+	}
+	if enabled && !found {
+		out = append(out, repo)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func workspaceRemoteRepoExists(ctx context.Context, client *cloudapi.Client, repo string) (bool, error) {
@@ -861,24 +950,6 @@ func workspaceRemoteRepoExists(ctx context.Context, client *cloudapi.Client, rep
 		}
 	}
 	return false, nil
-}
-
-func enableWorkspaceAutocheckInAnyOrg(ctx context.Context, client *cloudapi.Client, orgs []cloudauth.Org, state workspaceAutocheckState) (workspaceAutocheckState, error) {
-	var lastErr error
-	for _, org := range orgs {
-		if _, err := client.UpdateOrgRepoSetting(ctx, org.ID, state.Repo, state.IsPublic); err != nil {
-			lastErr = err
-			continue
-		}
-		state.OrgName = org.Name
-		state.OrgID = org.ID
-		state.Enabled = true
-		return state, nil
-	}
-	if lastErr != nil {
-		return workspaceAutocheckState{}, fmt.Errorf("turn workspace autocheck on: %w", lastErr)
-	}
-	return workspaceAutocheckState{}, fmt.Errorf("no Cloud org available for %s", state.Repo)
 }
 
 func workspaceAutocheckStateString(state workspaceAutocheckState) string {
