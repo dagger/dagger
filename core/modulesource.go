@@ -23,6 +23,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/core/modules/moduleref"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
@@ -834,15 +835,7 @@ func (src *ModuleSource) AsString() string {
 }
 
 func GitRefString(cloneRef, sourceRootSubpath, version string) string {
-	refPath := cloneRef
-	subPath := filepath.Join("/", sourceRootSubpath)
-	if subPath != "/" {
-		refPath += subPath
-	}
-	if version != "" {
-		refPath += "@" + version
-	}
-	return refPath
+	return moduleref.GitString(cloneRef, sourceRootSubpath, version)
 }
 
 func (src *ModuleSource) Pin() string {
@@ -1735,32 +1728,15 @@ func (src GitModuleSource) Clone() *GitModuleSource {
 	return &src
 }
 
-type SchemeType int
+type SchemeType = moduleref.SchemeType
 
 const (
-	NoScheme SchemeType = iota
-	SchemeHTTP
-	SchemeHTTPS
-	SchemeSSH
-	SchemeSCPLike
+	NoScheme      = moduleref.NoScheme
+	SchemeHTTP    = moduleref.SchemeHTTP
+	SchemeHTTPS   = moduleref.SchemeHTTPS
+	SchemeSSH     = moduleref.SchemeSSH
+	SchemeSCPLike = moduleref.SchemeSCPLike
 )
-
-func (s SchemeType) Prefix() string {
-	switch s {
-	case SchemeHTTP:
-		return "http://"
-	case SchemeHTTPS:
-		return "https://"
-	case SchemeSSH:
-		return "ssh://"
-	default:
-		return ""
-	}
-}
-
-func (s SchemeType) IsSSH() bool {
-	return s == SchemeSSH
-}
 
 type DirModuleSource struct {
 	// the original dir that AsModuleSource was called on

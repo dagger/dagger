@@ -17,7 +17,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/spf13/cobra"
 
-	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules/moduleref"
 	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
@@ -470,7 +470,7 @@ func inferLocalWorkspaceRemoteAddress(ctx context.Context, address string) (work
 	workspacePath = cleanWorkspaceRemoteSubdir(filepath.ToSlash(workspacePath))
 
 	cloneRef := normalizeWorkspaceGitOrigin(origin)
-	inferred := core.GitRefString(cloneRef, workspacePath, version)
+	inferred := moduleref.GitString(cloneRef, workspacePath, version)
 	remote, ok, err := parseWorkspaceRemoteAddress(ctx, inferred)
 	if err != nil {
 		return workspaceRemoteAddress{}, "", err
@@ -573,10 +573,10 @@ func workspaceAddressLooksRemote(address string) bool {
 	if address == "" || strings.HasPrefix(address, "file://") {
 		return false
 	}
-	switch core.FastModuleSourceKindCheck(address, "") {
-	case core.ModuleSourceKindLocal:
+	switch moduleref.FastKind(address, "") {
+	case moduleref.KindLocal:
 		return false
-	case core.ModuleSourceKindGit:
+	case moduleref.KindGit:
 		return true
 	default:
 		return strings.Contains(address, ".") && !strings.HasPrefix(address, "/")
@@ -603,10 +603,10 @@ func parseWorkspaceRemoteAddress(ctx context.Context, address string) (workspace
 			CloneRef:    cloneRef,
 			Path:        workspacePath,
 			Version:     version,
-			BaseAddress: core.GitRefString(cloneRef, workspacePath, ""),
+			BaseAddress: moduleref.GitString(cloneRef, workspacePath, ""),
 		}, true, nil
 	}
-	parsed, err := core.ParseGitRefString(ctx, address)
+	parsed, err := moduleref.ParseGit(address)
 	if err != nil {
 		return workspaceRemoteAddress{}, false, fmt.Errorf("parse remote workspace address %q: %w", address, err)
 	}
@@ -618,7 +618,7 @@ func parseWorkspaceRemoteAddress(ctx context.Context, address string) (workspace
 		CloneRef:    parsed.SourceCloneRef,
 		Path:        workspacePath,
 		Version:     parsed.ModVersion,
-		BaseAddress: core.GitRefString(parsed.SourceCloneRef, workspacePath, ""),
+		BaseAddress: moduleref.GitString(parsed.SourceCloneRef, workspacePath, ""),
 	}, true, nil
 }
 
@@ -661,7 +661,7 @@ func loadWorkspaceRemoteRows(ctx context.Context, dag *dagger.Client, remote wor
 		if version == "" {
 			return
 		}
-		address := core.GitRefString(remote.CloneRef, remote.Path, version)
+		address := moduleref.GitString(remote.CloneRef, remote.Path, version)
 		if _, ok := seen[address]; ok {
 			return
 		}
