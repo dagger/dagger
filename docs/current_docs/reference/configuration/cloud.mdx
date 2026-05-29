@@ -366,8 +366,10 @@ The Dagger CLI will invite you to authenticate your device by displaying a link 
 
 ```shell
 $ dagger login
-Browser opened to: https://auth.dagger.cloud/activate?user_code=XXXX-YYYY
-Confirmation code: XXXX-YYYY
+Login or sign up: https://auth.dagger.cloud/activate?user_code=XXXX-YYYY
+Verification code: XXXX-YYYY
+
+Waiting for authentication. Press Ctrl-C to cancel.
 ```
 
 Once you confirm your authentication code, your Dagger CLI is authenticated and you can visualize and debug your local Dagger workflow runs. Alternatively, you can set your Dagger Cloud token as an environment variable instead of using `dagger login`:
