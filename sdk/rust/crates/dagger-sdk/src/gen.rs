@@ -16169,6 +16169,9 @@ pub struct WorkspaceChecksOpts<'a> {
     /// When true, only return annotated check functions; exclude generate-as-checks
     #[builder(setter(into, strip_option), default)]
     pub no_generate: Option<bool>,
+    /// When true, only return generate-as-checks; exclude annotated check functions
+    #[builder(setter(into, strip_option), default)]
+    pub only_generate: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceDirectoryOpts<'a> {
@@ -16254,6 +16257,9 @@ impl Workspace {
         }
         if let Some(no_generate) = opts.no_generate {
             query = query.arg("noGenerate", no_generate);
+        }
+        if let Some(only_generate) = opts.only_generate {
+            query = query.arg("onlyGenerate", only_generate);
         }
         CheckGroup {
             proc: self.proc.clone(),
