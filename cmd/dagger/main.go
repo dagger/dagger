@@ -579,6 +579,9 @@ func validateWorkspaceFlagPolicy(cmd *cobra.Command, args []string) error {
 }
 
 func workspaceFlagPolicy(cmd *cobra.Command, args []string) string {
+	if flag := cmd.Flags().Lookup("global"); flag != nil && flag.Changed && flag.Value.String() == "true" {
+		return ""
+	}
 	if isWorkspaceConfigCommand(cmd) && len(args) == 2 {
 		return workspaceFlagPolicyLocalOnly
 	}

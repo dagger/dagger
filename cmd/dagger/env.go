@@ -9,6 +9,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	envListAll bool
+	envGlobal  bool
+)
+
 var envCmd = &cobra.Command{
 	Use:   "env",
 	Short: "Manage workspace environments",
@@ -22,7 +27,7 @@ var envListCmd = &cobra.Command{
 		return withEngine(cmd.Context(), client.Params{
 			SkipWorkspaceModules: true,
 		}, func(ctx context.Context, engineClient *client.Client) error {
-			names, err := workspaceEnvList(ctx, engineClient.Dagger())
+			names, err := workspaceEnvList(ctx, engineClient.Dagger(), envListAll)
 			if err != nil {
 				return err
 			}
@@ -44,7 +49,7 @@ var envCreateCmd = &cobra.Command{
 		return withEngine(cmd.Context(), client.Params{
 			SkipWorkspaceModules: true,
 		}, func(ctx context.Context, engineClient *client.Client) error {
-			return workspaceEnvCreate(ctx, engineClient.Dagger(), args[0], workspaceHere)
+			return workspaceEnvCreate(ctx, engineClient.Dagger(), args[0], workspaceHere, envGlobal)
 		})
 	},
 }
@@ -57,21 +62,24 @@ var envRmCmd = &cobra.Command{
 		return withEngine(cmd.Context(), client.Params{
 			SkipWorkspaceModules: true,
 		}, func(ctx context.Context, engineClient *client.Client) error {
-			return workspaceEnvRemove(ctx, engineClient.Dagger(), args[0], workspaceHere)
+			return workspaceEnvRemove(ctx, engineClient.Dagger(), args[0], workspaceHere, envGlobal)
 		})
 	},
 }
 
 func init() {
 	envCmd.AddCommand(envListCmd, envCreateCmd, envRmCmd)
+	envListCmd.Flags().BoolVarP(&envListAll, "all", "a", false, "List all env names across workspace and user config")
 	addWorkspaceHereFlag(envCreateCmd)
 	addWorkspaceHereFlag(envRmCmd)
+	envCreateCmd.Flags().BoolVarP(&envGlobal, "global", "g", false, "Write to user-level Dagger config")
+	envRmCmd.Flags().BoolVarP(&envGlobal, "global", "g", false, "Remove from user-level Dagger config")
 
 	setWorkspaceFlagPolicy(envCreateCmd, workspaceFlagPolicyLocalOnly)
 	setWorkspaceFlagPolicy(envRmCmd, workspaceFlagPolicyLocalOnly)
 }
 
-func workspaceEnvList(ctx context.Context, dag *dagger.Client) ([]string, error) {
+func workspaceEnvList(ctx context.Context, dag *dagger.Client, all bool) ([]string, error) {
 	var res struct {
 		CurrentWorkspace struct {
 			EnvList []string
@@ -79,7 +87,10 @@ func workspaceEnvList(ctx context.Context, dag *dagger.Client) ([]string, error)
 	}
 
 	err := dag.Do(ctx, &dagger.Request{
-		Query: `query { currentWorkspace { envList } }`,
+		Query: `query($all: Boolean!) { currentWorkspace { envList(all: $all) } }`,
+		Variables: map[string]any{
+			"all": all,
+		},
 	}, &dagger.Response{
 		Data: &res,
 	})
@@ -89,7 +100,7 @@ func workspaceEnvList(ctx context.Context, dag *dagger.Client) ([]string, error)
 	return res.CurrentWorkspace.EnvList, nil
 }
 
-func workspaceEnvCreate(ctx context.Context, dag *dagger.Client, name string, here bool) error {
+func workspaceEnvCreate(ctx context.Context, dag *dagger.Client, name string, here bool, global bool) error {
 	var res struct {
 		CurrentWorkspace struct {
 			EnvCreate string
@@ -97,17 +108,18 @@ func workspaceEnvCreate(ctx context.Context, dag *dagger.Client, name string, he
 	}
 
 	return dag.Do(ctx, &dagger.Request{
-		Query: `query($name: String!, $here: Boolean!) { currentWorkspace { envCreate(name: $name, here: $here) } }`,
+		Query: `query($name: String!, $here: Boolean!, $global: Boolean!) { currentWorkspace { envCreate(name: $name, here: $here, global: $global) } }`,
 		Variables: map[string]any{
-			"name": name,
-			"here": here,
+			"name":   name,
+			"here":   here,
+			"global": global,
 		},
 	}, &dagger.Response{
 		Data: &res,
 	})
 }
 
-func workspaceEnvRemove(ctx context.Context, dag *dagger.Client, name string, here bool) error {
+func workspaceEnvRemove(ctx context.Context, dag *dagger.Client, name string, here bool, global bool) error {
 	var res struct {
 		CurrentWorkspace struct {
 			EnvRemove string
@@ -115,10 +127,11 @@ func workspaceEnvRemove(ctx context.Context, dag *dagger.Client, name string, he
 	}
 
 	return dag.Do(ctx, &dagger.Request{
-		Query: `query($name: String!, $here: Boolean!) { currentWorkspace { envRemove(name: $name, here: $here) } }`,
+		Query: `query($name: String!, $here: Boolean!, $global: Boolean!) { currentWorkspace { envRemove(name: $name, here: $here, global: $global) } }`,
 		Variables: map[string]any{
-			"name": name,
-			"here": here,
+			"name":   name,
+			"here":   here,
+			"global": global,
 		},
 	}, &dagger.Response{
 		Data: &res,

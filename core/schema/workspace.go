@@ -108,29 +108,35 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 				dagql.Arg("key").Doc("Dotted key path (e.g. modules.greeter.source). Empty for full config."),
 			),
 		dagql.Func("configWrite", s.configWrite).
-			DoNotCache("Mutates workspace config on host").
+			DoNotCache("Mutates workspace or user config on host").
 			Doc("Write a configuration value to config.toml.").
 			Args(
 				dagql.Arg("key").Doc("Dotted key path (e.g. modules.greeter.source)."),
 				dagql.Arg("value").Doc("Value to set. Bools, integers, and comma-separated arrays are auto-detected."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
+				dagql.Arg("global").Doc("Write to user-level Dagger config instead of workspace config."),
 			),
 		dagql.Func("envList", s.envList).
 			DoNotCache("Reads live config from host").
-			Doc("List named environments defined in the workspace configuration."),
+			Doc("List named environments visible to the workspace.").
+			Args(
+				dagql.Arg("all").Doc("List all env names across workspace and user config."),
+			),
 		dagql.Func("envCreate", s.envCreate).
-			DoNotCache("Mutates workspace config on host").
-			Doc("Create a named workspace environment if it does not already exist.").
+			DoNotCache("Mutates workspace or user config on host").
+			Doc("Create a named environment if it does not already exist.").
 			Args(
 				dagql.Arg("name").Doc("Environment name."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
+				dagql.Arg("global").Doc("Create the env namespace in user-level Dagger config."),
 			),
 		dagql.Func("envRemove", s.envRemove).
-			DoNotCache("Mutates workspace config on host").
-			Doc("Remove a named workspace environment.").
+			DoNotCache("Mutates workspace or user config on host").
+			Doc("Remove a named environment.").
 			Args(
 				dagql.Arg("name").Doc("Environment name."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
+				dagql.Arg("global").Doc("Remove the env namespace from user-level Dagger config."),
 			),
 		dagql.NodeFunc("moduleList", s.moduleList).
 			DoNotCache("Reads live config from host").

@@ -16094,20 +16094,21 @@ func (r *UpGroup) AsNode() Node {
 type Workspace struct {
 	query *querybuilder.Selection
 
-	address     *string
-	clientId    *string
-	configFile  *string
-	configRead  *string
-	configWrite *string
-	cwd         *string
-	envCreate   *string
-	envRemove   *string
-	findUp      *string
-	id          *ID
-	init        *string
-	install     *string
-	moduleInit  *string
-	uninstall   *string
+	address      *string
+	clientId     *string
+	configFile   *string
+	configRead   *string
+	configWrite  *string
+	cwd          *string
+	envConfigKey *string
+	envCreate    *string
+	envRemove    *string
+	findUp       *string
+	id           *ID
+	init         *string
+	install      *string
+	moduleInit   *string
+	uninstall    *string
 }
 
 func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
@@ -16223,6 +16224,8 @@ func (r *Workspace) ConfigRead(ctx context.Context, opts ...WorkspaceConfigReadO
 type WorkspaceConfigWriteOpts struct {
 	// Write to the workspace config directory at the workspace cwd.
 	Here bool
+	// Write to user-level Dagger config instead of workspace config.
+	Global bool
 }
 
 // Write a configuration value to config.toml.
@@ -16235,6 +16238,10 @@ func (r *Workspace) ConfigWrite(ctx context.Context, key string, value string, o
 		// `here` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Here) {
 			q = q.Arg("here", opts[i].Here)
+		}
+		// `global` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Global) {
+			q = q.Arg("global", opts[i].Global)
 		}
 	}
 	q = q.Arg("key", key)
@@ -16299,9 +16306,11 @@ func (r *Workspace) Directory(path string, opts ...WorkspaceDirectoryOpts) *Dire
 type WorkspaceEnvCreateOpts struct {
 	// Write to the workspace config directory at the workspace cwd.
 	Here bool
+	// Create the env namespace in user-level Dagger config.
+	Global bool
 }
 
-// Create a named workspace environment if it does not already exist.
+// Create a named environment if it does not already exist.
 func (r *Workspace) EnvCreate(ctx context.Context, name string, opts ...WorkspaceEnvCreateOpts) (string, error) {
 	if r.envCreate != nil {
 		return *r.envCreate, nil
@@ -16312,6 +16321,10 @@ func (r *Workspace) EnvCreate(ctx context.Context, name string, opts ...Workspac
 		if !querybuilder.IsZeroValue(opts[i].Here) {
 			q = q.Arg("here", opts[i].Here)
 		}
+		// `global` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Global) {
+			q = q.Arg("global", opts[i].Global)
+		}
 	}
 	q = q.Arg("name", name)
 
@@ -16321,9 +16334,34 @@ func (r *Workspace) EnvCreate(ctx context.Context, name string, opts ...Workspac
 	return response, q.Execute(ctx)
 }
 
-// List named environments defined in the workspace configuration.
-func (r *Workspace) EnvList(ctx context.Context) ([]string, error) {
+// Key used to match workspace-scoped user environment config.
+func (r *Workspace) EnvConfigKey(ctx context.Context) (string, error) {
+	if r.envConfigKey != nil {
+		return *r.envConfigKey, nil
+	}
+	q := r.query.Select("envConfigKey")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// WorkspaceEnvListOpts contains options for Workspace.EnvList
+type WorkspaceEnvListOpts struct {
+	// List all env names across workspace and user config.
+	All bool
+}
+
+// List named environments visible to the workspace.
+func (r *Workspace) EnvList(ctx context.Context, opts ...WorkspaceEnvListOpts) ([]string, error) {
 	q := r.query.Select("envList")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `all` optional argument
+		if !querybuilder.IsZeroValue(opts[i].All) {
+			q = q.Arg("all", opts[i].All)
+		}
+	}
 
 	var response []string
 
@@ -16335,9 +16373,11 @@ func (r *Workspace) EnvList(ctx context.Context) ([]string, error) {
 type WorkspaceEnvRemoveOpts struct {
 	// Write to the workspace config directory at the workspace cwd.
 	Here bool
+	// Remove the env namespace from user-level Dagger config.
+	Global bool
 }
 
-// Remove a named workspace environment.
+// Remove a named environment.
 func (r *Workspace) EnvRemove(ctx context.Context, name string, opts ...WorkspaceEnvRemoveOpts) (string, error) {
 	if r.envRemove != nil {
 		return *r.envRemove, nil
@@ -16347,6 +16387,10 @@ func (r *Workspace) EnvRemove(ctx context.Context, name string, opts ...Workspac
 		// `here` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Here) {
 			q = q.Arg("here", opts[i].Here)
+		}
+		// `global` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Global) {
+			q = q.Arg("global", opts[i].Global)
 		}
 	}
 	q = q.Arg("name", name)

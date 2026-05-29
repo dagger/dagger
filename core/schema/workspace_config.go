@@ -12,6 +12,8 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/engineutil"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const initialWorkspaceConfig = `# Dagger workspace configuration
@@ -87,6 +89,9 @@ func loadWorkspaceConfigForMutation(
 	policy workspaceConfigMutationPolicy,
 	here bool,
 ) (*workspace.Config, bool, error) {
+	if ws.LocalConfigReadOnly() {
+		return nil, false, fmt.Errorf("workspace local config is read-only; use --global")
+	}
 	if ws.ConfigFile != "" && (!here || workspaceSameConfigDirectory(ws, workspaceConfigDirectoryForWrite(ws, true))) {
 		cfg, err := readWorkspaceConfig(ctx, ws)
 		return cfg, false, err
@@ -258,6 +263,94 @@ func readWorkspaceConfig(ctx context.Context, ws *core.Workspace) (*workspace.Co
 	return cfg, nil
 }
 
+func userConfigPath(ctx context.Context) (string, bool, error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	if clientMetadata.UserConfigPath == "" {
+		return "", false, nil
+	}
+	return clientMetadata.UserConfigPath, true, nil
+}
+
+func readUserConfigBytes(ctx context.Context) ([]byte, bool, error) {
+	path, ok, err := userConfigPath(ctx)
+	if err != nil || !ok {
+		return nil, false, err
+	}
+	bk, err := workspaceBuildkit(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	data, err := bk.ReadCallerHostFile(ctx, path)
+	if err != nil {
+		if status.Code(err) == codes.NotFound || os.IsNotExist(err) {
+			return nil, true, nil
+		}
+		return nil, false, fmt.Errorf("reading user config: %w", err)
+	}
+	return data, true, nil
+}
+
+func readUserConfig(ctx context.Context) (*workspace.UserConfig, []byte, bool, error) {
+	data, ok, err := readUserConfigBytes(ctx)
+	if err != nil || !ok {
+		return nil, data, ok, err
+	}
+	if len(data) == 0 {
+		return &workspace.UserConfig{}, data, ok, nil
+	}
+	cfg, err := workspace.ParseUserConfig(data)
+	if err != nil {
+		return nil, data, false, err
+	}
+	return cfg, data, ok, nil
+}
+
+func writeUserConfigBytes(ctx context.Context, data []byte) error {
+	path, ok, err := userConfigPath(ctx)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("user config path is unavailable")
+	}
+	bk, err := workspaceBuildkit(ctx)
+	if err != nil {
+		return err
+	}
+	return exportWorkspaceFileToHost(ctx, bk, path, data)
+}
+
+func updateUserConfigBytes(ctx context.Context, fn func(existing []byte) ([]byte, error)) error {
+	path, ok, err := userConfigPath(ctx)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("user config path is unavailable")
+	}
+
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return err
+	}
+	lockName := "user-config:" + path
+	query.Locker().Lock(lockName)
+	defer query.Locker().Unlock(lockName)
+
+	existing, _, err := readUserConfigBytes(ctx)
+	if err != nil {
+		return err
+	}
+	updated, err := fn(existing)
+	if err != nil {
+		return err
+	}
+	return writeUserConfigBytes(ctx, updated)
+}
+
 func writeWorkspaceConfig(ctx context.Context, ws *core.Workspace, cfg *workspace.Config) error {
 	return writeWorkspaceConfigWithHints(ctx, ws, cfg, nil)
 }
@@ -312,8 +405,12 @@ func (s *workspaceSchema) configRead(
 		if err != nil {
 			return "", err
 		}
+		userCfg, _, _, err := readUserConfig(ctx)
+		if err != nil {
+			return "", err
+		}
 
-		effective, err := effectiveWorkspaceConfigBytes(cfg, envName)
+		effective, err := effectiveWorkspaceConfigBytes(cfg, envName, userCfg, parent.EnvConfigKey)
 		if err != nil {
 			return "", err
 		}
@@ -338,9 +435,10 @@ func (s *workspaceSchema) configRead(
 }
 
 type configWriteArgs struct {
-	Key   string
-	Value string
-	Here  bool `default:"false"`
+	Key    string
+	Value  string
+	Here   bool `default:"false"`
+	Global bool `default:"false"`
 }
 
 func (s *workspaceSchema) configWrite(
@@ -348,6 +446,13 @@ func (s *workspaceSchema) configWrite(
 	parent *core.Workspace,
 	args configWriteArgs,
 ) (dagql.String, error) {
+	if args.Global {
+		if err := writeUserEnvConfigValue(ctx, parent, args.Key, args.Value); err != nil {
+			return "", err
+		}
+		return dagql.String(args.Value), nil
+	}
+
 	if _, _, err := loadWorkspaceConfigForMutation(ctx, parent, workspaceConfigInitIfMissing, args.Here); err != nil {
 		return "", err
 	}
@@ -393,13 +498,33 @@ func isExplicitEnvConfigKey(key string) bool {
 	return key == "env" || strings.HasPrefix(key, "env.")
 }
 
-func effectiveWorkspaceConfigBytes(cfg *workspace.Config, envName string) ([]byte, error) {
-	applied, err := workspace.ApplyEnvOverlay(cfg, envName)
+func effectiveWorkspaceConfigBytes(cfg *workspace.Config, envName string, userCfg *workspace.UserConfig, workspaceKey string) ([]byte, error) {
+	applied, err := workspace.ApplySelectedEnvOverlay(cfg, envName, userCfg, workspaceKey)
 	if err != nil {
 		return nil, err
 	}
 	applied.Env = nil
 	return workspace.SerializeConfig(applied), nil
+}
+
+func writeUserEnvConfigValue(ctx context.Context, ws *core.Workspace, key, value string) error {
+	envName, ok := selectedWorkspaceEnv(ctx)
+	if !ok {
+		return fmt.Errorf("--global config writes require --env")
+	}
+	if ws.EnvConfigKey == "" {
+		return fmt.Errorf("workspace env %q requires a workspace config key", envName)
+	}
+	if ws.ConfigFile == "" {
+		return fmt.Errorf("workspace env %q requires .dagger/config.toml", envName)
+	}
+	cfg, err := readWorkspaceConfig(ctx, ws)
+	if err != nil {
+		return err
+	}
+	return updateUserConfigBytes(ctx, func(existingData []byte) ([]byte, error) {
+		return workspace.WriteUserEnvConfigValue(existingData, cfg, envName, ws.EnvConfigKey, key, value)
+	})
 }
 
 func envScopedConfigKey(cfg *workspace.Config, envName, key string) (string, error) {

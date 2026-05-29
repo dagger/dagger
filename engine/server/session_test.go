@@ -516,7 +516,9 @@ func TestDetectAndLoadWorkspaceDoesNotInferModuleFromCWDWithoutWorkspace(t *test
 		true,
 	)
 	require.NoError(t, err)
-	require.Nil(t, client.workspace)
+	require.NotNil(t, client.workspace)
+	require.Equal(t, "scratch://workspace", client.workspace.Address)
+	require.True(t, client.workspace.LocalConfigReadOnly())
 	require.Empty(t, client.pendingModules)
 }
 
@@ -574,6 +576,50 @@ func TestRemoteWorkspaceCwdUsesDetectionStart(t *testing.T) {
 	require.Equal(t, "subdir", client.workspace.Cwd)
 	require.Equal(t, "github.com/acme/repo/subdir@main", client.workspace.Address)
 	require.Equal(t, filepath.Join(".dagger", workspace.ConfigFileName), client.workspace.ConfigFile)
+}
+
+func TestLocalWorkspaceEnvConfigKeyUsesOriginAndConfigOwner(t *testing.T) {
+	t.Parallel()
+
+	ws := &workspace.Workspace{
+		Root:       "/repo",
+		Cwd:        "apps/api",
+		ConfigFile: "apps/api/.dagger/config.toml",
+	}
+	readFile := func(_ context.Context, path string) ([]byte, error) {
+		require.Equal(t, filepath.Join("/repo", ".git", "config"), path)
+		return []byte(`[remote "origin"]
+	url = https://github.com/acme/app.git
+`), nil
+	}
+
+	require.Equal(t, "github.com/acme/app/apps/api", localWorkspaceEnvConfigKey(context.Background(), readFile, ws))
+}
+
+func TestLocalWorkspaceEnvConfigKeyFollowsGitDirFile(t *testing.T) {
+	t.Parallel()
+
+	ws := &workspace.Workspace{
+		Root:       "/repo/worktree",
+		Cwd:        ".",
+		ConfigFile: ".dagger/config.toml",
+	}
+	readFile := func(_ context.Context, path string) ([]byte, error) {
+		switch filepath.Clean(path) {
+		case filepath.Join("/repo/worktree", ".git", "config"):
+			return nil, os.ErrNotExist
+		case filepath.Join("/repo/worktree", ".git"):
+			return []byte("gitdir: ../.git/worktrees/worktree\n"), nil
+		case filepath.Join("/repo/.git/worktrees/worktree", "config"):
+			return []byte(`[remote "origin"]
+	url = git@github.com:acme/app.git
+`), nil
+		default:
+			return nil, os.ErrNotExist
+		}
+	}
+
+	require.Equal(t, "github.com/acme/app", localWorkspaceEnvConfigKey(context.Background(), readFile, ws))
 }
 
 func TestRemoteWorkspaceLoadsPlainModuleCompatFromCWD(t *testing.T) {

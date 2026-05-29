@@ -29,11 +29,14 @@ query WorkspaceSettings($module: String!) {
 
 var workspaceSettingsCmd = newSettingsCmd(false)
 var settingsCmd = newSettingsCmd(true)
+var settingsGlobal bool
 
 func init() {
 	workspaceCmd.AddCommand(workspaceSettingsCmd)
 	addWorkspaceHereFlag(workspaceSettingsCmd)
 	addWorkspaceHereFlag(settingsCmd)
+	workspaceSettingsCmd.Flags().BoolVarP(&settingsGlobal, "global", "g", false, "Write to user-level Dagger config")
+	settingsCmd.Flags().BoolVarP(&settingsGlobal, "global", "g", false, "Write to user-level Dagger config")
 }
 
 func newSettingsCmd(hidden bool) *cobra.Command {
@@ -73,8 +76,7 @@ func runWorkspaceSettings(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				return err
 			}
-			_, err = state.Workspace.ConfigWrite(ctx, workspaceSettingConfigKey(setting.Module, setting.Key), args[2], dagger.WorkspaceConfigWriteOpts{Here: workspaceHere})
-			return err
+			return writeWorkspaceSetting(ctx, engineClient.Dagger(), state.Workspace, setting, args[2])
 		default:
 			return fmt.Errorf("expected 0-3 arguments, got %d", len(args))
 		}
@@ -144,6 +146,34 @@ func (s *workspaceSettingsState) lookupSetting(name string) (workspaceSetting, e
 
 func workspaceSettingConfigKey(moduleName, settingName string) string {
 	return fmt.Sprintf("modules.%s.settings.%s", moduleName, settingName)
+}
+
+func writeWorkspaceSetting(ctx context.Context, dag *dagger.Client, ws *dagger.Workspace, setting workspaceSetting, value string) error {
+	key := workspaceSettingConfigKey(setting.Module, setting.Key)
+	if !settingsGlobal {
+		_, err := ws.ConfigWrite(ctx, key, value, dagger.WorkspaceConfigWriteOpts{Here: workspaceHere})
+		return err
+	}
+	var res struct {
+		CurrentWorkspace struct {
+			ConfigWrite string
+		}
+	}
+	return dag.Do(ctx, &dagger.Request{
+		Query: `query($key: String!, $value: String!, $here: Boolean!, $global: Boolean!) {
+			currentWorkspace {
+				configWrite(key: $key, value: $value, here: $here, global: $global)
+			}
+		}`,
+		Variables: map[string]any{
+			"key":    key,
+			"value":  value,
+			"here":   workspaceHere,
+			"global": true,
+		},
+	}, &dagger.Response{
+		Data: &res,
+	})
 }
 
 func writeWorkspaceSettingsTable(out io.Writer, settings []workspaceSetting) error {

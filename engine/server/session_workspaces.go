@@ -650,7 +650,27 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 
 	// No native workspace and no eligible legacy module: nothing to load.
 	if ws == nil {
-		client.workspace = nil
+		if isLocal {
+			scratchRoot, ok, err := srv.createScratchWorkspaceRoot(ctx, client)
+			if err != nil {
+				return err
+			}
+			if ok {
+				ws, err = workspace.DetectInRoot(ctx, pathExists, scratchRoot, scratchRoot)
+				if err != nil {
+					return err
+				}
+				coreWS, err := srv.buildCoreWorkspace(ctx, client, ws, true, dagql.ObjectResult[*core.Directory]{}, "")
+				if err != nil {
+					return fmt.Errorf("building scratch workspace: %w", err)
+				}
+				coreWS.SetLocalConfigReadOnly(true)
+				client.workspace = coreWS
+				client.pendingModules = nil
+				return nil
+			}
+		}
+		client.workspace = syntheticWorkspace(clientMD)
 		client.pendingModules = nil
 		return nil
 	}
@@ -667,6 +687,11 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	if err != nil {
 		return fmt.Errorf("building workspace: %w", err)
 	}
+	if isLocal {
+		if key := localWorkspaceEnvConfigKey(ctx, readFile, ws); key != "" {
+			coreWS.EnvConfigKey = key
+		}
+	}
 	coreWS.SetCompatWorkspace(compatWorkspace)
 	client.workspace = coreWS
 
@@ -681,7 +706,15 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 		if err := func() (rerr error) {
 			_, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("applying env: %s", workspaceEnv))
 			defer telemetry.EndWithCause(span, &rerr)
-			wsConfig, rerr = workspace.ApplyEnvOverlay(wsConfig, workspaceEnv)
+			userCfg, err := srv.readUserWorkspaceConfig(ctx, client)
+			if err != nil {
+				return err
+			}
+			workspaceKey := ""
+			if client.workspace != nil {
+				workspaceKey = client.workspace.EnvConfigKey
+			}
+			wsConfig, rerr = workspace.ApplySelectedEnvOverlay(wsConfig, workspaceEnv, userCfg, workspaceKey)
 			return rerr
 		}(); err != nil {
 			return err
@@ -742,6 +775,56 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	return nil
 }
 
+func (srv *Server) readUserWorkspaceConfig(ctx context.Context, client *daggerClient) (*workspace.UserConfig, error) {
+	clientMD := client.clientMetadata
+	if clientMD == nil || clientMD.UserConfigPath == "" {
+		return nil, nil
+	}
+	data, err := client.engineUtilClient.ReadCallerHostFile(ctx, clientMD.UserConfigPath)
+	if err != nil {
+		if status.Code(err) == codes.NotFound || errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading user config: %w", err)
+	}
+	if len(data) == 0 {
+		return nil, nil
+	}
+	return workspace.ParseUserConfig(data)
+}
+
+func (srv *Server) createScratchWorkspaceRoot(ctx context.Context, client *daggerClient) (string, bool, error) {
+	clientMD := client.clientMetadata
+	if clientMD == nil || clientMD.UserConfigPath == "" || client.engineUtilClient == nil {
+		return "", false, nil
+	}
+	scratchRoot := filepath.Join(filepath.Dir(clientMD.UserConfigPath), "ws", client.clientID)
+	tmpDir, err := os.MkdirTemp("", "dagger-scratch-workspace-*")
+	if err != nil {
+		return "", false, fmt.Errorf("create scratch workspace source: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	if err := client.engineUtilClient.LocalDirExport(ctx, tmpDir, scratchRoot, true, nil); err != nil {
+		return "", false, fmt.Errorf("create scratch workspace: %w", err)
+	}
+	return scratchRoot, true, nil
+}
+
+func syntheticWorkspace(clientMD *engine.ClientMetadata) *core.Workspace {
+	clientID := ""
+	if clientMD != nil {
+		clientID = clientMD.ClientID
+	}
+	ws := &core.Workspace{
+		Address:      "scratch://workspace",
+		Cwd:          ".",
+		ClientID:     clientID,
+		EnvConfigKey: "",
+	}
+	ws.SetLocalConfigReadOnly(true)
+	return ws
+}
+
 func console(ctx context.Context, msg string, args ...any) {
 	if !strings.HasSuffix(msg, "\n") {
 		msg += "\n"
@@ -784,6 +867,7 @@ func (srv *Server) buildCoreWorkspace(
 	if coreWS.Address == "" {
 		coreWS.Address = localWorkspaceAddress(detected.Root, detected.Cwd)
 	}
+	coreWS.EnvConfigKey = workspaceEnvConfigKey(ctx, coreWS.Address)
 	if isLocal {
 		// Local: store host path only. Directories are resolved lazily
 		// via per-call host.directory() in resolveRootfs.
@@ -806,6 +890,122 @@ func localWorkspaceAddress(root, workspaceCwd string) string {
 
 func remoteWorkspaceAddress(cloneRef, workspaceCwd, version string) string {
 	return core.GitRefString(cloneRef, workspaceCwd, version)
+}
+
+func workspaceEnvConfigKey(ctx context.Context, address string) string {
+	if address == "" {
+		return ""
+	}
+	if strings.HasPrefix(address, "file://") {
+		return address
+	}
+	parsed, err := core.ParseGitRefString(ctx, address)
+	if err != nil {
+		return address
+	}
+	subdir := parsed.RepoRootSubdir
+	if subdir == "/" || subdir == "" {
+		subdir = "."
+	}
+	return core.GitRefString(parsed.SourceCloneRef, subdir, "")
+}
+
+func localWorkspaceEnvConfigKey(ctx context.Context, readFile func(context.Context, string) ([]byte, error), ws *workspace.Workspace) string {
+	if ws == nil || readFile == nil {
+		return ""
+	}
+	data, err := readGitConfigFile(ctx, readFile, ws.Root)
+	if err != nil {
+		return ""
+	}
+	origin := parseGitOriginRemoteURL(string(data))
+	if origin == "" {
+		return ""
+	}
+	origin = normalizeWorkspaceRemoteKey(ctx, origin)
+	subdir := workspaceConfigOwnerSubdir(ws)
+	return core.GitRefString(origin, subdir, "")
+}
+
+func readGitConfigFile(ctx context.Context, readFile func(context.Context, string) ([]byte, error), root string) ([]byte, error) {
+	data, err := readFile(ctx, filepath.Join(root, ".git", "config"))
+	if err == nil {
+		return data, nil
+	}
+	gitFile, err := readFile(ctx, filepath.Join(root, ".git"))
+	if err != nil {
+		return nil, err
+	}
+	gitDir, ok := parseGitDirFile(string(gitFile))
+	if !ok {
+		return nil, fmt.Errorf("invalid .git file")
+	}
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(root, gitDir)
+	}
+	return readFile(ctx, filepath.Join(filepath.Clean(gitDir), "config"))
+}
+
+func parseGitDirFile(data string) (string, bool) {
+	line := strings.TrimSpace(data)
+	gitDir, ok := strings.CutPrefix(line, "gitdir:")
+	if !ok {
+		return "", false
+	}
+	gitDir = strings.TrimSpace(gitDir)
+	if gitDir == "" {
+		return "", false
+	}
+	return gitDir, true
+}
+
+func normalizeWorkspaceRemoteKey(ctx context.Context, remoteURL string) string {
+	if parsed, err := core.ParseGitRefString(ctx, remoteURL); err == nil && parsed.SourceCloneRef != "" {
+		remoteURL = parsed.SourceCloneRef
+	} else if remote, err := gitutil.ParseURL(remoteURL); err == nil {
+		remoteURL = remote.Remote()
+	}
+	remoteURL = strings.TrimPrefix(remoteURL, "https://")
+	remoteURL = strings.TrimPrefix(remoteURL, "http://")
+	remoteURL = strings.TrimPrefix(remoteURL, "ssh://git@")
+	remoteURL = strings.TrimPrefix(remoteURL, "git@")
+	remoteURL = strings.TrimSuffix(remoteURL, ".git")
+	remoteURL = strings.Replace(remoteURL, ":", "/", 1)
+	return remoteURL
+}
+
+func parseGitOriginRemoteURL(config string) string {
+	inOrigin := false
+	for _, line := range strings.Split(config, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+			continue
+		}
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			inOrigin = line == `[remote "origin"]`
+			continue
+		}
+		if !inOrigin {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if ok && strings.TrimSpace(key) == "url" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func workspaceConfigOwnerSubdir(ws *workspace.Workspace) string {
+	if ws == nil || ws.ConfigFile == "" {
+		return "."
+	}
+	configDir := filepath.Dir(filepath.Clean(ws.ConfigFile))
+	owner := filepath.Dir(configDir)
+	if owner == "" || owner == "." {
+		return "."
+	}
+	return filepath.ToSlash(owner)
 }
 
 // cloneGitTree clones a git repository and returns its directory tree.
