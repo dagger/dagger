@@ -57,7 +57,7 @@ defmodule Dagger.EnvFile do
   @doc """
   A unique identifier for this EnvFile.
   """
-  @spec id(t()) :: {:ok, Dagger.EnvFileID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = env_file) do
     query_builder =
       env_file.query_builder |> QB.select("id")
@@ -97,8 +97,9 @@ defmodule Dagger.EnvFile do
          %Dagger.EnvVariable{
            query_builder:
              QB.query()
-             |> QB.select("loadEnvVariableFromID")
-             |> QB.put_arg("id", id),
+             |> QB.select("node")
+             |> QB.put_arg("id", id)
+             |> QB.inline_fragment("EnvVariable"),
            client: env_file.client
          }
        end}
@@ -146,6 +147,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.EnvFile do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_env_file_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.EnvFile{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("EnvFile"),
+       client: dag.client
+     }}
   end
 end

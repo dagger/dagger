@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
 
 	"github.com/containerd/containerd/v2/core/content"
 	bkcache "github.com/dagger/dagger/engine/snapshots"
@@ -32,6 +33,9 @@ type Query struct {
 	// constructor. Set by the `with` field on Query so that entrypoint
 	// proxy resolvers can forward them to the constructor.
 	ConstructorArgs map[string]dagql.Input
+
+	cacheVolumeStoreMu sync.Mutex
+	cacheVolumeStore   *cacheVolumeStore
 }
 
 var (
@@ -238,15 +242,22 @@ func (*Query) TypeDescription() string {
 	return "The root of the DAG."
 }
 
-func (q Query) Clone() *Query {
-	cp := q
+func (q *Query) Clone() *Query {
+	cp := &Query{
+		Server: q.Server,
+	}
 	if q.ConstructorArgs != nil {
 		cp.ConstructorArgs = make(map[string]dagql.Input, len(q.ConstructorArgs))
 		for k, v := range q.ConstructorArgs {
 			cp.ConstructorArgs[k] = v
 		}
 	}
-	return &cp
+
+	q.cacheVolumeStoreMu.Lock()
+	cp.cacheVolumeStore = q.cacheVolumeStore
+	q.cacheVolumeStoreMu.Unlock()
+
+	return cp
 }
 
 func (q *Query) WithPipeline(name, desc string) *Query {

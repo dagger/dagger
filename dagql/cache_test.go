@@ -131,7 +131,7 @@ type cacheTestSizedInt struct {
 	sizeMayChange        bool
 }
 
-func (v cacheTestSizedInt) CacheUsageSize(_ context.Context, identity string) (int64, bool, error) {
+func (v cacheTestSizedInt) CacheUsageSize(_ context.Context, _ CacheUsageSizeProvider, identity string) (int64, bool, error) {
 	if v.sizeCalls != nil {
 		v.sizeCalls.Add(1)
 	}
@@ -5325,6 +5325,24 @@ func TestCachePruneThresholdTargetSpace(t *testing.T) {
 	assert.Equal(t, int64(200), report.ReclaimedBytes)
 	assert.Equal(t, cacheTestSharedResultEntryID(results[0]), report.Entries[0].ID)
 	assert.Equal(t, cacheTestSharedResultEntryID(results[1]), report.Entries[1].ID)
+}
+
+func TestCachePruneMinFreeSpaceUsesCurrentFreeSpace(t *testing.T) {
+	t.Parallel()
+
+	target, triggered := pruneTargetBytes(CachePrunePolicy{
+		MinFreeSpace:     200,
+		CurrentFreeSpace: 150,
+	}, 50)
+	assert.Assert(t, triggered)
+	assert.Equal(t, int64(50), target)
+
+	target, triggered = pruneTargetBytes(CachePrunePolicy{
+		MinFreeSpace:     200,
+		CurrentFreeSpace: 250,
+	}, 50)
+	assert.Assert(t, !triggered)
+	assert.Equal(t, int64(0), target)
 }
 
 func TestCachePruneSessionOwnedEntriesAreNeverPruned(t *testing.T) {

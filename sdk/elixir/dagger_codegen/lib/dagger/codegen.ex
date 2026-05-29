@@ -47,6 +47,10 @@ defmodule Dagger.Codegen do
     generator.generate_object(type)
   end
 
+  defp do_generate(%{kind: "INTERFACE"} = type, generator) do
+    generator.generate_object(type)
+  end
+
   defp do_generate(%{kind: "ENUM"} = type, generator) do
     generator.generate_enum(type)
   end

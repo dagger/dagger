@@ -74,12 +74,14 @@ func (entrySet *EngineCacheEntrySet) Sync(ctx context.Context) error {
 }
 
 type EngineCacheEntry struct {
-	Description               string `field:"true" doc:"The description of the cache entry."`
-	DiskSpaceBytes            int    `field:"true" doc:"The disk space used by the cache entry."`
-	CreatedTimeUnixNano       int    `field:"true" doc:"The time the cache entry was created, in Unix nanoseconds."`
-	MostRecentUseTimeUnixNano int    `field:"true" doc:"The most recent time the cache entry was used, in Unix nanoseconds."`
-	ActivelyUsed              bool   `field:"true" doc:"Whether the cache entry is actively being used."`
-	RecordType                string `field:"true" doc:"The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount)."`
+	Description               string   `field:"true" doc:"The description of the cache entry."`
+	DiskSpaceBytes            int      `field:"true" doc:"The disk space used by the cache entry."`
+	CreatedTimeUnixNano       int      `field:"true" doc:"The time the cache entry was created, in Unix nanoseconds."`
+	MostRecentUseTimeUnixNano int      `field:"true" doc:"The most recent time the cache entry was used, in Unix nanoseconds."`
+	ActivelyUsed              bool     `field:"true" doc:"Whether the cache entry is actively being used."`
+	RecordType                string   `field:"true" doc:"The type of the cache record (e.g. regular, internal, frontend, source.local, source.git.checkout, exec.cachemount)."`
+	RecordTypes               []string `field:"true" doc:"The storage record types represented by this cache entry."`
+	DagqlCall                 string   `field:"true" doc:"The DagQL call that produced this cache entry."`
 }
 
 func (*EngineCacheEntry) Type() *ast.Type {

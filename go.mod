@@ -1,10 +1,10 @@
 module github.com/dagger/dagger
 
-go 1.25.6
+go 1.26.1
 
 require (
-	dagger.io/dagger v0.20.6
-	github.com/dagger/dagger/engine/distconsts v0.20.6
+	dagger.io/dagger v0.21.0
+	github.com/dagger/dagger/engine/distconsts v0.21.0
 )
 
 replace (
@@ -59,6 +59,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/creack/pty v1.1.24
 	github.com/dagger/otel-go v1.43.1-0.20260515012101-af7cd0684887
+	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
 	github.com/dagger/testctx v0.1.2
 	github.com/dave/jennifer v1.7.1
 	github.com/denisbrodbeck/machineid v1.0.1
@@ -150,7 +151,7 @@ require (
 	github.com/urfave/cli v1.22.17
 	github.com/vektah/gqlparser/v2 v2.5.32
 	github.com/vito/bubbline v0.0.0-20250312195236-5f4f49d6ebcb
-	github.com/vito/dang v0.0.0-20260521194756-0751d1ee45eb
+	github.com/vito/dang v0.0.0-20260522161425-2320fd99d96a
 	github.com/vito/go-interact v1.0.2
 	github.com/vito/go-sse v1.1.3
 	github.com/vito/midterm v0.2.5-0.20260312180916-3c2add750bea

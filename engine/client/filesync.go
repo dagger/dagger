@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -151,9 +152,11 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 
 	for _, removePath := range opts.RemovePaths {
 		isDir := strings.HasSuffix(removePath, "/")
-		if !filepath.IsAbs(removePath) {
-			removePath = filepath.Join(opts.Path, removePath)
+		cleanRemovePath, err := safeLocalExportRemovePath(absPath, removePath)
+		if err != nil {
+			return err
 		}
+		removePath = cleanRemovePath
 		if isDir {
 			if err := os.RemoveAll(removePath); err != nil {
 				return fmt.Errorf("remove path %s: %w", removePath, err)
@@ -258,6 +261,30 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 			return err
 		}
 	}
+}
+
+func safeLocalExportRemovePath(absRoot, removePath string) (string, error) {
+	if filepath.IsAbs(removePath) || filepath.VolumeName(removePath) != "" {
+		return "", fmt.Errorf("invalid remove path %q: absolute paths are not allowed", removePath)
+	}
+	if strings.Contains(removePath, `\`) {
+		return "", fmt.Errorf("invalid remove path %q: backslashes are not allowed in diff paths", removePath)
+	}
+
+	cleanRel := path.Clean(strings.TrimSuffix(removePath, "/"))
+	if cleanRel == "." || cleanRel == ".." || strings.HasPrefix(cleanRel, "../") {
+		return "", fmt.Errorf("invalid remove path %q: escapes export root", removePath)
+	}
+
+	target := filepath.Join(absRoot, filepath.FromSlash(cleanRel))
+	rel, err := filepath.Rel(absRoot, target)
+	if err != nil {
+		return "", fmt.Errorf("validate remove path %q: %w", removePath, err)
+	}
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("invalid remove path %q: escapes export root", removePath)
+	}
+	return target, nil
 }
 
 func (f Filesyncer) fullRootPathAndBaseName(reqPath string, fullyResolvePath bool) (_ string, err error) {

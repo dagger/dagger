@@ -67,7 +67,17 @@ defmodule Dagger.Codegen.Introspection.Types.TypeRef do
     type
   end
 
+  def is_object?(%__MODULE__{kind: "NON_NULL", of_type: type}), do: is_object?(type)
+  def is_object?(%__MODULE__{kind: "OBJECT"}), do: true
+  def is_object?(_), do: false
+
+  def is_interface?(%__MODULE__{kind: "NON_NULL", of_type: type}), do: is_interface?(type)
+  def is_interface?(%__MODULE__{kind: "INTERFACE"}), do: true
+  def is_interface?(_), do: false
+
+  def is_object_or_interface?(%__MODULE__{} = type), do: is_object?(type) or is_interface?(type)
+
   def id_type?(%__MODULE__{kind: "NON_NULL", of_type: type}), do: id_type?(type)
-  def id_type?(%__MODULE__{kind: "SCALAR", name: name}), do: String.ends_with?(name, "ID")
+  def id_type?(%__MODULE__{kind: "SCALAR", name: "ID"}), do: true
   def id_type?(_), do: false
 end

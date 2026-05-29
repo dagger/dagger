@@ -242,9 +242,9 @@ func (dev *EngineDev) test(
 func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*dagger.Container, string, error) {
 	devEngine, err := dev.
 		WithEBPFProgs(ebpfProgs).
-		WithBuildkitConfig(`registry."registry:5000"`, `http = true`).
-		WithBuildkitConfig(`registry."privateregistry:5000"`, `http = true`).
-		WithBuildkitConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`).
+		WithEngineConfig(`registry."registry:5000"`, `http = true`).
+		WithEngineConfig(`registry."privateregistry:5000"`, `http = true`).
+		WithEngineConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`).
 		Container(
 			ctx,
 			"",    // platform

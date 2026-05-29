@@ -18,7 +18,7 @@ defmodule Dagger.Cloud do
   @doc """
   A unique identifier for this Cloud.
   """
-  @spec id(t()) :: {:ok, Dagger.CloudID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = cloud) do
     query_builder =
       cloud.query_builder |> QB.select("id")
@@ -47,6 +47,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.Cloud do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_cloud_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.Cloud{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("Cloud"),
+       client: dag.client
+     }}
   end
 end

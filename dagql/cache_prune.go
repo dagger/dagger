@@ -212,10 +212,8 @@ func (c *Cache) snapshotPruneState(activeRoots map[sharedResultID]struct{}) prun
 		if lastUsedAt == 0 {
 			lastUsedAt = createdAt
 		}
-		recordType := res.recordType
-		if recordType == "" {
-			recordType = "dagql.unknown"
-		}
+		recordTypes := cacheUsageRecordTypesFromMap(res.cacheUsageRecordTypeByID)
+		recordType := cacheUsagePrimaryRecordType(recordTypes, res.recordType)
 		description := res.description
 		if description == "" {
 			description = fmt.Sprintf("dagql cache result %d", resID)
@@ -229,37 +227,7 @@ func (c *Cache) snapshotPruneState(activeRoots map[sharedResultID]struct{}) prun
 		slices.Sort(deps)
 
 		callFrame := res.loadResultCall()
-		fieldName := ""
-		receiverTypeName := ""
-		callLabel := ""
-		if callFrame != nil {
-			frame := callFrame
-			if identityField, err := resultCallIdentityField(frame); err == nil {
-				fieldName = identityField
-			}
-			if frame.Receiver != nil {
-				if receiverRes := c.resultsByID[sharedResultID(frame.Receiver.ResultID)]; receiverRes != nil {
-					receiverFrame := receiverRes.loadResultCall()
-					switch {
-					case receiverFrame != nil && receiverFrame.Type != nil && receiverFrame.Type.NamedType != "":
-						receiverTypeName = receiverFrame.Type.NamedType
-					default:
-						receiverState := receiverRes.loadPayloadState()
-						receiverTypeName = sharedResultObjectTypeName(receiverRes, receiverState)
-					}
-				}
-			}
-			switch {
-			case receiverTypeName != "" && fieldName != "":
-				callLabel = receiverTypeName + "." + fieldName
-			case fieldName != "":
-				if frame.Kind == ResultCallKindField {
-					callLabel = "Query." + fieldName
-				} else {
-					callLabel = fieldName
-				}
-			}
-		}
+		callLabel := c.cacheUsageDagqlCallLocked(res)
 
 		edge, hasPersistedEdge := c.persistedEdgesByResult[resID]
 		snapshot.results[resID] = pruneSnapshotResult{
@@ -271,6 +239,8 @@ func (c *Cache) snapshotPruneState(activeRoots map[sharedResultID]struct{}) prun
 				ID:                        fmt.Sprintf("dagql.result.%d", resID),
 				Description:               description,
 				RecordType:                recordType,
+				RecordTypes:               recordTypes,
+				DagqlCall:                 callLabel,
 				SizeBytes:                 sizeBytes,
 				CreatedTimeUnixNano:       createdAt,
 				MostRecentUseTimeUnixNano: lastUsedAt,
@@ -654,35 +624,74 @@ func cachePrunePolicyMatchesEntry(policy CachePrunePolicy, entry CacheUsageEntry
 		return true
 	}
 	for _, filter := range policy.Filters {
-		key, value, ok := strings.Cut(filter, "==")
-		if !ok {
-			return false
-		}
-		key = strings.TrimSpace(strings.ToLower(key))
-		value = strings.TrimSpace(value)
-		switch key {
-		case "id":
-			if entry.ID != value {
-				return false
-			}
-		case "type", "recordtype":
-			if entry.RecordType != value {
-				return false
-			}
-		case "description":
-			if entry.Description != value {
-				return false
-			}
-		case "inuse":
-			want, err := strconv.ParseBool(value)
-			if err != nil || entry.ActivelyUsed != want {
-				return false
-			}
-		default:
+		if !cachePruneFilterMatchesEntry(filter, entry) {
 			return false
 		}
 	}
 	return true
+}
+
+func cachePruneFilterMatchesEntry(filter string, entry CacheUsageEntry) bool {
+	filter = strings.TrimSpace(filter)
+	if filter == "" {
+		return false
+	}
+
+	if strings.Contains(filter, ",") {
+		clauses := strings.Split(filter, ",")
+		recordTypeFilter := true
+		recordTypeMatch := false
+		for _, clause := range clauses {
+			key, value, ok := strings.Cut(clause, "==")
+			if !ok {
+				recordTypeFilter = false
+				break
+			}
+			key = strings.TrimSpace(strings.ToLower(key))
+			if key != "type" && key != "recordtype" {
+				recordTypeFilter = false
+				break
+			}
+			if cacheUsageEntryRecordTypeMatches(entry, strings.TrimSpace(value)) {
+				recordTypeMatch = true
+			}
+		}
+		if recordTypeFilter {
+			return recordTypeMatch
+		}
+	}
+
+	key, value, ok := strings.Cut(filter, "==")
+	if !ok {
+		return false
+	}
+	key = strings.TrimSpace(strings.ToLower(key))
+	value = strings.TrimSpace(value)
+	switch key {
+	case "id":
+		return entry.ID == value
+	case "type", "recordtype":
+		return cacheUsageEntryRecordTypeMatches(entry, value)
+	case "description":
+		return entry.Description == value
+	case "inuse":
+		want, err := strconv.ParseBool(value)
+		return err == nil && entry.ActivelyUsed == want
+	default:
+		return false
+	}
+}
+
+func cacheUsageEntryRecordTypeMatches(entry CacheUsageEntry, value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, recordType := range entry.RecordTypes {
+		if recordType == value {
+			return true
+		}
+	}
+	return entry.RecordType == value
 }
 
 func max(a, b int64) int64 {

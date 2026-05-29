@@ -1208,7 +1208,7 @@ func (ContainerSuite) TestWithMountedDirectory(ctx context.Context, t *testctx.T
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt", source: $id) {
@@ -1264,7 +1264,7 @@ func (ContainerSuite) TestWithMountedDirectoryReadOnly(ctx context.Context, t *t
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt", source: $id, readOnly: true) {
@@ -1326,7 +1326,7 @@ func (ContainerSuite) TestWithMountedDirectorySourcePath(ctx context.Context, t 
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt", source: $id) {
@@ -1389,7 +1389,7 @@ func (ContainerSuite) TestWithMountedDirectoryPropagation(ctx context.Context, t
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt", source: $id) {
@@ -1476,7 +1476,7 @@ func (ContainerSuite) TestWithMountedFile(ctx context.Context, t *testctx.T) {
 			}
 		}
 	}](c, t,
-		`query Test($id: FileID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedFile(path: "/mnt/file", source: $id) {
@@ -1980,7 +1980,7 @@ func (ContainerSuite) TestMountsWithoutMount(ctx context.Context, t *testctx.T) 
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!, $scratch: DirectoryID!) {
+		`query Test($id: ID!, $scratch: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withDirectory(path: "/mnt/dir", source: $scratch) {
@@ -2120,7 +2120,7 @@ func (ContainerSuite) TestDirectory(ctx context.Context, t *testctx.T) {
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -2152,7 +2152,7 @@ func (ContainerSuite) TestDirectory(ctx context.Context, t *testctx.T) {
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -2195,7 +2195,7 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 	id := dirRes.Directory.WithNewFile.WithNewFile.ID
 
 	_, err = testutil.QueryWithClient[any](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -2212,7 +2212,7 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 	requireErrOut(t, err, "path /mnt/dir/some-file is a file, not a directory")
 
 	_, err = testutil.QueryWithClient[any](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -2245,7 +2245,7 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 
 	cacheID := newCache(t)
 	_, err = testutil.QueryWithClient[any](c, t,
-		`query Test($cache: CacheVolumeID!) {
+		`query Test($cache: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedCache(path: "/mnt/cache", cache: $cache) {
@@ -2299,7 +2299,7 @@ func (ContainerSuite) TestDirectorySourcePath(ctx context.Context, t *testctx.T)
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -2329,7 +2329,7 @@ func (ContainerSuite) TestDirectorySourcePath(ctx context.Context, t *testctx.T)
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -2366,7 +2366,7 @@ func (ContainerSuite) TestFile(ctx context.Context, t *testctx.T) {
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -2398,7 +2398,7 @@ func (ContainerSuite) TestFile(ctx context.Context, t *testctx.T) {
 			}
 		}
 	}](c, t,
-		`query Test($id: FileID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedFile(path: "/mnt/file", source: $id) {
@@ -2421,7 +2421,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 
 	t.Run("path not found", func(ctx context.Context, t *testctx.T) {
 		_, err := testutil.Query[any](t,
-			`query Test($id: DirectoryID!) {
+			`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -2440,7 +2440,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 
 	t.Run("get directory as file", func(ctx context.Context, t *testctx.T) {
 		_, err := testutil.Query[any](t,
-			`query Test($id: DirectoryID!) {
+			`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -2477,7 +2477,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 	t.Run("get path under cache", func(ctx context.Context, t *testctx.T) {
 		cacheID := newCache(t)
 		_, err := testutil.Query[any](t,
-			`query Test($cache: CacheVolumeID!) {
+			`query Test($cache: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedCache(path: "/mnt/cache", cache: $cache) {
@@ -2496,7 +2496,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 
 	t.Run("get secret mount contents", func(ctx context.Context, t *testctx.T) {
 		_, err := testutil.Query[any](t,
-			`query Test($secret: SecretID!) {
+			`query Test($secret: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedSecret(path: "/sekret", source: $secret) {
@@ -2550,7 +2550,7 @@ func (ContainerSuite) TestFSDirectory(ctx context.Context, t *testctx.T) {
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/etc", source: $id) {
@@ -2619,7 +2619,7 @@ func (ContainerSuite) TestRelativePaths(ctx context.Context, t *testctx.T) {
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!, $cache: CacheVolumeID!) {
+		`query Test($id: ID!, $cache: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withExec(args: ["mkdir", "-p", "/mnt/sub"]) {
@@ -2673,7 +2673,7 @@ func (ContainerSuite) TestRelativePaths(ctx context.Context, t *testctx.T) {
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -2725,7 +2725,7 @@ func (ContainerSuite) TestMultiFrom(ctx context.Context, t *testctx.T) {
 			}
 		}
 	}](c, t,
-		`query Test($id: DirectoryID!) {
+		`query Test($id: ID!) {
 			container {
 				from(address: "node:18.10.0-alpine") {
 					withMountedDirectory(path: "/mnt", source: $id) {
@@ -2768,6 +2768,77 @@ func (ContainerSuite) TestPublish(ctx context.Context, t *testctx.T) {
 	output, err := pulledCtr.WithExec(nil).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "im-a-default-arg\n", output)
+}
+
+func (ContainerSuite) TestPublishWithDirectoryPreservesLayers(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	const expectedLayers = 10
+	sources := []struct {
+		path     string
+		file     string
+		contents string
+	}{}
+	for i := 1; i <= expectedLayers; i++ {
+		name := fmt.Sprintf("layer-%02d", i)
+		sources = append(sources, struct {
+			path     string
+			file     string
+			contents string
+		}{
+			path:     "/layers/" + name,
+			file:     name + ".txt",
+			contents: name,
+		})
+	}
+
+	ctr := c.Container()
+	for _, source := range sources {
+		dir := c.Directory().WithNewFile(source.file, source.contents)
+		ctr = ctr.WithDirectory(source.path, dir)
+	}
+
+	pushedRef, err := ctr.Publish(ctx, registryRef("container-publish-with-directory-layers"))
+	require.NoError(t, err)
+
+	pulledCtr := c.Container().From(pushedRef)
+	for _, source := range sources {
+		contents, err := pulledCtr.File(path.Join(source.path, source.file)).Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, source.contents, contents)
+	}
+
+	parsedRef, err := name.ParseReference(pushedRef, name.Insecure)
+	require.NoError(t, err)
+
+	imgDesc, err := remote.Get(parsedRef, remote.WithTransport(http.DefaultTransport))
+	require.NoError(t, err)
+	img, err := imgDesc.Image()
+	require.NoError(t, err)
+	manifest, err := img.Manifest()
+	require.NoError(t, err)
+
+	require.Len(t, manifest.Layers, expectedLayers, "published image should preserve one layer per WithDirectory call")
+}
+
+func (ContainerSuite) TestPublishScratchRootFSHasNoLayers(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().WithRootfs(c.Directory())
+	pushedRef, err := ctr.Publish(ctx, registryRef("container-publish-scratch-rootfs"))
+	require.NoError(t, err)
+
+	parsedRef, err := name.ParseReference(pushedRef, name.Insecure)
+	require.NoError(t, err)
+
+	imgDesc, err := remote.Get(parsedRef, remote.WithTransport(http.DefaultTransport))
+	require.NoError(t, err)
+	img, err := imgDesc.Image()
+	require.NoError(t, err)
+	manifest, err := img.Manifest()
+	require.NoError(t, err)
+
+	require.Empty(t, manifest.Layers, "published scratch rootfs should not include an empty layer")
 }
 
 func (ContainerSuite) TestAnnotations(ctx context.Context, t *testctx.T) {
@@ -3198,7 +3269,9 @@ func (ContainerSuite) TestFromIDPlatform(ctx context.Context, t *testctx.T) {
 	}).From(alpineImage).ID(ctx)
 	require.NoError(t, err)
 
-	platform, err := c.LoadContainerFromID(id).Platform(ctx)
+	ctr, err := dagger.Load[*dagger.Container](ctx, c, id)
+	require.NoError(t, err)
+	platform, err := ctr.Platform(ctx)
 	require.NoError(t, err)
 	require.Equal(t, desiredPlatform, platform)
 }
@@ -3460,17 +3533,211 @@ func (ContainerSuite) TestWithRegistryAuth(ctx context.Context, t *testctx.T) {
 	_, err := container.Publish(ctx, testRef)
 	require.Error(t, err)
 
-	pushedRef, err := container.
-		WithRegistryAuth(
-			privateRegistryHost,
-			"john",
-			c.SetSecret("this-secret", "xFlejaPdjrt25Dvr"),
-		).
-		Publish(ctx, testRef)
+	for range 2 {
+		c := connect(ctx, t)
+		container := c.Container().From(alpineImage)
+		pushedRef, err := container.
+			WithRegistryAuth(
+				privateRegistryHost,
+				"john",
+				c.SetSecret("this-secret", "xFlejaPdjrt25Dvr"),
+			).
+			WithEnvVariable("CACHE", time.Now().String()).
+			Publish(ctx, testRef)
+		require.NoError(t, err)
+		require.NotEqual(t, testRef, pushedRef)
+		require.Contains(t, pushedRef, "@sha256:")
+	}
+}
 
+func (ContainerSuite) TestWithRegistryAuthAfterAnonymousBearerPull(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	const (
+		registryPassword = "xFlejaPdjrt25Dvr"
+		registryConfig   = `version: 0.1
+log:
+  level: debug
+storage:
+  filesystem:
+    rootdirectory: /var/lib/registry
+http:
+  addr: :5000
+auth:
+  silly:
+    realm: http://tokenauth:5001/token
+    service: registry:5000
+`
+		tokenAuthServer = `package main
+
+import (
+	"encoding/json"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+)
+
+const (
+	username = "john"
+	password = "` + registryPassword + `"
+)
+
+func main() {
+	if err := os.MkdirAll("/logs", 0o755); err != nil {
+		log.Fatal(err)
+	}
+	f, err := os.OpenFile("/logs/token.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+	log.SetOutput(f)
+
+	http.HandleFunc("/token", token)
+	log.Fatal(http.ListenAndServe(":5001", nil))
+}
+
+func token(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	scopes := append([]string{}, r.URL.Query()["scope"]...)
+	scopes = append(scopes, r.PostForm["scope"]...)
+	scope := strings.Join(scopes, " ")
+
+	gotUser, gotPassword, presentedCredentials := credentials(r)
+	authenticated := gotUser == username && gotPassword == password
+
+	log.Printf("method=%s scope=%q user=%q presentedCredentials=%t authenticated=%t", r.Method, scope, gotUser, presentedCredentials, authenticated)
+
+	if presentedCredentials && !authenticated {
+		http.Error(w, "invalid credentials", http.StatusUnauthorized)
+		return
+	}
+	if !authenticated && strings.Contains(scope, "private") {
+		http.Error(w, "private scope requires credentials", http.StatusUnauthorized)
+		return
+	}
+
+	token := "anonymous-token"
+	if authenticated {
+		token = "authenticated-token"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"token":        token,
+		"access_token": token,
+		"expires_in":   3600,
+		"issued_at":    time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+func credentials(r *http.Request) (string, string, bool) {
+	if user, pass, ok := r.BasicAuth(); ok {
+		return user, pass, true
+	}
+	if r.Method == http.MethodPost {
+		if r.Form.Get("grant_type") == "password" {
+			return r.Form.Get("username"), r.Form.Get("password"), true
+		}
+		if refreshToken := r.Form.Get("refresh_token"); refreshToken != "" {
+			return "", refreshToken, true
+		}
+	}
+	return "", "", false
+}
+`
+	)
+
+	tokenLogs := c.CacheVolume("bearer-token-auth-logs-" + identity.NewID())
+	tokenAuthSvc := c.Container().
+		From("golang:1.26-alpine").
+		WithNewFile("/src/main.go", tokenAuthServer).
+		WithMountedCache("/logs", tokenLogs).
+		WithEnvVariable("GOCACHE", "/tmp/go-cache").
+		WithExposedPort(5001, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithDefaultArgs([]string{"go", "run", "/src/main.go"}).
+		AsService()
+
+	registryLogs := c.CacheVolume("bearer-registry-logs-" + identity.NewID())
+	registrySvc := c.Container().
+		From("registry:3").
+		WithNewFile("/etc/distribution/config.yml", registryConfig).
+		WithMountedCache("/cache/logs", registryLogs).
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithDefaultArgs([]string{"sh", "-c", "registry serve /etc/distribution/config.yml | tee /cache/logs/registry.log"}).
+		AsService()
+
+	devEngine := devEngineContainer(c,
+		func(ctr *dagger.Container) *dagger.Container {
+			return ctr.
+				WithServiceBinding("registry", registrySvc).
+				WithServiceBinding("tokenauth", tokenAuthSvc)
+		},
+		engineWithBkConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg bkconfig.Config) bkconfig.Config {
+			cfg.Registries = map[string]resolverconfig.RegistryConfig{
+				"registry:5000": {PlainHTTP: ptr(true)},
+			}
+			return cfg
+		}),
+	)
+
+	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(devEngine)).Start(ctx)
 	require.NoError(t, err)
-	require.NotEqual(t, testRef, pushedRef)
-	require.Contains(t, pushedRef, "@sha256:")
+	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx) })
+
+	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+
+	emptyDockerConfig := t.TempDir()
+	connectNested := func() *dagger.Client {
+		return connect(ctx, t,
+			dagger.WithRunnerHost(endpoint),
+			dagger.WithEnvironmentVariable("DOCKER_CONFIG", emptyDockerConfig),
+			dagger.WithLogOutput(testutil.NewTWriter(t)),
+		)
+	}
+
+	publicRef := "registry:5000/public:" + identity.NewID()
+	seedClient := connectNested()
+	_, err = seedClient.Container().
+		From(alpineImage).
+		WithNewFile("/public.txt", "public").
+		WithRegistryAuth("registry:5000", "john", seedClient.SetSecret("seed-registry-password", registryPassword)).
+		Publish(ctx, publicRef)
+	require.NoError(t, err)
+
+	reproClient := connectNested()
+	out, err := reproClient.Container().
+		From(publicRef).
+		WithExec([]string{"cat", "/public.txt"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "public", strings.TrimSpace(out))
+
+	privateRef := "registry:5000/private:" + identity.NewID()
+	_, err = reproClient.Container().
+		From(alpineImage).
+		WithNewFile("/private.txt", "private").
+		WithRegistryAuth("registry:5000", "john", reproClient.SetSecret("repro-registry-password", registryPassword)).
+		Publish(ctx, privateRef)
+	if err != nil {
+		tokenLog, logErr := c.Container().
+			From(alpineImage).
+			WithMountedCache("/logs", tokenLogs).
+			WithExec([]string{"sh", "-c", "cat /logs/token.log 2>/dev/null || true"}).
+			Stdout(ctx)
+		if logErr != nil {
+			t.Logf("failed to read token auth log: %v", logErr)
+		} else {
+			t.Logf("token auth log:\n%s", tokenLog)
+		}
+	}
+	require.NoError(t, err)
 }
 
 // Regression test for #11667: Directory/File access on private registry images
@@ -5508,7 +5775,8 @@ func (ContainerSuite) TestFileCaching(ctx context.Context, t *testctx.T) {
 
 		fn := func() (string, string, error) {
 			c := connect(ctx, t)
-			defer c.Close()
+			// Keep each session open until test cleanup so automatic pruning can't
+			// evict the producer result between these cross-client cache checks.
 
 			// This is used to test selecting a file different way, e.g. c.Host().File() vs c.Host().Directory().File()
 			// has no effect on the expected caching behavior

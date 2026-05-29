@@ -208,8 +208,9 @@ func (d containerConnector) EngineID() string {
 
 const (
 	// trim image digests to 16 characters to makeoutput more readable
-	hashLen             = 16
-	containerNamePrefix = "dagger-engine-"
+	hashLen                     = 16
+	containerNamePrefix         = "dagger-engine-"
+	defaultDebugListenerAddress = "127.0.0.1:6060"
 )
 
 const InstrumentationLibrary = "dagger.io/client.drivers"
@@ -290,7 +291,7 @@ func (d *imageDriver) create(ctx context.Context, opts containerCreateOpts, dopt
 		image:      opts.imageRef,
 		volumes:    []string{volume},
 		privileged: true,
-		args:       []string{"--debug"},
+		args:       []string{"--debug", "--debugaddr", defaultDebugListenerAddress},
 		env:        opts.env,
 		cpus:       opts.cpus,
 		memory:     opts.memory,

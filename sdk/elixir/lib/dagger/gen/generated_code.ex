@@ -32,7 +32,7 @@ defmodule Dagger.GeneratedCode do
   @doc """
   A unique identifier for this GeneratedCode.
   """
-  @spec id(t()) :: {:ok, Dagger.GeneratedCodeID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = generated_code) do
     query_builder =
       generated_code.query_builder |> QB.select("id")
@@ -104,6 +104,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.GeneratedCode do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_generated_code_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.GeneratedCode{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("GeneratedCode"),
+       client: dag.client
+     }}
   end
 end

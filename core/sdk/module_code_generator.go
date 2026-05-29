@@ -22,9 +22,13 @@ func (sdk *codeGeneratorModule) Codegen(
 	ctx, span := core.Tracer(ctx).Start(ctx, "module SDK: run codegen")
 	defer telemetry.EndWithCause(span, &rerr)
 
-	dag := sdk.mod.dag()
+	sdkInst, err := sdk.mod.instantiate(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize sdk module %s codegen: %w", sdk.mod.mod.Self().Name(), err)
+	}
+	dag := sdkInst.dag
 
-	source, err := scopeSourceForSDKOperation(ctx, source, "codegen", dag)
+	source, err = scopeSourceForSDKOperation(ctx, source, "codegen", dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scope module source for sdk module %s codegen: %w", sdk.mod.mod.Self().Name(), err)
 	}
@@ -43,7 +47,7 @@ func (sdk *codeGeneratorModule) Codegen(
 	}
 
 	var inst dagql.Result[*core.GeneratedCode]
-	err = dag.Select(ctx, sdk.mod.sdk, &inst, dagql.Selector{
+	err = dag.Select(ctx, sdkInst.sdk, &inst, dagql.Selector{
 		Field: "codegen",
 		Args: []dagql.NamedInput{
 			{

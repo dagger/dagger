@@ -40,7 +40,7 @@ defmodule Dagger.SourceMap do
   @doc """
   A unique identifier for this SourceMap.
   """
-  @spec id(t()) :: {:ok, Dagger.SourceMapID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = source_map) do
     query_builder =
       source_map.query_builder |> QB.select("id")
@@ -91,6 +91,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.SourceMap do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_source_map_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.SourceMap{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("SourceMap"),
+       client: dag.client
+     }}
   end
 end

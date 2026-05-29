@@ -724,40 +724,84 @@ func (s *sessionAuthSource) Credentials(ctx context.Context, host string) (Crede
 }
 
 func (r *Resolver) registryHosts() docker.RegistryHosts {
+	authorizers := newRegistryHostAuthorizerCache()
 	return func(domain string) ([]docker.RegistryHost, error) {
-		r.mu.Lock()
-		cached, ok := r.hostCache[domain]
-		r.mu.Unlock()
-		if ok {
-			return cloneRegistryHosts(cached), nil
+		hosts, err := r.registryHostConfigs(domain)
+		if err != nil {
+			return nil, err
 		}
+		return r.withRegistryHostAuthorizers(hosts, authorizers), nil
+	}
+}
 
-		var hosts []docker.RegistryHost
-		var err error
-		if r.hosts != nil {
-			hosts, err = r.hosts(domain)
-			if err != nil {
-				return nil, err
-			}
-		}
-		if len(hosts) == 0 {
-			hosts, err = docker.ConfigureDefaultRegistries(docker.WithPlainHTTP(docker.MatchLocalhost))(domain)
-			if err != nil {
-				return nil, err
-			}
-		}
+func (r *Resolver) registryHostConfigs(domain string) ([]docker.RegistryHost, error) {
+	r.mu.Lock()
+	cached, ok := r.hostCache[domain]
+	r.mu.Unlock()
+	if ok {
+		return cloneRegistryHosts(cached), nil
+	}
 
-		sessionHosts := make([]docker.RegistryHost, len(hosts))
-		closeFns := make([]func() error, 0, len(hosts))
-		for i, host := range hosts {
-			host := host
-			if host.Header != nil {
-				host.Header = host.Header.Clone()
-			}
-			if host.Client == nil {
-				host.Client = http.DefaultClient
-			}
-			host.Authorizer = docker.NewDockerAuthorizer(
+	var hosts []docker.RegistryHost
+	var err error
+	if r.hosts != nil {
+		hosts, err = r.hosts(domain)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(hosts) == 0 {
+		hosts, err = docker.ConfigureDefaultRegistries(docker.WithPlainHTTP(docker.MatchLocalhost))(domain)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	sessionHosts := make([]docker.RegistryHost, len(hosts))
+	closeFns := make([]func() error, 0, len(hosts))
+	for i, host := range hosts {
+		host := host
+		if host.Header != nil {
+			host.Header = host.Header.Clone()
+		}
+		if host.Client == nil {
+			host.Client = http.DefaultClient
+		}
+		host.Authorizer = nil
+		sessionHosts[i] = host
+		if host.Client != nil {
+			closeFns = append(closeFns, func() error {
+				host.Client.CloseIdleConnections()
+				return nil
+			})
+		}
+	}
+
+	r.mu.Lock()
+	r.hostCache[domain] = cloneRegistryHosts(sessionHosts)
+	r.closers = append(r.closers, closeFns...)
+	r.mu.Unlock()
+
+	return cloneRegistryHosts(sessionHosts), nil
+}
+
+type registryHostAuthorizerCache struct {
+	mu         sync.Mutex
+	authorizer map[string]docker.Authorizer
+}
+
+func newRegistryHostAuthorizerCache() *registryHostAuthorizerCache {
+	return &registryHostAuthorizerCache{
+		authorizer: map[string]docker.Authorizer{},
+	}
+}
+
+func (r *Resolver) withRegistryHostAuthorizers(hosts []docker.RegistryHost, authorizers *registryHostAuthorizerCache) []docker.RegistryHost {
+	out := cloneRegistryHosts(hosts)
+	for i := range out {
+		host := out[i]
+		out[i].Authorizer = authorizers.get(host, func() docker.Authorizer {
+			return docker.NewDockerAuthorizer(
 				docker.WithAuthClient(host.Client),
 				docker.WithAuthHeader(host.Header),
 				docker.WithAuthCreds(func(host string) (string, string, error) {
@@ -765,22 +809,39 @@ func (r *Resolver) registryHosts() docker.RegistryHosts {
 					return username, secret, err
 				}),
 			)
-			sessionHosts[i] = host
-			if host.Client != nil {
-				closeFns = append(closeFns, func() error {
-					host.Client.CloseIdleConnections()
-					return nil
-				})
-			}
-		}
-
-		r.mu.Lock()
-		r.hostCache[domain] = cloneRegistryHosts(sessionHosts)
-		r.closers = append(r.closers, closeFns...)
-		r.mu.Unlock()
-
-		return cloneRegistryHosts(sessionHosts), nil
+		})
 	}
+	return out
+}
+
+func (c *registryHostAuthorizerCache) get(host docker.RegistryHost, create func() docker.Authorizer) docker.Authorizer {
+	key := registryHostAuthorizerKey(host)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if authorizer, ok := c.authorizer[key]; ok {
+		return authorizer
+	}
+	authorizer := create()
+	c.authorizer[key] = authorizer
+	return authorizer
+}
+
+func registryHostAuthorizerKey(host docker.RegistryHost) string {
+	var headerParts []string
+	for key, values := range host.Header {
+		values := slices.Clone(values)
+		slices.Sort(values)
+		headerParts = append(headerParts, key+"="+strings.Join(values, "\x00"))
+	}
+	slices.Sort(headerParts)
+	return strings.Join([]string{
+		host.Scheme,
+		host.Host,
+		host.Path,
+		strings.Join(headerParts, "\x01"),
+	}, "\x00")
 }
 
 func (r *Resolver) lookupCredentials(host string) (string, string, error) {
@@ -898,27 +959,26 @@ func hydratePulledDescriptor(desc ocispecs.Descriptor) ocispecs.Descriptor {
 }
 
 func (r *Resolver) pushRegistryHosts(insecure bool) docker.RegistryHosts {
-	base := r.registryHosts()
-	if !insecure {
-		return base
-	}
+	authorizers := newRegistryHostAuthorizerCache()
 	return func(domain string) ([]docker.RegistryHost, error) {
-		hosts, err := base(domain)
+		hosts, err := r.registryHostConfigs(domain)
 		if err != nil {
 			return nil, err
 		}
-		for i := range hosts {
-			hosts[i].Scheme = "http"
-			if hosts[i].Client != nil {
-				hosts[i].Client = &http.Client{
-					Transport:     hosts[i].Client.Transport,
-					CheckRedirect: hosts[i].Client.CheckRedirect,
-					Jar:           hosts[i].Client.Jar,
-					Timeout:       hosts[i].Client.Timeout,
+		if insecure {
+			for i := range hosts {
+				hosts[i].Scheme = "http"
+				if hosts[i].Client != nil {
+					hosts[i].Client = &http.Client{
+						Transport:     hosts[i].Client.Transport,
+						CheckRedirect: hosts[i].Client.CheckRedirect,
+						Jar:           hosts[i].Client.Jar,
+						Timeout:       hosts[i].Client.Timeout,
+					}
 				}
 			}
 		}
-		return hosts, nil
+		return r.withRegistryHostAuthorizers(hosts, authorizers), nil
 	}
 }
 

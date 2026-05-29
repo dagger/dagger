@@ -768,6 +768,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.Func("withRegistryAuth", s.withRegistryAuth).
+			WithInput(dagql.PerSessionInput).
 			Doc(`Attach credentials for future publishing to a registry. Use in combination with publish`).
 			Args(
 				dagql.Arg("address").Doc(`The image address that needs authentication. Same format as "docker push". Example: "registry.dagger.io/dagger:latest"`),
@@ -776,6 +777,7 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 			),
 
 		dagql.Func("withoutRegistryAuth", s.withoutRegistryAuth).
+			WithInput(dagql.PerSessionInput).
 			Doc(`Retrieves this container without the registry authentication of a given address.`).
 			Args(
 				dagql.Arg("address").Doc(`Registry's address to remove the authentication from.`,
@@ -2422,7 +2424,14 @@ func (s *containerSchema) withMountedCacheDynamicInputs(
 
 	source := cacheSelf.Source
 	if hasSourceArg {
-		source = args.Source
+		source = dagql.Null[dagql.ObjectResult[*core.Directory]]()
+		if args.Source.Valid {
+			loaded, err := args.Source.Value.Load(ctx, srv)
+			if err != nil {
+				return err
+			}
+			source = dagql.NonNull(loaded)
+		}
 	}
 	if !needsRewrite {
 		return nil

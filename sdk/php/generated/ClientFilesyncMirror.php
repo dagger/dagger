@@ -11,14 +11,14 @@ namespace Dagger;
 /**
  * An internal persistent filesync mirror.
  */
-class ClientFilesyncMirror extends Client\AbstractObject implements Client\IdAble
+class ClientFilesyncMirror extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * A unique identifier for this ClientFilesyncMirror.
      */
-    public function id(): ClientFilesyncMirrorId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\ClientFilesyncMirrorId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 }

@@ -151,26 +151,32 @@ func (r *ElixirSDK) Lint(ctx context.Context) error { // elixir-sdk (../../../:0
 // ElixirSDKPublishOpts contains options for ElixirSDK.Publish
 type ElixirSDKPublishOpts struct {
 	//
+	// Hex.pm API key for publishing
+	//
+	HexAPIKey *Secret // elixir-sdk (../../../:0:0)
+	//
 	// Execute a dry-run release, with no side effects
 	//
 	DryRun bool // elixir-sdk (../../../:0:0)
 }
 
 // Publish the Elixir SDK
-func (r *ElixirSDK) Publish(ctx context.Context, tag string, hexApiKey *Secret, opts ...ElixirSDKPublishOpts) error { // elixir-sdk (../../../:0:0)
-	assertNotNil("hexApiKey", hexApiKey)
+func (r *ElixirSDK) Publish(ctx context.Context, tag string, opts ...ElixirSDKPublishOpts) error { // elixir-sdk (../../../:0:0)
 	if r.publish != nil {
 		return nil
 	}
 	q := r.query.Select("publish")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `hexApiKey` optional argument
+		if !querybuilder.IsZeroValue(opts[i].HexAPIKey) {
+			q = q.Arg("hexApiKey", opts[i].HexAPIKey)
+		}
 		// `dryRun` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DryRun) {
 			q = q.Arg("dryRun", opts[i].DryRun)
 		}
 	}
 	q = q.Arg("tag", tag)
-	q = q.Arg("hexApiKey", hexApiKey)
 
 	return q.Execute(ctx)
 }

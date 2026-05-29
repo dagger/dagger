@@ -117,14 +117,21 @@ func generateTypeDefs(ctx context.Context, cfg generator.Config, mfs *memfs.FS, 
 	return mfs.WriteFile(cfg.TypeDefsPath, []byte(t), 0600)
 }
 
-// We need the dagger package to be installed to correctly resolved imported interface
-// such as `querybuilder.GraphQLMarshaller`
+// We need the dagger package and its dependencies to be installed to correctly
+// resolve imported interfaces such as `querybuilder.GraphQLMarshaller`.
 func (g *GoGenerator) ensureDaggerPackage(ctx context.Context, dir string) error {
 	if g.Config.ModuleConfig == nil || g.Config.ModuleConfig.LibVersion == "" {
 		return nil
 	}
 
-	cmd := exec.CommandContext(ctx, "go", "get", daggerImportPath+"@"+g.Config.ModuleConfig.LibVersion)
+	// Install both dagger.io/dagger and github.com/dagger/querybuilder in a
+	// single `go get` invocation.  querybuilder used to be a sub-package of
+	// dagger.io/dagger but is now a separate module; generated code imports it
+	// directly.
+	cmd := exec.CommandContext(ctx, "go", "get",
+		daggerImportPath+"@"+g.Config.ModuleConfig.LibVersion,
+		querybuilderImportPath,
+	)
 	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

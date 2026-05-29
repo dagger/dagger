@@ -31,7 +31,7 @@ public class QueryExecutorTest
             .Select("envVariables")
             .Select("id");
 
-        var ids = await SDK.QueryExecutor.ExecuteListAsync<EnvVariableId>(gqlClient, queryBuilder);
+        var ids = await SDK.QueryExecutor.ExecuteListAsync<Id>(gqlClient, queryBuilder);
 
         Assert.IsTrue(ids.Length > 0);
         CollectionAssert.AllItemsAreNotNull(ids);

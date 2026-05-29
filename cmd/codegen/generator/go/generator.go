@@ -43,7 +43,7 @@ type GoGenerator struct {
 // fullSchemaTemplates is the set of output file paths (without .tmpl suffix)
 // that should be rendered against the full schema rather than the core schema
 // (i.e. the schema with dependency types excluded). These templates need
-// visibility into dep-contributed Query fields (e.g. hello(), loadHelloFromID())
+// visibility into dep-contributed Query fields (e.g. hello())
 // so that they can expose those constructors to callers.
 var fullSchemaTemplates = map[string]bool{
 	"dag/dag.gen.go": true,

@@ -11,6 +11,7 @@ public class CodegenVisitor implements SchemaVisitor {
   private final InputVisitor inputVisitor;
   private final EnumVisitor enumVisitor;
   private final ObjectVisitor objectVisitor;
+  private final InterfaceVisitor interfaceVisitor;
   private final VersionVisitor versionVisitor;
   private final IDAbleVisitor idAbleVisitor;
 
@@ -19,6 +20,7 @@ public class CodegenVisitor implements SchemaVisitor {
     this.inputVisitor = new InputVisitor(schema, targetDirectory, encoding);
     this.enumVisitor = new EnumVisitor(schema, targetDirectory, encoding);
     this.objectVisitor = new ObjectVisitor(schema, targetDirectory, encoding);
+    this.interfaceVisitor = new InterfaceVisitor(schema, targetDirectory, encoding);
     this.versionVisitor = new VersionVisitor(targetDirectory, encoding);
     this.idAbleVisitor = new IDAbleVisitor(schema, targetDirectory, encoding);
   }
@@ -36,6 +38,15 @@ public class CodegenVisitor implements SchemaVisitor {
   public void visitObject(Type type) {
     try {
       objectVisitor.visit(type);
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  @Override
+  public void visitInterface(Type type) {
+    try {
+      interfaceVisitor.visit(type);
     } catch (IOException e) {
       throw new RuntimeException(e);
     }

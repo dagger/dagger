@@ -12,6 +12,9 @@ import {
 export type QueryTree = {
   operation: string
   args?: Record<string, unknown>
+  // When set, children are wrapped in an inline fragment:
+  // operation(args) { ... on inlineType { children } }
+  inlineType?: string
 }
 
 export type Metadata = {
@@ -142,12 +145,28 @@ async function computeNestedQuery(
  * @returns
  */
 export function buildQuery(q: QueryTree[]): string {
-  const query = q.reduce((acc, { operation, args }, i) => {
+  const query = q.reduce((acc, { operation, args, inlineType }, i) => {
     const qLen = q.length
+    const isLast = qLen - 1 === i
 
-    acc += ` ${operation} ${args ? `${buildArgs(args)}` : ""} ${
-      qLen - 1 !== i ? "{" : "}".repeat(qLen - 1)
-    }`
+    acc += ` ${operation} ${args ? `${buildArgs(args)}` : ""}`
+
+    if (!isLast) {
+      acc += " {"
+      if (inlineType) {
+        acc += ` ... on ${inlineType} {`
+      }
+    } else {
+      // Close inline fragments and braces
+      let closes = ""
+      for (let j = i - 1; j >= 0; j--) {
+        if (q[j].inlineType) {
+          closes += " }"
+        }
+        closes += " }"
+      }
+      acc += closes
+    }
 
     return acc
   }, "")

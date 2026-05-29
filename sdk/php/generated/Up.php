@@ -8,7 +8,7 @@ declare(strict_types=1);
 
 namespace Dagger;
 
-class Up extends Client\AbstractObject implements Client\IdAble
+class Up extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * The description of the service
@@ -22,10 +22,10 @@ class Up extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Up.
      */
-    public function id(): UpId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\UpId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

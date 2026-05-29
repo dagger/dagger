@@ -89,7 +89,7 @@ defmodule Dagger.Host do
   @doc """
   A unique identifier for this Host.
   """
-  @spec id(t()) :: {:ok, Dagger.HostID.t()} | {:error, term()}
+  @spec id(t()) :: {:ok, String.t()} | {:error, term()}
   def id(%__MODULE__{} = host) do
     query_builder =
       host.query_builder |> QB.select("id")
@@ -159,6 +159,17 @@ end
 
 defimpl Nestru.Decoder, for: Dagger.Host do
   def decode_fields_hint(_struct, _context, id) do
-    {:ok, Dagger.Client.load_host_from_id(Dagger.Global.dag(), id)}
+    alias Dagger.Core.QueryBuilder, as: QB
+    dag = Dagger.Global.dag()
+
+    {:ok,
+     %Dagger.Host{
+       query_builder:
+         dag.query_builder
+         |> QB.select("node")
+         |> QB.put_arg("id", id)
+         |> QB.inline_fragment("Host"),
+       client: dag.client
+     }}
   end
 end

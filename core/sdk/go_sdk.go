@@ -27,7 +27,7 @@ const (
 	// Set to a commit on https://github.com/dagger/dagger-go-sdk if an unreleased
 	// change is needed in the generated library.
 	// Otherwise, update it to the latest known commit during release.
-	goSDKLibVersion = "7058e9313c720d82c6a07fefb6ce3fab60c7ec4e" // v0.20.6
+	goSDKLibVersion = "5dde81db2f77c62bd87837b25b07fe496df89606" // v0.21.0
 )
 
 var goSDKExecMDDigest = digest.FromString("go-sdk-with-exec-execmd")
@@ -64,6 +64,13 @@ func (sdk *goSDK) AsCodeGenerator() (core.CodeGenerator, bool) {
 
 func (sdk *goSDK) AsClientGenerator() (core.ClientGenerator, bool) {
 	return sdk, true
+}
+
+func (sdk *goSDK) AttachDependencyResults(
+	context.Context,
+	func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	return nil, nil
 }
 
 func (sdk *goSDK) RequiredClientGenerationFiles(_ context.Context) (dagql.Array[dagql.String], error) {
@@ -234,13 +241,11 @@ func (sdk *goSDK) Codegen(
 		VCSGeneratedPaths: []string{
 			"dagger.gen.go",
 			"internal/dagger/**",
-			"internal/querybuilder/**",
 			"internal/telemetry/**",
 		},
 		VCSIgnoredPaths: []string{
 			"dagger.gen.go",
 			"internal/dagger",
-			"internal/querybuilder",
 			"internal/telemetry",
 			".env", // this is here because the Go SDK does not use WithVCSIgnoredPaths on core/codegen/GeneratedCode
 		},

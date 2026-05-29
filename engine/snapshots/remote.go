@@ -50,6 +50,10 @@ func (sr *immutableRef) ExportChain(ctx context.Context, refCfg config.RefConfig
 
 	var parentSnapshotID string
 	for _, snapshotID := range snapshotIDs {
+		if parentSnapshotID == "" && isScratchSnapshotID(snapshotID) {
+			parentSnapshotID = snapshotID
+			continue
+		}
 		opened, err := sr.cm.GetBySnapshotID(ctx, snapshotID, NoUpdateLastUsed)
 		if err != nil {
 			return nil, err

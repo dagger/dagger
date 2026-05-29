@@ -1,6 +1,6 @@
 {
   "name": "markdown-lint",
-  "engineVersion": "v0.20.5",
+  "engineVersion": "v0.21.0",
   "sdk": {
     "source": "dang"
   }

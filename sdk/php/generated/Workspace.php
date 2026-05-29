@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A Dagger workspace detected from the current working directory.
  */
-class Workspace extends Client\AbstractObject implements Client\IdAble
+class Workspace extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
      * Canonical Dagger address of the workspace directory.
@@ -62,8 +62,8 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
      */
     public function directory(
         string $path,
-        ?array $exclude = null,
-        ?array $include = null,
+        ?array $exclude = [],
+        ?array $include = [],
         ?bool $gitignore = false,
     ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
@@ -135,10 +135,10 @@ class Workspace extends Client\AbstractObject implements Client\IdAble
     /**
      * A unique identifier for this Workspace.
      */
-    public function id(): WorkspaceId
+    public function id(): Id
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\WorkspaceId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\Id((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**

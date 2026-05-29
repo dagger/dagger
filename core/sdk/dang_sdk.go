@@ -38,6 +38,13 @@ func (sdk *dangSDK) AsClientGenerator() (core.ClientGenerator, bool) {
 	return sdk, true
 }
 
+func (sdk *dangSDK) AttachDependencyResults(
+	context.Context,
+	func(dagql.AnyResult) (dagql.AnyResult, error),
+) ([]dagql.AnyResult, error) {
+	return nil, nil
+}
+
 func (sdk *dangSDK) RequiredClientGenerationFiles(_ context.Context) (dagql.Array[dagql.String], error) {
 	return dagql.NewStringArray(), nil
 }

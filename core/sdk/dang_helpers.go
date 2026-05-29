@@ -21,6 +21,7 @@ import (
 	"github.com/vito/dang/pkg/hm"
 	"github.com/vito/dang/pkg/introspection"
 	"github.com/vito/dang/pkg/ioctx"
+	"github.com/vito/dang/pkg/querybuilder"
 	"go.opentelemetry.io/otel/propagation"
 )
 
@@ -176,7 +177,10 @@ func callDangFunction(ctx context.Context, env dang.EvalEnv, fnCall *core.Functi
 		inputArgs[arg.Name] = []byte(arg.Value)
 	}
 
-	parentModBase, found := env.Get(fnCall.ParentName)
+	parentModBase, found, err := env.Lookup(ctx, fnCall.ParentName)
+	if err != nil {
+		return nil, fmt.Errorf("lookup parent type %s: %w", fnCall.ParentName, err)
+	}
 	if !found {
 		return nil, fmt.Errorf("unknown parent type: %s", fnCall.ParentName)
 	}
@@ -243,7 +247,6 @@ func callDangFunction(ctx context.Context, env dang.EvalEnv, fnCall *core.Functi
 	}
 
 	parentModEnv := dang.NewModuleValue(parentModType)
-	parentModEnv.SetDynamicScope(parentModEnv)
 
 	for name, value := range parentState {
 		scheme, found := parentModType.SchemeOf(name)
@@ -258,11 +261,12 @@ func callDangFunction(ctx context.Context, env dang.EvalEnv, fnCall *core.Functi
 		if err != nil {
 			return nil, fmt.Errorf("convert field %s: %w", name, err)
 		}
-		parentModEnv.Set(name, dangVal)
+		parentModEnv.Bind(name, dangVal, dang.PrivateVisibility)
 	}
 
 	bodyEnv := dang.CreateCompositeEnv(parentModEnv, env)
-	_, err := dang.EvaluateFormsWithPhases(ctx, parentConstructor.ClassBodyForms, bodyEnv)
+	bodyEnv.EnterSelf(parentModEnv)
+	_, err = dang.EvaluateFormsWithPhases(ctx, parentConstructor.ClassBodyForms, bodyEnv)
 	if err != nil {
 		return nil, fmt.Errorf("evaluating class body for %s: %w", parentConstructor.ClassName, err)
 	}
@@ -1013,37 +1017,7 @@ func anyToDang(ctx context.Context, env dang.EvalEnv, val any, fieldType hm.Type
 	}
 	switch v := val.(type) {
 	case string:
-		if modType, ok := fieldType.(*dang.Module); ok && modType != dang.StringType {
-			if modType.Kind == dang.EnumKind {
-				if enumVal, found := env.Get(modType.Named); found {
-					if enumMod, ok := enumVal.(*dang.ModuleValue); ok {
-						if val, found := enumMod.Get(v); found {
-							return val, nil
-						}
-						return nil, fmt.Errorf("unknown enum value %s.%s", modType.Named, v)
-					}
-				}
-				return nil, fmt.Errorf("enum type %s not found in environment", modType.Named)
-			}
-
-			if modType.Kind == dang.ScalarKind {
-				return dang.ScalarValue{Val: v, ScalarType: modType}, nil
-			}
-
-			sel := &dang.FunCall{
-				Fun: &dang.Select{
-					Field: &dang.Symbol{Name: fmt.Sprintf("load%sFromID", modType.Named)},
-				},
-				Args: dang.Record{
-					dang.Keyed[dang.Node]{
-						Key:   "id",
-						Value: &dang.String{Value: v},
-					},
-				},
-			}
-			return sel.Eval(ctx, env)
-		}
-		return dang.StringValue{Val: v}, nil
+		return stringToDang(ctx, env, v, fieldType)
 	case int:
 		return dang.IntValue{Val: v}, nil
 	case json.Number:
@@ -1055,59 +1029,165 @@ func anyToDang(ctx context.Context, env dang.EvalEnv, val any, fieldType hm.Type
 	case bool:
 		return dang.BoolValue{Val: v}, nil
 	case []any:
-		listT, isList := fieldType.(dang.ListType)
-		if !isList {
-			return nil, fmt.Errorf("expected list type, got %T", fieldType)
-		}
-		vals := dang.ListValue{
-			ElemType: listT,
-		}
-		for _, item := range v {
-			val, err := anyToDang(ctx, env, item, listT.Type)
-			if err != nil {
-				return nil, fmt.Errorf("failed to convert list item: %w", err)
-			}
-			vals.Elements = append(vals.Elements, val)
-		}
-		return vals, nil
+		return listToDang(ctx, env, v, fieldType)
 	case map[string]any:
-		mod, isMod := fieldType.(dang.Env)
-		if !isMod {
-			return nil, fmt.Errorf("expected module type, got %T", fieldType)
-		}
-		modVal := dang.NewModuleValue(mod)
-		modVal.SetDynamicScope(modVal)
-		for name, val := range v {
-			expectedT, found := mod.SchemeOf(name)
-			if !found {
-				return nil, fmt.Errorf("module %q does not have a scheme for %q", mod.Name(), name)
-			}
-			t, isMono := expectedT.Type()
-			if !isMono {
-				return nil, fmt.Errorf("expected monomorphic type, got %T", t)
-			}
-			dangVal, err := anyToDang(ctx, env, val, t)
-			if err != nil {
-				return nil, fmt.Errorf("failed to convert map item %q: %w", name, err)
-			}
-			modVal.Set(name, dangVal)
-		}
-		if mod.Name() != "" {
-			constructor, ok := env.Get(mod.Name())
-			if ok {
-				if constructorFn, ok := constructor.(*dang.ConstructorFunction); ok {
-					bodyEnv := dang.CreateCompositeEnv(modVal, env)
-					_, err := dang.EvaluateFormsWithPhases(ctx, constructorFn.ClassBodyForms, bodyEnv)
-					if err != nil {
-						return nil, fmt.Errorf("evaluating class body for %s: %w", mod.Name(), err)
-					}
-				}
-			}
-		}
-		return modVal, nil
+		return mapToDang(ctx, env, v, fieldType)
 	case nil:
 		return dang.NullValue{}, nil
 	default:
 		return nil, fmt.Errorf("unsupported type %T", val)
 	}
+}
+
+func stringToDang(ctx context.Context, env dang.EvalEnv, val string, fieldType hm.Type) (dang.Value, error) {
+	modType, isMod := fieldType.(*dang.Module)
+	if !isMod {
+		return dang.StringValue{Val: val}, nil
+	}
+	if modType == dang.StringType {
+		return dang.StringValue{Val: val}, nil
+	}
+
+	switch modType.Kind {
+	case dang.EnumKind:
+		return enumStringToDang(ctx, env, val, modType)
+	case dang.ScalarKind:
+		return dang.ScalarValue{Val: val, ScalarType: modType}, nil
+	default:
+		return objectIDToDang(ctx, env, val, modType)
+	}
+}
+
+func enumStringToDang(ctx context.Context, env dang.EvalEnv, val string, modType *dang.Module) (dang.Value, error) {
+	enumVal, found, err := env.Lookup(ctx, modType.Named)
+	if err != nil {
+		return nil, fmt.Errorf("lookup enum type %s: %w", modType.Named, err)
+	}
+	if !found {
+		return nil, fmt.Errorf("enum type %s not found in environment", modType.Named)
+	}
+
+	enumMod, ok := enumVal.(*dang.ModuleValue)
+	if !ok {
+		return nil, fmt.Errorf("enum type %s not found in environment", modType.Named)
+	}
+
+	member, found, err := enumMod.Lookup(ctx, val)
+	if err != nil {
+		return nil, fmt.Errorf("lookup enum value %s.%s: %w", modType.Named, val, err)
+	}
+	if !found {
+		return nil, fmt.Errorf("unknown enum value %s.%s", modType.Named, val)
+	}
+	return member, nil
+}
+
+func objectIDToDang(ctx context.Context, env dang.EvalEnv, id string, modType *dang.Module) (dang.Value, error) {
+	nodeVal, found, err := env.Lookup(ctx, "node")
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("node field not found in environment")
+	}
+	nodeFn, ok := nodeVal.(dang.GraphQLFunction)
+	if !ok {
+		return nil, fmt.Errorf("node field is %T, not dang.GraphQLFunction", nodeVal)
+	}
+
+	field := *nodeFn.Field
+	field.TypeRef = &introspection.TypeRef{
+		Kind: introspection.TypeKindNonNull,
+		OfType: &introspection.TypeRef{
+			Kind: introspection.TypeKindObject,
+			Name: modType.Named,
+		},
+	}
+	if schemaType := nodeFn.Schema.Types.Get(modType.Named); schemaType != nil {
+		field.TypeRef.OfType.Kind = schemaType.Kind
+	}
+
+	return dang.GraphQLValue{
+		Name:       "node",
+		TypeName:   modType.Named,
+		Field:      &field,
+		ValType:    hm.NonNullType{Type: modType},
+		Client:     nodeFn.Client,
+		Schema:     nodeFn.Schema,
+		TypeEnv:    nodeFn.TypeEnv,
+		QueryChain: querybuilder.Query().Select("node").Arg("id", id).InlineFragment(modType.Named),
+	}, nil
+}
+
+func listToDang(ctx context.Context, env dang.EvalEnv, vals []any, fieldType hm.Type) (dang.Value, error) {
+	listT, isList := fieldType.(dang.ListType)
+	if !isList {
+		return nil, fmt.Errorf("expected list type, got %T", fieldType)
+	}
+
+	listVal := dang.ListValue{ElemType: listT}
+	for _, item := range vals {
+		itemVal, err := anyToDang(ctx, env, item, listT.Type)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert list item: %w", err)
+		}
+		listVal.Elements = append(listVal.Elements, itemVal)
+	}
+	return listVal, nil
+}
+
+func mapToDang(ctx context.Context, env dang.EvalEnv, vals map[string]any, fieldType hm.Type) (dang.Value, error) {
+	mod, isMod := fieldType.(dang.Env)
+	if !isMod {
+		return nil, fmt.Errorf("expected module type, got %T", fieldType)
+	}
+
+	modVal := dang.NewModuleValue(mod)
+	for name, val := range vals {
+		expectedT, found := mod.SchemeOf(name)
+		if !found {
+			return nil, fmt.Errorf("module %q does not have a scheme for %q", mod.Name(), name)
+		}
+		t, isMono := expectedT.Type()
+		if !isMono {
+			return nil, fmt.Errorf("expected monomorphic type, got %T", t)
+		}
+		dangVal, err := anyToDang(ctx, env, val, t)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert map item %q: %w", name, err)
+		}
+		modVal.Bind(name, dangVal, dang.PrivateVisibility)
+	}
+
+	if err := evaluateDangClassBody(ctx, env, mod, modVal); err != nil {
+		return nil, err
+	}
+	return modVal, nil
+}
+
+func evaluateDangClassBody(ctx context.Context, env dang.EvalEnv, mod dang.Env, modVal *dang.ModuleValue) error {
+	if mod.Name() == "" {
+		return nil
+	}
+
+	constructor, found, err := env.Lookup(ctx, mod.Name())
+	if err != nil {
+		return fmt.Errorf("lookup constructor %s: %w", mod.Name(), err)
+	}
+	if !found {
+		return nil
+	}
+
+	constructorFn, ok := constructor.(*dang.ConstructorFunction)
+	if !ok {
+		return nil
+	}
+
+	bodyEnv := dang.CreateCompositeEnv(modVal, env)
+	bodyEnv.EnterSelf(modVal)
+	_, err = dang.EvaluateFormsWithPhases(ctx, constructorFn.ClassBodyForms, bodyEnv)
+	if err != nil {
+		return fmt.Errorf("evaluating class body for %s: %w", mod.Name(), err)
+	}
+	return nil
 }

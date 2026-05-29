@@ -1,6 +1,8 @@
 use std::{ops::Deref, sync::Arc};
 
-use dagger_sdk::core::introspection::{FullType, FullTypeFields, InputValue, TypeRef, __TypeKind};
+use dagger_sdk::core::introspection::{
+    DirectivesExt, FullType, FullTypeFields, InputValue, TypeRef, __TypeKind,
+};
 use itertools::Itertools;
 
 use crate::utility::OptionExt;
@@ -18,6 +20,7 @@ pub trait FormatTypeFuncs {
         input: bool,
     ) -> String;
     fn format_kind_object(&self, representation: &str, ref_name: &str) -> String;
+    fn format_kind_interface(&self, representation: &str, ref_name: &str) -> String;
     fn format_kind_input_object(&self, representation: &str, ref_name: &str) -> String;
     fn format_kind_enum(&self, representation: &str, ref_name: &str) -> String;
 }
@@ -45,6 +48,38 @@ impl CommonFunctions {
 
     pub fn format_immutable_input_type(&self, t: &TypeRef) -> String {
         self.format_type(t, true, true)
+    }
+
+    /// Returns true if a field returns an ID that should be converted back
+    /// to its parent object (i.e. a sync-like field). This mirrors Go's
+    /// `ConvertID`.
+    pub fn convert_id(field: &FullTypeFields) -> bool {
+        // Never convert the `id` field itself.
+        if field.name.as_deref() == Some("id") {
+            return false;
+        }
+        let type_ref = match field.type_.as_ref() {
+            Some(t) => &t.type_ref,
+            None => return false,
+        };
+        // Must be a scalar (after unwrapping NON_NULL).
+        if !type_ref.is_scalar() {
+            return false;
+        }
+        // Must actually be the ID scalar.
+        if !type_ref.is_id() {
+            return false;
+        }
+        // Check @expectedType directive on the field.
+        if let Some(expected) = field.directives.expected_type() {
+            let parent_name = field
+                .parent_type
+                .as_ref()
+                .and_then(|p| p.name.as_deref())
+                .unwrap_or_default();
+            return expected == parent_name;
+        }
+        false
     }
 
     fn format_type(&self, t: &TypeRef, input: bool, immutable: bool) -> String {
@@ -110,7 +145,9 @@ impl CommonFunctions {
                             r = get_type(rf);
                             continue;
                         }
-                        __TypeKind::INTERFACE => break,
+                        __TypeKind::INTERFACE => self
+                            .format_type_funcs
+                            .format_kind_interface(&representation, rf.name.as_ref().unwrap()),
                         __TypeKind::UNION => break,
                     },
                     None => break,
@@ -192,7 +229,9 @@ impl TypeRefExt for TypeRef {
     }
 
     fn is_object(&self) -> bool {
-        self.get_non_null().is_kind_or_default(__TypeKind::OBJECT)
+        let inner = self.get_non_null();
+        inner.is_kind_or_default(__TypeKind::OBJECT)
+            || inner.is_kind_or_default(__TypeKind::INTERFACE)
     }
 
     fn is_list_of_objects(&self) -> bool {
@@ -383,6 +422,7 @@ mod test {
                     of_type: None,
                 },
                 default_value: None,
+                directives: None,
             },
             InputValue {
                 name: "some-other-name".to_string(),
@@ -393,6 +433,7 @@ mod test {
                     of_type: None,
                 },
                 default_value: None,
+                directives: None,
             },
         ];
 
@@ -413,6 +454,7 @@ mod test {
                     of_type: None,
                 },
                 default_value: None,
+                directives: None,
             },
             InputValue {
                 name: "some-other-name".to_string(),
@@ -423,6 +465,7 @@ mod test {
                     of_type: None,
                 },
                 default_value: None,
+                directives: None,
             },
         ];
 

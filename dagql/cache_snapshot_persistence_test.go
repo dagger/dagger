@@ -58,6 +58,7 @@ type fakeSnapshotManager struct {
 	persistentRows      bkcache.PersistentMetadataRows
 	loadedRows          bkcache.PersistentMetadataRows
 	snapshotSizes       map[string]int64
+	snapshotMetadata    map[string]bkcache.SnapshotRecordMetadata
 	snapshotSizeCalls   []string
 	attachCalls         []struct{ LeaseID, SnapshotID string }
 	removeCalls         []string
@@ -77,6 +78,10 @@ func (*fakeSnapshotManager) GetBySnapshotID(context.Context, string, ...bkcache.
 	panic("unexpected GetBySnapshotID call")
 }
 
+func (*fakeSnapshotManager) Scratch(context.Context) (bkcache.ImmutableRef, error) {
+	panic("unexpected Scratch call")
+}
+
 func (m *fakeSnapshotManager) SnapshotSize(ctx context.Context, snapshotID string) (int64, error) {
 	_ = ctx
 	if m.snapshotSizes == nil {
@@ -88,6 +93,15 @@ func (m *fakeSnapshotManager) SnapshotSize(ctx context.Context, snapshotID strin
 	}
 	m.snapshotSizeCalls = append(m.snapshotSizeCalls, snapshotID)
 	return sizeBytes, nil
+}
+
+func (m *fakeSnapshotManager) SnapshotRecordMetadata(ctx context.Context, snapshotID string) (bkcache.SnapshotRecordMetadata, bool, error) {
+	_ = ctx
+	if m.snapshotMetadata == nil {
+		return bkcache.SnapshotRecordMetadata{}, false, nil
+	}
+	md, ok := m.snapshotMetadata[snapshotID]
+	return md, ok, nil
 }
 
 func (*fakeSnapshotManager) New(context.Context, bkcache.ImmutableRef, ...bkcache.RefOption) (bkcache.MutableRef, error) {
