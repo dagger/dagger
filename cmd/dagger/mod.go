@@ -4,17 +4,13 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
-	"path/filepath"
 	"sort"
 	"strings"
 	"text/tabwriter"
 
 	"dagger.io/dagger"
-	"github.com/bmatcuk/doublestar/v4"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 )
@@ -101,10 +97,11 @@ func init() {
 	addWorkspaceInstallFlags(modInstallCmd)
 	addWorkspaceHereFlag(modUninstallCmd)
 
+	// install/uninstall mutate workspace config and only make sense for a
+	// local workspace; list/search/recommend are read-only and work for
+	// both local and remote -W refs.
 	setWorkspaceFlagPolicy(modInstallCmd, workspaceFlagPolicyLocalOnly)
 	setWorkspaceFlagPolicy(modUninstallCmd, workspaceFlagPolicyLocalOnly)
-	setWorkspaceFlagPolicy(modListCmd, workspaceFlagPolicyLocalOnly)
-	setWorkspaceFlagPolicy(modRecommendCmd, workspaceFlagPolicyLocalOnly)
 }
 
 func listWorkspaceModules(ctx context.Context, out io.Writer, dag *dagger.Client) error {
@@ -219,40 +216,25 @@ type recommendation struct {
 	Match  string
 }
 
-// recommendWalkSkipDirs lists directories we never descend into when scanning
-// the workspace for recommend glob matches. Keeps the walk cheap and avoids
-// false positives from vendored or generated content.
-var recommendWalkSkipDirs = map[string]bool{
-	".git":         true,
-	".dagger":      true,
-	"node_modules": true,
-	"vendor":       true,
-	"dist":         true,
-	"build":        true,
-	"target":       true,
+// recommendExcludeDirs lists directories we strip from the workspace
+// snapshot before globbing. Keeps the work cheap and avoids false positives
+// from vendored or generated content. Patterns match Workspace.Directory's
+// exclude semantics (path-prefix style).
+var recommendExcludeDirs = []string{
+	".git/",
+	".dagger/",
+	"node_modules/",
+	"vendor/",
+	"dist/",
+	"build/",
+	"target/",
 }
 
-// runRecommend is the cobra runtime for `dagger mod recommend`. It
-// resolves the workspace root (respecting -W), gathers installed module
-// names, walks the workspace, and prints the matches.
+// runRecommend is the cobra runtime for `dagger mod recommend`. It works for
+// both local and remote workspaces by globbing through the engine rather
+// than walking the local filesystem.
 func runRecommend(ctx context.Context, out io.Writer, dag *dagger.Client) error {
 	ws := dag.CurrentWorkspace()
-
-	address, err := ws.Address(ctx)
-	if err != nil {
-		return fmt.Errorf("load workspace address: %w", err)
-	}
-	cwd, err := ws.Cwd(ctx)
-	if err != nil {
-		return fmt.Errorf("load workspace cwd: %w", err)
-	}
-	root, err := workspaceRootFromAddress(address, cwd)
-	if err != nil {
-		return err
-	}
-	if root == "" {
-		return fmt.Errorf("workspace root not available")
-	}
 
 	installed, err := installedModuleNames(ctx, dag)
 	if err != nil {
@@ -264,12 +246,32 @@ func runRecommend(ctx context.Context, out io.Writer, dag *dagger.Client) error 
 		return err
 	}
 
-	files, err := collectWorkspaceFiles(root)
-	if err != nil {
-		return fmt.Errorf("scan workspace %s: %w", root, err)
-	}
+	// "/" resolves to the workspace root regardless of cwd; excluding common
+	// vendored/generated dirs keeps matches relevant.
+	dir := ws.Directory("/", dagger.WorkspaceDirectoryOpts{
+		Exclude: recommendExcludeDirs,
+	})
 
-	return printRecommendations(out, recommendModules(mods, files, installed))
+	recs := make([]recommendation, 0, len(mods))
+	for _, m := range mods {
+		if m.Recommend == "" || installed[m.Name] {
+			continue
+		}
+		matches, err := dir.Glob(ctx, m.Recommend)
+		if err != nil {
+			// A bad pattern in the registry shouldn't take down the whole
+			// command; just skip the entry.
+			continue
+		}
+		if len(matches) == 0 {
+			continue
+		}
+		sort.Strings(matches)
+		recs = append(recs, recommendation{Module: m, Match: matches[0]})
+	}
+	sort.Slice(recs, func(i, j int) bool { return recs[i].Module.Name < recs[j].Module.Name })
+
+	return printRecommendations(out, recs)
 }
 
 // installedModuleNames returns the set of module names installed in the
@@ -292,81 +294,6 @@ func installedModuleNames(ctx context.Context, dag *dagger.Client) (map[string]b
 		installed[m.Name] = true
 	}
 	return installed, nil
-}
-
-// collectWorkspaceFiles walks root and returns paths relative to it, using
-// forward slashes, suitable for doublestar matching. Directories listed in
-// recommendWalkSkipDirs are pruned.
-func collectWorkspaceFiles(root string) ([]string, error) {
-	var files []string
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			// Surface root-level errors; tolerate per-entry permission errors.
-			if path == root {
-				return err
-			}
-			if errors.Is(err, fs.ErrPermission) {
-				if d != nil && d.IsDir() {
-					return fs.SkipDir
-				}
-				return nil
-			}
-			return err
-		}
-		if d.IsDir() {
-			if path == root {
-				return nil
-			}
-			if recommendWalkSkipDirs[d.Name()] {
-				return fs.SkipDir
-			}
-			return nil
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		files = append(files, filepath.ToSlash(rel))
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	sort.Strings(files)
-	return files, nil
-}
-
-// recommendModules is the pure matching core: given the registry, a sorted
-// list of workspace-relative file paths, and the set of already-installed
-// module names, it returns one recommendation per module whose Recommend
-// glob matches at least one file (and which is not already installed).
-//
-// Results are sorted by module name; the recorded Match is the first matching
-// path in the input order.
-func recommendModules(mods []registryModule, files []string, installed map[string]bool) []recommendation {
-	out := make([]recommendation, 0, len(mods))
-	for _, m := range mods {
-		if m.Recommend == "" {
-			continue
-		}
-		if installed[m.Name] {
-			continue
-		}
-		for _, f := range files {
-			ok, err := doublestar.Match(m.Recommend, f)
-			if err != nil {
-				// A bad pattern is a registry bug; skip the entry rather
-				// than abort the whole command.
-				break
-			}
-			if ok {
-				out = append(out, recommendation{Module: m, Match: f})
-				break
-			}
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Module.Name < out[j].Module.Name })
-	return out
 }
 
 func printRecommendations(out io.Writer, recs []recommendation) error {
