@@ -273,7 +273,7 @@ func TestApplyWorkspaceClientParamsResolvesLocalWorkspaceAfterWorkdir(t *testing
 }
 
 func TestParseWorkspaceRemoteAddressPreservesSubdir(t *testing.T) {
-	remote, ok, err := parseWorkspaceRemoteAddress(t.Context(), "github.com/acme/mono/services/api@main")
+	remote, ok, err := parseWorkspaceRemoteAddress("github.com/acme/mono/services/api@main")
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, "github.com/acme/mono", remote.CloneRef)
@@ -281,7 +281,7 @@ func TestParseWorkspaceRemoteAddressPreservesSubdir(t *testing.T) {
 	require.Equal(t, "main", remote.Version)
 	require.Equal(t, "github.com/acme/mono/services/api", remote.BaseAddress)
 
-	remote, ok, err = parseWorkspaceRemoteAddress(t.Context(), "https://github.com/acme/mono#release-1.2:services/api")
+	remote, ok, err = parseWorkspaceRemoteAddress("https://github.com/acme/mono#release-1.2:services/api")
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, "https://github.com/acme/mono", remote.CloneRef)

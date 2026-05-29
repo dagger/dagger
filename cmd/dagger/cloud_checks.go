@@ -142,7 +142,7 @@ func (cli *CloudCLI) replayCloudCheckResult(cmd *cobra.Command, res *cloudCheckQ
 	}
 
 	if result != "green" {
-		return idtui.ExitError{OriginalCode: 1, Original: fmt.Errorf("Cloud checks are %s", result)}
+		return idtui.ExitError{OriginalCode: 1, Original: fmt.Errorf("cloud checks are %s", result)}
 	}
 	return nil
 }
@@ -251,7 +251,7 @@ func cloudRepoOwner(repo string) string {
 }
 
 func (cli *CloudCLI) loadCloudCheckRowsForWorkspaceAcrossUserOrgs(ctx context.Context, address string, checks []string, login bool) (*cloudCheckQueryResult, cloudCheckSelectorFlags, error) {
-	remote, ok, err := parseWorkspaceRemoteAddress(ctx, address)
+	remote, ok, err := parseWorkspaceRemoteAddress(address)
 	if err != nil {
 		return nil, cloudCheckSelectorFlags{}, err
 	}
@@ -364,7 +364,7 @@ func (cli *CloudCLI) loadCloudCheckRowsForWorkspaceAcrossUserOrgs(ctx context.Co
 }
 
 func cloudRowsForWorkspaceAddress(ctx context.Context, rows []cloudCheckRow, address string, checks []string) ([]cloudCheckRow, cloudCheckSelectorFlags, error) {
-	remote, ok, err := parseWorkspaceRemoteAddress(ctx, address)
+	remote, ok, err := parseWorkspaceRemoteAddress(address)
 	if err != nil {
 		return nil, cloudCheckSelectorFlags{}, err
 	}

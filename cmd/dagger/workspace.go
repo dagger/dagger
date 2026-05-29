@@ -388,7 +388,7 @@ func WorkspaceActivity(cmd *cobra.Command, _ []string) error {
 func currentWorkspaceRemoteAddress(ctx context.Context) (string, bool, error) {
 	address := strings.TrimSpace(workspaceRef)
 	if address != "" {
-		_, ok, err := parseWorkspaceRemoteAddress(ctx, address)
+		_, ok, err := parseWorkspaceRemoteAddress(address)
 		if err != nil {
 			return "", false, err
 		}
@@ -397,17 +397,16 @@ func currentWorkspaceRemoteAddress(ctx context.Context) (string, bool, error) {
 		}
 	}
 
-	_, inferred, err := inferLocalWorkspaceRemoteAddress(ctx, address)
-	if err != nil {
-		return "", false, nil
+	if _, inferred, err := inferLocalWorkspaceRemoteAddress(ctx, address); err == nil {
+		return inferred, true, nil
 	}
-	return inferred, true, nil
+	return "", false, nil
 }
 
 func selectedRemoteWorkspaceAddress(ctx context.Context, command string) (workspaceRemoteAddress, string, error) {
 	address := strings.TrimSpace(workspaceRef)
 	if address != "" {
-		remote, ok, err := parseWorkspaceRemoteAddress(ctx, address)
+		remote, ok, err := parseWorkspaceRemoteAddress(address)
 		if err != nil {
 			return workspaceRemoteAddress{}, "", err
 		}
@@ -471,7 +470,7 @@ func inferLocalWorkspaceRemoteAddress(ctx context.Context, address string) (work
 
 	cloneRef := normalizeWorkspaceGitOrigin(origin)
 	inferred := moduleref.GitString(cloneRef, workspacePath, version)
-	remote, ok, err := parseWorkspaceRemoteAddress(ctx, inferred)
+	remote, ok, err := parseWorkspaceRemoteAddress(inferred)
 	if err != nil {
 		return workspaceRemoteAddress{}, "", err
 	}
@@ -583,7 +582,7 @@ func workspaceAddressLooksRemote(address string) bool {
 	}
 }
 
-func parseWorkspaceRemoteAddress(ctx context.Context, address string) (workspaceRemoteAddress, bool, error) {
+func parseWorkspaceRemoteAddress(address string) (workspaceRemoteAddress, bool, error) {
 	if !workspaceAddressLooksRemote(address) {
 		return workspaceRemoteAddress{}, false, nil
 	}
@@ -716,7 +715,7 @@ func annotateWorkspaceRemoteRows(ctx context.Context, rows []*workspaceRemoteRow
 	if len(rows) == 0 {
 		return nil
 	}
-	remote, ok, err := parseWorkspaceRemoteAddress(ctx, rows[0].Address)
+	remote, ok, err := parseWorkspaceRemoteAddress(rows[0].Address)
 	if err != nil || !ok {
 		return err
 	}
