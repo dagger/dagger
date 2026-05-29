@@ -992,7 +992,7 @@ func (s *gitSchema) latestVersion(ctx context.Context, parent dagql.ObjectResult
 	remote := parent.Self().Remote
 	tags := remote.Tags().Filter([]string{"refs/tags/v*"}).ShortNames()
 	tags = slices.DeleteFunc(tags, func(tag string) bool {
-		return !semver.IsValid(tag)
+		return !semver.IsValid(tag) || semver.Prerelease(tag) != ""
 	})
 	if len(tags) == 0 {
 		return inst, fmt.Errorf("no valid semver tags found")
