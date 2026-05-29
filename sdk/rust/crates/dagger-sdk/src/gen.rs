@@ -151,6 +151,10 @@ impl Void {
     }
 }
 pub type WorkspaceId = Id;
+pub type WorkspaceMigrationId = Id;
+pub type WorkspaceMigrationStepId = Id;
+pub type WorkspaceModuleId = Id;
+pub type WorkspaceModuleSettingId = Id;
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct BuildArg {
     pub name: String,
@@ -14655,6 +14659,82 @@ impl Query {
             }),
         );
         Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a WorkspaceMigration from its ID.
+    pub fn load_workspace_migration_from_id(
+        &self,
+        id: impl IntoID<WorkspaceMigrationId>,
+    ) -> WorkspaceMigration {
+        let mut query = self.selection.select("loadWorkspaceMigrationFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        WorkspaceMigration {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a WorkspaceMigrationStep from its ID.
+    pub fn load_workspace_migration_step_from_id(
+        &self,
+        id: impl IntoID<WorkspaceMigrationStepId>,
+    ) -> WorkspaceMigrationStep {
+        let mut query = self.selection.select("loadWorkspaceMigrationStepFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        WorkspaceMigrationStep {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a WorkspaceModule from its ID.
+    pub fn load_workspace_module_from_id(
+        &self,
+        id: impl IntoID<WorkspaceModuleId>,
+    ) -> WorkspaceModule {
+        let mut query = self.selection.select("loadWorkspaceModuleFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        WorkspaceModule {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a WorkspaceModuleSetting from its ID.
+    pub fn load_workspace_module_setting_from_id(
+        &self,
+        id: impl IntoID<WorkspaceModuleSettingId>,
+    ) -> WorkspaceModuleSetting {
+        let mut query = self.selection.select("loadWorkspaceModuleSettingFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        WorkspaceModuleSetting {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
