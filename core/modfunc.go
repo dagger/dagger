@@ -1146,9 +1146,7 @@ func (fn *ModuleFunction) loadContextualGitArg(
 // loadWorkspaceArg loads a workspace argument by resolving it through the
 // currentWorkspace query. The workspace is automatically injected into
 // module functions that declare a Workspace parameter when the ambient context
-// has a selected workspace config or a legacy compat workspace. Bare detection
-// fallback still serves currentWorkspace APIs, but is not enough to satisfy a
-// module's Workspace input.
+// has a current workspace.
 func (fn *ModuleFunction) loadWorkspaceArg(
 	ctx context.Context,
 	dag *dagql.Server,
@@ -1168,9 +1166,6 @@ func (fn *ModuleFunction) loadWorkspaceArg(
 	)
 	if err != nil {
 		return nil, fmt.Errorf("load workspace: %w", err)
-	}
-	if ws.Self().ConfigFile == "" && ws.Self().CompatWorkspace() == nil {
-		return nil, fmt.Errorf("%w: workspace arguments require a selected workspace config or legacy compat workspace", ErrNoCurrentWorkspace)
 	}
 
 	wsID, err := ws.ID()
