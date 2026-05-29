@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `CiID` scalar type represents an identifier for an object of type Ci.
-type CiID string // ci (../../../:0:0)
 
 // Retrieve the binding value, as type Ci
 func (r *Binding) AsCi() *Ci { // ci (../../../:0:0)
@@ -26,7 +23,7 @@ type Ci struct { // ci (../../../:0:0)
 	query *querybuilder.Selection
 
 	bootstrap *Void
-	id        *CiID
+	id        *ID
 }
 
 func (r *Ci) WithGraphQLQuery(q *querybuilder.Selection) *Ci {
@@ -73,13 +70,13 @@ func (r *Ci) Bootstrap(ctx context.Context, opts ...CiBootstrapOpts) error { // 
 }
 
 // A unique identifier for this Ci.
-func (r *Ci) ID(ctx context.Context) (CiID, error) {
+func (r *Ci) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response CiID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -92,7 +89,7 @@ func (r *Ci) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Ci) XXX_GraphQLIDType() string {
-	return "CiID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -117,8 +114,16 @@ func (r *Ci) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadCiFromID(CiID(id))
+	*r = Ci{query: selectNode(dag.query, id, "Ci")}
 	return nil
+}
+
+// AsNode returns this Ci as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Ci) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }
 
 // Create or update a binding of type Ci in the environment
@@ -148,16 +153,6 @@ func (r *Env) WithCiOutput(name string, description string) *Env { // ci (../../
 // "CI in CI": check that Dagger can still run its own CI
 func (r *Query) Ci() *Ci { // ci (../../../:0:0)
 	q := r.query.Select("ci")
-
-	return &Ci{
-		query: q,
-	}
-}
-
-// Load a Ci from its ID.
-func (r *Query) LoadCiFromID(id CiID) *Ci { // ci (../../../:0:0)
-	q := r.query.Select("loadCiFromID")
-	q = q.Arg("id", id)
 
 	return &Ci{
 		query: q,

@@ -6,14 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `ShellcheckID` scalar type represents an identifier for an object of type Shellcheck.
-type ShellcheckID string // shellcheck (../../../:0:0)
-
-// The `ShellcheckScriptID` scalar type represents an identifier for an object of type ShellcheckScript.
-type ShellcheckScriptID string // shellcheck (../../../:0:0)
 
 // Retrieve the binding value, as type Shellcheck
 func (r *Binding) AsShellcheck() *Shellcheck { // shellcheck (../../../:0:0)
@@ -81,26 +75,6 @@ func (r *Env) WithShellcheckScriptOutput(name string, description string) *Env {
 	}
 }
 
-// Load a Shellcheck from its ID.
-func (r *Query) LoadShellcheckFromID(id ShellcheckID) *Shellcheck { // shellcheck (../../../:0:0)
-	q := r.query.Select("loadShellcheckFromID")
-	q = q.Arg("id", id)
-
-	return &Shellcheck{
-		query: q,
-	}
-}
-
-// Load a ShellcheckScript from its ID.
-func (r *Query) LoadShellcheckScriptFromID(id ShellcheckScriptID) *ShellcheckScript { // shellcheck (../../../:0:0)
-	q := r.query.Select("loadShellcheckScriptFromID")
-	q = q.Arg("id", id)
-
-	return &ShellcheckScript{
-		query: q,
-	}
-}
-
 // ShellcheckOpts contains options for Query.Shellcheck
 type ShellcheckOpts struct {
 	//
@@ -129,7 +103,7 @@ type Shellcheck struct { // shellcheck (../../../:0:0)
 	query *querybuilder.Selection
 
 	check *Void
-	id    *ShellcheckID
+	id    *ID
 }
 
 func (r *Shellcheck) WithGraphQLQuery(q *querybuilder.Selection) *Shellcheck {
@@ -179,13 +153,13 @@ func (r *Shellcheck) Exclude(ctx context.Context) ([]string, error) { // shellch
 }
 
 // A unique identifier for this Shellcheck.
-func (r *Shellcheck) ID(ctx context.Context) (ShellcheckID, error) {
+func (r *Shellcheck) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ShellcheckID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -198,7 +172,7 @@ func (r *Shellcheck) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Shellcheck) XXX_GraphQLIDType() string {
-	return "ShellcheckID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -223,7 +197,7 @@ func (r *Shellcheck) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadShellcheckFromID(ShellcheckID(id))
+	*r = Shellcheck{query: selectNode(dag.query, id, "Shellcheck")}
 	return nil
 }
 
@@ -245,7 +219,7 @@ func (r *Shellcheck) Scripts(ctx context.Context, opts ...ShellcheckScriptsOpts)
 	q = q.Select("id")
 
 	type scripts struct {
-		Id ShellcheckScriptID
+		Id ID
 	}
 
 	convert := func(fields []scripts) []ShellcheckScript {
@@ -253,7 +227,7 @@ func (r *Shellcheck) Scripts(ctx context.Context, opts ...ShellcheckScriptsOpts)
 
 		for i := range fields {
 			val := ShellcheckScript{id: &fields[i].Id}
-			val.query = q.Root().Select("loadShellcheckScriptFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "ShellcheckScript")
 			out = append(out, val)
 		}
 
@@ -271,11 +245,19 @@ func (r *Shellcheck) Scripts(ctx context.Context, opts ...ShellcheckScriptsOpts)
 	return convert(response), nil
 }
 
+// AsNode returns this Shellcheck as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Shellcheck) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type ShellcheckScript struct { // shellcheck (../../../:0:0)
 	query *querybuilder.Selection
 
 	check *Void
-	id    *ShellcheckScriptID
+	id    *ID
 	path  *string
 }
 
@@ -296,13 +278,13 @@ func (r *ShellcheckScript) Check(ctx context.Context) error { // shellcheck (../
 }
 
 // A unique identifier for this ShellcheckScript.
-func (r *ShellcheckScript) ID(ctx context.Context) (ShellcheckScriptID, error) {
+func (r *ShellcheckScript) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ShellcheckScriptID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -315,7 +297,7 @@ func (r *ShellcheckScript) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *ShellcheckScript) XXX_GraphQLIDType() string {
-	return "ShellcheckScriptID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -340,7 +322,7 @@ func (r *ShellcheckScript) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadShellcheckScriptFromID(ShellcheckScriptID(id))
+	*r = ShellcheckScript{query: selectNode(dag.query, id, "ShellcheckScript")}
 	return nil
 }
 
@@ -355,4 +337,12 @@ func (r *ShellcheckScript) Path(ctx context.Context) (string, error) { // shellc
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// AsNode returns this ShellcheckScript as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ShellcheckScript) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }

@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `PsAnalyzerID` scalar type represents an identifier for an object of type PsAnalyzer.
-type PsAnalyzerID string // ps-analyzer (../../../:0:0)
 
 // Retrieve the binding value, as type PsAnalyzer
 func (r *Binding) AsPsAnalyzer() *PsAnalyzer { // ps-analyzer (../../../:0:0)
@@ -50,7 +47,7 @@ type PsAnalyzer struct { // ps-analyzer (../../../:0:0)
 	query *querybuilder.Selection
 
 	check   *Void
-	id      *PsAnalyzerID
+	id      *ID
 	version *string
 }
 
@@ -101,13 +98,13 @@ func (r *PsAnalyzer) Exclude(ctx context.Context) ([]string, error) { // ps-anal
 }
 
 // A unique identifier for this PsAnalyzer.
-func (r *PsAnalyzer) ID(ctx context.Context) (PsAnalyzerID, error) {
+func (r *PsAnalyzer) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response PsAnalyzerID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -120,7 +117,7 @@ func (r *PsAnalyzer) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *PsAnalyzer) XXX_GraphQLIDType() string {
-	return "PsAnalyzerID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -145,7 +142,7 @@ func (r *PsAnalyzer) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadPsAnalyzerFromID(PsAnalyzerID(id))
+	*r = PsAnalyzer{query: selectNode(dag.query, id, "PsAnalyzer")}
 	return nil
 }
 
@@ -172,13 +169,11 @@ func (r *PsAnalyzer) Version(ctx context.Context) (string, error) { // ps-analyz
 	return response, q.Execute(ctx)
 }
 
-// Load a PsAnalyzer from its ID.
-func (r *Query) LoadPsAnalyzerFromID(id PsAnalyzerID) *PsAnalyzer { // ps-analyzer (../../../:0:0)
-	q := r.query.Select("loadPsAnalyzerFromID")
-	q = q.Arg("id", id)
-
-	return &PsAnalyzer{
-		query: q,
+// AsNode returns this PsAnalyzer as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *PsAnalyzer) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }
 

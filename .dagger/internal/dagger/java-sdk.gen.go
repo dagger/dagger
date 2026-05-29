@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `JavaSdkID` scalar type represents an identifier for an object of type JavaSdk.
-type JavaSDKID string // java-sdk (../../../:0:0)
 
 // Retrieve the binding value, as type JavaSdk
 func (r *Binding) AsJavaSDK() *JavaSDK { // java-sdk (../../../:0:0)
@@ -49,7 +46,7 @@ type JavaSDK struct { // java-sdk (../../../:0:0)
 	query *querybuilder.Selection
 
 	checkDeps     *Void
-	id            *JavaSDKID
+	id            *ID
 	lint          *Void
 	name          *string
 	release       *Void
@@ -103,13 +100,13 @@ func (r *JavaSDK) Fmt() *Changeset { // java-sdk (../../../:0:0)
 }
 
 // A unique identifier for this JavaSdk.
-func (r *JavaSDK) ID(ctx context.Context) (JavaSDKID, error) {
+func (r *JavaSDK) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response JavaSDKID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -122,7 +119,7 @@ func (r *JavaSDK) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *JavaSDK) XXX_GraphQLIDType() string {
-	return "JavaSDKID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -147,7 +144,7 @@ func (r *JavaSDK) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadJavaSDKFromID(JavaSDKID(id))
+	*r = JavaSDK{query: selectNode(dag.query, id, "JavaSdk")}
 	return nil
 }
 
@@ -250,6 +247,14 @@ func (r *JavaSDK) Workspace() *Directory { // java-sdk (../../../:0:0)
 	}
 }
 
+// AsNode returns this JavaSDK as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *JavaSDK) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // JavaSDKOpts contains options for Query.JavaSDK
 type JavaSDKOpts struct {
 	//
@@ -274,16 +279,6 @@ func (r *Query) JavaSDK(opts ...JavaSDKOpts) *JavaSDK { // java-sdk (../../../:0
 			q = q.Arg("sourcePath", opts[i].SourcePath)
 		}
 	}
-
-	return &JavaSDK{
-		query: q,
-	}
-}
-
-// Load a JavaSdk from its ID.
-func (r *Query) LoadJavaSDKFromID(id JavaSDKID) *JavaSDK { // java-sdk (../../../:0:0)
-	q := r.query.Select("loadJavaSdkFromID")
-	q = q.Arg("id", id)
 
 	return &JavaSDK{
 		query: q,

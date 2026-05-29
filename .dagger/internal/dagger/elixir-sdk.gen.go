@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `ElixirSdkID` scalar type represents an identifier for an object of type ElixirSdk.
-type ElixirSDKID string // elixir-sdk (../../../:0:0)
 
 // Retrieve the binding value, as type ElixirSdk
 func (r *Binding) AsElixirSDK() *ElixirSDK { // elixir-sdk (../../../:0:0)
@@ -26,7 +23,7 @@ type ElixirSDK struct { // elixir-sdk (../../../:0:0)
 
 	baseImage     *string
 	codegenTest   *Void
-	id            *ElixirSDKID
+	id            *ID
 	lint          *Void
 	publish       *Void
 	releaseDryRun *Void
@@ -90,13 +87,13 @@ func (r *ElixirSDK) DevContainer() *Container { // elixir-sdk (../../../:0:0)
 }
 
 // A unique identifier for this ElixirSdk.
-func (r *ElixirSDK) ID(ctx context.Context) (ElixirSDKID, error) {
+func (r *ElixirSDK) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ElixirSDKID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -109,7 +106,7 @@ func (r *ElixirSDK) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *ElixirSDK) XXX_GraphQLIDType() string {
-	return "ElixirSDKID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -134,7 +131,7 @@ func (r *ElixirSDK) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadElixirSDKFromID(ElixirSDKID(id))
+	*r = ElixirSDK{query: selectNode(dag.query, id, "ElixirSdk")}
 	return nil
 }
 
@@ -230,11 +227,28 @@ func (r *ElixirSDK) SyncImage() *File { // elixir-sdk (../../../:0:0)
 	}
 }
 
+// Update codegen test snapshots (auto-accept Mneme changes)
+func (r *ElixirSDK) UpdateCodegenTests() *Changeset { // elixir-sdk (../../../:0:0)
+	q := r.query.Select("updateCodegenTests")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 func (r *ElixirSDK) Workspace() *Directory { // elixir-sdk (../../../:0:0)
 	q := r.query.Select("workspace")
 
 	return &Directory{
 		query: q,
+	}
+}
+
+// AsNode returns this ElixirSDK as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ElixirSDK) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }
 
@@ -287,16 +301,6 @@ func (r *Query) ElixirSDK(opts ...ElixirSDKOpts) *ElixirSDK { // elixir-sdk (../
 			q = q.Arg("sourcePath", opts[i].SourcePath)
 		}
 	}
-
-	return &ElixirSDK{
-		query: q,
-	}
-}
-
-// Load a ElixirSdk from its ID.
-func (r *Query) LoadElixirSDKFromID(id ElixirSDKID) *ElixirSDK { // elixir-sdk (../../../:0:0)
-	q := r.query.Select("loadElixirSdkFromID")
-	q = q.Arg("id", id)
 
 	return &ElixirSDK{
 		query: q,

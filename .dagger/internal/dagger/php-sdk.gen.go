@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `PhpSdkID` scalar type represents an identifier for an object of type PhpSdk.
-type PhpSDKID string // php-sdk (../../../toolchains/php-sdk-dev/main.go:25:6)
 
 // Retrieve the binding value, as type PhpSdk
 func (r *Binding) AsPhpSDK() *PhpSDK { // php-sdk (../../../toolchains/php-sdk-dev/main.go:25:6)
@@ -48,7 +45,7 @@ func (r *Env) WithPhpSDKOutput(name string, description string) *Env { // php-sd
 type PhpSDK struct { // php-sdk (../../../toolchains/php-sdk-dev/main.go:25:6)
 	query *querybuilder.Selection
 
-	id             *PhpSDKID
+	id             *ID
 	phpCodeSniffer *Void
 	phpStan        *Void
 	release        *Void
@@ -140,13 +137,13 @@ func (r *PhpSDK) DoctumConfig() *File { // php-sdk (../../../toolchains/php-sdk-
 }
 
 // A unique identifier for this PhpSdk.
-func (r *PhpSDK) ID(ctx context.Context) (PhpSDKID, error) {
+func (r *PhpSDK) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response PhpSDKID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -159,7 +156,7 @@ func (r *PhpSDK) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *PhpSDK) XXX_GraphQLIDType() string {
-	return "PhpSDKID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -184,7 +181,7 @@ func (r *PhpSDK) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadPhpSDKFromID(PhpSDKID(id))
+	*r = PhpSDK{query: selectNode(dag.query, id, "PhpSdk")}
 	return nil
 }
 
@@ -342,13 +339,11 @@ func (r *PhpSDK) WithGeneratedDocs() *PhpSDK { // php-sdk (../../../toolchains/p
 	}
 }
 
-// Load a PhpSdk from its ID.
-func (r *Query) LoadPhpSDKFromID(id PhpSDKID) *PhpSDK { // php-sdk (../../../toolchains/php-sdk-dev/main.go:25:6)
-	q := r.query.Select("loadPhpSdkFromID")
-	q = q.Arg("id", id)
-
-	return &PhpSDK{
-		query: q,
+// AsNode returns this PhpSDK as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *PhpSDK) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }
 

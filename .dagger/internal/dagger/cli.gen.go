@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `CliID` scalar type represents an identifier for an object of type Cli.
-type CliID string // cli (../../../toolchains/cli-dev/main.go:83:6)
 
 // Retrieve the binding value, as type Cli
 func (r *Binding) AsCli() *Cli { // cli (../../../toolchains/cli-dev/main.go:83:6)
@@ -24,7 +21,7 @@ func (r *Binding) AsCli() *Cli { // cli (../../../toolchains/cli-dev/main.go:83:
 type Cli struct { // cli (../../../toolchains/cli-dev/main.go:83:6)
 	query *querybuilder.Selection
 
-	id              *CliID
+	id              *ID
 	publishMetadata *Void
 	releaseDryRun   *Void
 	tag             *string
@@ -79,13 +76,13 @@ func (r *Cli) DevBinaries(opts ...CliDevBinariesOpts) *Directory { // cli (../..
 }
 
 // A unique identifier for this Cli.
-func (r *Cli) ID(ctx context.Context) (CliID, error) {
+func (r *Cli) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response CliID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -98,7 +95,7 @@ func (r *Cli) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Cli) XXX_GraphQLIDType() string {
-	return "CliID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -123,7 +120,7 @@ func (r *Cli) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadCliFromID(CliID(id))
+	*r = Cli{query: selectNode(dag.query, id, "Cli")}
 	return nil
 }
 
@@ -271,6 +268,14 @@ func (r *Cli) Version(ctx context.Context) (string, error) { // cli (../../../to
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this Cli as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Cli) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // Create or update a binding of type Cli in the environment
 func (r *Env) WithCliInput(name string, value *Cli, description string) *Env { // cli (../../../toolchains/cli-dev/main.go:83:6)
 	assertNotNil("value", value)
@@ -331,16 +336,6 @@ func (r *Query) Cli(opts ...CliOpts) *Cli { // cli (../../../toolchains/cli-dev/
 			q = q.Arg("version", opts[i].Version)
 		}
 	}
-
-	return &Cli{
-		query: q,
-	}
-}
-
-// Load a Cli from its ID.
-func (r *Query) LoadCliFromID(id CliID) *Cli { // cli (../../../toolchains/cli-dev/main.go:83:6)
-	q := r.query.Select("loadCliFromID")
-	q = q.Arg("id", id)
 
 	return &Cli{
 		query: q,

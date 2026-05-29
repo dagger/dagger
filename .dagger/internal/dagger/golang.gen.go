@@ -6,14 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `GolangID` scalar type represents an identifier for an object of type Golang.
-type GolangID string // golang (../../../:0:0)
-
-// The `GolangModuleID` scalar type represents an identifier for an object of type GolangModule.
-type GolangModuleID string // golang (../../../:0:0)
 
 // Retrieve the binding value, as type Golang
 func (r *Binding) AsGolang() *Golang { // golang (../../../:0:0)
@@ -89,7 +83,7 @@ type Golang struct { // golang (../../../:0:0)
 	query *querybuilder.Selection
 
 	check        *Void
-	id           *GolangID
+	id           *ID
 	selectModule *string
 	version      *string
 }
@@ -122,13 +116,13 @@ func (r *Golang) Check(ctx context.Context, opts ...GolangCheckOpts) error { // 
 }
 
 // A unique identifier for this Golang.
-func (r *Golang) ID(ctx context.Context) (GolangID, error) {
+func (r *Golang) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GolangID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -141,7 +135,7 @@ func (r *Golang) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Golang) XXX_GraphQLIDType() string {
-	return "GolangID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -166,7 +160,7 @@ func (r *Golang) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadGolangFromID(GolangID(id))
+	*r = Golang{query: selectNode(dag.query, id, "Golang")}
 	return nil
 }
 
@@ -199,7 +193,7 @@ func (r *Golang) Modules(ctx context.Context, opts ...GolangModulesOpts) ([]Gola
 	q = q.Select("id")
 
 	type modules struct {
-		Id GolangModuleID
+		Id ID
 	}
 
 	convert := func(fields []modules) []GolangModule {
@@ -207,7 +201,7 @@ func (r *Golang) Modules(ctx context.Context, opts ...GolangModulesOpts) ([]Gola
 
 		for i := range fields {
 			val := GolangModule{id: &fields[i].Id}
-			val.query = q.Root().Select("loadGolangModuleFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "GolangModule")
 			out = append(out, val)
 		}
 
@@ -263,11 +257,19 @@ func (r *Golang) Version(ctx context.Context) (string, error) { // golang (../..
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this Golang as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Golang) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A discovered Go module in the workspace.
 type GolangModule struct { // golang (../../../:0:0)
 	query *querybuilder.Selection
 
-	id   *GolangModuleID
+	id   *ID
 	path *string
 	test *Void
 }
@@ -279,13 +281,13 @@ func (r *GolangModule) WithGraphQLQuery(q *querybuilder.Selection) *GolangModule
 }
 
 // A unique identifier for this GolangModule.
-func (r *GolangModule) ID(ctx context.Context) (GolangModuleID, error) {
+func (r *GolangModule) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GolangModuleID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -298,7 +300,7 @@ func (r *GolangModule) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *GolangModule) XXX_GraphQLIDType() string {
-	return "GolangModuleID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -323,7 +325,7 @@ func (r *GolangModule) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadGolangModuleFromID(GolangModuleID(id))
+	*r = GolangModule{query: selectNode(dag.query, id, "GolangModule")}
 	return nil
 }
 
@@ -348,6 +350,14 @@ func (r *GolangModule) Test(ctx context.Context) error { // golang (../../../:0:
 	q := r.query.Select("test")
 
 	return q.Execute(ctx)
+}
+
+// AsNode returns this GolangModule as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GolangModule) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }
 
 // GolangOpts contains options for Query.Golang
@@ -401,26 +411,6 @@ func (r *Query) Golang(opts ...GolangOpts) *Golang { // golang (../../../:0:0)
 	}
 
 	return &Golang{
-		query: q,
-	}
-}
-
-// Load a Golang from its ID.
-func (r *Query) LoadGolangFromID(id GolangID) *Golang { // golang (../../../:0:0)
-	q := r.query.Select("loadGolangFromID")
-	q = q.Arg("id", id)
-
-	return &Golang{
-		query: q,
-	}
-}
-
-// Load a GolangModule from its ID.
-func (r *Query) LoadGolangModuleFromID(id GolangModuleID) *GolangModule { // golang (../../../:0:0)
-	q := r.query.Select("loadGolangModuleFromID")
-	q = q.Arg("id", id)
-
-	return &GolangModule{
 		query: q,
 	}
 }

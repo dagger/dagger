@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `DocsID` scalar type represents an identifier for an object of type Docs.
-type DocsID string // docs (../../../toolchains/docs-dev/main.go:36:6)
 
 // Retrieve the binding value, as type Docs
 func (r *Binding) AsDocs() *Docs { // docs (../../../toolchains/docs-dev/main.go:36:6)
@@ -25,7 +22,7 @@ type Docs struct { // docs (../../../toolchains/docs-dev/main.go:36:6)
 	query *querybuilder.Selection
 
 	deploy  *string
-	id      *DocsID
+	id      *ID
 	publish *Void
 }
 
@@ -62,13 +59,13 @@ func (r *Docs) Deploy(ctx context.Context, message string, netlifyToken *Secret)
 }
 
 // A unique identifier for this Docs.
-func (r *Docs) ID(ctx context.Context) (DocsID, error) {
+func (r *Docs) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response DocsID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -81,7 +78,7 @@ func (r *Docs) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Docs) XXX_GraphQLIDType() string {
-	return "DocsID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -106,7 +103,7 @@ func (r *Docs) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadDocsFromID(DocsID(id))
+	*r = Docs{query: selectNode(dag.query, id, "Docs")}
 	return nil
 }
 
@@ -182,6 +179,14 @@ func (r *Docs) Source() *Directory { // docs (../../../toolchains/docs-dev/main.
 	}
 }
 
+// AsNode returns this Docs as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Docs) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // Create or update a binding of type Docs in the environment
 func (r *Env) WithDocsInput(name string, value *Docs, description string) *Env { // docs (../../../toolchains/docs-dev/main.go:36:6)
 	assertNotNil("value", value)
@@ -226,16 +231,6 @@ func (r *Query) Docs(opts ...DocsOpts) *Docs { // docs (../../../toolchains/docs
 			q = q.Arg("nginxConfig", opts[i].NginxConfig)
 		}
 	}
-
-	return &Docs{
-		query: q,
-	}
-}
-
-// Load a Docs from its ID.
-func (r *Query) LoadDocsFromID(id DocsID) *Docs { // docs (../../../toolchains/docs-dev/main.go:36:6)
-	q := r.query.Select("loadDocsFromID")
-	q = q.Arg("id", id)
 
 	return &Docs{
 		query: q,

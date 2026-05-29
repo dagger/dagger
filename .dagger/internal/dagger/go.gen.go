@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `GoID` scalar type represents an identifier for an object of type Go.
-type GoID string // go (../../../toolchains/go/main.go:138:6)
 
 // Retrieve the binding value, as type Go
 func (r *Binding) AsGo() *Go { // go (../../../toolchains/go/main.go:138:6)
@@ -51,7 +48,7 @@ type Go struct { // go (../../../toolchains/go/main.go:138:6)
 
 	cgo        *bool
 	checkTidy  *Void
-	id         *GoID
+	id         *ID
 	limit      *int
 	lint       *Void
 	lintModule *Void
@@ -302,13 +299,13 @@ func (r *Go) GenerateDaggerRuntimes() *Changeset { // go (../../../toolchains/go
 }
 
 // A unique identifier for this Go.
-func (r *Go) ID(ctx context.Context) (GoID, error) {
+func (r *Go) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GoID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -321,7 +318,7 @@ func (r *Go) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Go) XXX_GraphQLIDType() string {
-	return "GoID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -346,7 +343,7 @@ func (r *Go) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadGoFromID(GoID(id))
+	*r = Go{query: selectNode(dag.query, id, "Go")}
 	return nil
 }
 
@@ -682,6 +679,14 @@ func (r *Go) Version(ctx context.Context) (string, error) { // go (../../../tool
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this Go as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Go) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // GoOpts contains options for Query.Go
 type GoOpts struct {
 	//
@@ -802,16 +807,6 @@ func (r *Query) Go(opts ...GoOpts) *Go { // go (../../../toolchains/go/main.go:2
 			q = q.Arg("limit", opts[i].Limit)
 		}
 	}
-
-	return &Go{
-		query: q,
-	}
-}
-
-// Load a Go from its ID.
-func (r *Query) LoadGoFromID(id GoID) *Go { // go (../../../toolchains/go/main.go:138:6)
-	q := r.query.Select("loadGoFromID")
-	q = q.Arg("id", id)
 
 	return &Go{
 		query: q,
