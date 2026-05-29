@@ -334,6 +334,15 @@ type ContainerWithMountedFileLazy struct {
 	Readonly bool
 }
 
+type ContainerWithMountedPathDockerfileCompatLazy struct {
+	LazyState
+	Parent     dagql.ObjectResult[*Container]
+	Target     string
+	Source     dagql.ObjectResult[*Directory]
+	SourcePath string
+	Readonly   bool
+}
+
 type ContainerWithMountedCacheLazy struct {
 	LazyState
 	Parent dagql.ObjectResult[*Container]
@@ -707,6 +716,14 @@ type persistedContainerWithMountedFileLazy struct {
 	Target         string `json:"target"`
 	SourceResultID uint64 `json:"sourceResultID"`
 	Owner          string `json:"owner,omitempty"`
+	Readonly       bool   `json:"readonly,omitempty"`
+}
+
+type persistedContainerWithMountedPathDockerfileCompatLazy struct {
+	ParentResultID uint64 `json:"parentResultID"`
+	Target         string `json:"target"`
+	SourceResultID uint64 `json:"sourceResultID"`
+	SourcePath     string `json:"sourcePath,omitempty"`
 	Readonly       bool   `json:"readonly,omitempty"`
 }
 
@@ -3562,6 +3579,59 @@ func (lazy *ContainerWithMountedFileLazy) EncodePersisted(ctx context.Context, c
 	})
 }
 
+func (lazy *ContainerWithMountedPathDockerfileCompatLazy) Evaluate(ctx context.Context, container *Container) error {
+	return lazy.LazyState.Evaluate(ctx, "Container.withMountedPathDockerfileCompat", func(ctx context.Context) error {
+		cache, err := dagql.EngineCache(ctx)
+		if err != nil {
+			return err
+		}
+		if err := cache.Evaluate(ctx, lazy.Parent, lazy.Source); err != nil {
+			return err
+		}
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		_, err = container.WithMountedPathDockerfileCompat(ctx, lazy.Target, lazy.Source, lazy.SourcePath, lazy.Readonly)
+		if err != nil {
+			return err
+		}
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerWithMountedPathDockerfileCompatLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container withMountedPathDockerfileCompat parent")
+	if err != nil {
+		return nil, err
+	}
+	source, err := attachDirectoryResult(attach, lazy.Source, "attach container withMountedPathDockerfileCompat source")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	lazy.Source = source
+	return []dagql.AnyResult{parent, source}, nil
+}
+
+func (lazy *ContainerWithMountedPathDockerfileCompatLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container withMountedPathDockerfileCompat parent")
+	if err != nil {
+		return nil, err
+	}
+	sourceID, err := encodePersistedObjectRef(cache, lazy.Source, "container withMountedPathDockerfileCompat source")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerWithMountedPathDockerfileCompatLazy{
+		ParentResultID: parentID,
+		Target:         lazy.Target,
+		SourceResultID: sourceID,
+		SourcePath:     lazy.SourcePath,
+		Readonly:       lazy.Readonly,
+	})
+}
+
 func (lazy *ContainerWithMountedCacheLazy) Evaluate(ctx context.Context, container *Container) error {
 	return lazy.LazyState.Evaluate(ctx, "Container.withMountedCache", func(ctx context.Context) error {
 		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
@@ -4471,6 +4541,28 @@ func decodePersistedContainerLazy(
 			Source:    source,
 			Owner:     persisted.Owner,
 			Readonly:  persisted.Readonly,
+		}
+		return nil
+	case "__withMountedPathDockerfileCompat":
+		var persisted persistedContainerWithMountedPathDockerfileCompatLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return fmt.Errorf("decode persisted container withMountedPathDockerfileCompat lazy payload: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container withMountedPathDockerfileCompat parent")
+		if err != nil {
+			return err
+		}
+		source, err := loadPersistedObjectResultByResultID[*Directory](ctx, dag, persisted.SourceResultID, "container withMountedPathDockerfileCompat source")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerWithMountedPathDockerfileCompatLazy{
+			LazyState:  NewLazyState(),
+			Parent:     parent,
+			Target:     persisted.Target,
+			Source:     source,
+			SourcePath: persisted.SourcePath,
+			Readonly:   persisted.Readonly,
 		}
 		return nil
 	case "withMountedCache":
@@ -5386,6 +5478,175 @@ func (container *Container) WithMountedFile(
 	container.ImageRef = ""
 
 	return container, nil
+}
+
+// mutates container caller must have handled cloning or creating a new child.
+func (container *Container) WithMountedPathDockerfileCompat(
+	ctx context.Context,
+	target string,
+	source dagql.ObjectResult[*Directory],
+	sourcePath string,
+	readonly bool,
+) (*Container, error) {
+	target = absPath(container.Config.WorkingDir, target)
+	sourcePath = cleanDockerfileCompatMountSourcePath(sourcePath)
+
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := cache.Evaluate(ctx, source); err != nil {
+		return nil, err
+	}
+
+	if path.Clean(sourcePath) == "/" {
+		sourceDir, err := cloneDetachedDirectoryForContainerResult(ctx, source.Self())
+		if err != nil {
+			return nil, err
+		}
+		mountSource := new(LazyAccessor[*Directory, *Container])
+		mountSource.setValue(sourceDir)
+		container.Mounts = container.Mounts.With(ContainerMount{
+			DirectorySource: mountSource,
+			Target:          target,
+			Readonly:        readonly,
+		})
+		container.ImageRef = ""
+		return container, nil
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return nil, err
+	}
+	stat, err := source.Self().Stat(ctx, source, srv, sourcePath, false)
+	if err != nil {
+		return nil, err
+	}
+
+	if stat.FileType == FileTypeDirectory {
+		sourceDir, err := detachedDirectoryAtSourcePath(ctx, source, sourcePath)
+		if err != nil {
+			return nil, err
+		}
+		mountSource := new(LazyAccessor[*Directory, *Container])
+		mountSource.setValue(sourceDir)
+		container.Mounts = container.Mounts.With(ContainerMount{
+			DirectorySource: mountSource,
+			Target:          target,
+			Readonly:        readonly,
+		})
+		container.ImageRef = ""
+		return container, nil
+	}
+	if dockerfileCompatMountSourcePathHasDirHint(sourcePath) {
+		return nil, notADirectoryError{fmt.Errorf("path %s is a file, not a directory", sourcePath)}
+	}
+
+	sourceFile, err := detachedFileAtSourcePath(ctx, source, sourcePath)
+	if err != nil {
+		return nil, err
+	}
+	mountSource := new(LazyAccessor[*File, *Container])
+	mountSource.setValue(sourceFile)
+	container.Mounts = container.Mounts.With(ContainerMount{
+		FileSource: mountSource,
+		Target:     target,
+		Readonly:   readonly,
+	})
+	container.ImageRef = ""
+	return container, nil
+}
+
+func cleanDockerfileCompatMountSourcePath(sourcePath string) string {
+	if sourcePath == "" {
+		return "/"
+	}
+	trailingSlash := dockerfileCompatMountSourcePathHasDirHint(sourcePath)
+	sourcePath = path.Clean(sourcePath)
+	if !strings.HasPrefix(sourcePath, "/") {
+		sourcePath = "/" + sourcePath
+	}
+	if trailingSlash && !strings.HasSuffix(sourcePath, "/") {
+		sourcePath += "/"
+	}
+	return sourcePath
+}
+
+func dockerfileCompatMountSourcePathHasDirHint(sourcePath string) bool {
+	return strings.HasSuffix(sourcePath, "/") || strings.HasSuffix(sourcePath, "/.")
+}
+
+//nolint:dupl // symmetric with detachedFileAtSourcePath; sharing hides Directory vs File specifics
+func detachedDirectoryAtSourcePath(ctx context.Context, source dagql.ObjectResult[*Directory], sourcePath string) (*Directory, error) {
+	sourceDirPath, err := source.Self().Dir.GetOrEval(ctx, source.Result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source directory path: %w", err)
+	}
+	sourceSnapshot, err := source.Self().Snapshot.GetOrEval(ctx, source.Result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source directory snapshot: %w", err)
+	}
+	if sourceSnapshot == nil {
+		return nil, fmt.Errorf("source directory snapshot is nil")
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, sourceSnapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
+	if err != nil {
+		return nil, err
+	}
+
+	dir := &Directory{
+		Platform: source.Self().Platform,
+		Services: slices.Clone(source.Self().Services),
+		Dir:      new(LazyAccessor[string, *Directory]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *Directory]),
+	}
+	dir.Dir.setValue(path.Join(sourceDirPath, sourcePath))
+	dir.Snapshot.setValue(reopened)
+	return dir, nil
+}
+
+//nolint:dupl // symmetric with detachedDirectoryAtSourcePath; sharing hides File vs Directory specifics
+func detachedFileAtSourcePath(ctx context.Context, source dagql.ObjectResult[*Directory], sourcePath string) (*File, error) {
+	sourceDirPath, err := source.Self().Dir.GetOrEval(ctx, source.Result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source directory path: %w", err)
+	}
+	sourceSnapshot, err := source.Self().Snapshot.GetOrEval(ctx, source.Result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source directory snapshot: %w", err)
+	}
+	if sourceSnapshot == nil {
+		return nil, fmt.Errorf("source directory snapshot is nil")
+	}
+
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	reopened, err := query.SnapshotManager().GetBySnapshotID(ctx, sourceSnapshot.SnapshotID(), bkcache.NoUpdateLastUsed)
+	if err != nil {
+		return nil, err
+	}
+
+	file := &File{
+		Platform: source.Self().Platform,
+		Services: slices.Clone(source.Self().Services),
+		File:     new(LazyAccessor[string, *File]),
+		Snapshot: new(LazyAccessor[bkcache.ImmutableRef, *File]),
+	}
+	file.File.setValue(path.Join(sourceDirPath, sourcePath))
+	file.Snapshot.setValue(reopened)
+	return file, nil
 }
 
 // mutates container caller must have handled cloning or creating a new child.
