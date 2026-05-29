@@ -2,41 +2,49 @@
   {
     "name": "go",
     "description": "Build, test, and lint Go projects with the Go toolchain",
-    "repo": "github.com/dagger/go"
+    "repo": "github.com/dagger/go",
+    "recommend": "**/go.mod"
   },
   {
     "name": "eslint",
     "description": "Lint JavaScript and TypeScript with ESLint",
-    "repo": "github.com/dagger/eslint"
+    "repo": "github.com/dagger/eslint",
+    "recommend": "**/{.eslintrc*,eslint.config.*}"
   },
   {
     "name": "prettier",
     "description": "Format code with Prettier",
-    "repo": "github.com/dagger/prettier"
+    "repo": "github.com/dagger/prettier",
+    "recommend": "**/{.prettierrc*,prettier.config.*}"
   },
   {
     "name": "jest",
     "description": "Run JavaScript and TypeScript tests with Jest",
-    "repo": "github.com/dagger/jest"
+    "repo": "github.com/dagger/jest",
+    "recommend": "**/jest.config.*"
   },
   {
     "name": "vitest",
     "description": "Run JavaScript and TypeScript tests with Vitest",
-    "repo": "github.com/dagger/vitest"
+    "repo": "github.com/dagger/vitest",
+    "recommend": "**/vitest.config.*"
   },
   {
     "name": "pytest",
     "description": "Run Python tests with pytest",
-    "repo": "github.com/dagger/pytest"
+    "repo": "github.com/dagger/pytest",
+    "recommend": "**/{pytest.ini,pyproject.toml}"
   },
   {
     "name": "biomejs",
     "description": "Format and lint JavaScript and TypeScript with Biome",
-    "repo": "github.com/dagger/biomejs"
+    "repo": "github.com/dagger/biomejs",
+    "recommend": "**/biome.json*"
   },
   {
     "name": "playwright",
     "description": "Run end-to-end browser tests with Playwright",
-    "repo": "github.com/dagger/playwright"
+    "repo": "github.com/dagger/playwright",
+    "recommend": "**/playwright.config.*"
   }
 ]
