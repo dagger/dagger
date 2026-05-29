@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `WorkspaceMigrationStepID` scalar type represents an identifier for an object of type WorkspaceMigrationStep.
+ * A unique identifier for an object.
  */
-readonly class WorkspaceMigrationStepId extends Client\AbstractId
+readonly class WorkspaceMigrationStepId extends Client\AbstractScalar
 {
 }

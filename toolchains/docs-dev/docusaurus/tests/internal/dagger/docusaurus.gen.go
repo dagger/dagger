@@ -25,7 +25,7 @@ type Docusaurus struct { // docusaurus (../../../../../../toolchains/docs-dev/do
 	cacheVolumeName *string
 	dir             *string
 	disableCache    *bool
-	id              *ID
+	id              *DocusaurusID
 	yarn            *bool
 }
 
@@ -33,12 +33,6 @@ func (r *Docusaurus) WithGraphQLQuery(q *querybuilder.Selection) *Docusaurus {
 	return &Docusaurus{
 		query: q,
 	}
-}
-
-type DocusaurusID = ID
-
-func (r *Query) LoadDocusaurusFromID(id DocusaurusID) *Docusaurus {
-	return &Docusaurus{query: selectNode(r.query, ID(id), "Docusaurus")}
 }
 
 // Return base container for running docusaurus with docs mounted and docusaurus
@@ -97,13 +91,13 @@ func (r *Docusaurus) DisableCache(ctx context.Context) (bool, error) { // docusa
 }
 
 // A unique identifier for this Docusaurus.
-func (r *Docusaurus) ID(ctx context.Context) (ID, error) {
+func (r *Docusaurus) ID(ctx context.Context) (DocusaurusID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ID
+	var response DocusaurusID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
