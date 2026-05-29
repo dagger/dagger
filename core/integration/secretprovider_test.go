@@ -174,7 +174,7 @@ printf 'secret%s' "$count"
 	verifySecretFromOnePassword := func(ctx context.Context, base *dagger.Container, secretURL string) (string, error) {
 		return base.
 			WithWorkdir("/work").
-			With(daggerExec("init", "--sdk=go", "--name=foo", "--source=.")).
+			WithNewFile("dagger.json", `{"name":"foo","engineVersion":"latest","sdk":{"source":"go"},"source":"."}`).
 			WithNewFile("main.go", `package main
 
 import (
@@ -202,7 +202,7 @@ func (m *Foo) VerifySecret(ctx context.Context, secret *dagger.Secret) (string, 
 	return fmt.Sprintf("original: %s\nupdated: %s", original, updated), nil
 }
 `).
-			With(daggerCall("-vvv", "verify-secret", fmt.Sprintf("--secret=%s", secretURL))).Stdout(ctx)
+			With(daggerCallAt(".", "-vvv", "verify-secret", fmt.Sprintf("--secret=%s", secretURL))).Stdout(ctx)
 	}
 
 	testcases := []struct {
