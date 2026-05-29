@@ -8,6 +8,7 @@
 //go:test:include ../../cmd/dagger
 //go:test:include ../../core/modules
 //go:test:include ../../core/openrouter
+//go:test:include ../../core/workspace
 //go:test:include ../../dagql
 //go:test:include ../../engine
 //go:test:include ../../go.mod
