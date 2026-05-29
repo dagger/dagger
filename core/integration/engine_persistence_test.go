@@ -654,6 +654,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
 
 		modA := moduleFixture(t, engineClientA, "typescript/runtime-cache-control")
+			With(sdkSource("typescript", moduleSrc))
 		outA, err := modA.
 			WithEnvVariable("CACHE_BUST", identity.NewID()).
 			With(daggerCallAt(".", "test-always-cache")).
@@ -668,6 +669,7 @@ head -c 32 /dev/urandom | sha256sum | cut -d' ' -f1 > /work/random.txt
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
 
 		modB := moduleFixture(t, engineClientB, "typescript/runtime-cache-control")
+			With(sdkSource("typescript", moduleSrc))
 		outB, err := modB.
 			WithEnvVariable("CACHE_BUST", identity.NewID()).
 			With(daggerCallAt(".", "test-always-cache")).
