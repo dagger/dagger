@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `RustSdkDevID` scalar type represents an identifier for an object of type RustSdkDev.
-type RustSDKDevID string // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:32:6)
 
 // Retrieve the binding value, as type RustSdkDev
 func (r *Binding) AsRustSDKDev() *RustSDKDev { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:32:6)
@@ -41,16 +38,6 @@ func (r *Env) WithRustSDKDevOutput(name string, description string) *Env { // ru
 	q = q.Arg("description", description)
 
 	return &Env{
-		query: q,
-	}
-}
-
-// Load a RustSdkDev from its ID.
-func (r *Query) LoadRustSDKDevFromID(id RustSDKDevID) *RustSDKDev { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:32:6)
-	q := r.query.Select("loadRustSdkDevFromID")
-	q = q.Arg("id", id)
-
-	return &RustSDKDev{
 		query: q,
 	}
 }
@@ -94,7 +81,7 @@ type RustSDKDev struct { // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/ma
 
 	cargoCheck    *Void
 	cargoFmt      *Void
-	id            *RustSDKDevID
+	id            *ID
 	release       *Void
 	releaseDryRun *Void
 	test          *Void
@@ -195,13 +182,13 @@ func (r *RustSDKDev) DevContainer(opts ...RustSDKDevDevContainerOpts) *Container
 }
 
 // A unique identifier for this RustSdkDev.
-func (r *RustSDKDev) ID(ctx context.Context) (RustSDKDevID, error) {
+func (r *RustSDKDev) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response RustSDKDevID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -214,7 +201,7 @@ func (r *RustSDKDev) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *RustSDKDev) XXX_GraphQLIDType() string {
-	return "RustSDKDevID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -239,7 +226,7 @@ func (r *RustSDKDev) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadRustSDKDevFromID(RustSDKDevID(id))
+	*r = RustSDKDev{query: selectNode(dag.query, id, "RustSdkDev")}
 	return nil
 }
 
@@ -306,5 +293,13 @@ func (r *RustSDKDev) WithGeneratedClient() *RustSDKDev { // rust-sdk-dev (../../
 
 	return &RustSDKDev{
 		query: q,
+	}
+}
+
+// AsNode returns this RustSDKDev as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *RustSDKDev) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }
