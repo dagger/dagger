@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `TypescriptSdkID` scalar type represents an identifier for an object of type TypescriptSdk.
-type TypescriptSDKID string // typescript-sdk (../../../:0:0)
 
 // Retrieve the binding value, as type TypescriptSdk
 func (r *Binding) AsTypescriptSDK() *TypescriptSDK { // typescript-sdk (../../../:0:0)
@@ -41,16 +38,6 @@ func (r *Env) WithTypescriptSDKOutput(name string, description string) *Env { //
 	q = q.Arg("description", description)
 
 	return &Env{
-		query: q,
-	}
-}
-
-// Load a TypescriptSdk from its ID.
-func (r *Query) LoadTypescriptSDKFromID(id TypescriptSDKID) *TypescriptSDK { // typescript-sdk (../../../:0:0)
-	q := r.query.Select("loadTypescriptSdkFromID")
-	q = q.Arg("id", id)
-
-	return &TypescriptSDK{
 		query: q,
 	}
 }
@@ -102,7 +89,7 @@ type TypescriptSDK struct { // typescript-sdk (../../../:0:0)
 	query *querybuilder.Selection
 
 	bunVersion         *string
-	id                 *TypescriptSDKID
+	id                 *ID
 	isSemver           *bool
 	lintDocsSnippets   *Void
 	lintTypescript     *Void
@@ -170,14 +157,23 @@ func (r *TypescriptSDK) ClientLibrary() *Changeset { // typescript-sdk (../../..
 	}
 }
 
+// Format the SDK source with prettier via eslint --fix
+func (r *TypescriptSDK) Format() *Changeset { // typescript-sdk (../../../:0:0)
+	q := r.query.Select("format")
+
+	return &Changeset{
+		query: q,
+	}
+}
+
 // A unique identifier for this TypescriptSdk.
-func (r *TypescriptSDK) ID(ctx context.Context) (TypescriptSDKID, error) {
+func (r *TypescriptSDK) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response TypescriptSDKID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -190,7 +186,7 @@ func (r *TypescriptSDK) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *TypescriptSDK) XXX_GraphQLIDType() string {
-	return "TypescriptSDKID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -215,7 +211,7 @@ func (r *TypescriptSDK) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadTypescriptSDKFromID(TypescriptSDKID(id))
+	*r = TypescriptSDK{query: selectNode(dag.query, id, "TypescriptSdk")}
 	return nil
 }
 
@@ -432,5 +428,13 @@ func (r *TypescriptSDK) Workspace() *Directory { // typescript-sdk (../../../:0:
 
 	return &Directory{
 		query: q,
+	}
+}
+
+// AsNode returns this TypescriptSDK as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *TypescriptSDK) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }

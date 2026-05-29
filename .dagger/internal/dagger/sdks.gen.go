@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `SdksID` scalar type represents an identifier for an object of type Sdks.
-type SdksID string // sdks (../../../toolchains/all-sdks/main.go:13:6)
 
 // Retrieve the binding value, as type Sdks
 func (r *Binding) AsSdks() *Sdks { // sdks (../../../toolchains/all-sdks/main.go:13:6)
@@ -45,16 +42,6 @@ func (r *Env) WithSdksOutput(name string, description string) *Env { // sdks (..
 	}
 }
 
-// Load a Sdks from its ID.
-func (r *Query) LoadSdksFromID(id SdksID) *Sdks { // sdks (../../../toolchains/all-sdks/main.go:13:6)
-	q := r.query.Select("loadSdksFromID")
-	q = q.Arg("id", id)
-
-	return &Sdks{
-		query: q,
-	}
-}
-
 // Develop Dagger SDKs
 func (r *Query) Sdks() *Sdks { // sdks (../../../toolchains/all-sdks/main.go:13:6)
 	q := r.query.Select("sdks")
@@ -67,7 +54,7 @@ func (r *Query) Sdks() *Sdks { // sdks (../../../toolchains/all-sdks/main.go:13:
 type Sdks struct { // sdks (../../../toolchains/all-sdks/main.go:13:6)
 	query *querybuilder.Selection
 
-	id *SdksID
+	id *ID
 }
 
 func (r *Sdks) WithGraphQLQuery(q *querybuilder.Selection) *Sdks {
@@ -87,13 +74,13 @@ func (r *Sdks) Bump(version string) *Changeset { // sdks (../../../toolchains/al
 }
 
 // A unique identifier for this Sdks.
-func (r *Sdks) ID(ctx context.Context) (SdksID, error) {
+func (r *Sdks) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response SdksID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -106,7 +93,7 @@ func (r *Sdks) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Sdks) XXX_GraphQLIDType() string {
-	return "SdksID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -131,7 +118,7 @@ func (r *Sdks) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadSdksFromID(SdksID(id))
+	*r = Sdks{query: selectNode(dag.query, id, "Sdks")}
 	return nil
 }
 
@@ -143,4 +130,12 @@ func (r *Sdks) List(ctx context.Context) ([]string, error) { // sdks (../../../t
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// AsNode returns this Sdks as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Sdks) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }

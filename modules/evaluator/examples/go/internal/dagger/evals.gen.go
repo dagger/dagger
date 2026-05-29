@@ -6,56 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `EvalsBasicID` scalar type represents an identifier for an object of type EvalsBasic.
-type EvalsBasicID string // evals (../../../../../../modules/evals/basic.go:18:6)
-
-// The `EvalsBuildMultiID` scalar type represents an identifier for an object of type EvalsBuildMulti.
-type EvalsBuildMultiID string // evals (../../../../../../modules/evals/build_multi.go:20:6)
-
-// The `EvalsBuildMultiNoVarID` scalar type represents an identifier for an object of type EvalsBuildMultiNoVar.
-type EvalsBuildMultiNoVarID string // evals (../../../../../../modules/evals/build_multi_no_var.go:18:6)
-
-// The `EvalsBuildMultiStaticID` scalar type represents an identifier for an object of type EvalsBuildMultiStatic.
-type EvalsBuildMultiStaticID string // evals (../../../../../../modules/evals/static.go:14:6)
-
-// The `EvalsCoreApiID` scalar type represents an identifier for an object of type EvalsCoreApi.
-type EvalsCoreAPIID string // evals (../../../../../../modules/evals/core_api.go:18:6)
-
-// The `EvalsEnvPropagationID` scalar type represents an identifier for an object of type EvalsEnvPropagation.
-type EvalsEnvPropagationID string // evals (../../../../../../modules/evals/env_propagation.go:17:6)
-
-// The `EvalsID` scalar type represents an identifier for an object of type Evals.
-type EvalsID string // evals (../../../../../../modules/evals/main.go:21:6)
-
-// The `EvalsLifeAlertID` scalar type represents an identifier for an object of type EvalsLifeAlert.
-type EvalsLifeAlertID string // evals (../../../../../../modules/evals/life_alert.go:18:6)
-
-// The `EvalsModelContextProtocolID` scalar type represents an identifier for an object of type EvalsModelContextProtocol.
-type EvalsModelContextProtocolID string // evals (../../../../../../modules/evals/mcp_server.go:17:6)
-
-// The `EvalsModuleDependenciesID` scalar type represents an identifier for an object of type EvalsModuleDependencies.
-type EvalsModuleDependenciesID string // evals (../../../../../../modules/evals/module_dependencies.go:18:6)
-
-// The `EvalsNestedObjectsID` scalar type represents an identifier for an object of type EvalsNestedObjects.
-type EvalsNestedObjectsID string // evals (../../../../../../modules/evals/nested_objects.go:22:6)
-
-// The `EvalsReadImplicitVarsID` scalar type represents an identifier for an object of type EvalsReadImplicitVars.
-type EvalsReadImplicitVarsID string // evals (../../../../../../modules/evals/read_implicit_vars.go:20:6)
-
-// The `EvalsResponsesID` scalar type represents an identifier for an object of type EvalsResponses.
-type EvalsResponsesID string // evals (../../../../../../modules/evals/responses.go:18:6)
-
-// The `EvalsUndoChangesID` scalar type represents an identifier for an object of type EvalsUndoChanges.
-type EvalsUndoChangesID string // evals (../../../../../../modules/evals/undo_changes.go:19:6)
-
-// The `EvalsWorkspacePatternID` scalar type represents an identifier for an object of type EvalsWorkspacePattern.
-type EvalsWorkspacePatternID string // evals (../../../../../../modules/evals/workspace_pattern.go:19:6)
-
-// The `EvalsWritableID` scalar type represents an identifier for an object of type EvalsWritable.
-type EvalsWritableID string // evals (../../../../../../modules/evals/writable.go:17:6)
 
 // Retrieve the binding value, as type Evals
 func (r *Binding) AsEvals() *Evals { // evals (../../../../../../modules/evals/main.go:21:6)
@@ -590,7 +542,7 @@ type Evals struct { // evals (../../../../../../modules/evals/main.go:21:6)
 	query *querybuilder.Selection
 
 	check *Void
-	id    *EvalsID
+	id    *ID
 }
 
 func (r *Evals) WithGraphQLQuery(q *querybuilder.Selection) *Evals {
@@ -697,13 +649,13 @@ func (r *Evals) EnvPropagation() *EvalsEnvPropagation { // evals (../../../../..
 }
 
 // A unique identifier for this Evals.
-func (r *Evals) ID(ctx context.Context) (EvalsID, error) {
+func (r *Evals) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EvalsID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -716,7 +668,7 @@ func (r *Evals) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Evals) XXX_GraphQLIDType() string {
-	return "EvalsID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -741,7 +693,7 @@ func (r *Evals) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadEvalsFromID(EvalsID(id))
+	*r = Evals{query: selectNode(dag.query, id, "Evals")}
 	return nil
 }
 
@@ -834,25 +786,24 @@ func (r *Evals) Writable() *EvalsWritable { // evals (../../../../../../modules/
 	}
 }
 
+// AsNode returns this Evals as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Evals) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type EvalsBasic struct { // evals (../../../../../../modules/evals/basic.go:18:6)
 	query *querybuilder.Selection
 
 	check *Void
-	id    *EvalsBasicID
+	id    *ID
 	name  *string
 }
 
 func (r *EvalsBasic) WithGraphQLQuery(q *querybuilder.Selection) *EvalsBasic {
 	return &EvalsBasic{
-		query: q,
-	}
-}
-
-// Converts this EvalsBasic to a EvaluatorEval.
-func (r *EvalsBasic) AsEvaluatorEval() *EvaluatorEval {
-	q := r.query.Select("asEvaluatorEval")
-
-	return &EvaluatorEval{
 		query: q,
 	}
 }
@@ -869,13 +820,13 @@ func (r *EvalsBasic) Check(ctx context.Context, prompt *LLM) error { // evals (.
 }
 
 // A unique identifier for this EvalsBasic.
-func (r *EvalsBasic) ID(ctx context.Context) (EvalsBasicID, error) {
+func (r *EvalsBasic) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EvalsBasicID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -888,7 +839,7 @@ func (r *EvalsBasic) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EvalsBasic) XXX_GraphQLIDType() string {
-	return "EvalsBasicID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -913,7 +864,7 @@ func (r *EvalsBasic) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadEvalsBasicFromID(EvalsBasicID(id))
+	*r = EvalsBasic{query: selectNode(dag.query, id, "EvalsBasic")}
 	return nil
 }
 
@@ -939,25 +890,32 @@ func (r *EvalsBasic) Prompt(base *LLM) *LLM { // evals (../../../../../../module
 	}
 }
 
+// AsEvaluatorEval returns this EvalsBasic as a EvaluatorEval.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsBasic) AsEvaluatorEval() EvaluatorEval {
+	return &EvaluatorEvalClient{
+		query: r.query,
+	}
+}
+
+// AsNode returns this EvalsBasic as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsBasic) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type EvalsBuildMulti struct { // evals (../../../../../../modules/evals/build_multi.go:20:6)
 	query *querybuilder.Selection
 
 	check *Void
-	id    *EvalsBuildMultiID
+	id    *ID
 	name  *string
 }
 
 func (r *EvalsBuildMulti) WithGraphQLQuery(q *querybuilder.Selection) *EvalsBuildMulti {
 	return &EvalsBuildMulti{
-		query: q,
-	}
-}
-
-// Converts this EvalsBuildMulti to a EvaluatorEval.
-func (r *EvalsBuildMulti) AsEvaluatorEval() *EvaluatorEval {
-	q := r.query.Select("asEvaluatorEval")
-
-	return &EvaluatorEval{
 		query: q,
 	}
 }
@@ -974,13 +932,13 @@ func (r *EvalsBuildMulti) Check(ctx context.Context, prompt *LLM) error { // eva
 }
 
 // A unique identifier for this EvalsBuildMulti.
-func (r *EvalsBuildMulti) ID(ctx context.Context) (EvalsBuildMultiID, error) {
+func (r *EvalsBuildMulti) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EvalsBuildMultiID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -993,7 +951,7 @@ func (r *EvalsBuildMulti) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EvalsBuildMulti) XXX_GraphQLIDType() string {
-	return "EvalsBuildMultiID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1018,7 +976,7 @@ func (r *EvalsBuildMulti) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadEvalsBuildMultiFromID(EvalsBuildMultiID(id))
+	*r = EvalsBuildMulti{query: selectNode(dag.query, id, "EvalsBuildMulti")}
 	return nil
 }
 
@@ -1044,25 +1002,32 @@ func (r *EvalsBuildMulti) Prompt(base *LLM) *LLM { // evals (../../../../../../m
 	}
 }
 
+// AsEvaluatorEval returns this EvalsBuildMulti as a EvaluatorEval.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsBuildMulti) AsEvaluatorEval() EvaluatorEval {
+	return &EvaluatorEvalClient{
+		query: r.query,
+	}
+}
+
+// AsNode returns this EvalsBuildMulti as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsBuildMulti) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type EvalsBuildMultiNoVar struct { // evals (../../../../../../modules/evals/build_multi_no_var.go:18:6)
 	query *querybuilder.Selection
 
 	check *Void
-	id    *EvalsBuildMultiNoVarID
+	id    *ID
 	name  *string
 }
 
 func (r *EvalsBuildMultiNoVar) WithGraphQLQuery(q *querybuilder.Selection) *EvalsBuildMultiNoVar {
 	return &EvalsBuildMultiNoVar{
-		query: q,
-	}
-}
-
-// Converts this EvalsBuildMultiNoVar to a EvaluatorEval.
-func (r *EvalsBuildMultiNoVar) AsEvaluatorEval() *EvaluatorEval {
-	q := r.query.Select("asEvaluatorEval")
-
-	return &EvaluatorEval{
 		query: q,
 	}
 }
@@ -1079,13 +1044,13 @@ func (r *EvalsBuildMultiNoVar) Check(ctx context.Context, prompt *LLM) error { /
 }
 
 // A unique identifier for this EvalsBuildMultiNoVar.
-func (r *EvalsBuildMultiNoVar) ID(ctx context.Context) (EvalsBuildMultiNoVarID, error) {
+func (r *EvalsBuildMultiNoVar) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EvalsBuildMultiNoVarID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1098,7 +1063,7 @@ func (r *EvalsBuildMultiNoVar) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EvalsBuildMultiNoVar) XXX_GraphQLIDType() string {
-	return "EvalsBuildMultiNoVarID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1123,7 +1088,7 @@ func (r *EvalsBuildMultiNoVar) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadEvalsBuildMultiNoVarFromID(EvalsBuildMultiNoVarID(id))
+	*r = EvalsBuildMultiNoVar{query: selectNode(dag.query, id, "EvalsBuildMultiNoVar")}
 	return nil
 }
 
@@ -1149,25 +1114,32 @@ func (r *EvalsBuildMultiNoVar) Prompt(base *LLM) *LLM { // evals (../../../../..
 	}
 }
 
+// AsEvaluatorEval returns this EvalsBuildMultiNoVar as a EvaluatorEval.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsBuildMultiNoVar) AsEvaluatorEval() EvaluatorEval {
+	return &EvaluatorEvalClient{
+		query: r.query,
+	}
+}
+
+// AsNode returns this EvalsBuildMultiNoVar as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsBuildMultiNoVar) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type EvalsBuildMultiStatic struct { // evals (../../../../../../modules/evals/static.go:14:6)
 	query *querybuilder.Selection
 
 	check *Void
-	id    *EvalsBuildMultiStaticID
+	id    *ID
 	name  *string
 }
 
 func (r *EvalsBuildMultiStatic) WithGraphQLQuery(q *querybuilder.Selection) *EvalsBuildMultiStatic {
 	return &EvalsBuildMultiStatic{
-		query: q,
-	}
-}
-
-// Converts this EvalsBuildMultiStatic to a EvaluatorEval.
-func (r *EvalsBuildMultiStatic) AsEvaluatorEval() *EvaluatorEval {
-	q := r.query.Select("asEvaluatorEval")
-
-	return &EvaluatorEval{
 		query: q,
 	}
 }
@@ -1192,13 +1164,13 @@ func (r *EvalsBuildMultiStatic) Check(ctx context.Context, prompt *LLM) error { 
 }
 
 // A unique identifier for this EvalsBuildMultiStatic.
-func (r *EvalsBuildMultiStatic) ID(ctx context.Context) (EvalsBuildMultiStaticID, error) {
+func (r *EvalsBuildMultiStatic) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EvalsBuildMultiStaticID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1211,7 +1183,7 @@ func (r *EvalsBuildMultiStatic) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EvalsBuildMultiStatic) XXX_GraphQLIDType() string {
-	return "EvalsBuildMultiStaticID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1236,7 +1208,7 @@ func (r *EvalsBuildMultiStatic) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadEvalsBuildMultiStaticFromID(EvalsBuildMultiStaticID(id))
+	*r = EvalsBuildMultiStatic{query: selectNode(dag.query, id, "EvalsBuildMultiStatic")}
 	return nil
 }
 
@@ -1262,25 +1234,32 @@ func (r *EvalsBuildMultiStatic) Prompt(base *LLM) *LLM { // evals (../../../../.
 	}
 }
 
+// AsEvaluatorEval returns this EvalsBuildMultiStatic as a EvaluatorEval.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsBuildMultiStatic) AsEvaluatorEval() EvaluatorEval {
+	return &EvaluatorEvalClient{
+		query: r.query,
+	}
+}
+
+// AsNode returns this EvalsBuildMultiStatic as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsBuildMultiStatic) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type EvalsCoreAPI struct { // evals (../../../../../../modules/evals/core_api.go:18:6)
 	query *querybuilder.Selection
 
 	check *Void
-	id    *EvalsCoreAPIID
+	id    *ID
 	name  *string
 }
 
 func (r *EvalsCoreAPI) WithGraphQLQuery(q *querybuilder.Selection) *EvalsCoreAPI {
 	return &EvalsCoreAPI{
-		query: q,
-	}
-}
-
-// Converts this EvalsCoreApi to a EvaluatorEval.
-func (r *EvalsCoreAPI) AsEvaluatorEval() *EvaluatorEval {
-	q := r.query.Select("asEvaluatorEval")
-
-	return &EvaluatorEval{
 		query: q,
 	}
 }
@@ -1297,13 +1276,13 @@ func (r *EvalsCoreAPI) Check(ctx context.Context, prompt *LLM) error { // evals 
 }
 
 // A unique identifier for this EvalsCoreApi.
-func (r *EvalsCoreAPI) ID(ctx context.Context) (EvalsCoreAPIID, error) {
+func (r *EvalsCoreAPI) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EvalsCoreAPIID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1316,7 +1295,7 @@ func (r *EvalsCoreAPI) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EvalsCoreAPI) XXX_GraphQLIDType() string {
-	return "EvalsCoreAPIID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1341,7 +1320,7 @@ func (r *EvalsCoreAPI) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadEvalsCoreAPIFromID(EvalsCoreAPIID(id))
+	*r = EvalsCoreAPI{query: selectNode(dag.query, id, "EvalsCoreApi")}
 	return nil
 }
 
@@ -1367,25 +1346,32 @@ func (r *EvalsCoreAPI) Prompt(base *LLM) *LLM { // evals (../../../../../../modu
 	}
 }
 
+// AsEvaluatorEval returns this EvalsCoreAPI as a EvaluatorEval.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsCoreAPI) AsEvaluatorEval() EvaluatorEval {
+	return &EvaluatorEvalClient{
+		query: r.query,
+	}
+}
+
+// AsNode returns this EvalsCoreAPI as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsCoreAPI) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type EvalsEnvPropagation struct { // evals (../../../../../../modules/evals/env_propagation.go:17:6)
 	query *querybuilder.Selection
 
 	check *Void
-	id    *EvalsEnvPropagationID
+	id    *ID
 	name  *string
 }
 
 func (r *EvalsEnvPropagation) WithGraphQLQuery(q *querybuilder.Selection) *EvalsEnvPropagation {
 	return &EvalsEnvPropagation{
-		query: q,
-	}
-}
-
-// Converts this EvalsEnvPropagation to a EvaluatorEval.
-func (r *EvalsEnvPropagation) AsEvaluatorEval() *EvaluatorEval {
-	q := r.query.Select("asEvaluatorEval")
-
-	return &EvaluatorEval{
 		query: q,
 	}
 }
@@ -1402,13 +1388,13 @@ func (r *EvalsEnvPropagation) Check(ctx context.Context, prompt *LLM) error { //
 }
 
 // A unique identifier for this EvalsEnvPropagation.
-func (r *EvalsEnvPropagation) ID(ctx context.Context) (EvalsEnvPropagationID, error) {
+func (r *EvalsEnvPropagation) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EvalsEnvPropagationID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1421,7 +1407,7 @@ func (r *EvalsEnvPropagation) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EvalsEnvPropagation) XXX_GraphQLIDType() string {
-	return "EvalsEnvPropagationID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1446,7 +1432,7 @@ func (r *EvalsEnvPropagation) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadEvalsEnvPropagationFromID(EvalsEnvPropagationID(id))
+	*r = EvalsEnvPropagation{query: selectNode(dag.query, id, "EvalsEnvPropagation")}
 	return nil
 }
 
@@ -1472,25 +1458,32 @@ func (r *EvalsEnvPropagation) Prompt(base *LLM) *LLM { // evals (../../../../../
 	}
 }
 
+// AsEvaluatorEval returns this EvalsEnvPropagation as a EvaluatorEval.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsEnvPropagation) AsEvaluatorEval() EvaluatorEval {
+	return &EvaluatorEvalClient{
+		query: r.query,
+	}
+}
+
+// AsNode returns this EvalsEnvPropagation as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsEnvPropagation) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type EvalsLifeAlert struct { // evals (../../../../../../modules/evals/life_alert.go:18:6)
 	query *querybuilder.Selection
 
 	check *Void
-	id    *EvalsLifeAlertID
+	id    *ID
 	name  *string
 }
 
 func (r *EvalsLifeAlert) WithGraphQLQuery(q *querybuilder.Selection) *EvalsLifeAlert {
 	return &EvalsLifeAlert{
-		query: q,
-	}
-}
-
-// Converts this EvalsLifeAlert to a EvaluatorEval.
-func (r *EvalsLifeAlert) AsEvaluatorEval() *EvaluatorEval {
-	q := r.query.Select("asEvaluatorEval")
-
-	return &EvaluatorEval{
 		query: q,
 	}
 }
@@ -1507,13 +1500,13 @@ func (r *EvalsLifeAlert) Check(ctx context.Context, prompt *LLM) error { // eval
 }
 
 // A unique identifier for this EvalsLifeAlert.
-func (r *EvalsLifeAlert) ID(ctx context.Context) (EvalsLifeAlertID, error) {
+func (r *EvalsLifeAlert) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EvalsLifeAlertID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1526,7 +1519,7 @@ func (r *EvalsLifeAlert) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EvalsLifeAlert) XXX_GraphQLIDType() string {
-	return "EvalsLifeAlertID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1551,7 +1544,7 @@ func (r *EvalsLifeAlert) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadEvalsLifeAlertFromID(EvalsLifeAlertID(id))
+	*r = EvalsLifeAlert{query: selectNode(dag.query, id, "EvalsLifeAlert")}
 	return nil
 }
 
@@ -1577,25 +1570,32 @@ func (r *EvalsLifeAlert) Prompt(base *LLM) *LLM { // evals (../../../../../../mo
 	}
 }
 
+// AsEvaluatorEval returns this EvalsLifeAlert as a EvaluatorEval.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsLifeAlert) AsEvaluatorEval() EvaluatorEval {
+	return &EvaluatorEvalClient{
+		query: r.query,
+	}
+}
+
+// AsNode returns this EvalsLifeAlert as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsLifeAlert) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type EvalsModelContextProtocol struct { // evals (../../../../../../modules/evals/mcp_server.go:17:6)
 	query *querybuilder.Selection
 
 	check *Void
-	id    *EvalsModelContextProtocolID
+	id    *ID
 	name  *string
 }
 
 func (r *EvalsModelContextProtocol) WithGraphQLQuery(q *querybuilder.Selection) *EvalsModelContextProtocol {
 	return &EvalsModelContextProtocol{
-		query: q,
-	}
-}
-
-// Converts this EvalsModelContextProtocol to a EvaluatorEval.
-func (r *EvalsModelContextProtocol) AsEvaluatorEval() *EvaluatorEval {
-	q := r.query.Select("asEvaluatorEval")
-
-	return &EvaluatorEval{
 		query: q,
 	}
 }
@@ -1612,13 +1612,13 @@ func (r *EvalsModelContextProtocol) Check(ctx context.Context, prompt *LLM) erro
 }
 
 // A unique identifier for this EvalsModelContextProtocol.
-func (r *EvalsModelContextProtocol) ID(ctx context.Context) (EvalsModelContextProtocolID, error) {
+func (r *EvalsModelContextProtocol) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EvalsModelContextProtocolID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1631,7 +1631,7 @@ func (r *EvalsModelContextProtocol) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EvalsModelContextProtocol) XXX_GraphQLIDType() string {
-	return "EvalsModelContextProtocolID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1656,7 +1656,7 @@ func (r *EvalsModelContextProtocol) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadEvalsModelContextProtocolFromID(EvalsModelContextProtocolID(id))
+	*r = EvalsModelContextProtocol{query: selectNode(dag.query, id, "EvalsModelContextProtocol")}
 	return nil
 }
 
@@ -1682,25 +1682,32 @@ func (r *EvalsModelContextProtocol) Prompt(base *LLM) *LLM { // evals (../../../
 	}
 }
 
+// AsEvaluatorEval returns this EvalsModelContextProtocol as a EvaluatorEval.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsModelContextProtocol) AsEvaluatorEval() EvaluatorEval {
+	return &EvaluatorEvalClient{
+		query: r.query,
+	}
+}
+
+// AsNode returns this EvalsModelContextProtocol as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsModelContextProtocol) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type EvalsModuleDependencies struct { // evals (../../../../../../modules/evals/module_dependencies.go:18:6)
 	query *querybuilder.Selection
 
 	check *Void
-	id    *EvalsModuleDependenciesID
+	id    *ID
 	name  *string
 }
 
 func (r *EvalsModuleDependencies) WithGraphQLQuery(q *querybuilder.Selection) *EvalsModuleDependencies {
 	return &EvalsModuleDependencies{
-		query: q,
-	}
-}
-
-// Converts this EvalsModuleDependencies to a EvaluatorEval.
-func (r *EvalsModuleDependencies) AsEvaluatorEval() *EvaluatorEval {
-	q := r.query.Select("asEvaluatorEval")
-
-	return &EvaluatorEval{
 		query: q,
 	}
 }
@@ -1717,13 +1724,13 @@ func (r *EvalsModuleDependencies) Check(ctx context.Context, prompt *LLM) error 
 }
 
 // A unique identifier for this EvalsModuleDependencies.
-func (r *EvalsModuleDependencies) ID(ctx context.Context) (EvalsModuleDependenciesID, error) {
+func (r *EvalsModuleDependencies) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EvalsModuleDependenciesID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1736,7 +1743,7 @@ func (r *EvalsModuleDependencies) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EvalsModuleDependencies) XXX_GraphQLIDType() string {
-	return "EvalsModuleDependenciesID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1761,7 +1768,7 @@ func (r *EvalsModuleDependencies) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadEvalsModuleDependenciesFromID(EvalsModuleDependenciesID(id))
+	*r = EvalsModuleDependencies{query: selectNode(dag.query, id, "EvalsModuleDependencies")}
 	return nil
 }
 
@@ -1787,25 +1794,32 @@ func (r *EvalsModuleDependencies) Prompt(base *LLM) *LLM { // evals (../../../..
 	}
 }
 
+// AsEvaluatorEval returns this EvalsModuleDependencies as a EvaluatorEval.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsModuleDependencies) AsEvaluatorEval() EvaluatorEval {
+	return &EvaluatorEvalClient{
+		query: r.query,
+	}
+}
+
+// AsNode returns this EvalsModuleDependencies as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsModuleDependencies) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type EvalsNestedObjects struct { // evals (../../../../../../modules/evals/nested_objects.go:22:6)
 	query *querybuilder.Selection
 
 	check *Void
-	id    *EvalsNestedObjectsID
+	id    *ID
 	name  *string
 }
 
 func (r *EvalsNestedObjects) WithGraphQLQuery(q *querybuilder.Selection) *EvalsNestedObjects {
 	return &EvalsNestedObjects{
-		query: q,
-	}
-}
-
-// Converts this EvalsNestedObjects to a EvaluatorEval.
-func (r *EvalsNestedObjects) AsEvaluatorEval() *EvaluatorEval {
-	q := r.query.Select("asEvaluatorEval")
-
-	return &EvaluatorEval{
 		query: q,
 	}
 }
@@ -1822,13 +1836,13 @@ func (r *EvalsNestedObjects) Check(ctx context.Context, prompt *LLM) error { // 
 }
 
 // A unique identifier for this EvalsNestedObjects.
-func (r *EvalsNestedObjects) ID(ctx context.Context) (EvalsNestedObjectsID, error) {
+func (r *EvalsNestedObjects) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EvalsNestedObjectsID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1841,7 +1855,7 @@ func (r *EvalsNestedObjects) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EvalsNestedObjects) XXX_GraphQLIDType() string {
-	return "EvalsNestedObjectsID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1866,7 +1880,7 @@ func (r *EvalsNestedObjects) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadEvalsNestedObjectsFromID(EvalsNestedObjectsID(id))
+	*r = EvalsNestedObjects{query: selectNode(dag.query, id, "EvalsNestedObjects")}
 	return nil
 }
 
@@ -1892,26 +1906,33 @@ func (r *EvalsNestedObjects) Prompt(base *LLM) *LLM { // evals (../../../../../.
 	}
 }
 
+// AsEvaluatorEval returns this EvalsNestedObjects as a EvaluatorEval.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsNestedObjects) AsEvaluatorEval() EvaluatorEval {
+	return &EvaluatorEvalClient{
+		query: r.query,
+	}
+}
+
+// AsNode returns this EvalsNestedObjects as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsNestedObjects) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type EvalsReadImplicitVars struct { // evals (../../../../../../modules/evals/read_implicit_vars.go:20:6)
 	query *querybuilder.Selection
 
 	check     *Void
-	id        *EvalsReadImplicitVarsID
+	id        *ID
 	name      *string
 	weirdText *string
 }
 
 func (r *EvalsReadImplicitVars) WithGraphQLQuery(q *querybuilder.Selection) *EvalsReadImplicitVars {
 	return &EvalsReadImplicitVars{
-		query: q,
-	}
-}
-
-// Converts this EvalsReadImplicitVars to a EvaluatorEval.
-func (r *EvalsReadImplicitVars) AsEvaluatorEval() *EvaluatorEval {
-	q := r.query.Select("asEvaluatorEval")
-
-	return &EvaluatorEval{
 		query: q,
 	}
 }
@@ -1928,13 +1949,13 @@ func (r *EvalsReadImplicitVars) Check(ctx context.Context, prompt *LLM) error { 
 }
 
 // A unique identifier for this EvalsReadImplicitVars.
-func (r *EvalsReadImplicitVars) ID(ctx context.Context) (EvalsReadImplicitVarsID, error) {
+func (r *EvalsReadImplicitVars) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EvalsReadImplicitVarsID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1947,7 +1968,7 @@ func (r *EvalsReadImplicitVars) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EvalsReadImplicitVars) XXX_GraphQLIDType() string {
-	return "EvalsReadImplicitVarsID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1972,7 +1993,7 @@ func (r *EvalsReadImplicitVars) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadEvalsReadImplicitVarsFromID(EvalsReadImplicitVarsID(id))
+	*r = EvalsReadImplicitVars{query: selectNode(dag.query, id, "EvalsReadImplicitVars")}
 	return nil
 }
 
@@ -2010,25 +2031,32 @@ func (r *EvalsReadImplicitVars) WeirdText(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// AsEvaluatorEval returns this EvalsReadImplicitVars as a EvaluatorEval.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsReadImplicitVars) AsEvaluatorEval() EvaluatorEval {
+	return &EvaluatorEvalClient{
+		query: r.query,
+	}
+}
+
+// AsNode returns this EvalsReadImplicitVars as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsReadImplicitVars) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type EvalsResponses struct { // evals (../../../../../../modules/evals/responses.go:18:6)
 	query *querybuilder.Selection
 
 	check *Void
-	id    *EvalsResponsesID
+	id    *ID
 	name  *string
 }
 
 func (r *EvalsResponses) WithGraphQLQuery(q *querybuilder.Selection) *EvalsResponses {
 	return &EvalsResponses{
-		query: q,
-	}
-}
-
-// Converts this EvalsResponses to a EvaluatorEval.
-func (r *EvalsResponses) AsEvaluatorEval() *EvaluatorEval {
-	q := r.query.Select("asEvaluatorEval")
-
-	return &EvaluatorEval{
 		query: q,
 	}
 }
@@ -2045,13 +2073,13 @@ func (r *EvalsResponses) Check(ctx context.Context, prompt *LLM) error { // eval
 }
 
 // A unique identifier for this EvalsResponses.
-func (r *EvalsResponses) ID(ctx context.Context) (EvalsResponsesID, error) {
+func (r *EvalsResponses) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EvalsResponsesID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -2064,7 +2092,7 @@ func (r *EvalsResponses) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EvalsResponses) XXX_GraphQLIDType() string {
-	return "EvalsResponsesID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -2089,7 +2117,7 @@ func (r *EvalsResponses) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadEvalsResponsesFromID(EvalsResponsesID(id))
+	*r = EvalsResponses{query: selectNode(dag.query, id, "EvalsResponses")}
 	return nil
 }
 
@@ -2115,25 +2143,32 @@ func (r *EvalsResponses) Prompt(base *LLM) *LLM { // evals (../../../../../../mo
 	}
 }
 
+// AsEvaluatorEval returns this EvalsResponses as a EvaluatorEval.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsResponses) AsEvaluatorEval() EvaluatorEval {
+	return &EvaluatorEvalClient{
+		query: r.query,
+	}
+}
+
+// AsNode returns this EvalsResponses as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsResponses) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type EvalsUndoChanges struct { // evals (../../../../../../modules/evals/undo_changes.go:19:6)
 	query *querybuilder.Selection
 
 	check *Void
-	id    *EvalsUndoChangesID
+	id    *ID
 	name  *string
 }
 
 func (r *EvalsUndoChanges) WithGraphQLQuery(q *querybuilder.Selection) *EvalsUndoChanges {
 	return &EvalsUndoChanges{
-		query: q,
-	}
-}
-
-// Converts this EvalsUndoChanges to a EvaluatorEval.
-func (r *EvalsUndoChanges) AsEvaluatorEval() *EvaluatorEval {
-	q := r.query.Select("asEvaluatorEval")
-
-	return &EvaluatorEval{
 		query: q,
 	}
 }
@@ -2150,13 +2185,13 @@ func (r *EvalsUndoChanges) Check(ctx context.Context, prompt *LLM) error { // ev
 }
 
 // A unique identifier for this EvalsUndoChanges.
-func (r *EvalsUndoChanges) ID(ctx context.Context) (EvalsUndoChangesID, error) {
+func (r *EvalsUndoChanges) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EvalsUndoChangesID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -2169,7 +2204,7 @@ func (r *EvalsUndoChanges) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EvalsUndoChanges) XXX_GraphQLIDType() string {
-	return "EvalsUndoChangesID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -2194,7 +2229,7 @@ func (r *EvalsUndoChanges) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadEvalsUndoChangesFromID(EvalsUndoChangesID(id))
+	*r = EvalsUndoChanges{query: selectNode(dag.query, id, "EvalsUndoChanges")}
 	return nil
 }
 
@@ -2220,25 +2255,32 @@ func (r *EvalsUndoChanges) Prompt(base *LLM) *LLM { // evals (../../../../../../
 	}
 }
 
+// AsEvaluatorEval returns this EvalsUndoChanges as a EvaluatorEval.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsUndoChanges) AsEvaluatorEval() EvaluatorEval {
+	return &EvaluatorEvalClient{
+		query: r.query,
+	}
+}
+
+// AsNode returns this EvalsUndoChanges as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsUndoChanges) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type EvalsWorkspacePattern struct { // evals (../../../../../../modules/evals/workspace_pattern.go:19:6)
 	query *querybuilder.Selection
 
 	check *Void
-	id    *EvalsWorkspacePatternID
+	id    *ID
 	name  *string
 }
 
 func (r *EvalsWorkspacePattern) WithGraphQLQuery(q *querybuilder.Selection) *EvalsWorkspacePattern {
 	return &EvalsWorkspacePattern{
-		query: q,
-	}
-}
-
-// Converts this EvalsWorkspacePattern to a EvaluatorEval.
-func (r *EvalsWorkspacePattern) AsEvaluatorEval() *EvaluatorEval {
-	q := r.query.Select("asEvaluatorEval")
-
-	return &EvaluatorEval{
 		query: q,
 	}
 }
@@ -2255,13 +2297,13 @@ func (r *EvalsWorkspacePattern) Check(ctx context.Context, prompt *LLM) error { 
 }
 
 // A unique identifier for this EvalsWorkspacePattern.
-func (r *EvalsWorkspacePattern) ID(ctx context.Context) (EvalsWorkspacePatternID, error) {
+func (r *EvalsWorkspacePattern) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EvalsWorkspacePatternID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -2274,7 +2316,7 @@ func (r *EvalsWorkspacePattern) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EvalsWorkspacePattern) XXX_GraphQLIDType() string {
-	return "EvalsWorkspacePatternID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -2299,7 +2341,7 @@ func (r *EvalsWorkspacePattern) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadEvalsWorkspacePatternFromID(EvalsWorkspacePatternID(id))
+	*r = EvalsWorkspacePattern{query: selectNode(dag.query, id, "EvalsWorkspacePattern")}
 	return nil
 }
 
@@ -2325,25 +2367,32 @@ func (r *EvalsWorkspacePattern) Prompt(base *LLM) *LLM { // evals (../../../../.
 	}
 }
 
+// AsEvaluatorEval returns this EvalsWorkspacePattern as a EvaluatorEval.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsWorkspacePattern) AsEvaluatorEval() EvaluatorEval {
+	return &EvaluatorEvalClient{
+		query: r.query,
+	}
+}
+
+// AsNode returns this EvalsWorkspacePattern as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsWorkspacePattern) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type EvalsWritable struct { // evals (../../../../../../modules/evals/writable.go:17:6)
 	query *querybuilder.Selection
 
 	check *Void
-	id    *EvalsWritableID
+	id    *ID
 	name  *string
 }
 
 func (r *EvalsWritable) WithGraphQLQuery(q *querybuilder.Selection) *EvalsWritable {
 	return &EvalsWritable{
-		query: q,
-	}
-}
-
-// Converts this EvalsWritable to a EvaluatorEval.
-func (r *EvalsWritable) AsEvaluatorEval() *EvaluatorEval {
-	q := r.query.Select("asEvaluatorEval")
-
-	return &EvaluatorEval{
 		query: q,
 	}
 }
@@ -2360,13 +2409,13 @@ func (r *EvalsWritable) Check(ctx context.Context, prompt *LLM) error { // evals
 }
 
 // A unique identifier for this EvalsWritable.
-func (r *EvalsWritable) ID(ctx context.Context) (EvalsWritableID, error) {
+func (r *EvalsWritable) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EvalsWritableID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -2379,7 +2428,7 @@ func (r *EvalsWritable) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EvalsWritable) XXX_GraphQLIDType() string {
-	return "EvalsWritableID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -2404,7 +2453,7 @@ func (r *EvalsWritable) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadEvalsWritableFromID(EvalsWritableID(id))
+	*r = EvalsWritable{query: selectNode(dag.query, id, "EvalsWritable")}
 	return nil
 }
 
@@ -2430,6 +2479,22 @@ func (r *EvalsWritable) Prompt(base *LLM) *LLM { // evals (../../../../../../mod
 	}
 }
 
+// AsEvaluatorEval returns this EvalsWritable as a EvaluatorEval.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsWritable) AsEvaluatorEval() EvaluatorEval {
+	return &EvaluatorEvalClient{
+		query: r.query,
+	}
+}
+
+// AsNode returns this EvalsWritable as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalsWritable) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // EvalsOpts contains options for Query.Evals
 type EvalsOpts struct {
 	Docs *File // evals (../../../../../../modules/evals/main.go:27:2)
@@ -2446,166 +2511,6 @@ func (r *Query) Evals(opts ...EvalsOpts) *Evals { // evals (../../../../../../mo
 	}
 
 	return &Evals{
-		query: q,
-	}
-}
-
-// Load a EvalsBasic from its ID.
-func (r *Query) LoadEvalsBasicFromID(id EvalsBasicID) *EvalsBasic { // evals (../../../../../../modules/evals/basic.go:18:6)
-	q := r.query.Select("loadEvalsBasicFromID")
-	q = q.Arg("id", id)
-
-	return &EvalsBasic{
-		query: q,
-	}
-}
-
-// Load a EvalsBuildMulti from its ID.
-func (r *Query) LoadEvalsBuildMultiFromID(id EvalsBuildMultiID) *EvalsBuildMulti { // evals (../../../../../../modules/evals/build_multi.go:20:6)
-	q := r.query.Select("loadEvalsBuildMultiFromID")
-	q = q.Arg("id", id)
-
-	return &EvalsBuildMulti{
-		query: q,
-	}
-}
-
-// Load a EvalsBuildMultiNoVar from its ID.
-func (r *Query) LoadEvalsBuildMultiNoVarFromID(id EvalsBuildMultiNoVarID) *EvalsBuildMultiNoVar { // evals (../../../../../../modules/evals/build_multi_no_var.go:18:6)
-	q := r.query.Select("loadEvalsBuildMultiNoVarFromID")
-	q = q.Arg("id", id)
-
-	return &EvalsBuildMultiNoVar{
-		query: q,
-	}
-}
-
-// Load a EvalsBuildMultiStatic from its ID.
-func (r *Query) LoadEvalsBuildMultiStaticFromID(id EvalsBuildMultiStaticID) *EvalsBuildMultiStatic { // evals (../../../../../../modules/evals/static.go:14:6)
-	q := r.query.Select("loadEvalsBuildMultiStaticFromID")
-	q = q.Arg("id", id)
-
-	return &EvalsBuildMultiStatic{
-		query: q,
-	}
-}
-
-// Load a EvalsCoreApi from its ID.
-func (r *Query) LoadEvalsCoreAPIFromID(id EvalsCoreAPIID) *EvalsCoreAPI { // evals (../../../../../../modules/evals/core_api.go:18:6)
-	q := r.query.Select("loadEvalsCoreApiFromID")
-	q = q.Arg("id", id)
-
-	return &EvalsCoreAPI{
-		query: q,
-	}
-}
-
-// Load a EvalsEnvPropagation from its ID.
-func (r *Query) LoadEvalsEnvPropagationFromID(id EvalsEnvPropagationID) *EvalsEnvPropagation { // evals (../../../../../../modules/evals/env_propagation.go:17:6)
-	q := r.query.Select("loadEvalsEnvPropagationFromID")
-	q = q.Arg("id", id)
-
-	return &EvalsEnvPropagation{
-		query: q,
-	}
-}
-
-// Load a Evals from its ID.
-func (r *Query) LoadEvalsFromID(id EvalsID) *Evals { // evals (../../../../../../modules/evals/main.go:21:6)
-	q := r.query.Select("loadEvalsFromID")
-	q = q.Arg("id", id)
-
-	return &Evals{
-		query: q,
-	}
-}
-
-// Load a EvalsLifeAlert from its ID.
-func (r *Query) LoadEvalsLifeAlertFromID(id EvalsLifeAlertID) *EvalsLifeAlert { // evals (../../../../../../modules/evals/life_alert.go:18:6)
-	q := r.query.Select("loadEvalsLifeAlertFromID")
-	q = q.Arg("id", id)
-
-	return &EvalsLifeAlert{
-		query: q,
-	}
-}
-
-// Load a EvalsModelContextProtocol from its ID.
-func (r *Query) LoadEvalsModelContextProtocolFromID(id EvalsModelContextProtocolID) *EvalsModelContextProtocol { // evals (../../../../../../modules/evals/mcp_server.go:17:6)
-	q := r.query.Select("loadEvalsModelContextProtocolFromID")
-	q = q.Arg("id", id)
-
-	return &EvalsModelContextProtocol{
-		query: q,
-	}
-}
-
-// Load a EvalsModuleDependencies from its ID.
-func (r *Query) LoadEvalsModuleDependenciesFromID(id EvalsModuleDependenciesID) *EvalsModuleDependencies { // evals (../../../../../../modules/evals/module_dependencies.go:18:6)
-	q := r.query.Select("loadEvalsModuleDependenciesFromID")
-	q = q.Arg("id", id)
-
-	return &EvalsModuleDependencies{
-		query: q,
-	}
-}
-
-// Load a EvalsNestedObjects from its ID.
-func (r *Query) LoadEvalsNestedObjectsFromID(id EvalsNestedObjectsID) *EvalsNestedObjects { // evals (../../../../../../modules/evals/nested_objects.go:22:6)
-	q := r.query.Select("loadEvalsNestedObjectsFromID")
-	q = q.Arg("id", id)
-
-	return &EvalsNestedObjects{
-		query: q,
-	}
-}
-
-// Load a EvalsReadImplicitVars from its ID.
-func (r *Query) LoadEvalsReadImplicitVarsFromID(id EvalsReadImplicitVarsID) *EvalsReadImplicitVars { // evals (../../../../../../modules/evals/read_implicit_vars.go:20:6)
-	q := r.query.Select("loadEvalsReadImplicitVarsFromID")
-	q = q.Arg("id", id)
-
-	return &EvalsReadImplicitVars{
-		query: q,
-	}
-}
-
-// Load a EvalsResponses from its ID.
-func (r *Query) LoadEvalsResponsesFromID(id EvalsResponsesID) *EvalsResponses { // evals (../../../../../../modules/evals/responses.go:18:6)
-	q := r.query.Select("loadEvalsResponsesFromID")
-	q = q.Arg("id", id)
-
-	return &EvalsResponses{
-		query: q,
-	}
-}
-
-// Load a EvalsUndoChanges from its ID.
-func (r *Query) LoadEvalsUndoChangesFromID(id EvalsUndoChangesID) *EvalsUndoChanges { // evals (../../../../../../modules/evals/undo_changes.go:19:6)
-	q := r.query.Select("loadEvalsUndoChangesFromID")
-	q = q.Arg("id", id)
-
-	return &EvalsUndoChanges{
-		query: q,
-	}
-}
-
-// Load a EvalsWorkspacePattern from its ID.
-func (r *Query) LoadEvalsWorkspacePatternFromID(id EvalsWorkspacePatternID) *EvalsWorkspacePattern { // evals (../../../../../../modules/evals/workspace_pattern.go:19:6)
-	q := r.query.Select("loadEvalsWorkspacePatternFromID")
-	q = q.Arg("id", id)
-
-	return &EvalsWorkspacePattern{
-		query: q,
-	}
-}
-
-// Load a EvalsWritable from its ID.
-func (r *Query) LoadEvalsWritableFromID(id EvalsWritableID) *EvalsWritable { // evals (../../../../../../modules/evals/writable.go:17:6)
-	q := r.query.Select("loadEvalsWritableFromID")
-	q = q.Arg("id", id)
-
-	return &EvalsWritable{
 		query: q,
 	}
 }

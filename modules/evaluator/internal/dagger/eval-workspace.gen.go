@@ -6,17 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `EvalWorkspaceAttemptsReportID` scalar type represents an identifier for an object of type EvalWorkspaceAttemptsReport.
-type EvalWorkspaceAttemptsReportID string // eval-workspace (../../../../modules/evaluator/eval-workspace/main.go:168:6)
-
-// The `EvalWorkspaceEvalID` scalar type represents an identifier for an object of type EvalWorkspaceEval.
-type EvalWorkspaceEvalID string // eval-workspace (../../../../modules/evaluator/eval-workspace/main.go:46:6)
-
-// The `EvalWorkspaceID` scalar type represents an identifier for an object of type EvalWorkspace.
-type EvalWorkspaceID string // eval-workspace (../../../../modules/evaluator/eval-workspace/main.go:25:6)
 
 // Retrieve the binding value, as type EvalWorkspace
 func (r *Binding) AsEvalWorkspace() *EvalWorkspace { // eval-workspace (../../../../modules/evaluator/eval-workspace/main.go:25:6)
@@ -32,15 +23,6 @@ func (r *Binding) AsEvalWorkspaceAttemptsReport() *EvalWorkspaceAttemptsReport {
 	q := r.query.Select("asEvalWorkspaceAttemptsReport")
 
 	return &EvalWorkspaceAttemptsReport{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type EvalWorkspaceEval
-func (r *Binding) AsEvalWorkspaceEval() *EvalWorkspaceEval { // eval-workspace (../../../../modules/evaluator/eval-workspace/main.go:46:6)
-	q := r.query.Select("asEvalWorkspaceEval")
-
-	return &EvalWorkspaceEval{
 		query: q,
 	}
 }
@@ -61,30 +43,6 @@ func (r *Env) WithEvalWorkspaceAttemptsReportInput(name string, value *EvalWorks
 // Declare a desired EvalWorkspaceAttemptsReport output to be assigned in the environment
 func (r *Env) WithEvalWorkspaceAttemptsReportOutput(name string, description string) *Env { // eval-workspace (../../../../modules/evaluator/eval-workspace/main.go:168:6)
 	q := r.query.Select("withEvalWorkspaceAttemptsReportOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Create or update a binding of type EvalWorkspaceEval in the environment
-func (r *Env) WithEvalWorkspaceEvalInput(name string, value *EvalWorkspaceEval, description string) *Env { // eval-workspace (../../../../modules/evaluator/eval-workspace/main.go:46:6)
-	assertNotNil("value", value)
-	q := r.query.Select("withEvalWorkspaceEvalInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired EvalWorkspaceEval output to be assigned in the environment
-func (r *Env) WithEvalWorkspaceEvalOutput(name string, description string) *Env { // eval-workspace (../../../../modules/evaluator/eval-workspace/main.go:46:6)
-	q := r.query.Select("withEvalWorkspaceEvalOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
 
@@ -121,7 +79,7 @@ type EvalWorkspace struct { // eval-workspace (../../../../modules/evaluator/eva
 	query *querybuilder.Selection
 
 	disableDefaultSystemPrompt *bool
-	id                         *EvalWorkspaceID
+	id                         *ID
 	systemPrompt               *string
 }
 type WithEvalWorkspaceFunc func(r *EvalWorkspace) *EvalWorkspace
@@ -179,32 +137,22 @@ func (r *EvalWorkspace) Evals(ctx context.Context) ([]EvalWorkspaceEval, error) 
 	q := r.query.Select("evals")
 
 	q = q.Select("id")
-
-	type evals struct {
-		Id EvalWorkspaceEvalID
+	type evalsIDResult struct {
+		Id string
 	}
-
-	convert := func(fields []evals) []EvalWorkspaceEval {
-		out := []EvalWorkspaceEval{}
-
-		for i := range fields {
-			val := EvalWorkspaceEval{id: &fields[i].Id}
-			val.query = q.Root().Select("loadEvalWorkspaceEvalFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []evals
-
-	q = q.Bind(&response)
-
+	var idResults []evalsIDResult
+	q = q.Bind(&idResults)
 	err := q.Execute(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	return convert(response), nil
+	var results []EvalWorkspaceEval
+	for _, idResult := range idResults {
+		results = append(results, &EvalWorkspaceEvalClient{
+			query: selectNode(q.Root(), idResult.Id, "EvalWorkspaceEval"),
+		})
+	}
+	return results, nil
 }
 
 // EvalWorkspaceEvaluateOpts contains options for EvalWorkspace.Evaluate
@@ -250,13 +198,13 @@ func (r *EvalWorkspace) Findings(ctx context.Context) ([]string, error) { // eva
 }
 
 // A unique identifier for this EvalWorkspace.
-func (r *EvalWorkspace) ID(ctx context.Context) (EvalWorkspaceID, error) {
+func (r *EvalWorkspace) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EvalWorkspaceID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -269,7 +217,7 @@ func (r *EvalWorkspace) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EvalWorkspace) XXX_GraphQLIDType() string {
-	return "EvalWorkspaceID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -294,7 +242,7 @@ func (r *EvalWorkspace) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadEvalWorkspaceFromID(EvalWorkspaceID(id))
+	*r = EvalWorkspace{query: selectNode(dag.query, id, "EvalWorkspace")}
 	return nil
 }
 
@@ -322,8 +270,7 @@ func (r *EvalWorkspace) SystemPrompt(ctx context.Context) (string, error) { // e
 }
 
 // Register an eval to perform.
-func (r *EvalWorkspace) WithEval(eval *EvalWorkspaceEval) *EvalWorkspace { // eval-workspace (../../../../modules/evaluator/eval-workspace/main.go:103:1)
-	assertNotNil("eval", eval)
+func (r *EvalWorkspace) WithEval(eval EvalWorkspaceEval) *EvalWorkspace { // eval-workspace (../../../../modules/evaluator/eval-workspace/main.go:103:1)
 	q := r.query.Select("withEval")
 	q = q.Arg("eval", eval)
 
@@ -333,7 +280,7 @@ func (r *EvalWorkspace) WithEval(eval *EvalWorkspaceEval) *EvalWorkspace { // ev
 }
 
 // Register evals to perform.
-func (r *EvalWorkspace) WithEvals(evals []*EvalWorkspaceEval) *EvalWorkspace { // eval-workspace (../../../../modules/evaluator/eval-workspace/main.go:112:1)
+func (r *EvalWorkspace) WithEvals(evals []EvalWorkspaceEval) *EvalWorkspace { // eval-workspace (../../../../modules/evaluator/eval-workspace/main.go:112:1)
 	q := r.query.Select("withEvals")
 	q = q.Arg("evals", evals)
 
@@ -382,13 +329,21 @@ func (r *EvalWorkspace) WithoutDefaultSystemPrompt() *EvalWorkspace { // eval-wo
 	}
 }
 
+// AsNode returns this EvalWorkspace as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalWorkspace) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // AttemptsReport contains the aggregated results from multiple evaluation attempts.
 type EvalWorkspaceAttemptsReport struct { // eval-workspace (../../../../modules/evaluator/eval-workspace/main.go:168:6)
 	query *querybuilder.Selection
 
 	cachedTokenReads  *int
 	cachedTokenWrites *int
-	id                *EvalWorkspaceAttemptsReportID
+	id                *ID
 	inputTokens       *int
 	outputTokens      *int
 	report            *string
@@ -428,13 +383,13 @@ func (r *EvalWorkspaceAttemptsReport) CachedTokenWrites(ctx context.Context) (in
 }
 
 // A unique identifier for this EvalWorkspaceAttemptsReport.
-func (r *EvalWorkspaceAttemptsReport) ID(ctx context.Context) (EvalWorkspaceAttemptsReportID, error) {
+func (r *EvalWorkspaceAttemptsReport) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response EvalWorkspaceAttemptsReportID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -447,7 +402,7 @@ func (r *EvalWorkspaceAttemptsReport) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *EvalWorkspaceAttemptsReport) XXX_GraphQLIDType() string {
-	return "EvalWorkspaceAttemptsReportID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -472,7 +427,7 @@ func (r *EvalWorkspaceAttemptsReport) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadEvalWorkspaceAttemptsReportFromID(EvalWorkspaceAttemptsReportID(id))
+	*r = EvalWorkspaceAttemptsReport{query: selectNode(dag.query, id, "EvalWorkspaceAttemptsReport")}
 	return nil
 }
 
@@ -548,103 +503,11 @@ func (r *EvalWorkspaceAttemptsReport) TotalAttempts(ctx context.Context) (int, e
 	return response, q.Execute(ctx)
 }
 
-// Eval represents a single evaluation that can be run against an LLM.
-//
-// Implementations must provide a name, a method to generate a prompt,
-// and a check function to validate the LLM's response.
-type EvalWorkspaceEval struct { // eval-workspace (../../../../modules/evaluator/eval-workspace/main.go:46:6)
-	query *querybuilder.Selection
-
-	check *Void
-	id    *EvalWorkspaceEvalID
-	name  *string
-}
-
-func (r *EvalWorkspaceEval) WithGraphQLQuery(q *querybuilder.Selection) *EvalWorkspaceEval {
-	return &EvalWorkspaceEval{
-		query: q,
-	}
-}
-
-func (r *EvalWorkspaceEval) Check(ctx context.Context, prompt *LLM) error { // eval-workspace (../../../../modules/evaluator/eval-workspace/main.go:49:7)
-	assertNotNil("prompt", prompt)
-	if r.check != nil {
-		return nil
-	}
-	q := r.query.Select("check")
-	q = q.Arg("prompt", prompt)
-
-	return q.Execute(ctx)
-}
-
-// A unique identifier for this EvalWorkspaceEval.
-func (r *EvalWorkspaceEval) ID(ctx context.Context) (EvalWorkspaceEvalID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response EvalWorkspaceEvalID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *EvalWorkspaceEval) XXX_GraphQLType() string {
-	return "EvalWorkspaceEval"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *EvalWorkspaceEval) XXX_GraphQLIDType() string {
-	return "EvalWorkspaceEvalID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *EvalWorkspaceEval) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *EvalWorkspaceEval) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *EvalWorkspaceEval) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = *dag.LoadEvalWorkspaceEvalFromID(EvalWorkspaceEvalID(id))
-	return nil
-}
-
-func (r *EvalWorkspaceEval) Name(ctx context.Context) (string, error) { // eval-workspace (../../../../modules/evaluator/eval-workspace/main.go:47:6)
-	if r.name != nil {
-		return *r.name, nil
-	}
-	q := r.query.Select("name")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *EvalWorkspaceEval) Prompt(base *LLM) *LLM { // eval-workspace (../../../../modules/evaluator/eval-workspace/main.go:48:8)
-	assertNotNil("base", base)
-	q := r.query.Select("prompt")
-	q = q.Arg("base", base)
-
-	return &LLM{
-		query: q,
+// AsNode returns this EvalWorkspaceAttemptsReport as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *EvalWorkspaceAttemptsReport) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }
 
@@ -662,22 +525,113 @@ func (r *Query) EvalWorkspace() *EvalWorkspace { // eval-workspace (../../../../
 	}
 }
 
-// Load a EvalWorkspaceAttemptsReport from its ID.
-func (r *Query) LoadEvalWorkspaceAttemptsReportFromID(id EvalWorkspaceAttemptsReportID) *EvalWorkspaceAttemptsReport { // eval-workspace (../../../../modules/evaluator/eval-workspace/main.go:168:6)
-	q := r.query.Select("loadEvalWorkspaceAttemptsReportFromID")
-	q = q.Arg("id", id)
+// Eval represents a single evaluation that can be run against an LLM.
+//
+// Implementations must provide a name, a method to generate a prompt,
+// and a check function to validate the LLM's response.
+type EvalWorkspaceEval interface { // eval-workspace (../../../../modules/evaluator/eval-workspace/main.go:46:6)
+	DaggerObject
 
-	return &EvalWorkspaceAttemptsReport{
+	Check(ctx context.Context, prompt *LLM) error
+	// A unique identifier for this EvalWorkspaceEval.
+	ID(ctx context.Context) (ID, error)
+
+	Name(ctx context.Context) (string, error)
+
+	Prompt(base *LLM) *LLM
+}
+
+// EvalWorkspaceEvalClient is the query-builder for the EvalWorkspaceEval interface.
+type EvalWorkspaceEvalClient struct {
+	query *querybuilder.Selection
+
+	check *Void
+	id    *ID
+	name  *string
+}
+
+func (r *EvalWorkspaceEvalClient) WithGraphQLQuery(q *querybuilder.Selection) *EvalWorkspaceEvalClient {
+	return &EvalWorkspaceEvalClient{
 		query: q,
 	}
 }
 
-// Load a EvalWorkspace from its ID.
-func (r *Query) LoadEvalWorkspaceFromID(id EvalWorkspaceID) *EvalWorkspace { // eval-workspace (../../../../modules/evaluator/eval-workspace/main.go:25:6)
-	q := r.query.Select("loadEvalWorkspaceFromID")
-	q = q.Arg("id", id)
+func (r *EvalWorkspaceEvalClient) Check(ctx context.Context, prompt *LLM) error { // eval-workspace (../../../../modules/evaluator/eval-workspace/main.go:49:7)
+	assertNotNil("prompt", prompt)
+	if r.check != nil {
+		return nil
+	}
+	q := r.query.Select("check")
+	q = q.Arg("prompt", prompt)
 
-	return &EvalWorkspace{
+	return q.Execute(ctx)
+}
+
+// A unique identifier for this EvalWorkspaceEval.
+func (r *EvalWorkspaceEvalClient) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EvalWorkspaceEvalClient) XXX_GraphQLType() string {
+	return "EvalWorkspaceEval"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EvalWorkspaceEvalClient) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EvalWorkspaceEvalClient) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *EvalWorkspaceEvalClient) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *EvalWorkspaceEvalClient) UnmarshalJSON(bs []byte) error {
+	var id string
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = EvalWorkspaceEvalClient{query: selectNode(dag.query, id, "EvalWorkspaceEval")}
+	return nil
+}
+
+func (r *EvalWorkspaceEvalClient) Name(ctx context.Context) (string, error) { // eval-workspace (../../../../modules/evaluator/eval-workspace/main.go:47:6)
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *EvalWorkspaceEvalClient) Prompt(base *LLM) *LLM { // eval-workspace (../../../../modules/evaluator/eval-workspace/main.go:48:8)
+	assertNotNil("base", base)
+	q := r.query.Select("prompt")
+	q = q.Arg("base", base)
+
+	return &LLM{
 		query: q,
 	}
 }

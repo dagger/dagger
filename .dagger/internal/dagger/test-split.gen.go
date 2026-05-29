@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `TestSplitID` scalar type represents an identifier for an object of type TestSplit.
-type TestSplitID string // test-split (../../../:0:0)
 
 // Retrieve the binding value, as type TestSplit
 func (r *Binding) AsTestSplit() *TestSplit { // test-split (../../../:0:0)
@@ -45,16 +42,6 @@ func (r *Env) WithTestSplitOutput(name string, description string) *Env { // tes
 	}
 }
 
-// Load a TestSplit from its ID.
-func (r *Query) LoadTestSplitFromID(id TestSplitID) *TestSplit { // test-split (../../../:0:0)
-	q := r.query.Select("loadTestSplitFromID")
-	q = q.Arg("id", id)
-
-	return &TestSplit{
-		query: q,
-	}
-}
-
 // Test suites to run
 func (r *Query) TestSplit() *TestSplit { // test-split (../../../:0:0)
 	q := r.query.Select("testSplit")
@@ -68,7 +55,7 @@ func (r *Query) TestSplit() *TestSplit { // test-split (../../../:0:0)
 type TestSplit struct { // test-split (../../../:0:0)
 	query *querybuilder.Selection
 
-	id                   *TestSplitID
+	id                   *ID
 	testBase             *Void
 	testCachePersistence *Void
 	testCallAndShell     *Void
@@ -93,13 +80,13 @@ func (r *TestSplit) WithGraphQLQuery(q *querybuilder.Selection) *TestSplit {
 }
 
 // A unique identifier for this TestSplit.
-func (r *TestSplit) ID(ctx context.Context) (TestSplitID, error) {
+func (r *TestSplit) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response TestSplitID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -112,7 +99,7 @@ func (r *TestSplit) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *TestSplit) XXX_GraphQLIDType() string {
-	return "TestSplitID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -137,7 +124,7 @@ func (r *TestSplit) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadTestSplitFromID(TestSplitID(id))
+	*r = TestSplit{query: selectNode(dag.query, id, "TestSplit")}
 	return nil
 }
 
@@ -313,4 +300,12 @@ func (r *TestSplit) TestWorkspaces(ctx context.Context) error { // test-split (.
 	q := r.query.Select("testWorkspaces")
 
 	return q.Execute(ctx)
+}
+
+// AsNode returns this TestSplit as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *TestSplit) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }

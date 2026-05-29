@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `DepID` scalar type represents an identifier for an object of type Dep.
-type DepID string // dep (../../../../../dagql/idtui/viztest/dep/main.go:9:6)
 
 // Retrieve the binding value, as type Dep
 func (r *Binding) AsDep() *Dep { // dep (../../../../../dagql/idtui/viztest/dep/main.go:9:6)
@@ -83,7 +80,7 @@ func (r *Dep) GetFiles(ctx context.Context) ([]File, error) { // dep (../../../.
 
 		for i := range fields {
 			val := File{id: &fields[i].Id}
-			val.query = q.Root().Select("loadFileFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "File")
 			out = append(out, val)
 		}
 
@@ -121,7 +118,7 @@ func (r *Dep) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Dep) XXX_GraphQLIDType() string {
-	return "DepID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -146,8 +143,16 @@ func (r *Dep) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadDepFromID(DepID(id))
+	*r = Dep{query: selectNode(dag.query, id, "Dep")}
 	return nil
+}
+
+// AsNode returns this Dep as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Dep) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }
 
 // Create or update a binding of type Dep in the environment
@@ -176,16 +181,6 @@ func (r *Env) WithDepOutput(name string, description string) *Env { // dep (../.
 
 func (r *Query) Dep() *Dep { // dep (../../../../../dagql/idtui/viztest/dep/main.go:9:6)
 	q := r.query.Select("dep")
-
-	return &Dep{
-		query: q,
-	}
-}
-
-// Load a Dep from its ID.
-func (r *Query) LoadDepFromID(id DepID) *Dep { // dep (../../../../../dagql/idtui/viztest/dep/main.go:9:6)
-	q := r.query.Select("loadDepFromID")
-	q = q.Arg("id", id)
 
 	return &Dep{
 		query: q,

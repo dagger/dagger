@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `SecurityID` scalar type represents an identifier for an object of type Security.
-type SecurityID string // security (../../../:0:0)
 
 // Retrieve the binding value, as type Security
 func (r *Binding) AsSecurity() *Security { // security (../../../:0:0)
@@ -45,16 +42,6 @@ func (r *Env) WithSecurityOutput(name string, description string) *Env { // secu
 	}
 }
 
-// Load a Security from its ID.
-func (r *Query) LoadSecurityFromID(id SecurityID) *Security { // security (../../../:0:0)
-	q := r.query.Select("loadSecurityFromID")
-	q = q.Arg("id", id)
-
-	return &Security{
-		query: q,
-	}
-}
-
 func (r *Query) Security() *Security { // security (../../../:0:0)
 	q := r.query.Select("security")
 
@@ -66,7 +53,7 @@ func (r *Query) Security() *Security { // security (../../../:0:0)
 type Security struct { // security (../../../:0:0)
 	query *querybuilder.Selection
 
-	id                  *SecurityID
+	id                  *ID
 	scanEngineContainer *Void
 	scanSource          *Void
 }
@@ -87,13 +74,13 @@ func (r *Security) BaseContainer() *Container { // security (../../../:0:0)
 }
 
 // A unique identifier for this Security.
-func (r *Security) ID(ctx context.Context) (SecurityID, error) {
+func (r *Security) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response SecurityID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -106,7 +93,7 @@ func (r *Security) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Security) XXX_GraphQLIDType() string {
-	return "SecurityID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -131,7 +118,7 @@ func (r *Security) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadSecurityFromID(SecurityID(id))
+	*r = Security{query: selectNode(dag.query, id, "Security")}
 	return nil
 }
 
@@ -175,4 +162,12 @@ func (r *Security) ScanSource(ctx context.Context, opts ...SecurityScanSourceOpt
 	}
 
 	return q.Execute(ctx)
+}
+
+// AsNode returns this Security as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Security) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }

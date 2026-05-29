@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `VersionedID` scalar type represents an identifier for an object of type Versioned.
-type VersionedID string // versioned (https://github.com/dagger/dagger-test-modules/tree/73670b0338c02cdd190f56b34c6e25066c7c8875/versioned/main.go#L3)
 
 // Retrieve the binding value, as type Versioned
 func (r *Binding) AsVersioned() *Versioned { // versioned (https://github.com/dagger/dagger-test-modules/tree/73670b0338c02cdd190f56b34c6e25066c7c8875/versioned/main.go#L3)
@@ -41,16 +38,6 @@ func (r *Env) WithVersionedOutput(name string, description string) *Env { // ver
 	q = q.Arg("description", description)
 
 	return &Env{
-		query: q,
-	}
-}
-
-// Load a Versioned from its ID.
-func (r *Query) LoadVersionedFromID(id VersionedID) *Versioned { // versioned (https://github.com/dagger/dagger-test-modules/tree/73670b0338c02cdd190f56b34c6e25066c7c8875/versioned/main.go#L3)
-	q := r.query.Select("loadVersionedFromID")
-	q = q.Arg("id", id)
-
-	return &Versioned{
 		query: q,
 	}
 }
@@ -108,7 +95,7 @@ func (r *Versioned) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Versioned) XXX_GraphQLIDType() string {
-	return "VersionedID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -133,6 +120,14 @@ func (r *Versioned) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadVersionedFromID(VersionedID(id))
+	*r = Versioned{query: selectNode(dag.query, id, "Versioned")}
 	return nil
+}
+
+// AsNode returns this Versioned as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Versioned) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }

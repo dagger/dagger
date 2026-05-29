@@ -6,23 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `ReleaseID` scalar type represents an identifier for an object of type Release.
-type ReleaseID string // release (../../../toolchains/release/main.go:21:6)
-
-// The `ReleaseReportArtifactID` scalar type represents an identifier for an object of type ReleaseReportArtifact.
-type ReleaseReportArtifactID string // release (../../../toolchains/release/main.go:36:6)
-
-// The `ReleaseReportFollowUpID` scalar type represents an identifier for an object of type ReleaseReportFollowUp.
-type ReleaseReportFollowUpID string // release (../../../toolchains/release/main.go:46:6)
-
-// The `ReleaseReportID` scalar type represents an identifier for an object of type ReleaseReport.
-type ReleaseReportID string // release (../../../toolchains/release/main.go:23:6)
-
-// The `ReleaseTestID` scalar type represents an identifier for an object of type ReleaseTest.
-type ReleaseTestID string // release (../../../toolchains/release/tests.go:27:6)
 
 // Retrieve the binding value, as type Release
 func (r *Binding) AsRelease() *Release { // release (../../../toolchains/release/main.go:21:6)
@@ -189,56 +174,6 @@ func (r *Env) WithReleaseTestOutput(name string, description string) *Env { // r
 	}
 }
 
-// Load a Release from its ID.
-func (r *Query) LoadReleaseFromID(id ReleaseID) *Release { // release (../../../toolchains/release/main.go:21:6)
-	q := r.query.Select("loadReleaseFromID")
-	q = q.Arg("id", id)
-
-	return &Release{
-		query: q,
-	}
-}
-
-// Load a ReleaseReportArtifact from its ID.
-func (r *Query) LoadReleaseReportArtifactFromID(id ReleaseReportArtifactID) *ReleaseReportArtifact { // release (../../../toolchains/release/main.go:36:6)
-	q := r.query.Select("loadReleaseReportArtifactFromID")
-	q = q.Arg("id", id)
-
-	return &ReleaseReportArtifact{
-		query: q,
-	}
-}
-
-// Load a ReleaseReportFollowUp from its ID.
-func (r *Query) LoadReleaseReportFollowUpFromID(id ReleaseReportFollowUpID) *ReleaseReportFollowUp { // release (../../../toolchains/release/main.go:46:6)
-	q := r.query.Select("loadReleaseReportFollowUpFromID")
-	q = q.Arg("id", id)
-
-	return &ReleaseReportFollowUp{
-		query: q,
-	}
-}
-
-// Load a ReleaseReport from its ID.
-func (r *Query) LoadReleaseReportFromID(id ReleaseReportID) *ReleaseReport { // release (../../../toolchains/release/main.go:23:6)
-	q := r.query.Select("loadReleaseReportFromID")
-	q = q.Arg("id", id)
-
-	return &ReleaseReport{
-		query: q,
-	}
-}
-
-// Load a ReleaseTest from its ID.
-func (r *Query) LoadReleaseTestFromID(id ReleaseTestID) *ReleaseTest { // release (../../../toolchains/release/tests.go:27:6)
-	q := r.query.Select("loadReleaseTestFromID")
-	q = q.Arg("id", id)
-
-	return &ReleaseTest{
-		query: q,
-	}
-}
-
 // A module that encodes the official release process of the Dagger Engine
 func (r *Query) Release() *Release { // release (../../../toolchains/release/main.go:21:6)
 	q := r.query.Select("release")
@@ -251,7 +186,7 @@ func (r *Query) Release() *Release { // release (../../../toolchains/release/mai
 type Release struct { // release (../../../toolchains/release/main.go:21:6)
 	query *querybuilder.Selection
 
-	id     *ReleaseID
+	id     *ID
 	notify *Void
 }
 
@@ -293,13 +228,13 @@ func (r *Release) GetMaintainers(ctx context.Context, githubOrgName string, opts
 }
 
 // A unique identifier for this Release.
-func (r *Release) ID(ctx context.Context) (ReleaseID, error) {
+func (r *Release) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ReleaseID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -312,7 +247,7 @@ func (r *Release) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Release) XXX_GraphQLIDType() string {
-	return "ReleaseID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -337,7 +272,7 @@ func (r *Release) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadReleaseFromID(ReleaseID(id))
+	*r = Release{query: selectNode(dag.query, id, "Release")}
 	return nil
 }
 
@@ -519,12 +454,20 @@ func (r *Release) TestLocalRelease() *ReleaseTest { // release (../../../toolcha
 	}
 }
 
+// AsNode returns this Release as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Release) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type ReleaseReport struct { // release (../../../toolchains/release/main.go:23:6)
 	query *querybuilder.Selection
 
 	commit   *string
 	date     *string
-	id       *ReleaseReportID
+	id       *ID
 	markdown *string
 	ref      *string
 	version  *string
@@ -542,7 +485,7 @@ func (r *ReleaseReport) Artifacts(ctx context.Context) ([]ReleaseReportArtifact,
 	q = q.Select("id")
 
 	type artifacts struct {
-		Id ReleaseReportArtifactID
+		Id ID
 	}
 
 	convert := func(fields []artifacts) []ReleaseReportArtifact {
@@ -550,7 +493,7 @@ func (r *ReleaseReport) Artifacts(ctx context.Context) ([]ReleaseReportArtifact,
 
 		for i := range fields {
 			val := ReleaseReportArtifact{id: &fields[i].Id}
-			val.query = q.Root().Select("loadReleaseReportArtifactFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "ReleaseReportArtifact")
 			out = append(out, val)
 		}
 
@@ -598,7 +541,7 @@ func (r *ReleaseReport) Errors(ctx context.Context) ([]Error, error) { // releas
 	q = q.Select("id")
 
 	type errors struct {
-		Id ErrorID
+		Id ID
 	}
 
 	convert := func(fields []errors) []Error {
@@ -606,7 +549,7 @@ func (r *ReleaseReport) Errors(ctx context.Context) ([]Error, error) { // releas
 
 		for i := range fields {
 			val := Error{id: &fields[i].Id}
-			val.query = q.Root().Select("loadErrorFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "Error")
 			out = append(out, val)
 		}
 
@@ -630,7 +573,7 @@ func (r *ReleaseReport) FollowUps(ctx context.Context) ([]ReleaseReportFollowUp,
 	q = q.Select("id")
 
 	type followUps struct {
-		Id ReleaseReportFollowUpID
+		Id ID
 	}
 
 	convert := func(fields []followUps) []ReleaseReportFollowUp {
@@ -638,7 +581,7 @@ func (r *ReleaseReport) FollowUps(ctx context.Context) ([]ReleaseReportFollowUp,
 
 		for i := range fields {
 			val := ReleaseReportFollowUp{id: &fields[i].Id}
-			val.query = q.Root().Select("loadReleaseReportFollowUpFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "ReleaseReportFollowUp")
 			out = append(out, val)
 		}
 
@@ -657,13 +600,13 @@ func (r *ReleaseReport) FollowUps(ctx context.Context) ([]ReleaseReportFollowUp,
 }
 
 // A unique identifier for this ReleaseReport.
-func (r *ReleaseReport) ID(ctx context.Context) (ReleaseReportID, error) {
+func (r *ReleaseReport) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ReleaseReportID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -676,7 +619,7 @@ func (r *ReleaseReport) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *ReleaseReport) XXX_GraphQLIDType() string {
-	return "ReleaseReportID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -701,7 +644,7 @@ func (r *ReleaseReport) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadReleaseReportFromID(ReleaseReportID(id))
+	*r = ReleaseReport{query: selectNode(dag.query, id, "ReleaseReport")}
 	return nil
 }
 
@@ -741,10 +684,18 @@ func (r *ReleaseReport) Version(ctx context.Context) (string, error) { // releas
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this ReleaseReport as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ReleaseReport) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type ReleaseReportArtifact struct { // release (../../../toolchains/release/main.go:36:6)
 	query *querybuilder.Selection
 
-	id   *ReleaseReportArtifactID
+	id   *ID
 	link *string
 	name *string
 	tag  *string
@@ -762,7 +713,7 @@ func (r *ReleaseReportArtifact) Errors(ctx context.Context) ([]Error, error) { /
 	q = q.Select("id")
 
 	type errors struct {
-		Id ErrorID
+		Id ID
 	}
 
 	convert := func(fields []errors) []Error {
@@ -770,7 +721,7 @@ func (r *ReleaseReportArtifact) Errors(ctx context.Context) ([]Error, error) { /
 
 		for i := range fields {
 			val := Error{id: &fields[i].Id}
-			val.query = q.Root().Select("loadErrorFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "Error")
 			out = append(out, val)
 		}
 
@@ -789,13 +740,13 @@ func (r *ReleaseReportArtifact) Errors(ctx context.Context) ([]Error, error) { /
 }
 
 // A unique identifier for this ReleaseReportArtifact.
-func (r *ReleaseReportArtifact) ID(ctx context.Context) (ReleaseReportArtifactID, error) {
+func (r *ReleaseReportArtifact) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ReleaseReportArtifactID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -808,7 +759,7 @@ func (r *ReleaseReportArtifact) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *ReleaseReportArtifact) XXX_GraphQLIDType() string {
-	return "ReleaseReportArtifactID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -833,7 +784,7 @@ func (r *ReleaseReportArtifact) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadReleaseReportArtifactFromID(ReleaseReportArtifactID(id))
+	*r = ReleaseReportArtifact{query: selectNode(dag.query, id, "ReleaseReportArtifact")}
 	return nil
 }
 
@@ -873,10 +824,18 @@ func (r *ReleaseReportArtifact) Tag(ctx context.Context) (string, error) { // re
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this ReleaseReportArtifact as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ReleaseReportArtifact) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type ReleaseReportFollowUp struct { // release (../../../toolchains/release/main.go:46:6)
 	query *querybuilder.Selection
 
-	id   *ReleaseReportFollowUpID
+	id   *ID
 	link *string
 	name *string
 }
@@ -888,13 +847,13 @@ func (r *ReleaseReportFollowUp) WithGraphQLQuery(q *querybuilder.Selection) *Rel
 }
 
 // A unique identifier for this ReleaseReportFollowUp.
-func (r *ReleaseReportFollowUp) ID(ctx context.Context) (ReleaseReportFollowUpID, error) {
+func (r *ReleaseReportFollowUp) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ReleaseReportFollowUpID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -907,7 +866,7 @@ func (r *ReleaseReportFollowUp) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *ReleaseReportFollowUp) XXX_GraphQLIDType() string {
-	return "ReleaseReportFollowUpID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -932,7 +891,7 @@ func (r *ReleaseReportFollowUp) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadReleaseReportFollowUpFromID(ReleaseReportFollowUpID(id))
+	*r = ReleaseReportFollowUp{query: selectNode(dag.query, id, "ReleaseReportFollowUp")}
 	return nil
 }
 
@@ -960,11 +919,19 @@ func (r *ReleaseReportFollowUp) Name(ctx context.Context) (string, error) { // r
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this ReleaseReportFollowUp as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ReleaseReportFollowUp) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 type ReleaseTest struct { // release (../../../toolchains/release/tests.go:27:6)
 	query *querybuilder.Selection
 
 	existingModule *Void
-	id             *ReleaseTestID
+	id             *ID
 	newModule      *Void
 }
 
@@ -1004,13 +971,13 @@ func (r *ReleaseTest) ExistingModule(ctx context.Context, opts ...ReleaseTestExi
 }
 
 // A unique identifier for this ReleaseTest.
-func (r *ReleaseTest) ID(ctx context.Context) (ReleaseTestID, error) {
+func (r *ReleaseTest) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ReleaseTestID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -1023,7 +990,7 @@ func (r *ReleaseTest) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *ReleaseTest) XXX_GraphQLIDType() string {
-	return "ReleaseTestID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1048,7 +1015,7 @@ func (r *ReleaseTest) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadReleaseTestFromID(ReleaseTestID(id))
+	*r = ReleaseTest{query: selectNode(dag.query, id, "ReleaseTest")}
 	return nil
 }
 
@@ -1060,4 +1027,12 @@ func (r *ReleaseTest) NewModule(ctx context.Context) error { // release (../../.
 	q := r.query.Select("newModule")
 
 	return q.Execute(ctx)
+}
+
+// AsNode returns this ReleaseTest as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *ReleaseTest) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }

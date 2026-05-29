@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `ChangelogID` scalar type represents an identifier for an object of type Changelog.
-type ChangelogID string // changelog (../../../:0:0)
 
 // Retrieve the binding value, as type Changelog
 func (r *Binding) AsChangelog() *Changelog { // changelog (../../../:0:0)
@@ -24,7 +21,7 @@ func (r *Binding) AsChangelog() *Changelog { // changelog (../../../:0:0)
 type Changelog struct { // changelog (../../../:0:0)
 	query *querybuilder.Selection
 
-	id *ChangelogID
+	id *ID
 }
 
 func (r *Changelog) WithGraphQLQuery(q *querybuilder.Selection) *Changelog {
@@ -43,13 +40,13 @@ func (r *Changelog) Generate() *Changeset { // changelog (../../../:0:0)
 }
 
 // A unique identifier for this Changelog.
-func (r *Changelog) ID(ctx context.Context) (ChangelogID, error) {
+func (r *Changelog) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response ChangelogID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -62,7 +59,7 @@ func (r *Changelog) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Changelog) XXX_GraphQLIDType() string {
-	return "ChangelogID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -87,7 +84,7 @@ func (r *Changelog) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadChangelogFromID(ChangelogID(id))
+	*r = Changelog{query: selectNode(dag.query, id, "Changelog")}
 	return nil
 }
 
@@ -99,6 +96,14 @@ func (r *Changelog) LookupEntry(component string, version string) *File { // cha
 
 	return &File{
 		query: q,
+	}
+}
+
+// AsNode returns this Changelog as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Changelog) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }
 
@@ -139,16 +144,6 @@ func (r *Query) Changelog(opts ...ChangelogOpts) *Changelog { // changelog (../.
 			q = q.Arg("source", opts[i].Source)
 		}
 	}
-
-	return &Changelog{
-		query: q,
-	}
-}
-
-// Load a Changelog from its ID.
-func (r *Query) LoadChangelogFromID(id ChangelogID) *Changelog { // changelog (../../../:0:0)
-	q := r.query.Select("loadChangelogFromID")
-	q = q.Arg("id", id)
 
 	return &Changelog{
 		query: q,

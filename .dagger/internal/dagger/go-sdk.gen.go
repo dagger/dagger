@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `GoSdkID` scalar type represents an identifier for an object of type GoSdk.
-type GoSDKID string // go-sdk (../../../:0:0)
 
 // Retrieve the binding value, as type GoSdk
 func (r *Binding) AsGoSDK() *GoSDK { // go-sdk (../../../:0:0)
@@ -48,7 +45,7 @@ func (r *Env) WithGoSDKOutput(name string, description string) *Env { // go-sdk 
 type GoSDK struct { // go-sdk (../../../:0:0)
 	query *querybuilder.Selection
 
-	id            *GoSDKID
+	id            *ID
 	release       *Void
 	releaseDryRun *Void
 	sourcePath    *string
@@ -90,13 +87,13 @@ func (r *GoSDK) Generate() *Changeset { // go-sdk (../../../:0:0)
 }
 
 // A unique identifier for this GoSdk.
-func (r *GoSDK) ID(ctx context.Context) (GoSDKID, error) {
+func (r *GoSDK) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response GoSDKID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -109,7 +106,7 @@ func (r *GoSDK) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *GoSDK) XXX_GraphQLIDType() string {
-	return "GoSDKID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -134,7 +131,7 @@ func (r *GoSDK) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadGoSDKFromID(GoSDKID(id))
+	*r = GoSDK{query: selectNode(dag.query, id, "GoSdk")}
 	return nil
 }
 
@@ -269,6 +266,14 @@ func (r *GoSDK) Workspace() *Directory { // go-sdk (../../../:0:0)
 	}
 }
 
+// AsNode returns this GoSDK as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *GoSDK) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // GoSDKOpts contains options for Query.GoSDK
 type GoSDKOpts struct {
 	//
@@ -293,16 +298,6 @@ func (r *Query) GoSDK(opts ...GoSDKOpts) *GoSDK { // go-sdk (../../../:0:0)
 			q = q.Arg("sourcePath", opts[i].SourcePath)
 		}
 	}
-
-	return &GoSDK{
-		query: q,
-	}
-}
-
-// Load a GoSdk from its ID.
-func (r *Query) LoadGoSDKFromID(id GoSDKID) *GoSDK { // go-sdk (../../../:0:0)
-	q := r.query.Select("loadGoSdkFromID")
-	q = q.Arg("id", id)
 
 	return &GoSDK{
 		query: q,

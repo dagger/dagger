@@ -6,17 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `HelmChartID` scalar type represents an identifier for an object of type HelmChart.
-type HelmChartID string // helm (../../../:0:0)
-
-// The `HelmChartValuesID` scalar type represents an identifier for an object of type HelmChartValues.
-type HelmChartValuesID string // helm (../../../:0:0)
-
-// The `HelmID` scalar type represents an identifier for an object of type Helm.
-type HelmID string // helm (../../../:0:0)
 
 // Retrieve the binding value, as type Helm
 func (r *Binding) AsHelm() *Helm { // helm (../../../:0:0)
@@ -122,7 +113,7 @@ type Helm struct { // helm (../../../:0:0)
 	query *querybuilder.Selection
 
 	assertTemplate *Void
-	id             *HelmID
+	id             *ID
 	lint           *Void
 	valuesGlob     *string
 	version        *string
@@ -194,7 +185,7 @@ func (r *Helm) Charts(ctx context.Context, opts ...HelmChartsOpts) ([]HelmChart,
 	q = q.Select("id")
 
 	type charts struct {
-		Id HelmChartID
+		Id ID
 	}
 
 	convert := func(fields []charts) []HelmChart {
@@ -202,7 +193,7 @@ func (r *Helm) Charts(ctx context.Context, opts ...HelmChartsOpts) ([]HelmChart,
 
 		for i := range fields {
 			val := HelmChart{id: &fields[i].Id}
-			val.query = q.Root().Select("loadHelmChartFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "HelmChart")
 			out = append(out, val)
 		}
 
@@ -221,13 +212,13 @@ func (r *Helm) Charts(ctx context.Context, opts ...HelmChartsOpts) ([]HelmChart,
 }
 
 // A unique identifier for this Helm.
-func (r *Helm) ID(ctx context.Context) (HelmID, error) {
+func (r *Helm) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response HelmID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -240,7 +231,7 @@ func (r *Helm) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Helm) XXX_GraphQLIDType() string {
-	return "HelmID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -265,7 +256,7 @@ func (r *Helm) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadHelmFromID(HelmID(id))
+	*r = Helm{query: selectNode(dag.query, id, "Helm")}
 	return nil
 }
 
@@ -319,12 +310,20 @@ func (r *Helm) Version(ctx context.Context) (string, error) { // helm (../../../
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this Helm as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Helm) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A discovered Helm chart in the workspace.
 type HelmChart struct { // helm (../../../:0:0)
 	query *querybuilder.Selection
 
 	assertTemplate *Void
-	id             *HelmChartID
+	id             *ID
 	lint           *Void
 	path           *string
 }
@@ -349,13 +348,13 @@ func (r *HelmChart) AssertTemplate(ctx context.Context) error { // helm (../../.
 }
 
 // A unique identifier for this HelmChart.
-func (r *HelmChart) ID(ctx context.Context) (HelmChartID, error) {
+func (r *HelmChart) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response HelmChartID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -368,7 +367,7 @@ func (r *HelmChart) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *HelmChart) XXX_GraphQLIDType() string {
-	return "HelmChartID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -393,7 +392,7 @@ func (r *HelmChart) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadHelmChartFromID(HelmChartID(id))
+	*r = HelmChart{query: selectNode(dag.query, id, "HelmChart")}
 	return nil
 }
 
@@ -429,7 +428,7 @@ func (r *HelmChart) Values(ctx context.Context) ([]HelmChartValues, error) { // 
 	q = q.Select("id")
 
 	type values struct {
-		Id HelmChartValuesID
+		Id ID
 	}
 
 	convert := func(fields []values) []HelmChartValues {
@@ -437,7 +436,7 @@ func (r *HelmChart) Values(ctx context.Context) ([]HelmChartValues, error) { // 
 
 		for i := range fields {
 			val := HelmChartValues{id: &fields[i].Id}
-			val.query = q.Root().Select("loadHelmChartValuesFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "HelmChartValues")
 			out = append(out, val)
 		}
 
@@ -455,12 +454,20 @@ func (r *HelmChart) Values(ctx context.Context) ([]HelmChartValues, error) { // 
 	return convert(response), nil
 }
 
+// AsNode returns this HelmChart as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *HelmChart) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // A values dimension for Helm chart checks.
 type HelmChartValues struct { // helm (../../../:0:0)
 	query *querybuilder.Selection
 
 	assertTemplate *Void
-	id             *HelmChartValuesID
+	id             *ID
 	lint           *Void
 	path           *string
 }
@@ -482,13 +489,13 @@ func (r *HelmChartValues) AssertTemplate(ctx context.Context) error { // helm (.
 }
 
 // A unique identifier for this HelmChartValues.
-func (r *HelmChartValues) ID(ctx context.Context) (HelmChartValuesID, error) {
+func (r *HelmChartValues) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response HelmChartValuesID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -501,7 +508,7 @@ func (r *HelmChartValues) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *HelmChartValues) XXX_GraphQLIDType() string {
-	return "HelmChartValuesID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -526,7 +533,7 @@ func (r *HelmChartValues) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadHelmChartValuesFromID(HelmChartValuesID(id))
+	*r = HelmChartValues{query: selectNode(dag.query, id, "HelmChartValues")}
 	return nil
 }
 
@@ -551,6 +558,14 @@ func (r *HelmChartValues) Path(ctx context.Context) (string, error) { // helm (.
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// AsNode returns this HelmChartValues as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *HelmChartValues) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }
 
 // HelmOpts contains options for Query.Helm
@@ -581,36 +596,6 @@ func (r *Query) Helm(opts ...HelmOpts) *Helm { // helm (../../../:0:0)
 			q = q.Arg("valuesGlob", opts[i].ValuesGlob)
 		}
 	}
-
-	return &Helm{
-		query: q,
-	}
-}
-
-// Load a HelmChart from its ID.
-func (r *Query) LoadHelmChartFromID(id HelmChartID) *HelmChart { // helm (../../../:0:0)
-	q := r.query.Select("loadHelmChartFromID")
-	q = q.Arg("id", id)
-
-	return &HelmChart{
-		query: q,
-	}
-}
-
-// Load a HelmChartValues from its ID.
-func (r *Query) LoadHelmChartValuesFromID(id HelmChartValuesID) *HelmChartValues { // helm (../../../:0:0)
-	q := r.query.Select("loadHelmChartValuesFromID")
-	q = q.Arg("id", id)
-
-	return &HelmChartValues{
-		query: q,
-	}
-}
-
-// Load a Helm from its ID.
-func (r *Query) LoadHelmFromID(id HelmID) *Helm { // helm (../../../:0:0)
-	q := r.query.Select("loadHelmFromID")
-	q = q.Arg("id", id)
 
 	return &Helm{
 		query: q,
