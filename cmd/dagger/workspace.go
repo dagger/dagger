@@ -28,6 +28,7 @@ import (
 
 var workspaceCmd = &cobra.Command{
 	Use:     "workspace",
+	Aliases: []string{"ws"},
 	Short:   "Manage the current workspace",
 	GroupID: workspaceGroup.ID,
 }
