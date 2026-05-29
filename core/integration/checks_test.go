@@ -269,6 +269,27 @@ check.skip = ["failing-check", "failing-container"]
 	require.NotContains(t, out, "hello-with-checks:failing-container")
 }
 
+func (ChecksSuite) TestWorkspaceCheckSkipRemote(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	remoteRef := workspaceSelectionRemoteRef(ctx, t, c, c.Directory().
+		WithNewFile(".dagger/config.toml", `[modules.hello-with-checks]
+source = "modules/hello-with-checks"
+check.skip = ["failing-check", "failing-container"]
+`).
+		WithDirectory(".dagger/modules/hello-with-checks", c.Host().Directory(testDataPath(t, "checks", "hello-with-checks"))))
+
+	out, err := c.Container().From(alpineImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/empty").
+		With(workspaceSelectionDaggerExec("-W", remoteRef, "check", "-l")).
+		CombinedOutput(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "hello-with-checks:passing-check")
+	require.Contains(t, out, "hello-with-checks:passing-container")
+	require.NotContains(t, out, "hello-with-checks:failing-check")
+	require.NotContains(t, out, "hello-with-checks:failing-container")
+}
+
 func (ChecksSuite) TestChecksFailFast(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen, err := checksTestEnv(t, c)
