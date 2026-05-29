@@ -1670,7 +1670,7 @@
 			"t": "C",
 			"n": "Dagger\\WorkspaceMigrationId",
 			"p": "Dagger/WorkspaceMigrationId.html",
-			"d": "<p>The <code>WorkspaceMigrationID</code> scalar type represents an identifier for an object of type WorkspaceMigration.</p>",
+			"d": "<p>A unique identifier for an object.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -1690,7 +1690,7 @@
 			"t": "C",
 			"n": "Dagger\\WorkspaceMigrationStepId",
 			"p": "Dagger/WorkspaceMigrationStepId.html",
-			"d": "<p>The <code>WorkspaceMigrationStepID</code> scalar type represents an identifier for an object of type WorkspaceMigrationStep.</p>",
+			"d": "<p>A unique identifier for an object.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -1710,7 +1710,7 @@
 			"t": "C",
 			"n": "Dagger\\WorkspaceModuleId",
 			"p": "Dagger/WorkspaceModuleId.html",
-			"d": "<p>The <code>WorkspaceModuleID</code> scalar type represents an identifier for an object of type WorkspaceModule.</p>",
+			"d": "<p>A unique identifier for an object.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -1721,6 +1721,16 @@
 			"n": "Dagger\\WorkspaceModuleSetting",
 			"p": "Dagger/WorkspaceModuleSetting.html",
 			"d": "<p>A constructor-backed module setting.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\WorkspaceModuleSettingId",
+			"p": "Dagger/WorkspaceModuleSettingId.html",
+			"d": "<p>A unique identifier for an object.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -2877,6 +2887,30 @@
 			"n": "Dagger\\Client::loadWorkspaceFromID",
 			"p": "Dagger/Client.html#method_loadWorkspaceFromID",
 			"d": "<p>Load a Workspace from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadWorkspaceMigrationFromID",
+			"p": "Dagger/Client.html#method_loadWorkspaceMigrationFromID",
+			"d": "<p>Load a WorkspaceMigration from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadWorkspaceMigrationStepFromID",
+			"p": "Dagger/Client.html#method_loadWorkspaceMigrationStepFromID",
+			"d": "<p>Load a WorkspaceMigrationStep from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadWorkspaceModuleFromID",
+			"p": "Dagger/Client.html#method_loadWorkspaceModuleFromID",
+			"d": "<p>Load a WorkspaceModule from its ID.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::loadWorkspaceModuleSettingFromID",
+			"p": "Dagger/Client.html#method_loadWorkspaceModuleSettingFromID",
+			"d": "<p>Load a WorkspaceModuleSetting from its ID.</p>"
 		},
 		{
 			"t": "M",
