@@ -133,7 +133,7 @@ type PytestTestOpts struct {
 	//
 	Args []string // pytest (../../../../:0:0)
 	//
-	// Python version to use (e.g., "3.12", "3.11", "3.10")
+	// Python version to use (e.g., "3.14", "3.13", "3.12")
 	//
 	Version string // pytest (../../../../:0:0)
 }
@@ -144,10 +144,11 @@ type PytestTestOpts struct {
 // in Dagger TUI and Dagger Cloud. No configuration required.
 //
 // The function will:
-// - Use the provided container or default to Alpine Linux with uv
-// - Install your project dependencies using uv sync
-// - Inject pytest_otel for automatic test tracing
-// - Run pytest with the specified Python version
+//   - Reuse the provided container's Python environment, or default to Alpine
+//     Linux with uv and provision Python for the requested version
+//   - Inject pytest_otel for automatic test tracing
+//   - Install your project dependencies (via `uv run` for pyproject, or requirements.txt)
+//   - Run pytest with the specified Python version
 func (r *Pytest) Test(ctx context.Context, opts ...PytestTestOpts) error { // pytest (../../../../:0:0)
 	if r.test != nil {
 		return nil
