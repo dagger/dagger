@@ -562,6 +562,20 @@ CMD ["cat", "/copied.txt"]
 		require.Equal(t, "readonly-bind-data", strings.TrimSpace(copied))
 	})
 
+	t.Run("run-mount-bind-file", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().
+			WithNewFile("pyproject.toml", "[project]\nname = \"bind-file\"\n").
+			WithNewFile("Dockerfile", fmt.Sprintf(`# syntax=docker/dockerfile:1.7
+FROM %s
+RUN --mount=type=bind,source=pyproject.toml,target=pyproject.toml sh -lc 'cat pyproject.toml > /copied.txt'
+CMD ["cat", "/copied.txt"]
+`, alpineImage))
+
+		out, err := dir.DockerBuild().WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "[project]\nname = \"bind-file\"", strings.TrimSpace(out))
+	})
+
 	t.Run("run-mount-bind-non-sticky", func(ctx context.Context, t *testctx.T) {
 		dir := c.Directory().
 			WithNewFile("ctx.txt", "non-sticky-bind").
