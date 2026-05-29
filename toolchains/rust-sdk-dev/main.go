@@ -37,13 +37,15 @@ type RustSdkDev struct {
 
 func New(
 	// A directory with all the files needed to develop the SDK
-	// +defaultPath="/"
-	// +ignore=["*", "!sdk/rust/crates", "!sdk/rust/Cargo.lock", "!sdk/rust/Cargo.toml"]
-	workspace *dagger.Directory,
+	workspace *dagger.Workspace,
 	// The path of the SDK source in the workspace
 	// +default="sdk/rust"
 	sourcePath string,
 ) *RustSdkDev {
+	rustSrc := workspace.Directory("/", dagger.WorkspaceDirectoryOpts{
+		Exclude: []string{"*", "!sdk/rust/crates", "!sdk/rust/Cargo.lock", "!sdk/rust/Cargo.toml"},
+	})
+
 	baseContainer := dag.Container().
 		From(rustSdkImage+"@"+rustSdkImageDigest).
 		WithEnvVariable("CARGO_HOME", "/root/.cargo").
@@ -55,8 +57,8 @@ func New(
 		})
 
 	return &RustSdkDev{
-		OriginalWorkspace: workspace,
-		Workspace:         workspace,
+		OriginalWorkspace: rustSrc,
+		Workspace:         rustSrc,
 		SourcePath:        sourcePath,
 		BaseContainer:     baseContainer,
 	}
