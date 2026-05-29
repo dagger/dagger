@@ -665,10 +665,11 @@ export class Test {
 		upstreamSvcA, engineSvcA, engineClientA := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA) })
 
-		modA := modInit(t, engineClientA, "typescript", moduleSrc)
+		modA := moduleFixture(t, engineClientA, "typescript/base-test").
+			With(sdkSource("typescript", moduleSrc))
 		outA, err := modA.
 			WithEnvVariable("CACHE_BUST", identity.NewID()).
-			With(daggerCall("test-always-cache")).
+			With(daggerCallAt(".", "test-always-cache")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		stopEngine(ctx, t, upstreamSvcA, engineSvcA, engineClientA)
@@ -679,10 +680,11 @@ export class Test {
 		upstreamSvcB, engineSvcB, engineClientB := startEngine(c, ctx, t, stateKey, engineWithPersistenceTestGC(ctx, t))
 		t.Cleanup(func() { stopEngine(ctx, t, upstreamSvcB, engineSvcB, engineClientB) })
 
-		modB := modInit(t, engineClientB, "typescript", moduleSrc)
+		modB := moduleFixture(t, engineClientB, "typescript/base-test").
+			With(sdkSource("typescript", moduleSrc))
 		outB, err := modB.
 			WithEnvVariable("CACHE_BUST", identity.NewID()).
-			With(daggerCall("test-always-cache")).
+			With(daggerCallAt(".", "test-always-cache")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, outA, outB, "always-cached TypeScript function result should survive engine restart")
