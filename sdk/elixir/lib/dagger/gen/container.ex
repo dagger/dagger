@@ -145,7 +145,7 @@ defmodule Dagger.Container do
   end
 
   @doc """
-  Retrieves the value of the specified persistent environment variable.
+  Retrieves the value of the specified environment variable.
   """
   @spec env_variable(t(), String.t()) :: {:ok, String.t() | nil} | {:error, term()}
   def env_variable(%__MODULE__{} = container, name) do
@@ -156,7 +156,7 @@ defmodule Dagger.Container do
   end
 
   @doc """
-  Retrieves the list of persistent environment variables configured on the container.
+  Retrieves the list of environment variables passed to commands.
   """
   @spec env_variables(t()) :: {:ok, [Dagger.EnvVariable.t()]} | {:error, term()}
   def env_variables(%__MODULE__{} = container) do
@@ -183,8 +183,7 @@ defmodule Dagger.Container do
   """
   @spec exists(t(), String.t(), [
           {:expected_type, Dagger.ExistsType.t() | nil},
-          {:do_not_follow_symlinks, boolean() | nil},
-          {:expand, boolean() | nil}
+          {:do_not_follow_symlinks, boolean() | nil}
         ]) :: {:ok, boolean()} | {:error, term()}
   def exists(%__MODULE__{} = container, path, optional_args \\ []) do
     query_builder =
@@ -193,7 +192,6 @@ defmodule Dagger.Container do
       |> QB.put_arg("path", path)
       |> QB.maybe_put_arg("expectedType", optional_args[:expected_type])
       |> QB.maybe_put_arg("doNotFollowSymlinks", optional_args[:do_not_follow_symlinks])
-      |> QB.maybe_put_arg("expand", optional_args[:expand])
 
     Client.execute(container.client, query_builder)
   end
@@ -355,25 +353,10 @@ defmodule Dagger.Container do
   @doc """
   Download a container image, and apply it to the container state. All previous state will be lost.
   """
-  @spec from(t(), String.t(), [
-          {:registry_service, Dagger.Service.t() | nil},
-          {:protocol, Dagger.RegistryProtocol.t() | nil},
-          {:insecure_skip_tls_verify, boolean() | nil}
-        ]) :: Dagger.Container.t()
-  def from(%__MODULE__{} = container, address, optional_args \\ []) do
+  @spec from(t(), String.t()) :: Dagger.Container.t()
+  def from(%__MODULE__{} = container, address) do
     query_builder =
-      container.query_builder
-      |> QB.select("from")
-      |> QB.put_arg("address", address)
-      |> QB.maybe_put_arg(
-        "registryService",
-        if(optional_args[:registry_service],
-          do: Dagger.ID.id!(optional_args[:registry_service]),
-          else: nil
-        )
-      )
-      |> QB.maybe_put_arg("protocol", optional_args[:protocol])
-      |> QB.maybe_put_arg("insecureSkipTLSVerify", optional_args[:insecure_skip_tls_verify])
+      container.query_builder |> QB.select("from") |> QB.put_arg("address", address)
 
     %Dagger.Container{
       query_builder: query_builder,
@@ -484,10 +467,7 @@ defmodule Dagger.Container do
   @spec publish(t(), String.t(), [
           {:platform_variants, [Dagger.Container.t()]},
           {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
-          {:media_types, Dagger.ImageMediaTypes.t() | nil},
-          {:registry_service, Dagger.Service.t() | nil},
-          {:protocol, Dagger.RegistryProtocol.t() | nil},
-          {:insecure_skip_tls_verify, boolean() | nil}
+          {:media_types, Dagger.ImageMediaTypes.t() | nil}
         ]) :: {:ok, String.t()} | {:error, term()}
   def publish(%__MODULE__{} = container, address, optional_args \\ []) do
     query_builder =
@@ -503,15 +483,6 @@ defmodule Dagger.Container do
       )
       |> QB.maybe_put_arg("forcedCompression", optional_args[:forced_compression])
       |> QB.maybe_put_arg("mediaTypes", optional_args[:media_types])
-      |> QB.maybe_put_arg(
-        "registryService",
-        if(optional_args[:registry_service],
-          do: Dagger.ID.id!(optional_args[:registry_service]),
-          else: nil
-        )
-      )
-      |> QB.maybe_put_arg("protocol", optional_args[:protocol])
-      |> QB.maybe_put_arg("insecureSkipTLSVerify", optional_args[:insecure_skip_tls_verify])
 
     Client.execute(container.client, query_builder)
   end
@@ -1064,6 +1035,28 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  Retrieves this container plus a directory from the engine host bind-mounted at the given path.
+  """
+  @spec with_mounted_host_directory(t(), String.t(), String.t(), [
+          {:readonly, boolean() | nil},
+          {:expand, boolean() | nil}
+        ]) :: Dagger.Container.t()
+  def with_mounted_host_directory(%__MODULE__{} = container, path, source, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("withMountedHostDirectory")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("source", source)
+      |> QB.maybe_put_arg("readonly", optional_args[:readonly])
+      |> QB.maybe_put_arg("expand", optional_args[:expand])
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
   Retrieves this container plus a secret mounted into a file at the given path.
   """
   @spec with_mounted_secret(t(), String.t(), Dagger.Secret.t(), [
@@ -1260,17 +1253,20 @@ defmodule Dagger.Container do
   end
 
   @doc """
-  Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.
-
-  This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.
+  Retrieves this container plus an engine-managed volume bind-mounted at the given path.
   """
-  @spec with_volatile_variable(t(), String.t(), String.t()) :: Dagger.Container.t()
-  def with_volatile_variable(%__MODULE__{} = container, name, value) do
+  @spec with_volume_mount(t(), String.t(), Dagger.Volume.t(), [
+          {:readonly, boolean() | nil},
+          {:expand, boolean() | nil}
+        ]) :: Dagger.Container.t()
+  def with_volume_mount(%__MODULE__{} = container, path, volume, optional_args \\ []) do
     query_builder =
       container.query_builder
-      |> QB.select("withVolatileVariable")
-      |> QB.put_arg("name", name)
-      |> QB.put_arg("value", value)
+      |> QB.select("withVolumeMount")
+      |> QB.put_arg("path", path)
+      |> QB.put_arg("volume", Dagger.ID.id!(volume))
+      |> QB.maybe_put_arg("readonly", optional_args[:readonly])
+      |> QB.maybe_put_arg("expand", optional_args[:expand])
 
     %Dagger.Container{
       query_builder: query_builder,
@@ -1523,20 +1519,6 @@ defmodule Dagger.Container do
   def without_user(%__MODULE__{} = container) do
     query_builder =
       container.query_builder |> QB.select("withoutUser")
-
-    %Dagger.Container{
-      query_builder: query_builder,
-      client: container.client
-    }
-  end
-
-  @doc """
-  Retrieves this container minus the given volatile environment variable.
-  """
-  @spec without_volatile_variable(t(), String.t()) :: Dagger.Container.t()
-  def without_volatile_variable(%__MODULE__{} = container, name) do
-    query_builder =
-      container.query_builder |> QB.select("withoutVolatileVariable") |> QB.put_arg("name", name)
 
     %Dagger.Container{
       query_builder: query_builder,

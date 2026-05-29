@@ -123,7 +123,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
-     * Retrieves the value of the specified persistent environment variable.
+     * Retrieves the value of the specified environment variable.
      */
     public function envVariable(string $name): string
     {
@@ -133,7 +133,7 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
-     * Retrieves the list of persistent environment variables configured on the container.
+     * Retrieves the list of environment variables passed to commands.
      */
     public function envVariables(): array
     {
@@ -144,12 +144,8 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     /**
      * check if a file or directory exists
      */
-    public function exists(
-        string $path,
-        ?ExistsType $expectedType = null,
-        ?bool $doNotFollowSymlinks = false,
-        ?bool $expand = false,
-    ): bool {
+    public function exists(string $path, ?ExistsType $expectedType = null, ?bool $doNotFollowSymlinks = false): bool
+    {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exists');
         $leafQueryBuilder->setArgument('path', $path);
         if (null !== $expectedType) {
@@ -157,9 +153,6 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $doNotFollowSymlinks) {
         $leafQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
-        }
-        if (null !== $expand) {
-        $leafQueryBuilder->setArgument('expand', $expand);
         }
         return (bool)$this->queryLeaf($leafQueryBuilder, 'exists');
     }
@@ -283,23 +276,10 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     /**
      * Download a container image, and apply it to the container state. All previous state will be lost.
      */
-    public function from(
-        string $address,
-        ?Service $registryService = null,
-        ?RegistryProtocol $protocol = null,
-        ?bool $insecureSkipTLSVerify = false,
-    ): Container {
+    public function from(string $address): Container
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('from');
         $innerQueryBuilder->setArgument('address', $address);
-        if (null !== $registryService) {
-        $innerQueryBuilder->setArgument('registryService', $registryService);
-        }
-        if (null !== $protocol) {
-        $innerQueryBuilder->setArgument('protocol', $protocol);
-        }
-        if (null !== $insecureSkipTLSVerify) {
-        $innerQueryBuilder->setArgument('insecureSkipTLSVerify', $insecureSkipTLSVerify);
-        }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -381,9 +361,6 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         ?array $platformVariants = null,
         ?ImageLayerCompression $forcedCompression = null,
         ?ImageMediaTypes $mediaTypes = null,
-        ?Service $registryService = null,
-        ?RegistryProtocol $protocol = null,
-        ?bool $insecureSkipTLSVerify = false,
     ): string {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('publish');
         $leafQueryBuilder->setArgument('address', $address);
@@ -395,15 +372,6 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $mediaTypes) {
         $leafQueryBuilder->setArgument('mediaTypes', $mediaTypes);
-        }
-        if (null !== $registryService) {
-        $leafQueryBuilder->setArgument('registryService', $registryService);
-        }
-        if (null !== $protocol) {
-        $leafQueryBuilder->setArgument('protocol', $protocol);
-        }
-        if (null !== $insecureSkipTLSVerify) {
-        $leafQueryBuilder->setArgument('insecureSkipTLSVerify', $insecureSkipTLSVerify);
         }
         return (string)$this->queryLeaf($leafQueryBuilder, 'publish');
     }
@@ -909,6 +877,27 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
+     * Retrieves this container plus a directory from the engine host bind-mounted at the given path.
+     */
+    public function withMountedHostDirectory(
+        string $path,
+        string $source,
+        ?bool $readonly = false,
+        ?bool $expand = false,
+    ): Container {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedHostDirectory');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('source', $source);
+        if (null !== $readonly) {
+        $innerQueryBuilder->setArgument('readonly', $readonly);
+        }
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieves this container plus a secret mounted into a file at the given path.
      */
     public function withMountedSecret(
@@ -1070,15 +1059,23 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
-     * Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.
-     *
-     * This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.
+     * Retrieves this container plus an engine-managed volume bind-mounted at the given path.
      */
-    public function withVolatileVariable(string $name, string $value): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withVolatileVariable');
-        $innerQueryBuilder->setArgument('name', $name);
-        $innerQueryBuilder->setArgument('value', $value);
+    public function withVolumeMount(
+        string $path,
+        VolumeId|Volume $volume,
+        ?bool $readonly = false,
+        ?bool $expand = false,
+    ): Container {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withVolumeMount');
+        $innerQueryBuilder->setArgument('path', $path);
+        $innerQueryBuilder->setArgument('volume', $volume);
+        if (null !== $readonly) {
+        $innerQueryBuilder->setArgument('readonly', $readonly);
+        }
+        if (null !== $expand) {
+        $innerQueryBuilder->setArgument('expand', $expand);
+        }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -1261,16 +1258,6 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     public function withoutUser(): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutUser');
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Retrieves this container minus the given volatile environment variable.
-     */
-    public function withoutVolatileVariable(string $name): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutVolatileVariable');
-        $innerQueryBuilder->setArgument('name', $name);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
