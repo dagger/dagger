@@ -5581,6 +5581,7 @@ func dockerfileCompatMountSourcePathHasDirHint(sourcePath string) bool {
 	return strings.HasSuffix(sourcePath, "/") || strings.HasSuffix(sourcePath, "/.")
 }
 
+//nolint:dupl // symmetric with detachedFileAtSourcePath; sharing hides Directory vs File specifics
 func detachedDirectoryAtSourcePath(ctx context.Context, source dagql.ObjectResult[*Directory], sourcePath string) (*Directory, error) {
 	sourceDirPath, err := source.Self().Dir.GetOrEval(ctx, source.Result)
 	if err != nil {
@@ -5614,6 +5615,7 @@ func detachedDirectoryAtSourcePath(ctx context.Context, source dagql.ObjectResul
 	return dir, nil
 }
 
+//nolint:dupl // symmetric with detachedDirectoryAtSourcePath; sharing hides File vs Directory specifics
 func detachedFileAtSourcePath(ctx context.Context, source dagql.ObjectResult[*Directory], sourcePath string) (*File, error) {
 	sourceDirPath, err := source.Self().Dir.GetOrEval(ctx, source.Result)
 	if err != nil {
