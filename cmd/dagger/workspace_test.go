@@ -28,6 +28,16 @@ func TestInstallAndUpdateCommandFlags(t *testing.T) {
 	require.Nil(t, cmd.Flags().Lookup("compat"))
 }
 
+func TestWorkspaceCommandAliases(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"ws"})
+	require.NoError(t, err)
+	require.Same(t, workspaceCmd, cmd)
+
+	cmd, _, err = rootCmd.Find([]string{"i"})
+	require.NoError(t, err)
+	require.Same(t, moduleDepInstallCmd, cmd)
+}
+
 func TestWorkspaceCommandGrouping(t *testing.T) {
 	require.Equal(t, workspaceGroup.ID, configCmd.GroupID)
 	require.Equal(t, workspaceGroup.ID, envCmd.GroupID)
