@@ -247,7 +247,7 @@ func requireSampleGitRepo(ctx context.Context, t *testctx.T, c *dagger.Client, r
 	// latest tag
 	latestTag := repo.LatestVersion()
 	requireSampleGitRootDir(ctx, t, c, latestTag.Tree())
-	requireGitRefIsTag(ctx, t, c, `^refs/tags/v\d\.+\d+\.\d+$`, "", latestTag)
+	requireGitRefIsTag(ctx, t, c, `^refs/tags/v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$`, "", latestTag)
 	// sample tag
 	requireSampleGitTag(ctx, t, c, repo.Tag("v0.9.5"))
 	// sample annotated tag
