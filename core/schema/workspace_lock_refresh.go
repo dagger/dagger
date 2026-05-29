@@ -96,16 +96,7 @@ func refreshWorkspaceModuleLookups(
 				return fmt.Errorf("module %q source %q is not a git module", mod.Name, mod.Source)
 			}
 
-			existing, hasExisting, err := lock.GetModuleResolve(mod.Source)
-			if err != nil {
-				return fmt.Errorf("module %q source %q: %w", mod.Name, mod.Source, err)
-			}
-			policy := workspace.LockPolicy("")
-			if hasExisting {
-				policy = existing.Policy
-			}
-
-			result, err = resolveModuleSourceLookupResult(ctx, query, mod.Source, policy)
+			result, err = resolveModuleSourceLookupResult(ctx, query, mod.Source)
 			if err != nil {
 				return fmt.Errorf("module %q source %q: %w", mod.Name, mod.Source, err)
 			}

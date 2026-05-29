@@ -346,7 +346,7 @@ func (LockfileSuite) TestLiveDiscoversModuleSourceEntries(ctx context.Context, t
 
 	lockContents, err := updated.File("/work/.dagger/lock").Contents(ctx)
 	require.NoError(t, err)
-	assertModuleResolveLockEntry(t, []byte(lockContents), source, workspace.PolicyFloat)
+	assertModuleResolveLockEntry(t, []byte(lockContents), source, workspace.PolicyPin)
 }
 
 func (LockfileSuite) TestModuleSourceFrozenUsesLockedEntry(ctx context.Context, t *testctx.T) {
@@ -363,6 +363,37 @@ func (LockfileSuite) TestModuleSourceFrozenUsesLockedEntry(ctx context.Context, 
 		WithExec([]string{"dagger", "--silent", "--lock=frozen", "query", "--doc", "query.graphql"})
 
 	out, err := frozen.Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, initialCommit)
+	require.NotContains(t, out, newCommit)
+}
+
+func (LockfileSuite) TestModuleSourcePinnedUsesModuleResolveBeforeGitRefLock(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	gitDaemon, repoURL, source := startModuleResolveGitServiceWithRepo(ctx, t, c)
+	initialCommit := gitRepoHeadCommit(ctx, t, c, gitDaemon, repoURL)
+	newCommit := advanceGitRepo(ctx, t, c, gitDaemon, repoURL, "README.md", "second revision")
+	require.NotEqual(t, initialCommit, newCommit)
+
+	lock := workspace.NewLock()
+	require.NoError(t, lock.SetModuleResolve(source, workspace.LookupResult{
+		Value:  initialCommit,
+		Policy: workspace.PolicyPin,
+	}))
+	require.NoError(t, lock.SetLookup("", "git.ref", []any{repoURL, "main"}, workspace.LookupResult{
+		Value:  newCommit,
+		Policy: workspace.PolicyFloat,
+	}))
+	lockBytes, err := lock.Marshal()
+	require.NoError(t, err)
+
+	pinned := moduleResolveClientContainer(ctx, t, c, gitDaemon, source).
+		WithNewFile(".dagger/lock", string(lockBytes)).
+		WithNewFile("query.graphql", moduleSourceCommitQuery(source)).
+		WithExec([]string{"dagger", "--silent", "--lock=pinned", "query", "--doc", "query.graphql"})
+
+	out, err := pinned.Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, initialCommit)
 	require.NotContains(t, out, newCommit)
@@ -385,7 +416,7 @@ func (LockfileSuite) TestLockUpdateRefreshesExistingModuleResolveEntry(ctx conte
 
 	lockContents, err := updated.File("/work/.dagger/lock").Contents(ctx)
 	require.NoError(t, err)
-	assertModuleResolveLockEntry(t, []byte(lockContents), source, workspace.PolicyFloat)
+	assertModuleResolveLockEntry(t, []byte(lockContents), source, workspace.PolicyPin)
 	require.NotContains(t, lockContents, initialCommit)
 	require.Contains(t, lockContents, newCommit)
 }
@@ -480,11 +511,11 @@ func (LockfileSuite) TestWorkspaceModuleLockUpdate(ctx context.Context, t *testc
 		lock := workspace.NewLock()
 		require.NoError(t, lock.SetModuleResolve(wolfiSource, workspace.LookupResult{
 			Value:  wolfiPin,
-			Policy: workspace.PolicyFloat,
+			Policy: workspace.PolicyPin,
 		}))
 		require.NoError(t, lock.SetModuleResolve(ghaSource, workspace.LookupResult{
 			Value:  ghaPin,
-			Policy: workspace.PolicyFloat,
+			Policy: workspace.PolicyPin,
 		}))
 		lockBytes, err := lock.Marshal()
 		require.NoError(t, err)
@@ -516,11 +547,11 @@ source = "` + ghaSource + `"
 
 		wolfiEntry := requireWorkspaceModuleResolveLockEntry(t, []byte(lockOut), wolfiSource)
 		require.NotEqual(t, wolfiPin, wolfiEntry.Value)
-		require.Equal(t, workspace.PolicyFloat, wolfiEntry.Policy)
+		require.Equal(t, workspace.PolicyPin, wolfiEntry.Policy)
 
 		ghaEntry := requireWorkspaceModuleResolveLockEntry(t, []byte(lockOut), ghaSource)
 		require.Equal(t, ghaPin, ghaEntry.Value)
-		require.Equal(t, workspace.PolicyFloat, ghaEntry.Policy)
+		require.Equal(t, workspace.PolicyPin, ghaEntry.Policy)
 	})
 
 	t.Run("explicit local modules error", func(ctx context.Context, t *testctx.T) {
@@ -563,11 +594,11 @@ source = "github.com/dagger/dagger/modules/wolfi@main"
 		lock := workspace.NewLock()
 		require.NoError(t, lock.SetModuleResolve(wolfiSource, workspace.LookupResult{
 			Value:  wolfiPin,
-			Policy: workspace.PolicyFloat,
+			Policy: workspace.PolicyPin,
 		}))
 		require.NoError(t, lock.SetModuleResolve(ghaSource, workspace.LookupResult{
 			Value:  ghaPin,
-			Policy: workspace.PolicyFloat,
+			Policy: workspace.PolicyPin,
 		}))
 		lockBytes, err := lock.Marshal()
 		require.NoError(t, err)
@@ -599,11 +630,11 @@ source = "` + ghaSource + `"
 
 		wolfiEntry := requireWorkspaceModuleResolveLockEntry(t, []byte(lockOut), wolfiSource)
 		require.NotEqual(t, wolfiPin, wolfiEntry.Value)
-		require.Equal(t, workspace.PolicyFloat, wolfiEntry.Policy)
+		require.Equal(t, workspace.PolicyPin, wolfiEntry.Policy)
 
 		ghaEntry := requireWorkspaceModuleResolveLockEntry(t, []byte(lockOut), ghaSource)
 		require.Equal(t, ghaPin, ghaEntry.Value)
-		require.Equal(t, workspace.PolicyFloat, ghaEntry.Policy)
+		require.Equal(t, workspace.PolicyPin, ghaEntry.Policy)
 	})
 }
 
@@ -691,7 +722,7 @@ func mustMarshalModuleResolveLock(t *testctx.T, source, commit string, policy wo
 	t.Helper()
 
 	lock := workspace.NewLock()
-	require.NoError(t, lock.SetModuleResolve(source, workspace.LookupResult{
+	require.NoError(t, lock.SetLookup("", "modules.resolve", []any{source}, workspace.LookupResult{
 		Value:  commit,
 		Policy: policy,
 	}))

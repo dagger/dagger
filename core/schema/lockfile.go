@@ -199,7 +199,6 @@ func resolveModuleSourceLookupResult(
 	ctx context.Context,
 	query *core.Query,
 	source string,
-	policy workspace.LockPolicy,
 ) (workspace.LookupResult, error) {
 	ctx = lookupRefreshContext(ctx)
 
@@ -226,13 +225,9 @@ func resolveModuleSourceLookupResult(
 		return workspace.LookupResult{}, fmt.Errorf("resolve module source %q: %w", source, err)
 	}
 
-	if policy == "" {
-		policy = moduleResolveLockPolicy(gitRef.Self().Ref)
-	}
-
 	return workspace.LookupResult{
 		Value:  gitRef.Self().Ref.SHA,
-		Policy: policy,
+		Policy: workspace.PolicyPin,
 	}, nil
 }
 

@@ -24,7 +24,6 @@ import (
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
 	"golang.org/x/sync/errgroup"
@@ -607,7 +606,7 @@ func (s *moduleSourceSchema) gitModuleSource(
 				lookupLock.lock,
 				lockModulesResolveOperation,
 				[]any{source},
-				workspace.PolicyFloat,
+				workspace.PolicyPin,
 			)
 			if err != nil {
 				return inst, fmt.Errorf("%s lock resolution: %w", lockModulesResolveOperation, err)
@@ -753,17 +752,13 @@ func (s *moduleSourceSchema) gitModuleSource(
 	}
 
 	if lockResolution.ShouldWrite && lookupLock != nil {
-		policy := lockResolution.Policy
-		if !lockResolution.Found {
-			policy = moduleResolveLockPolicy(gitRef.Self().Ref)
-		}
 		if err := lookupLock.SetLookup(
 			lockCoreNamespace,
 			lockModulesResolveOperation,
 			[]any{source},
 			workspace.LookupResult{
 				Value:  gitRef.Self().Ref.SHA,
-				Policy: policy,
+				Policy: workspace.PolicyPin,
 			},
 		); err != nil {
 			return inst, fmt.Errorf("set lock entry for %s: %w", lockModulesResolveOperation, err)
@@ -776,13 +771,6 @@ func (s *moduleSourceSchema) gitModuleSource(
 	}
 
 	return inst, nil
-}
-
-func moduleResolveLockPolicy(ref *gitutil.Ref) workspace.LockPolicy {
-	if ref != nil && (strings.HasPrefix(ref.Name, "refs/tags/") || gitutil.IsCommitSHA(ref.Name)) {
-		return workspace.PolicyPin
-	}
-	return workspace.PolicyFloat
 }
 
 type directoryAsModuleArgs struct {
