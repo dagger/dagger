@@ -50,15 +50,15 @@ Examples:
 	GroupID: execGroup.ID,
 	Args:    cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if !checksListMode && sessionWorkspace != "" && workspaceAddressLooksRemote(sessionWorkspace) {
-			replayed, err := cloudCLI.TryReplayCloudChecksForWorkspace(cmd, sessionWorkspace, args)
+		if !checksListMode && workspaceRef != "" && workspaceAddressLooksRemote(workspaceRef) {
+			replayed, err := cloudCLI.TryReplayCloudChecksForWorkspace(cmd, workspaceRef, args)
 			if err == nil && replayed {
 				return nil
 			}
 			if err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "Cloud check lookup failed: %v; running checks now.\n\n", err)
 			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "No Cloud Checks result found for %s; running checks now.\n\n", sessionWorkspace)
+				fmt.Fprintf(cmd.OutOrStdout(), "No Cloud Checks result found for %s; running checks now.\n\n", workspaceRef)
 			}
 		}
 		params := client.Params{
