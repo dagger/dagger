@@ -42,27 +42,23 @@ func TestWriteDeviceAuthPrompt(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		opts     loginOptions
-		attempts []deviceAuthAttempt
-		want     string
+		name    string
+		opts    loginOptions
+		attempt deviceAuthAttempt
+		want    string
 	}{
 		{
-			name: "login",
-			attempts: []deviceAuthAttempt{
-				{action: "Authenticate", auth: deviceAuth, signup: true},
-			},
+			name:    "login",
+			attempt: deviceAuthAttempt{action: "Authenticate", auth: deviceAuth, signup: true},
 			want: "Login or sign up: https://auth.dagger.cloud/activate?user_code=ABCD-EFGH\n" +
 				"Verification code: ABCD-EFGH\n" +
 				"\n" +
 				"Waiting for authentication. Press Ctrl-C to cancel.\n",
 		},
 		{
-			name: "auth gate",
-			opts: loginOptions{authGate: true},
-			attempts: []deviceAuthAttempt{
-				{action: "Authenticate", auth: deviceAuth, signup: true},
-			},
+			name:    "auth gate",
+			opts:    loginOptions{authGate: true},
+			attempt: deviceAuthAttempt{action: "Authenticate", auth: deviceAuth, signup: true},
 			want: "This command requires authentication.\n" +
 				"\n" +
 				"Login or sign up to continue: https://auth.dagger.cloud/activate?user_code=ABCD-EFGH\n" +
@@ -71,10 +67,8 @@ func TestWriteDeviceAuthPrompt(t *testing.T) {
 				"Waiting for authentication. Press Ctrl-C to cancel.\n",
 		},
 		{
-			name: "switch account",
-			attempts: []deviceAuthAttempt{
-				{action: "Choose an account", auth: deviceAuth},
-			},
+			name:    "switch account",
+			attempt: deviceAuthAttempt{action: "Choose an account", auth: deviceAuth},
 			want: "Choose an account: https://auth.dagger.cloud/activate?user_code=ABCD-EFGH\n" +
 				"Verification code: ABCD-EFGH\n" +
 				"\n" +
@@ -85,7 +79,7 @@ func TestWriteDeviceAuthPrompt(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			writeDeviceAuthPrompt(&buf, tc.attempts, tc.opts)
+			writeDeviceAuthPrompt(&buf, tc.attempt, tc.opts)
 			assert.Equal(t, tc.want, buf.String())
 		})
 	}

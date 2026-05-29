@@ -8,27 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCloudListProjectionColumns(t *testing.T) {
-	rows := []cloudCheckRow{
-		{Dimensions: map[string]string{"github-repo": "acme/hello", "github-pr": "1", "git-sha": "aaa", "check": "lint"}},
-		{Dimensions: map[string]string{"github-repo": "acme/hello", "git-branch": "main", "git-sha": "bbb", "check": "lint"}},
-		{Dimensions: map[string]string{"github-repo": "acme/hello", "git-branch": "main", "git-sha": "bbb", "check": "test"}},
-	}
-
-	require.Equal(t,
-		[]string{"github-pr", "git-branch", "git-sha", "check"},
-		cloudListProjectionColumns("check", cloudCheckSelectorFlags{GitHubRepo: []string{"acme/hello"}}, rows),
-	)
-	require.Equal(t,
-		[]string{"github-pr", "git-sha"},
-		cloudListProjectionColumns("github-pr", cloudCheckSelectorFlags{GitHubRepo: []string{"acme/hello"}}, rows),
-	)
-	require.Equal(t,
-		[]string{"github-repo"},
-		cloudListProjectionColumns("github-repo", cloudCheckSelectorFlags{}, rows),
-	)
-}
-
 func TestCloudCheckRowsAndSelectors(t *testing.T) {
 	started := time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC)
 	duration := 12

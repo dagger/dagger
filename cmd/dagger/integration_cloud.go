@@ -13,12 +13,6 @@ import (
 )
 
 var githubOpen bool
-var integrationSyncAccount string
-var integrationSyncRepo string
-var integrationSyncPR string
-var integrationSyncTag string
-var integrationSyncBranch string
-var integrationSyncHead bool
 
 const githubOAuthRedirect = "https://dagger.cloud/github/callback"
 
@@ -46,23 +40,10 @@ var integrationAccountsCmd = &cobra.Command{
 	RunE:  cloudCLI.IntegrationAccounts,
 }
 
-var integrationSyncCmd = &cobra.Command{
-	Use:   "sync <provider>",
-	Short: "Manually sync source states for a Dagger Cloud integration provider",
-	Args:  cobra.ExactArgs(1),
-	RunE:  cloudCLI.IntegrationSync,
-}
-
 func init() {
 	integrationCmd.PersistentFlags().BoolVar(&cloudJSON, "json", false, "Print JSON output")
 	integrationSetupCmd.Flags().BoolVar(&githubOpen, "open", false, "Open the setup URL in a browser")
-	integrationSyncCmd.Flags().StringVar(&integrationSyncAccount, "account", "", "GitHub account name")
-	integrationSyncCmd.Flags().StringVar(&integrationSyncRepo, "repo", "", "GitHub repository, e.g. acme/hello")
-	integrationSyncCmd.Flags().StringVar(&integrationSyncPR, "pr", "", "GitHub pull request number")
-	integrationSyncCmd.Flags().StringVar(&integrationSyncTag, "tag", "", "Git tag name")
-	integrationSyncCmd.Flags().StringVar(&integrationSyncBranch, "branch", "", "Git branch name")
-	integrationSyncCmd.Flags().BoolVar(&integrationSyncHead, "head", false, "Sync the default branch head")
-	integrationCmd.AddCommand(integrationSetupCmd, integrationAccountsCmd, integrationSyncCmd)
+	integrationCmd.AddCommand(integrationSetupCmd, integrationAccountsCmd)
 	rootCmd.AddCommand(integrationCmd)
 }
 
@@ -95,15 +76,6 @@ func (cli *CloudCLI) IntegrationAccounts(cmd *cobra.Command, args []string) erro
 	switch strings.ToLower(args[0]) {
 	case "github":
 		return cli.integrationAccountsGitHub(cmd)
-	default:
-		return unsupportedIntegrationProvider(args[0])
-	}
-}
-
-func (cli *CloudCLI) IntegrationSync(cmd *cobra.Command, args []string) error {
-	switch strings.ToLower(args[0]) {
-	case "github":
-		return cli.integrationSyncGitHub()
 	default:
 		return unsupportedIntegrationProvider(args[0])
 	}
@@ -145,25 +117,6 @@ func (cli *CloudCLI) integrationSetupGitHub(cmd *cobra.Command) error {
 	fmt.Fprintln(out, "Open this URL to set up the GitHub integration:")
 	fmt.Fprintln(out, setup.URL)
 	return nil
-}
-
-func (cli *CloudCLI) integrationSyncGitHub() error {
-	targets := 0
-	for _, value := range []string{integrationSyncPR, integrationSyncTag, integrationSyncBranch} {
-		if value != "" {
-			targets++
-		}
-	}
-	if integrationSyncHead {
-		targets++
-	}
-	if targets > 1 {
-		return fmt.Errorf("--pr, --tag, --branch, and --head are mutually exclusive")
-	}
-	if targets > 0 && integrationSyncRepo == "" {
-		return fmt.Errorf("--repo is required with --pr, --tag, --branch, or --head")
-	}
-	return fmt.Errorf("dagger integration sync github is not supported by this CLI prototype yet; normal GitHub ingest comes from Cloud webhooks")
 }
 
 func (cli *CloudCLI) githubConnectHandoff(ctx context.Context, client *cloudapi.Client) (*githubSetupHandoff, error) {

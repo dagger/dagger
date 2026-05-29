@@ -25,47 +25,18 @@ import (
 
 const cloudCheckFetchLimit = 100
 
-var checkCloudSelectors cloudCheckSelectorFlags
-var listCloudSelectors cloudCheckSelectorFlags
-
-var cloudListCmd = &cobra.Command{
-	Use:     "list [dimension]",
-	Short:   "List Dagger Cloud check coordinate values",
-	Args:    cobra.MaximumNArgs(1),
-	GroupID: cloudGroup.ID,
-	RunE:    cloudCLI.ListCloudChecks,
-}
-
-func init() {
-	// Cloud Checks are selected through the current workspace, not through
-	// typed Cloud coordinate flags on dagger check/list.
-}
-
 type cloudCheckSelectorFlags struct {
-	GitHubAccount []string
-	GitHubRepo    []string
-	GitHubPR      []string
-	GitBranch     []string
-	GitTag        []string
-	GitSHA        []string
-	Workspace     []string
-	Check         []string
-}
-
-func (f *cloudCheckSelectorFlags) addFlags(cmd *cobra.Command) {
-	cmd.Flags().StringArrayVar(&f.GitHubAccount, "github-account", nil, "GitHub account name")
-	cmd.Flags().StringArrayVar(&f.GitHubRepo, "github-repo", nil, "GitHub repository, e.g. acme/hello")
-	cmd.Flags().StringArrayVar(&f.GitHubPR, "github-pr", nil, "GitHub pull request number")
-	cmd.Flags().StringArrayVar(&f.GitBranch, "git-branch", nil, "Git branch name")
-	cmd.Flags().StringArrayVar(&f.GitTag, "git-tag", nil, "Git tag name")
-	cmd.Flags().StringArrayVar(&f.GitSHA, "git-sha", nil, "Git commit SHA")
-	cmd.Flags().StringArrayVar(&f.Workspace, "workspace", nil, "Dagger workspace or module ref")
-	cmd.Flags().StringArrayVar(&f.Check, "check", nil, "Check name")
+	GitHubRepo []string
+	GitHubPR   []string
+	GitBranch  []string
+	GitTag     []string
+	GitSHA     []string
+	Workspace  []string
+	Check      []string
 }
 
 func (f cloudCheckSelectorFlags) hasCloudSelector() bool {
-	return len(f.GitHubAccount) > 0 ||
-		len(f.GitHubRepo) > 0 ||
+	return len(f.GitHubRepo) > 0 ||
 		len(f.GitHubPR) > 0 ||
 		len(f.GitBranch) > 0 ||
 		len(f.GitTag) > 0 ||
@@ -79,8 +50,6 @@ func (f cloudCheckSelectorFlags) selected(dim string) bool {
 
 func (f cloudCheckSelectorFlags) values(dim string) []string {
 	switch dim {
-	case "github-account":
-		return f.GitHubAccount
 	case "github-repo":
 		return f.GitHubRepo
 	case "github-pr":
@@ -100,13 +69,7 @@ func (f cloudCheckSelectorFlags) values(dim string) []string {
 	}
 }
 
-func (f cloudCheckSelectorFlags) withChecks(checks []string) cloudCheckSelectorFlags {
-	f.Check = append(append([]string{}, f.Check...), checks...)
-	return f
-}
-
 var cloudCheckDimensions = []string{
-	"github-account",
 	"github-repo",
 	"github-pr",
 	"git-branch",
@@ -114,24 +77,6 @@ var cloudCheckDimensions = []string{
 	"git-sha",
 	"workspace",
 	"check",
-}
-
-var cloudCheckDimensionAliases = map[string]string{
-	"account":        "github-account",
-	"github-account": "github-account",
-	"repo":           "github-repo",
-	"github-repo":    "github-repo",
-	"pr":             "github-pr",
-	"github-pr":      "github-pr",
-	"branch":         "git-branch",
-	"git-branch":     "git-branch",
-	"tag":            "git-tag",
-	"git-tag":        "git-tag",
-	"sha":            "git-sha",
-	"git-sha":        "git-sha",
-	"workspace":      "workspace",
-	"check":          "check",
-	"checks":         "check",
 }
 
 type cloudCheckQueryResult struct {
@@ -153,42 +98,6 @@ type cloudCheckRow struct {
 	Check  cloudapi.Check       `json:"-"`
 }
 
-func (cli *CloudCLI) ListCloudChecks(cmd *cobra.Command, args []string) error {
-	var dimension string
-	if len(args) > 0 {
-		var ok bool
-		dimension, ok = canonicalCloudCheckDimension(args[0])
-		if !ok {
-			return fmt.Errorf("unknown dimension %q; available dimensions: %s", args[0], strings.Join(cloudCheckDimensions, ", "))
-		}
-	}
-
-	res, err := cli.loadCloudCheckRows(cmd.Context(), listCloudSelectors)
-	if err != nil {
-		return err
-	}
-
-	if cloudJSON {
-		return writeCloudJSON(cmd, res.Rows)
-	}
-	if len(res.Rows) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No Cloud check results found for those selectors.")
-		return nil
-	}
-	cols := cloudListProjectionColumns(dimension, listCloudSelectors, res.Rows)
-	renderCloudList(cmd, res.Rows, cols)
-	return nil
-}
-
-func (cli *CloudCLI) CheckCloud(cmd *cobra.Command, args []string) error {
-	selectors := checkCloudSelectors.withChecks(args)
-	res, err := cli.loadCloudCheckRows(cmd.Context(), selectors)
-	if err != nil {
-		return err
-	}
-	return cli.replayCloudCheckResult(cmd, res, selectors, true)
-}
-
 func (cli *CloudCLI) TryReplayCloudChecksForWorkspace(cmd *cobra.Command, address string, checks []string) (bool, error) {
 	res, selectors, err := cli.loadCloudCheckRowsForWorkspace(cmd.Context(), address, checks, false)
 	if err != nil {
@@ -197,17 +106,14 @@ func (cli *CloudCLI) TryReplayCloudChecksForWorkspace(cmd *cobra.Command, addres
 	if len(res.Rows) == 0 {
 		return false, nil
 	}
-	if err := cli.replayCloudCheckResult(cmd, res, selectors, false); err != nil {
+	if err := cli.replayCloudCheckResult(cmd, res, selectors); err != nil {
 		return true, err
 	}
 	return true, nil
 }
 
-func (cli *CloudCLI) replayCloudCheckResult(cmd *cobra.Command, res *cloudCheckQueryResult, selectors cloudCheckSelectorFlags, renderMiss bool) error {
+func (cli *CloudCLI) replayCloudCheckResult(cmd *cobra.Command, res *cloudCheckQueryResult, selectors cloudCheckSelectorFlags) error {
 	if len(res.Rows) == 0 {
-		if renderMiss {
-			renderCloudCheckMiss(cmd, selectors)
-		}
 		return idtui.ExitError{OriginalCode: 1, Original: fmt.Errorf("no Cloud check result found")}
 	}
 
@@ -218,9 +124,6 @@ func (cli *CloudCLI) replayCloudCheckResult(cmd *cobra.Command, res *cloudCheckQ
 	}
 	checks := checksFromRows(rows)
 	if len(checks) == 0 {
-		if renderMiss {
-			renderCloudCheckMiss(cmd, selectors)
-		}
 		return idtui.ExitError{OriginalCode: 1, Original: fmt.Errorf("no Cloud check result found")}
 	}
 
@@ -240,10 +143,6 @@ func (cli *CloudCLI) replayCloudCheckResult(cmd *cobra.Command, res *cloudCheckQ
 		return idtui.ExitError{OriginalCode: 1, Original: fmt.Errorf("Cloud checks are %s", result)}
 	}
 	return nil
-}
-
-func (cli *CloudCLI) loadCloudCheckRows(ctx context.Context, selectors cloudCheckSelectorFlags) (*cloudCheckQueryResult, error) {
-	return cli.loadCloudCheckRowsWithLogin(ctx, selectors, true)
 }
 
 func (cli *CloudCLI) loadCloudCheckRowsNoLogin(ctx context.Context, selectors cloudCheckSelectorFlags) (*cloudCheckQueryResult, error) {
@@ -404,7 +303,6 @@ func cloudCheckRows(orgName string, commits []cloudapi.CheckCommit) []cloudCheck
 				}
 				repo := normalizeGitHubRepo(commit.Repo)
 				dims["github-repo"] = repo
-				dims["github-account"] = githubAccount(repo)
 				dims["git-sha"] = firstNonEmpty(commit.CommitSHA, check.ModuleVersion)
 				dims["workspace"] = firstNonEmpty(check.ModuleRef, repo)
 				dims["check"] = check.Name
@@ -600,12 +498,6 @@ func checksFromRows(rows []cloudCheckRow) []cloudapi.Check {
 	return checks
 }
 
-func renderCloudCheckMiss(cmd *cobra.Command, selectors cloudCheckSelectorFlags) {
-	fmt.Fprintf(cmd.OutOrStdout(), "No Cloud check result found for %s.\n\n", selectorSummary(selectors))
-	fmt.Fprintln(cmd.OutOrStdout(), "Checks are normally ingested from GitHub webhooks. To manually repair ingestion:")
-	fmt.Fprintln(cmd.OutOrStdout(), "  dagger integration sync github --repo=OWNER/REPO --pr=NUMBER")
-}
-
 func renderAmbiguousCloudChecks(cmd *cobra.Command, rows []cloudCheckRow) {
 	fmt.Fprintln(cmd.OutOrStdout(), "Selectors match multiple Cloud check subjects. Add more selectors.")
 	renderCloudList(cmd, rows, []string{"github-repo", "github-pr", "git-branch", "git-tag", "git-sha"})
@@ -710,68 +602,6 @@ func groupCloudListRows(rows []cloudCheckRow, columns []string) []groupedCloudLi
 		return out[i].UpdatedAt.After(out[j].UpdatedAt)
 	})
 	return out
-}
-
-func cloudListProjectionColumns(dimension string, selectors cloudCheckSelectorFlags, rows []cloudCheckRow) []string {
-	if dimension == "" {
-		var cols []string
-		for _, dim := range cloudCheckDimensions {
-			if !selectors.selected(dim) && cloudRowsHaveDimension(rows, dim) {
-				cols = append(cols, dim)
-			}
-		}
-		return cols
-	}
-	var cols []string
-	if dimension == "check" {
-		for _, dim := range []string{"github-repo", "github-pr", "git-branch", "git-tag", "git-sha", "workspace"} {
-			if selectors.selected(dim) || !cloudRowsHaveDimension(rows, dim) {
-				continue
-			}
-			if isCloudRefDimension(dim) || cloudRowsHaveMultipleValues(rows, dim) {
-				cols = append(cols, dim)
-			}
-		}
-	}
-	if !contains(cols, dimension) {
-		cols = append(cols, dimension)
-	}
-	if shouldIncludeGitSHAContext(dimension) && !selectors.selected("git-sha") && cloudRowsHaveDimension(rows, "git-sha") && !contains(cols, "git-sha") {
-		cols = append(cols, "git-sha")
-	}
-	return cols
-}
-
-func isCloudRefDimension(dim string) bool {
-	return dim == "github-pr" || dim == "git-branch" || dim == "git-tag"
-}
-
-func shouldIncludeGitSHAContext(dimension string) bool {
-	switch dimension {
-	case "github-pr", "git-branch", "git-tag", "workspace":
-		return true
-	default:
-		return false
-	}
-}
-
-func cloudRowsHaveDimension(rows []cloudCheckRow, dim string) bool {
-	for _, row := range rows {
-		if row.Dimensions[dim] != "" {
-			return true
-		}
-	}
-	return false
-}
-
-func cloudRowsHaveMultipleValues(rows []cloudCheckRow, dim string) bool {
-	values := map[string]struct{}{}
-	for _, row := range rows {
-		if row.Dimensions[dim] != "" {
-			values[row.Dimensions[dim]] = struct{}{}
-		}
-	}
-	return len(values) > 1
 }
 
 func replayCloudChecks(cmd *cobra.Command, client *cloudapi.Client, orgID string, commit cloudapi.CheckCommit, checks []cloudapi.Check) error {
@@ -1026,11 +856,6 @@ func cloudChecksHaveTraces(checks []cloudapi.Check) bool {
 	return false
 }
 
-func canonicalCloudCheckDimension(dim string) (string, bool) {
-	canonical, ok := cloudCheckDimensionAliases[strings.ToLower(dim)]
-	return canonical, ok
-}
-
 func normalizeGitHubRepo(repo string) string {
 	repo = strings.TrimSpace(repo)
 	repo = strings.TrimPrefix(repo, "https://")
@@ -1038,14 +863,6 @@ func normalizeGitHubRepo(repo string) string {
 	repo = strings.TrimPrefix(repo, "github.com/")
 	repo = strings.TrimSuffix(repo, ".git")
 	return repo
-}
-
-func githubAccount(repo string) string {
-	parts := strings.Split(normalizeGitHubRepo(repo), "/")
-	if len(parts) > 0 {
-		return parts[0]
-	}
-	return ""
 }
 
 func cloudResultForStatus(status string) string {
@@ -1201,19 +1018,6 @@ func cloudTraceURL(orgName, traceID string) string {
 		return ""
 	}
 	return fmt.Sprintf("https://dagger.cloud/%s/traces/%s", orgName, traceID)
-}
-
-func selectorSummary(selectors cloudCheckSelectorFlags) string {
-	var parts []string
-	for _, dim := range cloudCheckDimensions {
-		for _, value := range selectors.values(dim) {
-			parts = append(parts, dim+"="+value)
-		}
-	}
-	if len(parts) == 0 {
-		return "the supplied selectors"
-	}
-	return strings.Join(parts, " ")
 }
 
 func firstNonEmpty(values ...string) string {

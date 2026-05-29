@@ -22,10 +22,6 @@ func (cli *CloudCLI) cloudClient(ctx context.Context) (*cloudapi.Client, *clouda
 	return cli.cloudClientWithLogin(ctx, true)
 }
 
-func (cli *CloudCLI) cloudClientNoLogin(ctx context.Context) (*cloudapi.Client, *cloudauth.Cloud, error) {
-	return cli.cloudClientWithLogin(ctx, false)
-}
-
 func (cli *CloudCLI) cloudClientWithLogin(ctx context.Context, login bool) (*cloudapi.Client, *cloudauth.Cloud, error) {
 	cloudAuth, err := cloudauth.GetCloudAuth(ctx)
 	if err != nil {

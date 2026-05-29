@@ -33,14 +33,6 @@ var loginCmd = &cobra.Command{
 	RunE:    cloudCLI.Login,
 }
 
-var signupCmd = &cobra.Command{
-	Use:     "signup [org]",
-	Short:   "Start Dagger Cloud login; choose Sign up in the browser",
-	Args:    cobra.MaximumNArgs(1),
-	GroupID: cloudGroup.ID,
-	RunE:    cloudCLI.Login,
-}
-
 var logoutCmd = &cobra.Command{
 	Use:     "logout",
 	Short:   "Log out from Dagger Cloud",
@@ -52,7 +44,7 @@ var logoutCmd = &cobra.Command{
 func init() {
 	loginCmd.Flags().BoolVar(&loginSwitchAccount, "switch-account", false, "Choose a different Dagger Cloud account")
 	rootCmd.AddGroup(cloudGroup)
-	rootCmd.AddCommand(loginCmd, signupCmd, logoutCmd)
+	rootCmd.AddCommand(loginCmd, logoutCmd)
 }
 
 type CloudCLI struct{}

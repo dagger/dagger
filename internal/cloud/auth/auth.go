@@ -88,12 +88,11 @@ func Login(ctx context.Context, out io.Writer, loginOpts ...LoginOption) error {
 		return nil
 	}
 
-	attempts, err := deviceAuthAttempts(ctx, opts)
+	attempt, err := deviceAuthAttemptForLogin(ctx, opts)
 	if err != nil {
 		return err
 	}
 
-	openAttempt := attempts[0]
 	browserBuf := new(strings.Builder)
 	browserStdout := browser.Stdout
 	browserStderr := browser.Stderr
@@ -103,13 +102,13 @@ func Login(ctx context.Context, out io.Writer, loginOpts ...LoginOption) error {
 	}()
 	browser.Stdout = browserBuf
 	browser.Stderr = browserBuf
-	if err := browser.OpenURL(deviceAuthURL(openAttempt.auth)); err != nil {
+	if err := browser.OpenURL(deviceAuthURL(attempt.auth)); err != nil {
 		fmt.Fprintf(out, "Failed to open browser: %s\n\n%s\n", err, browserBuf.String())
 	}
 
-	writeDeviceAuthPrompt(out, attempts, opts)
+	writeDeviceAuthPrompt(out, attempt, opts)
 
-	token, err := deviceAccessToken(ctx, attempts)
+	token, err := authConfig.DeviceAccessToken(ctx, attempt.auth)
 	if err != nil {
 		return err
 	}
@@ -117,21 +116,13 @@ func Login(ctx context.Context, out io.Writer, loginOpts ...LoginOption) error {
 	return saveToken(token)
 }
 
-func writeDeviceAuthPrompt(out io.Writer, attempts []deviceAuthAttempt, opts loginOptions) {
+func writeDeviceAuthPrompt(out io.Writer, attempt deviceAuthAttempt, opts loginOptions) {
 	if opts.authGate {
 		fmt.Fprintln(out, "This command requires authentication.")
 		fmt.Fprintln(out)
 	}
-	for _, attempt := range attempts {
-		fmt.Fprintf(out, "%s: %s\n", deviceAuthPromptAction(attempt, opts), deviceAuthURL(attempt.auth))
-	}
-	if len(attempts) == 1 {
-		fmt.Fprintf(out, "Verification code: %s\n", attempts[0].auth.UserCode)
-	} else {
-		for _, attempt := range attempts {
-			fmt.Fprintf(out, "%s verification code: %s\n", deviceAuthPromptAction(attempt, opts), attempt.auth.UserCode)
-		}
-	}
+	fmt.Fprintf(out, "%s: %s\n", deviceAuthPromptAction(attempt, opts), deviceAuthURL(attempt.auth))
+	fmt.Fprintf(out, "Verification code: %s\n", attempt.auth.UserCode)
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Waiting for authentication. Press Ctrl-C to cancel.")
 }
@@ -146,24 +137,22 @@ func deviceAuthPromptAction(attempt deviceAuthAttempt, opts loginOptions) string
 	return attempt.action
 }
 
-func deviceAuthAttempts(ctx context.Context, opts loginOptions) ([]deviceAuthAttempt, error) {
+func deviceAuthAttemptForLogin(ctx context.Context, opts loginOptions) (deviceAuthAttempt, error) {
 	if opts.switchAccount {
 		deviceAuth, err := authConfig.DeviceAuth(ctx, oauth2.SetAuthURLParam("prompt", "login"))
 		if err != nil {
-			return nil, err
+			return deviceAuthAttempt{}, err
 		}
 
-		return []deviceAuthAttempt{{action: "Choose an account", auth: deviceAuth}}, nil
+		return deviceAuthAttempt{action: "Choose an account", auth: deviceAuth}, nil
 	}
 
 	deviceAuth, err := authConfig.DeviceAuth(ctx)
 	if err != nil {
-		return nil, err
+		return deviceAuthAttempt{}, err
 	}
 
-	return []deviceAuthAttempt{
-		{action: "Authenticate", auth: deviceAuth, signup: true},
-	}, nil
+	return deviceAuthAttempt{action: "Authenticate", auth: deviceAuth, signup: true}, nil
 }
 
 func deviceAuthURL(deviceAuth *oauth2.DeviceAuthResponse) string {
@@ -171,40 +160,6 @@ func deviceAuthURL(deviceAuth *oauth2.DeviceAuthResponse) string {
 		return deviceAuth.VerificationURIComplete
 	}
 	return deviceAuth.VerificationURI
-}
-
-func deviceAccessToken(ctx context.Context, attempts []deviceAuthAttempt) (*oauth2.Token, error) {
-	if len(attempts) == 1 {
-		return authConfig.DeviceAccessToken(ctx, attempts[0].auth)
-	}
-
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	type result struct {
-		attempt deviceAuthAttempt
-		token   *oauth2.Token
-		err     error
-	}
-	results := make(chan result, len(attempts))
-	for _, attempt := range attempts {
-		go func() {
-			token, err := authConfig.DeviceAccessToken(ctx, attempt.auth)
-			results <- result{attempt: attempt, token: token, err: err}
-		}()
-	}
-
-	var errs []string
-	for range attempts {
-		result := <-results
-		if result.err == nil {
-			cancel()
-			return result.token, nil
-		}
-		errs = append(errs, fmt.Sprintf("%s: %s", result.attempt.action, result.err))
-	}
-
-	return nil, fmt.Errorf("login failed: %s", strings.Join(errs, "; "))
 }
 
 // Logout deletes the client credentials
