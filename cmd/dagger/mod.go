@@ -56,20 +56,20 @@ var modListCmd = &cobra.Command{
 	},
 }
 
-var modRecommendedCmd = &cobra.Command{
-	Use:   "recommended",
+var modRecommendCmd = &cobra.Command{
+	Use:   "recommend",
 	Short: "Recommend modules based on files in your workspace",
 	Long: `Scan the workspace for files matching the recommend glob of each known
 module and print those whose pattern matches at least one file.
 
 Modules already installed in the workspace are excluded.`,
-	Example: "dagger mod recommended",
+	Example: "dagger mod recommend",
 	Args:    cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return withEngine(cmd.Context(), client.Params{
 			SkipWorkspaceModules: true,
 		}, func(ctx context.Context, engineClient *client.Client) error {
-			return runRecommended(ctx, cmd.OutOrStdout(), engineClient.Dagger())
+			return runRecommend(ctx, cmd.OutOrStdout(), engineClient.Dagger())
 		})
 	},
 }
@@ -96,7 +96,7 @@ With no query, lists all known modules.`,
 }
 
 func init() {
-	modCmd.AddCommand(modInstallCmd, modUninstallCmd, modListCmd, modSearchCmd, modRecommendedCmd)
+	modCmd.AddCommand(modInstallCmd, modUninstallCmd, modListCmd, modSearchCmd, modRecommendCmd)
 
 	addWorkspaceInstallFlags(modInstallCmd)
 	addWorkspaceHereFlag(modUninstallCmd)
@@ -104,7 +104,7 @@ func init() {
 	setWorkspaceFlagPolicy(modInstallCmd, workspaceFlagPolicyLocalOnly)
 	setWorkspaceFlagPolicy(modUninstallCmd, workspaceFlagPolicyLocalOnly)
 	setWorkspaceFlagPolicy(modListCmd, workspaceFlagPolicyLocalOnly)
-	setWorkspaceFlagPolicy(modRecommendedCmd, workspaceFlagPolicyLocalOnly)
+	setWorkspaceFlagPolicy(modRecommendCmd, workspaceFlagPolicyLocalOnly)
 }
 
 func listWorkspaceModules(ctx context.Context, out io.Writer, dag *dagger.Client) error {
@@ -150,7 +150,7 @@ type registryModule struct {
 	Description string `json:"description"`
 	Repo        string `json:"repo"`
 	// Recommend is a doublestar glob (e.g. "**/go.mod") used by
-	// `dagger mod recommended` to decide whether to suggest this module
+	// `dagger mod recommend` to decide whether to suggest this module
 	// based on files present in the workspace. Empty means never recommended.
 	Recommend string `json:"recommend,omitempty"`
 }
@@ -232,10 +232,10 @@ var recommendWalkSkipDirs = map[string]bool{
 	"target":       true,
 }
 
-// runRecommended is the cobra runtime for `dagger mod recommended`. It
+// runRecommend is the cobra runtime for `dagger mod recommend`. It
 // resolves the workspace root (respecting -W), gathers installed module
 // names, walks the workspace, and prints the matches.
-func runRecommended(ctx context.Context, out io.Writer, dag *dagger.Client) error {
+func runRecommend(ctx context.Context, out io.Writer, dag *dagger.Client) error {
 	ws := dag.CurrentWorkspace()
 
 	address, err := ws.Address(ctx)

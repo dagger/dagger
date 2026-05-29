@@ -65,7 +65,7 @@ func TestModSubcommandsRegistered(t *testing.T) {
 	for _, c := range modCmd.Commands() {
 		got[c.Name()] = true
 	}
-	for _, want := range []string{"install", "uninstall", "list", "search", "recommended"} {
+	for _, want := range []string{"install", "uninstall", "list", "search", "recommend"} {
 		require.Truef(t, got[want], "expected `dagger mod %s` to be registered", want)
 	}
 }
