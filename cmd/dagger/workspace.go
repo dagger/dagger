@@ -399,7 +399,9 @@ func currentWorkspaceRemoteAddress(ctx context.Context) (string, bool, error) {
 
 	_, inferred, err := inferLocalWorkspaceRemoteAddress(ctx, address)
 	if err != nil {
-		return "", false, nil
+		// Inference failures are not propagated: callers treat the empty
+		// result as "no remote workspace selected".
+		return "", false, nil //nolint:nilerr
 	}
 	return inferred, true, nil
 }
@@ -897,7 +899,7 @@ func workspaceMappedSourceForInstallation(ctx context.Context, client *cloudapi.
 			return source, nil
 		}
 	}
-	return cloudapi.MappedSource{}, fmt.Errorf("Cloud source %s is not mapped to org %q", installationID, orgName)
+	return cloudapi.MappedSource{}, fmt.Errorf("cloud source %s is not mapped to org %q", installationID, orgName)
 }
 
 func workspaceSelectedSourceRepos(repos []cloudapi.SourceRepository, repo string) ([]string, bool) {
