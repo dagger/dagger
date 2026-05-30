@@ -142,7 +142,7 @@ func (cli *CloudCLI) replayCloudCheckResult(cmd *cobra.Command, res *cloudCheckQ
 	}
 
 	if result != "green" {
-		return idtui.ExitError{OriginalCode: 1, Original: fmt.Errorf("Cloud checks are %s", result)}
+		return idtui.ExitError{OriginalCode: 1, Original: fmt.Errorf("cloud checks are %s", result)}
 	}
 	return nil
 }
