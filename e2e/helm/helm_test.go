@@ -5,9 +5,11 @@
 // workspace:include ../../helm/dagger
 // workspace:include ../../.changes/.next
 // workspace:include ../../analytics
+// workspace:include ../../cmd/codegen
 // workspace:include ../../cmd/dagger
 // workspace:include ../../core/modules
 // workspace:include ../../core/openrouter
+// workspace:include ../../core/prompts
 // workspace:include ../../dagql
 // workspace:include ../../engine
 // workspace:include ../../go.mod
