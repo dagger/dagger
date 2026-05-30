@@ -15493,6 +15493,7 @@ class Workspace(Type):
         *,
         include: list[str] | None = None,
         no_generate: bool | None = None,
+        only_generate: bool | None = None,
     ) -> CheckGroup:
         """Return all checks from modules loaded in the workspace.
 
@@ -15503,10 +15504,14 @@ class Workspace(Type):
         no_generate:
             When true, only return annotated check functions; exclude
             generate-as-checks
+        only_generate:
+            When true, only return generate-as-checks; exclude annotated check
+            functions
         """
         _args = [
             Arg("include", include, None),
             Arg("noGenerate", no_generate, None),
+            Arg("onlyGenerate", only_generate, None),
         ]
         _ctx = self._select("checks", _args)
         return CheckGroup(_ctx)

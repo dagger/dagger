@@ -20,9 +20,10 @@ import (
 )
 
 var (
-	checksListMode   bool
-	checksFailFast   bool
-	checksNoGenerate bool
+	checksListMode     bool
+	checksFailFast     bool
+	checksNoGenerate   bool
+	checksOnlyGenerate bool
 )
 
 //go:embed checks.graphql
@@ -32,6 +33,8 @@ func init() {
 	checksCmd.Flags().BoolVarP(&checksListMode, "list", "l", false, "List available checks")
 	checksCmd.Flags().BoolVar(&checksFailFast, "failfast", false, "Cancel remaining checks on first failure")
 	checksCmd.Flags().BoolVar(&checksNoGenerate, "no-generate", false, "Only run annotated check functions, skip generate-as-checks")
+	checksCmd.Flags().BoolVar(&checksOnlyGenerate, "generate", false, "Only run generate-as-checks, skip annotated check functions")
+	checksCmd.MarkFlagsMutuallyExclusive("no-generate", "generate")
 }
 
 var checksCmd = &cobra.Command{
@@ -59,8 +62,9 @@ Examples:
 				dag := engineClient.Dagger()
 				ws := dag.CurrentWorkspace()
 				checks := ws.Checks(dagger.WorkspaceChecksOpts{
-					Include:    args,
-					NoGenerate: checksNoGenerate,
+					Include:      args,
+					NoGenerate:   checksNoGenerate,
+					OnlyGenerate: checksOnlyGenerate,
 				})
 				if checksListMode {
 					return listChecks(ctx, dag, checks, cmd)

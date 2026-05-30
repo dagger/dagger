@@ -15929,6 +15929,8 @@ type WorkspaceChecksOpts struct {
 	Include []string
 	// When true, only return annotated check functions; exclude generate-as-checks
 	NoGenerate bool
+	// When true, only return generate-as-checks; exclude annotated check functions
+	OnlyGenerate bool
 }
 
 // Return all checks from modules loaded in the workspace.
@@ -15942,6 +15944,10 @@ func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
 		// `noGenerate` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoGenerate) {
 			q = q.Arg("noGenerate", opts[i].NoGenerate)
+		}
+		// `onlyGenerate` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OnlyGenerate) {
+			q = q.Arg("onlyGenerate", opts[i].OnlyGenerate)
 		}
 	}
 
