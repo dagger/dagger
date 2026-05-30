@@ -2907,6 +2907,11 @@ export type WorkspaceChecksOpts = {
    * When true, only return annotated check functions; exclude generate-as-checks
    */
   noGenerate?: boolean
+
+  /**
+   * When true, only return generate-as-checks; exclude annotated check functions
+   */
+  onlyGenerate?: boolean
 }
 
 export type WorkspaceDirectoryOpts = {
@@ -14862,6 +14867,7 @@ export class Workspace extends BaseClient {
    * Return all checks from modules loaded in the workspace.
    * @param opts.include Only include checks matching the specified patterns
    * @param opts.noGenerate When true, only return annotated check functions; exclude generate-as-checks
+   * @param opts.onlyGenerate When true, only return generate-as-checks; exclude annotated check functions
    */
   checks = (opts?: WorkspaceChecksOpts): CheckGroup => {
     const ctx = this._ctx.select("checks", { ...opts })

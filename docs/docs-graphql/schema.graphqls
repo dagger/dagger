@@ -5614,6 +5614,11 @@ type Workspace implements Node {
     When true, only return annotated check functions; exclude generate-as-checks
     """
     noGenerate: Boolean
+
+    """
+    When true, only return generate-as-checks; exclude annotated check functions
+    """
+    onlyGenerate: Boolean
   ): CheckGroup!
 
   """The client ID that owns this workspace's host filesystem."""
