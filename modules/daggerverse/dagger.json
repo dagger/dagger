@@ -1,6 +1,6 @@
 {
   "name": "daggerverse",
-  "engineVersion": "v0.21.0",
+  "engineVersion": "v0.21.3",
   "sdk": {
     "source": "go"
   },
