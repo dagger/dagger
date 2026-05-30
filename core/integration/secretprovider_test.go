@@ -131,6 +131,14 @@ if [ "$1" != "read" ] || [ "$2" != "-n" ]; then
 	exit 1
 fi
 case "$3" in
+	op://*)
+		;;
+	*)
+		echo "unexpected op secret reference: $3" >&2
+		exit 1
+		;;
+esac
+case "$3" in
 	*ttl=*)
 		echo "ttl query leaked to op ref: $3" >&2
 		exit 1
