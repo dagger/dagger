@@ -833,18 +833,6 @@ func (src *ModuleSource) AsString() string {
 	}
 }
 
-func GitRefString(cloneRef, sourceRootSubpath, version string) string {
-	refPath := cloneRef
-	subPath := filepath.Join("/", sourceRootSubpath)
-	if subPath != "/" {
-		refPath += subPath
-	}
-	if version != "" {
-		refPath += "@" + version
-	}
-	return refPath
-}
-
 func (src *ModuleSource) Pin() string {
 	switch src.Kind {
 	case ModuleSourceKindLocal:
@@ -1733,33 +1721,6 @@ func (src GitModuleSource) Link(filepath string, line int, column int) (string, 
 
 func (src GitModuleSource) Clone() *GitModuleSource {
 	return &src
-}
-
-type SchemeType int
-
-const (
-	NoScheme SchemeType = iota
-	SchemeHTTP
-	SchemeHTTPS
-	SchemeSSH
-	SchemeSCPLike
-)
-
-func (s SchemeType) Prefix() string {
-	switch s {
-	case SchemeHTTP:
-		return "http://"
-	case SchemeHTTPS:
-		return "https://"
-	case SchemeSSH:
-		return "ssh://"
-	default:
-		return ""
-	}
-}
-
-func (s SchemeType) IsSSH() bool {
-	return s == SchemeSSH
 }
 
 type DirModuleSource struct {

@@ -4,15 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 
-	"github.com/go-git/go-git/v5/plumbing/transport"
 	"golang.org/x/mod/semver"
 
+	"github.com/dagger/dagger/core/gitref"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/engine/vcs"
 	"github.com/dagger/dagger/util/gitutil"
 	telemetry "github.com/dagger/otel-go"
 )
@@ -24,27 +22,20 @@ func FastModuleSourceKindCheck(
 	refString string,
 	refPin string,
 ) ModuleSourceKind {
-	switch {
-	case refPin != "":
-		return ModuleSourceKindGit
-	case len(refString) > 0 && (refString[0] == '/' || refString[0] == '.'):
+	switch gitref.FastKindCheck(refString, refPin) {
+	case gitref.KindLocal:
 		return ModuleSourceKindLocal
-	case len(refString) > 1 && refString[0:2] == "..":
-		return ModuleSourceKindLocal
-	case strings.HasPrefix(refString, SchemeHTTP.Prefix()):
+	case gitref.KindGit:
 		return ModuleSourceKindGit
-	case strings.HasPrefix(refString, SchemeHTTPS.Prefix()):
-		return ModuleSourceKindGit
-	case strings.HasPrefix(refString, SchemeSSH.Prefix()):
-		return ModuleSourceKindGit
-	case !strings.Contains(refString, "."):
-		// technically host names can not have any dot, but we can save a lot of work
-		// by assuming a dot-free ref string is a local path. Users can prefix
-		// args with a scheme:// to disambiguate these obscure corner cases.
-		return ModuleSourceKindLocal
 	default:
 		return ""
 	}
+}
+
+// GitRefString builds a module ref string from a clone ref, an optional source
+// root subpath and an optional version.
+func GitRefString(cloneRef, sourceRootSubpath, version string) string {
+	return gitref.RefString(cloneRef, sourceRootSubpath, version)
 }
 
 type ParsedRefString struct {
@@ -102,7 +93,7 @@ func ParseRefString(
 			Kind: ModuleSourceKindGit,
 			Git:  &parsedGitRef,
 		}, nil
-	case errors.As(err, &gitEndpointError{}):
+	case errors.As(err, &gitref.EndpointError{}):
 		// couldn't connect to git endpoint, fallback to local
 		return &ParsedRefString{
 			Kind: ModuleSourceKindLocal,
@@ -119,138 +110,15 @@ type ParsedLocalRefString struct {
 	ModPath string
 }
 
+// ParsedGitRefString pairs the pure parsed git-ref data (gitref.Parsed) with
+// the dagql-aware GitRef resolution that needs the engine schema.
 type ParsedGitRefString struct {
-	modPath string
-
-	ModVersion string
-	hasVersion bool
-
-	RepoRoot       *vcs.RepoRoot
-	RepoRootSubdir string
-
-	scheme SchemeType
-
-	sourceUser     string
-	cloneUser      string
-	SourceCloneRef string // original user-provided username
-	cloneRef       string // resolved username
+	gitref.Parsed
 }
 
-type gitEndpointError struct{ error }
-
-func ParseGitRefString(ctx context.Context, refString string) (_ ParsedGitRefString, rerr error) {
-	_, span := Tracer(ctx).Start(ctx, fmt.Sprintf("parseGitRefString: %s", refString), telemetry.Internal())
-	defer telemetry.EndWithCause(span, &rerr)
-
-	scheme, schemelessRef := parseScheme(refString)
-
-	if scheme == NoScheme && isSCPLike(schemelessRef) {
-		scheme = SchemeSCPLike
-		// transform the ":" into a "/" to rely on a unified logic after
-		// works because "git@github.com:user" is equivalent to "ssh://git@ref/user"
-		schemelessRef = strings.Replace(schemelessRef, ":", "/", 1)
-	}
-
-	// Trick:
-	// as we removed the scheme above with `parseScheme``, and the SCP-like refs are
-	// now without ":", all refs are in such format: "[git@]github.com/user/path...@version"
-	// transport.NewEndpoint parses users only for SSH refs. As HTTP refs without scheme are valid SSH refs
-	// we use the "ssh://" prefix to parse properly both explicit / SCP-like and HTTP refs
-	// and delegate the logic to parse the host / path and user to the library
-	endpoint, err := transport.NewEndpoint("ssh://" + schemelessRef)
-	if err != nil {
-		return ParsedGitRefString{}, gitEndpointError{fmt.Errorf("failed to create git endpoint: %w", err)}
-	}
-
-	gitParsed := ParsedGitRefString{
-		modPath: endpoint.Host + endpoint.Path,
-		scheme:  scheme,
-	}
-
-	parts := strings.SplitN(endpoint.Path, "@", 2)
-	if len(parts) == 2 {
-		gitParsed.modPath = endpoint.Host + parts[0]
-		gitParsed.ModVersion = parts[1]
-		gitParsed.hasVersion = true
-	}
-
-	// Try to isolate the root of the git repo
-	// RepoRootForImportPath does not support SCP-like ref style. In parseGitEndpoint, we made sure that all refs
-	// would be compatible with this function to benefit from the repo URL and root splitting
-	repoRoot, err := vcs.RepoRootForImportPath(gitParsed.modPath, false)
-	if err != nil {
-		return ParsedGitRefString{}, gitEndpointError{fmt.Errorf("failed to get repo root for import path: %w", err)}
-	}
-	if repoRoot == nil || repoRoot.VCS == nil {
-		return ParsedGitRefString{}, fmt.Errorf("invalid repo root for import path: %s", gitParsed.modPath)
-	}
-	if repoRoot.VCS.Name != "Git" {
-		return ParsedGitRefString{}, fmt.Errorf("repo root is not a Git repo: %s", gitParsed.modPath)
-	}
-
-	gitParsed.RepoRoot = repoRoot
-
-	// the extra "/" trim is important as subpath traversal such as /../ are being cleaned by filePath.Clean
-	gitParsed.RepoRootSubdir = strings.TrimPrefix(strings.TrimPrefix(gitParsed.modPath, repoRoot.Root), "/")
-	if gitParsed.RepoRootSubdir == "" {
-		gitParsed.RepoRootSubdir = "/"
-	}
-	gitParsed.RepoRootSubdir = filepath.Clean(gitParsed.RepoRootSubdir)
-	if !filepath.IsAbs(gitParsed.RepoRootSubdir) && !filepath.IsLocal(gitParsed.RepoRootSubdir) {
-		return ParsedGitRefString{}, fmt.Errorf("git module source subpath points out of root: %q", gitParsed.RepoRootSubdir)
-	}
-
-	// Restore SCPLike ref format
-	if gitParsed.scheme == SchemeSCPLike {
-		gitParsed.RepoRoot.Root = strings.Replace(gitParsed.RepoRoot.Root, "/", ":", 1)
-	}
-
-	gitParsed.sourceUser, gitParsed.cloneUser = endpoint.User, endpoint.User
-	if gitParsed.cloneUser == "" && gitParsed.scheme.IsSSH() {
-		gitParsed.cloneUser = "git"
-	}
-	sourceUser := gitParsed.sourceUser
-	if sourceUser != "" {
-		sourceUser += "@"
-	}
-	cloneUser := gitParsed.cloneUser
-	if cloneUser != "" {
-		cloneUser += "@"
-	}
-
-	// For SSH URLs, inject port after host if it is defined: ssh://user@host:port/path
-	repoRootWithPort := gitParsed.RepoRoot.Root
-	if gitParsed.scheme == SchemeSSH && endpoint.Port > 0 {
-		if host, rest, ok := strings.Cut(repoRootWithPort, "/"); ok {
-			repoRootWithPort = fmt.Sprintf("%s:%d/%s", host, endpoint.Port, rest)
-		}
-	}
-
-	gitParsed.SourceCloneRef = gitParsed.scheme.Prefix() + sourceUser + repoRootWithPort
-	gitParsed.cloneRef = gitParsed.scheme.Prefix() + cloneUser + repoRootWithPort
-
-	return gitParsed, nil
-}
-
-func isSCPLike(ref string) bool {
-	return strings.Contains(ref, ":") && !strings.Contains(ref, "//")
-}
-
-func parseScheme(refString string) (SchemeType, string) {
-	schemes := []SchemeType{
-		SchemeHTTP,
-		SchemeHTTPS,
-		SchemeSSH,
-	}
-
-	for _, scheme := range schemes {
-		prefix := scheme.Prefix()
-		if strings.HasPrefix(refString, prefix) {
-			return scheme, strings.TrimPrefix(refString, prefix)
-		}
-	}
-
-	return NoScheme, refString
+func ParseGitRefString(ctx context.Context, refString string) (ParsedGitRefString, error) {
+	parsed, err := gitref.Parse(ctx, refString)
+	return ParsedGitRefString{parsed}, err
 }
 
 func (p *ParsedGitRefString) GitRef(
@@ -268,13 +136,13 @@ func (p *ParsedGitRefString) GitRef(
 	}
 
 	var modTag string
-	if p.hasVersion && semver.IsValid(p.ModVersion) {
+	if p.HasVersion && semver.IsValid(p.ModVersion) {
 		var tags dagql.Array[dagql.String]
 		err := dag.Select(ctx, dag.Root(), &tags,
 			dagql.Selector{
 				Field: "git",
 				Args: []dagql.NamedInput{
-					{Name: "url", Value: dagql.String(p.cloneRef)},
+					{Name: "url", Value: dagql.String(p.CloneRef)},
 				},
 			},
 			dagql.Selector{
@@ -300,7 +168,7 @@ func (p *ParsedGitRefString) GitRef(
 	repoSelector := dagql.Selector{
 		Field: "git",
 		Args: []dagql.NamedInput{
-			{Name: "url", Value: dagql.String(p.cloneRef)},
+			{Name: "url", Value: dagql.String(p.CloneRef)},
 		},
 	}
 	repoSelector = withCommitArg(repoSelector)
@@ -314,7 +182,7 @@ func (p *ParsedGitRefString) GitRef(
 				{Name: "name", Value: dagql.String(modTag)},
 			},
 		})
-	case p.hasVersion:
+	case p.HasVersion:
 		refSelector = withCommitArg(dagql.Selector{
 			Field: "ref",
 			Args: []dagql.NamedInput{
