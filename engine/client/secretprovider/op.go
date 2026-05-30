@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"strings"
 	"sync"
 	"time"
 
@@ -66,7 +65,7 @@ func parseOpCacheKey(key string) (string, time.Duration, error) {
 		parsed.RawQuery = query.Encode()
 	}
 
-	return strings.TrimPrefix(parsed.String(), "op://"), ttl, nil
+	return parsed.String(), ttl, nil
 }
 
 func opCacheExpired(entry opCacheEntry) bool {
