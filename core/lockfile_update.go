@@ -243,7 +243,7 @@ func resolveGitRefCommit(ctx context.Context, remoteURL, field, name string) (st
 }
 
 func resolveParsedGitRefCommit(ctx context.Context, parsed *ParsedGitRefString, pinCommitRef string) (string, error) {
-	remote, err := loadRemoteGitMetadata(ctx, parsed.cloneRef)
+	remote, err := loadRemoteGitMetadata(ctx, parsed.CloneRef)
 	if err != nil {
 		return "", err
 	}
@@ -284,13 +284,13 @@ func resolveParsedGitRef(remote *gitutil.Remote, parsed *ParsedGitRefString, pin
 
 	target := "HEAD"
 	switch {
-	case parsed.hasVersion && semver.IsValid(parsed.ModVersion):
+	case parsed.HasVersion && semver.IsValid(parsed.ModVersion):
 		matched, err := matchVersion(remote.Tags().ShortNames(), parsed.ModVersion, parsed.RepoRootSubdir)
 		if err != nil {
 			return nil, fmt.Errorf("matching version to tags: %w", err)
 		}
 		target = matched
-	case parsed.hasVersion:
+	case parsed.HasVersion:
 		target = parsed.ModVersion
 	case pinCommitRef != "":
 		target = pinCommitRef
