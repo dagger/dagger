@@ -136,8 +136,6 @@ func (r *Release) Publish( //nolint:gocyclo
 	if semver.IsValid(tag) {
 		version = tag
 	}
-	isStableRelease := semver.IsValid(version) && semver.Prerelease(version) == ""
-	isPrerelease := semver.IsValid(version) && semver.Prerelease(version) != ""
 
 	report := ReleaseReport{
 		Date:    time.Now().UTC().Format(time.RFC822),
@@ -153,7 +151,7 @@ func (r *Release) Publish( //nolint:gocyclo
 	}
 
 	tags := []string{tag, commit}
-	if isStableRelease {
+	if semver.IsValid(version) && semver.Prerelease(version) == "" {
 		// this is a public release
 		tags = append(tags, "latest")
 	}
@@ -173,7 +171,7 @@ func (r *Release) Publish( //nolint:gocyclo
 		Tag:  tag,
 	}
 	if !dryRun {
-		_, err = dag.CliDev().
+		_, err := dag.CliDev().
 			Publish(tag, goreleaserKey, githubOrgName, dagger.CliDevPublishOpts{
 				GithubToken:        githubToken,
 				AwsAccessKeyID:     awsAccessKeyID,
@@ -202,6 +200,7 @@ func (r *Release) Publish( //nolint:gocyclo
 		return &report, nil
 	}
 
+	isPrerelease := semver.IsValid(version) && semver.Prerelease(version) != ""
 	if isPrerelease {
 		// early-exit if this is a pre-release
 		return &report, nil

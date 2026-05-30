@@ -1,6 +1,6 @@
 module dagger/rust-sdk-dev
 
-go 1.25.3
+go 1.26.1
 
 require (
 	github.com/Khan/genqlient v0.8.1

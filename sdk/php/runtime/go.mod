@@ -1,6 +1,6 @@
 module php-sdk
 
-go 1.25.0
+go 1.26.1
 
 replace go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc => go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.16.0
 

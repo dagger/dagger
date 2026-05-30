@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -56,15 +55,6 @@ func (r Release) githubRelease(
 		return nil
 	}
 
-	exists, err := r.githubReleaseExists(ctx, repository, dest, src, token)
-	if err != nil {
-		return err
-	}
-	if exists {
-		fmt.Printf("found existing GitHub release %s; skipping\n", dest)
-		return nil
-	}
-
 	gh := dag.Gh(dagger.GhOpts{
 		Repo:  githubRepo,
 		Token: token,
@@ -79,90 +69,6 @@ func (r Release) githubRelease(
 			Latest:    dagger.GhLatestFalse,
 		},
 	)
-}
-
-func (r Release) githubReleaseExists(
-	ctx context.Context,
-	repository string,
-	tag string,
-	expectedCommit string,
-	token *dagger.Secret,
-) (bool, error) {
-	githubRepo, err := githubRepo(repository)
-	if err != nil {
-		return false, err
-	}
-
-	gh := dag.Gh(dagger.GhOpts{
-		Repo:  githubRepo,
-		Token: token,
-	})
-	releaseExists := true
-	if _, err = gh.Exec([]string{"release", "view", tag, "--json", "tagName"}).Sync(ctx); err != nil {
-		if !isGitHubNotFound(err) {
-			return false, err
-		}
-		releaseExists = false
-	}
-
-	if err := r.verifyGitHubReleaseTag(ctx, githubRepo, tag, expectedCommit, token); err != nil {
-		return false, err
-	}
-	return releaseExists, nil
-}
-
-func (r Release) verifyGitHubReleaseTag(
-	ctx context.Context,
-	githubRepo string,
-	tag string,
-	expectedCommit string,
-	token *dagger.Secret,
-) error {
-	gh := dag.Gh(dagger.GhOpts{
-		Repo:  githubRepo,
-		Token: token,
-	})
-
-	out, err := gh.Exec([]string{
-		"api",
-		fmt.Sprintf("repos/%s/git/ref/tags/%s", githubRepo, tag),
-		"--jq",
-		`.object.type + " " + .object.sha`,
-	}).Stdout(ctx)
-	if err != nil {
-		if isGitHubNotFound(err) {
-			return nil
-		}
-		return err
-	}
-
-	fields := strings.Fields(out)
-	if len(fields) != 2 {
-		return fmt.Errorf("unexpected GitHub tag response for %s: %q", tag, strings.TrimSpace(out))
-	}
-
-	kind, sha := fields[0], fields[1]
-	if kind != "commit" {
-		return fmt.Errorf("GitHub tag %s points to a %s object %s, expected commit %s", tag, kind, sha, expectedCommit)
-	}
-
-	if sha != expectedCommit {
-		return fmt.Errorf("GitHub tag %s resolves to %s; expected %s", tag, sha, expectedCommit)
-	}
-
-	return nil
-}
-
-func isGitHubNotFound(err error) bool {
-	var execErr *dagger.ExecError
-	if errors.As(err, &execErr) {
-		stderr := strings.ToLower(execErr.Stderr + "\n" + execErr.Stdout)
-		if strings.Contains(stderr, "release not found") || strings.Contains(stderr, "not found") {
-			return true
-		}
-	}
-
-	return false
 }
 
 func githubRepo(repo string) (string, error) {

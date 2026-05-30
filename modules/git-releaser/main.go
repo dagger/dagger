@@ -134,26 +134,6 @@ func (gitrel *GitReleaser) Release(
 		WithDirectory(".", sourceRepo.Ref(sourceTag).Tree(dagger.GitRefTreeOpts{Depth: -1})).
 		WithExec(filterRepoArgs)
 	if !dryRun {
-		localCommit, err := result.
-			WithExec([]string{"git", "rev-parse", sourceTag + "^{}"}).
-			Stdout(ctx)
-		if err != nil {
-			return err
-		}
-		localCommit = strings.TrimSpace(localCommit)
-
-		remoteCommit, exists, err := gitrel.remoteRefCommit(ctx, result, destRemote, destTag)
-		if err != nil {
-			return err
-		}
-		if exists && remoteCommit == localCommit {
-			fmt.Printf("found existing git ref %s at %s; skipping push to %s\n", destTag, remoteCommit, destRemote)
-			return nil
-		}
-		if exists && destTag != "main" {
-			return fmt.Errorf("remote git ref %s already exists at %s, expected %s", destTag, remoteCommit, localCommit)
-		}
-
 		result = result.WithExec([]string{
 			"git",
 			"push",
@@ -199,39 +179,4 @@ func (gitrel *GitReleaser) Release(
 
 	_, err := result.Sync(ctx)
 	return err
-}
-
-func (gitrel *GitReleaser) remoteRefCommit(
-	ctx context.Context,
-	ctr *dagger.Container,
-	remote string,
-	ref string,
-) (string, bool, error) {
-	fetch := ctr.WithExec(
-		[]string{"git", "fetch", "--no-tags", remote, ref},
-		dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeAny},
-	)
-
-	code, err := fetch.ExitCode(ctx)
-	if err != nil {
-		return "", false, err
-	}
-	if code != 0 {
-		stderr, err := fetch.Stderr(ctx)
-		if err != nil {
-			return "", false, err
-		}
-		if strings.Contains(stderr, "couldn't find remote ref") {
-			return "", false, nil
-		}
-		return "", false, fmt.Errorf("failed to fetch remote ref %s from %s: %s", ref, remote, strings.TrimSpace(stderr))
-	}
-
-	commit, err := fetch.
-		WithExec([]string{"git", "rev-parse", "FETCH_HEAD^{}"}).
-		Stdout(ctx)
-	if err != nil {
-		return "", false, err
-	}
-	return strings.TrimSpace(commit), true, nil
 }

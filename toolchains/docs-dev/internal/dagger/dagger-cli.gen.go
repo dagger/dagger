@@ -235,7 +235,7 @@ func (r *DaggerCli) Reference(opts ...DaggerCliReferenceOpts) *File { // dagger-
 }
 
 // Verify that the CLI builds without actually publishing anything
-func (r *DaggerCli) ReleaseDryRun(ctx context.Context) error { // dagger-cli (../../../../toolchains/cli-dev/publish.go:201:1)
+func (r *DaggerCli) ReleaseDryRun(ctx context.Context) error { // dagger-cli (../../../../toolchains/cli-dev/publish.go:200:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}

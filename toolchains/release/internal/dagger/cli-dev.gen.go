@@ -235,7 +235,7 @@ func (r *CliDev) Reference(opts ...CliDevReferenceOpts) *File { // cli-dev (../.
 }
 
 // Verify that the CLI builds without actually publishing anything
-func (r *CliDev) ReleaseDryRun(ctx context.Context) error { // cli-dev (../../../../toolchains/cli-dev/publish.go:201:1)
+func (r *CliDev) ReleaseDryRun(ctx context.Context) error { // cli-dev (../../../../toolchains/cli-dev/publish.go:200:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}

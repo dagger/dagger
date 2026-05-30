@@ -4,7 +4,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"regexp"
 	"strings"
 
@@ -258,39 +257,12 @@ func (t *RustSdkDev) Release(
 		return fmt.Errorf("invalid version %q", version)
 	}
 
-	exists, err := crateVersionExists(rustSdkCrate, versionFlag)
-	if err != nil {
-		return err
-	}
-	if exists {
-		fmt.Printf("found existing Rust SDK crate %s %s; skipping publish\n", rustSdkCrate, versionFlag)
-		return nil
-	}
-
 	_, err = t.releaseContainer(versionFlag).
 		WithSecretVariable("CARGO_REGISTRY_TOKEN", cargoRegistryToken).
 		WithExec([]string{"cargo", "publish", "-p", rustSdkCrate, "-v", "--all-features"}).
 		Sync(ctx)
 
 	return err
-}
-
-func crateVersionExists(crate string, version string) (bool, error) {
-	url := fmt.Sprintf("https://crates.io/api/v1/crates/%s/%s", crate, version)
-	resp, err := http.Get(url)
-	if err != nil {
-		return false, err
-	}
-	defer resp.Body.Close()
-
-	switch resp.StatusCode {
-	case http.StatusOK:
-		return true, nil
-	case http.StatusNotFound:
-		return false, nil
-	default:
-		return false, fmt.Errorf("unexpected crate lookup status %s from %s", resp.Status, url)
-	}
 }
 
 func (t *RustSdkDev) releaseContainer(
