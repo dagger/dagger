@@ -36,8 +36,7 @@ Examples:
   dagger up -l                    # List all available services
   dagger up web                   # Start only the 'web' service
 `,
-	GroupID: execGroup.ID,
-	Args:    cobra.ArbitraryArgs,
+	Args: cobra.ArbitraryArgs,
 	Annotations: map[string]string{
 		showFinalProgressKey: "true",
 	},

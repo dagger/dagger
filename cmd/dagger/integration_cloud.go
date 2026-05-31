@@ -17,10 +17,9 @@ var githubOpen bool
 const githubOAuthRedirect = "https://dagger.cloud/github/callback"
 
 var integrationCmd = &cobra.Command{
-	Use:     "integration",
-	Short:   "Manage Dagger Cloud integration providers",
-	Args:    cobra.NoArgs,
-	GroupID: cloudGroup.ID,
+	Use:   "integration",
+	Short: "Manage Dagger Cloud integration providers",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},

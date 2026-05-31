@@ -15,65 +15,75 @@ import (
 
 var migrateForce bool
 
-var migrateCmd = &cobra.Command{
-	Use:     "migrate",
-	Short:   "Migrate a legacy dagger.json project to the workspace format",
-	Long:    "Converts a legacy dagger.json to the .dagger/config.toml workspace format.",
-	GroupID: workspaceGroup.ID,
-	Args:    cobra.NoArgs,
-	Annotations: map[string]string{
-		showFinalProgressKey: "true",
-	},
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return withEngine(cmd.Context(), client.Params{
-			SkipWorkspaceModules:           true,
-			SuppressCompatWorkspaceWarning: true,
-		}, func(ctx context.Context, engineClient *client.Client) error {
-			dag := engineClient.Dagger()
-			currentWorkspace := dag.CurrentWorkspace()
-
-			migration := currentWorkspace.Migrate(dagger.WorkspaceMigrateOpts{
-				Force: migrateForce,
-			})
-
-			changes := migration.Changes()
-			changesID, err := changes.ID(ctx)
-			if err != nil {
-				return fmt.Errorf("migration failed: %w", err)
-			}
-			changes = dagger.Ref[*dagger.Changeset](dag, changesID)
-
-			isEmpty, err := changes.IsEmpty(ctx)
-			if err != nil {
-				return fmt.Errorf("migration failed: %w", err)
-			}
-			if isEmpty {
-				_, err := fmt.Fprintln(cmd.OutOrStdout(), "No migration needed.")
-				return err
-			}
-
-			warnings, err := migrationWarnings(ctx, migration)
-			if err != nil {
-				return fmt.Errorf("migration warnings: %w", err)
-			}
-			for _, warning := range warnings {
-				if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s\n", warning); err != nil {
-					return err
-				}
-			}
-
-			exportPath, err := currentWorkspaceExportPath(ctx, currentWorkspace)
-			if err != nil {
-				return err
-			}
-			return handleChangesetResponseAt(ctx, dag, changes, autoApply, exportPath)
-		})
-	},
-}
+var workspaceMigrateCmd = newMigrateCmd(false)
+var migrateCmd = newMigrateCmd(true)
 
 func init() {
+	workspaceCmd.AddCommand(workspaceMigrateCmd)
+	workspaceMigrateCmd.Flags().BoolVarP(&migrateForce, "force", "f", false, "Proceed even if modules cannot be loaded to generate settings hints")
 	migrateCmd.Flags().BoolVarP(&migrateForce, "force", "f", false, "Proceed even if modules cannot be loaded to generate settings hints")
+	setWorkspaceFlagPolicy(workspaceMigrateCmd, workspaceFlagPolicyDisallow)
 	setWorkspaceFlagPolicy(migrateCmd, workspaceFlagPolicyDisallow)
+}
+
+func newMigrateCmd(hidden bool) *cobra.Command {
+	return &cobra.Command{
+		Use:    "migrate",
+		Short:  "Migrate a legacy dagger.json project to the workspace format",
+		Long:   "Converts a legacy dagger.json to the .dagger/config.toml workspace format.",
+		Hidden: hidden,
+		Args:   cobra.NoArgs,
+		Annotations: map[string]string{
+			showFinalProgressKey: "true",
+		},
+		RunE: runWorkspaceMigrate,
+	}
+}
+
+func runWorkspaceMigrate(cmd *cobra.Command, args []string) error {
+	return withEngine(cmd.Context(), client.Params{
+		SkipWorkspaceModules:           true,
+		SuppressCompatWorkspaceWarning: true,
+	}, func(ctx context.Context, engineClient *client.Client) error {
+		dag := engineClient.Dagger()
+		currentWorkspace := dag.CurrentWorkspace()
+
+		migration := currentWorkspace.Migrate(dagger.WorkspaceMigrateOpts{
+			Force: migrateForce,
+		})
+
+		changes := migration.Changes()
+		changesID, err := changes.ID(ctx)
+		if err != nil {
+			return fmt.Errorf("migration failed: %w", err)
+		}
+		changes = dagger.Ref[*dagger.Changeset](dag, changesID)
+
+		isEmpty, err := changes.IsEmpty(ctx)
+		if err != nil {
+			return fmt.Errorf("migration failed: %w", err)
+		}
+		if isEmpty {
+			_, err := fmt.Fprintln(cmd.OutOrStdout(), "No migration needed.")
+			return err
+		}
+
+		warnings, err := migrationWarnings(ctx, migration)
+		if err != nil {
+			return fmt.Errorf("migration warnings: %w", err)
+		}
+		for _, warning := range warnings {
+			if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s\n", warning); err != nil {
+				return err
+			}
+		}
+
+		exportPath, err := currentWorkspaceExportPath(ctx, currentWorkspace)
+		if err != nil {
+			return err
+		}
+		return handleChangesetResponseAt(ctx, dag, changes, autoApply, exportPath)
+	})
 }
 
 func currentWorkspaceExportPath(ctx context.Context, ws *dagger.Workspace) (string, error) {

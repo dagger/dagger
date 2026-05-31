@@ -52,10 +52,26 @@ func TestFunctionListRunIncludesSiblingEntrypoints(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	err := functionListRun(provider, &out, io.Discard, false, []*modFunction{sibling})
+	err := functionListRun(provider, &out, io.Discard, false, false, []*modFunction{sibling})
 	require.NoError(t, err)
 	require.Contains(t, out.String(), "hello")
 	require.Contains(t, out.String(), "python-sdk")
+}
+
+func TestFunctionListRunCanHideLoadFromIDFunctions(t *testing.T) {
+	provider := &modObject{
+		Name: "Query",
+		Functions: []*modFunction{
+			{Name: "container", Description: "Create a container", ReturnType: testObjectTypeDef("Container", "", "")},
+			{Name: "loadContainerFromID", Description: "Load a Container from its ID", ReturnType: testObjectTypeDef("Container", "", "")},
+		},
+	}
+
+	var out bytes.Buffer
+	err := functionListRun(provider, &out, io.Discard, false, true, nil)
+	require.NoError(t, err)
+	require.Contains(t, out.String(), "container")
+	require.NotContains(t, out.String(), "load-container-from-id")
 }
 
 func TestFunctionArgNamedWorkspaceIgnoresInheritedGlobalWorkspaceFlag(t *testing.T) {
@@ -104,6 +120,30 @@ func TestFunctionArgNamedWorkspaceIgnoresInheritedGlobalWorkspaceFlag(t *testing
 	query, err := fc.q.Build(context.Background())
 	require.NoError(t, err)
 	require.NotContains(t, query, "workspace:")
+}
+
+func TestCorePseudoModuleSelection(t *testing.T) {
+	oldModuleURL := moduleURL
+	oldModuleNoURL := moduleNoURL
+	t.Cleanup(func() {
+		moduleURL = oldModuleURL
+		moduleNoURL = oldModuleNoURL
+	})
+
+	moduleURL = coreModuleRef
+	moduleNoURL = false
+
+	require.True(t, isCoreModuleSelected())
+	require.False(t, shouldLoadWorkspaceModules(false))
+	require.False(t, initModuleParams([]string{"container"}).LoadWorkspaceModules)
+
+	ref, ok := getExplicitModuleSourceRef()
+	require.True(t, ok)
+	require.Equal(t, coreModuleRef, ref)
+
+	moduleURL = "./core"
+	require.False(t, isCoreModuleSelected())
+	require.True(t, shouldLoadWorkspaceModules(false))
 }
 
 func testStringTypeDef() *modTypeDef {

@@ -7,8 +7,9 @@ import (
 )
 
 var configCmd = &cobra.Command{
-	Use:   "config [key] [value]",
-	Short: "Get or set workspace configuration",
+	Use:    "config [key] [value]",
+	Short:  "Get or set workspace configuration",
+	Hidden: true,
 	Long: strings.TrimSpace(`
 Alias for "dagger workspace config".
 
@@ -23,7 +24,6 @@ environment's overlay. Explicit env.* keys always address raw overlay storage.
 
 Local module source values are stored relative to .dagger/config.toml.`,
 	),
-	Args:    cobra.MaximumNArgs(2),
-	GroupID: workspaceGroup.ID,
-	RunE:    runWorkspaceConfig,
+	Args: cobra.MaximumNArgs(2),
+	RunE: runWorkspaceConfig,
 }

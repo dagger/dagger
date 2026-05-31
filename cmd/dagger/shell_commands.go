@@ -14,6 +14,8 @@ import (
 	"mvdan.cc/sh/v3/interp"
 )
 
+const shellModuleGroupID = "module"
+
 // ShellCommand is a Dagger Shell builtin or stdlib command
 type ShellCommand struct {
 	// Use is the one-line usage message
@@ -480,7 +482,7 @@ loaded as the default automatically, making its functions available at the top l
 
 Without arguments, the current working directory is replaced by the initial context.
 `,
-			GroupID: moduleGroup.ID,
+			GroupID: shellModuleGroupID,
 			Hidden:  true,
 			Args:    MaximumArgs(1),
 			State:   NoState,
@@ -495,7 +497,7 @@ Without arguments, the current working directory is replaced by the initial cont
 		&ShellCommand{
 			Use:         ".pwd",
 			Description: "Print the current working directory's absolute path",
-			GroupID:     moduleGroup.ID,
+			GroupID:     shellModuleGroupID,
 			Hidden:      true,
 			Args:        NoArgs,
 			State:       NoState,
@@ -509,7 +511,7 @@ Without arguments, the current working directory is replaced by the initial cont
 		&ShellCommand{
 			Use:         ".ls [path]",
 			Description: "List files in the current working directory",
-			GroupID:     moduleGroup.ID,
+			GroupID:     shellModuleGroupID,
 			Hidden:      true,
 			Args:        MaximumArgs(1),
 			State:       NoState,
@@ -541,7 +543,7 @@ Without arguments, the current working directory is replaced by the initial cont
 		&ShellCommand{
 			Use:         ".refresh",
 			Description: `Refresh the schema and reload all module functions`,
-			GroupID:     moduleGroup.ID,
+			GroupID:     shellModuleGroupID,
 			Args:        NoArgs,
 			State:       NoState,
 			Run: func(ctx context.Context, cmd *ShellCommand, args []string, st *ShellState) error {
