@@ -22,18 +22,22 @@ var (
 	queryVarsJSONInput string
 )
 
-var queryCmd = &cobra.Command{
-	Use:     "query [options] [operation]",
-	Aliases: []string{"q"},
-	Short:   "Send API queries to a dagger engine",
-	Long: `Send API queries to a dagger engine.
+var apiQueryCmd = newQueryCmd(false)
+var queryCmd = newQueryCmd(true)
+
+func newQueryCmd(hidden bool) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "query [options] [operation]",
+		Aliases: []string{"q"},
+		Short:   "Send API queries to a dagger engine",
+		Long: `Send API queries to a dagger engine.
 
 When no document file is provided, reads query from standard input.
 
 Can optionally provide the GraphQL operation name if there are multiple
 queries in the document.
 `,
-	Example: `dagger query <<EOF
+		Example: `dagger api query <<EOF
 {
   container {
     from(address:"hello-world") {
@@ -45,24 +49,27 @@ queries in the document.
 }
 EOF
 `,
-	GroupID: execGroup.ID,
-	Args:    cobra.MaximumNArgs(1), // operation can be specified
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if isPrintTraceLinkEnabled(cmd.Annotations) {
-			cmd.SetContext(idtui.WithPrintTraceLink(cmd.Context(), true))
-		}
+		Hidden: hidden,
+		Args:   cobra.MaximumNArgs(1), // operation can be specified
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if isPrintTraceLinkEnabled(cmd.Annotations) {
+				cmd.SetContext(idtui.WithPrintTraceLink(cmd.Context(), true))
+			}
 
-		_, explicitModRefSet := getExplicitModuleSourceRef()
-		return withEngine(cmd.Context(), client.Params{
-			LoadWorkspaceModules: !moduleNoURL && !explicitModRefSet,
-			SingleQuery:          true,
-		}, func(ctx context.Context, engineClient *client.Client) error {
-			return Query(ctx, engineClient, nil, cmd, args)
-		})
-	},
-	Annotations: map[string]string{
-		printTraceLinkKey: "true",
-	},
+			_, explicitModRefSet := getExplicitModuleSourceRef()
+			return withEngine(cmd.Context(), client.Params{
+				LoadWorkspaceModules: !moduleNoURL && !explicitModRefSet,
+				SingleQuery:          true,
+			}, func(ctx context.Context, engineClient *client.Client) error {
+				return Query(ctx, engineClient, nil, cmd, args)
+			})
+		},
+		Annotations: map[string]string{
+			printTraceLinkKey: "true",
+		},
+	}
+	addQueryFlags(cmd)
+	return cmd
 }
 
 func Query(ctx context.Context, engineClient *client.Client, _ *dagger.Module, cmd *cobra.Command, args []string) (rerr error) {
@@ -128,9 +135,9 @@ func getKVInput(kvs []string) map[string]any {
 	return m
 }
 
-func init() {
-	queryCmd.Flags().StringVar(&queryFile, "doc", "", "Read query from file (defaults to reading from stdin)")
-	queryCmd.Flags().StringSliceVar(&queryVarsInput, "var", nil, "List of query variables, in key=value format")
-	queryCmd.Flags().StringVar(&queryVarsJSONInput, "var-json", "", "Query variables in JSON format (overrides --var)")
-	queryCmd.MarkFlagFilename("doc", "graphql", "gql")
+func addQueryFlags(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&queryFile, "doc", "", "Read query from file (defaults to reading from stdin)")
+	cmd.Flags().StringSliceVar(&queryVarsInput, "var", nil, "List of query variables, in key=value format")
+	cmd.Flags().StringVar(&queryVarsJSONInput, "var-json", "", "Query variables in JSON format (overrides --var)")
+	cmd.MarkFlagFilename("doc", "graphql", "gql")
 }

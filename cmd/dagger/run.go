@@ -28,9 +28,9 @@ import (
 )
 
 var runCmd = &cobra.Command{
-	Use:     "run [options] <command>...",
-	Aliases: []string{"r"},
-	Short:   "Run a command in a Dagger session",
+	Use:     "exec [options] <command>...",
+	Aliases: []string{"run", "r"},
+	Short:   "Execute a command in a Dagger session",
 	Long: strings.ReplaceAll(
 		`Executes the specified command in a Dagger Session and displays
 live progress in a TUI.
@@ -41,7 +41,7 @@ injected automatically.
 For example:
 ´´´shell
 jq -n '{query:"{container{id}}"}' | \
-  dagger run sh -c 'curl -s \
+  dagger exec sh -c 'curl -s \
     -u $DAGGER_SESSION_TOKEN: \
     -H "content-type:application/json" \
     -d @- \
@@ -51,18 +51,18 @@ jq -n '{query:"{container{id}}"}' | \
 		"`",
 	),
 	Example: strings.TrimSpace(`
-dagger run go run main.go
-dagger run node index.mjs
-dagger run python main.py
+dagger exec go run main.go
+dagger exec node index.mjs
+dagger exec python main.py
 `,
 	),
-	GroupID:      execGroup.ID,
 	RunE:         Run,
 	Args:         cobra.MinimumNArgs(1),
 	SilenceUsage: true,
 	Annotations: map[string]string{
-		printTraceLinkKey:    "true",
-		showFinalProgressKey: "true",
+		hiddenAliasesAnnotation: "run,r",
+		printTraceLinkKey:       "true",
+		showFinalProgressKey:    "true",
 	},
 }
 

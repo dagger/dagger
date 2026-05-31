@@ -12,36 +12,47 @@ import (
 
 var billingOpen bool
 
-var billingCmd = &cobra.Command{
-	Use:     "billing",
-	Short:   "Manage Dagger Cloud billing",
-	Args:    cobra.NoArgs,
-	GroupID: cloudGroup.ID,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return cmd.Help()
-	},
-}
-
-var billingPlansCmd = &cobra.Command{
-	Use:   "plans",
-	Short: "List Dagger Cloud plans available at signup",
-	Args:  cobra.NoArgs,
-	RunE:  cloudCLI.BillingPlans,
-}
-
-var billingManageCmd = &cobra.Command{
-	Use:     "manage [org]",
-	Aliases: []string{"portal"},
-	Short:   "Open the billing portal for a Dagger Cloud org",
-	Args:    cobra.MaximumNArgs(1),
-	RunE:    cloudCLI.BillingManage,
-}
+var cloudBillingCmd = newBillingCmd(false)
+var billingCmd = newBillingCmd(true)
 
 func init() {
-	billingCmd.PersistentFlags().BoolVar(&cloudJSON, "json", false, "Print JSON output")
-	billingManageCmd.Flags().BoolVar(&billingOpen, "open", false, "Open the billing portal in a browser")
-	billingCmd.AddCommand(billingPlansCmd, billingManageCmd)
+	cloudCmd.AddCommand(cloudBillingCmd)
 	rootCmd.AddCommand(billingCmd)
+}
+
+func newBillingCmd(hidden bool) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:    "billing",
+		Short:  "Manage Dagger Cloud billing",
+		Args:   cobra.NoArgs,
+		Hidden: hidden,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return cmd.Help()
+		},
+	}
+	cmd.PersistentFlags().BoolVar(&cloudJSON, "json", false, "Print JSON output")
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:   "plans",
+			Short: "List Dagger Cloud plans available at signup",
+			Args:  cobra.NoArgs,
+			RunE:  cloudCLI.BillingPlans,
+		},
+		newBillingManageCmd(),
+	)
+	return cmd
+}
+
+func newBillingManageCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "manage [org]",
+		Aliases: []string{"portal"},
+		Short:   "Open the billing portal for a Dagger Cloud org",
+		Args:    cobra.MaximumNArgs(1),
+		RunE:    cloudCLI.BillingManage,
+	}
+	cmd.Flags().BoolVar(&billingOpen, "open", false, "Open the billing portal in a browser")
+	return cmd
 }
 
 func (cli *CloudCLI) BillingPlans(cmd *cobra.Command, args []string) error {

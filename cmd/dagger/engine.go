@@ -86,9 +86,15 @@ func withEngine(
 	if err := applyWorkspaceClientParams(&params); err != nil {
 		return err
 	}
+	coreModuleSelected := isCoreModuleSelected()
+	if coreModuleSelected {
+		params.LoadWorkspaceModules = false
+	}
 	if !moduleNoURL {
 		if modRef, _ := getExplicitModuleSourceRef(); modRef != "" {
-			params.Module = modRef
+			if !isCoreModuleRef(modRef) {
+				params.Module = modRef
+			}
 		}
 	}
 	if sessionWorkspace != "" && params.Workspace == nil {

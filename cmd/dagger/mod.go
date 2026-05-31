@@ -16,16 +16,19 @@ import (
 )
 
 var modCmd = &cobra.Command{
-	Use:     "mod",
+	Use:     "module",
+	Aliases: []string{"mod"},
 	Short:   "Work with modules in your workspace",
-	GroupID: moduleGroup.ID,
+	Annotations: map[string]string{
+		visibleAliasesAnnotation: "mod",
+	},
 }
 
 var modInstallCmd = &cobra.Command{
 	Use:     "install [options] <module>",
 	Short:   "Install a module into the workspace",
-	Long:    "Install a module into the current workspace. Alias for `dagger install`.",
-	Example: "dagger mod install github.com/shykes/daggerverse/hello@v0.3.0",
+	Long:    "Install a module into the current workspace. Alias for `dagger workspace install`.",
+	Example: "dagger module install github.com/shykes/daggerverse/hello@v0.3.0",
 	Args:    cobra.ExactArgs(1),
 	RunE:    runWorkspaceInstall,
 }
@@ -33,8 +36,8 @@ var modInstallCmd = &cobra.Command{
 var modUninstallCmd = &cobra.Command{
 	Use:     "uninstall [options] <module>",
 	Short:   "Uninstall a module from the workspace",
-	Long:    "Uninstall a module from the current workspace. Alias for `dagger uninstall`.",
-	Example: "dagger mod uninstall hello",
+	Long:    "Uninstall a module from the current workspace. Alias for `dagger workspace uninstall`.",
+	Example: "dagger module uninstall hello",
 	Args:    cobra.ExactArgs(1),
 	RunE:    runWorkspaceUninstall,
 }
@@ -59,7 +62,7 @@ var modRecommendCmd = &cobra.Command{
 module and print those whose pattern matches at least one file.
 
 Modules already installed in the workspace are excluded.`,
-	Example: "dagger mod recommend",
+	Example: "dagger module recommend",
 	Args:    cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return withEngine(cmd.Context(), client.Params{
@@ -76,7 +79,7 @@ var modSearchCmd = &cobra.Command{
 	Long: `Search the module registry by name or description.
 
 With no query, lists all known modules.`,
-	Example: "dagger mod search wolfi",
+	Example: "dagger module search wolfi",
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		query := ""
@@ -147,7 +150,7 @@ type registryModule struct {
 	Description string `json:"description"`
 	Repo        string `json:"repo"`
 	// Recommend is a doublestar glob (e.g. "**/go.mod") used by
-	// `dagger mod recommend` to decide whether to suggest this module
+	// `dagger module recommend` to decide whether to suggest this module
 	// based on files present in the workspace. Empty means never recommended.
 	Recommend string `json:"recommend,omitempty"`
 }
@@ -230,7 +233,7 @@ var recommendExcludeDirs = []string{
 	"target/",
 }
 
-// runRecommend is the cobra runtime for `dagger mod recommend`. It works for
+// runRecommend is the cobra runtime for `dagger module recommend`. It works for
 // both local and remote workspaces by globbing through the engine rather
 // than walking the local filesystem.
 func runRecommend(ctx context.Context, out io.Writer, dag *dagger.Client) error {
@@ -275,7 +278,7 @@ func runRecommend(ctx context.Context, out io.Writer, dag *dagger.Client) error 
 }
 
 // installedModuleNames returns the set of module names installed in the
-// current workspace (the same query backing `dagger mod list`).
+// current workspace (the same query backing `dagger module list`).
 func installedModuleNames(ctx context.Context, dag *dagger.Client) (map[string]bool, error) {
 	var res struct {
 		CurrentWorkspace struct {
@@ -315,6 +318,6 @@ func printRecommendations(out io.Writer, recs []recommendation) error {
 		return err
 	}
 
-	_, err := fmt.Fprintln(out, "\nRun 'dagger mod install <repo>' to install a module.")
+	_, err := fmt.Fprintln(out, "\nRun 'dagger module install <repo>' to install a module.")
 	return err
 }

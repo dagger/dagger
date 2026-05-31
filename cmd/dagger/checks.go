@@ -42,6 +42,9 @@ var checksCmd = &cobra.Command{
 	Aliases: []string{"checks"},
 	Use:     "check [options] [pattern...]",
 	Short:   "Check the state of your project by running tests, linters, etc.",
+	Annotations: map[string]string{
+		visibleAliasesAnnotation: "checks",
+	},
 	Long: `Check the state of your project by running tests, linters, etc.
 
 Examples:
@@ -50,8 +53,7 @@ Examples:
   dagger check go:lint            # Run the go:lint check and any subchecks
   dagger -W github.com/acme/ws check go:lint  # Run check(s) against explicit workspace
 `,
-	GroupID: execGroup.ID,
-	Args:    cobra.ArbitraryArgs,
+	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if !checksListMode && workspaceRef != "" && workspaceAddressLooksRemote(workspaceRef) {
 			replayed, err := cloudCLI.TryReplayCloudChecksForWorkspace(cmd, workspaceRef, args)

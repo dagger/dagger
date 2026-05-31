@@ -10,41 +10,46 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var orgCmd = &cobra.Command{
-	Use:     "org",
-	Short:   "Manage Dagger Cloud organizations",
-	Args:    cobra.NoArgs,
-	GroupID: cloudGroup.ID,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return cmd.Help()
-	},
-}
-
-var orgListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List Dagger Cloud organizations",
-	Args:  cobra.NoArgs,
-	RunE:  cloudCLI.OrgList,
-}
-
-var orgInfoCmd = &cobra.Command{
-	Use:   "info [org]",
-	Short: "Show Dagger Cloud organization status",
-	Args:  cobra.MaximumNArgs(1),
-	RunE:  cloudCLI.OrgInfo,
-}
-
-var orgUseCmd = &cobra.Command{
-	Use:   "use <org>",
-	Short: "Select the current Dagger Cloud organization",
-	Args:  cobra.ExactArgs(1),
-	RunE:  cloudCLI.OrgUse,
-}
+var cloudOrgCmd = newOrgCmd(false)
+var orgCmd = newOrgCmd(true)
 
 func init() {
-	orgCmd.PersistentFlags().BoolVar(&cloudJSON, "json", false, "Print JSON output")
-	orgCmd.AddCommand(orgListCmd, orgInfoCmd, orgUseCmd)
+	cloudCmd.AddCommand(cloudOrgCmd)
 	rootCmd.AddCommand(orgCmd)
+}
+
+func newOrgCmd(hidden bool) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:    "org",
+		Short:  "Manage Dagger Cloud organizations",
+		Args:   cobra.NoArgs,
+		Hidden: hidden,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return cmd.Help()
+		},
+	}
+	cmd.PersistentFlags().BoolVar(&cloudJSON, "json", false, "Print JSON output")
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:   "list",
+			Short: "List Dagger Cloud organizations",
+			Args:  cobra.NoArgs,
+			RunE:  cloudCLI.OrgList,
+		},
+		&cobra.Command{
+			Use:   "info [org]",
+			Short: "Show Dagger Cloud organization status",
+			Args:  cobra.MaximumNArgs(1),
+			RunE:  cloudCLI.OrgInfo,
+		},
+		&cobra.Command{
+			Use:   "use <org>",
+			Short: "Select the current Dagger Cloud organization",
+			Args:  cobra.ExactArgs(1),
+			RunE:  cloudCLI.OrgUse,
+		},
+	)
+	return cmd
 }
 
 func (cli *CloudCLI) OrgList(cmd *cobra.Command, args []string) error {
