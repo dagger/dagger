@@ -18,13 +18,28 @@ import (
 func TestInstallAndUpdateCommandFlags(t *testing.T) {
 	cmd, _, err := rootCmd.Find([]string{"install"})
 	require.NoError(t, err)
+	require.True(t, cmd.Hidden)
 	require.Nil(t, cmd.Flags().Lookup("mod"))
 	require.Nil(t, cmd.Flags().Lookup("compat"))
 	require.NotNil(t, cmd.Flags().Lookup("name"))
 	require.Contains(t, cmd.Long, "If no workspace config is selected")
 
+	cmd, _, err = rootCmd.Find([]string{"workspace", "install"})
+	require.NoError(t, err)
+	require.False(t, cmd.Hidden)
+	require.Nil(t, cmd.Flags().Lookup("mod"))
+	require.Nil(t, cmd.Flags().Lookup("compat"))
+	require.NotNil(t, cmd.Flags().Lookup("name"))
+
 	cmd, _, err = rootCmd.Find([]string{"update"})
 	require.NoError(t, err)
+	require.True(t, cmd.Hidden)
+	require.Nil(t, cmd.Flags().Lookup("mod"))
+	require.Nil(t, cmd.Flags().Lookup("compat"))
+
+	cmd, _, err = rootCmd.Find([]string{"workspace", "update"})
+	require.NoError(t, err)
+	require.False(t, cmd.Hidden)
 	require.Nil(t, cmd.Flags().Lookup("mod"))
 	require.Nil(t, cmd.Flags().Lookup("compat"))
 }
@@ -37,17 +52,177 @@ func TestWorkspaceCommandAliases(t *testing.T) {
 	cmd, _, err = rootCmd.Find([]string{"i"})
 	require.NoError(t, err)
 	require.Same(t, moduleDepInstallCmd, cmd)
+	require.True(t, cmd.Hidden)
 }
 
-func TestWorkspaceCommandGrouping(t *testing.T) {
-	require.Equal(t, workspaceGroup.ID, configCmd.GroupID)
-	require.Equal(t, workspaceGroup.ID, envCmd.GroupID)
-	require.Equal(t, workspaceGroup.ID, settingsCmd.GroupID)
-	require.Equal(t, workspaceGroup.ID, workspaceCmd.GroupID)
-	require.Equal(t, workspaceGroup.ID, moduleDepInstallCmd.GroupID)
-	require.Equal(t, workspaceGroup.ID, moduleUpdateCmd.GroupID)
-	require.Equal(t, workspaceGroup.ID, migrateCmd.GroupID)
-	require.Equal(t, workspaceGroup.ID, lockCmd.GroupID)
+func TestCosmeticCommandAliases(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"function"})
+	require.NoError(t, err)
+	require.Same(t, functionCmd, cmd)
+
+	cmd, _, err = rootCmd.Find([]string{"fn"})
+	require.NoError(t, err)
+	require.Same(t, functionCmd, cmd)
+
+	cmd, _, err = rootCmd.Find([]string{"function", "list"})
+	require.NoError(t, err)
+	require.Same(t, functionListCmd, cmd)
+	require.False(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"functions"})
+	require.NoError(t, err)
+	require.Same(t, funcListCmd, cmd)
+	require.True(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"function", "call"})
+	require.NoError(t, err)
+	require.Same(t, functionCallCmd.Command(), cmd)
+	require.False(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"call"})
+	require.NoError(t, err)
+	require.Same(t, callModCmd.Command(), cmd)
+	require.True(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"core"})
+	require.NoError(t, err)
+	require.Same(t, callCoreCmd.Command(), cmd)
+	require.True(t, cmd.Hidden)
+	require.Contains(t, cmd.Deprecated, "dagger -m core function call")
+
+	cmd, _, err = rootCmd.Find([]string{"module"})
+	require.NoError(t, err)
+	require.Same(t, modCmd, cmd)
+	require.False(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"mod"})
+	require.NoError(t, err)
+	require.Same(t, modCmd, cmd)
+
+	cmd, _, err = rootCmd.Find([]string{"exec"})
+	require.NoError(t, err)
+	require.Same(t, runCmd, cmd)
+
+	cmd, _, err = rootCmd.Find([]string{"run"})
+	require.NoError(t, err)
+	require.Same(t, runCmd, cmd)
+
+	cmd, _, err = rootCmd.Find([]string{"api"})
+	require.NoError(t, err)
+	require.Same(t, apiCmd, cmd)
+
+	cmd, _, err = rootCmd.Find([]string{"api", "query"})
+	require.NoError(t, err)
+	require.Same(t, apiQueryCmd, cmd)
+	require.False(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"query"})
+	require.NoError(t, err)
+	require.Same(t, queryCmd, cmd)
+	require.True(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"api", "listen"})
+	require.NoError(t, err)
+	require.Same(t, apiListenCmd, cmd)
+
+	cmd, _, err = rootCmd.Find([]string{"listen"})
+	require.NoError(t, err)
+	require.Same(t, listenCmd, cmd)
+	require.True(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"api", "session"})
+	require.NoError(t, err)
+	require.Same(t, apiSessionCmd, cmd)
+
+	cmd, _, err = rootCmd.Find([]string{"session"})
+	require.NoError(t, err)
+	require.Same(t, sessionAliasCmd, cmd)
+	require.True(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"workspace", "migrate"})
+	require.NoError(t, err)
+	require.Same(t, workspaceMigrateCmd, cmd)
+	require.False(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"migrate"})
+	require.NoError(t, err)
+	require.Same(t, migrateCmd, cmd)
+	require.True(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"workspace", "config"})
+	require.NoError(t, err)
+	require.Same(t, workspaceConfigCmd, cmd)
+	require.False(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"config"})
+	require.NoError(t, err)
+	require.Same(t, configCmd, cmd)
+	require.True(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"workspace", "settings"})
+	require.NoError(t, err)
+	require.Same(t, workspaceSettingsCmd, cmd)
+	require.False(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"settings"})
+	require.NoError(t, err)
+	require.Same(t, settingsCmd, cmd)
+	require.True(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"workspace", "uninstall"})
+	require.NoError(t, err)
+	require.Same(t, workspaceUninstallCmd, cmd)
+	require.False(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"uninstall"})
+	require.NoError(t, err)
+	require.Same(t, moduleDepUninstallCmd, cmd)
+	require.True(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"lock"})
+	require.NoError(t, err)
+	require.Same(t, lockCmd, cmd)
+	require.True(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"cloud", "login"})
+	require.NoError(t, err)
+	require.Same(t, cloudLoginCmd, cmd)
+	require.False(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"login"})
+	require.NoError(t, err)
+	require.Same(t, loginCmd, cmd)
+	require.True(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"cloud", "logout"})
+	require.NoError(t, err)
+	require.Same(t, cloudLogoutCmd, cmd)
+	require.False(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"logout"})
+	require.NoError(t, err)
+	require.Same(t, logoutCmd, cmd)
+	require.True(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"cloud", "org"})
+	require.NoError(t, err)
+	require.Same(t, cloudOrgCmd, cmd)
+	require.False(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"org"})
+	require.NoError(t, err)
+	require.Same(t, orgCmd, cmd)
+	require.True(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"cloud", "billing"})
+	require.NoError(t, err)
+	require.Same(t, cloudBillingCmd, cmd)
+	require.False(t, cmd.Hidden)
+
+	cmd, _, err = rootCmd.Find([]string{"billing"})
+	require.NoError(t, err)
+	require.Same(t, billingCmd, cmd)
+	require.True(t, cmd.Hidden)
 }
 
 func TestRemovedWorkspaceCommands(t *testing.T) {
@@ -57,77 +232,130 @@ func TestRemovedWorkspaceCommands(t *testing.T) {
 	}
 }
 
-func TestExecutionCommandGrouping(t *testing.T) {
-	require.Equal(t, execGroup.ID, queryCmd.GroupID)
-	require.Equal(t, execGroup.ID, runCmd.GroupID)
-	require.Equal(t, execGroup.ID, checksCmd.GroupID)
-	require.Equal(t, execGroup.ID, generateCmd.GroupID)
-	require.Equal(t, execGroup.ID, upCmd.GroupID)
-	require.False(t, checksCmd.Hidden)
-	require.False(t, generateCmd.Hidden)
-	require.False(t, upCmd.Hidden)
-}
+func TestRootHelpShowsImplicitCommandGrouping(t *testing.T) {
+	help := renderHelp(t, rootCmd)
+	require.Contains(t, help, "AVAILABLE COMMANDS")
+	require.NotContains(t, help, "DAGGER CLOUD COMMANDS")
+	require.NotContains(t, help, "DAGGER MODULE COMMANDS")
+	require.NotContains(t, help, "DAGGER WORKSPACE COMMANDS")
+	require.NotContains(t, help, "EXECUTION COMMANDS")
+	require.Contains(t, help, "check, checks")
+	require.Contains(t, help, "function, fn")
+	require.Contains(t, help, "module, mod")
+	require.Contains(t, help, "workspace, ws")
+	require.NotContains(t, help, "exec, run")
 
-func TestRootHelpShowsWorkspaceCommandGroup(t *testing.T) {
-	oldOut := rootCmd.OutOrStdout()
-	oldErr := rootCmd.ErrOrStderr()
-	var out bytes.Buffer
-	rootCmd.SetOut(&out)
-	rootCmd.SetErr(&out)
-	t.Cleanup(func() {
-		rootCmd.SetOut(oldOut)
-		rootCmd.SetErr(oldErr)
-	})
-
-	require.NoError(t, rootCmd.Help())
-
-	help := out.String()
-	require.Contains(t, help, "DAGGER WORKSPACE COMMANDS")
-
-	workspaceIdx := strings.Index(help, "DAGGER WORKSPACE COMMANDS")
-	require.NotEqual(t, -1, workspaceIdx)
-
-	sectionEnd := len(help)
-	if execIdx := strings.Index(help[workspaceIdx:], "EXECUTION COMMANDS"); execIdx != -1 {
-		sectionEnd = workspaceIdx + execIdx
-	}
-	if moduleIdx := strings.Index(help[workspaceIdx:], "DAGGER MODULE COMMANDS"); moduleIdx != -1 && workspaceIdx+moduleIdx < sectionEnd {
-		sectionEnd = workspaceIdx + moduleIdx
+	names := rootHelpCommandNames(help)
+	for _, name := range []string{
+		"check",
+		"exec",
+		"generate",
+		"up",
+		"version",
+		"api",
+		"cloud",
+		"env",
+		"function",
+		"integration",
+		"module",
+		"workspace",
+	} {
+		require.Contains(t, names, name)
 	}
 
-	workspaceSection := help[workspaceIdx:sectionEnd]
-	require.Contains(t, workspaceSection, "  config")
-	require.Contains(t, workspaceSection, "  env")
-	require.NotContains(t, workspaceSection, "  init")
-	require.Contains(t, workspaceSection, "  install")
-	require.Contains(t, workspaceSection, "  update")
-	require.Contains(t, workspaceSection, "  settings")
-	require.Contains(t, workspaceSection, "  workspace")
-	require.Contains(t, workspaceSection, "  migrate")
-	require.Contains(t, workspaceSection, "  lock")
+	for _, name := range []string{
+		"billing",
+		"call",
+		"completion",
+		"config",
+		"core",
+		"functions",
+		"install",
+		"listen",
+		"lock",
+		"login",
+		"logout",
+		"migrate",
+		"org",
+		"query",
+		"run",
+		"session",
+		"settings",
+		"uninstall",
+		"update",
+	} {
+		require.NotContains(t, names, name)
+	}
+
+	for _, leaf := range []string{"check", "exec", "generate", "up", "version"} {
+		for _, parent := range []string{"api", "cloud", "env", "function", "integration", "module", "workspace"} {
+			require.Less(t, commandIndex(names, leaf), commandIndex(names, parent))
+		}
+	}
 }
 
-func TestRootHelpShowsExecutionCommandGroup(t *testing.T) {
-	oldOut := rootCmd.OutOrStdout()
-	oldErr := rootCmd.ErrOrStderr()
+func TestHelpAliasesRespectHiddenAliases(t *testing.T) {
+	require.Contains(t, renderHelp(t, workspaceCmd), "workspace, ws")
+	require.Contains(t, renderHelp(t, functionCmd), "function, fn")
+	require.Contains(t, renderHelp(t, modCmd), "module, mod")
+
+	execHelp := renderHelp(t, runCmd)
+	require.NotContains(t, execHelp, "exec, run")
+	require.NotContains(t, execHelp, "exec, r")
+	require.NotContains(t, execHelp, "ALIASES")
+}
+
+func renderHelp(t *testing.T, cmd *cobra.Command) string {
+	t.Helper()
+
+	oldOut := cmd.OutOrStdout()
+	oldErr := cmd.ErrOrStderr()
 	var out bytes.Buffer
-	rootCmd.SetOut(&out)
-	rootCmd.SetErr(&out)
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
 	t.Cleanup(func() {
-		rootCmd.SetOut(oldOut)
-		rootCmd.SetErr(oldErr)
+		cmd.SetOut(oldOut)
+		cmd.SetErr(oldErr)
 	})
 
-	require.NoError(t, rootCmd.Help())
+	require.NoError(t, cmd.Help())
+	return out.String()
+}
 
-	help := out.String()
-	require.Contains(t, help, "EXECUTION COMMANDS")
+func rootHelpCommandNames(help string) []string {
+	start := strings.Index(help, "AVAILABLE COMMANDS")
+	if start == -1 {
+		return nil
+	}
 
-	require.Contains(t, help, "  check")
-	require.Contains(t, help, "  generate")
-	require.Contains(t, help, "  query")
-	require.Contains(t, help, "  run")
-	require.Contains(t, help, "  up")
+	section := help[start:]
+	if end := strings.Index(section, "\nOPTIONS"); end != -1 {
+		section = section[:end]
+	}
+	if end := strings.Index(section, "\nINHERITED OPTIONS"); end != -1 {
+		section = section[:end]
+	}
+
+	var names []string
+	for _, line := range strings.Split(section, "\n") {
+		if len(line) < 3 || !strings.HasPrefix(line, "  ") || line[2] == ' ' || line[2] == '-' {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) > 0 {
+			names = append(names, strings.TrimSuffix(fields[0], ","))
+		}
+	}
+	return names
+}
+
+func commandIndex(names []string, name string) int {
+	for i, commandName := range names {
+		if commandName == name {
+			return i
+		}
+	}
+	return -1
 }
 
 func TestInstallGlobalFlagsWorkspaceSelection(t *testing.T) {
@@ -185,10 +413,13 @@ func TestWorkspaceFlagPolicy(t *testing.T) {
 	workspaceRef = "github.com/acme/ws"
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceInitCmd, nil), "must be a local path")
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(migrateCmd, nil), "not supported")
+	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceMigrateCmd, nil), "not supported")
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(configCmd, []string{"modules.foo.source", "x"}), "must be a local path")
 	require.NoError(t, validateWorkspaceFlagPolicy(configCmd, []string{"modules.foo.source"}))
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar", "baz"}), "must be a local path")
 	require.NoError(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar"}))
+	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceSettingsCmd, []string{"foo", "bar", "baz"}), "must be a local path")
+	require.NoError(t, validateWorkspaceFlagPolicy(workspaceSettingsCmd, []string{"foo", "bar"}))
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(workspaceConfigCmd, []string{"modules.foo.source", "x"}), "must be a local path")
 	require.NoError(t, validateWorkspaceFlagPolicy(workspaceConfigCmd, []string{"modules.foo.source"}))
 	require.ErrorContains(t, validateWorkspaceFlagPolicy(envCreateCmd, []string{"ci"}), "must be a local path")
@@ -196,8 +427,10 @@ func TestWorkspaceFlagPolicy(t *testing.T) {
 
 	workspaceRef = "./local-workspace"
 	require.NoError(t, validateWorkspaceFlagPolicy(workspaceInitCmd, nil))
+	require.NoError(t, validateWorkspaceFlagPolicy(functionCallCmd.Command(), nil))
 	require.NoError(t, validateWorkspaceFlagPolicy(callModCmd.Command(), nil))
 	require.NoError(t, validateWorkspaceFlagPolicy(settingsCmd, []string{"foo", "bar", "baz"}))
+	require.NoError(t, validateWorkspaceFlagPolicy(workspaceSettingsCmd, []string{"foo", "bar", "baz"}))
 	require.NoError(t, validateWorkspaceFlagPolicy(envCreateCmd, []string{"ci"}))
 }
 

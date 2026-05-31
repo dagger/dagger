@@ -16,35 +16,46 @@ import (
 	"github.com/dagger/dagger/internal/cloud/auth"
 )
 
-var cloudGroup = &cobra.Group{
-	ID:    "cloud",
-	Title: "Dagger Cloud Commands",
-}
-
 var cloudCLI = &CloudCLI{}
 
 var loginSwitchAccount bool
 
-var loginCmd = &cobra.Command{
-	Use:     "login [options] [org]",
-	Short:   "Log in to Dagger Cloud",
-	Args:    cobra.MaximumNArgs(1),
-	GroupID: cloudGroup.ID,
-	RunE:    cloudCLI.Login,
+var cloudCmd = &cobra.Command{
+	Use:   "cloud",
+	Short: "Manage Dagger Cloud",
 }
 
-var logoutCmd = &cobra.Command{
-	Use:     "logout",
-	Short:   "Log out from Dagger Cloud",
-	Args:    cobra.NoArgs,
-	GroupID: cloudGroup.ID,
-	RunE:    cloudCLI.Logout,
-}
+var cloudLoginCmd = newLoginCmd(false)
+var loginCmd = newLoginCmd(true)
+
+var cloudLogoutCmd = newLogoutCmd(false)
+var logoutCmd = newLogoutCmd(true)
 
 func init() {
-	loginCmd.Flags().BoolVar(&loginSwitchAccount, "switch-account", false, "Choose a different Dagger Cloud account")
-	rootCmd.AddGroup(cloudGroup)
-	rootCmd.AddCommand(loginCmd, logoutCmd)
+	cloudCmd.AddCommand(cloudLoginCmd, cloudLogoutCmd)
+	rootCmd.AddCommand(cloudCmd, loginCmd, logoutCmd)
+}
+
+func newLoginCmd(hidden bool) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:    "login [options] [org]",
+		Short:  "Log in to Dagger Cloud",
+		Args:   cobra.MaximumNArgs(1),
+		Hidden: hidden,
+		RunE:   cloudCLI.Login,
+	}
+	cmd.Flags().BoolVar(&loginSwitchAccount, "switch-account", false, "Choose a different Dagger Cloud account")
+	return cmd
+}
+
+func newLogoutCmd(hidden bool) *cobra.Command {
+	return &cobra.Command{
+		Use:    "logout",
+		Short:  "Log out from Dagger Cloud",
+		Args:   cobra.NoArgs,
+		Hidden: hidden,
+		RunE:   cloudCLI.Logout,
+	}
 }
 
 type CloudCLI struct{}

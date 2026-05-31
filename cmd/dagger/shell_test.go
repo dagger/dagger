@@ -44,6 +44,22 @@ func TestGitSourceArgRef(t *testing.T) {
 	}
 }
 
+func TestCorePseudoModuleUsesDefaultShellWorkdir(t *testing.T) {
+	oldModuleURL := moduleURL
+	oldModuleNoURL := moduleNoURL
+	t.Cleanup(func() {
+		moduleURL = oldModuleURL
+		moduleNoURL = oldModuleNoURL
+	})
+
+	moduleURL = coreModuleRef
+	moduleNoURL = false
+
+	handler := newShellCallHandler(nil, &idtui.FrontendMock{})
+	require.True(t, handler.noModule)
+	require.Equal(t, moduleURLDefault, handler.moduleURL)
+}
+
 func (DaggerCMDSuite) TestLLMFileSyncing(ctx context.Context, t *testctx.T) {
 	if _, err := os.Stat("/dagger.env"); os.IsNotExist(err) {
 		t.Skip(".env not configured")

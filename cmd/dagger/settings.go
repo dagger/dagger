@@ -27,49 +27,58 @@ query WorkspaceSettings($module: String!) {
 }
 `
 
-var settingsCmd = &cobra.Command{
-	Use:     "settings [module] [key] [value]",
-	Short:   "Get or set module settings",
-	GroupID: workspaceGroup.ID,
-	Args:    cobra.MaximumNArgs(3),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
-			moduleName := ""
-			if len(args) > 0 {
-				moduleName = args[0]
-			}
+var workspaceSettingsCmd = newSettingsCmd(false)
+var settingsCmd = newSettingsCmd(true)
 
-			state, err := loadWorkspaceSettingsState(ctx, engineClient.Dagger(), moduleName)
+func init() {
+	workspaceCmd.AddCommand(workspaceSettingsCmd)
+	addWorkspaceHereFlag(workspaceSettingsCmd)
+	addWorkspaceHereFlag(settingsCmd)
+}
+
+func newSettingsCmd(hidden bool) *cobra.Command {
+	return &cobra.Command{
+		Use:    "settings [module] [key] [value]",
+		Short:  "Get or set module settings",
+		Hidden: hidden,
+		Args:   cobra.MaximumNArgs(3),
+		RunE:   runWorkspaceSettings,
+	}
+}
+
+func runWorkspaceSettings(cmd *cobra.Command, args []string) error {
+	return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
+		moduleName := ""
+		if len(args) > 0 {
+			moduleName = args[0]
+		}
+
+		state, err := loadWorkspaceSettingsState(ctx, engineClient.Dagger(), moduleName)
+		if err != nil {
+			return err
+		}
+
+		switch len(args) {
+		case 0, 1:
+			return writeWorkspaceSettingsTable(cmd.OutOrStdout(), state.Settings)
+		case 2:
+			setting, err := state.lookupSetting(args[1])
 			if err != nil {
 				return err
 			}
-
-			switch len(args) {
-			case 0, 1:
-				return writeWorkspaceSettingsTable(cmd.OutOrStdout(), state.Settings)
-			case 2:
-				setting, err := state.lookupSetting(args[1])
-				if err != nil {
-					return err
-				}
-				_, err = fmt.Fprintln(cmd.OutOrStdout(), setting.Value)
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), setting.Value)
+			return err
+		case 3:
+			setting, err := state.lookupSetting(args[1])
+			if err != nil {
 				return err
-			case 3:
-				setting, err := state.lookupSetting(args[1])
-				if err != nil {
-					return err
-				}
-				_, err = state.Workspace.ConfigWrite(ctx, workspaceSettingConfigKey(setting.Module, setting.Key), args[2], dagger.WorkspaceConfigWriteOpts{Here: workspaceHere})
-				return err
-			default:
-				return fmt.Errorf("expected 0-3 arguments, got %d", len(args))
 			}
-		})
-	},
-}
-
-func init() {
-	addWorkspaceHereFlag(settingsCmd)
+			_, err = state.Workspace.ConfigWrite(ctx, workspaceSettingConfigKey(setting.Module, setting.Key), args[2], dagger.WorkspaceConfigWriteOpts{Here: workspaceHere})
+			return err
+		default:
+			return fmt.Errorf("expected 0-3 arguments, got %d", len(args))
+		}
+	})
 }
 
 type workspaceSetting struct {

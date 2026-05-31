@@ -54,11 +54,6 @@ var (
 	cpuprofile = os.Getenv("CPUPROFILE")
 	pprofAddr  = os.Getenv("PPROF")
 
-	execGroup = &cobra.Group{
-		ID:    "exec",
-		Title: "Execution Commands",
-	}
-
 	workdir      string
 	workspaceRef string
 	workspaceEnv string
@@ -152,6 +147,7 @@ func init() {
 		versionCmd(),
 		queryCmd,
 		runCmd,
+		apiCmd,
 		traceCmd,
 		lockCmd,
 		configCmd,
@@ -166,29 +162,29 @@ func init() {
 		moduleDepUninstallCmd,
 		moduleUpdateCmd,
 		modCmd,
+		functionCmd,
 		funcListCmd,
 		callCoreCmd.Command(),
 		callModCmd.Command(),
-		sessionCmd(),
+		sessionAliasCmd,
 		newGenCmd(),
 		shellCmd,
 		clientCmd,
 		mcpCmd,
 	)
 
-	rootCmd.AddGroup(workspaceGroup)
-	rootCmd.AddGroup(moduleGroup)
-	rootCmd.AddGroup(execGroup)
-
 	rootCmd.PersistentFlags().StringVar(&cloudOrgFlag, "org", "", "Dagger Cloud org name for Cloud-scoped commands")
 
 	cobra.AddTemplateFunc("isExperimental", isExperimental)
 	cobra.AddTemplateFunc("flagUsagesWrapped", flagUsagesWrapped)
 	cobra.AddTemplateFunc("hasInheritedFlags", hasInheritedFlags)
-	cobra.AddTemplateFunc("cmdShortWrapped", cmdShortWrapped)
 	cobra.AddTemplateFunc("toUpperBold", toUpperBold)
 	cobra.AddTemplateFunc("sortRequiredFlags", sortRequiredFlags)
 	cobra.AddTemplateFunc("groupFlags", groupFlags)
+	cobra.AddTemplateFunc("cmdShortWrappedList", cmdShortWrappedList)
+	cobra.AddTemplateFunc("hasHelpAliases", hasHelpAliases)
+	cobra.AddTemplateFunc("nameAndHelpAliases", nameAndHelpAliases)
+	cobra.AddTemplateFunc("hasParentCommands", hasParentCommands)
 	cobra.AddTemplateFunc("indent", indent.String)
 	rootCmd.SetUsageTemplate(usageTemplate)
 
@@ -196,6 +192,7 @@ func init() {
 	// we'll add it in the last line of the usage template
 	rootCmd.PersistentFlags().BoolP("help", "h", false, "Print usage")
 	rootCmd.PersistentFlags().Lookup("help").Hidden = true
+	rootCmd.CompletionOptions.HiddenDefaultCmd = true
 
 	disableFlagsInUseLine(rootCmd)
 }
@@ -608,7 +605,12 @@ func isWorkspaceConfigCommand(cmd *cobra.Command) bool {
 }
 
 func isWorkspaceSettingsWriteCommand(cmd *cobra.Command, args []string) bool {
-	return commandName(cmd) == "settings" && len(args) == 3
+	switch commandName(cmd) {
+	case "settings", "workspace settings":
+		return len(args) == 3
+	default:
+		return false
+	}
 }
 
 func isObviouslyRemoteWorkspaceRef(ref string) bool {
@@ -863,16 +865,8 @@ func flagUsagesWrapped(flags *pflag.FlagSet) string {
 	return flags.FlagUsagesWrapped(getViewWidth())
 }
 
-// cmdShortWrapped returns the short description for the given command wrapped
-// to the width of the terminal.
-//
-// This reduces visual noise by preventing `c.Short` descriptions from showing
-// above the next command name.
-//
-// Ideally `c.Short` fields should be as short as possible.
-func cmdShortWrapped(c *cobra.Command) string {
-	return wrapCmdDescription(c.Name(), c.Short, c.NamePadding())
-}
+const visibleAliasesAnnotation = "help:visibleAliases"
+const hiddenAliasesAnnotation = "help:hiddenAliases"
 
 func wrapCmdDescription(name, short string, padding int) string {
 	width := getViewWidth()
@@ -889,6 +883,126 @@ func wrapCmdDescription(name, short string, padding int) string {
 		short = strings.TrimLeftFunc(indented, unicode.IsSpace)
 	}
 	return name + short
+}
+
+func cmdShortWrappedList(cmds []*cobra.Command, parents bool) string {
+	var available []*cobra.Command
+	padding := 0
+	for _, cmd := range cmds {
+		if parents != isParentCommand(cmd) {
+			continue
+		}
+		if !isHelpOrAvailableCommand(cmd) {
+			continue
+		}
+		available = append(available, cmd)
+		padding = max(padding, len(cmdDisplayName(cmd)))
+	}
+
+	var builder strings.Builder
+	for i, cmd := range available {
+		if i > 0 {
+			builder.WriteString("\n")
+		}
+		builder.WriteString(wrapCmdDescription(cmdDisplayName(cmd), cmd.Short, padding))
+	}
+	return builder.String()
+}
+
+func cmdDisplayName(cmd *cobra.Command) string {
+	aliases := visibleAliases(cmd)
+	if len(aliases) == 0 {
+		return cmd.Name()
+	}
+	return cmd.Name() + ", " + strings.Join(aliases, ", ")
+}
+
+func visibleAliases(cmd *cobra.Command) []string {
+	if cmd.Annotations == nil {
+		return nil
+	}
+	raw := cmd.Annotations[visibleAliasesAnnotation]
+	if raw == "" {
+		return nil
+	}
+
+	var aliases []string
+	for _, alias := range strings.Split(raw, ",") {
+		alias = strings.TrimSpace(alias)
+		if alias != "" {
+			aliases = append(aliases, alias)
+		}
+	}
+	return aliases
+}
+
+func hiddenAliases(cmd *cobra.Command) map[string]struct{} {
+	if cmd.Annotations == nil {
+		return nil
+	}
+	raw := cmd.Annotations[hiddenAliasesAnnotation]
+	if raw == "" {
+		return nil
+	}
+
+	hidden := map[string]struct{}{}
+	for _, alias := range strings.Split(raw, ",") {
+		alias = strings.TrimSpace(alias)
+		if alias != "" {
+			hidden[alias] = struct{}{}
+		}
+	}
+	return hidden
+}
+
+func helpAliases(cmd *cobra.Command) []string {
+	hidden := hiddenAliases(cmd)
+	if len(hidden) == 0 {
+		return cmd.Aliases
+	}
+
+	aliases := make([]string, 0, len(cmd.Aliases))
+	for _, alias := range cmd.Aliases {
+		if _, ok := hidden[alias]; !ok {
+			aliases = append(aliases, alias)
+		}
+	}
+	return aliases
+}
+
+func hasHelpAliases(cmd *cobra.Command) bool {
+	return len(helpAliases(cmd)) > 0
+}
+
+func nameAndHelpAliases(cmd *cobra.Command) string {
+	return strings.Join(append([]string{cmd.Name()}, helpAliases(cmd)...), ", ")
+}
+
+func isLeafCommand(cmd *cobra.Command) bool {
+	if !isHelpOrAvailableCommand(cmd) {
+		return false
+	}
+	return !cmd.HasAvailableSubCommands()
+}
+
+func isParentCommand(cmd *cobra.Command) bool {
+	if !isHelpOrAvailableCommand(cmd) {
+		return false
+	}
+	return cmd.HasAvailableSubCommands()
+}
+
+func hasParentCommands(cmds []*cobra.Command) bool {
+	for _, cmd := range cmds {
+		if isParentCommand(cmd) {
+			return true
+		}
+	}
+	return false
+}
+
+func isHelpOrAvailableCommand(cmd *cobra.Command) bool {
+	return cmd.IsAvailableCommand() || cmd.Name() == "help"
 }
 
 func nameShortWrapped[S ~[]E, E any](s S, f func(e E) (string, string)) string {
@@ -1014,10 +1128,10 @@ func groupFlags(flags *pflag.FlagSet) string {
 const usageTemplate = `{{ if .Runnable}}{{ "Usage" | toUpperBold }}
   {{.UseLine}}{{ end }}
 
-{{- if gt (len .Aliases) 0}}
+{{- if hasHelpAliases .}}
 
 {{ "Aliases" | toUpperBold }}
-  {{.NameAndAliases}}
+  {{nameAndHelpAliases .}}
 
 {{- end}}
 
@@ -1036,36 +1150,12 @@ const usageTemplate = `{{ if .Runnable}}{{ "Usage" | toUpperBold }}
 {{- end}}
 
 {{- if .HasAvailableSubCommands}}{{$cmds := .Commands}}
-{{- if eq (len .Groups) 0}}
 
 {{ "Available Commands" | toUpperBold }}
-{{- range $cmds }}
-{{- if (or .IsAvailableCommand (eq .Name "help"))}}
-{{cmdShortWrapped .}}
-{{- end}}
-{{- end}}
-
-{{- else}}
-{{- range $group := .Groups}}
-
-{{.Title | toUpperBold}}
-{{- range $cmds }}
-{{- if (and (eq .GroupID $group.ID) (or .IsAvailableCommand (eq .Name "help")))}}
-{{cmdShortWrapped .}}
-{{- end}}
-{{- end}}{{/* range $cmds */}}
-{{- end}}{{/* range $group := .Groups */}}
-
-{{- if not .AllChildCommandsHaveGroup}}
-
-{{ "Additional Commands" | toUpperBold }}
-{{- range $cmds }}
-{{- if (and (eq .GroupID "") (or .IsAvailableCommand (eq .Name "help")))}}
-{{cmdShortWrapped .}}
-{{- end}}
-{{- end}}{{/* range $cmds */}}
-{{- end}}{{/* if not .AllChildCommandsHaveGroup */}}
-{{- end}}{{/* if eq (len .Groups) 0 */}}
+{{cmdShortWrappedList $cmds false}}
+{{ if hasParentCommands $cmds}}
+{{cmdShortWrappedList $cmds true}}
+{{- end}}{{/* if hasParentCommands */}}
 {{- end}}{{/* if .HasAvailableSubCommands */}}
 
 {{- if .HasAvailableLocalFlags}}

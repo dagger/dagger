@@ -14,16 +14,6 @@ import (
 )
 
 var (
-	workspaceGroup = &cobra.Group{
-		ID:    "workspace",
-		Title: "Dagger Workspace Commands",
-	}
-
-	moduleGroup = &cobra.Group{
-		ID:    "module",
-		Title: "Dagger Module Commands",
-	}
-
 	moduleURL         string
 	moduleNoURL       bool
 	allowedLLMModules []string
@@ -36,6 +26,7 @@ var (
 
 const (
 	moduleURLDefault = "."
+	coreModuleRef    = "core"
 )
 
 func addWorkspaceInstallFlags(cmd *cobra.Command) {
@@ -46,7 +37,7 @@ func addWorkspaceInstallFlags(cmd *cobra.Command) {
 // moduleAddFlags adds common module-loading flags to a command.
 // If optional is true, it also adds the --no-mod flag and marks --mod and --no-mod as mutually exclusive.
 func moduleAddFlags(cmd *cobra.Command, flags *pflag.FlagSet, optional bool) {
-	flags.StringVarP(&moduleURL, "mod", "m", "", "Module reference to load, either a local path or a remote git repo (defaults to current directory)")
+	flags.StringVarP(&moduleURL, "mod", "m", "", "Module reference to load, either a local path, a remote git repo, or 'core' (defaults to current directory)")
 	if optional {
 		flags.BoolVarP(&moduleNoURL, "no-mod", "M", false, "Don't automatically load a module (mutually exclusive with --mod)")
 		cmd.MarkFlagsMutuallyExclusive("mod", "no-mod")
@@ -63,10 +54,16 @@ func moduleAddFlags(cmd *cobra.Command, flags *pflag.FlagSet, optional bool) {
 }
 
 func init() {
+	workspaceCmd.AddCommand(workspaceInstallCmd, workspaceUninstallCmd, workspaceUpdateCmd)
+
+	moduleAddFlags(functionCallCmd.Command(), functionCallCmd.Command().PersistentFlags(), true)
 	moduleAddFlags(callModCmd.Command(), callModCmd.Command().PersistentFlags(), true)
 
+	moduleAddFlags(functionListCmd, functionListCmd.PersistentFlags(), false)
 	moduleAddFlags(funcListCmd, funcListCmd.PersistentFlags(), false)
+	moduleAddFlags(apiListenCmd, apiListenCmd.PersistentFlags(), true)
 	moduleAddFlags(listenCmd, listenCmd.PersistentFlags(), true)
+	moduleAddFlags(apiQueryCmd, apiQueryCmd.PersistentFlags(), true)
 	moduleAddFlags(queryCmd, queryCmd.PersistentFlags(), true)
 
 	moduleAddFlags(mcpCmd, mcpCmd.PersistentFlags(), true)
@@ -77,50 +74,70 @@ func init() {
 	moduleAddFlags(rootCmd, rootCmd.Flags(), true)
 	shellAddFlags(rootCmd)
 
+	addWorkspaceInstallFlags(workspaceInstallCmd)
 	addWorkspaceInstallFlags(moduleDepInstallCmd)
+	addWorkspaceHereFlag(workspaceUninstallCmd)
 	addWorkspaceHereFlag(moduleDepUninstallCmd)
 
+	setWorkspaceFlagPolicy(workspaceUpdateCmd, workspaceFlagPolicyLocalOnly)
 	setWorkspaceFlagPolicy(moduleUpdateCmd, workspaceFlagPolicyLocalOnly)
+	setWorkspaceFlagPolicy(workspaceInstallCmd, workspaceFlagPolicyLocalOnly)
 	setWorkspaceFlagPolicy(moduleDepInstallCmd, workspaceFlagPolicyLocalOnly)
+	setWorkspaceFlagPolicy(workspaceUninstallCmd, workspaceFlagPolicyLocalOnly)
 	setWorkspaceFlagPolicy(moduleDepUninstallCmd, workspaceFlagPolicyLocalOnly)
 }
 
-var moduleUpdateCmd = &cobra.Command{
-	Use:   "update [module...]",
-	Short: "Refresh workspace-managed state",
-	Long: `Refresh workspace-managed state.
+var workspaceUpdateCmd = newWorkspaceUpdateCmd(false)
+var moduleUpdateCmd = newWorkspaceUpdateCmd(true)
+
+func newWorkspaceUpdateCmd(hidden bool) *cobra.Command {
+	return &cobra.Command{
+		Use:   "update [module...]",
+		Short: "Refresh workspace-managed state",
+		Long: `Refresh workspace-managed state.
 
 With no module names, refresh entries already recorded in .dagger/lock.
 
 With module names, refresh only those modules from .dagger/config.toml.
 `,
-	Example: `"dagger update" or "dagger update wolfi"`,
-	GroupID: workspaceGroup.ID,
-	RunE:    runWorkspaceUpdate,
+		Example: `"dagger workspace update" or "dagger workspace update wolfi"`,
+		Hidden:  hidden,
+		RunE:    runWorkspaceUpdate,
+	}
 }
 
-var moduleDepInstallCmd = &cobra.Command{
-	Use:     "install [options] <module>",
-	Aliases: []string{"i"},
-	Short:   "Install a module",
-	Long: `Install a module into the current workspace.
+var workspaceInstallCmd = newWorkspaceInstallCmd(false, nil)
+var moduleDepInstallCmd = newWorkspaceInstallCmd(true, []string{"i"})
+
+func newWorkspaceInstallCmd(hidden bool, aliases []string) *cobra.Command {
+	return &cobra.Command{
+		Use:     "install [options] <module>",
+		Aliases: aliases,
+		Short:   "Install a module",
+		Long: `Install a module into the current workspace.
 
 If no workspace config is selected, this creates one at the workspace root first.
 Use --here to create the workspace config at the workspace cwd instead.`,
-	Example: "dagger install github.com/shykes/daggerverse/hello@v0.3.0",
-	GroupID: workspaceGroup.ID,
-	Args:    cobra.ExactArgs(1),
-	RunE:    runWorkspaceInstall,
+		Example: "dagger workspace install github.com/shykes/daggerverse/hello@v0.3.0",
+		Hidden:  hidden,
+		Args:    cobra.ExactArgs(1),
+		RunE:    runWorkspaceInstall,
+	}
 }
 
-var moduleDepUninstallCmd = &cobra.Command{
-	Use:     "uninstall [options] <module>",
-	Short:   "Uninstall a module",
-	Long:    `Uninstall a module from the current workspace, removing it from .dagger/config.toml.`,
-	Example: "dagger uninstall hello",
-	GroupID: workspaceGroup.ID,
-	Args:    cobra.ExactArgs(1),
-	RunE:    runWorkspaceUninstall,
+var workspaceUninstallCmd = newWorkspaceUninstallCmd(false)
+var moduleDepUninstallCmd = newWorkspaceUninstallCmd(true)
+
+func newWorkspaceUninstallCmd(hidden bool) *cobra.Command {
+	return &cobra.Command{
+		Use:     "uninstall [options] <module>",
+		Short:   "Uninstall a module",
+		Long:    `Uninstall a module from the current workspace, removing it from .dagger/config.toml.`,
+		Example: "dagger workspace uninstall hello",
+		Hidden:  hidden,
+		Args:    cobra.ExactArgs(1),
+		RunE:    runWorkspaceUninstall,
+	}
 }
 
 func runWorkspaceInstall(cmd *cobra.Command, extraArgs []string) error {
@@ -155,6 +172,15 @@ func getExplicitModuleSourceRef() (string, bool) {
 	return "", false
 }
 
+func isCoreModuleRef(ref string) bool {
+	return ref == coreModuleRef
+}
+
+func isCoreModuleSelected() bool {
+	ref, ok := getExplicitModuleSourceRef()
+	return ok && isCoreModuleRef(ref)
+}
+
 func getModuleSourceRefWithDefault() (string, error) {
 	if v, ok := getExplicitModuleSourceRef(); ok {
 		return v, nil
@@ -178,9 +204,9 @@ func optionalModCmdWrapper(
 
 		return withEngine(cmd.Context(), client.Params{
 			SecretToken:          presetSecretToken,
-			LoadWorkspaceModules: !moduleNoURL && !explicitModRefSet,
+			LoadWorkspaceModules: !moduleNoURL && !explicitModRefSet && !isCoreModuleSelected(),
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
-			if moduleNoURL {
+			if moduleNoURL || isCoreModuleSelected() {
 				return fn(ctx, engineClient, nil, cmd, cmdArgs)
 			}
 

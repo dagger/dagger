@@ -29,7 +29,9 @@ var workspaceCmd = &cobra.Command{
 	Use:     "workspace",
 	Aliases: []string{"ws"},
 	Short:   "Manage the current workspace",
-	GroupID: workspaceGroup.ID,
+	Annotations: map[string]string{
+		visibleAliasesAnnotation: "ws",
+	},
 }
 
 var workspaceRootCmd = &cobra.Command{
@@ -164,6 +166,7 @@ func init() {
 	workspaceCmd.AddCommand(workspaceRootCmd)
 	workspaceCmd.AddCommand(workspaceActivityCmd)
 
+	addWorkspaceHereFlag(configCmd)
 	addWorkspaceHereFlag(workspaceConfigCmd)
 	addWorkspaceHereFlag(workspaceInitCmd)
 	workspaceActivityCmd.Flags().BoolVarP(&workspaceActivityAll, "all", "a", false, "Show activity from all remotes in the current workspace")

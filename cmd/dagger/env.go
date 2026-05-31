@@ -10,9 +10,8 @@ import (
 )
 
 var envCmd = &cobra.Command{
-	Use:     "env",
-	Short:   "Manage workspace environments",
-	GroupID: workspaceGroup.ID,
+	Use:   "env",
+	Short: "Manage workspace environments",
 }
 
 var envListCmd = &cobra.Command{

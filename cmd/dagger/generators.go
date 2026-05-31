@@ -39,8 +39,7 @@ Examples:
   dagger generate go:bin                     # Generate by selecting the generator function
   dagger -W github.com/acme/ws generate go:bin  # Generate against explicit workspace
 `,
-	GroupID: execGroup.ID,
-	Args:    cobra.ArbitraryArgs,
+	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		params := client.Params{
 			LoadWorkspaceModules: true,

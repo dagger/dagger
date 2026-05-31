@@ -62,11 +62,6 @@ var (
 	skippedOptsAnnotation = "help:skippedOpts"
 )
 
-var funcGroup = &cobra.Group{
-	ID:    "functions",
-	Title: "Functions",
-}
-
 // FuncCommand is a config object used to create a dynamic set of commands
 // for querying a module's functions.
 type FuncCommand struct {
@@ -78,6 +73,12 @@ type FuncCommand struct {
 
 	// Short is the short description shown in the 'help' output.
 	Short string
+
+	// Hidden hides the command from help output.
+	Hidden bool
+
+	// Deprecated marks the command as deprecated.
+	Deprecated string
 
 	// Long is the long message shown in the 'help <this-command>' output.
 	Long string
@@ -124,10 +125,11 @@ func (fc *FuncCommand) Command() *cobra.Command {
 			Use:         fc.Name,
 			Aliases:     fc.Aliases,
 			Short:       fc.Short,
+			Hidden:      fc.Hidden,
+			Deprecated:  fc.Deprecated,
 			Long:        fc.Long,
 			Example:     fc.Example,
 			Annotations: fc.Annotations,
-			GroupID:     moduleGroup.ID,
 
 			// We need to disable flag parsing because it'll act on --help
 			// and validate the args before we have a chance to add the
@@ -317,7 +319,7 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 
 	var mod *moduleDef
 	var err error
-	if fc.DisableModuleLoad || moduleNoURL {
+	if fc.DisableModuleLoad || moduleNoURL || isCoreModuleSelected() {
 		mod, err = initializeCore(ctx, fc.c.Dagger())
 	} else {
 		// -m modules are loaded at engine connect time as extra modules.
@@ -622,8 +624,6 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, t
 		return nil
 	}
 
-	cmd.AddGroup(funcGroup)
-
 	fns, skipped, err := GetSupportedFunctions(fnProvider)
 	if err != nil {
 		return err
@@ -651,7 +651,6 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, fn *modFunction) *cobra.C
 		Use:                   cliName(fn.Name),
 		Short:                 fn.Short(),
 		Long:                  fn.Description,
-		GroupID:               funcGroup.ID,
 		DisableFlagsInUseLine: true,
 		// FIXME: Persistent flags should be marked as hidden for sub-commands
 		// but it's not working, so setting an annotation to circumvent it.
