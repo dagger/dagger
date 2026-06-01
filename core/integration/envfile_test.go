@@ -566,6 +566,34 @@ func (m *Dep) Bar(
 	require.Equal(t, "doodoo", string(decodeOutput), string(callOutput))
 }
 
+// Regression test for https://github.com/dagger/dagger/issues/13291: a `.env`
+// file using the common `export KEY=value` convention must not break env file
+// loading.
+func (EnvFileSuite) TestExportPrefix(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	ef := c.File(".env", `export FOO=bar
+export BAZ="qux quux"
+export REF=$FOO-suffix
+PLAIN=plain
+`).AsEnvFile()
+
+	foo, err := ef.Get(ctx, "FOO")
+	require.NoError(t, err)
+	require.Equal(t, "bar", foo)
+
+	baz, err := ef.Get(ctx, "BAZ")
+	require.NoError(t, err)
+	require.Equal(t, "qux quux", baz)
+
+	ref, err := ef.Get(ctx, "REF")
+	require.NoError(t, err)
+	require.Equal(t, "bar-suffix", ref)
+
+	plain, err := ef.Get(ctx, "PLAIN")
+	require.NoError(t, err)
+	require.Equal(t, "plain", plain)
+}
+
 func (EnvFileSuite) TestUpdateVariableWithTheSameValue(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	ef := c.File(".env", "FOO=bar").AsEnvFile().
