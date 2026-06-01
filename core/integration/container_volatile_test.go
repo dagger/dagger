@@ -65,5 +65,5 @@ func (ContainerSuite) TestVolatileVariableCacheHitKeepsEachContainerValue(ctx co
 	require.Equal(t, "two:second", read(second, "second"))
 
 	// TODO this should work, but is currently getting two:first-again
-	// require.Equal(t, "one:first-again", read(first, "first-again"))
+	require.Equal(t, "one:first-again", read(first, "first-again"))
 }

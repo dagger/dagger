@@ -1020,9 +1020,8 @@ func (ContainerSuite) TestWithEnvVariableExpand(ctx context.Context, t *testctx.
 }
 
 func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
 	t.Run("cache ignores value changes", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 		base := c.Container().From(alpineImage)
 
 		run := func(runID string) string {
@@ -1040,6 +1039,7 @@ func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("cache ignores value changes through from", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 		run := func(runID string) string {
 			out, err := c.Container().
 				WithVolatileVariable("RUN_ID", runID).
@@ -1056,6 +1056,7 @@ func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("rerun sees latest value when another input changes", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 		run := func(marker, runID string) string {
 			out, err := c.Container().
 				From(alpineImage).
@@ -1074,6 +1075,7 @@ func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("visibility excludes volatile vars", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 		ctr := c.Container().
 			From(alpineImage).
 			WithEnvVariable("PERSIST", "persist").
@@ -1101,6 +1103,7 @@ func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("volatile value overrides persistent env and can be removed", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 		ctr := c.Container().
 			From(alpineImage).
 			WithEnvVariable("FOO", "persist").
@@ -1124,6 +1127,7 @@ func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("removing a volatile variable with no persistent fallback unsets it", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 		out, err := c.Container().
 			From(alpineImage).
 			WithVolatileVariable("FOO", "volatile").
@@ -1135,6 +1139,7 @@ func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("service start does not see volatile vars", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 		svc := c.Container().
 			From(alpineImage).
 			WithDefaultArgs([]string{"sh", "-c", `test -z "$VOL" && sleep 1`}).
@@ -1146,6 +1151,7 @@ func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("export excludes volatile vars", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 		imagePath := filepath.Join(t.TempDir(), identity.NewID()+".tar")
 
 		ctr := c.Container().
@@ -1172,6 +1178,7 @@ func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("expand rejects volatile vars", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 		_, err := c.Container().
 			From(alpineImage).
 			WithVolatileVariable("RUN_ID", "123").
@@ -1182,6 +1189,7 @@ func (ContainerSuite) TestVolatileVariables(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("with env variable expand rejects volatile vars", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 		_, err := c.Container().
 			From(alpineImage).
 			WithVolatileVariable("RUN_ID", "123").
