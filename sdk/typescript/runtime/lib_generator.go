@@ -47,12 +47,16 @@ func NewLibGenerator(sdkSourceDir *dagger.Directory, opts *LibGeneratorOpts) *Li
 	}
 }
 
-// GenerateBindings generates the client bindings for the given module.
+// GenerateBindings runs codegen and returns the directory containing all
+// generated *.gen.ts files: the core client.gen.ts plus one <dep>.gen.ts
+// per installed dependency. Callers overlay this directory onto the SDK
+// layout (bundle, local, or remote) so dep-augmentation files travel
+// alongside client.gen.ts.
 func (l *LibGenerator) GenerateBindings(
 	introspectionJSON *dagger.File,
 	libOrigin SDKLibOrigin,
 	outputDir string,
-) *dagger.File {
+) *dagger.Directory {
 	ctr := l.Ctr
 
 	codegenArgs := []string{codegenBinPath}
@@ -93,26 +97,28 @@ func (l *LibGenerator) GenerateBindings(
 			ExperimentalPrivilegedNesting: true,
 		})
 
+	// In module mode the generator writes to sdk/src/api/ relative to the
+	// module source path; in client/library mode it writes directly to the
+	// requested output dir. Either way, extract the whole directory so all
+	// dep files come along.
 	if l.Opts.modulePath != "" {
-		return ctr.
-			Directory(l.Opts.modulePath).
-			File("sdk/src/api/client.gen.ts")
+		return ctr.Directory(l.Opts.modulePath).Directory("sdk/src/api")
 	}
-
-	return ctr.Directory(outputDir).File("client.gen.ts")
+	return ctr.Directory(outputDir)
 }
 
 // Add the bundle library (code.js & core.d.ts) to the sdk directory.
 // Add the static export setup (index.ts & client.gen.ts) to the sdk directory.
-// Generate the client.gen.ts file using the introspection file.
+// Generate the client.gen.ts file (and one <dep>.gen.ts per dependency)
+// using the introspection file.
 func (l *LibGenerator) GenerateBundleLibrary(
 	introspectionJSON *dagger.File,
 	outputDir string,
 ) *dagger.Directory {
 	result := l.StaticBundleLib.
 		WithNewFile("telemetry.ts", tsutils.StaticBundleTelemetryTS).
-		WithFile(
-			"client.gen.ts",
+		WithDirectory(
+			".",
 			l.GenerateBindings(
 				introspectionJSON,
 				Bundle,
@@ -132,15 +138,16 @@ func (l *LibGenerator) GenerateBundleLibrary(
 }
 
 // Copy the complete Typescript SDK directory
-// Generate the client.gen.ts file using the introspection file.
+// Generate the client.gen.ts file (and one <dep>.gen.ts per dependency)
+// using the introspection file.
 // TODO(TomChv): We should deprecate local lib support in the future.
 func (l *LibGenerator) GenerateLocalLibrary(
 	introspectionJSON *dagger.File,
 	outputDir string,
 ) *dagger.Directory {
 	return l.StaticLocalLib.
-		WithFile(
-			"src/api/client.gen.ts",
+		WithDirectory(
+			"src/api",
 			l.GenerateBindings(
 				introspectionJSON,
 				Local,
@@ -156,7 +163,6 @@ func (l *LibGenerator) GenerateRemoteLibrary(
 	return dag.
 		Directory().
 		WithDirectory(outputDir,
-			dag.Directory().
-				WithFile("client.gen.ts", l.GenerateBindings(introspectionJSON, Remote, outputDir)),
+			l.GenerateBindings(introspectionJSON, Remote, outputDir),
 		)
 }

@@ -12,6 +12,17 @@ import { Location } from "./location.js"
 
 export const CLIENT_GEN_FILE = "client.gen.ts"
 
+/**
+ * Generated SDK files end with `.gen.ts`. Today this covers the core
+ * `client.gen.ts` plus one `<dep>.gen.ts` per installed dependency. The
+ * introspector treats all of them as "SDK-side" declarations (i.e. not
+ * the user's source), so it must short-circuit reference resolution
+ * against any of them — not just the legacy single-file name.
+ */
+export function isGeneratedSDKFile(fileName: string): boolean {
+  return fileName.endsWith(".gen.ts")
+}
+
 export type ResolvedNodeWithSymbol<T extends keyof DeclarationsMap> = {
   type: T
   node: DeclarationsMap[T]
@@ -62,7 +73,7 @@ export class AST {
 
         // Skip if it's not from the client gen nor the user module
         if (
-          !sourceFile.fileName.endsWith(CLIENT_GEN_FILE) &&
+          !isGeneratedSDKFile(sourceFile.fileName) &&
           !this.files.includes(path.resolve(sourceFile.fileName))
         ) {
           return
@@ -107,7 +118,7 @@ export class AST {
       ts.forEachChild(sourceFile, (node) => {
         // Skip if it's not from the client gen nor the user module
         if (
-          !sourceFile.fileName.endsWith(CLIENT_GEN_FILE) &&
+          !isGeneratedSDKFile(sourceFile.fileName) &&
           !this.files.includes(path.resolve(sourceFile.fileName))
         ) {
           return
@@ -312,50 +323,8 @@ export class AST {
       case "string":
         return argument.getText() as T
       case "object":
-        return this.resolveDecoratorArgumentValue(argument) as T
+        return eval(`(${argument.getText()})`)
     }
-  }
-
-  /**
-   * Resolve the value of a decorator argument expression.
-   *
-   * Decorator arguments may reference module-level constants, e.g.
-   * `@argument({ ignore: IGNORE })` or `@func({ alias: NAME })`. We therefore
-   * cannot simply `eval` the raw text: the referenced symbols are not in scope
-   * and the evaluation would throw. Instead we walk the expression and resolve
-   * each value through {@link resolveParameterDefaultValue}, which already knows
-   * how to follow identifiers, imports and enum members back to their literal
-   * values.
-   */
-  private resolveDecoratorArgumentValue(expression: ts.Expression): any {
-    if (ts.isObjectLiteralExpression(expression)) {
-      const result: Record<string, any> = {}
-
-      for (const property of expression.properties) {
-        if (ts.isPropertyAssignment(property)) {
-          result[this.getPropertyName(property.name)] =
-            this.resolveParameterDefaultValue(property.initializer)
-        } else if (ts.isShorthandPropertyAssignment(property)) {
-          // `{ alias }` shorthand, resolve the value from the identifier.
-          result[property.name.getText()] = this.resolveParameterDefaultValue(
-            property.name,
-          )
-        }
-      }
-
-      return result
-    }
-
-    // Non-object arguments, e.g. the string alias form `@func("alias")`.
-    return this.resolveParameterDefaultValue(expression)
-  }
-
-  private getPropertyName(name: ts.PropertyName): string {
-    if (ts.isStringLiteral(name) || ts.isNumericLiteral(name)) {
-      return name.text
-    }
-
-    return name.getText()
   }
 
   public unwrapTypeStringFromPromise(type: string): string {

@@ -36,11 +36,13 @@ func (i *Introspector) AsEntrypoint(
 
 	sourceCode *dagger.Directory,
 
-	clientBindings *dagger.File,
+	// clientBindings is the directory containing client.gen.ts and any
+	// per-dep <dep>.gen.ts files produced by the codegen.
+	clientBindings *dagger.Directory,
 ) *dagger.Container {
 	// Synthesize a minimal @dagger.io/dagger package so TS can resolve the bare import.
 	sdkPkg := dag.Directory().
-		WithFile("client.gen.ts", clientBindings).
+		WithDirectory(".", clientBindings).
 		WithNewFile("index.ts", tsutils.StaticBundleModuleIndexTS).
 		WithNewFile("core.d.ts", tsutils.StaticBundleCoreDTS).
 		WithNewFile("telemetry.ts", tsutils.StaticBundleTelemetryTS)
@@ -66,14 +68,16 @@ func (i *Introspector) EmitEntrypoint(
 
 	sourceCode *dagger.Directory,
 
-	clientBindings *dagger.File,
+	// clientBindings is the directory containing client.gen.ts and any
+	// per-dep <dep>.gen.ts files produced by the codegen.
+	clientBindings *dagger.Directory,
 
 	sdkSourceDir *dagger.Directory,
 ) *dagger.File {
 	const typedefPath = "/work/typedef.json"
 
 	sdkPkg := dag.Directory().
-		WithFile("client.gen.ts", clientBindings).
+		WithDirectory(".", clientBindings).
 		WithNewFile("index.ts", tsutils.StaticBundleModuleIndexTS).
 		WithNewFile("core.d.ts", tsutils.StaticBundleCoreDTS).
 		WithNewFile("telemetry.ts", tsutils.StaticBundleTelemetryTS)

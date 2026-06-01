@@ -55,7 +55,10 @@ func (n *NodeRuntime) SetupContainer(ctx context.Context) (*dagger.Container, er
 	// content-addressed cache.
 	sdkLibraryDir := NewLibGenerator(n.sdkSourceDir, n.cfg.libGeneratorOpts()).
 		GenerateBundleLibrary(n.introspectionJSON, ModSourceDirPath)
-	clientBindings := sdkLibraryDir.File("client.gen.ts")
+	// The full library dir contains client.gen.ts plus one <dep>.gen.ts per
+	// installed dependency (plus the static SDK files), which is exactly the
+	// shape the introspector expects when synthesizing @dagger.io/dagger.
+	clientBindings := sdkLibraryDir
 
 	eg, gctx := errgroup.WithContext(ctx)
 

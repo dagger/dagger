@@ -52,7 +52,9 @@ func (b *BunRuntime) SetupContainer(ctx context.Context) (*dagger.Container, err
 	// content-addressed cache.
 	sdkLibraryDir := NewLibGenerator(b.sdkSourceDir, b.cfg.libGeneratorOpts()).
 		GenerateBundleLibrary(b.introspectionJSON, ModSourceDirPath)
-	clientBindings := sdkLibraryDir.File("client.gen.ts")
+	// See runtime_node.go: pass the whole library dir so dep files travel
+	// alongside client.gen.ts.
+	clientBindings := sdkLibraryDir
 
 	eg, gctx := errgroup.WithContext(ctx)
 	eg.Go(func() (err error) {

@@ -2,6 +2,7 @@ export {
   connection,
   connect,
   Context,
+  BaseClient,
   func,
   check,
   generate,

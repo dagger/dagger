@@ -324,7 +324,7 @@ func TestModernTypeScriptFileInputNamedIDUsesFileType(t *testing.T) {
 
 func renderAPI(t *testing.T, schema *introspection.Schema, schemaVersion string) string {
 	t.Helper()
-	tmpl := templates.New(schemaVersion, generator.Config{})
+	tmpl := templates.New(schemaVersion, schema, generator.Config{})
 	data := struct {
 		Schema        *introspection.Schema
 		SchemaVersion string

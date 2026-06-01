@@ -9,8 +9,6 @@ import (
 	"strings"
 	"text/template"
 
-	"golang.org/x/mod/semver"
-
 	"github.com/iancoleman/strcase"
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
@@ -19,32 +17,36 @@ import (
 
 func TypescriptTemplateFuncs(
 	schemaVersion string,
+	fullSchema *introspection.Schema,
 	cfg generator.Config,
 ) template.FuncMap {
 	return typescriptTemplateFuncs{
 		cfg:           cfg,
 		schemaVersion: schemaVersion,
+		fullSchema:    fullSchema,
 	}.FuncMap()
 }
 
 type typescriptTemplateFuncs struct {
 	schemaVersion string
 	cfg           generator.Config
+	// fullSchema is the complete schema including all dependency types. It is
+	// only consulted for full-schema views like the per-dep `export *` list
+	// rendered in the header; per-type rendering uses the (possibly
+	// filtered) schema attached to the template data.
+	fullSchema *introspection.Schema
 }
 
 func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
-	formatTypeFunc := &FormatTypeFunc{
+	commonFunc := generator.NewCommonFunctions(funcs.schemaVersion, &FormatTypeFunc{
 		formatNameFunc: funcs.formatName,
-	}
-	commonFunc := generator.NewCommonFunctions(funcs.schemaVersion, formatTypeFunc)
+	})
 	return template.FuncMap{
-		"FormatFieldOutputType":     funcs.formatFieldOutputType(commonFunc),
-		"FormatFieldReturnType":     funcs.formatFieldReturnType(commonFunc),
 		"CommentToLines":            funcs.commentToLines,
 		"FormatDeprecation":         funcs.formatDeprecation,
 		"FormatExperimental":        funcs.formatExperimental,
 		"FormatReturnType":          commonFunc.FormatReturnType,
-		"FormatInputType":           funcs.formatInputType(commonFunc),
+		"FormatInputType":           commonFunc.FormatInputType,
 		"FormatOutputType":          commonFunc.FormatOutputType,
 		"FormatEnum":                funcs.formatEnum,
 		"FormatName":                funcs.formatName,
@@ -68,14 +70,12 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"ConvertID":                 commonFunc.ConvertID,
 		"IsSelfChainable":           commonFunc.IsSelfChainable,
 		"IsListOfObject":            commonFunc.IsListOfObject,
-		"IsListOfInterface":         funcs.isListOfInterface,
 		"IsListOfEnum":              commonFunc.IsListOfEnum,
 		"GetArrayField":             commonFunc.GetArrayField,
 		"ToLowerCase":               commonFunc.ToLowerCase,
 		"ToUpperCase":               commonFunc.ToUpperCase,
 		"ToSingleType":              funcs.toSingleType,
 		"GetEnumValues":             funcs.getEnumValues,
-		"IsInterface":               funcs.isInterface,
 		"CheckVersionCompatibility": commonFunc.CheckVersionCompatibility,
 		"ModuleRelPath":             funcs.moduleRelPath,
 		"FormatProtected":           funcs.formatProtected,
@@ -83,134 +83,195 @@ func (funcs typescriptTemplateFuncs) FuncMap() template.FuncMap {
 		"Dependencies":              funcs.Dependencies,
 		"HasLocalDependencies":      funcs.HasLocalDependencies,
 		"IsBundle":                  funcs.isBundle,
-		"LegacyTypeScriptSDKCompat": funcs.legacyTypeScriptSDKCompat,
-		"LegacyIDableTypes":         funcs.legacyIDableTypes,
-		"LegacyIDName":              funcs.legacyIDName,
-		"LegacyLoadFromIDName":      funcs.legacyLoadFromIDName,
+		"DependencyFiles":           funcs.dependencyFiles,
+		"IsExtendableType":          funcs.isExtendableType,
+		"DepFileName":               funcs.depFileName,
+		"CoreTypeNames":             funcs.coreTypeNames,
+		"DependencyExports":         funcs.dependencyExports,
+		"Augmentation":              augmentation,
+		"AugmentFnName":             augmentFnName,
 	}
 }
 
-// legacyTypeScriptSDKCompatCutoverVersion is the first engine version whose
-// TypeScript SDK surface is generated with unified ID-only re-entry and
-// first-class interface client types. The -0 prerelease floor intentionally
-// treats v0.21.0 dev builds as post-cutover while keeping v0.20.x modules in
-// legacy mode.
-const legacyTypeScriptSDKCompatCutoverVersion = "v0.21.0-0"
+// AugmentationData bundles the parent class name and a dep-contributed
+// field for the `augmentation_method` sub-template (text/template only
+// supports one positional argument, so we wrap them).
+type AugmentationData struct {
+	Parent string
+	Field  *introspection.Field
+}
 
-func (funcs typescriptTemplateFuncs) legacyTypeScriptSDKCompat() bool {
-	if funcs.schemaVersion == "" || !semver.IsValid(funcs.schemaVersion) {
-		return false
+func augmentation(parent string, field *introspection.Field) AugmentationData {
+	return AugmentationData{Parent: parent, Field: field}
+}
+
+// dependencyExports returns, for each dependency in the full schema, the
+// kebab-cased filename and the set of TypeScript identifiers that the dep
+// file exports. Used by client.gen.ts (via header.ts.gtpl) to emit named
+// imports for dep-owned types it references inline (e.g. `new Hello(ctx)`
+// in `Client.hello()`).
+//
+// `export * from "./<dep>.gen.js"` re-exports those identifiers for
+// downstream consumers but does NOT bring them into client.gen.ts's
+// module scope, so explicit named imports are still required.
+type DependencyExport struct {
+	File          string   // kebab-cased basename, no extension
+	Names         []string // exported TS identifiers contributed by the dep
+	AugmentFnName string   // exported function the dep file uses to attach
+	// its prototype augmentations to the extendable type classes
+	// (e.g. `__applyHelloAugmentations`).
+}
+
+func (funcs typescriptTemplateFuncs) dependencyExports() []DependencyExport {
+	if funcs.fullSchema == nil {
+		return nil
 	}
-	return semver.Compare(funcs.schemaVersion, legacyTypeScriptSDKCompatCutoverVersion) < 0
-}
+	deps := funcs.fullSchema.DependencyNames()
+	out := make([]DependencyExport, 0, len(deps))
+	for _, dep := range deps {
+		depSchema := funcs.fullSchema.Include(dep)
+		seen := map[string]struct{}{}
+		var names []string
+		for _, t := range depSchema.Types {
+			if strings.HasPrefix(t.Name, "_") {
+				continue
+			}
+			if slices.Contains(introspection.ExtendableTypes, t.Name) {
+				continue
+			}
+			name := funcs.queryToClient(funcs.formatName(t.Name))
+			if _, ok := seen[name]; ok {
+				continue
+			}
+			seen[name] = struct{}{}
+			names = append(names, name)
 
-// isInterface checks if the type is a GraphQL interface.
-func (funcs typescriptTemplateFuncs) isInterface(t *introspection.Type) bool {
-	return t.Kind == introspection.TypeKindInterface
-}
-
-// formatInputType returns a function that formats input values.
-func (funcs typescriptTemplateFuncs) formatInputType(
-	commonFunc *generator.CommonFunctions,
-) func(arg introspection.InputValue, scopes ...string) (string, error) {
-	return func(arg introspection.InputValue, scopes ...string) (string, error) {
-		if expectedType := arg.Directives.ExpectedType(); expectedType != "" {
-			if arg.Name == "id" && funcs.legacyTypeScriptSDKCompat() && expectedType != "Node" && !strings.HasPrefix(expectedType, "_") {
-				representation := funcs.scoped(scopes...) + funcs.legacyIDName(expectedType)
-				if arg.TypeRef != nil && arg.TypeRef.IsList() {
-					representation += "[]"
+			// Per-method Opts struct types are also re-exported.
+			if t.Kind == introspection.TypeKindObject {
+				for _, f := range t.Fields {
+					if len(funcs.getOptionalArgs(f.Args)) == 0 {
+						continue
+					}
+					optsName := funcs.queryToClient(funcs.formatName(t.Name)) + funcs.pascalCase(f.Name) + "Opts"
+					if _, ok := seen[optsName]; ok {
+						continue
+					}
+					seen[optsName] = struct{}{}
+					names = append(names, optsName)
 				}
-				return representation, nil
 			}
-			representation := funcs.scoped(scopes...) + funcs.formatName(expectedType)
-			if arg.TypeRef != nil && arg.TypeRef.IsList() {
-				representation += "[]"
-			}
-			return representation, nil
 		}
-		if arg.Name == "id" {
-			return commonFunc.FormatOutputType(arg.TypeRef, scopes...)
-		}
-		return commonFunc.FormatInputType(arg.TypeRef, scopes...)
+		sort.Strings(names)
+		out = append(out, DependencyExport{
+			File:          funcs.depFileName(dep),
+			Names:         names,
+			AugmentFnName: augmentFnName(dep),
+		})
 	}
+	return out
 }
 
-func (funcs typescriptTemplateFuncs) isListOfInterface(t *introspection.TypeRef) bool {
-	if t == nil || !t.IsList() {
+// augmentFnName returns the exported function name a dep file uses to
+// attach its prototype augmentations. e.g. "myDep" -> "__applyMyDepAugmentations".
+func augmentFnName(depName string) string {
+	return "__apply" + strcase.ToCamel(depName) + "Augmentations"
+}
+
+// coreTypeNames returns the exported TypeScript identifiers in
+// client.gen.ts that a per-dep file may legally reference for *type*
+// positions: every type in the full schema that is not contributed by a
+// dependency. Used by _dep.ts.gtpl to emit a single
+// `import type { ... } from "./client.gen.js"` line.
+//
+// BaseClient is intentionally NOT in this list — it must be imported as
+// a *value* (for `extends BaseClient`), and importing it from
+// client.gen.ts would create an ESM cycle (client.gen.ts re-exports each
+// dep file). The dep template imports BaseClient from the SDK runtime
+// instead.
+func (funcs typescriptTemplateFuncs) coreTypeNames() []string {
+	if funcs.fullSchema == nil {
+		return nil
+	}
+
+	depSet := map[string]struct{}{}
+	for _, d := range funcs.fullSchema.DependencyNames() {
+		depSet[d] = struct{}{}
+	}
+
+	seen := map[string]struct{}{}
+	var names []string
+
+	for _, t := range funcs.fullSchema.Types {
+		if strings.HasPrefix(t.Name, "_") {
+			continue
+		}
+		switch introspection.Scalar(t.Name) {
+		case introspection.ScalarString, introspection.ScalarInt,
+			introspection.ScalarFloat, introspection.ScalarBoolean:
+			continue
+		}
+		if sm := t.Directives.SourceMap(); sm != nil {
+			if _, ok := depSet[sm.Module]; ok {
+				continue
+			}
+		}
+		name := funcs.queryToClient(funcs.formatName(t.Name))
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+
+		// Also expose <Object>Opts types when the object has optional-argument fields.
+		if t.Kind == introspection.TypeKindObject {
+			for _, f := range t.Fields {
+				if len(funcs.getOptionalArgs(f.Args)) == 0 {
+					continue
+				}
+				optsName := funcs.queryToClient(funcs.formatName(t.Name)) + funcs.pascalCase(f.Name) + "Opts"
+				if _, ok := seen[optsName]; ok {
+					continue
+				}
+				seen[optsName] = struct{}{}
+				names = append(names, optsName)
+			}
+		}
+	}
+
+	sort.Strings(names)
+	return names
+}
+
+// dependencyFiles returns the per-dep generated file basenames (without
+// extension) for every dependency that contributes types to the full
+// schema. Used by header.ts.gtpl to emit `export *` lines.
+func (funcs typescriptTemplateFuncs) dependencyFiles() []string {
+	if funcs.fullSchema == nil {
+		return nil
+	}
+	deps := funcs.fullSchema.DependencyNames()
+	out := make([]string, len(deps))
+	for i, d := range deps {
+		out[i] = funcs.depFileName(d)
+	}
+	return out
+}
+
+// depFileName converts a module name to the kebab-cased file basename used
+// for its generated file (e.g. "myDep" -> "my-dep").
+func (funcs typescriptTemplateFuncs) depFileName(moduleName string) string {
+	return strcase.ToKebab(moduleName)
+}
+
+// isExtendableType reports whether the given type is one of the core types
+// (Query, Binding, Env) whose fields may be contributed by deps. Used by the
+// per-dep template to skip rendering extendable types — those stay (with
+// their dep-contributed fields) in client.gen.ts during Phase 1.
+func (funcs typescriptTemplateFuncs) isExtendableType(t *introspection.Type) bool {
+	if t == nil {
 		return false
 	}
-	for ref := t; ref != nil; ref = ref.OfType {
-		switch ref.Kind {
-		case introspection.TypeKindNonNull, introspection.TypeKindList:
-			continue
-		default:
-			return ref.Kind == introspection.TypeKindInterface
-		}
-	}
-	return false
-}
-
-// formatFieldOutputType returns the raw response value type for a field. Legacy
-// ID fields use old FooID aliases so generated caches/constructors match the
-// pre-cutover public surface.
-func (funcs typescriptTemplateFuncs) formatFieldOutputType(
-	commonFunc *generator.CommonFunctions,
-) func(field introspection.Field, scopes ...string) (string, error) {
-	return func(field introspection.Field, scopes ...string) (string, error) {
-		if funcs.legacyTypeScriptSDKCompat() && field.TypeRef.IsScalar() {
-			if expectedType := funcs.fieldExpectedIDType(field); expectedType != "" {
-				return funcs.scoped(scopes...) + funcs.legacyIDName(expectedType), nil
-			}
-		}
-		return commonFunc.FormatOutputType(field.TypeRef, scopes...)
-	}
-}
-
-// formatFieldReturnType returns the public method return type for a field. ID
-// fields that are object re-entry points remain converted to their object type;
-// plain ID fields use legacy FooID aliases only in legacy mode.
-func (funcs typescriptTemplateFuncs) formatFieldReturnType(
-	commonFunc *generator.CommonFunctions,
-) func(field introspection.Field, scopes ...string) (string, error) {
-	return func(field introspection.Field, scopes ...string) (string, error) {
-		if commonFunc.ConvertID(field) {
-			return commonFunc.FormatReturnType(field, scopes...)
-		}
-		if funcs.legacyTypeScriptSDKCompat() && field.TypeRef.IsScalar() {
-			if expectedType := funcs.fieldExpectedIDType(field); expectedType != "" {
-				return funcs.scoped(scopes...) + funcs.legacyIDName(expectedType), nil
-			}
-		}
-		return commonFunc.FormatReturnType(field, scopes...)
-	}
-}
-
-func (funcs typescriptTemplateFuncs) scoped(scopes ...string) string {
-	scope := strings.Join(scopes, "")
-	if scope != "" {
-		scope += "."
-	}
-	return scope
-}
-
-func (funcs typescriptTemplateFuncs) fieldExpectedIDType(field introspection.Field) string {
-	if !field.TypeRef.IsScalar() {
-		return ""
-	}
-	ref := field.TypeRef
-	if ref.Kind == introspection.TypeKindNonNull {
-		ref = ref.OfType
-	}
-	if ref.Kind != introspection.TypeKindScalar || ref.Name != "ID" {
-		return ""
-	}
-	if expectedType := field.Directives.ExpectedType(); expectedType != "" && expectedType != "Node" && !strings.HasPrefix(expectedType, "_") {
-		return expectedType
-	}
-	if field.Name == "id" && field.ParentObject != nil && field.ParentObject.Name != "Node" && !strings.HasPrefix(field.ParentObject.Name, "_") {
-		return field.ParentObject.Name
-	}
-	return ""
+	return slices.Contains(introspection.ExtendableTypes, t.Name)
 }
 
 // pascalCase change a type name into pascalCase
@@ -528,44 +589,6 @@ func (funcs typescriptTemplateFuncs) moduleRelPath(path string) string {
 
 func (funcs typescriptTemplateFuncs) formatProtected(s string) string {
 	return strings.TrimSuffix(s, "_")
-}
-
-func (funcs typescriptTemplateFuncs) legacyIDName(typeName string) string {
-	return typeName + "ID"
-}
-
-func (funcs typescriptTemplateFuncs) legacyLoadFromIDName(typeName string) string {
-	return funcs.formatName("load" + typeName + "FromID")
-}
-
-func (funcs typescriptTemplateFuncs) legacyIDableTypes() []*introspection.Type {
-	if !funcs.legacyTypeScriptSDKCompat() {
-		return nil
-	}
-	schema := generator.GetSchema()
-	if schema == nil {
-		return nil
-	}
-	var types []*introspection.Type
-	for _, t := range schema.Types {
-		if t == nil || t.Name == "Node" || strings.HasPrefix(t.Name, "_") {
-			continue
-		}
-		if t.Kind != introspection.TypeKindObject && t.Kind != introspection.TypeKindInterface {
-			continue
-		}
-		idName := funcs.legacyIDName(t.Name)
-		if schema.Types.Get(idName) != nil {
-			continue
-		}
-		if !slices.ContainsFunc(t.Fields, func(field *introspection.Field) bool {
-			return field.Name == "id" && field.TypeRef != nil && field.TypeRef.IsScalar()
-		}) {
-			continue
-		}
-		types = append(types, t)
-	}
-	return types
 }
 
 func (funcs typescriptTemplateFuncs) isClientOnly() bool {

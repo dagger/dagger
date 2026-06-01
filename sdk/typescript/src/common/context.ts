@@ -24,21 +24,20 @@ export class Context {
     )
   }
 
-  /**
-   * Select via node(id:) with an inline fragment on the given type.
-   * Produces: node(id: "...") { ... on TypeName { children } }
-   */
-  selectNode(id: string, typeName: string): Context {
-    return new Context(
-      [
-        ...this._queryTree,
-        { operation: "node", args: { id }, inlineType: typeName },
-      ],
-      this._connection,
-    )
-  }
-
   execute<T>(): Promise<T> {
     return computeQuery(this._queryTree, this._connection.getGQLClient())
   }
+}
+
+/**
+ * Common base class for every generated API class (Client, Container, and
+ * dep-contributed types). Lives here rather than in the generated
+ * client.gen.ts so per-dep generated files can extend it without creating
+ * an ESM cycle (client.gen.ts → <dep>.gen.ts → client.gen.ts).
+ */
+export class BaseClient {
+  /**
+   * @hidden
+   */
+  constructor(protected _ctx: Context = new Context()) {}
 }

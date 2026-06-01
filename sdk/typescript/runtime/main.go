@@ -146,10 +146,12 @@ func (t *TypescriptSdk) Codegen(
 	// the user's project tree, mirroring how Go's `dagger.gen.go` lands at the
 	// module root. The client bindings (`sdk/client.gen.ts`) were already
 	// emitted into the codegen overlay above; reuse them here.
+	// Pass the whole bindings directory (client.gen.ts + per-dep <dep>.gen.ts
+	// files) so the introspector sees the full surface.
 	entrypoint := NewIntrospector(t.SDKSourceDir).EmitEntrypoint(
 		cfg.name,
 		codegen.Directory(SrcDir),
-		codegen.Directory(GenDir).File("client.gen.ts"),
+		codegen.Directory(GenDir),
 		t.SDKSourceDir,
 	)
 	codegen = codegen.WithFile(EntrypointExecutableFile, entrypoint)
@@ -162,7 +164,6 @@ func (t *TypescriptSdk) Codegen(
 			EntrypointExecutableFile,
 		}).
 		WithVCSIgnoredPaths([]string{
-			EntrypointExecutableFile,
 			GenDir,
 			"**/node_modules/**",
 			"**/.pnpm-store/**",

@@ -12,6 +12,16 @@ export function connection(
 export function connect(cb: CallbackFct, opts?: ConnectOpts): Promise<void>
 export class Context {}
 
+/**
+ * Common base class of every generated API class (Client, Container,
+ * dep-contributed types, ...). Lives in the runtime — not in
+ * client.gen.ts — so per-dep generated files can `extends BaseClient`
+ * without creating an ESM cycle through client.gen.ts.
+ */
+export class BaseClient {
+  constructor(ctx?: Context)
+}
+
 export type ArgumentOptions = {
   defaultPath?: string
   ignore?: string[]

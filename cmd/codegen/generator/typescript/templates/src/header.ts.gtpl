@@ -8,11 +8,11 @@ inherited by futures objects and common types.
  * Do not make direct changes to the file.
  */
  {{- if IsBundle }}
-import { Context } from "./core.js"
+import { Context, BaseClient } from "./core.js"
 {{- else if (not IsClientOnly)}}
-import { Context } from "../common/context.js"
+import { Context, BaseClient } from "../common/context.js"
 {{- else }}
-import { Context, connect as _connect, connection as _connection, ConnectOpts, CallbackFct } from "@dagger.io/dagger"
+import { Context, BaseClient, connect as _connect, connection as _connection, ConnectOpts, CallbackFct } from "@dagger.io/dagger"
 {{- end }}
 
 {{ if IsClientOnly }}
@@ -86,11 +86,40 @@ export async function connect(
  */
 export type float = number
 
-class BaseClient {
-  /**
-   * @hidden
-   */
+// BaseClient is re-exported so consumers that previously did
+// `import { BaseClient } from "./client.gen.js"` keep working. The class
+// itself now lives in the common SDK runtime (see ../common/context.ts)
+// to avoid the ESM cycle that arises when per-dep generated files extend
+// BaseClient and client.gen.ts in turn `export *`s them.
+export { BaseClient }
 
-  constructor(protected _ctx: Context = new Context()) {}
-}
+{{- /* For each dependency: bring its types into this module's scope with
+a named import (so inline references like `new Hello(ctx)` resolve), import
+its augmentation function, and re-export both so downstream consumers see
+them via @dagger.io/dagger. */ -}}
+{{- range $dep := DependencyExports }}
+import {
+  {{ $dep.AugmentFnName }}{{ range $i, $n := $dep.Names }},
+  {{ $n }}{{ end }}
+} from "./{{ $dep.File }}.gen.js"
+export * from "./{{ $dep.File }}.gen.js"
+{{- end }}
+{{- end }}
+
+{{- /* `footer` runs after all class definitions in client.gen.ts. It
+calls each dep's augmentation function with the now-defined Client /
+Binding / Env classes so prototype methods are attached at module load
+time. */ -}}
+{{ define "footer" }}
+{{- $deps := DependencyExports }}
+{{- if $deps }}
+
+// Phase 2: attach dep-contributed prototype methods to the extendable
+// classes. Each dep file exports an apply function that takes the
+// extendable classes as a scope — this lets dep files only TYPE-import
+// from client.gen.ts, avoiding the ESM cycle that would otherwise occur.
+{{- range $dep := $deps }}
+{{ $dep.AugmentFnName }}({ Client, Binding, Env })
+{{- end }}
+{{- end }}
 {{- end }}

@@ -2,33 +2,29 @@ package templates
 
 import (
 	"embed"
-	"fmt"
 	"text/template"
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
+	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
-//go:embed src
+//go:embed all:src
 var srcs embed.FS
 
 // New creates a new template with all the template dependencies set up.
+//
+// All *.ts.gtpl files directly under src/ are parsed and registered. Files
+// whose basename starts with "_" are treated as helper templates: they are
+// parsed (so they can be referenced via {{ template "name" . }}) but their
+// existence is otherwise opaque to the generator, which selects the
+// top-level template by name (e.g. "api" or "dep").
 func New(
 	schemaVersion string,
+	fullSchema *introspection.Schema,
 	cfg generator.Config,
 ) *template.Template {
-	topLevelTemplate := "api"
-	templateDeps := []string{
-		topLevelTemplate, "header", "objects", "object", "interface", "method", "method_solve", "call_args", "method_comment", "types", "args", "default",
-	}
-
-	fileNames := make([]string, 0, len(templateDeps))
-	for _, tmpl := range templateDeps {
-		fileNames = append(fileNames, fmt.Sprintf("src/%s.ts.gtpl", tmpl))
-	}
-
-	funcs := TypescriptTemplateFuncs(schemaVersion, cfg)
-	tmpl := template.Must(template.New(topLevelTemplate).Funcs(funcs).ParseFS(srcs, fileNames...))
-	return tmpl
+	funcs := TypescriptTemplateFuncs(schemaVersion, fullSchema, cfg)
+	return template.Must(template.New("typescript").Funcs(funcs).ParseFS(srcs, "src/*.ts.gtpl"))
 }
 
 // NewEntrypoint creates a template that renders the static dispatch
