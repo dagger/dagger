@@ -21,7 +21,6 @@ import (
 // cached parent. If the engine returns the first cached output unchanged, the
 // second run observes "one:second" instead of the current value "two:second".
 func (ContainerSuite) TestVolatileVariableCachedExecOutputSeesLatestValue(ctx context.Context, t *testctx.T) {
-
 	run := func(runID, marker string) string {
 		c := connect(ctx, t)
 		out, err := c.Container().From(alpineImage).
