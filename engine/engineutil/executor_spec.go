@@ -488,7 +488,8 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 	overlayIncompatDirs := overlay.VolatileIncompatDirs(rootMnts)
 
 	state.cleanups.Add("unmount rootfs", func() error {
-		if err := mount.Unmount(state.rootfsPath, unix.MNT_DETACH); err != nil {
+		if err := mount.Unmount(state.rootfsPath, 0); err != nil {
+			_ = mount.Unmount(state.rootfsPath, unix.MNT_DETACH)
 			return err
 		}
 		for _, dir := range overlayIncompatDirs {
@@ -613,7 +614,8 @@ func (c *Client) setupRootfs(ctx context.Context, state *execState) error {
 		overlayIncompatDir := overlay.VolatileIncompatDir(mnt)
 
 		state.cleanups.Add("unmount from rootfs "+mnt.Target, func() error {
-			if err := mount.Unmount(dstPath, unix.MNT_DETACH); err != nil {
+			if err := mount.Unmount(dstPath, 0); err != nil {
+				_ = mount.Unmount(dstPath, unix.MNT_DETACH)
 				return err
 			}
 			if overlayIncompatDir != "" {
