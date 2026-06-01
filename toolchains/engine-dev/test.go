@@ -170,10 +170,12 @@ func (dev *EngineDev) test(
 	}
 
 	// Add ldflags
+	// FIXME: version module dependency removed — replace dag.Version() with another source of version info
 	version, err := dag.Version().Version(ctx)
 	if err != nil {
 		return dag.Container().WithError(err.Error())
 	}
+	// FIXME: version module dependency removed — replace dag.Version() with another source of version info
 	tag, err := dag.Version().ImageTag(ctx)
 	if err != nil {
 		return dag.Container().WithError(err.Error())

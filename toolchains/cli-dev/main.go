@@ -50,6 +50,7 @@ func New(
 ) (*CliDev, error) {
 	// FIXME: this go builder config is duplicated with engine build
 	// move into a shared engine/builder module
+	// FIXME: version module dependency removed — replace dag.Version() with another source of version info
 	v := dag.Version()
 
 	var err error

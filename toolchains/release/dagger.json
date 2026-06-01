@@ -67,10 +67,6 @@
       "source": "../typescript-sdk-dev"
     },
     {
-      "name": "version",
-      "source": "../../version"
-    },
-    {
       "name": "wolfi",
       "source": "../../modules/wolfi"
     }

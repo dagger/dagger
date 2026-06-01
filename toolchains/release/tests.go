@@ -12,6 +12,7 @@ import (
 
 // Create a fake release a run checks to catch potential breaking changes.
 func (r *Release) TestLocalRelease(ctx context.Context) (*ReleaseTest, error) {
+	// FIXME: version module dependency removed — replace dag.Version() with another source of version info
 	v, err := dag.Version().Version(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current engine version: %w", err)

@@ -224,6 +224,7 @@ func (dev *EngineDev) Service(
 	dev = dev.IncrementSubnet()
 	cacheVolumeName := "dagger-dev-engine-state"
 	if !sharedCache {
+		// FIXME: version module dependency removed — replace dag.Version() with another source of version info
 		version, err := dag.Version().Version(ctx)
 		if err != nil {
 			return nil, err

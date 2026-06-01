@@ -17,10 +17,6 @@
     {
       "name": "go",
       "source": "../go"
-    },
-    {
-      "name": "version",
-      "source": "../../version"
     }
   ],
   "codegen": {
