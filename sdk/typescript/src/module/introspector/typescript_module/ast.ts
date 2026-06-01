@@ -312,8 +312,50 @@ export class AST {
       case "string":
         return argument.getText() as T
       case "object":
-        return eval(`(${argument.getText()})`)
+        return this.resolveDecoratorArgumentValue(argument) as T
     }
+  }
+
+  /**
+   * Resolve the value of a decorator argument expression.
+   *
+   * Decorator arguments may reference module-level constants, e.g.
+   * `@argument({ ignore: IGNORE })` or `@func({ alias: NAME })`. We therefore
+   * cannot simply `eval` the raw text: the referenced symbols are not in scope
+   * and the evaluation would throw. Instead we walk the expression and resolve
+   * each value through {@link resolveParameterDefaultValue}, which already knows
+   * how to follow identifiers, imports and enum members back to their literal
+   * values.
+   */
+  private resolveDecoratorArgumentValue(expression: ts.Expression): any {
+    if (ts.isObjectLiteralExpression(expression)) {
+      const result: Record<string, any> = {}
+
+      for (const property of expression.properties) {
+        if (ts.isPropertyAssignment(property)) {
+          result[this.getPropertyName(property.name)] =
+            this.resolveParameterDefaultValue(property.initializer)
+        } else if (ts.isShorthandPropertyAssignment(property)) {
+          // `{ alias }` shorthand, resolve the value from the identifier.
+          result[property.name.getText()] = this.resolveParameterDefaultValue(
+            property.name,
+          )
+        }
+      }
+
+      return result
+    }
+
+    // Non-object arguments, e.g. the string alias form `@func("alias")`.
+    return this.resolveParameterDefaultValue(expression)
+  }
+
+  private getPropertyName(name: ts.PropertyName): string {
+    if (ts.isStringLiteral(name) || ts.isNumericLiteral(name)) {
+      return name.text
+    }
+
+    return name.getText()
   }
 
   public unwrapTypeStringFromPromise(type: string): string {
