@@ -1061,11 +1061,11 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			var source *dagger.Directory
-			if inputArgs["source"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["source"]), &source)
+			var workspace *dagger.Workspace
+			if inputArgs["workspace"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["workspace"]), &workspace)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg source", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg workspace", err))
 				}
 			}
 			var subnetNumber int
@@ -1082,7 +1082,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg clientDockerConfig", err))
 				}
 			}
-			return New(source, subnetNumber, clientDockerConfig), nil
+			return New(workspace, subnetNumber, clientDockerConfig), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}

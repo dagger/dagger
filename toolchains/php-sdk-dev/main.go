@@ -32,9 +32,7 @@ type PhpSdkDev struct {
 // Develop the Dagger PHP SDK (experimental)
 func New(
 	// A directory with all the files needed to develop the SDK
-	// +defaultPath="/"
-	// +ignore=["*", "!sdk/php", "!docs/doctum-config.php", "!docs/static/reference/php", "sdk/php/.changes"]
-	workspace *dagger.Directory,
+	workspace *dagger.Workspace,
 	// The path of the SDK source in the workspace
 	// +default="sdk/php"
 	sourcePath string,
@@ -42,9 +40,13 @@ func New(
 	// +default="docs/doctum-config.php"
 	doctumConfigPath string,
 ) *PhpSdkDev {
+	phpSrc := workspace.Directory("/", dagger.WorkspaceDirectoryOpts{
+		Exclude: []string{"*", "!sdk/php", "!docs/doctum-config.php", "!docs/static/reference/php", "sdk/php/.changes"},
+	})
+
 	return &PhpSdkDev{
-		Workspace:         workspace,
-		OriginalWorkspace: workspace,
+		Workspace:         phpSrc,
+		OriginalWorkspace: phpSrc,
 		SourcePath:        sourcePath,
 		DoctumConfigPath:  doctumConfigPath,
 	}

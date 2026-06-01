@@ -23,30 +23,32 @@ type PythonSdkDev struct {
 
 func New(
 	// A workspace containing the SDK source code and other relevant files
-	// +defaultPath="/"
-	// +ignore=[
-	//   "*",
-	//   "!sdk/python/*.toml",
-	//   "!sdk/python/*.lock",
-	//   "!sdk/python/*/*.toml",
-	//   "!sdk/python/*/*.lock",
-	//   "!sdk/python/.python-version",
-	//   "!sdk/python/dev/src/**/*.py",
-	//   "!sdk/python/docs/**/*.py",
-	//   "!sdk/python/docs/**/*.rst",
-	//   "!sdk/python/runtime/images",
-	//   "!sdk/python/src/**/*.py",
-	//   "!sdk/python/src/**/py.typed",
-	//   "!sdk/python/tests/**/*.py",
-	//   "!sdk/python/codegen/**/*.py",
-	//   "!sdk/python/README.md",
-	//   "!sdk/python/LICENSE"
-	// ]
-	workspace *dagger.Directory,
+	workspace *dagger.Workspace,
 
 	// +default="sdk/python"
 	sourcePath string,
 ) *PythonSdkDev {
+	pythonSrc := workspace.Directory("/", dagger.WorkspaceDirectoryOpts{
+		Exclude: []string{
+			"*",
+			"!sdk/python/*.toml",
+			"!sdk/python/*.lock",
+			"!sdk/python/*/*.toml",
+			"!sdk/python/*/*.lock",
+			"!sdk/python/.python-version",
+			"!sdk/python/dev/src/**/*.py",
+			"!sdk/python/docs/**/*.py",
+			"!sdk/python/docs/**/*.rst",
+			"!sdk/python/runtime/images",
+			"!sdk/python/src/**/*.py",
+			"!sdk/python/src/**/py.typed",
+			"!sdk/python/tests/**/*.py",
+			"!sdk/python/codegen/**/*.py",
+			"!sdk/python/README.md",
+			"!sdk/python/LICENSE",
+		},
+	})
+
 	return &PythonSdkDev{
 		DevContainer: dag.DaggerEngine().InstallClient(
 			dag.Wolfi().
@@ -57,11 +59,11 @@ func New(
 					"/root/.local/bin:/usr/local/bin:$PATH",
 					dagger.ContainerWithEnvVariableOpts{Expand: true}).
 				With(toolsCache("uv", "ruff", "mypy")).
-				With(uvTool(workspace)).
-				WithDirectory("/src/sdk/python", workspace.Directory(sourcePath)).
+				With(uvTool(pythonSrc)).
+				WithDirectory("/src/sdk/python", pythonSrc.Directory(sourcePath)).
 				WithWorkdir("/src/sdk/python").
 				WithExec(uv("sync"))),
-		Workspace:         workspace,
+		Workspace:         pythonSrc,
 		SourcePath:        sourcePath,
 		SupportedVersions: supportedVersions,
 	}
@@ -72,16 +74,18 @@ var supportedVersions = []string{"3.14", "3.13", "3.12", "3.11", "3.10"}
 // Lint the Python snippets in the documentation
 // +check
 func (t PythonSdkDev) LintDocsSnippets(
-	// +defaultPath="/"
-	// +ignore=[
-	//  "*",
-	//  "!docs/current_docs/**/*.py",
-	//  "!**/.ruff.toml"
-	// ]
-	workspace *dagger.Directory,
+	workspace *dagger.Workspace,
 ) *dagger.Container {
+	docsSrc := workspace.Directory("/", dagger.WorkspaceDirectoryOpts{
+		Exclude: []string{
+			"*",
+			"!docs/current_docs/**/*.py",
+			"!**/.ruff.toml",
+		},
+	})
+
 	// Preserve same file hierarchy for docs because of extend rules in .ruff.toml
-	return t.WithDirectory(workspace).Lint([]string{"../../docs"})
+	return t.WithDirectory(docsSrc).Lint([]string{"../../docs"})
 }
 
 // +check

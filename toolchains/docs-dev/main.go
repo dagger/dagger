@@ -15,18 +15,20 @@ import (
 )
 
 func New(
-	// +defaultPath="/"
-	// +ignore=[
-	// "*",
-	// "**/node_modules",
-	// "!docs",
-	// "!sdk/typescript",
-	// "!CONTRIBUTING.md"
-	// ]
-	source *dagger.Directory,
+	workspace *dagger.Workspace,
 	// +defaultPath="/docs/nginx.conf"
 	nginxConfig *dagger.File,
 ) DocsDev {
+	source := workspace.Directory("/", dagger.WorkspaceDirectoryOpts{
+		Exclude: []string{
+			"*",
+			"**/node_modules",
+			"!docs",
+			"!sdk/typescript",
+			"!CONTRIBUTING.md",
+		},
+	})
+
 	return DocsDev{
 		Source:      source,
 		NginxConfig: nginxConfig,

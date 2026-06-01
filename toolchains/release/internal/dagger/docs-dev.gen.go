@@ -213,7 +213,7 @@ func (r *Env) WithDocsDevOutput(name string, description string) *Env { // docs-
 
 // DocsDevOpts contains options for Query.DocsDev
 type DocsDevOpts struct {
-	Source *Directory // docs-dev (../../../../toolchains/docs-dev/main.go:26:2)
+	Workspace *Workspace // docs-dev (../../../../toolchains/docs-dev/main.go:18:2)
 
 	NginxConfig *File // docs-dev (../../../../toolchains/docs-dev/main.go:28:2)
 }
@@ -222,9 +222,9 @@ type DocsDevOpts struct {
 func (r *Query) DocsDev(opts ...DocsDevOpts) *DocsDev { // docs-dev (../../../../toolchains/docs-dev/main.go:17:1)
 	q := r.query.Select("docsDev")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `source` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Source) {
-			q = q.Arg("source", opts[i].Source)
+		// `workspace` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Workspace) {
+			q = q.Arg("workspace", opts[i].Workspace)
 		}
 		// `nginxConfig` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NginxConfig) {

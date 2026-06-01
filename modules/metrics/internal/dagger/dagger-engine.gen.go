@@ -1220,7 +1220,7 @@ func (r *Env) WithDaggerEngineOutput(name string, description string) *Env { // 
 
 // DaggerEngineOpts contains options for Query.DaggerEngine
 type DaggerEngineOpts struct {
-	Source *Directory // dagger-engine (../../../../toolchains/engine-dev/main.go:46:2)
+	Workspace *Workspace // dagger-engine (../../../../toolchains/engine-dev/main.go:21:2)
 	//
 	// A configurable part of the IP subnet managed by the engine
 	// Change this to allow nested dagger engines
@@ -1239,9 +1239,9 @@ type DaggerEngineOpts struct {
 func (r *Query) DaggerEngine(opts ...DaggerEngineOpts) *DaggerEngine { // dagger-engine (../../../../toolchains/engine-dev/main.go:20:1)
 	q := r.query.Select("daggerEngine")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `source` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Source) {
-			q = q.Arg("source", opts[i].Source)
+		// `workspace` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Workspace) {
+			q = q.Arg("workspace", opts[i].Workspace)
 		}
 		// `subnetNumber` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SubnetNumber) {

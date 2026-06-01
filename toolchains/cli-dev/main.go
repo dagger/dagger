@@ -15,26 +15,7 @@ func New(
 	// +optional
 	runnerHost string,
 
-	// +optional
-	// +defaultPath="/"
-	// +ignore=[
-	//   "*",
-	//   ".*",
-	//   "!cmd/dagger/*",
-	//   "!**/go.sum",
-	//   "!**/go.mod",
-	//   "!**/*.go",
-	//   "!vendor/**/*",
-	//   "!**.graphql",
-	//   "!.goreleaser*.yml",
-	//   "!.changes",
-	//   "!LICENSE",
-	//   "!install.sh",
-	//   "!install.ps1",
-	//   "!**/*.sql",
-	//   "!core/prompts/*.md"
-	// ]
-	source *dagger.Directory,
+	workspace *dagger.Workspace,
 
 	// Base image for go build environment
 	// +optional
@@ -68,6 +49,25 @@ func New(
 	if runnerHost != "" {
 		values = append(values, "main.RunnerHost="+runnerHost)
 	}
+	source := workspace.Directory("/", dagger.WorkspaceDirectoryOpts{
+		Exclude: []string{
+			"*",
+			".*",
+			"!cmd/dagger/*",
+			"!**/go.sum",
+			"!**/go.mod",
+			"!**/*.go",
+			"!vendor/**/*",
+			"!**.graphql",
+			"!.goreleaser*.yml",
+			"!.changes",
+			"!LICENSE",
+			"!install.sh",
+			"!install.ps1",
+			"!**/*.sql",
+			"!core/prompts/*.md",
+		},
+	})
 
 	return &CliDev{
 		Version: version,

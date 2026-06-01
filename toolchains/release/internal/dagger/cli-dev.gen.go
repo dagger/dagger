@@ -304,7 +304,7 @@ func (r *Env) WithCliDevOutput(name string, description string) *Env { // cli-de
 type CliDevOpts struct {
 	RunnerHost string // cli-dev (../../../../toolchains/cli-dev/main.go:16:2)
 
-	Source *Directory // cli-dev (../../../../toolchains/cli-dev/main.go:37:2)
+	Workspace *Workspace // cli-dev (../../../../toolchains/cli-dev/main.go:18:2)
 	//
 	// Base image for go build environment
 	//
@@ -323,9 +323,9 @@ func (r *Query) CliDev(opts ...CliDevOpts) *CliDev { // cli-dev (../../../../too
 		if !querybuilder.IsZeroValue(opts[i].RunnerHost) {
 			q = q.Arg("runnerHost", opts[i].RunnerHost)
 		}
-		// `source` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Source) {
-			q = q.Arg("source", opts[i].Source)
+		// `workspace` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Workspace) {
+			q = q.Arg("workspace", opts[i].Workspace)
 		}
 		// `base` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Base) {
