@@ -978,13 +978,6 @@ func nameAndHelpAliases(cmd *cobra.Command) string {
 	return strings.Join(append([]string{cmd.Name()}, helpAliases(cmd)...), ", ")
 }
 
-func isLeafCommand(cmd *cobra.Command) bool {
-	if !isHelpOrAvailableCommand(cmd) {
-		return false
-	}
-	return !cmd.HasAvailableSubCommands()
-}
-
 func isParentCommand(cmd *cobra.Command) bool {
 	if !isHelpOrAvailableCommand(cmd) {
 		return false
