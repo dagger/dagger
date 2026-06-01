@@ -2,72 +2,103 @@
 
 ## Goal
 
-Add a Dagger primitive that lets a containerized process execute LLM tool calls
-through Dagger, without giving that process direct access to host credentials,
-provider APIs, or the engine internals.
+Add a Dagger primitive that lets a containerized process send LLM traffic through
+a Dagger-managed proxy, while Dagger emits best-effort traces of the model
+session.
 
-The primitive should make this possible:
+The first version is a pass-through proxy, not an active LLM runtime. Its core
+contract is:
 
-1. A user starts a normal `Container`.
-2. The container runs an agent, coding assistant, MCP client, or other LLM-aware
-   process.
-3. That process talks to a local proxy endpoint injected by Dagger.
-4. The proxy routes model requests through Dagger's `LLM` object and executes
-   tool calls against an `Env`.
-5. The result is still regular Dagger state: immutable objects, updated
-   environment bindings, workspace changes, traces, cache metadata, and outputs.
+1. Forward model traffic without dropping, corrupting, or re-encoding the LLM
+   session.
+2. Keep provider credentials outside the container.
+3. Observe copied traffic on a best-effort basis and emit useful spans when the
+   proxy understands what is flowing through it.
+4. Degrade observability, not correctness, when the proxy cannot parse a request,
+   response, streaming chunk, or provider-specific field.
 
-In short: let arbitrary executables use Dagger's LLM runtime as their model and
-tool backend.
+In short: make Dagger a safe, observable transport for arbitrary LLM-aware
+processes before making it an active participant in the conversation.
 
 ## Motivation
 
-Dagger already has an `LLM` type with prompts, model routing, tool calls, MCP
-integration, and environments. That works well when the Dagger API is driving the
-conversation.
+Many agents, coding assistants, and MCP clients already know how to talk to an
+OpenAI-compatible, Anthropic-compatible, or provider-specific API. Dagger users
+should be able to run those tools in containers without copying provider
+credentials into the container and without losing the Dagger trace as the place
+to understand what happened.
 
-Many useful agents invert that control flow. They expect to run as a process and
-call an OpenAI-compatible API, an Anthropic-compatible API, or an MCP server.
-Today, wiring those agents into Dagger usually means giving the container raw
-provider credentials or writing adapter code around each agent.
-
-An LLM proxy primitive would let Dagger own the sensitive and stateful parts:
-
-- provider credentials stay in the engine/session;
-- tool calls execute through Dagger's schema and `Env`;
-- filesystem and service access remain explicit Dagger objects;
-- traces show the model request, tool calls, object IDs, and resulting state;
-- the same containerized agent can run locally, in CI, or in Dagger Cloud.
+The important constraint is that compatibility matters more than perfect
+understanding. If an agent sends fields the proxy does not recognize, uses
+streaming, or depends on provider-specific behavior, the proxy should still
+forward the session intact. Missing spans are acceptable. Broken LLM sessions are
+not.
 
 ## Non-goals
 
-- Do not make Dagger a general-purpose public LLM gateway.
+- Do not parse and re-encode normal provider requests as the forwarding path.
+- Do not execute Dagger `Env` tools from the proxy in the first version.
+- Do not return final `LLM` or `Env` state from a proxied container execution in
+  the first version.
+- Do not provide a general public LLM gateway.
 - Do not expose undocumented engine endpoints to containers.
-- Do not require every agent to be rewritten against Dagger's GraphQL API.
-- Do not bypass the existing `LLM`, `Env`, secret, cache, trace, or permissions
-  model.
-- Do not guarantee compatibility with every provider feature in the first
-  version.
+- Do not guarantee complete telemetry for every provider feature.
+
+## Design principle
+
+The proxy has two paths:
+
+### Data path
+
+The data path is authoritative. It forwards the incoming request and upstream
+response as streams.
+
+The proxy may perform minimal transport-level work:
+
+- select the upstream provider endpoint;
+- replace or inject provider authentication;
+- normalize hop-by-hop HTTP details required by the proxy implementation;
+- enforce session scoping and policy;
+- copy request and response bytes to the observer.
+
+It should not depend on JSON decoding in order to forward a request. If the
+observer fails, the data path must continue.
+
+### Observation path
+
+The observation path receives a copy of the traffic and tries to understand it.
+It can emit spans for:
+
+- provider, model, endpoint, and request IDs;
+- request start and response completion;
+- streaming chunks when they are understandable;
+- assistant text deltas;
+- tool-call declarations and results;
+- token usage when provided by the upstream API;
+- errors reported by the provider or client connection.
+
+Observation is explicitly lossy. Parser errors should produce a debug event or a
+partial span, then stop parsing that message. They must not change the forwarded
+traffic.
 
 ## API sketch
 
-The smallest useful shape is a service-like object that can be attached to a
-container:
+The exact API shape is open, but the first version should expose a service that
+can be bound into a container:
 
 ```graphql
-type LLM {
-  proxy(protocol: LLMProxyProtocol = OPENAI): LLMProxy!
+type Query {
+  llmProxy(protocol: LLMProxyProtocol = OPENAI): LLMProxy!
 }
 
 type LLMProxy {
-  endpoint: String!
   service: Service!
+  endpoint: String!
 }
 
 enum LLMProxyProtocol {
   OPENAI
   ANTHROPIC
-  MCP
 }
 ```
 
@@ -75,143 +106,127 @@ Example shell flow:
 
 ```shell
 dagger <<'EOF'
-src=$(host | directory ".")
-environment=$(env |
-  with-directory-input "src" $src "source tree to inspect" |
-  with-string-output "summary" "short summary of the result")
-proxy=$(llm --model claude |
-  with-env $environment |
-  proxy)
+proxy=$(llm-proxy --protocol openai)
 
 container |
   from node:22 |
   with-service-binding "llm-proxy" $proxy.service |
-  with-env-variable "OPENAI_BASE_URL" $proxy.endpoint |
+  with-env-variable "OPENAI_BASE_URL" "http://llm-proxy:8080/v1" |
   with-env-variable "OPENAI_API_KEY" "dagger" |
-  with-directory /work $src |
+  with-directory /work $(host | directory ".") |
   with-workdir /work |
   with-exec ["my-agent", "--task", "summarize the project"] |
   sync
 EOF
 ```
 
-The exact API names can change, but the important property is that Dagger
-creates both the network endpoint and the backing `LLM` state.
+The placeholder API key is only for clients that require an API key to be set.
+The proxy uses Dagger-managed provider credentials for upstream requests.
 
-## Semantics
+## Forwarding semantics
 
-The proxy is scoped to an `LLM` value.
+For the first milestone, the proxy should preserve the body and streaming shape
+of the client request as much as the HTTP implementation allows.
 
-- `llm.withEnv(env).proxy()` exposes tools from `env`.
-- `llm.withModel(model).proxy()` routes requests to that model.
-- `llm.withSystemPrompt(prompt).proxy()` includes those prompts.
-- `llm.withBlockedFunction(typeName, function).proxy()` hides blocked tools.
-- `llm.withStaticTools().proxy()` can force a static tool list for clients that
-  cannot handle dynamic tool discovery.
+- The request method, path, query, and body are forwarded to the configured
+  upstream provider.
+- Request bodies are streamed through; they are not decoded and re-encoded by
+  the forwarding path.
+- Response bodies are streamed back to the client as they arrive.
+- Server-sent events and chunked responses remain streaming responses to the
+  client.
+- Unknown request fields, response fields, and streaming events are preserved.
+- Provider credentials are injected upstream and are never exposed to the
+  container.
 
-Requests through the proxy update the same logical LLM conversation. Tool calls
-are evaluated by Dagger, not by the container process. If a tool returns an
-`Env`, that environment becomes the current environment for subsequent tool
-calls. If a tool returns a `Changeset`, the changes are applied to the
-environment workspace using the existing LLM tool semantics.
+Model selection needs an explicit policy because OpenAI-compatible clients send
+the model in the request body. The safest first version is to pass the request
+body through unchanged and configure only the upstream provider endpoint and
+credentials. Model override, aliasing, or validation can be added later, but
+those features require either request-body mutation or provider-specific policy.
 
-The proxy should be deterministic about ownership: the container can ask for
-model completions, but Dagger owns the tool registry, object IDs, credential
-resolution, tracing, and persistence of state.
+## Tracing semantics
 
-## Protocols
+Tracing is best effort.
 
-### OpenAI-compatible HTTP
+The proxy should emit a parent span for each proxied request. Child spans can be
+added when the observer understands the protocol. For example, an
+OpenAI-compatible observer can recognize:
 
-First target because most existing agents can use it with only `OPENAI_BASE_URL`
-and `OPENAI_API_KEY`.
+- `POST /v1/chat/completions`;
+- `POST /v1/responses`;
+- `GET /v1/models`;
+- non-streaming JSON responses;
+- streaming SSE `data:` events;
+- usage blocks;
+- tool-call deltas and final tool calls.
 
-Minimum endpoints:
-
-- `POST /v1/chat/completions`
-- `POST /v1/responses`, if needed by common clients
-- `GET /v1/models`
-
-The proxy translates provider-agnostic requests into Dagger `LLM` calls, then
-translates tool-call messages back into the requested wire format.
-
-### Anthropic-compatible HTTP
-
-Useful for agents that rely on Anthropic's messages API directly.
-
-Minimum endpoint:
-
-- `POST /v1/messages`
-
-This can be implemented after the OpenAI-compatible path unless a first user
-requires it.
-
-### MCP
-
-The existing `LLM.__mcp` path exposes a Dagger-backed MCP server for model tool
-use. A proxy primitive should make the inverse ergonomic too: an external agent
-can connect to an MCP endpoint backed by a Dagger `Env`.
-
-This may be a separate `env.mcp()` or `llm.proxy(protocol: MCP)` API depending
-on whether the endpoint needs model routing or only tool execution.
+If the observer cannot parse a message, it should keep the parent span and mark
+the protocol details as unknown. This is still valuable because the trace shows
+that an agent made a model request, how long it took, which upstream was used,
+and whether the transport succeeded.
 
 ## Security model
 
-The proxy must not forward provider credentials into the container. The
-container receives only an endpoint and, if a client requires it, a placeholder
-API key accepted by the proxy.
+The container receives a session-local proxy endpoint and, if needed, a
+placeholder API key accepted by the proxy. It does not receive provider
+credentials.
 
-Access is limited to the attached Dagger objects:
+The proxy should be scoped to the Dagger session. A container or process from
+another session must not be able to reuse the endpoint.
 
-- tools come from the `Env` and any explicitly attached MCP servers;
-- host filesystem access only exists through attached `Directory` or `File`
-  objects;
-- service access only exists through attached `Service` objects;
-- secrets remain Dagger `Secret` values and are never serialized as plain text
-  in proxy configuration.
+The observer must avoid recording secrets. It should redact authorization
+headers, provider keys, and known secret fields. Prompt and completion content
+can be revealed according to the same telemetry policy used for other Dagger LLM
+spans.
 
-The proxy should be session-scoped by default. A container from another session
-must not be able to reuse the endpoint.
+## Relationship to Dagger tools
 
-## Observability
+The pass-through proxy does not execute Dagger tools or mutate an `Env`.
 
-Each proxied request should produce trace spans that connect:
+Tool calls may still appear in observed traffic. The observer can trace them,
+but it should not take over tool execution. If Dagger wants to provide tools to
+the agent, that should be a separate explicit interface, such as an MCP service
+or another container binding. That keeps the model API proxy lossless and avoids
+silently changing the agent's protocol.
 
-- the container exec that initiated the request;
-- the proxy request and selected model;
-- provider request/response metadata;
-- tool calls and their Dagger selectors;
-- token usage;
-- resulting object IDs and environment changes.
-
-This is one of the main reasons to keep the proxy as a Dagger primitive instead
-of documenting an internal endpoint.
+A later active mode could intentionally terminate the provider protocol and
+mediate tool execution through Dagger. That mode should have a different
+contract because it would no longer be pure pass-through.
 
 ## Open questions
 
-- Should the proxy be an `LLM` method, an `Env` method, or a new top-level
-  `llmProxy` constructor?
-- Should proxy requests mutate one shared LLM history, or should each HTTP
-  conversation be keyed by provider conversation IDs?
-- How should streaming map to traces and tool execution boundaries?
-- What is the right default for parallel tool calls?
-- How should `maxAPICalls` count proxied model calls and tool continuations?
-- Should the API expose provider-specific compatibility modes, or infer them
-  from the incoming path?
-- What should be cached: provider responses, tool results, both, or neither?
+- Should the first API be top-level, such as `llmProxy`, or attached to `LLM`
+  for reuse of existing provider configuration?
+- How should users choose the upstream provider when the request body is passed
+  through unchanged?
+- Should model validation be opt-in, and should it fail closed or only annotate
+  traces?
+- What should be the default content visibility policy for prompts and
+  completions?
+- How much buffering is acceptable for the observer before it risks affecting
+  streaming latency?
+- Should the proxy support Anthropic in the first milestone, or start with only
+  OpenAI-compatible traffic?
 
 ## First milestone
 
-Implement an experimental OpenAI-compatible proxy for containers:
+Implement an experimental OpenAI-compatible pass-through proxy for containers:
 
-1. Add an `LLM.proxy()` API that returns a `Service` and endpoint URL.
-2. Support `POST /v1/chat/completions` without streaming.
-3. Support model tool calls through the existing `LLM` and `Env` machinery.
-4. Keep provider credentials entirely outside the container.
-5. Emit trace spans for proxy requests, provider calls, tool calls, and token
-   usage.
-6. Add an integration test that runs a containerized OpenAI-compatible client
-   against the proxy and saves an `Env` output.
+1. Add an API that returns a session-scoped proxy `Service`.
+2. Bind that service into a container and document the required
+   `OPENAI_BASE_URL` and placeholder `OPENAI_API_KEY` environment variables.
+3. Forward `POST /v1/chat/completions`, `POST /v1/responses`, and
+   `GET /v1/models` without JSON re-encoding in the data path.
+4. Preserve streaming responses.
+5. Inject upstream credentials from Dagger-managed configuration.
+6. Emit a parent trace span for each proxied request.
+7. Add best-effort OpenAI-compatible parsing for model, usage, errors, text
+   deltas, and tool-call deltas.
+8. Treat parser failure as a telemetry degradation only.
+9. Add an integration test with a real OpenAI-compatible client library running
+   in a container, including a streaming request.
 
-That milestone proves the primitive without committing to every provider or
-streaming behavior.
+That milestone proves the useful primitive: existing agents can run unchanged
+while Dagger keeps credentials out of the container and adds traces when it can
+understand the traffic.
