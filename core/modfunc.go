@@ -1155,8 +1155,23 @@ func (fn *ModuleFunction) loadWorkspaceArg(
 		return nil, fmt.Errorf("dagql server is nil but required for workspace argument")
 	}
 
+	query, err := CurrentQuery(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get current query: %w", err)
+	}
+	if _, err := query.CurrentModule(ctx); err == nil {
+		return nil, fmt.Errorf("%w: workspace arguments are not inherited by module runtime calls; pass a Workspace explicitly", ErrNoCurrentWorkspace)
+	} else if !errors.Is(err, ErrNoCurrentModule) {
+		return nil, fmt.Errorf("get current module: %w", err)
+	}
+	if fnCall, err := query.CurrentFunctionCall(ctx); err == nil && fnCall != nil {
+		return nil, fmt.Errorf("%w: workspace arguments are not inherited by module runtime calls; pass a Workspace explicitly", ErrNoCurrentWorkspace)
+	} else if err != nil && !errors.Is(err, ErrNoCurrentModule) {
+		return nil, fmt.Errorf("get current function call: %w", err)
+	}
+
 	var ws dagql.ObjectResult[*Workspace]
-	err := dag.Select(ctx, dag.Root(), &ws,
+	err = dag.Select(ctx, dag.Root(), &ws,
 		dagql.Selector{
 			Field: "currentWorkspace",
 			Args: []dagql.NamedInput{

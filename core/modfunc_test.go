@@ -113,6 +113,49 @@ func TestModuleFunctionCacheImplicitInputsNilSafe(t *testing.T) {
 	}).cacheImplicitInputs())
 }
 
+// TestModuleFunctionLoadWorkspaceArgRejectsModuleRuntimeCaller verifies that an
+// omitted Workspace argument is not filled from caller context when the caller
+// is identified by current module context.
+func TestModuleFunctionLoadWorkspaceArgRejectsModuleRuntimeCaller(t *testing.T) {
+	t.Parallel()
+
+	query := &Query{
+		Server: &mockServer{
+			moduleSource: &ModuleSource{
+				Kind:  ModuleSourceKindLocal,
+				Local: &LocalModuleSource{ContextDirectoryPath: "."},
+			},
+		},
+	}
+	ctx := ContextWithQuery(t.Context(), query)
+	dag := newCoreDagqlServerForTest(t, query)
+
+	_, err := (&ModuleFunction{}).loadWorkspaceArg(ctx, dag)
+	require.ErrorIs(t, err, ErrNoCurrentWorkspace)
+	require.Contains(t, err.Error(), "workspace arguments are not inherited by module runtime calls")
+	require.Contains(t, err.Error(), "pass a Workspace explicitly")
+}
+
+// TestModuleFunctionLoadWorkspaceArgRejectsFunctionCallRuntimeCaller verifies
+// the same omitted-Workspace guard for runtime clients identified only by an
+// active function call.
+func TestModuleFunctionLoadWorkspaceArgRejectsFunctionCallRuntimeCaller(t *testing.T) {
+	t.Parallel()
+
+	query := &Query{
+		Server: &mockServer{
+			functionCall: &FunctionCall{Name: "caller"},
+		},
+	}
+	ctx := ContextWithQuery(t.Context(), query)
+	dag := newCoreDagqlServerForTest(t, query)
+
+	_, err := (&ModuleFunction{}).loadWorkspaceArg(ctx, dag)
+	require.ErrorIs(t, err, ErrNoCurrentWorkspace)
+	require.Contains(t, err.Error(), "workspace arguments are not inherited by module runtime calls")
+	require.Contains(t, err.Error(), "pass a Workspace explicitly")
+}
+
 func mapImplicitInputsByName(inputs []dagql.ImplicitInput) map[string]dagql.ImplicitInput {
 	byName := make(map[string]dagql.ImplicitInput, len(inputs))
 	for _, input := range inputs {

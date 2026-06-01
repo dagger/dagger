@@ -743,6 +743,88 @@ func TestEnsureWorkspaceLoadedInheritsParentWorkspace(t *testing.T) {
 	require.Same(t, bound, child.workspace)
 }
 
+// TestEnsureWorkspaceLoadedDoesNotInheritBetweenModuleRuntimes verifies that
+// currentWorkspace inheritance stops when a module runtime calls another module
+// runtime.
+func TestEnsureWorkspaceLoadedDoesNotInheritBetweenModuleRuntimes(t *testing.T) {
+	t.Parallel()
+
+	srv := &Server{}
+	bound := &core.Workspace{
+		ClientID: "root-client",
+	}
+
+	root := &daggerClient{
+		workspace: bound,
+	}
+	moduleParent := &daggerClient{
+		workspace: bound,
+		parents:   []*daggerClient{root},
+		mod:       sessionTestModuleResult(t, "parent"),
+	}
+	child := &daggerClient{
+		parents: []*daggerClient{root, moduleParent},
+		mod:     sessionTestModuleResult(t, "child"),
+	}
+
+	require.NoError(t, srv.ensureWorkspaceLoaded(context.Background(), child))
+	require.Nil(t, child.workspace)
+}
+
+// TestEnsureWorkspaceLoadedDoesNotInheritBetweenFunctionCallRuntimes verifies
+// the same runtime boundary when clients are represented by active function
+// calls instead of module context.
+func TestEnsureWorkspaceLoadedDoesNotInheritBetweenFunctionCallRuntimes(t *testing.T) {
+	t.Parallel()
+
+	srv := &Server{}
+	bound := &core.Workspace{
+		ClientID: "root-client",
+	}
+
+	root := &daggerClient{
+		workspace: bound,
+	}
+	moduleParent := &daggerClient{
+		workspace: bound,
+		parents:   []*daggerClient{root},
+		fnCall:    &core.FunctionCall{Name: "parent"},
+	}
+	child := &daggerClient{
+		parents: []*daggerClient{root, moduleParent},
+		fnCall:  &core.FunctionCall{Name: "child"},
+	}
+
+	require.NoError(t, srv.ensureWorkspaceLoaded(context.Background(), child))
+	require.Nil(t, child.workspace)
+}
+
+// TestEnsureWorkspaceLoadedNonModuleClientInheritsThroughModuleParent keeps the
+// new boundary narrow: regular nested clients still inherit a parent workspace.
+func TestEnsureWorkspaceLoadedNonModuleClientInheritsThroughModuleParent(t *testing.T) {
+	t.Parallel()
+
+	srv := &Server{}
+	bound := &core.Workspace{
+		ClientID: "root-client",
+	}
+
+	root := &daggerClient{
+		workspace: bound,
+	}
+	moduleParent := &daggerClient{
+		workspace: bound,
+		parents:   []*daggerClient{root},
+		mod:       sessionTestModuleResult(t, "parent"),
+	}
+	child := &daggerClient{
+		parents: []*daggerClient{root, moduleParent},
+	}
+
+	require.NoError(t, srv.ensureWorkspaceLoaded(context.Background(), child))
+	require.Same(t, bound, child.workspace)
+}
+
 func TestEnsureWorkspaceLoadedKeepsExistingWorkspaceBinding(t *testing.T) {
 	t.Parallel()
 
