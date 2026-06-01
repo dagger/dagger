@@ -15,7 +15,7 @@ require (
 	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/stretchr/testify v1.11.1
-	github.com/vektah/gqlparser/v2 v2.5.32
+	github.com/vektah/gqlparser/v2 v2.5.33
 	go.opentelemetry.io/otel v1.41.0
 	go.opentelemetry.io/otel/trace v1.41.0
 	golang.org/x/sync v0.20.0
