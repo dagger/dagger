@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/containerd/platforms"
+	engineconfig "github.com/dagger/dagger/engine/config"
 	bkconfig "github.com/dagger/dagger/internal/buildkit/cmd/buildkitd/config"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	resolverconfig "github.com/dagger/dagger/internal/buildkit/util/resolver/config"
@@ -4025,6 +4026,121 @@ func credentials(r *http.Request) (string, string, bool) {
 		}
 	}
 	require.NoError(t, err)
+}
+
+func (ContainerSuite) TestPublishAndFromWithRegistryServiceBinding(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	module := func(ctx context.Context, t *testctx.T, devEngine *dagger.Service) *dagger.Container {
+		return engineClientContainer(ctx, t, c, devEngine).
+			WithWorkdir("/work").
+			With(daggerNonNestedExec("init", "--sdk=go", "--source=.", "--name=test")).
+			With(sdkSource("go", `package main
+
+import (
+	"context"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) CheckHTTP(ctx context.Context, registry *dagger.Service, ref string) (string, error) {
+	return publishAndRead(ctx, registry, ref)
+}
+
+func (m *Test) CheckHTTPS(ctx context.Context, registry *dagger.Service, ref string) (string, error) {
+	return publishAndRead(ctx, registry, ref)
+}
+
+func publishAndRead(ctx context.Context, registry *dagger.Service, ref string) (string, error) {
+	_, err := dag.Container().
+		WithNewFile("/hello.txt", "hello").
+		WithServiceBinding("bound-registry", registry).
+		Publish(ctx, ref)
+	if err != nil {
+		return "", err
+	}
+
+	return dag.Container().
+		WithServiceBinding("bound-registry", registry).
+		From(ref).
+		File("/hello.txt").
+		Contents(ctx)
+}
+`))
+	}
+
+	t.Run("https", func(ctx context.Context, t *testctx.T) {
+		certGen := newGeneratedCerts(c, "ca")
+		registryCert, registryKey := certGen.newServerCerts("bound-registry")
+		registry := c.Container().
+			From("registry:3").
+			WithMountedCache("/var/lib/registry", c.CacheVolume("service-binding-registry-https-"+identity.NewID())).
+			WithFile("/certs/domain.crt", registryCert).
+			WithFile("/certs/domain.key", registryKey).
+			WithEnvVariable("REGISTRY_HTTP_TLS_CERTIFICATE", "/certs/domain.crt").
+			WithEnvVariable("REGISTRY_HTTP_TLS_KEY", "/certs/domain.key").
+			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+			AsService()
+
+		devEngine := devEngineContainerAsService(devEngineContainer(c,
+			func(ctr *dagger.Container) *dagger.Container {
+				return ctr.WithMountedFile("/usr/local/share/ca-certificates/bound-registry.crt", certGen.caRootCert)
+			},
+			engineWithConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg engineconfig.Config) engineconfig.Config {
+				cfg.Registries = map[string]engineconfig.RegistryConfig{
+					"bound-registry:5000": {
+						RootCAs: []string{"/usr/local/share/ca-certificates/bound-registry.crt"},
+					},
+				}
+				return cfg
+			}),
+		))
+
+		ref := "bound-registry:5000/service-binding-https:" + identity.NewID()
+
+		out, err := module(ctx, t, devEngine).
+			WithServiceBinding("bound-registry", registry).
+			With(daggerNonNestedExec(
+				"call", "check-https",
+				"--registry", "tcp://bound-registry:5000",
+				"--ref", ref,
+			)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello", strings.TrimSpace(out))
+	})
+
+	t.Run("http engine config", func(ctx context.Context, t *testctx.T) {
+		registry := c.Container().
+			From("registry:3").
+			WithMountedCache("/var/lib/registry", c.CacheVolume("service-binding-registry-http-"+identity.NewID())).
+			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+			AsService()
+
+		devEngine := devEngineContainerAsService(devEngineContainer(c,
+			engineWithBkConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg bkconfig.Config) bkconfig.Config {
+				cfg.Registries = map[string]resolverconfig.RegistryConfig{
+					"bound-registry:5000": {PlainHTTP: ptr(true)},
+				}
+				return cfg
+			}),
+		))
+
+		ref := "bound-registry:5000/service-binding-http:" + identity.NewID()
+
+		out, err := module(ctx, t, devEngine).
+			WithServiceBinding("bound-registry", registry).
+			With(daggerNonNestedExec(
+				"call", "check-http",
+				"--registry", "tcp://bound-registry:5000",
+				"--ref", ref,
+			)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello", strings.TrimSpace(out))
+	})
 }
 
 // Regression test for #11667: Directory/File access on private registry images
