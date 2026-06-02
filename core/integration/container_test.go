@@ -3432,6 +3432,23 @@ func (ContainerSuite) TestWithDirectoryToMount(ctx context.Context, t *testctx.T
 	}, strings.Split(strings.Trim(contents, "\n"), "\n"))
 }
 
+func (ContainerSuite) TestAddFile(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := c.Container().From(alpineImage).
+		WithExec([]string{"sh", "-c", "mkdir -p /target/sub && ln -s /target/sub /link"})
+
+	const want = "hello through a symlink\n"
+	src := c.Directory().WithNewFile("file", want).File("file")
+	ctr, err := base.WithFile("/link/file", src).Sync(ctx)
+	require.NoError(t, err)
+
+	// the file written through the symlink must be readable at the resolved path
+	got, err := ctr.File("/target/sub/file").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
 func (ContainerSuite) TestExecError(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
