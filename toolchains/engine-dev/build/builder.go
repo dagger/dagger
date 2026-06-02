@@ -23,7 +23,6 @@ type Builder struct {
 	source *dagger.Directory
 
 	version string
-	tag     string
 
 	platform     dagger.Platform
 	platformSpec ocispecs.Platform
@@ -36,29 +35,13 @@ type Builder struct {
 func NewBuilder(
 	ctx context.Context,
 	source *dagger.Directory,
-	version, tag string,
+	version string,
 ) (*Builder, error) {
-	if version == "" {
-		v := dag.Version()
-		var err error
-		version, err = v.Version(ctx)
-		if err != nil {
-			return nil, err
-		}
-		tag, err = v.ImageTag(ctx)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if tag == "" {
-		tag = version
-	}
 	return &Builder{
 		source:       source,
 		platform:     dagger.Platform(platforms.DefaultString()),
 		platformSpec: platforms.DefaultSpec(),
 		version:      version,
-		tag:          tag,
 	}, nil
 }
 
@@ -190,28 +173,28 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 }
 
 func (build *Builder) CodegenBinary() *dagger.File {
-	return build.binary("./cmd/codegen", false, false)
+	return build.binary("./cmd/codegen", false)
 }
 
 func (build *Builder) engineBinary(race bool) *dagger.File {
-	return build.binaryWithSource("./cmd/engine", true, race, build.source)
+	return build.binaryWithSource("./cmd/engine", race, build.source)
 }
 
 func (build *Builder) dnsnameBinary() *dagger.File {
-	return build.binary("./cmd/dnsname", false, false)
+	return build.binary("./cmd/dnsname", false)
 }
 
 func (build *Builder) dialstdioBinary() *dagger.File {
-	return build.binary("./cmd/dialstdio", false, false)
+	return build.binary("./cmd/dialstdio", false)
 }
 
 //nolint:unparam
-func (build *Builder) binary(pkg string, version bool, race bool) *dagger.File {
-	return build.binaryWithSource(pkg, version, race, build.source)
+func (build *Builder) binary(pkg string, race bool) *dagger.File {
+	return build.binaryWithSource(pkg, race, build.source)
 }
 
-func (build *Builder) binaryWithSource(pkg string, version bool, race bool, source *dagger.Directory) *dagger.File {
-	return build.goWithSource(source, version, race).
+func (build *Builder) binaryWithSource(pkg string, race bool, source *dagger.Directory) *dagger.File {
+	return build.goWithSource(source, race).
 		Binary(pkg, dagger.GoBinaryOpts{
 			Platform:  build.platform,
 			NoSymbols: true,
@@ -219,21 +202,13 @@ func (build *Builder) binaryWithSource(pkg string, version bool, race bool, sour
 		})
 }
 
-func (build *Builder) Go(version bool, race bool) *dagger.Go {
-	return build.goWithSource(build.source, version, race)
+func (build *Builder) Go(race bool) *dagger.Go {
+	return build.goWithSource(build.source, race)
 }
 
-func (build *Builder) goWithSource(source *dagger.Directory, version bool, race bool) *dagger.Go {
-	var values []string
-	if version && build.version != "" {
-		values = append(values, "github.com/dagger/dagger/engine.Version="+build.version)
-	}
-	if version && build.tag != "" {
-		values = append(values, "github.com/dagger/dagger/engine.Tag="+build.tag)
-	}
+func (build *Builder) goWithSource(source *dagger.Directory, race bool) *dagger.Go {
 	return dag.Go(dagger.GoOpts{
 		Source: source,
-		Values: values,
 		Race:   race,
 		Tags: []string{
 			// The engine uses the dockerfile2llb code from buildkit, which makes use of tags
@@ -306,7 +281,7 @@ func (build *Builder) cniPlugins() (bins []*dagger.File) {
 }
 
 func (build *Builder) daggerInit() *dagger.File {
-	return build.binary("./cmd/init", false, false)
+	return build.binary("./cmd/init", false)
 }
 
 func (build *Builder) Init() *dagger.File {

@@ -74,7 +74,7 @@ func (dev *EngineDev) TestDump(
 	if err != nil {
 		return nil, err
 	}
-	ctr = dev.test(ctx, ctr, &testOpts{
+	ctr = dev.test(ctr, &testOpts{
 		runTestRegex:  run,
 		skipTestRegex: skip,
 		pkg:           pkg,

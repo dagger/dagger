@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"dagger/engine-dev/internal/dagger"
 
@@ -61,7 +60,7 @@ func (dev *EngineDev) Test(
 	if err != nil {
 		return err
 	}
-	_, err = dev.test(ctx, ctr, &testOpts{
+	_, err = dev.test(ctr, &testOpts{
 		runTestRegex:  run,
 		skipTestRegex: skip,
 		pkg:           pkg,
@@ -112,7 +111,7 @@ func (dev *EngineDev) TestTelemetry(
 	if err != nil {
 		return nil, err
 	}
-	ran, err := dev.test(ctx, ctr, &testOpts{
+	ran, err := dev.test(ctr, &testOpts{
 		runTestRegex:  run,
 		skipTestRegex: skip,
 		pkg:           "./dagql/idtui/",
@@ -148,7 +147,6 @@ type testOpts struct {
 }
 
 func (dev *EngineDev) test(
-	ctx context.Context,
 	// The test container to run the tests in
 	container *dagger.Container,
 	// Various test options
@@ -168,23 +166,6 @@ func (dev *EngineDev) test(
 	if opts.testVerbose {
 		args = append(args, "-v")
 	}
-
-	// Add ldflags
-	// FIXME: version module dependency removed — replace dag.Version() with another source of version info
-	version, err := dag.Version().Version(ctx)
-	if err != nil {
-		return dag.Container().WithError(err.Error())
-	}
-	// FIXME: version module dependency removed — replace dag.Version() with another source of version info
-	tag, err := dag.Version().ImageTag(ctx)
-	if err != nil {
-		return dag.Container().WithError(err.Error())
-	}
-	ldflags := []string{
-		"-X", "github.com/dagger/dagger/engine.Version=" + version,
-		"-X", "github.com/dagger/dagger/engine.Tag=" + tag,
-	}
-	args = append(args, "-ldflags", strings.Join(ldflags, " "))
 
 	// All following are go test flags
 	if opts.failfast {
@@ -252,7 +233,6 @@ func (dev *EngineDev) testContainer(ctx context.Context, ebpfProgs []string) (*d
 			"",    // platform
 			false, // gpuSupport
 			"",    // version
-			"",    // tag
 		)
 	if err != nil {
 		return nil, "", err

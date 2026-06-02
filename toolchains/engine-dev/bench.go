@@ -178,7 +178,7 @@ func (dev *EngineDev) benchDump(
 	if err != nil {
 		return nil, err
 	}
-	ctr = dev.test(ctx, ctr, &testOpts{
+	ctr = dev.test(ctr, &testOpts{
 		runTestRegex:  opts.runTestRegex,
 		skipTestRegex: opts.skipTestRegex,
 		pkg:           opts.pkg,
@@ -211,7 +211,7 @@ func (dev *EngineDev) bench(
 	opts *benchOpts,
 ) error {
 	run := func(cmd *dagger.Container) *dagger.Container {
-		return dev.test(ctx, cmd, &testOpts{
+		return dev.test(cmd, &testOpts{
 			runTestRegex:  opts.runTestRegex,
 			skipTestRegex: opts.skipTestRegex,
 			pkg:           opts.pkg,

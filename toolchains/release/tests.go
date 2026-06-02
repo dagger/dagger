@@ -11,16 +11,18 @@ import (
 )
 
 // Create a fake release a run checks to catch potential breaking changes.
-func (r *Release) TestLocalRelease(ctx context.Context) (*ReleaseTest, error) {
-	// FIXME: version module dependency removed — replace dag.Version() with another source of version info
-	v, err := dag.Version().Version(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current engine version: %w", err)
+func (r *Release) TestLocalRelease(
+	ctx context.Context,
+	// Current engine version. The test runs the next patch (vX.Y.Z+1) on top.
+	version string,
+) (*ReleaseTest, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	return &ReleaseTest{
 		Container: dag.EngineDev().Playground(
-			dagger.EngineDevPlaygroundOpts{Version: bumpVersionByPatch(v)},
+			dagger.EngineDevPlaygroundOpts{Version: bumpVersionByPatch(version)},
 		),
 	}, nil
 }

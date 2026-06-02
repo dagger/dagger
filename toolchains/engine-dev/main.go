@@ -149,8 +149,6 @@ func (dev *EngineDev) Container(
 	gpuSupport bool,
 	// +optional
 	version string,
-	// +optional
-	tag string,
 ) (*dagger.Container, error) {
 	cfg, err := generateConfig(dev.LogLevel)
 	if err != nil {
@@ -165,7 +163,7 @@ func (dev *EngineDev) Container(
 		return nil, err
 	}
 
-	builder, err := build.NewBuilder(ctx, dev.Source, version, tag)
+	builder, err := build.NewBuilder(ctx, dev.Source, version)
 	if err != nil {
 		return nil, err
 	}
@@ -192,10 +190,7 @@ func (dev *EngineDev) Container(
 		WithFile(engineEntrypointPath, entrypoint).
 		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
 
-	cli := dag.DaggerCli(dagger.DaggerCliOpts{
-		Version:  version,
-		ImageTag: tag,
-	}).Binary(dagger.DaggerCliBinaryOpts{
+	cli := dag.DaggerCli(dagger.DaggerCliOpts{Version: version}).Binary(dagger.DaggerCliBinaryOpts{
 		Platform: platform,
 	})
 	ctr = ctr.
@@ -224,11 +219,6 @@ func (dev *EngineDev) Service(
 	dev = dev.IncrementSubnet()
 	cacheVolumeName := "dagger-dev-engine-state"
 	if !sharedCache {
-		// FIXME: version module dependency removed — replace dag.Version() with another source of version info
-		version, err := dag.Version().Version(ctx)
-		if err != nil {
-			return nil, err
-		}
 		if version != "" {
 			cacheVolumeName = "dagger-dev-engine-state-" + version
 		} else {
@@ -239,7 +229,7 @@ func (dev *EngineDev) Service(
 		}
 	}
 
-	devEngine, err := dev.Container(ctx, "", gpuSupport, version, "")
+	devEngine, err := dev.Container(ctx, "", gpuSupport, version)
 	if err != nil {
 		return nil, err
 	}
@@ -493,7 +483,7 @@ func (dev *EngineDev) buildTargets(ctx context.Context, tags []string) ([]target
 		for j, platform := range target.Platforms {
 			jobs = jobs.WithJob(fmt.Sprintf("build %s for %s", target.Name, platform),
 				func(ctx context.Context) error {
-					ctr, err := dev.Container(ctx, platform, target.GPUSupport, releaseVersion, releaseVersion)
+					ctr, err := dev.Container(ctx, platform, target.GPUSupport, releaseVersion)
 					if err != nil {
 						return err
 					}
