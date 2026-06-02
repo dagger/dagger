@@ -272,6 +272,9 @@ func (ef *EnvFile) WithContents(contents string) (*EnvFile, error) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
+		// Tolerate the common `export KEY=value` convention by stripping the
+		// leading `export` keyword before parsing.
+		line = dotenv.StripExportPrefix(strings.TrimSpace(line))
 		kv := strings.SplitN(line, "=", 2)
 		k := kv[0]
 		var v string
