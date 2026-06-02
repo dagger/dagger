@@ -24,14 +24,16 @@ Use it when the project uses Vitest, especially Vite apps and modern frontend pa
 
 ## Main Workflows
 
-| Workflow | Function | Use it for |
-| --- | --- |
-| Test | `test` | Run the Vitest suite. |
-| Discover | `list` | Show which tests Vitest sees. |
+- `test`: run the Vitest suite.
+- `list`: show which tests Vitest sees.
 
 ## How to Use It
 
-Start with `test`. Use `list` when you need to understand what the runner found before it executes.
+Install the module, then run `dagger check`. The check should run the Vitest suite for the selected source directory.
+
+Use `list` when you need to understand what the runner found before it executes.
+
+Workspace settings can control the source directory, package manager, and Node base image.
 
 Vitest is a good check for packages where feedback speed matters. Pair it with ESLint, Prettier, or Biome for code quality checks.
 

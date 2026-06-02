@@ -24,13 +24,13 @@ Use it when your workspace already has Python tests and you want them to run the
 
 ## Main Workflow
 
-| Workflow | Function | Use it for |
-| --- | --- |
-| Test | `test` | Run Pytest against the project source. |
+- `test`: run Pytest against the project source.
 
 ## How to Use It
 
-Start with `test`. If the project is not at the default source path, point the module at the right directory. If the project needs system packages, a pinned Python version, or extra setup, provide a custom container.
+Install the module, then run `dagger check`. The check should run Pytest for the selected source directory.
+
+If the project is not at the default source path, set the source directory in workspace settings. If the project needs system packages, a pinned Python version, or extra setup, set a custom container.
 
 Keep this module focused on tests. Use separate modules for formatting, linting, shell scripts, or generated files.
 

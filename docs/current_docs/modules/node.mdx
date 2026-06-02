@@ -25,24 +25,24 @@ It is a foundation module. It does not define a check or generator by itself. Us
 
 ## Main Workflows
 
-| Workflow | Function | Use it for |
-| --- | --- |
-| Runtime | `base` | Get a Node container ready for project work. |
-| Install | `with-install-all` | Install the project's dependencies. |
-| Add package | `with-install-package` | Add one package before running a custom workflow. |
-| Add local package | `with-install-local-package` | Use a local package directory as part of the workflow. |
+- `base`: get a Node container ready for project work.
+- `with-install-all`: install the project's dependencies.
+- `with-install-package`: add one package before running a custom workflow.
+- `with-install-local-package`: use a local package directory as part of the workflow.
 
 ## How to Use It
 
-Use Node when the task is "prepare the environment" rather than "run the check."
+Node is not usually something you run with `dagger check` or `dagger generate` by itself. Use it to prepare the environment that another module uses.
 
-For common checks, install the specific module:
+For checks, install the specific tool module:
 
 - ESLint for linting
 - Prettier or Biome for formatting
 - Jest or Vitest for tests
 
-Use Node directly when you need a custom script, a build command, or a base layer for another module.
+For custom workflows, use Node directly when you need a build command, package install step, or base layer for your own module.
+
+Workspace settings can control the project source directory, package manager, and base image.
 
 ## Workspace Fit
 

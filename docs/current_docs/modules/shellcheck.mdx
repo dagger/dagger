@@ -24,16 +24,16 @@ Use it when scripts are part of the project and should be treated like code, not
 
 ## Main Workflows
 
-| Workflow | Function | Use it for |
-| --- | --- |
-| Check | `check` | Run ShellCheck on discovered shell scripts. |
-| Discover | `scripts` | See which `.sh` files the module finds. |
+- `check`: run ShellCheck on discovered shell scripts.
+- `scripts`: see which `.sh` files the module finds.
 
 ## How to Use It
 
-Start with `check`. If the result is surprising, use `scripts` to inspect discovery.
+Install the module, then run `dagger check`. The check should run ShellCheck on discovered shell scripts.
 
-Use `exclude` only for files that should not be checked. Keep the default path broad so new scripts are checked automatically.
+Use `scripts` when the check finds too much or too little.
+
+Workspace settings can exclude script paths from checking. Keep the default path broad so new scripts are checked automatically.
 
 ## Workspace Fit
 

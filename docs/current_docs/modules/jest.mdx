@@ -24,14 +24,16 @@ Use it when Jest is already the test runner for the repo and you want tests to b
 
 ## Main Workflows
 
-| Workflow | Function | Use it for |
-| --- | --- |
-| Test | `test` | Run the Jest suite. |
-| Discover | `list` | Show which tests Jest sees. |
+- `test`: run the Jest suite.
+- `list`: show which tests Jest sees.
 
 ## How to Use It
 
-Start with `test`. Use `list` when the module is installed but the wrong tests are running, or no tests are found.
+Install the module, then run `dagger check`. The check should run the Jest suite for the selected source directory.
+
+Use `list` when the wrong tests are running, or no tests are found.
+
+Workspace settings can control the source directory, package manager, and Node base image.
 
 Jest pairs well with ESLint and Prettier in JavaScript workspaces: tests catch behavior, lint catches code issues, and formatting keeps diffs clean.
 

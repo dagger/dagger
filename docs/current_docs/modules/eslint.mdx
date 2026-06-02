@@ -24,16 +24,16 @@ Use it when the repo already has ESLint config and you want linting to run as a 
 
 ## Main Workflows
 
-| Workflow | Function | Use it for |
-| --- | --- |
-| Check | `lint` | Run ESLint and fail on lint errors. |
-| Repair | `fix` | Apply ESLint fixes and return corrected source. |
+- `lint`: run ESLint and fail on lint errors.
+- `fix`: apply ESLint fixes and return corrected source.
 
 ## How to Use It
 
-Start with `lint`. That is the check you usually want in autocheck and CI.
+Install the module, then run `dagger check`. The check should run ESLint against the selected source directory.
 
-Use `fix` when the desired output is a changeset or repaired directory. That makes it useful for local repair workflows and future automation that suggests fixes.
+Run `dagger generate` when you want Dagger to produce ESLint fixes as a changeset or repaired directory.
+
+Workspace settings can control the source directory, package manager, and Node base image.
 
 ## Workspace Fit
 

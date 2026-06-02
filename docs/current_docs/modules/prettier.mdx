@@ -24,16 +24,16 @@ Use it when formatting should be boring, consistent, and enforced before code re
 
 ## Main Workflows
 
-| Workflow | Function | Use it for |
-| --- | --- |
-| Check | `check` | Fail when files are not formatted. |
-| Generate | `write` | Return source with Prettier formatting applied. |
+- `check`: fail when files are not formatted.
+- `write`: return source with Prettier formatting applied.
 
 ## How to Use It
 
-Start with `check`. It is the right workflow for PR validation.
+Install the module, then run `dagger check`. The check should fail when source files are not formatted.
 
-Use `write` when you want Dagger to produce the formatted result. That turns formatting from "go run a command yourself" into a repeatable generator.
+Run `dagger generate` when you want Dagger to apply Prettier and return the formatted source as a changeset.
+
+Workspace settings can control the source directory, package manager, and Node base image.
 
 ## Workspace Fit
 

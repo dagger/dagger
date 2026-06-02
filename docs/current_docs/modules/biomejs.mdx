@@ -24,14 +24,16 @@ Use it when a project uses Biome as the main code quality tool instead of separa
 
 ## Main Workflows
 
-| Workflow | Function | Use it for |
-| --- | --- |
-| Check | `lint` | Run Biome and fail on lint issues. |
-| Generate | `fix` | Return source with fixable issues repaired. |
+- `lint`: run Biome and fail on lint issues.
+- `fix`: return source with fixable issues repaired.
 
 ## How to Use It
 
-Start with `lint` for PR validation. Use `fix` when you want Dagger to produce the repaired output.
+Install the module, then run `dagger check`. The check should run Biome against the workspace source.
+
+Run `dagger generate` when you want Dagger to produce the fixed output.
+
+Workspace settings can control the source directory, config path, Biome version, and arguments.
 
 Biome is useful when a team wants one tool to cover work that might otherwise be split across ESLint and Prettier.
 

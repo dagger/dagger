@@ -25,19 +25,19 @@ It scans the workspace for `go.mod` files, treats each one as a Go module, and g
 
 ## Main Workflows
 
-| Workflow | Function | Use it for |
-| --- | --- |
-| Test | `test-all` | Check that every discovered Go module passes tests. |
-| Lint | `lint-all` | Check that every discovered Go module passes `golangci-lint`. |
-| Generate | `generate-all` | Run `go generate` everywhere generated files are part of the project. |
+- `test-all`: run Go tests in every discovered Go module.
+- `lint-all`: run `golangci-lint` in every discovered Go module.
+- `generate-all`: run `go generate` in every discovered Go module.
 
 ## How to Use It
 
-Start with `test-all`. That is the simplest proof that the module sees your Go workspace correctly.
+Install the module, then run `dagger check`. The checks you want first are tests and lint.
 
-Add `lint-all` when the project has a lint policy. Add `generate-all` when generated code, embedded assets, mocks, protobuf output, or other generated files are part of normal development.
+Run `dagger generate` when generated Go files are part of normal development: mocks, embedded assets, protobuf output, or code produced by `go generate`.
 
-The module also exposes discovery helpers for workflows that need to inspect the Go module layout. Most users should not start there. Start with the checks.
+Workspace settings can control the Go version, extra files mounted from the workspace root, and marker filenames that skip tests, lint, or generation for selected modules.
+
+The module also exposes discovery helpers for workflows that need to inspect the Go module layout. Most users should start with `dagger check` and `dagger generate`.
 
 ## Workspace Fit
 

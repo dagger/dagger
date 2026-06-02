@@ -25,17 +25,17 @@ It discovers charts in the workspace, lints them, and checks that values files r
 
 ## Main Workflows
 
-| Workflow | Function | Use it for |
-| --- | --- |
-| Check | `lint` | Run Helm lint on every discovered chart. |
-| Check | `assert-template` | Render discovered values files and fail if templating breaks. |
-| Discover | `charts` | See which charts the module finds. |
+- `lint`: run Helm lint on every discovered chart.
+- `assert-template`: render discovered values files and fail if templating breaks.
+- `charts`: see which charts the module finds.
 
 ## How to Use It
 
-Start with `lint`. Add `assert-template` when values files are important to the release path.
+Install the module, then run `dagger check`. The checks should lint discovered charts and render important values files.
 
-Use chart discovery helpers when a workflow needs to operate on one chart or explain what the module found.
+Use `charts` when a workflow needs to operate on one chart or explain what the module found.
+
+Workspace settings can control the Helm version and the values-file glob used for template checks.
 
 ## Workspace Fit
 

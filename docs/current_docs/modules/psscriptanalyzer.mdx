@@ -24,13 +24,13 @@ Use it when PowerShell is part of the project and needs the same review bar as a
 
 ## Main Workflow
 
-| Workflow | Function | Use it for |
-| --- | --- |
-| Check | `check` | Run PSScriptAnalyzer on discovered PowerShell scripts. |
+- `check`: run PSScriptAnalyzer on discovered PowerShell scripts.
 
 ## How to Use It
 
-Start with `check`. Tune only what the analyzer needs: exclude files that should not be checked, include extra files when scripts depend on project context, and pin the analyzer version when repeatability matters.
+Install the module, then run `dagger check`. The check should run PSScriptAnalyzer on discovered PowerShell scripts.
+
+Workspace settings can exclude files, include extra files needed by scripts, and pin the analyzer version for repeatable results.
 
 ## Workspace Fit
 
