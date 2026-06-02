@@ -147,6 +147,11 @@ type ClientMetadata struct {
 	// this client. When unset, no environment overlay is applied.
 	WorkspaceEnv *string `json:"workspace_env,omitempty"`
 
+	// UserConfigPath is the caller-host path to the user's Dagger config.
+	// The engine reads it through the caller host session when computing
+	// workspace/global config rollups.
+	UserConfigPath string `json:"user_config_path,omitempty"`
+
 	// UseRecipeIDsByDefault asks id() to return recipe-form IDs unless the
 	// request explicitly passes a recipe argument. This is engine-internal
 	// nested-client state and must not be forwarded through client headers.

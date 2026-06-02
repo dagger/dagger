@@ -27,6 +27,9 @@ type Workspace struct {
 	Cwd        string `field:"true" doc:"Current location within the workspace root. Relative paths in workspace APIs resolve from here."`
 	ConfigFile string `field:"true" doc:"Selected native workspace config file relative to the workspace root, if any."`
 
+	// EnvConfigKey is the stable key used to match workspace-scoped user envs.
+	EnvConfigKey string `field:"true" doc:"Key used to match workspace-scoped user environment config."`
+
 	// LockFile is the selected lockfile path relative to the workspace root.
 	// It is independent from ConfigFile: compat config and missing native config
 	// can still have a writable local lockfile.
@@ -41,6 +44,11 @@ type Workspace struct {
 	// Internal only (not in GraphQL schema). Empty for remote workspaces.
 	// Used by workspace filesystem operations that need host access.
 	hostPath string
+
+	// localConfigReadOnly marks generated/synthetic local workspaces whose
+	// root exists only to keep Workspace APIs total. Workspace-local config
+	// mutations must fail; global/user config mutations may still work.
+	localConfigReadOnly bool
 }
 
 // Rootfs returns the pre-fetched root filesystem directory for remote workspaces.
@@ -100,6 +108,8 @@ type persistedWorkspacePayload struct {
 	LockFile        string                        `json:"lockFile,omitempty"`
 	ClientID        string                        `json:"clientID,omitempty"`
 	HostPath        string                        `json:"hostPath,omitempty"`
+	EnvConfigKey    string                        `json:"envConfigKey,omitempty"`
+	LocalConfigRO   bool                          `json:"localConfigReadOnly,omitempty"`
 
 	// Decode-only names from main's pre-workspace-selection payload.
 	LegacyPath       string `json:"path,omitempty"`
@@ -120,6 +130,8 @@ func (ws *Workspace) EncodePersistedObject(ctx context.Context, cache dagql.Pers
 		LockFile:        ws.LockFile,
 		ClientID:        ws.ClientID,
 		HostPath:        ws.hostPath,
+		EnvConfigKey:    ws.EnvConfigKey,
+		LocalConfigRO:   ws.localConfigReadOnly,
 	}
 	if ws.rootfs.Self() != nil {
 		rootfsID, err := encodePersistedObjectRef(cache, ws.rootfs, "workspace rootfs")
@@ -171,14 +183,16 @@ func (*Workspace) DecodePersistedObject(
 	}
 
 	return &Workspace{
-		rootfs:          rootfs,
-		compatWorkspace: persisted.CompatWorkspace,
-		Address:         persisted.Address,
-		Cwd:             cwd,
-		ConfigFile:      configFile,
-		LockFile:        lockFile,
-		ClientID:        persisted.ClientID,
-		hostPath:        persisted.HostPath,
+		rootfs:              rootfs,
+		compatWorkspace:     persisted.CompatWorkspace,
+		Address:             persisted.Address,
+		Cwd:                 cwd,
+		ConfigFile:          configFile,
+		LockFile:            lockFile,
+		ClientID:            persisted.ClientID,
+		hostPath:            persisted.HostPath,
+		EnvConfigKey:        persisted.EnvConfigKey,
+		localConfigReadOnly: persisted.LocalConfigRO,
 	}, nil
 }
 
@@ -207,4 +221,12 @@ func (ws *Workspace) AttachDependencyResults(
 func (ws *Workspace) Clone() *Workspace {
 	cp := *ws
 	return &cp
+}
+
+func (ws *Workspace) LocalConfigReadOnly() bool {
+	return ws.localConfigReadOnly
+}
+
+func (ws *Workspace) SetLocalConfigReadOnly(readOnly bool) {
+	ws.localConfigReadOnly = readOnly
 }

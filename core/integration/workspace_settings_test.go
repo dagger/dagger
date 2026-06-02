@@ -207,6 +207,28 @@ region = "us-east-1"
 		require.NotContains(t, output, "us-west-2")
 	})
 
+	t.Run("settings MODULE in env scope includes user config overlay", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
+source = "../modules/aws"
+
+[modules.aws.settings]
+region = "us-west-2"
+`, workspaceSettingsAWSModule("modules/aws", "aws"))
+		addGitOrigin(ctx, t, workdir, "https://github.com/acme/app.git")
+		env := []string{"XDG_CONFIG_HOME=" + t.TempDir()}
+
+		_, err := hostDaggerEnvExecWithEnv(ctx, t, workdir, env, "--env=local", "config", "-g", "modules.aws.settings.region", "eu-central-1")
+		require.NoError(t, err)
+
+		out, err := hostDaggerEnvExecWithEnv(ctx, t, workdir, env, "--env=local", "settings", "aws", "region")
+		require.NoError(t, err)
+		require.Equal(t, "eu-central-1", strings.TrimSpace(string(out)))
+
+		out, err = hostDaggerEnvExecWithEnv(ctx, t, workdir, env, "settings", "aws", "region")
+		require.NoError(t, err)
+		require.Equal(t, "us-west-2", strings.TrimSpace(string(out)))
+	})
+
 	t.Run("unknown module fails clearly instead of printing an empty settings surface", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
 source = "../modules/aws"

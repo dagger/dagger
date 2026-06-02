@@ -145,6 +145,9 @@ type Params struct {
 	// WorkspaceEnv explicitly selects the workspace environment overlay for this client.
 	WorkspaceEnv *string
 
+	// UserConfigPath is the caller-host path to the user's Dagger config.
+	UserConfigPath string
+
 	CloudAuth           *auth.Cloud
 	EnableCloudScaleOut bool
 }
@@ -1463,6 +1466,9 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	}
 	if c.WorkspaceEnv != nil {
 		md.WorkspaceEnv = c.WorkspaceEnv
+	}
+	if c.UserConfigPath != "" {
+		md.UserConfigPath = c.UserConfigPath
 	}
 
 	return md

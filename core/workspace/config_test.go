@@ -529,6 +529,178 @@ func TestApplyEnvOverlay(t *testing.T) {
 	})
 }
 
+func TestApplySelectedEnvOverlay(t *testing.T) {
+	t.Parallel()
+
+	base := &Config{
+		Modules: map[string]ModuleEntry{
+			"aws": {
+				Source: "github.com/dagger/aws",
+				Settings: map[string]any{
+					"format": "json",
+					"region": "base",
+				},
+			},
+		},
+		Env: map[string]EnvOverlay{
+			"ci": {
+				Modules: map[string]EnvModuleOverlay{
+					"aws": {
+						Settings: map[string]any{
+							"region": "repo-ci",
+						},
+					},
+				},
+			},
+		},
+	}
+	userCfg := &UserConfig{
+		Env: map[string]UserEnvConfig{
+			"ci": {
+				Workspaces: map[string]EnvOverlay{
+					"github.com/acme/app": {
+						Modules: map[string]EnvModuleOverlay{
+							"aws": {
+								Settings: map[string]any{
+									"profile": "user-ci",
+									"region":  "user-ci",
+								},
+							},
+						},
+					},
+				},
+			},
+			"dev": {
+				Workspaces: map[string]EnvOverlay{
+					"github.com/acme/app": {
+						Modules: map[string]EnvModuleOverlay{
+							"aws": {
+								Settings: map[string]any{
+									"region": "user-dev",
+								},
+							},
+						},
+					},
+				},
+			},
+			"local": {},
+			"staging": {
+				Workspaces: map[string]EnvOverlay{
+					"github.com/acme/other": {
+						Modules: map[string]EnvModuleOverlay{
+							"aws": {
+								Settings: map[string]any{
+									"region": "us-east-2",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	t.Run("applies repo env then workspace-scoped user overlay", func(t *testing.T) {
+		t.Parallel()
+
+		applied, err := ApplySelectedEnvOverlay(base, "ci", userCfg, "github.com/acme/app")
+		require.NoError(t, err)
+		require.Equal(t, map[string]any{
+			"format":  "json",
+			"profile": "user-ci",
+			"region":  "user-ci",
+		}, applied.Modules["aws"].Settings)
+		require.Equal(t, "base", base.Modules["aws"].Settings["region"])
+	})
+
+	t.Run("allows workspace-scoped user env without repo env", func(t *testing.T) {
+		t.Parallel()
+
+		applied, err := ApplySelectedEnvOverlay(base, "dev", userCfg, "github.com/acme/app")
+		require.NoError(t, err)
+		require.Equal(t, "user-dev", applied.Modules["aws"].Settings["region"])
+	})
+
+	t.Run("allows global user env namespace without workspace overlay", func(t *testing.T) {
+		t.Parallel()
+
+		applied, err := ApplySelectedEnvOverlay(base, "local", userCfg, "github.com/acme/app")
+		require.NoError(t, err)
+		require.Equal(t, "base", applied.Modules["aws"].Settings["region"])
+	})
+
+	t.Run("env names include repo and user scopes", func(t *testing.T) {
+		t.Parallel()
+
+		require.Equal(t, []string{"ci", "dev", "local", "staging"}, EnvNamesForWorkspace(base, userCfg, "github.com/acme/app"))
+	})
+
+	t.Run("all env names include other workspaces", func(t *testing.T) {
+		t.Parallel()
+
+		require.Equal(t, []string{"ci", "dev", "local", "staging"}, EnvNamesAll(base, userCfg))
+	})
+
+	t.Run("rejects unknown env across all scopes", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := ApplySelectedEnvOverlay(base, "prod", userCfg, "github.com/acme/app")
+		require.EqualError(t, err, `workspace env "prod" is not defined`)
+	})
+}
+
+func TestParseUserConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := ParseUserConfig([]byte(`
+[env.ci.workspaces."github.com/acme/app".modules.aws.settings]
+region = "us-east-1"
+`))
+	require.NoError(t, err)
+	require.Equal(t, "us-east-1", cfg.Env["ci"].Workspaces["github.com/acme/app"].Modules["aws"].Settings["region"])
+}
+
+func TestEnsureUserEnv(t *testing.T) {
+	t.Parallel()
+
+	t.Run("creates env namespace without workspace", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := &UserConfig{}
+		require.True(t, EnsureUserEnv(cfg, "dev", ""))
+		require.False(t, EnsureUserEnv(cfg, "dev", ""))
+		require.Contains(t, cfg.Env, "dev")
+		require.Empty(t, cfg.Env["dev"].Workspaces)
+	})
+
+	t.Run("creates workspace-scoped env", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := &UserConfig{}
+		require.True(t, EnsureUserEnv(cfg, "dev", "github.com/acme/app"))
+		require.False(t, EnsureUserEnv(cfg, "dev", "github.com/acme/app"))
+		require.Contains(t, cfg.Env["dev"].Workspaces, "github.com/acme/app")
+	})
+}
+
+func TestWriteUserEnvConfigValue(t *testing.T) {
+	t.Parallel()
+
+	base := &Config{
+		Modules: map[string]ModuleEntry{
+			"aws": {
+				Source: "github.com/dagger/aws",
+			},
+		},
+	}
+	updated, err := WriteUserEnvConfigValue(nil, base, "dev", "github.com/acme/app", "modules.aws.settings.region", "us-west-2")
+	require.NoError(t, err)
+
+	cfg, err := ParseUserConfig(updated)
+	require.NoError(t, err)
+	require.Equal(t, "us-west-2", cfg.Env["dev"].Workspaces["github.com/acme/app"].Modules["aws"].Settings["region"])
+}
+
 func TestResolveModuleEntrySource(t *testing.T) {
 	t.Parallel()
 

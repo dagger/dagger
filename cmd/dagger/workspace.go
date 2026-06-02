@@ -154,6 +154,7 @@ var workspaceActivityCmd = &cobra.Command{
 }
 
 var workspaceActivityAll bool
+var workspaceConfigGlobal bool
 
 func init() {
 	workspaceCmd.AddCommand(workspaceConfigCmd)
@@ -168,6 +169,7 @@ func init() {
 
 	addWorkspaceHereFlag(configCmd)
 	addWorkspaceHereFlag(workspaceConfigCmd)
+	workspaceConfigCmd.Flags().BoolVarP(&workspaceConfigGlobal, "global", "g", false, "Write to user-level Dagger config")
 	addWorkspaceHereFlag(workspaceInitCmd)
 	workspaceActivityCmd.Flags().BoolVarP(&workspaceActivityAll, "all", "a", false, "Show activity from all remotes in the current workspace")
 
@@ -205,7 +207,7 @@ func runWorkspaceConfig(cmd *cobra.Command, args []string) error {
 		case 1:
 			return printWorkspaceConfig(ctx, cmd.OutOrStdout(), ws, args[0])
 		case 2:
-			return writeWorkspaceConfig(ctx, ws, args[0], args[1])
+			return writeWorkspaceConfig(ctx, engineClient.Dagger(), ws, args[0], args[1])
 		default:
 			return fmt.Errorf("expected 0-2 arguments, got %d", len(args))
 		}
@@ -231,9 +233,31 @@ func printWorkspaceConfig(ctx context.Context, out io.Writer, ws *dagger.Workspa
 	return err
 }
 
-func writeWorkspaceConfig(ctx context.Context, ws *dagger.Workspace, key, value string) error {
-	_, err := ws.ConfigWrite(ctx, key, value, dagger.WorkspaceConfigWriteOpts{Here: workspaceHere})
-	return err
+func writeWorkspaceConfig(ctx context.Context, dag *dagger.Client, ws *dagger.Workspace, key, value string) error {
+	if !workspaceConfigGlobal {
+		_, err := ws.ConfigWrite(ctx, key, value, dagger.WorkspaceConfigWriteOpts{Here: workspaceHere})
+		return err
+	}
+	var res struct {
+		CurrentWorkspace struct {
+			ConfigWrite string
+		}
+	}
+	return dag.Do(ctx, &dagger.Request{
+		Query: `query($key: String!, $value: String!, $here: Boolean!, $global: Boolean!) {
+			currentWorkspace {
+				configWrite(key: $key, value: $value, here: $here, global: $global)
+			}
+		}`,
+		Variables: map[string]any{
+			"key":    key,
+			"value":  value,
+			"here":   workspaceHere,
+			"global": workspaceConfigGlobal,
+		},
+	}, &dagger.Response{
+		Data: &res,
+	})
 }
 
 func installWorkspaceModule(ctx context.Context, out io.Writer, dag *dagger.Client, ref, name string, here bool) error {

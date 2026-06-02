@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -41,7 +42,14 @@ region = "us-east-1"
 func hostDaggerEnvExec(ctx context.Context, t *testctx.T, workdir string, args ...string) ([]byte, error) {
 	t.Helper()
 
+	return hostDaggerEnvExecWithEnv(ctx, t, workdir, nil, args...)
+}
+
+func hostDaggerEnvExecWithEnv(ctx context.Context, t *testctx.T, workdir string, env []string, args ...string) ([]byte, error) {
+	t.Helper()
+
 	cmd := hostDaggerCommandRaw(ctx, t, workdir, append([]string{"--progress=report"}, args...)...)
+	cmd.Env = append(cmd.Env, env...)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -52,6 +60,15 @@ func hostDaggerEnvExec(ctx context.Context, t *testctx.T, workdir string, args .
 		err = fmt.Errorf("%s%s: %w", stdout.String(), stderr.String(), err)
 	}
 	return stdout.Bytes(), err
+}
+
+func addGitOrigin(ctx context.Context, t *testctx.T, workdir, remote string) {
+	t.Helper()
+
+	cmd := exec.CommandContext(ctx, "git", "remote", "add", "origin", remote)
+	cmd.Dir = workdir
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(output))
 }
 
 func readWorkspaceEnvConfigFile(t *testctx.T, workdir string) string {
@@ -106,6 +123,30 @@ source = "github.com/dagger/aws"
 
 		cfg = readInstalledWorkspaceConfig(t, workdir)
 		require.Equal(t, "us-east-1", cfg.Env["ci"].Modules["aws"].Settings["region"])
+	})
+
+	t.Run("env create global initializes only a user env namespace", func(ctx context.Context, t *testctx.T) {
+		workdir := newWorkspaceConfigWorkdir(ctx, t, `[modules.aws]
+source = "github.com/dagger/aws"
+`)
+		addGitOrigin(ctx, t, workdir, "https://github.com/acme/app.git")
+		configHome := t.TempDir()
+		env := []string{"XDG_CONFIG_HOME=" + configHome}
+
+		_, err := hostDaggerEnvExecWithEnv(ctx, t, workdir, env, "env", "create", "-g", "local")
+		require.NoError(t, err)
+
+		require.NotContains(t, readWorkspaceEnvConfigFile(t, workdir), "[env.local")
+		userData, err := os.ReadFile(filepath.Join(configHome, "dagger", "config.toml"))
+		require.NoError(t, err)
+		userCfg, err := workspacecfg.ParseUserConfig(userData)
+		require.NoError(t, err)
+		require.Contains(t, userCfg.Env, "local")
+		require.Empty(t, userCfg.Env["local"].Workspaces)
+
+		out, err := hostDaggerEnvExecWithEnv(ctx, t, workdir, env, "env", "list")
+		require.NoError(t, err)
+		require.Equal(t, "local\n", string(out))
 	})
 
 	t.Run("env rm deletes only the selected env and fails for missing env", func(ctx context.Context, t *testctx.T) {

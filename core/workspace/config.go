@@ -58,6 +58,19 @@ type EnvModuleOverlay struct {
 	Settings map[string]any `toml:"settings,omitempty"`
 }
 
+// UserConfig represents user-local Dagger configuration, typically loaded from
+// ~/.config/dagger/config.toml. Env overlays are scoped to a workspace key so
+// user config cannot accidentally apply to unrelated repos with matching module
+// aliases.
+type UserConfig struct {
+	Env map[string]UserEnvConfig `toml:"env"`
+}
+
+// UserEnvConfig scopes one user-local environment to one or more workspaces.
+type UserEnvConfig struct {
+	Workspaces map[string]EnvOverlay `toml:"workspaces"`
+}
+
 // ResolveModuleEntrySource converts a workspace-config module source into the
 // path that should actually be loaded or displayed from the workspace root.
 // Relative local sources are resolved from the config directory; absolute local
@@ -84,11 +97,50 @@ func ParseConfig(data []byte) (*Config, error) {
 	return &cfg, nil
 }
 
+// ParseUserConfig parses user-local config bytes.
+func ParseUserConfig(data []byte) (*UserConfig, error) {
+	var cfg UserConfig
+	if err := toml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parse user env config: %w", err)
+	}
+	return &cfg, nil
+}
+
+func SerializeUserConfig(cfg *UserConfig) []byte {
+	if cfg == nil {
+		cfg = &UserConfig{}
+	}
+	data, err := toml.Marshal(cfg)
+	if err != nil {
+		// The user config structure is marshalable by construction.
+		panic(err)
+	}
+	return data
+}
+
 // ApplyEnvOverlay returns a copy of cfg with the named environment overlay
 // applied on top of the base module settings.
 //
 // In v1, environments may only override [modules.<name>.settings] values.
 func ApplyEnvOverlay(cfg *Config, envName string) (*Config, error) {
+	return ApplySelectedEnvOverlay(cfg, envName, nil, "")
+}
+
+// ApplySelectedEnvOverlay returns a copy of cfg with the named environment
+// overlay applied from repo-owned config and user-local config.
+//
+// Precedence is:
+//  1. base [modules.*] settings from .dagger/config.toml
+//  2. repo [env.<name>] overlay from .dagger/config.toml
+//  3. user workspace-scoped [env.<name>.workspaces.<key>] overlay
+//
+// Later overlays shadow earlier values for the same module setting key.
+func ApplySelectedEnvOverlay(
+	cfg *Config,
+	envName string,
+	userCfg *UserConfig,
+	workspaceKey string,
+) (*Config, error) {
 	if cfg == nil {
 		if envName == "" {
 			return nil, nil
@@ -101,15 +153,39 @@ func ApplyEnvOverlay(cfg *Config, envName string) (*Config, error) {
 		return applied, nil
 	}
 
-	env, ok := cfg.Env[envName]
-	if !ok {
+	found := false
+	if env, ok := cfg.Env[envName]; ok {
+		if err := applyEnvOverlay(applied, envName, env); err != nil {
+			return nil, err
+		}
+		found = true
+	}
+	if userCfg != nil {
+		if envCfg, ok := userCfg.Env[envName]; ok {
+			found = true
+			if workspaceKey != "" {
+				env, ok := envCfg.Workspaces[workspaceKey]
+				if !ok {
+					return applied, nil
+				}
+				if err := applyEnvOverlay(applied, envName, env); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+	if !found {
 		return nil, fmt.Errorf("workspace env %q is not defined", envName)
 	}
 
+	return applied, nil
+}
+
+func applyEnvOverlay(applied *Config, envName string, env EnvOverlay) error {
 	for moduleName, overlay := range env.Modules {
 		entry, ok := applied.Modules[moduleName]
 		if !ok {
-			return nil, fmt.Errorf("workspace env %q references unknown module %q", envName, moduleName)
+			return fmt.Errorf("workspace env %q references unknown module %q", envName, moduleName)
 		}
 		if entry.Settings == nil {
 			entry.Settings = map[string]any{}
@@ -119,22 +195,170 @@ func ApplyEnvOverlay(cfg *Config, envName string) (*Config, error) {
 		}
 		applied.Modules[moduleName] = entry
 	}
-
-	return applied, nil
+	return nil
 }
 
 // EnvNames returns the configured environment names in deterministic order.
 func EnvNames(cfg *Config) []string {
-	if cfg == nil || len(cfg.Env) == 0 {
+	return EnvNamesForWorkspace(cfg, nil, "")
+}
+
+// EnvNamesForWorkspace returns all environment names visible for a workspace,
+// including user-local envs.
+func EnvNamesForWorkspace(cfg *Config, userCfg *UserConfig, workspaceKey string) []string {
+	envNames := map[string]bool{}
+	if cfg != nil {
+		for name := range cfg.Env {
+			envNames[name] = true
+		}
+	}
+	if userCfg != nil {
+		for name := range userCfg.Env {
+			envNames[name] = true
+		}
+	}
+	if len(envNames) == 0 {
 		return nil
 	}
 
-	names := make([]string, 0, len(cfg.Env))
-	for name := range cfg.Env {
+	names := make([]string, 0, len(envNames))
+	for name := range envNames {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	return names
+}
+
+// EnvNamesAll returns all environment names known from repo and user config,
+// regardless of whether user envs target the selected workspace.
+func EnvNamesAll(cfg *Config, userCfg *UserConfig) []string {
+	envNames := map[string]bool{}
+	if cfg != nil {
+		for name := range cfg.Env {
+			envNames[name] = true
+		}
+	}
+	if userCfg != nil {
+		for name := range userCfg.Env {
+			envNames[name] = true
+		}
+	}
+	if len(envNames) == 0 {
+		return nil
+	}
+
+	names := make([]string, 0, len(envNames))
+	for name := range envNames {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// EnsureUserEnv makes sure the named user-local environment exists.
+// If workspaceKey is non-empty, the env is created for that workspace key.
+// Otherwise only the env namespace is created.
+// It returns true when the user config was changed.
+func EnsureUserEnv(cfg *UserConfig, envName, workspaceKey string) bool {
+	if cfg.Env == nil {
+		cfg.Env = map[string]UserEnvConfig{}
+	}
+
+	env, envExists := cfg.Env[envName]
+	if workspaceKey == "" {
+		if envExists {
+			return false
+		}
+		cfg.Env[envName] = env
+		return true
+	}
+
+	if env.Workspaces == nil {
+		env.Workspaces = map[string]EnvOverlay{}
+	}
+	if _, ok := env.Workspaces[workspaceKey]; ok {
+		if !envExists {
+			cfg.Env[envName] = env
+			return true
+		}
+		return false
+	}
+	env.Workspaces[workspaceKey] = EnvOverlay{}
+	cfg.Env[envName] = env
+	return true
+}
+
+func RemoveUserEnv(cfg *UserConfig, envName string) error {
+	if cfg == nil || len(cfg.Env) == 0 {
+		return fmt.Errorf("user env %q is not defined", envName)
+	}
+	if _, ok := cfg.Env[envName]; !ok {
+		return fmt.Errorf("user env %q is not defined", envName)
+	}
+	delete(cfg.Env, envName)
+	if len(cfg.Env) == 0 {
+		cfg.Env = nil
+	}
+	return nil
+}
+
+func UserEnvScopedConfigKey(cfg *Config, userCfg *UserConfig, envName, workspaceKey, key string) (string, error) {
+	if workspaceKey == "" {
+		return "", fmt.Errorf("workspace env %q requires a workspace config key", envName)
+	}
+	if cfg == nil {
+		return "", fmt.Errorf("workspace env %q requires .dagger/config.toml", envName)
+	}
+	if userCfg == nil || userCfg.Env == nil {
+		userCfg = &UserConfig{Env: map[string]UserEnvConfig{}}
+	}
+
+	parts := strings.Split(key, ".")
+	if len(parts) < 4 || parts[0] != "modules" || parts[2] != "settings" {
+		return "", fmt.Errorf("key %q cannot be set in env %q; only modules.<name>.settings.* is supported", key, envName)
+	}
+	moduleName := parts[1]
+	if _, ok := cfg.Modules[moduleName]; !ok {
+		return "", fmt.Errorf("workspace env %q cannot set settings for unknown module %q", envName, moduleName)
+	}
+	return strings.Join(append([]string{"env", envName, "workspaces", workspaceKey}, parts...), "."), nil
+}
+
+func WriteUserEnvConfigValue(existingData []byte, cfg *Config, envName, workspaceKey, key, rawValue string) ([]byte, error) {
+	if workspaceKey == "" {
+		return nil, fmt.Errorf("workspace env %q requires a workspace config key", envName)
+	}
+	if cfg == nil {
+		return nil, fmt.Errorf("workspace env %q requires .dagger/config.toml", envName)
+	}
+
+	parts := strings.Split(key, ".")
+	if len(parts) < 4 || parts[0] != "modules" || parts[2] != "settings" {
+		return nil, fmt.Errorf("key %q cannot be set in env %q; only modules.<name>.settings.* is supported", key, envName)
+	}
+	moduleName := parts[1]
+	if _, ok := cfg.Modules[moduleName]; !ok {
+		return nil, fmt.Errorf("workspace env %q cannot set settings for unknown module %q", envName, moduleName)
+	}
+
+	tree, err := toml.LoadBytes(existingData)
+	if err != nil && len(existingData) > 0 {
+		return nil, fmt.Errorf("parse existing user config: %w", err)
+	}
+	if tree == nil {
+		tree, err = toml.TreeFromMap(map[string]interface{}{})
+		if err != nil {
+			return nil, fmt.Errorf("create user config: %w", err)
+		}
+	}
+	value := parseValueString(key, rawValue)
+	path := append([]string{"env", envName, "workspaces", workspaceKey}, parts...)
+	tree.SetPath(path, value)
+	out, err := tree.ToTomlString()
+	if err != nil {
+		return nil, fmt.Errorf("serialize user config: %w", err)
+	}
+	return []byte(out), nil
 }
 
 // EnsureEnv makes sure the named environment exists.

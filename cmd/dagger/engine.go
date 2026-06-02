@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -204,6 +205,13 @@ func applyWorkspaceClientParams(params *client.Params) error {
 	if params.WorkspaceEnv == nil && workspaceEnv != "" {
 		env := workspaceEnv
 		params.WorkspaceEnv = &env
+	}
+	if params.UserConfigPath == "" {
+		userConfigDir, err := os.UserConfigDir()
+		if err != nil {
+			return fmt.Errorf("resolve user config dir: %w", err)
+		}
+		params.UserConfigPath = filepath.Join(userConfigDir, "dagger", workspace.ConfigFileName)
 	}
 	return nil
 }
