@@ -139,7 +139,9 @@ type DaggerCliPublishOpts struct {
 
 	ArtefactsFqdn string // dagger-cli (../../../../toolchains/cli-dev/publish.go:39:2)
 
-	DryRun bool // dagger-cli (../../../../toolchains/cli-dev/publish.go:41:2)
+	AwsEndpointURL string // dagger-cli (../../../../toolchains/cli-dev/publish.go:40:2)
+
+	DryRun bool // dagger-cli (../../../../toolchains/cli-dev/publish.go:42:2)
 }
 
 // Publish the CLI using GoReleaser
@@ -175,6 +177,10 @@ func (r *DaggerCli) Publish(tag string, goreleaserKey *Secret, githubOrgName str
 		if !querybuilder.IsZeroValue(opts[i].ArtefactsFqdn) {
 			q = q.Arg("artefactsFqdn", opts[i].ArtefactsFqdn)
 		}
+		// `awsEndpointUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AwsEndpointURL) {
+			q = q.Arg("awsEndpointUrl", opts[i].AwsEndpointURL)
+		}
 		// `dryRun` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DryRun) {
 			q = q.Arg("dryRun", opts[i].DryRun)
@@ -189,13 +195,30 @@ func (r *DaggerCli) Publish(tag string, goreleaserKey *Secret, githubOrgName str
 	}
 }
 
-func (r *DaggerCli) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, awsSecretAccessKey *Secret, awsRegion string, awsBucket string, awsCloudfrontDistribution string) error { // dagger-cli (../../../../toolchains/cli-dev/publish.go:139:1)
+// DaggerCliPublishMetadataOpts contains options for DaggerCli.PublishMetadata
+type DaggerCliPublishMetadataOpts struct {
+	AwsEndpointURL string // dagger-cli (../../../../toolchains/cli-dev/publish.go:149:2)
+
+	Git *GitRepository // dagger-cli (../../../../toolchains/cli-dev/publish.go:151:2)
+}
+
+func (r *DaggerCli) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, awsSecretAccessKey *Secret, awsRegion string, awsBucket string, awsCloudfrontDistribution string, opts ...DaggerCliPublishMetadataOpts) error { // dagger-cli (../../../../toolchains/cli-dev/publish.go:141:1)
 	assertNotNil("awsAccessKeyId", awsAccessKeyId)
 	assertNotNil("awsSecretAccessKey", awsSecretAccessKey)
 	if r.publishMetadata != nil {
 		return nil
 	}
 	q := r.query.Select("publishMetadata")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `awsEndpointUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AwsEndpointURL) {
+			q = q.Arg("awsEndpointUrl", opts[i].AwsEndpointURL)
+		}
+		// `git` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Git) {
+			q = q.Arg("git", opts[i].Git)
+		}
+	}
 	q = q.Arg("awsAccessKeyId", awsAccessKeyId)
 	q = q.Arg("awsSecretAccessKey", awsSecretAccessKey)
 	q = q.Arg("awsRegion", awsRegion)
@@ -234,7 +257,7 @@ func (r *DaggerCli) Reference(opts ...DaggerCliReferenceOpts) *File { // dagger-
 }
 
 // Verify that the CLI builds without actually publishing anything
-func (r *DaggerCli) ReleaseDryRun() *Directory { // dagger-cli (../../../../toolchains/cli-dev/publish.go:200:1)
+func (r *DaggerCli) ReleaseDryRun() *Directory { // dagger-cli (../../../../toolchains/cli-dev/publish.go:211:1)
 	q := r.query.Select("releaseDryRun")
 
 	return &Directory{

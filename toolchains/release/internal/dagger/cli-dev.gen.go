@@ -139,7 +139,9 @@ type CliDevPublishOpts struct {
 
 	ArtefactsFqdn string // cli-dev (../../../../toolchains/cli-dev/publish.go:39:2)
 
-	DryRun bool // cli-dev (../../../../toolchains/cli-dev/publish.go:41:2)
+	AwsEndpointURL string // cli-dev (../../../../toolchains/cli-dev/publish.go:40:2)
+
+	DryRun bool // cli-dev (../../../../toolchains/cli-dev/publish.go:42:2)
 }
 
 // Publish the CLI using GoReleaser
@@ -175,6 +177,10 @@ func (r *CliDev) Publish(tag string, goreleaserKey *Secret, githubOrgName string
 		if !querybuilder.IsZeroValue(opts[i].ArtefactsFqdn) {
 			q = q.Arg("artefactsFqdn", opts[i].ArtefactsFqdn)
 		}
+		// `awsEndpointUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AwsEndpointURL) {
+			q = q.Arg("awsEndpointUrl", opts[i].AwsEndpointURL)
+		}
 		// `dryRun` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DryRun) {
 			q = q.Arg("dryRun", opts[i].DryRun)
@@ -189,13 +195,30 @@ func (r *CliDev) Publish(tag string, goreleaserKey *Secret, githubOrgName string
 	}
 }
 
-func (r *CliDev) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, awsSecretAccessKey *Secret, awsRegion string, awsBucket string, awsCloudfrontDistribution string) error { // cli-dev (../../../../toolchains/cli-dev/publish.go:139:1)
+// CliDevPublishMetadataOpts contains options for CliDev.PublishMetadata
+type CliDevPublishMetadataOpts struct {
+	AwsEndpointURL string // cli-dev (../../../../toolchains/cli-dev/publish.go:149:2)
+
+	Git *GitRepository // cli-dev (../../../../toolchains/cli-dev/publish.go:151:2)
+}
+
+func (r *CliDev) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, awsSecretAccessKey *Secret, awsRegion string, awsBucket string, awsCloudfrontDistribution string, opts ...CliDevPublishMetadataOpts) error { // cli-dev (../../../../toolchains/cli-dev/publish.go:141:1)
 	assertNotNil("awsAccessKeyId", awsAccessKeyId)
 	assertNotNil("awsSecretAccessKey", awsSecretAccessKey)
 	if r.publishMetadata != nil {
 		return nil
 	}
 	q := r.query.Select("publishMetadata")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `awsEndpointUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].AwsEndpointURL) {
+			q = q.Arg("awsEndpointUrl", opts[i].AwsEndpointURL)
+		}
+		// `git` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Git) {
+			q = q.Arg("git", opts[i].Git)
+		}
+	}
 	q = q.Arg("awsAccessKeyId", awsAccessKeyId)
 	q = q.Arg("awsSecretAccessKey", awsSecretAccessKey)
 	q = q.Arg("awsRegion", awsRegion)
@@ -234,7 +257,7 @@ func (r *CliDev) Reference(opts ...CliDevReferenceOpts) *File { // cli-dev (../.
 }
 
 // Verify that the CLI builds without actually publishing anything
-func (r *CliDev) ReleaseDryRun() *Directory { // cli-dev (../../../../toolchains/cli-dev/publish.go:200:1)
+func (r *CliDev) ReleaseDryRun() *Directory { // cli-dev (../../../../toolchains/cli-dev/publish.go:219:1)
 	q := r.query.Select("releaseDryRun")
 
 	return &Directory{

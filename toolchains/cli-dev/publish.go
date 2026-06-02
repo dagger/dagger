@@ -37,6 +37,7 @@ func (cli *CliDev) Publish(
 	awsRegion string, // +optional
 	awsBucket string, // +optional
 	artefactsFQDN string, // +optional
+	awsEndpointURL string, // +optional
 
 	dryRun bool, // +optional
 ) (*dagger.Directory, error) {
@@ -103,6 +104,7 @@ func (cli *CliDev) Publish(
 		With(optEnvVariable("AWS_REGION", awsRegion)).
 		With(optEnvVariable("AWS_BUCKET", awsBucket)).
 		With(optEnvVariable("ARTEFACTS_FQDN", artefactsFQDN)).
+		With(optEnvVariable("AWS_ENDPOINT_URL", awsEndpointURL)).
 		WithEnvVariable("ENGINE_VERSION", cli.Version).
 		WithEnvVariable("ENGINE_TAG", cli.Tag).
 		WithEnvVariable("GORELEASER_CURRENT_TAG", tag).
@@ -144,7 +146,15 @@ func (cli *CliDev) PublishMetadata(
 	awsRegion string,
 	awsBucket string,
 	awsCloudfrontDistribution string,
+	awsEndpointURL string, // +optional
+
+	git *dagger.GitRepository, // +defaultPath="/"
 ) error {
+	source := cli.Go.Source()
+	if git != nil {
+		source = git.Head().Tree()
+	}
+
 	ctr := dag.
 		Alpine(dagger.AlpineOpts{
 			Branch:   "3.22",
@@ -152,17 +162,18 @@ func (cli *CliDev) PublishMetadata(
 		}).
 		Container().
 		WithWorkdir("/src").
-		WithDirectory(".", cli.Go.Source()).
+		WithDirectory(".", source).
 		WithSecretVariable("AWS_ACCESS_KEY_ID", awsAccessKeyID).
 		WithSecretVariable("AWS_SECRET_ACCESS_KEY", awsSecretAccessKey).
 		WithEnvVariable("AWS_REGION", awsRegion).
+		With(optEnvVariable("AWS_ENDPOINT_URL", awsEndpointURL)).
 		WithEnvVariable("AWS_EC2_METADATA_DISABLED", "true")
 
 	// update install scripts
 	ctr = ctr.
-		WithExec([]string{"aws", "s3", "cp", "./install.sh", s3Path(awsBucket, "dagger/install.sh")}).
-		WithExec([]string{"aws", "s3", "cp", "./install.ps1", s3Path(awsBucket, "dagger/install.ps1")}).
-		WithExec([]string{"aws", "cloudfront", "create-invalidation", "--distribution-id", awsCloudfrontDistribution, "--paths", "/dagger/install.sh", "/dagger/install.ps1"})
+		WithExec(awsCommand(awsEndpointURL, "s3", "cp", "./install.sh", s3Path(awsBucket, "dagger/install.sh"))).
+		WithExec(awsCommand(awsEndpointURL, "s3", "cp", "./install.ps1", s3Path(awsBucket, "dagger/install.ps1"))).
+		WithExec(awsCommand(awsEndpointURL, "cloudfront", "create-invalidation", "--distribution-id", awsCloudfrontDistribution, "--paths", "/dagger/install.sh", "/dagger/install.ps1"))
 
 	// update version pointers (only on proper releases)
 	if version := cli.Version; semver.IsValid(version) {
@@ -171,19 +182,27 @@ func (cli *CliDev) PublishMetadata(
 		}
 		if semver.Prerelease(version) == "" {
 			ctr = ctr.
-				WithExec([]string{"aws", "s3", "cp", "-", s3Path(awsBucket, "dagger/latest_version")}, cpOpts).
-				WithExec([]string{"aws", "s3", "cp", "-", s3Path(awsBucket, "dagger/versions/latest")}, cpOpts).
-				WithExec([]string{"aws", "s3", "cp", "-", s3Path(awsBucket, "dagger/versions/%s", strings.TrimPrefix(semver.MajorMinor(version), "v"))}, cpOpts)
+				WithExec(awsCommand(awsEndpointURL, "s3", "cp", "-", s3Path(awsBucket, "dagger/latest_version")), cpOpts).
+				WithExec(awsCommand(awsEndpointURL, "s3", "cp", "-", s3Path(awsBucket, "dagger/versions/latest")), cpOpts).
+				WithExec(awsCommand(awsEndpointURL, "s3", "cp", "-", s3Path(awsBucket, "dagger/versions/%s", strings.TrimPrefix(semver.MajorMinor(version), "v"))), cpOpts)
 		} else {
 			for _, variant := range util.PrereleaseVariants(version) {
 				ctr = ctr.
-					WithExec([]string{"aws", "s3", "cp", "-", s3Path(awsBucket, "dagger/versions/%s", strings.TrimPrefix(variant, "v"))}, cpOpts)
+					WithExec(awsCommand(awsEndpointURL, "s3", "cp", "-", s3Path(awsBucket, "dagger/versions/%s", strings.TrimPrefix(variant, "v"))), cpOpts)
 			}
 		}
 	}
 
 	_, err := ctr.Sync(ctx)
 	return err
+}
+
+func awsCommand(endpointURL string, args ...string) []string {
+	cmd := []string{"aws"}
+	if endpointURL != "" {
+		cmd = append(cmd, "--endpoint-url", endpointURL)
+	}
+	return append(cmd, args...)
 }
 
 func s3Path(bucket string, path string, args ...any) string {

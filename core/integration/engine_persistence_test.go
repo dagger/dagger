@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
@@ -1255,6 +1256,618 @@ git ls-remote --tags origin "$RELEASE_TAG"
 		require.NotContains(t, taggedOut, "Error while publishing", "release dry-run should validate built engine and CLI versions")
 	})
 
+	t.Run("release publish non-dry uses mock endpoints after main publish", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		stateKey := "phase7-release-nondry-version-state-" + identity.NewID()
+		releaseTag := "v9.9.9"
+		releaseVersion := strings.TrimPrefix(releaseTag, "v")
+		awsBucket := "dagger-release-test-" + strings.ToLower(identity.NewID())
+
+		goreleaserKey := lookupEnvFileValue(t, "GORELEASER_KEY")
+		if goreleaserKey == "" {
+			t.Skip("GORELEASER_KEY is required in the test env file for the non-dry release publish test")
+		}
+
+		cwd, err := os.Getwd()
+		require.NoError(t, err)
+		sourcePath := cwd
+		for {
+			_, err := os.Stat(filepath.Join(sourcePath, "toolchains", "release", "dagger.json"))
+			if err == nil {
+				break
+			}
+			parent := filepath.Dir(sourcePath)
+			require.NotEqual(t, sourcePath, parent, "could not find repository root from %s", cwd)
+			sourcePath = parent
+		}
+
+		// Keep the GoReleaser test configs on one Linux target and omit Homebrew,
+		// Nix, and Winget so this non-dry run cannot mutate those external repos.
+		stableGoReleaserConfig := `version: 2
+project_name: dagger
+builds:
+  - builder: prebuilt
+    id: dagger-linux
+    binary: ./dagger
+    goos:
+      - linux
+    goarch:
+      - amd64
+    prebuilt:
+      path: build/dagger_{{ .Env.ENGINE_VERSION }}_{{ .Os }}_{{ .Arch }}/dagger
+archives:
+  - name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+checksum:
+  name_template: "checksums.txt"
+release:
+  disable: true
+changelog:
+  disable: true
+blobs:
+  - provider: s3
+    endpoint: "{{ .Env.AWS_ENDPOINT_URL }}"
+    region: "{{ .Env.AWS_REGION }}"
+    bucket: "{{ .Env.AWS_BUCKET }}"
+    directory: "dagger/releases/{{ .Version }}"
+`
+		nightlyGoReleaserConfig := `version: 2
+project_name: dagger
+nightly:
+  version_template: "{{ .FullCommit }}"
+builds:
+  - builder: prebuilt
+    id: dagger-linux
+    binary: ./dagger
+    goos:
+      - linux
+    goarch:
+      - amd64
+    prebuilt:
+      path: build/dagger_{{ .Env.ENGINE_VERSION }}_{{ .Os }}_{{ .Arch }}/dagger
+archives:
+  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+checksum:
+  name_template: "checksums.txt"
+release:
+  disable: true
+changelog:
+  disable: true
+blobs:
+  - provider: s3
+    endpoint: "{{ .Env.AWS_ENDPOINT_URL }}"
+    region: "{{ .Env.AWS_REGION }}"
+    bucket: "{{ .Env.AWS_BUCKET }}"
+    directory: "dagger/main/{{ .Version }}"
+`
+		releaseNotes := "## Test release\n\nSynthetic release notes for the non-dry integration test.\n"
+		releaseSource := c.Host().Directory(sourcePath, dagger.HostDirectoryOpts{
+			Exclude: []string{".git"},
+			NoCache: true,
+		}).
+			WithNewFile(".release-cache-repro", identity.NewID()+"\n").
+			WithNewFile("LICENSE", "Synthetic license for release publish integration tests.\n").
+			WithNewFile("install.sh", "#!/bin/sh\nset -eu\necho dagger install\n", dagger.DirectoryWithNewFileOpts{Permissions: 0o755}).
+			WithNewFile("install.ps1", "Write-Output \"dagger install\"\n").
+			WithNewFile(".goreleaser.yml", stableGoReleaserConfig).
+			WithNewFile(".goreleaser.nightly.yml", nightlyGoReleaserConfig).
+			WithNewFile("docs/nginx.conf", "server { listen 8000; root /var/www; }\n").
+			WithNewFile(".changes/"+releaseTag+".md", releaseNotes).
+			WithNewFile("sdk/go/.changes/"+releaseTag+".md", releaseNotes).
+			WithNewFile("sdk/python/.changes/"+releaseTag+".md", releaseNotes).
+			WithNewFile("sdk/typescript/.changes/"+releaseTag+".md", releaseNotes).
+			WithNewFile("sdk/php/.changes/"+releaseTag+".md", releaseNotes).
+			WithNewFile("helm/dagger/Chart.yaml", `apiVersion: v2
+name: dagger-helm
+description: Synthetic chart for release publish integration tests.
+type: application
+version: `+releaseVersion+`
+appVersion: `+releaseVersion+`
+`).
+			WithNewFile("helm/dagger/values.yaml", "{}\n").
+			WithNewFile("helm/dagger/.changes/"+releaseTag+".md", releaseNotes)
+
+		gitDir := c.Container().
+			From(alpineImage).
+			WithExec([]string{"apk", "add", "git"}).
+			WithDirectory("/root/repo", releaseSource).
+			WithNewFile("/root/create-release-repo.sh", `#!/bin/sh
+set -e -u -x
+
+git config --global user.email "test@dagger.io"
+git config --global user.name "Test User"
+git config --global init.defaultBranch main
+
+cd /root/repo
+git init
+git checkout -B main
+git add -A
+git commit -m "initial release source"
+
+mkdir -p /root/srv
+git clone --no-local --bare . /root/srv/repo.git
+for repo in repo.git go-sdk.git php-sdk.git; do
+	if [ "$repo" != "repo.git" ]; then
+		git init --bare "/root/srv/$repo"
+	fi
+	git -C "/root/srv/$repo" config http.receivepack true
+	git -C "/root/srv/$repo" update-server-info
+done
+`).
+			WithExec([]string{"sh", "/root/create-release-repo.sh"}).
+			Directory("/root/srv")
+
+		gitHostname := identity.NewID() + ".test"
+		gitSvc, repoBaseURL := gitSmartHTTPServiceDirAuth(ctx, t, c, gitHostname, gitDir, "", nil)
+		repoURL := repoBaseURL + "/repo.git"
+		goSDKDestRemote := repoBaseURL + "/go-sdk.git"
+		phpSDKDestRemote := repoBaseURL + "/php-sdk.git"
+		gitHost := moduleResolveServiceHost(t, repoURL)
+
+		gitSvc, err = gitSvc.Start(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_, err := gitSvc.Stop(ctx)
+			require.NoError(t, err)
+		})
+
+		gitClient := func() *dagger.Container {
+			return c.Container().
+				From(alpineImage).
+				WithExec([]string{"apk", "add", "git"}).
+				With(gitUserConfig).
+				WithServiceBinding(gitHost, gitSvc).
+				WithWorkdir("/src")
+		}
+		gitStdout := func(ctx context.Context, t *testctx.T, script string) string {
+			t.Helper()
+			out, err := gitClient().
+				WithEnvVariable("REPO_URL", repoURL).
+				WithEnvVariable("RELEASE_TAG", releaseTag).
+				WithEnvVariable("GIT_CACHE_BUSTER", identity.NewID()).
+				WithExec([]string{"sh", "-ec", script}).
+				Stdout(ctx)
+			require.NoError(t, err, out)
+			return strings.TrimSpace(out)
+		}
+
+		commit := gitStdout(ctx, t, `git clone "$REPO_URL" .
+git rev-parse HEAD
+`)
+		require.NotEmpty(t, commit)
+		moduleRef := repoURL + "@" + commit
+
+		registrySvc := c.Container().
+			From("registry:3").
+			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+			AsService()
+		registrySvc, err = registrySvc.Start(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_, err := registrySvc.Stop(ctx)
+			require.NoError(t, err)
+		})
+
+		motoSvc := c.Container().
+			From("motoserver/moto:latest").
+			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+			AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+		motoSvc, err = motoSvc.Start(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_, err := motoSvc.Stop(ctx)
+			require.NoError(t, err)
+		})
+
+		verdaccioConfig := `storage: /verdaccio/storage
+auth:
+  htpasswd:
+    file: /verdaccio/conf/htpasswd
+    max_users: -1
+uplinks: {}
+packages:
+  '@*/*':
+    access: $all
+    publish: $all
+    unpublish: $all
+  '**':
+    access: $all
+    publish: $all
+    unpublish: $all
+log: { type: stdout, format: pretty, level: http }
+`
+		verdaccioSvc := c.Container().
+			From("verdaccio/verdaccio:5").
+			WithNewFile("/verdaccio/conf/config.yaml", verdaccioConfig).
+			WithExposedPort(4873, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+			AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+		verdaccioSvc, err = verdaccioSvc.Start(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_, err := verdaccioSvc.Stop(ctx)
+			require.NoError(t, err)
+		})
+
+		certGen := newGeneratedCerts(c, "ca")
+		githubCert, githubKey := certGen.newServerCerts("github.test")
+		mockRecords := c.CacheVolume("phase7-release-mock-records-" + identity.NewID())
+		mockServerScript := `import http.server
+import json
+import os
+import ssl
+import threading
+import time
+
+records_path = "/records/events.jsonl"
+os.makedirs(os.path.dirname(records_path), exist_ok=True)
+
+def record(kind, handler, body):
+    with open(records_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps({
+            "time": time.time(),
+            "kind": kind,
+            "method": handler.command,
+            "path": handler.path,
+            "body_len": len(body),
+        }, sort_keys=True) + "\n")
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, fmt, *args):
+        return
+
+    def read_body(self):
+        length = int(self.headers.get("content-length", "0") or "0")
+        return self.rfile.read(length) if length else b""
+
+    def send_bytes(self, status, body, content_type="application/json"):
+        self.send_response(status)
+        self.send_header("content-type", content_type)
+        self.send_header("content-length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def send_json(self, status, data):
+        self.send_bytes(status, json.dumps(data).encode("utf-8"))
+
+    def do_HEAD(self):
+        record("head", self, b"")
+        self.send_bytes(200, b"")
+
+    def do_GET(self):
+        if self.path.startswith("/netlify/api/v1/sites/docs.dagger.io/deploys"):
+            record("netlify_list_deploys", self, b"")
+            self.send_json(200, [{"id": "deploy-1"}])
+            return
+        if self.path.startswith("/api/v3/repos/dagger/dagger/releases/tags/"):
+            record("github_release_lookup", self, b"")
+            self.send_json(404, {"message": "Not Found"})
+            return
+        if self.path in ("/api/v3", "/api/v3/"):
+            record("github_api_root", self, b"")
+            self.send_json(200, {"verifiable_password_authentication": False})
+            return
+        if self.path.startswith("/api/v3/repos/dagger/dagger"):
+            record("github_repo", self, b"")
+            self.send_json(200, {"full_name": "dagger/dagger", "default_branch": "main"})
+            return
+        record("get", self, b"")
+        self.send_json(200, {})
+
+    def do_POST(self):
+        body = self.read_body()
+        if self.path.startswith("/netlify/api/v1/sites/docs.dagger.io/deploys/") and self.path.endswith("/restore"):
+            record("netlify_restore", self, body)
+            self.send_json(200, {"id": "deploy-1"})
+            return
+        if self.path.startswith("/pypi/"):
+            record("pypi_publish", self, body)
+            self.send_bytes(200, b"OK", "text/plain")
+            return
+        if self.path == "/api/v3/repos/dagger/dagger/releases":
+            record("github_release_create", self, body)
+            payload = json.loads(body.decode("utf-8") or "{}")
+            tag = payload.get("tag_name", "")
+            self.send_json(201, {
+                "id": int(time.time() * 1000),
+                "tag_name": tag,
+                "name": payload.get("name", tag),
+                "html_url": "https://github.test/dagger/dagger/releases/tag/" + tag,
+                "upload_url": "https://github.test/api/uploads/repos/dagger/dagger/releases/1/assets{?name,label}",
+            })
+            return
+        record("post", self, body)
+        self.send_json(200, {})
+
+    def do_PUT(self):
+        body = self.read_body()
+        record("put", self, body)
+        self.send_json(200, {})
+
+def serve_http():
+    http.server.ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+
+threading.Thread(target=serve_http, daemon=True).start()
+https = http.server.ThreadingHTTPServer(("0.0.0.0", 443), Handler)
+ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+ctx.load_cert_chain("/certs/github.test.crt", "/certs/github.test.key")
+https.socket = ctx.wrap_socket(https.socket, server_side=True)
+https.serve_forever()
+`
+		mockSvc := c.Container().
+			From("python:3.12-alpine").
+			WithMountedFile("/certs/github.test.crt", githubCert).
+			WithMountedFile("/certs/github.test.key", githubKey).
+			WithMountedCache("/records", mockRecords).
+			WithNewFile("/server.py", mockServerScript).
+			WithExposedPort(443, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+			WithExposedPort(8080, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+			WithEntrypoint([]string{"python", "/server.py"}).
+			AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
+		mockSvc, err = mockSvc.Start(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_, err := mockSvc.Stop(ctx)
+			require.NoError(t, err)
+		})
+
+		awsEndpointURL := "http://moto:5000"
+		awsCLI := func(opts ...dagger.ContainerOpts) *dagger.Container {
+			containerOpts := dagger.ContainerOpts{}
+			if len(opts) > 0 {
+				containerOpts = opts[0]
+			}
+			return c.Container(containerOpts).
+				From(alpineImage).
+				WithExec([]string{"apk", "add", "aws-cli", "curl"}).
+				WithServiceBinding("moto", motoSvc).
+				WithEnvVariable("AWS_ACCESS_KEY_ID", "test").
+				WithEnvVariable("AWS_SECRET_ACCESS_KEY", "test").
+				WithEnvVariable("AWS_REGION", "us-east-1").
+				WithEnvVariable("AWS_ENDPOINT_URL", awsEndpointURL).
+				WithEnvVariable("AWS_EC2_METADATA_DISABLED", "true")
+		}
+		cloudfrontDistribution, err := awsCLI().
+			WithEnvVariable("AWS_BUCKET", awsBucket).
+			WithNewFile("/tmp/distribution.json", `{
+  "CallerReference": "`+identity.NewID()+`",
+  "Comment": "dagger release integration test",
+  "Enabled": true,
+  "Origins": {
+    "Quantity": 1,
+    "Items": [{
+      "Id": "origin",
+      "DomainName": "example.com",
+      "CustomOriginConfig": {
+        "HTTPPort": 80,
+        "HTTPSPort": 443,
+        "OriginProtocolPolicy": "http-only",
+        "OriginSslProtocols": {"Quantity": 1, "Items": ["TLSv1.2"]}
+      }
+    }]
+  },
+  "DefaultCacheBehavior": {
+    "TargetOriginId": "origin",
+    "ViewerProtocolPolicy": "allow-all",
+    "TrustedSigners": {"Enabled": false, "Quantity": 0},
+    "ForwardedValues": {"QueryString": false, "Cookies": {"Forward": "none"}},
+    "MinTTL": 0
+  }
+}`).
+			WithExec([]string{"sh", "-ec", `
+aws --endpoint-url "$AWS_ENDPOINT_URL" s3 mb "s3://$AWS_BUCKET" >/dev/null
+aws --endpoint-url "$AWS_ENDPOINT_URL" cloudfront create-distribution \
+  --distribution-config file:///tmp/distribution.json \
+  --query 'Distribution.Id' --output text
+`}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		cloudfrontDistribution = strings.TrimSpace(cloudfrontDistribution)
+		require.NotEmpty(t, cloudfrontDistribution)
+
+		type startedReleaseEngine struct {
+			service  *dagger.Service
+			endpoint string
+		}
+
+		startReleaseEngine := func(ctx context.Context, t *testctx.T) *startedReleaseEngine {
+			t.Helper()
+
+			engineCtr := devEngineContainerWithStateKey(c, stateKey,
+				engineWithPersistenceTestGC(ctx, t),
+				engineWithConfig(ctx, t, func(ctx context.Context, t *testctx.T, cfg config.Config) config.Config {
+					if cfg.Registries == nil {
+						cfg.Registries = map[string]config.RegistryConfig{}
+					}
+					cfg.Registries["registry:5000"] = config.RegistryConfig{PlainHTTP: ptr(true)}
+					return cfg
+				}),
+				func(ctr *dagger.Container) *dagger.Container {
+					return ctr.
+						WithServiceBinding(gitHost, gitSvc).
+						WithServiceBinding("registry", registrySvc).
+						WithServiceBinding("moto", motoSvc).
+						WithServiceBinding("verdaccio", verdaccioSvc).
+						WithServiceBinding("mock", mockSvc).
+						WithServiceBinding("github.test", mockSvc)
+				},
+			)
+			service := devEngineContainerAsService(engineCtr)
+
+			endpoint, err := service.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+			require.NoError(t, err)
+
+			return &startedReleaseEngine{
+				service:  service,
+				endpoint: endpoint,
+			}
+		}
+
+		stopReleaseEngine := func(ctx context.Context, t *testctx.T, engine *startedReleaseEngine) {
+			t.Helper()
+			if engine == nil || engine.service == nil {
+				return
+			}
+			_, err := engine.service.Stop(ctx)
+			require.NoError(t, err)
+		}
+
+		runReleasePublish := func(ctx context.Context, t *testctx.T, engine *startedReleaseEngine, tag string) string {
+			t.Helper()
+
+			script := `set +e
+/bin/dagger --progress=plain -m "$MODULE_REF" call release publish \
+  --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" \
+  --registry-image "registry:5000/dagger/engine" \
+  --goreleaser-key=env:GORELEASER_KEY \
+  --github-release-token=env:FAKE_GITHUB_TOKEN \
+  --github-org-name "dagger" \
+  --github-host "github.test" \
+  --github-ca-cert "/github-ca.pem" \
+  --netlify-token=env:FAKE_NETLIFY_TOKEN \
+  --netlify-api-url "http://mock:8080/netlify/api/v1" \
+  --pypi-token=env:FAKE_PYPI_TOKEN \
+  --pypi-url "http://mock:8080/pypi/legacy/" \
+  --npm-token=env:FAKE_NPM_TOKEN \
+  --npm-registry-url "http://verdaccio:4873" \
+  --aws-access-key-id=env:AWS_ACCESS_KEY_ID \
+  --aws-secret-access-key=env:AWS_SECRET_ACCESS_KEY \
+  --aws-region "us-east-1" \
+  --aws-bucket "$AWS_BUCKET" \
+  --aws-cloudfront-distribution "$AWS_CLOUDFRONT_DISTRIBUTION" \
+  --aws-endpoint-url "http://moto:5000" \
+  --artefacts-fqdn "mock:8080" \
+  --go-sdk-dest-remote "$GO_SDK_DEST_REMOTE" \
+  --php-sdk-dest-remote "$PHP_SDK_DEST_REMOTE" \
+  --helm-registry "registry:5000/dagger" \
+  --skip-rust=true \
+  --skip-elixir=true \
+  markdown > /tmp/publish.log 2>&1
+status=$?
+cat /tmp/publish.log
+exit "$status"
+`
+			out, err := c.Container().From(alpineImage).
+				WithServiceBinding("dev-engine", engine.service).
+				WithServiceBinding(gitHost, gitSvc).
+				WithServiceBinding("registry", registrySvc).
+				WithServiceBinding("moto", motoSvc).
+				WithServiceBinding("verdaccio", verdaccioSvc).
+				WithServiceBinding("mock", mockSvc).
+				WithServiceBinding("github.test", mockSvc).
+				WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
+				WithMountedFile("/github-ca.pem", certGen.caRootCert).
+				WithSecretVariable("GORELEASER_KEY", c.SetSecret("goreleaser-key-"+identity.NewID(), goreleaserKey)).
+				WithSecretVariable("FAKE_GITHUB_TOKEN", c.SetSecret("fake-github-token-"+identity.NewID(), "fake-gh-token")).
+				WithSecretVariable("FAKE_NETLIFY_TOKEN", c.SetSecret("fake-netlify-token-"+identity.NewID(), "fake-netlify-token")).
+				WithSecretVariable("FAKE_PYPI_TOKEN", c.SetSecret("fake-pypi-token-"+identity.NewID(), "fake-pypi-token")).
+				WithSecretVariable("FAKE_NPM_TOKEN", c.SetSecret("fake-npm-token-"+identity.NewID(), "fake-npm-token")).
+				WithSecretVariable("AWS_ACCESS_KEY_ID", c.SetSecret("fake-aws-access-key-"+identity.NewID(), "test")).
+				WithSecretVariable("AWS_SECRET_ACCESS_KEY", c.SetSecret("fake-aws-secret-key-"+identity.NewID(), "test")).
+				WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+				WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engine.endpoint).
+				WithEnvVariable("MODULE_REF", moduleRef).
+				WithEnvVariable("RELEASE_TAG", tag).
+				WithEnvVariable("RELEASE_COMMIT", commit).
+				WithEnvVariable("AWS_BUCKET", awsBucket).
+				WithEnvVariable("AWS_CLOUDFRONT_DISTRIBUTION", cloudfrontDistribution).
+				WithEnvVariable("GO_SDK_DEST_REMOTE", goSDKDestRemote).
+				WithEnvVariable("PHP_SDK_DEST_REMOTE", phpSDKDestRemote).
+				WithEnvVariable("PUBLISH_RUN_CACHE_BUSTER", identity.NewID()).
+				WithExec([]string{"sh", "-ec", script}).
+				Stdout(ctx)
+			require.NoError(t, err, out)
+			return out
+		}
+
+		engine := startReleaseEngine(ctx, t)
+		t.Cleanup(func() { stopReleaseEngine(ctx, t, engine) })
+
+		initialOut := runReleasePublish(ctx, t, engine, "main")
+		require.Contains(t, initialOut, "- [x] 🚙 Engine", "initial main publish should publish the engine")
+		require.Contains(t, initialOut, "- [x] 🚗 CLI", "initial main publish should publish the CLI")
+
+		gitStdout(ctx, t, `git clone "$REPO_URL" .
+git tag "$RELEASE_TAG" "`+commit+`"
+git push origin "$RELEASE_TAG"
+git ls-remote --tags origin "$RELEASE_TAG"
+`)
+
+		taggedOut := runReleasePublish(ctx, t, engine, releaseTag)
+		require.Contains(t, taggedOut, fmt.Sprintf("- [x] 🚙 Engine ([`%s`]", releaseTag), "release publish should publish the engine")
+		require.Contains(t, taggedOut, fmt.Sprintf("- [x] 🚗 CLI ([`%s`]", releaseTag), "release publish should publish the CLI")
+		require.Contains(t, taggedOut, "- [x] 🐹 Go SDK", "release publish should publish the Go SDK")
+		require.Contains(t, taggedOut, "- [x] 🐍 Python SDK", "release publish should publish the Python SDK")
+		require.Contains(t, taggedOut, "- [x] ⬢ TypeScript SDK", "release publish should publish the TypeScript SDK")
+		require.Contains(t, taggedOut, "- [x] 🐘 PHP SDK", "release publish should publish the PHP SDK")
+		require.Contains(t, taggedOut, "- [x] ☸️ Helm Chart", "release publish should publish the Helm chart")
+		require.NotContains(t, taggedOut, "Error while publishing", "release publish should complete against mock endpoints")
+
+		mockEvents, err := c.Container().From(alpineImage).
+			WithMountedCache("/records", mockRecords).
+			WithExec([]string{"sh", "-ec", "cat /records/events.jsonl 2>/dev/null || true"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, mockEvents, `"kind": "netlify_restore"`)
+		require.Contains(t, mockEvents, `"kind": "pypi_publish"`)
+		require.Contains(t, mockEvents, `"kind": "github_release_create"`)
+
+		registryTags, err := c.Container().From(alpineImage).
+			WithExec([]string{"apk", "add", "curl"}).
+			WithServiceBinding("registry", registrySvc).
+			WithExec([]string{"curl", "-fsS", "http://registry:5000/v2/dagger/engine/tags/list"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, registryTags, releaseTag)
+		require.Contains(t, registryTags, commit)
+		require.Contains(t, registryTags, "latest")
+
+		engineVersion, err := c.Container().
+			From("gcr.io/go-containerregistry/crane:debug").
+			WithServiceBinding("registry", registrySvc).
+			WithExec([]string{"sh", "-ec", "crane export --insecure --platform linux/arm64 registry:5000/dagger/engine:" + releaseTag + " - | tar -xOf - usr/local/bin/dagger-engine > /tmp/dagger-engine && chmod +x /tmp/dagger-engine && /tmp/dagger-engine --version"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, engineVersion, releaseTag)
+
+		cliVersion, err := awsCLI(dagger.ContainerOpts{Platform: dagger.Platform("linux/amd64")}).
+			WithEnvVariable("AWS_BUCKET", awsBucket).
+			WithExec([]string{"sh", "-ec", `
+aws --endpoint-url "$AWS_ENDPOINT_URL" s3 cp "s3://$AWS_BUCKET/dagger/releases/` + releaseVersion + `/dagger_` + releaseTag + `_linux_amd64.tar.gz" /tmp/dagger.tgz
+mkdir -p /tmp/dagger
+tar -xzf /tmp/dagger.tgz -C /tmp/dagger
+/tmp/dagger/dagger version
+`}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, cliVersion, releaseTag)
+
+		npmVersion, err := c.Container().
+			From("node:20-alpine").
+			WithServiceBinding("verdaccio", verdaccioSvc).
+			WithExec([]string{"npm", "view", "@dagger.io/dagger@" + releaseVersion, "version", "--registry", "http://verdaccio:4873"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, releaseVersion, strings.TrimSpace(npmVersion))
+
+		helmTags, err := c.Container().From(alpineImage).
+			WithExec([]string{"apk", "add", "curl"}).
+			WithServiceBinding("registry", registrySvc).
+			WithExec([]string{"curl", "-fsS", "http://registry:5000/v2/dagger/dagger-helm/tags/list"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, helmTags, releaseVersion)
+
+		goSDKTags := gitStdout(ctx, t, `git ls-remote --tags "`+goSDKDestRemote+`" "`+releaseTag+`"`)
+		require.Contains(t, goSDKTags, releaseTag)
+		phpSDKTags := gitStdout(ctx, t, `git ls-remote --tags "`+phpSDKDestRemote+`" "`+releaseTag+`"`)
+		require.Contains(t, phpSDKTags, releaseTag)
+	})
+
 	t.Run("cache volume survives restart", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "phase7-cache-volume-state-" + identity.NewID()
@@ -1353,4 +1966,33 @@ git ls-remote --tags origin "$RELEASE_TAG"
 		}
 		require.NoError(t, eg.Wait())
 	})
+}
+
+func lookupEnvFileValue(t *testctx.T, key string) string {
+	t.Helper()
+
+	if val := strings.TrimSpace(os.Getenv(key)); val != "" {
+		return val
+	}
+
+	contents, err := os.ReadFile("/dagger.env")
+	if os.IsNotExist(err) {
+		return ""
+	}
+	require.NoError(t, err)
+
+	for _, line := range strings.Split(string(contents), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "export ")
+		name, val, ok := strings.Cut(line, "=")
+		if !ok || strings.TrimSpace(name) != key {
+			continue
+		}
+		return strings.Trim(strings.TrimSpace(val), `"'`)
+	}
+
+	return ""
 }

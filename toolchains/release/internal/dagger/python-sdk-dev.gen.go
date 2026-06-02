@@ -140,11 +140,11 @@ type PythonSDKDevBuildOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:284:2)
+	Version string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:287:2)
 }
 
 // Build the Python SDK client library package for distribution
-func (r *PythonSDKDev) Build(opts ...PythonSDKDevBuildOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:281:1)
+func (r *PythonSDKDev) Build(opts ...PythonSDKDevBuildOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:284:1)
 	q := r.query.Select("build")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `version` optional argument
@@ -159,7 +159,7 @@ func (r *PythonSDKDev) Build(opts ...PythonSDKDevBuildOpts) *Container { // pyth
 }
 
 // Bump the Python SDK's Engine dependency
-func (r *PythonSDKDev) Bump(version string) *Changeset { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:269:1)
+func (r *PythonSDKDev) Bump(version string) *Changeset { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:272:1)
 	q := r.query.Select("bump")
 	q = q.Arg("version", version)
 
@@ -187,7 +187,7 @@ func (r *PythonSDKDev) DevContainer() *Container { // python-sdk-dev (../../../.
 }
 
 // Preview the reference documentation
-func (r *PythonSDKDev) Docs() *PythonSDKDevDocs { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:322:1)
+func (r *PythonSDKDev) Docs() *PythonSDKDevDocs { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:325:1)
 	q := r.query.Select("docs")
 
 	return &PythonSDKDevDocs{
@@ -315,10 +315,10 @@ type PythonSDKDevProvisionOpts struct {
 	//
 	// _EXPERIMENTAL_DAGGER_RUNNER_HOST value
 	//
-	RunnerHost string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:334:2)
+	RunnerHost string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:337:2)
 }
 
-func (r *PythonSDKDev) Provision(cliBin *File, opts ...PythonSDKDevProvisionOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:328:1)
+func (r *PythonSDKDev) Provision(cliBin *File, opts ...PythonSDKDevProvisionOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:331:1)
 	assertNotNil("cliBin", cliBin)
 	q := r.query.Select("provision")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -341,15 +341,15 @@ type PythonSDKDevPublishOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:298:2)
+	Version string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:301:2)
 	//
 	// The URL of the upload endpoint (empty means PyPI)
 	//
-	URL string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:301:2)
+	URL string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:304:2)
 }
 
 // Publish Python SDK client library to PyPI
-func (r *PythonSDKDev) Publish(token *Secret, opts ...PythonSDKDevPublishOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:293:1)
+func (r *PythonSDKDev) Publish(token *Secret, opts ...PythonSDKDevPublishOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:296:1)
 	assertNotNil("token", token)
 	q := r.query.Select("publish")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -420,7 +420,9 @@ type PythonSDKDevReleaseOpts struct {
 
 	PypiRepo string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:243:2)
 
-	PypiToken *Secret // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:246:2)
+	PypiURL string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:246:2)
+
+	PypiToken *Secret // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:249:2)
 }
 
 // Release the Python SDK
@@ -437,6 +439,10 @@ func (r *PythonSDKDev) Release(ctx context.Context, sourceTag string, opts ...Py
 		// `pypiRepo` optional argument
 		if !querybuilder.IsZeroValue(opts[i].PypiRepo) {
 			q = q.Arg("pypiRepo", opts[i].PypiRepo)
+		}
+		// `pypiUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].PypiURL) {
+			q = q.Arg("pypiUrl", opts[i].PypiURL)
 		}
 		// `pypiToken` optional argument
 		if !querybuilder.IsZeroValue(opts[i].PypiToken) {
@@ -487,11 +493,11 @@ type PythonSDKDevTestPublishOpts struct {
 	//
 	//
 	// Default: "0.0.0"
-	Version string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:316:2)
+	Version string // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:319:2)
 }
 
 // Test the publishing of the Python SDK client library to TestPyPI
-func (r *PythonSDKDev) TestPublish(token *Secret, opts ...PythonSDKDevTestPublishOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:311:1)
+func (r *PythonSDKDev) TestPublish(token *Secret, opts ...PythonSDKDevTestPublishOpts) *Container { // python-sdk-dev (../../../../toolchains/python-sdk-dev/main.go:314:1)
 	assertNotNil("token", token)
 	q := r.query.Select("testPublish")
 	for i := len(opts) - 1; i >= 0; i-- {

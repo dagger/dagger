@@ -167,8 +167,13 @@ func (d DocsDev) Publish(
 	netlifyToken *dagger.Secret,
 	// +optional
 	deployment string,
+	// +optional
+	apiUrl string,
 ) error {
 	api := "https://api.netlify.com/api/v1"
+	if apiUrl != "" {
+		api = strings.TrimRight(apiUrl, "/")
+	}
 	site := "docs.dagger.io"
 	branch := "main"
 	client := http.Client{}

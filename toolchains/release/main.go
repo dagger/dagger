@@ -104,6 +104,7 @@ func (r *Release) Publish( //nolint:gocyclo
 	ctx context.Context,
 	tag string,
 	commit string,
+	git *dagger.GitRepository, // +optional +defaultPath="/"
 
 	dryRun bool, // +optional
 
@@ -115,26 +116,42 @@ func (r *Release) Publish( //nolint:gocyclo
 
 	githubToken *dagger.Secret, // +optional
 	githubOrgName string, // +optional
+	githubHost string, // +optional
+	githubCaCert *dagger.File, // +optional
+	githubReleaseToken *dagger.Secret, // +optional
 
 	netlifyToken *dagger.Secret, // +optional
+	netlifyApiUrl string, // +optional
 	pypiToken *dagger.Secret, // +optional
 	pypiRepo string, // +optional
+	pypiURL string, // +optional
 	npmToken *dagger.Secret, // +optional
+	npmRegistryURL string, // +optional
 	hexAPIKey *dagger.Secret, // +optional
 	cargoRegistryToken *dagger.Secret, // +optional
+	skipElixir bool, // +optional
+	skipRust bool, // +optional
+	goSdkDestRemote string, // +optional
+	phpSdkDestRemote string, // +optional
 
 	awsAccessKeyID *dagger.Secret, // +optional
 	awsSecretAccessKey *dagger.Secret, // +optional
 	awsRegion string, // +optional
 	awsBucket string, // +optional
 	awsCloudfrontDistribution string, // +optional
+	awsEndpointURL string, // +optional
 	artefactsFQDN string, // +optional
+
+	helmRegistry string, // +optional
 
 	discordWebhook *dagger.Secret, // +optional
 ) (*ReleaseReport, error) {
 	version := ""
 	if semver.IsValid(tag) {
 		version = tag
+	}
+	if githubReleaseToken == nil {
+		githubReleaseToken = githubToken
 	}
 
 	report := ReleaseReport{
@@ -194,17 +211,22 @@ func (r *Release) Publish( //nolint:gocyclo
 		_, err := cliDev.
 			Publish(tag, goreleaserKey, githubOrgName, dagger.CliDevPublishOpts{
 				GithubToken:        githubToken,
+				Git:                git,
 				AwsAccessKeyID:     awsAccessKeyID,
 				AwsSecretAccessKey: awsSecretAccessKey,
 				AwsRegion:          awsRegion,
 				AwsBucket:          awsBucket,
 				ArtefactsFqdn:      artefactsFQDN,
+				AwsEndpointURL:     awsEndpointURL,
 			}).
 			Sync(ctx)
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
-		err = cliDev.PublishMetadata(ctx, awsAccessKeyID, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution)
+		err = cliDev.PublishMetadata(ctx, awsAccessKeyID, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution, dagger.CliDevPublishMetadataOpts{
+			AwsEndpointURL: awsEndpointURL,
+			Git:            git,
+		})
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
@@ -237,7 +259,17 @@ func (r *Release) Publish( //nolint:gocyclo
 			Link: "https://docs.dagger.io",
 		}
 		if !dryRun {
-			if err := dag.DocsDev().Publish(ctx, netlifyToken); err != nil {
+			docsDev := dag.DocsDev()
+			if git != nil {
+				source := git.Head().Tree()
+				docsDev = dag.DocsDev(dagger.DocsDevOpts{
+					Source:      source,
+					NginxConfig: source.File("docs/nginx.conf"),
+				})
+			}
+			if err := docsDev.Publish(ctx, netlifyToken, dagger.DocsDevPublishOpts{
+				APIURL: netlifyApiUrl,
+			}); err != nil {
 				artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 			}
 		}
@@ -262,6 +294,7 @@ func (r *Release) Publish( //nolint:gocyclo
 			release: func(ctx context.Context) error {
 				return dag.GoSDKDev().Release(ctx, tag, dagger.GoSDKDevReleaseOpts{
 					GithubToken: githubToken,
+					DestRemote:  goSdkDestRemote,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
@@ -276,6 +309,7 @@ func (r *Release) Publish( //nolint:gocyclo
 			release: func(ctx context.Context) error {
 				return dag.PythonSDKDev().Release(ctx, tag, dagger.PythonSDKDevReleaseOpts{
 					PypiRepo:  pypiRepo,
+					PypiURL:   pypiURL,
 					PypiToken: pypiToken,
 				})
 			},
@@ -290,7 +324,8 @@ func (r *Release) Publish( //nolint:gocyclo
 			link: "https://www.npmjs.com/package/@dagger.io/dagger/v/" + strings.TrimPrefix(version, "v"),
 			release: func(ctx context.Context) error {
 				return dag.TypescriptSDKDev().Release(ctx, tag, dagger.TypescriptSDKDevReleaseOpts{
-					NpmToken: npmToken,
+					NpmToken:       npmToken,
+					NpmRegistryURL: npmRegistryURL,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
@@ -332,6 +367,7 @@ func (r *Release) Publish( //nolint:gocyclo
 			release: func(ctx context.Context) error {
 				return dag.PhpSDKDev().Release(ctx, tag, dagger.PhpSDKDevReleaseOpts{
 					GithubToken: githubToken,
+					Dest:        phpSdkDestRemote,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
@@ -346,7 +382,11 @@ func (r *Release) Publish( //nolint:gocyclo
 			// Helm publishing was inlined from helm-dev so release owns the
 			// package/push step without reintroducing that module dependency.
 			release: func(ctx context.Context) error {
-				return r.helmPublish(ctx, tag, githubToken, false)
+				var source *dagger.Directory
+				if git != nil {
+					source = git.Head().Tree()
+				}
+				return r.helmPublish(ctx, tag, githubToken, helmRegistry, source, false)
 			},
 			dryRun: func(ctx context.Context) error {
 				return r.helmReleaseDryRun(ctx)
@@ -356,6 +396,12 @@ func (r *Release) Publish( //nolint:gocyclo
 	artifacts := make([]*ReleaseReportArtifact, len(components))
 	var eg errgroup.Group
 	for i, component := range components {
+		if skipElixir && component.path == "sdk/elixir/" {
+			continue
+		}
+		if skipRust && component.path == "sdk/rust/" {
+			continue
+		}
 		if component.dev || semver.IsValid(version) {
 			// FIXME: use parallel
 			eg.Go(func() error {
@@ -398,7 +444,11 @@ func (r *Release) Publish( //nolint:gocyclo
 
 				if semver.IsValid(version) {
 					notes := dag.Changelog().LookupEntry(component.path, version)
-					if err := r.githubRelease(ctx, "https://github.com/dagger/dagger", commit, target, notes, githubToken, dryRun); err != nil {
+					repo := "https://github.com/dagger/dagger"
+					if githubHost != "" {
+						repo = "https://" + githubHost + "/dagger/dagger"
+					}
+					if err := r.githubRelease(ctx, repo, commit, target, notes, githubReleaseToken, githubHost, githubCaCert, dryRun); err != nil {
 						artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 						return nil
 					}
@@ -541,7 +591,7 @@ func (r Release) Notify(
 	// +optional
 	dryRun bool,
 ) error {
-	githubRepo, err := githubRepo(repository)
+	githubRepo, err := githubRepo(repository, "")
 	if err != nil {
 		return err
 	}

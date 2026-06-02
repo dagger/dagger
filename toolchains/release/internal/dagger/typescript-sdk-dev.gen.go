@@ -331,6 +331,10 @@ type TypescriptSDKDevReleaseOpts struct {
 	// Execute a dry-run release, with no side effects
 	//
 	DryRun bool // typescript-sdk-dev (../../../../:0:0)
+	//
+	// NPM registry URL to publish to.
+	//
+	NpmRegistryURL string // typescript-sdk-dev (../../../../:0:0)
 }
 
 func (r *TypescriptSDKDev) Release(ctx context.Context, sourceTag string, opts ...TypescriptSDKDevReleaseOpts) error { // typescript-sdk-dev (../../../../:0:0)
@@ -346,6 +350,10 @@ func (r *TypescriptSDKDev) Release(ctx context.Context, sourceTag string, opts .
 		// `dryRun` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DryRun) {
 			q = q.Arg("dryRun", opts[i].DryRun)
+		}
+		// `npmRegistryUrl` optional argument
+		if !querybuilder.IsZeroValue(opts[i].NpmRegistryURL) {
+			q = q.Arg("npmRegistryUrl", opts[i].NpmRegistryURL)
 		}
 	}
 	q = q.Arg("sourceTag", sourceTag)

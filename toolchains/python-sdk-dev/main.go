@@ -225,6 +225,7 @@ func (t PythonSdkDev) ReleaseDryRun(ctx context.Context) error {
 		"HEAD", // sourceTag
 		true,   // dryRun
 		"",     // pypiRepo
+		"",     // pypiURL
 		nil,    // pypiToken
 	)
 }
@@ -243,6 +244,9 @@ func (t PythonSdkDev) Release(
 	pypiRepo string,
 
 	// +optional
+	pypiURL string,
+
+	// +optional
 	pypiToken *dagger.Secret,
 ) error {
 	version := strings.TrimPrefix(sourceTag, "sdk/python/")
@@ -251,8 +255,8 @@ func (t PythonSdkDev) Release(
 	if dryRun {
 		ctr = t.Build("0.0.0") // no default arg in Go, without self call just replicate the default value
 	} else {
-		var url string
-		if pypiRepo == "test" {
+		url := pypiURL
+		if url == "" && pypiRepo == "test" {
 			url = "https://test.pypi.org/legacy/"
 		}
 		ctr = t.Publish(pypiToken, strings.TrimPrefix(version, "v"), url)
