@@ -133,7 +133,7 @@ module.exports = {
           label: "Learning and Advanced Use",
           collapsible: true,
           collapsed: true,
-          items: ["modules/setup", "modules/sdk-sdk"],
+          items: ["modules/sdk-sdk"],
         },
       ],
     },
