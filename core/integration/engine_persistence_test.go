@@ -1310,6 +1310,8 @@ git ls-remote --tags origin "$RELEASE_TAG"
 
 		require.Contains(t, tagsVisibleInPublishContainer(ctx, t), tag, "release tag should be visible in the publish container before the second dry-run")
 		taggedOut := runReleasePublish(ctx, t, engine, tag)
+		require.Contains(t, taggedOut, fmt.Sprintf("- [x] 🚙 Engine ([`%s`]", tag), "release dry-run should validate built engine version")
+		require.Contains(t, taggedOut, fmt.Sprintf("- [x] 🚗 CLI ([`%s`]", tag), "release dry-run should validate built CLI version")
 		require.NotContains(t, taggedOut, "Error while publishing", "release dry-run should validate built engine and CLI versions")
 	})
 

@@ -313,6 +313,10 @@ type DaggerCliOpts struct {
 	// Explicit version to set on the Dagger CLI.
 	//
 	Version string // dagger-cli (../../../../toolchains/cli-dev/main.go:45:2)
+	//
+	// Explicit engine image tag to embed in the Dagger CLI.
+	//
+	ImageTag string // dagger-cli (../../../../toolchains/cli-dev/main.go:49:2)
 }
 
 // Develop the Dagger CLI
@@ -334,6 +338,10 @@ func (r *Query) DaggerCli(opts ...DaggerCliOpts) *DaggerCli { // dagger-cli (../
 		// `version` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Version) {
 			q = q.Arg("version", opts[i].Version)
+		}
+		// `imageTag` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ImageTag) {
+			q = q.Arg("imageTag", opts[i].ImageTag)
 		}
 	}
 

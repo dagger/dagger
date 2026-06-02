@@ -192,7 +192,10 @@ func (dev *EngineDev) Container(
 		WithFile(engineEntrypointPath, entrypoint).
 		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
 
-	cli := dag.DaggerCli(dagger.DaggerCliOpts{Version: version}).Binary(dagger.DaggerCliBinaryOpts{
+	cli := dag.DaggerCli(dagger.DaggerCliOpts{
+		Version:  version,
+		ImageTag: tag,
+	}).Binary(dagger.DaggerCliBinaryOpts{
 		Platform: platform,
 	})
 	ctr = ctr.
