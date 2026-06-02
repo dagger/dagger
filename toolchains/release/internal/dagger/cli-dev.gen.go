@@ -23,7 +23,6 @@ type CliDev struct { // cli-dev (../../../../toolchains/cli-dev/main.go:83:6)
 
 	id              *ID
 	publishMetadata *Void
-	releaseDryRun   *Void
 	tag             *string
 	version         *string
 }
@@ -235,13 +234,12 @@ func (r *CliDev) Reference(opts ...CliDevReferenceOpts) *File { // cli-dev (../.
 }
 
 // Verify that the CLI builds without actually publishing anything
-func (r *CliDev) ReleaseDryRun(ctx context.Context) error { // cli-dev (../../../../toolchains/cli-dev/publish.go:200:1)
-	if r.releaseDryRun != nil {
-		return nil
-	}
+func (r *CliDev) ReleaseDryRun() *Directory { // cli-dev (../../../../toolchains/cli-dev/publish.go:200:1)
 	q := r.query.Select("releaseDryRun")
 
-	return q.Execute(ctx)
+	return &Directory{
+		query: q,
+	}
 }
 
 func (r *CliDev) Tag(ctx context.Context) (string, error) { // cli-dev (../../../../toolchains/cli-dev/main.go:85:2)

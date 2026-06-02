@@ -30,13 +30,12 @@ func (r *Binding) AsEngineDevLoadedEngine() *EngineDevLoadedEngine { // engine-d
 type EngineDev struct { // engine-dev (../../../../toolchains/engine-dev/main.go:63:6)
 	query *querybuilder.Selection
 
-	benchmark     *Void
-	id            *ID
-	networkCidr   *string
-	publish       *Void
-	releaseDryRun *Void
-	test          *Void
-	tests         *string
+	benchmark   *Void
+	id          *ID
+	networkCidr *string
+	publish     *Void
+	test        *Void
+	tests       *string
 }
 type WithEngineDevFunc func(r *EngineDev) *EngineDev
 
@@ -609,13 +608,36 @@ func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDev
 	return q.Execute(ctx)
 }
 
-func (r *EngineDev) ReleaseDryRun(ctx context.Context) error { // engine-dev (../../../../toolchains/engine-dev/main.go:437:1)
-	if r.releaseDryRun != nil {
-		return nil
-	}
+func (r *EngineDev) ReleaseDryRun(ctx context.Context) ([]Container, error) { // engine-dev (../../../../toolchains/engine-dev/main.go:437:1)
 	q := r.query.Select("releaseDryRun")
 
-	return q.Execute(ctx)
+	q = q.Select("id")
+
+	type releaseDryRun struct {
+		Id ID
+	}
+
+	convert := func(fields []releaseDryRun) []Container {
+		out := []Container{}
+
+		for i := range fields {
+			val := Container{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Container")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []releaseDryRun
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // EngineDevServiceOpts contains options for EngineDev.Service

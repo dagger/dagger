@@ -434,16 +434,16 @@ type targetResult struct {
 }
 
 // +check
-func (dev *EngineDev) ReleaseDryRun(ctx context.Context) error {
-	return dev.Publish(
+func (dev *EngineDev) ReleaseDryRun(ctx context.Context) ([]*dagger.Container, error) {
+	targetResults, err := dev.buildTargets(
 		ctx,
-		"dagger-engine.dev", // image
 		// FIXME: why not from HEAD like the SDKs?
 		[]string{"main"}, // tag
-		true,             // dryRun
-		nil,              // registryUsername
-		nil,              // registryPassword
 	)
+	if err != nil {
+		return nil, err
+	}
+	return flattenTargetPlatforms(targetResults), nil
 }
 
 // Publish all engine images to a registry
@@ -506,6 +506,14 @@ func (dev *EngineDev) buildTargets(ctx context.Context, tags []string) ([]target
 		return nil, err
 	}
 	return targetResults, nil
+}
+
+func flattenTargetPlatforms(targetResults []targetResult) []*dagger.Container {
+	var platforms []*dagger.Container
+	for _, result := range targetResults {
+		platforms = append(platforms, result.Platforms...)
+	}
+	return platforms
 }
 
 func (dev *EngineDev) pushTargets(
