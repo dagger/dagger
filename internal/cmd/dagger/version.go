@@ -11,7 +11,7 @@ import (
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/distconsts"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
-	"github.com/dagger/dagger/version"
+	"github.com/dagger/dagger/internal/version"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
