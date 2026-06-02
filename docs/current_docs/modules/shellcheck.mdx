@@ -1,7 +1,7 @@
 ---
 title: "ShellCheck"
 slug: /modules/shellcheck
-description: "Skeleton docs for the official ShellCheck module."
+description: "Check shell scripts with ShellCheck."
 ---
 
 # ShellCheck
@@ -12,40 +12,32 @@ Install with `dagger mod install github.com/dagger/shellcheck`.
 
 ## What It Is
 
-The ShellCheck module finds shell scripts in a workspace and checks them with ShellCheck.
+The ShellCheck module finds shell scripts and checks them with ShellCheck.
+
+Use it when scripts are part of the project and should be treated like code, not as untested glue.
 
 ## Use It For
 
-- Checking shell scripts
-- Adding shell linting to CI and Cloud checks
-- Sharing shell lint rules across a workspace
+- Check shell scripts in CI and Dagger Cloud.
+- Catch quoting, portability, and safety issues.
+- Exclude known files when a workspace needs a narrow check.
 
-## Functions
+## Main Workflows
 
-| Function | Purpose |
+| Workflow | Function | Use it for |
 | --- | --- |
-| `check` | Run ShellCheck on all shell scripts in the workspace. |
-| `scripts` | Find all `.sh` files in the workspace and return them as `Script` objects. |
-| `base` | Base container with ShellCheck installed. |
-| `exclude` | Shell script paths to exclude from checking. |
+| Check | `check` | Run ShellCheck on discovered shell scripts. |
+| Discover | `scripts` | See which `.sh` files the module finds. |
 
-## How to Read This API
+## How to Use It
 
-Use `check` for workspace validation. Use `scripts` when a workflow needs to inspect or compose per-script work.
+Start with `check`. If the result is surprising, use `scripts` to inspect discovery.
 
-## Checks
+Use `exclude` only for files that should not be checked. Keep the default path broad so new scripts are checked automatically.
 
-Use `check` as the likely workspace check.
+## Workspace Fit
 
-## Settings
-
-Document script discovery, `exclude`, ShellCheck version, and whether non-`.sh` shell files are included.
-
-## Examples to Add
-
-- Lint scripts in `scripts/`
-- Lint all shell files in a repo
-- Run as part of a workspace check suite
+This module is small and high value. It is a good default check for repos that contain deployment scripts, local dev scripts, or CI helper scripts.
 
 ## Source
 

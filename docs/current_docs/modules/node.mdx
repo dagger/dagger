@@ -1,7 +1,7 @@
 ---
 title: "Node"
 slug: /modules/node
-description: "Skeleton docs for the official Node module."
+description: "Prepare a Node environment for JavaScript and TypeScript workflows."
 ---
 
 # Node
@@ -12,47 +12,41 @@ Install with `dagger mod install github.com/dagger/node`.
 
 ## What It Is
 
-The Node module is the base toolchain for JavaScript and TypeScript workspaces. Other modules can build on it, and users can call it directly when they need a Node container with dependencies installed.
+The Node module prepares a Node container with your source and dependencies.
+
+It is a foundation module. It does not define a check or generator by itself. Use it when your own module or workflow needs a predictable Node environment, then pair it with a tool module such as ESLint, Prettier, Jest, or Vitest.
 
 ## Use It For
 
-- Installing dependencies
-- Running package scripts
-- Building frontend or backend projects
-- Sharing Node setup across other JS modules
+- Install dependencies once and reuse the result.
+- Build JavaScript or TypeScript projects.
+- Give other modules the same Node image, source directory, and package manager.
+- Create custom workflows when an official tool module is not enough.
 
-## Functions
+## Main Workflows
 
-| Function | Purpose |
+| Workflow | Function | Use it for |
 | --- | --- |
-| `base` | Runtime container for Node. |
-| `base-image-address` | Base image to use. |
-| `package-manager` | Package manager to use. |
-| `source` | Source directory for the project. |
-| `with-install-all` | Install all required packages. |
-| `with-install-package` | Install one package. |
-| `with-install-local-package` | Install a local package from a `Directory`. |
+| Runtime | `base` | Get a Node container ready for project work. |
+| Install | `with-install-all` | Install the project's dependencies. |
+| Add package | `with-install-package` | Add one package before running a custom workflow. |
+| Add local package | `with-install-local-package` | Use a local package directory as part of the workflow. |
 
-## How to Read This API
+## How to Use It
 
-Start with `base` when you need a container. Use the install functions before a build, test, lint, or format step.
+Use Node when the task is "prepare the environment" rather than "run the check."
 
-This module is also a foundation for `eslint`, `prettier`, `jest`, and `vitest`.
+For common checks, install the specific module:
 
-## Checks
+- ESLint for linting
+- Prettier or Biome for formatting
+- Jest or Vitest for tests
 
-This module is mostly a runtime and dependency toolchain. Checks usually belong in modules that run a specific tool, such as ESLint, Jest, Vitest, or Prettier.
+Use Node directly when you need a custom script, a build command, or a base layer for another module.
 
-## Settings
+## Workspace Fit
 
-Document `base-image-address`, `package-manager`, `source`, lockfile handling, and dependency cache behavior.
-
-## Examples to Add
-
-- Run `npm test`
-- Build a workspace package
-- Use pnpm or yarn
-- Reuse the module from ESLint, Jest, Vitest, or Prettier docs
+This module belongs in JavaScript and TypeScript workspaces that need shared dependency setup. It keeps runtime setup separate from checks, so each tool module can stay focused.
 
 ## Source
 

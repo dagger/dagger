@@ -1,7 +1,7 @@
 ---
 title: "Prettier"
 slug: /modules/prettier
-description: "Skeleton docs for the official Prettier module."
+description: "Check and rewrite source formatting with Prettier."
 ---
 
 # Prettier
@@ -12,41 +12,32 @@ Install with `dagger mod install github.com/dagger/prettier`.
 
 ## What It Is
 
-The Prettier module checks and rewrites formatting for files handled by Prettier. It uses a Node base image, package manager, and project source directory.
+The Prettier module checks and rewrites formatting for files handled by Prettier.
+
+Use it when formatting should be boring, consistent, and enforced before code review.
 
 ## Use It For
 
-- Checking formatting
-- Producing formatting changesets
-- Sharing formatting defaults across a workspace
+- Check formatting in CI and Dagger Cloud.
+- Generate a formatted version of the source.
+- Keep formatting policy separate from lint rules.
 
-## Functions
+## Main Workflows
 
-| Function | Purpose |
+| Workflow | Function | Use it for |
 | --- | --- |
-| `check` | Check whether files are formatted. |
-| `write` | Rewrite processed files in place. |
-| `source` | Source directory for the project. |
-| `package-manager` | Package manager to use. |
-| `base-image-address` | Base image to use. |
+| Check | `check` | Fail when files are not formatted. |
+| Generate | `write` | Return source with Prettier formatting applied. |
 
-## How to Read This API
+## How to Use It
 
-Use `check` for CI and Cloud. Use `write` for a formatting changeset or local repair workflow.
+Start with `check`. It is the right workflow for PR validation.
 
-## Checks
+Use `write` when you want Dagger to produce the formatted result. That turns formatting from "go run a command yourself" into a repeatable generator.
 
-Use `check` as the likely workspace check.
+## Workspace Fit
 
-## Settings
-
-Document `source`, config path, ignore path, `package-manager`, `base-image-address`, and Prettier args.
-
-## Examples to Add
-
-- Check formatting in CI
-- Generate a formatting changeset
-- Pair with ESLint
+Prettier works well next to ESLint: ESLint checks code quality, Prettier owns formatting. If the project uses Biome for both, use the Biome module instead.
 
 ## Source
 

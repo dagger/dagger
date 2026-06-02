@@ -1,7 +1,7 @@
 ---
 title: "ESLint"
 slug: /modules/eslint
-description: "Skeleton docs for the official ESLint module."
+description: "Lint JavaScript and TypeScript source with ESLint."
 ---
 
 # ESLint
@@ -12,41 +12,32 @@ Install with `dagger mod install github.com/dagger/eslint`.
 
 ## What It Is
 
-The ESLint module lints JavaScript and TypeScript source. It uses a Node base image, a package manager, and a project source directory.
+The ESLint module checks JavaScript and TypeScript source with ESLint.
+
+Use it when the repo already has ESLint config and you want linting to run as a Dagger check.
 
 ## Use It For
 
-- Linting JS and TS source
-- Adding lint checks to a workspace
-- Sharing ESLint defaults across a team
+- Catch code issues before a PR lands.
+- Run the same lint check locally and in CI.
+- Produce a repair workflow for fixable lint issues.
 
-## Functions
+## Main Workflows
 
-| Function | Purpose |
+| Workflow | Function | Use it for |
 | --- | --- |
-| `lint` | Lint the source. |
-| `fix` | Fix linting issues. |
-| `source` | Source directory for the project. |
-| `package-manager` | Package manager to use. |
-| `base-image-address` | Base image to use. |
+| Check | `lint` | Run ESLint and fail on lint errors. |
+| Repair | `fix` | Apply ESLint fixes and return corrected source. |
 
-## How to Read This API
+## How to Use It
 
-Use `lint` for validation. Use `fix` when the workflow should return corrected source or a changeset.
+Start with `lint`. That is the check you usually want in autocheck and CI.
 
-## Checks
+Use `fix` when the desired output is a changeset or repaired directory. That makes it useful for local repair workflows and future automation that suggests fixes.
 
-Use `lint` as the likely check. Confirm the final check annotation and workspace name before writing the full how-to.
+## Workspace Fit
 
-## Settings
-
-Document `source`, `package-manager`, `base-image-address`, config path, ignore paths, and ESLint args.
-
-## Examples to Add
-
-- Lint a frontend app
-- Lint one package in a monorepo
-- Pair with Prettier and Vitest
+Use ESLint with Prettier when the project separates lint rules from formatting. Use Biome when the project has moved linting and formatting into one tool.
 
 ## Source
 

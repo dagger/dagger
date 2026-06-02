@@ -1,19 +1,20 @@
 ---
 title: "Modules"
 slug: /modules
-description: "Official Dagger modules and toolchains."
+description: "Official Dagger modules you can add to a workspace."
 ---
 
 # Modules
 
-This section is the home for official Dagger modules.
+Official modules give a workspace useful work to do.
 
-Each page should help a developer answer four questions:
+Install a module when you want to add a real tool to your project: test Go code, run Pytest, lint shell scripts, format source, or validate Helm charts. Most modules are useful because they expose checks, generators, or repair workflows that can run the same way locally, in CI, and in Dagger Cloud.
 
-1. What does this module do?
-2. When should I install it?
-3. What can I call or check?
-4. How do I configure it for my workspace?
+Each page answers three questions:
+
+1. What is this module for?
+2. Which checks or generators matter first?
+3. How does it fit into a workspace?
 
 ## Official Modules
 
@@ -21,14 +22,12 @@ Each page should help a developer answer four questions:
 
 - [Go](./go.mdx)
 - [Node](./node.mdx)
-- [Bun](./bun.mdx)
 
 ### Testing
 
 - [Pytest](./pytest.mdx)
 - [Jest](./jest.mdx)
 - [Vitest](./vitest.mdx)
-- [Mocha](./mochajs.mdx)
 
 ### Linting and Formatting
 
@@ -42,19 +41,12 @@ Each page should help a developer answer four questions:
 
 - [Helm](./helm.mdx)
 
-### Learning and Advanced Use
+## Start Here
 
-- [SDK SDK](./sdk-sdk.mdx)
+Choose the module that matches the tool your project already uses.
 
-## Catalog Notes
+- For checks, start with functions named `check`, `test`, `lint`, or `assert`.
+- For generated output or repairs, start with functions named `generate`, `write`, or `fix`.
+- For runtimes, use the module as a base for another workflow instead of treating it as a check.
 
-This first pass includes public `dagger/*` repos that look like official reusable modules or toolchains. Repos for SDK source, mirrors, internal tests, products, examples, and the main Dagger mono-repo are not included here.
-
-Most pages now include the function list reported by the Dagger CLI for that module.
-
-Three pages are intentionally conservative:
-
-- [Bun](./bun.mdx) and [Mocha](./mochajs.mdx) have official toolchain repos, but their default branches do not currently contain loadable Dagger module config.
-- [SDK SDK](./sdk-sdk.mdx) has module config, but failed to load against the current beta CLI because a dependency hit Dang type inference errors.
-
-Replace this note with an automatic module catalog once official module metadata is stable.
+The pages here cover official modules that loaded in the current CLI pass.

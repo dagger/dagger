@@ -1,7 +1,7 @@
 ---
 title: "Vitest"
 slug: /modules/vitest
-description: "Skeleton docs for the official Vitest module."
+description: "Run Vitest tests for modern JavaScript and TypeScript workspaces."
 ---
 
 # Vitest
@@ -12,41 +12,32 @@ Install with `dagger mod install github.com/dagger/vitest`.
 
 ## What It Is
 
-The Vitest module runs Vitest tests for Vite and modern JavaScript or TypeScript projects. It uses a Node base image, package manager, and project source directory.
+The Vitest module runs Vitest tests for JavaScript and TypeScript projects.
+
+Use it when the project uses Vitest, especially Vite apps and modern frontend packages.
 
 ## Use It For
 
-- Running Vitest tests
-- Adding fast JS test checks
-- Testing Vite-based workspaces
+- Run Vitest as a workspace check.
+- Validate frontend packages and libraries.
+- List discovered tests when test selection is unclear.
 
-## Functions
+## Main Workflows
 
-| Function | Purpose |
+| Workflow | Function | Use it for |
 | --- | --- |
-| `test` | Execute the tests. |
-| `list` | List the tests. |
-| `source` | Source directory for the project. |
-| `package-manager` | Package manager to use. |
-| `base-image-address` | Base image to use. |
+| Test | `test` | Run the Vitest suite. |
+| Discover | `list` | Show which tests Vitest sees. |
 
-## How to Read This API
+## How to Use It
 
-Use `test` for normal validation. Use `list` to inspect what Vitest would run.
+Start with `test`. Use `list` when you need to understand what the runner found before it executes.
 
-## Checks
+Vitest is a good check for packages where feedback speed matters. Pair it with ESLint, Prettier, or Biome for code quality checks.
 
-Use `test` as the likely check. Confirm final check naming before publishing the complete workflow.
+## Workspace Fit
 
-## Settings
-
-Document `source`, `package-manager`, `base-image-address`, config file behavior, and Vitest args.
-
-## Examples to Add
-
-- Run Vitest for a frontend project
-- Run Vitest in a monorepo package
-- Pair with ESLint and Prettier checks
+Use this module when Vitest is the test runner. Use Jest instead for projects that already depend on Jest conventions and config.
 
 ## Source
 

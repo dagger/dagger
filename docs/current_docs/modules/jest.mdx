@@ -1,7 +1,7 @@
 ---
 title: "Jest"
 slug: /modules/jest
-description: "Skeleton docs for the official Jest module."
+description: "Run Jest tests for JavaScript and TypeScript workspaces."
 ---
 
 # Jest
@@ -12,41 +12,32 @@ Install with `dagger mod install github.com/dagger/jest`.
 
 ## What It Is
 
-The Jest module runs Jest tests for JavaScript and TypeScript workspaces. It uses a Node base image, a package manager, and a project source directory.
+The Jest module runs Jest tests for JavaScript and TypeScript projects.
+
+Use it when Jest is already the test runner for the repo and you want tests to become a Dagger check.
 
 ## Use It For
 
-- Running Jest tests
-- Adding a test check to a Node workspace
-- Sharing test settings across a team
+- Run Jest in CI and Dagger Cloud.
+- Check one app or package in a larger workspace.
+- List discovered tests when you need to debug test selection.
 
-## Functions
+## Main Workflows
 
-| Function | Purpose |
+| Workflow | Function | Use it for |
 | --- | --- |
-| `test` | Execute the tests. |
-| `list` | List the tests. |
-| `source` | Source directory for the project. |
-| `package-manager` | Package manager to use. |
-| `base-image-address` | Base image to use. |
+| Test | `test` | Run the Jest suite. |
+| Discover | `list` | Show which tests Jest sees. |
 
-## How to Read This API
+## How to Use It
 
-Use `test` for normal validation. Use `list` when a workflow needs to inspect test discovery without running the suite.
+Start with `test`. Use `list` when the module is installed but the wrong tests are running, or no tests are found.
 
-## Checks
+Jest pairs well with ESLint and Prettier in JavaScript workspaces: tests catch behavior, lint catches code issues, and formatting keeps diffs clean.
 
-Use `test` as the likely check. Confirm final check naming before publishing the complete page.
+## Workspace Fit
 
-## Settings
-
-Document `source`, `package-manager`, `base-image-address`, config file behavior, and Jest args.
-
-## Examples to Add
-
-- Run Jest in a monorepo package
-- Use a custom Jest config
-- Pair with the Node module
+Use this module when Jest is the test runner. Use Vitest instead for projects built around Vitest or Vite-first test workflows.
 
 ## Source
 

@@ -1,7 +1,7 @@
 ---
 title: "Helm"
 slug: /modules/helm
-description: "Skeleton docs for the official Helm module."
+description: "Lint Helm charts and check rendered templates."
 ---
 
 # Helm
@@ -12,45 +12,34 @@ Install with `dagger mod install github.com/dagger/helm`.
 
 ## What It Is
 
-The Helm module discovers Helm charts in a workspace, lints them, and checks that values files render with `helm template`.
+The Helm module validates Helm charts.
+
+It discovers charts in the workspace, lints them, and checks that values files render with `helm template --dry-run=client`.
 
 ## Use It For
 
-- Linting Helm charts
-- Rendering templates
-- Packaging charts
-- Validating chart changes in CI
+- Check chart structure with Helm lint.
+- Check that values files render cleanly.
+- Catch chart problems before a PR reaches a cluster.
+- Share the same Helm version across a workspace.
 
-## Functions
+## Main Workflows
 
-| Function | Purpose |
+| Workflow | Function | Use it for |
 | --- | --- |
-| `lint` | Lint every discovered Helm chart in the workspace. |
-| `assert-template` | Assert every discovered values file renders with `helm template --dry-run=client`. |
-| `charts` | Scan the workspace for Helm charts. |
-| `chart` | Return one discovered chart by workspace-relative path. |
-| `values-glob` | Glob for chart values files to check as extra matrix dimensions. |
-| `version` | Helm version to use. |
+| Check | `lint` | Run Helm lint on every discovered chart. |
+| Check | `assert-template` | Render discovered values files and fail if templating breaks. |
+| Discover | `charts` | See which charts the module finds. |
 
-## How to Read This API
+## How to Use It
 
-Use `lint` for chart validation. Use `assert-template` when values files should be rendered as part of the check.
+Start with `lint`. Add `assert-template` when values files are important to the release path.
 
-Use `charts` and `chart` for workflows that need to inspect chart discovery or operate on one chart.
+Use chart discovery helpers when a workflow needs to operate on one chart or explain what the module found.
 
-## Checks
+## Workspace Fit
 
-Use `lint` and `assert-template` as the likely workspace checks.
-
-## Settings
-
-Document chart discovery, `values-glob`, `version`, values file behavior, and registry/publish support if present.
-
-## Examples to Add
-
-- Lint a chart
-- Render templates with values
-- Package and publish a chart
+Use this module for repos that ship Kubernetes applications with Helm. It is a strong PR check because it validates chart changes before deploy tooling sees them.
 
 ## Source
 

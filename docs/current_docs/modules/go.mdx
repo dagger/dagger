@@ -1,7 +1,7 @@
 ---
 title: "Go"
 slug: /modules/go
-description: "Skeleton docs for the official Go module."
+description: "Run Go tests, lint, and generators across a workspace."
 ---
 
 # Go
@@ -12,52 +12,38 @@ Install with `dagger mod install github.com/dagger/go`.
 
 ## What It Is
 
-The Go module is the official Dagger toolchain for Go workspaces. It discovers Go modules, runs tests, runs generation, and runs lint across the workspace.
+The Go module is for Go workspaces that want one shared way to test, lint, and run `go generate`.
+
+It scans the workspace for `go.mod` files, treats each one as a Go module, and gives you workspace-level functions that run across all of them. That makes it a good fit for monorepos, service repos, and libraries with generated code.
 
 ## Use It For
 
-- Running Go tests
-- Building Go binaries
-- Managing Go toolchain versions
-- Producing artifacts for CI and release workflows
+- Test every Go module with the same command.
+- Run `golangci-lint` across the workspace.
+- Run `go generate` before a build or PR.
+- Skip tests, lint, or generation in selected modules with marker files.
 
-## Functions
+## Main Workflows
 
-| Function | Purpose |
+| Workflow | Function | Use it for |
 | --- | --- |
-| `test-all` | Run tests in every discovered Go module. |
-| `lint-all` | Run `golangci-lint` in every discovered Go module. |
-| `generate-all` | Run `go generate` in every discovered Go module. |
-| `modules` | Return every Go module discovered from workspace `go.mod` files. |
-| `module` | Return the Go module containing a workspace path. |
-| `version` | Go version used for test and generate commands. |
-| `include-extra-files` | Extra workspace-root include patterns mounted for each module's Go commands. |
-| `skip-test-filename` | Marker filename that skips tests at or above a Go module root. |
-| `skip-lint-filename` | Marker filename that skips lint at or above a Go module root. |
-| `skip-generate-filename` | Marker filename that skips generation at or above a Go module root. |
+| Test | `test-all` | Check that every discovered Go module passes tests. |
+| Lint | `lint-all` | Check that every discovered Go module passes `golangci-lint`. |
+| Generate | `generate-all` | Run `go generate` everywhere generated files are part of the project. |
 
-## How to Read This API
+## How to Use It
 
-Start with `test-all`, `lint-all`, and `generate-all`. Those are the workspace-level actions.
+Start with `test-all`. That is the simplest proof that the module sees your Go workspace correctly.
 
-Use `modules` and `module` when a workflow needs to inspect the Go module layout.
+Add `lint-all` when the project has a lint policy. Add `generate-all` when generated code, embedded assets, mocks, protobuf output, or other generated files are part of normal development.
 
-Use the skip marker functions to document or configure per-module opt-outs.
+The module also exposes discovery helpers for workflows that need to inspect the Go module layout. Most users should not start there. Start with the checks.
 
-## Checks
+## Workspace Fit
 
-Use `test-all`, `lint-all`, and `generate-all` as the likely check surface. Confirm final check names before expanding the how-to.
+Use this module when the repo contains one or more Go modules. It is especially useful when several Go modules should share the same Go version and the same CI checks.
 
-## Settings
-
-Document `version`, `include-extra-files`, skip marker filenames, discovery rules, and lint configuration.
-
-## Examples to Add
-
-- Test a Go module
-- Lint all Go modules in a monorepo
-- Skip tests for one module with a marker file
-- Run generation as a workspace check
+If one module should not run a workflow, use the module's skip marker settings instead of splitting the repo into separate check systems.
 
 ## Source
 

@@ -1,7 +1,7 @@
 ---
 title: "Biome"
 slug: /modules/biomejs
-description: "Skeleton docs for the official Biome module."
+description: "Lint and fix source with Biome."
 ---
 
 # Biome
@@ -12,38 +12,32 @@ Install with `dagger mod install github.com/dagger/biomejs`.
 
 ## What It Is
 
-The Biome module lints source and can fix issues by returning a changeset.
+The Biome module runs Biome linting and can return fixed source.
+
+Use it when a project uses Biome as the main code quality tool instead of separate lint and formatting tools.
 
 ## Use It For
 
-- Formatting JS and TS projects
-- Running Biome lint checks
-- Replacing or complementing ESLint and Prettier in a workspace
+- Check JavaScript and TypeScript projects.
+- Run one combined tool for lint and format rules.
+- Generate a fixed version of the source when Biome can repair issues.
 
-## Functions
+## Main Workflows
 
-| Function | Purpose |
+| Workflow | Function | Use it for |
 | --- | --- |
-| `lint` | Lint the source code. |
-| `fix` | Fix lint issues and return a changeset of the result. |
+| Check | `lint` | Run Biome and fail on lint issues. |
+| Generate | `fix` | Return source with fixable issues repaired. |
 
-## How to Read This API
+## How to Use It
 
-Use `lint` for validation. Use `fix` when the workflow should propose repaired source.
+Start with `lint` for PR validation. Use `fix` when you want Dagger to produce the repaired output.
 
-## Checks
+Biome is useful when a team wants one tool to cover work that might otherwise be split across ESLint and Prettier.
 
-Use `lint` as the likely workspace check.
+## Workspace Fit
 
-## Settings
-
-Document source discovery, config path, Biome version, args, and how `fix` returns changes.
-
-## Examples to Add
-
-- Check a frontend project
-- Format a monorepo package
-- Compare with ESLint and Prettier paths
+Use Biome for projects that already have Biome config. Keep ESLint and Prettier pages for projects that use those tools separately.
 
 ## Source
 

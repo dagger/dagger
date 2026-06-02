@@ -1,7 +1,7 @@
 ---
 title: "PSScriptAnalyzer"
 slug: /modules/psscriptanalyzer
-description: "Skeleton docs for the official PSScriptAnalyzer module."
+description: "Check PowerShell scripts with PSScriptAnalyzer."
 ---
 
 # PSScriptAnalyzer
@@ -14,39 +14,27 @@ Install with `dagger mod install github.com/dagger/PsScriptAnalyzer`.
 
 The PSScriptAnalyzer module checks PowerShell scripts with PSScriptAnalyzer.
 
+Use it when PowerShell is part of the project and needs the same review bar as application code.
+
 ## Use It For
 
-- Checking PowerShell scripts
-- Enforcing PowerShell style and safety rules
-- Adding PowerShell lint checks to CI and Cloud
+- Check PowerShell scripts in CI and Dagger Cloud.
+- Enforce style, safety, and ruleset expectations.
+- Include supporting files when scripts need project context.
 
-## Functions
+## Main Workflow
 
-| Function | Purpose |
+| Workflow | Function | Use it for |
 | --- | --- |
-| `check` | Run PSScriptAnalyzer on all PowerShell scripts in the workspace. |
-| `base` | Base container with PSScriptAnalyzer installed. |
-| `exclude` | PowerShell script paths to exclude from checking. |
-| `include-extra-files` | Extra non-PowerShell file paths to include for scripts that need project context. |
-| `version` | PSScriptAnalyzer version to install. |
+| Check | `check` | Run PSScriptAnalyzer on discovered PowerShell scripts. |
 
-## How to Read This API
+## How to Use It
 
-Use `check` for workspace validation. Use `exclude` and `include-extra-files` to tune what the analyzer sees.
+Start with `check`. Tune only what the analyzer needs: exclude files that should not be checked, include extra files when scripts depend on project context, and pin the analyzer version when repeatability matters.
 
-## Checks
+## Workspace Fit
 
-Use `check` as the likely workspace check.
-
-## Settings
-
-Document `version`, `exclude`, `include-extra-files`, source discovery, ruleset support, and analyzer args.
-
-## Examples to Add
-
-- Analyze a PowerShell module
-- Use a custom ruleset
-- Run as a workspace check
+Use this module for repos with PowerShell automation, Windows support scripts, or PowerShell modules. It complements ShellCheck in mixed shell workspaces.
 
 ## Source
 

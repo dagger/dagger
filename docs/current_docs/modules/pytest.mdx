@@ -1,7 +1,7 @@
 ---
 title: "Pytest"
 slug: /modules/pytest
-description: "Skeleton docs for the official Pytest module."
+description: "Run Pytest as a Dagger workspace check."
 ---
 
 # Pytest
@@ -12,39 +12,31 @@ Install with `dagger mod install github.com/dagger/pytest`.
 
 ## What It Is
 
-The Pytest module runs Python tests with pytest and OpenTelemetry tracing. It can use the default Python project source or a custom container with Python and `uv` installed.
+The Pytest module runs Python tests with Pytest.
+
+Use it when your workspace already has Python tests and you want them to run the same way locally, in CI, and in Dagger Cloud.
 
 ## Use It For
 
-- Running Python tests
-- Running test checks in CI and Cloud
-- Sharing pytest setup across a team
+- Add a Python test check to a workspace.
+- Run tests from a standard source directory.
+- Use a custom Python container when the default environment is not enough.
 
-## Functions
+## Main Workflow
 
-| Function | Purpose |
+| Workflow | Function | Use it for |
 | --- | --- |
-| `test` | Test a Python project with pytest and OpenTelemetry tracing. |
-| `source` | Optional source directory containing the Python project. |
-| `container` | Optional custom container with Python and `uv` installed. |
+| Test | `test` | Run Pytest against the project source. |
 
-## How to Read This API
+## How to Use It
 
-Start with `test`. Use `source` to point at the project directory. Use `container` when the default Python environment is not enough.
+Start with `test`. If the project is not at the default source path, point the module at the right directory. If the project needs system packages, a pinned Python version, or extra setup, provide a custom container.
 
-## Checks
+Keep this module focused on tests. Use separate modules for formatting, linting, shell scripts, or generated files.
 
-Use `test` as the likely workspace check. Confirm the final check annotation and check name before writing the complete how-to.
+## Workspace Fit
 
-## Settings
-
-Document `source`, `container`, pytest arguments, dependency install behavior, and Python or `uv` expectations.
-
-## Examples to Add
-
-- Run tests from a default path
-- Run tests with custom args
-- Use with a Python project module
+This module is a good first check for Python repos. Once it passes locally, it is a natural candidate for autocheck and PR validation.
 
 ## Source
 
