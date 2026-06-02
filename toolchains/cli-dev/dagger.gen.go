@@ -387,7 +387,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 			if err != nil {
 				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
 			}
-			return nil, (*CliDev).ReleaseDryRun(&parent, ctx)
+			return (*CliDev).ReleaseDryRun(&parent, ctx)
 		case "":
 			var parent CliDev
 			err = json.Unmarshal(parentJSON, &parent)

@@ -683,7 +683,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg tag", err))
 				}
 			}
-			return nil, (*EngineDev).ReleaseDryRun(&parent, ctx, tag)
+			return (*EngineDev).ReleaseDryRun(&parent, ctx, tag)
 		case "Service":
 			var parent EngineDev
 			err = json.Unmarshal(parentJSON, &parent)
