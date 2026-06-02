@@ -306,11 +306,11 @@ func printRecommendations(out io.Writer, recs []recommendation) error {
 	}
 
 	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	if _, err := fmt.Fprintln(w, "NAME\tDESCRIPTION\tREPO\tMATCHED"); err != nil {
+	if _, err := fmt.Fprintln(w, "ADDRESS\tDESCRIPTION\tMATCHED"); err != nil {
 		return err
 	}
 	for _, r := range recs {
-		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Module.Name, r.Module.Description, r.Module.Repo, r.Match); err != nil {
+		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\n", r.Module.Repo, r.Module.Description, r.Match); err != nil {
 			return err
 		}
 	}
@@ -318,6 +318,6 @@ func printRecommendations(out io.Writer, recs []recommendation) error {
 		return err
 	}
 
-	_, err := fmt.Fprintln(out, "\nRun 'dagger module install <repo>' to install a module.")
+	_, err := fmt.Fprintln(out, "\nRun 'dagger mod install <ADDRESS>' to install a module.")
 	return err
 }

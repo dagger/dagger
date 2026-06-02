@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/bmatcuk/doublestar/v4"
@@ -55,6 +56,29 @@ func TestEmbeddedModuleRegistryParses(t *testing.T) {
 	mods, err := parseModuleRegistry(embeddedModuleRegistry)
 	require.NoError(t, err)
 	require.NotEmpty(t, mods)
+}
+
+func TestPrintRecommendationsUsesInstallAddress(t *testing.T) {
+	recs := []recommendation{{
+		Module: registryModule{
+			Name:        "wolfi",
+			Description: "Wolfi Linux base images",
+			Repo:        "github.com/dagger/wolfi",
+		},
+		Match: "apko.yaml",
+	}}
+
+	var out bytes.Buffer
+	require.NoError(t, printRecommendations(&out, recs))
+
+	got := out.String()
+	require.Contains(t, got, "ADDRESS")
+	require.Contains(t, got, "DESCRIPTION")
+	require.Contains(t, got, "MATCHED")
+	require.NotContains(t, got, "NAME")
+	require.NotContains(t, got, "REPO")
+	require.Contains(t, got, "github.com/dagger/wolfi")
+	require.Contains(t, got, "Run 'dagger mod install <ADDRESS>' to install a module.")
 }
 
 func TestModSubcommandsRegistered(t *testing.T) {
