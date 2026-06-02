@@ -86,9 +86,16 @@ func (lazy *ContainerFromImageRefLazy) Evaluate(ctx context.Context, container *
 		if err != nil {
 			return err
 		}
+		network, detach, err := ContainerRegistryNetwork(ctx, container.Services)
+		if err != nil {
+			return err
+		}
+		defer detach()
+
 		pulled, err := rslvr.Pull(ctx, lazy.CanonicalRef, serverresolver.PullOpts{
 			Platform:    lazy.Platform.Spec(),
 			ResolveMode: lazy.ResolveMode,
+			Network:     network,
 		})
 		if err != nil {
 			return fmt.Errorf("pull image %q: %w", lazy.CanonicalRef, err)

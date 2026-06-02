@@ -1033,9 +1033,16 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		}
 
 		refStr := refName.String()
+		network, detach, err := core.ContainerRegistryNetwork(ctx, parent.Self().Services)
+		if err != nil {
+			return inst, err
+		}
+		defer detach()
+
 		_, _, cfgBytes, err := rslvr.ResolveImageConfig(ctx, refStr, serverresolver.ResolveImageConfigOpts{
 			Platform:    ptr(platform.Spec()),
 			ResolveMode: serverresolver.ResolveModeDefault,
+			Network:     network,
 		})
 		if err != nil {
 			return inst, fmt.Errorf("failed to resolve image %q (platform: %q): %w", refStr, platform.Format(), err)
@@ -1124,9 +1131,16 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.ObjectResult[*c
 		if err != nil {
 			return inst, fmt.Errorf("failed to get registry resolver: %w", err)
 		}
+		network, detach, err := core.ContainerRegistryNetwork(ctx, parent.Self().Services)
+		if err != nil {
+			return inst, err
+		}
+		defer detach()
+
 		_, resolvedDigest, _, err := rslvr.ResolveImageConfig(ctx, refName.String(), serverresolver.ResolveImageConfigOpts{
 			Platform:    ptr(platform.Spec()),
 			ResolveMode: serverresolver.ResolveModeDefault,
+			Network:     network,
 		})
 		if err != nil {
 			return inst, fmt.Errorf("failed to resolve image %q (platform: %q): %w", refName.String(), platform.Format(), err)
