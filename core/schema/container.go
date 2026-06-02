@@ -570,6 +570,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("path").Doc(`Path to check (e.g., "/file.txt").`),
 				dagql.Arg("expectedType").Doc(`If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").`),
 				dagql.Arg("doNotFollowSymlinks").Doc(`If specified, do not follow symlinks.`),
+				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
+					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
 		dagql.NodeFunc("stat", s.stat).
@@ -2308,7 +2310,14 @@ func (s *containerSchema) withoutAnnotation(ctx context.Context, parent dagql.Ob
 	return ctr, nil
 }
 
-func (s *containerSchema) exists(ctx context.Context, parent dagql.ObjectResult[*core.Container], args existsArgs) (dagql.Boolean, error) {
+type containerExistsArgs struct {
+	Path                string
+	ExpectedType        dagql.Optional[core.ExistsType]
+	DoNotFollowSymlinks bool `default:"false"`
+	Expand              bool `default:"false"`
+}
+
+func (s *containerSchema) exists(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerExistsArgs) (dagql.Boolean, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return false, fmt.Errorf("failed to get server: %w", err)
@@ -2320,7 +2329,13 @@ func (s *containerSchema) exists(ctx context.Context, parent dagql.ObjectResult[
 	if err := cache.Evaluate(ctx, parent); err != nil {
 		return false, err
 	}
-	exists, err := parent.Self().Exists(ctx, parent, srv, args.Path, args.ExpectedType.Value, args.DoNotFollowSymlinks)
+
+	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
+	if err != nil {
+		return false, err
+	}
+
+	exists, err := parent.Self().Exists(ctx, parent, srv, path, args.ExpectedType.Value, args.DoNotFollowSymlinks)
 	return dagql.NewBoolean(exists), err
 }
 
