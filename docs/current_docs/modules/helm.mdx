@@ -12,7 +12,7 @@ Install with `dagger mod install github.com/dagger/helm`.
 
 ## What It Is
 
-TODO: Explain the Helm module as a Kubernetes package manager toolchain.
+The Helm module discovers Helm charts in a workspace, lints them, and checks that values files render with `helm template`.
 
 ## Use It For
 
@@ -21,20 +21,30 @@ TODO: Explain the Helm module as a Kubernetes package manager toolchain.
 - Packaging charts
 - Validating chart changes in CI
 
-## Main Workflows
+## Functions
 
-- Lint a chart
-- Template a chart
-- Package a chart
-- Return chart artifacts
+| Function | Purpose |
+| --- | --- |
+| `lint` | Lint every discovered Helm chart in the workspace. |
+| `assert-template` | Assert every discovered values file renders with `helm template --dry-run=client`. |
+| `charts` | Scan the workspace for Helm charts. |
+| `chart` | Return one discovered chart by workspace-relative path. |
+| `values-glob` | Glob for chart values files to check as extra matrix dimensions. |
+| `version` | Helm version to use. |
+
+## How to Read This API
+
+Use `lint` for chart validation. Use `assert-template` when values files should be rendered as part of the check.
+
+Use `charts` and `chart` for workflows that need to inspect chart discovery or operate on one chart.
 
 ## Checks
 
-TODO: Document default chart checks.
+Use `lint` and `assert-template` as the likely workspace checks.
 
 ## Settings
 
-TODO: Document chart path, values files, Helm version, Kubernetes version, and registry settings.
+Document chart discovery, `values-glob`, `version`, values file behavior, and registry/publish support if present.
 
 ## Examples to Add
 

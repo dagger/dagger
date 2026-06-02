@@ -12,7 +12,7 @@ Install with `dagger mod install github.com/dagger/pytest`.
 
 ## What It Is
 
-TODO: Explain the Pytest module as a test runner for Python workspaces.
+The Pytest module runs Python tests with pytest and OpenTelemetry tracing. It can use the default Python project source or a custom container with Python and `uv` installed.
 
 ## Use It For
 
@@ -20,20 +20,25 @@ TODO: Explain the Pytest module as a test runner for Python workspaces.
 - Running test checks in CI and Cloud
 - Sharing pytest setup across a team
 
-## Main Workflows
+## Functions
 
-- Run all tests
-- Run a subset of tests
-- Return test output
-- Fail a workspace check on test failures
+| Function | Purpose |
+| --- | --- |
+| `test` | Test a Python project with pytest and OpenTelemetry tracing. |
+| `source` | Optional source directory containing the Python project. |
+| `container` | Optional custom container with Python and `uv` installed. |
+
+## How to Read This API
+
+Start with `test`. Use `source` to point at the project directory. Use `container` when the default Python environment is not enough.
 
 ## Checks
 
-TODO: Document the default test check and naming.
+Use `test` as the likely workspace check. Confirm the final check annotation and check name before writing the complete how-to.
 
 ## Settings
 
-TODO: Document Python version, source path, test path, dependency install mode, and pytest arguments.
+Document `source`, `container`, pytest arguments, dependency install behavior, and Python or `uv` expectations.
 
 ## Examples to Add
 

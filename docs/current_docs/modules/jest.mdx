@@ -12,7 +12,7 @@ Install with `dagger mod install github.com/dagger/jest`.
 
 ## What It Is
 
-TODO: Explain the Jest module as a JavaScript test runner for Dagger workspaces.
+The Jest module runs Jest tests for JavaScript and TypeScript workspaces. It uses a Node base image, a package manager, and a project source directory.
 
 ## Use It For
 
@@ -20,20 +20,27 @@ TODO: Explain the Jest module as a JavaScript test runner for Dagger workspaces.
 - Adding a test check to a Node workspace
 - Sharing test settings across a team
 
-## Main Workflows
+## Functions
 
-- Run all tests
-- Run tests with a config file
-- Run tests in CI
-- Return test output
+| Function | Purpose |
+| --- | --- |
+| `test` | Execute the tests. |
+| `list` | List the tests. |
+| `source` | Source directory for the project. |
+| `package-manager` | Package manager to use. |
+| `base-image-address` | Base image to use. |
+
+## How to Read This API
+
+Use `test` for normal validation. Use `list` when a workflow needs to inspect test discovery without running the suite.
 
 ## Checks
 
-TODO: Document the default check and how it is named in a workspace.
+Use `test` as the likely check. Confirm final check naming before publishing the complete page.
 
 ## Settings
 
-TODO: Document source path, package manager, Node version, config path, and Jest args.
+Document `source`, `package-manager`, `base-image-address`, config file behavior, and Jest args.
 
 ## Examples to Add
 

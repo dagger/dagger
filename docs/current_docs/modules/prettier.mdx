@@ -12,7 +12,7 @@ Install with `dagger mod install github.com/dagger/prettier`.
 
 ## What It Is
 
-TODO: Explain the Prettier module as a formatting toolchain for many file types.
+The Prettier module checks and rewrites formatting for files handled by Prettier. It uses a Node base image, package manager, and project source directory.
 
 ## Use It For
 
@@ -20,20 +20,27 @@ TODO: Explain the Prettier module as a formatting toolchain for many file types.
 - Producing formatting changesets
 - Sharing formatting defaults across a workspace
 
-## Main Workflows
+## Functions
 
-- Check formatting
-- Format files
-- Return a changeset
-- Run as a workspace check
+| Function | Purpose |
+| --- | --- |
+| `check` | Check whether files are formatted. |
+| `write` | Rewrite processed files in place. |
+| `source` | Source directory for the project. |
+| `package-manager` | Package manager to use. |
+| `base-image-address` | Base image to use. |
+
+## How to Read This API
+
+Use `check` for CI and Cloud. Use `write` for a formatting changeset or local repair workflow.
 
 ## Checks
 
-TODO: Document the default formatting check.
+Use `check` as the likely workspace check.
 
 ## Settings
 
-TODO: Document source path, config path, ignore path, package manager, and Prettier args.
+Document `source`, config path, ignore path, `package-manager`, `base-image-address`, and Prettier args.
 
 ## Examples to Add
 

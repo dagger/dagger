@@ -12,7 +12,7 @@ Install with `dagger mod install github.com/dagger/go`.
 
 ## What It Is
 
-TODO: Explain the Go module as the default Dagger toolchain for Go projects.
+The Go module is the official Dagger toolchain for Go workspaces. It discovers Go modules, runs tests, runs generation, and runs lint across the workspace.
 
 ## Use It For
 
@@ -21,27 +21,43 @@ TODO: Explain the Go module as the default Dagger toolchain for Go projects.
 - Managing Go toolchain versions
 - Producing artifacts for CI and release workflows
 
-## Main Workflows
+## Functions
 
-- Test a package or module
-- Build a binary
-- Run static checks
-- Prepare release artifacts
+| Function | Purpose |
+| --- | --- |
+| `test-all` | Run tests in every discovered Go module. |
+| `lint-all` | Run `golangci-lint` in every discovered Go module. |
+| `generate-all` | Run `go generate` in every discovered Go module. |
+| `modules` | Return every Go module discovered from workspace `go.mod` files. |
+| `module` | Return the Go module containing a workspace path. |
+| `version` | Go version used for test and generate commands. |
+| `include-extra-files` | Extra workspace-root include patterns mounted for each module's Go commands. |
+| `skip-test-filename` | Marker filename that skips tests at or above a Go module root. |
+| `skip-lint-filename` | Marker filename that skips lint at or above a Go module root. |
+| `skip-generate-filename` | Marker filename that skips generation at or above a Go module root. |
+
+## How to Read This API
+
+Start with `test-all`, `lint-all`, and `generate-all`. Those are the workspace-level actions.
+
+Use `modules` and `module` when a workflow needs to inspect the Go module layout.
+
+Use the skip marker functions to document or configure per-module opt-outs.
 
 ## Checks
 
-TODO: List check functions and explain which one should be enabled by default.
+Use `test-all`, `lint-all`, and `generate-all` as the likely check surface. Confirm final check names before expanding the how-to.
 
 ## Settings
 
-TODO: Document Go version, source path, package path, build tags, and cache settings.
+Document `version`, `include-extra-files`, skip marker filenames, discovery rules, and lint configuration.
 
 ## Examples to Add
 
 - Test a Go module
-- Build a CLI binary
-- Run checks in a workspace
-- Publish a multi-platform artifact
+- Lint all Go modules in a monorepo
+- Skip tests for one module with a marker file
+- Run generation as a workspace check
 
 ## Source
 

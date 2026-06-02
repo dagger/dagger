@@ -12,7 +12,7 @@ Install with `dagger mod install github.com/dagger/shellcheck`.
 
 ## What It Is
 
-TODO: Explain the ShellCheck module as a linting tool for shell scripts.
+The ShellCheck module finds shell scripts in a workspace and checks them with ShellCheck.
 
 ## Use It For
 
@@ -20,20 +20,26 @@ TODO: Explain the ShellCheck module as a linting tool for shell scripts.
 - Adding shell linting to CI and Cloud checks
 - Sharing shell lint rules across a workspace
 
-## Main Workflows
+## Functions
 
-- Find shell scripts
-- Run ShellCheck
-- Fail on lint errors
-- Return reports if supported
+| Function | Purpose |
+| --- | --- |
+| `check` | Run ShellCheck on all shell scripts in the workspace. |
+| `scripts` | Find all `.sh` files in the workspace and return them as `Script` objects. |
+| `base` | Base container with ShellCheck installed. |
+| `exclude` | Shell script paths to exclude from checking. |
+
+## How to Read This API
+
+Use `check` for workspace validation. Use `scripts` when a workflow needs to inspect or compose per-script work.
 
 ## Checks
 
-TODO: Document the default shell lint check.
+Use `check` as the likely workspace check.
 
 ## Settings
 
-TODO: Document source path, file globs, excluded paths, ShellCheck version, and args.
+Document script discovery, `exclude`, ShellCheck version, and whether non-`.sh` shell files are included.
 
 ## Examples to Add
 

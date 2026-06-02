@@ -12,7 +12,7 @@ Install with `dagger mod install github.com/dagger/biomejs`.
 
 ## What It Is
 
-TODO: Explain the Biome module as a formatter and analyzer for web projects.
+The Biome module lints source and can fix issues by returning a changeset.
 
 ## Use It For
 
@@ -20,20 +20,24 @@ TODO: Explain the Biome module as a formatter and analyzer for web projects.
 - Running Biome lint checks
 - Replacing or complementing ESLint and Prettier in a workspace
 
-## Main Workflows
+## Functions
 
-- Check formatting
-- Run lint
-- Return a changeset if supported
-- Run as a workspace check
+| Function | Purpose |
+| --- | --- |
+| `lint` | Lint the source code. |
+| `fix` | Fix lint issues and return a changeset of the result. |
+
+## How to Read This API
+
+Use `lint` for validation. Use `fix` when the workflow should propose repaired source.
 
 ## Checks
 
-TODO: Document default check functions and how they are named.
+Use `lint` as the likely workspace check.
 
 ## Settings
 
-TODO: Document source path, config path, Biome version, and args.
+Document source discovery, config path, Biome version, args, and how `fix` returns changes.
 
 ## Examples to Add
 

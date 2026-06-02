@@ -12,7 +12,7 @@ Install with `dagger mod install github.com/dagger/vitest`.
 
 ## What It Is
 
-TODO: Explain the Vitest module as a test runner for Vite and modern JavaScript projects.
+The Vitest module runs Vitest tests for Vite and modern JavaScript or TypeScript projects. It uses a Node base image, package manager, and project source directory.
 
 ## Use It For
 
@@ -20,20 +20,27 @@ TODO: Explain the Vitest module as a test runner for Vite and modern JavaScript 
 - Adding fast JS test checks
 - Testing Vite-based workspaces
 
-## Main Workflows
+## Functions
 
-- Run all tests
-- Run tests with a config file
-- Run tests in CI
-- Return test output
+| Function | Purpose |
+| --- | --- |
+| `test` | Execute the tests. |
+| `list` | List the tests. |
+| `source` | Source directory for the project. |
+| `package-manager` | Package manager to use. |
+| `base-image-address` | Base image to use. |
+
+## How to Read This API
+
+Use `test` for normal validation. Use `list` to inspect what Vitest would run.
 
 ## Checks
 
-TODO: Document the default test check and how it composes with other checks.
+Use `test` as the likely check. Confirm final check naming before publishing the complete workflow.
 
 ## Settings
 
-TODO: Document source path, package manager, Node version, config path, and Vitest args.
+Document `source`, `package-manager`, `base-image-address`, config file behavior, and Vitest args.
 
 ## Examples to Add
 

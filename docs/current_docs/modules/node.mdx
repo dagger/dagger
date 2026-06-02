@@ -12,7 +12,7 @@ Install with `dagger mod install github.com/dagger/node`.
 
 ## What It Is
 
-TODO: Explain the Node module as the base toolchain for JavaScript and TypeScript projects.
+The Node module is the base toolchain for JavaScript and TypeScript workspaces. Other modules can build on it, and users can call it directly when they need a Node container with dependencies installed.
 
 ## Use It For
 
@@ -21,20 +21,31 @@ TODO: Explain the Node module as the base toolchain for JavaScript and TypeScrip
 - Building frontend or backend projects
 - Sharing Node setup across other JS modules
 
-## Main Workflows
+## Functions
 
-- Install dependencies
-- Run a script
-- Build a project
-- Return build output
+| Function | Purpose |
+| --- | --- |
+| `base` | Runtime container for Node. |
+| `base-image-address` | Base image to use. |
+| `package-manager` | Package manager to use. |
+| `source` | Source directory for the project. |
+| `with-install-all` | Install all required packages. |
+| `with-install-package` | Install one package. |
+| `with-install-local-package` | Install a local package from a `Directory`. |
+
+## How to Read This API
+
+Start with `base` when you need a container. Use the install functions before a build, test, lint, or format step.
+
+This module is also a foundation for `eslint`, `prettier`, `jest`, and `vitest`.
 
 ## Checks
 
-TODO: Decide whether this module exposes checks directly or mainly supports other toolchain modules.
+This module is mostly a runtime and dependency toolchain. Checks usually belong in modules that run a specific tool, such as ESLint, Jest, Vitest, or Prettier.
 
 ## Settings
 
-TODO: Document Node version, package manager, source path, lockfile handling, and cache volumes.
+Document `base-image-address`, `package-manager`, `source`, lockfile handling, and dependency cache behavior.
 
 ## Examples to Add
 
