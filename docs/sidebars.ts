@@ -77,6 +77,68 @@ module.exports = {
     },
 
     // ========================================
+    // MODULES
+    // ========================================
+    {
+      type: "category",
+      label: "Modules",
+      link: {
+        type: "doc",
+        id: "modules/index",
+      },
+      collapsible: true,
+      collapsed: false,
+      items: [
+        {
+          type: "category",
+          label: "Languages and Runtimes",
+          collapsible: true,
+          collapsed: true,
+          items: ["modules/go", "modules/node", "modules/bun"],
+        },
+        {
+          type: "category",
+          label: "Testing",
+          collapsible: true,
+          collapsed: true,
+          items: [
+            "modules/pytest",
+            "modules/jest",
+            "modules/vitest",
+            "modules/mochajs",
+          ],
+        },
+        {
+          type: "category",
+          label: "Linting and Formatting",
+          collapsible: true,
+          collapsed: true,
+          items: [
+            "modules/eslint",
+            "modules/prettier",
+            "modules/biomejs",
+            "modules/shellcheck",
+            "modules/psscriptanalyzer",
+          ],
+        },
+        {
+          type: "category",
+          label: "Delivery and Packaging",
+          collapsible: true,
+          collapsed: true,
+          items: ["modules/helm"],
+        },
+        {
+          type: "category",
+          label: "Learning and Advanced Use",
+          collapsible: true,
+          collapsed: true,
+          items: ["modules/setup", "modules/sdk-sdk"],
+        },
+      ],
+    },
+
+    // ========================================
     // MODULE DEVELOPER GUIDE
     // ========================================
     {
