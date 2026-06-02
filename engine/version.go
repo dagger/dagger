@@ -5,27 +5,25 @@ import (
 	"strings"
 
 	"golang.org/x/mod/semver"
+
+	iversion "github.com/dagger/dagger/internal/version"
 )
 
 var (
-	// Version holds the complete version number.
+	// Version is the engine/CLI semver, derived from internal/version.Version
+	// (which embeds VERSION at build time) with a "v" prefix.
 	//
-	// Note: this is filled at link-time.
-	//
-	// - For official tagged releases, this is simple semver like vX.Y.Z
-	// - For builds off our repo's main branch, this is a pre-release of the
-	//   form vX.Y.Z-<timestamp>-<commit>
-	// - For local dev builds with no other specified version, this is a
-	//   pre-release of the form vX.Y.Z-<timestamp>-dev-<dirhash>
+	// DAGGER_VERSION overrides at init for tests.
 	Version string
 
-	// Tag holds the tag that the respective engine version is tagged with.
+	// Tag is the OCI image tag this engine binary was published under.
 	//
-	// Note: this is filled at link-time.
+	// If VCS info is available (native go build, or P2 sandbox injection),
+	// Tag is the commit hash — matching how the Dagger release pipeline
+	// tags engine images for dev/main builds. Otherwise Tag == Version,
+	// which matches the image tag of an official release.
 	//
-	// - For official tagged releases, this is simple semver like vX.Y.Z
-	// - For untagged builds, this is a commit sha for the last known commit from main
-	// - For dev builds, this is the last known commit from main (or maybe empty)
+	// DAGGER_TAG overrides at init for tests.
 	Tag string
 
 	// MinimumEngineVersion is used by the client to determine the minimum
@@ -59,6 +57,13 @@ var (
 )
 
 func init() {
+	Version = "v" + iversion.Version
+	if iversion.Commit != "" {
+		Tag = iversion.Commit
+	} else {
+		Tag = Version
+	}
+
 	// The minimum version is greater than our current version this is weird,
 	// and shouldn't generally be intentional - but can happen if we set it to
 	// vX.Y.Z in anticipation of the next release being vX.Y.Z.
