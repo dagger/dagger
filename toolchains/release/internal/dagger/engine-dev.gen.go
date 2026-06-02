@@ -608,8 +608,19 @@ func (r *EngineDev) Publish(ctx context.Context, tag []string, opts ...EngineDev
 	return q.Execute(ctx)
 }
 
-func (r *EngineDev) ReleaseDryRun(ctx context.Context) ([]Container, error) { // engine-dev (../../../../toolchains/engine-dev/main.go:437:1)
+// EngineDevReleaseDryRunOpts contains options for EngineDev.ReleaseDryRun
+type EngineDevReleaseDryRunOpts struct {
+	Tag string // engine-dev (../../../../toolchains/engine-dev/main.go:441:2)
+}
+
+func (r *EngineDev) ReleaseDryRun(ctx context.Context, opts ...EngineDevReleaseDryRunOpts) ([]Container, error) { // engine-dev (../../../../toolchains/engine-dev/main.go:437:1)
 	q := r.query.Select("releaseDryRun")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `tag` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Tag) {
+			q = q.Arg("tag", opts[i].Tag)
+		}
+	}
 
 	q = q.Select("id")
 

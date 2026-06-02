@@ -156,7 +156,9 @@ func (r *Release) Publish( //nolint:gocyclo
 		tags = append(tags, "latest")
 	}
 	if dryRun {
-		engineArtifacts, err := dag.EngineDev().ReleaseDryRun(ctx)
+		engineArtifacts, err := dag.EngineDev().ReleaseDryRun(ctx, dagger.EngineDevReleaseDryRunOpts{
+			Tag: tag,
+		})
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
@@ -181,8 +183,15 @@ func (r *Release) Publish( //nolint:gocyclo
 		Name: "🚗 CLI",
 		Tag:  tag,
 	}
+	cliDev := dag.CliDev()
+	if version != "" {
+		cliDev = dag.CliDev(dagger.CliDevOpts{
+			Version:  version,
+			ImageTag: version,
+		})
+	}
 	if !dryRun {
-		_, err := dag.CliDev().
+		_, err := cliDev.
 			Publish(tag, goreleaserKey, githubOrgName, dagger.CliDevPublishOpts{
 				GithubToken:        githubToken,
 				AwsAccessKeyID:     awsAccessKeyID,
@@ -195,12 +204,12 @@ func (r *Release) Publish( //nolint:gocyclo
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
-		err = dag.CliDev().PublishMetadata(ctx, awsAccessKeyID, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution)
+		err = cliDev.PublishMetadata(ctx, awsAccessKeyID, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution)
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 		}
 	} else {
-		cliArtifacts := dag.CliDev().ReleaseDryRun()
+		cliArtifacts := cliDev.ReleaseDryRun()
 		if version != "" {
 			if err := r.validateCLIDryRunVersion(ctx, cliArtifacts, version); err != nil {
 				artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
@@ -482,7 +491,7 @@ func (r *Release) validateCLIDryRunVersion(ctx context.Context, artifacts *dagge
 	}
 	found := false
 	for _, entry := range entries {
-		if entry == expectedDir {
+		if strings.TrimSuffix(entry, "/") == expectedDir {
 			found = true
 			break
 		}
@@ -491,7 +500,7 @@ func (r *Release) validateCLIDryRunVersion(ctx context.Context, artifacts *dagge
 		return fmt.Errorf("validate CLI dry-run version: missing %s in dry-run artifacts: %s", expectedDir, strings.Join(entries, ", "))
 	}
 
-	out, err := dag.Container().
+	out, err := dag.Container(dagger.ContainerOpts{Platform: "linux/amd64"}).
 		From("alpine:latest").
 		WithFile("/usr/local/bin/dagger", artifacts.File(expectedDir+"/dagger"), dagger.ContainerWithFileOpts{
 			Permissions: 0o755,

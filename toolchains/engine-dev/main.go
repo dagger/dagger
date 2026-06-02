@@ -10,9 +10,9 @@ import (
 
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/util/parallel"
+	"golang.org/x/mod/semver"
 
 	"dagger/engine-dev/build"
-
 	"dagger/engine-dev/internal/dagger"
 )
 
@@ -434,11 +434,20 @@ type targetResult struct {
 }
 
 // +check
-func (dev *EngineDev) ReleaseDryRun(ctx context.Context) ([]*dagger.Container, error) {
+func (dev *EngineDev) ReleaseDryRun(
+	ctx context.Context,
+	// +optional
+	tag string,
+) ([]*dagger.Container, error) {
+	tags := []string{"main"}
+	if semver.IsValid(tag) {
+		tags = []string{tag}
+	}
+
 	targetResults, err := dev.buildTargets(
 		ctx,
 		// FIXME: why not from HEAD like the SDKs?
-		[]string{"main"}, // tag
+		tags,
 	)
 	if err != nil {
 		return nil, err
@@ -476,6 +485,7 @@ func (dev *EngineDev) Publish(
 }
 
 func (dev *EngineDev) buildTargets(ctx context.Context, tags []string) ([]targetResult, error) {
+	releaseVersion := releaseVersionFromTags(tags)
 	targetResults := make([]targetResult, len(targets))
 	jobs := parallel.New()
 	for i, target := range targets {
@@ -488,7 +498,7 @@ func (dev *EngineDev) buildTargets(ctx context.Context, tags []string) ([]target
 		for j, platform := range target.Platforms {
 			jobs = jobs.WithJob(fmt.Sprintf("build %s for %s", target.Name, platform),
 				func(ctx context.Context) error {
-					ctr, err := dev.Container(ctx, platform, target.GPUSupport, "", "")
+					ctr, err := dev.Container(ctx, platform, target.GPUSupport, releaseVersion, releaseVersion)
 					if err != nil {
 						return err
 					}
@@ -506,6 +516,15 @@ func (dev *EngineDev) buildTargets(ctx context.Context, tags []string) ([]target
 		return nil, err
 	}
 	return targetResults, nil
+}
+
+func releaseVersionFromTags(tags []string) string {
+	for _, tag := range tags {
+		if semver.IsValid(tag) {
+			return tag
+		}
+	}
+	return ""
 }
 
 func flattenTargetPlatforms(targetResults []targetResult) []*dagger.Container {
