@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `GeneratedCodeID` scalar type represents an identifier for an object of type GeneratedCode.
+ * A unique identifier for an object.
  */
-readonly class GeneratedCodeId extends Client\AbstractId
+readonly class GeneratedCodeId extends Client\AbstractScalar
 {
 }

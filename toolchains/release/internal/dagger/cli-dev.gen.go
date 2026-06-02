@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `CliDevID` scalar type represents an identifier for an object of type CliDev.
-type CliDevID string // cli-dev (../../../../toolchains/cli-dev/main.go:83:6)
 
 // Retrieve the binding value, as type CliDev
 func (r *Binding) AsCliDev() *CliDev { // cli-dev (../../../../toolchains/cli-dev/main.go:83:6)
@@ -24,7 +21,7 @@ func (r *Binding) AsCliDev() *CliDev { // cli-dev (../../../../toolchains/cli-de
 type CliDev struct { // cli-dev (../../../../toolchains/cli-dev/main.go:83:6)
 	query *querybuilder.Selection
 
-	id              *CliDevID
+	id              *ID
 	publishMetadata *Void
 	releaseDryRun   *Void
 	tag             *string
@@ -79,13 +76,13 @@ func (r *CliDev) DevBinaries(opts ...CliDevDevBinariesOpts) *Directory { // cli-
 }
 
 // A unique identifier for this CliDev.
-func (r *CliDev) ID(ctx context.Context) (CliDevID, error) {
+func (r *CliDev) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response CliDevID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -98,7 +95,7 @@ func (r *CliDev) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *CliDev) XXX_GraphQLIDType() string {
-	return "CliDevID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -123,7 +120,7 @@ func (r *CliDev) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadCliDevFromID(CliDevID(id))
+	*r = CliDev{query: selectNode(dag.query, id, "CliDev")}
 	return nil
 }
 
@@ -271,6 +268,14 @@ func (r *CliDev) Version(ctx context.Context) (string, error) { // cli-dev (../.
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this CliDev as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *CliDev) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // Create or update a binding of type CliDev in the environment
 func (r *Env) WithCliDevInput(name string, value *CliDev, description string) *Env { // cli-dev (../../../../toolchains/cli-dev/main.go:83:6)
 	assertNotNil("value", value)
@@ -331,16 +336,6 @@ func (r *Query) CliDev(opts ...CliDevOpts) *CliDev { // cli-dev (../../../../too
 			q = q.Arg("version", opts[i].Version)
 		}
 	}
-
-	return &CliDev{
-		query: q,
-	}
-}
-
-// Load a CliDev from its ID.
-func (r *Query) LoadCliDevFromID(id CliDevID) *CliDev { // cli-dev (../../../../toolchains/cli-dev/main.go:83:6)
-	q := r.query.Select("loadCliDevFromID")
-	q = q.Arg("id", id)
 
 	return &CliDev{
 		query: q,

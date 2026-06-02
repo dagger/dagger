@@ -50,23 +50,28 @@ func opProvider(ctx context.Context, key string) ([]byte, error) {
 }
 
 func parseOpCacheKey(key string) (string, time.Duration, error) {
-	parsed, err := url.Parse("op://" + key)
+	ref, rawQuery, hasQuery := strings.Cut(key, "?")
+	cacheKey := "op://" + ref
+	if !hasQuery {
+		return cacheKey, 0, nil
+	}
+
+	query, err := url.ParseQuery(rawQuery)
 	if err != nil {
-		return "", 0, err
+		return "", 0, fmt.Errorf("invalid query parameters in secret key %q: %w", key, err)
 	}
 
-	var ttl time.Duration
-	query := parsed.Query()
-	if ttlStr := query.Get("ttl"); ttlStr != "" {
-		ttl, err = time.ParseDuration(ttlStr)
-		if err != nil {
-			return "", 0, fmt.Errorf("invalid ttl %q provided for secret %q: %w", ttlStr, parsed.Redacted(), err)
-		}
-		query.Del("ttl")
-		parsed.RawQuery = query.Encode()
+	ttlStr := strings.TrimSpace(query.Get("ttl"))
+	if ttlStr == "" {
+		return "op://" + key, 0, nil
 	}
 
-	return strings.TrimPrefix(parsed.String(), "op://"), ttl, nil
+	ttl, err := time.ParseDuration(ttlStr)
+	if err != nil {
+		return "", 0, fmt.Errorf("invalid ttl %q provided for secret %q: %w", ttlStr, key, err)
+	}
+
+	return cacheKey, ttl, nil
 }
 
 func opCacheExpired(entry opCacheEntry) bool {

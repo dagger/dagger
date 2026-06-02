@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `ContainerID` scalar type represents an identifier for an object of type Container.
+ * A unique identifier for an object.
  */
-readonly class ContainerId extends Client\AbstractId
+readonly class ContainerId extends Client\AbstractScalar
 {
 }

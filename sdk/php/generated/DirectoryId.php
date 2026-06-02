@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `DirectoryID` scalar type represents an identifier for an object of type Directory.
+ * A unique identifier for an object.
  */
-readonly class DirectoryId extends Client\AbstractId
+readonly class DirectoryId extends Client\AbstractScalar
 {
 }

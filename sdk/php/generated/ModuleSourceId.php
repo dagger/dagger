@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
+ * A unique identifier for an object.
  */
-readonly class ModuleSourceId extends Client\AbstractId
+readonly class ModuleSourceId extends Client\AbstractScalar
 {
 }

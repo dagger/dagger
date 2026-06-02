@@ -123,6 +123,10 @@ describe("scan by reference TypeScript", function () {
       name: "Should correctly scan interfaces",
       directory: "interface",
     },
+    {
+      name: "Should correctly scan decorators",
+      directory: "decorators",
+    },
   ]
 
   for (const test of testCases) {

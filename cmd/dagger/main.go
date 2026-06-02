@@ -34,6 +34,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/mod/semver"
 	"golang.org/x/term"
 	"mvdan.cc/sh/v3/interp"
 
@@ -394,13 +395,21 @@ func disableFlagsInUseLine(cmd *cobra.Command) {
 
 func execXRelease(ctx context.Context) error {
 	ref := strings.TrimSpace(xRelease)
-	commit, resolved, err := resolveXReleaseRef(ctx, ref)
-	if err != nil {
-		return fmt.Errorf("resolve experimental release %q: %w", ref, err)
+	downloadRef, engineRef, release := xReleaseReleaseRef(ref)
+	resolved := false
+	if !release {
+		commit, wasResolved, err := resolveXReleaseRef(ctx, ref)
+		if err != nil {
+			return fmt.Errorf("resolve experimental release %q: %w", ref, err)
+		}
+		downloadRef = commit
+		engineRef = commit
+		resolved = wasResolved
 	}
 
 	downloader := engineconn.CLIDownloader{
-		Ref:       commit,
+		Ref:       downloadRef,
+		Release:   release,
 		LogOutput: stderr,
 	}
 	binPath, err := downloader.Download(ctx)
@@ -409,15 +418,17 @@ func execXRelease(ctx context.Context) error {
 	}
 
 	msg := fmt.Sprintf("running build from %s", ref)
-	if resolved {
-		msg += fmt.Sprintf("; resolved to %s; pin with %s=%s or --x-release=%s", commit, daggerXReleaseEnv, commit, commit)
+	if release {
+		msg += fmt.Sprintf("; using release %s", engineRef)
+	} else if resolved {
+		msg += fmt.Sprintf("; resolved to %s; pin with %s=%s or --x-release=%s", downloadRef, daggerXReleaseEnv, downloadRef, downloadRef)
 	}
 	fmt.Fprintln(stderr, xReleaseLogLine(msg))
 
 	if shouldCleanupOldEngines() {
 		_ = drivers.CleanupOldEngines(ctx, []string{
 			engineVersion(engine.Tag),
-			engineVersion(commit),
+			engineVersion(engineRef),
 		})
 	}
 
@@ -428,6 +439,14 @@ func execXRelease(ctx context.Context) error {
 		return fmt.Errorf("exec experimental release CLI: %w", err)
 	}
 	return nil
+}
+
+func xReleaseReleaseRef(ref string) (downloadRef string, engineRef string, ok bool) {
+	maybeTag := strings.TrimPrefix(ref, "v")
+	if !semver.IsValid("v" + maybeTag) {
+		return "", "", false
+	}
+	return maybeTag, "v" + maybeTag, true
 }
 
 func resolveXReleaseRef(ctx context.Context, ref string) (string, bool, error) {
@@ -486,7 +505,8 @@ func xReleaseProcessEnv(environ []string) []string {
 	hasLeaveOldEngine := false
 	for _, kv := range environ {
 		key, _, _ := strings.Cut(kv, "=")
-		if key == daggerXReleaseEnv {
+		switch key {
+		case daggerXReleaseEnv, RunnerHostEnv, RunnerImageLoaderEnv:
 			continue
 		}
 		if key == "DAGGER_LEAVE_OLD_ENGINE" {

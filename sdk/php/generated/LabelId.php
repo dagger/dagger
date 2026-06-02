@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `LabelID` scalar type represents an identifier for an object of type Label.
+ * A unique identifier for an object.
  */
-readonly class LabelId extends Client\AbstractId
+readonly class LabelId extends Client\AbstractScalar
 {
 }

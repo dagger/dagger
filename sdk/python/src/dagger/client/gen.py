@@ -12,8 +12,204 @@ from dagger.client._guards import typecheck
 from dagger.client.base import Enum, Input, Root, Scalar, Type
 
 
+class AddressID(Scalar):
+    """A unique identifier for an object."""
+
+
+class BindingID(Scalar):
+    """A unique identifier for an object."""
+
+
+class CacheVolumeID(Scalar):
+    """A unique identifier for an object."""
+
+
+class ChangesetID(Scalar):
+    """A unique identifier for an object."""
+
+
+class CheckGroupID(Scalar):
+    """A unique identifier for an object."""
+
+
+class CheckID(Scalar):
+    """A unique identifier for an object."""
+
+
+class ClientFilesyncMirrorID(Scalar):
+    """A unique identifier for an object."""
+
+
+class CloudID(Scalar):
+    """A unique identifier for an object."""
+
+
+class ContainerID(Scalar):
+    """A unique identifier for an object."""
+
+
+class CurrentModuleID(Scalar):
+    """A unique identifier for an object."""
+
+
+class DiffStatID(Scalar):
+    """A unique identifier for an object."""
+
+
+class DirectoryID(Scalar):
+    """A unique identifier for an object."""
+
+
+class EngineCacheEntryID(Scalar):
+    """A unique identifier for an object."""
+
+
+class EngineCacheEntrySetID(Scalar):
+    """A unique identifier for an object."""
+
+
+class EngineCacheID(Scalar):
+    """A unique identifier for an object."""
+
+
+class EngineID(Scalar):
+    """A unique identifier for an object."""
+
+
+class EnumTypeDefID(Scalar):
+    """A unique identifier for an object."""
+
+
+class EnumValueTypeDefID(Scalar):
+    """A unique identifier for an object."""
+
+
+class EnvFileID(Scalar):
+    """A unique identifier for an object."""
+
+
+class EnvID(Scalar):
+    """A unique identifier for an object."""
+
+
+class EnvVariableID(Scalar):
+    """A unique identifier for an object."""
+
+
+class ErrorID(Scalar):
+    """A unique identifier for an object."""
+
+
+class ErrorValueID(Scalar):
+    """A unique identifier for an object."""
+
+
+class ExportableID(Scalar):
+    """A unique identifier for an object."""
+
+
+class FieldTypeDefID(Scalar):
+    """A unique identifier for an object."""
+
+
+class FileID(Scalar):
+    """A unique identifier for an object."""
+
+
+class FunctionArgID(Scalar):
+    """A unique identifier for an object."""
+
+
+class FunctionCallArgValueID(Scalar):
+    """A unique identifier for an object."""
+
+
+class FunctionCallID(Scalar):
+    """A unique identifier for an object."""
+
+
+class FunctionID(Scalar):
+    """A unique identifier for an object."""
+
+
+class GeneratedCodeID(Scalar):
+    """A unique identifier for an object."""
+
+
+class GeneratorGroupID(Scalar):
+    """A unique identifier for an object."""
+
+
+class GeneratorID(Scalar):
+    """A unique identifier for an object."""
+
+
+class GitRefID(Scalar):
+    """A unique identifier for an object."""
+
+
+class GitRepositoryID(Scalar):
+    """A unique identifier for an object."""
+
+
+class HTTPStateID(Scalar):
+    """A unique identifier for an object."""
+
+
+class HealthcheckConfigID(Scalar):
+    """A unique identifier for an object."""
+
+
+class HostID(Scalar):
+    """A unique identifier for an object."""
+
+
+class InputTypeDefID(Scalar):
+    """A unique identifier for an object."""
+
+
+class InterfaceTypeDefID(Scalar):
+    """A unique identifier for an object."""
+
+
 class JSON(Scalar):
     """An arbitrary JSON-encoded value."""
+
+
+class JSONValueID(Scalar):
+    """A unique identifier for an object."""
+
+
+class LLMID(Scalar):
+    """A unique identifier for an object."""
+
+
+class LLMTokenUsageID(Scalar):
+    """A unique identifier for an object."""
+
+
+class LabelID(Scalar):
+    """A unique identifier for an object."""
+
+
+class ListTypeDefID(Scalar):
+    """A unique identifier for an object."""
+
+
+class ModuleConfigClientID(Scalar):
+    """A unique identifier for an object."""
+
+
+class ModuleID(Scalar):
+    """A unique identifier for an object."""
+
+
+class ModuleSourceID(Scalar):
+    """A unique identifier for an object."""
+
+
+class ObjectTypeDefID(Scalar):
+    """A unique identifier for an object."""
 
 
 class Platform(Scalar):
@@ -22,9 +218,77 @@ class Platform(Scalar):
     "windows/amd64", "linux/arm64")."""
 
 
+class PortID(Scalar):
+    """A unique identifier for an object."""
+
+
+class RemoteGitMirrorID(Scalar):
+    """A unique identifier for an object."""
+
+
+class SDKConfigID(Scalar):
+    """A unique identifier for an object."""
+
+
+class ScalarTypeDefID(Scalar):
+    """A unique identifier for an object."""
+
+
+class SearchResultID(Scalar):
+    """A unique identifier for an object."""
+
+
+class SearchSubmatchID(Scalar):
+    """A unique identifier for an object."""
+
+
+class SecretID(Scalar):
+    """A unique identifier for an object."""
+
+
+class ServiceID(Scalar):
+    """A unique identifier for an object."""
+
+
+class SocketID(Scalar):
+    """A unique identifier for an object."""
+
+
+class SourceMapID(Scalar):
+    """A unique identifier for an object."""
+
+
+class StatID(Scalar):
+    """A unique identifier for an object."""
+
+
+class SyncerID(Scalar):
+    """A unique identifier for an object."""
+
+
+class TerminalID(Scalar):
+    """A unique identifier for an object."""
+
+
+class TypeDefID(Scalar):
+    """A unique identifier for an object."""
+
+
+class UpGroupID(Scalar):
+    """A unique identifier for an object."""
+
+
+class UpID(Scalar):
+    """A unique identifier for an object."""
+
+
 class Void(Scalar):
     """The absence of a value.  A Null Void is used as a placeholder for
     resolvers that do not return anything."""
+
+
+class WorkspaceID(Scalar):
+    """A unique identifier for an object."""
 
 
 class CacheSharingMode(Enum):
@@ -12874,6 +13138,552 @@ class Query(Root):
         _ctx = self._select("llm", _args)
         return LLM(_ctx)
 
+    def load_address_from_id(self, id: AddressID) -> Address:
+        """Load a Address from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadAddressFromID", _args)
+        return Address(_ctx)
+
+    def load_binding_from_id(self, id: BindingID) -> Binding:
+        """Load a Binding from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadBindingFromID", _args)
+        return Binding(_ctx)
+
+    def load_cache_volume_from_id(self, id: CacheVolumeID) -> CacheVolume:
+        """Load a CacheVolume from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadCacheVolumeFromID", _args)
+        return CacheVolume(_ctx)
+
+    def load_changeset_from_id(self, id: ChangesetID) -> Changeset:
+        """Load a Changeset from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadChangesetFromID", _args)
+        return Changeset(_ctx)
+
+    def load_check_from_id(self, id: CheckID) -> Check:
+        """Load a Check from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadCheckFromID", _args)
+        return Check(_ctx)
+
+    def load_check_group_from_id(self, id: CheckGroupID) -> CheckGroup:
+        """Load a CheckGroup from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadCheckGroupFromID", _args)
+        return CheckGroup(_ctx)
+
+    def load_client_filesync_mirror_from_id(
+        self, id: ClientFilesyncMirrorID
+    ) -> ClientFilesyncMirror:
+        """Load a ClientFilesyncMirror from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadClientFilesyncMirrorFromID", _args)
+        return ClientFilesyncMirror(_ctx)
+
+    def load_cloud_from_id(self, id: CloudID) -> Cloud:
+        """Load a Cloud from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadCloudFromID", _args)
+        return Cloud(_ctx)
+
+    def load_container_from_id(self, id: ContainerID) -> Container:
+        """Load a Container from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadContainerFromID", _args)
+        return Container(_ctx)
+
+    def load_current_module_from_id(self, id: CurrentModuleID) -> CurrentModule:
+        """Load a CurrentModule from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadCurrentModuleFromID", _args)
+        return CurrentModule(_ctx)
+
+    def load_diff_stat_from_id(self, id: DiffStatID) -> DiffStat:
+        """Load a DiffStat from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadDiffStatFromID", _args)
+        return DiffStat(_ctx)
+
+    def load_directory_from_id(self, id: DirectoryID) -> Directory:
+        """Load a Directory from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadDirectoryFromID", _args)
+        return Directory(_ctx)
+
+    def load_engine_cache_entry_from_id(
+        self, id: EngineCacheEntryID
+    ) -> EngineCacheEntry:
+        """Load a EngineCacheEntry from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadEngineCacheEntryFromID", _args)
+        return EngineCacheEntry(_ctx)
+
+    def load_engine_cache_entry_set_from_id(
+        self, id: EngineCacheEntrySetID
+    ) -> EngineCacheEntrySet:
+        """Load a EngineCacheEntrySet from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadEngineCacheEntrySetFromID", _args)
+        return EngineCacheEntrySet(_ctx)
+
+    def load_engine_cache_from_id(self, id: EngineCacheID) -> EngineCache:
+        """Load a EngineCache from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadEngineCacheFromID", _args)
+        return EngineCache(_ctx)
+
+    def load_engine_from_id(self, id: EngineID) -> Engine:
+        """Load a Engine from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadEngineFromID", _args)
+        return Engine(_ctx)
+
+    def load_enum_type_def_from_id(self, id: EnumTypeDefID) -> EnumTypeDef:
+        """Load a EnumTypeDef from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadEnumTypeDefFromID", _args)
+        return EnumTypeDef(_ctx)
+
+    def load_enum_value_type_def_from_id(
+        self, id: EnumValueTypeDefID
+    ) -> EnumValueTypeDef:
+        """Load a EnumValueTypeDef from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadEnumValueTypeDefFromID", _args)
+        return EnumValueTypeDef(_ctx)
+
+    def load_env_file_from_id(self, id: EnvFileID) -> EnvFile:
+        """Load a EnvFile from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadEnvFileFromID", _args)
+        return EnvFile(_ctx)
+
+    def load_env_from_id(self, id: EnvID) -> Env:
+        """Load a Env from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadEnvFromID", _args)
+        return Env(_ctx)
+
+    def load_env_variable_from_id(self, id: EnvVariableID) -> EnvVariable:
+        """Load a EnvVariable from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadEnvVariableFromID", _args)
+        return EnvVariable(_ctx)
+
+    def load_error_from_id(self, id: ErrorID) -> Error:
+        """Load a Error from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadErrorFromID", _args)
+        return Error(_ctx)
+
+    def load_error_value_from_id(self, id: ErrorValueID) -> ErrorValue:
+        """Load a ErrorValue from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadErrorValueFromID", _args)
+        return ErrorValue(_ctx)
+
+    def load_exportable_from_id(self, id: ExportableID) -> Exportable:
+        """Load a Exportable from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadExportableFromID", _args)
+        return _ExportableClient(_ctx)
+
+    def load_field_type_def_from_id(self, id: FieldTypeDefID) -> FieldTypeDef:
+        """Load a FieldTypeDef from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadFieldTypeDefFromID", _args)
+        return FieldTypeDef(_ctx)
+
+    def load_file_from_id(self, id: FileID) -> File:
+        """Load a File from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadFileFromID", _args)
+        return File(_ctx)
+
+    def load_function_arg_from_id(self, id: FunctionArgID) -> FunctionArg:
+        """Load a FunctionArg from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadFunctionArgFromID", _args)
+        return FunctionArg(_ctx)
+
+    def load_function_call_arg_value_from_id(
+        self, id: FunctionCallArgValueID
+    ) -> FunctionCallArgValue:
+        """Load a FunctionCallArgValue from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadFunctionCallArgValueFromID", _args)
+        return FunctionCallArgValue(_ctx)
+
+    def load_function_call_from_id(self, id: FunctionCallID) -> FunctionCall:
+        """Load a FunctionCall from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadFunctionCallFromID", _args)
+        return FunctionCall(_ctx)
+
+    def load_function_from_id(self, id: FunctionID) -> Function:
+        """Load a Function from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadFunctionFromID", _args)
+        return Function(_ctx)
+
+    def load_generated_code_from_id(self, id: GeneratedCodeID) -> GeneratedCode:
+        """Load a GeneratedCode from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadGeneratedCodeFromID", _args)
+        return GeneratedCode(_ctx)
+
+    def load_generator_from_id(self, id: GeneratorID) -> Generator:
+        """Load a Generator from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadGeneratorFromID", _args)
+        return Generator(_ctx)
+
+    def load_generator_group_from_id(self, id: GeneratorGroupID) -> GeneratorGroup:
+        """Load a GeneratorGroup from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadGeneratorGroupFromID", _args)
+        return GeneratorGroup(_ctx)
+
+    def load_git_ref_from_id(self, id: GitRefID) -> GitRef:
+        """Load a GitRef from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadGitRefFromID", _args)
+        return GitRef(_ctx)
+
+    def load_git_repository_from_id(self, id: GitRepositoryID) -> GitRepository:
+        """Load a GitRepository from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadGitRepositoryFromID", _args)
+        return GitRepository(_ctx)
+
+    def load_http_state_from_id(self, id: HTTPStateID) -> HTTPState:
+        """Load a HTTPState from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadHTTPStateFromID", _args)
+        return HTTPState(_ctx)
+
+    def load_healthcheck_config_from_id(
+        self, id: HealthcheckConfigID
+    ) -> HealthcheckConfig:
+        """Load a HealthcheckConfig from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadHealthcheckConfigFromID", _args)
+        return HealthcheckConfig(_ctx)
+
+    def load_host_from_id(self, id: HostID) -> Host:
+        """Load a Host from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadHostFromID", _args)
+        return Host(_ctx)
+
+    def load_input_type_def_from_id(self, id: InputTypeDefID) -> InputTypeDef:
+        """Load a InputTypeDef from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadInputTypeDefFromID", _args)
+        return InputTypeDef(_ctx)
+
+    def load_interface_type_def_from_id(
+        self, id: InterfaceTypeDefID
+    ) -> InterfaceTypeDef:
+        """Load a InterfaceTypeDef from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadInterfaceTypeDefFromID", _args)
+        return InterfaceTypeDef(_ctx)
+
+    def load_json_value_from_id(self, id: JSONValueID) -> JSONValue:
+        """Load a JSONValue from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadJSONValueFromID", _args)
+        return JSONValue(_ctx)
+
+    def load_llm_from_id(self, id: LLMID) -> LLM:
+        """Load a LLM from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadLLMFromID", _args)
+        return LLM(_ctx)
+
+    def load_llm_token_usage_from_id(self, id: LLMTokenUsageID) -> LLMTokenUsage:
+        """Load a LLMTokenUsage from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadLLMTokenUsageFromID", _args)
+        return LLMTokenUsage(_ctx)
+
+    def load_label_from_id(self, id: LabelID) -> Label:
+        """Load a Label from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadLabelFromID", _args)
+        return Label(_ctx)
+
+    def load_list_type_def_from_id(self, id: ListTypeDefID) -> ListTypeDef:
+        """Load a ListTypeDef from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadListTypeDefFromID", _args)
+        return ListTypeDef(_ctx)
+
+    def load_module_config_client_from_id(
+        self, id: ModuleConfigClientID
+    ) -> ModuleConfigClient:
+        """Load a ModuleConfigClient from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadModuleConfigClientFromID", _args)
+        return ModuleConfigClient(_ctx)
+
+    def load_module_from_id(self, id: ModuleID) -> Module:
+        """Load a Module from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadModuleFromID", _args)
+        return Module(_ctx)
+
+    def load_module_source_from_id(self, id: ModuleSourceID) -> ModuleSource:
+        """Load a ModuleSource from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadModuleSourceFromID", _args)
+        return ModuleSource(_ctx)
+
+    def load_object_type_def_from_id(self, id: ObjectTypeDefID) -> ObjectTypeDef:
+        """Load a ObjectTypeDef from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadObjectTypeDefFromID", _args)
+        return ObjectTypeDef(_ctx)
+
+    def load_port_from_id(self, id: PortID) -> Port:
+        """Load a Port from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadPortFromID", _args)
+        return Port(_ctx)
+
+    def load_remote_git_mirror_from_id(
+        self, id: RemoteGitMirrorID
+    ) -> "RemoteGitMirror":
+        """Load a RemoteGitMirror from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadRemoteGitMirrorFromID", _args)
+        return RemoteGitMirror(_ctx)
+
+    def load_sdk_config_from_id(self, id: SDKConfigID) -> "SDKConfig":
+        """Load a SDKConfig from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadSDKConfigFromID", _args)
+        return SDKConfig(_ctx)
+
+    def load_scalar_type_def_from_id(self, id: ScalarTypeDefID) -> "ScalarTypeDef":
+        """Load a ScalarTypeDef from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadScalarTypeDefFromID", _args)
+        return ScalarTypeDef(_ctx)
+
+    def load_search_result_from_id(self, id: SearchResultID) -> "SearchResult":
+        """Load a SearchResult from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadSearchResultFromID", _args)
+        return SearchResult(_ctx)
+
+    def load_search_submatch_from_id(self, id: SearchSubmatchID) -> "SearchSubmatch":
+        """Load a SearchSubmatch from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadSearchSubmatchFromID", _args)
+        return SearchSubmatch(_ctx)
+
+    def load_secret_from_id(self, id: SecretID) -> "Secret":
+        """Load a Secret from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadSecretFromID", _args)
+        return Secret(_ctx)
+
+    def load_service_from_id(self, id: ServiceID) -> "Service":
+        """Load a Service from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadServiceFromID", _args)
+        return Service(_ctx)
+
+    def load_socket_from_id(self, id: SocketID) -> "Socket":
+        """Load a Socket from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadSocketFromID", _args)
+        return Socket(_ctx)
+
+    def load_source_map_from_id(self, id: SourceMapID) -> "SourceMap":
+        """Load a SourceMap from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadSourceMapFromID", _args)
+        return SourceMap(_ctx)
+
+    def load_stat_from_id(self, id: StatID) -> "Stat":
+        """Load a Stat from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadStatFromID", _args)
+        return Stat(_ctx)
+
+    def load_syncer_from_id(self, id: SyncerID) -> Syncer:
+        """Load a Syncer from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadSyncerFromID", _args)
+        return _SyncerClient(_ctx)
+
+    def load_terminal_from_id(self, id: TerminalID) -> "Terminal":
+        """Load a Terminal from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadTerminalFromID", _args)
+        return Terminal(_ctx)
+
+    def load_type_def_from_id(self, id: TypeDefID) -> "TypeDef":
+        """Load a TypeDef from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadTypeDefFromID", _args)
+        return TypeDef(_ctx)
+
+    def load_up_from_id(self, id: UpID) -> "Up":
+        """Load a Up from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadUpFromID", _args)
+        return Up(_ctx)
+
+    def load_up_group_from_id(self, id: UpGroupID) -> "UpGroup":
+        """Load a UpGroup from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadUpGroupFromID", _args)
+        return UpGroup(_ctx)
+
+    def load_workspace_from_id(self, id: WorkspaceID) -> "Workspace":
+        """Load a Workspace from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadWorkspaceFromID", _args)
+        return Workspace(_ctx)
+
     def module(self) -> Module:
         """Create a new module."""
         _args: list[Arg] = []
@@ -14683,6 +15493,7 @@ class Workspace(Type):
         *,
         include: list[str] | None = None,
         no_generate: bool | None = None,
+        only_generate: bool | None = None,
     ) -> CheckGroup:
         """Return all checks from modules loaded in the workspace.
 
@@ -14693,10 +15504,14 @@ class Workspace(Type):
         no_generate:
             When true, only return annotated check functions; exclude
             generate-as-checks
+        only_generate:
+            When true, only return generate-as-checks; exclude annotated check
+            functions
         """
         _args = [
             Arg("include", include, None),
             Arg("noGenerate", no_generate, None),
+            Arg("onlyGenerate", only_generate, None),
         ]
         _ctx = self._select("checks", _args)
         return CheckGroup(_ctx)
@@ -14996,92 +15811,158 @@ dag = Client()
 __all__ = [
     "JSON",
     "LLM",
+    "LLMID",
     "Address",
+    "AddressID",
     "Binding",
+    "BindingID",
     "BuildArg",
     "CacheSharingMode",
     "CacheVolume",
+    "CacheVolumeID",
     "Changeset",
+    "ChangesetID",
     "ChangesetMergeConflict",
     "ChangesetsMergeConflict",
     "Check",
     "CheckGroup",
+    "CheckGroupID",
+    "CheckID",
     "Client",
     "ClientFilesyncMirror",
+    "ClientFilesyncMirrorID",
     "Cloud",
+    "CloudID",
     "Container",
+    "ContainerID",
     "CurrentModule",
+    "CurrentModuleID",
     "DiffStat",
+    "DiffStatID",
     "DiffStatKind",
     "Directory",
+    "DirectoryID",
     "Engine",
     "EngineCache",
     "EngineCacheEntry",
+    "EngineCacheEntryID",
     "EngineCacheEntrySet",
+    "EngineCacheEntrySetID",
+    "EngineCacheID",
+    "EngineID",
     "EnumTypeDef",
+    "EnumTypeDefID",
     "EnumValueTypeDef",
+    "EnumValueTypeDefID",
     "Env",
     "EnvFile",
+    "EnvFileID",
+    "EnvID",
     "EnvVariable",
+    "EnvVariableID",
     "Error",
+    "ErrorID",
     "ErrorValue",
+    "ErrorValueID",
     "ExistsType",
     "Exportable",
+    "ExportableID",
     "FieldTypeDef",
+    "FieldTypeDefID",
     "File",
+    "FileID",
     "FileType",
     "Function",
     "FunctionArg",
+    "FunctionArgID",
     "FunctionCachePolicy",
     "FunctionCall",
     "FunctionCallArgValue",
+    "FunctionCallArgValueID",
+    "FunctionCallID",
+    "FunctionID",
     "GeneratedCode",
+    "GeneratedCodeID",
     "Generator",
     "GeneratorGroup",
+    "GeneratorGroupID",
+    "GeneratorID",
     "GitRef",
+    "GitRefID",
     "GitRepository",
+    "GitRepositoryID",
     "HTTPState",
+    "HTTPStateID",
     "HealthcheckConfig",
+    "HealthcheckConfigID",
     "Host",
+    "HostID",
     "ImageLayerCompression",
     "ImageMediaTypes",
     "InputTypeDef",
+    "InputTypeDefID",
     "InterfaceTypeDef",
+    "InterfaceTypeDefID",
     "JSONValue",
+    "JSONValueID",
     "LLMTokenUsage",
+    "LLMTokenUsageID",
     "Label",
+    "LabelID",
     "ListTypeDef",
+    "ListTypeDefID",
     "Module",
     "ModuleConfigClient",
+    "ModuleConfigClientID",
+    "ModuleID",
     "ModuleSource",
     "ModuleSourceExperimentalFeature",
+    "ModuleSourceID",
     "ModuleSourceKind",
     "NetworkProtocol",
     "Node",
     "ObjectTypeDef",
+    "ObjectTypeDefID",
     "PipelineLabel",
     "Platform",
     "Port",
     "PortForward",
+    "PortID",
     "Query",
     "RemoteGitMirror",
+    "RemoteGitMirrorID",
     "ReturnType",
     "SDKConfig",
+    "SDKConfigID",
     "ScalarTypeDef",
+    "ScalarTypeDefID",
     "SearchResult",
+    "SearchResultID",
     "SearchSubmatch",
+    "SearchSubmatchID",
     "Secret",
+    "SecretID",
     "Service",
+    "ServiceID",
     "Socket",
+    "SocketID",
     "SourceMap",
+    "SourceMapID",
     "Stat",
+    "StatID",
     "Syncer",
+    "SyncerID",
     "Terminal",
+    "TerminalID",
     "TypeDef",
+    "TypeDefID",
     "TypeDefKind",
     "Up",
     "UpGroup",
+    "UpGroupID",
+    "UpID",
     "Void",
     "Workspace",
+    "WorkspaceID",
     "dag",
 ]

@@ -1514,7 +1514,9 @@ func (DirectorySuite) TestDirectoryName(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("git directory", func(ctx context.Context, t *testctx.T) {
-		dir := c.Git("https://github.com/dagger/dagger#ee32df913f57c876e067bd5ecc159561510b6f50").Head().Tree()
+		// Pin the commit explicitly: a git URL fragment is not honored by .Head()
+		// (which tracks the live default branch), and .dagger no longer exists there.
+		dir := c.Git("https://github.com/dagger/dagger").Commit("ee32df913f57c876e067bd5ecc159561510b6f50").Tree()
 
 		t.Run("root directory", func(ctx context.Context, t *testctx.T) {
 			rootName, err := dir.Name(ctx)

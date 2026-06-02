@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `NestedDepID` scalar type represents an identifier for an object of type NestedDep.
-type NestedDepID string // nested-dep (../../../../../../dagql/idtui/viztest/dep/nested-dep/main.go:8:6)
 
 // Retrieve the binding value, as type NestedDep
 func (r *Binding) AsNestedDep() *NestedDep { // nested-dep (../../../../../../dagql/idtui/viztest/dep/nested-dep/main.go:8:6)
@@ -87,7 +84,7 @@ func (r *NestedDep) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *NestedDep) XXX_GraphQLIDType() string {
-	return "NestedDepID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -112,17 +109,15 @@ func (r *NestedDep) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadNestedDepFromID(NestedDepID(id))
+	*r = NestedDep{query: selectNode(dag.query, id, "NestedDep")}
 	return nil
 }
 
-// Load a NestedDep from its ID.
-func (r *Query) LoadNestedDepFromID(id NestedDepID) *NestedDep { // nested-dep (../../../../../../dagql/idtui/viztest/dep/nested-dep/main.go:8:6)
-	q := r.query.Select("loadNestedDepFromID")
-	q = q.Arg("id", id)
-
-	return &NestedDep{
-		query: q,
+// AsNode returns this NestedDep as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *NestedDep) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }
 

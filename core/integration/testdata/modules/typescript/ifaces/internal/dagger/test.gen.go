@@ -5,39 +5,16 @@ package dagger
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `TestCustomIfaceID` scalar type represents an identifier for an object of type TestCustomIface.
-type TestCustomIfaceID string // test (../../../../../../../../:0:0)
-
-// The `TestCustomObjID` scalar type represents an identifier for an object of type TestCustomObj.
-type TestCustomObjID string // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:305:13)
-
-// The `TestID` scalar type represents an identifier for an object of type Test.
-type TestID string // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:48:14)
-
-// The `TestOtherCustomObjID` scalar type represents an identifier for an object of type TestOtherCustomObj.
-type TestOtherCustomObjID string // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:312:13)
-
-// The `TestOtherIfaceID` scalar type represents an identifier for an object of type TestOtherIface.
-type TestOtherIfaceID string // test (../../../../../../../../:0:0)
 
 // Retrieve the binding value, as type Test
 func (r *Binding) AsTest() *Test { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:48:14)
 	q := r.query.Select("asTest")
 
 	return &Test{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type TestCustomIface
-func (r *Binding) AsTestCustomIface() *TestCustomIface { // test (../../../../../../../../:0:0)
-	q := r.query.Select("asTestCustomIface")
-
-	return &TestCustomIface{
 		query: q,
 	}
 }
@@ -56,39 +33,6 @@ func (r *Binding) AsTestOtherCustomObj() *TestOtherCustomObj { // test (../../..
 	q := r.query.Select("asTestOtherCustomObj")
 
 	return &TestOtherCustomObj{
-		query: q,
-	}
-}
-
-// Retrieve the binding value, as type TestOtherIface
-func (r *Binding) AsTestOtherIface() *TestOtherIface { // test (../../../../../../../../:0:0)
-	q := r.query.Select("asTestOtherIface")
-
-	return &TestOtherIface{
-		query: q,
-	}
-}
-
-// Create or update a binding of type TestCustomIface in the environment
-func (r *Env) WithTestCustomIfaceInput(name string, value *TestCustomIface, description string) *Env { // test (../../../../../../../../:0:0)
-	assertNotNil("value", value)
-	q := r.query.Select("withTestCustomIfaceInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired TestCustomIface output to be assigned in the environment
-func (r *Env) WithTestCustomIfaceOutput(name string, description string) *Env { // test (../../../../../../../../:0:0)
-	q := r.query.Select("withTestCustomIfaceOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
 		query: q,
 	}
 }
@@ -154,30 +98,6 @@ func (r *Env) WithTestOtherCustomObjOutput(name string, description string) *Env
 	}
 }
 
-// Create or update a binding of type TestOtherIface in the environment
-func (r *Env) WithTestOtherIfaceInput(name string, value *TestOtherIface, description string) *Env { // test (../../../../../../../../:0:0)
-	assertNotNil("value", value)
-	q := r.query.Select("withTestOtherIfaceInput")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
-// Declare a desired TestOtherIface output to be assigned in the environment
-func (r *Env) WithTestOtherIfaceOutput(name string, description string) *Env { // test (../../../../../../../../:0:0)
-	q := r.query.Select("withTestOtherIfaceOutput")
-	q = q.Arg("name", name)
-	q = q.Arg("description", description)
-
-	return &Env{
-		query: q,
-	}
-}
-
 // Declare a desired Test output to be assigned in the environment
 func (r *Env) WithTestOutput(name string, description string) *Env { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:48:14)
 	q := r.query.Select("withTestOutput")
@@ -185,36 +105,6 @@ func (r *Env) WithTestOutput(name string, description string) *Env { // test (..
 	q = q.Arg("description", description)
 
 	return &Env{
-		query: q,
-	}
-}
-
-// Load a TestCustomObj from its ID.
-func (r *Query) LoadTestCustomObjFromID(id TestCustomObjID) *TestCustomObj { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:305:13)
-	q := r.query.Select("loadTestCustomObjFromID")
-	q = q.Arg("id", id)
-
-	return &TestCustomObj{
-		query: q,
-	}
-}
-
-// Load a Test from its ID.
-func (r *Query) LoadTestFromID(id TestID) *Test { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:48:14)
-	q := r.query.Select("loadTestFromID")
-	q = q.Arg("id", id)
-
-	return &Test{
-		query: q,
-	}
-}
-
-// Load a TestOtherCustomObj from its ID.
-func (r *Query) LoadTestOtherCustomObjFromID(id TestOtherCustomObjID) *TestOtherCustomObj { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:312:13)
-	q := r.query.Select("loadTestOtherCustomObjFromID")
-	q = q.Arg("id", id)
-
-	return &TestOtherCustomObj{
 		query: q,
 	}
 }
@@ -276,72 +166,52 @@ func (r *Test) BoolList(ctx context.Context, ifaceArg *TestCustomIface) ([]bool,
 	return response, q.Execute(ctx)
 }
 
-func (r *Test) DynamicOtherIfaceByIfaceList(ctx context.Context, ifaceArg *TestCustomIface) ([]TestOtherIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:194:9)
+func (r *Test) DynamicOtherIfaceByIfaceList(ctx context.Context, ifaceArg *TestCustomIface) ([]*TestOtherIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:194:9)
 	assertNotNil("ifaceArg", ifaceArg)
 	q := r.query.Select("dynamicOtherIfaceByIfaceList")
 	q = q.Arg("ifaceArg", ifaceArg)
 
 	q = q.Select("id")
-
-	type dynamicOtherIfaceByIfaceList struct {
-		Id TestOtherIfaceID
+	type dynamicOtherIfaceByIfaceListIDResult struct {
+		Id string
 	}
-
-	convert := func(fields []dynamicOtherIfaceByIfaceList) []TestOtherIface {
-		out := []TestOtherIface{}
-
-		for i := range fields {
-			val := TestOtherIface{id: &fields[i].Id}
-			val.query = q.Root().Select("loadTestOtherIfaceFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []dynamicOtherIfaceByIfaceList
-
-	q = q.Bind(&response)
-
+	var idResults []dynamicOtherIfaceByIfaceListIDResult
+	q = q.Bind(&idResults)
 	err := q.Execute(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	return convert(response), nil
+	var results []*TestOtherIface
+	for _, idResult := range idResults {
+		results = append(results, &TestOtherIface{
+			query: selectNode(q.Root(), idResult.Id, "TestOtherIface"),
+		})
+	}
+	return results, nil
 }
 
-func (r *Test) DynamicOtherIfaceList(ctx context.Context, ifaceArg *TestCustomIface) ([]TestOtherIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:184:9)
+func (r *Test) DynamicOtherIfaceList(ctx context.Context, ifaceArg *TestCustomIface) ([]*TestOtherIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:184:9)
 	assertNotNil("ifaceArg", ifaceArg)
 	q := r.query.Select("dynamicOtherIfaceList")
 	q = q.Arg("ifaceArg", ifaceArg)
 
 	q = q.Select("id")
-
-	type dynamicOtherIfaceList struct {
-		Id TestOtherIfaceID
+	type dynamicOtherIfaceListIDResult struct {
+		Id string
 	}
-
-	convert := func(fields []dynamicOtherIfaceList) []TestOtherIface {
-		out := []TestOtherIface{}
-
-		for i := range fields {
-			val := TestOtherIface{id: &fields[i].Id}
-			val.query = q.Root().Select("loadTestOtherIfaceFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []dynamicOtherIfaceList
-
-	q = q.Bind(&response)
-
+	var idResults []dynamicOtherIfaceListIDResult
+	q = q.Bind(&idResults)
 	err := q.Execute(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	return convert(response), nil
+	var results []*TestOtherIface
+	for _, idResult := range idResults {
+		results = append(results, &TestOtherIface{
+			query: selectNode(q.Root(), idResult.Id, "TestOtherIface"),
+		})
+	}
+	return results, nil
 }
 
 // A unique identifier for this Test.
@@ -364,7 +234,7 @@ func (r *Test) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *Test) XXX_GraphQLIDType() string {
-	return "TestID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -389,13 +259,12 @@ func (r *Test) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadTestFromID(TestID(id))
+	*r = Test{query: selectNode(dag.query, id, "Test")}
 	return nil
 }
 
 func (r *Test) IfaceField() *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:50:3)
 	q := r.query.Select("ifaceField")
-
 	return &TestCustomIface{
 		query: q,
 	}
@@ -403,7 +272,6 @@ func (r *Test) IfaceField() *TestCustomIface { // test (../../../../../../../../
 
 func (r *Test) IfaceFieldNeverSet() *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:53:3)
 	q := r.query.Select("ifaceFieldNeverSet")
-
 	return &TestCustomIface{
 		query: q,
 	}
@@ -420,36 +288,26 @@ func (r *Test) IfaceListArgs(ctx context.Context, ifaces []*TestCustomIface, oth
 	return response, q.Execute(ctx)
 }
 
-func (r *Test) IfaceListField(ctx context.Context) ([]TestCustomIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:58:3)
+func (r *Test) IfaceListField(ctx context.Context) ([]*TestCustomIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:58:3)
 	q := r.query.Select("ifaceListField")
 
 	q = q.Select("id")
-
-	type ifaceListField struct {
-		Id TestCustomIfaceID
+	type ifaceListFieldIDResult struct {
+		Id string
 	}
-
-	convert := func(fields []ifaceListField) []TestCustomIface {
-		out := []TestCustomIface{}
-
-		for i := range fields {
-			val := TestCustomIface{id: &fields[i].Id}
-			val.query = q.Root().Select("loadTestCustomIfaceFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []ifaceListField
-
-	q = q.Bind(&response)
-
+	var idResults []ifaceListFieldIDResult
+	q = q.Bind(&idResults)
 	err := q.Execute(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	return convert(response), nil
+	var results []*TestCustomIface
+	for _, idResult := range idResults {
+		results = append(results, &TestCustomIface{
+			query: selectNode(q.Root(), idResult.Id, "TestCustomIface"),
+		})
+	}
+	return results, nil
 }
 
 func (r *Test) Int(ctx context.Context, ifaceArg *TestCustomIface) (int, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:94:9)
@@ -503,7 +361,7 @@ func (r *Test) ObjList(ctx context.Context, ifaceArg *TestCustomIface) ([]Direct
 
 		for i := range fields {
 			val := Directory{id: &fields[i].Id}
-			val.query = q.Root().Select("loadDirectoryFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "Directory")
 			out = append(out, val)
 		}
 
@@ -525,42 +383,31 @@ func (r *Test) OtherIface(ifaceArg *TestCustomIface) *TestOtherIface { // test (
 	assertNotNil("ifaceArg", ifaceArg)
 	q := r.query.Select("otherIface")
 	q = q.Arg("ifaceArg", ifaceArg)
-
 	return &TestOtherIface{
 		query: q,
 	}
 }
 
-func (r *Test) OtherIfaceListField(ctx context.Context) ([]TestOtherIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:61:3)
+func (r *Test) OtherIfaceListField(ctx context.Context) ([]*TestOtherIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:61:3)
 	q := r.query.Select("otherIfaceListField")
 
 	q = q.Select("id")
-
-	type otherIfaceListField struct {
-		Id TestOtherIfaceID
+	type otherIfaceListFieldIDResult struct {
+		Id string
 	}
-
-	convert := func(fields []otherIfaceListField) []TestOtherIface {
-		out := []TestOtherIface{}
-
-		for i := range fields {
-			val := TestOtherIface{id: &fields[i].Id}
-			val.query = q.Root().Select("loadTestOtherIfaceFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []otherIfaceListField
-
-	q = q.Bind(&response)
-
+	var idResults []otherIfaceListFieldIDResult
+	q = q.Bind(&idResults)
 	err := q.Execute(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	return convert(response), nil
+	var results []*TestOtherIface
+	for _, idResult := range idResults {
+		results = append(results, &TestOtherIface{
+			query: selectNode(q.Root(), idResult.Id, "TestOtherIface"),
+		})
+	}
+	return results, nil
 }
 
 func (r *Test) ParentIfaceFields(ctx context.Context) ([]string, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:254:9)
@@ -586,78 +433,57 @@ func (r *Test) SelfIface(ifaceArg *TestCustomIface) *TestCustomIface { // test (
 	assertNotNil("ifaceArg", ifaceArg)
 	q := r.query.Select("selfIface")
 	q = q.Arg("ifaceArg", ifaceArg)
-
 	return &TestCustomIface{
 		query: q,
 	}
 }
 
-func (r *Test) SelfIfaceList(ctx context.Context, ifaceArg *TestCustomIface) ([]TestCustomIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:164:9)
+func (r *Test) SelfIfaceList(ctx context.Context, ifaceArg *TestCustomIface) ([]*TestCustomIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:164:9)
 	assertNotNil("ifaceArg", ifaceArg)
 	q := r.query.Select("selfIfaceList")
 	q = q.Arg("ifaceArg", ifaceArg)
 
 	q = q.Select("id")
-
-	type selfIfaceList struct {
-		Id TestCustomIfaceID
+	type selfIfaceListIDResult struct {
+		Id string
 	}
-
-	convert := func(fields []selfIfaceList) []TestCustomIface {
-		out := []TestCustomIface{}
-
-		for i := range fields {
-			val := TestCustomIface{id: &fields[i].Id}
-			val.query = q.Root().Select("loadTestCustomIfaceFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []selfIfaceList
-
-	q = q.Bind(&response)
-
+	var idResults []selfIfaceListIDResult
+	q = q.Bind(&idResults)
 	err := q.Execute(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	return convert(response), nil
+	var results []*TestCustomIface
+	for _, idResult := range idResults {
+		results = append(results, &TestCustomIface{
+			query: selectNode(q.Root(), idResult.Id, "TestCustomIface"),
+		})
+	}
+	return results, nil
 }
 
-func (r *Test) StaticOtherIfaceList(ctx context.Context, ifaceArg *TestCustomIface) ([]TestOtherIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:174:9)
+func (r *Test) StaticOtherIfaceList(ctx context.Context, ifaceArg *TestCustomIface) ([]*TestOtherIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:174:9)
 	assertNotNil("ifaceArg", ifaceArg)
 	q := r.query.Select("staticOtherIfaceList")
 	q = q.Arg("ifaceArg", ifaceArg)
 
 	q = q.Select("id")
-
-	type staticOtherIfaceList struct {
-		Id TestOtherIfaceID
+	type staticOtherIfaceListIDResult struct {
+		Id string
 	}
-
-	convert := func(fields []staticOtherIfaceList) []TestOtherIface {
-		out := []TestOtherIface{}
-
-		for i := range fields {
-			val := TestOtherIface{id: &fields[i].Id}
-			val.query = q.Root().Select("loadTestOtherIfaceFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []staticOtherIfaceList
-
-	q = q.Bind(&response)
-
+	var idResults []staticOtherIfaceListIDResult
+	q = q.Bind(&idResults)
 	err := q.Execute(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	return convert(response), nil
+	var results []*TestOtherIface
+	for _, idResult := range idResults {
+		results = append(results, &TestOtherIface{
+			query: selectNode(q.Root(), idResult.Id, "TestOtherIface"),
+		})
+	}
+	return results, nil
 }
 
 func (r *Test) Str(ctx context.Context, ifaceArg *TestCustomIface) (string, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:69:9)
@@ -701,7 +527,6 @@ func (r *Test) WithBool(ifaceArg *TestCustomIface, boolArg bool) *TestCustomIfac
 	q := r.query.Select("withBool")
 	q = q.Arg("ifaceArg", ifaceArg)
 	q = q.Arg("boolArg", boolArg)
-
 	return &TestCustomIface{
 		query: q,
 	}
@@ -712,7 +537,6 @@ func (r *Test) WithBoolList(ifaceArg *TestCustomIface, boolListArg []bool) *Test
 	q := r.query.Select("withBoolList")
 	q = q.Arg("ifaceArg", ifaceArg)
 	q = q.Arg("boolListArg", boolListArg)
-
 	return &TestCustomIface{
 		query: q,
 	}
@@ -742,7 +566,6 @@ func (r *Test) WithInt(ifaceArg *TestCustomIface, intArg int) *TestCustomIface {
 	q := r.query.Select("withInt")
 	q = q.Arg("ifaceArg", ifaceArg)
 	q = q.Arg("intArg", intArg)
-
 	return &TestCustomIface{
 		query: q,
 	}
@@ -753,7 +576,6 @@ func (r *Test) WithIntList(ifaceArg *TestCustomIface, intListArg []int) *TestCus
 	q := r.query.Select("withIntList")
 	q = q.Arg("ifaceArg", ifaceArg)
 	q = q.Arg("intListArg", intListArg)
-
 	return &TestCustomIface{
 		query: q,
 	}
@@ -765,7 +587,6 @@ func (r *Test) WithObj(ifaceArg *TestCustomIface, objArg *Directory) *TestCustom
 	q := r.query.Select("withObj")
 	q = q.Arg("ifaceArg", ifaceArg)
 	q = q.Arg("objArg", objArg)
-
 	return &TestCustomIface{
 		query: q,
 	}
@@ -776,7 +597,6 @@ func (r *Test) WithObjList(ifaceArg *TestCustomIface, objListArg []*Directory) *
 	q := r.query.Select("withObjList")
 	q = q.Arg("ifaceArg", ifaceArg)
 	q = q.Arg("objListArg", objListArg)
-
 	return &TestCustomIface{
 		query: q,
 	}
@@ -816,7 +636,6 @@ func (r *Test) WithOptionalObj(ifaceArg *TestCustomIface, opts ...TestWithOption
 		}
 	}
 	q = q.Arg("ifaceArg", ifaceArg)
-
 	return &TestCustomIface{
 		query: q,
 	}
@@ -837,7 +656,6 @@ func (r *Test) WithOptionalStr(ifaceArg *TestCustomIface, opts ...TestWithOption
 		}
 	}
 	q = q.Arg("ifaceArg", ifaceArg)
-
 	return &TestCustomIface{
 		query: q,
 	}
@@ -849,7 +667,6 @@ func (r *Test) WithOtherIface(ifaceArg *TestCustomIface, otherArg *TestOtherIfac
 	q := r.query.Select("withOtherIface")
 	q = q.Arg("ifaceArg", ifaceArg)
 	q = q.Arg("otherArg", otherArg)
-
 	return &TestCustomIface{
 		query: q,
 	}
@@ -861,7 +678,6 @@ func (r *Test) WithOtherIfaceByIface(ifaceArg *TestCustomIface, otherArg *TestOt
 	q := r.query.Select("withOtherIfaceByIface")
 	q = q.Arg("ifaceArg", ifaceArg)
 	q = q.Arg("otherArg", otherArg)
-
 	return &TestCustomIface{
 		query: q,
 	}
@@ -891,7 +707,6 @@ func (r *Test) WithStr(ifaceArg *TestCustomIface, strArg string) *TestCustomIfac
 	q := r.query.Select("withStr")
 	q = q.Arg("ifaceArg", ifaceArg)
 	q = q.Arg("strArg", strArg)
-
 	return &TestCustomIface{
 		query: q,
 	}
@@ -902,469 +717,16 @@ func (r *Test) WithStrList(ifaceArg *TestCustomIface, strListArg []string) *Test
 	q := r.query.Select("withStrList")
 	q = q.Arg("ifaceArg", ifaceArg)
 	q = q.Arg("strListArg", strListArg)
-
 	return &TestCustomIface{
 		query: q,
 	}
 }
 
-type TestCustomIface struct { // test (../../../../../../../../:0:0)
-	query *querybuilder.Selection
-
-	bool *bool
-	id   *TestCustomIfaceID
-	int  *int
-	str  *string
-	void *Void
-}
-type WithTestCustomIfaceFunc func(r *TestCustomIface) *TestCustomIface
-
-// With calls the provided function with current TestCustomIface.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *TestCustomIface) With(f WithTestCustomIfaceFunc) *TestCustomIface {
-	return f(r)
-}
-
-func (r *TestCustomIface) WithGraphQLQuery(q *querybuilder.Selection) *TestCustomIface {
-	return &TestCustomIface{
-		query: q,
-	}
-}
-
-func (r *TestCustomIface) Bool(ctx context.Context) (bool, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:19:3)
-	if r.bool != nil {
-		return *r.bool, nil
-	}
-	q := r.query.Select("bool")
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *TestCustomIface) BoolList(ctx context.Context) ([]bool, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:21:3)
-	q := r.query.Select("boolList")
-
-	var response []bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *TestCustomIface) DynamicOtherIfaceByIfaceList(ctx context.Context) ([]TestOtherIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:40:3)
-	q := r.query.Select("dynamicOtherIfaceByIfaceList")
-
-	q = q.Select("id")
-
-	type dynamicOtherIfaceByIfaceList struct {
-		Id TestOtherIfaceID
-	}
-
-	convert := func(fields []dynamicOtherIfaceByIfaceList) []TestOtherIface {
-		out := []TestOtherIface{}
-
-		for i := range fields {
-			val := TestOtherIface{id: &fields[i].Id}
-			val.query = q.Root().Select("loadTestOtherIfaceFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []dynamicOtherIfaceByIfaceList
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-func (r *TestCustomIface) DynamicOtherIfaceList(ctx context.Context) ([]TestOtherIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:37:3)
-	q := r.query.Select("dynamicOtherIfaceList")
-
-	q = q.Select("id")
-
-	type dynamicOtherIfaceList struct {
-		Id TestOtherIfaceID
-	}
-
-	convert := func(fields []dynamicOtherIfaceList) []TestOtherIface {
-		out := []TestOtherIface{}
-
-		for i := range fields {
-			val := TestOtherIface{id: &fields[i].Id}
-			val.query = q.Root().Select("loadTestOtherIfaceFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []dynamicOtherIfaceList
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// A unique identifier for this TestCustomIface.
-func (r *TestCustomIface) ID(ctx context.Context) (TestCustomIfaceID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response TestCustomIfaceID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *TestCustomIface) XXX_GraphQLType() string {
-	return "TestCustomIface"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *TestCustomIface) XXX_GraphQLIDType() string {
-	return "TestCustomIfaceID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *TestCustomIface) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *TestCustomIface) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-func (r *TestCustomIface) UnmarshalJSON(bs []byte) error {
-	var id string
-	err := json.Unmarshal(bs, &id)
-	if err != nil {
-		return err
-	}
-	*r = *dag.LoadTestCustomIfaceFromID(TestCustomIfaceID(id))
-	return nil
-}
-
-func (r *TestCustomIface) Int(ctx context.Context) (int, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:13:3)
-	if r.int != nil {
-		return *r.int, nil
-	}
-	q := r.query.Select("int")
-
-	var response int
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *TestCustomIface) IntList(ctx context.Context) ([]int, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:16:3)
-	q := r.query.Select("intList")
-
-	var response []int
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *TestCustomIface) Obj() *Directory { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:24:3)
-	q := r.query.Select("obj")
-
-	return &Directory{
-		query: q,
-	}
-}
-
-func (r *TestCustomIface) ObjList(ctx context.Context) ([]Directory, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:28:3)
-	q := r.query.Select("objList")
-
-	q = q.Select("id")
-
-	type objList struct {
-		Id DirectoryID
-	}
-
-	convert := func(fields []objList) []Directory {
-		out := []Directory{}
-
-		for i := range fields {
-			val := Directory{id: &fields[i].Id}
-			val.query = q.Root().Select("loadDirectoryFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []objList
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-func (r *TestCustomIface) OtherIface() *TestOtherIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:34:3)
-	q := r.query.Select("otherIface")
-
-	return &TestOtherIface{
-		query: q,
-	}
-}
-
-func (r *TestCustomIface) SelfIface() *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:31:3)
-	q := r.query.Select("selfIface")
-
-	return &TestCustomIface{
-		query: q,
-	}
-}
-
-func (r *TestCustomIface) SelfIfaceList(ctx context.Context) ([]TestCustomIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:32:3)
-	q := r.query.Select("selfIfaceList")
-
-	q = q.Select("id")
-
-	type selfIfaceList struct {
-		Id TestCustomIfaceID
-	}
-
-	convert := func(fields []selfIfaceList) []TestCustomIface {
-		out := []TestCustomIface{}
-
-		for i := range fields {
-			val := TestCustomIface{id: &fields[i].Id}
-			val.query = q.Root().Select("loadTestCustomIfaceFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []selfIfaceList
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-func (r *TestCustomIface) StaticOtherIfaceList(ctx context.Context) ([]TestOtherIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:35:3)
-	q := r.query.Select("staticOtherIfaceList")
-
-	q = q.Select("id")
-
-	type staticOtherIfaceList struct {
-		Id TestOtherIfaceID
-	}
-
-	convert := func(fields []staticOtherIfaceList) []TestOtherIface {
-		out := []TestOtherIface{}
-
-		for i := range fields {
-			val := TestOtherIface{id: &fields[i].Id}
-			val.query = q.Root().Select("loadTestOtherIfaceFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []staticOtherIfaceList
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-func (r *TestCustomIface) Str(ctx context.Context) (string, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:6:3)
-	if r.str != nil {
-		return *r.str, nil
-	}
-	q := r.query.Select("str")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *TestCustomIface) StrList(ctx context.Context) ([]string, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:10:3)
-	q := r.query.Select("strList")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-func (r *TestCustomIface) Void(ctx context.Context) error { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:4:3)
-	if r.void != nil {
-		return nil
-	}
-	q := r.query.Select("void")
-
-	return q.Execute(ctx)
-}
-
-func (r *TestCustomIface) WithBool(bool bool) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:20:3)
-	q := r.query.Select("withBool")
-	q = q.Arg("bool", bool)
-
-	return &TestCustomIface{
-		query: q,
-	}
-}
-
-func (r *TestCustomIface) WithBoolList(bools []bool) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:22:3)
-	q := r.query.Select("withBoolList")
-	q = q.Arg("bools", bools)
-
-	return &TestCustomIface{
-		query: q,
-	}
-}
-
-func (r *TestCustomIface) WithInt(int int) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:14:3)
-	q := r.query.Select("withInt")
-	q = q.Arg("int", int)
-
-	return &TestCustomIface{
-		query: q,
-	}
-}
-
-func (r *TestCustomIface) WithIntList(ints []int) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:17:3)
-	q := r.query.Select("withIntList")
-	q = q.Arg("ints", ints)
-
-	return &TestCustomIface{
-		query: q,
-	}
-}
-
-func (r *TestCustomIface) WithObj(obj *Directory) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:25:3)
-	assertNotNil("obj", obj)
-	q := r.query.Select("withObj")
-	q = q.Arg("obj", obj)
-
-	return &TestCustomIface{
-		query: q,
-	}
-}
-
-func (r *TestCustomIface) WithObjList(objs []*Directory) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:29:3)
-	q := r.query.Select("withObjList")
-	q = q.Arg("objs", objs)
-
-	return &TestCustomIface{
-		query: q,
-	}
-}
-
-// TestCustomIfaceWithOptionalObjOpts contains options for TestCustomIface.WithOptionalObj
-type TestCustomIfaceWithOptionalObjOpts struct {
-	Obj *Directory // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:26:21)
-}
-
-func (r *TestCustomIface) WithOptionalObj(opts ...TestCustomIfaceWithOptionalObjOpts) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:26:3)
-	q := r.query.Select("withOptionalObj")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `obj` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Obj) {
-			q = q.Arg("obj", opts[i].Obj)
-		}
-	}
-
-	return &TestCustomIface{
-		query: q,
-	}
-}
-
-// TestCustomIfaceWithOptionalStrOpts contains options for TestCustomIface.WithOptionalStr
-type TestCustomIfaceWithOptionalStrOpts struct {
-	Str string // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:8:21)
-}
-
-func (r *TestCustomIface) WithOptionalStr(opts ...TestCustomIfaceWithOptionalStrOpts) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:8:3)
-	q := r.query.Select("withOptionalStr")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `str` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Str) {
-			q = q.Arg("str", opts[i].Str)
-		}
-	}
-
-	return &TestCustomIface{
-		query: q,
-	}
-}
-
-func (r *TestCustomIface) WithOtherIface(other *TestOtherIface) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:36:3)
-	assertNotNil("other", other)
-	q := r.query.Select("withOtherIface")
-	q = q.Arg("other", other)
-
-	return &TestCustomIface{
-		query: q,
-	}
-}
-
-func (r *TestCustomIface) WithOtherIfaceByIface(other *TestOtherIface) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:39:3)
-	assertNotNil("other", other)
-	q := r.query.Select("withOtherIfaceByIface")
-	q = q.Arg("other", other)
-
-	return &TestCustomIface{
-		query: q,
-	}
-}
-
-func (r *TestCustomIface) WithStr(str string) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:7:3)
-	q := r.query.Select("withStr")
-	q = q.Arg("str", str)
-
-	return &TestCustomIface{
-		query: q,
-	}
-}
-
-func (r *TestCustomIface) WithStrList(strs []string) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:11:3)
-	q := r.query.Select("withStrList")
-	q = q.Arg("strs", strs)
-
-	return &TestCustomIface{
-		query: q,
+// AsNode returns this Test as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *Test) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
 	}
 }
 
@@ -1400,7 +762,7 @@ func (r *TestCustomObj) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *TestCustomObj) XXX_GraphQLIDType() string {
-	return "TestCustomObjID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1425,48 +787,37 @@ func (r *TestCustomObj) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadTestCustomObjFromID(TestCustomObjID(id))
+	*r = TestCustomObj{query: selectNode(dag.query, id, "TestCustomObj")}
 	return nil
 }
 
 func (r *TestCustomObj) Iface() *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:305:13)
 	q := r.query.Select("iface")
-
 	return &TestCustomIface{
 		query: q,
 	}
 }
 
-func (r *TestCustomObj) IfaceList(ctx context.Context) ([]TestCustomIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:305:13)
+func (r *TestCustomObj) IfaceList(ctx context.Context) ([]*TestCustomIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:305:13)
 	q := r.query.Select("ifaceList")
 
 	q = q.Select("id")
-
-	type ifaceList struct {
-		Id TestCustomIfaceID
+	type ifaceListIDResult struct {
+		Id string
 	}
-
-	convert := func(fields []ifaceList) []TestCustomIface {
-		out := []TestCustomIface{}
-
-		for i := range fields {
-			val := TestCustomIface{id: &fields[i].Id}
-			val.query = q.Root().Select("loadTestCustomIfaceFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []ifaceList
-
-	q = q.Bind(&response)
-
+	var idResults []ifaceListIDResult
+	q = q.Bind(&idResults)
 	err := q.Execute(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	return convert(response), nil
+	var results []*TestCustomIface
+	for _, idResult := range idResults {
+		results = append(results, &TestCustomIface{
+			query: selectNode(q.Root(), idResult.Id, "TestCustomIface"),
+		})
+	}
+	return results, nil
 }
 
 func (r *TestCustomObj) Other() *TestOtherCustomObj { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:305:13)
@@ -1491,7 +842,7 @@ func (r *TestCustomObj) OtherList(ctx context.Context) ([]TestOtherCustomObj, er
 
 		for i := range fields {
 			val := TestOtherCustomObj{id: &fields[i].Id}
-			val.query = q.Root().Select("loadTestOtherCustomObjFromID").Arg("id", fields[i].Id)
+			val.query = selectNode(q.Root(), fields[i].Id, "TestOtherCustomObj")
 			out = append(out, val)
 		}
 
@@ -1507,6 +858,14 @@ func (r *TestCustomObj) OtherList(ctx context.Context) ([]TestOtherCustomObj, er
 	}
 
 	return convert(response), nil
+}
+
+// AsNode returns this TestCustomObj as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *TestCustomObj) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
 }
 
 type TestOtherCustomObj struct { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:312:13)
@@ -1541,7 +900,7 @@ func (r *TestOtherCustomObj) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *TestOtherCustomObj) XXX_GraphQLIDType() string {
-	return "TestOtherCustomObjID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1566,48 +925,455 @@ func (r *TestOtherCustomObj) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadTestOtherCustomObjFromID(TestOtherCustomObjID(id))
+	*r = TestOtherCustomObj{query: selectNode(dag.query, id, "TestOtherCustomObj")}
 	return nil
 }
 
 func (r *TestOtherCustomObj) Iface() *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:312:13)
 	q := r.query.Select("iface")
-
 	return &TestCustomIface{
 		query: q,
 	}
 }
 
-func (r *TestOtherCustomObj) IfaceList(ctx context.Context) ([]TestCustomIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:312:13)
+func (r *TestOtherCustomObj) IfaceList(ctx context.Context) ([]*TestCustomIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:312:13)
 	q := r.query.Select("ifaceList")
 
 	q = q.Select("id")
+	type ifaceListIDResult struct {
+		Id string
+	}
+	var idResults []ifaceListIDResult
+	q = q.Bind(&idResults)
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var results []*TestCustomIface
+	for _, idResult := range idResults {
+		results = append(results, &TestCustomIface{
+			query: selectNode(q.Root(), idResult.Id, "TestCustomIface"),
+		})
+	}
+	return results, nil
+}
 
-	type ifaceList struct {
-		Id TestCustomIfaceID
+// AsNode returns this TestOtherCustomObj as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *TestOtherCustomObj) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+type TestCustomIface struct { // test (../../../../../../../../:0:0)
+	query *querybuilder.Selection
+
+	bool *bool
+	id   *TestCustomIfaceID
+	int  *int
+	str  *string
+	void *Void
+}
+
+type TestCustomIfaceClient = TestCustomIface
+
+func (r *TestCustomIface) WithGraphQLQuery(q *querybuilder.Selection) *TestCustomIface {
+	return &TestCustomIface{
+		query: q,
+	}
+}
+
+func (r *TestCustomIface) Bool(ctx context.Context) (bool, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:19:3)
+	if r.bool != nil {
+		return *r.bool, nil
+	}
+	q := r.query.Select("bool")
+
+	var response bool
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *TestCustomIface) BoolList(ctx context.Context) ([]bool, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:21:3)
+	q := r.query.Select("boolList")
+
+	var response []bool
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *TestCustomIface) DynamicOtherIfaceByIfaceList(ctx context.Context) ([]*TestOtherIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:40:3)
+	q := r.query.Select("dynamicOtherIfaceByIfaceList")
+	q = q.Select("id")
+	type idResult struct {
+		Id string
+	}
+	var idResults []idResult
+	q = q.Bind(&idResults)
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var results []*TestOtherIface
+	for _, idResult := range idResults {
+		results = append(results, &TestOtherIface{
+			query: selectNode(q.Root(), idResult.Id, "TestOtherIface"),
+		})
+	}
+	return results, nil
+}
+
+func (r *TestCustomIface) DynamicOtherIfaceList(ctx context.Context) ([]*TestOtherIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:37:3)
+	q := r.query.Select("dynamicOtherIfaceList")
+	q = q.Select("id")
+	type idResult struct {
+		Id string
+	}
+	var idResults []idResult
+	q = q.Bind(&idResults)
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var results []*TestOtherIface
+	for _, idResult := range idResults {
+		results = append(results, &TestOtherIface{
+			query: selectNode(q.Root(), idResult.Id, "TestOtherIface"),
+		})
+	}
+	return results, nil
+}
+
+// A unique identifier for this TestCustomIface.
+func (r *TestCustomIface) ID(ctx context.Context) (TestCustomIfaceID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response TestCustomIfaceID
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *TestCustomIface) XXX_GraphQLType() string {
+	return "TestCustomIface"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *TestCustomIface) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *TestCustomIface) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *TestCustomIface) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+func (r *TestCustomIface) UnmarshalJSON(bs []byte) error {
+	var id TestCustomIfaceID
+	err := json.Unmarshal(bs, &id)
+	if err != nil {
+		return err
+	}
+	*r = TestCustomIface{query: selectNode(dag.query, id, "TestCustomIface")}
+	return nil
+}
+
+func (r *TestCustomIface) Int(ctx context.Context) (int, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:13:3)
+	if r.int != nil {
+		return *r.int, nil
+	}
+	q := r.query.Select("int")
+
+	var response int
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *TestCustomIface) IntList(ctx context.Context) ([]int, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:16:3)
+	q := r.query.Select("intList")
+
+	var response []int
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *TestCustomIface) Obj() *Directory { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:24:3)
+	q := r.query.Select("obj")
+
+	return &Directory{
+		query: q,
+	}
+}
+
+func (r *TestCustomIface) ObjList(ctx context.Context) ([]Directory, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:28:3)
+	q := r.query.Select("objList")
+
+	q = q.Select("id")
+
+	type objList struct {
+		Id ID
 	}
 
-	convert := func(fields []ifaceList) []TestCustomIface {
-		out := []TestCustomIface{}
+	convert := func(fields []objList) []Directory {
+		out := []Directory{}
 
 		for i := range fields {
-			val := TestCustomIface{id: &fields[i].Id}
-			val.query = q.Root().Select("loadTestCustomIfaceFromID").Arg("id", fields[i].Id)
+			val := Directory{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "Directory")
 			out = append(out, val)
 		}
 
 		return out
 	}
-	var response []ifaceList
 
+	var response []objList
 	q = q.Bind(&response)
-
 	err := q.Execute(ctx)
 	if err != nil {
 		return nil, err
 	}
-
 	return convert(response), nil
+}
+
+func (r *TestCustomIface) OtherIface() *TestOtherIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:34:3)
+	q := r.query.Select("otherIface")
+	return &TestOtherIface{
+		query: q,
+	}
+}
+
+func (r *TestCustomIface) SelfIface() *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:31:3)
+	q := r.query.Select("selfIface")
+	return &TestCustomIface{
+		query: q,
+	}
+}
+
+func (r *TestCustomIface) SelfIfaceList(ctx context.Context) ([]*TestCustomIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:32:3)
+	q := r.query.Select("selfIfaceList")
+	q = q.Select("id")
+	type idResult struct {
+		Id string
+	}
+	var idResults []idResult
+	q = q.Bind(&idResults)
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var results []*TestCustomIface
+	for _, idResult := range idResults {
+		results = append(results, &TestCustomIface{
+			query: selectNode(q.Root(), idResult.Id, "TestCustomIface"),
+		})
+	}
+	return results, nil
+}
+
+func (r *TestCustomIface) StaticOtherIfaceList(ctx context.Context) ([]*TestOtherIface, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:35:3)
+	q := r.query.Select("staticOtherIfaceList")
+	q = q.Select("id")
+	type idResult struct {
+		Id string
+	}
+	var idResults []idResult
+	q = q.Bind(&idResults)
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var results []*TestOtherIface
+	for _, idResult := range idResults {
+		results = append(results, &TestOtherIface{
+			query: selectNode(q.Root(), idResult.Id, "TestOtherIface"),
+		})
+	}
+	return results, nil
+}
+
+func (r *TestCustomIface) Str(ctx context.Context) (string, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:6:3)
+	if r.str != nil {
+		return *r.str, nil
+	}
+	q := r.query.Select("str")
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *TestCustomIface) StrList(ctx context.Context) ([]string, error) { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:10:3)
+	q := r.query.Select("strList")
+
+	var response []string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+func (r *TestCustomIface) Void(ctx context.Context) error { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:4:3)
+	if r.void != nil {
+		return nil
+	}
+	q := r.query.Select("void")
+
+	return q.Execute(ctx)
+}
+
+func (r *TestCustomIface) WithBool(bool bool) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:20:3)
+	q := r.query.Select("withBool")
+	q = q.Arg("bool", bool)
+	return &TestCustomIface{
+		query: q,
+	}
+}
+
+func (r *TestCustomIface) WithBoolList(bools []bool) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:22:3)
+	q := r.query.Select("withBoolList")
+	q = q.Arg("bools", bools)
+	return &TestCustomIface{
+		query: q,
+	}
+}
+
+func (r *TestCustomIface) WithInt(int int) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:14:3)
+	q := r.query.Select("withInt")
+	q = q.Arg("int", int)
+	return &TestCustomIface{
+		query: q,
+	}
+}
+
+func (r *TestCustomIface) WithIntList(ints []int) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:17:3)
+	q := r.query.Select("withIntList")
+	q = q.Arg("ints", ints)
+	return &TestCustomIface{
+		query: q,
+	}
+}
+
+func (r *TestCustomIface) WithObj(obj *Directory) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:25:3)
+	assertNotNil("obj", obj)
+	q := r.query.Select("withObj")
+	q = q.Arg("obj", obj)
+	return &TestCustomIface{
+		query: q,
+	}
+}
+
+func (r *TestCustomIface) WithObjList(objs []*Directory) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:29:3)
+	q := r.query.Select("withObjList")
+	q = q.Arg("objs", objs)
+	return &TestCustomIface{
+		query: q,
+	}
+}
+
+// TestCustomIfaceWithOptionalObjOpts contains options for TestCustomIface.WithOptionalObj
+type TestCustomIfaceWithOptionalObjOpts struct {
+	Obj *Directory // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:26:21)
+}
+
+func (r *TestCustomIface) WithOptionalObj(opts ...TestCustomIfaceWithOptionalObjOpts) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:26:3)
+	q := r.query.Select("withOptionalObj")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `obj` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Obj) {
+			q = q.Arg("obj", opts[i].Obj)
+		}
+	}
+	return &TestCustomIface{
+		query: q,
+	}
+}
+
+// TestCustomIfaceWithOptionalStrOpts contains options for TestCustomIface.WithOptionalStr
+type TestCustomIfaceWithOptionalStrOpts struct {
+	Str string // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:8:21)
+}
+
+func (r *TestCustomIface) WithOptionalStr(opts ...TestCustomIfaceWithOptionalStrOpts) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:8:3)
+	q := r.query.Select("withOptionalStr")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `str` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Str) {
+			q = q.Arg("str", opts[i].Str)
+		}
+	}
+	return &TestCustomIface{
+		query: q,
+	}
+}
+
+func (r *TestCustomIface) WithOtherIface(other *TestOtherIface) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:36:3)
+	assertNotNil("other", other)
+	q := r.query.Select("withOtherIface")
+	q = q.Arg("other", other)
+	return &TestCustomIface{
+		query: q,
+	}
+}
+
+func (r *TestCustomIface) WithOtherIfaceByIface(other *TestOtherIface) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:39:3)
+	assertNotNil("other", other)
+	q := r.query.Select("withOtherIfaceByIface")
+	q = q.Arg("other", other)
+	return &TestCustomIface{
+		query: q,
+	}
+}
+
+func (r *TestCustomIface) WithStr(str string) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:7:3)
+	q := r.query.Select("withStr")
+	q = q.Arg("str", str)
+	return &TestCustomIface{
+		query: q,
+	}
+}
+
+func (r *TestCustomIface) WithStrList(strs []string) *TestCustomIface { // test (../../../../../../../../core/integration/testdata/modules/typescript/ifaces/test/src/index.ts:11:3)
+	q := r.query.Select("withStrList")
+	q = q.Arg("strs", strs)
+	return &TestCustomIface{
+		query: q,
+	}
+}
+
+// Concrete loads and returns the underlying concrete type of this
+// interface, which can then be used with a type switch.
+func (r *TestCustomIface) Concrete(ctx context.Context) (Node, error) {
+	// Query __typename to determine the concrete type.
+	var typeName string
+	q := r.query.Select("__typename")
+	q = q.Bind(&typeName)
+	if err := q.Execute(ctx); err != nil {
+		return nil, err
+	}
+	// Get the ID to load the concrete object.
+	id, err := r.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	switch typeName {
+	case "Impl":
+		return &Impl{query: selectNode(r.query.Root(), id, "Impl")}, nil
+	default:
+		return nil, fmt.Errorf("unknown TestCustomIface implementation: %s", typeName)
+	}
 }
 
 type TestOtherIface struct { // test (../../../../../../../../:0:0)
@@ -1616,6 +1382,8 @@ type TestOtherIface struct { // test (../../../../../../../../:0:0)
 	foo *string
 	id  *TestOtherIfaceID
 }
+
+type TestOtherIfaceClient = TestOtherIface
 
 func (r *TestOtherIface) WithGraphQLQuery(q *querybuilder.Selection) *TestOtherIface {
 	return &TestOtherIface{
@@ -1630,7 +1398,6 @@ func (r *TestOtherIface) Foo(ctx context.Context) (string, error) { // test (../
 	q := r.query.Select("foo")
 
 	var response string
-
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
 }
@@ -1643,7 +1410,6 @@ func (r *TestOtherIface) ID(ctx context.Context) (TestOtherIfaceID, error) {
 	q := r.query.Select("id")
 
 	var response TestOtherIfaceID
-
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
 }
@@ -1655,7 +1421,7 @@ func (r *TestOtherIface) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *TestOtherIface) XXX_GraphQLIDType() string {
-	return "TestOtherIfaceID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1675,11 +1441,34 @@ func (r *TestOtherIface) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 func (r *TestOtherIface) UnmarshalJSON(bs []byte) error {
-	var id string
+	var id TestOtherIfaceID
 	err := json.Unmarshal(bs, &id)
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadTestOtherIfaceFromID(TestOtherIfaceID(id))
+	*r = TestOtherIface{query: selectNode(dag.query, id, "TestOtherIface")}
 	return nil
+}
+
+// Concrete loads and returns the underlying concrete type of this
+// interface, which can then be used with a type switch.
+func (r *TestOtherIface) Concrete(ctx context.Context) (Node, error) {
+	// Query __typename to determine the concrete type.
+	var typeName string
+	q := r.query.Select("__typename")
+	q = q.Bind(&typeName)
+	if err := q.Execute(ctx); err != nil {
+		return nil, err
+	}
+	// Get the ID to load the concrete object.
+	id, err := r.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	switch typeName {
+	case "ImplOtherImpl":
+		return &ImplOtherImpl{query: selectNode(r.query.Root(), id, "ImplOtherImpl")}, nil
+	default:
+		return nil, fmt.Errorf("unknown TestOtherIface implementation: %s", typeName)
+	}
 }

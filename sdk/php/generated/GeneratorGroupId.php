@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * The `GeneratorGroupID` scalar type represents an identifier for an object of type GeneratorGroup.
+ * A unique identifier for an object.
  */
-readonly class GeneratorGroupId extends Client\AbstractId
+readonly class GeneratorGroupId extends Client\AbstractScalar
 {
 }

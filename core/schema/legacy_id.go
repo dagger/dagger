@@ -14,7 +14,7 @@ import (
 // load<Foo>FromID root fields are exposed. Older client engine
 // versions expected this surface; modern clients use the unified ID
 // scalar plus node(id:).
-var legacyIDView = BeforeVersion("v0.21.1")
+var legacyIDView = BeforeVersion("v0.22.0")
 
 // legacyIDHook installs a per-type FooID scalar and a
 // load<Foo>FromID root field for every idable object or interface as

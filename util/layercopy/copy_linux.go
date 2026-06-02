@@ -183,6 +183,7 @@ func (c *Copier) copyEntry(
 
 	if ent.Info.IsDir() {
 		childPending := pending
+		var realDirPath string
 		if include {
 			if err := c.ensurePending(pending, opts); err != nil {
 				return err
@@ -190,20 +191,18 @@ func (c *Copier) copyEntry(
 			if err := c.dest.removeForReplace(destPath, ent.Info, opts); err != nil {
 				return err
 			}
-			if _, _, err := c.dest.ensureDir(destPath, &ent, opts, true); err != nil {
+			rel, _, err := c.dest.ensureDir(destPath, &ent, opts, true)
+			if err != nil {
 				return err
 			}
+			realDirPath = filepath.Join(c.dest.writeRoot, rel)
 		} else {
 			childPending = append(childPending, pendingDir{entry: ent, destPath: destPath})
 		}
 
 		if !matcher.shouldDescend(ent.Rel) {
 			if include {
-				realPath, err := c.dest.realPath(destPath)
-				if err != nil {
-					return err
-				}
-				return c.dest.applyMetadataPath(realPath, &ent, opts)
+				return c.dest.applyMetadataPath(realDirPath, &ent, opts)
 			}
 			return nil
 		}
@@ -219,11 +218,7 @@ func (c *Copier) copyEntry(
 			}
 		}
 		if include {
-			realPath, err := c.dest.realPath(destPath)
-			if err != nil {
-				return err
-			}
-			return c.dest.applyMetadataPath(realPath, &ent, opts)
+			return c.dest.applyMetadataPath(realDirPath, &ent, opts)
 		}
 		return nil
 	}

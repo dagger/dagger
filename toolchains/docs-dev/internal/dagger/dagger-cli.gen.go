@@ -6,11 +6,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"dagger.io/dagger/querybuilder"
+	"github.com/dagger/querybuilder"
 )
-
-// The `DaggerCliID` scalar type represents an identifier for an object of type DaggerCli.
-type DaggerCliID string // dagger-cli (../../../../toolchains/cli-dev/main.go:83:6)
 
 // Retrieve the binding value, as type DaggerCli
 func (r *Binding) AsDaggerCli() *DaggerCli { // dagger-cli (../../../../toolchains/cli-dev/main.go:83:6)
@@ -24,7 +21,7 @@ func (r *Binding) AsDaggerCli() *DaggerCli { // dagger-cli (../../../../toolchai
 type DaggerCli struct { // dagger-cli (../../../../toolchains/cli-dev/main.go:83:6)
 	query *querybuilder.Selection
 
-	id              *DaggerCliID
+	id              *ID
 	publishMetadata *Void
 	releaseDryRun   *Void
 	tag             *string
@@ -79,13 +76,13 @@ func (r *DaggerCli) DevBinaries(opts ...DaggerCliDevBinariesOpts) *Directory { /
 }
 
 // A unique identifier for this DaggerCli.
-func (r *DaggerCli) ID(ctx context.Context) (DaggerCliID, error) {
+func (r *DaggerCli) ID(ctx context.Context) (ID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.query.Select("id")
 
-	var response DaggerCliID
+	var response ID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -98,7 +95,7 @@ func (r *DaggerCli) XXX_GraphQLType() string {
 
 // XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
 func (r *DaggerCli) XXX_GraphQLIDType() string {
-	return "DaggerCliID"
+	return "ID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -123,7 +120,7 @@ func (r *DaggerCli) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return err
 	}
-	*r = *dag.LoadDaggerCliFromID(DaggerCliID(id))
+	*r = DaggerCli{query: selectNode(dag.query, id, "DaggerCli")}
 	return nil
 }
 
@@ -271,6 +268,14 @@ func (r *DaggerCli) Version(ctx context.Context) (string, error) { // dagger-cli
 	return response, q.Execute(ctx)
 }
 
+// AsNode returns this DaggerCli as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *DaggerCli) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
 // Create or update a binding of type DaggerCli in the environment
 func (r *Env) WithDaggerCliInput(name string, value *DaggerCli, description string) *Env { // dagger-cli (../../../../toolchains/cli-dev/main.go:83:6)
 	assertNotNil("value", value)
@@ -331,16 +336,6 @@ func (r *Query) DaggerCli(opts ...DaggerCliOpts) *DaggerCli { // dagger-cli (../
 			q = q.Arg("version", opts[i].Version)
 		}
 	}
-
-	return &DaggerCli{
-		query: q,
-	}
-}
-
-// Load a DaggerCli from its ID.
-func (r *Query) LoadDaggerCliFromID(id DaggerCliID) *DaggerCli { // dagger-cli (../../../../toolchains/cli-dev/main.go:83:6)
-	q := r.query.Select("loadDaggerCliFromID")
-	q = q.Arg("id", id)
 
 	return &DaggerCli{
 		query: q,

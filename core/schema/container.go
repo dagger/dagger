@@ -371,6 +371,15 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 			),
 
+		dagql.NodeFunc("__withMountedPathDockerfileCompat", s.withMountedPathDockerfileCompat).
+			Doc(`(Internal-only) Dockerfile-compat bind mount path.`).
+			Args(
+				dagql.Arg("path").Doc(`Location of the mounted path.`),
+				dagql.Arg("source").Doc(`Identifier of the directory containing the mounted path.`),
+				dagql.Arg("sourcePath").Doc(`Path within source to mount.`),
+				dagql.Arg("readOnly").Doc(`Mount the path read-only.`),
+			),
+
 		dagql.NodeFunc("withMountedTemp", s.withMountedTemp).
 			Doc(`Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.`).
 			Args(
@@ -2358,6 +2367,46 @@ func (s *containerSchema) withMountedFile(ctx context.Context, parent dagql.Obje
 		Target:     target,
 		Readonly:   false,
 		FileSource: new(core.LazyAccessor[*core.File, *core.Container]),
+	})
+	return ctr, nil
+}
+
+type containerWithMountedPathDockerfileCompatArgs struct {
+	Path       string
+	Source     core.DirectoryID
+	SourcePath string `internal:"true" default:"/"`
+	ReadOnly   bool   `default:"false"`
+}
+
+func (s *containerSchema) withMountedPathDockerfileCompat(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerWithMountedPathDockerfileCompatArgs) (*core.Container, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server: %w", err)
+	}
+
+	dir, err := args.Source.Load(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+
+	ctr, err := cloneContainerForSchemaChild(ctx, parent)
+	if err != nil {
+		return nil, err
+	}
+
+	target := absPath(parent.Self().Config.WorkingDir, args.Path)
+	ctr.Lazy = &core.ContainerWithMountedPathDockerfileCompatLazy{
+		LazyState:  core.NewLazyState(),
+		Parent:     parent,
+		Target:     target,
+		Source:     dir,
+		SourcePath: args.SourcePath,
+		Readonly:   args.ReadOnly,
+	}
+	ctr.Mounts = ctr.Mounts.With(core.ContainerMount{
+		Target:          target,
+		Readonly:        args.ReadOnly,
+		DirectorySource: new(core.LazyAccessor[*core.Directory, *core.Container]),
 	})
 	return ctr, nil
 }

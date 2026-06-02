@@ -62,6 +62,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("include").Doc("Only include checks matching the specified patterns"),
 				dagql.Arg("noGenerate").Doc("When true, only return annotated check functions; exclude generate-as-checks"),
+				dagql.Arg("onlyGenerate").Doc("When true, only return generate-as-checks; exclude annotated check functions"),
 			),
 		dagql.Func("generators", s.generators).
 			Doc("Return all generators from modules loaded in the workspace.").
@@ -449,8 +450,9 @@ func (s *workspaceSchema) checks(
 	ctx context.Context,
 	parent *core.Workspace,
 	args struct {
-		Include    dagql.Optional[dagql.ArrayInput[dagql.String]]
-		NoGenerate dagql.Optional[dagql.Boolean]
+		Include      dagql.Optional[dagql.ArrayInput[dagql.String]]
+		NoGenerate   dagql.Optional[dagql.Boolean]
+		OnlyGenerate dagql.Optional[dagql.Boolean]
 	},
 ) (*core.CheckGroup, error) {
 	include := workspaceIncludePatterns(args.Include)
@@ -461,6 +463,7 @@ func (s *workspaceSchema) checks(
 	}
 
 	noGenerate := args.NoGenerate.GetOr(false).Bool()
+	onlyGenerate := args.OnlyGenerate.GetOr(false).Bool()
 	mods, err := currentWorkspacePrimaryModules(ctx)
 	if err != nil {
 		return nil, err
@@ -474,7 +477,7 @@ func (s *workspaceSchema) checks(
 
 	var allChecks []*core.Check
 	for _, mod := range mods {
-		checkGroup, err := core.NewCheckGroup(ctx, mod, nil, noGenerate)
+		checkGroup, err := core.NewCheckGroup(ctx, mod, nil, noGenerate, onlyGenerate)
 		if err != nil {
 			return nil, fmt.Errorf("checks from module %q: %w", mod.Self().Name(), err)
 		}
