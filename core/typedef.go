@@ -308,7 +308,6 @@ func (fn *Function) FieldSpec(ctx context.Context, mod Mod) (dagql.FieldSpec, er
 	spec.IsPersistable = true
 	switch cachePolicy {
 	case FunctionCachePolicyNever:
-		spec.DoNotCache = "function explicitly marked as never cache"
 		spec.IsPersistable = false
 
 	case FunctionCachePolicyPerSession:

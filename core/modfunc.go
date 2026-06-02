@@ -128,7 +128,10 @@ func (fn *ModuleFunction) cacheImplicitInputs() []dagql.ImplicitInput {
 
 	var implicitInputs []dagql.ImplicitInput
 	cachePolicy := fn.metadata.derivedCachePolicy(fn.mod.Self())
-	if cachePolicy == FunctionCachePolicyPerSession {
+	switch cachePolicy {
+	case FunctionCachePolicyNever:
+		implicitInputs = append(implicitInputs, dagql.PerCallInput)
+	case FunctionCachePolicyPerSession:
 		implicitInputs = append(implicitInputs, dagql.PerSessionInput)
 	}
 
