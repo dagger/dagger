@@ -145,7 +145,7 @@ defmodule Dagger.Container do
   end
 
   @doc """
-  Retrieves the value of the specified environment variable.
+  Retrieves the value of the specified persistent environment variable.
   """
   @spec env_variable(t(), String.t()) :: {:ok, String.t() | nil} | {:error, term()}
   def env_variable(%__MODULE__{} = container, name) do
@@ -156,7 +156,7 @@ defmodule Dagger.Container do
   end
 
   @doc """
-  Retrieves the list of environment variables passed to commands.
+  Retrieves the list of persistent environment variables configured on the container.
   """
   @spec env_variables(t()) :: {:ok, [Dagger.EnvVariable.t()]} | {:error, term()}
   def env_variables(%__MODULE__{} = container) do
@@ -1231,6 +1231,25 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.
+
+  This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.
+  """
+  @spec with_volatile_variable(t(), String.t(), String.t()) :: Dagger.Container.t()
+  def with_volatile_variable(%__MODULE__{} = container, name, value) do
+    query_builder =
+      container.query_builder
+      |> QB.select("withVolatileVariable")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", value)
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
   Change the container's working directory. Like WORKDIR in Dockerfile.
   """
   @spec with_workdir(t(), String.t(), [{:expand, boolean() | nil}]) :: Dagger.Container.t()
@@ -1475,6 +1494,20 @@ defmodule Dagger.Container do
   def without_user(%__MODULE__{} = container) do
     query_builder =
       container.query_builder |> QB.select("withoutUser")
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
+  Retrieves this container minus the given volatile environment variable.
+  """
+  @spec without_volatile_variable(t(), String.t()) :: Dagger.Container.t()
+  def without_volatile_variable(%__MODULE__{} = container, name) do
+    query_builder =
+      container.query_builder |> QB.select("withoutVolatileVariable") |> QB.put_arg("name", name)
 
     %Dagger.Container{
       query_builder: query_builder,
