@@ -33,7 +33,7 @@ func EntrypointTemplateFuncs(module *TypedefModule, opts EntrypointOptions) temp
 		"isInteger":            func(t *TypedefType) bool { return t != nil && t.Kind == KindInteger },
 		"argCoercionLine":      c.argCoercionLine,
 		"hasDefault":           hasDefault,
-		"engineLoadFnName":     c.engineLoadFnName,
+		"engineIfaceTypeName":  c.engineIfaceTypeName,
 		"plannedImports":       c.plannedImports,
 		"isVariadic":           func(a *TypedefArgument) bool { return a.IsVariadic },
 		"propFieldName":        propFieldName,
@@ -96,7 +96,9 @@ func (c *entrypointFuncCtx) coerceExpr(expr string, t *TypedefType) string {
 		if _, ok := c.module.Objects[t.Name]; ok {
 			return fmt.Sprintf("rebuild%s(%s)", t.Name, expr)
 		}
-		return fmt.Sprintf("dag.load%sFromID(%s)", t.Name, expr)
+		// Core/dependency object: the engine hands us an ID string; load a
+		// typed client from it via node(id:) (unified-ID API, post-#12041).
+		return fmt.Sprintf("__loadCoreObject(%s, %s)", expr, jsString(t.Name))
 	case KindEnum:
 		e, ok := c.module.Enums[t.Name]
 		if !ok {
@@ -282,8 +284,8 @@ func (c *entrypointFuncCtx) renderFunctionExpr(fn *TypedefFunction) string {
 
 // argCoercionLine emits a single `const __arg_X = ...` declaration coercing
 // the engine-supplied JSON value into a runtime value the user method
-// expects (loadXFromID for IDables, rebuilder for module objects, enum map,
-// iface wrap, etc.).
+// expects (node(id:) load for core IDables, rebuilder for module objects,
+// enum map, iface wrap, etc.).
 func (c *entrypointFuncCtx) argCoercionLine(arg *TypedefArgument) string {
 	v := coercedVarName(arg)
 	access := fmt.Sprintf("args[%s]", jsString(arg.Name))
@@ -296,10 +298,12 @@ func (c *entrypointFuncCtx) argCoercionLine(arg *TypedefArgument) string {
 	)
 }
 
-// engineLoadFnName returns "load<Module><Iface>FromID" — the GraphQL field
-// the iface wrapper calls to instantiate from its engine-side ID.
-func (c *entrypointFuncCtx) engineLoadFnName(iface *TypedefInterface) string {
-	return "load" + pascalize(c.module.Name) + iface.Name + "FromID"
+// engineIfaceTypeName returns "<Module><Iface>" — the namespaced GraphQL type
+// name under which a module interface is registered in the schema. The iface
+// wrapper uses it with node(id:) (via Context.selectNode) to instantiate from
+// its engine-side ID.
+func (c *entrypointFuncCtx) engineIfaceTypeName(iface *TypedefInterface) string {
+	return pascalize(c.module.Name) + iface.Name
 }
 
 // plannedImports returns an ordered slice of import lines to emit. Encodes
@@ -314,6 +318,9 @@ func (c *entrypointFuncCtx) plannedImports() []importLine {
 		From:  sdk,
 		Names: []string{"Context", "Error as DaggerError", "FunctionCachePolicy", "TypeDefKind", "connection", "dag", "getRegisteredClass"},
 	})
+	// Namespace import of the generated client so __loadCoreObject can look up
+	// core/dependency object classes by name when loading them from an ID.
+	lines = append(lines, importLine{From: sdk, Namespace: "* as __dagger"})
 	lines = append(lines, importLine{From: sdk + "/telemetry", Namespace: "* as telemetry"})
 
 	// Group user imports by file path, deduping side-effect-only files.

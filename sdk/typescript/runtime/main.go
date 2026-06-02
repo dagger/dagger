@@ -162,6 +162,7 @@ func (t *TypescriptSdk) Codegen(
 			EntrypointExecutableFile,
 		}).
 		WithVCSIgnoredPaths([]string{
+			EntrypointExecutableFile,
 			GenDir,
 			"**/node_modules/**",
 			"**/.pnpm-store/**",

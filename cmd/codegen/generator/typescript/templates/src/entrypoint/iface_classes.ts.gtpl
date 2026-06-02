@@ -6,7 +6,7 @@ class __Iface_{{ $iface.Name }} {
   constructor(public _ctx: Context) {}
 
   static fromID(id: string): __Iface_{{ $iface.Name }} {
-    return new __Iface_{{ $iface.Name }}(new Context().select({{ jsString (engineLoadFnName $iface) }}, { id }))
+    return new __Iface_{{ $iface.Name }}(new Context().selectNode(id, {{ jsString (engineIfaceTypeName $iface) }}))
   }
 
   async id(): Promise<string> {
@@ -51,7 +51,7 @@ class __Iface_{{ $iface.Name }} {
     {{- else if and (eq $inner.Kind "OBJECT_KIND") (index $module.Objects $inner.Name) }}
     return __ids.map(({ id }) => rebuild{{ $inner.Name }}({ id }))
     {{- else }}
-    return __ids.map(({ id }) => dag.load{{ $inner.Name }}FromID(id as any))
+    return __ids.map(({ id }) => __loadCoreObject(id, {{ jsString $inner.Name }}))
     {{- end }}
     {{- else }}
     return await this._ctx.select({{ jsString $fn.Name }}, __args).execute()
