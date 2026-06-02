@@ -1448,6 +1448,59 @@ func encodePersistedContainerFileValue(ctx context.Context, cache dagql.Persiste
 	return encoded, remapContainerSnapshotLinks(encoding.SnapshotLinks, role), nil
 }
 
+func encodePersistedContainerMount(ctx context.Context, cache dagql.PersistedObjectCache, mnt ContainerMount, i int) (persistedContainerMountPayload, []dagql.PersistedSnapshotRefLink, error) {
+	encoded := persistedContainerMountPayload{
+		Target:   mnt.Target,
+		Readonly: mnt.Readonly,
+	}
+	var snapshotLinks []dagql.PersistedSnapshotRefLink
+	switch {
+	case mnt.DirectorySource != nil:
+		encoded.Kind = persistedContainerMountKindDirectory
+		if dir, ok := mnt.DirectorySource.Peek(); ok && dir != nil {
+			val, links, err := encodePersistedContainerDirectoryValue(ctx, cache, dir, fmt.Sprintf("mount_dir:%d", i))
+			if err != nil {
+				return persistedContainerMountPayload{}, nil, err
+			}
+			encoded.Value = val
+			snapshotLinks = links
+		}
+	case mnt.FileSource != nil:
+		encoded.Kind = persistedContainerMountKindFile
+		if file, ok := mnt.FileSource.Peek(); ok && file != nil {
+			val, links, err := encodePersistedContainerFileValue(ctx, cache, file, fmt.Sprintf("mount_file:%d", i))
+			if err != nil {
+				return persistedContainerMountPayload{}, nil, err
+			}
+			encoded.Value = val
+			snapshotLinks = links
+		}
+	case mnt.CacheSource != nil:
+		encoded.Kind = persistedContainerMountKindCache
+		id, err := encodePersistedObjectRef(cache, mnt.CacheSource.Volume, fmt.Sprintf("cache mount %q", mnt.Target))
+		if err != nil {
+			return persistedContainerMountPayload{}, nil, err
+		}
+		encoded.CacheSourceResultID = id
+	case mnt.TmpfsSource != nil:
+		encoded.Kind = persistedContainerMountKindTmpfs
+		encoded.TmpfsSize = mnt.TmpfsSource.Size
+	case mnt.HostSource != nil:
+		encoded.Kind = persistedContainerMountKindHost
+		encoded.HostSource = mnt.HostSource.Source
+	case mnt.VolumeSource != nil:
+		encoded.Kind = persistedContainerMountKindVolume
+		id, err := encodePersistedObjectRef(cache, mnt.VolumeSource.Volume, fmt.Sprintf("volume mount %q", mnt.Target))
+		if err != nil {
+			return persistedContainerMountPayload{}, nil, err
+		}
+		encoded.VolumeSourceResultID = id
+	default:
+		return persistedContainerMountPayload{}, nil, fmt.Errorf("encode persisted container mount %q: unsupported mount source", mnt.Target)
+	}
+	return encoded, snapshotLinks, nil
+}
+
 func decodePersistedContainerDirectoryValue(ctx context.Context, dag *dagql.Server, resultID uint64, role string, payload json.RawMessage) (decodedContainerDirectoryValue, error) {
 	var wrapped persistedContainerDirectoryValue
 	if err := json.Unmarshal(payload, &wrapped); err != nil {
@@ -1605,54 +1658,11 @@ func (container *Container) EncodePersistedObject(ctx context.Context, cache dag
 	}
 
 	for i, mnt := range container.Mounts {
-		encoded := persistedContainerMountPayload{
-			Target:   mnt.Target,
-			Readonly: mnt.Readonly,
+		encoded, links, err := encodePersistedContainerMount(ctx, cache, mnt, i)
+		if err != nil {
+			return dagql.PersistedObjectEncoding{}, err
 		}
-		switch {
-		case mnt.DirectorySource != nil:
-			encoded.Kind = persistedContainerMountKindDirectory
-			if dir, ok := mnt.DirectorySource.Peek(); ok && dir != nil {
-				val, links, err := encodePersistedContainerDirectoryValue(ctx, cache, dir, fmt.Sprintf("mount_dir:%d", i))
-				if err != nil {
-					return dagql.PersistedObjectEncoding{}, err
-				}
-				encoded.Value = val
-				snapshotLinks = append(snapshotLinks, links...)
-			}
-		case mnt.FileSource != nil:
-			encoded.Kind = persistedContainerMountKindFile
-			if file, ok := mnt.FileSource.Peek(); ok && file != nil {
-				val, links, err := encodePersistedContainerFileValue(ctx, cache, file, fmt.Sprintf("mount_file:%d", i))
-				if err != nil {
-					return dagql.PersistedObjectEncoding{}, err
-				}
-				encoded.Value = val
-				snapshotLinks = append(snapshotLinks, links...)
-			}
-		case mnt.CacheSource != nil:
-			encoded.Kind = persistedContainerMountKindCache
-			id, err := encodePersistedObjectRef(cache, mnt.CacheSource.Volume, fmt.Sprintf("cache mount %q", mnt.Target))
-			if err != nil {
-				return dagql.PersistedObjectEncoding{}, err
-			}
-			encoded.CacheSourceResultID = id
-		case mnt.TmpfsSource != nil:
-			encoded.Kind = persistedContainerMountKindTmpfs
-			encoded.TmpfsSize = mnt.TmpfsSource.Size
-		case mnt.HostSource != nil:
-			encoded.Kind = persistedContainerMountKindHost
-			encoded.HostSource = mnt.HostSource.Source
-		case mnt.VolumeSource != nil:
-			encoded.Kind = persistedContainerMountKindVolume
-			id, err := encodePersistedObjectRef(cache, mnt.VolumeSource.Volume, fmt.Sprintf("volume mount %q", mnt.Target))
-			if err != nil {
-				return dagql.PersistedObjectEncoding{}, err
-			}
-			encoded.VolumeSourceResultID = id
-		default:
-			return dagql.PersistedObjectEncoding{}, fmt.Errorf("encode persisted container mount %q: unsupported mount source", mnt.Target)
-		}
+		snapshotLinks = append(snapshotLinks, links...)
 		payload.Mounts = append(payload.Mounts, encoded)
 	}
 	for _, secret := range container.Secrets {
