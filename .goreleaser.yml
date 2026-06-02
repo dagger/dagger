@@ -6,8 +6,18 @@ includes:
   - from_file:
       path: ./.goreleaser.common.yml
 
+github_urls:
+  api: "{{ .Env.GORELEASER_GITHUB_API_URL }}"
+  upload: "{{ .Env.GORELEASER_GITHUB_UPLOAD_URL }}"
+  download: "{{ .Env.GORELEASER_GITHUB_DOWNLOAD_URL }}"
+
 snapshot:
   version_template: "{{ .Tag }}-next"
+
+release:
+  github:
+    owner: "{{ .Env.GH_ORG_NAME }}"
+    name: dagger
 
 archives:
   - name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
@@ -91,6 +101,7 @@ winget:
 
 blobs:
   - provider: s3
+    endpoint: "{{ .Env.AWS_ENDPOINT_URL }}"
     region: "{{ .Env.AWS_REGION }}"
     bucket: "{{ .Env.AWS_BUCKET }}"
     directory: "dagger/releases/{{ .Version }}"

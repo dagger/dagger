@@ -1089,179 +1089,14 @@ printf 'layered\n' > /work/layered.txt
 		require.Equal(t, randomB, randomCRestored, "engine-dev container build result should survive engine restart without the repo source change")
 	})
 
-	t.Run("release publish dry-run rebuilds version after main publish", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-		stateKey := "phase7-release-tag-version-state-" + identity.NewID()
-		tag := "v9.9.9-repro"
-
-		cwd, err := os.Getwd()
-		require.NoError(t, err)
-		sourcePath := cwd
-		for {
-			_, err := os.Stat(filepath.Join(sourcePath, "toolchains", "release", "dagger.json"))
-			if err == nil {
-				break
-			}
-			parent := filepath.Dir(sourcePath)
-			require.NotEqual(t, sourcePath, parent, "could not find repository root from %s", cwd)
-			sourcePath = parent
-		}
-		releaseSource := c.Host().Directory(sourcePath, dagger.HostDirectoryOpts{
-			Exclude: []string{".git"},
-			NoCache: true,
-		}).WithNewFile(".release-cache-repro", identity.NewID()+"\n")
-
-		gitDir := c.Container().
-			From(alpineImage).
-			WithExec([]string{"apk", "add", "git"}).
-			WithDirectory("/root/repo", releaseSource).
-			WithNewFile("/root/create-release-repo.sh", `#!/bin/sh
-set -e -u -x
-
-git config --global user.email "test@dagger.io"
-git config --global user.name "Test User"
-git config --global init.defaultBranch main
-
-cd /root/repo
-git init
-git checkout -B main
-git add -A
-git commit -m "initial release source"
-
-mkdir -p /root/srv
-git clone --no-local --bare . /root/srv/repo.git
-git -C /root/srv/repo.git config http.receivepack true
-git -C /root/srv/repo.git update-server-info
-`).
-			WithExec([]string{"sh", "/root/create-release-repo.sh"}).
-			Directory("/root/srv")
-
-		hostname := identity.NewID() + ".test"
-		gitSvc, repoBaseURL := gitSmartHTTPServiceDirAuth(ctx, t, c, hostname, gitDir, "", nil)
-		repoURL := repoBaseURL + "/repo.git"
-		gitHost := moduleResolveServiceHost(t, repoURL)
-
-		gitSvc, err = gitSvc.Start(ctx)
-		require.NoError(t, err)
-		t.Cleanup(func() {
-			_, err := gitSvc.Stop(ctx)
-			require.NoError(t, err)
-		})
-
-		gitClient := func() *dagger.Container {
-			return c.Container().
-				From(alpineImage).
-				WithExec([]string{"apk", "add", "git"}).
-				With(gitUserConfig).
-				WithServiceBinding(gitHost, gitSvc).
-				WithWorkdir("/src")
-		}
-		gitStdout := func(ctx context.Context, t *testctx.T, script string) string {
-			t.Helper()
-			out, err := gitClient().
-				WithEnvVariable("REPO_URL", repoURL).
-				WithEnvVariable("RELEASE_TAG", tag).
-				WithEnvVariable("GIT_CACHE_BUSTER", identity.NewID()).
-				WithExec([]string{"sh", "-ec", script}).
-				Stdout(ctx)
-			require.NoError(t, err, out)
-			return strings.TrimSpace(out)
-		}
-
-		commit := gitStdout(ctx, t, `git clone "$REPO_URL" .
-git rev-parse HEAD
-`)
-		require.NotEmpty(t, commit)
-		moduleRef := repoURL + "@" + commit
-
-		type startedReleaseEngine struct {
-			service  *dagger.Service
-			endpoint string
-		}
-
-		startReleaseEngine := func(ctx context.Context, t *testctx.T) *startedReleaseEngine {
-			t.Helper()
-
-			engineCtr := devEngineContainerWithStateKey(c, stateKey, engineWithPersistenceTestGC(ctx, t)).
-				WithServiceBinding(gitHost, gitSvc)
-			service := devEngineContainerAsService(engineCtr)
-
-			endpoint, err := service.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
-			require.NoError(t, err)
-
-			return &startedReleaseEngine{
-				service:  service,
-				endpoint: endpoint,
-			}
-		}
-
-		stopReleaseEngine := func(ctx context.Context, t *testctx.T, engine *startedReleaseEngine) {
-			t.Helper()
-			if engine == nil || engine.service == nil {
-				return
-			}
-			_, err := engine.service.Stop(ctx)
-			require.NoError(t, err)
-		}
-
-		runReleasePublish := func(ctx context.Context, t *testctx.T, engine *startedReleaseEngine, releaseTag string) string {
-			t.Helper()
-
-			daggerCli := daggerCliFile(t, c)
-			script := `set +e
-/bin/dagger --progress=plain -W "$MODULE_REF" call release publish --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --dry-run=true markdown > /tmp/publish.log 2>&1
-status=$?
-cat /tmp/publish.log
-exit "$status"
-`
-			out, err := c.Container().From(alpineImage).
-				WithServiceBinding("dev-engine", engine.service).
-				WithServiceBinding(gitHost, gitSvc).
-				WithMountedFile("/bin/dagger", daggerCli).
-				WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
-				WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", engine.endpoint).
-				WithWorkdir("/app").
-				WithEnvVariable("MODULE_REF", moduleRef).
-				WithEnvVariable("RELEASE_TAG", releaseTag).
-				WithEnvVariable("RELEASE_COMMIT", commit).
-				WithEnvVariable("PUBLISH_RUN_CACHE_BUSTER", identity.NewID()).
-				WithExec([]string{"sh", "-ec", script}).
-				Stdout(ctx)
-			require.NoError(t, err, out)
-			return out
-		}
-		tagsVisibleInPublishContainer := func(ctx context.Context, t *testctx.T) string {
-			t.Helper()
-			return gitStdout(ctx, t, `git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"`)
-		}
-
-		engine := startReleaseEngine(ctx, t)
-		t.Cleanup(func() { stopReleaseEngine(ctx, t, engine) })
-
-		require.NotContains(t, tagsVisibleInPublishContainer(ctx, t), tag, "release tag should not be visible before it is created")
-		initialOut := runReleasePublish(ctx, t, engine, "main")
-		require.Contains(t, initialOut, "- [x] 🚙 Engine", "initial main dry-run should build the engine")
-		require.Contains(t, initialOut, "- [x] 🚗 CLI", "initial main dry-run should build the CLI")
-
-		gitStdout(ctx, t, `git clone "$REPO_URL" .
-git tag "$RELEASE_TAG" "`+commit+`"
-git push origin "$RELEASE_TAG"
-git ls-remote --tags origin "$RELEASE_TAG"
-	`)
-
-		require.Contains(t, tagsVisibleInPublishContainer(ctx, t), tag, "release tag should be visible in the publish container before the second dry-run")
-		taggedOut := runReleasePublish(ctx, t, engine, tag)
-		require.Contains(t, taggedOut, fmt.Sprintf("- [x] 🚙 Engine ([`%s`]", tag), "release dry-run should validate built engine version")
-		require.Contains(t, taggedOut, fmt.Sprintf("- [x] 🚗 CLI ([`%s`]", tag), "release dry-run should validate built CLI version")
-		require.NotContains(t, taggedOut, "Error while publishing", "release dry-run should validate built engine and CLI versions")
-	})
-
 	t.Run("release publish non-dry uses mock endpoints after main publish", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		stateKey := "phase7-release-nondry-version-state-" + identity.NewID()
-		releaseTag := "v9.9.9"
+		releaseTag := "v0.21.3"
 		releaseVersion := strings.TrimPrefix(releaseTag, "v")
 		awsBucket := "dagger-release-test-" + strings.ToLower(identity.NewID())
+		registryUsername := "john"
+		registryPassword := "xFlejaPdjrt25Dvr"
 
 		goreleaserKey := lookupEnvFileValue(t, "GORELEASER_KEY")
 		if goreleaserKey == "" {
@@ -1281,94 +1116,10 @@ git ls-remote --tags origin "$RELEASE_TAG"
 			sourcePath = parent
 		}
 
-		// Keep the GoReleaser test configs on one Linux target and omit Homebrew,
-		// Nix, and Winget so this non-dry run cannot mutate those external repos.
-		stableGoReleaserConfig := `version: 2
-project_name: dagger
-builds:
-  - builder: prebuilt
-    id: dagger-linux
-    binary: ./dagger
-    goos:
-      - linux
-    goarch:
-      - amd64
-    prebuilt:
-      path: build/dagger_{{ .Env.ENGINE_VERSION }}_{{ .Os }}_{{ .Arch }}/dagger
-archives:
-  - name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}"
-    files:
-      - LICENSE
-checksum:
-  name_template: "checksums.txt"
-release:
-  disable: true
-changelog:
-  disable: true
-blobs:
-  - provider: s3
-    endpoint: "{{ .Env.AWS_ENDPOINT_URL }}"
-    region: "{{ .Env.AWS_REGION }}"
-    bucket: "{{ .Env.AWS_BUCKET }}"
-    directory: "dagger/releases/{{ .Version }}"
-`
-		nightlyGoReleaserConfig := `version: 2
-project_name: dagger
-nightly:
-  version_template: "{{ .FullCommit }}"
-builds:
-  - builder: prebuilt
-    id: dagger-linux
-    binary: ./dagger
-    goos:
-      - linux
-    goarch:
-      - amd64
-    prebuilt:
-      path: build/dagger_{{ .Env.ENGINE_VERSION }}_{{ .Os }}_{{ .Arch }}/dagger
-archives:
-  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    files:
-      - LICENSE
-checksum:
-  name_template: "checksums.txt"
-release:
-  disable: true
-changelog:
-  disable: true
-blobs:
-  - provider: s3
-    endpoint: "{{ .Env.AWS_ENDPOINT_URL }}"
-    region: "{{ .Env.AWS_REGION }}"
-    bucket: "{{ .Env.AWS_BUCKET }}"
-    directory: "dagger/main/{{ .Version }}"
-`
-		releaseNotes := "## Test release\n\nSynthetic release notes for the non-dry integration test.\n"
 		releaseSource := c.Host().Directory(sourcePath, dagger.HostDirectoryOpts{
 			Exclude: []string{".git"},
 			NoCache: true,
-		}).
-			WithNewFile(".release-cache-repro", identity.NewID()+"\n").
-			WithNewFile("LICENSE", "Synthetic license for release publish integration tests.\n").
-			WithNewFile("install.sh", "#!/bin/sh\nset -eu\necho dagger install\n", dagger.DirectoryWithNewFileOpts{Permissions: 0o755}).
-			WithNewFile("install.ps1", "Write-Output \"dagger install\"\n").
-			WithNewFile(".goreleaser.yml", stableGoReleaserConfig).
-			WithNewFile(".goreleaser.nightly.yml", nightlyGoReleaserConfig).
-			WithNewFile("docs/nginx.conf", "server { listen 8000; root /var/www; }\n").
-			WithNewFile(".changes/"+releaseTag+".md", releaseNotes).
-			WithNewFile("sdk/go/.changes/"+releaseTag+".md", releaseNotes).
-			WithNewFile("sdk/python/.changes/"+releaseTag+".md", releaseNotes).
-			WithNewFile("sdk/typescript/.changes/"+releaseTag+".md", releaseNotes).
-			WithNewFile("sdk/php/.changes/"+releaseTag+".md", releaseNotes).
-			WithNewFile("helm/dagger/Chart.yaml", `apiVersion: v2
-name: dagger-helm
-description: Synthetic chart for release publish integration tests.
-type: application
-version: `+releaseVersion+`
-appVersion: `+releaseVersion+`
-`).
-			WithNewFile("helm/dagger/values.yaml", "{}\n").
-			WithNewFile("helm/dagger/.changes/"+releaseTag+".md", releaseNotes)
+		})
 
 		gitDir := c.Container().
 			From(alpineImage).
@@ -1442,6 +1193,10 @@ git rev-parse HEAD
 
 		registrySvc := c.Container().
 			From("registry:3").
+			WithNewFile("/auth/htpasswd", registryUsername+":$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC").
+			WithEnvVariable("REGISTRY_AUTH", "htpasswd").
+			WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
+			WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
 			WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 			AsService()
 		registrySvc, err = registrySvc.Start(ctx)
@@ -1543,7 +1298,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             record("netlify_list_deploys", self, b"")
             self.send_json(200, [{"id": "deploy-1"}])
             return
-        if self.path.startswith("/api/v3/repos/dagger/dagger/releases/tags/"):
+        if self.path == "/api/v3/rate_limit":
+            record("github_rate_limit", self, b"")
+            self.send_json(200, {
+                "resources": {"core": {"limit": 5000, "remaining": 4999, "reset": int(time.time()) + 3600}},
+                "rate": {"limit": 5000, "remaining": 4999, "reset": int(time.time()) + 3600},
+            })
+            return
+        if self.path.startswith("/api/v3/repos/") and "/releases/tags/" in self.path:
             record("github_release_lookup", self, b"")
             self.send_json(404, {"message": "Not Found"})
             return
@@ -1551,9 +1313,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
             record("github_api_root", self, b"")
             self.send_json(200, {"verifiable_password_authentication": False})
             return
-        if self.path.startswith("/api/v3/repos/dagger/dagger"):
+        if self.path.startswith("/api/v3/repos/") and "/contents/" in self.path:
+            record("github_content_lookup", self, b"")
+            self.send_json(404, {"message": "Not Found"})
+            return
+        if self.path.startswith("/api/v3/repos/") and "/branches/" in self.path:
+            record("github_branch_lookup", self, b"")
+            self.send_json(404, {"message": "Not Found"})
+            return
+        if self.path.startswith("/api/v3/repos/") and "/git/ref/heads/" in self.path:
+            record("github_ref_lookup", self, b"")
+            self.send_json(200, {"ref": "refs/heads/main", "object": {"sha": "1111111111111111111111111111111111111111"}})
+            return
+        if self.path.startswith("/api/v3/repos/"):
             record("github_repo", self, b"")
-            self.send_json(200, {"full_name": "dagger/dagger", "default_branch": "main"})
+            parts = self.path.split("/")
+            owner = parts[4] if len(parts) > 4 else "dagger"
+            name = parts[5] if len(parts) > 5 else "dagger"
+            default_branch = "master" if name == "winget-pkgs" else "main"
+            self.send_json(200, {"full_name": owner + "/" + name, "default_branch": default_branch})
             return
         record("get", self, b"")
         self.send_json(200, {})
@@ -1580,12 +1358,44 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "upload_url": "https://github.test/api/uploads/repos/dagger/dagger/releases/1/assets{?name,label}",
             })
             return
+        if self.path.startswith("/api/uploads/repos/dagger/dagger/releases/") and "/assets" in self.path:
+            record("github_release_asset_upload", self, body)
+            self.send_json(201, {"id": int(time.time() * 1000), "name": self.path.split("name=", 1)[-1].split("&", 1)[0]})
+            return
+        if self.path.startswith("/api/v3/repos/") and self.path.endswith("/merge-upstream"):
+            record("github_merge_upstream", self, body)
+            self.send_json(200, {"message": "mock merge upstream", "merge_type": "none", "base_branch": "master"})
+            return
+        if self.path.startswith("/api/v3/repos/") and self.path.endswith("/git/refs"):
+            record("github_ref_create", self, body)
+            self.send_json(201, {"ref": "refs/heads/mock", "object": {"sha": "1111111111111111111111111111111111111111"}})
+            return
+        if self.path.startswith("/api/v3/repos/") and self.path.endswith("/pulls"):
+            record("github_pull_request_create", self, body)
+            self.send_json(201, {"html_url": "https://github.test/mock/pull/1", "number": 1})
+            return
         record("post", self, body)
         self.send_json(200, {})
 
     def do_PUT(self):
         body = self.read_body()
+        if self.path.startswith("/api/v3/repos/") and "/contents/" in self.path:
+            record("github_content_write", self, body)
+            self.send_json(201, {
+                "content": {"path": self.path.split("/contents/", 1)[-1].split("?", 1)[0], "sha": "2222222222222222222222222222222222222222"},
+                "commit": {"sha": "3333333333333333333333333333333333333333"},
+            })
+            return
         record("put", self, body)
+        self.send_json(200, {})
+
+    def do_PATCH(self):
+        body = self.read_body()
+        if self.path.startswith("/api/v3/repos/dagger/dagger/releases/"):
+            record("github_release_publish", self, body)
+            self.send_json(200, {"id": 1, "tag_name": "mock", "html_url": "https://github.test/dagger/dagger/releases/tag/mock"})
+            return
+        record("patch", self, body)
         self.send_json(200, {})
 
 def serve_http():
@@ -1723,7 +1533,10 @@ aws --endpoint-url "$AWS_ENDPOINT_URL" cloudfront create-distribution \
 /bin/dagger --progress=plain -m "$MODULE_REF" call release publish \
   --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" \
   --registry-image "registry:5000/dagger/engine" \
+  --registry-username "$REGISTRY_USERNAME" \
+  --registry-password=env:REGISTRY_PASSWORD \
   --goreleaser-key=env:GORELEASER_KEY \
+  --github-token=env:FAKE_GITHUB_TOKEN \
   --github-release-token=env:FAKE_GITHUB_TOKEN \
   --github-org-name "dagger" \
   --github-host "github.test" \
@@ -1762,6 +1575,7 @@ exit "$status"
 				WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
 				WithMountedFile("/github-ca.pem", certGen.caRootCert).
 				WithSecretVariable("GORELEASER_KEY", c.SetSecret("goreleaser-key-"+identity.NewID(), goreleaserKey)).
+				WithSecretVariable("REGISTRY_PASSWORD", c.SetSecret("registry-password-"+identity.NewID(), registryPassword)).
 				WithSecretVariable("FAKE_GITHUB_TOKEN", c.SetSecret("fake-github-token-"+identity.NewID(), "fake-gh-token")).
 				WithSecretVariable("FAKE_NETLIFY_TOKEN", c.SetSecret("fake-netlify-token-"+identity.NewID(), "fake-netlify-token")).
 				WithSecretVariable("FAKE_PYPI_TOKEN", c.SetSecret("fake-pypi-token-"+identity.NewID(), "fake-pypi-token")).
@@ -1773,6 +1587,7 @@ exit "$status"
 				WithEnvVariable("MODULE_REF", moduleRef).
 				WithEnvVariable("RELEASE_TAG", tag).
 				WithEnvVariable("RELEASE_COMMIT", commit).
+				WithEnvVariable("REGISTRY_USERNAME", registryUsername).
 				WithEnvVariable("AWS_BUCKET", awsBucket).
 				WithEnvVariable("AWS_CLOUDFRONT_DISTRIBUTION", cloudfrontDistribution).
 				WithEnvVariable("GO_SDK_DEST_REMOTE", goSDKDestRemote).
@@ -1788,8 +1603,9 @@ exit "$status"
 		t.Cleanup(func() { stopReleaseEngine(ctx, t, engine) })
 
 		initialOut := runReleasePublish(ctx, t, engine, "main")
-		require.Contains(t, initialOut, "- [x] 🚙 Engine", "initial main publish should publish the engine")
-		require.Contains(t, initialOut, "- [x] 🚗 CLI", "initial main publish should publish the CLI")
+		require.Contains(t, initialOut, "- [x] 🚙 Engine", "initial main publish should publish the engine:\n%s", initialOut)
+		require.Contains(t, initialOut, "- [x] 🚗 CLI", "initial main publish should publish the CLI:\n%s", initialOut)
+		require.Contains(t, initialOut, ".goreleaser.nightly.yml", "initial main publish should use the nightly GoReleaser config:\n%s", initialOut)
 
 		gitStdout(ctx, t, `git clone "$REPO_URL" .
 git tag "$RELEASE_TAG" "`+commit+`"
@@ -1805,6 +1621,7 @@ git ls-remote --tags origin "$RELEASE_TAG"
 		require.Contains(t, taggedOut, "- [x] ⬢ TypeScript SDK", "release publish should publish the TypeScript SDK")
 		require.Contains(t, taggedOut, "- [x] 🐘 PHP SDK", "release publish should publish the PHP SDK")
 		require.Contains(t, taggedOut, "- [x] ☸️ Helm Chart", "release publish should publish the Helm chart")
+		require.Contains(t, taggedOut, ".goreleaser.yml", "tagged release publish should use the stable GoReleaser config:\n%s", taggedOut)
 		require.NotContains(t, taggedOut, "Error while publishing", "release publish should complete against mock endpoints")
 
 		mockEvents, err := c.Container().From(alpineImage).
@@ -1815,11 +1632,22 @@ git ls-remote --tags origin "$RELEASE_TAG"
 		require.Contains(t, mockEvents, `"kind": "netlify_restore"`)
 		require.Contains(t, mockEvents, `"kind": "pypi_publish"`)
 		require.Contains(t, mockEvents, `"kind": "github_release_create"`)
+		require.Contains(t, mockEvents, `"kind": "github_release_asset_upload"`)
+		require.Contains(t, mockEvents, `"kind": "github_content_write"`)
+		require.Contains(t, mockEvents, `"kind": "github_pull_request_create"`)
+		require.Contains(t, mockEvents, `/api/v3/repos/dagger/nix/contents/pkgs/dagger/default.nix`)
+		require.Contains(t, mockEvents, `/api/v3/repos/dagger/homebrew-tap/contents/dagger.rb`)
+		require.Contains(t, mockEvents, `/api/v3/repos/dagger/winget-pkgs/contents/manifests/d/Dagger/Cli/`+releaseVersion+`/Dagger.Cli.yaml`)
+		require.Contains(t, mockEvents, `/api/v3/repos/dagger/winget-pkgs/contents/manifests/d/Dagger/Cli/`+releaseVersion+`/Dagger.Cli.installer.yaml`)
+		require.Contains(t, mockEvents, `/api/v3/repos/dagger/winget-pkgs/contents/manifests/d/Dagger/Cli/`+releaseVersion+`/Dagger.Cli.locale.en-US.yaml`)
+		require.Contains(t, mockEvents, `/api/v3/repos/microsoft/winget-pkgs/pulls`)
 
 		registryTags, err := c.Container().From(alpineImage).
 			WithExec([]string{"apk", "add", "curl"}).
 			WithServiceBinding("registry", registrySvc).
-			WithExec([]string{"curl", "-fsS", "http://registry:5000/v2/dagger/engine/tags/list"}).
+			WithEnvVariable("REGISTRY_USERNAME", registryUsername).
+			WithSecretVariable("REGISTRY_PASSWORD", c.SetSecret("registry-list-password-"+identity.NewID(), registryPassword)).
+			WithExec([]string{"sh", "-ec", `curl -fsS -u "$REGISTRY_USERNAME:$REGISTRY_PASSWORD" http://registry:5000/v2/dagger/engine/tags/list`}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, registryTags, releaseTag)
@@ -1829,7 +1657,9 @@ git ls-remote --tags origin "$RELEASE_TAG"
 		engineVersion, err := c.Container().
 			From("gcr.io/go-containerregistry/crane:debug").
 			WithServiceBinding("registry", registrySvc).
-			WithExec([]string{"sh", "-ec", "crane export --insecure --platform linux/arm64 registry:5000/dagger/engine:" + releaseTag + " - | tar -xOf - usr/local/bin/dagger-engine > /tmp/dagger-engine && chmod +x /tmp/dagger-engine && /tmp/dagger-engine --version"}).
+			WithEnvVariable("REGISTRY_USERNAME", registryUsername).
+			WithSecretVariable("REGISTRY_PASSWORD", c.SetSecret("registry-crane-password-"+identity.NewID(), registryPassword)).
+			WithExec([]string{"sh", "-ec", "crane auth login registry:5000 --insecure --username \"$REGISTRY_USERNAME\" --password \"$REGISTRY_PASSWORD\" && crane export --insecure --platform linux/arm64 registry:5000/dagger/engine:" + releaseTag + " - | tar -xOf - usr/local/bin/dagger-engine > /tmp/dagger-engine && chmod +x /tmp/dagger-engine && /tmp/dagger-engine --version"}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, engineVersion, releaseTag)
@@ -1857,7 +1687,9 @@ tar -xzf /tmp/dagger.tgz -C /tmp/dagger
 		helmTags, err := c.Container().From(alpineImage).
 			WithExec([]string{"apk", "add", "curl"}).
 			WithServiceBinding("registry", registrySvc).
-			WithExec([]string{"curl", "-fsS", "http://registry:5000/v2/dagger/dagger-helm/tags/list"}).
+			WithEnvVariable("REGISTRY_USERNAME", registryUsername).
+			WithSecretVariable("REGISTRY_PASSWORD", c.SetSecret("registry-helm-list-password-"+identity.NewID(), registryPassword)).
+			WithExec([]string{"sh", "-ec", `curl -fsS -u "$REGISTRY_USERNAME:$REGISTRY_PASSWORD" http://registry:5000/v2/dagger/dagger-helm/tags/list`}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, helmTags, releaseVersion)
@@ -1973,6 +1805,17 @@ func lookupEnvFileValue(t *testctx.T, key string) string {
 
 	if val := strings.TrimSpace(os.Getenv(key)); val != "" {
 		return val
+	}
+
+	if key == "GORELEASER_KEY" {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			contents, err := os.ReadFile(filepath.Join(home, ".goreleaserkey"))
+			if err == nil {
+				return strings.TrimSpace(string(contents))
+			}
+			require.True(t, os.IsNotExist(err), "failed to read ~/.goreleaserkey")
+		}
 	}
 
 	contents, err := os.ReadFile("/dagger.env")

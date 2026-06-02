@@ -29,12 +29,14 @@ blobs:
   - provider: s3
     ids:
       - sha
+    endpoint: "{{ .Env.AWS_ENDPOINT_URL }}"
     region: "{{ .Env.AWS_REGION }}"
     bucket: "{{ .Env.AWS_BUCKET }}"
     directory: "dagger/main/{{ .Version }}"
   - provider: s3
     ids:
       - head
+    endpoint: "{{ .Env.AWS_ENDPOINT_URL }}"
     region: "{{ .Env.AWS_REGION }}"
     bucket: "{{ .Env.AWS_BUCKET }}"
     directory: "dagger/main/head"

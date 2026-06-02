@@ -58,19 +58,35 @@ func (r *Release) helmSetVersion(ctx context.Context, version string, source *da
 }
 
 func (r *Release) helmReleaseDryRun(ctx context.Context) error {
-	return r.helmPublish(ctx, "main", nil, "", nil, true)
+	return r.helmPublish(ctx, "main", nil, "", "", nil, nil, true)
 }
 
-func (r *Release) helmPublish(ctx context.Context, target string, githubToken *dagger.Secret, registry string, source *dagger.Directory, dryRun bool) error {
+func (r *Release) helmPublish(
+	ctx context.Context,
+	target string,
+	githubToken *dagger.Secret,
+	registry string,
+	registryUsername string,
+	registryPassword *dagger.Secret,
+	source *dagger.Directory,
+	dryRun bool,
+) error {
 	if registry == "" {
 		registry = "ghcr.io/dagger"
 	}
-	login := githubToken != nil && registry == "ghcr.io/dagger"
+	if registryPassword == nil && registry == "ghcr.io/dagger" {
+		registryUsername = "dagger"
+		registryPassword = githubToken
+	}
+	if registryUsername == "" {
+		registryUsername = "dagger"
+	}
+	login := registryPassword != nil
 	version := strings.TrimPrefix(target, "helm/chart/")
 	_, err := r.helmChart(source).
 		With(func(c *dagger.Container) *dagger.Container {
-			if githubToken != nil {
-				return c.WithSecretVariable("GITHUB_TOKEN", githubToken)
+			if registryPassword != nil {
+				return c.WithSecretVariable("HELM_REGISTRY_PASSWORD", registryPassword)
 			}
 			return c
 		}).
@@ -85,7 +101,7 @@ func (r *Release) helmPublish(ctx context.Context, target string, githubToken *d
 			if login {
 				steps = append([]string{
 					"set -x",
-					"helm registry login " + registry + " --username dagger --password $GITHUB_TOKEN",
+					"helm registry login " + registry + " --username " + registryUsername + " --password $HELM_REGISTRY_PASSWORD",
 				}, steps[1:]...)
 			}
 			steps = append(steps, "helm push dagger-helm-"+strings.TrimPrefix(version, "v")+".tgz oci://"+registry)

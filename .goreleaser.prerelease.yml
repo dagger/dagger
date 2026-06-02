@@ -21,6 +21,7 @@ archives:
 
 blobs:
   - provider: s3
+    endpoint: "{{ .Env.AWS_ENDPOINT_URL }}"
     region: "{{ .Env.AWS_REGION }}"
     bucket: "{{ .Env.AWS_BUCKET }}"
     directory: "dagger/releases/{{ .Version }}"

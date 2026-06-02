@@ -23,6 +23,7 @@ type DaggerCli struct { // dagger-cli (../../../../toolchains/cli-dev/main.go:89
 
 	id              *ID
 	publishMetadata *Void
+	releaseDryRun   *Void
 	tag             *string
 	version         *string
 }
@@ -127,21 +128,25 @@ func (r *DaggerCli) UnmarshalJSON(bs []byte) error {
 type DaggerCliPublishOpts struct {
 	GithubToken *Secret // dagger-cli (../../../../toolchains/cli-dev/publish.go:31:2)
 
-	Git *GitRepository // dagger-cli (../../../../toolchains/cli-dev/publish.go:33:2)
+	GithubHost string // dagger-cli (../../../../toolchains/cli-dev/publish.go:32:2)
 
-	AwsAccessKeyID *Secret // dagger-cli (../../../../toolchains/cli-dev/publish.go:35:2)
+	GithubCaCert *File // dagger-cli (../../../../toolchains/cli-dev/publish.go:33:2)
 
-	AwsSecretAccessKey *Secret // dagger-cli (../../../../toolchains/cli-dev/publish.go:36:2)
+	Git *GitRepository // dagger-cli (../../../../toolchains/cli-dev/publish.go:35:2)
 
-	AwsRegion string // dagger-cli (../../../../toolchains/cli-dev/publish.go:37:2)
+	AwsAccessKeyID *Secret // dagger-cli (../../../../toolchains/cli-dev/publish.go:37:2)
 
-	AwsBucket string // dagger-cli (../../../../toolchains/cli-dev/publish.go:38:2)
+	AwsSecretAccessKey *Secret // dagger-cli (../../../../toolchains/cli-dev/publish.go:38:2)
 
-	ArtefactsFqdn string // dagger-cli (../../../../toolchains/cli-dev/publish.go:39:2)
+	AwsRegion string // dagger-cli (../../../../toolchains/cli-dev/publish.go:39:2)
 
-	AwsEndpointURL string // dagger-cli (../../../../toolchains/cli-dev/publish.go:40:2)
+	AwsBucket string // dagger-cli (../../../../toolchains/cli-dev/publish.go:40:2)
 
-	DryRun bool // dagger-cli (../../../../toolchains/cli-dev/publish.go:42:2)
+	ArtefactsFqdn string // dagger-cli (../../../../toolchains/cli-dev/publish.go:41:2)
+
+	AwsEndpointURL string // dagger-cli (../../../../toolchains/cli-dev/publish.go:42:2)
+
+	DryRun bool // dagger-cli (../../../../toolchains/cli-dev/publish.go:44:2)
 }
 
 // Publish the CLI using GoReleaser
@@ -152,6 +157,14 @@ func (r *DaggerCli) Publish(tag string, goreleaserKey *Secret, githubOrgName str
 		// `githubToken` optional argument
 		if !querybuilder.IsZeroValue(opts[i].GithubToken) {
 			q = q.Arg("githubToken", opts[i].GithubToken)
+		}
+		// `githubHost` optional argument
+		if !querybuilder.IsZeroValue(opts[i].GithubHost) {
+			q = q.Arg("githubHost", opts[i].GithubHost)
+		}
+		// `githubCaCert` optional argument
+		if !querybuilder.IsZeroValue(opts[i].GithubCaCert) {
+			q = q.Arg("githubCaCert", opts[i].GithubCaCert)
 		}
 		// `git` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Git) {
@@ -197,12 +210,12 @@ func (r *DaggerCli) Publish(tag string, goreleaserKey *Secret, githubOrgName str
 
 // DaggerCliPublishMetadataOpts contains options for DaggerCli.PublishMetadata
 type DaggerCliPublishMetadataOpts struct {
-	AwsEndpointURL string // dagger-cli (../../../../toolchains/cli-dev/publish.go:149:2)
+	AwsEndpointURL string // dagger-cli (../../../../toolchains/cli-dev/publish.go:188:2)
 
-	Git *GitRepository // dagger-cli (../../../../toolchains/cli-dev/publish.go:151:2)
+	Git *GitRepository // dagger-cli (../../../../toolchains/cli-dev/publish.go:190:2)
 }
 
-func (r *DaggerCli) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, awsSecretAccessKey *Secret, awsRegion string, awsBucket string, awsCloudfrontDistribution string, opts ...DaggerCliPublishMetadataOpts) error { // dagger-cli (../../../../toolchains/cli-dev/publish.go:141:1)
+func (r *DaggerCli) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, awsSecretAccessKey *Secret, awsRegion string, awsBucket string, awsCloudfrontDistribution string, opts ...DaggerCliPublishMetadataOpts) error { // dagger-cli (../../../../toolchains/cli-dev/publish.go:180:1)
 	assertNotNil("awsAccessKeyId", awsAccessKeyId)
 	assertNotNil("awsSecretAccessKey", awsSecretAccessKey)
 	if r.publishMetadata != nil {
@@ -257,12 +270,13 @@ func (r *DaggerCli) Reference(opts ...DaggerCliReferenceOpts) *File { // dagger-
 }
 
 // Verify that the CLI builds without actually publishing anything
-func (r *DaggerCli) ReleaseDryRun() *Directory { // dagger-cli (../../../../toolchains/cli-dev/publish.go:211:1)
+func (r *DaggerCli) ReleaseDryRun(ctx context.Context) error { // dagger-cli (../../../../toolchains/cli-dev/publish.go:258:1)
+	if r.releaseDryRun != nil {
+		return nil
+	}
 	q := r.query.Select("releaseDryRun")
 
-	return &Directory{
-		query: q,
-	}
+	return q.Execute(ctx)
 }
 
 func (r *DaggerCli) Tag(ctx context.Context) (string, error) { // dagger-cli (../../../../toolchains/cli-dev/main.go:91:2)

@@ -22,12 +22,17 @@ func New(
 	// +ignore=[
 	// "*",
 	// "!.git",
+	// "!.goreleaser*.yml",
+	// "!LICENSE",
 	// "!dagger.json",
 	// "!**/dagger.json",
 	// "!**/go.*",
 	// "!**/*.dang",
+	// "!install.sh",
+	// "!install.ps1",
 	// "!version",
 	// "!core",
+	// "!docs",
 	// "!engine",
 	// "!util",
 	// "!network",
@@ -35,6 +40,7 @@ func New(
 	// "!analytics",
 	// "!auth",
 	// "!cmd",
+	// "!helm",
 	// "!internal",
 	// "!sdk",
 	// "sdk/**/examples",
@@ -437,25 +443,16 @@ type targetResult struct {
 }
 
 // +check
-func (dev *EngineDev) ReleaseDryRun(
-	ctx context.Context,
-	// +optional
-	tag string,
-) ([]*dagger.Container, error) {
-	tags := []string{"main"}
-	if semver.IsValid(tag) {
-		tags = []string{tag}
-	}
-
-	targetResults, err := dev.buildTargets(
+func (dev *EngineDev) ReleaseDryRun(ctx context.Context) error {
+	return dev.Publish(
 		ctx,
+		"dagger-engine.dev", // image
 		// FIXME: why not from HEAD like the SDKs?
-		tags,
+		[]string{"main"}, // tag
+		true,             // dryRun
+		nil,              // registryUsername
+		nil,              // registryPassword
 	)
-	if err != nil {
-		return nil, err
-	}
-	return flattenTargetPlatforms(targetResults), nil
 }
 
 // Publish all engine images to a registry
@@ -528,14 +525,6 @@ func releaseVersionFromTags(tags []string) string {
 		}
 	}
 	return ""
-}
-
-func flattenTargetPlatforms(targetResults []targetResult) []*dagger.Container {
-	var platforms []*dagger.Container
-	for _, result := range targetResults {
-		platforms = append(platforms, result.Platforms...)
-	}
-	return platforms
 }
 
 func (dev *EngineDev) pushTargets(

@@ -29,6 +29,8 @@ func (cli *CliDev) Publish(
 
 	githubOrgName string,
 	githubToken *dagger.Secret, // +optional
+	githubHost string, // +optional
+	githubCaCert *dagger.File, // +optional
 
 	git *dagger.GitRepository, // +defaultPath="/"
 
@@ -45,6 +47,8 @@ func (cli *CliDev) Publish(
 	if err != nil {
 		return nil, err
 	}
+	ctr = ctr.With(withGithubCaCert(githubCaCert))
+
 	ctr = ctr.
 		WithWorkdir("/app").
 		WithDirectory(".", cli.Go.Source()).
@@ -105,6 +109,9 @@ func (cli *CliDev) Publish(
 		With(optEnvVariable("AWS_BUCKET", awsBucket)).
 		With(optEnvVariable("ARTEFACTS_FQDN", artefactsFQDN)).
 		With(optEnvVariable("AWS_ENDPOINT_URL", awsEndpointURL)).
+		WithEnvVariable("GORELEASER_GITHUB_API_URL", goReleaserGithubAPIURL(githubHost)).
+		WithEnvVariable("GORELEASER_GITHUB_UPLOAD_URL", goReleaserGithubUploadURL(githubHost)).
+		WithEnvVariable("GORELEASER_GITHUB_DOWNLOAD_URL", goReleaserGithubDownloadURL(githubHost)).
 		WithEnvVariable("ENGINE_VERSION", cli.Version).
 		WithEnvVariable("ENGINE_TAG", cli.Tag).
 		WithEnvVariable("GORELEASER_CURRENT_TAG", tag).
@@ -137,6 +144,38 @@ func optSecretVariable(name string, val *dagger.Secret) dagger.WithContainerFunc
 	}
 }
 
+func withGithubCaCert(caCert *dagger.File) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		if caCert == nil {
+			return ctr
+		}
+		return ctr.
+			WithMountedFile("/usr/local/share/ca-certificates/dagger-github.crt", caCert).
+			WithExec([]string{"update-ca-certificates"})
+	}
+}
+
+func goReleaserGithubAPIURL(host string) string {
+	if host == "" {
+		return "https://api.github.com/"
+	}
+	return "https://" + host + "/api/v3/"
+}
+
+func goReleaserGithubUploadURL(host string) string {
+	if host == "" {
+		return "https://uploads.github.com/"
+	}
+	return "https://" + host + "/api/uploads/"
+}
+
+func goReleaserGithubDownloadURL(host string) string {
+	if host == "" {
+		return "https://github.com"
+	}
+	return "https://" + host
+}
+
 // +cache="session"
 func (cli *CliDev) PublishMetadata(
 	ctx context.Context,
@@ -148,7 +187,7 @@ func (cli *CliDev) PublishMetadata(
 	awsCloudfrontDistribution string,
 	awsEndpointURL string, // +optional
 
-	git *dagger.GitRepository, // +defaultPath="/"
+	git *dagger.GitRepository, // +optional
 ) error {
 	source := cli.Go.Source()
 	if git != nil {
@@ -216,9 +255,8 @@ func s3Path(bucket string, path string, args ...any) string {
 
 // +check
 // Verify that the CLI builds without actually publishing anything
-func (cli *CliDev) ReleaseDryRun(ctx context.Context) (*dagger.Directory, error) {
-	binaries := cli.goreleaserBinaries()
-	err := parallel.New().
+func (cli *CliDev) ReleaseDryRun(ctx context.Context) error {
+	return parallel.New().
 		WithJob(
 			"dry-run build on all targets",
 			// TODO: ideally this would also use go releaser, but we want to run this
@@ -226,7 +264,7 @@ func (cli *CliDev) ReleaseDryRun(ctx context.Context) (*dagger.Directory, error)
 			// a key which is private. For now, this just builds the CLI for the same
 			// targets so there's at least some coverage
 			func(ctx context.Context) error {
-				_, err := binaries.Sync(ctx)
+				_, err := cli.goreleaserBinaries().Sync(ctx)
 				return err
 			}).
 		WithJob(
@@ -240,10 +278,6 @@ func (cli *CliDev) ReleaseDryRun(ctx context.Context) (*dagger.Directory, error)
 				return err
 			}).
 		Run(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return binaries, nil
 }
 
 func (cli *CliDev) goreleaserBinaries() *dagger.Directory {
@@ -275,7 +309,7 @@ func publishEnv(ctx context.Context) (*dagger.Container, error) {
 
 	// install nix
 	ctr = ctr.
-		WithExec([]string{"apk", "add", "coreutils", "xz"}).
+		WithExec([]string{"apk", "add", "ca-certificates", "coreutils", "xz"}).
 		WithDirectory("/nix", dag.Directory()).
 		WithNewFile("/etc/nix/nix.conf", `build-users-group =`).
 		WithExec([]string{"sh", "-c", "curl -fsSL https://nixos.org/nix/install | sh -s -- --no-daemon"})
