@@ -13,7 +13,7 @@ Modules are packages of functions that add capabilities to your workspace. You c
 Install a module into your workspace:
 
 ```shell
-dagger install github.com/dagger/eslint
+dagger mod install github.com/dagger/eslint
 ```
 
 See what functions it provides:
@@ -32,9 +32,9 @@ dagger call eslint lint
 
 Modules can be installed from:
 
-- **GitHub**: `dagger install github.com/dagger/eslint`
-- **Local paths**: `dagger install ./my-module`
-- **Any Git URL**: `dagger install github.com/org/repo/path@v1.0`
+- **GitHub**: `dagger mod install github.com/dagger/eslint`
+- **Local paths**: `dagger mod install ./my-module`
+- **Any Git URL**: `dagger mod install github.com/org/repo/path@v1.0`
 
 ## Module vs Workspace
 
@@ -44,10 +44,10 @@ You interact with modules through your workspace:
 
 ```shell
 # Add a module to your workspace
-dagger install github.com/dagger/vitest
+dagger mod install github.com/dagger/vitest
 
 # Configure it
-# Edit .dagger/config.toml to add [modules.vitest.config] settings
+# Edit .dagger/config.toml to add [modules.vitest.settings]
 
 # Use it
 dagger call vitest test
@@ -59,15 +59,15 @@ dagger check
 When pre-built modules don't cover your needs, you can write your own:
 
 ```shell
-dagger module init --sdk=go my-ci
+mkdir -p .dagger/modules/my-ci
 ```
 
-This creates a local module in `.dagger/modules/my-ci/` that you can develop and use alongside installed modules.
+Add a `dagger.json` file in that directory to declare the module's name, SDK, and dependencies. Then install it into the workspace with `dagger mod install ./.dagger/modules/my-ci --name my-ci` so it can be used alongside other workspace modules.
 
-See [Developing Modules](/extending) for the full guide.
+See the [Module Developer Guide](/extending) for the full guide.
 
 ## Next Steps
 
 - **[Functions](/core-concepts/functions)** — Learn about functions
 - **[Checks](/core-concepts/checks)** — Learn about checks
-- **[Developing Modules](/extending)** — Write your own modules
+- **[Module Developer Guide](/extending)** — Write your own modules

@@ -12,9 +12,13 @@ Dagger decouples *when* workflows run from *where* they run. This page covers tr
 
 The standard trigger is [Cloud Checks](https://dagger.cloud): a managed service that watches your repository and runs `dagger check` on every push.
 
-1. `dagger login`
-2. Connect your repository in the Dagger Cloud dashboard
-3. Push code — checks run automatically and report as commit statuses on your PRs
+From a local checkout whose `origin` points to the GitHub repository:
+
+```shell
+dagger ws autocheck on
+```
+
+If needed, the command guides you through Dagger Cloud signup or login, GitHub authorization, and repository selection. After autocheck is enabled, push code or open a pull request. Checks run automatically and report as commit statuses on your PRs.
 
 No CI configuration files, no webhooks, no runners.
 

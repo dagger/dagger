@@ -18,7 +18,7 @@ A workspace is your Git repository. Dagger stores its configuration in a `.dagge
 
 ```shell
 # Install a module (creates .dagger/ if needed)
-dagger install github.com/dagger/eslint
+dagger mod install github.com/dagger/eslint
 ```
 
 [Learn about Workspaces →](/core-concepts/workspaces)
@@ -33,7 +33,7 @@ Modules add capabilities to your workspace. Install pre-built modules from the c
 
 ```shell
 # Install a module
-dagger install github.com/dagger/vitest
+dagger mod install github.com/dagger/vitest
 
 # See its functions
 dagger call vitest --help
@@ -90,9 +90,9 @@ dagger check lint-*
 
 ```shell
 # Set up your workspace with modules
-dagger install github.com/dagger/eslint
-dagger install github.com/dagger/vitest
-dagger install github.com/dagger/prettier
+dagger mod install github.com/dagger/eslint
+dagger mod install github.com/dagger/vitest
+dagger mod install github.com/dagger/prettier
 
 # Use their functions
 dagger call eslint lint
@@ -107,4 +107,4 @@ dagger check
 ## Next Steps
 
 - **[Quickstart](/quickstart)** — Get CI running in 5 minutes
-- **[Developing Modules](/extending)** — Write your own modules
+- **[Module Developer Guide](/extending)** — Write your own modules

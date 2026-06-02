@@ -31,11 +31,12 @@ The `.dagger/` directory also contains:
 
 ## Installing Modules
 
-Add modules to your workspace with `dagger install`:
+Find modules for your project with `dagger mod recommend`, then install the ones you want with `dagger mod install`:
 
 ```shell
-dagger install github.com/dagger/eslint
-dagger install github.com/dagger/vitest --name tests
+dagger mod recommend
+dagger mod install github.com/dagger/eslint
+dagger mod install github.com/dagger/vitest --name tests
 ```
 
 Each module becomes available under its name:
@@ -45,6 +46,8 @@ dagger call eslint lint
 dagger call tests test
 ```
 
+Use `dagger mod list` to see installed modules. Use `dagger mod search <query>` or `dagger mod recommend` to find modules you can add, `dagger mod uninstall <name>` to remove one, and `dagger mod update [name...]` to refresh workspace-managed state.
+
 ## Configuring Modules
 
 Modules can be configured in your workspace config. Configuration values are passed as constructor arguments to the module:
@@ -53,9 +56,11 @@ Modules can be configured in your workspace config. Configuration values are pas
 [modules.go]
 source = "github.com/dagger/go"
 
-[modules.go.config]
+[modules.go.settings]
 goVersion = "1.22"
 ```
+
+Use `dagger settings` to inspect discoverable module settings, and `dagger settings <module> <key> <value>` to update them from the CLI.
 
 ## Version Control
 

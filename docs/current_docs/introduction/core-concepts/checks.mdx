@@ -42,8 +42,8 @@ The easiest way to add checks to your project is by installing modules that prov
 
 ```shell
 # Install modules that provide checks
-dagger install github.com/dagger/eslint
-dagger install github.com/dagger/vitest
+dagger mod install github.com/dagger/eslint
+dagger mod install github.com/dagger/vitest
 
 # List all checks
 dagger check -l
@@ -132,4 +132,4 @@ async lintCode(): Promise<void> {
 ## Next Steps
 
 - **[Functions](/core-concepts/functions)** — Learn about functions
-- **[Developing Modules](/extending)** — Create your own checks and functions
+- **[Module Developer Guide](/extending)** — Create your own checks and functions

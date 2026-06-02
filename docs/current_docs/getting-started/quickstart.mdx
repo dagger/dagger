@@ -6,26 +6,52 @@ description: "Get CI running in your project in 5 minutes"
 
 # Quickstart
 
-In this quickstart, you'll add automated checks to a project and connect them to Dagger Cloud — no code required.
+In this quickstart, you'll fork an example project, add automated checks, and open a pull request that runs those checks in Dagger Cloud — no CI YAML required.
 
 ## Requirements
 
 - [Dagger CLI installed](/getting-started/installation)
 - [Git](https://git-scm.com/downloads) and a container runtime ([Docker](https://docs.docker.com/engine/install/), Podman, or similar)
+- A [GitHub](https://github.com) account
+- Optional: [GitHub CLI](https://cli.github.com/) for the copy-paste fork and pull request commands
 
-## Get the example project
+## Fork the example project
+
+Fork the example project into your GitHub account or organization, then clone your fork.
+
+With GitHub CLI:
 
 ```shell
-git clone https://github.com/dagger/hello-dagger.git
+gh repo fork dagger/hello-dagger --clone --default-branch-only
 cd hello-dagger
 ```
 
-## Install modules
+For an organization fork, add `--org YOUR_GITHUB_ORG` to the `gh repo fork` command.
+
+If you use the GitHub web UI instead, clone your fork locally before continuing. Dagger uses the repository's `origin` remote to infer which GitHub repository should run checks, so make sure `origin` points to your fork.
+
+## Create a branch
 
 ```shell
-dagger install github.com/dagger/eslint
-dagger install github.com/dagger/vitest
-dagger install github.com/dagger/prettier
+git checkout -b add-dagger-checks
+```
+
+## Find modules to install
+
+```shell
+dagger mod recommend
+```
+
+Dagger scans the project and recommends modules that match the tools it finds.
+
+## Install recommended modules
+
+Install the modules you want from the recommendations:
+
+```shell
+dagger mod install github.com/dagger/eslint
+dagger mod install github.com/dagger/vitest
+dagger mod install github.com/dagger/prettier
 ```
 
 This creates a `.dagger/config.toml` configuration file and adds three modules — a linter, a test runner, and a code formatter.
@@ -38,49 +64,53 @@ dagger check
 
 All three modules run their checks concurrently. You should see each one pass.
 
-## Explore what's available
+## Commit and push
 
 ```shell
-dagger functions
+git add .
+git commit -m "Add Dagger checks"
+git push -u origin add-dagger-checks
 ```
 
-Each installed module exposes functions you can call directly:
+## Enable automatic checks
+
+Dagger can infer the GitHub repository from your local checkout:
 
 ```shell
-dagger call eslint lint
-dagger call vitest test
-dagger call prettier check
+dagger ws remote
 ```
 
-## Connect to Dagger Cloud
+Enable automatic checks for that repository:
 
 ```shell
-dagger login
+dagger ws autocheck on
 ```
 
-This creates a free [Dagger Cloud](https://dagger.io/cloud) account. Once authenticated, every `dagger check` emits a trace link you can open in your browser to visualize what happened.
+If you are not signed in to Dagger Cloud yet, the command guides you through signup or login. If the GitHub integration is not installed yet, the command guides you through authorizing GitHub and selecting the forked repository.
 
-Run checks again:
+## Open a pull request
+
+With GitHub CLI:
 
 ```shell
-dagger check
+GITHUB_OWNER=YOUR_GITHUB_USER_OR_ORG
+gh pr create \
+  --repo "$GITHUB_OWNER/hello-dagger" \
+  --base main \
+  --head add-dagger-checks \
+  --title "Add Dagger checks" \
+  --body "Run Dagger checks on every pull request."
 ```
 
-Click the trace link in the output to see a full breakdown of each step, timing, and cache behavior.
+If you use the GitHub web UI instead, open a pull request from `add-dagger-checks` into `main` in your fork. Do not open the pull request against the upstream `dagger/hello-dagger` repository.
 
-## Run checks in the cloud
+## Verify CI
+
+Your pull request should show Dagger check statuses. You can also inspect recent Dagger Cloud activity from the CLI:
 
 ```shell
-dagger check --cloud
+dagger ws activity
 ```
-
-Same checks, running on managed cloud infrastructure instead of your local machine.
-
-## Automate with Cloud Checks
-
-Connect Cloud Checks to your repository to run `dagger check` on every push — no CI YAML required.
-
-See [Dagger Cloud](/reference/configuration/cloud) to set this up.
 
 ## Next steps
 
