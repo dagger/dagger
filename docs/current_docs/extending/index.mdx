@@ -1,50 +1,52 @@
 ---
 slug: /extending
 title: "Module Developer Guide"
-description: "A platform-level guide to designing, building, and operating Dagger modules."
+description: "Learn how to design, build, and ship Dagger modules."
 ---
 
 # Module Developer Guide
 
-This guide is for developers who want to create Dagger modules: reusable packages of functions, types, checks, services, and generators that other people can run from a workspace.
+This guide is for developers who want to create Dagger modules.
 
-The goal is not to teach one SDK. The goal is to teach the Dagger platform model that every SDK exposes: what a module is, how it is loaded, how functions become an API, how data flows through the type system, and how to design modules that are easy to call, test, document, and compose.
+A module is a reusable API for automation. It can expose functions, objects, checks, services, generators, and typed workflows that other people can run from a workspace.
 
-## How to Use This Guide
+This guide does not teach one SDK. It teaches the Dagger model every SDK shares.
 
-Read this guide before choosing SDK-specific documentation. A module developer should finish it able to answer these questions:
+## Start Here
 
-- What problem should this module solve, and who is it for?
-- What should be a function, an object, a setting, a check, a service, or a generator?
-- What inputs should be explicit, and what can safely come from workspace defaults?
-- How do Dagger objects, directories, files, containers, secrets, services, and changesets behave?
-- How do modules compose with other modules?
-- What makes a module predictable, cache-friendly, debuggable, and pleasant to call?
+Read the guide in this order:
 
-## Recommended Learning Path
+1. **Learn how Dagger works.** Workspaces, modules, functions, checks, cache, and execution.
+2. **Decide what to build.** Know when a workflow deserves a module.
+3. **Shape the API.** Choose the right functions, objects, inputs, outputs, and defaults.
+4. **Use the type system.** Make the module easy to call and compose.
+5. **Design for real use.** Errors, checks, services, secrets, Cloud, and quality.
+6. **Choose an SDK.** Use SDK docs for syntax, file layout, package tools, and tests.
+
+## Path
 
 | Chapter | Reader outcome |
 | --- | --- |
-| [When to Create a Module](./when-to-create-module.mdx) | Decide whether a workflow deserves a module and what problem the module should own. |
-| [How Dagger Executes Modules](./platform-model.mdx) | Understand the graph, engine, workspace, SDK runtime, cache, and materialization model behind every call. |
-| [Module Anatomy and Lifecycle](./module-anatomy.mdx) | Know which files, metadata, generated assets, and API lifecycle stages make up a module. |
-| [Designing Great Modules](./design-principles.mdx) | Shape functions, objects, inputs, outputs, defaults, and side effects around caller intent. |
-| [The Type System](./type-system/index.mdx) | Use Dagger types as the module's user interface, not as an implementation detail. |
-| [Objects, State, and Persistence](./objects-and-state.mdx) | Model workflow state without hiding mutation or confusing the engine's graph model. |
-| [Directives and Metadata](./directives.mdx) | Use metadata to improve docs, default behavior, source handling, checks, and generators. |
-| [Interfaces and Composition](./interfaces.mdx) | Design modules that can depend on capabilities instead of hard-coded implementations. |
-| [Errors and Diagnostics](./errors.mdx) | Write failures, validation, and traces that help callers recover. |
-| [Platform Features to Leverage](./platform-features.mdx) | Choose the right system features for settings, services, secrets, checks, generators, Cloud, and remote workspaces. |
-| [Module Quality and Readiness](./module-quality.mdx) | Prepare modules for real users, automation, compatibility, and maintenance. |
+| [How Dagger Works](./how-dagger-works/index.mdx) | Learn the core model. |
+| [When to Create a Module](./when-to-create-module.mdx) | Decide if a workflow deserves an API. |
+| [Module Anatomy](./module-anatomy.mdx) | Know what a module contains. |
+| [Designing Modules](./design-principles.mdx) | Shape clear functions, objects, and defaults. |
+| [The Type System](./type-system/index.mdx) | Make the API typed, discoverable, and composable. |
+| [Objects and State](./objects-and-state.mdx) | Model state without hiding data flow. |
+| [Directives](./directives.mdx) | Add metadata that improves the user experience. |
+| [Interfaces](./interfaces.mdx) | Compose modules without hard-coded dependencies. |
+| [Errors](./errors.mdx) | Help users recover. |
+| [Platform Features](./platform-features.mdx) | Use settings, services, secrets, checks, generators, and Cloud well. |
+| [Quality](./module-quality.mdx) | Prepare the module for real users. |
 
 ## What This Guide Does Not Do
 
-This guide intentionally avoids using Dang as universal pseudocode. Code examples belong in SDK documentation, where the syntax, package manager, project layout, generated files, and testing tools can be taught honestly.
+This guide avoids universal pseudocode. Code examples belong in SDK docs, where syntax, package layout, generated clients, and tests can be taught honestly.
 
-TODO: Once the SDK docs split is ready, replace this note with a stable "choose your SDK" page that sends readers to the standalone SDK documentation build.
+It also avoids command-driven teaching. Commands help you get started. A module author needs the deeper model: how workspaces resolve modules, how functions build the graph, when work runs, why cache works, and how checks reach CI and Cloud.
 
 ## SDK-Specific Documentation
 
-SDK documentation should be standalone. Its reader has already learned the platform model here and now needs implementation details for one SDK.
+SDK docs should stand alone. Their reader has learned the platform model here and now needs one language.
 
 Use the [SDK documentation structure](./sdks/index.mdx) as the editorial blueprint for those standalone docs.

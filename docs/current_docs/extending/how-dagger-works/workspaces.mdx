@@ -1,0 +1,79 @@
+---
+title: "Workspaces"
+slug: /extending/how-dagger-works/workspaces
+description: "Learn where Dagger starts: the project using modules."
+---
+
+# Workspaces
+
+A workspace is the project using Dagger.
+
+It is the caller's home. This is where modules are installed, named, configured, checked, and automated.
+
+For module authors, this is the first thing to understand: users do not experience your module in isolation. They experience it through a workspace.
+
+## What It Contains
+
+A workspace owns:
+
+- installed modules
+- module names
+- module settings
+- lock state
+- local modules
+- checks
+- Cloud automation
+
+The workspace config is the shared contract for a team. Commit it. Let CI and Cloud use the same setup as developers.
+
+## Workspace vs Module
+
+A workspace uses modules. A module adds capabilities to a workspace.
+
+This distinction matters:
+
+- If you are adding automation to one repo, start with the workspace.
+- If you are packaging reusable automation, create a module.
+- If a repo contains a local module, the repo is still the workspace.
+- If a module comes from Git, the caller's workspace still controls its installed name and settings.
+
+Do not design a module as if it owns the whole repo. Ask for the files and settings you need.
+
+## Names and Settings
+
+The installed name becomes part of the user's command surface. Keep that in mind when naming functions.
+
+Workspace settings are for values reused across calls:
+
+- tool versions
+- default paths
+- image names
+- team policy
+- environment choices
+
+Function arguments are for values that change per call.
+
+Good modules make common calls short without hiding important inputs.
+
+## Why Authors Care
+
+A workspace is where your module becomes real:
+
+- Developers call it locally.
+- CI runs it on every change.
+- Cloud can run its checks on pull requests.
+- Other modules can call it.
+
+A module that works only on your machine is not done. A module that works from a clean workspace is ready to grow.
+
+## Design Check
+
+Before publishing a module, ask:
+
+- What should the workspace configure once?
+- What should the caller pass each time?
+- What files should have defaults?
+- What installed name makes the API read well?
+- Can this run locally, in CI, and in Cloud?
+
+Next: [Modules](./modules.mdx).

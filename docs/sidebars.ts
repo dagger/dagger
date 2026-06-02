@@ -77,27 +77,6 @@ module.exports = {
     },
 
     // ========================================
-    // CORE CONCEPTS
-    // ========================================
-    {
-      type: "category",
-      label: "Core Concepts",
-      link: {
-        type: "doc",
-        id: "introduction/core-concepts/index",
-      },
-      collapsible: true,
-      collapsed: true,
-      items: [
-        "introduction/core-concepts/workspaces",
-        "introduction/core-concepts/modules",
-        "introduction/core-concepts/functions",
-        "introduction/core-concepts/checks",
-        "introduction/core-concepts/caching",
-      ],
-    },
-
-    // ========================================
     // MODULE DEVELOPER GUIDE
     // ========================================
     {
@@ -110,8 +89,25 @@ module.exports = {
       collapsible: true,
       collapsed: true,
       items: [
+        {
+          type: "category",
+          label: "How Dagger Works",
+          link: {
+            type: "doc",
+            id: "extending/how-dagger-works/index",
+          },
+          collapsible: true,
+          collapsed: false,
+          items: [
+            "extending/how-dagger-works/workspaces",
+            "extending/how-dagger-works/modules",
+            "extending/how-dagger-works/functions",
+            "extending/how-dagger-works/checks",
+            "extending/how-dagger-works/cache",
+            "extending/how-dagger-works/execution",
+          ],
+        },
         "extending/when-to-create-module",
-        "extending/platform-model",
         "extending/module-anatomy",
         "extending/design-principles",
         {
