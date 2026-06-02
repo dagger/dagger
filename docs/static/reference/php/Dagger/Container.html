@@ -218,7 +218,7 @@
                 <div class="col-md-8">
                     <a href="#method_envVariable">envVariable</a>(string $name)
         
-                                            <p><p>Retrieves the value of the specified environment variable.</p></p>                </div>
+                                            <p><p>Retrieves the value of the specified persistent environment variable.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -228,7 +228,7 @@
                 <div class="col-md-8">
                     <a href="#method_envVariables">envVariables</a>()
         
-                                            <p><p>Retrieves the list of environment variables passed to commands.</p></p>                </div>
+                                            <p><p>Retrieves the list of persistent environment variables configured on the container.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -756,6 +756,16 @@
                     <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
                 </div>
                 <div class="col-md-8">
+                    <a href="#method_withVolatileVariable">withVolatileVariable</a>(string $name, string $value)
+        
+                                            <p><p>Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
+                </div>
+                <div class="col-md-8">
                     <a href="#method_withWorkdir">withWorkdir</a>(string $path, bool|null $expand = false)
         
                                             <p><p>Change the container's working directory. Like WORKDIR in Dockerfile.</p></p>                </div>
@@ -909,6 +919,16 @@
                     <a href="#method_withoutUser">withoutUser</a>()
         
                                             <p><p>Retrieves this container with an unset command user.</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_withoutVolatileVariable">withoutVolatileVariable</a>(string $name)
+        
+                                            <p><p>Retrieves this container minus the given volatile environment variable.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -1332,7 +1352,7 @@
             
 
         <div class="method-description">
-                            <p><p>Retrieves the value of the specified environment variable.</p></p>                        
+                            <p><p>Retrieves the value of the specified persistent environment variable.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1374,7 +1394,7 @@
             
 
         <div class="method-description">
-                            <p><p>Retrieves the list of environment variables passed to commands.</p></p>                        
+                            <p><p>Retrieves the list of persistent environment variables configured on the container.</p></p>                        
         </div>
         <div class="tags">
             
@@ -3941,8 +3961,55 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_withVolatileVariable">
+        <div class="location">at line 1045</div>
+        <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
+    <strong>withVolatileVariable</strong>(string $name, string $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.</p></p>                <p><p>This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.</p></p>        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td>string</td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_withWorkdir">
-        <div class="location">at line 1043</div>
+        <div class="location">at line 1056</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withWorkdir</strong>(string $path, bool|null $expand = false)
         </code>
@@ -3989,7 +4056,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutAnnotation">
-        <div class="location">at line 1056</div>
+        <div class="location">at line 1069</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutAnnotation</strong>(string $name)
         </code>
@@ -4031,7 +4098,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutDefaultArgs">
-        <div class="location">at line 1066</div>
+        <div class="location">at line 1079</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutDefaultArgs</strong>()
         </code>
@@ -4063,7 +4130,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutDirectory">
-        <div class="location">at line 1075</div>
+        <div class="location">at line 1088</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutDirectory</strong>(string $path, bool|null $expand = false)
         </code>
@@ -4110,7 +4177,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutDockerHealthcheck">
-        <div class="location">at line 1088</div>
+        <div class="location">at line 1101</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutDockerHealthcheck</strong>()
         </code>
@@ -4142,7 +4209,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutEntrypoint">
-        <div class="location">at line 1097</div>
+        <div class="location">at line 1110</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutEntrypoint</strong>(bool|null $keepDefaultArgs = false)
         </code>
@@ -4184,7 +4251,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutEnvVariable">
-        <div class="location">at line 1109</div>
+        <div class="location">at line 1122</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutEnvVariable</strong>(string $name)
         </code>
@@ -4226,7 +4293,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutExposedPort">
-        <div class="location">at line 1119</div>
+        <div class="location">at line 1132</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutExposedPort</strong>(int $port, <abbr title="Dagger\Dagger\NetworkProtocol">NetworkProtocol</abbr>|null $protocol = null)
         </code>
@@ -4273,7 +4340,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutFile">
-        <div class="location">at line 1132</div>
+        <div class="location">at line 1145</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutFile</strong>(string $path, bool|null $expand = false)
         </code>
@@ -4320,7 +4387,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutFiles">
-        <div class="location">at line 1145</div>
+        <div class="location">at line 1158</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutFiles</strong>(array $paths, bool|null $expand = false)
         </code>
@@ -4367,7 +4434,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutLabel">
-        <div class="location">at line 1158</div>
+        <div class="location">at line 1171</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutLabel</strong>(string $name)
         </code>
@@ -4409,7 +4476,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutMount">
-        <div class="location">at line 1168</div>
+        <div class="location">at line 1181</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutMount</strong>(string $path, bool|null $expand = false)
         </code>
@@ -4456,7 +4523,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutRegistryAuth">
-        <div class="location">at line 1181</div>
+        <div class="location">at line 1194</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutRegistryAuth</strong>(string $address)
         </code>
@@ -4498,7 +4565,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutSecretVariable">
-        <div class="location">at line 1191</div>
+        <div class="location">at line 1204</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutSecretVariable</strong>(string $name)
         </code>
@@ -4540,7 +4607,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutUnixSocket">
-        <div class="location">at line 1201</div>
+        <div class="location">at line 1214</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutUnixSocket</strong>(string $path, bool|null $expand = false)
         </code>
@@ -4587,7 +4654,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_withoutUser">
-        <div class="location">at line 1216</div>
+        <div class="location">at line 1229</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutUser</strong>()
         </code>
@@ -4618,8 +4685,50 @@
 
             </div>
                     <div class="method-item">
+                    <h3 id="method_withoutVolatileVariable">
+        <div class="location">at line 1238</div>
+        <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
+    <strong>withoutVolatileVariable</strong>(string $name)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Retrieves this container minus the given volatile environment variable.</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$name</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
                     <h3 id="method_withoutWorkdir">
-        <div class="location">at line 1227</div>
+        <div class="location">at line 1250</div>
         <code>                    <a href="../Dagger/Container.html"><abbr title="Dagger\Container">Container</abbr></a>
     <strong>withoutWorkdir</strong>()
         </code>
@@ -4651,7 +4760,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_workdir">
-        <div class="location">at line 1236</div>
+        <div class="location">at line 1259</div>
         <code>                    string
     <strong>workdir</strong>()
         </code>
