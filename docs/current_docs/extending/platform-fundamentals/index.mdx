@@ -1,0 +1,57 @@
+---
+title: "Platform Fundamentals"
+slug: /extending/platform-fundamentals
+description: "Understand the Dagger platform concepts every module developer needs."
+---
+
+# Platform Fundamentals
+
+Dagger module development starts with the platform model. A module is useful only because it participates in a larger system: a workspace selects modules, module functions describe a typed graph, the engine evaluates that graph, checks validate the workspace, and cache makes repeated work fast enough to become part of everyday development.
+
+This section replaces the old split between "core concepts" and "module development." That split made the platform sound like background reading and modules sound like an implementation detail. In practice, they are the same subject from two angles. To design a good module, you need to know how callers will install it, configure it, call it, run its checks, inspect its traces, and benefit from its cache behavior.
+
+## What You Should Understand First
+
+Read these pages before the design chapters if you are new to the Dagger 1.0 workspace model:
+
+- [Workspaces](./workspaces.mdx) explain the project boundary where modules are installed, configured, checked, and automated.
+- [Modules](./modules.mdx) explain the reusable API packages a workspace installs or authors.
+- [Functions](./functions.mdx) explain the typed operations modules expose to callers.
+- [Checks](./checks.mdx) explain how no-required-argument functions become repeatable workspace validations.
+- [Caching](./caching.mdx) explains why precise inputs, immutable objects, and deterministic behavior matter.
+- [How Dagger Executes Modules](../platform-model.mdx) connects those concepts into the runtime path from CLI call to engine execution.
+
+## The Working Model
+
+The shortest useful model is:
+
+1. A **workspace** is the project context. It owns `.dagger/config.toml`, installed modules, settings, lock state, and automation such as checks.
+2. A **module** is a typed API package. It contributes functions, objects, checks, services, generators, and dependencies.
+3. A **function** is a graph-building operation. It accepts typed inputs and returns typed values that callers can keep composing.
+4. The **engine** evaluates the graph. It handles containers, files, directories, services, secrets, cache, materialization, and traces.
+5. **Dagger Cloud** can observe and automate workspace checks, but the module contract still needs to be clear and portable.
+
+This model resolves several common points of confusion:
+
+- Installing a module is not the same thing as authoring one. A workspace can use community modules, local modules, or both.
+- Running `dagger check` is not the same thing as unit-testing a module SDK project. Checks validate a workspace from the caller's point of view; SDK docs should teach practical test harnesses.
+- Calling a function is not always the same thing as immediately running work. Many calls return Dagger objects that stay lazy until a caller materializes a result.
+- A workspace is not just a directory with commands in it. It is the durable configuration surface that lets Dagger run the same module graph locally, in CI, and through Cloud automation.
+
+## Why Module Authors Need This
+
+Every platform concept becomes an API design constraint:
+
+- Workspace configuration affects what should be a module setting, an explicit argument, or a default path.
+- Module installation affects naming, dependency boundaries, and versioning.
+- Function calls affect discoverability, help output, traces, error messages, and composition.
+- Checks affect whether users can trust the module in local development and pull requests.
+- Cache behavior affects whether the module feels fast or constantly redoes work.
+
+The rest of the Module Developer Guide builds on this foundation. Once the platform model is clear, the design chapters can focus on judgment: what to expose, what to hide, how to shape types, and how to make modules that stay understandable as teams depend on them.
+
+## Next Steps
+
+- Continue to [Workspaces](./workspaces.mdx) if you want the platform model in order.
+- Jump to [When to Create a Module](../when-to-create-module.mdx) if you already understand workspace/module/function/check/cache basics.
+- Use the [SDK documentation outline](../sdks/index.mdx) when you are ready for language-specific implementation guidance.

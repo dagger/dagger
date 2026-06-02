@@ -1,0 +1,83 @@
+---
+title: "Functions"
+slug: /extending/platform-fundamentals/functions
+description: "Understand Dagger functions as typed graph-building operations."
+---
+
+# Functions
+
+Dagger functions are the operations a module exposes. They accept typed inputs, describe work in the Dagger graph, and return typed values. Callers use them from the CLI, from other modules, from generated clients, and through automation such as checks.
+
+A function is not just a named shell step. It is part of a typed API. Its name, arguments, return type, documentation, defaults, errors, and trace spans are all part of the caller experience.
+
+## Caller View
+
+From the caller's point of view, a function should answer a concrete question or perform a concrete operation:
+
+- Build this target.
+- Test this source tree.
+- Return a container prepared for deployment.
+- Generate a changeset.
+- Publish an artifact.
+- Start a service.
+
+The caller should not need to know the internal sequence of container operations unless that detail is part of the public contract. A module function should name the intent, not merely the implementation step.
+
+## Author View
+
+From the author's point of view, a function builds graph edges. It receives typed values, calls Dagger APIs, calls other module functions, and returns another typed value. The engine later evaluates the graph as much as needed.
+
+This has practical design consequences:
+
+- Returning a `Container`, `Directory`, `File`, `Service`, object, or changeset keeps the result composable.
+- Returning a string too early can force work to materialize and make composition harder.
+- Hidden host state makes the graph less portable and harder to cache.
+- Broad directory inputs invalidate more work than precise inputs.
+- Names and argument defaults determine whether the function feels obvious in CLI help.
+
+## Inputs and Outputs
+
+Function inputs should make dependencies explicit. If a function needs source code, accept a directory or file. If it needs credentials, accept a secret. If it needs a service, accept or create a service. If it needs policy, accept a setting or argument that callers can see.
+
+Function outputs should preserve useful structure:
+
+- Use Dagger objects when callers may want to keep chaining work.
+- Use module object types when the workflow has meaningful state or phases.
+- Use simple scalars for final answers, labels, status values, or diagnostics.
+- Use changesets when the function proposes modifications to the caller's workspace.
+
+This is where the type system becomes the module's user interface. The [Type System](../type-system/index.mdx) section goes deeper.
+
+## Functions, Fields, and Objects
+
+Not every operation should be a top-level function. Object types let a module group related operations and keep state explicit. A constructor can collect durable inputs. Fields can expose derived values. Methods can perform operations on that object.
+
+Use object structure when it improves the caller's mental model:
+
+- A release object can hold source, version, target platform, and publishing options.
+- A project object can hold source and toolchain settings.
+- A deployment object can hold environment and service configuration.
+
+Use top-level functions when the operation is a clear entry point and does not need a richer object lifecycle.
+
+## Materialization
+
+Many function calls describe future work rather than immediately performing it. Work is materialized when a caller asks for a concrete result: reading a scalar, exporting a file or directory, syncing a container, applying a changeset, or using a service.
+
+Module authors should make materialization points intentional. A function that returns a composable object gives callers room to extend the graph. A function that materializes internally should do so because the operation's purpose is to produce a final effect or final answer.
+
+## Checks Are Functions Too
+
+A check is a function that can validate a workspace without required arguments. Checks should be designed from the caller's point of view: "Does this project satisfy the contract?" not "Did my SDK implementation unit test pass?"
+
+The [Checks](./checks.mdx) page explains the platform role of checks. SDK-specific testing docs should teach how to test module code in a particular language.
+
+## Writing Assignment
+
+TODO: Add a decision tree for choosing top-level function vs object constructor vs method vs field vs check. Keep the examples conceptual and move SDK syntax to standalone SDK docs.
+
+## Next Steps
+
+- [Checks](./checks.mdx)
+- [The Type System](../type-system/index.mdx)
+- [Designing Great Modules](../design-principles.mdx)

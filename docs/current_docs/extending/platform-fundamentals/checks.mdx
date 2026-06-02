@@ -1,0 +1,81 @@
+---
+title: "Checks"
+slug: /extending/platform-fundamentals/checks
+description: "Understand checks as workspace validations exposed by Dagger modules."
+toc_max_heading_level: 2
+---
+
+# Checks
+
+Checks are Dagger functions that validate a workspace without requiring arguments. They are how a module contributes repeatable quality gates to local development, CI, and Dagger Cloud automation.
+
+The key phrase is "without requiring arguments." A check must be callable by the workspace as a standing validation. It can use workspace settings, defaults, optional arguments, installed module configuration, and explicit Dagger objects, but it should not require the caller to assemble a one-off command every time.
+
+## Checks Are Workspace-Facing
+
+A check answers a user-facing question:
+
+- Is this source tree formatted?
+- Do tests pass for the default project configuration?
+- Does generated code match the source?
+- Does a security or policy rule fail?
+- Is this release candidate internally consistent?
+
+That makes checks different from SDK-level module tests. SDK tests prove the module implementation behaves correctly in one language's test harness. Checks prove the installed module can validate a real workspace through Dagger.
+
+Both matter, but they belong in different docs:
+
+- The Module Developer Guide should explain what checks are for, how they fit the platform, and how to design useful ones.
+- Standalone SDK docs should explain the practical mechanics of annotating check functions, writing module tests, creating fixtures, and asserting results.
+
+## Where Checks Run
+
+Checks are useful because the same workspace validation can run in several places:
+
+- **Locally.** Developers can run checks before opening a pull request.
+- **In CI.** Teams can run checks as part of existing pipelines.
+- **Through Dagger Cloud.** Connected workspaces can enable autocheck so pull requests receive Dagger check results without rewriting the module.
+
+For module authors, this means checks should not depend on accidental local state. They should work from explicit workspace configuration, Dagger inputs, and portable services.
+
+## What Makes a Good Check
+
+A good check is:
+
+- **Meaningful.** It validates something a caller cares about, not an implementation detail.
+- **Stable.** It gives the same answer for the same inputs.
+- **Fast enough.** It uses precise inputs and cache-friendly steps so developers can run it often.
+- **Focused.** Its failure points to a clear problem.
+- **Discoverable.** Its name and docs explain what it validates.
+- **Composable.** It can share setup with other functions without forcing callers through private helper steps.
+
+Checks are often best when they reuse the same public module functions users already understand. For example, a build check can call the module's build function and materialize enough of the result to prove it works.
+
+## Required Arguments and Defaults
+
+A check cannot require arguments because the workspace must be able to run it unattended. That does not mean every input must be hard-coded.
+
+Use these tools deliberately:
+
+- **Workspace settings** for durable project policy.
+- **Default paths** for the common source or configuration location.
+- **Optional arguments** for advanced customization when a caller invokes the check directly.
+- **Module object state** for values that belong together and should remain explicit in the type system.
+
+If a check cannot run without a required argument, it may be a normal function instead.
+
+## Checks and Autocheck
+
+Autocheck runs workspace checks for remote events once the workspace has the required Cloud and Git integration setup. That setup is intentionally a workspace concern. A module does not need special "CI code" to participate; it needs checks that are portable, deterministic, and clear.
+
+This is why check design belongs beside workspace and module design. The module author defines the validation contract; the workspace maintainer decides where and when it runs.
+
+## Writing Assignment
+
+TODO: Add a check design checklist that helps authors decide whether a validation should be a check, a normal function, or an SDK-level test. Include failure-message guidance and examples of good check names, but leave check annotations and test harness syntax to SDK docs.
+
+## Next Steps
+
+- [Functions](./functions.mdx)
+- [Module Quality and Readiness](../module-quality.mdx)
+- [SDK Documentation Structure](../sdks/index.mdx)

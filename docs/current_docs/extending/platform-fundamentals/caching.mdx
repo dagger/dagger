@@ -1,0 +1,76 @@
+---
+title: "Caching"
+slug: /extending/platform-fundamentals/caching
+description: "Understand how Dagger caching shapes module API design."
+---
+
+# Caching
+
+Dagger's cache is not an optimization bolted onto modules after they are written. It is a direct result of the graph a module builds: the inputs it accepts, the objects it returns, the files it includes, the services it starts, the commands it runs, and the points where it materializes results.
+
+Most users experience this simply: the second run is faster. Module authors need a deeper model, because small API choices can decide whether cache reuse is excellent or constantly invalidated.
+
+## The Cache Follows the Graph
+
+Dagger evaluates a content-addressed graph. If the same operation receives the same inputs, the engine can reuse the result. If any input changes, affected downstream work must be recomputed.
+
+That makes inputs the most important caching design surface:
+
+- A narrow directory input invalidates only the work that depends on that directory.
+- A broad workspace input invalidates more work when unrelated files change.
+- Pinned tool versions produce more predictable cache keys than floating external state.
+- Deterministic outputs can be trusted and reused.
+- Hidden environment variables, clocks, host files, and network state make cache behavior harder to reason about.
+
+## Types of Reuse
+
+Dagger uses several forms of reuse:
+
+- **Operation reuse.** Repeated container and filesystem operations can reuse previous results when inputs match.
+- **Function reuse.** A function called with the same typed inputs can avoid rebuilding the same subgraph.
+- **Object reuse.** Returning Dagger objects lets callers compose without forcing premature work.
+- **Cache volumes.** Package managers and tools with mutable cache directories can use named volumes to persist reusable data across runs.
+- **Shared cache.** Dagger Cloud can help teams reuse work across environments when configured for that workspace.
+
+Module authors do not need to expose every caching mechanism directly. They do need to design APIs that give the engine precise, stable inputs.
+
+## Directory Precision
+
+Directories are one of the most common cache pitfalls. A function that accepts the whole workspace because it only needs one subdirectory will rerun when unrelated files change. A function that accepts the exact source, package file, lock file, or generated output directory can reuse more work.
+
+Default paths can make precise inputs ergonomic. Instead of asking every caller to pass a path for common cases, a module can define a sensible default while still keeping the actual directory input explicit in the type system.
+
+## Cache Volumes
+
+Cache volumes are useful for tool caches: package downloads, compiler caches, dependency stores, and other mutable data that should survive across runs. They are not a substitute for explicit inputs or deterministic outputs.
+
+Use cache volumes when:
+
+- A tool expects a mutable cache directory.
+- The cache content is an acceleration, not the source of truth.
+- The cache name is stable enough to share across related calls.
+- A stale cache would not silently change the module's public output.
+
+Avoid cache volumes for data that should be represented as a `File`, `Directory`, object, setting, or secret.
+
+## Local, CI, and Cloud Cache
+
+Local development, CI runners, and Cloud-backed environments may have different cache availability. A module should be correct with an empty cache and faster with a warm cache. It should not rely on a cache volume or remote cache as if it were required state.
+
+This principle is especially important for checks. A check should fail or pass because of the workspace inputs, not because the runner happened to have a warm local cache.
+
+## Cache-Friendly Module Design
+
+Use these questions when reviewing a module:
+
+- Does each function accept the smallest meaningful `Directory` or `File`?
+- Are generated outputs excluded from inputs unless they are intentionally validated?
+- Are dependency lock files part of the graph when they affect results?
+- Are tool versions pinned or passed explicitly?
+- Does the function return a composable object instead of materializing too early?
+- Are secrets kept out of cacheable data paths where appropriate?
+- Can a caller understand why a change caused work to rerun?
+
+## Writing Assignment
+
+TODO: Add cache diagnostics guidance once the beta CLI output is settled. The section should teach authors how to explain cache misses to users without relying on unstable screenshots or verbose trace formats.

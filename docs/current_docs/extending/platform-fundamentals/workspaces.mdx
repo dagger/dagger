@@ -1,0 +1,88 @@
+---
+title: "Workspaces"
+slug: /extending/platform-fundamentals/workspaces
+description: "Understand the project boundary where Dagger modules are installed, configured, and automated."
+---
+
+# Workspaces
+
+A workspace is the project context Dagger operates on. It is usually a Git repository, but the important part is not the directory itself. The important part is the Dagger configuration that says which modules this project uses, how those modules are named, what settings they receive, and which checks can run for this codebase.
+
+For module developers, the workspace is the caller's home. Your module may live somewhere else, but users experience it through a workspace: they install it, configure it, call its functions, run its checks, and later automate those checks from CI or Dagger Cloud.
+
+## What a Workspace Owns
+
+A workspace owns:
+
+- **Installed modules.** The workspace chooses which modules are available and which local names callers use for them.
+- **Module settings.** Settings provide reusable defaults for installed modules without hiding them inside the module's implementation.
+- **Lock state.** The workspace records resolved module sources so teams and automation use the same module graph.
+- **Local modules.** A workspace can contain modules being authored in the same repository.
+- **Checks.** Installed modules can contribute checks that run together as workspace validation.
+- **Cloud automation.** Once connected, a workspace can run autochecks for pull requests and other remote events.
+
+This is why workspace documentation belongs in the Module Developer Guide. A module API that ignores the workspace will be hard to install, configure, call, and automate.
+
+## Workspace vs Module
+
+A workspace is the project using Dagger. A module is an API package the workspace installs or develops.
+
+That distinction answers many common questions:
+
+- If you are adding automation to an application repository, you are usually working in a workspace.
+- If you are publishing reusable capabilities for other projects, you are authoring a module.
+- If a local module lives under the same repository as the application, the repository is still the workspace; the local module is one dependency inside it.
+- If a module is installed from a Git ref, the caller's workspace still controls the installed name, settings, and lock state.
+
+Do not design a module as if it owns the caller's whole repository by default. A good module states the inputs it needs and lets the workspace decide where those inputs come from.
+
+## Installing and Naming Modules
+
+Installed module names become part of the caller's command and help experience. A module can have a source name, package name, and installed workspace name; users mostly feel the installed name.
+
+Module authors should design for this:
+
+- Export function names that read well under a module name.
+- Avoid naming functions after the module itself unless the phrase still reads naturally.
+- Keep the public surface small enough that `dagger call <module> --help` stays useful.
+- Document any expected settings so workspace maintainers can configure the module without reading source code.
+
+## Settings, Defaults, and Explicit Inputs
+
+Workspace settings are for values that should be stable across many calls: tool versions, default directories, default image names, organization identifiers, feature flags, or policy choices.
+
+Function arguments are for call-specific inputs: the file to process, the target to build, the image tag to publish, the environment to deploy to, or the secret to use for one operation.
+
+Default paths sit between those two ideas. They make common calls short, but they should not prevent callers from passing precise files or directories when needed. The best module APIs make the default path obvious while still allowing explicit inputs.
+
+## Local Development and Shared Automation
+
+The workspace is where local development and remote automation meet:
+
+- Local callers run functions and checks against their working tree.
+- Teams commit workspace configuration so everyone sees the same installed modules and settings.
+- CI can run workspace checks without rebuilding separate YAML workflows for every tool.
+- Cloud autocheck can run the same workspace checks for pull requests once the workspace is connected.
+
+This continuity is the point of the 1.0 workspace model. A module should help the workspace express durable intent, not force each environment to rediscover how automation is wired.
+
+## Design Questions for Module Authors
+
+Ask these questions while designing a module:
+
+- What does the caller need to configure once at the workspace level?
+- What must remain an explicit function argument because it changes by call?
+- Which files or directories should be defaulted from the workspace?
+- What installed name will make the function surface read well?
+- Can this module run against a clean checkout, in CI, and through Cloud autocheck without hidden host state?
+- Does the module expose checks that validate the workspace from the user's point of view?
+
+## Writing Assignment
+
+TODO: Add a short workspace diagram showing the caller repository, `.dagger/config.toml`, installed remote modules, local modules, lock state, and Cloud autocheck. Keep the diagram SDK-agnostic and make the distinction between "workspace" and "module" visually unmistakable.
+
+## Next Steps
+
+- [Modules](./modules.mdx)
+- [Checks](./checks.mdx)
+- [Platform Features to Leverage](../platform-features.mdx)

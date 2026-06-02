@@ -10,6 +10,8 @@ A Dagger module is not a script that runs on your host. It is an API that the Da
 
 That distinction matters. Great modules are designed around Dagger's execution model: explicit inputs, immutable objects, content-addressed data, lazy evaluation, cache reuse, and clear boundaries between host, workspace, engine, containers, services, and Cloud.
 
+This page ties the platform fundamentals together. [Workspaces](./platform-fundamentals/workspaces.mdx) explain the caller boundary. [Modules](./platform-fundamentals/modules.mdx) explain the API package. [Functions](./platform-fundamentals/functions.mdx) explain the operations. [Checks](./platform-fundamentals/checks.mdx) and [caching](./platform-fundamentals/caching.mdx) explain why the same graph can become local validation, CI, Cloud automation, and repeatable reuse.
+
 ## The Core Mental Model
 
 Think of a module as a typed API that contributes nodes to a Dagger graph.
@@ -35,11 +37,27 @@ At runtime, a module developer should think in these layers:
 - **CLI and API clients**: the callers. They build requests, render progress, and export results.
 - **Dagger Cloud**: optional remote visibility and automation around traces, checks, and workspaces.
 
-## Lazy Evaluation
+## Execution Tour
+
+A typical call moves through these stages:
+
+1. **The caller selects a workspace.** The CLI finds the workspace configuration, installed modules, settings, and lock state.
+2. **The workspace resolves the requested module.** The installed name maps to a module source, dependency graph, settings, and SDK runtime.
+3. **The engine loads the module.** The SDK runtime exposes the module's public functions and object types as a Dagger API.
+4. **The caller invokes a function.** Arguments become typed values: scalars, files, directories, containers, secrets, services, objects, or lists.
+5. **The function builds graph nodes.** It can call Dagger APIs, call other module functions, create containers, select files, start services, and return typed objects.
+6. **The graph remains lazy where possible.** Returning a Dagger value usually describes work rather than forcing it to happen immediately.
+7. **The caller materializes a result.** Exporting a file, reading a string, syncing a container, applying a changeset, or running a check forces the needed graph to execute.
+8. **The engine evaluates and caches.** It runs only the required work, reuses cached results when inputs match, starts services, protects secrets, and records trace data.
+9. **The result returns to the caller.** The CLI, another module, CI, or Cloud receives the value, failure, trace, or check status.
+
+This tour is more important than any one command. It explains why module design depends on explicit inputs, durable types, stable names, precise directories, and clear materialization points.
+
+## Lazy Evaluation and Materialization
 
 Dagger builds a graph before it runs work. Function calls often create values that describe future work. Work happens when a result must be materialized: a string is read, a file is exported, a container is synchronized, a service is used, or a changeset is applied.
 
-Design implication: prefer functions that return meaningful Dagger objects rather than forcing everything to run immediately.
+Design implication: prefer functions that return meaningful Dagger objects when callers may want to keep composing. Materialize inside a function when the purpose of the function is a final effect or final answer.
 
 TODO: Add a visual graph example showing a module function returning a `Container`, a caller chaining more operations, and evaluation happening only at the final materialization point.
 
@@ -66,6 +84,20 @@ Teach module authors to ask:
 - Does this function return a deterministic value?
 - Does this function depend on time, network state, or unpinned external versions?
 
+The [Caching](./platform-fundamentals/caching.mdx) page gives the platform model. The design chapters apply that model to function signatures, object structure, default paths, settings, and check design.
+
+## Checks in the Execution Model
+
+Checks are not a separate runtime system. They are functions that the workspace can discover and run as validation. When the caller runs workspace checks locally, in CI, or through Cloud autocheck, the engine still loads modules, builds graphs, evaluates the needed work, caches results, and records traces.
+
+This is why checks should share the same API quality bar as any other function. A good check has explicit inputs through workspace settings and defaults, deterministic behavior, clear names, useful failures, and no dependency on hidden host state.
+
+## Cloud and Remote Automation
+
+Dagger Cloud observes the same execution model rather than replacing it. Once a workspace is connected and autocheck is enabled, Cloud can help run and display workspace checks for pull requests. The module author still owns the validation contract: which checks exist, what they validate, how they fail, and whether they are portable enough to run outside the author's laptop.
+
+Module authors should design with this continuity in mind. The same module function may be called interactively, from another module, from CI, or through Cloud automation. The best APIs do not need different behavior for each environment.
+
 ## Writing Assignment
 
-TODO: Expand this page into a conceptual "execution tour" that follows one call from CLI invocation to module load to graph evaluation to trace output. Keep it SDK-agnostic and explain every boundary a module author can influence.
+TODO: Add one end-to-end narrative once beta terminology is final: a workspace installs a local module, a caller invokes one function, that function returns a container, the caller materializes output, a check reuses part of the graph, and Cloud shows the trace. Keep it SDK-agnostic and explain every boundary a module author can influence.

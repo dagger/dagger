@@ -1,0 +1,80 @@
+---
+title: "Modules"
+slug: /extending/platform-fundamentals/modules
+description: "Understand modules as typed API packages for reusable Dagger capabilities."
+---
+
+# Modules
+
+A module is a typed API package for Dagger. It can expose functions, object types, constructors, fields, checks, services, generators, and dependencies. A workspace installs modules so its users can call those capabilities through Dagger.
+
+The module is not the workflow run itself. It is the reusable interface and implementation that Dagger loads when a caller asks for a function. That distinction matters because a module's public surface becomes part of the Dagger API graph, command help, traces, generated SDK bindings, and workspace checks.
+
+## Installed Modules and Authored Modules
+
+A module can be used in two modes:
+
+- **Installed module.** A workspace depends on a module from a local path, a Git repository, or another source. The workspace controls the installed name and settings.
+- **Authored module.** A developer edits the module source, metadata, dependencies, and SDK code that define the module API.
+
+The same module can be both. A repository can contain an application workspace and a local module that the workspace installs. A published module can be installed by many other workspaces.
+
+Keep those roles separate in your design. A module should not assume it owns every file in the caller's repository unless that is truly its contract. It should declare what it needs through types, default paths, settings, and arguments.
+
+## What a Module Contains
+
+A module has three layers:
+
+- **Metadata.** The module declaration names the module, SDK, source, dependencies, and other configuration Dagger needs to load it.
+- **Implementation.** The SDK source defines functions and object types using one language's module authoring API.
+- **Public contract.** The Dagger type system exposes the functions, arguments, return values, docs, checks, and object relationships callers can depend on.
+
+The public contract is the most important layer for this guide. SDK docs should teach syntax; the Module Developer Guide teaches how to shape a contract that callers can understand and compose.
+
+## Dependencies Between Modules
+
+Modules can depend on other modules. This is how reusable capabilities become building blocks instead of isolated scripts.
+
+Design dependency edges deliberately:
+
+- Depend on a module when you want to reuse a stable capability.
+- Depend on an interface when callers should be able to provide alternate implementations.
+- Avoid dependencies that leak every implementation detail into your public API.
+- Prefer returning Dagger objects or typed module objects over flattening everything to strings too early.
+
+The more a module composes cleanly with other modules, the less callers need to copy workflow glue into their own repositories.
+
+## Modules as User Interfaces
+
+A module is a user interface even when the user is another program. Its names, types, defaults, errors, docs, and traces all teach callers what to do.
+
+Strong module interfaces usually have these qualities:
+
+- They are organized around caller goals, not around internal steps.
+- They have a small set of obvious entry points.
+- They keep required arguments meaningful and avoid forcing callers to pass boilerplate.
+- They return structured Dagger values so callers can keep composing.
+- They expose checks for important validation paths.
+- They fail with messages that explain what input or configuration must change.
+
+## When a Workflow Becomes a Module
+
+A workflow deserves a module when it needs a durable API. That usually means one or more of:
+
+- Other people or repositories need to run it.
+- It has enough configuration that workspace settings would help.
+- It should contribute checks or generators.
+- It benefits from a typed object model rather than a sequence of shell commands.
+- It should be versioned, reused, and maintained separately from one immediate use.
+
+If a workflow is still private, experimental, or one-off, start smaller. The [When to Create a Module](../when-to-create-module.mdx) chapter gives a more complete decision guide.
+
+## Writing Assignment
+
+TODO: Add a module lifecycle diagram covering source, install, load, call, trace, check, version, and deprecate. Make it clear which parts are controlled by the module author and which are controlled by the workspace maintainer.
+
+## Next Steps
+
+- [Functions](./functions.mdx)
+- [When to Create a Module](../when-to-create-module.mdx)
+- [Module Anatomy and Lifecycle](../module-anatomy.mdx)
