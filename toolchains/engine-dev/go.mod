@@ -17,6 +17,7 @@ require (
 	github.com/dagger/otel-go v1.43.1-0.20260515012101-af7cd0684887
 	github.com/opencontainers/image-spec v1.1.1
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546
+	golang.org/x/mod v0.34.0
 	golang.org/x/sync v0.20.0
 )
 
