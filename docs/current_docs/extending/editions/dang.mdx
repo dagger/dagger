@@ -7,6 +7,10 @@ description: "Learn to develop Dagger modules using Dang, Dagger's native DSL"
 
 # Developing Modules — Base Edition
 
+:::caution Legacy draft
+This page is legacy SDK-specific material. The platform-level guide now starts at [Module Developer Guide](/extending), and the standalone SDK documentation structure starts at [Standalone SDK Docs](/extending/sdks).
+:::
+
 This guide uses **Dang**, Dagger's native DSL. It maps directly to the Dagger API with no codegen — what you write is what runs. No build step, no generated files, no runtime overhead.
 
 Use Dang when your module is primarily orchestrating containers, files, and other Dagger objects. If you need external libraries (a Go parser, a Python ML library, a Node.js bundler API), use the [Go](/extending/editions/go), [TypeScript](/extending/editions/typescript), or [Python](/extending/editions/python) edition instead.
@@ -14,10 +18,21 @@ Use Dang when your module is primarily orchestrating containers, files, and othe
 ## Project setup
 
 ```shell
-dagger module init --sdk=dang my-module
+mkdir my-module
+cd my-module
+cat > dagger.json <<'EOF'
+{
+  "name": "my-module",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "dang"
+  },
+  "source": "."
+}
+EOF
 ```
 
-This creates a module at `.dagger/modules/my-module/` with a single `main.dang` file.
+This creates a Dagger module that uses Dang. Add the module code in `main.dang`.
 
 ## Language basics
 
@@ -251,8 +266,21 @@ The `.changes(source)` call computes the diff between the generated output and t
 
 Modules can depend on other modules. Add a dependency:
 
-```shell
-dagger module install github.com/dagger/go
+```json title="dagger.json"
+{
+  "name": "my-module",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "dang"
+  },
+  "source": ".",
+  "dependencies": [
+    {
+      "name": "go",
+      "source": "github.com/dagger/go"
+    }
+  ]
+}
 ```
 
 Then call it in your code:
@@ -262,7 +290,7 @@ type MyCi {
   pub workspace: Directory! @defaultPath(path: "/")
 
   pub devContainer: Container! {
-    # 'go' is the installed module — call it like a function
+    # 'go' is the dependency module — call it like a function
     go(source: workspace).env.withWorkdir("/app")
   }
 
@@ -299,24 +327,22 @@ github.com/shykes/daggerverse/hello@v0.3.0
 
 ### Managing dependencies
 
-```shell
-# Install a dependency
-dagger module install github.com/shykes/daggerverse/hello@v0.3.0
-
-# Update to latest version
-dagger module update hello
-
-# Update to a specific version
-dagger module update hello@v0.4.0
-
-# Remove a dependency
-dagger uninstall hello
-
-# Local modules (same git repo) work too
-dagger module install ./path/to/module
+```json title="dagger.json"
+{
+  "dependencies": [
+    {
+      "name": "hello",
+      "source": "github.com/shykes/daggerverse/hello@v0.3.0"
+    },
+    {
+      "name": "local",
+      "source": "./path/to/module"
+    }
+  ]
+}
 ```
 
-Dependencies are pinned to exact commits in `dagger.json` and versioned via git refs. Updates are explicit.
+Dependencies are declared in `dagger.json` and versioned via git refs. To update a dependency, change its `source` ref. To remove one, delete it from the `dependencies` array.
 
 ## Services
 
@@ -477,8 +503,8 @@ Users can override defaults via the CLI or workspace config:
 dagger call --node-version=18 build
 
 # Or configure in .dagger/config.toml
-# [modules.my-ci.config]
-# node-version = "18"
+# [modules.my-ci.settings]
+# nodeVersion = "18"
 # registry = "docker.io"
 ```
 

@@ -6,6 +6,10 @@ description: "Patterns for testing Dagger modules."
 
 # Testing Modules
 
+:::caution Legacy draft
+This page is legacy SDK-specific material. Platform-level quality guidance now belongs in [Module Quality and Readiness](/extending/module-quality), and SDK-specific test code belongs in the standalone SDK docs structure at [Standalone SDK Docs](/extending/sdks).
+:::
+
 Like any other piece of software, Dagger Functions and modules should be thoroughly tested. This page documents proven patterns for effectively testing reusable modules.
 
 The following examples rely on a module called `greeter` that provides a function to greet a person:
@@ -43,8 +47,22 @@ Following these principles leads to writing tests for your Dagger modules using 
 ```bash
 mkdir tests
 cd tests
-dagger module init --sdk=go --source=. tests
-dagger module install ..
+cat > dagger.json <<'EOF'
+{
+  "name": "tests",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "source": ".",
+  "dependencies": [
+    {
+      "name": "greeter",
+      "source": ".."
+    }
+  ]
+}
+EOF
 ```
 
 Then add the following to `main.go`:
@@ -70,8 +88,22 @@ func (m *Tests) Hello(ctx context.Context) error {
 ```bash
 mkdir tests
 cd tests
-dagger module init --sdk=python --source=. tests
-dagger module install ..
+cat > dagger.json <<'EOF'
+{
+  "name": "tests",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "python"
+  },
+  "source": ".",
+  "dependencies": [
+    {
+      "name": "greeter",
+      "source": ".."
+    }
+  ]
+}
+EOF
 ```
 
 Then add the following to `src/tests/main.py`:
@@ -93,8 +125,22 @@ class Tests:
 ```bash
 mkdir tests
 cd tests
-dagger module init --sdk=typescript --source=. tests
-dagger module install ..
+cat > dagger.json <<'EOF'
+{
+  "name": "tests",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "typescript"
+  },
+  "source": ".",
+  "dependencies": [
+    {
+      "name": "greeter",
+      "source": ".."
+    }
+  ]
+}
+EOF
 ```
 
 Then add the following to `src/index.ts`:
@@ -137,8 +183,22 @@ You can combine example modules with the test module pattern to turn those examp
 ```bash
 mkdir -p examples/go
 cd examples/go
-dagger module init --sdk=go --source=. examples/go
-dagger module install ../..
+cat > dagger.json <<'EOF'
+{
+  "name": "examples-go",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "go"
+  },
+  "source": ".",
+  "dependencies": [
+    {
+      "name": "greeter",
+      "source": "../.."
+    }
+  ]
+}
+EOF
 ```
 
 Then add the following to `main.go`:
@@ -163,8 +223,22 @@ func (m *Examples) GreeterHello(ctx context.Context) error {
 ```bash
 mkdir -p examples/python
 cd examples/python
-dagger module init --sdk=python --source=. examples/python
-dagger module install ../..
+cat > dagger.json <<'EOF'
+{
+  "name": "examples-python",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "python"
+  },
+  "source": ".",
+  "dependencies": [
+    {
+      "name": "greeter",
+      "source": "../.."
+    }
+  ]
+}
+EOF
 ```
 
 Then add the following to `src/examples/main.py`:
@@ -185,8 +259,22 @@ class Examples:
 ```bash
 mkdir -p examples/typescript
 cd examples/typescript
-dagger module init --sdk=typescript --source=. examples/typescript
-dagger module install ../..
+cat > dagger.json <<'EOF'
+{
+  "name": "examples-typescript",
+  "engineVersion": "latest",
+  "sdk": {
+    "source": "typescript"
+  },
+  "source": ".",
+  "dependencies": [
+    {
+      "name": "greeter",
+      "source": "../.."
+    }
+  ]
+}
+EOF
 ```
 
 Then add the following to `src/index.ts`:

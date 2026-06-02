@@ -7,7 +7,11 @@ description: "Learn to develop Dagger modules using Python"
 
 # Developing Modules — Python Edition
 
-See the [Base Edition](/extending/editions/dang) for the complete guide — the patterns are the same across all SDKs.
+:::caution Legacy draft
+This page is legacy SDK-specific material. The platform-level guide now starts at [Module Developer Guide](/extending), and the standalone SDK documentation structure starts at [Standalone SDK Docs](/extending/sdks).
+:::
+
+For platform concepts, start with the [Module Developer Guide](/extending). This page remains available as legacy Python recipe material while standalone Python SDK docs are being designed.
 
 ## Recipes
 
@@ -325,7 +329,6 @@ To get your IDE to recognize a Dagger Python module and any added Dagger module 
 For example, to open Visual Studio Code from the terminal, with functioning autocompletions (assuming the [Python extensions](https://github.com/microsoft/vscode-python) are installed):
 
 ```shell
-dagger develop
 uv run code .
 ```
 
@@ -337,7 +340,7 @@ The `uv run` command works with a `uv.lock` file. If you need to use a `requirem
 
 ### Project environment
 
-The following examples show how to get a working [project environment](https://docs.astral.sh/uv/concepts/projects/#project-environments) (`.venv`) from the terminal. Make sure to run `dagger develop` first to get the necessary `sdk` directory locally.
+The following examples show how to get a working [project environment](https://docs.astral.sh/uv/concepts/projects/#project-environments) (`.venv`) from the terminal. Make sure the module's generated `sdk` directory is present before installing it into the environment.
 
 <Tabs groupId="pytools">
 <TabItem value="uv">

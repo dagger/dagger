@@ -1,0 +1,68 @@
+---
+title: "SDK Documentation Structure"
+slug: /extending/sdks
+description: "Editorial blueprint for standalone Dagger SDK documentation."
+---
+
+# SDK Documentation Structure
+
+Each SDK deserves standalone documentation. The reader has already learned the Dagger platform model in the Module Developer Guide. Now they need to become productive in one SDK.
+
+SDK docs should not repeat the whole platform guide. They should translate platform concepts into one language's syntax, tooling, project layout, editor workflow, test workflow, and troubleshooting model.
+
+This directory is a transitional editorial outline. The target shape is a standalone documentation build per SDK, with its own navigation, examples, maintenance owner, and release/update process.
+
+## Audience
+
+SDK docs are for module developers who:
+
+- Have chosen one SDK.
+- Need to create and maintain modules in that language.
+- Need precise syntax and file layout guidance.
+- Need editor, package manager, generated-file, and testing workflows.
+- Need SDK-specific troubleshooting.
+
+## Standard SDK Docs Shape
+
+Every SDK documentation set should include:
+
+1. **Start here**: prerequisites, project layout, first successful module load.
+2. **Functions and objects**: how platform functions and objects map to language constructs.
+3. **Arguments and return values**: type mapping, defaults, docs, nullability, enums.
+4. **Core Dagger types**: containers, directories, files, secrets, services, changesets, env, LLM.
+5. **Module dependencies**: declaring dependencies and calling them.
+6. **Directives and metadata**: docs, default paths, ignore patterns, checks, generators.
+7. **Testing modules**: idiomatic test structure, harness setup, fixtures, assertions, generated clients, async/runtime behavior, and CI examples for this SDK.
+8. **Generated files and IDE setup**: what is committed, what is generated, and how to refresh it.
+9. **Packaging and release**: language package manager guidance and module versioning.
+10. **Troubleshooting**: common SDK-specific failures and recovery.
+
+## Standalone Build Boundary
+
+Each SDK docs build should be able to stand alone for a developer who has already read the Module Developer Guide. That means it needs its own:
+
+- Landing page and learning path.
+- Prerequisites and setup assumptions.
+- Progressive example module.
+- API design translation from platform concepts to SDK syntax.
+- Generated-file and editor workflow.
+- Practical testing workflow.
+- Troubleshooting index.
+- Compatibility and release notes.
+
+The main docs should link into these builds at stable entry points. They should not carry large SDK-specific chapters inline once the standalone docs exist.
+
+## Editorial Rules
+
+- Use real code in the SDK's language.
+- Do not use another SDK as pseudocode.
+- Keep platform explanations short and link back to the Module Developer Guide.
+- Make copy-paste examples complete enough to run.
+- Explain generated files and local editor setup honestly.
+- Include a "what changed recently" section when the workspace UX changes commands or file layout.
+- Prefer one growing example module over disconnected snippets, so readers build a mental model instead of memorizing fragments.
+- Explain what to commit, what to regenerate, and what to ignore for each SDK.
+
+## Writing Assignment
+
+TODO: Turn this blueprint into a separate Docusaurus build or another standalone docs package. Define routing, versioning, shared content strategy, and how main docs link to SDK docs without nesting all SDK detail inside the main guide.

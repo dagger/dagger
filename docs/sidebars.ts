@@ -98,11 +98,11 @@ module.exports = {
     },
 
     // ========================================
-    // DEVELOPING MODULES
+    // MODULE DEVELOPER GUIDE
     // ========================================
     {
       type: "category",
-      label: "Developing Modules",
+      label: "Module Developer Guide",
       link: {
         type: "doc",
         id: "extending/index",
@@ -110,11 +110,36 @@ module.exports = {
       collapsible: true,
       collapsed: true,
       items: [
-        "extending/editions/dang",
-        "extending/editions/go/index",
-        "extending/editions/typescript/index",
-        "extending/editions/python/index",
-        "extending/testing",
+        "extending/when-to-create-module",
+        "extending/platform-model",
+        "extending/module-anatomy",
+        "extending/design-principles",
+        {
+          type: "category",
+          label: "Type System",
+          link: {
+            type: "doc",
+            id: "extending/type-system/index",
+          },
+          collapsible: true,
+          collapsed: true,
+          items: [
+            "extending/type-system/scalars-lists-nullability-defaults",
+            "extending/type-system/core-types",
+            "extending/type-system/user-defined-object-types",
+            "extending/type-system/constructors-fields-methods",
+            "extending/type-system/arguments-and-return-values",
+            "extending/type-system/enums-and-validation",
+            "extending/type-system/designing-for-composability",
+            "extending/type-system/type-design-clinics",
+          ],
+        },
+        "extending/objects-and-state",
+        "extending/directives",
+        "extending/interfaces",
+        "extending/errors",
+        "extending/platform-features",
+        "extending/module-quality",
         {
           type: "category",
           label: "Types Reference",
@@ -133,6 +158,24 @@ module.exports = {
             "extending/types/llm",
           ],
         },
+      ],
+    },
+    {
+      type: "category",
+      label: "Standalone SDK Docs",
+      link: {
+        type: "doc",
+        id: "extending/sdks/index",
+      },
+      collapsible: true,
+      collapsed: true,
+      items: [
+        "extending/sdks/dang",
+        "extending/sdks/go",
+        "extending/sdks/typescript",
+        "extending/sdks/python",
+        "extending/sdks/java",
+        "extending/sdks/php",
       ],
     },
 

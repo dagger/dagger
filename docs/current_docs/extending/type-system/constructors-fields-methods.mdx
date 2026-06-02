@@ -1,0 +1,40 @@
+---
+title: "Constructors, Fields, and Methods"
+slug: /extending/type-system/constructors-fields-methods
+description: "Decide where state belongs in a Dagger object API."
+---
+
+# Constructors, Fields, and Methods
+
+Object APIs have three different surfaces:
+
+- Constructors establish durable context.
+- Fields expose readable state or computed values.
+- Methods perform typed workflow steps.
+
+Good module APIs keep those surfaces predictable.
+
+## Constructors
+
+Constructor inputs should describe the context the object cannot make sense without:
+
+- Source directory.
+- Tool version.
+- Target platform.
+- Registry.
+- Environment name.
+- Feature toggles.
+
+Constructor state should be visible and explainable. If changing it changes later results, the caller should understand why.
+
+## Fields
+
+Fields should expose meaningful information, not private implementation details. A field should be useful to callers, generated clients, traces, or other modules.
+
+Avoid fields that force callers to understand intermediate files, temporary containers, or SDK-generated structures.
+
+## Methods
+
+Methods should represent actions or transformations that belong to the object concept. They should return the next useful value, not just logs.
+
+TODO: Coordinate this chapter with [Objects, State, and Persistence](/extending/objects-and-state) so type design and object persistence reinforce each other without duplicating content.

@@ -7,7 +7,11 @@ description: "Learn to develop Dagger modules using Java"
 
 # Developing Modules — Java Edition
 
-This edition is not yet available. See the [Base Edition](/extending/editions/dang) for the complete guide — the patterns are the same across all SDKs.
+:::caution Legacy draft
+This page is legacy SDK-specific material. The platform-level guide now starts at [Module Developer Guide](/extending), and the standalone SDK documentation structure starts at [Standalone SDK Docs](/extending/sdks).
+:::
+
+This edition is not yet available. For platform concepts, start with the [Module Developer Guide](/extending). Standalone Java SDK docs still need a complete structure and examples.
 
 ## IDE setup
 
@@ -18,7 +22,7 @@ The Dagger dependency code, especially the code generated based on the Dagger en
 This creates a standard Maven project structure, and you can import the project into your favorite IDE as a Maven project. The IDE will automatically recognize the Dagger dependencies and provide code completion and other features out of the box.
 
 :::tip
-The `target` directory is added to the `.gitignore` file by default, so you don't need to worry about committing the generated code. This code is only to help the IDE provide code completion and other features. This code is not required to run the module. It can be refreshed by running `dagger develop` again.
+The `target` directory is added to the `.gitignore` file by default, so you don't need to worry about committing the generated code. This code is only to help the IDE provide code completion and other features. This code is not required to run the module and can be refreshed by the Java SDK code generation flow.
 :::
 
 Most popular IDEs, like IntelliJ Idea or Visual Studio Code, support Maven projects, and will provide out-of-the-box code completion.

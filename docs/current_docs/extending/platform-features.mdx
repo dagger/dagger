@@ -1,0 +1,76 @@
+---
+title: "Platform Features to Leverage"
+slug: /extending/platform-features
+description: "Know which Dagger platform features can make modules better."
+---
+
+# Platform Features to Leverage
+
+Dagger modules are more than functions in containers. The platform gives module authors higher-level features that can turn a useful function into a great developer experience.
+
+## Feature Selection Map
+
+| If the module needs to... | Reach for... | Avoid... |
+| --- | --- | --- |
+| Encode team defaults without hardcoding them. | Workspace settings and environments. | Hidden environment variables or host-specific files. |
+| Report project health. | Checks. | A generic `run all` function whose failures are hard to classify. |
+| Propose source edits. | Generators returning changesets. | Silently rewriting caller files. |
+| Coordinate long-running dependencies. | Services with clear readiness behavior. | Sleeping, polling external localhost ports, or relying on host daemons. |
+| Use credentials. | Explicit `Secret` inputs and documented scopes. | Reading credentials from undeclared host state. |
+| Support remote execution and team visibility. | Cloud traces, workspace-aware inputs, and stable checks. | Local-only assumptions or unstructured logs as the only diagnostic surface. |
+
+## Workspace Settings and Environments
+
+Use workspace settings for team-level defaults that should not be hardcoded into module source.
+
+Use environments when the same workspace needs different settings for contexts such as local development, CI, staging, and production.
+
+TODO: Add examples using `[modules.<name>.settings]` and `[env.<name>.modules.<name>.settings]`, plus guidance for which settings should be module constructor defaults versus workspace settings.
+
+## Checks
+
+Checks let modules participate in project health. A check should be:
+
+- Fast enough to run often, or clearly scoped if it is expensive.
+- Named after the condition it verifies.
+- Actionable when it fails.
+- Safe to run in CI and Cloud.
+
+## Generators and Changesets
+
+Generators should propose changes, not silently rewrite the workspace. Use changesets to keep generated output reviewable.
+
+Use generators for:
+
+- Codegen.
+- Formatting.
+- Configuration sync.
+- Lockfile maintenance.
+- Generated documentation.
+
+## Services
+
+Services make integration workflows first-class. Use them for databases, web servers, queues, mock APIs, and local dependencies that other functions need.
+
+Design service APIs around readiness and ports. A caller should not need to understand the startup internals.
+
+## Secrets
+
+Secrets must be explicit. A module should never make a credential requirement surprising.
+
+Document:
+
+- Which function needs the secret.
+- What scope the secret needs.
+- Whether the secret is used locally, inside a container, or against an external service.
+- How failure appears when the secret is wrong.
+
+## Cloud and Remote Workspaces
+
+Cloud-aware modules should treat remote execution as a normal mode, not a special case. Avoid host-only assumptions and make workspace inputs explicit.
+
+TODO: Add Cloud-specific guidance for traces, checks, remote workspace refs, and source mappings after Cloud workspace UX stabilizes.
+
+## Writing Assignment
+
+TODO: Expand the feature selection map. For each feature, include when to use it, when not to use it, common mistakes, and the caller experience it unlocks.

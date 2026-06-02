@@ -1,0 +1,29 @@
+---
+title: "Designing for Composability"
+slug: /extending/type-system/designing-for-composability
+description: "Return values that other functions, modules, clients, and agents can keep using."
+---
+
+# Designing for Composability
+
+The type system is what lets Dagger workflows keep going. A well-typed result can be passed to another function, another module, a generated client, a check, a generator, or an agent.
+
+## Composable Return Values
+
+Return values should help the caller continue the workflow:
+
+- Return `Container` when the caller may still run, publish, export, or inspect it.
+- Return `Directory` or `File` when the caller needs artifacts.
+- Return `Service` when another step needs a live endpoint.
+- Return `Changeset` when the module proposes source edits.
+- Return a user-defined object when the caller needs a domain concept with more methods.
+
+## Avoid Dead Ends
+
+Strings and logs can be useful final outputs, but they are often dead ends. If a caller has to parse text to continue, the module probably returned too little structure.
+
+## Composition Across Modules
+
+Design return types so other modules can consume them without knowing implementation details. This is where type design and interface design meet.
+
+TODO: Cross-link this chapter with [Interfaces and Composition](/extending/interfaces) after the interface guide is expanded.
