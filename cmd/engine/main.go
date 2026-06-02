@@ -38,8 +38,6 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
@@ -521,10 +519,12 @@ func main() { //nolint:gocyclo
 		// start serving on the listeners for actual clients
 		bklog.G(ctx).Debug("starting main engine api listeners")
 		srv.Register(grpcServer)
-		http2Server := &http2.Server{}
+		protocols := new(http.Protocols)
+		protocols.SetHTTP1(true)
+		protocols.SetUnencryptedHTTP2(true)
 		httpServer = &http.Server{
 			ReadHeaderTimeout: 30 * time.Second,
-			Handler: h2c.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("content-type"), "application/grpc") {
 					// The docs on grpcServer.ServeHTTP warn that some features are missing vs. serving fully "native" gRPC,
 					// but in practice it seems to work fine for us and only be relevant for some advanced features we don't use.
@@ -532,10 +532,8 @@ func main() { //nolint:gocyclo
 					return
 				}
 				srv.ServeHTTP(w, r)
-			}), http2Server),
-		}
-		if err := http2.ConfigureServer(httpServer, http2Server); err != nil {
-			return fmt.Errorf("failed to configure http2 server: %w", err)
+			}),
+			Protocols: protocols,
 		}
 		errCh := make(chan error, 1)
 		if err := serveAPI(bkcfg.GRPC, httpServer, errCh); err != nil {
