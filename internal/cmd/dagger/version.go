@@ -8,10 +8,10 @@ import (
 	"maps"
 	"os"
 
-	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/distconsts"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/dagger/dagger/version"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -26,7 +26,10 @@ import (
 	"github.com/dagger/dagger/engine"
 )
 
-var forceVersionCheck bool
+var (
+	forceVersionCheck bool
+	versionQuiet      bool
+)
 
 func versionCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -36,7 +39,12 @@ func versionCmd() *cobra.Command {
 		PersistentPreRun: func(*cobra.Command, []string) {},
 		Args:             cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Fprintln(cmd.OutOrStdout(), version())
+			out := cmd.OutOrStdout()
+			if versionQuiet {
+				fmt.Fprintln(out, version.Canonical())
+				return
+			}
+			fmt.Fprintln(out, versionHuman())
 			if forceVersionCheck {
 				updateAvailable, err := updateAvailable(cmd.Context())
 				if err != nil {
@@ -51,15 +59,24 @@ func versionCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&forceVersionCheck, "check", false, "Check for updates")
+	cmd.Flags().BoolVarP(&versionQuiet, "quiet", "q", false, "Print only the canonical build identifier")
 	return cmd
 }
 
-func version() string {
-	return fmt.Sprintf("dagger %s (%s) %s",
-		engine.Version,
-		RunnerHost,
-		platforms.DefaultString(),
-	)
+func versionHuman() string {
+	commit := "unknown"
+	if version.Commit != "" {
+		commit = version.Commit
+		if len(commit) > 8 {
+			commit = commit[:8]
+		}
+	}
+	dirty := "no"
+	if version.Dirty {
+		dirty = "yes"
+	}
+	return fmt.Sprintf("version: %s\ncommit:  %s\ndirty:   %s",
+		version.Version, commit, dirty)
 }
 
 func updateAvailable(ctx context.Context) (string, error) {

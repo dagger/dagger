@@ -10,6 +10,8 @@ require (
 replace (
 	dagger.io/dagger => ./sdk/go
 	github.com/dagger/dagger/engine/distconsts => ./engine/distconsts
+	// TODO: switch to a tagged release once buildinfo ships in dagger/go.
+	github.com/dagger/go/buildinfo => ../go/buildinfo
 )
 
 require (
