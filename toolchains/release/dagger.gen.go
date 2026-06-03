@@ -645,6 +645,27 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			return (*Release).Publish(&parent, ctx, tag, commit, git, dryRun, registryImage, registryUsername, registryPassword, goreleaserKey, githubToken, githubOrgName, githubHost, githubCaCert, githubReleaseToken, netlifyToken, netlifyApiUrl, pypiToken, pypiRepo, pypiUrl, npmToken, npmRegistryUrl, hexApikey, cargoRegistryToken, skipElixir, skipRust, goSdkDestRemote, phpSdkDestRemote, awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution, awsEndpointUrl, artefactsFqdn, helmRegistry, discordWebhook)
+		case "PublishWithMockEndpoints":
+			var parent Release
+			err = json.Unmarshal(parentJSON, &parent)
+			if err != nil {
+				panic(fmt.Errorf("%s: %w", "failed to unmarshal parent object", err))
+			}
+			var source *dagger.Directory
+			if inputArgs["source"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["source"]), &source)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg source", err))
+				}
+			}
+			var goreleaserKey *dagger.Secret
+			if inputArgs["goreleaserKey"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["goreleaserKey"]), &goreleaserKey)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg goreleaserKey", err))
+				}
+			}
+			return nil, (*Release).PublishWithMockEndpoints(&parent, ctx, source, goreleaserKey)
 		case "TestLocalRelease":
 			var parent Release
 			err = json.Unmarshal(parentJSON, &parent)
