@@ -2021,9 +2021,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 					}
 				}
 			}
-
 		}()
-
 		emu, err := getEmulator(ctx, specs.Platform(container.Platform))
 		if err != nil {
 			return err

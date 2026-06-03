@@ -162,7 +162,6 @@ func (r *ContainerRuntime) AsContainer() (dagql.ObjectResult[*Container], bool) 
 	return r.Container, true
 }
 
-//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (r *ContainerRuntime) Call(
 	ctx context.Context,
 	execMD *engineutil.ExecutionMetadata,
