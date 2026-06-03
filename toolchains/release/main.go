@@ -121,14 +121,14 @@ func (r *Release) Publish( //nolint:gocyclo
 	githubReleaseToken *dagger.Secret, // +optional
 
 	netlifyToken *dagger.Secret, // +optional
-	netlifyApiUrl string, // +optional
+	netlifyAPIURL string, // +optional
 	pypiToken *dagger.Secret, // +optional
 	pypiRepo string, // +optional
 	pypiURL string, // +optional
 	npmToken *dagger.Secret, // +optional
 	npmRegistryURL string, // +optional
-	hexApiKey *dagger.Secret, // +optional
-	hexApiUrl string, // +optional
+	hexAPIKey *dagger.Secret, // +optional
+	hexAPIURL string, // +optional
 	cargoRegistryToken *dagger.Secret, // +optional
 	cargoRegistryIndex string, // +optional
 	goSdkDestRemote string, // +optional
@@ -254,7 +254,7 @@ func (r *Release) Publish( //nolint:gocyclo
 				})
 			}
 			if err := docsDev.Publish(ctx, netlifyToken, dagger.DocsDevPublishOpts{
-				APIURL: netlifyApiUrl,
+				APIURL: netlifyAPIURL,
 			}); err != nil {
 				artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
 			}
@@ -325,8 +325,8 @@ func (r *Release) Publish( //nolint:gocyclo
 			link: "https://hex.pm/packages/dagger/" + strings.TrimPrefix(version, "v"),
 			release: func(ctx context.Context) error {
 				return dag.ElixirSDKDev().Publish(ctx, tag, dagger.ElixirSDKDevPublishOpts{
-					HexAPIKey: hexApiKey,
-					HexAPIURL: hexApiUrl,
+					HexAPIKey: hexAPIKey,
+					HexAPIURL: hexAPIURL,
 				})
 			},
 			dryRun: func(ctx context.Context) error {

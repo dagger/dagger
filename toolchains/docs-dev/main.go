@@ -168,11 +168,11 @@ func (d DocsDev) Publish(
 	// +optional
 	deployment string,
 	// +optional
-	apiUrl string,
+	apiURL string,
 ) error {
 	api := "https://api.netlify.com/api/v1"
-	if apiUrl != "" {
-		api = strings.TrimRight(apiUrl, "/")
+	if apiURL != "" {
+		api = strings.TrimRight(apiURL, "/")
 	}
 	site := "docs.dagger.io"
 	branch := "main"

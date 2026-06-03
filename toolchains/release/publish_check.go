@@ -16,7 +16,7 @@ import (
 const (
 	publishCheckReleaseTag      = "v0.21.3"
 	publishCheckRegistryUser    = "john"
-	publishCheckRegistryPass    = "xFlejaPdjrt25Dvr"
+	publishCheckRegistryPass    = "xFlejaPdjrt25Dvr" // #nosec G101 -- fake password for the local test registry.
 	publishCheckRegistryAddress = "registry:5000"
 	publishCheckRegistryImage   = publishCheckRegistryAddress + "/dagger/engine"
 	publishCheckEngineStateDir  = "/var/lib/dagger"
@@ -209,7 +209,7 @@ done
 	env.gitWorktree = gitSetup.Directory("/root/repo")
 	gitDir := gitSetup.Directory("/root/srv")
 	gitHostname := "git.test"
-	env.gitSvc, env.repoURL = gitSmartHTTPServiceDir(ctx, gitHostname, gitDir)
+	env.gitSvc, env.repoURL = gitSmartHTTPServiceDir(gitHostname, gitDir)
 	env.repoURL += "/repo"
 	env.goSDKDestRemote = strings.TrimSuffix(env.repoURL, "/repo") + "/go-sdk.git"
 	env.phpSDKDestRemote = strings.TrimSuffix(env.repoURL, "/repo") + "/php-sdk.git"
@@ -318,7 +318,7 @@ func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service,
 	}), nil
 }
 
-func (env *publishCheckEnv) client(ctx context.Context, engine *dagger.Service) *dagger.Container {
+func (env *publishCheckEnv) client(engine *dagger.Service) *dagger.Container {
 	dev := dag.EngineDev(dagger.EngineDevOpts{Source: env.source})
 	client := dag.Wolfi().
 		Container(dagger.WolfiContainerOpts{
@@ -375,7 +375,7 @@ cat /tmp/publish.log
 exit "$status"
 `
 
-	out, err := env.client(ctx, engine).
+	out, err := env.client(engine).
 		WithSecretVariable("GORELEASER_KEY", env.goreleaserKey).
 		WithSecretVariable("REGISTRY_PASSWORD", dag.SetSecret("release-registry-password-"+randomID(), publishCheckRegistryPass)).
 		WithSecretVariable("FAKE_GITHUB_TOKEN", dag.SetSecret("fake-github-token-"+randomID(), "fake-gh-token")).
@@ -633,7 +633,7 @@ func (env *publishCheckEnv) assertSDKTags(ctx context.Context) error {
 	return requireContains(phpSDKTags, env.releaseTag, "PHP SDK git remote should contain release tag")
 }
 
-func gitSmartHTTPServiceDir(ctx context.Context, hostname string, dir *dagger.Directory) (*dagger.Service, string) {
+func gitSmartHTTPServiceDir(hostname string, dir *dagger.Directory) (*dagger.Service, string) {
 	tmpl := template.Must(template.New("").Parse(`
 server {
 	listen       80;
