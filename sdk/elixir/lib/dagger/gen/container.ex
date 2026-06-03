@@ -183,7 +183,8 @@ defmodule Dagger.Container do
   """
   @spec exists(t(), String.t(), [
           {:expected_type, Dagger.ExistsType.t() | nil},
-          {:do_not_follow_symlinks, boolean() | nil}
+          {:do_not_follow_symlinks, boolean() | nil},
+          {:expand, boolean() | nil}
         ]) :: {:ok, boolean()} | {:error, term()}
   def exists(%__MODULE__{} = container, path, optional_args \\ []) do
     query_builder =
@@ -192,6 +193,7 @@ defmodule Dagger.Container do
       |> QB.put_arg("path", path)
       |> QB.maybe_put_arg("expectedType", optional_args[:expected_type])
       |> QB.maybe_put_arg("doNotFollowSymlinks", optional_args[:do_not_follow_symlinks])
+      |> QB.maybe_put_arg("expand", optional_args[:expand])
 
     Client.execute(container.client, query_builder)
   end

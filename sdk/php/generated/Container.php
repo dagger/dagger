@@ -144,8 +144,12 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     /**
      * check if a file or directory exists
      */
-    public function exists(string $path, ?ExistsType $expectedType = null, ?bool $doNotFollowSymlinks = false): bool
-    {
+    public function exists(
+        string $path,
+        ?ExistsType $expectedType = null,
+        ?bool $doNotFollowSymlinks = false,
+        ?bool $expand = false,
+    ): bool {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exists');
         $leafQueryBuilder->setArgument('path', $path);
         if (null !== $expectedType) {
@@ -153,6 +157,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $doNotFollowSymlinks) {
         $leafQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
+        }
+        if (null !== $expand) {
+        $leafQueryBuilder->setArgument('expand', $expand);
         }
         return (bool)$this->queryLeaf($leafQueryBuilder, 'exists');
     }

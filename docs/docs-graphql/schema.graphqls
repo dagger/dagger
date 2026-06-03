@@ -547,6 +547,12 @@ type Container implements Exportable & Node & Syncer {
 
     """If specified, do not follow symlinks."""
     doNotFollowSymlinks: Boolean = false
+
+    """
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
   ): Boolean!
 
   """
