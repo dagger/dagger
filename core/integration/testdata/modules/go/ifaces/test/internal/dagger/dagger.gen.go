@@ -2065,7 +2065,7 @@ func (r *Container) Entrypoint(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
-// Retrieves the value of the specified environment variable.
+// Retrieves the value of the specified persistent environment variable.
 func (r *Container) EnvVariable(ctx context.Context, name string) (string, error) {
 	if r.envVariable != nil {
 		return *r.envVariable, nil
@@ -2079,7 +2079,7 @@ func (r *Container) EnvVariable(ctx context.Context, name string) (string, error
 	return response, q.Execute(ctx)
 }
 
-// Retrieves the list of environment variables passed to commands.
+// Retrieves the list of persistent environment variables configured on the container.
 func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 	q := r.query.Select("envVariables")
 
@@ -3546,6 +3546,19 @@ func (r *Container) WithUser(name string) *Container {
 	}
 }
 
+// Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.
+//
+// This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.
+func (r *Container) WithVolatileVariable(name string, value string) *Container {
+	q := r.query.Select("withVolatileVariable")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Container{
+		query: q,
+	}
+}
+
 // ContainerWithWorkdirOpts contains options for Container.WithWorkdir
 type ContainerWithWorkdirOpts struct {
 	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
@@ -3796,6 +3809,16 @@ func (r *Container) WithoutUnixSocket(path string, opts ...ContainerWithoutUnixS
 // Should default to root.
 func (r *Container) WithoutUser() *Container {
 	q := r.query.Select("withoutUser")
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Retrieves this container minus the given volatile environment variable.
+func (r *Container) WithoutVolatileVariable(name string) *Container {
+	q := r.query.Select("withoutVolatileVariable")
+	q = q.Arg("name", name)
 
 	return &Container{
 		query: q,
@@ -15629,6 +15652,8 @@ type WorkspaceChecksOpts struct {
 	Include []string
 	// When true, only return annotated check functions; exclude generate-as-checks
 	NoGenerate bool
+	// When true, only return generate-as-checks; exclude annotated check functions
+	OnlyGenerate bool
 }
 
 // Return all checks from modules loaded in the workspace.
@@ -15642,6 +15667,10 @@ func (r *Workspace) Checks(opts ...WorkspaceChecksOpts) *CheckGroup {
 		// `noGenerate` optional argument
 		if !querybuilder.IsZeroValue(opts[i].NoGenerate) {
 			q = q.Arg("noGenerate", opts[i].NoGenerate)
+		}
+		// `onlyGenerate` optional argument
+		if !querybuilder.IsZeroValue(opts[i].OnlyGenerate) {
+			q = q.Arg("onlyGenerate", opts[i].OnlyGenerate)
 		}
 	}
 
