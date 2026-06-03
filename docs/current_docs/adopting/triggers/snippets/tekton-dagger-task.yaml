@@ -3,7 +3,7 @@ kind: Task
 metadata:
   name: dagger
 spec:
-  description: Run Dagger Function
+  description: Run Dagger checks
   workspaces:
   - name: source
   params:
@@ -33,7 +33,7 @@ spec:
         - mountPath: /var/lib/dagger
           name: dagger-storage
   steps:
-  # modify to use different function(s) as needed
+  # runs the checks from the modules installed in your workspace
   - name: read
     image: docker:dind
     workingDir: $(workspaces.source.path)
@@ -41,7 +41,7 @@ spec:
       #!/usr/bin/env sh
       apk add curl
       curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin sh
-      dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --source=. --args=.
+      dagger check
     volumeMounts:
       - mountPath: /run/dagger
         name: dagger-socket

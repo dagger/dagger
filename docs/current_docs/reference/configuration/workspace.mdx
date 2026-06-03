@@ -1,0 +1,76 @@
+---
+title: "Workspace configuration"
+slug: /reference/configuration/workspace
+description: "The .dagger/config.toml workspace configuration file schema."
+---
+
+# Workspace configuration
+
+A workspace is configured by a `.dagger/config.toml` file. It records the modules installed in the workspace, their settings, and any per-environment overrides. Unlike a module's [`dagger.json`](./modules.mdx) — which is module-authoring metadata — `.dagger/config.toml` is the *consumer* side: it's what `dagger check`, `dagger generate`, `dagger up`, and `dagger call` load.
+
+Create it with `dagger workspace init`, or let `dagger mod install` create it on first install. To convert a legacy `dagger.json` project, run `dagger migrate`. See [Workspace Setup](/adopting/workspace-setup) to get started.
+
+## Modules
+
+Each installed module is a `[modules.<name>]` table:
+
+```toml
+[modules.eslint]
+source = "github.com/dagger/eslint@v0.3.0"
+
+[modules.eslint.settings]
+packageManager = "yarn"
+```
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `source` | string | The module address — a local path or a Git ref such as `github.com/org/mod@version`. |
+| `entrypoint` | bool | Marks this module as the workspace entrypoint. |
+| `settings` | table | Module settings (see [Settings](#settings)). |
+
+Discover and manage modules with the catalog commands (see [Workspace Setup](/adopting/workspace-setup)): `dagger mod recommend` and `dagger mod search` to find modules, `dagger mod install <ref>` and `dagger mod uninstall <name>` to add or remove them. Dagger may also record additional managed keys (for example, migration-compatibility flags).
+
+### Settings
+
+Module settings live in `[modules.<name>.settings]`. List and set them with `dagger settings`:
+
+```shell
+dagger settings                              # list every module's settings
+dagger settings eslint packageManager yarn   # set one
+```
+
+`dagger settings <module> <key> <value>` is a typed front-end over the config file — it writes `modules.<module>.settings.<key>`. For values it can't express on the command line (such as lists), edit `.dagger/config.toml` directly. `dagger config <key> <value>` is the lower-level key/value interface to the same file.
+
+### Skipping functions for a verb
+
+A module can opt specific functions out of a verb with a `skip` list:
+
+```toml
+[modules.eslint.check]
+skip = ["someCheck"]
+```
+
+The same applies to `[modules.<name>.generate]` and `[modules.<name>.up]`.
+
+## Environments
+
+An [environment](/using-dagger/environments) is a named overlay applied with the global `--env` flag. Overrides are stored under `[env.<name>...]` and layered on top of the base configuration:
+
+```toml
+[env.staging.modules.eslint.settings]
+baseImageAddress = "node:22-alpine"
+```
+
+Write overlays with `dagger settings --env <name> <module> <key> <value>` (or `dagger config --env <name> …`). Reads with `--env` show the effective view — the base configuration with the overlay applied — and the base is what every environment inherits.
+
+## Other keys
+
+| Key | Description |
+| --- | --- |
+| `ignore` | Path patterns excluded when loading the workspace. |
+| `defaults_from_dotenv` | When `true`, module constructor defaults are read from a `.env` file. |
+| `[ports.<name>]` | Maps a host port to a service backend (`backendService`, `backendPort`) for services exposed by `dagger up`. |
+
+## Lockfile
+
+Resolved lookups — module sources, container image references, and Git references — are recorded in `.dagger/lock` alongside the config. Refresh it with `dagger workspace update` or `dagger lock update`. See [Lockfiles](/reference/cli/lockfiles) for lock modes and policies.

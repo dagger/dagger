@@ -29,13 +29,31 @@ Use it when a project uses Biome as the main code quality tool instead of separa
 
 ## How to Use It
 
-Install the module, then run `dagger check`. The check should run Biome against the workspace source.
+Install the module, then run its check:
 
-Run `dagger generate` when you want Dagger to produce the fixed output.
+```bash
+dagger mod install github.com/dagger/biomejs
 
-Workspace settings can control the source directory, config path, Biome version, and arguments.
+dagger check              # run every check in the workspace
+dagger check biomejs:lint # run Biome against the workspace source
+```
 
-Biome is useful when a team wants one tool to cover work that might otherwise be split across ESLint and Prettier.
+`lint` installs dependencies and runs `biome check` over the whole workspace using the project's own `biome.json`. Biome's `check` covers both linting and formatting, which is why this single check replaces a separate ESLint and Prettier pair.
+
+## Settings
+
+List the current settings and their values with `dagger settings biomejs`, then set one with `dagger settings biomejs <key> <value>`. Settings are stored in `.dagger/config.toml` under `[modules.biomejs.settings]`.
+
+- **`baseImageAddress`** (default `node:25-alpine`): the Node base image Biome runs in. Pin it to the project's Node version, for example `node:22-alpine`. Biome installs with npm, so unlike the ESLint and Prettier modules there is no package-manager setting.
+
+```toml
+[modules.biomejs.settings]
+baseImageAddress = "node:22-alpine"
+```
+
+## Fixing issues
+
+Biome also exposes a `fix` function that runs `biome check --write` and returns the repaired source as a changeset (covering `.js`, `.ts`, `.jsx`, `.tsx`). It is a regular function rather than a check, so it does not run during `dagger check`; call it with `dagger function call` (run `dagger function list` to see available functions).
 
 ## Workspace Fit
 

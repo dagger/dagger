@@ -29,11 +29,33 @@ Use it when formatting should be boring, consistent, and enforced before code re
 
 ## How to Use It
 
-Install the module, then run `dagger check`. The check should fail when source files are not formatted.
+Install the module, then run its check:
 
-Run `dagger generate` when you want Dagger to apply Prettier and return the formatted source as a changeset.
+```bash
+dagger mod install github.com/dagger/prettier
 
-Workspace settings can control the source directory, package manager, and Node base image.
+dagger check               # run every check in the workspace
+dagger check prettier:check # fail when source files are not formatted
+```
+
+`check` installs dependencies and runs `prettier --check .` over the whole workspace using the project's own Prettier configuration, failing if any file is not formatted.
+
+## Settings
+
+List the current settings and their values with `dagger settings prettier`, then set one with `dagger settings prettier <key> <value>`. Settings are stored in `.dagger/config.toml` under `[modules.prettier.settings]`.
+
+- **`packageManager`** (default `npm`): the package manager used to install dependencies before checking. Set it to `yarn` or `pnpm` to match the project, so the same lockfile and dependency versions are used.
+- **`baseImageAddress`** (default `node:25-alpine`): the Node base image Prettier runs in. Pin it to the project's Node version, for example `node:22-alpine`.
+
+```toml
+[modules.prettier.settings]
+packageManager = "pnpm"
+baseImageAddress = "node:22-alpine"
+```
+
+## Rewriting files
+
+Prettier also exposes a `write` function that runs `prettier --write .` and returns the reformatted source as a changeset. The changeset is limited to the file types Prettier owns here (`.js`, `.ts`, `.jsx`, `.md`). It is a regular function rather than a check, so it does not run during `dagger check`; call it with `dagger function call` (run `dagger function list` to see available functions).
 
 ## Workspace Fit
 

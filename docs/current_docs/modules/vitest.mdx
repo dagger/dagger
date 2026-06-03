@@ -29,13 +29,39 @@ Use it when the project uses Vitest, especially Vite apps and modern frontend pa
 
 ## How to Use It
 
-Install the module, then run `dagger check`. The check should run the Vitest suite for the selected source directory.
+Install the module, then run its check:
 
-Use `list` when you need to understand what the runner found before it executes.
+```bash
+dagger mod install github.com/dagger/vitest
 
-Workspace settings can control the source directory, package manager, and Node base image.
+dagger check            # run every check in the workspace
+dagger check vitest:test # run the Vitest suite
+```
 
-Vitest is a good check for packages where feedback speed matters. Pair it with ESLint, Prettier, or Biome for code quality checks.
+`test` installs dependencies and runs the Vitest suite over the workspace (excluding `node_modules`, `dist`, and `build`). It automatically registers an OpenTelemetry hook, so individual tests appear as spans in the Dagger TUI and Dagger Cloud without changing the project's Vitest config.
+
+## Settings
+
+List the current settings and their values with `dagger settings vitest`, then set one with `dagger settings vitest <key> <value>`. Settings are stored in `.dagger/config.toml` under `[modules.vitest.settings]`.
+
+- **`packageManager`** (default `npm`): the package manager used to install dependencies before testing. Set it to `yarn` or `pnpm` to match the project; with `pnpm`, the module enables Corepack automatically.
+- **`baseImageAddress`** (default `node:25-alpine`): the Node base image tests run in. Pin it to the project's Node version, for example `node:22-alpine`.
+
+```toml
+[modules.vitest.settings]
+packageManager = "pnpm"
+baseImageAddress = "node:22-alpine"
+```
+
+## Test options
+
+The `vitest:test` check runs with default options. Call the `test` function directly with `dagger function call` to override them:
+
+- **`files`**: limit the run to specific test files.
+- **`build`**: run the project's build script before testing.
+- **`flags`**: extra flags passed through to `vitest`.
+
+Use `list` to print the tests Vitest discovers when test selection is unclear.
 
 ## Workspace Fit
 

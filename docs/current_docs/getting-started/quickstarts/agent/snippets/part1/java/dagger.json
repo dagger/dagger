@@ -1,7 +1,0 @@
-{
-  "name": "coding-agent",
-  "engineVersion": "v0.18.3",
-  "sdk": {
-    "source": "java"
-  }
-}

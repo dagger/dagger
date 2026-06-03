@@ -1,65 +1,86 @@
 ---
 title: "GitHub Actions"
 slug: /adopting/triggers/github-actions
-description: "Learn how to use Dagger with GitHub Actions."
+description: "Learn how to run your Dagger checks in GitHub Actions."
 ---
-
 
 # GitHub Actions
 
-Dagger provides a GitHub Action that can be used in any GitHub Actions workflow to call one or more Dagger Functions on specific events, such as a new commit.
+Dagger provides a GitHub Action that runs `dagger check` in any GitHub Actions workflow, so the same checks you run locally run on every push — without rewriting your pipeline.
+
+:::tip
+For checks with no workflow YAML at all, enable [Cloud Checks](/adopting/triggers) with `dagger ws autocheck on`. The GitHub Action below is the hybrid-mode alternative for when you want to drive Dagger from your existing GitHub Actions setup.
+:::
 
 ## How it works
 
-When running a CI pipeline with Dagger using a standard GitHub Actions runner, the general workflow looks like this:
-
 1. GitHub receives a workflow trigger based on a repository event.
-2. GitHub begins processing the jobs and steps in the workflow.
-3. GitHub finds the "Dagger for GitHub" action and passes control to it.
-4. The "Dagger for GitHub" action calls the Dagger CLI with the specified sub-command, module, function name, and arguments.
-5. The Dagger CLI attempts to find an existing Dagger Engine or spins up a new one inside the GitHub Actions runner.
-6. The Dagger CLI executes the specified sub-command and sends telemetry to Dagger Cloud if the `DAGGER_CLOUD_TOKEN` environment variable is set.
-7. The workflow completes with success or failure. Logs appear in GitHub as usual.
+2. GitHub runs the `dagger/dagger-for-github` action.
+3. The action installs the Dagger CLI and runs `dagger check` against the modules installed in your workspace.
+4. The CLI finds an existing Dagger Engine or starts one in the runner, and sends telemetry to Dagger Cloud if a Cloud token is configured.
+5. The workflow succeeds or fails based on the check results. Logs appear in GitHub as usual.
 
 ## Prerequisites
 
-- A GitHub repository
+- A GitHub repository with a Dagger workspace (`.dagger/config.toml`) — see [Workspace Setup](/adopting/workspace-setup).
 
-## Examples
+## Example
 
-The following example demonstrates how to call a Dagger Function on a standard GitHub runner in a GitHub Actions workflow.
+Run all checks on every push and pull request:
 
-```yaml title=".github/workflows/dagger.yml" file=./snippets/github-hello.yml
+```yaml title=".github/workflows/dagger.yml"
+name: dagger
+on:
+  push:
+  pull_request:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Dagger checks
+        uses: dagger/dagger-for-github@v8.4.0
+        with:
+          check: "**"
+          version: "latest"
 ```
 
-You can also use Dagger shell syntax instead of Dagger call syntax in your Github Actions workflow. This is useful if you want to use the more advanced chaining and subshell capabilities of Dagger shell.
+The `check` input takes the same patterns as the CLI, so you can scope it — for example `check: "go:*"` to run a single module's checks. As a convenience for the common case, the [`dagger/checks`](https://github.com/dagger/checks) action wraps this step.
 
-```yaml title=".github/workflows/dagger.yml" file=./snippets/github-hello-shell.yml
+## Dagger Cloud
+
+To send traces to [Dagger Cloud](/adopting/observability) and offload execution to a managed Dagger Engine, add your Cloud token:
+
+1. In Dagger Cloud, open the settings page (cogwheel icon) → **Tokens** and copy a token (URL pattern: `https://dagger.cloud/{Your Org Name}/settings?tab=Tokens`).
+2. In your GitHub repository, go to **Settings > Secrets and variables > Actions**, click **New repository secret**, name it `DAGGER_CLOUD_TOKEN`, and paste the token.
+3. Pass it to the action with the `cloud-token` input:
+
+```yaml title=".github/workflows/dagger.yml"
+      - name: Run Dagger checks
+        uses: dagger/dagger-for-github@v8.4.0
+        with:
+          check: "**"
+          version: "latest"
+          cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}
 ```
-
-The following is a more complex example demonstrating how to create a GitHub Actions workflow that checks out source code, calls a Dagger Function to test the project, and then calls another Dagger Function to build and publish a container image of the project. This example uses a simple [Go application](https://github.com/kpenfound/greetings-api) and assumes that you have already forked it in your own GitHub repository.
-
-```yaml title=".github/workflows/dagger.yml" file=./snippets/github-test-build.yml
-```
-
-More information is available in the [Dagger for GitHub page](https://github.com/marketplace/actions/dagger-for-github).
 
 ### Dagger Cloud Engines
 
-Instead of spinning up a Dagger Engine inside the GitHub Actions runner, you can offload execution to a managed Dagger Engine provided by Dagger Cloud. This gives you persistent caching and additional compute capacity without provisioning your own infrastructure.
+By default the action starts a Dagger Engine inside the GitHub Actions runner. For a faster, more reliable experience, offload execution to a managed Dagger Engine provided by Dagger Cloud by adding `--cloud` to `dagger-flags`:
 
-To use a Dagger Cloud Engine from a GitHub Actions workflow:
-
-1. In Dagger Cloud, navigate to the settings page using the cogwheel icon in the top navigation bar and open the **Tokens** sub-menu (the same location as the [Telemetry token](/reference/configuration/cloud#connect-your-ci-environment)). Copy the **Compute Token**. You can also use this URL pattern: `https://dagger.cloud/{Your Org Name}/settings?tab=Tokens`.
-
-1. In your GitHub repository, go to **Settings > Secrets and variables > Actions** and click **New repository secret**. Name it `DAGGER_CLOUD_TOKEN` and paste the Compute Token as the value.
-
-1. In your workflow, set `dagger-flags: "--cloud"` on the `dagger/dagger-for-github` step. The Dagger CLI will then connect to a Dagger Engine provided by Dagger Cloud instead of starting one inside the runner.
-
-```yaml title=".github/workflows/dagger.yml" file=./snippets/github-cloud-engine.yml
+```yaml title=".github/workflows/dagger.yml"
+      - name: Run Dagger checks
+        uses: dagger/dagger-for-github@v8.4.0
+        with:
+          check: "**"
+          version: "latest"
+          cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+          dagger-flags: "--cloud"
 ```
 
-### SSH configuration
+Cloud Engines provide a large persistent cache shared across runs and far more compute than a GitHub Actions runner, so checks are typically much faster — and you don't provision or maintain any infrastructure. This requires the `DAGGER_CLOUD_TOKEN` secret configured above.
+
+## SSH configuration
 
 When using SSH keys in GitHub Actions, ensure proper SSH agent setup:
 

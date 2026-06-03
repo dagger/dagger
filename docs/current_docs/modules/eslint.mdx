@@ -29,11 +29,33 @@ Use it when the repo already has ESLint config and you want linting to run as a 
 
 ## How to Use It
 
-Install the module, then run `dagger check`. The check should run ESLint against the selected source directory.
+Install the module, then run its check:
 
-Run `dagger generate` when you want Dagger to produce ESLint fixes as a changeset or repaired directory.
+```bash
+dagger mod install github.com/dagger/eslint
 
-Workspace settings can control the source directory, package manager, and Node base image.
+dagger check             # run every check in the workspace
+dagger check eslint:lint # run ESLint against the workspace source
+```
+
+`lint` installs dependencies and runs `eslint .` over the whole workspace using the project's own ESLint configuration, so the result matches what developers see locally.
+
+## Settings
+
+List the current settings and their values with `dagger settings eslint`, then set one with `dagger settings eslint <key> <value>`. Settings are stored in `.dagger/config.toml` under `[modules.eslint.settings]`.
+
+- **`packageManager`** (default `npm`): the package manager used to install dependencies before linting. Set it to `yarn` or `pnpm` to match the project, so the same lockfile and dependency versions are used.
+- **`baseImageAddress`** (default `node:25-alpine`): the Node base image ESLint runs in. Pin it to the project's Node version, for example `node:22-alpine`.
+
+```toml
+[modules.eslint.settings]
+packageManager = "pnpm"
+baseImageAddress = "node:22-alpine"
+```
+
+## Fixing issues
+
+ESLint also exposes a `fix` function that runs `eslint . --fix` and returns the repaired source as a changeset (excluding `node_modules`). It is a regular function rather than a check, so it does not run during `dagger check`; call it with `dagger function call` (run `dagger function list` to see available functions).
 
 ## Workspace Fit
 

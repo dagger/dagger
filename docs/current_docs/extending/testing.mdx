@@ -7,7 +7,7 @@ description: "Patterns for testing Dagger modules."
 # Testing Modules
 
 :::caution Legacy draft
-This page is legacy SDK-specific material. Platform-level quality guidance now belongs in [Module Quality and Readiness](/extending/module-quality), and SDK-specific test code belongs in the standalone SDK docs structure at [Standalone SDK Docs](/extending/sdks).
+This page is legacy SDK-specific material. Platform-level quality guidance now belongs in [Module Quality and Readiness](/extending), and SDK-specific test code belongs in the standalone SDK docs structure at [Standalone SDK Docs](/extending/sdks).
 :::
 
 Like any other piece of software, Dagger Functions and modules should be thoroughly tested. This page documents proven patterns for effectively testing reusable modules.
@@ -363,7 +363,7 @@ export class Tests {
 </TabItem>
 </Tabs>
 
-In some situations, you may need to provide specific values to your test modules, such as when authenticating against an external service. In these cases, you can rely on [module constructors](./editions/dang#configuration-with-defaults) to inject any required inputs.
+In some situations, you may need to provide specific values to your test modules, such as when authenticating against an external service. In these cases, you can rely on [module constructors](./sdks/dang#arguments-and-return-values) to inject any required inputs.
 
 ## "All" function pattern
 

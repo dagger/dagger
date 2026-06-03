@@ -62,7 +62,23 @@ This creates a `.dagger/config.toml` configuration file and adds three modules �
 dagger check
 ```
 
-All three modules run their checks concurrently. You should see each one pass.
+All three modules run their checks concurrently. The linter and tests pass, but `prettier:check` fails — the example project has some unformatted files, so `dagger check` exits non-zero.
+
+## Fix the formatting
+
+Let Prettier rewrite the files for you:
+
+```shell
+dagger call prettier write
+```
+
+This returns a [changeset](/using-dagger/changesets) — the reformatted files — and applies it to your working tree. Run the checks again:
+
+```shell
+dagger check
+```
+
+This time every check passes.
 
 ## Commit and push
 

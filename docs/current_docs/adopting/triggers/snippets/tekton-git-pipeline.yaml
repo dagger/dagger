@@ -4,7 +4,7 @@ metadata:
   name: dagger-pipeline
 spec:
   description: |
-    This pipeline clones a Git repository, then runs the Dagger Function.
+    This pipeline clones a Git repository, then runs the Dagger checks.
   params:
   - name: repo-url
     type: string

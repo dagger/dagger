@@ -15,8 +15,8 @@ steps:
   displayName: 'Checkout Source Branch'
 - script: curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
   displayName: 'Install Dagger CLI'
-- script: dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --greeting="bonjour" --name="monde"
-  displayName: 'Call Dagger Function'
+- script: dagger check
+  displayName: 'Run Dagger checks'
   env:
     # assumes the Dagger Cloud token is
     # in a secret named DAGGER_CLOUD_TOKEN
