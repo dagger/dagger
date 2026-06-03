@@ -116,14 +116,14 @@ func (sdk *dangSDK) ModuleTypes(
 		return inst, err
 	}
 
-	runner := dangSourceRunner(func(ctx context.Context, modSrcDir string) (dang.EvalEnv, error) {
+	runner := dangSourceRunner(func(ctx context.Context, modSrcDir string) (dang.ValueScope, error) {
 		return dang.RunDir(ctx, modSrcDir, false)
 	})
 	if src.Self().SDK.ExperimentalFeatureEnabled(core.ModuleSourceExperimentalFeatureSelfCalls) {
 		runner = runDangDirForModuleTypes
 	}
 
-	_, err = evalDangSource(ctx, query, src, schemaJSONFile, nestedClientMetadata, clientMetadata.ClientID, true, nil, scopedMod, dagql.ObjectResult[*core.Env]{}, runner, func(ctx context.Context, env dang.EvalEnv) ([]byte, error) {
+	_, err = evalDangSource(ctx, query, src, schemaJSONFile, nestedClientMetadata, clientMetadata.ClientID, true, nil, scopedMod, dagql.ObjectResult[*core.Env]{}, runner, func(ctx context.Context, env dang.ValueScope) ([]byte, error) {
 		inst, err = initDangModule(ctx, dag, env)
 		if err != nil {
 			return nil, fmt.Errorf("init module: %w", err)
