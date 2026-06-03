@@ -15,12 +15,28 @@ on:
       - sdk
       # ...or when we are
       - .github/workflows/publish.yml
+      - .env.gha
+      - toolchains/release/**
 
 permissions:
   id-token: write
   contents: read
 
 jobs:
+  mock-publish:
+    if: ${{ github.repository == 'dagger/dagger' && github.event_name == 'pull_request' }}
+    runs-on:
+      - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Mock Publish"
+        uses: ./.github/actions/call
+        with:
+          function: release publish-with-mock-endpoints
+        env:
+          GORELEASER_PRO_LICENSE_KEY: ${{ secrets.GORELEASER_PRO_LICENSE_KEY }}
+
   publish:
     if: ${{ github.repository == 'dagger/dagger' && github.event_name == 'push' }}
     runs-on: ubuntu-latest

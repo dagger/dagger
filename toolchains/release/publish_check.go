@@ -55,7 +55,6 @@ type publishCheckEnv struct {
 
 // Exercise the release publish path against local mock endpoints.
 //
-// +check
 func (r *Release) PublishWithMockEndpoints(
 	ctx context.Context,
 
@@ -66,7 +65,6 @@ func (r *Release) PublishWithMockEndpoints(
 
 	// GoReleaser Pro key. This unlocks the real GoReleaser release config but
 	// does not grant publish credentials to any external service.
-	// +optional
 	goreleaserKey *dagger.Secret,
 ) error {
 	env, err := newPublishCheckEnv(ctx, source.WithoutDirectory(".git"), goreleaserKey)
