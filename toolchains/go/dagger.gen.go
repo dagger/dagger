@@ -669,7 +669,14 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg limit", err))
 				}
 			}
-			return New(source, version, moduleCache, buildCache, base, ldflags, tags, values, cgo, race, experiment, extraPackages, limit), nil
+			var repo *dagger.GitRepository
+			if inputArgs["repo"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["repo"]), &repo)
+				if err != nil {
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg repo", err))
+				}
+			}
+			return New(ctx, source, version, moduleCache, buildCache, base, ldflags, tags, values, cgo, race, experiment, extraPackages, limit, repo), nil
 		default:
 			return nil, fmt.Errorf("unknown function %s", fnName)
 		}
