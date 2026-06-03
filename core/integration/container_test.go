@@ -5248,6 +5248,21 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "phonetic data", output)
 	})
+
+	t.Run("env variable is expanded in Exists", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithEnvVariable("foo", "bar").
+			WithNewFile("/bar.txt", "contents")
+
+		exists, err := ctr.Exists(ctx, "/${foo}.txt", dagger.ContainerExistsOpts{Expand: true})
+		require.NoError(t, err)
+		require.True(t, exists)
+
+		notExists, err := ctr.Exists(ctx, "/${foo}-missing.txt", dagger.ContainerExistsOpts{Expand: true})
+		require.NoError(t, err)
+		require.False(t, notExists)
+	})
 }
 
 func (ContainerSuite) TestExecInit(ctx context.Context, t *testctx.T) {

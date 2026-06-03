@@ -358,6 +358,11 @@ export type ContainerExistsOpts = {
    * If specified, do not follow symlinks.
    */
   doNotFollowSymlinks?: boolean
+
+  /**
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   */
+  expand?: boolean
 }
 
 export type ContainerExportOpts = {
@@ -4265,6 +4270,7 @@ export class Container extends BaseClient {
    * @param path Path to check (e.g., "/file.txt").
    * @param opts.expectedType If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
    * @param opts.doNotFollowSymlinks If specified, do not follow symlinks.
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   exists = async (
     path: string,

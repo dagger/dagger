@@ -1543,6 +1543,9 @@ pub struct ContainerExistsOpts {
     /// If specified, do not follow symlinks.
     #[builder(setter(into, strip_option), default)]
     pub do_not_follow_symlinks: Option<bool>,
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
     /// If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
     #[builder(setter(into, strip_option), default)]
     pub expected_type: Option<ExistsType>,
@@ -2168,6 +2171,9 @@ impl Container {
         }
         if let Some(do_not_follow_symlinks) = opts.do_not_follow_symlinks {
             query = query.arg("doNotFollowSymlinks", do_not_follow_symlinks);
+        }
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
         }
         query.execute(self.graphql_client.clone()).await
     }

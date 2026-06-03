@@ -2073,6 +2073,7 @@ class Container(Type):
         *,
         expected_type: ExistsType | None = None,
         do_not_follow_symlinks: bool | None = False,
+        expand: bool | None = False,
     ) -> bool:
         """check if a file or directory exists
 
@@ -2085,6 +2086,10 @@ class Container(Type):
             "DIRECTORY_TYPE", or "SYMLINK_TYPE").
         do_not_follow_symlinks:
             If specified, do not follow symlinks.
+        expand:
+            Replace "${VAR}" or "$VAR" in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo").
 
         Returns
         -------
@@ -2102,6 +2107,7 @@ class Container(Type):
             Arg("path", path),
             Arg("expectedType", expected_type, None),
             Arg("doNotFollowSymlinks", do_not_follow_symlinks, False),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("exists", _args)
         return await _ctx.execute(bool)
