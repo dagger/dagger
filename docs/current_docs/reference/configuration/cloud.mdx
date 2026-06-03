@@ -66,13 +66,13 @@ The app requires the following permissions:
 
 ## Checks
 
-Dagger Cloud Checks is a fully managed CI platform with integrated compute and caching. Checks run on Dagger engines fully managed by Dagger — there are no self-hosted runners or infrastructure to maintain. When a commit is pushed, Dagger Cloud detects the event, loads your module, discovers your [check functions](/core-concepts/checks), runs them on managed infrastructure, and reports results back to GitHub as commit statuses.
+Dagger Cloud Checks is a fully managed CI platform with integrated compute and caching. Checks run on Dagger engines fully managed by Dagger — there are no self-hosted runners or infrastructure to maintain. When a commit is pushed, Dagger Cloud detects the event, loads your module, discovers your [check functions](../../introduction/core-concepts/checks.mdx), runs them on managed infrastructure, and reports results back to GitHub as commit statuses.
 
 ### Prerequisites
 
 - A Dagger Cloud team account
 - A GitHub repository with a Dagger module (`dagger.json` at the repo root)
-- The module must define at least one [check function](/core-concepts/checks)
+- The module must define at least one [check function](../../introduction/core-concepts/checks.mdx)
 - The [Dagger Cloud GitHub App](#install-the-dagger-cloud-github-app) must be installed on the repository's GitHub organization
 
 ### How checks work
@@ -91,7 +91,7 @@ You can view check results on the **Checks** page in Dagger Cloud.
 If no checks appear, verify that:
 
 - The repository has a `dagger.json` at its root
-- The module defines at least one [check function](/core-concepts/checks)
+- The module defines at least one [check function](../../introduction/core-concepts/checks.mdx)
 - The GitHub App is installed on the repository's organization
 - A new commit has been pushed (Dagger Cloud only runs checks on new events)
 
@@ -103,7 +103,7 @@ If your checks need access to secrets (API keys, cloud credentials, etc.), you c
 
 1. Navigate to a module's settings (click the settings icon next to the module name on the Checks page).
 2. Add environment variables that should be available to your checks.
-3. These are injected as a `.env` file in the check's working directory. Read more at [Local Defaults (.env)](/features/local-defaults) about how to configure default argument values and secrets with environment variables.
+3. These are injected as a `.env` file in the check's working directory. Read more at [Local Defaults (.env)](../../introduction/features/local-defaults.mdx) about how to configure default argument values and secrets with environment variables.
 
 #### Secret providers
 
