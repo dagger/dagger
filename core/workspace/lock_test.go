@@ -41,7 +41,7 @@ func TestModuleResolveSetGet(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, "0123456789abcdef0123456789abcdef01234567", result.Value)
-	require.Equal(t, PolicyFloat, result.Policy)
+	require.Equal(t, PolicyPin, result.Policy)
 }
 
 func TestLookupSetValidation(t *testing.T) {

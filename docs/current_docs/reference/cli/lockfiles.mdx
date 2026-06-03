@@ -120,5 +120,6 @@ These operations currently record and resolve lock entries:
 | `git.branch` | `[remoteURL, branchName]` | `float` |
 | `git.tag` | `[remoteURL, tagName]` | `pin` |
 | `git.ref` | `[remoteURL, refName]` | `pin` for tags, `float` otherwise |
+| `modules.resolve` | `[moduleSource]` | `pin` |
 
 `git.commit` is already pinned by its input and does not create lock entries.

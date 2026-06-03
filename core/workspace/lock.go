@@ -116,11 +116,12 @@ func (l *Lock) GetModuleResolve(source string) (LookupResult, bool, error) {
 	return l.GetLookup("", lockModulesResolveOperation, moduleResolveInputs(source))
 }
 
-// SetModuleResolve sets the lock result for a module source lookup.
+// SetModuleResolve sets the pinned lock result for a module source lookup.
 func (l *Lock) SetModuleResolve(source string, result LookupResult) error {
 	if source == "" {
 		return fmt.Errorf("module source is required")
 	}
+	result.Policy = PolicyPin
 	return l.SetLookup("", lockModulesResolveOperation, moduleResolveInputs(source), result)
 }
 

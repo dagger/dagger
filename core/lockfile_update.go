@@ -105,7 +105,7 @@ func updateModuleResolveLockEntry(ctx context.Context, query *Query, entry works
 
 	return workspace.LookupResult{
 		Value:  commit,
-		Policy: entry.Result.Policy,
+		Policy: workspace.PolicyPin,
 	}, nil
 }
 
