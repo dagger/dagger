@@ -127,10 +127,10 @@ func (r *Release) Publish( //nolint:gocyclo
 	pypiURL string, // +optional
 	npmToken *dagger.Secret, // +optional
 	npmRegistryURL string, // +optional
-	hexAPIKey *dagger.Secret, // +optional
+	hexApiKey *dagger.Secret, // +optional
+	hexApiUrl string, // +optional
 	cargoRegistryToken *dagger.Secret, // +optional
-	skipElixir bool, // +optional
-	skipRust bool, // +optional
+	cargoRegistryIndex string, // +optional
 	goSdkDestRemote string, // +optional
 	phpSdkDestRemote string, // +optional
 
@@ -325,7 +325,8 @@ func (r *Release) Publish( //nolint:gocyclo
 			link: "https://hex.pm/packages/dagger/" + strings.TrimPrefix(version, "v"),
 			release: func(ctx context.Context) error {
 				return dag.ElixirSDKDev().Publish(ctx, tag, dagger.ElixirSDKDevPublishOpts{
-					HexAPIKey: hexAPIKey,
+					HexAPIKey: hexApiKey,
+					HexAPIURL: hexApiUrl,
 				})
 			},
 			dryRun: func(ctx context.Context) error {
@@ -338,7 +339,9 @@ func (r *Release) Publish( //nolint:gocyclo
 			tag:  "sdk/rust/",
 			link: "https://crates.io/crates/dagger-sdk/" + strings.TrimPrefix(version, "v"),
 			release: func(ctx context.Context) error {
-				return dag.RustSDKDev().Release(ctx, tag, cargoRegistryToken)
+				return dag.RustSDKDev().Release(ctx, tag, cargoRegistryToken, dagger.RustSDKDevReleaseOpts{
+					CargoRegistryIndex: cargoRegistryIndex,
+				})
 			},
 			dryRun: func(ctx context.Context) error {
 				return dag.RustSDKDev().ReleaseDryRun(ctx)
@@ -382,12 +385,6 @@ func (r *Release) Publish( //nolint:gocyclo
 	artifacts := make([]*ReleaseReportArtifact, len(components))
 	var eg errgroup.Group
 	for i, component := range components {
-		if skipElixir && component.path == "sdk/elixir/" {
-			continue
-		}
-		if skipRust && component.path == "sdk/rust/" {
-			continue
-		}
 		if component.dev || semver.IsValid(version) {
 			// FIXME: use parallel
 			eg.Go(func() error {

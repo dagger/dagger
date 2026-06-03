@@ -119,6 +119,10 @@ type ElixirSdkDev {
     """
     hexApiKey: Secret,
     """
+    Hex.pm API URL to publish to
+    """
+    hexApiUrl: String! = "",
+    """
     Execute a dry-run release, with no side effects
     """
     dryRun: Boolean! = false,
@@ -144,6 +148,9 @@ type ElixirSdkDev {
       ctr = ctr.withEnvVariable("HEX_API_KEY", "")
     } else if (hexApiKey != null) {
       ctr = ctr.withSecretVariable("HEX_API_KEY", hexApiKey)
+    }
+    if (hexApiUrl != "") {
+      ctr = ctr.withEnvVariable("HEX_API_URL", hexApiUrl)
     }
     ctr.withExec(mix).sync
     null

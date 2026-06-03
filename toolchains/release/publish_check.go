@@ -121,6 +121,8 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 		{"- [x] 🐹 Go SDK", "release publish should publish the Go SDK"},
 		{"- [x] 🐍 Python SDK", "release publish should publish the Python SDK"},
 		{"- [x] ⬢ TypeScript SDK", "release publish should publish the TypeScript SDK"},
+		{"- [x] 🧪 Elixir SDK", "release publish should publish the Elixir SDK"},
+		{"- [x] ⚙️ Rust SDK", "release publish should publish the Rust SDK"},
 		{"- [x] 🐘 PHP SDK", "release publish should publish the PHP SDK"},
 		{"- [x] ☸️ Helm Chart", "release publish should publish the Helm chart"},
 		{".goreleaser.yml", "tagged release publish should use the stable GoReleaser config"},
@@ -353,6 +355,10 @@ func (env *publishCheckEnv) runReleasePublish(ctx context.Context, engine *dagge
   --pypi-url "http://mock:8080/pypi/legacy/" \
   --npm-token=env:FAKE_NPM_TOKEN \
   --npm-registry-url "http://verdaccio:4873" \
+  --hex-api-key=env:FAKE_HEX_API_KEY \
+  --hex-api-url "http://mock:8080/hex/api" \
+  --cargo-registry-token=env:FAKE_CARGO_REGISTRY_TOKEN \
+  --cargo-registry-index "sparse+http://mock:8080/cargo/" \
   --aws-access-key-id=env:AWS_ACCESS_KEY_ID \
   --aws-secret-access-key=env:AWS_SECRET_ACCESS_KEY \
   --aws-region "us-east-1" \
@@ -363,8 +369,6 @@ func (env *publishCheckEnv) runReleasePublish(ctx context.Context, engine *dagge
   --go-sdk-dest-remote "$GO_SDK_DEST_REMOTE" \
   --php-sdk-dest-remote "$PHP_SDK_DEST_REMOTE" \
   --helm-registry "registry:5000/dagger" \
-  --skip-rust=true \
-  --skip-elixir=true \
   markdown > /tmp/publish.log 2>&1
 status=$?
 cat /tmp/publish.log
@@ -378,6 +382,8 @@ exit "$status"
 		WithSecretVariable("FAKE_NETLIFY_TOKEN", dag.SetSecret("fake-netlify-token-"+randomID(), "fake-netlify-token")).
 		WithSecretVariable("FAKE_PYPI_TOKEN", dag.SetSecret("fake-pypi-token-"+randomID(), "fake-pypi-token")).
 		WithSecretVariable("FAKE_NPM_TOKEN", dag.SetSecret("fake-npm-token-"+randomID(), "fake-npm-token")).
+		WithSecretVariable("FAKE_HEX_API_KEY", dag.SetSecret("fake-hex-api-key-"+randomID(), "fake-hex-api-key")).
+		WithSecretVariable("FAKE_CARGO_REGISTRY_TOKEN", dag.SetSecret("fake-cargo-token-"+randomID(), "fake-cargo-token")).
 		WithSecretVariable("AWS_ACCESS_KEY_ID", dag.SetSecret("fake-aws-access-key-"+randomID(), "test")).
 		WithSecretVariable("AWS_SECRET_ACCESS_KEY", dag.SetSecret("fake-aws-secret-key-"+randomID(), "test")).
 		WithEnvVariable("MODULE_REF", env.moduleRef).
@@ -509,6 +515,10 @@ func (env *publishCheckEnv) assertMockEvents(ctx context.Context) error {
 	for _, needle := range []string{
 		`"kind": "netlify_restore"`,
 		`"kind": "pypi_publish"`,
+		`"kind": "hex_publish"`,
+		`"kind": "hex_docs_publish"`,
+		`"kind": "cargo_publish"`,
+		`"crate_version": "` + env.releaseVersion + `"`,
 		`"kind": "github_release_create"`,
 		`"kind": "github_release_asset_upload"`,
 		`"kind": "github_content_write"`,
@@ -792,24 +802,108 @@ log: { type: stdout, format: pretty, level: http }
 `
 
 const releaseMockServerScript = `import http.server
+import hashlib
 import json
 import os
 import ssl
+import struct
 import threading
 import time
 
 records_path = "/records/events.jsonl"
 os.makedirs(os.path.dirname(records_path), exist_ok=True)
+published_crates = {}
+state_lock = threading.Lock()
 
-def record(kind, handler, body):
+def record(kind, handler, body, extra=None):
+    event = {
+        "time": time.time(),
+        "kind": kind,
+        "method": handler.command,
+        "path": handler.path,
+        "body_len": len(body),
+    }
+    if extra:
+        event.update(extra)
     with open(records_path, "a", encoding="utf-8") as f:
-        f.write(json.dumps({
-            "time": time.time(),
-            "kind": kind,
-            "method": handler.command,
-            "path": handler.path,
-            "body_len": len(body),
-        }, sort_keys=True) + "\n")
+        f.write(json.dumps(event, sort_keys=True) + "\n")
+
+def cargo_index_path(crate_name):
+    if len(crate_name) == 1:
+        return "1/" + crate_name
+    if len(crate_name) == 2:
+        return "2/" + crate_name
+    if len(crate_name) == 3:
+        return "3/" + crate_name[:1] + "/" + crate_name
+    return crate_name[:2] + "/" + crate_name[2:4] + "/" + crate_name
+
+def cargo_index_entry(crate_name, meta, checksum):
+    deps = meta.get("deps") or []
+    return json.dumps({
+        "name": crate_name,
+        "vers": meta.get("vers"),
+        "deps": deps,
+        "cksum": checksum,
+        "features": meta.get("features") or {},
+        "features2": meta.get("features2") or {},
+        "yanked": False,
+        "links": meta.get("links"),
+        "v": 2,
+    }, sort_keys=True).encode("utf-8") + b"\n"
+
+def decode_cargo_publish(body):
+    if len(body) < 8:
+        return {}, b""
+    meta_len = struct.unpack("<I", body[:4])[0]
+    meta_start = 4
+    meta_end = meta_start + meta_len
+    meta = json.loads(body[meta_start:meta_end].decode("utf-8"))
+    crate_len = struct.unpack("<I", body[meta_end:meta_end + 4])[0]
+    crate_start = meta_end + 4
+    crate_end = crate_start + crate_len
+    return meta, body[crate_start:crate_end]
+
+def record_cargo_publish(handler, body):
+    meta, crate = decode_cargo_publish(body)
+    crate_name = meta.get("name", "")
+    crate_version = meta.get("vers", "")
+    checksum = hashlib.sha256(crate).hexdigest()
+    with state_lock:
+        published_crates[crate_name] = {
+            "name": crate_name,
+            "meta": meta,
+            "checksum": checksum,
+        }
+    record("cargo_publish", handler, body, {"crate_name": crate_name, "crate_version": crate_version})
+    handler.send_json(200, {"warnings": {"invalid_categories": [], "invalid_badges": [], "other": []}})
+
+def etf(value):
+    if isinstance(value, dict):
+        out = b"t" + struct.pack(">I", len(value))
+        for key, item in value.items():
+            out += etf(key) + etf(item)
+        return out
+    if isinstance(value, list):
+        if not value:
+            return b"j"
+        out = b"l" + struct.pack(">I", len(value))
+        for item in value:
+            out += etf(item)
+        return out + b"j"
+    if isinstance(value, bool):
+        atom = b"true" if value else b"false"
+        return b"w" + bytes([len(atom)]) + atom
+    if isinstance(value, int):
+        if 0 <= value <= 255:
+            return b"a" + bytes([value])
+        return b"b" + struct.pack(">i", value)
+    if value is None:
+        return b"w\x03nil"
+    data = str(value).encode("utf-8")
+    return b"m" + struct.pack(">I", len(data)) + data
+
+def etf_body(value):
+    return b"\x83" + etf(value)
 
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -821,15 +915,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
         length = int(self.headers.get("content-length", "0") or "0")
         return self.rfile.read(length) if length else b""
 
-    def send_bytes(self, status, body, content_type="application/json"):
+    def send_bytes(self, status, body, content_type="application/json", headers=None):
         self.send_response(status)
         self.send_header("content-type", content_type)
         self.send_header("content-length", str(len(body)))
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
 
     def send_json(self, status, data):
         self.send_bytes(status, json.dumps(data).encode("utf-8"))
+
+    def send_etf(self, status, data, headers=None):
+        self.send_bytes(status, etf_body(data), "application/vnd.hex+erlang", headers)
 
     def do_HEAD(self):
         record("head", self, b"")
@@ -839,6 +938,31 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path.startswith("/netlify/api/v1/sites/docs.dagger.io/deploys"):
             record("netlify_list_deploys", self, b"")
             self.send_json(200, [{"id": "deploy-1"}])
+            return
+        if self.path == "/hex/api/users/me":
+            record("hex_user_me", self, b"")
+            self.send_etf(200, {
+                "username": "mock",
+                "organizations": [],
+            })
+            return
+        if self.path == "/cargo/config.json":
+            record("cargo_config", self, b"")
+            self.send_json(200, {
+                "dl": "http://mock:8080/cargo/api/v1/crates",
+                "api": "http://mock:8080/cargo",
+            })
+            return
+        if self.path.startswith("/cargo/"):
+            crate_path = self.path.removeprefix("/cargo/")
+            with state_lock:
+                match = next((entry for entry in published_crates.values() if cargo_index_path(entry["name"]) == crate_path), None)
+            if match is None:
+                record("cargo_index_missing", self, b"")
+                self.send_bytes(404, b"", "text/plain")
+                return
+            record("cargo_index", self, b"", {"crate_name": match["name"], "crate_version": match["meta"].get("vers", "")})
+            self.send_bytes(200, cargo_index_entry(match["name"], match["meta"], match["checksum"]), "text/plain")
             return
         if self.path == "/api/v3/rate_limit":
             record("github_rate_limit", self, b"")
@@ -888,6 +1012,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
             record("pypi_publish", self, body)
             self.send_bytes(200, b"OK", "text/plain")
             return
+        if self.path.startswith("/hex/api/packages/dagger/releases/") and self.path.endswith("/docs"):
+            record("hex_docs_publish", self, body)
+            self.send_etf(201, {}, {"location": "http://mock:8080/hexdocs/dagger/" + self.path.split("/releases/", 1)[-1].split("/docs", 1)[0]})
+            return
+        if self.path.startswith("/hex/api/packages/dagger/releases"):
+            record("hex_publish", self, body)
+            version = "` + publishCheckReleaseTag + `".lstrip("v")
+            self.send_etf(201, {
+                "html_url": "http://mock:8080/hex/packages/dagger/" + version,
+                "url": "http://mock:8080/hex/api/packages/dagger/releases/" + version,
+                "version": version,
+            })
+            return
+        if self.path == "/cargo/api/v1/crates/new":
+            record_cargo_publish(self, body)
+            return
         if self.path == "/api/v3/repos/dagger/dagger/releases":
             record("github_release_create", self, body)
             payload = json.loads(body.decode("utf-8") or "{}")
@@ -921,6 +1061,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_PUT(self):
         body = self.read_body()
+        if self.path == "/cargo/api/v1/crates/new":
+            record_cargo_publish(self, body)
+            return
         if self.path.startswith("/api/v3/repos/") and "/contents/" in self.path:
             record("github_content_write", self, body)
             self.send_json(201, {
