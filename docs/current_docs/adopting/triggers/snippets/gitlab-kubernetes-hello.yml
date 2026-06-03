@@ -8,7 +8,7 @@
   before_script:
     - apk add curl
     - curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=/tmp sh
-hello:
+check:
   extends: [.dagger]
   script:
-    - dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --greeting="bonjour" --name="monde"
+    - dagger check

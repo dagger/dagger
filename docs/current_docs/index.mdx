@@ -24,8 +24,8 @@ No code required. Install modules, run commands, get results.
 ### Lint and format across your stack
 
 ```shell
-dagger install github.com/dagger/eslint
-dagger install github.com/dagger/prettier
+dagger mod install github.com/dagger/eslint
+dagger mod install github.com/dagger/prettier
 dagger check
 ```
 
@@ -34,26 +34,17 @@ dagger check
 ### Run e2e tests with real services
 
 ```shell
-dagger install github.com/dagger/playwright
+dagger mod install github.com/dagger/playwright
 dagger check
 ```
 
 {/* TODO: TUI gif */}
 
-### Generate code and docs
+### Run code generators
 
 ```shell
-dagger install github.com/dagger/openapi
+dagger mod install github.com/dagger/go
 dagger generate
-```
-
-{/* TODO: TUI gif */}
-
-### Start dev services
-
-```shell
-dagger install github.com/dagger/postgres
-dagger up
 ```
 
 {/* TODO: TUI gif */}

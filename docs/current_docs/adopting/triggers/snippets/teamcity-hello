@@ -23,7 +23,7 @@ object Greeter : BuildType({
 
             // recipe inputs
             param("env.input_version", "0.19.2")
-            param("env.input_command", """dagger call -m github.com/shykes/hello hello --greeting "bonjour"""")
+            param("env.input_command", "dagger check")
         }
     }
 })

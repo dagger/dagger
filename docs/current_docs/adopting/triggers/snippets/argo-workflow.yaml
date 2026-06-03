@@ -45,8 +45,8 @@ spec:
       container:
         image: alpine:latest
         command: ["sh", "-c"]
-        # modify to use different function(s) as needed
-        args: ["dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call test --source=."]
+        # runs the checks from the modules installed in your workspace
+        args: ["dagger check"]
         workingDir: /work
         env:
         - name: "_EXPERIMENTAL_DAGGER_RUNNER_HOST"

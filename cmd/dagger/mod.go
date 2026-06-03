@@ -28,7 +28,7 @@ var modInstallCmd = &cobra.Command{
 	Use:     "install [options] <module>",
 	Short:   "Install a module into the workspace",
 	Long:    "Install a module into the current workspace. Alias for `dagger workspace install`.",
-	Example: "dagger module install github.com/shykes/daggerverse/hello@v0.3.0",
+	Example: "dagger mod install github.com/shykes/daggerverse/hello@v0.3.0",
 	Args:    cobra.ExactArgs(1),
 	RunE:    runWorkspaceInstall,
 }
@@ -37,7 +37,7 @@ var modUninstallCmd = &cobra.Command{
 	Use:     "uninstall [options] <module>",
 	Short:   "Uninstall a module from the workspace",
 	Long:    "Uninstall a module from the current workspace. Alias for `dagger workspace uninstall`.",
-	Example: "dagger module uninstall hello",
+	Example: "dagger mod uninstall hello",
 	Args:    cobra.ExactArgs(1),
 	RunE:    runWorkspaceUninstall,
 }
@@ -149,10 +149,16 @@ type registryModule struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Repo        string `json:"repo"`
-	// Recommend is a doublestar glob (e.g. "**/go.mod") used by
-	// `dagger module recommend` to decide whether to suggest this module
-	// based on files present in the workspace. Empty means never recommended.
-	Recommend string `json:"recommend,omitempty"`
+	// Recommend lists the globs (e.g. "**/go.mod") used by
+	// `dagger mod recommend` to decide whether to suggest this module based on
+	// files present in the workspace. The module is recommended when any
+	// pattern matches at least one file. An empty list means never recommended.
+	//
+	// Patterns are matched at runtime by Directory.Glob, which uses
+	// util/patternmatcher (.dockerignore semantics). That matcher does NOT
+	// support brace expansion ("{a,b}") — express alternatives as separate
+	// list entries instead.
+	Recommend []string `json:"recommend,omitempty"`
 }
 
 // embeddedModuleRegistry is the registry baked in at build time.
@@ -208,7 +214,7 @@ func printModuleSearchResults(out io.Writer, mods []registryModule) error {
 		return err
 	}
 
-	_, err := fmt.Fprintln(out, "\nRun 'dagger install <repo>' to install a module.")
+	_, err := fmt.Fprintln(out, "\nRun 'dagger mod install <REPO>' to install a module.")
 	return err
 }
 
@@ -257,20 +263,31 @@ func runRecommend(ctx context.Context, out io.Writer, dag *dagger.Client) error 
 
 	recs := make([]recommendation, 0, len(mods))
 	for _, m := range mods {
-		if m.Recommend == "" || installed[m.Name] {
+		if len(m.Recommend) == 0 || installed[m.Name] {
 			continue
 		}
-		matches, err := dir.Glob(ctx, m.Recommend)
-		if err != nil {
-			// A bad pattern in the registry shouldn't take down the whole
-			// command; just skip the entry.
+		// Recommend the module if any of its patterns match; report the
+		// lexicographically smallest matched path so output is stable.
+		var match string
+		for _, pattern := range m.Recommend {
+			matches, err := dir.Glob(ctx, pattern)
+			if err != nil {
+				// A bad pattern in the registry shouldn't take down the whole
+				// command; just skip the pattern.
+				continue
+			}
+			if len(matches) == 0 {
+				continue
+			}
+			sort.Strings(matches)
+			if match == "" || matches[0] < match {
+				match = matches[0]
+			}
+		}
+		if match == "" {
 			continue
 		}
-		if len(matches) == 0 {
-			continue
-		}
-		sort.Strings(matches)
-		recs = append(recs, recommendation{Module: m, Match: matches[0]})
+		recs = append(recs, recommendation{Module: m, Match: match})
 	}
 	sort.Slice(recs, func(i, j int) bool { return recs[i].Module.Name < recs[j].Module.Name })
 

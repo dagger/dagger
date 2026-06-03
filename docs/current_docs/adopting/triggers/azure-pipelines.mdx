@@ -6,7 +6,11 @@ description: "Learn how to use Dagger with Azure Pipelines."
 
 # Azure Pipelines
 
-Dagger provides a programmable container engine that allows you to replace your YAML Azure Pipelines definitions with Dagger Functions written in a regular programming language. This allows you to execute your pipeline the same way locally and in CI, with the additional benefit of intelligent caching.
+Azure Pipelines can run `dagger check` in any pipeline, so the same checks you run locally run on every push — without rewriting your pipeline.
+
+:::tip
+For checks with no pipeline YAML at all, enable [Cloud Checks](/adopting/triggers) with `dagger ws autocheck on`. The Azure Pipeline below is the hybrid-mode alternative for when you want to drive Dagger from your existing Azure Pipelines setup.
+:::
 
 ## How it works
 
@@ -15,29 +19,35 @@ When running a CI pipeline with Dagger using Azure Pipelines, the general workfl
 1. Azure Pipelines receives a trigger based on a repository event.
 1. Azure Pipelines begins processing the steps in the `azure-pipelines.yml` file.
 1. Azure Pipelines downloads the Dagger CLI.
-1. Azure Pipelines executes one (or more) Dagger CLI commands, such as `dagger call ...`.
+1. Azure Pipelines runs `dagger check` against the modules installed in your workspace.
 1. The Dagger CLI attempts to find an existing Dagger Engine or spins up a new one inside the Azure Pipelines runner.
-1. The Dagger CLI calls the specified Dagger Function and sends telemetry to Dagger Cloud if the `DAGGER_CLOUD_TOKEN` environment variable is set.
-1. The pipeline completes with success or failure. Logs appear in Azure Pipelines as usual.
+1. The Dagger CLI sends telemetry to Dagger Cloud if the `DAGGER_CLOUD_TOKEN` environment variable is set.
+1. The pipeline completes with success or failure, based on the check results. Logs appear in Azure Pipelines as usual.
 
 ## Prerequisites
 
 - An Azure DevOps organization and project
 - An Azure Pipelines agent to run jobs connected to the project
+- A repository with a Dagger workspace (`.dagger/config.toml`) — see [Workspace Setup](/adopting/workspace-setup).
 
-## Examples
+## Example
 
-### Docker executor
-
-The following example demonstrates how to call a Dagger Function in an Azure Pipeline.
+The following example runs all of your workspace's checks with `dagger check`:
 
 ```yaml title="azure-pipelines.yml" file=./snippets/azure-pipelines-hello.yml
 ```
 
-The following is a more complex example demonstrating how to create an Azure Pipeline that checks out source code, calls a Dagger Function to test the project, and then calls another Dagger Function to build and publish a container image of the project. This example uses a simple [Go application](https://github.com/kpenfound/greetings-api) and assumes that you have already imported it into your Azure DevOps project repository.
+`dagger check` runs every check and exits non-zero if any fails. You can scope it to a subset — for example `dagger check go:*` to run a single module's checks.
 
-```yaml title="azure-pipelines.yml" file=./snippets/azure-pipelines-test-build.yml
+## Dagger Cloud Engines
+
+By default the Dagger CLI starts a Dagger Engine inside the Azure Pipelines runner. For a faster, more reliable experience, offload execution to a managed Dagger Engine provided by Dagger Cloud by adding `--cloud` to the command:
+
+```shell
+dagger check --cloud
 ```
+
+Cloud Engines provide a large persistent cache shared across runs and far more compute than an Azure Pipelines runner, so checks are typically much faster — and you don't provision or maintain any infrastructure. This requires the `DAGGER_CLOUD_TOKEN` secret configured for the pipeline.
 
 ## Resources
 

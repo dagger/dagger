@@ -24,6 +24,26 @@ After logging in, every `dagger` command sends traces to your Dagger Cloud dashb
 - **CI and local traces**: Both environments in one view, grouped by git commit. Traces from CI include repository metadata (branch, commit author, status).
 - **Search and navigation**: Search trace logs by keyword. Breadcrumbs show the full context of any span back to the root.
 
+### From the CLI
+
+Open the trace for a run directly in your browser by adding `-w`/`--web`:
+
+```shell
+dagger -w check
+```
+
+Review recent Cloud activity for the current workspace without leaving the terminal:
+
+```shell
+dagger ws activity
+```
+
+If you belong to more than one Dagger Cloud organization, scope a command with `--org`:
+
+```shell
+dagger --org my-org ws activity
+```
+
 Traces are useful for debugging failures, optimizing slow workflows, and understanding what your team's Dagger usage looks like across projects.
 
 ## OpenTelemetry

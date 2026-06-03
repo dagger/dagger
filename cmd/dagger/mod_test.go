@@ -2,9 +2,10 @@ package main
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
-	"github.com/bmatcuk/doublestar/v4"
+	"github.com/dagger/dagger/util/patternmatcher"
 	"github.com/stretchr/testify/require"
 )
 
@@ -92,17 +93,73 @@ func TestModSubcommandsRegistered(t *testing.T) {
 }
 
 // TestEmbeddedRegistryRecommendPatternsValid is a static smoke test on the
-// embedded registry: every populated recommend string must be a syntactically
-// valid glob. The runtime delegates matching to the engine via Directory.Glob,
-// so this catches typos in modules.json without requiring an engine.
+// embedded registry. At runtime, matching is delegated to the engine via
+// Directory.Glob, which uses util/patternmatcher (.dockerignore semantics) —
+// the same matcher used here. Validating against it (rather than a
+// shell/doublestar matcher) is deliberate: patternmatcher silently treats
+// brace expansion ("{a,b}") as literal text, so a pattern like
+// "**/{.eslintrc*,eslint.config.*}" would never match anything in the field
+// yet pass a doublestar check. This catches that class of bug without an engine.
 func TestEmbeddedRegistryRecommendPatternsValid(t *testing.T) {
 	mods, err := parseModuleRegistry(embeddedModuleRegistry)
 	require.NoError(t, err)
 	for _, m := range mods {
-		if m.Recommend == "" {
-			continue
+		for _, pat := range m.Recommend {
+			_, err := patternmatcher.NewPattern(pat)
+			require.NoErrorf(t, err, "module %q has invalid recommend pattern %q", m.Name, pat)
+			require.NotContainsf(t, pat, "{",
+				"module %q recommend pattern %q uses brace expansion, which Directory.Glob (patternmatcher) does not support; split it into separate list entries",
+				m.Name, pat)
 		}
-		_, err := doublestar.Match(m.Recommend, "probe")
-		require.NoErrorf(t, err, "module %q has invalid recommend glob %q", m.Name, m.Recommend)
 	}
+}
+
+// TestEmbeddedRegistryRecommendsCanonicalConfigFiles is a regression test for
+// the brace-expansion bug: it asserts each module is actually recommended for
+// the canonical config file(s) it targets, using the same matcher as the
+// runtime. Brace-broken patterns (eslint, prettier, pytest) would fail here.
+func TestEmbeddedRegistryRecommendsCanonicalConfigFiles(t *testing.T) {
+	mods, err := parseModuleRegistry(embeddedModuleRegistry)
+	require.NoError(t, err)
+	byName := make(map[string]registryModule, len(mods))
+	for _, m := range mods {
+		byName[m.Name] = m
+	}
+
+	want := map[string][]string{
+		"go":         {"go.mod", "internal/dagger/go.mod"},
+		"eslint":     {".eslintrc.cjs", "eslint.config.js"},
+		"prettier":   {".prettierrc.json", "prettier.config.js"},
+		"jest":       {"jest.config.ts"},
+		"vitest":     {"vitest.config.ts"},
+		"pytest":     {"pyproject.toml", "pytest.ini"},
+		"biomejs":    {"biome.json"},
+		"playwright": {"playwright.config.ts"},
+	}
+
+	for name, files := range want {
+		m, ok := byName[name]
+		require.Truef(t, ok, "module %q missing from embedded registry", name)
+		for _, f := range files {
+			require.Truef(t, recommendMatchesFile(t, m, f),
+				"module %q should be recommended for %q", name, f)
+		}
+	}
+}
+
+// recommendMatchesFile reports whether any of the module's recommend patterns
+// matches path, using the same matcher (util/patternmatcher) that
+// Directory.Glob applies at runtime.
+func recommendMatchesFile(t *testing.T, m registryModule, path string) bool {
+	t.Helper()
+	for _, pat := range m.Recommend {
+		p, err := patternmatcher.NewPattern(pat)
+		require.NoErrorf(t, err, "module %q has invalid recommend pattern %q", m.Name, pat)
+		match, err := p.Match(strings.TrimPrefix(path, "/"))
+		require.NoError(t, err)
+		if match {
+			return true
+		}
+	}
+	return false
 }

@@ -31,19 +31,59 @@ It scans the workspace for `go.mod` files, treats each one as a Go module, and g
 
 ## How to Use It
 
-Install the module, then run `dagger check`. The checks you want first are tests and lint.
+Install the module, then run its checks:
 
-Run `dagger generate` when generated Go files are part of normal development: mocks, embedded assets, protobuf output, or code produced by `go generate`.
+```bash
+dagger mod install github.com/dagger/go
 
-Workspace settings can control the Go version, extra files mounted from the workspace root, and marker filenames that skip tests, lint, or generation for selected modules.
+dagger check               # run every check in the workspace
+dagger check go:test-all   # run Go tests across every module
+dagger check go:lint-all   # run golangci-lint across every module
+```
 
-The module also exposes discovery helpers for workflows that need to inspect the Go module layout. Most users should start with `dagger check` and `dagger generate`.
+`test-all` and `lint-all` discover every `go.mod` in the workspace, treat each as a Go module, and run against all of them. Tests run through an OpenTelemetry-aware runner, so individual Go tests appear as spans in the Dagger TUI and Dagger Cloud. Lint runs a pinned `golangci-lint` and picks up each module's `.golangci.*` config.
+
+Run the generator when generated Go files are part of normal development, such as mocks, embedded assets, protobuf output, or code produced by `go generate`:
+
+```bash
+dagger generate go:generate-all
+```
+
+`generate-all` runs only in modules that contain a `//go:generate` directive, and returns the result as a changeset to review before applying.
+
+## Settings
+
+List the current settings and their values with `dagger settings go`, then set one with `dagger settings go <key> <value>`. Settings are stored in `.dagger/config.toml` under `[modules.go.settings]`.
+
+- **`version`** (default `1.26`): the Go toolchain version used to build the test and generate containers (`golang:<version>-alpine`). Set this so every module is tested and generated against the same Go version. Lint uses a pinned `golangci-lint` image and is unaffected.
+- **`includeExtraFiles`** (default empty): extra workspace-root path patterns mounted alongside each module's Go source. Go source, `go.mod`/`go.sum`/`go.work`, and `testdata/` directories are already included automatically; use this for inputs those patterns miss, such as embedded non-Go assets, generator inputs, or fixtures kept outside `testdata/`.
+- **`skipTestFilename`** (default `.dagger-skip-go-test`): the name of the marker file that excludes a module from `test-all`. To skip a module's tests, create an empty file with this name at the module root. The marker also applies to any nested modules, and placing it at the workspace root skips tests everywhere.
+- **`skipLintFilename`** (default `.dagger-skip-go-lint`): the marker filename that excludes a module from `lint-all`, with the same placement rules.
+- **`skipGenerateFilename`** (default `.dagger-skip-go-generate`): the marker filename that excludes a module from `generate-all`, with the same placement rules.
+
+The skip markers work by file presence: the setting only renames the marker file the module looks for, which is rarely needed. To exclude a module from a workflow, add the marker file; to include it again, delete the file.
+
+```bash
+# Pin the Go version for the whole workspace
+dagger settings go version 1.25
+
+# Exclude one module from linting by adding its marker file
+touch ./legacy-service/.dagger-skip-go-lint
+```
+
+List-valued settings such as `includeExtraFiles` are edited directly in `.dagger/config.toml`:
+
+```toml
+[modules.go.settings]
+version = "1.25"
+includeExtraFiles = ["Makefile", "tools/**"]
+```
 
 ## Workspace Fit
 
 Use this module when the repo contains one or more Go modules. It is especially useful when several Go modules should share the same Go version and the same CI checks.
 
-If one module should not run a workflow, use the module's skip marker settings instead of splitting the repo into separate check systems.
+To exclude a single module from a workflow, add its skip marker file instead of splitting the repo into separate check systems.
 
 ## Source
 

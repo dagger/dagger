@@ -26,6 +26,31 @@ dagger check vitest:test       # a single check
 dagger check *:lint            # pattern across modules
 ```
 
+## Stop on first failure
+
+By default every check runs so you see all failures at once. To cancel the rest as soon as one fails:
+
+```shell
+dagger check --failfast
+```
+
+## Checks and generators
+
+A generator can be run as a check to confirm its output is up to date. To control which kind runs:
+
+```shell
+dagger check --no-generate     # only annotated check functions
+dagger check --generate        # only generators-run-as-checks
+```
+
+## Per-environment checks
+
+Run checks with a named [environment](/using-dagger/environments) overlay applied:
+
+```shell
+dagger --env staging check
+```
+
 ## In CI
 
 ```yaml

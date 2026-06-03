@@ -29,13 +29,40 @@ Use it when Jest is already the test runner for the repo and you want tests to b
 
 ## How to Use It
 
-Install the module, then run `dagger check`. The check should run the Jest suite for the selected source directory.
+Install the module, then run its check:
 
-Use `list` when the wrong tests are running, or no tests are found.
+```bash
+dagger mod install github.com/dagger/jest
 
-Workspace settings can control the source directory, package manager, and Node base image.
+dagger check          # run every check in the workspace
+dagger check jest:test # run the Jest suite
+```
 
-Jest pairs well with ESLint and Prettier in JavaScript workspaces: tests catch behavior, lint catches code issues, and formatting keeps diffs clean.
+`test` installs dependencies and runs the Jest suite over the workspace (excluding `node_modules`, `dist`, and `build`). It automatically registers an OpenTelemetry hook, so individual tests appear as spans in the Dagger TUI and Dagger Cloud without changing the project's Jest config.
+
+## Settings
+
+List the current settings and their values with `dagger settings jest`, then set one with `dagger settings jest <key> <value>`. Settings are stored in `.dagger/config.toml` under `[modules.jest.settings]`.
+
+- **`packageManager`** (default `npm`): the package manager used to install dependencies before testing. Set it to `yarn` or `pnpm` to match the project.
+- **`baseImageAddress`** (default `node:25-alpine`): the Node base image tests run in. Pin it to the project's Node version, for example `node:22-alpine`.
+
+```toml
+[modules.jest.settings]
+packageManager = "pnpm"
+baseImageAddress = "node:22-alpine"
+```
+
+## Test options
+
+The `jest:test` check runs with default options. Call the `test` function directly with `dagger function call` to override them:
+
+- **`files`**: limit the run to specific test files.
+- **`build`**: run the project's build script before testing.
+- **`useEnv`**: use the project's own Jest environment instead of the module's automatic OpenTelemetry environment.
+- **`flags`**: extra flags passed through to `jest`.
+
+Use `list` to print the tests Jest discovers when test selection is unclear.
 
 ## Workspace Fit
 

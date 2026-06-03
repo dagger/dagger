@@ -29,11 +29,29 @@ Use it when scripts are part of the project and should be treated like code, not
 
 ## How to Use It
 
-Install the module, then run `dagger check`. The check should run ShellCheck on discovered shell scripts.
+Install the module, then run its check:
 
-Use `scripts` when the check finds too much or too little.
+```bash
+dagger mod install github.com/dagger/shellcheck
 
-Workspace settings can exclude script paths from checking. Keep the default path broad so new scripts are checked automatically.
+dagger check                  # run every check in the workspace
+dagger check shellcheck:check # run ShellCheck on discovered shell scripts
+```
+
+`check` finds every `.sh` file in the workspace and runs ShellCheck on each one, so a script must use the `.sh` extension to be discovered. Use `scripts` to see exactly which files the module found.
+
+## Settings
+
+List the current settings and their values with `dagger settings shellcheck`. The `exclude` setting is list-valued, so set it in `.dagger/config.toml` under `[modules.shellcheck.settings]`.
+
+- **`exclude`** (default: none): a list of script paths to skip. Use it for vendored or generated scripts the repo does not own.
+
+```toml
+[modules.shellcheck.settings]
+exclude = ["vendor/", "third_party/"]
+```
+
+Keep the exclude list narrow so new scripts are checked automatically.
 
 ## Workspace Fit
 

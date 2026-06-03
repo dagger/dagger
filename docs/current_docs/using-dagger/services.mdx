@@ -49,3 +49,12 @@ curl http://localhost:80
 ## Host-to-container networking
 
 Containers running in Dagger can also connect to services on your host machine. This is useful for testing against a locally running database or API.
+
+A function exposes a host service by accepting it as an argument, using the `tcp://` or `udp://` provider to point at a host port:
+
+```shell
+# Make a database running on the host reachable from the function
+dagger call integration-test --db=tcp://localhost:5432
+```
+
+Inside the function the argument is an ordinary `Service`, so the same code works whether the upstream runs on your host or in another container.
