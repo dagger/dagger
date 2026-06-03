@@ -5,58 +5,58 @@ toc_max_heading_level: 3
 description: "Learn how to use Dagger to build, test, and deploy your applications with practical examples."
 ---
 
-import MultiStageBuild from '@cookbookBuild/_multi-stage.mdx';
-import MatrixBuild from '@cookbookBuild/_matrix-build.mdx';
-import BuildMultiArch from '@cookbookBuild/_multi-arch.mdx';
-import BuildMultiArchCC from '@cookbookBuild/_multi-arch-cross-compilation.mdx';
-import BuildImageFromDockerfile from '@cookbookBuild/_image-from-dockerfile.mdx';
-import BuildImageFromDockerfileContext from '@cookbookBuild/_image-from-dockerfile-build-context.mdx';
-import OciAnnotations from '@cookbookBuild/_oci-annotations.mdx';
-import OciLabels from '@cookbookBuild/_oci-labels.mdx';
-import InvalidateCache from '@cookbookBuild/_invalidate-cache.mdx';
-import CacheDependencies from '@cookbookBuild/_cache-dependencies.mdx';
-import ExecuteConcurrently from '@cookbookBuild/_execute-concurrently.mdx';
-import PersistServiceState from '@cookbookBuild/_persist-service-state.mdx';
+import MultiStageBuild from '../partials/cookbook/builds/_multi-stage.mdx';
+import MatrixBuild from '../partials/cookbook/builds/_matrix-build.mdx';
+import BuildMultiArch from '../partials/cookbook/builds/_multi-arch.mdx';
+import BuildMultiArchCC from '../partials/cookbook/builds/_multi-arch-cross-compilation.mdx';
+import BuildImageFromDockerfile from '../partials/cookbook/builds/_image-from-dockerfile.mdx';
+import BuildImageFromDockerfileContext from '../partials/cookbook/builds/_image-from-dockerfile-build-context.mdx';
+import OciAnnotations from '../partials/cookbook/builds/_oci-annotations.mdx';
+import OciLabels from '../partials/cookbook/builds/_oci-labels.mdx';
+import InvalidateCache from '../partials/cookbook/builds/_invalidate-cache.mdx';
+import CacheDependencies from '../partials/cookbook/builds/_cache-dependencies.mdx';
+import ExecuteConcurrently from '../partials/cookbook/builds/_execute-concurrently.mdx';
+import PersistServiceState from '../partials/cookbook/builds/_persist-service-state.mdx';
 
-import PublishPrivateRegistry from "@cookbookContainer/_publish-private-registry.mdx";
-import PublishPrivateRegistryMultiple from "@cookbookContainer/_publish-private-registry-multiple.mdx";
-import ExportContainerImageToHost from "@cookbookContainer/_export-container-image-to-host.mdx";
-import SetEnvVar from "@cookbookContainer/_set-env-var.mdx";
+import PublishPrivateRegistry from "../partials/cookbook/containers/_publish-private-registry.mdx";
+import PublishPrivateRegistryMultiple from "../partials/cookbook/containers/_publish-private-registry-multiple.mdx";
+import ExportContainerImageToHost from "../partials/cookbook/containers/_export-container-image-to-host.mdx";
+import SetEnvVar from "../partials/cookbook/containers/_set-env-var.mdx";
 
-import CloneRemoteGit from "@cookbookFilesystem/_clone-remote-git.mdx";
-import MountCopyDirectory from "@cookbookFilesystem/_mount-copy-directory.mdx";
-import ModifyCopiedDirectory from "@cookbookFilesystem/_modify-copied-directory.mdx";
-import CopySubsetDirectory from "@cookbookFilesystem/_copy-subset-directory.mdx";
-import CopyPredefinedFilters from "@cookbookFilesystem/_copy-predefined-filters.mdx";
-import ExportDirectoryOrFileToHost from "@cookbookFilesystem/_export-directory-or-file-to-host.mdx";
-import MountCopyFile from "@cookbookFilesystem/_mount-copy-file.mdx";
-import CopyFileRuntime from "@cookbookFilesystem/_copy-file-runtime.mdx";
-import RequestFileHttp from "@cookbookFilesystem/_request-file-http.mdx";
-import SetModuleDefault from "@cookbookFilesystem/_set-module-default.mdx";
+import CloneRemoteGit from "../partials/cookbook/filesystems/_clone-remote-git.mdx";
+import MountCopyDirectory from "../partials/cookbook/filesystems/_mount-copy-directory.mdx";
+import ModifyCopiedDirectory from "../partials/cookbook/filesystems/_modify-copied-directory.mdx";
+import CopySubsetDirectory from "../partials/cookbook/filesystems/_copy-subset-directory.mdx";
+import CopyPredefinedFilters from "../partials/cookbook/filesystems/_copy-predefined-filters.mdx";
+import ExportDirectoryOrFileToHost from "../partials/cookbook/filesystems/_export-directory-or-file-to-host.mdx";
+import MountCopyFile from "../partials/cookbook/filesystems/_mount-copy-file.mdx";
+import CopyFileRuntime from "../partials/cookbook/filesystems/_copy-file-runtime.mdx";
+import RequestFileHttp from "../partials/cookbook/filesystems/_request-file-http.mdx";
+import SetModuleDefault from "../partials/cookbook/filesystems/_set-module-default.mdx";
 
-import UseService from "@cookbookService/_use-service.mdx";
-import ExposeServiceToHost from "@cookbookService/_expose-service-to-host.mdx";
-import ExposeHostServiceToFunction from "@cookbookService/_expose-host-service-to-function.mdx";
-import UseServiceEndpoints from "@cookbookService/_use-service-endpoints.mdx";
-import CreateServiceForTest from "@cookbookService/_create-service-for-test.mdx";
-import StartStopService from "@cookbookService/_start-stop-service.mdx";
-import CreateInterdependentServices from "@cookbookService/_create-interdependent-services.mdx";
+import UseService from "../partials/cookbook/services/_use-service.mdx";
+import ExposeServiceToHost from "../partials/cookbook/services/_expose-service-to-host.mdx";
+import ExposeHostServiceToFunction from "../partials/cookbook/services/_expose-host-service-to-function.mdx";
+import UseServiceEndpoints from "../partials/cookbook/services/_use-service-endpoints.mdx";
+import CreateServiceForTest from "../partials/cookbook/services/_create-service-for-test.mdx";
+import StartStopService from "../partials/cookbook/services/_start-stop-service.mdx";
+import CreateInterdependentServices from "../partials/cookbook/services/_create-interdependent-services.mdx";
 
-import UseSecretVariable from "@cookbookSecret/_use-secret-variable.mdx";
-import MountFilesAsSecret from "@cookbookSecret/_mount-files-as-secret.mdx";
-import DockerfileBuild from "@cookbookSecret/_dockerfile-build.mdx";
+import UseSecretVariable from "../partials/cookbook/secrets/_use-secret-variable.mdx";
+import MountFilesAsSecret from "../partials/cookbook/secrets/_mount-files-as-secret.mdx";
+import DockerfileBuild from "../partials/cookbook/secrets/_dockerfile-build.mdx";
 
-import EnvUseStrings from "@cookbookAgent/_env-use-strings.mdx";
-import EnvUseContainers from "@cookbookAgent/_env-use-containers.mdx";
-import EnvUseDirectories from "@cookbookAgent/_env-use-directories.mdx";
-import EnvUseMultipleTypes from "@cookbookAgent/_env-use-multiple-types.mdx";
-import BuildCodingAgent from "@cookbookAgent/_build-coding-agent.mdx";
+import EnvUseStrings from "../partials/cookbook/agents/_env-use-strings.mdx";
+import EnvUseContainers from "../partials/cookbook/agents/_env-use-containers.mdx";
+import EnvUseDirectories from "../partials/cookbook/agents/_env-use-directories.mdx";
+import EnvUseMultipleTypes from "../partials/cookbook/agents/_env-use-multiple-types.mdx";
+import BuildCodingAgent from "../partials/cookbook/agents/_build-coding-agent.mdx";
 
-import HandleErrors from "@cookbookError/_handle-errors.mdx";
-import ContinueAfterErrors from "@cookbookError/_continue-after-errors.mdx";
-import DebugTerminal from "@cookbookError/_debug-terminal.mdx";
-import InspectFilesystem from "@cookbookError/_inspect-filesystem.mdx";
-import CreateCustomSpans from "@cookbookError/_custom-spans.mdx";
+import HandleErrors from "../partials/cookbook/errors/_handle-errors.mdx";
+import ContinueAfterErrors from "../partials/cookbook/errors/_continue-after-errors.mdx";
+import DebugTerminal from "../partials/cookbook/errors/_debug-terminal.mdx";
+import InspectFilesystem from "../partials/cookbook/errors/_inspect-filesystem.mdx";
+import CreateCustomSpans from "../partials/cookbook/errors/_custom-spans.mdx";
 
 # Cookbook
 
@@ -204,8 +204,8 @@ Handle errors gracefully and build resilient workflows. This section contains pr
 
 Can't find what you're looking for? Check out:
 
-- **[Features](/features)** - Explore Dagger's capabilities
-- **[Module Development](/extending/modules)** - Build reusable modules
-- **[Reference](/reference/)** - Deep dive into APIs and configuration
+- **[Features](../introduction/features/index.mdx)** - Explore Dagger's capabilities
+- **[Module Development](../extending/modules/modules.mdx)** - Build reusable modules
+- **[Reference](../reference/index.mdx)** - Deep dive into APIs and configuration
 
 Have a recipe idea? [Contribute to the cookbook!](https://github.com/dagger/dagger/tree/main/docs/current_docs/cookbook)

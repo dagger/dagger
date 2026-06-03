@@ -9,6 +9,7 @@ import path from "path";
 import { daggerVersion } from "./current_docs/partials/version";
 
 const url = "https://docs.dagger.io";
+const docsPath = "./current_docs";
 
 const config: Config = {
   title: "Dagger",
@@ -52,8 +53,17 @@ const config: Config = {
       {
         docs: {
           breadcrumbs: false,
-          path: "./current_docs",
+          path: docsPath,
           routeBasePath: "/",
+          lastVersion: "current",
+          versions: {
+            current: {
+              label: "Latest",
+              path: "/",
+              banner: "none",
+              badge: false,
+            },
+          },
           sidebarPath: "./sidebars.ts",
           sidebarCollapsible: true,
           editUrl: "https://github.com/dagger/dagger/edit/main/docs",
@@ -83,39 +93,6 @@ const config: Config = {
           return {
             resolve: {
               alias: {
-                "@cookbookBuild": path.resolve(
-                  __dirname,
-                  "current_docs/partials/cookbook/builds"
-                ),
-                "@cookbookFilesystem": path.resolve(
-                  __dirname,
-                  "current_docs/partials/cookbook/filesystems"
-                ),
-                "@cookbookContainer": path.resolve(
-                  __dirname,
-                  "current_docs/partials/cookbook/containers"
-                ),
-                "@cookbookSecret": path.resolve(
-                  __dirname,
-                  "current_docs/partials/cookbook/secrets"
-                ),
-                "@cookbookService": path.resolve(
-                  __dirname,
-                  "current_docs/partials/cookbook/services"
-                ),
-                "@cookbookAgent": path.resolve(
-                  __dirname,
-                  "current_docs/partials/cookbook/agents"
-                ),
-                "@cookbookError": path.resolve(
-                  __dirname,
-                  "current_docs/partials/cookbook/errors"
-                ),
-                "@partials": path.resolve(__dirname, "current_docs/partials"),
-                "@daggerTypes": path.resolve(
-                  __dirname,
-                  "current_docs/partials/types"
-                ),
                 "@components": path.resolve(__dirname, "src/components"),
               },
             },
@@ -126,7 +103,7 @@ const config: Config = {
     "docusaurus-plugin-sass",
     "docusaurus-plugin-image-zoom",
     // Thanks to @jharrell and Prisma team. Apache-2.0 content
-    llmsTxtPlugin,
+    [llmsTxtPlugin, { docsPath }],
     [
       "posthog-docusaurus",
       {
