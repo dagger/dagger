@@ -50,6 +50,8 @@ jobs:
     runs-on:
       - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
     name: checks
+    env:
+      GORELEASER_PRO_LICENSE_KEY: ${{ secrets.GORELEASER_PRO_LICENSE_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
