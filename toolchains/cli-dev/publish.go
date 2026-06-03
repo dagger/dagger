@@ -186,14 +186,7 @@ func (cli *CliDev) PublishMetadata(
 	awsBucket string,
 	awsCloudfrontDistribution string,
 	awsEndpointURL string, // +optional
-
-	git *dagger.GitRepository, // +optional
 ) error {
-	source := cli.Go.Source()
-	if git != nil {
-		source = git.Head().Tree()
-	}
-
 	ctr := dag.
 		Alpine(dagger.AlpineOpts{
 			Branch:   "3.22",
@@ -201,7 +194,7 @@ func (cli *CliDev) PublishMetadata(
 		}).
 		Container().
 		WithWorkdir("/src").
-		WithDirectory(".", source).
+		WithDirectory(".", cli.Go.Source()).
 		WithSecretVariable("AWS_ACCESS_KEY_ID", awsAccessKeyID).
 		WithSecretVariable("AWS_SECRET_ACCESS_KEY", awsSecretAccessKey).
 		WithEnvVariable("AWS_REGION", awsRegion).

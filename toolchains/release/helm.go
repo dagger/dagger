@@ -13,28 +13,25 @@ import (
 // Helm chart versioning and publication live in release now. The former
 // helm-dev module only covers chart checks, so release owns the artifact path
 // directly instead of depending on a separate toolchain for these steps.
-func (r *Release) helmChartSource(source *dagger.Directory) *dagger.Directory {
-	if source != nil {
-		return source.Directory("helm/dagger")
-	}
+func (r *Release) helmChartSource() *dagger.Directory {
 	return dag.CurrentWorkspace().
 		Directory("/", dagger.WorkspaceDirectoryOpts{Include: []string{"helm/dagger"}}).
 		Directory("helm/dagger")
 }
 
-func (r *Release) helmChart(source *dagger.Directory) *dagger.Container {
+func (r *Release) helmChart() *dagger.Container {
 	return dag.Wolfi().
 		Container(dagger.WolfiContainerOpts{
 			Packages: []string{
 				"helm~3.18.4",
 			},
 		}).
-		WithDirectory("/dagger-helm", r.helmChartSource(source)).
+		WithDirectory("/dagger-helm", r.helmChartSource()).
 		WithWorkdir("/dagger-helm")
 }
 
-func (r *Release) helmSetVersion(ctx context.Context, version string, source *dagger.Directory) (*dagger.File, error) {
-	chartYaml, err := r.helmChartSource(source).File("Chart.yaml").Contents(ctx)
+func (r *Release) helmSetVersion(ctx context.Context, version string) (*dagger.File, error) {
+	chartYaml, err := r.helmChartSource().File("Chart.yaml").Contents(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +55,7 @@ func (r *Release) helmSetVersion(ctx context.Context, version string, source *da
 }
 
 func (r *Release) helmReleaseDryRun(ctx context.Context) error {
-	return r.helmPublish(ctx, "main", nil, "", "", nil, nil, true)
+	return r.helmPublish(ctx, "main", nil, "", true)
 }
 
 func (r *Release) helmPublish(
@@ -66,27 +63,16 @@ func (r *Release) helmPublish(
 	target string,
 	githubToken *dagger.Secret,
 	registry string,
-	registryUsername string,
-	registryPassword *dagger.Secret,
-	source *dagger.Directory,
 	dryRun bool,
 ) error {
 	if registry == "" {
 		registry = "ghcr.io/dagger"
 	}
-	if registryPassword == nil && registry == "ghcr.io/dagger" {
-		registryUsername = "dagger"
-		registryPassword = githubToken
-	}
-	if registryUsername == "" {
-		registryUsername = "dagger"
-	}
-	login := registryPassword != nil
 	version := strings.TrimPrefix(target, "helm/chart/")
-	_, err := r.helmChart(source).
+	_, err := r.helmChart().
 		With(func(c *dagger.Container) *dagger.Container {
-			if registryPassword != nil {
-				return c.WithSecretVariable("HELM_REGISTRY_PASSWORD", registryPassword)
+			if githubToken != nil {
+				return c.WithSecretVariable("GITHUB_TOKEN", githubToken)
 			}
 			return c
 		}).
@@ -94,21 +80,13 @@ func (r *Release) helmPublish(
 			if dryRun {
 				return c.WithExec([]string{"helm", "package", "."})
 			}
-			steps := []string{
+			script := strings.Join([]string{
 				"set -x",
+				"helm registry login " + registry + " --username dagger --password $GITHUB_TOKEN",
 				"helm package .",
-			}
-			if login {
-				steps = append([]string{
-					"set -x",
-					"helm registry login " + registry + " --username " + registryUsername + " --password $HELM_REGISTRY_PASSWORD",
-				}, steps[1:]...)
-			}
-			steps = append(steps, "helm push dagger-helm-"+strings.TrimPrefix(version, "v")+".tgz oci://"+registry)
-			if login {
-				steps = append(steps, "helm registry logout "+registry)
-			}
-			script := strings.Join(steps, " && \\")
+				"helm push dagger-helm-" + strings.TrimPrefix(version, "v") + ".tgz oci://" + registry,
+				"helm registry logout " + registry,
+			}, " && \\")
 			return c.WithExec([]string{"sh", "-c", script})
 		}).
 		Sync(ctx)

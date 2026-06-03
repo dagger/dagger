@@ -413,13 +413,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg commit", err))
 				}
 			}
-			var git *dagger.GitRepository
-			if inputArgs["git"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["git"]), &git)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg git", err))
-				}
-			}
 			var dryRun bool
 			if inputArgs["dryRun"] != nil {
 				err = json.Unmarshal([]byte(inputArgs["dryRun"]), &dryRun)
@@ -497,11 +490,11 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg netlifyToken", err))
 				}
 			}
-			var netlifyApiUrl string
-			if inputArgs["netlifyApiUrl"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["netlifyApiUrl"]), &netlifyApiUrl)
+			var netlifyApiurl string
+			if inputArgs["netlifyAPIURL"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["netlifyAPIURL"]), &netlifyApiurl)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg netlifyApiUrl", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg netlifyAPIURL", err))
 				}
 			}
 			var pypiToken *dagger.Secret
@@ -539,18 +532,18 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg npmRegistryURL", err))
 				}
 			}
-			var hexApiKey *dagger.Secret
-			if inputArgs["hexApiKey"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["hexApiKey"]), &hexApiKey)
+			var hexApikey *dagger.Secret
+			if inputArgs["hexAPIKey"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["hexAPIKey"]), &hexApikey)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg hexApiKey", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg hexAPIKey", err))
 				}
 			}
-			var hexApiUrl string
-			if inputArgs["hexApiUrl"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["hexApiUrl"]), &hexApiUrl)
+			var hexApiurl string
+			if inputArgs["hexAPIURL"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["hexAPIURL"]), &hexApiurl)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg hexApiUrl", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg hexAPIURL", err))
 				}
 			}
 			var cargoRegistryToken *dagger.Secret
@@ -644,7 +637,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg discordWebhook", err))
 				}
 			}
-			return (*Release).Publish(&parent, ctx, tag, commit, git, dryRun, registryImage, registryUsername, registryPassword, goreleaserKey, githubToken, githubOrgName, githubHost, githubCaCert, githubReleaseToken, netlifyToken, netlifyApiUrl, pypiToken, pypiRepo, pypiUrl, npmToken, npmRegistryUrl, hexApiKey, hexApiUrl, cargoRegistryToken, cargoRegistryIndex, goSdkDestRemote, phpSdkDestRemote, awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution, awsEndpointUrl, artefactsFqdn, helmRegistry, discordWebhook)
+			return (*Release).Publish(&parent, ctx, tag, commit, dryRun, registryImage, registryUsername, registryPassword, goreleaserKey, githubToken, githubOrgName, githubHost, githubCaCert, githubReleaseToken, netlifyToken, netlifyApiurl, pypiToken, pypiRepo, pypiUrl, npmToken, npmRegistryUrl, hexApikey, hexApiurl, cargoRegistryToken, cargoRegistryIndex, goSdkDestRemote, phpSdkDestRemote, awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution, awsEndpointUrl, artefactsFqdn, helmRegistry, discordWebhook)
 		case "PublishWithMockEndpoints":
 			var parent Release
 			err = json.Unmarshal(parentJSON, &parent)

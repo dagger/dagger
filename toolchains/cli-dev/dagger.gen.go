@@ -387,14 +387,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg awsEndpointURL", err))
 				}
 			}
-			var git *dagger.GitRepository
-			if inputArgs["git"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["git"]), &git)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg git", err))
-				}
-			}
-			return nil, (*CliDev).PublishMetadata(&parent, ctx, awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution, awsEndpointUrl, git)
+			return nil, (*CliDev).PublishMetadata(&parent, ctx, awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution, awsEndpointUrl)
 		case "Reference":
 			var parent CliDev
 			err = json.Unmarshal(parentJSON, &parent)

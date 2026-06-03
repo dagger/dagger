@@ -211,8 +211,6 @@ func (r *CliDev) Publish(tag string, goreleaserKey *Secret, githubOrgName string
 // CliDevPublishMetadataOpts contains options for CliDev.PublishMetadata
 type CliDevPublishMetadataOpts struct {
 	AwsEndpointURL string // cli-dev (../../../../toolchains/cli-dev/publish.go:188:2)
-
-	Git *GitRepository // cli-dev (../../../../toolchains/cli-dev/publish.go:190:2)
 }
 
 func (r *CliDev) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, awsSecretAccessKey *Secret, awsRegion string, awsBucket string, awsCloudfrontDistribution string, opts ...CliDevPublishMetadataOpts) error { // cli-dev (../../../../toolchains/cli-dev/publish.go:180:1)
@@ -226,10 +224,6 @@ func (r *CliDev) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, aw
 		// `awsEndpointUrl` optional argument
 		if !querybuilder.IsZeroValue(opts[i].AwsEndpointURL) {
 			q = q.Arg("awsEndpointUrl", opts[i].AwsEndpointURL)
-		}
-		// `git` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Git) {
-			q = q.Arg("git", opts[i].Git)
 		}
 	}
 	q = q.Arg("awsAccessKeyId", awsAccessKeyId)
@@ -270,7 +264,7 @@ func (r *CliDev) Reference(opts ...CliDevReferenceOpts) *File { // cli-dev (../.
 }
 
 // Verify that the CLI builds without actually publishing anything
-func (r *CliDev) ReleaseDryRun(ctx context.Context) error { // cli-dev (../../../../toolchains/cli-dev/publish.go:258:1)
+func (r *CliDev) ReleaseDryRun(ctx context.Context) error { // cli-dev (../../../../toolchains/cli-dev/publish.go:251:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}

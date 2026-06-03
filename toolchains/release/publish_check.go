@@ -15,7 +15,7 @@ import (
 
 const (
 	publishCheckReleaseTag      = "v0.21.3"
-	publishCheckRegistryUser    = "john"
+	publishCheckRegistryUser    = "dagger"
 	publishCheckRegistryPass    = "xFlejaPdjrt25Dvr" // #nosec G101 -- fake password for the local test registry.
 	publishCheckRegistryAddress = "registry:5000"
 	publishCheckRegistryImage   = publishCheckRegistryAddress + "/dagger/engine"
@@ -350,13 +350,13 @@ func (env *publishCheckEnv) runReleasePublish(ctx context.Context, engine *dagge
   --github-host "github.test" \
   --github-ca-cert "/github-ca.pem" \
   --netlify-token=env:FAKE_NETLIFY_TOKEN \
-  --netlify-api-url "http://mock:8080/netlify/api/v1" \
+  --netlify-apiurl "http://mock:8080/netlify/api/v1" \
   --pypi-token=env:FAKE_PYPI_TOKEN \
   --pypi-url "http://mock:8080/pypi/legacy/" \
   --npm-token=env:FAKE_NPM_TOKEN \
   --npm-registry-url "http://verdaccio:4873" \
-  --hex-api-key=env:FAKE_HEX_API_KEY \
-  --hex-api-url "http://mock:8080/hex/api" \
+  --hex-apikey=env:FAKE_HEX_API_KEY \
+  --hex-apiurl "http://mock:8080/hex/api" \
   --cargo-registry-token=env:FAKE_CARGO_REGISTRY_TOKEN \
   --cargo-registry-index "sparse+http://mock:8080/cargo/" \
   --aws-access-key-id=env:AWS_ACCESS_KEY_ID \
@@ -378,7 +378,7 @@ exit "$status"
 	out, err := env.client(engine).
 		WithSecretVariable("GORELEASER_KEY", env.goreleaserKey).
 		WithSecretVariable("REGISTRY_PASSWORD", dag.SetSecret("release-registry-password-"+randomID(), publishCheckRegistryPass)).
-		WithSecretVariable("FAKE_GITHUB_TOKEN", dag.SetSecret("fake-github-token-"+randomID(), "fake-gh-token")).
+		WithSecretVariable("FAKE_GITHUB_TOKEN", dag.SetSecret("fake-github-token-"+randomID(), publishCheckRegistryPass)).
 		WithSecretVariable("FAKE_NETLIFY_TOKEN", dag.SetSecret("fake-netlify-token-"+randomID(), "fake-netlify-token")).
 		WithSecretVariable("FAKE_PYPI_TOKEN", dag.SetSecret("fake-pypi-token-"+randomID(), "fake-pypi-token")).
 		WithSecretVariable("FAKE_NPM_TOKEN", dag.SetSecret("fake-npm-token-"+randomID(), "fake-npm-token")).

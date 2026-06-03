@@ -104,7 +104,6 @@ func (r *Release) Publish( //nolint:gocyclo
 	ctx context.Context,
 	tag string,
 	commit string,
-	git *dagger.GitRepository, // +optional +defaultPath="/"
 
 	dryRun bool, // +optional
 
@@ -188,9 +187,6 @@ func (r *Release) Publish( //nolint:gocyclo
 		Tag:  tag,
 	}
 	cliDevOpts := dagger.CliDevOpts{}
-	if git != nil && tag != "" {
-		cliDevOpts.Source = git.Ref(tag).Tree()
-	}
 	if version != "" {
 		cliDevOpts.Version = version
 		cliDevOpts.ImageTag = version
@@ -202,7 +198,6 @@ func (r *Release) Publish( //nolint:gocyclo
 				GithubToken:        githubToken,
 				GithubHost:         githubHost,
 				GithubCaCert:       githubCaCert,
-				Git:                git,
 				AwsAccessKeyID:     awsAccessKeyID,
 				AwsSecretAccessKey: awsSecretAccessKey,
 				AwsRegion:          awsRegion,
@@ -216,7 +211,6 @@ func (r *Release) Publish( //nolint:gocyclo
 		}
 		err = cliDev.PublishMetadata(ctx, awsAccessKeyID, awsSecretAccessKey, awsRegion, awsBucket, awsCloudfrontDistribution, dagger.CliDevPublishMetadataOpts{
 			AwsEndpointURL: awsEndpointURL,
-			Git:            git,
 		})
 		if err != nil {
 			artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
@@ -245,15 +239,7 @@ func (r *Release) Publish( //nolint:gocyclo
 			Link: "https://docs.dagger.io",
 		}
 		if !dryRun {
-			docsDev := dag.DocsDev()
-			if git != nil {
-				source := git.Head().Tree()
-				docsDev = dag.DocsDev(dagger.DocsDevOpts{
-					Source:      source,
-					NginxConfig: source.File("docs/nginx.conf"),
-				})
-			}
-			if err := docsDev.Publish(ctx, netlifyToken, dagger.DocsDevPublishOpts{
+			if err := dag.DocsDev().Publish(ctx, netlifyToken, dagger.DocsDevPublishOpts{
 				APIURL: netlifyAPIURL,
 			}); err != nil {
 				artifact.Errors = append(artifact.Errors, dag.Error(err.Error()))
@@ -371,11 +357,7 @@ func (r *Release) Publish( //nolint:gocyclo
 			// Helm publishing was inlined from helm-dev so release owns the
 			// package/push step without reintroducing that module dependency.
 			release: func(ctx context.Context) error {
-				var source *dagger.Directory
-				if git != nil {
-					source = git.Head().Tree()
-				}
-				return r.helmPublish(ctx, tag, githubToken, helmRegistry, registryUsername, registryPassword, source, false)
+				return r.helmPublish(ctx, tag, githubToken, helmRegistry, false)
 			},
 			dryRun: func(ctx context.Context) error {
 				return r.helmReleaseDryRun(ctx)
