@@ -2,20 +2,12 @@ package core
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"maps"
-	"os"
-	"path"
 	"slices"
 
-	containerdfs "github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/engineutil"
-	telemetry "github.com/dagger/otel-go"
-	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/trace"
 )
 
 /*
@@ -148,15 +140,15 @@ type ModuleRuntime interface {
 
 	// Call executes a function call in this runtime.
 	// The runtime is responsible for preparing the execution environment,
-	// running the function, and returning the result.
-	// Returns the output bytes and the client ID that was used for execution.
+	// running the function, and allowing the function to report its result through
+	// the provided FunctionCall.
 	Call(
 		ctx context.Context,
 		execMD *engineutil.ExecutionMetadata,
 		fnCall *FunctionCall,
 		moduleContext dagql.ObjectResult[*Module],
 		envContext dagql.ObjectResult[*Env],
-	) (outputBytes []byte, err error)
+	) error
 }
 
 /*
@@ -170,65 +162,27 @@ func (r *ContainerRuntime) AsContainer() (dagql.ObjectResult[*Container], bool) 
 	return r.Container, true
 }
 
-//nolint:gocyclo // intrinsically long state machine; refactoring would hurt clarity
 func (r *ContainerRuntime) Call(
 	ctx context.Context,
 	execMD *engineutil.ExecutionMetadata,
 	fnCall *FunctionCall,
 	moduleContext dagql.ObjectResult[*Module],
 	envContext dagql.ObjectResult[*Env],
-) ([]byte, error) {
+) error {
 	hideCtx := dagql.WithSkip(ctx)
 
-	srv, err := CurrentDagqlServer(hideCtx)
-	if err != nil {
-		return nil, fmt.Errorf("current dagql server: %w", err)
-	}
-
-	// Desugar to the canonical server for core API plumbing so that
-	// entrypoint proxies cannot shadow core fields like "directory".
-	coreSrv := srv.Canonical()
-
-	var metaDir dagql.ObjectResult[*Directory]
-	err = coreSrv.Select(hideCtx, coreSrv.Root(), &metaDir,
-		dagql.Selector{
-			Field: "directory",
-		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("create mod metadata directory: %w", err)
-	}
-
-	metaDirID, err := metaDir.ID()
-	if err != nil {
-		return nil, fmt.Errorf("get mod metadata directory ID: %w", err)
-	}
-
-	var ctr dagql.ObjectResult[*Container]
-	err = srv.Select(hideCtx, r.Container, &ctr,
-		dagql.Selector{
-			Field: "withMountedDirectory",
-			Args: []dagql.NamedInput{
-				{Name: "path", Value: dagql.String(modMetaDirPath)},
-				{Name: "source", Value: dagql.NewID[*Directory](metaDirID)},
-			},
-		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("mount function metadir: %w", err)
-	}
-
+	ctr := r.Container
 	clonedFS, err := CloneContainerDirectoryAccessor(hideCtx, ctr.Self().FS)
 	if err != nil {
-		return nil, fmt.Errorf("clone exec rootfs: %w", err)
+		return fmt.Errorf("clone exec rootfs: %w", err)
 	}
 	clonedMounts, err := CloneContainerMounts(hideCtx, ctr.Self().Mounts)
 	if err != nil {
-		return nil, fmt.Errorf("clone exec mounts: %w", err)
+		return fmt.Errorf("clone exec mounts: %w", err)
 	}
 	clonedMeta, err := CloneContainerMetaSnapshot(hideCtx, ctr.Self().MetaSnapshot)
 	if err != nil {
-		return nil, fmt.Errorf("clone exec meta snapshot: %w", err)
+		return fmt.Errorf("clone exec meta snapshot: %w", err)
 	}
 	execCtr := &Container{
 		FS:                 clonedFS,
@@ -258,9 +212,9 @@ func (r *ContainerRuntime) Call(
 		Args:                          []string{},
 		UseEntrypoint:                 true,
 		ExperimentalPrivilegedNesting: true,
-	}, execMD, moduleContext, fnCall, true)
+	}, execMD, moduleContext, fnCall)
 	if err != nil {
-		return nil, fmt.Errorf("exec function: %w", err)
+		return fmt.Errorf("exec function: %w", err)
 	}
 
 	syncCtx := ctx
@@ -269,105 +223,13 @@ func (r *ContainerRuntime) Call(
 	}
 	err = execCtr.Sync(syncCtx)
 	if err != nil {
-		var modExecErr *ModuleExecError
-		if errors.As(err, &modExecErr) {
-			srv, srvErr := CurrentDagqlServer(ctx)
-			if srvErr != nil {
-				return nil, fmt.Errorf("load error instance: %w", srvErr)
-			}
-			errInst, loadErr := modExecErr.ErrorID.Load(ctx, srv)
-			if loadErr != nil {
-				return nil, fmt.Errorf("load error instance: %w", loadErr)
-			}
-			dagErr := errInst.Self().Clone()
-
-			originCtx := trace.SpanContextFromContext(
-				telemetry.Propagator.Extract(
-					context.Background(),
-					telemetry.AnyMapCarrier(dagErr.Extensions()),
-				),
-			)
-			if !originCtx.IsValid() {
-				if origins := telemetry.ParseErrorOrigins(modExecErr.Err.Error()); len(origins) > 0 && origins[0].IsValid() {
-					originCtx = origins[0]
-				}
-			}
-			if !originCtx.IsValid() {
-				originCtx = trace.SpanContextFromContext(ctx)
-			}
-			if originCtx.IsValid() && len(telemetry.ParseErrorOrigins(dagErr.Message)) == 0 {
-				dagErr.Message = telemetry.TrackOrigin(errors.New(dagErr.Message), originCtx).Error()
-			}
-			if originCtx.IsValid() {
-				extOriginCtx := trace.SpanContextFromContext(
-					telemetry.Propagator.Extract(
-						context.Background(),
-						telemetry.AnyMapCarrier(dagErr.Extensions()),
-					),
-				)
-				if !extOriginCtx.IsValid() {
-					carrier := propagation.MapCarrier{}
-					telemetry.Propagator.Inject(trace.ContextWithSpanContext(context.Background(), originCtx), carrier)
-					for _, key := range carrier.Keys() {
-						valJSON, marshalErr := json.Marshal(carrier.Get(key))
-						if marshalErr != nil {
-							return nil, fmt.Errorf("marshal error extension %q: %w", key, marshalErr)
-						}
-						dagErr = dagErr.WithValue(key, JSON(valJSON))
-					}
-				}
-			}
-
-			return nil, dagErr
-		}
 		if fnCall.Name == "" {
-			return nil, fmt.Errorf("call constructor: %w", err)
+			return fmt.Errorf("call constructor: %w", err)
 		}
-		return nil, fmt.Errorf("call function %q: %w", fnCall.Name, err)
+		return fmt.Errorf("call function %q: %w", fnCall.Name, err)
 	}
 
-	var outputDir *Directory
-	for _, ctrMount := range execCtr.Mounts {
-		if ctrMount.Target != modMetaDirPath {
-			continue
-		}
-		if ctrMount.DirectorySource == nil {
-			return nil, fmt.Errorf("function output directory mount %s is missing directory source", modMetaDirPath)
-		}
-		mountedDir, ok := ctrMount.DirectorySource.Peek()
-		if !ok || mountedDir == nil {
-			return nil, fmt.Errorf("function output directory mount %s is missing materialized directory", modMetaDirPath)
-		}
-		outputDir = mountedDir
-		break
-	}
-	if outputDir == nil {
-		return nil, fmt.Errorf("function output directory mount %s not found", modMetaDirPath)
-	}
-
-	snapshot, _ := outputDir.Snapshot.Peek()
-	if snapshot == nil {
-		return nil, fmt.Errorf("function output snapshot is nil")
-	}
-	outputDirPath, _ := outputDir.Dir.Peek()
-
-	root, _, release, err := MountRefCloser(ctx, snapshot, mountRefAsReadOnly)
-	if err != nil {
-		return nil, fmt.Errorf("mount function output snapshot: %w", err)
-	}
-	defer release()
-
-	outputPath, err := containerdfs.RootPath(root, path.Join(outputDirPath, modMetaOutputPath))
-	if err != nil {
-		return nil, fmt.Errorf("resolve function output file path: %w", err)
-	}
-
-	outputBytes, err := os.ReadFile(outputPath)
-	if err != nil {
-		return nil, fmt.Errorf("read function output file: %w", err)
-	}
-
-	return outputBytes, nil
+	return nil
 }
 
 /*

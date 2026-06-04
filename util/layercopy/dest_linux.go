@@ -112,7 +112,9 @@ func (d *destination) ensureDir(destPath string, src *sourceEntry, opts CopyOpti
 				return "", false, err
 			}
 			rel = cleanRel(rel)
-			if parent := filepath.Dir(destPath); parent != "/" && parent != "." {
+			// Recurse on the parent of the *resolved* path (rel), not destPath:
+			// to handle symlins on dest paths
+			if parent := filepath.Dir(cleanContainerPath(rel)); parent != "/" && parent != "." {
 				if _, _, err := d.ensureDir(parent, nil, CopyOptions{}, false); err != nil {
 					return "", false, err
 				}

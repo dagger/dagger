@@ -2,7 +2,7 @@ module dagger/engine-dev
 
 go 1.26.1
 
-require github.com/dagger/dagger/engine/distconsts v0.21.0
+require github.com/dagger/dagger/engine/distconsts v0.21.4
 
 replace (
 	github.com/dagger/dagger => ../..
@@ -17,6 +17,7 @@ require (
 	github.com/dagger/otel-go v1.43.1-0.20260515012101-af7cd0684887
 	github.com/opencontainers/image-spec v1.1.1
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546
+	golang.org/x/mod v0.36.0
 	golang.org/x/sync v0.20.0
 )
 
@@ -57,9 +58,9 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.44.0
 	go.opentelemetry.io/proto/otlp v1.9.0 // indirect
-	golang.org/x/net v0.52.0 // indirect
+	golang.org/x/net v0.54.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
-	golang.org/x/text v0.35.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260319201613-d00831a3d3e7 // indirect
 	google.golang.org/grpc v1.80.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect

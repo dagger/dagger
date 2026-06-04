@@ -731,7 +731,7 @@ func createObjectTypeDef(ctx context.Context, srv *dagql.Server, name string, mo
 	}
 
 	for _, form := range module.ClassBodyForms {
-		slot, ok := form.(*dang.SlotDecl)
+		slot, ok := form.(*dang.FieldDecl)
 		if !ok || slot.Visibility < dang.PublicVisibility {
 			continue
 		}

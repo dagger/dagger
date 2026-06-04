@@ -137,14 +137,10 @@ if [ "$1" != "read" ] || [ "$2" != "-n" ]; then
 	echo "unexpected op invocation: $*" >&2
 	exit 1
 fi
-case "$3" in
-	op://*)
-		;;
-	*)
-		echo "unexpected op secret reference: $3" >&2
-		exit 1
-		;;
-esac
+if [ "$3" != "$EXPECTED_OP_REF" ]; then
+	echo "unexpected op secret reference: $3 (expected $EXPECTED_OP_REF)" >&2
+	exit 1
+fi
 case "$3" in
 	*ttl=*)
 		echo "ttl query leaked to op ref: $3" >&2
@@ -209,15 +205,23 @@ func (m *Foo) VerifySecret(ctx context.Context, secret *dagger.Secret) (string, 
 		name         string
 		secret       string
 		shouldUpdate bool
+		expectedRef  string
 	}{
 		{
-			name:   "without-ttl",
-			secret: "op://vault/without-ttl/field",
+			name:        "without-ttl",
+			secret:      "op://vault/without-ttl/field",
+			expectedRef: "op://vault/without-ttl/field",
 		},
 		{
 			name:         "with-ttl",
 			secret:       "op://vault/with-ttl/field?ttl=2s",
 			shouldUpdate: true,
+			expectedRef:  "op://vault/with-ttl/field",
+		},
+		{
+			name:        "with-spaces",
+			secret:      "op://vault space/field",
+			expectedRef: "op://vault space/field",
 		},
 	}
 
@@ -226,7 +230,8 @@ func (m *Foo) VerifySecret(ctx context.Context, secret *dagger.Secret) (string, 
 			c := connect(ctx, t)
 
 			base := baseContainer(c).
-				WithEnvVariable("CACHE_BUSTER", tc.name)
+				WithEnvVariable("CACHE_BUSTER", tc.name).
+				WithEnvVariable("EXPECTED_OP_REF", tc.expectedRef)
 
 			output, err := verifySecretFromOnePassword(ctx, base, tc.secret)
 			require.NoError(t, err)

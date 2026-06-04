@@ -37,7 +37,7 @@ func daggerShell(script string) dagger.WithContainerFunc {
 
 func daggerShellAt(modPath, script string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		execArgs := []string{"dagger"}
+		execArgs := []string{"dagger", "shell"}
 		if modPath != "" {
 			execArgs = append(execArgs, "-m", modPath)
 		}
@@ -50,7 +50,7 @@ func daggerShellAt(modPath, script string) dagger.WithContainerFunc {
 
 func daggerShellNoMod(script string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec([]string{"dagger", "-M"}, dagger.ContainerWithExecOpts{
+		return c.WithExec([]string{"dagger", "shell", "-M"}, dagger.ContainerWithExecOpts{
 			Stdin:                         script,
 			ExperimentalPrivilegedNesting: true,
 		})

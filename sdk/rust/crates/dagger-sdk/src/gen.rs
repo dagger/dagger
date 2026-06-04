@@ -1593,6 +1593,9 @@ pub struct ContainerExistsOpts {
     /// If specified, do not follow symlinks.
     #[builder(setter(into, strip_option), default)]
     pub do_not_follow_symlinks: Option<bool>,
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
     /// If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").
     #[builder(setter(into, strip_option), default)]
     pub expected_type: Option<ExistsType>,
@@ -2162,7 +2165,7 @@ impl Container {
         let query = self.selection.select("entrypoint");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Retrieves the value of the specified environment variable.
+    /// Retrieves the value of the specified persistent environment variable.
     ///
     /// # Arguments
     ///
@@ -2172,7 +2175,7 @@ impl Container {
         query = query.arg("name", name.into());
         query.execute(self.graphql_client.clone()).await
     }
-    /// Retrieves the list of environment variables passed to commands.
+    /// Retrieves the list of persistent environment variables configured on the container.
     pub async fn env_variables(&self) -> Result<Vec<EnvVariable>, DaggerError> {
         let query = self.selection.select("envVariables");
         let query = query.select("id");
@@ -2218,6 +2221,9 @@ impl Container {
         }
         if let Some(do_not_follow_symlinks) = opts.do_not_follow_symlinks {
             query = query.arg("doNotFollowSymlinks", do_not_follow_symlinks);
+        }
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
         }
         query.execute(self.graphql_client.clone()).await
     }
@@ -3845,6 +3851,27 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Set a new non-secret environment variable for future execs without invalidating exec cache when only its value changes.
+    /// This is an expert-only escape hatch. If a volatile value affects observable exec results, stale cached results may be reused.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the volatile variable (e.g., "CI_RUN_ID").
+    /// * `value` - Value of the volatile variable.
+    pub fn with_volatile_variable(
+        &self,
+        name: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Container {
+        let mut query = self.selection.select("withVolatileVariable");
+        query = query.arg("name", name.into());
+        query = query.arg("value", value.into());
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Change the container's working directory. Like WORKDIR in Dockerfile.
     ///
     /// # Arguments
@@ -4233,6 +4260,20 @@ impl Container {
     /// Should default to root.
     pub fn without_user(&self) -> Container {
         let query = self.selection.select("withoutUser");
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container minus the given volatile environment variable.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the volatile environment variable (e.g., "CI_RUN_ID").
+    pub fn without_volatile_variable(&self, name: impl Into<String>) -> Container {
+        let mut query = self.selection.select("withoutVolatileVariable");
+        query = query.arg("name", name.into());
         Container {
             proc: self.proc.clone(),
             selection: query,

@@ -43,6 +43,10 @@ func New(
 	// Explicit version to set on the Dagger CLI.
 	// +optional
 	version string,
+
+	// Explicit engine image tag to embed in the Dagger CLI.
+	// +optional
+	imageTag string,
 ) (*CliDev, error) {
 	// FIXME: this go builder config is duplicated with engine build
 	// move into a shared engine/builder module
@@ -56,9 +60,11 @@ func New(
 		}
 	}
 
-	imageTag, err := v.ImageTag(ctx)
-	if err != nil {
-		return nil, err
+	if imageTag == "" {
+		imageTag, err = v.ImageTag(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 	values := []string{
 		// FIXME: how to avoid duplication with engine module?
