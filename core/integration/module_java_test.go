@@ -87,6 +87,21 @@ func (JavaSuite) TestInit(_ context.Context, t *testctx.T) {
 	})
 }
 
+func (JavaSuite) TestDevelopExportsEntrypoint(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// `dagger develop` must export the generated entrypoint
+	// (io.dagger.gen.entrypoint.Entrypoint) as real source under src/generated/java,
+	// alongside the vendored SDK sources, so the user and their IDE can see and
+	// build it with a plain `mvn package`.
+	modGen := javaModule(t, c, "fields").
+		With(daggerExec("develop"))
+
+	entries, err := modGen.Directory(".").Glob(ctx, "src/generated/java/io/dagger/gen/entrypoint/Entrypoint.java")
+	require.NoError(t, err)
+	require.NotEmpty(t, entries, "expected io.dagger.gen.entrypoint.Entrypoint to be exported under src/generated/java by dagger develop")
+}
+
 func (JavaSuite) TestFields(_ context.Context, t *testctx.T) {
 	t.Run("can set and retrieve field using custom function", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)

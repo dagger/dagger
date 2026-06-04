@@ -12,6 +12,14 @@
     <properties>
         <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!--
+        Controls whether the Dagger annotation processor runs to (re)generate
+        io.dagger.gen.entrypoint.Entrypoint. A plain `mvn package` leaves it at
+        "none" and just compiles the already-generated source under
+        src/generated/java. `dagger develop` / the engine pass -Ddagger.proc=full
+        to regenerate it from the current module code.
+        -->
+        <dagger.proc>none</dagger.proc>
     </properties>
 
     <!--
@@ -203,10 +211,13 @@
         <plugins>
             <plugin>
                 <!--
-                Register the vendored Dagger Java SDK sources as compilation roots:
+                Register the vendored Dagger Java SDK sources and the generated
+                entrypoint as compilation roots:
                   - sdk/src/main/java       the hand-written SDK library
                   - sdk/src/processor/java  the annotation processor (generates the entrypoint)
                   - sdk/src/generated/java  the client bindings generated from the engine schema
+                  - src/generated/java      io.dagger.gen.entrypoint.Entrypoint, generated
+                                            from the module code (see maven-compiler-plugin)
                 -->
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>build-helper-maven-plugin</artifactId>
@@ -222,6 +233,7 @@
                                 <source>sdk/src/main/java</source>
                                 <source>sdk/src/processor/java</source>
                                 <source>sdk/src/generated/java</source>
+                                <source>src/generated/java</source>
                             </sources>
                         </configuration>
                     </execution>
@@ -231,11 +243,21 @@
                 <!--
                 The module is built in two compilation passes from a single `mvn package`:
                   1. default-compile compiles the vendored SDK and annotation processor
-                     (everything but the user module) without annotation processing.
-                  2. compile-module compiles the user module (io.dagger.modules.*); the
-                     annotation processor compiled in pass 1 is then discovered on the
-                     classpath and generates io.dagger.gen.entrypoint.Entrypoint.
-                This avoids depending on pre-built/published Dagger SDK artifacts.
+                     plus the client bindings (everything but the user module and the
+                     generated entrypoint), without annotation processing.
+                  2. compile-module compiles the user module (io.dagger.modules.*) and the
+                     entrypoint (io.dagger.gen.*) together.
+
+                Whether the entrypoint is (re)generated depends on the dagger.proc
+                property, so the very same pom serves two purposes:
+                  - dagger.proc=none (default, a plain `mvn package`): the processor does
+                    not run; the entrypoint already present as vendored source under
+                    src/generated/java is just compiled.
+                  - dagger.proc=full (passed by `dagger develop` / the engine): the
+                    processor runs in pass 2 and (re)generates the entrypoint. `dagger
+                    develop` vendors the result under src/generated/java.
+                This keeps the entrypoint as real, vendored source and avoids depending
+                on pre-built/published Dagger SDK artifacts.
                 -->
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
@@ -249,6 +271,7 @@
                             <proc>none</proc>
                             <excludes>
                                 <exclude>io/dagger/modules/**</exclude>
+                                <exclude>io/dagger/gen/**</exclude>
                             </excludes>
                         </configuration>
                     </execution>
@@ -259,8 +282,10 @@
                             <goal>compile</goal>
                         </goals>
                         <configuration>
+                            <proc>${dagger.proc}</proc>
                             <includes>
                                 <include>io/dagger/modules/**</include>
+                                <include>io/dagger/gen/**</include>
                             </includes>
                         </configuration>
                     </execution>

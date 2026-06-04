@@ -22,6 +22,22 @@ const (
 	// VendorDir is the directory, relative to the module root, where the Java
 	// SDK is vendored as real, buildable source by `dagger develop`.
 	VendorDir = "sdk"
+	// GeneratedSrcDir is the directory, relative to the module root, where
+	// `dagger develop` vendors the generated entrypoint
+	// (io.dagger.gen.entrypoint.Entrypoint) as real, buildable source. Its java/
+	// subdirectory is a regular compilation root (see template/pom.xml), so a
+	// plain `mvn package` compiles it without re-running the processor. It is
+	// generated and git-ignored, like the vendored sdk/src tree.
+	GeneratedSrcDir = "src/generated"
+
+	// annotationsDir is where the Maven compiler plugin writes annotation-processed
+	// sources (the entrypoint) during an engine build (proc=full). The engine
+	// relocates it to GeneratedSrcDir/java for export.
+	annotationsDir = "target/generated-sources/annotations"
+
+	// procFull enables the Dagger annotation processor (entrypoint generation)
+	// for an engine-driven build; a plain `mvn package` defaults to "none".
+	procFull = "-Ddagger.proc=full"
 
 	javaSdkModuleNameEnv = "_DAGGER_JAVA_SDK_MODULE_NAME"
 
@@ -89,15 +105,48 @@ func (m *JavaSdk) Codegen(
 		return nil, err
 	}
 
+	// Generate the entrypoint (io.dagger.gen.entrypoint.Entrypoint) as real source
+	// under src/generated/java by running the vendored annotation processor over
+	// the user module, and export it alongside the vendored SDK sources. A plain
+	// `mvn package` then compiles it without re-running the processor.
+	entrypoint, err := m.generateEntrypoint(ctx, ctr)
+	if err != nil {
+		return nil, err
+	}
+
+	genDir := dag.Directory().
+		WithDirectory("/", ctr.Directory(ModSourceDirPath)).
+		WithDirectory(filepath.Join(m.moduleConfig.subPath, GeneratedSrcDir, "java"), entrypoint)
+
 	return dag.
-		GeneratedCode(dag.Directory().WithDirectory("/", ctr.Directory(ModSourceDirPath))).
+		GeneratedCode(genDir).
 		WithVCSGeneratedPaths([]string{
 			filepath.Join(VendorDir, "src", "**"),
+			filepath.Join(GeneratedSrcDir, "**"),
 		}).
 		WithVCSIgnoredPaths([]string{
 			filepath.Join(VendorDir, "src"),
+			GeneratedSrcDir,
 			"target",
 		}), nil
+}
+
+// generateEntrypoint compiles the user module with the Dagger annotation
+// processor enabled (proc=full) so it generates io.dagger.gen.entrypoint.Entrypoint,
+// and returns the generated-sources directory (the entrypoint) as real, buildable
+// source for the caller to vendor under src/generated/java.
+//
+// This mirrors the two-pass build performed when packaging the jar, but stops
+// after `compile` so we only pay for source generation, not packaging.
+func (m *JavaSdk) generateEntrypoint(
+	ctx context.Context,
+	ctr *dagger.Container,
+) (*dagger.Directory, error) {
+	compiled := ctr.
+		// set the module name as an environment variable so we ensure constructor is only on main object
+		WithEnvVariable(javaSdkModuleNameEnv, m.moduleConfig.name).
+		WithExec(m.mavenCommand("mvn", "clean", "compile", procFull))
+	return compiled.Directory(filepath.Join(m.moduleConfig.modulePath(), annotationsDir)), nil
 }
 
 // moduleContainer returns a maven container with the user module sources, the
@@ -141,7 +190,10 @@ func (m *JavaSdk) moduleContainer(
 	vendorPath := filepath.Join(m.moduleConfig.modulePath(), VendorDir)
 	ctr = ctr.
 		WithoutDirectory(filepath.Join(vendorPath, "src")).
-		WithDirectory(vendorPath, vendoredSDK)
+		WithDirectory(vendorPath, vendoredSDK).
+		// Drop any entrypoint left over from a previous `dagger develop`; an
+		// engine-driven build regenerates it (proc=full) from the current code.
+		WithoutDirectory(filepath.Join(m.moduleConfig.modulePath(), GeneratedSrcDir))
 
 	return ctr, nil
 }
@@ -327,12 +379,14 @@ func (m *JavaSdk) buildJar(
 		ctr.
 			// set the module name as an environment variable so we ensure constructor is only on main object
 			WithEnvVariable(javaSdkModuleNameEnv, m.moduleConfig.name).
-			// build the final jar
+			// build the final jar, (re)generating the entrypoint from the current
+			// module code (proc=full) in the same pass
 			WithExec(m.mavenCommand(
 				"mvn",
 				"clean",
 				"package",
 				"-DskipTests",
+				procFull,
 			)))
 }
 
