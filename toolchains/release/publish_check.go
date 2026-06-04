@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	publishCheckReleaseTag      = "v0.21.3"
+	publishCheckReleaseTag      = "v0.21.4"
 	publishCheckRegistryUser    = "dagger"
 	publishCheckRegistryPass    = "xFlejaPdjrt25Dvr" // #nosec G101 -- fake password for the local test registry.
 	publishCheckRegistryAddress = "registry:5000"
@@ -54,7 +54,6 @@ type publishCheckEnv struct {
 }
 
 // Exercise the release publish path against local mock endpoints.
-//
 func (r *Release) PublishWithMockEndpoints(
 	ctx context.Context,
 
@@ -98,6 +97,9 @@ func (r *Release) PublishWithMockEndpoints(
 	if err := requireContains(initialOut, ".goreleaser.nightly.yml", "initial main publish should use the nightly GoReleaser config"); err != nil {
 		return err
 	}
+	if err := env.assertInitialGoReleaserOutputs(ctx); err != nil {
+		return err
+	}
 
 	if _, err := env.gitWorktreeStdout(ctx, `
 git tag "$RELEASE_TAG" "$RELEASE_COMMIT"
@@ -117,6 +119,7 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 	}{
 		{fmt.Sprintf("- [x] 🚙 Engine ([`%s`]", env.releaseTag), "release publish should publish the engine"},
 		{fmt.Sprintf("- [x] 🚗 CLI ([`%s`]", env.releaseTag), "release publish should publish the CLI"},
+		{"- [x] 📖 Docs", "release publish should publish docs"},
 		{"- [x] 🐹 Go SDK", "release publish should publish the Go SDK"},
 		{"- [x] 🐍 Python SDK", "release publish should publish the Python SDK"},
 		{"- [x] ⬢ TypeScript SDK", "release publish should publish the TypeScript SDK"},
@@ -134,6 +137,15 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 		return err
 	}
 
+	if err := env.assertStableGoReleaserArtifacts(ctx); err != nil {
+		return err
+	}
+	if err := env.assertGoReleaserGitHubRelease(ctx); err != nil {
+		return err
+	}
+	if err := env.assertGoReleaserPackageManagers(ctx); err != nil {
+		return err
+	}
 	if err := env.assertMockEvents(ctx); err != nil {
 		return err
 	}
@@ -324,6 +336,8 @@ func (env *publishCheckEnv) client(engine *dagger.Service) *dagger.Container {
 			Packages: []string{"apk-tools", "ca-certificates", "curl", "git"},
 		}).
 		WithEnvVariable("HOME", "/root").
+		WithDirectory("/src", env.gitWorktree).
+		WithWorkdir("/src").
 		WithServiceBinding(env.gitHost, env.gitSvc).
 		WithServiceBinding("registry", env.registrySvc).
 		WithServiceBinding("moto", env.motoSvc).
@@ -502,38 +516,317 @@ aws --endpoint-url "$AWS_ENDPOINT_URL" cloudfront create-distribution \
 }
 
 func (env *publishCheckEnv) assertMockEvents(ctx context.Context) error {
-	events, err := dag.Container().
-		From("alpine:latest").
-		WithMountedCache("/records", env.mockRecords).
-		WithExec([]string{"sh", "-ec", "cat /records/events.jsonl 2>/dev/null || true"}).
-		Stdout(ctx)
+	events, err := env.mockEvents(ctx)
 	if err != nil {
-		return fmt.Errorf("read mock events: %w", err)
+		return err
 	}
 
 	for _, needle := range []string{
+		`"kind": "netlify_list_deploys"`,
 		`"kind": "netlify_restore"`,
 		`"kind": "pypi_publish"`,
 		`"kind": "hex_publish"`,
 		`"kind": "hex_docs_publish"`,
 		`"kind": "cargo_publish"`,
 		`"crate_version": "` + env.releaseVersion + `"`,
-		`"kind": "github_release_create"`,
-		`"kind": "github_release_asset_upload"`,
-		`"kind": "github_content_write"`,
-		`"kind": "github_pull_request_create"`,
-		`/api/v3/repos/dagger/nix/contents/pkgs/dagger/default.nix`,
-		`/api/v3/repos/dagger/homebrew-tap/contents/dagger.rb`,
-		`/api/v3/repos/dagger/winget-pkgs/contents/manifests/d/Dagger/Cli/` + env.releaseVersion + `/Dagger.Cli.yaml`,
-		`/api/v3/repos/dagger/winget-pkgs/contents/manifests/d/Dagger/Cli/` + env.releaseVersion + `/Dagger.Cli.installer.yaml`,
-		`/api/v3/repos/dagger/winget-pkgs/contents/manifests/d/Dagger/Cli/` + env.releaseVersion + `/Dagger.Cli.locale.en-US.yaml`,
-		`/api/v3/repos/microsoft/winget-pkgs/pulls`,
 	} {
 		if err := requireContains(events, needle, "mock endpoint should receive expected request"); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (env *publishCheckEnv) assertInitialGoReleaserOutputs(ctx context.Context) error {
+	if err := env.assertS3ArchiveSet(ctx, "dagger/main/"+env.commit, publishCheckArchiveNames(env.commit), false); err != nil {
+		return fmt.Errorf("check main SHA CLI artifacts: %w", err)
+	}
+	if err := env.assertS3ArchiveSet(ctx, "dagger/main/head", publishCheckArchiveNames("head"), false); err != nil {
+		return fmt.Errorf("check main head CLI artifacts: %w", err)
+	}
+
+	events, err := env.mockEvents(ctx)
+	if err != nil {
+		return err
+	}
+	for _, needle := range []string{
+		`"kind": "github_release_create"`,
+		`"kind": "github_release_asset_upload"`,
+		`/api/v3/repos/dagger/nix/contents/pkgs/dagger/default.nix`,
+		`/api/v3/repos/dagger/homebrew-tap/contents/dagger.rb`,
+		`/api/v3/repos/dagger/winget-pkgs/contents/`,
+		`/api/v3/repos/microsoft/winget-pkgs/pulls`,
+	} {
+		if err := requireNotContains(events, needle, "initial main publish should not perform stable GoReleaser publishing"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (env *publishCheckEnv) assertStableGoReleaserArtifacts(ctx context.Context) error {
+	return env.assertS3ArchiveSet(ctx, "dagger/releases/"+env.releaseVersion, publishCheckArchiveNames(env.releaseTag), true)
+}
+
+func (env *publishCheckEnv) assertS3ArchiveSet(ctx context.Context, dir string, archives []string, inspectArchives bool) error {
+	inspect := "0"
+	if inspectArchives {
+		inspect = "1"
+	}
+
+	_, err := env.awsCLI().
+		WithExec([]string{"apk", "add", "coreutils", "unzip"}).
+		WithEnvVariable("AWS_BUCKET", env.awsBucket).
+		WithEnvVariable("S3_DIR", dir).
+		WithEnvVariable("INSPECT_ARCHIVES", inspect).
+		WithNewFile("/tmp/expected-artifacts", strings.Join(archives, "\n")+"\n").
+		WithExec([]string{"sh", "-ec", `
+set -eu
+mkdir -p /tmp/artifacts
+
+while IFS= read -r file; do
+	[ -n "$file" ] || continue
+	aws --endpoint-url "$AWS_ENDPOINT_URL" s3 cp "s3://$AWS_BUCKET/$S3_DIR/$file" "/tmp/artifacts/$file" >/dev/null
+done < /tmp/expected-artifacts
+aws --endpoint-url "$AWS_ENDPOINT_URL" s3 cp "s3://$AWS_BUCKET/$S3_DIR/checksums.txt" /tmp/artifacts/checksums.txt >/dev/null
+
+cd /tmp/artifacts
+while IFS= read -r file; do
+	[ -n "$file" ] || continue
+	matches="$(grep -F "  $file" checksums.txt | wc -l | tr -d ' ')"
+	if [ "$matches" != "1" ]; then
+		echo "expected exactly one checksum entry for $file, got $matches" >&2
+		cat checksums.txt >&2
+		exit 1
+	fi
+done < /tmp/expected-artifacts
+sha256sum -c checksums.txt --ignore-missing >/tmp/checksums.out
+cat /tmp/checksums.out
+
+if [ "$INSPECT_ARCHIVES" = "1" ]; then
+	while IFS= read -r file; do
+		[ -n "$file" ] || continue
+		case "$file" in
+			*.tar.gz)
+				tar -tzf "$file" > /tmp/archive-list
+				grep -Fx LICENSE /tmp/archive-list >/dev/null
+				grep -Fx dagger /tmp/archive-list >/dev/null
+				;;
+			*.zip)
+				unzip -Z1 "$file" > /tmp/archive-list
+				grep -Fx LICENSE /tmp/archive-list >/dev/null
+				grep -Fx dagger.exe /tmp/archive-list >/dev/null
+				;;
+			*)
+				echo "unknown archive format: $file" >&2
+				exit 1
+				;;
+		esac
+	done < /tmp/expected-artifacts
+fi
+`}).
+		Stdout(ctx)
+	if err != nil {
+		return fmt.Errorf("check S3 archive set %s: %w", dir, err)
+	}
+	return nil
+}
+
+func (env *publishCheckEnv) assertGoReleaserGitHubRelease(ctx context.Context) error {
+	assets := append(publishCheckArchiveNames(env.releaseTag), "checksums.txt")
+	_, err := dag.Container().
+		From("python:3.12-alpine").
+		WithMountedCache("/records", env.mockRecords).
+		WithEnvVariable("RELEASE_TAG", env.releaseTag).
+		WithEnvVariable("RELEASE_COMMIT", env.commit).
+		WithNewFile("/tmp/expected-assets", strings.Join(assets, "\n")+"\n").
+		WithExec([]string{"python", "-c", `
+import json
+import os
+import sys
+
+def fail(msg):
+    print(msg, file=sys.stderr)
+    raise SystemExit(1)
+
+events = []
+with open("/records/events.jsonl", encoding="utf-8") as f:
+    for line in f:
+        if line.strip():
+            events.append(json.loads(line))
+
+tag = os.environ["RELEASE_TAG"]
+commit = os.environ["RELEASE_COMMIT"]
+
+releases = [e for e in events if e.get("kind") == "github_release_create" and e.get("tag_name") == tag]
+if len(releases) != 1:
+    fail(f"expected exactly one root release create for {tag}, got {len(releases)}")
+release = releases[0]
+if release.get("target_commitish") not in ("", commit):
+    fail(f"release target mismatch: expected {commit}, got {release.get('target_commitish')}")
+if release.get("prerelease") not in (None, False):
+    fail(f"stable release should not be marked prerelease: {release.get('prerelease')}")
+if "Fix a regression in the 1Password secret provider where secrets with spaces could not be resolved" not in release.get("release_body", ""):
+    fail("root release body did not include expected changelog entry")
+
+expected_assets = sorted(line.strip() for line in open("/tmp/expected-assets", encoding="utf-8") if line.strip())
+actual_assets = sorted(e.get("asset_name", "") for e in events if e.get("kind") == "github_release_asset_upload")
+if actual_assets != expected_assets:
+    fail("release assets mismatch\nexpected: %r\nactual:   %r" % (expected_assets, actual_assets))
+`}).
+		Stdout(ctx)
+	if err != nil {
+		return fmt.Errorf("check GoReleaser GitHub release: %w", err)
+	}
+	return nil
+}
+
+func (env *publishCheckEnv) assertGoReleaserPackageManagers(ctx context.Context) error {
+	_, err := env.awsCLI().
+		WithExec([]string{"apk", "add", "python3"}).
+		WithMountedCache("/records", env.mockRecords).
+		WithEnvVariable("AWS_BUCKET", env.awsBucket).
+		WithEnvVariable("RELEASE_TAG", env.releaseTag).
+		WithEnvVariable("RELEASE_VERSION", env.releaseVersion).
+		WithExec([]string{"sh", "-ec", `
+set -eu
+aws --endpoint-url "$AWS_ENDPOINT_URL" s3 cp "s3://$AWS_BUCKET/dagger/releases/$RELEASE_VERSION/checksums.txt" /tmp/checksums.txt >/dev/null
+python3 - <<'PY'
+import json
+import os
+import re
+import sys
+
+def fail(msg):
+    print(msg, file=sys.stderr)
+    raise SystemExit(1)
+
+def need(condition, msg):
+    if not condition:
+        fail(msg)
+
+def read_record(path):
+    full = os.path.join("/records/github-content", path)
+    try:
+        with open(full, encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        fail(f"missing recorded GitHub content write: {path}")
+
+tag = os.environ["RELEASE_TAG"]
+version = os.environ["RELEASE_VERSION"]
+base_url = f"https://mock:8080/dagger/releases/{version}"
+
+checksums = {}
+with open("/tmp/checksums.txt", encoding="utf-8") as f:
+    for line in f:
+        line = line.strip()
+        if not line:
+            continue
+        checksum, name = line.split(None, 1)
+        checksums[name] = checksum
+
+def archive(suffix):
+    name = f"dagger_{tag}_{suffix}"
+    need(name in checksums, f"missing checksum for {name}")
+    return name
+
+homebrew = read_record("dagger/homebrew-tap/dagger.rb")
+need("This file was generated by GoReleaser" in homebrew, "homebrew formula should be GoReleaser generated")
+need("class Dagger < Formula" in homebrew, "homebrew formula should define Dagger formula")
+need(f'version "{version}"' in homebrew, "homebrew formula should set release version")
+need('system "#{bin}/dagger version"' in homebrew, "homebrew formula should keep smoke test")
+for suffix in ("darwin_amd64.tar.gz", "darwin_arm64.tar.gz", "linux_amd64.tar.gz", "linux_arm64.tar.gz"):
+    name = archive(suffix)
+    need(f'url "{base_url}/{name}"' in homebrew, f"homebrew formula missing URL for {name}")
+    need(f'sha256 "{checksums[name]}"' in homebrew, f"homebrew formula missing sha256 for {name}")
+need("linux_armv7" not in homebrew, "homebrew formula should not include linux armv7")
+
+nix = read_record("dagger/nix/pkgs/dagger/default.nix")
+need("This file was generated by GoReleaser" in nix, "nix package should be GoReleaser generated")
+need('pname = "dagger";' in nix, "nix package should set pname")
+need(f'version = "{version}";' in nix, "nix package should set release version")
+need("installShellCompletion --cmd dagger" in nix, "nix package should install shell completions")
+need("lib.licenses.asl20" in nix, "nix package should set license")
+nix_archives = {
+    "x86_64-linux": "linux_amd64.tar.gz",
+    "armv7l-linux": "linux_armv7.tar.gz",
+    "aarch64-linux": "linux_arm64.tar.gz",
+    "x86_64-darwin": "darwin_amd64.tar.gz",
+    "aarch64-darwin": "darwin_arm64.tar.gz",
+}
+for platform, suffix in nix_archives.items():
+    name = archive(suffix)
+    need(f'{platform} = "{base_url}/{name}";' in nix, f"nix package missing URL for {platform}")
+    need(re.search(rf'{re.escape(platform)} = "[0-9a-z]{{20,}}";', nix), f"nix package missing hash for {platform}")
+need("windows_amd64" not in nix and "windows_arm64" not in nix, "nix package should not include windows archives")
+
+version_manifest = read_record(f"dagger/winget-pkgs/manifests/d/Dagger/Cli/{version}/Dagger.Cli.yaml")
+need("PackageIdentifier: Dagger.Cli" in version_manifest, "winget version manifest should set package id")
+need(f"PackageVersion: {version}" in version_manifest, "winget version manifest should set version")
+need("ManifestType: version" in version_manifest, "winget version manifest should be a version manifest")
+
+installer_manifest = read_record(f"dagger/winget-pkgs/manifests/d/Dagger/Cli/{version}/Dagger.Cli.installer.yaml")
+need("InstallerType: zip" in installer_manifest, "winget installer manifest should use zip installers")
+need("NestedInstallerType: portable" in installer_manifest, "winget installer manifest should use portable nested installer")
+need("RelativeFilePath: dagger.exe" in installer_manifest, "winget installer manifest should point at dagger.exe")
+need("PortableCommandAlias: dagger" in installer_manifest, "winget installer manifest should set portable alias")
+for arch, suffix in (("arm64", "windows_arm64.zip"), ("x64", "windows_amd64.zip")):
+    name = archive(suffix)
+    need(f"Architecture: {arch}" in installer_manifest, f"winget installer manifest missing {arch}")
+    need(f"InstallerUrl: {base_url}/{name}" in installer_manifest, f"winget installer manifest missing URL for {name}")
+    need(f"InstallerSha256: {checksums[name]}" in installer_manifest, f"winget installer manifest missing sha256 for {name}")
+
+locale_manifest = read_record(f"dagger/winget-pkgs/manifests/d/Dagger/Cli/{version}/Dagger.Cli.locale.en-US.yaml")
+for needle in (
+    "PackageIdentifier: Dagger.Cli",
+    f"PackageVersion: {version}",
+    "Publisher: Dagger",
+    "PublisherUrl: https://dagger.io",
+    "PublisherSupportUrl: https://github.com/dagger/dagger/issues/new/choose",
+    "PackageName: dagger",
+    "License: asl20",
+    "ShortDescription: Dagger is an integrated platform to orchestrate the delivery of applications",
+    "ManifestType: defaultLocale",
+):
+    need(needle in locale_manifest, f"winget locale manifest missing {needle}")
+
+events = [json.loads(line) for line in open("/records/events.jsonl", encoding="utf-8") if line.strip()]
+content_writes = {
+    (e.get("github_owner"), e.get("github_repo"), e.get("content_path"))
+    for e in events
+    if e.get("kind") == "github_content_write" and e.get("github_repo") in {"homebrew-tap", "nix", "winget-pkgs"}
+}
+expected_writes = {
+    ("dagger", "homebrew-tap", "dagger.rb"),
+    ("dagger", "nix", "pkgs/dagger/default.nix"),
+    ("dagger", "winget-pkgs", f"manifests/d/Dagger/Cli/{version}/Dagger.Cli.yaml"),
+    ("dagger", "winget-pkgs", f"manifests/d/Dagger/Cli/{version}/Dagger.Cli.installer.yaml"),
+    ("dagger", "winget-pkgs", f"manifests/d/Dagger/Cli/{version}/Dagger.Cli.locale.en-US.yaml"),
+}
+need(content_writes == expected_writes, f"package manager content writes mismatch\nexpected: {sorted(expected_writes)}\nactual:   {sorted(content_writes)}")
+winget_prs = [e for e in events if e.get("kind") == "github_pull_request_create" and e.get("path") == "/api/v3/repos/microsoft/winget-pkgs/pulls"]
+need(len(winget_prs) == 1, f"expected one winget pull request, got {len(winget_prs)}")
+PY
+`}).
+		Stdout(ctx)
+	if err != nil {
+		return fmt.Errorf("check GoReleaser package manager outputs: %w", err)
+	}
+	return nil
+}
+
+func (env *publishCheckEnv) mockEvents(ctx context.Context) (string, error) {
+	events, err := dag.Container().
+		From("alpine:latest").
+		WithMountedCache("/records", env.mockRecords).
+		WithEnvVariable("MOCK_EVENTS_CACHE_BUSTER", randomID()).
+		WithExec([]string{"sh", "-ec", "cat /records/events.jsonl 2>/dev/null || true"}).
+		Stdout(ctx)
+	if err != nil {
+		return "", fmt.Errorf("read mock events: %w", err)
+	}
+	return events, nil
 }
 
 func (env *publishCheckEnv) assertRegistryTags(ctx context.Context) error {
@@ -752,6 +1045,19 @@ func publishCheckPlatform(ctx context.Context) (dagger.Platform, string, error) 
 	}
 }
 
+func publishCheckArchiveNames(version string) []string {
+	prefix := "dagger_" + version + "_"
+	return []string{
+		prefix + "darwin_amd64.tar.gz",
+		prefix + "darwin_arm64.tar.gz",
+		prefix + "linux_amd64.tar.gz",
+		prefix + "linux_arm64.tar.gz",
+		prefix + "linux_armv7.tar.gz",
+		prefix + "windows_amd64.zip",
+		prefix + "windows_arm64.zip",
+	}
+}
+
 func serviceHost(rawURL string) (string, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -800,7 +1106,8 @@ packages:
 log: { type: stdout, format: pretty, level: http }
 `
 
-const releaseMockServerScript = `import http.server
+const releaseMockServerScript = `import base64
+import http.server
 import hashlib
 import json
 import os
@@ -808,9 +1115,14 @@ import ssl
 import struct
 import threading
 import time
+import urllib.parse
 
 records_path = "/records/events.jsonl"
 os.makedirs(os.path.dirname(records_path), exist_ok=True)
+github_content_records_dir = "/records/github-content"
+github_release_records_dir = "/records/github-releases"
+os.makedirs(github_content_records_dir, exist_ok=True)
+os.makedirs(github_release_records_dir, exist_ok=True)
 published_crates = {}
 state_lock = threading.Lock()
 
@@ -826,6 +1138,29 @@ def record(kind, handler, body, extra=None):
         event.update(extra)
     with open(records_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(event, sort_keys=True) + "\n")
+
+def safe_filename(value):
+    return urllib.parse.quote(value, safe="")
+
+def github_content_target(path):
+    parsed = urllib.parse.urlparse(path)
+    parts = parsed.path.split("/")
+    if len(parts) < 8:
+        return "dagger", "dagger", parsed.path.lstrip("/")
+    owner = urllib.parse.unquote(parts[4])
+    repo = urllib.parse.unquote(parts[5])
+    content_path = urllib.parse.unquote("/".join(parts[7:]))
+    return owner, repo, content_path
+
+def write_github_content_record(owner, repo, content_path, content):
+    full = os.path.join(github_content_records_dir, owner, repo, content_path)
+    os.makedirs(os.path.dirname(full), exist_ok=True)
+    with open(full, "wb") as f:
+        f.write(content)
+
+def write_github_release_record(tag, payload):
+    with open(os.path.join(github_release_records_dir, safe_filename(tag) + ".json"), "w", encoding="utf-8") as f:
+        json.dump(payload, f, sort_keys=True)
 
 def cargo_index_path(crate_name):
     if len(crate_name) == 1:
@@ -1028,9 +1363,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             record_cargo_publish(self, body)
             return
         if self.path == "/api/v3/repos/dagger/dagger/releases":
-            record("github_release_create", self, body)
             payload = json.loads(body.decode("utf-8") or "{}")
             tag = payload.get("tag_name", "")
+            write_github_release_record(tag, payload)
+            record("github_release_create", self, body, {
+                "tag_name": tag,
+                "target_commitish": payload.get("target_commitish", ""),
+                "name": payload.get("name", ""),
+                "draft": payload.get("draft"),
+                "prerelease": payload.get("prerelease"),
+                "release_body": payload.get("body", ""),
+            })
             self.send_json(201, {
                 "id": int(time.time() * 1000),
                 "tag_name": tag,
@@ -1040,8 +1383,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             })
             return
         if self.path.startswith("/api/uploads/repos/dagger/dagger/releases/") and "/assets" in self.path:
-            record("github_release_asset_upload", self, body)
-            self.send_json(201, {"id": int(time.time() * 1000), "name": self.path.split("name=", 1)[-1].split("&", 1)[0]})
+            parsed = urllib.parse.urlparse(self.path)
+            asset_name = urllib.parse.parse_qs(parsed.query).get("name", [""])[0]
+            record("github_release_asset_upload", self, body, {"asset_name": asset_name})
+            self.send_json(201, {"id": int(time.time() * 1000), "name": asset_name})
             return
         if self.path.startswith("/api/v3/repos/") and self.path.endswith("/merge-upstream"):
             record("github_merge_upstream", self, body)
@@ -1052,7 +1397,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_json(201, {"ref": "refs/heads/mock", "object": {"sha": "1111111111111111111111111111111111111111"}})
             return
         if self.path.startswith("/api/v3/repos/") and self.path.endswith("/pulls"):
-            record("github_pull_request_create", self, body)
+            payload = json.loads(body.decode("utf-8") or "{}")
+            record("github_pull_request_create", self, body, {
+                "title": payload.get("title", ""),
+                "head": payload.get("head", ""),
+                "base": payload.get("base", ""),
+            })
             self.send_json(201, {"html_url": "https://github.test/mock/pull/1", "number": 1})
             return
         record("post", self, body)
@@ -1064,7 +1414,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             record_cargo_publish(self, body)
             return
         if self.path.startswith("/api/v3/repos/") and "/contents/" in self.path:
-            record("github_content_write", self, body)
+            owner, repo, content_path = github_content_target(self.path)
+            payload = json.loads(body.decode("utf-8") or "{}")
+            content = base64.b64decode(payload.get("content", ""))
+            write_github_content_record(owner, repo, content_path, content)
+            record("github_content_write", self, body, {
+                "github_owner": owner,
+                "github_repo": repo,
+                "content_path": content_path,
+                "message": payload.get("message", ""),
+                "branch": payload.get("branch", ""),
+                "decoded_len": len(content),
+            })
             self.send_json(201, {
                 "content": {"path": self.path.split("/contents/", 1)[-1].split("?", 1)[0], "sha": "2222222222222222222222222222222222222222"},
                 "commit": {"sha": "3333333333333333333333333333333333333333"},
@@ -1076,7 +1437,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_PATCH(self):
         body = self.read_body()
         if self.path.startswith("/api/v3/repos/dagger/dagger/releases/"):
-            record("github_release_publish", self, body)
+            payload = json.loads(body.decode("utf-8") or "{}")
+            record("github_release_publish", self, body, {
+                "draft": payload.get("draft"),
+                "prerelease": payload.get("prerelease"),
+            })
             self.send_json(200, {"id": 1, "tag_name": "mock", "html_url": "https://github.test/dagger/dagger/releases/tag/mock"})
             return
         record("patch", self, body)
