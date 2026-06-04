@@ -13,26 +13,17 @@ import (
 	"dagger/cli-dev/util"
 )
 
-const (
-	// https://github.com/goreleaser/goreleaser/releases
-	goReleaserVersion = "v2.11.0"
-	goReleaserImage   = "ghcr.io/goreleaser/goreleaser-pro:" + goReleaserVersion
-)
-
-// Publish the CLI using GoReleaser
+// Publish the CLI release artifacts.
 // +cache="session"
 func (cli *CliDev) Publish(
 	ctx context.Context,
 	tag string,
-
-	goreleaserKey *dagger.Secret,
+	commit string,
 
 	githubOrgName string,
 	githubToken *dagger.Secret, // +optional
 	githubHost string, // +optional
 	githubCaCert *dagger.File, // +optional
-
-	git *dagger.GitRepository, // +defaultPath="/"
 
 	awsAccessKeyID *dagger.Secret, // +optional
 	awsSecretAccessKey *dagger.Secret, // +optional
@@ -43,87 +34,33 @@ func (cli *CliDev) Publish(
 
 	dryRun bool, // +optional
 ) (*dagger.Directory, error) {
-	ctr, err := publishEnv(ctx)
+	dist, err := cli.releaseDist(ctx, tag, commit)
 	if err != nil {
 		return nil, err
-	}
-	ctr = ctr.With(withGithubCaCert(githubCaCert))
-
-	ctr = ctr.
-		WithWorkdir("/app").
-		WithDirectory(".", cli.Go.Source()).
-		WithDirectory(".", git.Ref(tag).Tree()).
-		WithDirectory("build", cli.goreleaserBinaries())
-
-	if !semver.IsValid(tag) {
-		// all non-semver tags (like "main") are dev builds
-		tag = ""
-	} else {
-		// sanity check that the semver tag actually exists, otherwise do a dev build
-		_, err = ctr.WithExec([]string{"git", "show-ref", "--verify", "refs/tags/" + tag}).Sync(ctx)
-		if err != nil {
-			err, ok := err.(*ExecError)
-			if !ok || !strings.Contains(err.Stderr, "not a valid ref") {
-				return nil, err
-			}
-			tag = ""
-		}
-	}
-	if tag == "" {
-		// goreleaser refuses to run if there isn't a tag, so set it to a dummy but valid semver
-		ctr = ctr.WithExec([]string{"git", "tag", "v0.0.0"})
-	}
-
-	args := []string{"release", "--clean", "--skip=validate", "--verbose"}
-	if tag != "" {
-		if semver.Prerelease(tag) == "" {
-			// public release (vX.Y.Z)
-			args = append(args,
-				"--release-notes", fmt.Sprintf(".changes/%s.md", tag),
-			)
-		} else {
-			// public pre-release (vX.Y.Z-prerelease)
-			args = append(args,
-				"--nightly",
-				"--config", ".goreleaser.prerelease.yml",
-			)
-		}
-	} else {
-		// nightly off of main
-		args = append(args,
-			"--nightly",
-			"--config", ".goreleaser.nightly.yml",
-		)
 	}
 	if dryRun {
-		args = append(args, "--skip=publish")
+		return dist, nil
 	}
 
-	ctr, err = ctr.
-		WithEnvVariable("GH_ORG_NAME", githubOrgName).
-		WithSecretVariable("GORELEASER_KEY", goreleaserKey).
-		With(optSecretVariable("GITHUB_TOKEN", githubToken)).
-		With(optSecretVariable("AWS_ACCESS_KEY_ID", awsAccessKeyID)).
-		With(optSecretVariable("AWS_SECRET_ACCESS_KEY", awsSecretAccessKey)).
-		With(optEnvVariable("AWS_REGION", awsRegion)).
-		With(optEnvVariable("AWS_BUCKET", awsBucket)).
-		With(optEnvVariable("ARTEFACTS_FQDN", artefactsFQDN)).
-		With(optEnvVariable("AWS_ENDPOINT_URL", awsEndpointURL)).
-		WithEnvVariable("GORELEASER_GITHUB_API_URL", goReleaserGithubAPIURL(githubHost)).
-		WithEnvVariable("GORELEASER_GITHUB_UPLOAD_URL", goReleaserGithubUploadURL(githubHost)).
-		WithEnvVariable("GORELEASER_GITHUB_DOWNLOAD_URL", goReleaserGithubDownloadURL(githubHost)).
-		WithEnvVariable("ENGINE_VERSION", cli.Version).
-		WithEnvVariable("ENGINE_TAG", cli.Tag).
-		WithEnvVariable("GORELEASER_CURRENT_TAG", tag).
-		WithEntrypoint([]string{"/sbin/tini", "--", "/entrypoint.sh"}).
-		WithExec(args, dagger.ContainerWithExecOpts{
-			UseEntrypoint: true,
-		}).
-		Sync(ctx)
-	if err != nil {
+	mode := cliReleaseModeForTag(tag)
+	if err := cli.publishReleaseArtifactsToS3(ctx, dist, tag, commit, mode, awsAccessKeyID, awsSecretAccessKey, awsRegion, awsBucket, awsEndpointURL); err != nil {
 		return nil, err
 	}
-	return ctr.Directory("dist"), nil
+
+	if mode == cliReleaseModeStable {
+		notes, err := cli.Go.Source().File(".changes/" + tag + ".md").Contents(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if err := cli.publishRootGitHubRelease(ctx, dist, tag, commit, notes, githubOrgName, githubToken, githubHost, githubCaCert); err != nil {
+			return nil, err
+		}
+		if err := cli.publishPackageManagers(ctx, dist, tag, githubOrgName, githubToken, githubHost, githubCaCert, artefactsFQDN); err != nil {
+			return nil, err
+		}
+	}
+
+	return dist, nil
 }
 
 func optEnvVariable(name string, val string) dagger.WithContainerFunc {
@@ -155,25 +92,11 @@ func withGithubCaCert(caCert *dagger.File) dagger.WithContainerFunc {
 	}
 }
 
-func goReleaserGithubAPIURL(host string) string {
+func githubAPIURL(host string) string {
 	if host == "" {
-		return "https://api.github.com/"
+		return "https://api.github.com"
 	}
-	return "https://" + host + "/api/v3/"
-}
-
-func goReleaserGithubUploadURL(host string) string {
-	if host == "" {
-		return "https://uploads.github.com/"
-	}
-	return "https://" + host + "/api/uploads/"
-}
-
-func goReleaserGithubDownloadURL(host string) string {
-	if host == "" {
-		return "https://github.com"
-	}
-	return "https://" + host
+	return "https://" + host + "/api/v3"
 }
 
 // +cache="session"
@@ -252,67 +175,19 @@ func (cli *CliDev) ReleaseDryRun(ctx context.Context) error {
 	return parallel.New().
 		WithJob(
 			"dry-run build on all targets",
-			// TODO: ideally this would also use go releaser, but we want to run this
-			// step in PRs and locally and we use goreleaser pro features that require
-			// a key which is private. For now, this just builds the CLI for the same
-			// targets so there's at least some coverage
 			func(ctx context.Context) error {
-				_, err := cli.goreleaserBinaries().Sync(ctx)
+				_, err := cli.releaseBinaries().Sync(ctx)
 				return err
 			}).
 		WithJob(
-			"dry-run build the goreleaser environment",
+			"dry-run package release artifacts",
 			func(ctx context.Context) error {
-				env, err := publishEnv(ctx)
+				dist, err := cli.releaseDist(ctx, cli.Version, "dry-run")
 				if err != nil {
 					return err
 				}
-				_, err = env.Sync(ctx)
+				_, err = dist.Sync(ctx)
 				return err
 			}).
 		Run(ctx)
-}
-
-func (cli *CliDev) goreleaserBinaries() *dagger.Directory {
-	oses := []string{"linux", "windows", "darwin"}
-	arches := []string{"amd64", "arm64", "arm"}
-
-	dir := dag.Directory()
-	for _, os := range oses {
-		for _, arch := range arches {
-			if arch == "arm" && (os == "darwin" || os == "windows") {
-				continue
-			}
-
-			platform := os + "/" + arch
-			if arch == "arm" {
-				platform += "/v7" // not always correct but not sure of better way
-			}
-
-			binary := cli.Binary(dagger.Platform(platform))
-			dest := fmt.Sprintf("dagger_%s_%s/dagger", cli.Version, strings.ReplaceAll(platform, "/", "_"))
-			dir = dir.WithFile(dest, binary)
-		}
-	}
-	return dir
-}
-
-func publishEnv(ctx context.Context) (*dagger.Container, error) {
-	ctr := dag.Container().From(goReleaserImage)
-
-	// install nix
-	ctr = ctr.
-		WithExec([]string{"apk", "add", "ca-certificates", "coreutils", "xz"}).
-		WithDirectory("/nix", dag.Directory()).
-		WithNewFile("/etc/nix/nix.conf", `build-users-group =`).
-		WithExec([]string{"sh", "-c", "curl -fsSL https://nixos.org/nix/install | sh -s -- --no-daemon"})
-	path, err := ctr.EnvVariable(ctx, "PATH")
-	if err != nil {
-		return nil, err
-	}
-	ctr = ctr.WithEnvVariable("PATH", path+":/nix/var/nix/profiles/default/bin")
-	// goreleaser requires nix-prefetch-url, so check we can run it
-	ctr = ctr.WithExec([]string{"sh", "-c", "nix-prefetch-url 2>&1 | grep 'error: you must specify a URL'"})
-
-	return ctr, nil
 }

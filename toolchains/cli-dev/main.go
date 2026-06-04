@@ -26,7 +26,6 @@ func New(
 	//   "!**/*.go",
 	//   "!vendor/**/*",
 	//   "!**.graphql",
-	//   "!.goreleaser*.yml",
 	//   "!.changes",
 	//   "!LICENSE",
 	//   "!install.sh",

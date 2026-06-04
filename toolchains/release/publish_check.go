@@ -23,8 +23,7 @@ const (
 )
 
 type publishCheckEnv struct {
-	source        *dagger.Directory
-	goreleaserKey *dagger.Secret
+	source *dagger.Directory
 
 	releaseTag     string
 	releaseVersion string
@@ -61,12 +60,8 @@ func (r *Release) PublishWithMockEndpoints(
 	// service and invokes release through a nested engine using that git ref.
 	// +defaultPath="/"
 	source *dagger.Directory,
-
-	// GoReleaser Pro key. This unlocks the real GoReleaser release config but
-	// does not grant publish credentials to any external service.
-	goreleaserKey *dagger.Secret,
 ) error {
-	env, err := newPublishCheckEnv(ctx, source.WithoutDirectory(".git"), goreleaserKey)
+	env, err := newPublishCheckEnv(ctx, source.WithoutDirectory(".git"))
 	if err != nil {
 		return err
 	}
@@ -94,10 +89,7 @@ func (r *Release) PublishWithMockEndpoints(
 	if err := requireContains(initialOut, "- [x] 🚗 CLI", "initial main publish should publish the CLI"); err != nil {
 		return err
 	}
-	if err := requireContains(initialOut, ".goreleaser.nightly.yml", "initial main publish should use the nightly GoReleaser config"); err != nil {
-		return err
-	}
-	if err := env.assertInitialGoReleaserOutputs(ctx); err != nil {
+	if err := env.assertInitialCLIReleaseOutputs(ctx); err != nil {
 		return err
 	}
 
@@ -127,7 +119,6 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 		{"- [x] ⚙️ Rust SDK", "release publish should publish the Rust SDK"},
 		{"- [x] 🐘 PHP SDK", "release publish should publish the PHP SDK"},
 		{"- [x] ☸️ Helm Chart", "release publish should publish the Helm chart"},
-		{".goreleaser.yml", "tagged release publish should use the stable GoReleaser config"},
 	} {
 		if err := requireContains(taggedOut, check.needle, check.msg); err != nil {
 			return err
@@ -137,13 +128,13 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 		return err
 	}
 
-	if err := env.assertStableGoReleaserArtifacts(ctx); err != nil {
+	if err := env.assertStableCLIReleaseArtifacts(ctx); err != nil {
 		return err
 	}
-	if err := env.assertGoReleaserGitHubRelease(ctx); err != nil {
+	if err := env.assertCLIGitHubRelease(ctx); err != nil {
 		return err
 	}
-	if err := env.assertGoReleaserPackageManagers(ctx); err != nil {
+	if err := env.assertCLIPackageManagers(ctx); err != nil {
 		return err
 	}
 	if err := env.assertMockEvents(ctx); err != nil {
@@ -170,7 +161,7 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 	return nil
 }
 
-func newPublishCheckEnv(ctx context.Context, source *dagger.Directory, goreleaserKey *dagger.Secret) (*publishCheckEnv, error) {
+func newPublishCheckEnv(ctx context.Context, source *dagger.Directory) (*publishCheckEnv, error) {
 	platform, platformArchive, err := publishCheckPlatform(ctx)
 	if err != nil {
 		return nil, err
@@ -178,7 +169,6 @@ func newPublishCheckEnv(ctx context.Context, source *dagger.Directory, gorelease
 
 	env := &publishCheckEnv{
 		source:          source,
-		goreleaserKey:   goreleaserKey,
 		releaseTag:      publishCheckReleaseTag,
 		releaseVersion:  strings.TrimPrefix(publishCheckReleaseTag, "v"),
 		awsBucket:       "dagger-release-test-" + strings.ToLower(randomID()),
@@ -356,7 +346,6 @@ func (env *publishCheckEnv) runReleasePublish(ctx context.Context, engine *dagge
   --registry-image "` + publishCheckRegistryImage + `" \
   --registry-username "` + publishCheckRegistryUser + `" \
   --registry-password=env:REGISTRY_PASSWORD \
-  --goreleaser-key=env:GORELEASER_KEY \
   --github-token=env:FAKE_GITHUB_TOKEN \
   --github-release-token=env:FAKE_GITHUB_TOKEN \
   --github-org-name "dagger" \
@@ -389,7 +378,6 @@ exit "$status"
 `
 
 	out, err := env.client(engine).
-		WithSecretVariable("GORELEASER_KEY", env.goreleaserKey).
 		WithSecretVariable("REGISTRY_PASSWORD", dag.SetSecret("release-registry-password-"+randomID(), publishCheckRegistryPass)).
 		WithSecretVariable("FAKE_GITHUB_TOKEN", dag.SetSecret("fake-github-token-"+randomID(), publishCheckRegistryPass)).
 		WithSecretVariable("FAKE_NETLIFY_TOKEN", dag.SetSecret("fake-netlify-token-"+randomID(), "fake-netlify-token")).
@@ -537,7 +525,7 @@ func (env *publishCheckEnv) assertMockEvents(ctx context.Context) error {
 	return nil
 }
 
-func (env *publishCheckEnv) assertInitialGoReleaserOutputs(ctx context.Context) error {
+func (env *publishCheckEnv) assertInitialCLIReleaseOutputs(ctx context.Context) error {
 	if err := env.assertS3ArchiveSet(ctx, "dagger/main/"+env.commit, publishCheckArchiveNames(env.commit), false); err != nil {
 		return fmt.Errorf("check main SHA CLI artifacts: %w", err)
 	}
@@ -557,14 +545,14 @@ func (env *publishCheckEnv) assertInitialGoReleaserOutputs(ctx context.Context) 
 		`/api/v3/repos/dagger/winget-pkgs/contents/`,
 		`/api/v3/repos/microsoft/winget-pkgs/pulls`,
 	} {
-		if err := requireNotContains(events, needle, "initial main publish should not perform stable GoReleaser publishing"); err != nil {
+		if err := requireNotContains(events, needle, "initial main publish should not perform stable CLI publishing"); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (env *publishCheckEnv) assertStableGoReleaserArtifacts(ctx context.Context) error {
+func (env *publishCheckEnv) assertStableCLIReleaseArtifacts(ctx context.Context) error {
 	return env.assertS3ArchiveSet(ctx, "dagger/releases/"+env.releaseVersion, publishCheckArchiveNames(env.releaseTag), true)
 }
 
@@ -653,7 +641,7 @@ fi
 	return nil
 }
 
-func (env *publishCheckEnv) assertGoReleaserGitHubRelease(ctx context.Context) error {
+func (env *publishCheckEnv) assertCLIGitHubRelease(ctx context.Context) error {
 	assets := append(publishCheckArchiveNames(env.releaseTag), "checksums.txt")
 	_, err := dag.Container().
 		From("python:3.12-alpine").
@@ -707,12 +695,12 @@ if publishes[0].get("draft") is not False:
 `}).
 		Stdout(ctx)
 	if err != nil {
-		return fmt.Errorf("check GoReleaser GitHub release: %w", err)
+		return fmt.Errorf("check CLI GitHub release: %w", err)
 	}
 	return nil
 }
 
-func (env *publishCheckEnv) assertGoReleaserPackageManagers(ctx context.Context) error {
+func (env *publishCheckEnv) assertCLIPackageManagers(ctx context.Context) error {
 	_, err := env.awsCLI().
 		WithExec([]string{"apk", "add", "python3"}).
 		WithMountedCache("/records", env.mockRecords).
@@ -763,7 +751,7 @@ def archive(suffix):
     return name
 
 homebrew = read_record("dagger/homebrew-tap/dagger.rb")
-need("This file was generated by GoReleaser" in homebrew, "homebrew formula should be GoReleaser generated")
+need("This file was generated by Dagger release tooling" in homebrew, "homebrew formula should be generated by Dagger release tooling")
 need("class Dagger < Formula" in homebrew, "homebrew formula should define Dagger formula")
 need(f'version "{version}"' in homebrew, "homebrew formula should set release version")
 need('system "#{bin}/dagger version"' in homebrew, "homebrew formula should keep smoke test")
@@ -774,7 +762,7 @@ for suffix in ("darwin_amd64.tar.gz", "darwin_arm64.tar.gz", "linux_amd64.tar.gz
 need("linux_armv7" not in homebrew, "homebrew formula should not include linux armv7")
 
 nix = read_record("dagger/nix/pkgs/dagger/default.nix")
-need("This file was generated by GoReleaser" in nix, "nix package should be GoReleaser generated")
+need("This file was generated by Dagger release tooling" in nix, "nix package should be generated by Dagger release tooling")
 need('pname = "dagger";' in nix, "nix package should set pname")
 need(f'version = "{version}";' in nix, "nix package should set release version")
 need('sourceRoot = ".";' in nix, "nix package should use the archive root as sourceRoot")
@@ -897,12 +885,12 @@ need(len(winget_prs) == 1, f"expected one winget pull request, got {len(winget_p
 need(winget_prs[0].get("title") == f"New version: Dagger.Cli {version}", f"unexpected winget PR title: {winget_prs[0].get('title')}")
 need(winget_prs[0].get("head") == f"dagger:winget-pkgs:dagger-{version}", f"unexpected winget PR head: {winget_prs[0].get('head')}")
 need(winget_prs[0].get("base") == "master", f"unexpected winget PR base: {winget_prs[0].get('base')}")
-need("Automated with [GoReleaser]" in winget_prs[0].get("body", ""), "winget PR body should include GoReleaser footer")
+need("Dagger release tooling" in winget_prs[0].get("body", ""), "winget PR body should include Dagger release tooling footer")
 PY
 `}).
 		Stdout(ctx)
 	if err != nil {
-		return fmt.Errorf("check GoReleaser package manager outputs: %w", err)
+		return fmt.Errorf("check CLI package manager outputs: %w", err)
 	}
 	return nil
 }

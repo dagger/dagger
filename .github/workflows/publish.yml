@@ -4,39 +4,11 @@ on:
     branches: ["main"]
     tags: ["v**"]
 
-  pull_request:
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - ready_for_review
-    paths:
-      # run tests in a PR when an SDK is modified...
-      - sdk
-      # ...or when we are
-      - .github/workflows/publish.yml
-      - .env.gha
-      - toolchains/release/**
-
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  mock-publish:
-    if: ${{ github.repository == 'dagger/dagger' && github.event_name == 'pull_request' }}
-    runs-on:
-      - ${{ github.repository == 'dagger/dagger' && 'nscloud-ubuntu-24.04-amd64-16x32' || 'ubuntu-24.04' }}
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-      - name: "Mock Publish"
-        uses: ./.github/actions/call
-        with:
-          function: release publish-with-mock-endpoints
-        env:
-          GORELEASER_PRO_LICENSE_KEY: ${{ secrets.GORELEASER_PRO_LICENSE_KEY }}
-
   publish:
     if: ${{ github.repository == 'dagger/dagger' && github.event_name == 'push' }}
     runs-on: ubuntu-latest
@@ -53,7 +25,6 @@ jobs:
             --registry-image="$DAGGER_ENGINE_IMAGE" \
             --registry-username="$DAGGER_ENGINE_IMAGE_USERNAME" \
             --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD \
-            --goreleaser-key=env:GORELEASER_KEY \
             --github-token=env:GITHUB_TOKEN \
             --github-org-name="$GITHUB_ORG_NAME" \
             --netlify-token=env:NETLIFY_TOKEN \
@@ -75,8 +46,6 @@ jobs:
           DAGGER_ENGINE_IMAGE: ${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}
           DAGGER_ENGINE_IMAGE_USERNAME: ${{ github.actor }}
           DAGGER_ENGINE_IMAGE_PASSWORD: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-
-          GORELEASER_KEY: ${{ secrets.GORELEASER_PRO_LICENSE_KEY }}
 
           GITHUB_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
           GITHUB_ORG_NAME: ${{ vars.GH_ORG_NAME }}

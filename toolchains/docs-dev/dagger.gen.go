@@ -258,10 +258,10 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				}
 			}
 			var apiUrl string
-			if inputArgs["apiUrl"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["apiUrl"]), &apiUrl)
+			if inputArgs["apiURL"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["apiURL"]), &apiUrl)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg apiUrl", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg apiURL", err))
 				}
 			}
 			return nil, (*DocsDev).Publish(&parent, ctx, netlifyToken, deployment, apiUrl)

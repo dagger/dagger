@@ -111,8 +111,6 @@ func (r *Release) Publish( //nolint:gocyclo
 	registryUsername string, // +optional
 	registryPassword *dagger.Secret, // +optional
 
-	goreleaserKey *dagger.Secret, // +optional
-
 	githubToken *dagger.Secret, // +optional
 	githubOrgName string, // +optional
 	githubHost string, // +optional
@@ -194,7 +192,7 @@ func (r *Release) Publish( //nolint:gocyclo
 	cliDev := dag.CliDev(cliDevOpts)
 	if !dryRun {
 		_, err := cliDev.
-			Publish(tag, goreleaserKey, githubOrgName, dagger.CliDevPublishOpts{
+			Publish(tag, commit, githubOrgName, dagger.CliDevPublishOpts{
 				GithubToken:        githubToken,
 				GithubHost:         githubHost,
 				GithubCaCert:       githubCaCert,

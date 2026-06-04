@@ -10,7 +10,7 @@ import (
 )
 
 // Retrieve the binding value, as type CliDev
-func (r *Binding) AsCliDev() *CliDev { // cli-dev (../../../../toolchains/cli-dev/main.go:89:6)
+func (r *Binding) AsCliDev() *CliDev { // cli-dev (../../../../toolchains/cli-dev/main.go:88:6)
 	q := r.query.Select("asCliDev")
 
 	return &CliDev{
@@ -18,7 +18,7 @@ func (r *Binding) AsCliDev() *CliDev { // cli-dev (../../../../toolchains/cli-de
 	}
 }
 
-type CliDev struct { // cli-dev (../../../../toolchains/cli-dev/main.go:89:6)
+type CliDev struct { // cli-dev (../../../../toolchains/cli-dev/main.go:88:6)
 	query *querybuilder.Selection
 
 	id              *ID
@@ -36,11 +36,11 @@ func (r *CliDev) WithGraphQLQuery(q *querybuilder.Selection) *CliDev {
 
 // CliDevBinaryOpts contains options for CliDev.Binary
 type CliDevBinaryOpts struct {
-	Platform Platform // cli-dev (../../../../toolchains/cli-dev/main.go:99:2)
+	Platform Platform // cli-dev (../../../../toolchains/cli-dev/main.go:98:2)
 }
 
 // Build the dagger CLI binary for a single platform
-func (r *CliDev) Binary(opts ...CliDevBinaryOpts) *File { // cli-dev (../../../../toolchains/cli-dev/main.go:97:1)
+func (r *CliDev) Binary(opts ...CliDevBinaryOpts) *File { // cli-dev (../../../../toolchains/cli-dev/main.go:96:1)
 	q := r.query.Select("binary")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -56,12 +56,12 @@ func (r *CliDev) Binary(opts ...CliDevBinaryOpts) *File { // cli-dev (../../../.
 
 // CliDevDevBinariesOpts contains options for CliDev.DevBinaries
 type CliDevDevBinariesOpts struct {
-	Platform Platform // cli-dev (../../../../toolchains/cli-dev/main.go:133:2)
+	Platform Platform // cli-dev (../../../../toolchains/cli-dev/main.go:132:2)
 }
 
 // Build dev CLI binaries
 // TODO: remove this
-func (r *CliDev) DevBinaries(opts ...CliDevDevBinariesOpts) *Directory { // cli-dev (../../../../toolchains/cli-dev/main.go:131:1)
+func (r *CliDev) DevBinaries(opts ...CliDevDevBinariesOpts) *Directory { // cli-dev (../../../../toolchains/cli-dev/main.go:130:1)
 	q := r.query.Select("devBinaries")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `platform` optional argument
@@ -126,32 +126,29 @@ func (r *CliDev) UnmarshalJSON(bs []byte) error {
 
 // CliDevPublishOpts contains options for CliDev.Publish
 type CliDevPublishOpts struct {
-	GithubToken *Secret // cli-dev (../../../../toolchains/cli-dev/publish.go:31:2)
+	GithubToken *Secret // cli-dev (../../../../toolchains/cli-dev/publish.go:24:2)
 
-	GithubHost string // cli-dev (../../../../toolchains/cli-dev/publish.go:32:2)
+	GithubHost string // cli-dev (../../../../toolchains/cli-dev/publish.go:25:2)
 
-	GithubCaCert *File // cli-dev (../../../../toolchains/cli-dev/publish.go:33:2)
+	GithubCaCert *File // cli-dev (../../../../toolchains/cli-dev/publish.go:26:2)
 
-	Git *GitRepository // cli-dev (../../../../toolchains/cli-dev/publish.go:35:2)
+	AwsAccessKeyID *Secret // cli-dev (../../../../toolchains/cli-dev/publish.go:28:2)
 
-	AwsAccessKeyID *Secret // cli-dev (../../../../toolchains/cli-dev/publish.go:37:2)
+	AwsSecretAccessKey *Secret // cli-dev (../../../../toolchains/cli-dev/publish.go:29:2)
 
-	AwsSecretAccessKey *Secret // cli-dev (../../../../toolchains/cli-dev/publish.go:38:2)
+	AwsRegion string // cli-dev (../../../../toolchains/cli-dev/publish.go:30:2)
 
-	AwsRegion string // cli-dev (../../../../toolchains/cli-dev/publish.go:39:2)
+	AwsBucket string // cli-dev (../../../../toolchains/cli-dev/publish.go:31:2)
 
-	AwsBucket string // cli-dev (../../../../toolchains/cli-dev/publish.go:40:2)
+	ArtefactsFqdn string // cli-dev (../../../../toolchains/cli-dev/publish.go:32:2)
 
-	ArtefactsFqdn string // cli-dev (../../../../toolchains/cli-dev/publish.go:41:2)
+	AwsEndpointURL string // cli-dev (../../../../toolchains/cli-dev/publish.go:33:2)
 
-	AwsEndpointURL string // cli-dev (../../../../toolchains/cli-dev/publish.go:42:2)
-
-	DryRun bool // cli-dev (../../../../toolchains/cli-dev/publish.go:44:2)
+	DryRun bool // cli-dev (../../../../toolchains/cli-dev/publish.go:35:2)
 }
 
-// Publish the CLI using GoReleaser
-func (r *CliDev) Publish(tag string, goreleaserKey *Secret, githubOrgName string, opts ...CliDevPublishOpts) *Directory { // cli-dev (../../../../toolchains/cli-dev/publish.go:24:1)
-	assertNotNil("goreleaserKey", goreleaserKey)
+// Publish the CLI release artifacts.
+func (r *CliDev) Publish(tag string, commit string, githubOrgName string, opts ...CliDevPublishOpts) *Directory { // cli-dev (../../../../toolchains/cli-dev/publish.go:18:1)
 	q := r.query.Select("publish")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `githubToken` optional argument
@@ -165,10 +162,6 @@ func (r *CliDev) Publish(tag string, goreleaserKey *Secret, githubOrgName string
 		// `githubCaCert` optional argument
 		if !querybuilder.IsZeroValue(opts[i].GithubCaCert) {
 			q = q.Arg("githubCaCert", opts[i].GithubCaCert)
-		}
-		// `git` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Git) {
-			q = q.Arg("git", opts[i].Git)
 		}
 		// `awsAccessKeyId` optional argument
 		if !querybuilder.IsZeroValue(opts[i].AwsAccessKeyID) {
@@ -200,7 +193,7 @@ func (r *CliDev) Publish(tag string, goreleaserKey *Secret, githubOrgName string
 		}
 	}
 	q = q.Arg("tag", tag)
-	q = q.Arg("goreleaserKey", goreleaserKey)
+	q = q.Arg("commit", commit)
 	q = q.Arg("githubOrgName", githubOrgName)
 
 	return &Directory{
@@ -210,10 +203,10 @@ func (r *CliDev) Publish(tag string, goreleaserKey *Secret, githubOrgName string
 
 // CliDevPublishMetadataOpts contains options for CliDev.PublishMetadata
 type CliDevPublishMetadataOpts struct {
-	AwsEndpointURL string // cli-dev (../../../../toolchains/cli-dev/publish.go:188:2)
+	AwsEndpointURL string // cli-dev (../../../../toolchains/cli-dev/publish.go:111:2)
 }
 
-func (r *CliDev) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, awsSecretAccessKey *Secret, awsRegion string, awsBucket string, awsCloudfrontDistribution string, opts ...CliDevPublishMetadataOpts) error { // cli-dev (../../../../toolchains/cli-dev/publish.go:180:1)
+func (r *CliDev) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, awsSecretAccessKey *Secret, awsRegion string, awsBucket string, awsCloudfrontDistribution string, opts ...CliDevPublishMetadataOpts) error { // cli-dev (../../../../toolchains/cli-dev/publish.go:103:1)
 	assertNotNil("awsAccessKeyId", awsAccessKeyId)
 	assertNotNil("awsSecretAccessKey", awsSecretAccessKey)
 	if r.publishMetadata != nil {
@@ -237,15 +230,15 @@ func (r *CliDev) PublishMetadata(ctx context.Context, awsAccessKeyId *Secret, aw
 
 // CliDevReferenceOpts contains options for CliDev.Reference
 type CliDevReferenceOpts struct {
-	Frontmatter string // cli-dev (../../../../toolchains/cli-dev/main.go:111:2)
+	Frontmatter string // cli-dev (../../../../toolchains/cli-dev/main.go:110:2)
 	//
 	// Include experimental commands
 	//
-	IncludeExperimental bool // cli-dev (../../../../toolchains/cli-dev/main.go:114:2)
+	IncludeExperimental bool // cli-dev (../../../../toolchains/cli-dev/main.go:113:2)
 }
 
 // Generate a markdown CLI reference doc
-func (r *CliDev) Reference(opts ...CliDevReferenceOpts) *File { // cli-dev (../../../../toolchains/cli-dev/main.go:109:1)
+func (r *CliDev) Reference(opts ...CliDevReferenceOpts) *File { // cli-dev (../../../../toolchains/cli-dev/main.go:108:1)
 	q := r.query.Select("reference")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `frontmatter` optional argument
@@ -264,7 +257,7 @@ func (r *CliDev) Reference(opts ...CliDevReferenceOpts) *File { // cli-dev (../.
 }
 
 // Verify that the CLI builds without actually publishing anything
-func (r *CliDev) ReleaseDryRun(ctx context.Context) error { // cli-dev (../../../../toolchains/cli-dev/publish.go:251:1)
+func (r *CliDev) ReleaseDryRun(ctx context.Context) error { // cli-dev (../../../../toolchains/cli-dev/publish.go:174:1)
 	if r.releaseDryRun != nil {
 		return nil
 	}
@@ -273,7 +266,7 @@ func (r *CliDev) ReleaseDryRun(ctx context.Context) error { // cli-dev (../../..
 	return q.Execute(ctx)
 }
 
-func (r *CliDev) Tag(ctx context.Context) (string, error) { // cli-dev (../../../../toolchains/cli-dev/main.go:91:2)
+func (r *CliDev) Tag(ctx context.Context) (string, error) { // cli-dev (../../../../toolchains/cli-dev/main.go:90:2)
 	if r.tag != nil {
 		return *r.tag, nil
 	}
@@ -285,7 +278,7 @@ func (r *CliDev) Tag(ctx context.Context) (string, error) { // cli-dev (../../..
 	return response, q.Execute(ctx)
 }
 
-func (r *CliDev) Version(ctx context.Context) (string, error) { // cli-dev (../../../../toolchains/cli-dev/main.go:90:2)
+func (r *CliDev) Version(ctx context.Context) (string, error) { // cli-dev (../../../../toolchains/cli-dev/main.go:89:2)
 	if r.version != nil {
 		return *r.version, nil
 	}
@@ -306,7 +299,7 @@ func (r *CliDev) AsNode() Node {
 }
 
 // Create or update a binding of type CliDev in the environment
-func (r *Env) WithCliDevInput(name string, value *CliDev, description string) *Env { // cli-dev (../../../../toolchains/cli-dev/main.go:89:6)
+func (r *Env) WithCliDevInput(name string, value *CliDev, description string) *Env { // cli-dev (../../../../toolchains/cli-dev/main.go:88:6)
 	assertNotNil("value", value)
 	q := r.query.Select("withCliDevInput")
 	q = q.Arg("name", name)
@@ -319,7 +312,7 @@ func (r *Env) WithCliDevInput(name string, value *CliDev, description string) *E
 }
 
 // Declare a desired CliDev output to be assigned in the environment
-func (r *Env) WithCliDevOutput(name string, description string) *Env { // cli-dev (../../../../toolchains/cli-dev/main.go:89:6)
+func (r *Env) WithCliDevOutput(name string, description string) *Env { // cli-dev (../../../../toolchains/cli-dev/main.go:88:6)
 	q := r.query.Select("withCliDevOutput")
 	q = q.Arg("name", name)
 	q = q.Arg("description", description)
@@ -333,19 +326,19 @@ func (r *Env) WithCliDevOutput(name string, description string) *Env { // cli-de
 type CliDevOpts struct {
 	RunnerHost string // cli-dev (../../../../toolchains/cli-dev/main.go:16:2)
 
-	Source *Directory // cli-dev (../../../../toolchains/cli-dev/main.go:37:2)
+	Source *Directory // cli-dev (../../../../toolchains/cli-dev/main.go:36:2)
 	//
 	// Base image for go build environment
 	//
-	Base *Container // cli-dev (../../../../toolchains/cli-dev/main.go:41:2)
+	Base *Container // cli-dev (../../../../toolchains/cli-dev/main.go:40:2)
 	//
 	// Explicit version to set on the Dagger CLI.
 	//
-	Version string // cli-dev (../../../../toolchains/cli-dev/main.go:45:2)
+	Version string // cli-dev (../../../../toolchains/cli-dev/main.go:44:2)
 	//
 	// Explicit engine image tag to embed in the Dagger CLI.
 	//
-	ImageTag string // cli-dev (../../../../toolchains/cli-dev/main.go:49:2)
+	ImageTag string // cli-dev (../../../../toolchains/cli-dev/main.go:48:2)
 }
 
 // Develop the Dagger CLI

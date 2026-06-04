@@ -247,11 +247,11 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg tag", err))
 				}
 			}
-			var goreleaserKey *dagger.Secret
-			if inputArgs["goreleaserKey"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["goreleaserKey"]), &goreleaserKey)
+			var commit string
+			if inputArgs["commit"] != nil {
+				err = json.Unmarshal([]byte(inputArgs["commit"]), &commit)
 				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg goreleaserKey", err))
+					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg commit", err))
 				}
 			}
 			var githubOrgName string
@@ -280,13 +280,6 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 				err = json.Unmarshal([]byte(inputArgs["githubCaCert"]), &githubCaCert)
 				if err != nil {
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg githubCaCert", err))
-				}
-			}
-			var git *dagger.GitRepository
-			if inputArgs["git"] != nil {
-				err = json.Unmarshal([]byte(inputArgs["git"]), &git)
-				if err != nil {
-					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg git", err))
 				}
 			}
 			var awsAccessKeyId *dagger.Secret
@@ -338,7 +331,7 @@ func invoke(ctx context.Context, parentJSON []byte, parentName string, fnName st
 					panic(fmt.Errorf("%s: %w", "failed to unmarshal input arg dryRun", err))
 				}
 			}
-			return (*CliDev).Publish(&parent, ctx, tag, goreleaserKey, githubOrgName, githubToken, githubHost, githubCaCert, git, awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucket, artefactsFqdn, awsEndpointUrl, dryRun)
+			return (*CliDev).Publish(&parent, ctx, tag, commit, githubOrgName, githubToken, githubHost, githubCaCert, awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucket, artefactsFqdn, awsEndpointUrl, dryRun)
 		case "PublishMetadata":
 			var parent CliDev
 			err = json.Unmarshal(parentJSON, &parent)
