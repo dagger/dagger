@@ -770,3 +770,43 @@ func runGit(t *testing.T, dir string, args ...string) {
 	out, err := cmd.CombinedOutput()
 	require.NoErrorf(t, err, "git %s: %s", strings.Join(args, " "), out)
 }
+
+func TestWorkspaceRootFromAddressUsesPublicCwd(t *testing.T) {
+	t.Run("file address nested cwd", func(t *testing.T) {
+		got, err := workspaceRootFromAddress("file:///tmp/repo/services/api", "/services/api")
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(string(filepath.Separator), "tmp", "repo"), got)
+	})
+
+	t.Run("file address root cwd", func(t *testing.T) {
+		got, err := workspaceRootFromAddress("file:///tmp/repo", "/")
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(string(filepath.Separator), "tmp", "repo"), got)
+	})
+
+	t.Run("git address nested cwd", func(t *testing.T) {
+		got, err := workspaceRootFromAddress("github.com/acme/repo/services/api@v1.2.3", "/services/api")
+		require.NoError(t, err)
+		require.Equal(t, "github.com/acme/repo@v1.2.3", got)
+	})
+
+	t.Run("rejects escaping cwd", func(t *testing.T) {
+		_, err := workspaceRootFromAddress("file:///tmp/repo", "../outside")
+		require.ErrorContains(t, err, "escapes workspace root")
+	})
+
+	t.Run("rejects public escaping cwd", func(t *testing.T) {
+		_, err := workspaceRootFromAddress("file:///tmp/repo", "/../outside")
+		require.ErrorContains(t, err, "escapes workspace root")
+	})
+
+	t.Run("rejects file address outside cwd", func(t *testing.T) {
+		_, err := workspaceRootFromAddress("file:///tmp/repo/other", "/services/api")
+		require.ErrorContains(t, err, "is not within workspace cwd")
+	})
+
+	t.Run("rejects git address outside cwd", func(t *testing.T) {
+		_, err := workspaceRootFromAddress("github.com/acme/repo/other@v1.2.3", "/services/api")
+		require.ErrorContains(t, err, "is not within workspace cwd")
+	})
+}

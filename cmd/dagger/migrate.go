@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -118,22 +117,20 @@ func localWorkspaceAddressPath(address string) (string, error) {
 }
 
 func workspaceRootFromCwd(wd, workspaceCwd string) (string, error) {
-	root, err := filepath.Abs(wd)
+	wd, err := filepath.Abs(wd)
 	if err != nil {
 		return "", fmt.Errorf("working directory: %w", err)
 	}
-	workspaceCwd = filepath.Clean(filepath.FromSlash(workspaceCwd))
-	if workspaceCwd == "" || workspaceCwd == "." {
-		return root, nil
+	workspaceCwd, err = workspaceRelativeCwd(workspaceCwd)
+	if err != nil {
+		return "", err
 	}
-	if filepath.IsAbs(workspaceCwd) || workspaceCwd == ".." || strings.HasPrefix(workspaceCwd, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("workspace cwd %q escapes workspace root", workspaceCwd)
+	if workspaceCwd == "" {
+		return wd, nil
 	}
-	for _, part := range strings.Split(workspaceCwd, string(filepath.Separator)) {
-		if part == "" || part == "." {
-			continue
-		}
-		root = filepath.Dir(root)
+	root, ok := stripWorkspaceCwdSuffix(wd, workspaceCwd)
+	if !ok {
+		return "", fmt.Errorf("working directory %q is not within workspace cwd %q", wd, workspaceCwd)
 	}
 	return root, nil
 }
