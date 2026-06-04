@@ -14,6 +14,9 @@ func (s *workspaceSchema) envList(
 	parent *core.Workspace,
 	_ struct{},
 ) (dagql.Array[dagql.String], error) {
+	if isSyntheticWorkspace(parent) {
+		return dagql.Array[dagql.String]{}, nil
+	}
 	if parent.ConfigFile == "" {
 		return nil, fmt.Errorf("no dagger.toml found in workspace")
 	}

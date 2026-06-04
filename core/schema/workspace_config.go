@@ -87,6 +87,9 @@ func loadWorkspaceConfigForMutation(
 	policy workspaceConfigMutationPolicy,
 	here bool,
 ) (*workspace.Config, bool, error) {
+	if err := unsupportedSyntheticWorkspaceFeature(ws, "config mutations"); err != nil {
+		return nil, false, err
+	}
 	if ws.ConfigFile != "" && (!here || workspaceSameConfigDirectory(ws, workspaceConfigDirectoryForWrite(ws, true))) {
 		cfg, err := readWorkspaceConfig(ctx, ws)
 		return cfg, false, err
@@ -297,6 +300,9 @@ func (s *workspaceSchema) configRead(
 	parent *core.Workspace,
 	args configReadArgs,
 ) (dagql.String, error) {
+	if err := unsupportedSyntheticWorkspaceFeature(parent, "config"); err != nil {
+		return "", err
+	}
 	if parent.ConfigFile == "" {
 		result, err := workspace.ReadConfigValue(nil, args.Key)
 		if err != nil {

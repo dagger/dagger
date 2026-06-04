@@ -278,6 +278,12 @@ func (s *directorySchema) Install(srv *dagql.Server) {
 			),
 		dagql.NodeFunc("asGit", s.asGit).
 			Doc(`Converts this directory to a local git repository`),
+		dagql.NodeFunc("asWorkspace", s.asWorkspace).
+			Doc("Creates a synthetic workspace from this directory.").
+			Args(
+				dagql.Arg("cwd").Doc("Current working directory inside the workspace root. Defaults to the workspace root."),
+			).
+			Experimental("Synthetic workspaces currently support filesystem APIs only."),
 		dagql.NodeFunc("terminal", s.terminal).
 			View(AfterVersion("v0.12.0")).
 			DoNotCache("Only creates a temporary container for the user to interact with and then returns original parent.").
@@ -1753,6 +1759,14 @@ func (s *directorySchema) asGit(
 		return inst, err
 	}
 	return inst, nil
+}
+
+func (s *directorySchema) asWorkspace(
+	ctx context.Context,
+	dir dagql.ObjectResult[*core.Directory],
+	args workspaceArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	return syntheticWorkspaceFromRootfs(ctx, dir, args.Cwd, "directory://")
 }
 
 type directoryWithSymlinkArgs struct {

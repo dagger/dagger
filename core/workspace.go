@@ -23,8 +23,8 @@ type Workspace struct {
 	// dagger.toml. Internal only.
 	compatWorkspace *workspacepkg.CompatWorkspace
 
-	Address    string `field:"true" doc:"Canonical Dagger address of the workspace location."`
-	Cwd        string `field:"true" doc:"Current location within the workspace root. Relative paths in workspace APIs resolve from here."`
+	Address    string `field:"true" doc:"Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces."`
+	Cwd        string
 	ConfigFile string `field:"true" doc:"Selected native workspace config file relative to the workspace root, if any."`
 
 	// LockFile is the selected lockfile path relative to the workspace root.
@@ -84,7 +84,7 @@ func (*Workspace) Type() *ast.Type {
 }
 
 func (*Workspace) TypeDescription() string {
-	return "A Dagger workspace detected from the current working directory."
+	return "A Dagger workspace detected from the current working directory or constructed from a Directory."
 }
 
 var _ dagql.PersistedObject = (*Workspace)(nil)
