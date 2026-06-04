@@ -10,6 +10,7 @@ require (
 	github.com/containerd/platforms v1.0.0-rc.2
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
 	github.com/dagger/otel-go v1.43.1-0.20260515012101-af7cd0684887
+	github.com/pelletier/go-toml v1.9.5
 	github.com/vektah/gqlparser/v2 v2.5.33
 	go.opentelemetry.io/otel v1.44.0
 	go.opentelemetry.io/otel/sdk v1.43.0

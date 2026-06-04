@@ -7,15 +7,18 @@ import (
 )
 
 const (
-	// ConfigFileName is the workspace config filename inside .dagger/.
-	ConfigFileName = "config.toml"
+	// ConfigFileName is the workspace config filename.
+	ConfigFileName = "dagger.toml"
 
-	// ModuleConfigFileName is the module config filename.
-	ModuleConfigFileName = "dagger.json"
+	// ModuleConfigFileName is the current module config filename.
+	ModuleConfigFileName = "dagger-module.toml"
+
+	// LegacyModuleConfigFileName is the legacy module config filename.
+	LegacyModuleConfigFileName = "dagger.json"
 )
 
 // Workspace represents a detected workspace boundary and selected files within
-// it. ConfigFile and LockFile are deliberately separate: config.toml may be
+// it. ConfigFile and LockFile are deliberately separate: dagger.toml may be
 // absent or projected from compat dagger.json, while the lockfile is a local
 // writable binding selected from the workspace tree.
 type Workspace struct {
@@ -25,13 +28,13 @@ type Workspace struct {
 	// Cwd is the detection start location relative to Root. "." means Root.
 	Cwd string
 
-	// ConfigFile is the selected native config.toml path relative to Root.
+	// ConfigFile is the selected native dagger.toml path relative to Root.
 	// Empty means no native workspace config exists.
 	ConfigFile string
 
-	// LockFile is the selected lockfile path relative to Root. It is the nearest
-	// existing .dagger/lock from Cwd up to Root, or the selected .dagger fallback
-	// directory when none exists.
+	// LockFile is the selected canonical lockfile path relative to Root. It is
+	// the nearest existing dagger.lock from Cwd up to Root, or the canonical
+	// dagger.lock sibling of the selected config when none exists.
 	LockFile string
 }
 
@@ -46,10 +49,10 @@ type PathExistsFunc func(ctx context.Context, path string) (parentDir string, ex
 // no workspace; callers should treat the nil workspace as a normal no-workspace
 // condition, not an error.
 //
-// After the boundary is known, ConfigFile is the nearest .dagger/config.toml
+// After the boundary is known, ConfigFile is the nearest dagger.toml
 // walking upward from cwd, stopping at the workspace root. LockFile is the
-// nearest existing .dagger/lock, or the nearest .dagger/lock write target when
-// no lock exists yet.
+// canonical dagger.lock write target. Legacy .dagger/lock files influence the
+// selected canonical sibling path when no dagger.lock exists.
 func Detect(
 	ctx context.Context,
 	pathExists PathExistsFunc,
@@ -89,8 +92,7 @@ func DetectInRoot(
 		return nil, fmt.Errorf("workspace cwd %q is outside workspace root %q", cwd, root)
 	}
 
-	configName := filepath.Join(LockDirName, ConfigFileName)
-	configDir, foundConfigFile, err := findUp(ctx, pathExists, cwd, root, configName)
+	configDir, foundConfigFile, err := findUp(ctx, pathExists, cwd, root, ConfigFileName)
 	if err != nil {
 		return nil, fmt.Errorf("workspace config detection: %w", err)
 	}
@@ -103,8 +105,7 @@ func DetectInRoot(
 		configFile = cleanRelPath(filepath.Join(configDirRel, ConfigFileName))
 	}
 
-	lockName := filepath.Join(LockDirName, LockFileName)
-	lockDir, foundLockFile, err := findUp(ctx, pathExists, cwd, root, lockName)
+	lockDir, foundLockFile, err := findUp(ctx, pathExists, cwd, root, LockFileName)
 	if err != nil {
 		return nil, fmt.Errorf("workspace lock detection: %w", err)
 	}
@@ -115,11 +116,17 @@ func DetectInRoot(
 			return nil, fmt.Errorf("workspace lock directory: %w", err)
 		}
 		lockFile = filepath.Join(lockDirRel, LockFileName)
-	} else {
-		lockDirRel, err := lockFileFallbackDir(ctx, pathExists, cwd, root)
+	} else if legacyLockDir, foundLegacyLockFile, err := findUp(ctx, pathExists, cwd, root, LegacyLockFilePath); err != nil {
+		return nil, fmt.Errorf("legacy workspace lock detection: %w", err)
+	} else if foundLegacyLockFile {
+		legacyLockDirRel, err := filepath.Rel(root, legacyLockDir)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("legacy workspace lock directory: %w", err)
 		}
+		canonicalLockDir := filepath.Dir(legacyLockDirRel)
+		lockFile = filepath.Join(canonicalLockDir, LockFileName)
+	} else {
+		lockDirRel := lockFileFallbackDir(configFile)
 		lockFile = filepath.Join(lockDirRel, LockFileName)
 	}
 
@@ -131,24 +138,11 @@ func DetectInRoot(
 	}, nil
 }
 
-func lockFileFallbackDir(
-	ctx context.Context,
-	pathExists PathExistsFunc,
-	cwd string,
-	root string,
-) (string, error) {
-	daggerParentDir, hasDaggerDir, err := findUp(ctx, pathExists, cwd, root, LockDirName)
-	if err != nil {
-		return "", fmt.Errorf("workspace .dagger detection: %w", err)
+func lockFileFallbackDir(configFile string) string {
+	if configFile != "" {
+		return cleanRelPath(filepath.Dir(configFile))
 	}
-	if !hasDaggerDir {
-		return LockDirName, nil
-	}
-	daggerDirRel, err := filepath.Rel(root, filepath.Join(daggerParentDir, LockDirName))
-	if err != nil {
-		return "", fmt.Errorf("workspace .dagger directory: %w", err)
-	}
-	return cleanRelPath(daggerDirRel), nil
+	return "."
 }
 
 func cleanRelPath(p string) string {

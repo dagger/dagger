@@ -92,15 +92,13 @@ var moduleUpdateCmd = newWorkspaceUpdateCmd(true)
 
 func newWorkspaceUpdateCmd(hidden bool) *cobra.Command {
 	return &cobra.Command{
-		Use:   "update [module...]",
+		Use:   "update",
 		Short: "Refresh workspace-managed state",
 		Long: `Refresh workspace-managed state.
 
-With no module names, refresh entries already recorded in .dagger/lock.
-
-With module names, refresh only those modules from .dagger/config.toml.
-`,
-		Example: `"dagger workspace update" or "dagger workspace update wolfi"`,
+Refreshes entries already recorded in dagger.lock.`,
+		Example: `"dagger workspace update"`,
+		Args:    cobra.NoArgs,
 		Hidden:  hidden,
 		RunE:    runWorkspaceUpdate,
 	}
@@ -132,7 +130,7 @@ func newWorkspaceUninstallCmd(hidden bool) *cobra.Command {
 	return &cobra.Command{
 		Use:     "uninstall [options] <module>",
 		Short:   "Uninstall a module",
-		Long:    `Uninstall a module from the current workspace, removing it from .dagger/config.toml.`,
+		Long:    `Uninstall a module from the current workspace, removing it from dagger.toml.`,
 		Example: "dagger workspace uninstall hello",
 		Hidden:  hidden,
 		Args:    cobra.ExactArgs(1),

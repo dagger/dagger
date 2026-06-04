@@ -104,7 +104,7 @@ type Myapp {
 		c := connect(ctx, t)
 
 		ctr := workspaceBase(t, c).
-			WithNewFile(".dagger/config.toml", "[modules]\n").
+			WithNewFile("dagger.toml", "[modules]\n").
 			With(withWorkspaceFixture(t, c, ".", "workspaces/contextual/paths-shape")).
 			WithWorkdir("/work/app")
 

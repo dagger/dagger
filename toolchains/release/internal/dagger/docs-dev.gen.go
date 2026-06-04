@@ -33,7 +33,7 @@ func (r *DocsDev) WithGraphQLQuery(q *querybuilder.Selection) *DocsDev {
 }
 
 // Bump the Go SDK's Engine dependency
-func (r *DocsDev) Bump(engineVersion string) *Changeset { // docs-dev (../../../../toolchains/docs-dev/main.go:120:1)
+func (r *DocsDev) Bump(engineVersion string) *Changeset { // docs-dev (../../../../toolchains/docs-dev/main.go:121:1)
 	q := r.query.Select("bump")
 	q = q.Arg("engineVersion", engineVersion)
 
@@ -43,7 +43,7 @@ func (r *DocsDev) Bump(engineVersion string) *Changeset { // docs-dev (../../../
 }
 
 // Deploys a current build of the docs.
-func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs-dev (../../../../toolchains/docs-dev/main.go:135:1)
+func (r *DocsDev) Deploy(ctx context.Context, message string, netlifyToken *Secret) (string, error) { // docs-dev (../../../../toolchains/docs-dev/main.go:136:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.deploy != nil {
 		return *r.deploy, nil
@@ -109,11 +109,11 @@ func (r *DocsDev) UnmarshalJSON(bs []byte) error {
 
 // DocsDevPublishOpts contains options for DocsDev.Publish
 type DocsDevPublishOpts struct {
-	Deployment string // docs-dev (../../../../toolchains/docs-dev/main.go:168:2)
+	Deployment string // docs-dev (../../../../toolchains/docs-dev/main.go:169:2)
 }
 
 // Publish a previous deployment to production - defaults to the latest deployment on the main branch.
-func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsDevPublishOpts) error { // docs-dev (../../../../toolchains/docs-dev/main.go:164:1)
+func (r *DocsDev) Publish(ctx context.Context, netlifyToken *Secret, opts ...DocsDevPublishOpts) error { // docs-dev (../../../../toolchains/docs-dev/main.go:165:1)
 	assertNotNil("netlifyToken", netlifyToken)
 	if r.publish != nil {
 		return nil

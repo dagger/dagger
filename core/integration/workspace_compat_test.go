@@ -391,8 +391,8 @@ type Legacy {
   }
 }
 `).
-			WithNewFile(".dagger/config.toml", `[modules.native]
-source = "modules/native"
+			WithNewFile("dagger.toml", `[modules.native]
+source = ".dagger/modules/native"
 `).
 			WithNewFile(".dagger/modules/native/dagger.json", `{"name":"native","sdk":{"source":"dang"}}`).
 			WithNewFile(".dagger/modules/native/main.dang", `
@@ -412,8 +412,8 @@ type Native {
 	t.Run("native workspace config suppresses sdk-only child config", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c).
-			WithNewFile(".dagger/config.toml", `[modules.native]
-source = "modules/native"
+			WithNewFile("dagger.toml", `[modules.native]
+source = ".dagger/modules/native"
 entrypoint = true
 `).
 			WithNewFile(".dagger/modules/native/dagger.json", `{"name":"native","sdk":{"source":"dang"}}`).
@@ -496,7 +496,7 @@ func (WorkspaceCompatSuite) TestWorkspaceCompatMutationGuards(ctx context.Contex
 	t.Run("install rejects sdk-only legacy config", func(ctx context.Context, t *testctx.T) {
 		// An SDK-only dagger.json is still legacy compat state. It may be run
 		// and migrated, but workspace mutations must not silently create
-		// .dagger/config.toml beside it because that would bypass migration and
+		// dagger.toml beside it because that would bypass migration and
 		// let native config drift from the legacy project state.
 		workdir := t.TempDir()
 		depDir := filepath.Join(workdir, "dep")
@@ -511,7 +511,7 @@ func (WorkspaceCompatSuite) TestWorkspaceCompatMutationGuards(ctx context.Contex
 		require.Error(t, err)
 		requireErrOut(t, err, "workspace is using legacy dagger.json config; run dagger migrate first")
 
-		_, err = os.Stat(filepath.Join(workdir, ".dagger", "config.toml"))
+		_, err = os.Stat(filepath.Join(workdir, "dagger.toml"))
 		require.ErrorIs(t, err, os.ErrNotExist)
 	})
 }
@@ -542,8 +542,8 @@ func (WorkspaceCompatSuite) TestLegacyWorkspaceDirectLoadErrors(ctx context.Cont
 	t.Run("local workspace module source tells the user to migrate that project", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c).
-			WithNewFile(".dagger/config.toml", `[modules.legacy]
-source = "../legacy"
+			WithNewFile("dagger.toml", `[modules.legacy]
+source = "legacy"
 `).
 			WithNewFile("legacy/dagger.json", `{
   "name": "legacy",
@@ -582,7 +582,7 @@ type Blueprint {
 `))
 
 		ctr := workspaceBase(t, c).
-			WithNewFile(".dagger/config.toml", `[modules.legacy]
+			WithNewFile("dagger.toml", `[modules.legacy]
 source = "`+remoteRef+`"
 `)
 
@@ -645,16 +645,16 @@ func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.
 		_, err = ctr.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
 		require.Error(t, err, "root dagger.json should be removed after migration")
 
-		configOut, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+		configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, configOut, `[modules.myapp]`)
-		require.Contains(t, configOut, `source = "modules/myapp"`)
+		require.Contains(t, configOut, `source = ".dagger/modules/myapp"`)
 		require.Contains(t, configOut, `entrypoint = true`)
 
-		moduleOut, err := ctr.WithExec([]string{"cat", ".dagger/modules/myapp/dagger.json"}).Stdout(ctx)
+		moduleOut, err := ctr.WithExec([]string{"cat", ".dagger/modules/myapp/dagger-module.toml"}).Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, moduleOut, `"name": "myapp"`)
-		require.Contains(t, moduleOut, `"source": "../../../ci"`)
+		require.Contains(t, moduleOut, `name = "myapp"`)
+		require.Contains(t, moduleOut, `source = "../../../ci"`)
 
 		out, err := ctr.With(compatDaggerCall("greet")).Stdout(ctx)
 		require.NoError(t, err)
@@ -673,10 +673,10 @@ func (WorkspaceCompatSuite) TestCompatMigration(ctx context.Context, t *testctx.
 		_, err = ctr.WithExec([]string{"test", "-f", "dagger.json"}).Sync(ctx)
 		require.NoError(t, err, "sdk-only dagger.json should remain in place")
 
-		_, err = ctr.WithExec([]string{"test", "-f", ".dagger/config.toml"}).Sync(ctx)
+		_, err = ctr.WithExec([]string{"test", "-f", "dagger.toml"}).Sync(ctx)
 		require.NoError(t, err, "root parent workspace config should be created")
 
-		configOut, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+		configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, configOut, `[modules.go-sdk]`)
 		require.Contains(t, configOut, `source = "github.com/dagger/go-sdk"`)
@@ -754,7 +754,7 @@ func (WorkspaceCompatSuite) TestCompatMigrationToolchainSkipFields(ctx context.C
 }`).
 		With(compatDaggerExec("migrate", "-y"))
 
-	configOut, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+	configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, configOut, "[modules.hello-with-generators]")
 	require.Contains(t, configOut, `generate.skip = ["generate-other-files", "other-generators:*"]`)
@@ -809,7 +809,7 @@ func (WorkspaceCompatSuite) TestCompatMigrationPortMappings(ctx context.Context,
 }`).
 		With(compatDaggerExec("migrate", "-y"))
 
-	configOut, err := ctr.WithExec([]string{"cat", ".dagger/config.toml"}).Stdout(ctx)
+	configOut, err := ctr.WithExec([]string{"cat", "dagger.toml"}).Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, configOut, "[modules.hello-with-services]")
 	require.Contains(t, configOut, `up.skip = ["redis", "infra:database"]`)
@@ -826,7 +826,7 @@ func (WorkspaceCompatSuite) TestCompatMigrationPortMappings(ctx context.Context,
 }
 
 // TestCompatUpSkipsAndPortMappingsBeforeMigration covers compat behavior before
-// migration writes .dagger/config.toml. Legacy ignoreServices and portMappings
+// migration writes dagger.toml. Legacy ignoreServices and portMappings
 // should be read through the same workspace config projection that migration
 // writes.
 func (WorkspaceCompatSuite) TestCompatUpSkipsAndPortMappingsBeforeMigration(ctx context.Context, t *testctx.T) {

@@ -7,17 +7,18 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	toml "github.com/pelletier/go-toml"
 )
 
-// Config represents a parsed .dagger/config.toml workspace configuration.
+// Config represents a parsed dagger.toml workspace configuration.
 type Config struct {
-	Modules            map[string]ModuleEntry `toml:"modules"`
-	Ignore             []string               `toml:"ignore"`
-	DefaultsFromDotEnv bool                   `toml:"defaults_from_dotenv,omitempty"`
-	Env                map[string]EnvOverlay  `toml:"env"`
-	Ports              map[string]PortMapping `toml:"ports,omitempty"`
+	Modules            map[string]ModuleEntry `json:"modules,omitempty" toml:"modules"`
+	Ignore             []string               `json:"ignore,omitempty" toml:"ignore"`
+	DefaultsFromDotEnv bool                   `json:"defaults_from_dotenv,omitempty" toml:"defaults_from_dotenv,omitempty"`
+	Env                map[string]EnvOverlay  `json:"env,omitempty" toml:"env"`
+	Ports              map[string]PortMapping `json:"ports,omitempty" toml:"ports,omitempty"`
 }
 
 // PortMapping declares a host port that forwards to a workspace service.
@@ -25,37 +26,37 @@ type Config struct {
 // `[ports.3000]`). BackendService is the service path scoped under a workspace
 // module (e.g. "hello-with-services:web").
 type PortMapping struct {
-	BackendService string `toml:"backendService"`
-	BackendPort    int    `toml:"backendPort"`
+	BackendService string `json:"backendService" toml:"backendService"`
+	BackendPort    int    `json:"backendPort" toml:"backendPort"`
 }
 
 // ModuleEntry represents a single module entry in the workspace config.
 type ModuleEntry struct {
-	Source            string         `toml:"source"`
-	Settings          map[string]any `toml:"settings,omitempty"`
-	Entrypoint        bool           `toml:"entrypoint,omitempty"`
-	LegacyDefaultPath bool           `toml:"legacy-default-path,omitempty"`
-	Up                ModuleSkip     `toml:"up,omitempty"`
-	Generate          ModuleSkip     `toml:"generate,omitempty"`
-	Check             ModuleSkip     `toml:"check,omitempty"`
+	Source            string         `json:"source" toml:"source"`
+	Settings          map[string]any `json:"settings,omitempty" toml:"settings,omitempty"`
+	Entrypoint        bool           `json:"entrypoint,omitempty" toml:"entrypoint,omitempty"`
+	LegacyDefaultPath bool           `json:"legacy-default-path,omitempty" toml:"legacy-default-path,omitempty"`
+	Up                ModuleSkip     `json:"up,omitempty" toml:"up,omitempty"`
+	Generate          ModuleSkip     `json:"generate,omitempty" toml:"generate,omitempty"`
+	Check             ModuleSkip     `json:"check,omitempty" toml:"check,omitempty"`
 }
 
 // ModuleSkip carries the per-action skip patterns for a module entry.
 // Patterns may be exact names or globs and apply to the action's leaf nodes
 // scoped under the module (e.g. "redis", "infra:database", "other-generators:*").
 type ModuleSkip struct {
-	Skip []string `toml:"skip,omitempty"`
+	Skip []string `json:"skip,omitempty" toml:"skip,omitempty"`
 }
 
 // EnvOverlay is a named workspace environment overlay.
 // It intentionally supports only a constrained subset of the root schema.
 type EnvOverlay struct {
-	Modules map[string]EnvModuleOverlay `toml:"modules"`
+	Modules map[string]EnvModuleOverlay `json:"modules,omitempty" toml:"modules"`
 }
 
 // EnvModuleOverlay is the environment-specific overlay for one installed module.
 type EnvModuleOverlay struct {
-	Settings map[string]any `toml:"settings,omitempty"`
+	Settings map[string]any `json:"settings,omitempty" toml:"settings,omitempty"`
 }
 
 // ResolveModuleEntrySource converts a workspace-config module source into the
@@ -63,7 +64,7 @@ type EnvModuleOverlay struct {
 // Relative local sources are resolved from the config directory; absolute local
 // sources are preserved as-is.
 func ResolveModuleEntrySource(configDir, source string) string {
-	if source == "" || !isLocalRef(source, "") {
+	if source == "" || !IsLocalRef(source, "") {
 		return source
 	}
 	if filepath.IsAbs(source) {
@@ -75,11 +76,11 @@ func ResolveModuleEntrySource(configDir, source string) string {
 	return filepath.Clean(filepath.Join(configDir, source))
 }
 
-// ParseConfig parses config.toml bytes into a workspace config.
+// ParseConfig parses dagger.toml bytes into a workspace config.
 func ParseConfig(data []byte) (*Config, error) {
 	var cfg Config
 	if err := toml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parse config.toml: %w", err)
+		return nil, fmt.Errorf("parse dagger.toml: %w", err)
 	}
 	return &cfg, nil
 }
@@ -93,7 +94,7 @@ func ApplyEnvOverlay(cfg *Config, envName string) (*Config, error) {
 		if envName == "" {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("workspace env %q requires .dagger/config.toml", envName)
+		return nil, fmt.Errorf("workspace env %q requires dagger.toml", envName)
 	}
 
 	applied := cloneConfig(cfg)
@@ -271,7 +272,8 @@ func writeModuleEntries(b *strings.Builder, modules map[string]ModuleEntry) bool
 		}
 
 		entry := modules[name]
-		fmt.Fprintf(b, "[modules.%s]\n", name)
+		modulePath := "modules." + formatConfigPathSegment(name)
+		fmt.Fprintf(b, "[%s]\n", modulePath)
 		fmt.Fprintf(b, "source = %q\n", entry.Source)
 		if entry.Entrypoint {
 			b.WriteString("entrypoint = true\n")
@@ -288,7 +290,7 @@ func writeModuleEntries(b *strings.Builder, modules map[string]ModuleEntry) bool
 		if len(entry.Check.Skip) > 0 {
 			fmt.Fprintf(b, "check.skip = %s\n", formatConfigValue(entry.Check.Skip))
 		}
-		writeConfigTable(b, "modules."+name+".settings", entry.Settings, true)
+		writeConfigTable(b, modulePath+".settings", entry.Settings, true)
 	}
 
 	return true
@@ -312,7 +314,7 @@ func writeEnvEntries(b *strings.Builder, envs map[string]EnvOverlay) bool {
 
 		env := envs[name]
 		if len(env.Modules) == 0 {
-			fmt.Fprintf(b, "[env.%s]\n", name)
+			fmt.Fprintf(b, "[env.%s]\n", formatConfigPathSegment(name))
 			continue
 		}
 
@@ -326,7 +328,14 @@ func writeEnvEntries(b *strings.Builder, envs map[string]EnvOverlay) bool {
 			if j > 0 {
 				b.WriteString("\n")
 			}
-			writeConfigTable(b, "env."+name+".modules."+moduleName+".settings", env.Modules[moduleName].Settings, false)
+			tablePath := strings.Join([]string{
+				"env",
+				formatConfigPathSegment(name),
+				"modules",
+				formatConfigPathSegment(moduleName),
+				"settings",
+			}, ".")
+			writeConfigTable(b, tablePath, env.Modules[moduleName].Settings, false)
 		}
 	}
 
@@ -349,7 +358,7 @@ func writePortEntries(b *strings.Builder, ports map[string]PortMapping) bool {
 			b.WriteString("\n")
 		}
 		pm := ports[host]
-		fmt.Fprintf(b, "[ports.%s]\n", host)
+		fmt.Fprintf(b, "[ports.%s]\n", formatConfigPathSegment(host))
 		fmt.Fprintf(b, "backendService = %q\n", pm.BackendService)
 		fmt.Fprintf(b, "backendPort = %d\n", pm.BackendPort)
 	}
@@ -373,7 +382,7 @@ func writeConfigTable(b *strings.Builder, tablePath string, config map[string]an
 	}
 	fmt.Fprintf(b, "[%s]\n", tablePath)
 	for _, key := range keys {
-		fmt.Fprintf(b, "%s = %s\n", key, formatConfigValue(config[key]))
+		fmt.Fprintf(b, "%s = %s\n", formatConfigPathSegment(key), formatConfigValue(config[key]))
 	}
 }
 
@@ -389,9 +398,13 @@ func ReadConfigValue(data []byte, key string) (string, error) {
 		return "", fmt.Errorf("parse config: %w", err)
 	}
 
-	value := tree.GetPath(strings.Split(key, "."))
+	parts, err := splitConfigPath(key)
+	if err != nil {
+		return "", err
+	}
+	value := tree.GetPath(parts)
 	if value == nil {
-		if defaultValue, ok := readMissingConfigDefault(tree, key); ok {
+		if defaultValue, ok := readMissingConfigDefault(tree, parts); ok {
 			return defaultValue, nil
 		}
 		return "", fmt.Errorf("key %q is not set", key)
@@ -405,9 +418,8 @@ func ReadConfigValue(data []byte, key string) (string, error) {
 	}
 }
 
-func readMissingConfigDefault(tree *toml.Tree, key string) (string, bool) {
-	parts := strings.Split(key, ".")
-	if key == "defaults_from_dotenv" {
+func readMissingConfigDefault(tree *toml.Tree, parts []string) (string, bool) {
+	if len(parts) == 1 && parts[0] == "defaults_from_dotenv" {
 		return "false", true
 	}
 	if len(parts) == 3 && parts[0] == "modules" && (parts[2] == "entrypoint" || parts[2] == "legacy-default-path") {
@@ -423,7 +435,11 @@ func WriteConfigValue(existingData []byte, key string, rawValue string) ([]byte,
 	if key == "" {
 		return nil, fmt.Errorf("key is required for writing")
 	}
-	if err := validateConfigKey(key); err != nil {
+	parts, err := splitConfigPath(key)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateConfigKeyParts(parts, key); err != nil {
 		return nil, err
 	}
 
@@ -435,8 +451,8 @@ func WriteConfigValue(existingData []byte, key string, rawValue string) ([]byte,
 		cfg = &Config{}
 	}
 
-	value := parseValueString(key, rawValue)
-	if setConfigValue(cfg, strings.Split(key, "."), value); err != nil {
+	value := parseValueString(parts, rawValue)
+	if err := setConfigValue(cfg, parts, value); err != nil {
 		return nil, err
 	}
 
@@ -446,9 +462,9 @@ func WriteConfigValue(existingData []byte, key string, rawValue string) ([]byte,
 func flattenTOMLTree(prefix string, tree *toml.Tree) string {
 	var lines []string
 	for _, key := range tree.Keys() {
-		fullKey := key
+		fullKey := formatConfigPathSegment(key)
 		if prefix != "" {
-			fullKey = prefix + "." + key
+			fullKey = prefix + "." + fullKey
 		}
 
 		switch value := tree.Get(key).(type) {
@@ -532,12 +548,164 @@ func formatScalarTOML(v any) string {
 	}
 }
 
-func validateConfigKey(key string) error {
-	parts := strings.Split(key, ".")
+// SplitConfigPath parses a TOML dotted key path into its logical path segments.
+func SplitConfigPath(key string) ([]string, error) {
+	return splitConfigPath(key)
+}
+
+func validateConfigKeyParts(parts []string, key string) error {
 	if len(parts) == 0 {
 		return fmt.Errorf("key is required")
 	}
 	return validateKeyAgainstType(parts, reflect.TypeOf(Config{}), key)
+}
+
+// JoinConfigPath formats logical path segments as a TOML dotted key path.
+func JoinConfigPath(parts ...string) string {
+	formatted := make([]string, len(parts))
+	for i, part := range parts {
+		formatted[i] = FormatConfigPathSegment(part)
+	}
+	return strings.Join(formatted, ".")
+}
+
+func splitConfigPath(key string) ([]string, error) {
+	if key == "" {
+		return nil, fmt.Errorf("key is required")
+	}
+
+	parts := []string{}
+	for i := 0; i < len(key); {
+		if key[i] == '.' {
+			return nil, fmt.Errorf("invalid key %q: empty path segment", key)
+		}
+
+		part, next, err := parseConfigPathSegment(key, i)
+		if err != nil {
+			return nil, err
+		}
+		if part == "" {
+			return nil, fmt.Errorf("invalid key %q: empty path segment", key)
+		}
+		parts = append(parts, part)
+		i = next
+
+		if i == len(key) {
+			break
+		}
+		if key[i] != '.' {
+			return nil, fmt.Errorf("invalid key %q: expected dot separator", key)
+		}
+		i++
+		if i == len(key) {
+			return nil, fmt.Errorf("invalid key %q: empty path segment", key)
+		}
+	}
+
+	return parts, nil
+}
+
+func parseConfigPathSegment(key string, start int) (string, int, error) {
+	switch key[start] {
+	case '"':
+		return parseBasicConfigPathSegment(key, start+1)
+	case '\'':
+		return parseLiteralConfigPathSegment(key, start+1)
+	default:
+		return parseBareConfigPathSegment(key, start)
+	}
+}
+
+func parseBasicConfigPathSegment(key string, start int) (string, int, error) {
+	var b strings.Builder
+	for i := start; i < len(key); {
+		ch := key[i]
+		i++
+		switch ch {
+		case '\\':
+			r, next, err := parseConfigPathEscape(key, i)
+			if err != nil {
+				return "", 0, err
+			}
+			b.WriteRune(r)
+			i = next
+		case '"':
+			return b.String(), i, nil
+		default:
+			if ch < 0x20 || ch == 0x7f {
+				return "", 0, fmt.Errorf("invalid key %q: unescaped control character in quoted path segment", key)
+			}
+			b.WriteByte(ch)
+		}
+	}
+	return "", 0, fmt.Errorf("invalid key %q: unterminated quoted path segment", key)
+}
+
+func parseConfigPathEscape(key string, start int) (rune, int, error) {
+	if start >= len(key) {
+		return 0, 0, fmt.Errorf("invalid key %q: trailing escape in quoted path segment", key)
+	}
+
+	escaped := key[start]
+	next := start + 1
+	switch escaped {
+	case 'b':
+		return '\b', next, nil
+	case 't':
+		return '\t', next, nil
+	case 'n':
+		return '\n', next, nil
+	case 'f':
+		return '\f', next, nil
+	case 'r':
+		return '\r', next, nil
+	case '"':
+		return '"', next, nil
+	case '\\':
+		return '\\', next, nil
+	case 'u', 'U':
+		digits := 4
+		if escaped == 'U' {
+			digits = 8
+		}
+		return parseConfigPathUnicodeEscape(key, next, digits)
+	default:
+		return 0, 0, fmt.Errorf("invalid key %q: invalid escape in quoted path segment", key)
+	}
+}
+
+func parseConfigPathUnicodeEscape(key string, start, digits int) (rune, int, error) {
+	if start+digits > len(key) {
+		return 0, 0, fmt.Errorf("invalid key %q: incomplete unicode escape in quoted path segment", key)
+	}
+	v, err := strconv.ParseInt(key[start:start+digits], 16, 32)
+	if err != nil || v > utf8.MaxRune || v >= 0xD800 && v <= 0xDFFF {
+		return 0, 0, fmt.Errorf("invalid key %q: invalid unicode escape in quoted path segment", key)
+	}
+	return rune(v), start + digits, nil
+}
+
+func parseLiteralConfigPathSegment(key string, start int) (string, int, error) {
+	i := start
+	for i < len(key) && key[i] != '\'' {
+		i++
+	}
+	if i >= len(key) {
+		return "", 0, fmt.Errorf("invalid key %q: unterminated quoted path segment", key)
+	}
+	return key[start:i], i + 1, nil
+}
+
+func parseBareConfigPathSegment(key string, start int) (string, int, error) {
+	i := start
+	for i < len(key) && key[i] != '.' {
+		i++
+	}
+	part := key[start:i]
+	if !isBareConfigPathSegment(part) {
+		return "", 0, fmt.Errorf("invalid key %q: path segment %q must be quoted", key, part)
+	}
+	return part, i, nil
 }
 
 func setConfigValue(cfg *Config, parts []string, value any) error { //nolint:gocyclo
@@ -762,11 +930,10 @@ func preferredExampleFieldName(t reflect.Type) string {
 	return names[0]
 }
 
-func parseValueString(key string, rawValue string) any {
-	parts := strings.Split(key, ".")
+func parseValueString(parts []string, rawValue string) any {
 	leaf := parts[len(parts)-1]
 
-	if leaf == "entrypoint" || leaf == "legacy-default-path" || key == "defaults_from_dotenv" {
+	if leaf == "entrypoint" || leaf == "legacy-default-path" || (len(parts) == 1 && parts[0] == "defaults_from_dotenv") {
 		return rawValue == "true"
 	}
 

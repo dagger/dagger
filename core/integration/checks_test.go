@@ -256,8 +256,8 @@ func (ChecksSuite) TestWorkspaceCheckSkip(ctx context.Context, t *testctx.T) {
 	modGen, err := checksTestEnv(t, c)
 	require.NoError(t, err)
 
-	ctr := modGen.WithNewFile(".dagger/config.toml", `[modules.hello-with-checks]
-source = "../hello-with-checks"
+	ctr := modGen.WithNewFile("dagger.toml", `[modules.hello-with-checks]
+source = "hello-with-checks"
 check.skip = ["failing-check", "failing-container"]
 `)
 
@@ -272,8 +272,8 @@ check.skip = ["failing-check", "failing-container"]
 func (ChecksSuite) TestWorkspaceCheckSkipRemote(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	remoteRef := workspaceSelectionRemoteRef(ctx, t, c, c.Directory().
-		WithNewFile(".dagger/config.toml", `[modules.hello-with-checks]
-source = "modules/hello-with-checks"
+		WithNewFile("dagger.toml", `[modules.hello-with-checks]
+source = ".dagger/modules/hello-with-checks"
 check.skip = ["failing-check", "failing-container"]
 `).
 		WithDirectory(".dagger/modules/hello-with-checks", c.Host().Directory(testDataPath(t, "checks", "hello-with-checks"))))
@@ -283,7 +283,7 @@ check.skip = ["failing-check", "failing-container"]
 		WithWorkdir("/empty").
 		With(workspaceSelectionDaggerExec("-W", remoteRef, "check", "-l")).
 		CombinedOutput(ctx)
-	require.NoError(t, err)
+	require.NoError(t, err, out)
 	require.Contains(t, out, "hello-with-checks:passing-check")
 	require.Contains(t, out, "hello-with-checks:passing-container")
 	require.NotContains(t, out, "hello-with-checks:failing-check")
@@ -321,8 +321,8 @@ func (ChecksSuite) TestChecksAsToolchain(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			modGen = modGen.
 				WithWorkdir("app").
-				WithNewFile(".dagger/config.toml", fmt.Sprintf(`[modules.%s]
-source = "../../%s"
+				WithNewFile("dagger.toml", fmt.Sprintf(`[modules.%s]
+source = "../%s"
 `, tc.path, tc.path))
 			// list checks
 			out, err := modGen.

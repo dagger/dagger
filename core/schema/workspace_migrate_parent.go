@@ -59,6 +59,9 @@ func workspaceMigrationParentAssignments(
 		if compatWorkspace == nil || compatWorkspace.MustMigrateToWorkspaceConfig() {
 			continue
 		}
+		if compatWorkspace.Config == nil || compatWorkspace.Config.SDK == nil {
+			continue
+		}
 		parentRoot, err := workspaceMigrationNearestPlannedParent(compatWorkspace.ProjectRoot, workspacePlans)
 		if err != nil {
 			return nil, err
@@ -374,14 +377,14 @@ func workspaceMigrationExplicitModuleWarning(moduleDir string) string {
 func workspaceMigrationExplicitModuleReportEntry(moduleDir string) string {
 	if moduleDir == "." {
 		return "## Root module requires explicit loading\n\n" +
-			"The root `dagger.json` is still a valid module, but it must be loaded explicitly.\n\n" +
+			"The root module is still valid, but it must be loaded explicitly.\n\n" +
 			"- **This works**: `dagger -m . call --help`\n" +
 			"- **This no longer works**: `dagger call --help`\n\n" +
 			"ACTION: If your scripts rely on implicit loading of the root module, change them to use explicit loading.\n"
 	}
 	return fmt.Sprintf(
 		"## %s requires explicit loading\n\n"+
-			"`%s` is still a valid module, but it must be loaded explicitly.\n\n"+
+			"The module at `%s` is still valid, but it must be loaded explicitly.\n\n"+
 			"- **This works**: `dagger -m %s call --help`\n"+
 			"- **This no longer works**: `cd %s; dagger call --help`\n\n"+
 			"ACTION: If your scripts rely on implicit loading of `%s`, change them to use explicit loading.\n",

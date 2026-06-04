@@ -194,5 +194,5 @@ func workspaceSettingsModuleRef(
 }
 
 func workspaceSettingConfigKey(moduleName, settingName string) string {
-	return fmt.Sprintf("modules.%s.settings.%s", moduleName, settingName)
+	return workspace.JoinConfigPath("modules", moduleName, "settings", settingName)
 }

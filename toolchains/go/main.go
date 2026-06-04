@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 
 	doublestar "github.com/bmatcuk/doublestar/v4"
 	telemetry "github.com/dagger/otel-go"
+	toml "github.com/pelletier/go-toml"
 
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/modules/go/internal/dagger"
@@ -18,7 +20,9 @@ import (
 )
 
 const (
-	defaultPlatform = dagger.Platform("")
+	defaultPlatform        = dagger.Platform("")
+	moduleConfigFilename   = "dagger-module.toml"
+	legacyModuleConfigFile = "dagger.json"
 )
 
 func New(
@@ -591,33 +595,34 @@ func (p *Go) generateDaggerRuntimeLayer(ctx context.Context, start string) (*dag
 	var daggerModPath string
 	if err := parallel.Run(ctx, "check for dagger runtime", func(ctx context.Context) error {
 		// 1. Are we in a dagger module?
-		daggerJSONPath, err := p.Source.FindUp(ctx, "dagger.json", start)
+		daggerConfigPath, err := p.findUpModuleConfig(ctx, start)
 		if err != nil {
 			return err
 		}
-		if daggerJSONPath == "" {
+		if daggerConfigPath == "" {
 			return nil
 		}
-		daggerJSONContents, err := p.Source.File(daggerJSONPath).Contents(ctx)
+		daggerConfigContents, err := p.Source.File(daggerConfigPath).Contents(ctx)
 		if err != nil {
 			return err
 		}
-		daggerJSON := dag.JSON().WithContents(dagger.JSON(daggerJSONContents))
-		sdk, err := daggerJSON.Field([]string{"sdk", "source"}).AsString(ctx)
+		daggerConfig, err := parseModuleConfigSummary([]byte(daggerConfigContents), path.Base(daggerConfigPath))
 		if err != nil {
-			// It's valid for a dagger.json to not have a source field
-			return nil //nolint:nilerr
+			return err
 		}
-		daggerModPath = path.Clean(strings.TrimSuffix(daggerJSONPath, "dagger.json"))
+		if daggerConfig.Runtime.Source == "" {
+			// It's valid for a module config to not have a runtime/source field.
+			return nil
+		}
+		daggerModPath = path.Clean(strings.TrimSuffix(daggerConfigPath, path.Base(daggerConfigPath)))
 
 		// 2. Is the dagger module using the Go SDK?
-		if sdk != "go" {
+		if daggerConfig.Runtime.Source != "go" {
 			return nil
 		}
 		// 3. Are we in the dagger module's *source* directory?
-		sourceField, err := daggerJSON.Field([]string{"source"}).AsString(ctx)
-		if err != nil {
-			// If no source field, default to "."
+		sourceField := daggerConfig.Source
+		if sourceField == "" {
 			sourceField = "."
 		}
 		runtimeSourcePath := path.Clean(path.Join(daggerModPath, sourceField))
@@ -646,6 +651,89 @@ func (p *Go) generateDaggerRuntimeLayer(ctx context.Context, start string) (*dag
 		return nil, false, err
 	}
 	return layer, true, nil
+}
+
+func (p *Go) findUpModuleConfig(ctx context.Context, start string) (configPath string, err error) {
+	currentPath, err := p.Source.FindUp(ctx, moduleConfigFilename, start)
+	if err != nil {
+		return "", err
+	}
+	legacyPath, err := p.Source.FindUp(ctx, legacyModuleConfigFile, start)
+	if err != nil {
+		return "", err
+	}
+
+	switch {
+	case currentPath == "" && legacyPath == "":
+		return "", nil
+	case legacyPath == "":
+		return currentPath, nil
+	case currentPath == "":
+		return legacyPath, nil
+	case moduleConfigPathDepth(legacyPath) > moduleConfigPathDepth(currentPath):
+		return legacyPath, nil
+	default:
+		return currentPath, nil
+	}
+}
+
+// The Go SDK only needs enough config to decide whether it should generate a
+// runtime layer. Keep this local so the SDK module does not import core/modules
+// and pull the engine dependency graph into its own go.mod.
+type moduleConfigSummary struct {
+	Runtime moduleConfigRuntime
+	Source  string
+}
+
+type moduleConfigRuntime struct {
+	Source string `json:"source" toml:"source"`
+}
+
+func (runtime *moduleConfigRuntime) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+	if data[0] == '"' {
+		return json.Unmarshal(data, &runtime.Source)
+	}
+	type alias moduleConfigRuntime
+	return json.Unmarshal(data, (*alias)(runtime))
+}
+
+func parseModuleConfigSummary(data []byte, filename string) (*moduleConfigSummary, error) {
+	if filename == legacyModuleConfigFile {
+		var cfg struct {
+			SDK    moduleConfigRuntime `json:"sdk"`
+			Source string              `json:"source"`
+		}
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			return nil, err
+		}
+		return &moduleConfigSummary{
+			Runtime: cfg.SDK,
+			Source:  cfg.Source,
+		}, nil
+	}
+
+	var cfg struct {
+		Runtime moduleConfigRuntime `toml:"runtime"`
+		Source  string              `toml:"source"`
+	}
+	if err := toml.Unmarshal(data, &cfg); err != nil {
+		return nil, err
+	}
+	return &moduleConfigSummary{
+		Runtime: cfg.Runtime,
+		Source:  cfg.Source,
+	}, nil
+}
+
+func moduleConfigPathDepth(configPath string) int {
+	dir := path.Dir(configPath)
+	if dir == "." || dir == "/" {
+		return 0
+	}
+	return strings.Count(strings.Trim(dir, "/"), "/") + 1
 }
 
 // Check if 'go mod tidy' is up-to-date

@@ -379,7 +379,7 @@
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::configClients</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The clients generated for the module.</p></dd><dt><a href="Dagger/ModuleSource.html#method_configExists">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::configExists</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>Whether an existing dagger.json for the module was found.</p></dd><dt><a href="Dagger/ModuleSource.html#method_contextDirectory">
+                    <dd><p>Whether an existing module config file was found.</p></dd><dt><a href="Dagger/ModuleSource.html#method_contextDirectory">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::contextDirectory</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The full directory loaded for the module source, including the source code as a subdirectory.</p></dd><dt><a href="Dagger/ObjectTypeDef.html#method_constructor">
 <abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr>::constructor</a>() &mdash; <em>Method in class <a href="Dagger/ObjectTypeDef.html"><abbr title="Dagger\ObjectTypeDef">ObjectTypeDef</abbr></a></em></dt>
@@ -397,9 +397,9 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::configFile</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Selected native workspace config file relative to the workspace root, if any.</p></dd><dt><a href="Dagger/Workspace.html#method_configRead">
 <abbr title="Dagger\Workspace">Workspace</abbr>::configRead</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Read a configuration value from config.toml.</p></dd><dt><a href="Dagger/Workspace.html#method_configWrite">
+                    <dd><p>Read a configuration value from dagger.toml.</p></dd><dt><a href="Dagger/Workspace.html#method_configWrite">
 <abbr title="Dagger\Workspace">Workspace</abbr>::configWrite</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Write a configuration value to config.toml.</p></dd><dt><a href="Dagger/Workspace.html#method_cwd">
+                    <dd><p>Write a configuration value to dagger.toml.</p></dd><dt><a href="Dagger/Workspace.html#method_cwd">
 <abbr title="Dagger\Workspace">Workspace</abbr>::cwd</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Current location within the workspace root. Relative paths in workspace APIs resolve from here.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_changes">
 <abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr>::changes</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a></em></dt>
@@ -941,9 +941,9 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>A unique identifier for this Workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_init">
 <abbr title="Dagger\Workspace">Workspace</abbr>::init</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Initialize workspace config, creating .dagger/config.toml.</p></dd><dt><a href="Dagger/Workspace.html#method_install">
+                    <dd><p>Initialize workspace config, creating dagger.toml.</p></dd><dt><a href="Dagger/Workspace.html#method_install">
 <abbr title="Dagger\Workspace">Workspace</abbr>::install</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Install a module into the workspace, writing config.toml to the host.</p></dd><dt><a href="Dagger/WorkspaceGit.html#method_id">
+                    <dd><p>Install a module into the workspace, writing dagger.toml to the host.</p></dd><dt><a href="Dagger/WorkspaceGit.html#method_id">
 <abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceGit.html"><abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr></a></em></dt>
                     <dd><p>A unique identifier for this WorkspaceGit.</p></dd><dt><a href="Dagger/WorkspaceMigration.html#method_id">
 <abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr>::id</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceMigration.html"><abbr title="Dagger\WorkspaceMigration">WorkspaceMigration</abbr></a></em></dt>
@@ -1188,7 +1188,7 @@
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::moduleName</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The name of the module, including any setting via the withName API.</p></dd><dt><a href="Dagger/ModuleSource.html#method_moduleOriginalName">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::moduleOriginalName</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).</p></dd><dt><a href="Dagger/ModuleSourceId.html"><abbr title="Dagger\ModuleSourceId">ModuleSourceId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
+                    <dd><p>The original name of the module as read from the module config file (or set for the first time with the withName API).</p></dd><dt><a href="Dagger/ModuleSourceId.html"><abbr title="Dagger\ModuleSourceId">ModuleSourceId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/PhpSdk.html#method_moduleRuntime">
 <abbr title="Dagger\PhpSdk">PhpSdk</abbr>::moduleRuntime</a>() &mdash; <em>Method in class <a href="Dagger/PhpSdk.html"><abbr title="Dagger\PhpSdk">PhpSdk</abbr></a></em></dt>
                     <dd></dd><dt><a href="Dagger/SearchResult.html#method_matchedLines">
@@ -1199,7 +1199,7 @@
 <abbr title="Dagger\Workspace">Workspace</abbr>::migrate</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Plan the explicit migration needed for the current workspace.</p></dd><dt><a href="Dagger/Workspace.html#method_moduleInit">
 <abbr title="Dagger\Workspace">Workspace</abbr>::moduleInit</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Create a new module owned by the workspace and auto-install it in config.toml.</p></dd><dt><a href="Dagger/Workspace.html#method_moduleList">
+                    <dd><p>Create a new module owned by the workspace and auto-install it in dagger.toml.</p></dd><dt><a href="Dagger/Workspace.html#method_moduleList">
 <abbr title="Dagger\Workspace">Workspace</abbr>::moduleList</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>List modules defined in the workspace configuration.</p></dd>        </dl><h2 id="letterN">N</h2>
         <dl id="indexN"><dt><a href="Dagger/Binding.html#method_name">
@@ -1398,9 +1398,7 @@
 <abbr title="Dagger\Up">Up</abbr>::run</a>() &mdash; <em>Method in class <a href="Dagger/Up.html"><abbr title="Dagger\Up">Up</abbr></a></em></dt>
                     <dd><p>Execute the service function</p></dd><dt><a href="Dagger/UpGroup.html#method_run">
 <abbr title="Dagger\UpGroup">UpGroup</abbr>::run</a>() &mdash; <em>Method in class <a href="Dagger/UpGroup.html"><abbr title="Dagger\UpGroup">UpGroup</abbr></a></em></dt>
-                    <dd><p>Execute all selected service functions</p></dd><dt><a href="Dagger/Workspace.html#method_refreshModules">
-<abbr title="Dagger\Workspace">Workspace</abbr>::refreshModules</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Refresh lock entries for selected workspace-config modules.</p></dd>        </dl><h2 id="letterS">S</h2>
+                    <dd><p>Execute all selected service functions</p></dd>        </dl><h2 id="letterS">S</h2>
         <dl id="indexS"><dt><a href="Dagger/Address.html#method_secret">
 <abbr title="Dagger\Address">Address</abbr>::secret</a>() &mdash; <em>Method in class <a href="Dagger/Address.html"><abbr title="Dagger\Address">Address</abbr></a></em></dt>
                     <dd><p>Load a secret from the address.</p></dd><dt><a href="Dagger/Address.html#method_service">
@@ -1489,7 +1487,7 @@
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::sdk</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The SDK configuration of the module.</p></dd><dt><a href="Dagger/ModuleSource.html#method_sourceRootSubpath">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::sourceRootSubpath</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
-                    <dd><p>The path, relative to the context directory, that contains the module's dagger.json.</p></dd><dt><a href="Dagger/ModuleSource.html#method_sourceSubpath">
+                    <dd><p>The path, relative to the context directory, that contains the module config.</p></dd><dt><a href="Dagger/ModuleSource.html#method_sourceSubpath">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::sourceSubpath</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
                     <dd><p>The path to the directory containing the module's source code, relative to the context directory.</p></dd><dt><a href="Dagger/ModuleSource.html#method_sync">
 <abbr title="Dagger\ModuleSource">ModuleSource</abbr>::sync</a>() &mdash; <em>Method in class <a href="Dagger/ModuleSource.html"><abbr title="Dagger\ModuleSource">ModuleSource</abbr></a></em></dt>
@@ -1620,7 +1618,7 @@
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/UpId.html"><abbr title="Dagger\UpId">UpId</abbr></a> &mdash; <em>Class in namespace <a href="Dagger.html">Dagger</a></em></dt>
                     <dd><p>A unique identifier for an object.</p></dd><dt><a href="Dagger/Workspace.html#method_uninstall">
 <abbr title="Dagger\Workspace">Workspace</abbr>::uninstall</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
-                    <dd><p>Uninstall a module from the workspace, writing config.toml to the host.</p></dd><dt><a href="Dagger/Workspace.html#method_update">
+                    <dd><p>Uninstall a module from the workspace, writing dagger.toml to the host.</p></dd><dt><a href="Dagger/Workspace.html#method_update">
 <abbr title="Dagger\Workspace">Workspace</abbr>::update</a>() &mdash; <em>Method in class <a href="Dagger/Workspace.html"><abbr title="Dagger\Workspace">Workspace</abbr></a></em></dt>
                     <dd><p>Refresh workspace-managed state and return the resulting changeset.</p></dd><dt><a href="Dagger/WorkspaceGit.html#method_uncommitted">
 <abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr>::uncommitted</a>() &mdash; <em>Method in class <a href="Dagger/WorkspaceGit.html"><abbr title="Dagger\WorkspaceGit">WorkspaceGit</abbr></a></em></dt>

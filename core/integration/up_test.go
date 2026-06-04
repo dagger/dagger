@@ -207,8 +207,8 @@ func (UpSuite) TestWorkspaceUpSkip(ctx context.Context, t *testctx.T) {
 	modGen, err := upTestEnv(t, c)
 	require.NoError(t, err)
 
-	ctr := modGen.WithNewFile(".dagger/config.toml", `[modules.hello-with-services]
-source = "../hello-with-services"
+	ctr := modGen.WithNewFile("dagger.toml", `[modules.hello-with-services]
+source = "hello-with-services"
 up.skip = ["redis"]
 `)
 
@@ -224,8 +224,8 @@ func (UpSuite) TestWorkspaceUpPortMapping(ctx context.Context, t *testctx.T) {
 	modGen, err := upTestEnv(t, c)
 	require.NoError(t, err)
 
-	ctr := modGen.WithNewFile(".dagger/config.toml", `[modules.hello-with-services]
-source = "../hello-with-services"
+	ctr := modGen.WithNewFile("dagger.toml", `[modules.hello-with-services]
+source = "hello-with-services"
 up.skip = ["redis", "infra:database"]
 
 [ports.3000]
@@ -259,8 +259,8 @@ func (UpSuite) TestUpAsToolchain(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			modGen = modGen.
 				WithWorkdir("app").
-				WithNewFile(".dagger/config.toml", fmt.Sprintf(`[modules.%s]
-source = "../../%s"
+				WithNewFile("dagger.toml", fmt.Sprintf(`[modules.%s]
+source = "../%s"
 `, tc.path, tc.path))
 			// list services
 			out, err := modGen.

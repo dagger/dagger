@@ -157,7 +157,7 @@ func TestWorkspaceConfigPendingModules(t *testing.T) {
 	ws := &workspace.Workspace{
 		Root:       "/repo",
 		Cwd:        ".",
-		ConfigFile: filepath.Join(workspace.LockDirName, workspace.ConfigFileName),
+		ConfigFile: workspace.ConfigFileName,
 		LockFile:   filepath.Join(workspace.LockDirName, workspace.LockFileName),
 	}
 	resolveLocalRef := func(_ *workspace.Workspace, relPath string) string {
@@ -181,7 +181,7 @@ func TestWorkspaceConfigPendingModules(t *testing.T) {
 	require.Len(t, pending, 2)
 
 	require.Equal(t, "alpha", pending[0].Name)
-	require.Equal(t, "/resolved/.dagger/modules/alpha", pending[0].Ref)
+	require.Equal(t, "/resolved/modules/alpha", pending[0].Ref)
 	require.Empty(t, pending[0].RefPin)
 	require.False(t, pending[0].Entrypoint)
 	require.True(t, pending[0].DisableFindUp)
@@ -282,11 +282,11 @@ func TestDetectAndLoadWorkspaceIgnoresCompatFallbackWhenConfigExists(t *testing.
 	t.Parallel()
 
 	existingFiles := map[string]bool{
-		"/repo/.git":                              true,
-		"/repo/.dagger/config.toml":               true,
-		"/repo/mymod/dagger.json":                 true,
-		"/repo/.dagger/modules/local":             true,
-		"/repo/.dagger/modules/local/dagger.json": true,
+		"/repo/.git":                      true,
+		"/repo/dagger.toml":               true,
+		"/repo/mymod/dagger.json":         true,
+		"/repo/modules/local":             true,
+		"/repo/modules/local/dagger.json": true,
 	}
 
 	statFS := core.StatFSFunc(func(_ context.Context, path string) (string, *core.Stat, error) {
@@ -301,7 +301,7 @@ func TestDetectAndLoadWorkspaceIgnoresCompatFallbackWhenConfigExists(t *testing.
 
 	readFile := func(_ context.Context, path string) ([]byte, error) {
 		switch filepath.Clean(path) {
-		case "/repo/.dagger/config.toml":
+		case "/repo/dagger.toml":
 			return []byte(`[modules.dev]
 source = "github.com/acme/dev@main"
 entrypoint = true
@@ -340,7 +340,7 @@ source = "modules/local"
 	)
 	require.NoError(t, err)
 	require.Equal(t, "mymod", client.workspace.Cwd)
-	require.Equal(t, filepath.Join(workspace.LockDirName, workspace.ConfigFileName), client.workspace.ConfigFile)
+	require.Equal(t, workspace.ConfigFileName, client.workspace.ConfigFile)
 
 	require.Len(t, client.pendingModules, 2)
 	require.Equal(t, moduleLoadKindAmbient, client.pendingModules[0].Kind)
@@ -350,7 +350,7 @@ source = "modules/local"
 
 	require.Equal(t, moduleLoadKindAmbient, client.pendingModules[1].Kind)
 	require.Equal(t, "local", client.pendingModules[1].Name)
-	require.Equal(t, "/repo/.dagger/modules/local", client.pendingModules[1].Ref)
+	require.Equal(t, "/repo/modules/local", client.pendingModules[1].Ref)
 	require.False(t, client.pendingModules[1].Entrypoint)
 }
 
@@ -524,7 +524,7 @@ func TestRemoteWorkspaceCwdUsesDetectionStart(t *testing.T) {
 	t.Parallel()
 
 	existingFiles := map[string]bool{
-		".dagger/config.toml": true,
+		"dagger.toml": true,
 	}
 
 	statFS := core.StatFSFunc(func(_ context.Context, path string) (string, *core.Stat, error) {
@@ -538,7 +538,7 @@ func TestRemoteWorkspaceCwdUsesDetectionStart(t *testing.T) {
 	})
 
 	readFile := func(_ context.Context, path string) ([]byte, error) {
-		if filepath.Clean(path) == ".dagger/config.toml" {
+		if filepath.Clean(path) == "dagger.toml" {
 			return []byte("# workspace\n"), nil
 		}
 		return nil, os.ErrNotExist
@@ -573,7 +573,7 @@ func TestRemoteWorkspaceCwdUsesDetectionStart(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "subdir", client.workspace.Cwd)
 	require.Equal(t, "github.com/acme/repo/subdir@main", client.workspace.Address)
-	require.Equal(t, filepath.Join(".dagger", workspace.ConfigFileName), client.workspace.ConfigFile)
+	require.Equal(t, workspace.ConfigFileName, client.workspace.ConfigFile)
 }
 
 func TestRemoteWorkspaceLoadsPlainModuleCompatFromCWD(t *testing.T) {
@@ -890,13 +890,13 @@ func TestBuildCoreWorkspaceIncludesConfigState(t *testing.T) {
 		ws, err := srv.buildCoreWorkspace(ctx, nil, &workspace.Workspace{
 			Root:       "/repo",
 			Cwd:        filepath.Join("services", "payment", "src"),
-			ConfigFile: filepath.Join("services", "payment", workspace.LockDirName, workspace.ConfigFileName),
+			ConfigFile: filepath.Join("services", "payment", workspace.ConfigFileName),
 			LockFile:   filepath.Join("services", "payment", workspace.LockDirName, workspace.LockFileName),
 		}, true, dagql.ObjectResult[*core.Directory]{}, "")
 		require.NoError(t, err)
 		require.Equal(t, "file:///repo/services/payment/src", ws.Address)
 		require.Equal(t, filepath.Join("services", "payment", "src"), ws.Cwd)
-		require.Equal(t, filepath.Join("services", "payment", workspace.LockDirName, workspace.ConfigFileName), ws.ConfigFile)
+		require.Equal(t, filepath.Join("services", "payment", workspace.ConfigFileName), ws.ConfigFile)
 		require.Equal(t, filepath.Join("services", "payment", workspace.LockDirName, workspace.LockFileName), ws.LockFile)
 		require.Equal(t, "/repo", ws.HostPath())
 	})
@@ -1140,13 +1140,13 @@ func TestGatherModuleLoadRequests(t *testing.T) {
 	require.True(t, loads[2].mod.Entrypoint)
 }
 
-func TestModuleResolveParallelism(t *testing.T) {
+func TestModuleLoadParallelism(t *testing.T) {
 	t.Parallel()
 
-	require.Equal(t, 1, moduleResolveParallelism(0))
-	require.Equal(t, 1, moduleResolveParallelism(1))
-	require.Equal(t, 3, moduleResolveParallelism(3))
-	require.Equal(t, maxParallelModuleResolves, moduleResolveParallelism(maxParallelModuleResolves+4))
+	require.Equal(t, 1, moduleLoadParallelism(0))
+	require.Equal(t, 1, moduleLoadParallelism(1))
+	require.Equal(t, 3, moduleLoadParallelism(3))
+	require.Equal(t, maxParallelModuleResolves, moduleLoadParallelism(maxParallelModuleResolves+4))
 }
 
 func TestModuleLoadErr(t *testing.T) {
@@ -1287,6 +1287,47 @@ func TestNormalizeWorkspaceRemoteSubdir(t *testing.T) {
 		_, err := normalizeWorkspaceRemoteSubdir("../outside")
 		require.ErrorContains(t, err, "outside repository")
 	})
+}
+
+func TestReadWorkspaceLockStateReadsLegacyLockFallback(t *testing.T) {
+	t.Parallel()
+
+	legacy := workspace.NewLock()
+	require.NoError(t, legacy.SetLookup("", "container.from", []any{"alpine:latest", "linux/amd64"}, workspace.LookupResult{
+		Value:  "sha256:deadbeef",
+		Policy: workspace.PolicyPin,
+	}))
+	legacyBytes, err := legacy.Marshal()
+	require.NoError(t, err)
+
+	ws := &core.Workspace{
+		ConfigFile: "dagger.toml",
+		LockFile:   "dagger.lock",
+	}
+	ws.SetHostPath("/repo")
+
+	lock, err := readWorkspaceLockState(t.Context(), fakeWorkspaceLockStateReader{
+		files: map[string][]byte{
+			filepath.Join("/repo", ".dagger", "lock"): legacyBytes,
+		},
+	}, ws)
+	require.NoError(t, err)
+
+	got, ok, err := lock.GetLookup("", "container.from", []any{"alpine:latest", "linux/amd64"})
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, workspace.LookupResult{Value: "sha256:deadbeef", Policy: workspace.PolicyPin}, got)
+}
+
+type fakeWorkspaceLockStateReader struct {
+	files map[string][]byte
+}
+
+func (r fakeWorkspaceLockStateReader) ReadCallerHostFile(_ context.Context, path string) ([]byte, error) {
+	if data, ok := r.files[path]; ok {
+		return data, nil
+	}
+	return nil, os.ErrNotExist
 }
 
 func stringPtr(v string) *string {

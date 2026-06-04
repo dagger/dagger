@@ -43,21 +43,17 @@ Following these principles leads to writing tests for your Dagger modules using 
 ```bash
 mkdir tests
 cd tests
-cat > dagger.json <<'EOF'
-{
-  "name": "tests",
-  "engineVersion": "latest",
-  "sdk": {
-    "source": "go"
-  },
-  "source": ".",
-  "dependencies": [
-    {
-      "name": "greeter",
-      "source": ".."
-    }
-  ]
-}
+cat > dagger-module.toml <<'EOF'
+name = "tests"
+engineVersion = "latest"
+source = "."
+
+[runtime]
+source = "go"
+
+[[dependencies]]
+name = "greeter"
+source = ".."
 EOF
 ```
 
@@ -84,21 +80,17 @@ func (m *Tests) Hello(ctx context.Context) error {
 ```bash
 mkdir tests
 cd tests
-cat > dagger.json <<'EOF'
-{
-  "name": "tests",
-  "engineVersion": "latest",
-  "sdk": {
-    "source": "python"
-  },
-  "source": ".",
-  "dependencies": [
-    {
-      "name": "greeter",
-      "source": ".."
-    }
-  ]
-}
+cat > dagger-module.toml <<'EOF'
+name = "tests"
+engineVersion = "latest"
+source = "."
+
+[runtime]
+source = "python"
+
+[[dependencies]]
+name = "greeter"
+source = ".."
 EOF
 ```
 
@@ -121,21 +113,17 @@ class Tests:
 ```bash
 mkdir tests
 cd tests
-cat > dagger.json <<'EOF'
-{
-  "name": "tests",
-  "engineVersion": "latest",
-  "sdk": {
-    "source": "typescript"
-  },
-  "source": ".",
-  "dependencies": [
-    {
-      "name": "greeter",
-      "source": ".."
-    }
-  ]
-}
+cat > dagger-module.toml <<'EOF'
+name = "tests"
+engineVersion = "latest"
+source = "."
+
+[runtime]
+source = "typescript"
+
+[[dependencies]]
+name = "greeter"
+source = ".."
 EOF
 ```
 
@@ -179,21 +167,17 @@ You can combine example modules with the test module pattern to turn those examp
 ```bash
 mkdir -p examples/go
 cd examples/go
-cat > dagger.json <<'EOF'
-{
-  "name": "examples-go",
-  "engineVersion": "latest",
-  "sdk": {
-    "source": "go"
-  },
-  "source": ".",
-  "dependencies": [
-    {
-      "name": "greeter",
-      "source": "../.."
-    }
-  ]
-}
+cat > dagger-module.toml <<'EOF'
+name = "examples-go"
+engineVersion = "latest"
+source = "."
+
+[runtime]
+source = "go"
+
+[[dependencies]]
+name = "greeter"
+source = "../.."
 EOF
 ```
 
@@ -219,21 +203,17 @@ func (m *Examples) GreeterHello(ctx context.Context) error {
 ```bash
 mkdir -p examples/python
 cd examples/python
-cat > dagger.json <<'EOF'
-{
-  "name": "examples-python",
-  "engineVersion": "latest",
-  "sdk": {
-    "source": "python"
-  },
-  "source": ".",
-  "dependencies": [
-    {
-      "name": "greeter",
-      "source": "../.."
-    }
-  ]
-}
+cat > dagger-module.toml <<'EOF'
+name = "examples-python"
+engineVersion = "latest"
+source = "."
+
+[runtime]
+source = "python"
+
+[[dependencies]]
+name = "greeter"
+source = "../.."
 EOF
 ```
 
@@ -255,21 +235,17 @@ class Examples:
 ```bash
 mkdir -p examples/typescript
 cd examples/typescript
-cat > dagger.json <<'EOF'
-{
-  "name": "examples-typescript",
-  "engineVersion": "latest",
-  "sdk": {
-    "source": "typescript"
-  },
-  "source": ".",
-  "dependencies": [
-    {
-      "name": "greeter",
-      "source": "../.."
-    }
-  ]
-}
+cat > dagger-module.toml <<'EOF'
+name = "examples-typescript"
+engineVersion = "latest"
+source = "."
+
+[runtime]
+source = "typescript"
+
+[[dependencies]]
+name = "greeter"
+source = "../.."
 EOF
 ```
 

@@ -536,8 +536,8 @@ main()
 					WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 					With(nonNestedDevEngine(c)).
 					With(tc.setup).
-					WithNewFile(".dagger/config.toml", `[modules.test]
-source = ".."
+					WithNewFile("dagger.toml", `[modules.test]
+source = "."
 entrypoint = true
 `).
 					With(daggerClientInstall(tc.generator))
@@ -1586,8 +1586,8 @@ func (t *Test) Message() string {
 	return t.Greeting + ", world!"
 }
 `).
-		WithNewFile(".dagger/config.toml", `[modules.test]
-source = ".."
+		WithNewFile("dagger.toml", `[modules.test]
+source = "."
 entrypoint = true
 `).
 		// Ensure the module compiles

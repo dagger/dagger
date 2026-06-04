@@ -103,7 +103,7 @@ var workspaceConfigFileCmd = &cobra.Command{
 var workspaceInitCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Create workspace config",
-	Long:  "Create .dagger/config.toml for the current workspace.",
+	Long:  "Create dagger.toml for the current workspace.",
 	Args:  cobra.NoArgs,
 	RunE:  runWorkspaceInit,
 }
@@ -111,7 +111,7 @@ var workspaceInitCmd = &cobra.Command{
 var workspaceConfigCmd = &cobra.Command{
 	Use:   "config [key] [value]",
 	Short: "Get or set workspace configuration",
-	Long: `Get or set workspace configuration values in .dagger/config.toml.
+	Long: `Get or set workspace configuration values in dagger.toml.
 
 With no arguments, prints the full configuration.
 With one argument, prints the value at the given key.
@@ -120,7 +120,7 @@ With two arguments, sets the value at the given key.
 With --env, reads show the effective env-applied view while writes target that
 environment's overlay. Explicit env.* keys always address raw overlay storage.
 
-Local module source values are stored relative to .dagger/config.toml.`,
+Local module source values are stored relative to dagger.toml.`,
 	Args: cobra.MaximumNArgs(2),
 	RunE: runWorkspaceConfig,
 }
@@ -466,7 +466,7 @@ func inferLocalWorkspaceRemoteAddress(ctx context.Context, address string) (work
 	}
 	workspaceDir := repoRoot
 	if detected.ConfigFile != "" {
-		workspaceDir = filepath.Join(repoRoot, filepath.Dir(filepath.Dir(detected.ConfigFile)))
+		workspaceDir = filepath.Join(repoRoot, filepath.Dir(detected.ConfigFile))
 	}
 	workspacePath, err := filepath.Rel(repoRoot, workspaceDir)
 	if err != nil {

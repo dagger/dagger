@@ -472,10 +472,31 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 				})
 				return inst, err
 			}
-		} else if clientMetadata.SSHAuthSocketPath != "" {
-			// For SSH refs, scope the caller's default SSH auth socket and reinvoke so it appears in the DAG.
+		} else {
+			// No explicit socket: scope a default SSH auth socket from a client that
+			// has one. Normally that's the current client; for trusted module
+			// dependency/SDK resolution running under a nested client without a
+			// socket (e.g. a codegen exec during `dagger generate`), fall back to the
+			// session's originating client.
+			sshSocketCtx := ctx
+			sshAuthSocketPath := clientMetadata.SSHAuthSocketPath
+			if sshAuthSocketPath == "" && core.IsModuleDependencyResolution(ctx) {
+				mainClientMetadata, err := parent.Self().MainClientCallerMetadata(ctx)
+				if err != nil {
+					return inst, err
+				}
+				if mainClientMetadata.SSHAuthSocketPath != "" {
+					sshSocketCtx = engine.ContextWithClientMetadata(ctx, mainClientMetadata)
+					sshAuthSocketPath = mainClientMetadata.SSHAuthSocketPath
+				}
+			}
+			if sshAuthSocketPath == "" {
+				return inst, fmt.Errorf("%w: SSH URLs are not supported without an SSH socket", gitutil.ErrGitAuthFailed)
+			}
+
+			// Scope that client's default SSH auth socket and reinvoke so it appears in the DAG.
 			var scopedSock dagql.ObjectResult[*core.Socket]
-			if err := srv.Select(ctx, srv.Root(), &scopedSock,
+			if err := srv.Select(sshSocketCtx, srv.Root(), &scopedSock,
 				dagql.Selector{
 					Field: "host",
 				},
@@ -541,8 +562,6 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 				View:  curCall.View,
 			})
 			return inst, err
-		} else {
-			return inst, fmt.Errorf("%w: SSH URLs are not supported without an SSH socket", gitutil.ErrGitAuthFailed)
 		}
 	case gitutil.HTTPProtocol, gitutil.HTTPSProtocol:
 		if args.HTTPAuthToken.Valid {
@@ -558,14 +577,33 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 			}
 		}
 		if httpAuthToken.Self() == nil && httpAuthHeader.Self() == nil {
-			// For HTTP refs, try to load client credentials from the git helper
+			// For HTTP refs, try to load client credentials from the git helper.
 			parentClientMetadata, err := parent.Self().NonModuleParentClientMetadata(ctx)
 			if err != nil {
 				return inst, err
 			}
-			if clientMetadata.ClientID != parentClientMetadata.ClientID {
-				// only handle PAT auth if we're the main client
+
+			// Determine which client(s) may supply implicit credentials. Arbitrary
+			// git access from nested module runtime code must not implicitly use the
+			// host's credentials, so by default we only do so when we ARE the
+			// non-module caller. For trusted module dependency/SDK resolution we
+			// additionally fall back to the session's originating client, since
+			// codegen can run under a nested client (e.g. a git-less codegen exec
+			// during `dagger generate`) that doesn't itself hold the user's
+			// credentials.
+			isTrustedDepResolution := core.IsModuleDependencyResolution(ctx)
+			if clientMetadata.ClientID != parentClientMetadata.ClientID && !isTrustedDepResolution {
 				break
+			}
+			credClientMetadatas := []*engine.ClientMetadata{parentClientMetadata}
+			if isTrustedDepResolution {
+				mainClientMetadata, err := parent.Self().MainClientCallerMetadata(ctx)
+				if err != nil {
+					return inst, err
+				}
+				if mainClientMetadata.ClientID != parentClientMetadata.ClientID {
+					credClientMetadatas = append(credClientMetadatas, mainClientMetadata)
+				}
 			}
 
 			// start services if needed, before checking for auth
@@ -595,93 +633,97 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.ObjectResult[*core.Que
 				break
 			}
 
-			// Retrieve credential from host
-			authCtx := engine.ContextWithClientMetadata(ctx, parentClientMetadata)
-			bk, err := parent.Self().Engine(authCtx)
-			if err != nil {
-				return inst, fmt.Errorf("failed to get engine client: %w", err)
-			}
-			credentials, err := bk.GetCredential(authCtx, remote.Scheme, remote.Host, remote.Path)
-			if err != nil {
-				// it's possible to provide auth tokens via chained API calls, so warn now but
-				// don't fail. Auth will be checked again before relevant operations later.
-				slog.Warn("Failed to retrieve git credentials", "error", err)
-				break
-			}
+			// Retrieve credentials, trying each candidate client until one succeeds.
+			for _, credClientMetadata := range credClientMetadatas {
+				authCtx := engine.ContextWithClientMetadata(ctx, credClientMetadata)
+				bk, err := parent.Self().Engine(authCtx)
+				if err != nil {
+					return inst, fmt.Errorf("failed to get engine client: %w", err)
+				}
+				credentials, err := bk.GetCredential(authCtx, remote.Scheme, remote.Host, remote.Path)
+				if err != nil {
+					// it's possible to provide auth tokens via chained API calls, so warn now but
+					// don't fail. Auth will be checked again before relevant operations later.
+					slog.Warn("Failed to retrieve git credentials", "error", err, "clientID", credClientMetadata.ClientID)
+					continue
+				}
 
-			hash := sha256.Sum256([]byte(credentials.Password))
-			secretName := hex.EncodeToString(hash[:])
-			var authToken dagql.ObjectResult[*core.Secret]
-			if err := srv.Select(authCtx, srv.Root(), &authToken,
-				dagql.Selector{
-					Field: "setSecret",
-					Args: []dagql.NamedInput{
-						{
-							Name:  "name",
-							Value: dagql.NewString(secretName),
-						},
-						{
-							Name:  "plaintext",
-							Value: dagql.NewString(credentials.Password),
+				hash := sha256.Sum256([]byte(credentials.Password))
+				secretName := hex.EncodeToString(hash[:])
+				var authToken dagql.ObjectResult[*core.Secret]
+				if err := srv.Select(authCtx, srv.Root(), &authToken,
+					dagql.Selector{
+						Field: "setSecret",
+						Args: []dagql.NamedInput{
+							{
+								Name:  "name",
+								Value: dagql.NewString(secretName),
+							},
+							{
+								Name:  "plaintext",
+								Value: dagql.NewString(credentials.Password),
+							},
 						},
 					},
-				},
-			); err != nil {
-				return inst, fmt.Errorf("failed to create a new secret with the git auth token: %w", err)
-			}
-			authTokenID, err := authToken.ID()
-			if err != nil {
-				return inst, fmt.Errorf("git auth token ID: %w", err)
-			}
+				); err != nil {
+					return inst, fmt.Errorf("failed to create a new secret with the git auth token: %w", err)
+				}
+				authTokenID, err := authToken.ID()
+				if err != nil {
+					return inst, fmt.Errorf("git auth token ID: %w", err)
+				}
 
-			// reinvoke this API with the socket as an explicit arg so it shows up in the DAG
-			selectArgs := []dagql.NamedInput{
-				{
-					Name:  "url",
-					Value: dagql.NewString(remote.String()),
-				},
-				{
-					Name:  "httpAuthToken",
-					Value: dagql.Opt(dagql.NewID[*core.Secret](authTokenID)),
-				},
-			}
-			// Omit blank username; adding it would change the selector hash and kill cache hits.
-			if credentials.Username != "" {
-				selectArgs = append(selectArgs, dagql.NamedInput{
-					Name:  "httpAuthUsername",
-					Value: dagql.NewString(credentials.Username),
+				// reinvoke this API with the token as an explicit arg so it shows up in the DAG
+				selectArgs := []dagql.NamedInput{
+					{
+						Name:  "url",
+						Value: dagql.NewString(remote.String()),
+					},
+					{
+						Name:  "httpAuthToken",
+						Value: dagql.Opt(dagql.NewID[*core.Secret](authTokenID)),
+					},
+				}
+				// Omit blank username; adding it would change the selector hash and kill cache hits.
+				if credentials.Username != "" {
+					selectArgs = append(selectArgs, dagql.NamedInput{
+						Name:  "httpAuthUsername",
+						Value: dagql.NewString(credentials.Username),
+					})
+				}
+				if args.KeepGitDir.Valid {
+					selectArgs = append(selectArgs, dagql.NamedInput{
+						Name:  "keepGitDir",
+						Value: dagql.Opt(args.KeepGitDir.Value),
+					})
+				}
+				if args.Commit != "" {
+					selectArgs = append(selectArgs, dagql.NamedInput{
+						Name:  "commit",
+						Value: dagql.NewString(args.Commit),
+					})
+				}
+				if args.Ref != "" {
+					selectArgs = append(selectArgs, dagql.NamedInput{
+						Name:  "ref",
+						Value: dagql.NewString(args.Ref),
+					})
+				}
+				if args.ExperimentalServiceHost.Valid {
+					selectArgs = append(selectArgs, dagql.NamedInput{
+						Name:  "experimentalServiceHost",
+						Value: dagql.Opt(dagql.NewID[*core.Service](experimentalServiceHostID)),
+					})
+				}
+				err = srv.Select(ctx, parent, &inst, dagql.Selector{
+					Field: "git",
+					Args:  selectArgs,
+					View:  curCall.View,
 				})
+				return inst, err
 			}
-			if args.KeepGitDir.Valid {
-				selectArgs = append(selectArgs, dagql.NamedInput{
-					Name:  "keepGitDir",
-					Value: dagql.Opt(args.KeepGitDir.Value),
-				})
-			}
-			if args.Commit != "" {
-				selectArgs = append(selectArgs, dagql.NamedInput{
-					Name:  "commit",
-					Value: dagql.NewString(args.Commit),
-				})
-			}
-			if args.Ref != "" {
-				selectArgs = append(selectArgs, dagql.NamedInput{
-					Name:  "ref",
-					Value: dagql.NewString(args.Ref),
-				})
-			}
-			if args.ExperimentalServiceHost.Valid {
-				selectArgs = append(selectArgs, dagql.NamedInput{
-					Name:  "experimentalServiceHost",
-					Value: dagql.Opt(dagql.NewID[*core.Service](experimentalServiceHostID)),
-				})
-			}
-			err = srv.Select(ctx, parent, &inst, dagql.Selector{
-				Field: "git",
-				Args:  selectArgs,
-				View:  curCall.View,
-			})
-			return inst, err
+			// no candidate client provided credentials; proceed unauthenticated
+			break
 		}
 	}
 

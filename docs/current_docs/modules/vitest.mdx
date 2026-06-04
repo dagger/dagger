@@ -37,7 +37,7 @@ Use `list` to print the tests Vitest discovers when test selection is unclear.
 
 ## Configure it
 
-List the current settings and their values with `dagger settings vitest`, then set one with `dagger settings vitest <key> <value>`. They live in `.dagger/config.toml` under `[modules.vitest.settings]`:
+List the current settings and their values with `dagger settings vitest`, then set one with `dagger settings vitest <key> <value>`. They live in `dagger.toml` under `[modules.vitest.settings]`:
 
 - **`packageManager`** (default `npm`): the package manager used to install dependencies before testing. Set it to `yarn` or `pnpm` to match the project; with `pnpm`, the module enables Corepack automatically.
 - **`baseImageAddress`** (default `node:25-alpine`): the Node base image tests run in. Pin it to the project's Node version, for example `node:22-alpine`.

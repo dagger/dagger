@@ -1,7 +1,7 @@
 [modules.real]
-source = "modules/app"
+source = ".dagger/modules/app"
 entrypoint = true
 
 [modules.canonical]
-source = "./modules/app"
+source = "./.dagger/modules/app"
 entrypoint = true

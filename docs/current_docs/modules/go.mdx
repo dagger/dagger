@@ -50,7 +50,7 @@ returns the result as a changeset to review before applying.
 ## Configure it
 
 List the current settings with `dagger settings go`, then change one with
-`dagger settings go <key> <value>`. They live in `.dagger/config.toml` under
+`dagger settings go <key> <value>`. They live in `dagger.toml` under
 `[modules.go.settings]`:
 
 - **`version`** (default `1.26`): the Go toolchain version used to build the test
@@ -85,7 +85,7 @@ touch ./legacy-service/.dagger-skip-go-lint
 ```
 
 List-valued settings such as `includeExtraFiles` are edited directly in
-`.dagger/config.toml`:
+`dagger.toml`:
 
 ```toml
 [modules.go.settings]

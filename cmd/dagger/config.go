@@ -13,7 +13,7 @@ var configCmd = &cobra.Command{
 	Long: strings.TrimSpace(`
 Alias for "dagger workspace config".
 
-Get or set workspace configuration values in .dagger/config.toml.
+Get or set workspace configuration values in dagger.toml.
 
 With no arguments, prints the full configuration.
 With one argument, prints the value at the given key.
@@ -22,7 +22,7 @@ With two arguments, sets the value at the given key.
 With --env, reads show the effective env-applied view while writes target that
 environment's overlay. Explicit env.* keys always address raw overlay storage.
 
-Local module source values are stored relative to .dagger/config.toml.`,
+Local module source values are stored relative to dagger.toml.`,
 	),
 	Args: cobra.MaximumNArgs(2),
 	RunE: runWorkspaceConfig,

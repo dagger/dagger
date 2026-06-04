@@ -27,7 +27,7 @@ dagger check shellcheck:check # run ShellCheck on discovered shell scripts
 
 ## Configure it
 
-List the current settings and their values with `dagger settings shellcheck`. The `exclude` setting is list-valued, so set it in `.dagger/config.toml` under `[modules.shellcheck.settings]`:
+List the current settings and their values with `dagger settings shellcheck`. The `exclude` setting is list-valued, so set it in `dagger.toml` under `[modules.shellcheck.settings]`:
 
 - **`exclude`** (default: none): a list of script paths to skip. Use it for vendored or generated scripts the repo does not own.
 

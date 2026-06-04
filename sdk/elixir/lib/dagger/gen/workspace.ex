@@ -71,7 +71,7 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Read a configuration value from config.toml.
+  Read a configuration value from dagger.toml.
 
   If key is empty, returns the full config.
 
@@ -90,7 +90,7 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Write a configuration value to config.toml.
+  Write a configuration value to dagger.toml.
   """
   @spec config_write(t(), String.t(), String.t(), [{:here, boolean() | nil}]) ::
           {:ok, String.t()} | {:error, term()}
@@ -261,7 +261,7 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Initialize workspace config, creating .dagger/config.toml.
+  Initialize workspace config, creating dagger.toml.
   """
   @spec init(t(), [{:here, boolean() | nil}]) :: {:ok, String.t()} | {:error, term()}
   def init(%__MODULE__{} = workspace, optional_args \\ []) do
@@ -274,7 +274,7 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Install a module into the workspace, writing config.toml to the host.
+  Install a module into the workspace, writing dagger.toml to the host.
   """
   @spec install(t(), String.t(), [{:name, String.t() | nil}, {:here, boolean() | nil}]) ::
           {:ok, String.t()} | {:error, term()}
@@ -308,7 +308,7 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Create a new module owned by the workspace and auto-install it in config.toml.
+  Create a new module owned by the workspace and auto-install it in dagger.toml.
   """
   @spec module_init(t(), String.t(), [
           {:sdk, String.t() | nil},
@@ -359,28 +359,6 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Refresh lock entries for selected workspace-config modules.
-
-  This layers selective workspace refresh on top of the lockfile base.
-
-  > #### Experimental {: .warning}
-  >
-  > "Experimental selective workspace lock refresh API."
-  """
-  @spec refresh_modules(t(), [{:module_names, [String.t()]}]) :: Dagger.Changeset.t()
-  def refresh_modules(%__MODULE__{} = workspace, optional_args \\ []) do
-    query_builder =
-      workspace.query_builder
-      |> QB.select("refreshModules")
-      |> QB.maybe_put_arg("moduleNames", optional_args[:module_names])
-
-    %Dagger.Changeset{
-      query_builder: query_builder,
-      client: workspace.client
-    }
-  end
-
-  @doc """
   Return all services from modules loaded in the workspace.
   """
   @spec services(t(), [{:include, [String.t()]}]) :: Dagger.UpGroup.t()
@@ -397,7 +375,7 @@ defmodule Dagger.Workspace do
   end
 
   @doc """
-  Uninstall a module from the workspace, writing config.toml to the host.
+  Uninstall a module from the workspace, writing dagger.toml to the host.
   """
   @spec uninstall(t(), String.t(), [{:here, boolean() | nil}]) ::
           {:ok, String.t()} | {:error, term()}

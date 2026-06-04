@@ -613,7 +613,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	// loading. Legacy dagger.json compatibility remains only when no workspace
 	// config is selected.
 	var compatWorkspace *workspace.CompatWorkspace
-	moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.ModuleConfigFileName)
+	moduleDir, hasModuleConfig, _ := core.Host{}.FindUp(ctx, statFS, cwd, workspace.LegacyModuleConfigFileName)
 	if hasModuleConfig && wsConfig != nil {
 		wsDir := filepath.Clean(ws.Root)
 		rel, err := filepath.Rel(wsDir, filepath.Clean(moduleDir))
@@ -624,7 +624,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	}
 	legacyCallerDir := legacyCallerModuleDir(isLocal, moduleDir)
 	if wsConfig == nil && hasModuleConfig {
-		cfgPath := filepath.Join(moduleDir, workspace.ModuleConfigFileName)
+		cfgPath := filepath.Join(moduleDir, workspace.LegacyModuleConfigFileName)
 		if data, readErr := readFile(ctx, cfgPath); readErr == nil {
 			compatWorkspace, _ = workspace.ParseRuntimeCompatWorkspaceAt(data, cfgPath)
 		}
@@ -676,7 +676,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 
 	if hasWorkspaceEnv {
 		if wsConfig == nil {
-			return fmt.Errorf("workspace env %q requires .dagger/config.toml", workspaceEnv)
+			return fmt.Errorf("workspace env %q requires dagger.toml", workspaceEnv)
 		}
 		if err := func() (rerr error) {
 			_, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("applying env: %s", workspaceEnv))
@@ -862,10 +862,10 @@ func (srv *Server) ensureModulesLoaded(ctx context.Context, client *daggerClient
 	resolvedLoads := make([]resolvedModuleLoad, len(loads))
 	resolveErrs := make([]error, len(loads))
 
-	// Resolve modules in parallel, then apply to client state in deterministic order.
+	// Load modules in parallel, then apply to client state in deterministic order.
 	jobs := parallel.New().
 		WithContextualTracer(true).
-		WithLimit(moduleResolveParallelism(len(loads)))
+		WithLimit(moduleLoadParallelism(len(loads)))
 	for i, load := range loads {
 		i := i
 		load := load
@@ -1177,7 +1177,7 @@ func gatherModuleLoadRequests(pending []pendingModule, extras []engine.ExtraModu
 	return loads
 }
 
-func moduleResolveParallelism(moduleCount int) int {
+func moduleLoadParallelism(moduleCount int) int {
 	if moduleCount <= 1 {
 		return 1
 	}

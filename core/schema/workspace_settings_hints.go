@@ -67,6 +67,7 @@ func (s *workspaceSchema) collectWorkspaceSettingsHintsFromConfig(
 	ctx context.Context,
 	ws *core.Workspace,
 	cfg *workspace.Config,
+	configDir string,
 	projectRootPath string,
 	migratedDir dagql.ObjectResult[*core.Directory],
 ) (map[string][]workspace.ConstructorArgHint, []string) {
@@ -94,7 +95,7 @@ func (s *workspaceSchema) collectWorkspaceSettingsHintsFromConfig(
 			continue
 		}
 
-		constructorHints, err := introspectConfiguredModuleArgs(ctx, srv, projectRootPath, migratedDir, entry.Source)
+		constructorHints, err := introspectConfiguredModuleArgs(ctx, srv, configDir, projectRootPath, migratedDir, entry.Source)
 		if err != nil {
 			slog.Warn("could not introspect constructor args for workspace settings hints",
 				"module", name,
@@ -157,25 +158,25 @@ func introspectConstructorArgs(
 func introspectConfiguredModuleArgs(
 	ctx context.Context,
 	srv *dagql.Server,
+	configDir string,
 	projectRootPath string,
 	migratedDir dagql.ObjectResult[*core.Directory],
 	source string,
 ) ([]workspace.ConstructorArgHint, error) {
-	resolvedSource := workspace.ResolveModuleEntrySource(workspace.LockDirName, source)
+	resolvedSource := workspace.ResolveModuleEntrySource(configDir, source)
 	switch {
 	case filepath.IsAbs(resolvedSource):
 		return introspectConstructorArgs(ctx, srv, resolvedSource)
-	case resolvedSource != source:
-		if usesMigratedWorkspaceHintDirectory(resolvedSource) {
-			migratedDirID, err := migratedDir.ID()
-			if err != nil {
-				return nil, err
-			}
-			if migratedDirID == nil {
-				return nil, fmt.Errorf("migrated module source %q requires prepared migrated workspace directory", source)
-			}
-			return introspectConstructorArgsFromDirectory(ctx, srv, migratedDir, resolvedSource)
+	case usesMigratedWorkspaceHintDirectory(resolvedSource):
+		migratedDirID, err := migratedDir.ID()
+		if err != nil {
+			return nil, err
 		}
+		if migratedDirID == nil {
+			return nil, fmt.Errorf("migrated module source %q requires prepared migrated workspace directory", source)
+		}
+		return introspectConstructorArgsFromDirectory(ctx, srv, migratedDir, resolvedSource)
+	case resolvedSource != source:
 		if projectRootPath == "" {
 			return nil, fmt.Errorf("workspace project root is required for local module source %q", source)
 		}

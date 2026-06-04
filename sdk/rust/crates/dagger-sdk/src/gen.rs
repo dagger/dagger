@@ -12244,7 +12244,7 @@ impl ModuleSource {
             })
             .collect())
     }
-    /// Whether an existing dagger.json for the module was found.
+    /// Whether an existing module config file was found.
     pub async fn config_exists(&self) -> Result<bool, DaggerError> {
         let query = self.selection.select("configExists");
         query.execute(self.graphql_client.clone()).await
@@ -12358,7 +12358,7 @@ impl ModuleSource {
         let query = self.selection.select("moduleName");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).
+    /// The original name of the module as read from the module config file (or set for the first time with the withName API).
     pub async fn module_original_name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("moduleOriginalName");
         query.execute(self.graphql_client.clone()).await
@@ -12387,7 +12387,7 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// The path, relative to the context directory, that contains the module's dagger.json.
+    /// The path, relative to the context directory, that contains the module config.
     pub async fn source_root_subpath(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sourceRootSubpath");
         query.execute(self.graphql_client.clone()).await
@@ -13063,7 +13063,7 @@ pub struct QueryModuleSourceOpts<'a> {
     /// If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.
     #[builder(setter(into, strip_option), default)]
     pub allow_not_exists: Option<bool>,
-    /// If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.
+    /// If true, do not attempt to find a module config file in a parent directory of the provided path. Only relevant for local module sources.
     #[builder(setter(into, strip_option), default)]
     pub disable_find_up: Option<bool>,
     /// The pinned version of the module source
@@ -16653,12 +16653,6 @@ pub struct WorkspaceModuleListOpts<'a> {
     pub module: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct WorkspaceRefreshModulesOpts<'a> {
-    /// Workspace module names to refresh.
-    #[builder(setter(into, strip_option), default)]
-    pub module_names: Option<Vec<&'a str>>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct WorkspaceServicesOpts<'a> {
     /// Only include services matching the specified patterns
     #[builder(setter(into, strip_option), default)]
@@ -16744,7 +16738,7 @@ impl Workspace {
         let query = self.selection.select("configFile");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Read a configuration value from config.toml.
+    /// Read a configuration value from dagger.toml.
     /// If key is empty, returns the full config.
     /// If key points to a scalar, returns the value.
     /// If key points to a table, returns flattened dotted-key output.
@@ -16756,7 +16750,7 @@ impl Workspace {
         let query = self.selection.select("configRead");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Read a configuration value from config.toml.
+    /// Read a configuration value from dagger.toml.
     /// If key is empty, returns the full config.
     /// If key points to a scalar, returns the value.
     /// If key points to a table, returns flattened dotted-key output.
@@ -16774,7 +16768,7 @@ impl Workspace {
         }
         query.execute(self.graphql_client.clone()).await
     }
-    /// Write a configuration value to config.toml.
+    /// Write a configuration value to dagger.toml.
     ///
     /// # Arguments
     ///
@@ -16791,7 +16785,7 @@ impl Workspace {
         query = query.arg("value", value.into());
         query.execute(self.graphql_client.clone()).await
     }
-    /// Write a configuration value to config.toml.
+    /// Write a configuration value to dagger.toml.
     ///
     /// # Arguments
     ///
@@ -17018,7 +17012,7 @@ impl Workspace {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Initialize workspace config, creating .dagger/config.toml.
+    /// Initialize workspace config, creating dagger.toml.
     ///
     /// # Arguments
     ///
@@ -17027,7 +17021,7 @@ impl Workspace {
         let query = self.selection.select("init");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Initialize workspace config, creating .dagger/config.toml.
+    /// Initialize workspace config, creating dagger.toml.
     ///
     /// # Arguments
     ///
@@ -17039,7 +17033,7 @@ impl Workspace {
         }
         query.execute(self.graphql_client.clone()).await
     }
-    /// Install a module into the workspace, writing config.toml to the host.
+    /// Install a module into the workspace, writing dagger.toml to the host.
     ///
     /// # Arguments
     ///
@@ -17050,7 +17044,7 @@ impl Workspace {
         query = query.arg("ref", r#ref.into());
         query.execute(self.graphql_client.clone()).await
     }
-    /// Install a module into the workspace, writing config.toml to the host.
+    /// Install a module into the workspace, writing dagger.toml to the host.
     ///
     /// # Arguments
     ///
@@ -17102,7 +17096,7 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Create a new module owned by the workspace and auto-install it in config.toml.
+    /// Create a new module owned by the workspace and auto-install it in dagger.toml.
     ///
     /// # Arguments
     ///
@@ -17113,7 +17107,7 @@ impl Workspace {
         query = query.arg("name", name.into());
         query.execute(self.graphql_client.clone()).await
     }
-    /// Create a new module owned by the workspace and auto-install it in config.toml.
+    /// Create a new module owned by the workspace and auto-install it in dagger.toml.
     ///
     /// # Arguments
     ///
@@ -17191,37 +17185,6 @@ impl Workspace {
             })
             .collect())
     }
-    /// Refresh lock entries for selected workspace-config modules.
-    /// This layers selective workspace refresh on top of the lockfile base.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn refresh_modules(&self) -> Changeset {
-        let query = self.selection.select("refreshModules");
-        Changeset {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Refresh lock entries for selected workspace-config modules.
-    /// This layers selective workspace refresh on top of the lockfile base.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn refresh_modules_opts<'a>(&self, opts: WorkspaceRefreshModulesOpts<'a>) -> Changeset {
-        let mut query = self.selection.select("refreshModules");
-        if let Some(module_names) = opts.module_names {
-            query = query.arg("moduleNames", module_names);
-        }
-        Changeset {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Return all services from modules loaded in the workspace.
     ///
     /// # Arguments
@@ -17251,7 +17214,7 @@ impl Workspace {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Uninstall a module from the workspace, writing config.toml to the host.
+    /// Uninstall a module from the workspace, writing dagger.toml to the host.
     ///
     /// # Arguments
     ///
@@ -17262,7 +17225,7 @@ impl Workspace {
         query = query.arg("name", name.into());
         query.execute(self.graphql_client.clone()).await
     }
-    /// Uninstall a module from the workspace, writing config.toml to the host.
+    /// Uninstall a module from the workspace, writing dagger.toml to the host.
     ///
     /// # Arguments
     ///
