@@ -11,6 +11,11 @@ import { daggerVersion } from "./current_docs/partials/version";
 const url = "https://docs.dagger.io";
 const docsPath = "./current_docs";
 const baseUrl = process.env.DOCUSAURUS_BASE_URL ?? "/";
+const versions = require("./versions.json") as string[];
+const versionSelectHtml = `<select class="docs-version-select" aria-label="Docs version" onchange="window.location.href=this.value">
+  <option value="${baseUrl}">Latest</option>
+  ${versions.map((version) => `<option value="${baseUrl}${version}/">${version}</option>`).join("")}
+</select>`;
 
 const config: Config = {
   title: "Dagger",
@@ -207,8 +212,15 @@ const config: Config = {
       },
       items: [
         {
+          type: "html",
+          position: "right",
+          className: "navbar-version-select-mobile",
+          value: versionSelectHtml,
+        },
+        {
           type: "docsVersionDropdown",
           position: "right",
+          className: "navbar-version-dropdown",
         },
         // TODO(jasonmccallister): Add these items back in the nav or possible swizzle into a sidebar or toc?
         // {
