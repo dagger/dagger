@@ -591,6 +591,13 @@ done < /tmp/expected-artifacts
 aws --endpoint-url "$AWS_ENDPOINT_URL" s3 cp "s3://$AWS_BUCKET/$S3_DIR/checksums.txt" /tmp/artifacts/checksums.txt >/dev/null
 
 cd /tmp/artifacts
+awk '{print $2}' checksums.txt > /tmp/checksum-names
+if ! sort /tmp/checksum-names | cmp -s - /tmp/checksum-names; then
+	echo "checksums.txt should be sorted by artifact filename" >&2
+	cat checksums.txt >&2
+	exit 1
+fi
+
 while IFS= read -r file; do
 	[ -n "$file" ] || continue
 	matches="$(grep -F "  $file" checksums.txt | wc -l | tr -d ' ')"
@@ -602,6 +609,20 @@ while IFS= read -r file; do
 done < /tmp/expected-artifacts
 sha256sum -c checksums.txt --ignore-missing >/tmp/checksums.out
 cat /tmp/checksums.out
+
+while IFS= read -r file; do
+	[ -n "$file" ] || continue
+	disposition="$(aws --endpoint-url "$AWS_ENDPOINT_URL" s3api head-object --bucket "$AWS_BUCKET" --key "$S3_DIR/$file" --query ContentDisposition --output text)"
+	if [ "$disposition" != "attachment;filename=$file" ]; then
+		echo "unexpected content disposition for $file: $disposition" >&2
+		exit 1
+	fi
+done < /tmp/expected-artifacts
+disposition="$(aws --endpoint-url "$AWS_ENDPOINT_URL" s3api head-object --bucket "$AWS_BUCKET" --key "$S3_DIR/checksums.txt" --query ContentDisposition --output text)"
+if [ "$disposition" != "attachment;filename=checksums.txt" ]; then
+	echo "unexpected content disposition for checksums.txt: $disposition" >&2
+	exit 1
+fi
 
 if [ "$INSPECT_ARCHIVES" = "1" ]; then
 	while IFS= read -r file; do
