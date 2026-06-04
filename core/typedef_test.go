@@ -1,11 +1,14 @@
 package core
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/stretchr/testify/require"
 )
 
 func sampleTypeDefs(t *testing.T) map[TypeDefKind]*TypeDef {
@@ -87,4 +90,47 @@ func TestTypeDefConversions(t *testing.T) {
 			sample.ToType()
 		})
 	}
+}
+
+func TestFunctionCallReturnValueStoresDecodedJSON(t *testing.T) {
+	fnCall := newFunctionCall(FunctionCall{Name: "fn"})
+
+	err := fnCall.ReturnValue(context.Background(), JSON(`{"n":123,"s":"ok"}`))
+	require.NoError(t, err)
+
+	res, ok, err := fnCall.returnResult()
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.False(t, res.HasError)
+
+	obj, ok := res.Value.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, json.Number("123"), obj["n"])
+	require.Equal(t, "ok", obj["s"])
+}
+
+func TestFunctionCallReturnValueAllowsNull(t *testing.T) {
+	fnCall := newFunctionCall(FunctionCall{Name: "fn"})
+
+	err := fnCall.ReturnValue(context.Background(), JSON(`null`))
+	require.NoError(t, err)
+
+	res, ok, err := fnCall.returnResult()
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.False(t, res.HasError)
+	require.Nil(t, res.Value)
+}
+
+func TestFunctionCallReturnIsExactlyOnce(t *testing.T) {
+	fnCall := newFunctionCall(FunctionCall{Name: "fn"})
+
+	require.NoError(t, fnCall.ReturnValue(context.Background(), JSON(`"first"`)))
+	require.ErrorContains(t, fnCall.ReturnValue(context.Background(), JSON(`"second"`)), "already set")
+}
+
+func TestFunctionCallReturnRequiresActiveCall(t *testing.T) {
+	fnCall := &FunctionCall{Name: "decoded"}
+
+	require.ErrorContains(t, fnCall.ReturnValue(context.Background(), JSON(`"x"`)), "not active")
 }

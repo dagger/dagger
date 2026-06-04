@@ -1364,7 +1364,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 	if err != nil {
 		return inst, err
 	}
-	err = ctr.WithExec(ctx, parent, args.ContainerExecOpts, md, moduleContext, nil, false)
+	err = ctr.WithExec(ctx, parent, args.ContainerExecOpts, md, moduleContext, nil)
 	if err != nil {
 		return inst, err
 	}
