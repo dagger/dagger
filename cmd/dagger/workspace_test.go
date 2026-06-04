@@ -629,6 +629,25 @@ func TestSelectedRemoteWorkspaceAddressInfersLocalGitWorkspace(t *testing.T) {
 	require.Equal(t, "services/api", remote.Path)
 }
 
+func TestInferCleanLocalWorkspaceRemoteAddressUsesHeadCommit(t *testing.T) {
+	repo, workspaceDir, sha := setupCleanWorkspaceRepo(t)
+
+	t.Chdir(workspaceDir)
+	remote, address, dirty, err := inferCleanLocalWorkspaceRemoteAddress(t.Context(), "")
+	require.NoError(t, err)
+	require.False(t, dirty)
+	require.Equal(t, "github.com/acme/mono/services/api@"+sha, address)
+	require.Equal(t, "github.com/acme/mono", remote.CloneRef)
+	require.Equal(t, "services/api", remote.Path)
+	require.Equal(t, sha, remote.Version)
+
+	require.NoError(t, os.WriteFile(filepath.Join(repo, "untracked.txt"), []byte("dirty\n"), 0o600))
+	_, address, dirty, err = inferCleanLocalWorkspaceRemoteAddress(t.Context(), "")
+	require.NoError(t, err)
+	require.True(t, dirty)
+	require.Empty(t, address)
+}
+
 func TestCurrentWorkspaceRemoteAddress(t *testing.T) {
 	oldWorkspaceRef := workspaceRef
 	t.Cleanup(func() {
@@ -681,10 +700,67 @@ func TestSelectedRemoteWorkspaceAddressUsesExplicitRemoteWorkspace(t *testing.T)
 	require.Equal(t, "main", remote.Version)
 }
 
+func TestCheckPastWorkspaceAddress(t *testing.T) {
+	oldWorkspaceRef := workspaceRef
+	t.Cleanup(func() {
+		workspaceRef = oldWorkspaceRef
+	})
+
+	workspaceRef = "github.com/acme/mono/services/api@main"
+	address, ok, reason, err := checkPastWorkspaceAddress(t.Context())
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Empty(t, reason)
+	require.Equal(t, "github.com/acme/mono/services/api@main", address)
+
+	workspaceRef = ""
+	t.Chdir(t.TempDir())
+	address, ok, reason, err = checkPastWorkspaceAddress(t.Context())
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Empty(t, address)
+	require.Contains(t, reason, "find git root")
+
+	_, workspaceDir, sha := setupCleanWorkspaceRepo(t)
+	workspaceRef = "."
+	t.Chdir(workspaceDir)
+	address, ok, reason, err = checkPastWorkspaceAddress(t.Context())
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Empty(t, reason)
+	require.Equal(t, "github.com/acme/mono/services/api@"+sha, address)
+
+	require.NoError(t, os.WriteFile(filepath.Join(workspaceDir, "dirty.txt"), []byte("dirty\n"), 0o600))
+	address, ok, reason, err = checkPastWorkspaceAddress(t.Context())
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Empty(t, address)
+	require.Equal(t, "workspace has uncommitted changes", reason)
+}
+
 func TestNormalizeWorkspaceGitOrigin(t *testing.T) {
 	require.Equal(t, "github.com/acme/mono", normalizeWorkspaceGitOrigin("git@github.com:acme/mono.git"))
 	require.Equal(t, "github.com/acme/mono", normalizeWorkspaceGitOrigin("https://github.com/acme/mono.git"))
 	require.Equal(t, "ssh://git@example.com/acme/mono", normalizeWorkspaceGitOrigin("ssh://git@example.com/acme/mono.git"))
+}
+
+func setupCleanWorkspaceRepo(t *testing.T) (string, string, string) {
+	t.Helper()
+
+	repo := t.TempDir()
+	runGit(t, repo, "init")
+	runGit(t, repo, "remote", "add", "origin", "git@github.com:acme/mono.git")
+	runGit(t, repo, "checkout", "-b", "feature/work")
+
+	workspaceDir := filepath.Join(repo, "services", "api")
+	require.NoError(t, os.MkdirAll(workspaceDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workspaceDir, "dagger.toml"), []byte("# workspace\n"), 0o600))
+	runGit(t, repo, "add", ".")
+	runGit(t, repo, "-c", "user.name=Test User", "-c", "user.email=test@example.com", "commit", "-m", "initial")
+
+	sha, err := gitOutput(t.Context(), repo, "rev-parse", "HEAD")
+	require.NoError(t, err)
+	return repo, workspaceDir, sha
 }
 
 func runGit(t *testing.T, dir string, args ...string) {
