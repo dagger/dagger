@@ -48,6 +48,9 @@ type FrontendOpts struct {
 	// its child spans.
 	ZoomedSpan SpanID
 
+	// ZoomedSpanIncludeSelf includes the zoomed span itself in the row tree.
+	ZoomedSpanIncludeSelf bool
+
 	// FocusedSpan is the currently selected span, i.e. the cursor position.
 	FocusedSpan SpanID
 

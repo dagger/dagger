@@ -23,12 +23,7 @@ import (
 // GraphQL operations for streaming trace data from Dagger Cloud.
 // These mirror the subscriptions used by the Cloud UI (dagger.io).
 
-const getSpanUpdatesOperation = `
-subscription GetSpanUpdates ($orgID: ID!, $traceID: ID!, $root: Boolean! = true, $before: Time, $after: Time, $listen: [ID!]) {
-	spansUpdated(org: $orgID, traceId: $traceID, root: $root, before: $before, after: $after, listen: $listen) {
-		... SpanProps
-	}
-}
+const spanPropsFragment = `
 fragment SpanProps on Span {
 	id
 	traceId
@@ -64,6 +59,24 @@ fragment SpanProps on Span {
 	partial
 }
 `
+
+const getSpanUpdatesOperation = `
+subscription GetSpanUpdates ($orgID: ID!, $traceID: ID!, $root: Boolean! = true, $before: Time, $after: Time, $listen: [ID!]) {
+	spansUpdated(org: $orgID, traceId: $traceID, root: $root, before: $before, after: $after, listen: $listen) {
+		... SpanProps
+	}
+}
+` + spanPropsFragment
+
+const getSpanOperation = `
+query GetSpan ($orgID: ID!, $traceID: ID!) {
+	trace(org: $orgID, id: $traceID) {
+		spans {
+			... SpanProps
+		}
+	}
+}
+` + spanPropsFragment
 
 const getSpanLogsOperation = `
 subscription GetSpanLogs ($orgID: ID!, $traceID: ID!, $spanID: ID!, $after: Time, $descendants: Boolean!) {
@@ -134,8 +147,25 @@ type graphqlSSEResponse[T any] struct {
 	Data T `json:"data"`
 }
 
+type graphqlResponse[T any] struct {
+	Data   T              `json:"data"`
+	Errors []graphqlError `json:"errors"`
+}
+
+type graphqlError struct {
+	Message string `json:"message"`
+}
+
 type spansUpdatedResponse struct {
 	SpansUpdated []SpanData `json:"spansUpdated"`
+}
+
+type spanResponse struct {
+	Trace *traceSpansData `json:"trace"`
+}
+
+type traceSpansData struct {
+	Spans []SpanData `json:"spans"`
 }
 
 type logsEmittedResponse struct {
@@ -155,18 +185,25 @@ func (c *Client) StreamSpans(
 	ctx context.Context,
 	orgID string,
 	traceID string,
+	spanID string,
 	handler func([]SpanData),
 ) error {
+	root := spanID == ""
+	var listen []string
+	if spanID != "" {
+		listen = []string{spanID}
+	}
+
 	return c.streamGraphQL(ctx, &graphqlRequest{
 		OpName: "GetSpanUpdates",
 		Query:  getSpanUpdatesOperation,
 		Variables: map[string]any{
 			"orgID":   orgID,
 			"traceID": traceID,
-			"root":    true,
+			"root":    root,
 			"after":   nil,
 			"before":  nil,
-			"listen":  nil,
+			"listen":  listen,
 		},
 	}, func(data []byte) error {
 		var resp graphqlSSEResponse[spansUpdatedResponse]
@@ -180,6 +217,38 @@ func (c *Client) StreamSpans(
 		handler(spans)
 		return nil
 	})
+}
+
+// GetSpan retrieves one span from a trace in Dagger Cloud.
+func (c *Client) GetSpan(
+	ctx context.Context,
+	orgID string,
+	traceID string,
+	spanID string,
+) (*SpanData, error) {
+	var resp graphqlResponse[spanResponse]
+	if err := c.queryGraphQL(ctx, &graphqlRequest{
+		OpName: "GetSpan",
+		Query:  getSpanOperation,
+		Variables: map[string]any{
+			"orgID":   orgID,
+			"traceID": traceID,
+		},
+	}, &resp); err != nil {
+		return nil, err
+	}
+	if len(resp.Errors) > 0 {
+		return nil, fmt.Errorf("GetSpan: %s", resp.Errors[0].Message)
+	}
+	if resp.Data.Trace == nil {
+		return nil, nil
+	}
+	for i := range resp.Data.Trace.Spans {
+		if resp.Data.Trace.Spans[i].ID == spanID {
+			return &resp.Data.Trace.Spans[i], nil
+		}
+	}
+	return nil, nil
 }
 
 // StreamLogs streams log messages for a trace from Dagger Cloud's GraphQL API.
@@ -212,6 +281,38 @@ func (c *Client) StreamLogs(
 		handler(logs)
 		return nil
 	})
+}
+
+func (c *Client) queryGraphQL(ctx context.Context, gqlReq *graphqlRequest, out any) error {
+	body, err := json.Marshal(gqlReq)
+	if err != nil {
+		return fmt.Errorf("marshal graphql request: %w", err)
+	}
+
+	endpoint := c.u.JoinPath("/query").String()
+	slog.Debug("querying cloud GraphQL", "url", endpoint, "op", gqlReq.OpName)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+	resp, err := c.h.Do(req)
+	if err != nil {
+		return fmt.Errorf("connect to %s: %w", gqlReq.OpName, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("%s: %s: %s", gqlReq.OpName, resp.Status, string(respBody))
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("decode response from %s: %w", gqlReq.OpName, err)
+	}
+	return nil
 }
 
 // streamGraphQL connects to the Cloud GraphQL SSE endpoint and streams
