@@ -1,0 +1,39 @@
+---
+title: "The Type System"
+slug: /extending/type-system
+description: "Design module APIs with Dagger's type system."
+---
+
+# The Type System
+
+Dagger modules expose typed APIs. Types are not decoration; they are the contract that lets the CLI, SDK clients, other modules, agents, and Cloud understand what a module can do.
+
+This section teaches type design for module authors. The [Types Reference](/1.0-beta/extending/types) remains the API reference; this section explains how to use the type system to make modules discoverable, composable, cache-friendly, and pleasant to call.
+
+## What Types Do for Callers
+
+Types help callers:
+
+- Discover available functions and object methods.
+- Understand required and optional inputs.
+- Compose outputs into later calls.
+- Get useful help text and generated clients.
+- Avoid passing data in the wrong shape.
+- See where host files, services, secrets, generated changes, and external effects enter the workflow.
+
+## Learning Path
+
+| Chapter | Reader outcome |
+| --- | --- |
+| [Scalars, Lists, Nullability, and Defaults](./scalars-lists-nullability-defaults.mdx) | Know how basic values, optionality, and defaults shape the caller experience. |
+| [Core Dagger Types](./core-types.mdx) | Understand the platform types every module author should design with. |
+| [User-Defined Object Types](./user-defined-object-types.mdx) | Model durable workflow concepts without imitating one SDK's class system. |
+| [Constructors, Fields, and Methods](./constructors-fields-methods.mdx) | Decide where state belongs and how object APIs should be organized. |
+| [Function Arguments and Return Values](./arguments-and-return-values.mdx) | Make module functions explicit, discoverable, and easy to compose. |
+| [Enums and Validation](./enums-and-validation.mdx) | Represent closed choices and fail early with useful errors. |
+| [Designing for Composability](./designing-for-composability.mdx) | Return values that other functions, modules, clients, and agents can keep using. |
+| [Type Design Clinics](./type-design-clinics.mdx) | Practice improving weak APIs into typed Dagger APIs. |
+
+## Writing Assignment
+
+TODO: Add a short conceptual diagram that shows a module function accepting core values, returning a user-defined object, and exposing methods that continue the graph.

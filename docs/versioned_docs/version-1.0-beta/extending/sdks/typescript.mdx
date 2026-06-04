@@ -1,0 +1,951 @@
+---
+title: "TypeScript SDK"
+slug: /extending/sdks/typescript
+description: "Develop Dagger modules in TypeScript: create modules, define objects and functions, manage dependencies, regenerate bindings, run checks, and release."
+---
+
+# TypeScript SDK
+
+The TypeScript SDK lets you write Dagger modules in TypeScript. You define an
+`@object()` class with `@func()` methods, and Dagger exposes those methods as
+API functions that anyone can call from the CLI, from another module, or over
+the API. Inside your functions you orchestrate containers, files, services, and
+secrets through a generated, fully-typed client.
+
+This page assumes you already understand the Dagger module model. If you don't,
+read these first — this page stays light on platform concepts and links back
+where relevant:
+
+- [Module Developer Guide](/1.0-beta/extending) — what a module is and how it runs
+- [Type System](/1.0-beta/extending/type-system) — how language types map to the Dagger API
+- [Checks](/1.0-beta/extending/how-dagger-works/checks) — how `dagger check` discovers and runs checks
+- [Changesets](/1.0-beta/using-dagger/changesets) — how generated files are reviewed and applied
+
+:::important
+Module development tooling is no longer built into the `dagger` CLI. There is no
+`dagger init` or `dagger develop`. Instead, **the TypeScript SDK is itself a
+Dagger module** — `github.com/dagger/typescript-sdk` — and you create and
+maintain TypeScript modules by calling its functions.
+:::
+
+## Create a module
+
+:::note
+Run `init` from inside a Git repository — that's where the new module is created.
+:::
+
+Use the SDK module's `init` function to scaffold a new TypeScript module. `init`
+does not write to disk directly — it returns a [changeset](/1.0-beta/using-dagger/changesets)
+describing the files to create, exactly like `dagger call prettier write`. You
+review the changeset, then apply it.
+
+```shell
+# Inspect the changeset as a unified diff, without applying it
+dagger -m github.com/dagger/typescript-sdk call init --name=my-module as-patch
+
+# Review and apply (pass -y to apply without prompting)
+dagger -m github.com/dagger/typescript-sdk call init --name=my-module
+```
+
+`init` arguments (from `dagger call init --help`):
+
+| Argument | Required | Description |
+|---|---|---|
+| `--name` | yes | The module name. |
+| `--path` | no | Where to create the module. Defaults to the nearest `.dagger/modules/<name>` visible from the workspace path. |
+| `--runtime` | no | One of `NODE`, `BUN`, `DENO`. Defaults to Node. |
+| `--template` | no | Materialize files from `templates/<template>`. Empty uses the SDK's default template. |
+| `--ignore-generated` | no | Add generated SDK paths to `.gitignore` instead of checking them in. |
+
+By default the module is created under the nearest `.dagger` directory:
+
+```
+<nearest .dagger>/modules/my-module
+```
+
+Pass `--path` to choose a different location. The target path must not already
+contain a Dagger module.
+
+:::tip Applying changesets
+Any function that returns a `Changeset` (`init`, `mod generate`, `mod deps add`)
+supports the same operations: `as-patch` to view a Git-style diff, `is-empty`
+to test for changes, and then you review the changeset and apply it (pass `-y`
+to apply without prompting). Dagger writes the files into the current host
+workspace.
+:::
+
+### File layout
+
+A freshly created Node module looks like this:
+
+```
+my-module/
+├── dagger.json          # module config
+├── package.json         # npm/yarn/pnpm package definition
+├── tsconfig.json        # TypeScript config with the @dagger.io/dagger path alias
+├── sdk/                 # generated TypeScript bindings (the typed client)
+└── src/
+    └── index.ts         # your module code
+```
+
+`dagger.json` declares the SDK source:
+
+```json title="dagger.json"
+{
+  "name": "my-module",
+  "engineVersion": "v1.0.0-beta.2",
+  "sdk": {
+    "source": "typescript"
+  },
+  "source": "."
+}
+```
+
+`tsconfig.json` wires the `@dagger.io/dagger` import to the local generated SDK
+so editors resolve types without a separate install:
+
+```json title="tsconfig.json"
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "moduleResolution": "Node",
+    "experimentalDecorators": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "paths": {
+      "@dagger.io/dagger": ["./sdk/index.ts"],
+      "@dagger.io/dagger/telemetry": ["./sdk/telemetry.ts"]
+    }
+  }
+}
+```
+
+`package.json` declares the package as an ES module:
+
+```json title="package.json"
+{
+  "type": "module"
+}
+```
+
+## Define objects and functions
+
+A module is a class decorated with `@object()`. Methods decorated with `@func()`
+become Dagger API functions. The first `@object()` class is the module's main
+object; its name in the API is derived from the module name.
+
+```typescript title="src/index.ts"
+import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
+
+@object()
+class MyModule {
+  /**
+   * Build and publish a container image, returning the published ref
+   */
+  @func()
+  async build(src: Directory): Promise<string> {
+    const builder = dag
+      .container()
+      .from("golang:latest")
+      .withDirectory("/src", src)
+      .withWorkdir("/src")
+      .withEnvVariable("CGO_ENABLED", "0")
+      .withExec(["go", "build", "-o", "myapp"])
+
+    const prodImage = dag
+      .container()
+      .from("alpine")
+      .withFile("/bin/myapp", builder.file("/src/myapp"))
+      .withEntrypoint(["/bin/myapp"])
+
+    return await prodImage.publish("ttl.sh/myapp:latest")
+  }
+}
+```
+
+Call it like any other module:
+
+```shell
+dagger -m ./my-module call build --src=.
+```
+
+Key points:
+
+- `dag` is the generated Dagger client. Every core type (`Container`,
+  `Directory`, `File`, `Service`, `Secret`, …) is imported from
+  `@dagger.io/dagger`.
+- The Dagger API is lazy and immutable: each builder method returns a new value
+  and nothing executes until you `await` a leaf operation (`publish`, `stdout`,
+  `sync`, `entries`, …). You can return an unresolved `Container`/`Directory`
+  and the caller decides when to evaluate it.
+- A `@func()` may be `async` and return a `Promise<T>`, or return a lazy Dagger
+  type directly.
+
+### The constructor
+
+A class constructor becomes the module's constructor — its parameters become
+arguments that callers (or workspace config) can set when they reference the
+module. Store them as fields so other functions can use them.
+
+```typescript
+import { dag, Directory, object, func } from "@dagger.io/dagger"
+
+@object()
+class MyModule {
+  source: Directory
+  nodeVersion: string
+
+  constructor(source: Directory, nodeVersion = "20") {
+    this.source = source
+    this.nodeVersion = nodeVersion
+  }
+
+  @func()
+  build(): Container {
+    return dag
+      .container()
+      .from(`node:${this.nodeVersion}`)
+      .withDirectory("/app", this.source)
+      .withWorkdir("/app")
+      .withExec(["npm", "ci"])
+      .withExec(["npm", "run", "build"])
+  }
+}
+```
+
+A field decorated with `@func()` is exposed as a readable API field; an
+undecorated field is private internal state.
+
+### Workspace inputs
+
+To read the user's project files, give your `@object()` constructor a
+`Workspace` parameter. Dagger **auto-populates** it from the current workspace —
+the caller passes nothing, and nothing is uploaded up front. The module then
+reads project content **lazily, on demand**, so only the paths you actually
+touch are loaded (and become part of the cache key).
+
+```typescript
+import { dag, Container, Directory, Workspace, object, func } from "@dagger.io/dagger"
+
+@object()
+class MyModule {
+  source: Directory
+
+  // ws is auto-populated from the current workspace; the caller passes nothing.
+  constructor(ws: Workspace) {
+    // Read the workspace root as the module's source directory.
+    this.source = ws.directory("/")
+  }
+
+  @func()
+  build(): Container {
+    return dag
+      .container()
+      .from("node:20")
+      .withDirectory("/app", this.source)
+      .withWorkdir("/app")
+      .withExec(["npm", "ci"])
+      .withExec(["npm", "run", "build"])
+  }
+}
+```
+
+:::note
+The `@object()` constructor declares the `Workspace` as a plain typed parameter —
+no decorator — that Dagger fills from the current workspace; the caller passes
+nothing. The `Workspace` type is imported from `@dagger.io/dagger`.
+:::
+
+A `Workspace` exposes lazy accessors for project content:
+
+- `ws.directory(path, opts?)` — return a `Directory` for `path`. Takes an
+  options object with `exclude`, `include`, and `gitignore`. Use `exclude`
+  aggressively to keep the cache key tight:
+
+  ```typescript
+  this.source = ws.directory("/", { exclude: ["node_modules", ".git", "dist"] })
+  ```
+
+- `ws.file(path)` — return a `File` for `path`.
+
+  ```typescript
+  const pkg = ws.file("package.json")
+  ```
+
+- `ws.findUp(name, opts?)` — walk up from a start path (`opts.from`) within the
+  workspace looking for `name`; returns the absolute workspace path, or null if
+  not found. The search stops at the workspace root.
+
+  ```typescript
+  const modRoot = await ws.findUp("package.json")
+  ```
+
+**Path resolution:** relative paths (e.g. `"src"`, `"package.json"`) resolve
+from the workspace **cwd**; absolute paths (e.g. `"/src"`, `"/go.mod"`) resolve
+from the workspace **root**.
+
+Because these accessors are lazy, reading a `Directory` or `File` from the
+workspace does not upload anything until a downstream operation actually
+evaluates it. Pull only the paths you need, with tight `exclude` patterns, to
+minimize cache invalidation.
+
+## Arguments and return values
+
+Function parameters become Dagger function arguments. TypeScript types map onto
+the Dagger type system (see [Type System](/1.0-beta/extending/type-system)):
+
+| TypeScript | Dagger API | Notes |
+|---|---|---|
+| `string` | `String` | |
+| `number` | `Int` / `Float` | |
+| `boolean` | `Boolean` | |
+| `string[]`, `T[]` | list | |
+| `Directory`, `File`, `Container`, `Service`, `Secret`, `Port`, … | core types | imported from `@dagger.io/dagger` |
+| `void` / `Promise<void>` | `Void` | common for checks and side-effecting functions |
+| a custom `@object()` class | object | for returning multiple related values |
+| a TypeScript `enum` | enum | restricts to a set of values |
+
+### Documenting arguments and functions
+
+Use JSDoc comments. The comment above a method is the function description; the
+comment above a parameter is the argument description. Both appear in
+`dagger functions` and `dagger call --help`.
+
+```typescript
+@object()
+class MyModule {
+  /**
+   * Query the GitHub API
+   */
+  @func()
+  async githubApi(
+    /**
+     * GitHub API token
+     */
+    token: Secret,
+  ): Promise<string> {
+    return await dag
+      .container()
+      .from("alpine:3.17")
+      .withSecretVariable("GITHUB_API_TOKEN", token)
+      .withExec(["apk", "add", "curl"])
+      .withExec([
+        "sh",
+        "-c",
+        `curl "https://api.github.com/repos/dagger/dagger/issues" --header "Authorization: Bearer $GITHUB_API_TOKEN"`,
+      ])
+      .stdout()
+  }
+}
+```
+
+### Defaults and optional arguments
+
+A TypeScript default value makes the argument optional:
+
+```typescript
+@func()
+greet(name = "world"): string {
+  return `Hello, ${name}!`
+}
+```
+
+```shell
+dagger call greet            # Hello, world!
+dagger call greet --name=Sam # Hello, Sam!
+```
+
+### Nullability
+
+An optional parameter (`name?: string`) maps to a nullable argument that may be
+omitted. A required parameter without a default must always be provided.
+
+```typescript
+@func()
+maybeGreet(name?: string): string {
+  return name ? `Hello, ${name}!` : "Hello!"
+}
+```
+
+### Enums
+
+A TypeScript `enum` restricts an argument to a fixed set of values. Document
+members with JSDoc.
+
+```typescript
+import { func, object } from "@dagger.io/dagger"
+
+/**
+ * Severity levels for a scan
+ */
+export enum Severity {
+  Low = "LOW",
+  Medium = "MEDIUM",
+  High = "HIGH",
+  Critical = "CRITICAL",
+}
+
+@object()
+export class Security {
+  @func()
+  describe(severity: Severity): string {
+    return `scanning at severity ${severity}`
+  }
+}
+```
+
+Passing an invalid value produces an error listing the valid choices.
+
+### Custom object types
+
+To return multiple related values, define another `@object()` class and expose
+its fields with `@func()`:
+
+```typescript
+import { dag, File, object, func } from "@dagger.io/dagger"
+
+@object()
+class BuildResult {
+  @func()
+  binary: File
+
+  @func()
+  version: string
+
+  constructor(binary: File, version: string) {
+    this.binary = binary
+    this.version = version
+  }
+}
+
+@object()
+class MyModule {
+  @func()
+  build(): BuildResult {
+    const bin = dag
+      .container()
+      .from("golang:1.22")
+      .withExec(["sh", "-c", "echo built > /out/app"])
+      .file("/out/app")
+    return new BuildResult(bin, "1.0.0")
+  }
+}
+```
+
+Dagger prefixes custom type names in the schema (e.g. `MyModuleBuildResult`) to
+avoid collisions when multiple modules are loaded together.
+
+## Core Dagger types
+
+The generated client exposes the full Dagger API. The patterns below are the
+ones you'll reach for most.
+
+### Containers and files
+
+```typescript
+@func()
+test(source: Directory): Container {
+  return dag
+    .container()
+    .from("node:20")
+    .withDirectory("/app", source)
+    .withWorkdir("/app")
+    .withMountedCache("/app/node_modules", dag.cacheVolume("node-modules"))
+    .withExec(["npm", "ci"])
+    .withExec(["npm", "test"])
+}
+```
+
+`withMountedCache` + `dag.cacheVolume("name")` give you a persistent,
+content-addressed cache keyed by name. Every builder operation is layer-cached
+automatically by its inputs.
+
+### Secrets
+
+Accept secrets as the `Secret` type, never as a plain string. Dagger scrubs
+secret values from logs, caches, and crash reports.
+
+```typescript
+@func()
+async deploy(token: Secret): Promise<string> {
+  return await dag
+    .container()
+    .from("alpine")
+    .withSecretVariable("DEPLOY_TOKEN", token)
+    .withExec(["sh", "-c", "deploy --token=$DEPLOY_TOKEN"])
+    .stdout()
+}
+```
+
+Callers supply secrets through providers:
+
+```shell
+dagger call deploy --token=env:DEPLOY_TOKEN
+dagger call deploy --token=file:./token.txt
+dagger call deploy --token=cmd:"gh auth token"
+dagger call deploy --token=op://vault/item/field
+```
+
+### Services
+
+```typescript
+@func()
+integrationTest(source: Directory): Container {
+  const db = dag
+    .container()
+    .from("postgres:16")
+    .withEnvVariable("POSTGRES_PASSWORD", "test")
+    .withExposedPort(5432)
+    .asService()
+
+  return dag
+    .container()
+    .from("node:20")
+    .withDirectory("/app", source)
+    .withWorkdir("/app")
+    .withServiceBinding("db", db)
+    .withEnvVariable("DATABASE_URL", "postgres://postgres:test@db:5432/test")
+    .withExec(["npm", "run", "test:integration"])
+}
+```
+
+Services are content-addressed: the same definition always resolves to the same
+hostname, so there are no port conflicts.
+
+### Concurrency
+
+Because the API is lazy, you can start independent pipelines and `await` them
+together with `Promise.all`:
+
+```typescript
+@func()
+async ci(source: Directory): Promise<void> {
+  await Promise.all([
+    this.lint(source).sync(),
+    this.test(source).sync(),
+  ])
+}
+```
+
+## Module dependencies
+
+Dependencies are declared in `dagger.json` and managed with the SDK module's
+`mod deps` functions, which return changesets you review and apply.
+
+```shell
+# List current dependencies
+dagger -m github.com/dagger/typescript-sdk call mod deps list
+
+# Add a dependency (preview, then apply)
+dagger -m github.com/dagger/typescript-sdk \
+  call mod deps add --source=github.com/dagger/dagger/modules/go as-patch
+
+dagger -m github.com/dagger/typescript-sdk \
+  call mod deps add --source=github.com/dagger/dagger/modules/go
+
+# Update one dependency, or all remote dependencies
+dagger -m github.com/dagger/typescript-sdk call mod deps update --help
+
+# Remove a dependency by name or source
+dagger -m github.com/dagger/typescript-sdk call mod deps remove --help
+```
+
+`mod deps add` arguments: `--source` (required, the module reference) and
+`--name` (optional, override the local alias).
+
+A module reference is `[proto://]host/repo[/subpath][@version]`, e.g.
+`github.com/shykes/daggerverse/hello@v0.3.0`. Local paths (`./path/to/module`)
+are also supported. After adding a dependency, `dagger.json` gains a
+`dependencies` entry:
+
+```json title="dagger.json"
+{
+  "name": "my-module",
+  "engineVersion": "v1.0.0-beta.2",
+  "sdk": { "source": "typescript" },
+  "source": ".",
+  "dependencies": [
+    { "name": "go", "source": "github.com/dagger/dagger/modules/go" }
+  ]
+}
+```
+
+Once a dependency is added and bindings are regenerated, call it through `dag`.
+The dependency's functions are accessible by its name, and arguments are passed
+as an options object:
+
+```typescript
+import { dag, Directory, object, func } from "@dagger.io/dagger"
+
+@object()
+class MyModule {
+  @func()
+  example(buildSrc: Directory, buildArgs: string[]): Directory {
+    return dag.golang().build({ source: buildSrc, args: buildArgs }).terminal()
+  }
+}
+```
+
+## Regenerate bindings
+
+The `sdk/` directory holds the generated typed client. Regenerate it whenever
+you add or update a dependency, or bump the engine version. Use the SDK module's
+`mod generate`, which returns a changeset:
+
+```shell
+# Preview regenerated bindings
+dagger -m github.com/dagger/typescript-sdk call mod generate as-patch
+
+# Apply
+dagger -m github.com/dagger/typescript-sdk call mod generate
+```
+
+If the generate skip marker is present in the module (or an ancestor), the
+changeset is empty — see `mod skip-generate`.
+
+You can also use the top-level CLI shortcut, which runs the configured SDK's
+generators for the module in the current workspace:
+
+```shell
+dagger generate
+```
+
+### Commit vs. generate
+
+By default, generated SDK files are checked into version control so that
+consumers and CI don't need to regenerate before building. This is the
+recommended setup. If you'd rather keep generated files out of git, pass
+`--ignore-generated` to `init` (or configure generation accordingly), which adds
+the generated paths to `.gitignore`. In that mode, anyone building the module
+must regenerate first.
+
+Either way, treat regeneration as a reviewable step: run `mod generate`, inspect
+the changeset, and commit the result alongside the change that required it.
+
+## Engine version
+
+`dagger.json`'s `engineVersion` pins the engine your module targets. Manage it
+with `mod engine`:
+
+```shell
+# Show the required version (without leading "v")
+dagger -m github.com/dagger/typescript-sdk call mod engine required
+
+# Pin to a specific version
+dagger -m github.com/dagger/typescript-sdk call mod engine require --help
+
+# Pin to the current engine, or the latest stable release
+dagger -m github.com/dagger/typescript-sdk call mod engine require-current
+dagger -m github.com/dagger/typescript-sdk call mod engine require-latest
+```
+
+After changing the engine version, regenerate bindings (`mod generate`) so the
+client matches.
+
+## Checks, generators, directives, and ignore
+
+A useful, reusable module provides at least one first-class function type:
+a **check** (run by `dagger check`), a **generator** (run by `dagger generate`),
+or a **service** (started by `dagger up`). Each is a regular `@func()` annotated
+with an additional decorator.
+
+### Checks
+
+A check is a function that validates something and passes or fails by exit code.
+Mark it with `@check()`. `dagger check` discovers and runs every check in the
+module. See [Checks](/1.0-beta/extending/how-dagger-works/checks).
+
+```typescript
+import { dag, Directory, Workspace, object, func, check } from "@dagger.io/dagger"
+
+@object()
+class MyModule {
+  source: Directory
+
+  constructor(ws: Workspace) {
+    this.source = ws.directory("/")
+  }
+
+  /**
+   * Lint the code
+   */
+  @func()
+  @check()
+  async lint(): Promise<void> {
+    await dag
+      .container()
+      .from("node:20")
+      .withDirectory("/app", this.source)
+      .withWorkdir("/app")
+      .withExec(["npm", "ci"])
+      .withExec(["npm", "run", "lint"])
+      .sync()
+  }
+
+  /**
+   * Run unit tests
+   */
+  @func()
+  @check()
+  async test(): Promise<void> {
+    await dag
+      .container()
+      .from("node:20")
+      .withDirectory("/app", this.source)
+      .withWorkdir("/app")
+      .withExec(["npm", "ci"])
+      .withExec(["npm", "test"])
+      .sync()
+  }
+}
+```
+
+```shell
+dagger check
+```
+
+A check passes if it returns without throwing; it fails if any `withExec`
+returns a non-zero exit code (which surfaces as a thrown error when you `sync`).
+
+### Generators
+
+A generator produces a [changeset](/1.0-beta/using-dagger/changesets) — a diff between the
+current source and generated output. Mark it with `@generate()` and return a
+`Changeset`. `dagger generate` runs every generator and presents the combined
+changeset for review.
+
+```typescript
+import { dag, Directory, Workspace, Changeset, object, func, generate } from "@dagger.io/dagger"
+
+@object()
+class MyModule {
+  source: Directory
+
+  constructor(ws: Workspace) {
+    this.source = ws.directory("/")
+  }
+
+  /**
+   * Generate API client code
+   */
+  @func()
+  @generate()
+  generateApi(): Changeset {
+    return dag
+      .container()
+      .from("node:20")
+      .withDirectory("/app", this.source)
+      .withWorkdir("/app")
+      .withExec(["npm", "ci"])
+      .withExec(["npm", "run", "generate:api"])
+      .directory("/app")
+      .changes(this.source)
+  }
+}
+```
+
+`.changes(this.source)` computes the diff against the original source.
+
+This author-written `@generate()` function is distinct from `mod generate`
+(covered in [Regenerate bindings](#regenerate-bindings)), which regenerates the
+SDK's own typed client in `sdk/`. Your `@generate()` functions produce
+project-specific output (API clients, config, scaffolding) and are run by
+`dagger generate`.
+
+### Services
+
+A service is a long-running container — a database, web server, or other
+dependency. Mark a `@func()` with `@up()` and return a `Service`. `dagger up`
+starts every service in the module. See [Services](/1.0-beta/using-dagger/services).
+
+```typescript
+import { Service, dag, object, func, up } from "@dagger.io/dagger"
+
+@object()
+class MyModule {
+  /**
+   * A web server service
+   */
+  @func()
+  @up()
+  web(): Service {
+    return dag.container().from("nginx:alpine").withExposedPort(80).asService()
+  }
+
+  /**
+   * A redis service
+   */
+  @func()
+  @up()
+  redis(): Service {
+    return dag.container().from("redis:alpine").withExposedPort(6379).asService()
+  }
+}
+```
+
+```shell
+dagger up
+```
+
+The `@up()` decorator goes below `@func()`, and the function returns a `Service`
+built from a container with `.asService()`.
+
+### Cache directive
+
+Control function caching with the `@func({ cache })` option:
+
+```typescript
+// Persistent caching for 10 minutes (useful for external data)
+@func({ cache: "10m" })
+async latestRelease(): Promise<string> { /* ... */ }
+
+// Cache only for the current session
+@func({ cache: "session" })
+async sessionId(): Promise<string> { /* ... */ }
+
+// Never cache — re-execute every call
+@func({ cache: "never" })
+async currentTime(): Promise<string> { /* ... */ }
+```
+
+A cache miss still benefits from layer caching for operations inside the
+function. `"never"` forces the function to re-run but does not disable layer
+caching for its operations.
+
+### Ignore
+
+When you read a directory from the workspace, filter it with the `exclude`
+option on `ws.directory(path, { exclude })` (see
+[Workspace inputs](#workspace-inputs)). Push file access to the leaves: read only
+the paths you need, with tight `exclude` patterns, to minimize cache
+invalidation.
+
+```typescript
+this.source = ws.directory("/", { exclude: ["node_modules", ".git", "dist"] })
+```
+
+## Testing TypeScript modules
+
+The primary way to test a module is to call its functions and run its checks:
+
+```shell
+# Smoke test — does it build?
+dagger -m ./my-module call build --src=.
+
+# Run all checks
+dagger check
+
+# Run generators and confirm there's no drift
+dagger check --generate
+```
+
+For richer behavioral tests, write a separate test module (in TypeScript or any
+SDK) that adds your module as a dependency and asserts on its outputs. Because
+services and containers are content-addressed and reproducible, integration
+tests against ephemeral databases or HTTP services are deterministic.
+
+### In CI
+
+Run `dagger check` from CI to execute every check the module defines:
+
+```yaml title=".github/workflows/ci.yml"
+name: ci
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dagger/dagger-for-github@v6
+        with:
+          version: "v1.0.0-beta.2"
+          verb: check
+```
+
+If your module keeps generated `sdk/` files in git, also gate on drift by
+running `dagger check --generate`.
+
+## IDE and package-manager setup
+
+### Runtimes and package managers
+
+`init --runtime` selects the runtime: `NODE` (default), `BUN`, or `DENO`. For
+Node, the SDK works with npm, yarn, and pnpm — the package manager is detected
+from your lockfile (`package-lock.json`, `yarn.lock`, or `pnpm-lock.yaml`).
+Commit the lockfile so builds are reproducible. Bun and Deno manage dependencies
+through their own native tooling; the module code and decorators are identical
+across runtimes — only dependency installation and lockfiles differ.
+
+### Editor type resolution
+
+Because `tsconfig.json` maps `@dagger.io/dagger` to the local `./sdk/index.ts`,
+most editors resolve Dagger types and offer completion without a separate
+install:
+
+```json
+"experimentalDecorators": true,
+"paths": {
+  "@dagger.io/dagger": ["./sdk/index.ts"],
+  "@dagger.io/dagger/telemetry": ["./sdk/telemetry.ts"]
+}
+```
+
+`experimentalDecorators` is required for `@object()`, `@func()`, `@check()`,
+`@generate()`, and `@argument()` to work.
+
+### Source maps
+
+When working across inter-dependent modules, the SDK attaches source maps to
+generated code (line comments of the form `./path/to/filename:line`), so you can
+click through to a function's declaration in another module. Most editors support
+this natively or via a plugin such as the
+[Open file plugin](https://marketplace.visualstudio.com/items?itemName=Fr43nk.seito-openfile)
+for VS Code.
+
+## Packaging and release
+
+A TypeScript module is published simply by pushing it to a git repository. There
+is no separate publish step. Consumers reference it by its git address and
+version (a tag, branch, or commit):
+
+```shell
+# In a consumer module's workspace
+dagger mod install github.com/you/my-module@v1.0.0
+```
+
+This adds the dependency to the consumer's `dagger.json`. Tag releases (e.g.
+`v1.0.0`) so consumers can pin a stable version. Keep generated `sdk/` files
+committed so consumers don't have to regenerate before using your module.
+
+Recommended release checklist:
+
+1. `dagger check` passes.
+2. `dagger check --generate` produces no drift.
+3. `mod engine required` matches the engine you support.
+4. Tag and push: `git tag vX.Y.Z && git push --tags`.
+
+## Troubleshooting
+
+**`init` fails: target already contains a Dagger module.** Pass a different
+`--path`, or remove the existing `dagger.json` if you intended to recreate it.
+
+**Decorators not recognized / runtime errors about metadata.** Ensure
+`experimentalDecorators` is `true` in `tsconfig.json` and that your `@object()`
+class is exported/defined as shown. The first `@object()` class is the module's
+main object.
+
+**Calling a dependency fails with "unknown function" or missing types.** Add the
+dependency with `mod deps add`, then regenerate bindings with `mod generate` and
+apply the changeset. The generated `sdk/` client must include the dependency
+before `dag.<dep>()` resolves.
+
+**`dagger check` finds no checks.** Confirm the functions are decorated with both
+`@func()` and `@check()` and that the class is the module's `@object()`.
+
+**CI build fails on missing `sdk/`.** Either commit the generated `sdk/`
+directory, or run `mod generate` (or `dagger generate`) as a build step before
+calling the module.
+
+**Engine version mismatch warnings.** Align `dagger.json`'s `engineVersion`
+with your engine using `mod engine require`/`require-current`/`require-latest`,
+then regenerate bindings.
