@@ -664,6 +664,8 @@ if len(releases) != 1:
 release = releases[0]
 if release.get("target_commitish") not in ("", commit):
     fail(f"release target mismatch: expected {commit}, got {release.get('target_commitish')}")
+if release.get("draft") is not True:
+    fail(f"release should be created as draft before asset uploads: {release.get('draft')}")
 if release.get("prerelease") not in (None, False):
     fail(f"stable release should not be marked prerelease: {release.get('prerelease')}")
 if "Fix a regression in the 1Password secret provider where secrets with spaces could not be resolved" not in release.get("release_body", ""):
@@ -673,6 +675,12 @@ expected_assets = sorted(line.strip() for line in open("/tmp/expected-assets", e
 actual_assets = sorted(e.get("asset_name", "") for e in events if e.get("kind") == "github_release_asset_upload")
 if actual_assets != expected_assets:
     fail("release assets mismatch\nexpected: %r\nactual:   %r" % (expected_assets, actual_assets))
+
+publishes = [e for e in events if e.get("kind") == "github_release_publish"]
+if len(publishes) != 1:
+    fail(f"expected exactly one root release publish after asset upload, got {len(publishes)}")
+if publishes[0].get("draft") is not False:
+    fail(f"release publish should undraft the release: {publishes[0].get('draft')}")
 `}).
 		Stdout(ctx)
 	if err != nil {
@@ -805,8 +813,59 @@ expected_writes = {
     ("dagger", "winget-pkgs", f"manifests/d/Dagger/Cli/{version}/Dagger.Cli.locale.en-US.yaml"),
 }
 need(content_writes == expected_writes, f"package manager content writes mismatch\nexpected: {sorted(expected_writes)}\nactual:   {sorted(content_writes)}")
+
+content_by_path = {
+    (e.get("github_owner"), e.get("github_repo"), e.get("content_path")): e
+    for e in events
+    if e.get("kind") == "github_content_write"
+}
+expected_write_details = {
+    ("dagger", "homebrew-tap", "dagger.rb"): {
+        "branch": "main",
+        "message": f"Brew formula update for dagger version {tag}",
+    },
+    ("dagger", "nix", "pkgs/dagger/default.nix"): {
+        "branch": "main",
+        "message": f"dagger:  -> {tag}",
+    },
+    ("dagger", "winget-pkgs", f"manifests/d/Dagger/Cli/{version}/Dagger.Cli.yaml"): {
+        "branch": f"dagger-{version}",
+        "message": f"New version: Dagger.Cli {version}: add version",
+    },
+    ("dagger", "winget-pkgs", f"manifests/d/Dagger/Cli/{version}/Dagger.Cli.installer.yaml"): {
+        "branch": f"dagger-{version}",
+        "message": f"New version: Dagger.Cli {version}: add installer",
+    },
+    ("dagger", "winget-pkgs", f"manifests/d/Dagger/Cli/{version}/Dagger.Cli.locale.en-US.yaml"): {
+        "branch": f"dagger-{version}",
+        "message": f"New version: Dagger.Cli {version}: add locale",
+    },
+}
+for key, expected in expected_write_details.items():
+    event = content_by_path.get(key)
+    need(event is not None, f"missing content write event for {key}")
+    for field, value in expected.items():
+        need(event.get(field) == value, f"content write {key} should have {field}={value!r}, got {event.get(field)!r}")
+    need(event.get("committer_name") == "dagger-bot", f"content write {key} should use dagger-bot committer")
+    need(event.get("committer_email") == "noreply@dagger.io", f"content write {key} should use dagger-bot email")
+
+winget_refs = [
+    e for e in events
+    if e.get("kind") == "github_ref_create" and e.get("path") == "/api/v3/repos/dagger/winget-pkgs/git/refs"
+]
+need(len(winget_refs) == 1, f"expected one winget branch create, got {len(winget_refs)}")
+need(winget_refs[0].get("ref") == f"refs/heads/dagger-{version}", f"unexpected winget branch ref: {winget_refs[0].get('ref')}")
+winget_syncs = [
+    e for e in events
+    if e.get("kind") == "github_merge_upstream" and e.get("path") == "/api/v3/repos/dagger/winget-pkgs/merge-upstream"
+]
+need(len(winget_syncs) == 1, f"expected one winget fork sync, got {len(winget_syncs)}")
 winget_prs = [e for e in events if e.get("kind") == "github_pull_request_create" and e.get("path") == "/api/v3/repos/microsoft/winget-pkgs/pulls"]
 need(len(winget_prs) == 1, f"expected one winget pull request, got {len(winget_prs)}")
+need(winget_prs[0].get("title") == f"New version: Dagger.Cli {version}", f"unexpected winget PR title: {winget_prs[0].get('title')}")
+need(winget_prs[0].get("head") == f"dagger:winget-pkgs:dagger-{version}", f"unexpected winget PR head: {winget_prs[0].get('head')}")
+need(winget_prs[0].get("base") == "master", f"unexpected winget PR base: {winget_prs[0].get('base')}")
+need("Automated with [GoReleaser]" in winget_prs[0].get("body", ""), "winget PR body should include GoReleaser footer")
 PY
 `}).
 		Stdout(ctx)
@@ -1124,6 +1183,7 @@ github_release_records_dir = "/records/github-releases"
 os.makedirs(github_content_records_dir, exist_ok=True)
 os.makedirs(github_release_records_dir, exist_ok=True)
 published_crates = {}
+github_refs = {}
 state_lock = threading.Lock()
 
 def record(kind, handler, body, extra=None):
@@ -1151,6 +1211,22 @@ def github_content_target(path):
     repo = urllib.parse.unquote(parts[5])
     content_path = urllib.parse.unquote("/".join(parts[7:]))
     return owner, repo, content_path
+
+def github_repo_target(path):
+    parsed = urllib.parse.urlparse(path)
+    parts = parsed.path.split("/")
+    owner = urllib.parse.unquote(parts[4]) if len(parts) > 4 else "dagger"
+    repo = urllib.parse.unquote(parts[5]) if len(parts) > 5 else "dagger"
+    return owner, repo
+
+def github_default_branch(repo):
+    return "master" if repo == "winget-pkgs" else "main"
+
+def github_ref_sha(owner, repo, branch):
+    if branch == github_default_branch(repo):
+        return "1111111111111111111111111111111111111111"
+    with state_lock:
+        return github_refs.get((owner, repo, branch))
 
 def write_github_content_record(owner, repo, content_path, content):
     full = os.path.join(github_content_records_dir, owner, repo, content_path)
@@ -1319,11 +1395,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         if self.path.startswith("/api/v3/repos/") and "/branches/" in self.path:
             record("github_branch_lookup", self, b"")
-            self.send_json(404, {"message": "Not Found"})
+            owner, repo = github_repo_target(self.path)
+            branch = urllib.parse.unquote(self.path.split("/branches/", 1)[1].split("?", 1)[0])
+            sha = github_ref_sha(owner, repo, branch)
+            if sha is None:
+                self.send_json(404, {"message": "Not Found"})
+                return
+            self.send_json(200, {"name": branch, "commit": {"sha": sha}})
             return
         if self.path.startswith("/api/v3/repos/") and "/git/ref/heads/" in self.path:
             record("github_ref_lookup", self, b"")
-            self.send_json(200, {"ref": "refs/heads/main", "object": {"sha": "1111111111111111111111111111111111111111"}})
+            owner, repo = github_repo_target(self.path)
+            branch = urllib.parse.unquote(self.path.split("/git/ref/heads/", 1)[1].split("?", 1)[0])
+            sha = github_ref_sha(owner, repo, branch)
+            if sha is None:
+                self.send_json(404, {"message": "Not Found"})
+                return
+            self.send_json(200, {"ref": "refs/heads/" + branch, "object": {"sha": sha}})
             return
         if self.path.startswith("/api/v3/repos/"):
             record("github_repo", self, b"")
@@ -1393,7 +1481,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_json(200, {"message": "mock merge upstream", "merge_type": "none", "base_branch": "master"})
             return
         if self.path.startswith("/api/v3/repos/") and self.path.endswith("/git/refs"):
-            record("github_ref_create", self, body)
+            payload = json.loads(body.decode("utf-8") or "{}")
+            owner, repo = github_repo_target(self.path)
+            ref = payload.get("ref", "")
+            sha = (payload.get("sha") or payload.get("object", {}).get("sha") or "")
+            if ref.startswith("refs/heads/"):
+                with state_lock:
+                    github_refs[(owner, repo, ref.removeprefix("refs/heads/"))] = sha
+            record("github_ref_create", self, body, {
+                "ref": ref,
+                "sha": sha,
+            })
             self.send_json(201, {"ref": "refs/heads/mock", "object": {"sha": "1111111111111111111111111111111111111111"}})
             return
         if self.path.startswith("/api/v3/repos/") and self.path.endswith("/pulls"):
@@ -1402,6 +1500,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "title": payload.get("title", ""),
                 "head": payload.get("head", ""),
                 "base": payload.get("base", ""),
+                "body": payload.get("body", ""),
             })
             self.send_json(201, {"html_url": "https://github.test/mock/pull/1", "number": 1})
             return
@@ -1424,6 +1523,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "content_path": content_path,
                 "message": payload.get("message", ""),
                 "branch": payload.get("branch", ""),
+                "committer_name": payload.get("committer", {}).get("name", ""),
+                "committer_email": payload.get("committer", {}).get("email", ""),
                 "decoded_len": len(content),
             })
             self.send_json(201, {
