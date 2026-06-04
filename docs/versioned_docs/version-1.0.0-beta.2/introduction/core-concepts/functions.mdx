@@ -1,0 +1,87 @@
+---
+title: "Functions"
+slug: /core-concepts/functions
+description: "Building blocks for creating workflows"
+---
+
+# Functions
+
+Functions are the building blocks of Dagger workflows. They accept inputs, perform operations (typically in containers), and return outputs. When you run `dagger call`, you're calling a function.
+
+## Using Functions
+
+If you've installed modules in your workspace, you can call their functions directly:
+
+```shell
+# Call a function from an installed module
+dagger call eslint lint
+dagger call vitest test
+
+# See available functions
+dagger functions
+
+# Get help for a specific module's functions
+dagger call eslint --help
+```
+
+## What is a Function?
+
+A Dagger Function is code that:
+- Accepts typed inputs (strings, containers, directories, etc.)
+- Performs operations using the Dagger API
+- Returns typed outputs
+
+Functions run in isolated, reproducible environments with full access to Dagger's caching and parallelization.
+
+## Common Patterns
+
+### Build
+
+Transform source code into artifacts:
+
+```go
+func (m *MyModule) Build() *Container {
+    return dag.Container().
+        From("node:20").
+        WithDirectory("/app", m.Source).
+        WithWorkdir("/app").
+        WithExec([]string{"npm", "install"}).
+        WithExec([]string{"npm", "run", "build"})
+}
+```
+
+### Test
+
+Execute tests and return results:
+
+```go
+func (m *MyModule) Test(ctx context.Context) (string, error) {
+    return dag.Container().
+        From("python:3.11").
+        WithDirectory("/app", m.Source).
+        WithWorkdir("/app").
+        WithExec([]string{"pytest", "--verbose"}).
+        Stdout(ctx)
+}
+```
+
+### Generate
+
+Run generation tools and return a Changeset:
+
+```go
+func (m *MyModule) Generate() *Changeset {
+    generated := dag.Container().
+        From("golang:1.21").
+        WithDirectory("/app", m.Source).
+        WithWorkdir("/app").
+        WithExec([]string{"go", "generate"}).
+        Directory("/app")
+    return generated.Changes(m.Source)
+}
+```
+
+## Next Steps
+
+- **[Checks](/1.0.0-beta.2/core-concepts/checks)** — Functions that validate
+- **[Developing Modules](/1.0.0-beta.2/extending)** — Write your own functions

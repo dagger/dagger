@@ -1,0 +1,86 @@
+---
+title: "Dagger Documentation"
+description: "Dagger is a CI orchestration engine. Define your pipelines once, in real code. Run them identically before and after push, locally or at scale."
+slug: "/"
+---
+
+# Dagger Documentation
+
+## What is Dagger?
+
+Dagger is a CI orchestration engine. Define your pipelines once, in real code. Run them identically before and after push, locally or at scale.
+
+## Orientation
+
+- **Want to adopt Dagger in your project?** Start with the [Quickstart](/1.0.0-beta.2/quickstart), then follow [Workspace Setup](/1.0.0-beta.2/adopting/workspace-setup).
+- **Your project already uses Dagger?** See [Using Dagger](/1.0.0-beta.2/using-dagger/checking) to run checks, generate code, and start services.
+- **Migrating to workspaces?** See [Upgrading to Workspaces](/1.0.0-beta.2/reference/upgrade-to-workspaces).
+- **Want to learn more about what Dagger can do?** Keep reading.
+
+## What you can do
+
+No code required. Install modules, run commands, get results.
+
+### Lint and format across your stack
+
+```shell
+dagger install github.com/dagger/eslint
+dagger install github.com/dagger/prettier
+dagger check
+```
+
+{/* TODO: TUI gif */}
+
+### Run e2e tests with real services
+
+```shell
+dagger install github.com/dagger/playwright
+dagger check
+```
+
+{/* TODO: TUI gif */}
+
+### Generate code and docs
+
+```shell
+dagger install github.com/dagger/openapi
+dagger generate
+```
+
+{/* TODO: TUI gif */}
+
+### Start dev services
+
+```shell
+dagger install github.com/dagger/postgres
+dagger up
+```
+
+{/* TODO: TUI gif */}
+
+### Debug a broken build
+
+```shell
+dagger check
+dagger call eslint lint terminal
+```
+
+{/* TODO: TUI gif */}
+
+## Key features
+
+**Programmable.** Real code — Go, Python, TypeScript — not YAML.
+
+**Local-first.** Run your full pipeline before you push. Same result everywhere.
+
+**Zero-setup tracing.** Every step traced automatically. No instrumentation code.
+
+**Interactive debugging.** Drop into a terminal at any step of your pipeline.
+
+**Incremental execution.** Only what changed gets re-executed.
+
+**Agent-friendly.** Agents run Dagger checks in their dev loop. Sandboxed, cached, remote.
+
+**Native secrets.** Plugs into your existing secret infrastructure.
+
+**Just-in-time services.** Service dependencies build on demand, no pre-provisioning.

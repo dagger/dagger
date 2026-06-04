@@ -1,0 +1,110 @@
+---
+title: "Core Concepts"
+slug: /core-concepts
+description: "Understand the fundamental concepts that power Dagger"
+---
+
+# Core Concepts
+
+Dagger is built around a few core concepts that work together to enable powerful, reusable automation workflows.
+
+---
+
+## [Workspaces](/1.0.0-beta.2/core-concepts/workspaces)
+
+**Your project, managed by Dagger.**
+
+A workspace is your Git repository. Dagger stores its configuration in a `.dagger/` directory, created automatically when you first install a module.
+
+```shell
+# Install a module (creates .dagger/ if needed)
+dagger install github.com/dagger/eslint
+```
+
+[Learn about Workspaces →](/1.0.0-beta.2/core-concepts/workspaces)
+
+---
+
+## [Modules](/1.0.0-beta.2/core-concepts/modules)
+
+**Packages of functions you install or develop.**
+
+Modules add capabilities to your workspace. Install pre-built modules from the community, or write your own. Each module provides functions you can call and checks you can run.
+
+```shell
+# Install a module
+dagger install github.com/dagger/vitest
+
+# See its functions
+dagger call vitest --help
+```
+
+[Learn about Modules →](/1.0.0-beta.2/core-concepts/modules)
+
+---
+
+## [Functions](/1.0.0-beta.2/core-concepts/functions)
+
+**The building blocks you call.**
+
+Functions are units of computation that accept inputs, perform operations, and return outputs. When you run `dagger call`, you're calling a function.
+
+```shell
+# Call a function
+dagger call eslint lint
+
+# Chain functions
+dagger call vitest test
+```
+
+[Learn about Functions →](/1.0.0-beta.2/core-concepts/functions)
+
+---
+
+## [Checks](/1.0.0-beta.2/core-concepts/checks)
+
+**Functions that validate with no required arguments.**
+
+Checks are special functions that validate your code and run with a single command. Every installed module can provide checks that run concurrently.
+
+```shell
+# Run all checks
+dagger check
+
+# Run specific checks
+dagger check lint-*
+```
+
+[Learn about Checks →](/1.0.0-beta.2/core-concepts/checks)
+
+---
+
+## How They Work Together
+
+1. **Workspaces** declare which **Modules** your project uses
+2. **Modules** provide **Functions** and **Checks**
+3. **Functions** are what you call with `dagger call`
+4. **Checks** are functions that validate, run with `dagger check`
+
+### Example
+
+```shell
+# Set up your workspace with modules
+dagger install github.com/dagger/eslint
+dagger install github.com/dagger/vitest
+dagger install github.com/dagger/prettier
+
+# Use their functions
+dagger call eslint lint
+dagger call vitest test
+
+# Run all checks at once
+dagger check
+```
+
+---
+
+## Next Steps
+
+- **[Quickstart](/1.0.0-beta.2/quickstart)** — Get CI running in 5 minutes
+- **[Developing Modules](/1.0.0-beta.2/extending)** — Write your own modules

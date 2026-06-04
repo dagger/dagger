@@ -11,11 +11,12 @@ import { daggerVersion } from "./current_docs/partials/version";
 const url = "https://docs.dagger.io";
 const docsPath = "./current_docs";
 const baseUrl = process.env.DOCUSAURUS_BASE_URL ?? "/";
+const latestVersion = "0.21.4";
 const versions = require("./versions.json") as string[];
 const versionSelectOptions = [
-  ...versions.map((version, index) => ({
+  ...versions.map((version) => ({
     label: version,
-    path: index === 0 ? baseUrl : `${baseUrl}${version}/`,
+    path: version === latestVersion ? baseUrl : `${baseUrl}${version}/`,
   })),
   { label: "Next", path: `${baseUrl}next/` },
 ];
@@ -67,10 +68,10 @@ const config: Config = {
           breadcrumbs: false,
           path: docsPath,
           routeBasePath: "/",
-          lastVersion: "0.21",
+          lastVersion: latestVersion,
           versions: {
-            "0.21": {
-              label: "0.21",
+            "0.21.4": {
+              label: "0.21.4",
               path: "/",
               banner: "none",
               badge: false,
