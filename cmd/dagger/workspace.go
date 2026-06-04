@@ -431,7 +431,13 @@ func selectedRemoteWorkspaceAddress(ctx context.Context, command string) (worksp
 	return remote, inferred, nil
 }
 
-func inferLocalWorkspaceRemoteAddress(ctx context.Context, address string) (workspaceRemoteAddress, string, error) {
+type localWorkspaceRemoteInfo struct {
+	repoRoot      string
+	cloneRef      string
+	workspacePath string
+}
+
+func localWorkspaceRemoteInfoForAddress(ctx context.Context, address string) (localWorkspaceRemoteInfo, error) {
 	localPath := address
 	if localPath == "" {
 		localPath = "."
@@ -441,7 +447,7 @@ func inferLocalWorkspaceRemoteAddress(ctx context.Context, address string) (work
 	}
 	absPath, err := filepath.Abs(localPath)
 	if err != nil {
-		return workspaceRemoteAddress{}, "", fmt.Errorf("resolve local workspace path: %w", err)
+		return localWorkspaceRemoteInfo{}, fmt.Errorf("resolve local workspace path: %w", err)
 	}
 	if stat, err := os.Stat(absPath); err == nil && !stat.IsDir() {
 		absPath = filepath.Dir(absPath)
@@ -449,20 +455,16 @@ func inferLocalWorkspaceRemoteAddress(ctx context.Context, address string) (work
 
 	repoRoot, err := gitOutput(ctx, absPath, "rev-parse", "--show-toplevel")
 	if err != nil {
-		return workspaceRemoteAddress{}, "", fmt.Errorf("find git root: %w", err)
+		return localWorkspaceRemoteInfo{}, fmt.Errorf("find git root: %w", err)
 	}
 	origin, err := gitOutput(ctx, repoRoot, "config", "--get", "remote.origin.url")
 	if err != nil {
-		return workspaceRemoteAddress{}, "", fmt.Errorf("find git origin: %w", err)
-	}
-	version, err := currentGitRef(ctx, repoRoot)
-	if err != nil {
-		return workspaceRemoteAddress{}, "", err
+		return localWorkspaceRemoteInfo{}, fmt.Errorf("find git origin: %w", err)
 	}
 
 	detected, err := workspacepkg.DetectInRoot(ctx, localPathExists, absPath, repoRoot)
 	if err != nil {
-		return workspaceRemoteAddress{}, "", err
+		return localWorkspaceRemoteInfo{}, err
 	}
 	workspaceDir := repoRoot
 	if detected.ConfigFile != "" {
@@ -470,20 +472,64 @@ func inferLocalWorkspaceRemoteAddress(ctx context.Context, address string) (work
 	}
 	workspacePath, err := filepath.Rel(repoRoot, workspaceDir)
 	if err != nil {
-		return workspaceRemoteAddress{}, "", fmt.Errorf("resolve workspace subdir: %w", err)
+		return localWorkspaceRemoteInfo{}, fmt.Errorf("resolve workspace subdir: %w", err)
 	}
 	workspacePath = cleanWorkspaceRemoteSubdir(filepath.ToSlash(workspacePath))
 
-	cloneRef := normalizeWorkspaceGitOrigin(origin)
-	inferred := gitref.RefString(cloneRef, workspacePath, version)
+	return localWorkspaceRemoteInfo{
+		repoRoot:      repoRoot,
+		cloneRef:      normalizeWorkspaceGitOrigin(origin),
+		workspacePath: workspacePath,
+	}, nil
+}
+
+func inferLocalWorkspaceRemoteAddress(ctx context.Context, address string) (workspaceRemoteAddress, string, error) {
+	info, err := localWorkspaceRemoteInfoForAddress(ctx, address)
+	if err != nil {
+		return workspaceRemoteAddress{}, "", err
+	}
+	version, err := currentGitRef(ctx, info.repoRoot)
+	if err != nil {
+		return workspaceRemoteAddress{}, "", err
+	}
+
+	inferred := gitref.RefString(info.cloneRef, info.workspacePath, version)
 	remote, ok, err := parseWorkspaceRemoteAddress(ctx, inferred)
 	if err != nil {
 		return workspaceRemoteAddress{}, "", err
 	}
 	if !ok {
-		return workspaceRemoteAddress{}, "", fmt.Errorf("inferred git origin %q is not a remote workspace address", origin)
+		return workspaceRemoteAddress{}, "", fmt.Errorf("inferred git origin %q is not a remote workspace address", info.cloneRef)
 	}
 	return remote, inferred, nil
+}
+
+func inferCleanLocalWorkspaceRemoteAddress(ctx context.Context, address string) (workspaceRemoteAddress, string, bool, error) {
+	info, err := localWorkspaceRemoteInfoForAddress(ctx, address)
+	if err != nil {
+		return workspaceRemoteAddress{}, "", false, err
+	}
+	dirty, err := gitWorktreeDirty(ctx, info.repoRoot)
+	if err != nil {
+		return workspaceRemoteAddress{}, "", false, err
+	}
+	if dirty {
+		return workspaceRemoteAddress{}, "", true, nil
+	}
+	commit, err := currentGitCommit(ctx, info.repoRoot)
+	if err != nil {
+		return workspaceRemoteAddress{}, "", false, err
+	}
+
+	inferred := gitref.RefString(info.cloneRef, info.workspacePath, commit)
+	remote, ok, err := parseWorkspaceRemoteAddress(ctx, inferred)
+	if err != nil {
+		return workspaceRemoteAddress{}, "", false, err
+	}
+	if !ok {
+		return workspaceRemoteAddress{}, "", false, fmt.Errorf("inferred git origin %q is not a remote workspace address", info.cloneRef)
+	}
+	return remote, inferred, false, nil
 }
 
 // This is intentionally narrower than the workspace-git API: it only projects
@@ -499,6 +545,22 @@ func currentGitRef(ctx context.Context, repoRoot string) (string, error) {
 		return "", fmt.Errorf("find git ref: %w", err)
 	}
 	return sha, nil
+}
+
+func currentGitCommit(ctx context.Context, repoRoot string) (string, error) {
+	sha, err := gitOutput(ctx, repoRoot, "rev-parse", "--verify", "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("find git commit: %w", err)
+	}
+	return sha, nil
+}
+
+func gitWorktreeDirty(ctx context.Context, repoRoot string) (bool, error) {
+	status, err := gitOutput(ctx, repoRoot, "status", "--porcelain")
+	if err != nil {
+		return false, fmt.Errorf("check git status: %w", err)
+	}
+	return status != "", nil
 }
 
 func localPathExists(_ context.Context, path string) (string, bool, error) {

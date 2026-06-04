@@ -182,6 +182,9 @@ dagger check [options] [pattern...]
   -l, --list                List available checks
   -m, --mod string          Module reference to load, either a local path, a remote git repo, or 'core' (defaults to current directory)
       --no-generate         Only run annotated check functions, skip generate-as-checks
+      --no-past             Disable past Cloud Checks lookup
+      --past                Only replay past Cloud Checks results
+      --run                 Run checks even when past Cloud Checks results are replayed
 ```
 
 ### Options inherited from parent commands
