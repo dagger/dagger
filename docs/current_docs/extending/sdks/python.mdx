@@ -12,7 +12,7 @@ This page is the standalone reference for developing modules with Python. For pl
 
 ## The Python SDK is a module
 
-There is no `dagger init` or `dagger develop` in the CLI. Module development tooling lives in the **Python SDK module itself**: `github.com/dagger/python-sdk`. You scaffold and maintain modules by calling its functions:
+Module development tooling lives in the **Python SDK module itself**: `github.com/dagger/python-sdk`, not the `dagger` CLI. You scaffold and maintain modules by calling its functions:
 
 ```shell
 dagger -m github.com/dagger/python-sdk call <function> ...
@@ -954,7 +954,7 @@ dagger -m github.com/you/your-module@v0.1.0 call <function> ...
 
 ## Troubleshooting
 
-- **`dagger init` / `dagger develop` not found.** They were removed from the CLI. Use the Python SDK module: `dagger -m github.com/dagger/python-sdk call init …` and `… mod generate …`.
+- **`dagger init` / `dagger develop` not found.** Module development tooling lives in the Python SDK module, not the CLI. Use `dagger -m github.com/dagger/python-sdk call init …` and `… mod generate …`.
 - **`init` "didn't write any files."** `init` returns a changeset; review and apply it (or pass `-y` to apply without prompting), or inspect it with `diff-stats`.
 - **Target already contains a module.** `init` refuses to overwrite an existing module. Choose a different `--path` or `--name`.
 - **IDE has no autocompletion / `import dagger` unresolved.** The `sdk/` client must be generated and installed into an active `.venv`. Run `mod generate` (if gitignored) and `uv sync` / `uv pip install -e ./sdk -e .`.
