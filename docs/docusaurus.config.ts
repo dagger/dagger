@@ -10,6 +10,7 @@ import { daggerVersion } from "./current_docs/partials/version";
 
 const url = "https://docs.dagger.io";
 const docsPath = "./current_docs";
+const baseUrl = process.env.DOCUSAURUS_BASE_URL ?? "/";
 
 const config: Config = {
   title: "Dagger",
@@ -21,7 +22,7 @@ const config: Config = {
   url: url,
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
-  baseUrl: "/",
+  baseUrl,
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
@@ -43,7 +44,7 @@ const config: Config = {
   },
   scripts: [
     {
-      src: "/js/commonroom.js",
+      src: `${baseUrl}js/commonroom.js`,
       async: true,
     },
   ],
