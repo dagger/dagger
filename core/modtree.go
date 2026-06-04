@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -213,7 +214,7 @@ func (node *ModTreeNode) tryRunGeneratorAsCheckScaleOut(ctx context.Context) (_ 
 		return true, err
 	}
 
-	query = query.Select("generator").Arg("name", node.PathString())
+	query = query.Select("generator").Arg("name", node.moduleLocalPathString())
 	query = query.Select("run")
 	query = query.Select("isEmpty")
 
@@ -280,7 +281,7 @@ func (node *ModTreeNode) tryRunCheckScaleOut(ctx context.Context) (_ bool, rerr 
 		return true, err
 	}
 
-	query = query.Select("check").Arg("name", node.PathString())
+	query = query.Select("check").Arg("name", node.moduleLocalPathString())
 	query = query.Select("run")
 	query = query.Select("error")
 	query = query.Select("id")
@@ -535,7 +536,43 @@ func (node *ModTreeNode) buildScaleOutModuleQuery(query *querybuilder.Selection)
 		query = query.Select("asModuleSource").
 			Arg("sourceRootPath", modSrc.DirSrc.OriginalSourceRootSubpath)
 	}
-	return query.Select("asModule"), nil
+	query = query.Select("asModule")
+	if mod.Name() != "" && mod.Name() != modSrc.ModuleName {
+		query = query.Arg("legacyNameOverride", mod.Name())
+	}
+	if mod.LegacyDefaultPath {
+		query = query.Arg("legacyDefaultPath", true)
+	}
+	if mod.ContextSource.Valid {
+		contextSrc := mod.ContextSource.Value.Self()
+		if contextSrc != nil {
+			contextRef := contextSrc.AsString()
+			if contextRef != "" && (contextRef != modSrc.AsString() || contextSrc.Pin() != modSrc.Pin()) {
+				query = query.Arg("defaultPathContextSourceRef", contextRef)
+				if contextPin := contextSrc.Pin(); contextPin != "" {
+					query = query.Arg("defaultPathContextSourcePin", contextPin)
+				}
+			}
+		}
+	}
+	if len(mod.WorkspaceConfig) > 0 {
+		workspaceConfigJSON, err := json.Marshal(mod.WorkspaceConfig)
+		if err != nil {
+			return nil, fmt.Errorf("encode workspace config: %w", err)
+		}
+		query = query.Arg("legacyWorkspaceConfigJson", string(workspaceConfigJSON))
+		if mod.DefaultsFromDotEnv {
+			query = query.Arg("legacyDefaultsFromDotEnv", true)
+		}
+	}
+	if len(mod.LegacyArgCustomizations) > 0 {
+		customizationsJSON, err := json.Marshal(mod.LegacyArgCustomizations)
+		if err != nil {
+			return nil, fmt.Errorf("encode arg customizations: %w", err)
+		}
+		query = query.Arg("legacyArgCustomizationsJson", string(customizationsJSON))
+	}
+	return query, nil
 }
 
 // Initialize a standalone dagql server for querying the given module
@@ -770,6 +807,26 @@ func (node *ModTreeNode) Match(ctx context.Context, patterns []string) (bool, er
 
 func (node *ModTreeNode) PathString() string {
 	return strings.Join(node.Path().CliCase(), ":")
+}
+
+func (node *ModTreeNode) moduleLocalPathString() string {
+	path := node.Path()
+	if len(path) == 0 {
+		return ""
+	}
+
+	root := node
+	for root.Parent != nil && root.Parent.Module.Self() != nil {
+		root = root.Parent
+	}
+
+	// Workspace checks reparent each module tree under a synthetic naming-only
+	// root. Scale-out loads the module directly, so the remote check/generator
+	// lookup must use the name relative to that module.
+	if root.Parent != nil && root.Parent.Module.Self() == nil && path[0] == root.Name {
+		path = path[1:]
+	}
+	return strings.Join(path.CliCase(), ":")
 }
 
 type WalkFunc func(context.Context, *ModTreeNode) (bool, error)
