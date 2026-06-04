@@ -669,6 +669,97 @@ func (LocalCacheSuite) TestLocalCachePruneRemoteGitSnapshot(ctx context.Context,
 	require.Equal(t, readmeBeforePrune, readmeAfterPrune)
 }
 
+func (LocalCacheSuite) TestLocalCachePruneDoesNotDropZstdTarballLayerContent(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	engine := devEngineContainer(c, engineWithConfig(ctx, t, engineConfigWithEnabled(false)))
+	engineSvc, err := c.Host().Tunnel(devEngineContainerAsService(engine)).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _, _ = engineSvc.Stop(ctx, dagger.ServiceStopOpts{Kill: true}) })
+
+	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+
+	newNestedClient := func() *dagger.Client {
+		t.Helper()
+
+		client, err := dagger.Connect(
+			ctx,
+			dagger.WithRunnerHost(endpoint),
+			dagger.WithLogOutput(testutil.NewTWriter(t)),
+		)
+		require.NoError(t, err)
+		return client
+	}
+
+	tarballDigest := func(t *testctx.T, ctr *dagger.Container) string {
+		t.Helper()
+
+		dgst, err := ctr.AsTarball(dagger.ContainerAsTarballOpts{
+			ForcedCompression: dagger.ImageLayerCompressionZstd,
+		}).Digest(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, dgst)
+		return dgst
+	}
+
+	producer := newNestedClient()
+	source := producer.
+		Container().
+		From(golangImage).
+		WithExec([]string{
+			"sh",
+			"-ec",
+			"mkdir -p /work && printf 'zstd prune repro\\n' > /work/source.txt",
+		})
+
+	sourceID, err := source.ID(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, sourceID)
+
+	beforeDigest := tarballDigest(t, source)
+	require.NoError(t, producer.Close())
+
+	pinnedClient := newNestedClient()
+	t.Cleanup(func() { _ = pinnedClient.Close() })
+
+	pinned := dagger.Ref[*dagger.Container](pinnedClient, sourceID)
+	pinned, err = pinned.Sync(ctx)
+	require.NoError(t, err)
+
+	ballastClient := newNestedClient()
+	_, err = ballastClient.
+		Container().
+		From(alpineImage).
+		WithEnvVariable("ZSTD_PRUNE_BALLAST", identity.NewID()).
+		WithExec([]string{
+			"sh",
+			"-ec",
+			"dd if=/dev/urandom of=/ballast bs=1M count=64 status=none",
+		}).
+		Sync(ctx)
+	require.NoError(t, err)
+	require.NoError(t, ballastClient.Close())
+
+	pruneClient := newNestedClient()
+	err = pruneClient.Engine().LocalCache().Prune(ctx, dagger.EngineCachePruneOpts{
+		UseDefaultPolicy: false,
+		MaxUsedSpace:     "1",
+		ReservedSpace:    "0",
+		MinFreeSpace:     "0",
+		TargetSpace:      "1",
+	})
+	require.NoError(t, err)
+	require.NoError(t, pruneClient.Close())
+
+	sourceContents, err := pinned.File("/work/source.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "zstd prune repro\n", sourceContents)
+
+	afterDigest := tarballDigest(t, pinned)
+	require.Equal(t, beforeDigest, afterDigest)
+}
+
 func (LocalCacheSuite) TestLocalCachePruneDoesNotBreakRunningNestedEngineService(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

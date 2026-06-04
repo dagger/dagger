@@ -263,13 +263,36 @@ var rootCmd = &cobra.Command{
 
 		return nil
 	},
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if len(args) > 0 && !isFile(args[0]) {
-			return fmt.Errorf("unknown command or file %q for %q%s", args[0], cmd.CommandPath(), findSuggestions(cmd, args[0]))
+	RunE: runRoot,
+}
+
+func runRoot(cmd *cobra.Command, args []string) error {
+	// Historically, the root command fell back to the hidden shell command:
+	// `dagger`, `dagger -c ...`, and `dagger file.dsh` all executed shell.
+	// Bare `dagger` now prints regular CLI usage, but explicit shell-style root
+	// invocations still take the old fallback below.
+	if len(args) == 0 && !hasChangedRootShellFlag(cmd) {
+		return cmd.Usage()
+	}
+	if len(args) > 0 && !isFile(args[0]) {
+		return fmt.Errorf("unknown command or file %q for %q%s", args[0], cmd.CommandPath(), findSuggestions(cmd, args[0]))
+	}
+	cmd.SetArgs(append([]string{"shell"}, args...))
+	return cmd.Execute()
+}
+
+func hasChangedRootShellFlag(cmd *cobra.Command) bool {
+	// Cobra stores parsed persistent and local flags together in cmd.Flags().
+	// Only root-local flags signal an explicit shell-style invocation; global
+	// flags like `--debug` should not keep the old shell fallback.
+	changed := false
+	persistent := cmd.PersistentFlags()
+	cmd.Flags().Visit(func(flag *pflag.Flag) {
+		if persistent.Lookup(flag.Name) == nil {
+			changed = true
 		}
-		cmd.SetArgs(append([]string{"shell"}, args...))
-		return cmd.Execute()
-	},
+	})
+	return changed
 }
 
 func isFile(name string) bool {

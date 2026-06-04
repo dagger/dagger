@@ -14,6 +14,20 @@ Different inputs: Dagger reruns the affected work.
 
 This is why module API design affects speed.
 
+## Function Cache Hits
+
+A function cache hit skips the function entirely, so none of its internal steps
+run. A cache miss runs the function, but individual container/file steps inside
+it may still be cache hits if their inputs are unchanged.
+
+If you need a specific step to always re-run, add a cache-busting input to that
+step. If you need non-secret metadata to be visible to a `withExec` step without
+invalidating cache when only that metadata changes, use
+`withVolatileVariable` on the `Container`. Cached `withExec` results may be
+reused even when the volatile value changes, and reruns caused by other inputs
+will see the latest volatile value. See
+[Container volatile variables](../types/container.mdx#volatile-variables).
+
 ## Inputs Matter
 
 Precise inputs make precise cache keys.

@@ -378,6 +378,16 @@ func (ModuleSuite) TestReturnNil(ctx context.Context, t *testctx.T) {
 	require.JSONEq(t, `{"objsWithNothing":[null,{"dirs":[null]}]}`, out)
 }
 
+func (ModuleSuite) TestNeverCacheModuleObjectReturn(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := moduleFixture(t, c, "go/runtime-cache-control")
+
+	out, err := modGen.With(daggerCall("touch")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "Test@")
+}
+
 func (ModuleSuite) TestFunctionCacheControl(ctx context.Context, t *testctx.T) {
 	for _, tc := range []struct {
 		sdk     string

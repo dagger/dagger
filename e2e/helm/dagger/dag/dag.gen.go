@@ -200,7 +200,7 @@ func HTTP(url string, opts ...dagger.HTTPOpts) *dagger.File {
 }
 
 // A unique identifier for this Query.
-func ID(ctx context.Context) (dagger.QueryID, error) {
+func ID(ctx context.Context) (dagger.ID, error) {
 	client := initClient()
 	return client.ID(ctx)
 }
@@ -363,6 +363,12 @@ func LoadErrorValueFromID(id dagger.ErrorValueID) *dagger.ErrorValue {
 	return client.LoadErrorValueFromID(id)
 }
 
+// Load a Exportable from its ID.
+func LoadExportableFromID(id dagger.ExportableID) dagger.Exportable {
+	client := initClient()
+	return client.LoadExportableFromID(id)
+}
+
 // Load a FieldTypeDef from its ID.
 func LoadFieldTypeDefFromID(id dagger.FieldTypeDefID) *dagger.FieldTypeDef {
 	client := initClient()
@@ -519,12 +525,6 @@ func LoadPortFromID(id dagger.PortID) *dagger.Port {
 	return client.LoadPortFromID(id)
 }
 
-// Load a Query from its ID.
-func LoadQueryFromID(id dagger.QueryID) *dagger.Query {
-	client := initClient()
-	return client.LoadQueryFromID(id)
-}
-
 // Load a RemoteGitMirror from its ID.
 func LoadRemoteGitMirrorFromID(id dagger.RemoteGitMirrorID) *dagger.RemoteGitMirror {
 	client := initClient()
@@ -585,6 +585,12 @@ func LoadStatFromID(id dagger.StatID) *dagger.Stat {
 	return client.LoadStatFromID(id)
 }
 
+// Load a Syncer from its ID.
+func LoadSyncerFromID(id dagger.SyncerID) dagger.Syncer {
+	client := initClient()
+	return client.LoadSyncerFromID(id)
+}
+
 // Load a Terminal from its ID.
 func LoadTerminalFromID(id dagger.TerminalID) *dagger.Terminal {
 	client := initClient()
@@ -625,6 +631,12 @@ func Module() *dagger.Module {
 func ModuleSource(refString string, opts ...dagger.ModuleSourceOpts) *dagger.ModuleSource {
 	client := initClient()
 	return client.ModuleSource(refString, opts...)
+}
+
+// Load any object by its ID.
+func Node(id dagger.ID) dagger.Node {
+	client := initClient()
+	return client.Node(id)
 }
 
 // Creates a new secret.

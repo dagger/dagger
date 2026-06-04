@@ -2082,7 +2082,7 @@ class Container(Type):
         return await _ctx.execute(list[str])
 
     async def env_variable(self, name: str) -> str | None:
-        """Retrieves the value of the specified environment variable.
+        """Retrieves the value of the specified persistent environment variable.
 
         Parameters
         ----------
@@ -2110,7 +2110,9 @@ class Container(Type):
         return await _ctx.execute(str | None)
 
     async def env_variables(self) -> list["EnvVariable"]:
-        """Retrieves the list of environment variables passed to commands."""
+        """Retrieves the list of persistent environment variables configured on
+        the container.
+        """
         _args: list[Arg] = []
         _ctx = self._select("envVariables", _args)
         return await _ctx.execute_object_list(EnvVariable)
@@ -2121,6 +2123,7 @@ class Container(Type):
         *,
         expected_type: ExistsType | None = None,
         do_not_follow_symlinks: bool | None = False,
+        expand: bool | None = False,
     ) -> bool:
         """check if a file or directory exists
 
@@ -2133,6 +2136,10 @@ class Container(Type):
             "DIRECTORY_TYPE", or "SYMLINK_TYPE").
         do_not_follow_symlinks:
             If specified, do not follow symlinks.
+        expand:
+            Replace "${VAR}" or "$VAR" in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo").
 
         Returns
         -------
@@ -2150,6 +2157,7 @@ class Container(Type):
             Arg("path", path),
             Arg("expectedType", expected_type, None),
             Arg("doNotFollowSymlinks", do_not_follow_symlinks, False),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("exists", _args)
         return await _ctx.execute(bool)
@@ -3689,6 +3697,27 @@ class Container(Type):
         _ctx = self._select("withUser", _args)
         return Container(_ctx)
 
+    def with_volatile_variable(self, name: str, value: str) -> Self:
+        """Set a new non-secret environment variable for future execs without
+        invalidating exec cache when only its value changes.
+
+        This is an expert-only escape hatch. If a volatile value affects
+        observable exec results, stale cached results may be reused.
+
+        Parameters
+        ----------
+        name:
+            Name of the volatile variable (e.g., "CI_RUN_ID").
+        value:
+            Value of the volatile variable.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+        ]
+        _ctx = self._select("withVolatileVariable", _args)
+        return Container(_ctx)
+
     def with_workdir(
         self,
         path: str,
@@ -3972,6 +4001,21 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("withoutUser", _args)
+        return Container(_ctx)
+
+    def without_volatile_variable(self, name: str) -> Self:
+        """Retrieves this container minus the given volatile environment
+        variable.
+
+        Parameters
+        ----------
+        name:
+            The name of the volatile environment variable (e.g., "CI_RUN_ID").
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withoutVolatileVariable", _args)
         return Container(_ctx)
 
     def without_workdir(self) -> Self:

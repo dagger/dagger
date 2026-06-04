@@ -2,6 +2,9 @@ package core
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -10,6 +13,7 @@ import (
 	bkcache "github.com/dagger/dagger/engine/snapshots"
 	bkexecutor "github.com/dagger/dagger/internal/buildkit/executor"
 	telemetry "github.com/dagger/otel-go"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -40,25 +44,6 @@ func (e *ExecError) Extensions() map[string]any {
 		"stdout":   e.Stdout,
 		"stderr":   e.Stderr,
 	}
-}
-
-type ModuleExecError struct {
-	Err     error
-	ErrorID dagql.ID[*Error]
-}
-
-func (e *ModuleExecError) Error() string {
-	if e == nil || e.Err == nil {
-		return "module exec error"
-	}
-	return e.Err.Error()
-}
-
-func (e *ModuleExecError) Unwrap() error {
-	if e == nil {
-		return nil
-	}
-	return e.Err
 }
 
 func execErrorFromMetaRef(
@@ -95,26 +80,61 @@ func execErrorFromMetaRef(
 	return execErr, true, nil
 }
 
-func moduleErrorIDFromRef(
+func functionCallReturnedError(
 	ctx context.Context,
-	client *engineutil.Client,
-	ref bkcache.ImmutableRef,
-) (dagql.ID[*Error], bool, error) {
-	var id dagql.ID[*Error]
-	if ref == nil {
-		return id, false, nil
-	}
-	idBytes, err := readSnapshotPathFromRef(ctx, client, ref, modMetaErrorPath, -1)
+	errID dagql.ID[*Error],
+	execErr error,
+) (*Error, error) {
+	srv, err := CurrentDagqlServer(ctx)
 	if err != nil {
-		return id, false, err
+		return nil, fmt.Errorf("load returned function error: %w", err)
 	}
-	if strings.TrimSpace(string(idBytes)) == "" {
-		return id, false, nil
+
+	errInst, err := errID.Load(ctx, srv)
+	if err != nil {
+		return nil, fmt.Errorf("load returned function error: %w", err)
 	}
-	if err := id.Decode(string(idBytes)); err != nil {
-		return id, false, err
+
+	dagErr := errInst.Self().Clone()
+
+	originCtx := trace.SpanContextFromContext(
+		telemetry.Propagator.Extract(
+			context.Background(),
+			telemetry.AnyMapCarrier(dagErr.Extensions()),
+		),
+	)
+	if !originCtx.IsValid() && execErr != nil {
+		if origins := telemetry.ParseErrorOrigins(execErr.Error()); len(origins) > 0 && origins[0].IsValid() {
+			originCtx = origins[0]
+		}
 	}
-	return id, true, nil
+	if !originCtx.IsValid() {
+		originCtx = trace.SpanContextFromContext(ctx)
+	}
+	if originCtx.IsValid() && len(telemetry.ParseErrorOrigins(dagErr.Message)) == 0 {
+		dagErr.Message = telemetry.TrackOrigin(errors.New(dagErr.Message), originCtx).Error()
+	}
+	if originCtx.IsValid() {
+		extOriginCtx := trace.SpanContextFromContext(
+			telemetry.Propagator.Extract(
+				context.Background(),
+				telemetry.AnyMapCarrier(dagErr.Extensions()),
+			),
+		)
+		if !extOriginCtx.IsValid() {
+			carrier := propagation.MapCarrier{}
+			telemetry.Propagator.Inject(trace.ContextWithSpanContext(context.Background(), originCtx), carrier)
+			for _, key := range carrier.Keys() {
+				valJSON, err := json.Marshal(carrier.Get(key))
+				if err != nil {
+					return nil, fmt.Errorf("marshal error extension %q: %w", key, err)
+				}
+				dagErr = dagErr.WithValue(key, JSON(valJSON))
+			}
+		}
+	}
+
+	return dagErr, nil
 }
 
 func getExecMeta(ctx context.Context, client *engineutil.Client, metaMount bkcache.ImmutableRef) (stdout []byte, stderr []byte, exitCode int, _ error) {

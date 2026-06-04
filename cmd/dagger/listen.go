@@ -11,8 +11,6 @@ import (
 	"github.com/rs/cors"
 	"github.com/spf13/cobra"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/client"
@@ -67,8 +65,9 @@ func Listen(ctx context.Context, engineClient *client.Client, _ *dagger.Module, 
 		return fmt.Sprintf("%s: HTTP %s %s", o, r.Method, r.URL.Path)
 	}))
 
-	http2Srv := &http2.Server{}
-	handler = h2c.NewHandler(handler, http2Srv)
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
 
 	srv := &http.Server{
 		Handler: handler,
@@ -77,9 +76,7 @@ func Listen(ctx context.Context, engineClient *client.Client, _ *dagger.Module, 
 		BaseContext: func(_ net.Listener) context.Context {
 			return ctx
 		},
-	}
-	if err := http2.ConfigureServer(srv, http2Srv); err != nil {
-		return fmt.Errorf("http2 server configuration: %w", err)
+		Protocols: protocols,
 	}
 
 	go func() {

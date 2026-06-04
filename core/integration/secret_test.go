@@ -144,6 +144,18 @@ func (SecretSuite) TestSet(ctx context.Context, t *testctx.T) {
 	require.Equal(t, secretName, name)
 }
 
+func (SecretSuite) TestSetWithEmptyName(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	s := c.SetSecret("", "very-secret-text")
+
+	_, err := c.Container().From(alpineImage).
+		WithSecretVariable("SECRET", s).
+		WithExec([]string{"sh", "-ec", `test "$SECRET" = "very-secret-text"`}).
+		Sync(ctx)
+	require.NoError(t, err)
+}
+
 func (SecretSuite) TestUnsetVariable(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

@@ -89,12 +89,11 @@ type ContainerExecOpts struct {
 type ContainerExecState struct {
 	LazyState
 
-	Parent             dagql.ObjectResult[*Container]
-	Opts               ContainerExecOpts
-	ExecMD             *engineutil.ExecutionMetadata
-	ModuleContext      dagql.ObjectResult[*Module]
-	FunctionCall       *FunctionCall
-	ExtractModuleError bool
+	Parent        dagql.ObjectResult[*Container]
+	Opts          ContainerExecOpts
+	ExecMD        *engineutil.ExecutionMetadata
+	ModuleContext dagql.ObjectResult[*Module]
+	FunctionCall  *FunctionCall
 }
 
 type ContainerExecLazy struct {
@@ -102,12 +101,22 @@ type ContainerExecLazy struct {
 }
 
 type persistedContainerExecLazy struct {
-	ParentResultID        uint64                        `json:"parentResultID"`
-	ModuleContextResultID uint64                        `json:"moduleContextResultID,omitempty"`
-	Opts                  ContainerExecOpts             `json:"opts"`
-	ExecMD                *engineutil.ExecutionMetadata `json:"execMD,omitempty"`
-	FunctionCall          *FunctionCall                 `json:"functionCall,omitempty"`
-	ExtractModuleError    bool                          `json:"extractModuleError,omitempty"`
+	ParentResultID                 uint64                        `json:"parentResultID"`
+	ModuleContextResultID          uint64                        `json:"moduleContextResultID,omitempty"`
+	Opts                           ContainerExecOpts             `json:"opts"`
+	ExecMD                         *engineutil.ExecutionMetadata `json:"execMD,omitempty"`
+	VolatileCacheHitParentResultID uint64                        `json:"volatileCacheHitParentResultID,omitempty"`
+	VolatileCacheHitVolatileEnv    []string                      `json:"volatileCacheHitVolatileEnv,omitempty"`
+}
+
+// ContainerVolatileExecCacheHitLazy materializes from a broad volatile exec
+// cache hit, then restores the request-local volatile environment for
+// descendants of the returned container.
+type ContainerVolatileExecCacheHitLazy struct {
+	LazyState
+
+	Parent      dagql.ObjectResult[*Container]
+	VolatileEnv []string
 }
 
 func (lazy *ContainerExecLazy) Evaluate(ctx context.Context, ctr *Container) error {
@@ -148,6 +157,9 @@ func (lazy *ContainerExecLazy) EncodePersisted(ctx context.Context, cache dagql.
 	if lazy == nil || lazy.State == nil {
 		return nil, fmt.Errorf("encode persisted container withExec lazy: nil state")
 	}
+	if lazy.State.FunctionCall != nil {
+		return nil, fmt.Errorf("cannot persist container exec with active function call")
+	}
 	parentID, err := encodePersistedObjectRef(cache, lazy.State.Parent, "container withExec parent")
 	if err != nil {
 		return nil, err
@@ -164,8 +176,46 @@ func (lazy *ContainerExecLazy) EncodePersisted(ctx context.Context, cache dagql.
 		ModuleContextResultID: moduleContextID,
 		Opts:                  lazy.State.Opts,
 		ExecMD:                lazy.State.ExecMD,
-		FunctionCall:          lazy.State.FunctionCall,
-		ExtractModuleError:    lazy.State.ExtractModuleError,
+	})
+}
+
+func (lazy *ContainerVolatileExecCacheHitLazy) Evaluate(ctx context.Context, container *Container) error {
+	if lazy == nil {
+		return nil
+	}
+	return lazy.LazyState.Evaluate(ctx, "Container.withExec.cacheHit", func(ctx context.Context) error {
+		if err := materializeContainerStateFromParent(ctx, container, lazy.Parent); err != nil {
+			return err
+		}
+		container.VolatileEnv = slices.Clone(lazy.VolatileEnv)
+		container.Lazy = nil
+		return nil
+	})
+}
+
+func (lazy *ContainerVolatileExecCacheHitLazy) AttachDependencies(ctx context.Context, attach func(dagql.AnyResult) (dagql.AnyResult, error)) ([]dagql.AnyResult, error) {
+	if lazy == nil {
+		return nil, nil
+	}
+	parent, err := attachContainerResult(attach, lazy.Parent, "attach container volatile exec cache hit parent")
+	if err != nil {
+		return nil, err
+	}
+	lazy.Parent = parent
+	return []dagql.AnyResult{parent}, nil
+}
+
+func (lazy *ContainerVolatileExecCacheHitLazy) EncodePersisted(ctx context.Context, cache dagql.PersistedObjectCache) (json.RawMessage, error) {
+	if lazy == nil {
+		return nil, fmt.Errorf("encode persisted container volatile exec cache hit lazy: nil lazy")
+	}
+	parentID, err := encodePersistedObjectRef(cache, lazy.Parent, "container volatile exec cache hit parent")
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(persistedContainerExecLazy{
+		VolatileCacheHitParentResultID: parentID,
+		VolatileCacheHitVolatileEnv:    slices.Clone(lazy.VolatileEnv),
 	})
 }
 
@@ -262,7 +312,7 @@ func (container *Container) execMeta(
 	return &execMD, nil
 }
 
-func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts) (*executor.Meta, error) {
+func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts, includeVolatileEnv bool) (*executor.Meta, error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get current query: %w", err)
@@ -297,6 +347,9 @@ func (container *Container) metaSpec(ctx context.Context, opts ContainerExecOpts
 	}
 
 	metaSpec.Env = addDefaultEnvvar(metaSpec.Env, "PATH", utilsystem.DefaultPathEnv(platform.OS))
+	if includeVolatileEnv {
+		metaSpec.Env = mergeEnv(metaSpec.Env, container.VolatileEnv)
+	}
 
 	if opts.Expect != ReturnSuccess {
 		metaSpec.ValidExitCodes = opts.Expect.ReturnCodes()
@@ -1104,16 +1157,14 @@ func (container *Container) WithExec(
 	execMD *engineutil.ExecutionMetadata,
 	moduleContext dagql.ObjectResult[*Module],
 	functionCall *FunctionCall,
-	extractModuleError bool,
 ) error {
 	state := &ContainerExecState{
-		LazyState:          NewLazyState(),
-		Parent:             parent,
-		Opts:               opts,
-		ExecMD:             execMD,
-		ModuleContext:      moduleContext,
-		FunctionCall:       functionCall,
-		ExtractModuleError: extractModuleError,
+		LazyState:     NewLazyState(),
+		Parent:        parent,
+		Opts:          opts,
+		ExecMD:        execMD,
+		ModuleContext: moduleContext,
+		FunctionCall:  functionCall,
 	}
 	container.Lazy = &ContainerExecLazy{State: state}
 	container.ImageRef = ""
@@ -1178,6 +1229,16 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		}
 		defer releaseLockedCaches()
 
+		volatileEnvsFromSession := dagCache.ResolveVolatileVars(ctx, clientMetadata.SessionID)
+		var volatileEnvs []string
+		for _, k := range container.VolatileEnv {
+			k = strings.SplitN(k, "=", 2)[0]
+			if v, ok := volatileEnvsFromSession[k]; ok {
+				volatileEnvs = append(volatileEnvs, fmt.Sprintf("%s=%s", k, v))
+			}
+		}
+		container.VolatileEnv = volatileEnvs
+
 		secretEnv, err := container.secretEnvValues(ctx)
 		if err != nil {
 			return err
@@ -1186,7 +1247,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 		opts := state.Opts
 		expandedArgs := make([]string, len(opts.Args))
 		for i, arg := range opts.Args {
-			expandedArg, err := expandContainerInput(container, arg, opts.Expand)
+			expandedArg, err := ExpandContainerInput(container, arg, opts.Expand)
 			if err != nil {
 				return err
 			}
@@ -1224,7 +1285,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 
 		cache := query.SnapshotManager()
 
-		metaSpec, err := container.metaSpec(ctx, opts)
+		metaSpec, err := container.metaSpec(ctx, opts, true)
 		if err != nil {
 			return err
 		}
@@ -1733,9 +1794,6 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			defer releaseResolvedRefs()
 
 			var metaRef bkcache.ImmutableRef
-			var moduleRef bkcache.ImmutableRef
-			var moduleErrID dagql.ID[*Error]
-			haveModuleErrID := false
 			resolveAndTrackFailureRef := func(state *execMountState) (bkcache.ImmutableRef, error) {
 				ref, err := resolveFailureRef(state)
 				if err != nil {
@@ -1745,9 +1803,6 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			}
 			for _, mountState := range mountStates {
 				keepRef := mountState.Dest == engineutil.MetaMountDestPath
-				if state.ExtractModuleError && mountState.Dest == modMetaDirPath {
-					keepRef = true
-				}
 				if !keepRef {
 					continue
 				}
@@ -1761,21 +1816,6 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 				}
 				if mountState.Dest == engineutil.MetaMountDestPath {
 					metaRef = ref
-				}
-				if state.ExtractModuleError && mountState.Dest == modMetaDirPath {
-					moduleRef = ref
-				}
-			}
-
-			if state.ExtractModuleError && moduleRef != nil {
-				errID, ok, err := moduleErrorIDFromRef(ctx, engineClient, moduleRef)
-				if err != nil {
-					rerr = errors.Join(rerr, fmt.Errorf("extract module error: %w", err))
-					return
-				}
-				if ok {
-					moduleErrID = errID
-					haveModuleErrID = true
 				}
 			}
 
@@ -1981,15 +2021,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 					}
 				}
 			}
-
-			if haveModuleErrID {
-				rerr = &ModuleExecError{
-					Err:     rerr,
-					ErrorID: moduleErrID,
-				}
-			}
 		}()
-
 		emu, err := getEmulator(ctx, specs.Platform(container.Platform))
 		if err != nil {
 			return err
@@ -2143,6 +2175,18 @@ func decodePersistedContainerExecLazy(
 	if err := json.Unmarshal(payload, &persisted); err != nil {
 		return fmt.Errorf("decode persisted container withExec lazy payload: %w", err)
 	}
+	if persisted.VolatileCacheHitParentResultID != 0 {
+		parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.VolatileCacheHitParentResultID, "container volatile exec cache hit parent")
+		if err != nil {
+			return err
+		}
+		container.Lazy = &ContainerVolatileExecCacheHitLazy{
+			LazyState:   NewLazyState(),
+			Parent:      parent,
+			VolatileEnv: slices.Clone(persisted.VolatileCacheHitVolatileEnv),
+		}
+		return nil
+	}
 	parent, err := loadPersistedObjectResultByResultID[*Container](ctx, dag, persisted.ParentResultID, "container exec parent")
 	if err != nil {
 		return err
@@ -2152,13 +2196,11 @@ func decodePersistedContainerExecLazy(
 		return err
 	}
 	state := &ContainerExecState{
-		LazyState:          NewLazyState(),
-		Parent:             parent,
-		Opts:               persisted.Opts,
-		ExecMD:             persisted.ExecMD,
-		ModuleContext:      moduleContext,
-		FunctionCall:       persisted.FunctionCall,
-		ExtractModuleError: persisted.ExtractModuleError,
+		LazyState:     NewLazyState(),
+		Parent:        parent,
+		Opts:          persisted.Opts,
+		ExecMD:        persisted.ExecMD,
+		ModuleContext: moduleContext,
 	}
 	container.Lazy = &ContainerExecLazy{State: state}
 	container.ImageRef = ""

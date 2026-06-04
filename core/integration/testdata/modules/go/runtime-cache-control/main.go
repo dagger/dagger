@@ -24,6 +24,11 @@ func (m *Test) TestNeverCache() string {
 	return rand.Text()
 }
 
+// +cache="never"
+func (m *Test) Touch() *Test {
+	return m
+}
+
 // My rad doc on TestAlwaysCache
 func (m *Test) TestAlwaysCache() string {
 	return rand.Text()

@@ -251,12 +251,14 @@ func (s *moduleSchema) Install(dag *dagql.Server) {
 	dagql.Fields[*core.FunctionCall]{
 		dagql.Func("returnValue", s.functionCallReturnValue).
 			WithInput(dagql.PerClientInput).
+			DoNotCache("Imperatively records the active function call result.").
 			Doc(`Set the return value of the function call to the provided value.`).
 			Args(
 				dagql.Arg("value").Doc(`JSON serialization of the return value.`),
 			),
 		dagql.Func("returnError", s.functionCallReturnError).
 			WithInput(dagql.PerClientInput).
+			DoNotCache("Imperatively records the active function call result.").
 			Doc(`Return an error from the function.`).
 			Args(
 				dagql.Arg("error").Doc(`The error to return.`),

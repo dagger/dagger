@@ -42,8 +42,6 @@ import (
 	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
@@ -1060,15 +1058,15 @@ func (c *Client) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionPortEnv+"="+strconv.Itoa(tcpAddr.Port))
 	state.spec.Process.Env = append(state.spec.Process.Env, DaggerEngineNumCPUEnv+"="+strconv.Itoa(runtime.NumCPU()))
 
-	http2Srv := &http2.Server{}
+	protocols := new(http.Protocols)
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
 	httpSrv := &http.Server{
 		ReadHeaderTimeout: 10 * time.Second,
-		Handler: h2c.NewHandler(http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+		Handler: http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
 			c.SessionHandler.ServeHTTPToNestedClient(resp, req, state.nestedClientMetadata, state.callerClientID, false, state.nestedClientModule, state.nestedClientFunctionCall, state.nestedClientEnv)
-		}), http2Srv),
-	}
-	if err := http2.ConfigureServer(httpSrv, http2Srv); err != nil {
-		return fmt.Errorf("configure nested client http2 server: %w", err)
+		}),
+		Protocols: protocols,
 	}
 
 	srvPool.Go(func(_ context.Context) error {
