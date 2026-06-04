@@ -1,0 +1,48 @@
+---
+title: "AWS CodeBuild"
+slug: /adopting/triggers/aws-codebuild
+description: "Learn how to use Dagger with AWS CodeBuild."
+---
+
+# AWS CodeBuild
+
+Dagger runs your checks in AWS CodeBuild via `dagger check`, so the same checks you run locally run on every build — without rewriting your pipeline. You keep your existing CodeBuild project and `buildspec.yml`, and simply invoke the Dagger CLI from it.
+
+:::tip
+For checks with no buildspec at all, enable [Cloud Checks](/1.0-beta/adopting/triggers) with `dagger ws autocheck on`. The buildspec below is the hybrid-mode alternative for when you want to drive Dagger from your existing AWS CodeBuild setup.
+:::
+
+## How it works
+
+When running a CI pipeline with Dagger using AWS CodeBuild, the general workflow looks like this:
+
+1. AWS CodeBuild receives a trigger based on a repository event.
+1. AWS CodeBuild begins processing the build instructions in the `buildspec.yml` file.
+1. AWS CodeBuild downloads the Dagger CLI.
+1. AWS CodeBuild runs `dagger check` against the modules installed in your workspace.
+1. The Dagger CLI attempts to find an existing Dagger Engine or spins up a new one inside the CodeBuild runner, and sends telemetry to Dagger Cloud if the `DAGGER_CLOUD_TOKEN` environment variable is set.
+1. The build completes with success or failure based on the check results. Logs appear in the AWS CodeBuild interface as usual.
+
+## Prerequisites
+
+- An AWS CodeBuild project connected with a source code repository in GitLab, GitHub, BitBucket or any other supported provider
+- A repository with a Dagger workspace (`.dagger/config.toml`) — see [Workspace Setup](/1.0-beta/adopting/workspace-setup).
+
+## Example
+
+The following example demonstrates how to run your Dagger checks in an AWS CodeBuild project. `dagger check` runs all checks from the modules installed in your workspace and exits non-zero if any check fails; scope it to a single module's checks with a pattern such as `dagger check go:*`.
+
+```yaml title="buildspec.yml" file=./snippets/buildspec-hello.yml
+```
+
+## Dagger Cloud Engines
+
+By default the CLI starts a Dagger Engine inside the CodeBuild runner. For a faster, more reliable experience, offload execution to a managed Dagger Engine provided by Dagger Cloud by adding `--cloud` to the command (`dagger check --cloud`). Cloud Engines provide a large persistent cache shared across runs and far more compute than a CodeBuild runner, so checks are typically much faster — and you don't provision or maintain any infrastructure. This requires the `DAGGER_CLOUD_TOKEN` environment variable configured above.
+
+## Resources
+
+If you have any questions about additional ways to use AWS CodeBuild with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions in our [AWS channel](https://discord.com/channels/707636530424053791/1122940682714222752).
+
+## About AWS CodeBuild
+
+[AWS CodeBuild](https://aws.amazon.com/codebuild/) is a managed service to test, build and deploy applications in public or private repositories.

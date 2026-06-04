@@ -1,0 +1,74 @@
+---
+title: "Calling Functions"
+slug: /using-dagger/calling-functions
+description: "Call module functions directly and chain them into pipelines"
+---
+
+# Calling Functions
+
+`dagger check`, `dagger generate`, and `dagger up` are conveniences built on top of the underlying primitive: calling a module's functions. When you need something those verbs don't cover, call functions directly.
+
+```shell
+dagger call jest test
+```
+
+`dagger call` is shorthand for `dagger function call`.
+
+## Discover functions
+
+List the functions available in your workspace:
+
+```shell
+dagger function list
+```
+
+List the functions on a specific module:
+
+```shell
+dagger function list jest
+```
+
+Every function and its arguments are also visible through `--help`:
+
+```shell
+dagger call jest --help
+```
+
+## Pass arguments
+
+Arguments are flags on the function that accepts them:
+
+```shell
+dagger call jest --package-manager=yarn test
+```
+
+Secrets are passed the same way, via provider URIs — see [Secrets](/1.0-beta/adopting/secrets):
+
+```shell
+dagger call deploy --token=env:DEPLOY_TOKEN
+```
+
+## Chain functions
+
+Functions interconnect into a pipeline. Each function returns an object, and the next function is called on that result:
+
+```shell
+dagger -m core call container \
+  from --address=alpine \
+  with-exec --args=echo,hello \
+  stdout
+```
+
+## Output
+
+By default the result is printed to your terminal. Format it as JSON:
+
+```shell
+dagger call jest test --json
+```
+
+Or save a returned file or directory to the host:
+
+```shell
+dagger call build --output=./dist
+```
