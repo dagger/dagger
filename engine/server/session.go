@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -36,6 +37,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/oauth2"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -58,6 +60,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/dagger/dagger/engine/wcprof"
+	cloudauth "github.com/dagger/dagger/internal/cloud/auth"
 	"github.com/dagger/dagger/util/cleanups"
 )
 
@@ -923,6 +926,21 @@ func (srv *Server) initializeDaggerClient(
 		}
 	}
 
+	var (
+		cloudSpans   sdktrace.SpanExporter
+		cloudLogs    sdklog.Exporter
+		cloudMetrics sdkmetric.Exporter
+	)
+
+	// export to Dagger Cloud if the client has cloud auth
+	if client.clientMetadata.CloudAuth != nil {
+		// in-memory token refresher since this code runs in the engine
+		cloudSpans, cloudLogs, cloudMetrics, err = enginetel.NewCloudExporters(ctx, client.clientMetadata.CloudAuth, refreshAndPersistCredentials)
+		if err != nil {
+			slog.Warn("failed to configure cloud exporters for session", "error", err)
+		}
+	}
+
 	// configure OTel providers that export to the per-client telemetry store
 	client.spanExporter = srv.telemetryPubSub.Spans(client)
 	// Raise the per-span link cap well above the SDK default of 128. The wcprof
@@ -966,6 +984,12 @@ func (srv *Server) initializeDaggerClient(
 		)),
 	}
 
+	if cloudSpans != nil {
+		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(telemetry.NewLiveSpanProcessor(
+			cloudSpans,
+		)))
+	}
+
 	logs := srv.telemetryPubSub.Logs(client)
 	client.logExporter = logs
 	loggerOpts := []sdklog.LoggerProviderOption{
@@ -977,6 +1001,12 @@ func (srv *Server) initializeDaggerClient(
 		sdklog.WithProcessor(enginetel.NewLogBatchProcessor(logs)),
 	}
 
+	if cloudLogs != nil {
+		loggerOpts = append(loggerOpts, sdklog.WithProcessor(
+			sdklog.NewBatchProcessor(cloudLogs, sdklog.WithExportInterval(telemetry.NearlyImmediate)),
+		))
+	}
+
 	const metricReaderInterval = 5 * time.Second
 
 	client.metricExporter = srv.telemetryPubSub.Metrics(client)
@@ -986,6 +1016,15 @@ func (srv *Server) initializeDaggerClient(
 			client.metricExporter,
 			sdkmetric.WithInterval(metricReaderInterval),
 		)),
+	}
+
+	if cloudMetrics != nil {
+		meterOpts = append(meterOpts, sdkmetric.WithReader(
+			sdkmetric.NewPeriodicReader(
+				cloudMetrics,
+				sdkmetric.WithInterval(metricReaderInterval),
+			)),
+		)
 	}
 
 	// export to parent client DBs too (same large-queue live BSP — nested-client
@@ -1004,8 +1043,8 @@ func (srv *Server) initializeDaggerClient(
 			sdkmetric.NewPeriodicReader(
 				srv.telemetryPubSub.Metrics(parent),
 				sdkmetric.WithInterval(metricReaderInterval),
-			),
-		))
+			)),
+		)
 	}
 	client.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
 	client.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)
@@ -1038,6 +1077,58 @@ func (client *daggerClient) resolveHostServiceCaller(
 	}
 
 	return client.getClientCaller(ctx, id)
+}
+
+func refreshAndPersistCredentials(ctx context.Context) (*oauth2.Token, error) {
+	cPath := ""
+	clientID := ""
+	if md, err := engine.ClientMetadataFromContext(ctx); err == nil {
+		cPath = md.CredentialsPath
+		clientID = md.ClientID
+	}
+	if cPath == "" || clientID == "" {
+		return nil, fmt.Errorf("no credentials path or client id available: %s - %s", cPath, clientID)
+	}
+
+	sv, ok := ctx.Value(serverCtxKey{}).(*Server)
+	if !ok {
+		return nil, fmt.Errorf("get server return false")
+	}
+
+	tokenData, err := (&core.Secret{
+		URIVal:         "file://" + cPath,
+		SourceClientID: clientID,
+	}).Plaintext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get secret: %w", err)
+	}
+	var token oauth2.Token
+	if err := json.Unmarshal(tokenData, &token); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+
+	ts, err := cloudauth.TokenSource(ctx, &token)
+	if err != nil {
+		return nil, fmt.Errorf("get token source: %w", err)
+	}
+	newToken, err := ts.Token()
+	if err != nil {
+		return nil, fmt.Errorf("get new token: %w", err)
+	}
+	bt, err := json.Marshal(newToken)
+	if err != nil {
+		return nil, fmt.Errorf("marshal token: %w", err)
+	}
+
+	engine, err := sv.Engine(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get buildkit client: %w", err)
+	}
+	if err := engine.IOReaderExport(ctx, bytes.NewReader(bt), cPath, 0o600); err != nil {
+		return nil, fmt.Errorf("write config: %w", err)
+	}
+	slog.Info("refreshed cloud credentials", "credentialsPath", cPath)
+	return newToken, nil
 }
 
 func (srv *Server) clientFromContext(ctx context.Context) (*daggerClient, error) {
@@ -1329,6 +1420,10 @@ func (srv *Server) getOrInitClient(
 			client.clientMetadata.ExtraModules = opts.ExtraModules
 			client.pendingExtraModules = opts.ExtraModules
 		}
+
+		if client.clientMetadata.CredentialsPath == "" && opts.ClientMetadata.CredentialsPath != "" {
+			client.clientMetadata.CredentialsPath = opts.ClientMetadata.CredentialsPath
+		}
 	}
 
 	// increment the number of active connections from this client
@@ -1519,6 +1614,7 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 	var suppressCompatWorkspaceWarning bool
 	var workspaceRef *string
 	var workspaceEnv *string
+	credentialsPath := clientMetadata.CredentialsPath
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(h); md != nil {
 		clientMetadata.ClientVersion = md.ClientVersion
 		clientMetadata.AllowedLLMModules = slices.Clone(md.AllowedLLMModules)
@@ -1531,6 +1627,7 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 		workspaceModuleScope = md.WorkspaceModuleScope
 		eagerRuntime = md.EagerRuntime
 		suppressCompatWorkspaceWarning = md.SuppressCompatWorkspaceWarning
+		credentialsPath = md.CredentialsPath
 		if declaredWorkspace, ok := workspaceRefFromClientMetadata(md); ok {
 			ref := declaredWorkspace
 			workspaceRef = &ref
@@ -1552,10 +1649,13 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 	clientMetadata.SuppressCompatWorkspaceWarning = suppressCompatWorkspaceWarning
 	clientMetadata.Workspace = workspaceRef
 	clientMetadata.WorkspaceEnv = workspaceEnv
+	clientMetadata.CredentialsPath = credentialsPath
 	return &clientMetadata
 }
 
 const InstrumentationLibrary = "dagger.io/engine.server"
+
+type serverCtxKey struct{}
 
 func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opts *ClientInitOpts) (rerr error) {
 	if srv.isShuttingDown() {
@@ -1568,6 +1668,8 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	}
 
 	ctx := srv.withShutdownCancel(r.Context())
+
+	ctx = context.WithValue(ctx, serverCtxKey{}, srv)
 
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(fmt.Errorf("http request done for client %q", opts.ClientID))
@@ -2347,7 +2449,8 @@ func workspaceLockPath(ws *core.Workspace) (string, error) {
 
 func readWorkspaceLockState(ctx context.Context, bk interface {
 	ReadCallerHostFile(ctx context.Context, path string) ([]byte, error)
-}, ws *core.Workspace) (*workspace.Lock, error) {
+}, ws *core.Workspace,
+) (*workspace.Lock, error) {
 	lockPath, err := workspaceLockPath(ws)
 	if err != nil {
 		return nil, err
