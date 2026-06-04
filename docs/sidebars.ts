@@ -80,11 +80,11 @@ module.exports = {
     },
 
     // ========================================
-    // MODULES
+    // SETUP GUIDES
     // ========================================
     {
       type: "category",
-      label: "Modules",
+      label: "Setup Guides",
       link: {
         type: "doc",
         id: "modules/index",

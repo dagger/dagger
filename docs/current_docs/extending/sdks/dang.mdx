@@ -19,7 +19,7 @@ Before diving in, it helps to understand the platform concepts every SDK shares:
 
 ## A note on tooling: Dang is delivered as a Dagger module
 
-There is no `dagger init` or `dagger develop` subcommand in the CLI. Module development tooling for Dang lives in a Dagger module of its own: **`github.com/dagger/dang-sdk`**. You scaffold and maintain Dang modules by *calling functions on that module*:
+Module development tooling for Dang lives in a Dagger module of its own — **`github.com/dagger/dang-sdk`**, not the `dagger` CLI. You scaffold and maintain Dang modules by *calling functions on that module*:
 
 ```shell
 dagger -m github.com/dagger/dang-sdk call <function> [args]

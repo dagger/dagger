@@ -16,7 +16,7 @@ This page is a standalone guide to the Go SDK. It assumes you already understand
 
 A useful, reusable module provides at least one of the three first-class function types — a **check**, a **generator**, or a **service**. See [Checks, generators, services, directives, and ignore patterns](#checks-generators-services-directives-and-ignore-patterns) for the Go syntax.
 
-The one thing that is genuinely different from older Dagger versions: **module development tooling is not in the `dagger` CLI**. There is no `dagger init` or `dagger develop`. Instead, **the Go SDK is itself a Dagger module — `github.com/dagger/go-sdk`** — and you scaffold, generate, and maintain Go modules by calling its functions:
+Module development tooling lives in the SDK module, not the `dagger` CLI: **the Go SDK is itself a Dagger module — `github.com/dagger/go-sdk`** — and you scaffold, generate, and maintain Go modules by calling its functions:
 
 ```shell
 dagger -m github.com/dagger/go-sdk call <function> ...
@@ -1011,7 +1011,7 @@ or by adding it to their `dagger.json` `dependencies` and regenerating. A module
 
 ## Troubleshooting
 
-**`dagger init` / `dagger develop` not found.** These commands were removed. Use the Go SDK module: `dagger -m github.com/dagger/go-sdk call init ...` to scaffold and `... call mod generate ...` to regenerate.
+**`dagger init` / `dagger develop` not found.** Module development tooling lives in the Go SDK module, not the CLI. Use `dagger -m github.com/dagger/go-sdk call init ...` to scaffold and `... call mod generate ...` to regenerate.
 
 **Nothing was written after `init`.** `init` returns a changeset; it doesn't write files on its own. Apply it directly (review, or pass `-y` to apply without prompting).
 

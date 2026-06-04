@@ -1,24 +1,24 @@
 ---
-title: "Modules"
+title: "Setup Guides"
 slug: /modules
-description: "Official Dagger modules you can add to a workspace."
+description: "Guides for setting up official Dagger modules in your project."
 ---
 
-# Modules
+# Setup Guides
 
-Official modules give a workspace useful work to do: test code, run a test runner, lint and format source, or validate Helm charts.
+These guides walk through setting up the official Dagger modules in your project — the standard library of tools that give a workspace useful work to do: test code, run a test runner, lint and format source, or validate Helm charts.
 
-Install a module when you want a real tool that runs the same way locally, in CI, and in Dagger Cloud. Most modules expose checks, generators, or repair workflows, so the work stays consistent everywhere it runs.
+Reach for a module when you want a real tool that runs the same way locally, in CI, and in Dagger Cloud. Most expose checks, generators, or repair workflows, so the work stays consistent everywhere it runs.
 
-Install any module with `dagger mod install`:
+Add any module to your project with `dagger mod install`:
 
 ```bash
 dagger mod install github.com/dagger/go
 ```
 
-Each module page explains what the module is for, which checks or generators to reach for first, the settings that tune it, and how it fits into a workspace.
+Each guide explains what the module is for, which checks or generators to reach for first, the settings that tune it, and how it fits into your project.
 
-| Module | Purpose |
+| Guide | What it covers |
 | --- | --- |
 | [Go](./go.mdx) | Test, lint, and run generators across every Go module in a workspace. |
 | [Pytest](./pytest.mdx) | Run Python tests with Pytest. |
