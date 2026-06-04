@@ -48,7 +48,7 @@ func (e *countingMetricExporter) Aggregation(sdkmetric.InstrumentKind) sdkmetric
 func (e *countingMetricExporter) Shutdown(context.Context) error   { return nil }
 func (e *countingMetricExporter) ForceFlush(context.Context) error { return nil }
 
-func TestEngineTelemetryConfigDefaultsToFrontendAndCloud(t *testing.T) {
+func TestClientTelemetryConfigDefaultsToFrontendAndCloud(t *testing.T) {
 	oldFrontend := Frontend
 	oldSkip := skipSharedTelemetryExporters
 	t.Cleanup(func() {
@@ -70,7 +70,7 @@ func TestEngineTelemetryConfigDefaultsToFrontendAndCloud(t *testing.T) {
 	cloudSpans := tracetest.NewInMemoryExporter()
 	cloudLogs := new(countingLogExporter)
 	cloudMetrics := new(countingMetricExporter)
-	cfg := engineTelemetryConfigWithCloud(context.Background(), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
+	cfg := clientTelemetryConfigWithCloud(context.Background(), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
 		return cloudSpans, cloudLogs, cloudMetrics, true
 	})
 
@@ -87,7 +87,7 @@ func TestEngineTelemetryConfigDefaultsToFrontendAndCloud(t *testing.T) {
 	})
 }
 
-func TestEngineTelemetryConfigWithoutFrontendStillExportsToCloud(t *testing.T) {
+func TestClientTelemetryConfigWithoutFrontendStillExportsToCloud(t *testing.T) {
 	oldFrontend := Frontend
 	oldSkip := skipSharedTelemetryExporters
 	t.Cleanup(func() {
@@ -109,7 +109,7 @@ func TestEngineTelemetryConfigWithoutFrontendStillExportsToCloud(t *testing.T) {
 	cloudSpans := tracetest.NewInMemoryExporter()
 	cloudLogs := new(countingLogExporter)
 	cloudMetrics := new(countingMetricExporter)
-	cfg := engineTelemetryConfigWithCloud(withoutFrontendTelemetry(context.Background()), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
+	cfg := clientTelemetryConfigWithCloud(withoutFrontendTelemetry(context.Background()), func(context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
 		return cloudSpans, cloudLogs, cloudMetrics, true
 	})
 
@@ -152,13 +152,13 @@ func TestEngineTelemetryConfigWithoutFrontendStillExportsToCloud(t *testing.T) {
 	require.Zero(t, localMetrics.exports.Load())
 }
 
-// TestEngineTelemetryConfigSkipsSharedExporters guards the fix for the noisy
+// TestClientTelemetryConfigSkipsSharedExporters guards the fix for the noisy
 // "HTTP exporter is shutdown" / "context canceled" telemetry warnings emitted by
 // the second engine session that `dagger module init` opens. Internal plumbing
 // sessions must not wire up (and later tear down) the process-wide OTLP exporter
 // singletons, otherwise the real command that runs next in the same process
-// re-exports into already-shut-down exporters. See engineTelemetryConfig.
-func TestEngineTelemetryConfigSkipsSharedExporters(t *testing.T) {
+// re-exports into already-shut-down exporters. See clientTelemetryConfig.
+func TestClientTelemetryConfigSkipsSharedExporters(t *testing.T) {
 	oldFrontend := Frontend
 	oldSkip := skipSharedTelemetryExporters
 	Frontend = &idtui.FrontendMock{
@@ -174,12 +174,12 @@ func TestEngineTelemetryConfigSkipsSharedExporters(t *testing.T) {
 	ctx := context.Background()
 
 	skipSharedTelemetryExporters = false
-	if cfg := engineTelemetryConfig(ctx); !cfg.Detect {
+	if cfg := clientTelemetryConfig(ctx); !cfg.Detect {
 		t.Fatal("expected Detect to be enabled for a normal session")
 	}
 
 	skipSharedTelemetryExporters = true
-	if cfg := engineTelemetryConfig(ctx); cfg.Detect {
+	if cfg := clientTelemetryConfig(ctx); cfg.Detect {
 		t.Fatal("expected Detect to be disabled for an internal silent session")
 	}
 }
