@@ -107,21 +107,19 @@ func (cli *CliDev) releaseArchive(label string, target cliReleaseTarget) *dagger
 			Permissions: 0o755,
 		})
 
-	cmd := `mkdir -p /out
-if [ "$WINDOWS" = "true" ]; then
-	cd /input
-	touch -t 198001010000 LICENSE "$BINARY"
-	zip -X -q "/out/$ARCHIVE" LICENSE "$BINARY"
-else
-	tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner -czf "/out/$ARCHIVE" -C /input LICENSE "$BINARY"
-fi`
-
-	return releaseArchiveBase().
+	ctr := releaseArchiveBase().
 		WithDirectory("/input", input).
-		WithEnvVariable("ARCHIVE", name).
-		WithEnvVariable("BINARY", target.Binary).
-		WithEnvVariable("WINDOWS", fmt.Sprintf("%t", target.Windows)).
-		WithExec([]string{"sh", "-ec", cmd}).
+		WithExec([]string{"mkdir", "-p", "/out"})
+	if target.Windows {
+		return ctr.
+			WithWorkdir("/input").
+			WithExec([]string{"touch", "-t", "198001010000", "LICENSE", target.Binary}).
+			WithExec([]string{"zip", "-X", "-q", "/out/" + name, "LICENSE", target.Binary}).
+			File("/out/" + name)
+	}
+
+	return ctr.
+		WithExec([]string{"tar", "--sort=name", "--mtime=UTC 1970-01-01", "--owner=0", "--group=0", "--numeric-owner", "-czf", "/out/" + name, "-C", "/input", "LICENSE", target.Binary}).
 		File("/out/" + name)
 }
 

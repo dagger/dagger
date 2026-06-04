@@ -371,6 +371,8 @@ func (cli *CliDev) uploadGitHubReleaseAsset(
 	githubCaCert *dagger.File,
 ) error {
 	uploadURL += "?name=" + url.QueryEscape(asset)
+	// Release archives are binary; keep upload in a container so the mounted
+	// file can be streamed without converting it through File.Contents().
 	ctr := dag.
 		Alpine(dagger.AlpineOpts{
 			Branch:   "3.22",
@@ -420,10 +422,6 @@ func (cli *CliDev) publishPackageManagers(
 	if err != nil {
 		return err
 	}
-	nixArchives, err := cli.releaseNixArchives(ctx, dist, tag, checksums)
-	if err != nil {
-		return err
-	}
 
 	version := strings.TrimPrefix(tag, "v")
 	baseURL := "https://" + artefactsFQDN + "/dagger/releases/" + version
@@ -432,32 +430,40 @@ func (cli *CliDev) publishPackageManagers(
 		return err
 	}
 
-	homebrew, err := homebrewFormula(tag, version, baseURL, checksums)
-	if err != nil {
-		return err
-	}
-	if err := gh.writeContent(ctx, githubOrgName, "homebrew-tap", "dagger.rb", homebrew, "main", "Brew formula update for dagger version "+tag); err != nil {
-		return err
-	}
-	if err := gh.writeContent(ctx, githubOrgName, "nix", "pkgs/dagger/default.nix", nixPackage(version, baseURL, nixArchives), "main", "dagger:  -> "+tag); err != nil {
-		return err
-	}
-
-	wingetBranch := "dagger-" + version
-	if err := gh.ensureBranch(ctx, githubOrgName, "winget-pkgs", wingetBranch); err != nil {
-		return err
-	}
-	if err := gh.mergeUpstream(ctx, githubOrgName, "winget-pkgs", "master"); err != nil {
-		return err
-	}
-	manifests, err := wingetManifests(tag, version, baseURL, checksums)
-	if err != nil {
-		return err
-	}
-	for _, manifest := range manifests {
-		if err := gh.writeContent(ctx, githubOrgName, "winget-pkgs", manifest.Path, manifest.Content, wingetBranch, "New version: Dagger.Cli "+version+": add "+manifest.MessageSuffix); err != nil {
+	jobs := parallel.New()
+	jobs = jobs.WithJob("publish homebrew", func(ctx context.Context) error {
+		homebrew, err := homebrewFormula(tag, version, baseURL, checksums)
+		if err != nil {
 			return err
 		}
-	}
-	return gh.createPullRequest(ctx, "microsoft", "winget-pkgs", "New version: Dagger.Cli "+version, "master", githubOrgName+":winget-pkgs:"+wingetBranch, "Automated with Dagger release tooling.")
+		return gh.writeContent(ctx, githubOrgName, "homebrew-tap", "dagger.rb", homebrew, "main", "Brew formula update for dagger version "+tag)
+	})
+	jobs = jobs.WithJob("publish nix", func(ctx context.Context) error {
+		nixArchives, err := cli.releaseNixArchives(ctx, dist, tag, checksums)
+		if err != nil {
+			return err
+		}
+		return gh.writeContent(ctx, githubOrgName, "nix", "pkgs/dagger/default.nix", nixPackage(version, baseURL, nixArchives), "main", "dagger:  -> "+tag)
+	})
+	jobs = jobs.WithJob("publish winget", func(ctx context.Context) error {
+		wingetBranch := "dagger-" + version
+		if err := gh.ensureBranch(ctx, githubOrgName, "winget-pkgs", wingetBranch); err != nil {
+			return err
+		}
+		if err := gh.mergeUpstream(ctx, githubOrgName, "winget-pkgs", "master"); err != nil {
+			return err
+		}
+		manifests, err := wingetManifests(tag, version, baseURL, checksums)
+		if err != nil {
+			return err
+		}
+		for _, manifest := range manifests {
+			if err := gh.writeContent(ctx, githubOrgName, "winget-pkgs", manifest.Path, manifest.Content, wingetBranch, "New version: Dagger.Cli "+version+": add "+manifest.MessageSuffix); err != nil {
+				return err
+			}
+		}
+		return gh.createPullRequest(ctx, "microsoft", "winget-pkgs", "New version: Dagger.Cli "+version, "master", githubOrgName+":winget-pkgs:"+wingetBranch, "Automated with Dagger release tooling.")
+	})
+
+	return jobs.Run(ctx)
 }

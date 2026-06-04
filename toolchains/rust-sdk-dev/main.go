@@ -26,7 +26,7 @@ const (
 	cargoEditVersion = "0.13.0"
 	cargoChefVersion = "0.1.62"
 
-	alternateCargoRegistryName = "daggertest"
+	mockCargoRegistryName = "mock"
 )
 
 // Develop the Dagger Rust SDK (experimental)
@@ -39,13 +39,15 @@ type RustSdkDev struct {
 
 func New(
 	// A directory with all the files needed to develop the SDK
-	// +defaultPath="/"
-	// +ignore=["*", "!sdk/rust/Cargo.lock", "!sdk/rust/Cargo.toml", "!sdk/rust/crates", "!sdk/rust/crates/**"]
-	workspace *dagger.Directory,
+	workspace *dagger.Workspace,
 	// The path of the SDK source in the workspace
 	// +default="sdk/rust"
 	sourcePath string,
 ) *RustSdkDev {
+	rustSrc := workspace.Directory("/", dagger.WorkspaceDirectoryOpts{
+		Exclude: []string{"*", "!sdk/rust/crates", "!sdk/rust/Cargo.lock", "!sdk/rust/Cargo.toml"},
+	})
+
 	baseContainer := dag.Container().
 		From(rustSdkImage+"@"+rustSdkImageDigest).
 		WithEnvVariable("CARGO_HOME", "/root/.cargo").
@@ -57,8 +59,8 @@ func New(
 		})
 
 	return &RustSdkDev{
-		OriginalWorkspace: workspace,
-		Workspace:         workspace,
+		OriginalWorkspace: rustSrc,
+		Workspace:         rustSrc,
 		SourcePath:        sourcePath,
 		BaseContainer:     baseContainer,
 	}
@@ -264,10 +266,12 @@ func (t *RustSdkDev) Release(
 	ctr := t.releaseContainer(versionFlag)
 	args := []string{"cargo", "publish", "-p", rustSdkCrate, "-v", "--all-features"}
 	if cargoRegistryIndex != "" {
+		// Cargo alternate registries are configured through
+		// CARGO_REGISTRIES_<NAME>_* environment variables.
 		ctr = ctr.
-			WithEnvVariable("CARGO_REGISTRIES_DAGGERTEST_INDEX", cargoRegistryIndex).
-			WithSecretVariable("CARGO_REGISTRIES_DAGGERTEST_TOKEN", cargoRegistryToken)
-		args = append(args, "--registry", alternateCargoRegistryName)
+			WithEnvVariable("CARGO_REGISTRIES_MOCK_INDEX", cargoRegistryIndex).
+			WithSecretVariable("CARGO_REGISTRIES_MOCK_TOKEN", cargoRegistryToken)
+		args = append(args, "--registry", mockCargoRegistryName)
 	} else {
 		ctr = ctr.WithSecretVariable("CARGO_REGISTRY_TOKEN", cargoRegistryToken)
 	}

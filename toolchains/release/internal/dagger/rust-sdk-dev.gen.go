@@ -47,7 +47,7 @@ type RustSDKDevOpts struct {
 	//
 	// A directory with all the files needed to develop the SDK
 	//
-	Workspace *Directory // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:44:2)
+	Workspace *Workspace // rust-sdk-dev (../../../../toolchains/rust-sdk-dev/main.go:40:2)
 	//
 	// The path of the SDK source in the workspace
 	//
