@@ -8,8 +8,8 @@ The documentation website (source code, assets and content) live in the `/docs` 
 
 Within this directory, the content is separated into:
 
-- `/current_docs`: the current docs shown on docs.dagger.io
-- `/versioned_docs`: Docusaurus snapshots for previous release lines, if available
+- `/current_docs`: the next docs shown at `/next`
+- `/versioned_docs`: Docusaurus snapshots for release lines
 - `/versioned_sidebars`: sidebars for versioned docs snapshots
 - `/versions.json`: Docusaurus version order
 - `/archived_docs`: the site template for the docs archive. Related instructions are in [ARCHIVING.md](./ARCHIVING.md)
@@ -63,10 +63,11 @@ This will install all dependencies, start the docs web server locally and open [
 
 ## What is the versioned docs workflow?
 
-- Normal docs PRs update `/current_docs` and must use version-safe relative links/imports for docs content.
+- Normal docs PRs update `/current_docs`, which publishes at `/next`.
+- The latest release line is published at `/`; older release lines use `/<version>/`.
 - Before cutting a release docs version, regenerate generated references first.
 - From `/docs`, run `yarn docs:version <version>` to snapshot `/current_docs` into `/versioned_docs/version-<version>`.
-- Review both `/` and `/<version>/` before publishing.
+- Review `/`, `/next/`, and older `/<version>/` routes before publishing.
 - After release, keep normal docs edits in `/current_docs`. Patch `/versioned_docs/version-<version>` only for fixes that must apply to that maintained release line.
 
 ### With a Dagger module

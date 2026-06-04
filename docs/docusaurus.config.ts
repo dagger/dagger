@@ -12,9 +12,15 @@ const url = "https://docs.dagger.io";
 const docsPath = "./current_docs";
 const baseUrl = process.env.DOCUSAURUS_BASE_URL ?? "/";
 const versions = require("./versions.json") as string[];
+const versionSelectOptions = [
+  ...versions.map((version, index) => ({
+    label: version,
+    path: index === 0 ? baseUrl : `${baseUrl}${version}/`,
+  })),
+  { label: "Next", path: `${baseUrl}next/` },
+];
 const versionSelectHtml = `<select class="docs-version-select" aria-label="Docs version" onchange="window.location.href=this.value">
-  <option value="${baseUrl}">Latest</option>
-  ${versions.map((version) => `<option value="${baseUrl}${version}/">${version}</option>`).join("")}
+  ${versionSelectOptions.map(({ label, path }) => `<option value="${path}">${label}</option>`).join("")}
 </select>`;
 
 const config: Config = {
@@ -61,12 +67,18 @@ const config: Config = {
           breadcrumbs: false,
           path: docsPath,
           routeBasePath: "/",
-          lastVersion: "current",
+          lastVersion: "0.21",
           versions: {
-            current: {
-              label: "Latest",
+            "0.21": {
+              label: "0.21",
               path: "/",
               banner: "none",
+              badge: false,
+            },
+            current: {
+              label: "Next",
+              path: "next",
+              banner: "unreleased",
               badge: false,
             },
           },
