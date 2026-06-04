@@ -527,6 +527,9 @@ func (c *Client) startEngine(ctx context.Context, params Params) (rerr error) {
 }
 
 func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
+	if c.EngineTrace == nil && c.EngineLogs == nil && len(c.EngineMetrics) == 0 {
+		return nil
+	}
 	ctx, span := Tracer(ctx).Start(ctx, "subscribing to telemetry",
 		telemetry.Encapsulated())
 	defer telemetry.EndWithCause(span, &rerr)
@@ -974,7 +977,7 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 			slog.ExtraDebug("received span from engine", "span", span.Name(), "id", span.SpanContext().SpanID(), "endTime", span.EndTime())
 		}
 
-		if err := c.Params.EngineTrace.ExportSpans(ctx, spans); err != nil {
+		if err := c.EngineTrace.ExportSpans(ctx, spans); err != nil {
 			return fmt.Errorf("export %d spans: %w", len(spans), err)
 		}
 
@@ -1447,6 +1450,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		SingleQuery:                    c.SingleQuery,
 		SuppressCompatWorkspaceWarning: c.SuppressCompatWorkspaceWarning,
 		CloudAuth:                      c.CloudAuth,
+		CredentialsPath:                auth.CredentialsFile(),
 		EnableCloudScaleOut:            c.EnableCloudScaleOut,
 		CloudScaleOutEngineID:          remoteEngineID,
 		LockMode:                       c.LockMode,

@@ -21,7 +21,7 @@ import (
 	"go.opentelemetry.io/otel"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace"
 )
 
 const (
@@ -105,7 +105,7 @@ func withEngine(
 
 		// Init tracing as early as possible and shutdown after the command
 		// completes, ensuring progress is fully flushed to the frontend.
-		ctx, cleanupTelemetry := initEngineTelemetry(ctx)
+		ctx, cleanupTelemetry := initClientTelemetry(ctx)
 
 		otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
 			if opts.Debug {
@@ -142,13 +142,44 @@ func withEngine(
 
 		params.CloudURLCallback = Frontend.SetCloudURL
 
-		params.EngineTrace = telemetry.SpanForwarder{
-			Processors: telemetry.SpanProcessors,
+		// setup exporters that will subscribe to engine telemetry.
+		// by default it should only be the frontend unless the user
+		// specifies additional ones via OTEL_* variables which the
+		// client then will pick up.
+		traceExporters := []trace.SpanExporter{}
+		logExporters := []sdklog.Exporter{}
+		metricExporters := []sdkmetric.Exporter{}
+
+		// if silent is set, don't set default exporters to avoid subscribing
+		// to telemetry unnecessarily
+		if !silent {
+			traceExporters = append(traceExporters, Frontend.SpanExporter())
+			logExporters = append(logExporters, Frontend.LogExporter())
+			metricExporters = append(metricExporters, Frontend.MetricExporter())
 		}
-		params.EngineLogs = telemetry.LogForwarder{
-			Processors: telemetry.LogProcessors,
+
+		if exp, ok := telemetry.ConfiguredSpanExporter(ctx); ok {
+			if !telemetry.LiveTracesEnabled {
+				exp = telemetry.FilterLiveSpansExporter{SpanExporter: exp}
+			}
+			traceExporters = append(traceExporters, exp)
 		}
-		params.EngineMetrics = telemetry.MetricExporters
+		if exp, ok := telemetry.ConfiguredLogExporter(ctx); ok {
+			logExporters = append(logExporters, exp)
+		}
+		if exp, ok := telemetry.ConfiguredMetricExporter(ctx); ok {
+			metricExporters = append(metricExporters, exp)
+		}
+
+		if len(traceExporters) > 0 {
+			params.EngineTrace = enginetel.MultiSpanExporter(traceExporters)
+		}
+		if len(logExporters) > 0 {
+			params.EngineLogs = enginetel.MultiLogExporter(logExporters)
+		}
+		if len(metricExporters) > 0 {
+			params.EngineMetrics = metricExporters
+		}
 
 		params.WithTerminal = withTerminal
 
@@ -226,21 +257,23 @@ func resolveLockMode(paramLockMode, globalLockMode string) (string, error) {
 	return string(mode), nil
 }
 
-func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
+func initClientTelemetry(ctx context.Context) (context.Context, func(error)) {
 	// Setup telemetry config
 	telemetryCfg := telemetry.Config{
 		Detect:   true,
 		Resource: Resource(ctx),
 
-		LiveTraceExporters:  []sdktrace.SpanExporter{Frontend.SpanExporter()},
+		LiveTraceExporters:  []trace.SpanExporter{Frontend.SpanExporter()},
 		LiveLogExporters:    []sdklog.Exporter{Frontend.LogExporter()},
 		LiveMetricExporters: []sdkmetric.Exporter{Frontend.MetricExporter()},
 	}
+
 	if spans, logs, metrics, ok := enginetel.ConfiguredCloudExporters(ctx); ok {
 		telemetryCfg.LiveTraceExporters = append(telemetryCfg.LiveTraceExporters, spans)
 		telemetryCfg.LiveLogExporters = append(telemetryCfg.LiveLogExporters, logs)
 		telemetryCfg.LiveMetricExporters = append(telemetryCfg.LiveMetricExporters, metrics)
 	}
+
 	ctx = telemetry.Init(ctx, telemetryCfg)
 	// telemetry.Init extracts inherited OTel baggage from the environment.
 	// Re-apply explicit local process settings afterward so a nested Dagger
