@@ -206,6 +206,10 @@ const config: Config = {
         srcDark: "img/dagger-logo-white.png",
       },
       items: [
+        {
+          type: "docsVersionDropdown",
+          position: "right",
+        },
         // TODO(jasonmccallister): Add these items back in the nav or possible swizzle into a sidebar or toc?
         // {
         //   position: "right",
