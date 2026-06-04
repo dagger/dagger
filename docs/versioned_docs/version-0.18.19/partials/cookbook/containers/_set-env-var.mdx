@@ -1,0 +1,95 @@
+### Set environment variables in a container
+
+The following Dagger Function demonstrates how to set a single environment variable in a container.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/set-env-var/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/set-env-var/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/set-env-var/typescript/index.ts
+```
+
+</TabItem>
+<TabItem value="php" label="PHP">
+
+```php file=../../../cookbook/snippets/set-env-var/php/src/MyModule.php
+```
+
+</TabItem>
+</Tabs>
+
+The following Dagger Function demonstrates how to set multiple environment variables in a container.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/set-env-vars/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/set-env-vars/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/set-env-vars/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Set a single environment variable in a container:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c set-env-var
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+set-env-var
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call set-env-var
+```
+</TabItem>
+</Tabs>
+
+Set multiple environment variables in a container:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c set-env-vars
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+set-env-vars
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call set-env-vars
+```
+</TabItem>
+</Tabs>

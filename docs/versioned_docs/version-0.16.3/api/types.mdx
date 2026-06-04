@@ -1,0 +1,108 @@
+---
+slug: /api/types
+---
+
+# Core Types
+
+In addition to basic types (string, boolean, integer, arrays...), the Dagger API also provides powerful core types which serve as both arguments and return values for Dagger Functions.
+
+:::note
+The types listed on this page are indicative and not exhaustive. For a complete list of supported types and their fields, refer to the [Dagger API reference](https://docs.dagger.io/api/reference).
+:::
+
+The following table lists available types and what they represent:
+
+| Type | Description |
+|------|-------------|
+| `CacheVolume` | A directory whose contents persist across runs |
+| `Container` | An OCI-compatible container |
+| `CurrentModule` | The current Dagger module and its context |
+| `Engine` | The Dagger Engine configuration and state |
+| `Directory` | A directory (local path or Git reference) |
+| `EnvVariable` | An environment variable name and value |
+| `File` | A file |
+| `GitRepository` | A Git repository |
+| `GitRef` | A Git reference (tag, branch, or commit) |
+| `Host` | The Dagger host environment |
+| `Module` | A Dagger module |
+| `Port` | A port exposed by a container |
+| `Secret` | A secret credential like a password, access token or key) |
+| `Service` | A content-addressed service providing TCP connectivity |
+| `Socket` | A Unix or TCP/IP socket that can be mounted into a container |
+| `Terminal` | An interactive terminal session |
+
+Each type exposes additional fields. Some of these are discussed below.
+
+## Container
+
+The `Container` type represents the state of an OCI-compatible container. This `Container` object is not merely a string referencing an image on a remote registry. It is the actual state of a container, managed by the Dagger Engine, and passed to a Dagger Function's code as if it were just another variable.
+
+Some of the `Container` type's important fields are:
+
+| Field | Description |
+|-------|-------------|
+| `from` | Initializes the container from a specified base image |
+| `asService` | Turns the container into a `Service` |
+| `asTarball` | Returns a serialized tarball of the container as a `File` |
+| `export` / `import` | Writes / reads the container as an OCI tarball to / from a file path on the host |
+| `publish` | Publishes the container image to a registry |
+| `stdout` / `stderr` | Returns the output / error stream of the last executed command |
+| `withDirectory` / `withMountedDirectory` | Returns the container plus a directory copied / mounted at the given path |
+| `withEntrypoint` | Returns the container with a custom entrypoint command |
+| `withExec` | Returns the container after executing a command inside it |
+| `withFile` / `withMountedFile` | Returns the container plus a file copied / mounted at the given path |
+| `withMountedCache` | Returns the container plus a cache volume mounted at the given path |
+| `withRegistryAuth` | Returns the container with registry authentication configured |
+| `withWorkdir` | Returns the container configured with a specific working directory |
+| `withServiceBinding` | Returns the container with runtime dependency on another `Service` |
+
+## Directory
+
+The `Directory` type represents the state of a directory. This could be either a local directory path or a remote Git reference. Some of its important fields are:
+
+| Field | Description |
+|-------|-------------|
+| `dockerBuild` | Builds a new Docker container from the directory |
+| `entries` | Returns a list of files and directories in the directory |
+| `export` | Writes the contents of the directory to a path on the host |
+| `file` | Returns a file at the given path as a `File`  |
+| `withFile` / `withFiles` | Returns the directory plus the file(s) copied to the given path |
+
+## File
+
+The `File` type represents a single file. Some of its important fields are:
+
+| Field | Description |
+|-------|-------------|
+| `contents` | Returns the contents of the file |
+| `export` | Writes the file to a path on the host |
+
+## Service
+
+The `Service` type represents a content-addressed service providing TCP connectivity. Some of its important fields are:
+
+| Field | Description |
+|-------|-------------|
+| `endpoint` | Returns a URL or host:port pair to reach the service |
+| `hostname` | Returns a hostname to reach the service |
+| `ports` | Returns the list of ports provided by the service |
+| `up` | Creates a tunnel that forwards traffic from the caller's network to the service  |
+
+## Secret
+
+Dagger allows you to utilize confidential information ("secrets") such as passwords, API keys, SSH keys and so on, without exposing those secrets in plaintext logs, writing them into the filesystem of containers you're building, or inserting them into the cache. The `Secret` type is used to represent these secret values. Some of its important fields are:
+
+| Field | Description |
+|-------|-------------|
+| `name` | Returns the name of the secret |
+| `plaintext` | Returns the plaintext value of the secret |
+
+## CurrentModule
+
+The `CurrentModule` type provides capabilities to introspect the Dagger Function's module and interface between the current execution environment and the Dagger API.
+
+| Field | Description |
+|-------|-------------|
+| `source` | Returns the directory containing the module's source code |
+| `workdir` | Loads and returns a directory from the module's working directory, including any changes that may have been made to it during function execution |
+| `workdirFile` | Loads and returns a file from the module's working directory, including any changes that may have been made to it during function execution |

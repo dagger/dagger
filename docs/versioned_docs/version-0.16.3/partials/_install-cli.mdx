@@ -1,0 +1,193 @@
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+import CodeBlock from '@theme/CodeBlock';
+import { daggerVersion } from './version';
+
+:::info
+The Dagger CLI is available for installation on macOS, Linux, and Windows to run locally or in a CI environment.
+:::
+
+### Stable release
+
+Install the latest stable release of the Dagger CLI following the steps below.
+
+<Tabs groupId="platform">
+<TabItem value="macOS">
+
+We assume that you have [Homebrew](https://brew.sh/) installed. If you do, you can install `dagger` with a single command:
+
+```shell
+brew install dagger/tap/dagger
+```
+
+:::note
+This installs `dagger` in:
+
+```shell
+type dagger
+# Expected output on macOS ARM:
+# dagger is /opt/homebrew/bin/dagger
+# Expected output on macOS Intel:
+# dagger is /usr/local/bin/dagger
+```
+:::
+
+If you do not have Homebrew installed, you can use [install.sh](https://github.com/dagger/dagger/blob/main/install.sh):
+
+<CodeBlock language="shell">
+{`curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin sh`}
+</CodeBlock>
+
+If your user account doesn't have sufficient privileges to install in
+`/usr/local` and `sudo` is available, you can set `BIN_DIR` and use `sudo -E`:
+
+<CodeBlock language="shell">
+{`curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin sudo -E sh`}
+</CodeBlock>
+
+If you want to set a specific version, you can set `DAGGER_VERSION`:
+
+<CodeBlock language="shell">
+{`curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${daggerVersion} BIN_DIR=/usr/local/bin sh`}
+</CodeBlock>
+
+To see the installed version of dagger:
+
+<CodeBlock language="shell">
+{`./bin/dagger version\n`}
+{`# Expected output: dagger v${daggerVersion} (registry.dagger.io/engine:v${daggerVersion}) darwin/amd64`}
+</CodeBlock>
+
+</TabItem>
+<TabItem value="Linux">
+The quickest way of installing the latest stable release of `dagger` on Linux is to use [install.sh](https://github.com/dagger/dagger/blob/main/install.sh):
+
+```shell
+curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+```
+
+:::note
+This installs `dagger` in `$HOME/.local/bin`:
+
+```shell
+type dagger
+# Expected output: dagger is $HOME/.local/bin/dagger
+```
+
+You may need to add it to your `$PATH` environment variable.
+:::
+
+If you want to install globally, and `sudo` is available, you can specify an
+alternative install location by setting `BIN_DIR` and using `sudo -E`:
+
+```shell
+curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin sudo -E sh
+```
+
+If you want to set a specific version, you can set `DAGGER_VERSION`:
+
+<CodeBlock language="shell">
+{`curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${daggerVersion} BIN_DIR=$HOME/.local/bin sh`}
+</CodeBlock>
+
+To see the installed version of dagger:
+
+<CodeBlock language="shell">
+{`./bin/dagger version\n`}
+{`# Expected output: dagger v${daggerVersion} (registry.dagger.io/engine:v${daggerVersion}) linux/amd64`}
+</CodeBlock>
+
+</TabItem>
+
+<TabItem value="Windows">
+
+The Dagger CLI can be installed on Windows via a PowerShell 7.0 script.
+
+The quickest way of installing the latest stable release of `dagger` on Windows is to use [install.ps1](https://github.com/dagger/dagger/blob/main/install.ps1):
+
+```powershell
+Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression; Install-Dagger
+```
+
+To install Dagger to a custom location, specify the location using the `-InstallPath` parameter.
+
+```powershell
+Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression;
+Install-Dagger -InstallPath C:\tools\dagger
+```
+
+To install a specific version of Dagger, specify the version with the `-DaggerVersion` parameter.
+
+<CodeBlock language="powershell">
+{`Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression;\n`}
+{`Install-Dagger -DaggerVersion ${daggerVersion}`}
+</CodeBlock>
+
+For an interactive installation process, include the `-Interactive` switch.
+
+```powershell
+Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression;
+Install-Dagger -Interactive
+```
+
+For further customization, such as adding Dagger to your system's PATH, additional parameters are available. To view all available options:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression;
+Get-Command -Name Install-Dagger -Syntax
+```
+
+By default, without specifying the `-InstallPath`, Dagger will be installed in the `<your home folder>\dagger` directory.
+
+To verify that Dagger has been installed correctly, use where.exe
+
+```powershell
+where.exe dagger
+# Expected output: C:\<your home folder>\dagger\dagger.exe
+```
+
+</TabItem>
+</Tabs>
+
+### Development release
+
+:::warning
+Development releases should be considered unfinished.
+:::
+
+<Tabs groupId="platform">
+<TabItem value="macOS">
+To install the latest development release, use the following command:
+
+```shell
+curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_COMMIT=head sh
+```
+
+This will install the development release of the Dagger CLI in `./bin/dagger`.
+</TabItem>
+<TabItem value="Linux">
+To install the latest development release, use the following command:
+
+```shell
+curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_COMMIT=head sh
+```
+
+This will install the development release of the Dagger CLI in `./bin/dagger`.
+</TabItem>
+<TabItem value="Windows">
+To install the latest development release, use the following command:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 -DaggerCommit head
+```
+
+This will install the development release of the Dagger CLI in the `<your home folder>\dagger` directory.
+</TabItem>
+</Tabs>
+
+:::warning
+Running this CLI against the stable Dagger Engine will, by default, stop and remove the stable version and install a development version of the Dagger Engine instead. You may prefer to install it in an isolated environment so as to avoid conflicts.
+:::
+
+
+CLI version, so you may prefer to install it in an isolated environment so as to avoid conflicts.

@@ -1,0 +1,46 @@
+### Build and load a container image into the host Docker Engine
+
+The following Dagger Function builds a just-in-time container image and loads it into the Docker Engine running on the host.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+
+```go file=../../../cookbook/snippets/export-container/go/main.go
+```
+
+</TabItem>
+<TabItem value="python" label="Python">
+
+```python file=../../../cookbook/snippets/export-container/python/main.py
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript file=../../../cookbook/snippets/export-container/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Build and load a just-in-time container image into the Docker Engine running on the host:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'load /var/run/docker.sock myimage'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+load /var/run/docker.sock myimage
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call load --docker=/var/run/docker.sock --tag=myimage
+```
+</TabItem>
+</Tabs>
