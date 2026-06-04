@@ -53,6 +53,7 @@ type publishCheckEnv struct {
 }
 
 // Exercise the release publish path against local mock endpoints.
+// +check
 func (r *Release) PublishWithMockEndpoints(
 	ctx context.Context,
 
