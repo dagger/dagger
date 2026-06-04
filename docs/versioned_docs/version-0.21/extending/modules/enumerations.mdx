@@ -1,0 +1,157 @@
+---
+slug: /extending/enumerations
+toc_max_heading_level: 2
+title: "Enumerations"
+description: "Learn how to create enums in Dagger"
+---
+
+# Enumerations
+
+:::important
+The information on this page is only applicable to Go, Python and TypeScript SDKs. Enumerations are not currently supported in the PHP SDK.
+:::
+
+Dagger supports custom enumeration (enum) types, which can be used to restrict possible values for a string argument. Enum values are strictly validated, preventing common mistakes like accidentally passing null, true, or false.
+
+:::note
+Following the [GraphQL specification](https://spec.graphql.org/October2021/#Name), enums are represented as strings in the Dagger API GraphQL schema and follow these rules:
+- Enum names cannot start with digits, and can only be composed of alphabets, digits or `_`.
+- Enum values are case-sensitive, and by convention should be upper-cased.
+:::
+
+Here is an example of a Dagger Function that takes two arguments: an image reference and a severity filter. The latter is defined as an enum named `Severity`:
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+```go file=./snippets/enums/go/main.go
+```
+</TabItem>
+<TabItem value="python" label="Python">
+```python file=./snippets/enums/python/main.py
+```
+
+:::note
+`dagger.Enum` is a convenience base class for defining documentation, but you can also use `enum.Enum` directly.
+:::
+</TabItem>
+
+<TabItem value="typescript" label="TypeScript">
+```typescript file=./snippets/enums/typescript/index.ts
+```
+</TabItem>
+<TabItem value="java" label="Java">
+```java file=./snippets/enums/java/Severity.java
+```
+
+:::note
+Please note the `@Enum` annotation that is required for Dagger to recognize the enum.
+:::
+
+```java file=./snippets/enums/java/MyModule.java
+```
+</TabItem>
+</Tabs>
+
+Enumeration choices will be displayed when calling `--help` or `.help` on a Dagger Function:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c '.help scan'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+.help scan
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call scan --help
+```
+</TabItem>
+</Tabs>
+
+The result will be:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+USAGE
+  scan <ref> <severity>
+
+REQUIRED ARGUMENTS
+  ref string
+  severity MyModuleSeverity   (possible values: UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL)
+
+RETURNS
+  string - Primitive type.
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell
+USAGE
+  scan <ref> <severity>
+
+REQUIRED ARGUMENTS
+  ref string
+  severity MyModuleSeverity   (possible values: UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL)
+
+RETURNS
+  string - Primitive type.
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+USAGE
+  dagger call scan [arguments]
+
+ARGUMENTS
+      --ref string                                  [required]
+      --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL   [required]
+```
+</TabItem>
+</Tabs>
+
+Here's an example of calling the Dagger Function with an invalid enum argument:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'scan hello-world:latest FOO'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+scan hello-world:latest FOO
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call scan --ref=hello-world:latest --severity=FOO
+```
+</TabItem>
+</Tabs>
+
+This will result in an error that displays possible values, as follows:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+! function "scan": invalid argument "FOO" for "--severity" flag: value should be one of UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+! Usage: scan <ref> <severity>
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell
+! function "scan": invalid argument "FOO" for "--severity" flag: value should be one of UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+! Usage: scan <ref> <severity>
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+Error: invalid argument "FOO" for "--severity" flag: value should be one of UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+Run 'dagger call scan --help' for usage.
+```
+</TabItem>
+</Tabs>
