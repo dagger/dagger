@@ -42,12 +42,12 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		msg, err := c.CurrentWorkspace().Install(ctx, ref, dagger.WorkspaceInstallOpts{Name: "mywolfi"})
 		require.NoError(t, err)
 		require.Equal(t,
-			"Created workspace config in "+filepath.Join(workdir, ".dagger")+"\n"+
-				`Installed module "mywolfi" in `+filepath.Join(workdir, ".dagger", workspacecfg.ConfigFileName),
+			"Created workspace config in "+workdir+"\n"+
+				`Installed module "mywolfi" in `+filepath.Join(workdir, workspacecfg.ConfigFileName),
 			msg,
 		)
 
-		configBytes, err := os.ReadFile(filepath.Join(workdir, ".dagger", workspacecfg.ConfigFileName))
+		configBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.ConfigFileName))
 		require.NoError(t, err)
 
 		cfg, err := workspacecfg.ParseConfig(configBytes)
@@ -58,9 +58,9 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 
 		require.NoError(t, c.Close())
 
-		lockBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.LockFileName))
+		lockBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockFileName))
 		require.NoError(t, err)
-		assertModuleResolveLockEntry(t, lockBytes, ref, workspacecfg.PolicyPin)
+		assertNoModuleResolveLockEntry(t, lockBytes)
 
 		c = connect(ctx, t, dagger.WithWorkdir(workdir))
 		msg, err = c.CurrentWorkspace().Install(ctx, ref, dagger.WorkspaceInstallOpts{Name: "mywolfi"})
@@ -68,7 +68,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		require.Equal(t, `Module "mywolfi" is already installed`, msg)
 	})
 
-	t.Run("CurrentWorkspace.Install rewrites local refs relative to .dagger", func(ctx context.Context, t *testctx.T) {
+	t.Run("CurrentWorkspace.Install rewrites local refs relative to dagger.toml", func(ctx context.Context, t *testctx.T) {
 		workdir := t.TempDir()
 		depDir := filepath.Join(workdir, "dep")
 
@@ -81,24 +81,24 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		msg, err := c.CurrentWorkspace().Install(ctx, "./dep")
 		require.NoError(t, err)
 		require.Equal(t,
-			"Created workspace config in "+filepath.Join(workdir, ".dagger")+"\n"+
-				`Installed module "dep" in `+filepath.Join(workdir, ".dagger", workspacecfg.ConfigFileName),
+			"Created workspace config in "+workdir+"\n"+
+				`Installed module "dep" in `+filepath.Join(workdir, workspacecfg.ConfigFileName),
 			msg,
 		)
 
-		configBytes, err := os.ReadFile(filepath.Join(workdir, ".dagger", workspacecfg.ConfigFileName))
+		configBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.ConfigFileName))
 		require.NoError(t, err)
 
 		cfg, err := workspacecfg.ParseConfig(configBytes)
 		require.NoError(t, err)
 		require.Contains(t, cfg.Modules, "dep")
-		require.Equal(t, "../dep", cfg.Modules["dep"].Source)
+		require.Equal(t, "dep", cfg.Modules["dep"].Source)
 	})
 
 	t.Run("install initializes empty workspace", func(ctx context.Context, t *testctx.T) {
 		// With no native workspace config and no legacy dagger.json, `dagger
 		// install` owns workspace initialization: it should create
-		// .dagger/config.toml and record the dependency there.
+		// dagger.toml and record the dependency there.
 		workdir := t.TempDir()
 		depDir := filepath.Join(workdir, "dep")
 
@@ -110,15 +110,15 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "./dep")
 		require.NoError(t, err)
 		outStr := strings.TrimSpace(string(out))
-		require.Contains(t, outStr, "Created workspace config in "+filepath.Join(workdir, workspacecfg.LockDirName))
-		require.Contains(t, outStr, `Installed module "dep" in `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName))
+		require.Contains(t, outStr, "Created workspace config in "+workdir)
+		require.Contains(t, outStr, `Installed module "dep" in `+filepath.Join(workdir, workspacecfg.ConfigFileName))
 
 		cfg := readInstalledWorkspaceConfig(t, workdir)
 		require.Contains(t, cfg.Modules, "dep")
-		require.Equal(t, "../dep", cfg.Modules["dep"].Source)
+		require.Equal(t, "dep", cfg.Modules["dep"].Source)
 	})
 
-	t.Run("workspace install writes install lock entries by default", func(ctx context.Context, t *testctx.T) {
+	t.Run("workspace install does not write module resolve lock entries", func(ctx context.Context, t *testctx.T) {
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
 
@@ -126,14 +126,14 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleInstall(ctx context.Context, t *
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", ref)
 		require.NoError(t, err)
 		require.Equal(t,
-			"Created workspace config in "+filepath.Join(workdir, workspacecfg.LockDirName)+"\n"+
-				`Installed module "wolfi" in `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName),
+			"Created workspace config in "+workdir+"\n"+
+				`Installed module "wolfi" in `+filepath.Join(workdir, workspacecfg.ConfigFileName),
 			strings.TrimSpace(string(out)),
 		)
 
-		lockBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.LockFileName))
+		lockBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockFileName))
 		require.NoError(t, err)
-		assertModuleResolveLockEntry(t, lockBytes, ref, workspacecfg.PolicyPin)
+		assertNoModuleResolveLockEntry(t, lockBytes)
 	})
 
 	t.Run("absolute local installs preserve absolute source paths", func(ctx context.Context, t *testctx.T) {
@@ -186,7 +186,7 @@ entrypoint = true
 		require.Error(t, err)
 		requireErrOut(t, err, `ref "./empty" does not point to an initialized module`)
 
-		configBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName))
+		configBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.ConfigFileName))
 		require.NoError(t, err)
 		require.NotContains(t, string(configBytes), "[modules.]")
 
@@ -214,7 +214,7 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleUninstall(ctx context.Context, t
 		out, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "uninstall", "dep")
 		require.NoError(t, err)
 		require.Contains(t, strings.TrimSpace(string(out)),
-			`Uninstalled module "dep" from `+filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName))
+			`Uninstalled module "dep" from `+filepath.Join(workdir, workspacecfg.ConfigFileName))
 
 		require.NotContains(t, readInstalledWorkspaceConfig(t, workdir).Modules, "dep")
 	})
@@ -262,16 +262,16 @@ func (WorkspaceModulesSuite) TestWorkspaceModuleMutation(ctx context.Context, t 
 		copyTestdataFixture(ctx, t, depDir, "modules", "go", "minimal-dep")
 
 		writeWorkspaceConfigFile(t, workdir, `[modules.dep]
-source = "../existing"
+source = "existing"
 `)
 
 		_, err := hostDaggerExecRaw(ctx, t, workdir, "--silent", "install", "--name=dep", "./dep")
 		require.Error(t, err)
-		requireErrOut(t, err, `module "dep" already exists in workspace config with source "../existing" (new source "../dep")`)
+		requireErrOut(t, err, `module "dep" already exists in workspace config with source "existing" (new source "dep")`)
 
 		cfg := readInstalledWorkspaceConfig(t, workdir)
 		require.Contains(t, cfg.Modules, "dep")
-		require.Equal(t, "../existing", cfg.Modules["dep"].Source)
+		require.Equal(t, "existing", cfg.Modules["dep"].Source)
 	})
 }
 
@@ -313,7 +313,7 @@ func (WorkspaceModulesSuite) TestWorkspaceManagedModuleBehavior(ctx context.Cont
 	})
 
 	t.Run("native workspace ignores cwd dagger.json", func(ctx context.Context, t *testctx.T) {
-		// Once .dagger/config.toml exists, it is authoritative for workspace
+		// Once dagger.toml exists, it is authoritative for workspace
 		// module commands. A dagger.json in the current working directory must
 		// not steal resolution away from the configured workspace module.
 		ctr := workspaceFixture(t, c, "workspace-managed")
@@ -330,7 +330,7 @@ func (WorkspaceModulesSuite) TestWorkspaceManagedModuleBehavior(ctx context.Cont
 func readInstalledWorkspaceConfig(t *testctx.T, workdir string) *workspacecfg.Config {
 	t.Helper()
 
-	configBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName))
+	configBytes, err := os.ReadFile(filepath.Join(workdir, workspacecfg.ConfigFileName))
 	require.NoError(t, err)
 
 	cfg, err := workspacecfg.ParseConfig(configBytes)

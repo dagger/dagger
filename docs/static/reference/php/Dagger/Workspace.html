@@ -188,7 +188,7 @@
                 <div class="col-md-8">
                     <a href="#method_configRead">configRead</a>(string|null $key = &#039;&#039;)
         
-                                            <p><p>Read a configuration value from config.toml.</p></p>                </div>
+                                            <p><p>Read a configuration value from dagger.toml.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -198,7 +198,7 @@
                 <div class="col-md-8">
                     <a href="#method_configWrite">configWrite</a>(string $key, string $value, bool|null $here = false)
         
-                                            <p><p>Write a configuration value to config.toml.</p></p>                </div>
+                                            <p><p>Write a configuration value to dagger.toml.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -308,7 +308,7 @@
                 <div class="col-md-8">
                     <a href="#method_init">init</a>(bool|null $here = false)
         
-                                            <p><p>Initialize workspace config, creating .dagger/config.toml.</p></p>                </div>
+                                            <p><p>Initialize workspace config, creating dagger.toml.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -318,7 +318,7 @@
                 <div class="col-md-8">
                     <a href="#method_install">install</a>(string $ref, string|null $name = &#039;&#039;, bool|null $here = false)
         
-                                            <p><p>Install a module into the workspace, writing config.toml to the host.</p></p>                </div>
+                                            <p><p>Install a module into the workspace, writing dagger.toml to the host.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -338,7 +338,7 @@
                 <div class="col-md-8">
                     <a href="#method_moduleInit">moduleInit</a>(string $name, string|null $sdk = &#039;&#039;, string|null $source = &#039;&#039;, array|null $include = [], bool|null $selfCalls = false, bool|null $here = false)
         
-                                            <p><p>Create a new module owned by the workspace and auto-install it in config.toml.</p></p>                </div>
+                                            <p><p>Create a new module owned by the workspace and auto-install it in dagger.toml.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -349,16 +349,6 @@
                     <a href="#method_moduleList">moduleList</a>(string|null $module = &#039;&#039;)
         
                                             <p><p>List modules defined in the workspace configuration.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_refreshModules">refreshModules</a>(array|null $moduleNames = [])
-        
-                                            <p><p>Refresh lock entries for selected workspace-config modules.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -378,7 +368,7 @@
                 <div class="col-md-8">
                     <a href="#method_uninstall">uninstall</a>(string $name, bool|null $here = false)
         
-                                            <p><p>Uninstall a module from the workspace, writing config.toml to the host.</p></p>                </div>
+                                            <p><p>Uninstall a module from the workspace, writing dagger.toml to the host.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -646,7 +636,7 @@
             
 
         <div class="method-description">
-                            <p><p>Read a configuration value from config.toml.</p></p>                <p><p>If key is empty, returns the full config.</p>
+                            <p><p>Read a configuration value from dagger.toml.</p></p>                <p><p>If key is empty, returns the full config.</p>
 <p>If key points to a scalar, returns the value.</p>
 <p>If key points to a table, returns flattened dotted-key output.</p></p>        
         </div>
@@ -690,7 +680,7 @@
             
 
         <div class="method-description">
-                            <p><p>Write a configuration value to config.toml.</p></p>                        
+                            <p><p>Write a configuration value to dagger.toml.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1154,7 +1144,7 @@
             
 
         <div class="method-description">
-                            <p><p>Initialize workspace config, creating .dagger/config.toml.</p></p>                        
+                            <p><p>Initialize workspace config, creating dagger.toml.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1196,7 +1186,7 @@
             
 
         <div class="method-description">
-                            <p><p>Install a module into the workspace, writing config.toml to the host.</p></p>                        
+                            <p><p>Install a module into the workspace, writing dagger.toml to the host.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1290,7 +1280,7 @@
             
 
         <div class="method-description">
-                            <p><p>Create a new module owned by the workspace and auto-install it in config.toml.</p></p>                        
+                            <p><p>Create a new module owned by the workspace and auto-install it in dagger.toml.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1388,50 +1378,8 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_refreshModules">
-        <div class="location">at line 313</div>
-        <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
-    <strong>refreshModules</strong>(array|null $moduleNames = [])
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Refresh lock entries for selected workspace-config modules.</p></p>                <p><p>This layers selective workspace refresh on top of the lockfile base.</p></p>        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>array|null</td>
-                <td>$moduleNames</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
                     <h3 id="method_services">
-        <div class="location">at line 325</div>
+        <div class="location">at line 311</div>
         <code>                    <a href="../Dagger/UpGroup.html"><abbr title="Dagger\UpGroup">UpGroup</abbr></a>
     <strong>services</strong>(array|null $include = null)
         </code>
@@ -1473,7 +1421,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_uninstall">
-        <div class="location">at line 337</div>
+        <div class="location">at line 323</div>
         <code>                    string
     <strong>uninstall</strong>(string $name, bool|null $here = false)
         </code>
@@ -1483,7 +1431,7 @@
             
 
         <div class="method-description">
-                            <p><p>Uninstall a module from the workspace, writing config.toml to the host.</p></p>                        
+                            <p><p>Uninstall a module from the workspace, writing dagger.toml to the host.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1520,7 +1468,7 @@
             </div>
                     <div class="method-item">
                     <h3 id="method_update">
-        <div class="location">at line 352</div>
+        <div class="location">at line 338</div>
         <code>                    <a href="../Dagger/Changeset.html"><abbr title="Dagger\Changeset">Changeset</abbr></a>
     <strong>update</strong>()
         </code>

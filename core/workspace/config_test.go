@@ -114,6 +114,76 @@ greeting = "hola"
 `, string(out))
 }
 
+func TestSerializeConfigQuotesDynamicPathSegments(t *testing.T) {
+	t.Parallel()
+
+	out := SerializeConfig(&Config{
+		Modules: map[string]ModuleEntry{
+			"my.module": {
+				Source: "modules/my.module",
+				Settings: map[string]any{
+					"some.key": "value",
+				},
+			},
+		},
+		Env: map[string]EnvOverlay{
+			"review env": {
+				Modules: map[string]EnvModuleOverlay{
+					"my.module": {
+						Settings: map[string]any{
+							"some.key": "override",
+						},
+					},
+				},
+			},
+		},
+		Ports: map[string]PortMapping{
+			"127.0.0.1": {
+				BackendService: "my.module:web",
+				BackendPort:    80,
+			},
+		},
+	})
+
+	require.Contains(t, string(out), `[modules."my.module"]`)
+	require.Contains(t, string(out), `[modules."my.module".settings]`)
+	require.Contains(t, string(out), `"some.key" = "value"`)
+	require.Contains(t, string(out), `[env."review env".modules."my.module".settings]`)
+	require.Contains(t, string(out), `"some.key" = "override"`)
+	require.Contains(t, string(out), `[ports."127.0.0.1"]`)
+
+	cfg, err := ParseConfig(out)
+	require.NoError(t, err)
+	require.Equal(t, "modules/my.module", cfg.Modules["my.module"].Source)
+	require.Equal(t, "value", cfg.Modules["my.module"].Settings["some.key"])
+	require.Equal(t, "override", cfg.Env["review env"].Modules["my.module"].Settings["some.key"])
+	require.Equal(t, PortMapping{BackendService: "my.module:web", BackendPort: 80}, cfg.Ports["127.0.0.1"])
+}
+
+func TestConfigPathSegmentFormatting(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, "greeter", FormatConfigPathSegment("greeter"))
+	require.Equal(t, `"my.module"`, FormatConfigPathSegment("my.module"))
+	require.Equal(t, `"review env"`, FormatConfigPathSegment("review env"))
+	require.Equal(t, `"café"`, FormatConfigPathSegment("café"))
+	require.Equal(t, `"quote\"slash\\line\n"`, FormatConfigPathSegment("quote\"slash\\line\n"))
+
+	path := JoinConfigPath("env", "review env", "modules", "my.module", "settings", "some.key")
+	require.Equal(t, `env."review env".modules."my.module".settings."some.key"`, path)
+
+	parts, err := SplitConfigPath(`env."review env".modules."my.module".settings."some.key"`)
+	require.NoError(t, err)
+	require.Equal(t, []string{"env", "review env", "modules", "my.module", "settings", "some.key"}, parts)
+
+	parts, err = SplitConfigPath(`modules."quote\"slash\\line\n".source`)
+	require.NoError(t, err)
+	require.Equal(t, []string{"modules", "quote\"slash\\line\n", "source"}, parts)
+
+	_, err = SplitConfigPath(`modules.my module.source`)
+	require.EqualError(t, err, `invalid key "modules.my module.source": path segment "my module" must be quoted`)
+}
+
 func TestReadConfigValue(t *testing.T) {
 	t.Parallel()
 
@@ -189,6 +259,25 @@ enabled = false
 		require.NoError(t, err)
 		require.Equal(t, "false", value)
 	})
+
+	t.Run("quoted path segments", func(t *testing.T) {
+		t.Parallel()
+
+		data := []byte(`[modules."my.module"]
+source = "modules/my.module"
+
+[modules."my.module".settings]
+"some.key" = "value"
+`)
+
+		value, err := ReadConfigValue(data, `modules."my.module".source`)
+		require.NoError(t, err)
+		require.Equal(t, "modules/my.module", value)
+
+		value, err = ReadConfigValue(data, `modules."my.module".settings."some.key"`)
+		require.NoError(t, err)
+		require.Equal(t, "value", value)
+	})
 }
 
 func TestWriteConfigValue(t *testing.T) {
@@ -250,6 +339,30 @@ func TestWriteConfigValue(t *testing.T) {
 		require.Equal(t, []string{"generate-other-files", "other-generators:*"}, cfg.Modules["greeter"].Generate.Skip)
 		require.Equal(t, []string{"flaky-check"}, cfg.Modules["greeter"].Check.Skip)
 		require.Equal(t, []string{"redis", "infra:database"}, cfg.Modules["greeter"].Up.Skip)
+	})
+
+	t.Run("writes quoted path segments", func(t *testing.T) {
+		t.Parallel()
+
+		data, err := WriteConfigValue(nil, `modules."my.module".source`, "modules/my.module")
+		require.NoError(t, err)
+		data, err = WriteConfigValue(data, `modules."my.module".settings."some.key"`, "value")
+		require.NoError(t, err)
+		data, err = WriteConfigValue(data, `env."review env".modules."my.module".settings."some.key"`, "override")
+		require.NoError(t, err)
+
+		out := string(data)
+		require.Contains(t, out, `[modules."my.module"]`)
+		require.Contains(t, out, `[modules."my.module".settings]`)
+		require.Contains(t, out, `"some.key" = "value"`)
+		require.Contains(t, out, `[env."review env".modules."my.module".settings]`)
+		require.Contains(t, out, `"some.key" = "override"`)
+
+		cfg, err := ParseConfig(data)
+		require.NoError(t, err)
+		require.Equal(t, "modules/my.module", cfg.Modules["my.module"].Source)
+		require.Equal(t, "value", cfg.Modules["my.module"].Settings["some.key"])
+		require.Equal(t, "override", cfg.Env["review env"].Modules["my.module"].Settings["some.key"])
 	})
 
 	t.Run("rejects invalid keys", func(t *testing.T) {
@@ -401,6 +514,35 @@ source = "modules/greeter"
 		require.Contains(t, out, "# greeting = \"hello\"")
 		require.NotContains(t, out, "# greeting = \"hello\" # string")
 		require.NotContains(t, out, "# settings.greeting = \"hello\"")
+	})
+
+	t.Run("adds setting hints for quoted module and setting names", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := &Config{
+			Modules: map[string]ModuleEntry{
+				"my.module": {
+					Source: "modules/my.module",
+					Settings: map[string]any{
+						"enabled.flag": true,
+					},
+				},
+			},
+		}
+
+		updated, err := UpdateConfigBytesWithHints(nil, cfg, map[string][]ConstructorArgHint{
+			"my.module": {{
+				Name:         "some.key",
+				TypeLabel:    "string",
+				ExampleValue: `"hello"`,
+			}},
+		})
+		require.NoError(t, err)
+
+		out := string(updated)
+		require.Contains(t, out, `[modules."my.module".settings]`)
+		require.Contains(t, out, `"enabled.flag" = true`)
+		require.Contains(t, out, `# "some.key" = "hello"`)
 	})
 
 	t.Run("preserves comments across env removal", func(t *testing.T) {

@@ -20,7 +20,7 @@ type Workspace struct {
 
 	// compatWorkspace stores the originating compat-workspace projection when
 	// this workspace was loaded from a legacy dagger.json instead of an explicit
-	// .dagger/config.toml. Internal only.
+	// dagger.toml. Internal only.
 	compatWorkspace *workspacepkg.CompatWorkspace
 
 	Address    string `field:"true" doc:"Canonical Dagger address of the workspace location."`
@@ -169,6 +169,7 @@ func (*Workspace) DecodePersistedObject(
 	if lockFile == "" && configFile != "" {
 		lockFile = filepath.Join(filepath.Dir(configFile), workspacepkg.LockFileName)
 	}
+	lockFile = workspacepkg.CanonicalLockFilePath(lockFile)
 
 	return &Workspace{
 		rootfs:          rootfs,

@@ -6,7 +6,7 @@ description: "Develop Dagger modules with Dang, Dagger's native DSL — no codeg
 
 # Dang SDK
 
-Dang is Dagger's native DSL. It maps directly to the Dagger API: **what you write is what runs.** There is no codegen, no generated client files to commit, no build step, and no language-runtime overhead. A Dang module is, in the common case, a single `main.dang` file plus a `dagger.json`.
+Dang is Dagger's native DSL. It maps directly to the Dagger API: **what you write is what runs.** There is no codegen, no generated client files to commit, no build step, and no language-runtime overhead. A Dang module is, in the common case, a single `main.dang` file plus a `dagger-module.toml`.
 
 Use Dang when your module is primarily *orchestrating* the Dagger API — containers, files, directories, services, secrets, and other modules. If you need to reach for external libraries (a Go parser, a Python ML library, a Node.js bundler API), use the [Go](/extending/sdks/go), [Python](/extending/sdks/python), or [TypeScript](/extending/sdks/typescript) SDK instead, which give you a full host language alongside the Dagger client.
 
@@ -35,7 +35,7 @@ The functions you will use most often:
 | `mod generate` | (Re)generate module metadata. For Dang this is effectively a no-op — there are no client bindings to regenerate. |
 | `mod engine` | Read or set the required Dagger engine version. |
 | `generate-all` | Generate every discovered Dang SDK module in the workspace. |
-| `modules` | List every Dagger module in the workspace whose `sdk.source` is `"dang"`. |
+| `modules` | List every Dagger module in the workspace whose `runtime.source` is `"dang"`. |
 | `templates` | List the init templates this version of `dang-sdk` ships. |
 
 ## Create a module
@@ -54,7 +54,7 @@ Preview the changeset first by listing the paths it would add:
 
 ```shell
 dagger -m github.com/dagger/dang-sdk call init --name my-ci added-paths
-# .dagger/modules/my-ci/dagger.json
+# .dagger/modules/my-ci/dagger-module.toml
 # .dagger/modules/my-ci/main.dang
 # .dagger/modules/
 # .dagger/modules/my-ci/
@@ -79,26 +79,24 @@ dagger -m github.com/dagger/dang-sdk call init --name my-ci
 .dagger/
   modules/
     my-ci/
-      dagger.json
+      dagger-module.toml
       main.dang
 ```
 
-The generated `dagger.json`:
+The generated `dagger-module.toml`:
 
-```json title=".dagger/modules/my-ci/dagger.json"
-{
-  "name": "my-ci",
-  "engineVersion": "latest",
-  "sdk": {
-    "source": "dang"
-  },
-  "codegen": {
-    "automaticGitignore": false
-  }
-}
+```toml title=".dagger/modules/my-ci/dagger-module.toml"
+name = "my-ci"
+engineVersion = "latest"
+
+[runtime]
+source = "dang"
+
+[codegen]
+automaticGitignore = false
 ```
 
-`sdk.source` set to `"dang"` is what tells Dagger to run this module with the Dang runtime. `engineVersion` declares the engine version the module requires (see [Engine version](#engine-version)).
+`runtime.source` set to `"dang"` is what tells Dagger to run this module with the Dang runtime. `engineVersion` declares the engine version the module requires (see [Engine version](#engine-version)).
 
 The generated `main.dang` entry point:
 
@@ -378,7 +376,7 @@ type MyCi {
 # CLI override
 dagger call --node-version=18 build
 
-# Or in .dagger/config.toml
+# Or in dagger.toml
 # [modules.my-ci.settings]
 # nodeVersion = "18"
 # registry = "docker.io"
@@ -508,7 +506,7 @@ dagger -m github.com/dagger/dang-sdk call mod deps add \
   --name hello
 ```
 
-`mod deps add` returns a changeset that updates `dagger.json`. Arguments are `--source` (required) and an optional `--name`.
+`mod deps add` returns a changeset that updates `dagger-module.toml`. Arguments are `--source` (required) and an optional `--name`.
 
 List, update, and remove:
 
@@ -523,18 +521,22 @@ dagger -m github.com/dagger/dang-sdk call mod deps update --name hello
 dagger -m github.com/dagger/dang-sdk call mod deps remove --name hello
 ```
 
-The result is reflected in `dagger.json`:
+The result is reflected in `dagger-module.toml`:
 
-```json title="dagger.json"
-{
-  "name": "my-ci",
-  "engineVersion": "latest",
-  "sdk": { "source": "dang" },
-  "dependencies": [
-    { "name": "hello", "source": "github.com/shykes/daggerverse/hello@v0.3.0" },
-    { "name": "local", "source": "./path/to/module" }
-  ]
-}
+```toml title="dagger-module.toml"
+name = "my-ci"
+engineVersion = "latest"
+
+[runtime]
+source = "dang"
+
+[[dependencies]]
+name = "hello"
+source = "github.com/shykes/daggerverse/hello@v0.3.0"
+
+[[dependencies]]
+name = "local"
+source = "./path/to/module"
 ```
 
 A dependency reference follows `[proto://]host/repo[/subpath][@version]`:
@@ -585,7 +587,7 @@ dagger -m github.com/dagger/dang-sdk call mod generate
 # Regenerate every Dang module discovered in the workspace
 dagger -m github.com/dagger/dang-sdk call generate-all
 
-# List every module in the workspace whose sdk.source is "dang"
+# List every module in the workspace whose runtime.source is "dang"
 dagger -m github.com/dagger/dang-sdk call modules
 ```
 
@@ -599,7 +601,7 @@ Because there is nothing to commit from generation, the `--ignore-generated` fla
 
 ## Engine version
 
-Each module declares the Dagger engine version it requires via `engineVersion` in `dagger.json`. Manage it with `mod engine`:
+Each module declares the Dagger engine version it requires via `engineVersion` in `dagger-module.toml`. Manage it with `mod engine`:
 
 ```shell
 # Read the required version (without the leading "v")
@@ -836,11 +838,11 @@ jobs:
 
 ## Packaging and release
 
-A Dang module is just source — `main.dang` and `dagger.json` (and any extra `.dang` files). There is nothing to build or generate before publishing.
+A Dang module is just source — `main.dang` and `dagger-module.toml` (and any extra `.dang` files). There is nothing to build or generate before publishing.
 
 To release:
 
-1. Commit `dagger.json`, `main.dang`, and any other source files.
+1. Commit `dagger-module.toml`, `main.dang`, and any other source files.
 2. Pin a concrete engine version with `mod engine require` for reproducibility.
 3. Tag the repository (`git tag v0.1.0 && git push --tags`).
 

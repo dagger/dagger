@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/dagql"
 	telemetry "github.com/dagger/otel-go"
@@ -25,12 +26,23 @@ type workspaceMigrateArgs struct {
 type workspaceMigrationProgressContextKey struct{}
 
 type workspaceMigrationPlanBundle struct {
-	WorkspacePlans []*workspace.MigrationPlan
-	ParentPlans    []workspaceMigrationParentPlan
+	WorkspacePlans          []*workspace.MigrationPlan
+	ParentPlans             []workspaceMigrationParentPlan
+	ModuleConfigConversions []workspaceMigrationModuleConfigConversion
 }
 
+type workspaceMigrationLegacyLockMove struct {
+	SourcePath string
+	TargetPath string
+	Data       []byte
+}
+
+const workspaceMigrationLockModulesResolveOperation = "modules.resolve"
+
 func (plans workspaceMigrationPlanBundle) empty() bool {
-	return len(plans.WorkspacePlans) == 0 && len(plans.ParentPlans) == 0
+	return len(plans.WorkspacePlans) == 0 &&
+		len(plans.ParentPlans) == 0 &&
+		len(plans.ModuleConfigConversions) == 0
 }
 
 func (s *workspaceSchema) migrate(
@@ -80,7 +92,6 @@ func (s *workspaceSchema) migrate(
 		return nil, err
 	}
 	plans := make([]*workspace.MigrationPlan, 0, len(compatWorkspaces))
-	locks := make([]*workspace.Lock, 0, len(compatWorkspaces))
 	for _, compatWorkspace := range compatWorkspaces {
 		if !compatWorkspace.MustMigrateToWorkspaceConfig() {
 			continue
@@ -91,23 +102,20 @@ func (s *workspaceSchema) migrate(
 			return nil, err
 		}
 		plans = append(plans, plan)
-
-		lock, err := s.workspaceMigrationLock(workspaceCtx, query, plan)
-		if err != nil {
-			return nil, err
-		}
-		if lock != nil {
-			locks = append(locks, lock)
-		}
 	}
 
 	parentPlans, err := workspaceMigrationParentPlansForPlainModules(ws, compatWorkspaces, plans)
 	if err != nil {
 		return nil, err
 	}
+	moduleConfigConversions, err := workspaceMigrationModuleConfigConversions(compatWorkspaces)
+	if err != nil {
+		return nil, err
+	}
 	planBundle := workspaceMigrationPlanBundle{
-		WorkspacePlans: plans,
-		ParentPlans:    parentPlans,
+		WorkspacePlans:          plans,
+		ParentPlans:             parentPlans,
+		ModuleConfigConversions: moduleConfigConversions,
 	}
 	warnings := workspaceMigrationPlanBundleWarnings(planBundle)
 
@@ -121,11 +129,6 @@ func (s *workspaceSchema) migrate(
 	changes, err := s.workspaceMigrationChangeset(ctx, ws, planBundle)
 	if err != nil {
 		return nil, err
-	}
-	for _, lock := range locks {
-		if err := s.stageWorkspaceMigrationLock(workspaceCtx, query, lock); err != nil {
-			return nil, err
-		}
 	}
 
 	return &core.WorkspaceMigration{
@@ -156,15 +159,16 @@ func (s *workspaceSchema) prepareWorkspaceMigrationPlan(
 	if err != nil {
 		return nil, fmt.Errorf("parse planned workspace config: %w", err)
 	}
+	plannedConfigDir := filepath.Dir(workspace.ConfigFileName)
 	var updatedDir dagql.ObjectResult[*core.Directory]
-	if workspaceConfigUsesMigratedModuleSources(cfg) {
+	if workspaceConfigUsesMigratedModuleSources(cfg, plannedConfigDir) {
 		if _, preparedDir, err := s.workspaceMigrationPreparedDirectories(ctx, ws, plan); err != nil {
 			return nil, fmt.Errorf("prepare migrated module config: %w", err)
 		} else {
 			updatedDir = preparedDir
 		}
 	}
-	hints, hintWarnings := s.collectWorkspaceSettingsHintsFromConfig(ctx, ws, cfg, plan.ProjectRoot, updatedDir)
+	hints, hintWarnings := s.collectWorkspaceSettingsHintsFromConfig(ctx, ws, cfg, plannedConfigDir, plan.ProjectRoot, updatedDir)
 	if len(hintWarnings) > 0 {
 		if !args.Force {
 			return nil, fmt.Errorf("could not load modules to generate settings hints: %s; use --force to migrate anyway", strings.Join(hintWarnings, "; "))
@@ -195,24 +199,15 @@ func (s *workspaceSchema) workspaceMigrationCompatWorkspaces(
 			".git/**",
 			"**/.git",
 			"**/.git/**",
-			workspace.LockDirName,
-			workspace.LockDirName + "/**",
-			"**/" + workspace.LockDirName,
-			"**/" + workspace.LockDirName + "/**",
 		},
 	}, false)
 	if err != nil {
 		return nil, err
 	}
-	paths, err := rootDir.Self().Glob(ctx, rootDir, workspace.ModuleConfigFileName)
+	paths, err := workspaceMigrationLegacyConfigPaths(ctx, rootDir, ws)
 	if err != nil {
-		return nil, fmt.Errorf("find root legacy module config: %w", err)
+		return nil, err
 	}
-	nestedPaths, err := rootDir.Self().Glob(ctx, rootDir, "**/"+workspace.ModuleConfigFileName)
-	if err != nil {
-		return nil, fmt.Errorf("find nested legacy module configs: %w", err)
-	}
-	paths = workspaceMigrationUniqueSortedPaths(append(paths, nestedPaths...))
 
 	workspaceCtx, err := s.withWorkspaceClientContext(ctx, ws)
 	if err != nil {
@@ -249,7 +244,7 @@ func (s *workspaceSchema) workspaceMigrationCompatWorkspaces(
 		if err != nil {
 			return nil, fmt.Errorf("reading legacy module config %s: %w", relPath, err)
 		}
-		compatWorkspace, err := workspace.ParseRuntimeCompatWorkspaceAt(data, configPath)
+		compatWorkspace, err := workspaceMigrationCompatWorkspaceForLegacyConfig(data, configPath)
 		if err != nil {
 			return nil, fmt.Errorf("parsing legacy module config %s: %w", relPath, err)
 		}
@@ -259,6 +254,100 @@ func (s *workspaceSchema) workspaceMigrationCompatWorkspaces(
 		compatWorkspaces = append(compatWorkspaces, compatWorkspace)
 	}
 	return compatWorkspaces, nil
+}
+
+func workspaceMigrationLegacyConfigPaths(
+	ctx context.Context,
+	rootDir dagql.ObjectResult[*core.Directory],
+	ws *core.Workspace,
+) ([]string, error) {
+	// Migration is intentionally scoped to the selected legacy project plus
+	// its conventional project-local module directory. A repo may contain
+	// unrelated dagger.json files in testdata, examples, or nested projects;
+	// those should only migrate when the user runs migration from that project.
+	selectedConfig, selected, err := workspaceMigrationSelectedLegacyConfigPath(ctx, rootDir, ws)
+	if err != nil {
+		return nil, err
+	}
+
+	projectRoot := workspaceMigrationCleanRelPath(ws.Cwd)
+	if selected {
+		projectRoot = path.Dir(selectedConfig)
+		if projectRoot == "." {
+			projectRoot = ""
+		}
+	}
+
+	paths := make([]string, 0, 1)
+	if selected {
+		paths = append(paths, selectedConfig)
+	}
+
+	moduleConfigPattern := path.Join(projectRoot, workspace.LockDirName, "modules", "**", workspace.LegacyModuleConfigFileName)
+	modulePaths, err := rootDir.Self().Glob(ctx, rootDir, moduleConfigPattern)
+	if err != nil {
+		return nil, fmt.Errorf("find legacy module configs under %s: %w", path.Join(projectRoot, workspace.LockDirName, "modules"), err)
+	}
+	paths = append(paths, modulePaths...)
+
+	return workspaceMigrationUniqueSortedPaths(paths), nil
+}
+
+func workspaceMigrationSelectedLegacyConfigPath(
+	ctx context.Context,
+	rootDir dagql.ObjectResult[*core.Directory],
+	ws *core.Workspace,
+) (string, bool, error) {
+	if ws == nil {
+		return "", false, fmt.Errorf("workspace is required")
+	}
+
+	dir := workspaceMigrationCleanRelPath(ws.Cwd)
+	for {
+		candidate := path.Join(dir, workspace.LegacyModuleConfigFileName)
+		exists, err := workspaceMigrationPathExists(ctx, rootDir, candidate)
+		if err != nil {
+			return "", false, err
+		}
+		if exists {
+			return candidate, true, nil
+		}
+		if dir == "." {
+			return "", false, nil
+		}
+		next := path.Dir(dir)
+		if next == dir {
+			return "", false, nil
+		}
+		dir = next
+	}
+}
+
+func workspaceMigrationCleanRelPath(p string) string {
+	if p == "" || p == "." {
+		return "."
+	}
+	return path.Clean(filepath.ToSlash(p))
+}
+
+func workspaceMigrationCompatWorkspaceForLegacyConfig(data []byte, configPath string) (*workspace.CompatWorkspace, error) {
+	compatWorkspace, err := workspace.ParseMigrationCompatWorkspaceAt(data, configPath)
+	if err != nil || compatWorkspace != nil {
+		return compatWorkspace, err
+	}
+
+	modCfg, err := modules.ParseModuleConfigForFilename(data, workspace.LegacyModuleConfigFileName)
+	if err != nil {
+		return nil, err
+	}
+	if modCfg.Name == "" {
+		return nil, nil
+	}
+	return &workspace.CompatWorkspace{
+		Config:      &modCfg.ModuleConfig,
+		ConfigPath:  configPath,
+		ProjectRoot: filepath.Dir(configPath),
+	}, nil
 }
 
 func workspaceMigrationUniqueSortedPaths(paths []string) []string {
@@ -276,7 +365,17 @@ func workspaceMigrationUniqueSortedPaths(paths []string) []string {
 }
 
 func workspaceMigrationHiddenPath(relPath string) bool {
-	for _, part := range strings.Split(filepath.ToSlash(relPath), "/") {
+	parts := strings.Split(filepath.ToSlash(relPath), "/")
+	if len(parts) >= 3 && parts[0] == workspace.LockDirName && parts[1] == "modules" {
+		for _, part := range parts[2:] {
+			if part != "" && strings.HasPrefix(part, ".") {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, part := range parts {
 		if part != "" && strings.HasPrefix(part, ".") {
 			return true
 		}
@@ -294,7 +393,7 @@ func workspaceMigrationHasExplicitConfigAncestor(
 	dir = filepath.Clean(dir)
 	for {
 		if dir == root || strings.HasPrefix(dir, root+string(filepath.Separator)) {
-			_, exists, err := core.StatFSExists(ctx, statFS, filepath.Join(dir, workspace.LockDirName, workspace.ConfigFileName))
+			_, exists, err := core.StatFSExists(ctx, statFS, filepath.Join(dir, workspace.ConfigFileName))
 			if err != nil {
 				return false, fmt.Errorf("check workspace config at %s: %w", dir, err)
 			}
@@ -313,80 +412,6 @@ func workspaceMigrationHasExplicitConfigAncestor(
 	}
 }
 
-func (s *workspaceSchema) workspaceMigrationLock(
-	ctx context.Context,
-	query *core.Query,
-	plan *workspace.MigrationPlan,
-) (_ *workspace.Lock, rerr error) {
-	ctx, span := core.Tracer(ctx).Start(ctx, "refresh workspace lock", telemetry.Internal())
-	defer telemetry.EndWithCause(span, &rerr)
-
-	var lock *workspace.Lock
-	if len(plan.LockData) > 0 {
-		parsed, err := workspace.ParseLock(plan.LockData)
-		if err != nil {
-			return nil, fmt.Errorf("parse planned workspace lock: %w", err)
-		}
-		lock = parsed
-	} else {
-		lock = workspace.NewLock()
-	}
-
-	refreshMods := make([]workspaceRefreshModule, 0, len(plan.LookupSources))
-	for _, source := range plan.LookupSources {
-		if _, ok, err := lock.GetModuleResolve(source); err != nil {
-			return nil, err
-		} else if ok {
-			continue
-		}
-		refreshMods = append(refreshMods, workspaceRefreshModule{
-			Name:   source,
-			Source: source,
-		})
-	}
-	if len(refreshMods) > 0 {
-		if err := refreshWorkspaceModuleLookups(ctx, query, lock, workspace.LockDirName, refreshMods); err != nil {
-			return nil, fmt.Errorf("refresh migrated module lookups: %w", err)
-		}
-	}
-
-	entries, err := lock.Entries()
-	if err != nil {
-		return nil, err
-	}
-	if len(entries) == 0 {
-		return nil, nil
-	}
-	return lock, nil
-}
-
-func (s *workspaceSchema) stageWorkspaceMigrationLock(
-	ctx context.Context,
-	query *core.Query,
-	lock *workspace.Lock,
-) (rerr error) {
-	if lock == nil {
-		return nil
-	}
-
-	ctx, span := core.Tracer(ctx).Start(ctx, "stage workspace lock", telemetry.Internal())
-	defer telemetry.EndWithCause(span, &rerr)
-
-	entries, err := lock.Entries()
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		// FIXME(workspace-migrate): Entries are staged through the current
-		// workspace lock binding. Add coverage for multi-config migrations with
-		// remote refs before changing this to per-plan lock staging.
-		if err := query.SetCurrentWorkspaceLookup(ctx, entry.Namespace, entry.Operation, entry.Inputs, entry.Result); err != nil {
-			return fmt.Errorf("stage workspace lock entry for %s: %w", entry.Operation, err)
-		}
-	}
-	return nil
-}
-
 func (s *workspaceSchema) workspaceMigrationChangeset(
 	ctx context.Context,
 	ws *core.Workspace,
@@ -401,83 +426,37 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 	}
 	updatedDir := baseDir
 
+	lockMoves, err := workspaceMigrationLegacyLockMoves(ctx, ws, baseDir, plans)
+	if err != nil {
+		return nil, err
+	}
+
 	targetPaths, err := workspaceMigrationRootTargetPaths(ws, plans)
 	if err != nil {
 		return nil, err
+	}
+	for _, move := range lockMoves {
+		targetPaths = append(targetPaths, move.TargetPath)
 	}
 	if err := validateWorkspaceMigrationTargetPaths(ctx, baseDir, targetPaths); err != nil {
 		return nil, err
 	}
 
-	for _, plan := range plans.WorkspacePlans {
-		if len(plan.MigratedModuleConfigData) > 0 {
-			migratedModuleConfigPath, err := workspaceMigrationRootPath(ws, plan, plan.MigratedModuleConfigPath)
-			if err != nil {
-				return nil, err
-			}
-			updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, migratedModuleConfigPath, plan.MigratedModuleConfigData, "move module: "+workspace.ModuleConfigFileName+" -> "+workspaceMigrationDisplayPath(migratedModuleConfigPath))
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		workspaceConfigPath, err := workspaceMigrationRootPath(ws, plan, filepath.Join(workspace.LockDirName, workspace.ConfigFileName))
-		if err != nil {
-			return nil, err
-		}
-		updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, workspaceConfigPath, plan.WorkspaceConfigData, "workspace configuration: "+workspaceMigrationDisplayPath(workspaceConfigPath))
-		if err != nil {
-			return nil, err
-		}
-
-		if len(plan.MigrationReportData) > 0 {
-			migrationReportPath, err := workspaceMigrationRootPath(ws, plan, plan.MigrationReportPath)
-			if err != nil {
-				return nil, err
-			}
-			updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, migrationReportPath, plan.MigrationReportData, "migration report: "+workspaceMigrationDisplayPath(migrationReportPath))
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		legacyConfigPath, err := workspaceMigrationRootPath(ws, plan, workspace.ModuleConfigFileName)
-		if err != nil {
-			return nil, err
-		}
-		if err := func() (rerr error) {
-			removeCtx, span := core.Tracer(ctx).Start(ctx, "remove legacy config", telemetry.Internal())
-			defer telemetry.EndWithCause(span, &rerr)
-			var err error
-			updatedDir, err = workspaceMigrationSelectDirectory(removeCtx, updatedDir, "withoutFile", []dagql.NamedInput{
-				{Name: "path", Value: dagql.NewString(path.Clean(filepath.ToSlash(legacyConfigPath)))},
-			})
-			return err
-		}(); err != nil {
-			return nil, fmt.Errorf("migration remove legacy config: %w", err)
-		}
+	updatedDir, err = applyWorkspaceMigrationLegacyLockMoves(ctx, updatedDir, lockMoves)
+	if err != nil {
+		return nil, err
 	}
-
-	for _, plan := range plans.ParentPlans {
-		workspaceConfigPath, err := workspaceMigrationRootPathForProject(ws, plan.ProjectRoot, filepath.Join(workspace.LockDirName, workspace.ConfigFileName))
-		if err != nil {
-			return nil, err
-		}
-		updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, workspaceConfigPath, plan.WorkspaceConfigData, "parent workspace configuration: "+workspaceMigrationDisplayPath(workspaceConfigPath))
-		if err != nil {
-			return nil, err
-		}
-
-		if len(plan.MigrationReportData) > 0 {
-			migrationReportPath, err := workspaceMigrationRootPathForProject(ws, plan.ProjectRoot, plan.MigrationReportPath)
-			if err != nil {
-				return nil, err
-			}
-			updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, migrationReportPath, plan.MigrationReportData, "migration report: "+workspaceMigrationDisplayPath(migrationReportPath))
-			if err != nil {
-				return nil, err
-			}
-		}
+	updatedDir, err = applyWorkspaceMigrationWorkspacePlans(ctx, ws, updatedDir, plans.WorkspacePlans)
+	if err != nil {
+		return nil, err
+	}
+	updatedDir, err = applyWorkspaceMigrationModuleConfigConversions(ctx, ws, updatedDir, plans.ModuleConfigConversions)
+	if err != nil {
+		return nil, err
+	}
+	updatedDir, err = applyWorkspaceMigrationParentPlans(ctx, ws, updatedDir, plans.ParentPlans)
+	if err != nil {
+		return nil, err
 	}
 
 	var changes *core.Changeset
@@ -493,9 +472,165 @@ func (s *workspaceSchema) workspaceMigrationChangeset(
 	return changes, nil
 }
 
+func applyWorkspaceMigrationLegacyLockMoves(
+	ctx context.Context,
+	dir dagql.ObjectResult[*core.Directory],
+	moves []workspaceMigrationLegacyLockMove,
+) (dagql.ObjectResult[*core.Directory], error) {
+	var err error
+	for _, move := range moves {
+		dir, err = withWorkspaceMigrationFile(ctx, dir, move.TargetPath, move.Data, "workspace lock: "+workspaceMigrationDisplayPath(move.SourcePath)+" -> "+workspaceMigrationDisplayPath(move.TargetPath))
+		if err != nil {
+			return dir, err
+		}
+		dir, err = removeWorkspaceMigrationFile(ctx, dir, move.SourcePath, "remove legacy workspace lock", "migration remove legacy workspace lock")
+		if err != nil {
+			return dir, err
+		}
+	}
+	return dir, nil
+}
+
+func applyWorkspaceMigrationWorkspacePlans(
+	ctx context.Context,
+	ws *core.Workspace,
+	dir dagql.ObjectResult[*core.Directory],
+	plans []*workspace.MigrationPlan,
+) (dagql.ObjectResult[*core.Directory], error) {
+	var err error
+	for _, plan := range plans {
+		dir, err = applyWorkspaceMigrationWorkspacePlan(ctx, ws, dir, plan)
+		if err != nil {
+			return dir, err
+		}
+	}
+	return dir, nil
+}
+
+func applyWorkspaceMigrationWorkspacePlan(
+	ctx context.Context,
+	ws *core.Workspace,
+	dir dagql.ObjectResult[*core.Directory],
+	plan *workspace.MigrationPlan,
+) (dagql.ObjectResult[*core.Directory], error) {
+	if len(plan.MigratedModuleConfigData) > 0 {
+		migratedModuleConfigPath, err := workspaceMigrationRootPath(ws, plan, plan.MigratedModuleConfigPath)
+		if err != nil {
+			return dir, err
+		}
+		dir, err = withWorkspaceMigrationFile(ctx, dir, migratedModuleConfigPath, plan.MigratedModuleConfigData, "move module: "+workspace.LegacyModuleConfigFileName+" -> "+workspaceMigrationDisplayPath(migratedModuleConfigPath))
+		if err != nil {
+			return dir, err
+		}
+	}
+
+	workspaceConfigPath, err := workspaceMigrationRootPath(ws, plan, workspace.ConfigFileName)
+	if err != nil {
+		return dir, err
+	}
+	dir, err = withWorkspaceMigrationFile(ctx, dir, workspaceConfigPath, plan.WorkspaceConfigData, "workspace configuration: "+workspaceMigrationDisplayPath(workspaceConfigPath))
+	if err != nil {
+		return dir, err
+	}
+
+	if len(plan.MigrationReportData) > 0 {
+		migrationReportPath, err := workspaceMigrationRootPath(ws, plan, plan.MigrationReportPath)
+		if err != nil {
+			return dir, err
+		}
+		dir, err = withWorkspaceMigrationFile(ctx, dir, migrationReportPath, plan.MigrationReportData, "migration report: "+workspaceMigrationDisplayPath(migrationReportPath))
+		if err != nil {
+			return dir, err
+		}
+	}
+
+	legacyConfigPath, err := workspaceMigrationRootPath(ws, plan, workspace.LegacyModuleConfigFileName)
+	if err != nil {
+		return dir, err
+	}
+	return removeWorkspaceMigrationFile(ctx, dir, legacyConfigPath, "remove legacy config", "migration remove legacy config")
+}
+
+func applyWorkspaceMigrationModuleConfigConversions(
+	ctx context.Context,
+	ws *core.Workspace,
+	dir dagql.ObjectResult[*core.Directory],
+	conversions []workspaceMigrationModuleConfigConversion,
+) (dagql.ObjectResult[*core.Directory], error) {
+	for _, conversion := range conversions {
+		currentConfigPath, err := workspaceMigrationRootPathForProject(ws, conversion.ProjectRoot, workspace.ModuleConfigFileName)
+		if err != nil {
+			return dir, err
+		}
+		dir, err = withWorkspaceMigrationFile(ctx, dir, currentConfigPath, conversion.ConfigData, "module config: "+workspace.LegacyModuleConfigFileName+" -> "+workspaceMigrationDisplayPath(currentConfigPath))
+		if err != nil {
+			return dir, err
+		}
+
+		legacyConfigPath, err := workspaceMigrationRootPathForProject(ws, conversion.ProjectRoot, workspace.LegacyModuleConfigFileName)
+		if err != nil {
+			return dir, err
+		}
+		dir, err = removeWorkspaceMigrationFile(ctx, dir, legacyConfigPath, "remove legacy module config", "migration remove legacy module config")
+		if err != nil {
+			return dir, err
+		}
+	}
+	return dir, nil
+}
+
+func applyWorkspaceMigrationParentPlans(
+	ctx context.Context,
+	ws *core.Workspace,
+	dir dagql.ObjectResult[*core.Directory],
+	plans []workspaceMigrationParentPlan,
+) (dagql.ObjectResult[*core.Directory], error) {
+	for _, plan := range plans {
+		workspaceConfigPath, err := workspaceMigrationRootPathForProject(ws, plan.ProjectRoot, workspace.ConfigFileName)
+		if err != nil {
+			return dir, err
+		}
+		dir, err = withWorkspaceMigrationFile(ctx, dir, workspaceConfigPath, plan.WorkspaceConfigData, "parent workspace configuration: "+workspaceMigrationDisplayPath(workspaceConfigPath))
+		if err != nil {
+			return dir, err
+		}
+		if len(plan.MigrationReportData) == 0 {
+			continue
+		}
+		migrationReportPath, err := workspaceMigrationRootPathForProject(ws, plan.ProjectRoot, plan.MigrationReportPath)
+		if err != nil {
+			return dir, err
+		}
+		dir, err = withWorkspaceMigrationFile(ctx, dir, migrationReportPath, plan.MigrationReportData, "migration report: "+workspaceMigrationDisplayPath(migrationReportPath))
+		if err != nil {
+			return dir, err
+		}
+	}
+	return dir, nil
+}
+
+func removeWorkspaceMigrationFile(
+	ctx context.Context,
+	dir dagql.ObjectResult[*core.Directory],
+	filePath string,
+	spanName string,
+	errPrefix string,
+) (updated dagql.ObjectResult[*core.Directory], rerr error) {
+	removeCtx, span := core.Tracer(ctx).Start(ctx, spanName, telemetry.Internal())
+	defer telemetry.EndWithCause(span, &rerr)
+
+	updated, err := workspaceMigrationSelectDirectory(removeCtx, dir, "withoutFile", []dagql.NamedInput{
+		{Name: "path", Value: dagql.NewString(path.Clean(filepath.ToSlash(filePath)))},
+	})
+	if err != nil {
+		return dir, fmt.Errorf("%s: %w", errPrefix, err)
+	}
+	return updated, nil
+}
+
 func workspaceMigrationRootTargetPaths(ws *core.Workspace, plans workspaceMigrationPlanBundle) ([]string, error) {
 	seen := make(map[string]struct{})
-	paths := make([]string, 0, len(plans.WorkspacePlans)*3+len(plans.ParentPlans)*2)
+	paths := make([]string, 0, len(plans.WorkspacePlans)*3+len(plans.ParentPlans)*2+len(plans.ModuleConfigConversions))
 	addPath := func(rootPath string) error {
 		cleanPath := path.Clean(filepath.ToSlash(rootPath))
 		if _, ok := seen[cleanPath]; ok {
@@ -517,8 +652,17 @@ func workspaceMigrationRootTargetPaths(ws *core.Workspace, plans workspaceMigrat
 			}
 		}
 	}
+	for _, conversion := range plans.ModuleConfigConversions {
+		rootPath, err := workspaceMigrationRootPathForProject(ws, conversion.ProjectRoot, workspace.ModuleConfigFileName)
+		if err != nil {
+			return nil, err
+		}
+		if err := addPath(rootPath); err != nil {
+			return nil, err
+		}
+	}
 	for _, plan := range plans.ParentPlans {
-		rootPath, err := workspaceMigrationRootPathForProject(ws, plan.ProjectRoot, filepath.Join(workspace.LockDirName, workspace.ConfigFileName))
+		rootPath, err := workspaceMigrationRootPathForProject(ws, plan.ProjectRoot, workspace.ConfigFileName)
 		if err != nil {
 			return nil, err
 		}
@@ -536,6 +680,93 @@ func workspaceMigrationRootTargetPaths(ws *core.Workspace, plans workspaceMigrat
 		}
 	}
 	return paths, nil
+}
+
+func workspaceMigrationLegacyLockMoves(
+	ctx context.Context,
+	ws *core.Workspace,
+	baseDir dagql.ObjectResult[*core.Directory],
+	plans workspaceMigrationPlanBundle,
+) ([]workspaceMigrationLegacyLockMove, error) {
+	projectRoots := workspaceMigrationLegacyLockProjectRoots(plans)
+
+	moves := make([]workspaceMigrationLegacyLockMove, 0, len(projectRoots))
+	for _, projectRoot := range projectRoots {
+		sourcePath, err := workspaceMigrationRootPathForProject(ws, projectRoot, workspace.LegacyLockFilePath)
+		if err != nil {
+			return nil, err
+		}
+		exists, err := workspaceMigrationPathExists(ctx, baseDir, sourcePath)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			continue
+		}
+		data, err := core.DirectoryReadFile(ctx, baseDir, path.Clean(filepath.ToSlash(sourcePath)))
+		if err != nil {
+			return nil, fmt.Errorf("read legacy workspace lock %q: %w", sourcePath, err)
+		}
+		data, err = workspaceMigrationFilterLegacyLockData(data)
+		if err != nil {
+			return nil, fmt.Errorf("filter legacy workspace lock %q: %w", sourcePath, err)
+		}
+
+		targetPath, err := workspaceMigrationRootPathForProject(ws, projectRoot, workspace.LockFileName)
+		if err != nil {
+			return nil, err
+		}
+		moves = append(moves, workspaceMigrationLegacyLockMove{
+			SourcePath: sourcePath,
+			TargetPath: targetPath,
+			Data:       data,
+		})
+	}
+	return moves, nil
+}
+
+func workspaceMigrationFilterLegacyLockData(data []byte) ([]byte, error) {
+	lock, err := workspace.ParseLock(data)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := lock.Entries()
+	if err != nil {
+		return nil, err
+	}
+	filtered := workspace.NewLock()
+	for _, entry := range entries {
+		if entry.Namespace == "" && entry.Operation == workspaceMigrationLockModulesResolveOperation {
+			continue
+		}
+		if err := filtered.SetLookup(entry.Namespace, entry.Operation, entry.Inputs, entry.Result); err != nil {
+			return nil, fmt.Errorf("preserve lock entry %s %v: %w", entry.Operation, entry.Inputs, err)
+		}
+	}
+	return filtered.Marshal()
+}
+
+func workspaceMigrationLegacyLockProjectRoots(plans workspaceMigrationPlanBundle) []string {
+	seenProjects := map[string]struct{}{}
+	projectRoots := make([]string, 0, len(plans.WorkspacePlans)+len(plans.ParentPlans)+len(plans.ModuleConfigConversions))
+	addProject := func(projectRoot string) {
+		projectRoot = filepath.Clean(projectRoot)
+		if _, ok := seenProjects[projectRoot]; ok {
+			return
+		}
+		seenProjects[projectRoot] = struct{}{}
+		projectRoots = append(projectRoots, projectRoot)
+	}
+	for _, plan := range plans.WorkspacePlans {
+		addProject(plan.ProjectRoot)
+	}
+	for _, plan := range plans.ParentPlans {
+		addProject(plan.ProjectRoot)
+	}
+	for _, conversion := range plans.ModuleConfigConversions {
+		addProject(conversion.ProjectRoot)
+	}
+	return projectRoots
 }
 
 func workspaceMigrationRootPath(ws *core.Workspace, plan *workspace.MigrationPlan, relPath string) (string, error) {
@@ -576,7 +807,7 @@ func (s *workspaceSchema) workspaceMigrationPreparedDirectories(
 			return dagql.ObjectResult[*core.Directory]{}, dagql.ObjectResult[*core.Directory]{}, err
 		}
 
-		updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, plan.MigratedModuleConfigPath, plan.MigratedModuleConfigData, "move module: "+workspace.ModuleConfigFileName+" -> "+workspaceMigrationDisplayPath(plan.MigratedModuleConfigPath))
+		updatedDir, err = withWorkspaceMigrationFile(ctx, updatedDir, plan.MigratedModuleConfigPath, plan.MigratedModuleConfigData, "move module: "+workspace.LegacyModuleConfigFileName+" -> "+workspaceMigrationDisplayPath(plan.MigratedModuleConfigPath))
 		if err != nil {
 			return dagql.ObjectResult[*core.Directory]{}, dagql.ObjectResult[*core.Directory]{}, err
 		}
@@ -590,7 +821,7 @@ func workspaceMigrationTargetPaths(plan *workspace.MigrationPlan) []string {
 	if len(plan.MigratedModuleConfigData) > 0 {
 		paths = append(paths, plan.MigratedModuleConfigPath)
 	}
-	paths = append(paths, filepath.Join(workspace.LockDirName, workspace.ConfigFileName))
+	paths = append(paths, workspace.ConfigFileName)
 	if len(plan.MigrationReportData) > 0 {
 		paths = append(paths, plan.MigrationReportPath)
 	}
@@ -655,23 +886,36 @@ func validateWorkspaceMigrationTargetPaths(
 	baseDir dagql.ObjectResult[*core.Directory],
 	targetPaths []string,
 ) error {
-	srv, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return err
-	}
-
 	for _, targetPath := range targetPaths {
 		cleanPath := path.Clean(filepath.ToSlash(targetPath))
-		_, err := baseDir.Self().Stat(ctx, baseDir, srv, cleanPath, false)
-		if err == nil {
+		exists, err := workspaceMigrationPathExists(ctx, baseDir, cleanPath)
+		if err != nil {
+			return fmt.Errorf("check migration target %q: %w", cleanPath, err)
+		}
+		if exists {
 			return fmt.Errorf("migration target %q already exists; refusing to overwrite existing workspace data", cleanPath)
 		}
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		return fmt.Errorf("check migration target %q: %w", cleanPath, err)
 	}
 	return nil
+}
+
+func workspaceMigrationPathExists(
+	ctx context.Context,
+	baseDir dagql.ObjectResult[*core.Directory],
+	filePath string,
+) (bool, error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return false, err
+	}
+	_, err = baseDir.Self().Stat(ctx, baseDir, srv, path.Clean(filepath.ToSlash(filePath)), false)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	return false, err
 }
 
 func (s *workspaceSchema) workspaceMigrationBaseDirectory(
@@ -853,14 +1097,14 @@ func workspaceMigrationPlanBundleWarnings(plans workspaceMigrationPlanBundle) []
 	return warnings
 }
 
-func workspaceConfigUsesMigratedModuleSources(cfg *workspace.Config) bool {
+func workspaceConfigUsesMigratedModuleSources(cfg *workspace.Config, configDir string) bool {
 	if cfg == nil {
 		return false
 	}
 
 	migratedModulesDir := filepath.Clean(filepath.Join(workspace.LockDirName, "modules"))
 	for _, entry := range cfg.Modules {
-		resolvedSource := workspace.ResolveModuleEntrySource(workspace.LockDirName, entry.Source)
+		resolvedSource := workspace.ResolveModuleEntrySource(configDir, entry.Source)
 		if filepath.IsAbs(resolvedSource) {
 			continue
 		}

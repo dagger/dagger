@@ -96,7 +96,7 @@ func loadWorkspaceConfigForMutation(
 		return nil, false, fmt.Errorf("workspace is using legacy dagger.json config; run dagger migrate first")
 	}
 	if policy == workspaceConfigMustExist {
-		return nil, false, fmt.Errorf("no config.toml found in workspace")
+		return nil, false, fmt.Errorf("no dagger.toml found in workspace")
 	}
 
 	bk, err := workspaceBuildkit(ctx)
@@ -130,12 +130,12 @@ func ensureWorkspaceInitialized(ctx context.Context, bk *engineutil.Client, ws *
 
 func workspaceConfigDirectoryForWrite(ws *core.Workspace, here bool) string {
 	if here {
-		return cleanWorkspaceRelPath(filepath.Join(ws.Cwd, workspace.LockDirName))
+		return cleanWorkspaceRelPath(ws.Cwd)
 	}
 	if ws.ConfigFile != "" {
 		return filepath.Dir(cleanWorkspaceRelPath(ws.ConfigFile))
 	}
-	return workspace.LockDirName
+	return "."
 }
 
 func workspaceConfigDirectory(ws *core.Workspace) (string, error) {
@@ -148,7 +148,7 @@ func workspaceConfigDirectory(ws *core.Workspace) (string, error) {
 
 func workspaceConfigFile(ws *core.Workspace) (string, error) {
 	if ws.ConfigFile == "" {
-		return "", fmt.Errorf("no config.toml found in workspace")
+		return "", fmt.Errorf("no dagger.toml found in workspace")
 	}
 	return cleanWorkspaceRelPath(ws.ConfigFile), nil
 }
@@ -164,9 +164,7 @@ func workspaceSameConfigDirectory(ws *core.Workspace, configDir string) bool {
 func setWorkspaceConfigSelection(ws *core.Workspace, configDir string) {
 	configDir = cleanWorkspaceRelPath(configDir)
 	configFile := cleanWorkspaceRelPath(filepath.Join(configDir, workspace.ConfigFileName))
-	if ws.LockFile == "" {
-		ws.LockFile = cleanWorkspaceRelPath(filepath.Join(configDir, workspace.LockFileName))
-	}
+	ws.LockFile = cleanWorkspaceRelPath(filepath.Join(configDir, workspace.LockFileName))
 	ws.ConfigFile = configFile
 }
 
@@ -404,13 +402,16 @@ func effectiveWorkspaceConfigBytes(cfg *workspace.Config, envName string) ([]byt
 
 func envScopedConfigKey(cfg *workspace.Config, envName, key string) (string, error) {
 	if cfg == nil {
-		return "", fmt.Errorf("workspace env %q requires .dagger/config.toml", envName)
+		return "", fmt.Errorf("workspace env %q requires dagger.toml", envName)
 	}
 	if _, ok := cfg.Env[envName]; !ok {
 		return "", fmt.Errorf("workspace env %q is not defined", envName)
 	}
 
-	parts := strings.Split(key, ".")
+	parts, err := workspace.SplitConfigPath(key)
+	if err != nil {
+		return "", err
+	}
 	if len(parts) < 4 || parts[0] != "modules" || parts[2] != "settings" {
 		return "", fmt.Errorf("key %q cannot be set in env %q; only modules.<name>.settings.* is supported", key, envName)
 	}
@@ -420,7 +421,7 @@ func envScopedConfigKey(cfg *workspace.Config, envName, key string) (string, err
 		return "", fmt.Errorf("workspace env %q cannot set settings for unknown module %q", envName, moduleName)
 	}
 
-	return strings.Join(append([]string{"env", envName}, parts...), "."), nil
+	return workspace.JoinConfigPath(append([]string{"env", envName}, parts...)...), nil
 }
 
 func exportWorkspaceFileToHost(ctx context.Context, bk *engineutil.Client, hostPath string, contents []byte) error {

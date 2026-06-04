@@ -78,20 +78,17 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 	// Register viztest in a native workspace so local module calls and check
 	// discovery exercise this fixture without falling back to the repository-level
 	// dagger.json and printing migration warnings.
-	if err := os.MkdirAll(".dagger", 0o755); err != nil {
-		t.Fatalf("failed to initialize viztest workspace: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(".dagger", "config.toml"), []byte(`# Dagger workspace configuration
+	if err := os.WriteFile("dagger.toml", []byte(`# Dagger workspace configuration
 
 [modules.viztest]
-source = "../viztest"
+source = "./viztest"
 entrypoint = true
 `), 0o644); err != nil {
 		t.Fatalf("failed to initialize viztest workspace config: %v", err)
 	}
 
 	t.Cleanup(func() {
-		exec.Command("rm", "-rf", ".git", ".dagger").Run()
+		exec.Command("rm", "-rf", ".git", ".dagger", "dagger.toml").Run()
 	})
 
 	listDir := t.TempDir()

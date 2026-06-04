@@ -278,7 +278,7 @@ func (r *EngineDev) ClientDockerConfig() *Secret { // engine-dev (../../../../to
 }
 
 // Generate the json schema for a dagger config file
-// Currently supported: "dagger.json", "engine.json"
+// Currently supported: "dagger.json", "dagger-module.toml", "dagger.toml", "engine.json"
 func (r *EngineDev) ConfigSchema(filename string) *File { // engine-dev (../../../../toolchains/engine-dev/main.go:359:1)
 	q := r.query.Select("configSchema")
 	q = q.Arg("filename", filename)

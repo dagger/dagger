@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dagger/dagger/core/workspace/config",
+  "$ref": "#/$defs/Config",
+  "$defs": {
+    "Config": {
+      "properties": {
+        "modules": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ModuleEntry"
+          },
+          "type": "object"
+        },
+        "ignore": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "defaults_from_dotenv": {
+          "type": "boolean"
+        },
+        "env": {
+          "additionalProperties": {
+            "$ref": "#/$defs/EnvOverlay"
+          },
+          "type": "object"
+        },
+        "ports": {
+          "additionalProperties": {
+            "$ref": "#/$defs/PortMapping"
+          },
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "Config represents a parsed dagger.toml workspace configuration."
+    },
+    "EnvModuleOverlay": {
+      "properties": {
+        "settings": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "EnvModuleOverlay is the environment-specific overlay for one installed module."
+    },
+    "EnvOverlay": {
+      "properties": {
+        "modules": {
+          "additionalProperties": {
+            "$ref": "#/$defs/EnvModuleOverlay"
+          },
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "EnvOverlay is a named workspace environment overlay."
+    },
+    "ModuleEntry": {
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "settings": {
+          "type": "object"
+        },
+        "entrypoint": {
+          "type": "boolean"
+        },
+        "legacy-default-path": {
+          "type": "boolean"
+        },
+        "up": {
+          "$ref": "#/$defs/ModuleSkip"
+        },
+        "generate": {
+          "$ref": "#/$defs/ModuleSkip"
+        },
+        "check": {
+          "$ref": "#/$defs/ModuleSkip"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "source"
+      ],
+      "description": "ModuleEntry represents a single module entry in the workspace config."
+    },
+    "ModuleSkip": {
+      "properties": {
+        "skip": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "ModuleSkip carries the per-action skip patterns for a module entry."
+    },
+    "PortMapping": {
+      "properties": {
+        "backendService": {
+          "type": "string"
+        },
+        "backendPort": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "backendService",
+        "backendPort"
+      ],
+      "description": "PortMapping declares a host port that forwards to a workspace service."
+    }
+  }
+}

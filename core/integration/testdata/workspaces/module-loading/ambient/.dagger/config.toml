@@ -1,9 +1,0 @@
-[modules.ci]
-source = "modules/ci"
-entrypoint = true
-
-[modules.lint]
-source = "modules/lint"
-
-[modules.test]
-source = "modules/test"

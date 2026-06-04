@@ -105,7 +105,8 @@ func (d DocsDev) References(
 	// 4. Generate config file schemas?
 	withConfigSchemas := src.
 		WithFile("docs/static/reference/dagger.schema.json", dag.EngineDev().ConfigSchema("dagger.json")).
-		WithFile("docs/static/reference/dagger.schema.json", dag.EngineDev().ConfigSchema("dagger.json"))
+		WithFile("docs/static/reference/dagger-module.schema.json", dag.EngineDev().ConfigSchema("dagger-module.toml")).
+		WithFile("docs/static/reference/dagger-workspace.schema.json", dag.EngineDev().ConfigSchema("dagger.toml"))
 
 	changes := src.
 		WithChanges(withGqlSchema.Changes(src)).

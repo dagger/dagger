@@ -902,7 +902,7 @@ func (m *Reader) ListIgnoredDefaultDirectory(
 		WithNewFile("filtered/keep.txt", "workspace keep should not be read").
 		WithNewFile("filtered/drop.txt", "workspace drop should not be read").
 		WithNewFile("filtered/workspace-only.txt", "workspace-only should not be listed").
-		WithNewFile(".dagger/config.toml", `[modules.reader]
+		WithNewFile("dagger.toml", `[modules.reader]
 source = "`+remoteRef+`"
 entrypoint = true
 `)

@@ -30,7 +30,7 @@ func newMigrateCmd(hidden bool) *cobra.Command {
 	return &cobra.Command{
 		Use:    "migrate",
 		Short:  "Migrate a legacy dagger.json project to the workspace format",
-		Long:   "Converts a legacy dagger.json to the .dagger/config.toml workspace format.",
+		Long:   "Converts a legacy dagger.json to the dagger.toml workspace format.",
 		Hidden: hidden,
 		Args:   cobra.NoArgs,
 		Annotations: map[string]string{

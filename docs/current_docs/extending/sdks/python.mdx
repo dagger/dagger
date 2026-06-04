@@ -28,13 +28,13 @@ The functions you use most often:
 |---|---|
 | `init` | Create a new Python SDK module. Returns a [changeset](/using-dagger/changesets) of files to write. |
 | `mod` | Resolve the module at or above a workspace path; entry point for `deps`, `generate`, `engine`, `config`, `path`. |
-| `mod deps` | Manage Dagger dependencies in `dagger.json` (`add`, `remove`, `update`, `list`). |
+| `mod deps` | Manage Dagger dependencies in `dagger-module.toml` (`add`, `remove`, `update`, `list`). |
 | `mod generate` | Regenerate the module's SDK bindings. Returns a changeset. |
 | `mod engine` | Read or set the required Dagger engine version. |
 | `mod config` | Read or set Python build configuration in `pyproject.toml`. |
 | `generate-all` | Regenerate every discovered Python SDK module. |
 | `templates` | List the init templates this SDK ships. |
-| `modules` | List every Dagger module whose `sdk.source` is `"python"`. |
+| `modules` | List every Dagger module whose `runtime.source` is `"python"`. |
 
 The examples below are run from a project working directory (the directory that contains, or will contain, your `.dagger` folder).
 
@@ -78,7 +78,7 @@ A minimal Python module looks like:
 
 ```
 my-module/
-├── dagger.json          # module metadata
+├── dagger-module.toml          # module metadata
 ├── pyproject.toml       # Python project + Dagger build config
 ├── src/
 │   └── my_module/
@@ -86,17 +86,15 @@ my-module/
 └── sdk/                 # generated dagger-io client (checked in by default)
 ```
 
-`dagger.json` declares the SDK source:
+`dagger-module.toml` declares the SDK source:
 
-```json title="dagger.json"
-{
-  "name": "my-module",
-  "engineVersion": "v1.0.0-beta.2",
-  "sdk": {
-    "source": "python"
-  },
-  "source": "."
-}
+```toml title="dagger-module.toml"
+name = "my-module"
+engineVersion = "v1.0.0-beta.2"
+source = "."
+
+[runtime]
+source = "python"
 ```
 
 The starter module is a single `@object_type` with two functions:
@@ -545,9 +543,9 @@ Services are content-addressed: the same definition always resolves to the same 
 
 ## Module dependencies
 
-Modules can depend on other modules. Manage dependencies in `dagger.json` with `mod deps`. Run these from your project directory; `mod` finds the module at or above the current path (use `--find-up` / `--path` to control resolution).
+Modules can depend on other modules. Manage dependencies in `dagger-module.toml` with `mod deps`. Run these from your project directory; `mod` finds the module at or above the current path (use `--find-up` / `--path` to control resolution).
 
-Add a dependency (returns a changeset of the `dagger.json` edit — review and apply, or pass `-y` to apply without prompting):
+Add a dependency (returns a changeset of the `dagger-module.toml` edit — review and apply, or pass `-y` to apply without prompting):
 
 ```shell
 dagger -m github.com/dagger/python-sdk call \
@@ -608,7 +606,7 @@ If a project also declares a generator binding, the platform-level `dagger gener
 
 ## Engine version
 
-`dagger.json` records the Dagger engine version your module requires (`engineVersion`). Manage it with `mod engine`:
+`dagger-module.toml` records the Dagger engine version your module requires (`engineVersion`). Manage it with `mod engine`:
 
 ```shell
 # Read the current requirement (without leading "v")
@@ -912,12 +910,12 @@ python -m pip install -r requirements.lock -e ./sdk -e .
 </Tabs>
 
 :::tip
-If `.venv` lives inside the module, add it to `.gitignore` **and** to `"include": ["!.venv"]` in `dagger.json` so it isn't uploaded to the runtime container.
+If `.venv` lives inside the module, add it to `.gitignore` **and** to `"include": ["!.venv"]` in `dagger-module.toml` so it isn't uploaded to the runtime container.
 :::
 
 ### Python build configuration (`pyproject.toml`)
 
-`dagger.json` declares `sdk.source: "python"`; the Python-specific build settings (Python version, base image, whether to use uv) live in `pyproject.toml` and can be read or edited with `mod config`:
+`dagger-module.toml` declares `runtime.source: "python"`; the Python-specific build settings (Python version, base image, whether to use uv) live in `pyproject.toml` and can be read or edited with `mod config`:
 
 ```shell
 # Read the current configuration

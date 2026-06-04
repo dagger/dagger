@@ -66,7 +66,7 @@ type Module struct {
 	// module loading.
 	LegacyDefaultPath bool
 
-	// Workspace setting values from workspace config.toml [modules.<name>.settings].
+	// Workspace setting values from dagger.toml [modules.<name>.settings].
 	// Typed map: strings, bools, ints, floats as-is from TOML.
 	// When set, constructor args are resolved from this map first.
 	WorkspaceConfig map[string]any

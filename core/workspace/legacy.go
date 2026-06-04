@@ -94,6 +94,27 @@ func ParseRuntimeCompatWorkspaceAt(data []byte, configPath string) (*CompatWorks
 	return buildCompatWorkspace(cfg, configPath), nil
 }
 
+// ParseMigrationCompatWorkspaceAt parses a legacy dagger.json for migration
+// planning. Unlike runtime loading, migration may need to plan a best-effort
+// diff for a module that requires a newer engine so `dagger migrate --force`
+// can still write reviewable workspace files.
+func ParseMigrationCompatWorkspaceAt(data []byte, configPath string) (*CompatWorkspace, error) {
+	cfg, err := parseLegacyConfig(data)
+	if err != nil {
+		if !strings.Contains(err.Error(), "module requires dagger") {
+			return nil, err
+		}
+		cfg, err = parseLegacyConfigShape(data)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if !legacyConfigCreatesRuntimeCompatWorkspace(cfg) {
+		return nil, nil
+	}
+	return buildCompatWorkspace(cfg, configPath), nil
+}
+
 func buildCompatWorkspace(cfg *modules.ModuleConfig, configPath string) *CompatWorkspace {
 	if cfg == nil {
 		return nil
@@ -149,7 +170,7 @@ func buildCompatWorkspace(cfg *modules.ModuleConfig, configPath string) *CompatW
 			Name:       cfg.Name,
 			ConfigName: cfg.Name,
 			Entry: ModuleEntry{
-				Source:     filepath.Join("modules", cfg.Name),
+				Source:     filepath.Join(LockDirName, "modules", cfg.Name),
 				Entrypoint: cfg.Blueprint == nil,
 			},
 		}
@@ -162,10 +183,13 @@ func buildCompatWorkspace(cfg *modules.ModuleConfig, configPath string) *CompatW
 }
 
 func legacyWorkspaceModuleSource(source, pin string) string {
-	if isLocalRef(source, pin) {
-		return filepath.Join("..", source)
+	if pin == "" {
+		return source
 	}
-	return source
+	if idx := strings.LastIndex(source, "@"); idx >= 0 {
+		return source[:idx+1] + pin
+	}
+	return source + "@" + pin
 }
 
 func (compatWorkspace *CompatWorkspace) WorkspaceConfig() *Config {
@@ -218,7 +242,7 @@ func (compatWorkspace *CompatWorkspace) WorkspaceConfig() *Config {
 }
 
 // MustMigrateToWorkspaceConfig reports whether this compat workspace was
-// created from a legacy dagger.json that must be replaced by .dagger/config.toml
+// created from a legacy dagger.json that must be replaced by dagger.toml
 // at the same location during migration.
 func (compatWorkspace *CompatWorkspace) MustMigrateToWorkspaceConfig() bool {
 	if compatWorkspace == nil {
@@ -254,7 +278,7 @@ func legacyConfigCreatesRuntimeCompatWorkspace(cfg *modules.ModuleConfig) bool {
 }
 
 // mustMigrateToWorkspaceConfig reports whether a legacy dagger.json carries
-// workspace-level semantics and must be replaced by .dagger/config.toml at the
+// workspace-level semantics and must be replaced by dagger.toml at the
 // same location during migration.
 func mustMigrateToWorkspaceConfig(cfg *modules.ModuleConfig) bool {
 	if cfg == nil {
@@ -311,11 +335,19 @@ func ParseLegacyToolchains(data []byte) ([]LegacyToolchain, error) {
 
 // parseLegacyConfig parses a legacy dagger.json into the internal representation.
 func parseLegacyConfig(data []byte) (*modules.ModuleConfig, error) {
-	var cfg modules.ModuleConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
+	cfg, err := modules.ParseModuleConfigForFormat(data, modules.ConfigFormatLegacy)
+	if err != nil {
 		return nil, fmt.Errorf("parsing legacy config: %w", err)
 	}
-	return &cfg, nil
+	return &cfg.ModuleConfig, nil
+}
+
+func parseLegacyConfigShape(data []byte) (*modules.ModuleConfig, error) {
+	var cfg modules.ModuleConfigWithUserFields
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to decode module config: %w", err)
+	}
+	return &cfg.ModuleConfig, nil
 }
 
 // ExtractConfigDefaults returns constructor arg defaults from customizations.

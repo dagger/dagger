@@ -14,13 +14,13 @@ It's language-agnostic. For the underlying model, read [How Dagger Works](./how-
 
 Build a module when a workflow should become a durable, named interface rather than a remembered sequence of steps — something run often, in more than one place, that encodes a project's conventions or composes with other modules. A module earns its name by improving the caller's experience: better names, typed inputs, structured outputs, and clear errors. Wrapping a single command in a module just for ceremony isn't worth it.
 
-Install a module into a workspace ([`.dagger/config.toml`](/reference/configuration/workspace)) to make it part of a project's command surface; publish a reusable module when several projects need the same capability. See [Workspace Setup](/adopting/workspace-setup).
+Install a module into a workspace ([`dagger.toml`](/reference/configuration/workspace)) to make it part of a project's command surface; publish a reusable module when several projects need the same capability. See [Workspace Setup](/adopting/workspace-setup).
 
 ## Developer workflow
 
 Dagger ships no language-specific module tooling in the CLI. Instead, **each SDK is itself a Dagger module** — `github.com/dagger/go-sdk`, `dang-sdk`, and so on — whose functions you call to develop a module in that language. The exact commands differ per SDK and live on each [SDK page](#choose-your-sdk); the loop is the same everywhere:
 
-1. **Scaffold** a new module — the SDK writes its `dagger.json` and a source skeleton, returned as a [changeset](/using-dagger/changesets) you apply.
+1. **Scaffold** a new module — the SDK writes its `dagger-module.toml` and a source skeleton, returned as a [changeset](/using-dagger/changesets) you apply.
 2. **Write** your objects and functions; the SDK maps them to the Dagger [type system](./type-system/index.mdx).
 3. **Regenerate** the client bindings whenever the module's shape or its dependencies change.
 4. **Add dependencies** on other modules, and **pin** the engine version the module needs.

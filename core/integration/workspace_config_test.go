@@ -1,13 +1,13 @@
 package core
 
-// These tests cover current workspace config in `dagger.json`. They verify
+// These tests cover current workspace config in `dagger.toml`. They verify
 // reads, writes, command aliases, workspace boundaries, and how
 // `[modules.<name>.settings]` affects loaded modules.
 //
 // See also:
 // - workspace_env_management_test.go: config while an environment is selected.
 // - workspace_settings_test.go: typed setting commands backed by config.
-// - module_config_test.go: module-shaped `dagger.json` config.
+// - module_config_test.go: module-shaped `dagger-module.toml` config.
 
 import (
 	"context"
@@ -53,9 +53,9 @@ func initGitRepo(ctx context.Context, t testing.TB, workdir string) {
 func writeWorkspaceConfigFile(t *testctx.T, workdir, configTOML string) {
 	t.Helper()
 
-	require.NoError(t, os.MkdirAll(filepath.Join(workdir, workspace.LockDirName), 0o755))
+	require.NoError(t, os.MkdirAll(workdir, 0o755))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(workdir, workspace.LockDirName, workspace.ConfigFileName),
+		filepath.Join(workdir, workspace.ConfigFileName),
 		[]byte(configTOML),
 		0o644,
 	))
@@ -140,7 +140,7 @@ entrypoint = true
 		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "workspace", "config", "modules.greeter.settings.tags", "main, develop")
 		require.NoError(t, err)
 
-		configContents, err := os.ReadFile(filepath.Join(workdir, workspace.LockDirName, workspace.ConfigFileName))
+		configContents, err := os.ReadFile(filepath.Join(workdir, workspace.ConfigFileName))
 		require.NoError(t, err)
 		require.Contains(t, string(configContents), "tags")
 		require.Contains(t, string(configContents), "main")
@@ -162,7 +162,7 @@ entrypoint = true
 func newWorkspaceModuleSettingsCtr(t *testctx.T, c *dagger.Client, configTOML string) *dagger.Container {
 	t.Helper()
 	return nestedDaggerContainer(t, c, "go", "defaults/superconstructor").
-		WithNewFile(".dagger/config.toml", configTOML).
+		WithNewFile("dagger.toml", configTOML).
 		WithNewFile("/foo/hello.txt", "hello there!").
 		WithEnvVariable("PASSWORD", "topsecret").
 		WithServiceBinding("www", c.Container().From("nginx").AsService())
@@ -173,7 +173,7 @@ func (WorkspaceSuite) TestWorkspaceModuleSettingsRuntime(ctx context.Context, t 
 
 	t.Run("workspace module settings drive constructor help and runtime", func(ctx context.Context, t *testctx.T) {
 		ctr := newWorkspaceModuleSettingsCtr(t, c, `[modules.superconstructor]
-source = "../defaults/superconstructor"
+source = "defaults/superconstructor"
 entrypoint = true
 
 [modules.superconstructor.settings]
@@ -219,7 +219,7 @@ service = "tcp://www:80"
 
 	t.Run("native workspaces do not fall back to .env", func(ctx context.Context, t *testctx.T) {
 		ctr := newWorkspaceModuleSettingsCtr(t, c, `[modules.superconstructor]
-source = "../defaults/superconstructor"
+source = "defaults/superconstructor"
 entrypoint = true
 
 [modules.superconstructor.settings]
@@ -271,9 +271,8 @@ func (WorkspaceSuite) TestWorkspaceConfigReadWithoutNativeConfig(ctx context.Con
 	t.Run("full read in compat workspace is empty and quiet", func(ctx context.Context, t *testctx.T) {
 		workdir := t.TempDir()
 		initGitRepo(ctx, t, workdir)
-		require.NoError(t, os.WriteFile(filepath.Join(workdir, workspace.ModuleConfigFileName), []byte(`{
-  "name": "app"
-}`), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(workdir, workspace.ModuleConfigFileName), []byte(`name = "app"
+`), 0o644))
 
 		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "config")
 		require.NoError(t, err)
@@ -295,10 +294,9 @@ func (WorkspaceSuite) TestCurrentWorkspaceConfigBoundary(ctx context.Context, t 
 	appDir := filepath.Join(workdir, "app")
 	nestedDir := filepath.Join(appDir, "sub")
 
-	require.NoError(t, os.MkdirAll(filepath.Join(appDir, workspace.LockDirName), 0o755))
 	require.NoError(t, os.MkdirAll(nestedDir, 0o755))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(appDir, workspace.LockDirName, workspace.ConfigFileName),
+		filepath.Join(appDir, workspace.ConfigFileName),
 		[]byte("# Dagger workspace configuration\n"),
 		0o644,
 	))
@@ -317,7 +315,7 @@ func (WorkspaceSuite) TestCurrentWorkspaceConfigBoundary(ctx context.Context, t 
 			"cwd": "app/sub",
 			"configFile": %q
 		}
-	}`, filepath.Join("app", workspace.LockDirName, workspace.ConfigFileName)), string(out))
+	}`, filepath.Join("app", workspace.ConfigFileName)), string(out))
 }
 
 func (WorkspaceSuite) TestWorkspaceInitCommand(ctx context.Context, t *testctx.T) {
@@ -335,9 +333,9 @@ func (WorkspaceSuite) TestWorkspaceInitCommand(ctx context.Context, t *testctx.T
 
 		out, err := hostDaggerExecRaw(ctx, t, nestedDir, "--silent", "workspace", "init")
 		require.NoError(t, err)
-		require.Equal(t, fmt.Sprintf("Created workspace config in %s", filepath.Join(workdir, workspace.LockDirName)), strings.TrimSpace(string(out)))
+		require.Equal(t, fmt.Sprintf("Created workspace config in %s", workdir), strings.TrimSpace(string(out)))
 
-		configHostPath := filepath.Join(workdir, workspace.LockDirName, workspace.ConfigFileName)
+		configHostPath := filepath.Join(workdir, workspace.ConfigFileName)
 		configContents, err := os.ReadFile(configHostPath)
 		require.NoError(t, err)
 		require.Contains(t, string(configContents), "[modules]")
@@ -349,7 +347,7 @@ func (WorkspaceSuite) TestWorkspaceInitCommand(ctx context.Context, t *testctx.T
 				"cwd": "app/sub",
 				"configFile": %q
 			}
-		}`, filepath.Join(workspace.LockDirName, workspace.ConfigFileName)), string(out))
+		}`, workspace.ConfigFileName), string(out))
 	})
 
 	t.Run("creates config at the workspace cwd with --here", func(ctx context.Context, t *testctx.T) {
@@ -366,9 +364,9 @@ func (WorkspaceSuite) TestWorkspaceInitCommand(ctx context.Context, t *testctx.T
 
 		out, err := hostDaggerExecRaw(ctx, t, nestedDir, "--silent", "workspace", "init", "--here")
 		require.NoError(t, err)
-		require.Equal(t, fmt.Sprintf("Created workspace config in %s", filepath.Join(nestedDir, workspace.LockDirName)), strings.TrimSpace(string(out)))
+		require.Equal(t, fmt.Sprintf("Created workspace config in %s", nestedDir), strings.TrimSpace(string(out)))
 
-		configHostPath := filepath.Join(nestedDir, workspace.LockDirName, workspace.ConfigFileName)
+		configHostPath := filepath.Join(nestedDir, workspace.ConfigFileName)
 		configContents, err := os.ReadFile(configHostPath)
 		require.NoError(t, err)
 		require.Contains(t, string(configContents), "[modules]")
@@ -380,7 +378,7 @@ func (WorkspaceSuite) TestWorkspaceInitCommand(ctx context.Context, t *testctx.T
 				"cwd": "app/sub",
 				"configFile": %q
 			}
-		}`, filepath.Join("app", "sub", workspace.LockDirName, workspace.ConfigFileName)), string(out))
+		}`, filepath.Join("app", "sub", workspace.ConfigFileName)), string(out))
 	})
 
 	t.Run("rejects reinitialization", func(ctx context.Context, t *testctx.T) {
@@ -395,7 +393,7 @@ func (WorkspaceSuite) TestWorkspaceInitCommand(ctx context.Context, t *testctx.T
 
 		_, err = hostDaggerExec(ctx, t, nestedDir, "--silent", "workspace", "init")
 		require.Error(t, err)
-		requireErrOut(t, err, fmt.Sprintf("workspace config already exists at %s", filepath.Join(workdir, workspace.LockDirName)))
+		requireErrOut(t, err, fmt.Sprintf("workspace config already exists at %s", workdir))
 	})
 }
 
@@ -404,7 +402,7 @@ func (WorkspaceSuite) TestWorkspaceModuleSettingsPolicy(ctx context.Context, t *
 		c := connect(ctx, t)
 
 		ctr := newWorkspaceModuleSettingsCtr(t, c, `[modules.superconstructor]
-source = "../defaults/superconstructor"
+source = "defaults/superconstructor"
 entrypoint = true
 
 [modules.superconstructor.settings]
@@ -428,7 +426,7 @@ func (WorkspaceSuite) TestWorkspaceModuleSettingsSemantics(ctx context.Context, 
 		c := connect(ctx, t)
 
 		ctr := newWorkspaceModuleSettingsCtr(t, c, `[modules.superconstructor]
-source = "../defaults/superconstructor"
+source = "defaults/superconstructor"
 entrypoint = true
 
 [modules.superconstructor.settings]
@@ -451,7 +449,7 @@ SERVICE = "tcp://www:80"
 
 	t.Run("typed settings values validate and coerce predictably", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.vitest]
-source = "../modules/vitest"
+source = "modules/vitest"
 
 [modules.vitest.settings]
 failFast = true
@@ -474,7 +472,7 @@ tags = ["smoke", "nightly"]
 
 		c := connect(ctx, t)
 		ctr := newWorkspaceModuleSettingsCtr(t, c, `[modules.superconstructor]
-source = "../defaults/superconstructor"
+source = "defaults/superconstructor"
 entrypoint = true
 
 [modules.superconstructor.settings]
@@ -499,7 +497,7 @@ service = "tcp://www:80"
 		c := connect(ctx, t)
 
 		ctr := newWorkspaceModuleSettingsCtr(t, c, `[modules.superconstructor]
-source = "../defaults/superconstructor"
+source = "defaults/superconstructor"
 entrypoint = true
 
 [modules.superconstructor.settings]
@@ -522,13 +520,13 @@ service = "tcp://www:80"
 
 	t.Run("module settings are scoped per loaded module", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.alpha]
-source = "../modules/alpha"
+source = "modules/alpha"
 
 [modules.alpha.settings]
 greeting = "hello alpha"
 
 [modules.beta]
-source = "../modules/beta"
+source = "modules/beta"
 
 [modules.beta.settings]
 greeting = "hello beta"
@@ -603,7 +601,7 @@ func (m *Beta) Greeting() string {
 				settings[tc.key] = fmt.Sprintf("%q", tc.value)
 
 				ctr := newWorkspaceModuleSettingsCtr(t, c, fmt.Sprintf(`[modules.superconstructor]
-source = "../defaults/superconstructor"
+source = "defaults/superconstructor"
 entrypoint = true
 
 [modules.superconstructor.settings]
@@ -641,9 +639,9 @@ func (WorkspaceSuite) TestWorkspaceConfigurationLifecycle(ctx context.Context, t
 
 		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "query", "--doc", "query.graphql")
 		require.NoError(t, err)
-		require.JSONEq(t, fmt.Sprintf(`{"currentWorkspace":{"init":%q}}`, filepath.Join(workdir, workspace.LockDirName)), string(out))
+		require.JSONEq(t, fmt.Sprintf(`{"currentWorkspace":{"init":%q}}`, workdir), string(out))
 
-		configContents, err := os.ReadFile(filepath.Join(workdir, workspace.LockDirName, workspace.ConfigFileName))
+		configContents, err := os.ReadFile(filepath.Join(workdir, workspace.ConfigFileName))
 		require.NoError(t, err)
 		require.Contains(t, string(configContents), "[modules]")
 	})

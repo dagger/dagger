@@ -59,7 +59,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Read a configuration value from config.toml.
+     * Read a configuration value from dagger.toml.
      *
      * If key is empty, returns the full config.
      *
@@ -77,7 +77,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Write a configuration value to config.toml.
+     * Write a configuration value to dagger.toml.
      */
     public function configWrite(string $key, string $value, ?bool $here = false): string
     {
@@ -221,7 +221,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Initialize workspace config, creating .dagger/config.toml.
+     * Initialize workspace config, creating dagger.toml.
      */
     public function init(?bool $here = false): string
     {
@@ -233,7 +233,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Install a module into the workspace, writing config.toml to the host.
+     * Install a module into the workspace, writing dagger.toml to the host.
      */
     public function install(string $ref, ?string $name = '', ?bool $here = false): string
     {
@@ -263,7 +263,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Create a new module owned by the workspace and auto-install it in config.toml.
+     * Create a new module owned by the workspace and auto-install it in dagger.toml.
      */
     public function moduleInit(
         string $name,
@@ -306,20 +306,6 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Refresh lock entries for selected workspace-config modules.
-     *
-     * This layers selective workspace refresh on top of the lockfile base.
-     */
-    public function refreshModules(?array $moduleNames = []): Changeset
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('refreshModules');
-        if (null !== $moduleNames) {
-        $innerQueryBuilder->setArgument('moduleNames', $moduleNames);
-        }
-        return new \Dagger\Changeset($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Return all services from modules loaded in the workspace.
      */
     public function services(?array $include = null): UpGroup
@@ -332,7 +318,7 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Uninstall a module from the workspace, writing config.toml to the host.
+     * Uninstall a module from the workspace, writing dagger.toml to the host.
      */
     public function uninstall(string $name, ?bool $here = false): string
     {

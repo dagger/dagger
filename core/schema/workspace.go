@@ -73,13 +73,13 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Doc("Git state for this workspace. Errors if the workspace is not in a git repository."),
 		dagql.Func("init", s.workspaceInit).
 			DoNotCache("Mutates workspace on host").
-			Doc("Initialize workspace config, creating .dagger/config.toml.").
+			Doc("Initialize workspace config, creating dagger.toml.").
 			Args(
 				dagql.Arg("here").Doc("Create the workspace config directory at the workspace cwd instead of using the default write target."),
 			),
 		dagql.Func("install", s.install).
 			DoNotCache("Mutates workspace config on host").
-			Doc("Install a module into the workspace, writing config.toml to the host.").
+			Doc("Install a module into the workspace, writing dagger.toml to the host.").
 			Args(
 				dagql.Arg("ref").Doc("Module reference to install."),
 				dagql.Arg("name").Doc("Override name for the installed module entry."),
@@ -87,14 +87,14 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.Func("uninstall", s.uninstall).
 			DoNotCache("Mutates workspace config on host").
-			Doc("Uninstall a module from the workspace, writing config.toml to the host.").
+			Doc("Uninstall a module from the workspace, writing dagger.toml to the host.").
 			Args(
 				dagql.Arg("name").Doc("Name of the installed module entry to remove."),
 				dagql.Arg("here").Doc("Write to the workspace config directory at the workspace cwd."),
 			),
 		dagql.Func("moduleInit", s.moduleInit).
 			DoNotCache("Mutates workspace config and host filesystem").
-			Doc("Create a new module owned by the workspace and auto-install it in config.toml.").
+			Doc("Create a new module owned by the workspace and auto-install it in dagger.toml.").
 			Args(
 				dagql.Arg("name").Doc("Name of the new module."),
 				dagql.Arg("sdk").Doc("SDK to use for the new module."),
@@ -105,7 +105,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.Func("configRead", s.configRead).
 			DoNotCache("Reads live config from host").
-			Doc("Read a configuration value from config.toml.",
+			Doc("Read a configuration value from dagger.toml.",
 				"If key is empty, returns the full config.",
 				"If key points to a scalar, returns the value.",
 				"If key points to a table, returns flattened dotted-key output.").
@@ -114,7 +114,7 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			),
 		dagql.Func("configWrite", s.configWrite).
 			DoNotCache("Mutates workspace config on host").
-			Doc("Write a configuration value to config.toml.").
+			Doc("Write a configuration value to dagger.toml.").
 			Args(
 				dagql.Arg("key").Doc("Dotted key path (e.g. modules.greeter.source)."),
 				dagql.Arg("value").Doc("Value to set. Bools, integers, and comma-separated arrays are auto-detected."),
@@ -160,13 +160,6 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			Args(
 				dagql.Arg("include").Doc("Only include services matching the specified patterns"),
 			),
-		dagql.NodeFunc("refreshModules", s.refreshModules).
-			Doc("Refresh lock entries for selected workspace-config modules.",
-				"This layers selective workspace refresh on top of the lockfile base.").
-			Args(
-				dagql.Arg("moduleNames").Doc("Workspace module names to refresh."),
-			).
-			Experimental("Experimental selective workspace lock refresh API."),
 		dagql.NodeFunc("update", s.update).
 			Doc("Refresh workspace-managed state and return the resulting changeset.",
 				"Currently this refreshes existing lockfile entries only.").
@@ -1132,7 +1125,7 @@ func workspaceConfigWithCompatFallback(
 
 // workspaceConfigSkipPatterns reads per-module skip patterns from the served
 // workspace config shape, keyed by module name. In legacy compat workspaces,
-// there is no .dagger/config.toml yet, so use the shared compat projection that
+// there is no dagger.toml yet, so use the shared compat projection that
 // migration also persists.
 func workspaceConfigSkipPatterns(
 	ctx context.Context,

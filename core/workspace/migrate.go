@@ -4,15 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/dagger/dagger/core/modules"
 )
 
-// isLocalRef performs a fast heuristic check to determine whether a module
+// IsLocalRef performs a fast heuristic check to determine whether a module
 // reference string refers to a local path instead of a git source.
-func isLocalRef(source, pin string) bool {
+func IsLocalRef(source, pin string) bool {
 	if pin != "" {
 		return false
 	}
@@ -26,7 +25,6 @@ func isLocalRef(source, pin string) bool {
 // dagger.json project to workspace format.
 type MigrationPlan struct {
 	ProjectRoot              string
-	LookupSources            []string
 	Warnings                 []string
 	MigrationGapCount        int
 	MigrationReportPath      string
@@ -34,7 +32,6 @@ type MigrationPlan struct {
 	MigratedModuleConfigData []byte
 	MigratedModuleConfigPath string
 	MigrationReportData      []byte
-	LockData                 []byte
 }
 
 // PlanMigration computes the pure filesystem plan for migrating a compat
@@ -64,11 +61,11 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 	if needsProjectModuleMigration {
 		modulePath := filepath.Join("modules", cfg.Name)
 		moduleDir := filepath.Join(LockDirName, modulePath)
-		newJSON, err := buildMigratedModuleJSON(cfg, moduleDir)
+		newModuleConfig, err := buildMigratedModuleConfig(cfg, moduleDir)
 		if err != nil {
-			return nil, fmt.Errorf("building migrated module JSON: %w", err)
+			return nil, fmt.Errorf("building migrated module config: %w", err)
 		}
-		plan.MigratedModuleConfigData = newJSON
+		plan.MigratedModuleConfigData = newModuleConfig
 		plan.MigratedModuleConfigPath = filepath.Join(moduleDir, ModuleConfigFileName)
 	}
 
@@ -88,31 +85,9 @@ func PlanMigration(compatWorkspace *CompatWorkspace) (*MigrationPlan, error) {
 	}
 	plan.WorkspaceConfigData = workspaceConfigData
 
-	migrateLock := NewLock()
-	hasLockEntries := false
-	for _, mod := range compatWorkspace.Modules {
-		addMigrationLookupSource(plan, mod.Entry.Source)
-
-		if mod.Pin != "" {
-			if err := setMigrationModuleResolvePin(migrateLock, mod.Entry.Source, mod.Pin); err != nil {
-				return nil, fmt.Errorf("setting lock for module %q: %w", mod.ConfigName, err)
-			}
-			hasLockEntries = true
-		}
-	}
-	finalizeMigrationLookupSources(plan)
-
 	if len(warnings) > 0 {
 		plan.MigrationReportPath = filepath.Join(LockDirName, "migration-report.md")
 		plan.MigrationReportData = []byte(generateMigrationReportMarkdown(compatWorkspace.ConfigPath, warnings))
-	}
-
-	if hasLockEntries {
-		lockBytes, err := migrateLock.Marshal()
-		if err != nil {
-			return nil, fmt.Errorf("serializing workspace lock: %w", err)
-		}
-		plan.LockData = lockBytes
 	}
 
 	return plan, nil
@@ -140,9 +115,9 @@ func renderMigrationWorkspaceConfig(cfg *Config, mainModule *CompatMainModule) (
 	return UpdateConfigBytes(seeded, cfg)
 }
 
-// buildMigratedModuleJSON creates the cleaned-up dagger.json for the migrated
+// buildMigratedModuleConfig creates the cleaned-up dagger-module.toml for the migrated
 // module. newModuleDir is relative to the project root.
-func buildMigratedModuleJSON(cfg *modules.ModuleConfig, newModuleDir string) ([]byte, error) {
+func buildMigratedModuleConfig(cfg *modules.ModuleConfig, newModuleDir string) ([]byte, error) {
 	source, err := migratedModuleRelPath(newModuleDir, cfg.Source)
 	if err != nil {
 		return nil, fmt.Errorf("rebasing source path: %w", err)
@@ -160,7 +135,7 @@ func buildMigratedModuleJSON(cfg *modules.ModuleConfig, newModuleDir string) ([]
 		}
 
 		depSource := dep.Source
-		if isLocalRef(dep.Source, dep.Pin) {
+		if IsLocalRef(dep.Source, dep.Pin) {
 			depSource, err = migratedModuleRelPath(newModuleDir, dep.Source)
 			if err != nil {
 				return nil, fmt.Errorf("rebasing dependency %q source path: %w", dep.Name, err)
@@ -198,11 +173,12 @@ func buildMigratedModuleJSON(cfg *modules.ModuleConfig, newModuleDir string) ([]
 		DisableDefaultFunctionCaching: cfg.DisableDefaultFunctionCaching,
 	}
 
-	out, err := json.MarshalIndent(newCfg, "", "  ")
+	out, err := modules.MarshalModuleConfigForFormat(&modules.ModuleConfigWithUserFields{
+		ModuleConfig: newCfg,
+	}, modules.ConfigFormatCurrent)
 	if err != nil {
 		return nil, err
 	}
-	out = append(out, '\n')
 	return out, nil
 }
 
@@ -320,48 +296,4 @@ func analyzeCustomizations(toolchains []*modules.ModuleConfigDependency) []migra
 
 func isConstructorCustomization(cust *modules.ModuleConfigArgument) bool {
 	return len(cust.Function) == 0
-}
-
-func addMigrationLookupSource(plan *MigrationPlan, source string) {
-	if source == "" || isLocalRef(source, "") {
-		return
-	}
-	plan.LookupSources = append(plan.LookupSources, source)
-}
-
-func finalizeMigrationLookupSources(plan *MigrationPlan) {
-	if len(plan.LookupSources) < 2 {
-		return
-	}
-
-	sort.Strings(plan.LookupSources)
-	compacted := plan.LookupSources[:1]
-	for _, source := range plan.LookupSources[1:] {
-		if source != compacted[len(compacted)-1] {
-			compacted = append(compacted, source)
-		}
-	}
-	plan.LookupSources = compacted
-}
-
-func setMigrationModuleResolvePin(lock *Lock, source, pin string) error {
-	if source == "" || pin == "" {
-		return nil
-	}
-
-	existingResult, ok, err := lock.GetModuleResolve(source)
-	if err != nil {
-		return err
-	}
-	if ok {
-		if existingResult.Value != pin {
-			return fmt.Errorf("conflicting pins for source %q: %q vs %q", source, existingResult.Value, pin)
-		}
-		return nil
-	}
-
-	return lock.SetModuleResolve(source, LookupResult{
-		Value:  pin,
-		Policy: PolicyPin,
-	})
 }

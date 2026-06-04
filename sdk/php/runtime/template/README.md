@@ -20,7 +20,7 @@ To initialise the module, call the following:
 dagger init --sdk="php" <path-to-module>
 ```
 
-This will create a `dagger.json` configuration file.
+This will create a `dagger-module.toml` configuration file.
 
 The `path-to-module` argument can be omitted and the module will be initialised where the command was called from.
 
@@ -34,7 +34,7 @@ dagger develop -m <path-to-module>
 
 This will generate a copy of the classes available to you from the SDK. Making it easier to see what you have to work with. It will also generate a `src/` directory if it does not exist, this is required; this is where Dagger searches for available functions.
 
-The `-m` flag must be a git url or relative file path. The argument may be omitted if the command is called within the directory containing your module's `dagger.json`
+The `-m` flag must be a git url or relative file path. The argument may be omitted if the command is called within the directory containing your module's `dagger-module.toml`
 
 ### Check Module Functions
 
@@ -384,11 +384,11 @@ class Example
 
 ##### Default Paths
 
-Default paths allow your module access files outside the *source directory* specified in your `dagger.json` file.
+Default paths allow your module access files outside the *source directory* specified in your `dagger-module.toml` file.
 Note that default paths are only applicable for paths within your project:
 
 - If it is a Git Repository, it is restricted to files in the same Git Repository.
-- If it is a non-repository, then it is restricted to files and sub-directories of the directory containing your `dagger.json` file.
+- If it is a non-repository, then it is restricted to files and sub-directories of the directory containing your `dagger-module.toml` file.
 
 Note that you cannot easily instantiate a `Directory` or `File` object from scratch.
 So the standard way to specify defaults in PHP would be hard to apply.
@@ -398,9 +398,9 @@ Instead, specify a `DefaultPath` attribute with a `string` path.
 If an absolute path is specified:
 
 - in a Git repository (defined by the presence of a .git sub-directory), the default context is the root of the Git repository.
-- in a non-repository location (defined by the absence of a .git sub-directory), the default context is the directory containing a `dagger.json` file.
+- in a non-repository location (defined by the absence of a .git sub-directory), the default context is the directory containing a `dagger-module.toml` file.
 
-If a relative path is specified the default context is always the directory containing a `dagger.json` file.
+If a relative path is specified the default context is always the directory containing a `dagger-module.toml` file.
 
 A default path is specified like so:
 
@@ -414,19 +414,19 @@ public function myDaggerFunction(
 }
 ```
 
-A default path of `.` returns the directory containing your `dagger.json` file.
+A default path of `.` returns the directory containing your `dagger-module.toml` file.
 
-If your `dagger.json` file is located in `~/my-project/src/`:
+If your `dagger-module.toml` file is located in `~/my-project/src/`:
 
 - `.` resolves to `~/my-project/src/`
 - `..` resolves to `~/my-project/` **if it is a Git Repository** otherwise this is not allowed.
 - `/`, if `~/my-project/` is a Git repository, resolves to `~/my-project/` because that is the root of your Git repository.
-- `/`, if `~/my-project/` is not a Git repository, resolves to `~/my-project/src/` because that is the directory containing your `dagger.json` file.
+- `/`, if `~/my-project/` is not a Git repository, resolves to `~/my-project/src/` because that is the directory containing your `dagger-module.toml` file.
 
 - `./README.md` resolves to `~/my-project/src/README.md`
 - `../README.md` resolves to `~/my-project/README.md` **if it is a Git Repository** otherwise this is not allowed.
 - `/README.md`, if `~/my-project/` is a Git repository, resolves to `~/my-project/README.md` because that is the root of your Git repository.
-- `/`, if `~/my-project/` is not a Git repository, resolves to `~/my-project/src/README` because that is the directory containing your `dagger.json` file.
+- `/`, if `~/my-project/` is not a Git repository, resolves to `~/my-project/src/README` because that is the directory containing your `dagger-module.toml` file.
 
 For further detail, refer to [Directories and Files](https://docs.dagger.io/manuals/developer/functions/#directories-and-files).
 

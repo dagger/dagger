@@ -24,7 +24,6 @@ import (
 	"github.com/dagger/dagger/engine/client/pathutil"
 	"github.com/dagger/dagger/engine/engineutil"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/util/gitutil"
 	"github.com/dagger/dagger/util/hashutil"
 	telemetry "github.com/dagger/otel-go"
 	"golang.org/x/sync/errgroup"
@@ -68,7 +67,7 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 			Args(
 				dagql.Arg("refString").Doc(`The string ref representation of the module source`),
 				dagql.Arg("refPin").Doc(`The pinned version of the module source`),
-				dagql.Arg("disableFindUp").Doc(`If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.`),
+				dagql.Arg("disableFindUp").Doc(`If true, do not attempt to find a module config file in a parent directory of the provided path. Only relevant for local module sources.`),
 				dagql.Arg("allowNotExists").Doc(`If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.`),
 				dagql.Arg("requireKind").Doc(`If set, error out if the ref string is not of the provided requireKind.`),
 			),
@@ -163,39 +162,39 @@ func (s *moduleSourceSchema) Install(dag *dagql.Server) {
 
 		dagql.Func("withBlueprint", s.moduleSourceWithBlueprint).
 			Doc(`Set a blueprint for the module source.`).
-			Deprecated("Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.").
+			Deprecated("Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.").
 			Args(
 				dagql.Arg("blueprint").Doc(`The blueprint module to set.`),
 			),
 
 		dagql.Func("withToolchains", s.moduleSourceWithToolchains).
 			Doc(`Add toolchains to the module source.`).
-			Deprecated("Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.").
+			Deprecated("Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.").
 			Args(
 				dagql.Arg("toolchains").Doc(`The toolchain modules to add.`),
 			),
 
 		dagql.NodeFunc("withUpdateToolchains", s.moduleSourceWithUpdateToolchains).
 			Doc(`Update one or more toolchains.`).
-			Deprecated("Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.").
+			Deprecated("Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.").
 			Args(
 				dagql.Arg("toolchains").Doc(`The toolchains to update.`),
 			),
 
 		dagql.Func("withoutToolchains", s.moduleSourceWithoutToolchains).
 			Doc(`Remove the provided toolchains from the module source.`).
-			Deprecated("Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.").
+			Deprecated("Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.").
 			Args(
 				dagql.Arg("toolchains").Doc(`The toolchains to remove.`),
 			),
 
 		dagql.NodeFunc("withUpdateBlueprint", s.moduleSourceWithUpdateBlueprint).
 			Doc(`Update the blueprint module to the latest version.`).
-			Deprecated("Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead."),
+			Deprecated("Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead."),
 
 		dagql.Func("withoutBlueprint", s.moduleSourceWithoutBlueprint).
 			Doc(`Remove the current blueprint from the module source.`).
-			Deprecated("Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead."),
+			Deprecated("Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead."),
 
 		dagql.Func("withExperimentalFeatures", s.moduleSourceWithExperimentalFeatures).
 			Doc(`Enable the experimental features for the module source.`).
@@ -328,7 +327,7 @@ func (s *moduleSourceSchema) moduleSource(
 			return inst, err
 		}
 	case core.ModuleSourceKindGit:
-		inst, err = s.gitModuleSource(ctx, query, args.RefString, parsedRef.Git, args.RefPin, !args.DisableFindUp)
+		inst, err = s.gitModuleSource(ctx, query, parsedRef.Git, args.RefPin, !args.DisableFindUp)
 		if err != nil {
 			return inst, err
 		}
@@ -341,6 +340,53 @@ func (s *moduleSourceSchema) moduleSource(
 	return inst, nil
 }
 
+func findUpModuleConfig(ctx context.Context, statFS core.StatFS, start string) (dir string, filename string, found bool, err error) {
+	names := make(map[string]struct{}, len(modules.ConfigFilenames()))
+	for _, filename := range modules.ConfigFilenames() {
+		names[filename] = struct{}{}
+	}
+	foundPaths, err := core.Host{}.FindUpAll(ctx, statFS, start, names)
+	if err != nil {
+		return "", "", false, err
+	}
+	dir, filename, found = selectFoundModuleConfig(foundPaths)
+	return dir, filename, found, nil
+}
+
+func selectFoundModuleConfig(foundPaths map[string]string) (dir string, filename string, found bool) {
+	for _, candidate := range modules.ConfigFilenames() {
+		candidateDir, ok := foundPaths[candidate]
+		if !ok {
+			continue
+		}
+		if !found || moduleConfigDirDepth(candidateDir) > moduleConfigDirDepth(dir) {
+			dir, filename, found = candidateDir, candidate, true
+		}
+	}
+	return dir, filename, found
+}
+
+func moduleConfigDirDepth(dir string) int {
+	clean := filepath.Clean(dir)
+	if clean == "." || clean == string(filepath.Separator) {
+		return 0
+	}
+	return strings.Count(filepath.ToSlash(clean), "/") + 1
+}
+
+func moduleConfigInDir(ctx context.Context, statFS core.StatFS, dir string) (filename string, found bool, err error) {
+	for _, filename := range modules.ConfigFilenames() {
+		_, exists, err := core.StatFSExists(ctx, statFS, filepath.Join(dir, filename))
+		if err != nil {
+			return "", false, err
+		}
+		if exists {
+			return filename, true, nil
+		}
+	}
+	return "", false, nil
+}
+
 //nolint:gocyclo
 func (s *moduleSourceSchema) localModuleSource(
 	ctx context.Context,
@@ -348,13 +394,13 @@ func (s *moduleSourceSchema) localModuleSource(
 	bk *engineutil.Client,
 
 	// localPath is the path the user provided to load the module, it may be relative or absolute and
-	// may point to either the directory containing dagger.json or any subdirectory in the
-	// filetree under the directory containing dagger.json.
-	// When findUp is enabled, it can also be a name of a dependency in the default dagger.json found-up from the cwd.
+	// may point to either the directory containing a module config file or any subdirectory in the
+	// filetree under the directory containing that module config file.
+	// When findUp is enabled, it can also be a name of a dependency in the default module config found-up from the cwd.
 	localPath string,
 
-	// whether to search up the directory tree for a dagger.json file. additionally, when enabled if a dagger.json is found-up
-	// and localPath is a named dependency in that dagger.json, the returned source will be for that dependency.
+	// whether to search up the directory tree for a module config file. additionally, when enabled if a module config is found-up
+	// and localPath is a named dependency in that module config, the returned source will be for that dependency.
 	doFindUp bool,
 
 	// if true, tolerate the localPath not existing on the filesystem (for dagger init on directories that don't exist yet)
@@ -378,30 +424,30 @@ func (s *moduleSourceSchema) localModuleSource(
 		return inst, fmt.Errorf("failed to stat local path: %w", err)
 	}
 
-	// if localPath doesn't exist and find-up is enabled, check if it's a named dep in the default dagger.json
+	// if localPath doesn't exist and find-up is enabled, check if it's a named dep in the default module config
 	if localAbsPath == "" && doFindUp {
 		cwd, err := bk.AbsPath(ctx, ".")
 		if err != nil {
 			return inst, fmt.Errorf("failed to get cwd: %w", err)
 		}
-		defaultFindUpSourceRootDir, defaultFindUpExists, err := core.Host{}.FindUp(ctx, core.NewCallerStatFS(bk), cwd, modules.Filename)
+		defaultFindUpSourceRootDir, defaultConfigFilename, defaultFindUpExists, err := findUpModuleConfig(ctx, core.NewCallerStatFS(bk), cwd)
 		if err != nil {
 			return inst, fmt.Errorf("failed to find up root: %w", err)
 		}
 		if defaultFindUpExists {
-			configPath := filepath.Join(defaultFindUpSourceRootDir, modules.Filename)
+			configPath := filepath.Join(defaultFindUpSourceRootDir, defaultConfigFilename)
 			contents, err := bk.ReadCallerHostFile(ctx, configPath)
 			if err != nil {
 				return inst, fmt.Errorf("failed to read module config file: %w", err)
 			}
-			modCfg, err := modules.ParseModuleConfig(contents)
+			modCfg, err := modules.ParseModuleConfigForFilename(contents, defaultConfigFilename)
 			if err != nil {
 				return inst, fmt.Errorf("failed to parse module config: %w", err)
 			}
 
 			namedDep, ok := modCfg.DependencyByName(localPath)
 			if ok {
-				// found a dep in the default dagger.json with the name localPath, load it and return it
+				// found a dep in the default module config with the name localPath, load it and return it
 				parsedRef, err := core.ParseRefString(
 					ctx,
 					core.StatFSFunc(func(ctx context.Context, path string) (string, *core.Stat, error) {
@@ -422,7 +468,7 @@ func (s *moduleSourceSchema) localModuleSource(
 					depModPath := filepath.Join(defaultFindUpSourceRootDir, namedDep.Source)
 					return s.localModuleSource(ctx, query, bk, depModPath, false, allowNotExists)
 				case core.ModuleSourceKindGit:
-					return s.gitModuleSource(ctx, query, namedDep.Source, parsedRef.Git, namedDep.Pin, false)
+					return s.gitModuleSource(ctx, query, parsedRef.Git, namedDep.Pin, false)
 				}
 			}
 		}
@@ -443,15 +489,16 @@ func (s *moduleSourceSchema) localModuleSource(
 
 	// We always find-up the context dir. When doFindUp is true, we also try a find-up for the source root.
 	const dotGit = ".git"
-	foundPaths, err := core.Host{}.FindUpAll(ctx, core.NewCallerStatFS(bk), localAbsPath, map[string]struct{}{
-		modules.Filename: {}, // dagger.json, the directory containing this is the source root
-		dotGit:           {}, // the context dir is the git repo root, if it exists
-	})
+	findUpNames := map[string]struct{}{dotGit: {}}
+	for _, filename := range modules.ConfigFilenames() {
+		findUpNames[filename] = struct{}{}
+	}
+	foundPaths, err := core.Host{}.FindUpAll(ctx, core.NewCallerStatFS(bk), localAbsPath, findUpNames)
 	if err != nil {
 		return inst, fmt.Errorf("failed to find up source root and context: %w", err)
 	}
 	contextDirPath, dotGitFound := foundPaths[dotGit]
-	sourceRootPath, daggerCfgFound := foundPaths[modules.Filename]
+	sourceRootPath, configFilename, daggerCfgFound := selectFoundModuleConfig(foundPaths)
 
 	switch {
 	case doFindUp && daggerCfgFound:
@@ -464,6 +511,9 @@ func (s *moduleSourceSchema) localModuleSource(
 	default:
 		// we weren't trying to find-up the source root, so we always set the source root to the local path
 		daggerCfgFound = sourceRootPath == localAbsPath // config was found if-and-only-if it was in the localAbsPath dir
+		if !daggerCfgFound {
+			configFilename = ""
+		}
 		sourceRootPath = localAbsPath
 	}
 
@@ -484,9 +534,13 @@ func (s *moduleSourceSchema) localModuleSource(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get relative path from context to original path: %w", err)
 	}
+	if configFilename == "" {
+		configFilename = modules.Filename
+	}
 
 	localSrc := &core.ModuleSource{
 		ConfigExists:      daggerCfgFound,
+		ConfigFilename:    configFilename,
 		SourceRootSubpath: sourceRootRelPath,
 		OriginalSubpath:   originalRelPath,
 		Kind:              core.ModuleSourceKindLocal,
@@ -525,8 +579,8 @@ func (s *moduleSourceSchema) localModuleSource(
 			return inst, err
 		}
 	} else {
-		// we found a dagger.json, load the module source using its values
-		configPath := filepath.Join(sourceRootPath, modules.Filename)
+		// we found a module config, load the module source using its values
+		configPath := filepath.Join(sourceRootPath, configFilename)
 		contents, err := bk.ReadCallerHostFile(ctx, configPath)
 		if err != nil {
 			return inst, fmt.Errorf("failed to read module config file: %w", err)
@@ -576,44 +630,17 @@ func (s *moduleSourceSchema) localModuleSource(
 	return dagql.NewResultForCurrentCall(ctx, localSrc)
 }
 
-//nolint:gocyclo
 func (s *moduleSourceSchema) gitModuleSource(
 	ctx context.Context,
 	query dagql.ObjectResult[*core.Query],
-	source string,
 	parsed *core.ParsedGitRefString,
 	refPin string,
-	// whether to search up the directory tree for a dagger.json file
+	// whether to search up the directory tree for a module config file
 	doFindUp bool,
 ) (inst dagql.Result[*core.ModuleSource], err error) {
 	dag, err := query.Self().Server.Server(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get dag server: %w", err)
-	}
-
-	var (
-		lockResolution lookupLockResolution
-		lookupLock     *workspaceLookupLock
-	)
-	if refPin == "" {
-		lockMode, loadedLookupLock, err := lookupLockForMode(ctx, query.Self(), lockModulesResolveOperation)
-		if err != nil {
-			return inst, err
-		}
-		lookupLock = loadedLookupLock
-		if lockMode != workspace.LockModeDisabled {
-			lockResolution, err = resolveLookupFromLock(
-				lockMode,
-				lookupLock.lock,
-				lockModulesResolveOperation,
-				[]any{source},
-				workspace.PolicyFloat,
-			)
-			if err != nil {
-				return inst, fmt.Errorf("%s lock resolution: %w", lockModulesResolveOperation, err)
-			}
-			refPin = lockResolution.Pin
-		}
 	}
 
 	gitRef, err := parsed.GitRef(ctx, dag, refPin)
@@ -622,8 +649,9 @@ func (s *moduleSourceSchema) gitModuleSource(
 	}
 
 	gitSrc := &core.ModuleSource{
-		ConfigExists: true, // we can't load uninitialized git modules, we'll error out later if it's not there
-		Kind:         core.ModuleSourceKindGit,
+		ConfigExists:   true, // we can't load uninitialized git modules, we'll error out later if it's not there
+		ConfigFilename: modules.Filename,
+		Kind:           core.ModuleSourceKindGit,
 		Git: &core.GitModuleSource{
 			HTMLRepoURL:  parsed.RepoRoot.Repo,
 			RepoRootPath: parsed.RepoRoot.Root,
@@ -654,11 +682,20 @@ func (s *moduleSourceSchema) gitModuleSource(
 
 	var configPath string
 	if !doFindUp {
-		configPath = filepath.Join(gitSrc.SourceRootSubpath, modules.Filename)
+		statFS := &core.DirectoryStatFS{Dir: gitSrc.ContextDirectory}
+		configFilename, found, err := moduleConfigInDir(ctx, statFS, filepath.Join("/", gitSrc.SourceRootSubpath))
+		if err != nil {
+			return inst, fmt.Errorf("failed to find module config: %w", err)
+		}
+		if !found {
+			return inst, fmt.Errorf("git module source %q does not contain a dagger config file", gitSrc.AsString())
+		}
+		gitSrc.ConfigFilename = configFilename
+		configPath = filepath.Join(gitSrc.SourceRootSubpath, configFilename)
 	} else {
 		// first validate the given path exists at all, otherwise weird things like
 		// `dagger -m github.com/dagger/dagger/not/a/real/dir` can succeed because
-		// they find-up to a real dagger.json
+		// they find-up to a real module config file
 		statFS := &core.DirectoryStatFS{Dir: gitSrc.ContextDirectory}
 
 		if gitSrc.SourceRootSubpath != "" {
@@ -669,17 +706,15 @@ func (s *moduleSourceSchema) gitModuleSource(
 			}
 		}
 
-		configDir, found, err := core.Host{}.FindUp(ctx, statFS,
-			filepath.Join("/", gitSrc.SourceRootSubpath),
-			modules.Filename,
-		)
+		configDir, configFilename, found, err := findUpModuleConfig(ctx, statFS, filepath.Join("/", gitSrc.SourceRootSubpath))
 		if err != nil {
-			return inst, fmt.Errorf("failed to find-up dagger.json: %w", err)
+			return inst, fmt.Errorf("failed to find-up module config: %w", err)
 		}
 		if !found {
 			return inst, fmt.Errorf("git module source %q does not contain a dagger config file", gitSrc.AsString())
 		}
-		configPath = filepath.Join(configDir, modules.Filename)
+		gitSrc.ConfigFilename = configFilename
+		configPath = filepath.Join(configDir, configFilename)
 		gitSrc.SourceRootSubpath = strings.TrimPrefix(configDir, "/")
 	}
 	if gitSrc.SourceRootSubpath == "" {
@@ -752,37 +787,12 @@ func (s *moduleSourceSchema) gitModuleSource(
 		return inst, fmt.Errorf("load user defaults: %w", err)
 	}
 
-	if lockResolution.ShouldWrite && lookupLock != nil {
-		policy := lockResolution.Policy
-		if !lockResolution.Found {
-			policy = moduleResolveLockPolicy(gitRef.Self().Ref)
-		}
-		if err := lookupLock.SetLookup(
-			lockCoreNamespace,
-			lockModulesResolveOperation,
-			[]any{source},
-			workspace.LookupResult{
-				Value:  gitRef.Self().Ref.SHA,
-				Policy: policy,
-			},
-		); err != nil {
-			return inst, fmt.Errorf("set lock entry for %s: %w", lockModulesResolveOperation, err)
-		}
-	}
-
 	inst, err = dagql.NewResultForCurrentCall(ctx, gitSrc)
 	if err != nil {
 		return inst, fmt.Errorf("failed to create instance: %w", err)
 	}
 
 	return inst, nil
-}
-
-func moduleResolveLockPolicy(ref *gitutil.Ref) workspace.LockPolicy {
-	if ref != nil && (strings.HasPrefix(ref.Name, "refs/tags/") || gitutil.IsCommitSHA(ref.Name)) {
-		return workspace.PolicyPin
-	}
-	return workspace.PolicyFloat
 }
 
 type directoryAsModuleArgs struct {
@@ -834,6 +844,7 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 
 	dirSrc := &core.ModuleSource{
 		ConfigExists:      true, // we can't load uninitialized dir modules, we'll error out later if it's not there
+		ConfigFilename:    modules.Filename,
 		SourceRootSubpath: sourceRootSubpath,
 		ContextDirectory:  contextDir,
 		Kind:              core.ModuleSourceKindDir,
@@ -846,7 +857,15 @@ func (s *moduleSourceSchema) directoryAsModuleSource(
 		dirSrc.SourceRootSubpath = "."
 	}
 
-	configPath := filepath.Join(dirSrc.SourceRootSubpath, modules.Filename)
+	configFilename, found, err := moduleConfigInDir(ctx, &core.DirectoryStatFS{Dir: contextDir}, filepath.Join("/", dirSrc.SourceRootSubpath))
+	if err != nil {
+		return inst, fmt.Errorf("failed to find dir module config: %w", err)
+	}
+	if !found {
+		return inst, fmt.Errorf("dir module source does not contain a dagger config file")
+	}
+	dirSrc.ConfigFilename = configFilename
+	configPath := filepath.Join(dirSrc.SourceRootSubpath, configFilename)
 	var configContents string
 	err = dag.Select(ctx, contextDir, &configContents,
 		dagql.Selector{
@@ -920,8 +939,11 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	if src.SourceRootSubpath == "" {
 		return fmt.Errorf("source root path must be set")
 	}
+	if src.ConfigFilename == "" {
+		src.ConfigFilename = modules.Filename
+	}
 
-	modCfg, err := modules.ParseModuleConfig(configBytes)
+	modCfg, err := modules.ParseModuleConfigForFilename(configBytes, src.ConfigFilename)
 	if err != nil {
 		return err
 	}
@@ -966,13 +988,13 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	)
 	switch {
 	case modCfg.DisableDefaultFunctionCaching != nil:
-		// explicit setting in dagger.json, use it
+		// explicit setting in the module config, use it
 		src.DisableDefaultFunctionCaching = *modCfg.DisableDefaultFunctionCaching
 	case canDefaultFuncCaching:
-		// no explicit setting in dagger.json but module engine version supports it, enable function caching
+		// no explicit setting in the module config but module engine version supports it, enable function caching
 		src.DisableDefaultFunctionCaching = false
 	default:
-		// no explicit setting in dagger.json and module engine version doesn't support it, disable function caching
+		// no explicit setting in the module config and module engine version doesn't support it, disable function caching
 		src.DisableDefaultFunctionCaching = true
 	}
 
@@ -1021,6 +1043,13 @@ func (s *moduleSourceSchema) initFromModConfig(configBytes []byte, src *core.Mod
 	return nil
 }
 
+func moduleSourceConfigFilename(src *core.ModuleSource) string {
+	if src != nil && src.ConfigFilename != "" {
+		return src.ConfigFilename
+	}
+	return modules.Filename
+}
+
 // load (or re-load) the context directory for the given module source
 func (s *moduleSourceSchema) loadModuleSourceContext(
 	ctx context.Context,
@@ -1031,11 +1060,11 @@ func (s *moduleSourceSchema) loadModuleSourceContext(
 		return fmt.Errorf("failed to get dag server: %w", err)
 	}
 
-	// we load the includes specified by the user in dagger.json (if any) plus a few
+	// we load the includes specified by the user in the module config (if any) plus a few
 	// prepended paths that are always loaded
 	fullIncludePaths := []string{
 		// always load the config file
-		src.SourceRootSubpath + "/" + modules.Filename,
+		src.SourceRootSubpath + "/" + moduleSourceConfigFilename(src),
 	}
 
 	if src.SourceSubpath == "." {
@@ -2344,10 +2373,13 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 		}
 	}
 
-	if src.ConfigBlueprint != nil {
+	format := modules.ConfigFormatForFilename(moduleSourceConfigFilename(src))
+	if format == modules.ConfigFormatLegacy && src.ConfigBlueprint != nil {
 		modCfg.Blueprint = src.ConfigBlueprint
 	}
-	modCfg.Toolchains = src.ConfigToolchains
+	if format == modules.ConfigFormatLegacy {
+		modCfg.Toolchains = src.ConfigToolchains
+	}
 
 	// Check version compatibility.
 	if !engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion) {
@@ -2370,7 +2402,7 @@ func (s *moduleSourceSchema) loadModuleSourceConfig(
 		if err != nil {
 			return nil, fmt.Errorf("failed to get relative path from source root to source: %w", err)
 		}
-		// if source is ".", leave it unset in dagger.json as that's the default
+		// if source is ".", leave it unset in the module config as that's the default
 		if modCfg.Source == "." {
 			modCfg.Source = ""
 		}
@@ -2671,7 +2703,7 @@ func (s *moduleSourceSchema) runClientGenerator(
 	return genDirInst, nil
 }
 
-// runGeneratedContext runs codegen, client generation, and dagger.json writing for the given
+// runGeneratedContext runs codegen, client generation, and module config writing for the given
 // module source, returning the original context directory and the fully-generated context
 // directory. Callers can use these two directories to produce either a diff or a Changeset.
 func (s *moduleSourceSchema) runGeneratedContext(
@@ -2711,13 +2743,13 @@ func (s *moduleSourceSchema) runGeneratedContext(
 		}
 	}
 
-	// write dagger.json to the generated context directory
-	modCfgBytes, err := json.MarshalIndent(modCfg, "", "  ")
+	// write the module config to the generated context directory
+	configFilename := moduleSourceConfigFilename(srcInst.Self())
+	modCfgBytes, err := modules.MarshalModuleConfigForFilename(modCfg, configFilename)
 	if err != nil {
 		return originalCtxDir, genDirInst, fmt.Errorf("failed to encode module config: %w", err)
 	}
-	modCfgBytes = append(modCfgBytes, '\n')
-	modCfgPath := filepath.Join(srcInst.Self().SourceRootSubpath, modules.Filename)
+	modCfgPath := filepath.Join(srcInst.Self().SourceRootSubpath, configFilename)
 	err = dag.Select(ctx, genDirInst, &genDirInst,
 		dagql.Selector{
 			Field: "withNewFile",
@@ -2729,7 +2761,7 @@ func (s *moduleSourceSchema) runGeneratedContext(
 		},
 	)
 	if err != nil {
-		return originalCtxDir, genDirInst, fmt.Errorf("failed to add updated dagger.json to context dir: %w", err)
+		return originalCtxDir, genDirInst, fmt.Errorf("failed to add updated module config to context dir: %w", err)
 	}
 
 	return originalCtxDir, genDirInst, nil

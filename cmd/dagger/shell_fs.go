@@ -334,7 +334,7 @@ func (h *shellCallHandler) getModuleConfig(ctx context.Context, ref string) (rcf
 
 	src := h.dag.ModuleSource(ref)
 
-	// could be a git repo without a dagger.json in a parent directory
+	// could be a git repo without a module config file in a parent directory
 	// (i.e., doesn't return an error)
 	exists, err := src.ConfigExists(ctx)
 	if !exists {

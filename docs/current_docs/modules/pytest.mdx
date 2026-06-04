@@ -41,7 +41,7 @@ dagger check pytest:test # run Pytest against the project source
 
 ## Settings
 
-List the current settings and their values with `dagger settings pytest`, then set one with `dagger settings pytest <key> <value>`. Settings are stored in `.dagger/config.toml` under `[modules.pytest.settings]`.
+List the current settings and their values with `dagger settings pytest`, then set one with `dagger settings pytest <key> <value>`. Settings are stored in `dagger.toml` under `[modules.pytest.settings]`.
 
 - **`source`** (default: workspace root): the directory containing the Python project to test. Point it at a subdirectory when the project is not at the workspace root.
 - **`container`** (default: none): a custom container that already has Python and `uv` installed. By default the module uses an Alpine base and provisions Python with `uv`; set a container when tests need system packages, a private index, or other setup the default image lacks.

@@ -13,10 +13,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const (
-	lockCoreNamespace           = ""
-	lockModulesResolveOperation = "modules.resolve"
-)
+const lockCoreNamespace = ""
 
 type workspaceLookupLock struct {
 	ctx   context.Context
@@ -179,9 +176,23 @@ func readWorkspaceLockState(ctx context.Context, bk interface {
 	data, err := bk.ReadCallerHostFile(ctx, lockPath)
 	if err != nil {
 		if isWorkspaceLockNotFound(err) {
-			return workspace.NewLock(), false, nil
+			legacyPath, err := legacyLockHostPath(ws)
+			if err != nil {
+				return nil, false, err
+			}
+			if legacyPath == "" || legacyPath == lockPath {
+				return workspace.NewLock(), false, nil
+			}
+			data, err = bk.ReadCallerHostFile(ctx, legacyPath)
+			if err != nil {
+				if isWorkspaceLockNotFound(err) {
+					return workspace.NewLock(), false, nil
+				}
+				return nil, false, fmt.Errorf("reading legacy lock: %w", err)
+			}
+		} else {
+			return nil, false, fmt.Errorf("reading lock: %w", err)
 		}
-		return nil, false, fmt.Errorf("reading lock: %w", err)
 	}
 
 	lock, err := workspace.ParseLock(data)
@@ -195,54 +206,9 @@ func isWorkspaceLockNotFound(err error) bool {
 	return errors.Is(err, os.ErrNotExist) || status.Code(err) == codes.NotFound
 }
 
-func resolveModuleSourceLookupResult(
-	ctx context.Context,
-	query *core.Query,
-	source string,
-	policy workspace.LockPolicy,
-) (workspace.LookupResult, error) {
-	ctx = lookupRefreshContext(ctx)
-
-	bk, err := query.Engine(ctx)
-	if err != nil {
-		return workspace.LookupResult{}, fmt.Errorf("engine client: %w", err)
+func legacyLockHostPath(ws *core.Workspace) (string, error) {
+	if ws == nil || ws.LockFile == "" {
+		return "", nil
 	}
-
-	parsedRef, err := core.ParseRefString(ctx, core.NewCallerStatFS(bk), source, "")
-	if err != nil {
-		return workspace.LookupResult{}, fmt.Errorf("parse module source %q: %w", source, err)
-	}
-	if parsedRef.Kind != core.ModuleSourceKindGit {
-		return workspace.LookupResult{}, fmt.Errorf("module source %q is not a git source", source)
-	}
-
-	dag, err := core.CurrentDagqlServer(ctx)
-	if err != nil {
-		return workspace.LookupResult{}, fmt.Errorf("query server: %w", err)
-	}
-
-	gitRef, err := parsedRef.Git.GitRef(ctx, dag, "")
-	if err != nil {
-		return workspace.LookupResult{}, fmt.Errorf("resolve module source %q: %w", source, err)
-	}
-
-	if policy == "" {
-		policy = moduleResolveLockPolicy(gitRef.Self().Ref)
-	}
-
-	return workspace.LookupResult{
-		Value:  gitRef.Self().Ref.SHA,
-		Policy: policy,
-	}, nil
-}
-
-func lookupRefreshContext(ctx context.Context) context.Context {
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return ctx
-	}
-
-	refreshed := *clientMetadata
-	refreshed.LockMode = string(workspace.LockModeDisabled)
-	return engine.ContextWithClientMetadata(ctx, &refreshed)
+	return workspaceHostPath(ws, workspace.LegacyLockFilePathForCanonical(ws.LockFile))
 }

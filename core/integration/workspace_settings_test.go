@@ -29,7 +29,7 @@ import (
 func (WorkspaceSuite) TestWorkspaceSettingsCommandGrammar(ctx context.Context, t *testctx.T) {
 	t.Run("settings supports exactly zero, one, two, or three positional args", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
-source = "../modules/aws"
+source = "modules/aws"
 entrypoint = true
 
 [modules.aws.settings]
@@ -68,7 +68,7 @@ region = "us-west-2"
 
 	t.Run("module omission is never supported, even for a single entrypoint module", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.greeter]
-source = "../modules/greeter"
+source = "modules/greeter"
 entrypoint = true
 
 [modules.greeter.settings]
@@ -82,7 +82,7 @@ greeting = "hello"
 
 	t.Run("module selection always uses the workspace alias, not the module's intrinsic name", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.prod-aws]
-source = "../modules/aws"
+source = "modules/aws"
 
 [modules.prod-aws.settings]
 region = "us-west-2"
@@ -103,10 +103,10 @@ region = "us-west-2"
 func (WorkspaceSuite) TestWorkspaceSettingsDiscovery(ctx context.Context, t *testctx.T) {
 	t.Run("settings with no module arg lists installed modules in deterministic order", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.vitest]
-source = "../modules/vitest"
+source = "modules/vitest"
 
 [modules.aws]
-source = "../modules/aws"
+source = "modules/aws"
 `, workspaceSettingsAWSModule("modules/aws", "aws"), workspaceSettingsVitestModule("modules/vitest", "vitest"))
 
 		out, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings")
@@ -126,7 +126,7 @@ source = "../modules/aws"
 
 	t.Run("settings MODULE shows compact setting table with current effective values", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
-source = "../modules/aws"
+source = "modules/aws"
 entrypoint = true
 
 [modules.aws.settings]
@@ -155,7 +155,7 @@ secretKey = "op://vault/aws"
 
 	t.Run("settings MODULE skips args not configurable from workspace settings", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.resources]
-source = "../modules/resources"
+source = "modules/resources"
 
 [modules.resources.settings]
 name = "demo"
@@ -186,7 +186,7 @@ secret = "env://TOKEN"
 
 	t.Run("settings MODULE in env scope shows effective values after overlay", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
-source = "../modules/aws"
+source = "modules/aws"
 
 [modules.aws.settings]
 format = "json"
@@ -209,7 +209,7 @@ region = "us-east-1"
 
 	t.Run("unknown module fails clearly instead of printing an empty settings surface", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
-source = "../modules/aws"
+source = "modules/aws"
 `, workspaceSettingsAWSModule("modules/aws", "aws"))
 
 		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "missing")
@@ -224,7 +224,7 @@ source = "../modules/aws"
 func (WorkspaceSuite) TestWorkspaceSettingsReadSemantics(ctx context.Context, t *testctx.T) {
 	t.Run("settings MODULE KEY reads the base-scope effective value", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
-source = "../modules/aws"
+source = "modules/aws"
 
 [modules.aws.settings]
 region = "us-west-2"
@@ -237,7 +237,7 @@ region = "us-west-2"
 
 	t.Run("settings MODULE KEY with env reads the effective env value with base fallback", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
-source = "../modules/aws"
+source = "modules/aws"
 
 [modules.aws.settings]
 format = "json"
@@ -258,7 +258,7 @@ region = "us-east-1"
 
 	t.Run("missing env fails clearly instead of silently falling back to base", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
-source = "../modules/aws"
+source = "modules/aws"
 
 [modules.aws.settings]
 region = "us-west-2"
@@ -271,7 +271,7 @@ region = "us-west-2"
 
 	t.Run("unknown setting fails clearly and does not expose non-setting metadata", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
-source = "../modules/aws"
+source = "modules/aws"
 
 [modules.aws.settings]
 region = "us-west-2"
@@ -292,7 +292,7 @@ region = "us-west-2"
 func (WorkspaceSuite) TestWorkspaceSettingsWriteSemantics(ctx context.Context, t *testctx.T) {
 	t.Run("base-scope writes update modules.<alias>.settings and affect later effective reads", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
-source = "../modules/aws"
+source = "modules/aws"
 
 [modules.aws.settings]
 region = "us-west-2"
@@ -315,7 +315,7 @@ region = "us-west-2"
 
 	t.Run("env-scoped writes update env.<name>.modules.<alias>.settings and leave base unchanged", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
-source = "../modules/aws"
+source = "modules/aws"
 
 [modules.aws.settings]
 region = "us-west-2"
@@ -341,7 +341,7 @@ region = "us-west-2"
 
 	t.Run("typed writes use the same coercion rules as config writes", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.vitest]
-source = "../modules/vitest"
+source = "modules/vitest"
 `, workspaceSettingsVitestModule("modules/vitest", "vitest"))
 
 		_, err := hostDaggerExec(ctx, t, workdir, "--silent", "settings", "vitest", "failFast", "true")
@@ -366,7 +366,7 @@ source = "../modules/vitest"
 
 	t.Run("writes reject unknown modules, unknown settings, and workspace-owned fields", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
-source = "../modules/aws"
+source = "modules/aws"
 
 [modules.aws.settings]
 region = "us-west-2"
@@ -396,7 +396,7 @@ region = "us-west-2"
 func (WorkspaceSuite) TestWorkspaceSettingsConfigProjection(ctx context.Context, t *testctx.T) {
 	t.Run("settings reads agree with config reads for the same effective value", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
-source = "../modules/aws"
+source = "modules/aws"
 
 [modules.aws.settings]
 region = "us-west-2"
@@ -420,7 +420,7 @@ region = "us-east-1"
 
 	t.Run("writes through settings are visible immediately through config and runtime behavior", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
-source = "../modules/aws"
+source = "modules/aws"
 entrypoint = true
 
 [modules.aws.settings]

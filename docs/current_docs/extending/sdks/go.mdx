@@ -88,7 +88,7 @@ A freshly-initialized Go module looks like this:
 
 ```
 my-module/
-├── dagger.json
+├── dagger-module.toml
 ├── go.mod
 ├── go.sum
 ├── main.go                       # your code
@@ -101,22 +101,20 @@ my-module/
     └── telemetry/                # generated
 ```
 
-The `dagger.json` records that this is a Go SDK module via `sdk.source`:
+The `dagger-module.toml` records that this is a Go SDK module via `runtime.source`:
 
-```json title="dagger.json"
-{
-  "name": "my-module",
-  "engineVersion": "v0.21.0",
-  "sdk": {
-    "source": "go"
-  }
-}
+```toml title="dagger-module.toml"
+name = "my-module"
+engineVersion = "v0.21.0"
+
+[runtime]
+source = "go"
 ```
 
-`sdk.source: "go"` is what makes this a Go module — it tells the engine to use the Go runtime and is how the SDK module's `modules` function discovers Go modules in a workspace. The generated files in `dagger.gen.go` and `internal/` are not handwritten; see [Regenerate bindings](#regenerate-bindings-and-generated-files).
+`runtime.source: "go"` is what makes this a Go module — it tells the engine to use the Go runtime and is how the SDK module's `modules` function discovers Go modules in a workspace. The generated files in `dagger.gen.go` and `internal/` are not handwritten; see [Regenerate bindings](#regenerate-bindings-and-generated-files).
 
 :::tip
-You can list the Go modules in a workspace with `dagger -m github.com/dagger/go-sdk call modules` — it returns every module whose `sdk.source` is `"go"`.
+You can list the Go modules in a workspace with `dagger -m github.com/dagger/go-sdk call modules` — it returns every module whose `runtime.source` is `"go"`.
 :::
 
 ## Define objects and functions
@@ -167,7 +165,7 @@ Key rules:
 - The first parameter may be a `context.Context`; it does not appear as a Dagger argument and is supplied by the runtime.
 - A method may return an error as its last value; a non-nil error fails the function.
 
-Call your functions exactly like any other module — from the directory that contains `dagger.json` (or with `-m <path>`):
+Call your functions exactly like any other module — from the directory that contains `dagger-module.toml` (or with `-m <path>`):
 
 ```shell
 dagger call hello --name=World --greeting=Hello
@@ -672,23 +670,27 @@ func (run LintRun) Assert(ctx context.Context) error {
 
 ## Module dependencies
 
-A module can depend on other Dagger modules and call them through `dag` — for example `dag.Ruff()` once `ruff` is a dependency. Dependencies are recorded in `dagger.json` under `dependencies`:
+A module can depend on other Dagger modules and call them through `dag` — for example `dag.Ruff()` once `ruff` is a dependency. Dependencies are recorded in `dagger-module.toml` under `dependencies`:
 
-```json title="dagger.json"
-{
-  "name": "dev",
-  "engineVersion": "v0.21.0",
-  "sdk": { "source": "go" },
-  "dependencies": [
-    { "name": "go", "source": "../../toolchains/go" },
-    { "name": "wolfi", "source": "../wolfi" }
-  ]
-}
+```toml title="dagger-module.toml"
+name = "dev"
+engineVersion = "v0.21.0"
+
+[runtime]
+source = "go"
+
+[[dependencies]]
+name = "go"
+source = "../../toolchains/go"
+
+[[dependencies]]
+name = "wolfi"
+source = "../wolfi"
 ```
 
 A `source` may be a local path (`../wolfi`) or a remote reference of the form `[proto://]host/repo[/subpath][@version]`, e.g. `github.com/shykes/daggerverse/hello@v0.3.0`.
 
-Manage dependencies with the SDK module's `mod deps` operations rather than hand-editing `dagger.json`. Each returns a changeset you apply directly (review, or pass `-y` to apply without prompting).
+Manage dependencies with the SDK module's `mod deps` operations rather than hand-editing `dagger-module.toml`. Each returns a changeset you apply directly (review, or pass `-y` to apply without prompting).
 
 Add a dependency (`--source` required, `--name` optional alias):
 
@@ -762,12 +764,12 @@ A module (or an ancestor) can carry a "skip generate" marker; when present, `mod
 :::
 
 :::tip
-Whether generated SDK files are committed or git-ignored is controlled per-module. It is set when you run `init` (the `--ignore-generated` flag) and recorded in `dagger.json` under `codegen` (e.g. `"codegen": { "automaticGitignore": false }`). Committing them is the default and is recommended so consumers can build your module without first running codegen.
+Whether generated SDK files are committed or git-ignored is controlled per-module. It is set when you run `init` (the `--ignore-generated` flag) and recorded in `dagger-module.toml` under `codegen` (e.g. `"codegen": { "automaticGitignore": false }`). Committing them is the default and is recommended so consumers can build your module without first running codegen.
 :::
 
 ## Engine version
 
-Each module declares the Dagger engine version it requires in `dagger.json` (`engineVersion`). Manage it with the SDK module's `mod engine` operations.
+Each module declares the Dagger engine version it requires in `dagger-module.toml` (`engineVersion`). Manage it with the SDK module's `mod engine` operations.
 
 Read the currently required version (without the leading `v`):
 
@@ -1007,7 +1009,7 @@ Consumers add your module as a dependency with the user-facing workspace command
 dagger mod install github.com/you/your-module@v1.2.0
 ```
 
-or by adding it to their `dagger.json` `dependencies` and regenerating. A module reference follows `[proto://]host/repo[/subpath][@version]`; the version may be a tag, branch, or commit, and is resolved over HTTPS or SSH depending on available authentication.
+or by adding it to their `dagger-module.toml` `dependencies` and regenerating. A module reference follows `[proto://]host/repo[/subpath][@version]`; the version may be a tag, branch, or commit, and is resolved over HTTPS or SSH depending on available authentication.
 
 ## Troubleshooting
 
@@ -1015,13 +1017,13 @@ or by adding it to their `dagger.json` `dependencies` and regenerating. A module
 
 **Nothing was written after `init`.** `init` returns a changeset; it doesn't write files on its own. Apply it directly (review, or pass `-y` to apply without prompting).
 
-**A new function or dependency doesn't show up.** Regenerate bindings with `dagger -m github.com/dagger/go-sdk call mod generate` (or `dagger generate`). The API surface comes from the generated `internal/dagger` package, which must be in sync with your code and `dagger.json`.
+**A new function or dependency doesn't show up.** Regenerate bindings with `dagger -m github.com/dagger/go-sdk call mod generate` (or `dagger generate`). The API surface comes from the generated `internal/dagger` package, which must be in sync with your code and `dagger-module.toml`.
 
 **`mod generate` returns an empty changeset.** A "skip generate" marker is likely in effect for this module or an ancestor. Confirm with `dagger -m github.com/dagger/go-sdk call mod skip-generate`.
 
 **Build/import errors referencing `internal/dagger` or `dag`.** The generated client is stale or missing. Regenerate as above; if `go.mod`/`go.sum` drifted, ensure they match the regenerated code (a workspace `go.work` can help your IDE here).
 
-**`git diff` is noisy after generation.** Confirm `.gitattributes` marks the generated paths as `linguist-generated`. If you'd rather not track them at all, re-init with `--ignore-generated`, or set `codegen.automaticGitignore` in `dagger.json`.
+**`git diff` is noisy after generation.** Confirm `.gitattributes` marks the generated paths as `linguist-generated`. If you'd rather not track them at all, re-init with `--ignore-generated`, or set `codegen.automaticGitignore` in `dagger-module.toml`.
 
 **Engine version mismatch.** Align the module with `mod engine require --version <v>` (or `require-current` / `require-latest`), then regenerate.
 

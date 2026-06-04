@@ -11932,10 +11932,10 @@ class ModuleSource(Type):
 
         .. deprecated::
             Legacy dagger.json field. Generic module loading no longer honors
-            it; use workspace modules in .dagger/config.toml instead.
+            it; use workspace modules in dagger.toml instead.
         """
         warnings.warn(
-            'Method "blueprint" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.',
+            'Method "blueprint" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.',
             DeprecationWarning,
             stacklevel=4,
         )
@@ -11993,7 +11993,7 @@ class ModuleSource(Type):
         return await _ctx.execute_object_list(ModuleConfigClient)
 
     async def config_exists(self) -> bool:
-        """Whether an existing dagger.json for the module was found.
+        """Whether an existing module config file was found.
 
         Returns
         -------
@@ -12249,7 +12249,7 @@ class ModuleSource(Type):
         return await _ctx.execute(str)
 
     async def module_original_name(self) -> str:
-        """The original name of the module as read from the module's dagger.json
+        """The original name of the module as read from the module config file
         (or set for the first time with the withName API).
 
         Returns
@@ -12342,8 +12342,8 @@ class ModuleSource(Type):
         return SDKConfig(_ctx)
 
     async def source_root_subpath(self) -> str:
-        """The path, relative to the context directory, that contains the
-        module's dagger.json.
+        """The path, relative to the context directory, that contains the module
+        config.
 
         Returns
         -------
@@ -12407,10 +12407,10 @@ class ModuleSource(Type):
 
         .. deprecated::
             Legacy dagger.json field. Generic module loading no longer honors
-            it; use workspace modules in .dagger/config.toml instead.
+            it; use workspace modules in dagger.toml instead.
         """
         warnings.warn(
-            'Method "toolchains" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.',
+            'Method "toolchains" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.',
             DeprecationWarning,
             stacklevel=4,
         )
@@ -12450,7 +12450,7 @@ class ModuleSource(Type):
 
         .. deprecated::
             Legacy dagger.json field. Generic module loading no longer honors
-            it; use workspace modules in `.dagger/config.toml` instead.
+            it; use workspace modules in `dagger.toml` instead.
 
         Parameters
         ----------
@@ -12458,7 +12458,7 @@ class ModuleSource(Type):
             The blueprint module to set.
         """
         warnings.warn(
-            'Method "with_blueprint" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.',
+            'Method "with_blueprint" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.',
             DeprecationWarning,
             stacklevel=4,
         )
@@ -12594,7 +12594,7 @@ class ModuleSource(Type):
 
         .. deprecated::
             Legacy dagger.json field. Generic module loading no longer honors
-            it; use workspace modules in `.dagger/config.toml` instead.
+            it; use workspace modules in `dagger.toml` instead.
 
         Parameters
         ----------
@@ -12602,7 +12602,7 @@ class ModuleSource(Type):
             The toolchain modules to add.
         """
         warnings.warn(
-            'Method "with_toolchains" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.',
+            'Method "with_toolchains" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.',
             DeprecationWarning,
             stacklevel=4,
         )
@@ -12617,10 +12617,10 @@ class ModuleSource(Type):
 
         .. deprecated::
             Legacy dagger.json field. Generic module loading no longer honors
-            it; use workspace modules in `.dagger/config.toml` instead.
+            it; use workspace modules in `dagger.toml` instead.
         """
         warnings.warn(
-            'Method "with_update_blueprint" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.',
+            'Method "with_update_blueprint" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.',
             DeprecationWarning,
             stacklevel=4,
         )
@@ -12647,7 +12647,7 @@ class ModuleSource(Type):
 
         .. deprecated::
             Legacy dagger.json field. Generic module loading no longer honors
-            it; use workspace modules in `.dagger/config.toml` instead.
+            it; use workspace modules in `dagger.toml` instead.
 
         Parameters
         ----------
@@ -12655,7 +12655,7 @@ class ModuleSource(Type):
             The toolchains to update.
         """
         warnings.warn(
-            'Method "with_update_toolchains" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.',
+            'Method "with_update_toolchains" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.',
             DeprecationWarning,
             stacklevel=4,
         )
@@ -12684,10 +12684,10 @@ class ModuleSource(Type):
 
         .. deprecated::
             Legacy dagger.json field. Generic module loading no longer honors
-            it; use workspace modules in `.dagger/config.toml` instead.
+            it; use workspace modules in `dagger.toml` instead.
         """
         warnings.warn(
-            'Method "without_blueprint" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.',
+            'Method "without_blueprint" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.',
             DeprecationWarning,
             stacklevel=4,
         )
@@ -12746,7 +12746,7 @@ class ModuleSource(Type):
 
         .. deprecated::
             Legacy dagger.json field. Generic module loading no longer honors
-            it; use workspace modules in `.dagger/config.toml` instead.
+            it; use workspace modules in `dagger.toml` instead.
 
         Parameters
         ----------
@@ -12754,7 +12754,7 @@ class ModuleSource(Type):
             The toolchains to remove.
         """
         warnings.warn(
-            'Method "without_toolchains" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.',
+            'Method "without_toolchains" is deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.',
             DeprecationWarning,
             stacklevel=4,
         )
@@ -14098,8 +14098,9 @@ class Query(Root):
         ref_pin:
             The pinned version of the module source
         disable_find_up:
-            If true, do not attempt to find dagger.json in a parent directory
-            of the provided path. Only relevant for local module sources.
+            If true, do not attempt to find a module config file in a parent
+            directory of the provided path. Only relevant for local module
+            sources.
         allow_not_exists:
             If true, do not error out if the provided ref string is a local
             path and does not exist yet. Useful when initializing new modules
@@ -15950,7 +15951,7 @@ class Workspace(Type):
         return await _ctx.execute(str)
 
     async def config_read(self, *, key: str | None = "") -> str:
-        """Read a configuration value from config.toml.
+        """Read a configuration value from dagger.toml.
 
         If key is empty, returns the full config.
 
@@ -15991,7 +15992,7 @@ class Workspace(Type):
         *,
         here: bool | None = False,
     ) -> str:
-        """Write a configuration value to config.toml.
+        """Write a configuration value to dagger.toml.
 
         Parameters
         ----------
@@ -16295,7 +16296,7 @@ class Workspace(Type):
         return await _ctx.execute(str)
 
     async def init(self, *, here: bool | None = False) -> str:
-        """Initialize workspace config, creating .dagger/config.toml.
+        """Initialize workspace config, creating dagger.toml.
 
         Parameters
         ----------
@@ -16330,7 +16331,7 @@ class Workspace(Type):
         name: str | None = "",
         here: bool | None = False,
     ) -> str:
-        """Install a module into the workspace, writing config.toml to the host.
+        """Install a module into the workspace, writing dagger.toml to the host.
 
         Parameters
         ----------
@@ -16386,7 +16387,7 @@ class Workspace(Type):
         here: bool | None = False,
     ) -> str:
         """Create a new module owned by the workspace and auto-install it in
-        config.toml.
+        dagger.toml.
 
         Parameters
         ----------
@@ -16442,29 +16443,6 @@ class Workspace(Type):
         _ctx = self._select("moduleList", _args)
         return await _ctx.execute_object_list(WorkspaceModule)
 
-    def refresh_modules(
-        self,
-        *,
-        module_names: list[str] | None = None,
-    ) -> Changeset:
-        """Refresh lock entries for selected workspace-config modules.
-
-        This layers selective workspace refresh on top of the lockfile base.
-
-        .. caution::
-            Experimental: Experimental selective workspace lock refresh API.
-
-        Parameters
-        ----------
-        module_names:
-            Workspace module names to refresh.
-        """
-        _args = [
-            Arg("moduleNames", [] if module_names is None else module_names, []),
-        ]
-        _ctx = self._select("refreshModules", _args)
-        return Changeset(_ctx)
-
     def services(
         self,
         *,
@@ -16489,7 +16467,7 @@ class Workspace(Type):
         *,
         here: bool | None = False,
     ) -> str:
-        """Uninstall a module from the workspace, writing config.toml to the
+        """Uninstall a module from the workspace, writing dagger.toml to the
         host.
 
         Parameters
