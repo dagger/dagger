@@ -856,11 +856,11 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 		return nil, fmt.Errorf("marshal parent value: %w", err)
 	}
 
-	fnCall := &FunctionCall{
+	fnCall := newFunctionCall(FunctionCall{
 		Name:      fn.metadata.OriginalName,
 		Parent:    parentJSON,
 		InputArgs: callInputs,
-	}
+	})
 	if fn.objDef != nil {
 		fnCall.ParentName = fn.objDef.OriginalName
 	}
@@ -881,19 +881,37 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Any
 	}
 
 	// Delegate the actual function execution to the runtime
-	outputBytes, err := runtime.Call(ctx, &execMD, fnCall, fn.mod, envContext)
+	err = runtime.Call(ctx, &execMD, fnCall, fn.mod, envContext)
+	returned, returnedSet, returnStateErr := fnCall.returnResult()
+	if returnStateErr != nil {
+		return nil, returnStateErr
+	}
 	if err != nil {
+		if returnedSet && returned.HasError {
+			dagErr, loadErr := functionCallReturnedError(ctx, returned.ErrorID, err)
+			if loadErr != nil {
+				return nil, loadErr
+			}
+			return nil, dagErr
+		}
 		return nil, err
 	}
 
-	var returnValueAny any
-	dec := json.NewDecoder(strings.NewReader(string(outputBytes)))
-	dec.UseNumber()
-	if err := dec.Decode(&returnValueAny); err != nil {
-		return nil, fmt.Errorf("unmarshal result: %w", err)
+	if !returnedSet {
+		if fnCall.Name == "" {
+			return nil, fmt.Errorf("constructor completed without returning a value")
+		}
+		return nil, fmt.Errorf("function %q completed without returning a value", fnCall.Name)
+	}
+	if returned.HasError {
+		dagErr, err := functionCallReturnedError(ctx, returned.ErrorID, nil)
+		if err != nil {
+			return nil, err
+		}
+		return nil, dagErr
 	}
 
-	returnValue, err := fn.returnType.ConvertFromSDKResult(ctx, returnValueAny)
+	returnValue, err := fn.returnType.ConvertFromSDKResult(ctx, returned.Value)
 	if err != nil {
 		return nil, fmt.Errorf("convert return value: %w", err)
 	}

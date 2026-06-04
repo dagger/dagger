@@ -3613,7 +3613,7 @@ func (ContainerSuite) TestWithDirectoryToMount(ctx context.Context, t *testctx.T
 	}, strings.Split(strings.Trim(contents, "\n"), "\n"))
 }
 
-func (ContainerSuite) TestAddFile(ctx context.Context, t *testctx.T) {
+func (ContainerSuite) TestAddFileSymlink(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	base := c.Container().From(alpineImage).
@@ -3628,6 +3628,17 @@ func (ContainerSuite) TestAddFile(ctx context.Context, t *testctx.T) {
 	got, err := ctr.File("/target/sub/file").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, want, got)
+}
+
+func (ContainerSuite) TestAddDirSrcSymlink(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	rel := c.Container().From(alpineImage).WithExec([]string{"sh", "-c", "mkdir -p /store/real && echo hi > /store/real/marker.txt && ln -s /store/real /store/link"}).Directory("/store/link")
+
+	out, err := c.Container().From(alpineImage).WithDirectory("/release", rel).WithExec([]string{"cat", "/release/marker.txt"}).Stdout(ctx)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, out)
 }
 
 func (ContainerSuite) TestExecError(ctx context.Context, t *testctx.T) {
@@ -5248,6 +5259,21 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "phonetic data", output)
 	})
+
+	t.Run("env variable is expanded in Exists", func(ctx context.Context, t *testctx.T) {
+		ctr := c.Container().
+			From(alpineImage).
+			WithEnvVariable("foo", "bar").
+			WithNewFile("/bar.txt", "contents")
+
+		exists, err := ctr.Exists(ctx, "/${foo}.txt", dagger.ContainerExistsOpts{Expand: true})
+		require.NoError(t, err)
+		require.True(t, exists)
+
+		notExists, err := ctr.Exists(ctx, "/${foo}-missing.txt", dagger.ContainerExistsOpts{Expand: true})
+		require.NoError(t, err)
+		require.False(t, notExists)
+	})
 }
 
 func (ContainerSuite) TestExecInit(ctx context.Context, t *testctx.T) {
@@ -6247,4 +6273,70 @@ func (ContainerSuite) TestWithoutHealthcheck(ctx context.Context, t *testctx.T) 
 	healthcheckArgs, err := configuredHealthcheck.Args(ctx)
 	require.NoError(t, err)
 	require.Empty(t, healthcheckArgs)
+}
+
+func (ContainerSuite) TestManifest(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().
+		From(alpineImage)
+
+	manifestFile := ctr.Manifest()
+	require.NotEmpty(t, manifestFile)
+
+	manifestContent, err := manifestFile.Contents(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, manifestContent)
+
+	var manifest ocispecs.Manifest
+	require.NoError(t, json.Unmarshal([]byte(manifestContent), &manifest))
+
+	tarPath := filepath.Join(t.TempDir(), "export.tar")
+	_, err = ctr.Export(ctx, tarPath)
+	require.NoError(t, err)
+
+	// check that docker compatible manifest is present
+	dockerManifestBytes := readTarFile(t, tarPath, "manifest.json")
+	require.NotNil(t, dockerManifestBytes)
+
+	indexBytes := readTarFile(t, tarPath, "index.json")
+	var index ocispecs.Index
+	require.NoError(t, json.Unmarshal(indexBytes, &index))
+	require.NotEmpty(t, index.Manifests)
+
+	exportedManifestDigest := index.Manifests[0].Digest
+	exportedManifestBytes := readTarFile(t, tarPath, "blobs/sha256/"+exportedManifestDigest.Encoded())
+	var exportedManifest ocispecs.Manifest
+	require.NoError(t, json.Unmarshal(exportedManifestBytes, &exportedManifest))
+
+	require.Equal(t, exportedManifest, manifest)
+}
+
+func (ContainerSuite) TestLayer(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().
+		From(alpineImage)
+
+	manifestFile := ctr.Manifest()
+	require.NotEmpty(t, manifestFile)
+
+	manifestContent, err := manifestFile.Contents(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, manifestContent)
+
+	var manifest ocispecs.Manifest
+	require.NoError(t, json.Unmarshal([]byte(manifestContent), &manifest))
+	require.NotEmpty(t, manifest.Layers)
+
+	id := manifest.Layers[0].Digest
+	require.NotEmpty(t, id)
+	layerFile := ctr.Layer(id.String())
+	require.NotEmpty(t, layerFile)
+
+	tarPath := filepath.Join(t.TempDir(), "export.tar")
+	_, err = ctr.Export(ctx, tarPath)
+	require.NoError(t, err)
+
+	readTarFile(t, tarPath, "blobs/sha256/"+id.String())
 }

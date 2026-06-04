@@ -1,0 +1,49 @@
+---
+slug: /features/modules
+description: "Create, reuse and share frequently-used workflows"
+---
+
+# Reusable Modules
+
+Dagger lets you encapsulate common tasks and workflows in reusable, shareable Dagger modules. These Dagger modules are simply collections of Dagger Functions, packaged together for easy sharing and consumption. Their design is inspired by Go modules:
+
+- Modules are just source code. Binary artifacts are built locally, and aggressively cached.
+- Git is the source of truth. Modules follow semantic versioning using Git tags.
+- Dependencies are pinned by default. The version you install is the version that will run.
+- No dependency hell. Since Dagger Functions are containerized, their dependencies are naturally scoped. Different modules can require different versions of the same dependency, and everything will just work.
+- First-class monorepo support. Dagger is agnostic to repository layout, and any number of Dagger modules can peacefully coexist in a monorepo. It's up to you how to organize your module's source code. Some like to publish each module as a dedicated repository; others like to organize all their modules together, with the Git repository acting as a "catalog".
+
+Modern development takes place in a mix of languages, tools and platforms. In these environments, no one language or tool can "win"; every component must be interoperable with every other. Dagger is ideally suited to these polyglot environments, because Dagger modules are portable and reusable across languages. For example, a Python function can call a Go function, which can call a TypeScript function, and so on.
+
+This feature immediately unlocks cross-team collaboration: even though different teams might prefer different languages, the Dagger modules they create are instantly compatible and usable by other teams. It also means that you no longer need to care which language your CI tooling is written in; you can use the one that you're most comfortable with or that best suits your requirements.
+
+Here's an example, where a Dagger Function written in Python calls both core functions and third-party Dagger Functions written in Go:
+
+```python
+@function
+async def ci(self, source: dagger.Directory) -> str:
+    # Use third-party Golang module to configure project
+    go_project = dag.golang().with_project(source)
+
+    # Run Go tests using Golang module
+    await go_project.test()
+
+    # Get container with built binaries using Golang module
+    image = await go_project.build_container()
+
+    # Push image to a registry using core Dagger API
+    ref = await image.publish("ttl.sh/demoapp:1h")
+
+    # Scan image for vulnerabilites using third-party Trivy module
+    return await dag.trivy().scan_container(dag.container().from_(ref))
+```
+
+To make it easier to search and consume Dagger modules, the [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules. These might be Dagger modules developed by your team, your organization or the broader Dagger community. By importing and reusing these Dagger modules in your pipelines and across your teams, you can significantly speed up development.
+
+## Learn more
+
+- [Create a module](../api/custom-functions.mdx)
+- [Call a remote module](../api/remote-modules.mdx)
+- [Understand module structure](../api/module-structure.mdx)
+- [Publish a module](../api/daggerverse.mdx)
+- [Find modules in the Daggerverse](https://daggerverse.dev)

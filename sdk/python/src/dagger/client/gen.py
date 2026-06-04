@@ -2073,6 +2073,7 @@ class Container(Type):
         *,
         expected_type: ExistsType | None = None,
         do_not_follow_symlinks: bool | None = False,
+        expand: bool | None = False,
     ) -> bool:
         """check if a file or directory exists
 
@@ -2085,6 +2086,10 @@ class Container(Type):
             "DIRECTORY_TYPE", or "SYMLINK_TYPE").
         do_not_follow_symlinks:
             If specified, do not follow symlinks.
+        expand:
+            Replace "${VAR}" or "$VAR" in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo").
 
         Returns
         -------
@@ -2102,6 +2107,7 @@ class Container(Type):
             Arg("path", path),
             Arg("expectedType", expected_type, None),
             Arg("doNotFollowSymlinks", do_not_follow_symlinks, False),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("exists", _args)
         return await _ctx.execute(bool)
@@ -2444,6 +2450,54 @@ class Container(Type):
         _args: list[Arg] = []
         _ctx = self._select("labels", _args)
         return await _ctx.execute_object_list(Label)
+
+    def layer(
+        self,
+        id: str,
+        *,
+        forced_compression: ImageLayerCompression | None = None,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+    ) -> "File":
+        """Returns the layer with the given digest as a File.
+
+        Parameters
+        ----------
+        id:
+            Digest of the layer (e.g. "sha256:abc123...").
+        forced_compression:
+            Compression to use for image layers. Defaults to Gzip.
+        media_types:
+            Media types to use for image layers. Defaults to OCI.
+        """
+        _args = [
+            Arg("id", id),
+            Arg("forcedCompression", forced_compression, None),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+        ]
+        _ctx = self._select("layer", _args)
+        return File(_ctx)
+
+    def manifest(
+        self,
+        *,
+        forced_compression: ImageLayerCompression | None = None,
+        media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+    ) -> "File":
+        """Computes and returns the manifest for this container as a File.
+
+        Parameters
+        ----------
+        forced_compression:
+            Compression to use for image layers. Defaults to Gzip.
+        media_types:
+            Media types to use for image layers. Defaults to OCI.
+        """
+        _args = [
+            Arg("forcedCompression", forced_compression, None),
+            Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+        ]
+        _ctx = self._select("manifest", _args)
+        return File(_ctx)
 
     async def mounts(self) -> list[str]:
         """Retrieves the list of paths where a directory is mounted.

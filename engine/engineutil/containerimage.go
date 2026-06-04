@@ -3,11 +3,13 @@ package engineutil
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"slices"
 
+	"github.com/containerd/containerd/v2/core/content"
 	archiveexporter "github.com/containerd/containerd/v2/core/images/archive"
 	"github.com/containerd/platforms"
 	imageexport "github.com/dagger/dagger/engine/engineutil/imageexport"
@@ -17,6 +19,7 @@ import (
 	"github.com/dagger/dagger/internal/buildkit/util/compression"
 	"github.com/dagger/dagger/util/containerutil"
 	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
+	digest "github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -251,4 +254,73 @@ func (c *Client) ExportContainerImage(
 	}
 
 	return nil, fmt.Errorf("client has no supported api for loading image")
+}
+
+func (c *Client) ContainerManifest(
+	ctx context.Context,
+	inputByPlatform map[string]ContainerExport,
+	useOCIMediaTypes bool,
+	forceCompression string,
+) ([]byte, error) {
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel(errors.New("container manifest done"))
+
+	exported, err := c.assembleExportedImage(ctx, inputByPlatform, useOCIMediaTypes, forceCompression)
+	if err != nil {
+		return nil, err
+	}
+	return content.ReadBlob(ctx, exported.Provider, exported.RootDesc)
+}
+
+func (c *Client) ContainerLayer(
+	ctx context.Context,
+	inputByPlatform map[string]ContainerExport,
+	useOCIMediaTypes bool,
+	forceCompression string,
+	id string,
+) ([]byte, error) {
+	if err := digest.Digest(id).Validate(); err != nil {
+		return nil, fmt.Errorf("invalid layer digest %q: %w", id, err)
+	}
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel(errors.New("container layer done"))
+
+	exported, err := c.assembleExportedImage(ctx, inputByPlatform, useOCIMediaTypes, forceCompression)
+	if err != nil {
+		return nil, err
+	}
+
+	manifestBlob, err := content.ReadBlob(ctx, exported.Provider, exported.RootDesc)
+	if err != nil {
+		return nil, fmt.Errorf("read manifest: %w", err)
+	}
+
+	var manifest struct {
+		Layers []struct {
+			Digest string `json:"digest"`
+			Size   int64  `json:"size"`
+			// MediaType intentionally omitted
+		} `json:"layers"`
+	}
+	if err := json.Unmarshal(manifestBlob, &manifest); err != nil {
+		return nil, fmt.Errorf("parse manifest: %w", err)
+	}
+
+	for _, layer := range manifest.Layers {
+		if layer.Digest == id {
+			layerDesc := specs.Descriptor{
+				Digest: digest.Digest(layer.Digest),
+				Size:   layer.Size,
+			}
+			return content.ReadBlob(ctx, exported.Provider, layerDesc)
+		}
+	}
+
+	return nil, fmt.Errorf("layer %q not found in manifest", id)
 }

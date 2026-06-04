@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "moduleResolution": "Node",
+    "experimentalDecorators": true,
+    "paths": {
+      "@dagger.io/dagger": ["./sdk/src"],
+      "@dagger.io/dagger/telemetry": ["./sdk/src/telemetry"]
+    }
+  }
+}

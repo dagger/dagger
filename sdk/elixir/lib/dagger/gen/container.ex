@@ -183,7 +183,8 @@ defmodule Dagger.Container do
   """
   @spec exists(t(), String.t(), [
           {:expected_type, Dagger.ExistsType.t() | nil},
-          {:do_not_follow_symlinks, boolean() | nil}
+          {:do_not_follow_symlinks, boolean() | nil},
+          {:expand, boolean() | nil}
         ]) :: {:ok, boolean()} | {:error, term()}
   def exists(%__MODULE__{} = container, path, optional_args \\ []) do
     query_builder =
@@ -192,6 +193,7 @@ defmodule Dagger.Container do
       |> QB.put_arg("path", path)
       |> QB.maybe_put_arg("expectedType", optional_args[:expected_type])
       |> QB.maybe_put_arg("doNotFollowSymlinks", optional_args[:do_not_follow_symlinks])
+      |> QB.maybe_put_arg("expand", optional_args[:expand])
 
     Client.execute(container.client, query_builder)
   end
@@ -435,6 +437,47 @@ defmodule Dagger.Container do
          }
        end}
     end
+  end
+
+  @doc """
+  Returns the layer with the given digest as a File.
+  """
+  @spec layer(t(), String.t(), [
+          {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
+          {:media_types, Dagger.ImageMediaTypes.t() | nil}
+        ]) :: Dagger.File.t()
+  def layer(%__MODULE__{} = container, id, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("layer")
+      |> QB.put_arg("id", id)
+      |> QB.maybe_put_arg("forcedCompression", optional_args[:forced_compression])
+      |> QB.maybe_put_arg("mediaTypes", optional_args[:media_types])
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc """
+  Computes and returns the manifest for this container as a File.
+  """
+  @spec manifest(t(), [
+          {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
+          {:media_types, Dagger.ImageMediaTypes.t() | nil}
+        ]) :: Dagger.File.t()
+  def manifest(%__MODULE__{} = container, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("manifest")
+      |> QB.maybe_put_arg("forcedCompression", optional_args[:forced_compression])
+      |> QB.maybe_put_arg("mediaTypes", optional_args[:media_types])
+
+    %Dagger.File{
+      query_builder: query_builder,
+      client: container.client
+    }
   end
 
   @doc """

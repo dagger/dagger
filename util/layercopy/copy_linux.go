@@ -77,7 +77,7 @@ func (c *Copier) Usage() (snapshots.Usage, error) {
 }
 
 func (c *Copier) copy(ctx context.Context, src *source, matcher *matcher, srcPath, destPath string, opts CopyOptions) error {
-	if err := src.selectBase(srcPath, false); err != nil {
+	if err := src.selectBase(srcPath, opts.CopyDirContents); err != nil {
 		return err
 	}
 	root := sourceEntry{

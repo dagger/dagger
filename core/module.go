@@ -66,6 +66,10 @@ type Module struct {
 	// Used for legacy blueprints/toolchains migrated to workspace modules.
 	LegacyDefaultPath bool
 
+	// LegacyArgCustomizations are workspace dagger.json argument customizations
+	// applied through asModule.
+	LegacyArgCustomizations []*modules.ModuleConfigArgument
+
 	// Config values from workspace config.toml [modules.<name>.config].
 	// Typed map: strings, bools, ints, floats as-is from TOML.
 	// When set, constructor args are resolved from this map first.
@@ -858,23 +862,24 @@ func (mod *Module) AttachDependencyResults(
 }
 
 type persistedModulePayload struct {
-	SourceResultID                uint64         `json:"sourceResultID,omitempty"`
-	ContextSourceResultID         uint64         `json:"contextSourceResultID,omitempty"`
-	RuntimeResultID               uint64         `json:"runtimeResultID,omitempty"`
-	DepModuleResultIDs            []uint64       `json:"depModuleResultIDs,omitempty"`
-	IncludeSelfInDeps             bool           `json:"includeSelfInDeps,omitempty"`
-	NameField                     string         `json:"nameField,omitempty"`
-	OriginalName                  string         `json:"originalName,omitempty"`
-	SDKConfig                     *SDKConfig     `json:"sdkConfig,omitempty"`
-	Description                   string         `json:"description,omitempty"`
-	ObjectDefResultIDs            []uint64       `json:"objectDefResultIDs,omitempty"`
-	InterfaceDefResultIDs         []uint64       `json:"interfaceDefResultIDs,omitempty"`
-	EnumDefResultIDs              []uint64       `json:"enumDefResultIDs,omitempty"`
-	LegacyDefaultPath             bool           `json:"legacyDefaultPath,omitempty"`
-	WorkspaceConfig               map[string]any `json:"workspaceConfig,omitempty"`
-	DefaultsFromDotEnv            bool           `json:"defaultsFromDotEnv,omitempty"`
-	DisableDefaultFunctionCaching bool           `json:"disableDefaultFunctionCaching,omitempty"`
-	AsModuleVariantDigest         string         `json:"asModuleVariantDigest,omitempty"`
+	SourceResultID                uint64                          `json:"sourceResultID,omitempty"`
+	ContextSourceResultID         uint64                          `json:"contextSourceResultID,omitempty"`
+	RuntimeResultID               uint64                          `json:"runtimeResultID,omitempty"`
+	DepModuleResultIDs            []uint64                        `json:"depModuleResultIDs,omitempty"`
+	IncludeSelfInDeps             bool                            `json:"includeSelfInDeps,omitempty"`
+	NameField                     string                          `json:"nameField,omitempty"`
+	OriginalName                  string                          `json:"originalName,omitempty"`
+	SDKConfig                     *SDKConfig                      `json:"sdkConfig,omitempty"`
+	Description                   string                          `json:"description,omitempty"`
+	ObjectDefResultIDs            []uint64                        `json:"objectDefResultIDs,omitempty"`
+	InterfaceDefResultIDs         []uint64                        `json:"interfaceDefResultIDs,omitempty"`
+	EnumDefResultIDs              []uint64                        `json:"enumDefResultIDs,omitempty"`
+	LegacyDefaultPath             bool                            `json:"legacyDefaultPath,omitempty"`
+	LegacyArgCustomizations       []*modules.ModuleConfigArgument `json:"legacyArgCustomizations,omitempty"`
+	WorkspaceConfig               map[string]any                  `json:"workspaceConfig,omitempty"`
+	DefaultsFromDotEnv            bool                            `json:"defaultsFromDotEnv,omitempty"`
+	DisableDefaultFunctionCaching bool                            `json:"disableDefaultFunctionCaching,omitempty"`
+	AsModuleVariantDigest         string                          `json:"asModuleVariantDigest,omitempty"`
 }
 
 func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.PersistedObjectCache) (dagql.PersistedObjectEncoding, error) {
@@ -949,6 +954,7 @@ func (mod *Module) EncodePersistedObject(ctx context.Context, cache dagql.Persis
 		persisted.EnumDefResultIDs = append(persisted.EnumDefResultIDs, defID)
 	}
 	persisted.LegacyDefaultPath = mod.LegacyDefaultPath
+	persisted.LegacyArgCustomizations = mod.LegacyArgCustomizations
 	persisted.WorkspaceConfig = mod.WorkspaceConfig
 	persisted.DefaultsFromDotEnv = mod.DefaultsFromDotEnv
 	persisted.DisableDefaultFunctionCaching = mod.DisableDefaultFunctionCaching
@@ -1033,6 +1039,7 @@ func (*Module) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 		EnumDefs:                      enumDefs,
 		IncludeSelfInDeps:             persisted.IncludeSelfInDeps,
 		LegacyDefaultPath:             persisted.LegacyDefaultPath,
+		LegacyArgCustomizations:       persisted.LegacyArgCustomizations,
 		WorkspaceConfig:               persisted.WorkspaceConfig,
 		DefaultsFromDotEnv:            persisted.DefaultsFromDotEnv,
 		DisableDefaultFunctionCaching: persisted.DisableDefaultFunctionCaching,
@@ -2411,6 +2418,7 @@ func (mod Module) Clone() *Module {
 			cp.WorkspaceConfig[k] = v
 		}
 	}
+	cp.LegacyArgCustomizations = append([]*modules.ModuleConfigArgument(nil), mod.LegacyArgCustomizations...)
 	return &cp
 }
 

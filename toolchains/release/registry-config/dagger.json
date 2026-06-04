@@ -1,6 +1,6 @@
 {
   "name": "registry-config",
-  "engineVersion": "v0.21.0",
+  "engineVersion": "v0.21.4",
   "sdk": {
     "source": "go"
   },

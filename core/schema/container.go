@@ -570,6 +570,8 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 				dagql.Arg("path").Doc(`Path to check (e.g., "/file.txt").`),
 				dagql.Arg("expectedType").Doc(`If specified, also validate the type of file (e.g. "REGULAR_TYPE", "DIRECTORY_TYPE", or "SYMLINK_TYPE").`),
 				dagql.Arg("doNotFollowSymlinks").Doc(`If specified, do not follow symlinks.`),
+				dagql.Arg("expand").Doc(`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
+					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 			),
 
 		dagql.NodeFunc("stat", s.stat).
@@ -810,6 +812,21 @@ func (s *containerSchema) Install(srv *dagql.Server) {
 
 		dagql.Func("imageRef", s.imageRef).
 			Doc(`The unique image reference which can only be retrieved immediately after the 'Container.From' call.`),
+
+		dagql.NodeFunc("manifest", s.manifest).
+			Doc(`Computes and returns the manifest for this container as a File.`).
+			Args(
+				dagql.Arg("forcedCompression").Doc(`Compression to use for image layers. Defaults to Gzip.`),
+				dagql.Arg("mediaTypes").Doc(`Media types to use for image layers. Defaults to OCI.`),
+			),
+
+		dagql.NodeFunc("layer", s.layer).
+			Doc(`Returns the layer with the given digest as a File.`).
+			Args(
+				dagql.Arg("id").Doc(`Digest of the layer (e.g. "sha256:abc123...").`),
+				dagql.Arg("forcedCompression").Doc(`Compression to use for image layers. Defaults to Gzip.`),
+				dagql.Arg("mediaTypes").Doc(`Media types to use for image layers. Defaults to OCI.`),
+			),
 
 		dagql.NodeFunc("withExposedPort", s.withExposedPort).
 			Doc(`Expose a network port. Like EXPOSE in Dockerfile (but with healthcheck support)`,
@@ -1362,7 +1379,7 @@ func (s *containerSchema) withExec(ctx context.Context, parent dagql.ObjectResul
 	if err != nil {
 		return inst, err
 	}
-	err = ctr.WithExec(ctx, parent, args.ContainerExecOpts, md, moduleContext, nil, false)
+	err = ctr.WithExec(ctx, parent, args.ContainerExecOpts, md, moduleContext, nil)
 	if err != nil {
 		return inst, err
 	}
@@ -2308,7 +2325,14 @@ func (s *containerSchema) withoutAnnotation(ctx context.Context, parent dagql.Ob
 	return ctr, nil
 }
 
-func (s *containerSchema) exists(ctx context.Context, parent dagql.ObjectResult[*core.Container], args existsArgs) (dagql.Boolean, error) {
+type containerExistsArgs struct {
+	Path                string
+	ExpectedType        dagql.Optional[core.ExistsType]
+	DoNotFollowSymlinks bool `default:"false"`
+	Expand              bool `default:"false"`
+}
+
+func (s *containerSchema) exists(ctx context.Context, parent dagql.ObjectResult[*core.Container], args containerExistsArgs) (dagql.Boolean, error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return false, fmt.Errorf("failed to get server: %w", err)
@@ -2320,7 +2344,13 @@ func (s *containerSchema) exists(ctx context.Context, parent dagql.ObjectResult[
 	if err := cache.Evaluate(ctx, parent); err != nil {
 		return false, err
 	}
-	exists, err := parent.Self().Exists(ctx, parent, srv, args.Path, args.ExpectedType.Value, args.DoNotFollowSymlinks)
+
+	path, err := expandEnvVar(ctx, parent.Self(), args.Path, args.Expand)
+	if err != nil {
+		return false, err
+	}
+
+	exists, err := parent.Self().Exists(ctx, parent, srv, path, args.ExpectedType.Value, args.DoNotFollowSymlinks)
 	return dagql.NewBoolean(exists), err
 }
 
@@ -3926,6 +3956,71 @@ func (s *containerSchema) withoutRegistryAuth(ctx context.Context, parent *core.
 
 func (s *containerSchema) imageRef(ctx context.Context, parent *core.Container, args struct{}) (string, error) {
 	return parent.ImageRefOrErr(ctx)
+}
+
+type containerManifestArgs struct {
+	ForcedCompression dagql.Optional[core.ImageLayerCompression]
+	MediaTypes        core.ImageMediaTypes `default:"OCI"`
+}
+
+func (s *containerSchema) manifest(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Container],
+	args containerManifestArgs,
+) (inst dagql.ObjectResult[*core.File], err error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get server: %w", err)
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return inst, err
+	}
+	if err := cache.Evaluate(ctx, parent); err != nil {
+		return inst, err
+	}
+	f, err := parent.Self().Manifest(ctx, args.ForcedCompression.Value, args.MediaTypes)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, f)
+}
+
+type containerLayerArgs struct {
+	ID                string
+	ForcedCompression dagql.Optional[core.ImageLayerCompression]
+	MediaTypes        core.ImageMediaTypes `default:"OCI"`
+}
+
+func (s *containerSchema) layer(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Container],
+	args containerLayerArgs,
+) (inst dagql.ObjectResult[*core.File], err error) {
+	query, err := core.CurrentQuery(ctx)
+	if err != nil {
+		return inst, err
+	}
+	srv, err := query.Server.Server(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get server: %w", err)
+	}
+	cache, err := dagql.EngineCache(ctx)
+	if err != nil {
+		return inst, err
+	}
+	if err := cache.Evaluate(ctx, parent); err != nil {
+		return inst, err
+	}
+	f, err := parent.Self().Layer(ctx, args.ForcedCompression.Value, args.MediaTypes, args.ID)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, f)
 }
 
 type containerWithServiceBindingArgs struct {

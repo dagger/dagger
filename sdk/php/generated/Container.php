@@ -144,8 +144,12 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     /**
      * check if a file or directory exists
      */
-    public function exists(string $path, ?ExistsType $expectedType = null, ?bool $doNotFollowSymlinks = false): bool
-    {
+    public function exists(
+        string $path,
+        ?ExistsType $expectedType = null,
+        ?bool $doNotFollowSymlinks = false,
+        ?bool $expand = false,
+    ): bool {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exists');
         $leafQueryBuilder->setArgument('path', $path);
         if (null !== $expectedType) {
@@ -153,6 +157,9 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
         }
         if (null !== $doNotFollowSymlinks) {
         $leafQueryBuilder->setArgument('doNotFollowSymlinks', $doNotFollowSymlinks);
+        }
+        if (null !== $expand) {
+        $leafQueryBuilder->setArgument('expand', $expand);
         }
         return (bool)$this->queryLeaf($leafQueryBuilder, 'exists');
     }
@@ -331,6 +338,42 @@ class Container extends Client\AbstractObject implements Client\IdAble, Exportab
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('labels');
         return (array)$this->queryLeaf($leafQueryBuilder, 'labels');
+    }
+
+    /**
+     * Returns the layer with the given digest as a File.
+     */
+    public function layer(
+        string $id,
+        ?ImageLayerCompression $forcedCompression = null,
+        ?ImageMediaTypes $mediaTypes = null,
+    ): File {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('layer');
+        $innerQueryBuilder->setArgument('id', $id);
+        if (null !== $forcedCompression) {
+        $innerQueryBuilder->setArgument('forcedCompression', $forcedCompression);
+        }
+        if (null !== $mediaTypes) {
+        $innerQueryBuilder->setArgument('mediaTypes', $mediaTypes);
+        }
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Computes and returns the manifest for this container as a File.
+     */
+    public function manifest(
+        ?ImageLayerCompression $forcedCompression = null,
+        ?ImageMediaTypes $mediaTypes = null,
+    ): File {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('manifest');
+        if (null !== $forcedCompression) {
+        $innerQueryBuilder->setArgument('forcedCompression', $forcedCompression);
+        }
+        if (null !== $mediaTypes) {
+        $innerQueryBuilder->setArgument('mediaTypes', $mediaTypes);
+        }
+        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

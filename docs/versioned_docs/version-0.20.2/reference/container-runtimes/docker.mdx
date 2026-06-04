@@ -1,0 +1,46 @@
+---
+title: "Docker"
+description: "Learn how to use Dagger with Docker."
+slug: /reference/container-runtimes/docker
+---
+
+# Docker
+
+Dagger can be used with any OCI-compatible container runtime, including Docker.
+
+## Prerequisites
+
+Ensure that docker is running on the host system:
+
+```console
+$ docker info
+Client:
+ Version:    28.4.0
+ Context:    default
+ ...
+```
+
+You can install docker:
+
+- Using the instructions from the [official Docker documentation](https://docs.docker.com/get-docker/)
+- From your system package manager:
+  - Debian/Ubuntu: `apt install docker.io`
+  - Fedora: `dnf install docker`
+  - Arch Linux: `pacman -S docker`
+- Using a third-party tool like [Orbstack](https://orbstack.dev/).
+
+## Example
+
+```console
+$ docker ps
+CONTAINER ID   IMAGE                                COMMAND                  CREATED       STATUS       PORTS                                         NAMES
+$ dagger core version
+v0.18.19
+$ docker ps
+CONTAINER ID   IMAGE                                COMMAND                  CREATED       STATUS       PORTS                                         NAMES
+27d47c3d5a10   registry.dagger.io/engine:v0.18.19   "dagger-entrypoint.s…"   6 days ago    Up 4 hours                                                 dagger-engine-v0.18.19
+```
+
+## Resources
+
+If you have any questions about additional ways to use Docker with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions in our [help channel](https://discord.com/channels/707636530424053791/1030538312508776540).

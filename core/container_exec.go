@@ -89,12 +89,11 @@ type ContainerExecOpts struct {
 type ContainerExecState struct {
 	LazyState
 
-	Parent             dagql.ObjectResult[*Container]
-	Opts               ContainerExecOpts
-	ExecMD             *engineutil.ExecutionMetadata
-	ModuleContext      dagql.ObjectResult[*Module]
-	FunctionCall       *FunctionCall
-	ExtractModuleError bool
+	Parent        dagql.ObjectResult[*Container]
+	Opts          ContainerExecOpts
+	ExecMD        *engineutil.ExecutionMetadata
+	ModuleContext dagql.ObjectResult[*Module]
+	FunctionCall  *FunctionCall
 }
 
 type ContainerExecLazy struct {
@@ -106,8 +105,6 @@ type persistedContainerExecLazy struct {
 	ModuleContextResultID          uint64                        `json:"moduleContextResultID,omitempty"`
 	Opts                           ContainerExecOpts             `json:"opts"`
 	ExecMD                         *engineutil.ExecutionMetadata `json:"execMD,omitempty"`
-	FunctionCall                   *FunctionCall                 `json:"functionCall,omitempty"`
-	ExtractModuleError             bool                          `json:"extractModuleError,omitempty"`
 	VolatileCacheHitParentResultID uint64                        `json:"volatileCacheHitParentResultID,omitempty"`
 	VolatileCacheHitVolatileEnv    []string                      `json:"volatileCacheHitVolatileEnv,omitempty"`
 }
@@ -160,6 +157,9 @@ func (lazy *ContainerExecLazy) EncodePersisted(ctx context.Context, cache dagql.
 	if lazy == nil || lazy.State == nil {
 		return nil, fmt.Errorf("encode persisted container withExec lazy: nil state")
 	}
+	if lazy.State.FunctionCall != nil {
+		return nil, fmt.Errorf("cannot persist container exec with active function call")
+	}
 	parentID, err := encodePersistedObjectRef(cache, lazy.State.Parent, "container withExec parent")
 	if err != nil {
 		return nil, err
@@ -176,8 +176,6 @@ func (lazy *ContainerExecLazy) EncodePersisted(ctx context.Context, cache dagql.
 		ModuleContextResultID: moduleContextID,
 		Opts:                  lazy.State.Opts,
 		ExecMD:                lazy.State.ExecMD,
-		FunctionCall:          lazy.State.FunctionCall,
-		ExtractModuleError:    lazy.State.ExtractModuleError,
 	})
 }
 
@@ -1159,16 +1157,14 @@ func (container *Container) WithExec(
 	execMD *engineutil.ExecutionMetadata,
 	moduleContext dagql.ObjectResult[*Module],
 	functionCall *FunctionCall,
-	extractModuleError bool,
 ) error {
 	state := &ContainerExecState{
-		LazyState:          NewLazyState(),
-		Parent:             parent,
-		Opts:               opts,
-		ExecMD:             execMD,
-		ModuleContext:      moduleContext,
-		FunctionCall:       functionCall,
-		ExtractModuleError: extractModuleError,
+		LazyState:     NewLazyState(),
+		Parent:        parent,
+		Opts:          opts,
+		ExecMD:        execMD,
+		ModuleContext: moduleContext,
+		FunctionCall:  functionCall,
 	}
 	container.Lazy = &ContainerExecLazy{State: state}
 	container.ImageRef = ""
@@ -1798,9 +1794,6 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			defer releaseResolvedRefs()
 
 			var metaRef bkcache.ImmutableRef
-			var moduleRef bkcache.ImmutableRef
-			var moduleErrID dagql.ID[*Error]
-			haveModuleErrID := false
 			resolveAndTrackFailureRef := func(state *execMountState) (bkcache.ImmutableRef, error) {
 				ref, err := resolveFailureRef(state)
 				if err != nil {
@@ -1810,9 +1803,6 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 			}
 			for _, mountState := range mountStates {
 				keepRef := mountState.Dest == engineutil.MetaMountDestPath
-				if state.ExtractModuleError && mountState.Dest == modMetaDirPath {
-					keepRef = true
-				}
 				if !keepRef {
 					continue
 				}
@@ -1826,21 +1816,6 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 				}
 				if mountState.Dest == engineutil.MetaMountDestPath {
 					metaRef = ref
-				}
-				if state.ExtractModuleError && mountState.Dest == modMetaDirPath {
-					moduleRef = ref
-				}
-			}
-
-			if state.ExtractModuleError && moduleRef != nil {
-				errID, ok, err := moduleErrorIDFromRef(ctx, engineClient, moduleRef)
-				if err != nil {
-					rerr = errors.Join(rerr, fmt.Errorf("extract module error: %w", err))
-					return
-				}
-				if ok {
-					moduleErrID = errID
-					haveModuleErrID = true
 				}
 			}
 
@@ -2046,15 +2021,7 @@ func (state *ContainerExecState) Evaluate(ctx context.Context, container *Contai
 					}
 				}
 			}
-
-			if haveModuleErrID {
-				rerr = &ModuleExecError{
-					Err:     rerr,
-					ErrorID: moduleErrID,
-				}
-			}
 		}()
-
 		emu, err := getEmulator(ctx, specs.Platform(container.Platform))
 		if err != nil {
 			return err
@@ -2229,13 +2196,11 @@ func decodePersistedContainerExecLazy(
 		return err
 	}
 	state := &ContainerExecState{
-		LazyState:          NewLazyState(),
-		Parent:             parent,
-		Opts:               persisted.Opts,
-		ExecMD:             persisted.ExecMD,
-		ModuleContext:      moduleContext,
-		FunctionCall:       persisted.FunctionCall,
-		ExtractModuleError: persisted.ExtractModuleError,
+		LazyState:     NewLazyState(),
+		Parent:        parent,
+		Opts:          persisted.Opts,
+		ExecMD:        persisted.ExecMD,
+		ModuleContext: moduleContext,
 	}
 	container.Lazy = &ContainerExecLazy{State: state}
 	container.ImageRef = ""
