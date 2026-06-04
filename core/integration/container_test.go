@@ -3613,7 +3613,7 @@ func (ContainerSuite) TestWithDirectoryToMount(ctx context.Context, t *testctx.T
 	}, strings.Split(strings.Trim(contents, "\n"), "\n"))
 }
 
-func (ContainerSuite) TestAddFile(ctx context.Context, t *testctx.T) {
+func (ContainerSuite) TestAddFileSymlink(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	base := c.Container().From(alpineImage).
@@ -3628,6 +3628,17 @@ func (ContainerSuite) TestAddFile(ctx context.Context, t *testctx.T) {
 	got, err := ctr.File("/target/sub/file").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, want, got)
+}
+
+func (ContainerSuite) TestAddDirSrcSymlink(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	rel := c.Container().From(alpineImage).WithExec([]string{"sh", "-c", "mkdir -p /store/real && echo hi > /store/real/marker.txt && ln -s /store/real /store/link"}).Directory("/store/link")
+
+	out, err := c.Container().From(alpineImage).WithDirectory("/release", rel).WithExec([]string{"cat", "/release/marker.txt"}).Stdout(ctx)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, out)
 }
 
 func (ContainerSuite) TestExecError(ctx context.Context, t *testctx.T) {
