@@ -1,9 +1,7 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"strings"
 
 	"golang.org/x/mod/semver"
 
@@ -55,13 +53,21 @@ func cliReleaseLabels(tag, commit string) []string {
 func cliReleaseArchiveNames(label string) []string {
 	names := make([]string, 0, len(cliReleaseTargets))
 	for _, target := range cliReleaseTargets {
-		ext := ".tar.gz"
-		if target.Windows {
-			ext = ".zip"
-		}
-		names = append(names, "dagger_"+label+"_"+target.ID+ext)
+		names = append(names, cliReleaseArchiveName(label, target))
 	}
 	return names
+}
+
+func cliReleaseArchiveName(label string, target cliReleaseTarget) string {
+	ext := ".tar.gz"
+	if target.Windows {
+		ext = ".zip"
+	}
+	return "dagger_" + label + "_" + target.ID + ext
+}
+
+func (cli *CliDev) releaseBinary(target cliReleaseTarget) *dagger.File {
+	return cli.Binary(dagger.Platform(target.Platform))
 }
 
 func (cli *CliDev) releaseBinaries() *dagger.Directory {
@@ -69,7 +75,7 @@ func (cli *CliDev) releaseBinaries() *dagger.Directory {
 	for _, target := range cliReleaseTargets {
 		dir = dir.WithFile(
 			target.ID+"/"+target.Binary,
-			cli.Binary(dagger.Platform(target.Platform)),
+			cli.releaseBinary(target),
 		)
 	}
 	return dir
@@ -80,85 +86,65 @@ func (cli *CliDev) releaseDist(tag, commit string) (*dagger.Directory, error) {
 		return nil, fmt.Errorf("commit must be set")
 	}
 
-	targets, err := json.Marshal(cliReleaseTargets)
-	if err != nil {
-		return nil, err
+	dist := dag.Directory()
+	for _, label := range cliReleaseLabels(tag, commit) {
+		for _, target := range cliReleaseTargets {
+			name := cliReleaseArchiveName(label, target)
+			dist = dist.WithFile(name, cli.releaseArchive(label, target))
+		}
 	}
 
-	ctr := dag.
-		Alpine(dagger.AlpineOpts{
-			Branch:   "3.22",
-			Packages: []string{"python3"},
-		}).
-		Container().
-		WithDirectory("/src", cli.Go.Source()).
-		WithDirectory("/binaries", cli.releaseBinaries()).
-		WithEnvVariable("RELEASE_LABELS", strings.Join(cliReleaseLabels(tag, commit), ",")).
-		WithEnvVariable("RELEASE_TARGETS", string(targets)).
-		WithNewFile("/package-release.py", packageReleaseScript).
-		WithExec([]string{"python3", "/package-release.py"})
-
-	return ctr.Directory("/dist"), nil
+	return dist.WithFile("checksums.txt", cli.releaseChecksums(dist)), nil
 }
 
-const packageReleaseScript = `import gzip
-import hashlib
-import json
-import os
-import shutil
-import stat
-import tarfile
-import zipfile
+func (cli *CliDev) releaseArchive(label string, target cliReleaseTarget) *dagger.File {
+	name := cliReleaseArchiveName(label, target)
+	input := dag.Directory().
+		WithFile("LICENSE", cli.Go.Source().File("LICENSE"), dagger.DirectoryWithFileOpts{
+			Permissions: 0o644,
+		}).
+		WithFile(target.Binary, cli.releaseBinary(target), dagger.DirectoryWithFileOpts{
+			Permissions: 0o755,
+		})
 
-labels = [label for label in os.environ["RELEASE_LABELS"].split(",") if label]
-targets = json.loads(os.environ["RELEASE_TARGETS"])
-dist = "/dist"
-work = "/work"
-license_path = "/src/LICENSE"
+	cmd := `mkdir -p /out
+if [ "$WINDOWS" = "true" ]; then
+	cd /input
+	touch -t 198001010000 LICENSE "$BINARY"
+	zip -X -q "/out/$ARCHIVE" LICENSE "$BINARY"
+else
+	tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner -czf "/out/$ARCHIVE" -C /input LICENSE "$BINARY"
+fi`
 
-shutil.rmtree(dist, ignore_errors=True)
-shutil.rmtree(work, ignore_errors=True)
-os.makedirs(dist, exist_ok=True)
-os.makedirs(work, exist_ok=True)
+	return releaseArchiveBase().
+		WithDirectory("/input", input).
+		WithEnvVariable("ARCHIVE", name).
+		WithEnvVariable("BINARY", target.Binary).
+		WithEnvVariable("WINDOWS", fmt.Sprintf("%t", target.Windows)).
+		WithExec([]string{"sh", "-ec", cmd}).
+		File("/out/" + name)
+}
 
-def add_zip_file(zf, src, arcname, mode):
-    info = zipfile.ZipInfo(arcname)
-    info.compress_type = zipfile.ZIP_DEFLATED
-    info.external_attr = (stat.S_IFREG | mode) << 16
-    with open(src, "rb") as f:
-        zf.writestr(info, f.read())
+func (cli *CliDev) releaseChecksums(dist *dagger.Directory) *dagger.File {
+	return dag.
+		Alpine(dagger.AlpineOpts{
+			Branch: "3.22",
+		}).
+		Container().
+		WithDirectory("/dist", dist).
+		WithExec([]string{"sh", "-ec", `mkdir -p /out
+cd /dist
+for file in $(ls | sort); do
+	sha256sum "$file"
+done > /out/checksums.txt`}).
+		File("/out/checksums.txt")
+}
 
-def add_tar_file(tf, src, arcname, mode):
-    info = tf.gettarinfo(src, arcname)
-    info.mode = mode
-    with open(src, "rb") as f:
-        tf.addfile(info, f)
-
-for label in labels:
-    for target in targets:
-        ext = ".zip" if target.get("windows") else ".tar.gz"
-        archive = f"dagger_{label}_{target['id']}{ext}"
-        binary = os.path.join("/binaries", target["id"], target["binary"])
-        out = os.path.join(dist, archive)
-
-        if target.get("windows"):
-            with zipfile.ZipFile(out, "w") as zf:
-                add_zip_file(zf, license_path, "LICENSE", 0o644)
-                add_zip_file(zf, binary, target["binary"], 0o755)
-        else:
-            with gzip.GzipFile(out, "wb", mtime=0) as gz:
-                with tarfile.open(fileobj=gz, mode="w") as tf:
-                    add_tar_file(tf, license_path, "LICENSE", 0o644)
-                    add_tar_file(tf, binary, target["binary"], 0o755)
-
-checksums = []
-for name in sorted(os.listdir(dist)):
-    if name == "checksums.txt":
-        continue
-    with open(os.path.join(dist, name), "rb") as f:
-        checksums.append((name, hashlib.sha256(f.read()).hexdigest()))
-
-with open(os.path.join(dist, "checksums.txt"), "w", encoding="utf-8") as f:
-    for name, checksum in checksums:
-        f.write(f"{checksum}  {name}\n")
-`
+func releaseArchiveBase() *dagger.Container {
+	return dag.
+		Alpine(dagger.AlpineOpts{
+			Branch:   "3.22",
+			Packages: []string{"tar", "gzip", "zip"},
+		}).
+		Container()
+}
