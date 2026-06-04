@@ -3168,6 +3168,7 @@ func (s *moduleSourceSchema) moduleSourceAsModule(
 		if err := json.Unmarshal([]byte(args.LegacyArgCustomizationsJSON), &customizations); err != nil {
 			return inst, fmt.Errorf("decoding legacy arg customizations: %w", err)
 		}
+		mod.LegacyArgCustomizations = customizations
 		if err := mod.ApplyLegacyCustomizationsToTypeDefs(ctx, dag, customizations); err != nil {
 			return inst, err
 		}
