@@ -2,8 +2,10 @@ package snapshots
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/containerd/containerd/v2/core/leases"
 	ctdsnapshots "github.com/containerd/containerd/v2/core/snapshots"
@@ -79,6 +81,134 @@ func (lm *applySnapshotDiffTestLeaseManager) DeleteResource(_ context.Context, l
 }
 
 func (lm *applySnapshotDiffTestLeaseManager) ListResources(_ context.Context, lease leases.Lease) ([]leases.Resource, error) {
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
+	return append([]leases.Resource(nil), lm.resources[lease.ID]...), nil
+}
+
+type attachRemoveRaceLeaseManager struct {
+	mu        sync.Mutex
+	leases    map[string]leases.Lease
+	resources map[string][]leases.Resource
+
+	targetLease string
+	blockDelete bool
+
+	deleteStarted      chan struct{}
+	attachCreatedLease chan struct{}
+	allowDelete        chan struct{}
+	deleteDone         chan struct{}
+
+	deleteStartedOnce      sync.Once
+	attachCreatedLeaseOnce sync.Once
+	deleteDoneOnce         sync.Once
+}
+
+func newAttachRemoveRaceLeaseManager(targetLease string) *attachRemoveRaceLeaseManager {
+	return &attachRemoveRaceLeaseManager{
+		leases:             map[string]leases.Lease{},
+		resources:          map[string][]leases.Resource{},
+		targetLease:        targetLease,
+		deleteStarted:      make(chan struct{}),
+		attachCreatedLease: make(chan struct{}),
+		allowDelete:        make(chan struct{}),
+		deleteDone:         make(chan struct{}),
+	}
+}
+
+func (lm *attachRemoveRaceLeaseManager) Create(_ context.Context, opts ...leases.Opt) (leases.Lease, error) {
+	l := leases.Lease{}
+	for _, opt := range opts {
+		if err := opt(&l); err != nil {
+			return leases.Lease{}, err
+		}
+	}
+
+	lm.mu.Lock()
+	lm.leases[l.ID] = l
+	blockDelete := lm.blockDelete
+	lm.mu.Unlock()
+
+	if l.ID == lm.targetLease && blockDelete {
+		lm.attachCreatedLeaseOnce.Do(func() {
+			close(lm.attachCreatedLease)
+		})
+	}
+
+	return l, nil
+}
+
+func (lm *attachRemoveRaceLeaseManager) Delete(ctx context.Context, lease leases.Lease, _ ...leases.DeleteOpt) error {
+	lm.mu.Lock()
+	blockDelete := lm.blockDelete && lease.ID == lm.targetLease
+	lm.mu.Unlock()
+
+	if blockDelete {
+		lm.deleteStartedOnce.Do(func() {
+			close(lm.deleteStarted)
+		})
+		select {
+		case <-lm.allowDelete:
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		}
+	}
+
+	lm.mu.Lock()
+	delete(lm.leases, lease.ID)
+	delete(lm.resources, lease.ID)
+	lm.mu.Unlock()
+
+	if blockDelete {
+		lm.deleteDoneOnce.Do(func() {
+			close(lm.deleteDone)
+		})
+	}
+
+	return nil
+}
+
+func (lm *attachRemoveRaceLeaseManager) List(context.Context, ...string) ([]leases.Lease, error) {
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
+	out := make([]leases.Lease, 0, len(lm.leases))
+	for _, lease := range lm.leases {
+		out = append(out, lease)
+	}
+	return out, nil
+}
+
+func (lm *attachRemoveRaceLeaseManager) AddResource(ctx context.Context, lease leases.Lease, resource leases.Resource) error {
+	if lease.ID == lm.targetLease {
+		select {
+		case <-lm.deleteDone:
+		default:
+			select {
+			case <-lm.deleteStarted:
+				select {
+				case <-lm.deleteDone:
+				case <-ctx.Done():
+					return context.Cause(ctx)
+				}
+			default:
+			}
+		}
+	}
+
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
+	if _, ok := lm.leases[lease.ID]; !ok {
+		return fmt.Errorf("lease %q: not found", lease.ID)
+	}
+	lm.resources[lease.ID] = append(lm.resources[lease.ID], resource)
+	return nil
+}
+
+func (lm *attachRemoveRaceLeaseManager) DeleteResource(context.Context, leases.Lease, leases.Resource) error {
+	return nil
+}
+
+func (lm *attachRemoveRaceLeaseManager) ListResources(_ context.Context, lease leases.Lease) ([]leases.Resource, error) {
 	lm.mu.Lock()
 	defer lm.mu.Unlock()
 	return append([]leases.Resource(nil), lm.resources[lease.ID]...), nil
@@ -192,6 +322,7 @@ func newApplySnapshotDiffTestManager(t *testing.T) *snapshotManager {
 		importedLayerByDiff:    map[ImportedLayerDiffKey]string{},
 		snapshotOwnerLeases:    map[string]map[string]struct{}{},
 		importLayerLocker:      locker.New(),
+		ownerLeaseLocker:       locker.New(),
 	}
 }
 
@@ -271,6 +402,61 @@ func TestSnapshotManagerEnsuresLazyLeaseForCreateBoundaries(t *testing.T) {
 		require.Len(t, sn.commitLeaseID, 1)
 		require.NotEmpty(t, sn.commitLeaseID[0])
 	})
+}
+
+func TestSnapshotManagerRemoveLeaseDoesNotDeleteDuringAttachLease(t *testing.T) {
+	const (
+		leaseID     = "dagql/result/123/fs"
+		oldSnapshot = "snapshot-old"
+		newSnapshot = "snapshot-new"
+	)
+
+	cm := newApplySnapshotDiffTestManager(t)
+	lm := newAttachRemoveRaceLeaseManager(leaseID)
+	cm.LeaseManager = lm
+	sn := cm.Snapshotter.(*applySnapshotDiffTestSnapshotter)
+	sn.snapshots[oldSnapshot] = ctdsnapshots.Info{Name: oldSnapshot}
+	sn.snapshots[newSnapshot] = ctdsnapshots.Info{Name: newSnapshot}
+
+	require.NoError(t, cm.AttachLease(context.Background(), leaseID, oldSnapshot))
+
+	lm.mu.Lock()
+	lm.blockDelete = true
+	lm.mu.Unlock()
+
+	removeErrCh := make(chan error, 1)
+	go func() {
+		removeErrCh <- cm.RemoveLease(context.Background(), leaseID)
+	}()
+
+	select {
+	case <-lm.deleteStarted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for RemoveLease to start deleting the owner lease")
+	}
+
+	attachErrCh := make(chan error, 1)
+	attachAttempted := make(chan struct{})
+	go func() {
+		close(attachAttempted)
+		attachErrCh <- cm.AttachLease(context.Background(), leaseID, newSnapshot)
+	}()
+
+	select {
+	case <-attachAttempted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for AttachLease goroutine to start")
+	}
+
+	select {
+	case <-lm.attachCreatedLease:
+	case <-time.After(time.Second):
+	}
+
+	close(lm.allowDelete)
+
+	require.NoError(t, <-removeErrCh)
+	require.NoError(t, <-attachErrCh)
 }
 
 func TestApplySnapshotDiffNilContract(t *testing.T) {

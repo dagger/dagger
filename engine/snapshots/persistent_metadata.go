@@ -3,7 +3,6 @@ package snapshots
 import (
 	"context"
 	stderrors "errors"
-	"slices"
 	"strings"
 	"time"
 
@@ -138,6 +137,9 @@ func (cm *snapshotManager) AttachLease(ctx context.Context, leaseID, snapshotID 
 		return stderrors.New("attach lease: empty snapshot ID")
 	}
 
+	cm.ownerLeaseLocker.Lock(leaseID)
+	defer cm.ownerLeaseLocker.Unlock(leaseID)
+
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
@@ -198,15 +200,8 @@ func (cm *snapshotManager) RemoveLease(ctx context.Context, leaseID string) erro
 		return nil
 	}
 
-	cm.mu.Lock()
-	affectedSnapshotIDs := make([]string, 0)
-	for snapshotID, leaseIDs := range cm.snapshotOwnerLeases {
-		if _, ok := leaseIDs[leaseID]; ok {
-			affectedSnapshotIDs = append(affectedSnapshotIDs, snapshotID)
-		}
-	}
-	cm.mu.Unlock()
-	slices.Sort(affectedSnapshotIDs)
+	cm.ownerLeaseLocker.Lock(leaseID)
+	defer cm.ownerLeaseLocker.Unlock(leaseID)
 
 	err := cm.LeaseManager.Delete(ctx, leases.Lease{ID: leaseID})
 	if err != nil && !cerrdefs.IsNotFound(err) {
