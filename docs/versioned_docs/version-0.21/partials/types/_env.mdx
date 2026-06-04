@@ -1,0 +1,20 @@
+The `Env` type represents an environment consisting of inputs and desired outputs, for use by an `LLM`. For example, an environment might provide a `Directory`, a `Container`, a custom module, and a string variable as inputs, and request a `Container` as output.
+
+### Common operations
+
+Some of the common operations available on the `Env` type include:
+
+| Field | Description |
+|-------|-------------|
+| `input` | Retrieves an input value by name |
+| `inputs` | Retrieves all input values |
+| `output` | Retrieves an output value by name |
+| `outputs` | Retrieves all output values |
+| `withContainerInput` | Creates or updates an input of type `Container` |
+| `withContainerOutput` | Declare a desired output of type `Container` |
+| `withDirectoryInput` | Creates or updates an input of type `Directory` |
+| `withDirectoryOutput` | Declare a desired output of type `Directory` |
+| `withFileInput` | Creates or updates an input of type `File` |
+| `withFileOutput` | Declare a desired output of type `File` |
+| `with[Object]Input` | Creates or updates an input of type `Object` |
+| `with[Object]Output` | Declare a desired output of type `Object` |
