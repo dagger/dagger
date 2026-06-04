@@ -99,7 +99,7 @@ func initializeModule(
 	return def, nil
 }
 
-var ErrConfigNotFound = errors.New("dagger.json not found")
+var ErrConfigNotFound = errors.New("module config file not found")
 
 //nolint:unparam
 func initializeClientGeneratorModule(

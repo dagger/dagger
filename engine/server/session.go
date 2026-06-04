@@ -1773,9 +1773,20 @@ func readWorkspaceLockState(ctx context.Context, bk interface {
 	data, err := bk.ReadCallerHostFile(ctx, lockPath)
 	if err != nil {
 		if isWorkspaceLockNotFound(err) {
-			return workspace.NewLock(), nil
+			legacyPath := legacyWorkspaceLockPath(ws)
+			if legacyPath == "" || legacyPath == lockPath {
+				return workspace.NewLock(), nil
+			}
+			data, err = bk.ReadCallerHostFile(ctx, legacyPath)
+			if err != nil {
+				if isWorkspaceLockNotFound(err) {
+					return workspace.NewLock(), nil
+				}
+				return nil, fmt.Errorf("reading legacy lock: %w", err)
+			}
+		} else {
+			return nil, fmt.Errorf("reading lock: %w", err)
 		}
-		return nil, fmt.Errorf("reading lock: %w", err)
 	}
 
 	lock, err := workspace.ParseLock(data)
@@ -1783,6 +1794,13 @@ func readWorkspaceLockState(ctx context.Context, bk interface {
 		return nil, fmt.Errorf("parsing lock: %w", err)
 	}
 	return lock, nil
+}
+
+func legacyWorkspaceLockPath(ws *core.Workspace) string {
+	if ws == nil || ws.HostPath() == "" || ws.LockFile == "" {
+		return ""
+	}
+	return filepath.Join(ws.HostPath(), workspace.LegacyLockFilePathForCanonical(ws.LockFile))
 }
 
 func isWorkspaceLockNotFound(err error) bool {

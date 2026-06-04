@@ -41,7 +41,7 @@ dagger check ps-analyzer:check # run PSScriptAnalyzer on discovered PowerShell s
 
 ## Settings
 
-List the current settings and their values with `dagger settings ps-analyzer`, then set one with `dagger settings ps-analyzer <key> <value>`. Settings are stored in `.dagger/config.toml` under `[modules.ps-analyzer.settings]`.
+List the current settings and their values with `dagger settings ps-analyzer`, then set one with `dagger settings ps-analyzer <key> <value>`. Settings are stored in `dagger.toml` under `[modules.ps-analyzer.settings]`.
 
 - **`version`** (default `1.22.0`): the PSScriptAnalyzer release to install. Pin it so the same ruleset and analyzer behavior run locally and in CI.
 - **`exclude`** (default: none): a list of script paths to skip.
@@ -51,7 +51,7 @@ List the current settings and their values with `dagger settings ps-analyzer`, t
 dagger settings ps-analyzer version 1.22.0
 ```
 
-The list-valued settings are edited directly in `.dagger/config.toml`:
+The list-valued settings are edited directly in `dagger.toml`:
 
 ```toml
 [modules.ps-analyzer.settings]

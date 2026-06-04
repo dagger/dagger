@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/core/workspace"
 	"github.com/stretchr/testify/require"
 )
@@ -248,6 +249,17 @@ func TestWorkspaceMigrationWarningsKeepsGapWarningsAggregated(t *testing.T) {
 	}, workspaceMigrationWarnings(plan))
 }
 
+func TestWorkspaceConfigUsesMigratedModuleSourcesResolvesFromConfigDir(t *testing.T) {
+	cfg := &workspace.Config{
+		Modules: map[string]workspace.ModuleEntry{
+			"api": {Source: filepath.Join(workspace.LockDirName, "modules", "api")},
+		},
+	}
+
+	require.True(t, workspaceConfigUsesMigratedModuleSources(cfg, "."))
+	require.False(t, workspaceConfigUsesMigratedModuleSources(cfg, workspace.LockDirName))
+}
+
 func TestWorkspaceMigrationRootPath(t *testing.T) {
 	root := filepath.Join(string(filepath.Separator), "repo")
 	ws := &core.Workspace{}
@@ -256,9 +268,9 @@ func TestWorkspaceMigrationRootPath(t *testing.T) {
 		ProjectRoot: filepath.Join(root, "services", "api"),
 	}
 
-	got, err := workspaceMigrationRootPath(ws, plan, filepath.Join(workspace.LockDirName, workspace.ConfigFileName))
+	got, err := workspaceMigrationRootPath(ws, plan, workspace.ConfigFileName)
 	require.NoError(t, err)
-	require.Equal(t, filepath.Join("services", "api", workspace.LockDirName, workspace.ConfigFileName), got)
+	require.Equal(t, filepath.Join("services", "api", workspace.ConfigFileName), got)
 }
 
 func TestWorkspaceMigrationParentPlans(t *testing.T) {
@@ -389,6 +401,96 @@ source = "github.com/acme/custom-go-sdk"
 	})
 }
 
+func TestWorkspaceMigrationModuleConfigConversions(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "repo")
+
+	plain := testRuntimeCompatWorkspace(t, filepath.Join(root, ".dagger", "modules", "video"), `{
+  "name": "video",
+  "sdk": {"source": "go"},
+  "dependencies": [
+    {"name": "dep", "source": "github.com/acme/dep@main", "pin": "sha256:abc"},
+    {"name": "local", "source": "./local"}
+  ]
+}`)
+	rootSDKOnly := testRuntimeCompatWorkspace(t, root, `{
+  "name": "app",
+  "sdk": {"source": "go"}
+}`)
+	workspaceConfig := testRuntimeCompatWorkspace(t, filepath.Join(root, "services", "api"), `{
+  "name": "api",
+  "sdk": {"source": "go"},
+  "source": "src"
+}`)
+	noSDKPlain, err := workspaceMigrationCompatWorkspaceForLegacyConfig([]byte(`{
+  "name": "data"
+}`), filepath.Join(root, "modules", "data", workspace.LegacyModuleConfigFileName))
+	require.NoError(t, err)
+	require.NotNil(t, noSDKPlain)
+
+	conversions, err := workspaceMigrationModuleConfigConversions([]*workspace.CompatWorkspace{
+		plain,
+		rootSDKOnly,
+		workspaceConfig,
+		noSDKPlain,
+	})
+	require.NoError(t, err)
+	require.Len(t, conversions, 2)
+	require.Equal(t, filepath.Join(root, ".dagger", "modules", "video"), conversions[0].ProjectRoot)
+	cfg, err := modules.ParseModuleConfigForFilename(conversions[0].ConfigData, workspace.ModuleConfigFileName)
+	require.NoError(t, err)
+	require.Equal(t, "video", cfg.Name)
+	require.Equal(t, "go", cfg.SDK.Source)
+	require.Equal(t, "github.com/acme/dep@main", cfg.Dependencies[0].Source)
+	require.Equal(t, "sha256:abc", cfg.Dependencies[0].Pin)
+	require.Equal(t, "./local", cfg.Dependencies[1].Source)
+
+	require.Equal(t, filepath.Join(root, "modules", "data"), conversions[1].ProjectRoot)
+	cfg, err = modules.ParseModuleConfigForFilename(conversions[1].ConfigData, workspace.ModuleConfigFileName)
+	require.NoError(t, err)
+	require.Equal(t, "data", cfg.Name)
+	require.Nil(t, cfg.SDK)
+}
+
+func TestWorkspaceMigrationLegacyLockProjectRootsIncludesModuleConfigConversions(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "repo")
+
+	require.Equal(t, []string{
+		root,
+		filepath.Join(root, "modules", "video"),
+		filepath.Join(root, "modules", "data"),
+	}, workspaceMigrationLegacyLockProjectRoots(workspaceMigrationPlanBundle{
+		WorkspacePlans: []*workspace.MigrationPlan{
+			{ProjectRoot: root},
+		},
+		ModuleConfigConversions: []workspaceMigrationModuleConfigConversion{
+			{ProjectRoot: filepath.Join(root, "modules", "video")},
+			{ProjectRoot: filepath.Join(root, "modules", "data")},
+		},
+	}))
+}
+
+func TestEnvScopedConfigKeyQuotesDynamicSegments(t *testing.T) {
+	cfg := &workspace.Config{
+		Modules: map[string]workspace.ModuleEntry{
+			"my.module": {Source: "modules/my.module"},
+		},
+		Env: map[string]workspace.EnvOverlay{
+			"review env": {},
+		},
+	}
+
+	key, err := envScopedConfigKey(cfg, "review env", `modules."my.module".settings."some.key"`)
+	require.NoError(t, err)
+	require.Equal(t, `env."review env".modules."my.module".settings."some.key"`, key)
+}
+
+func TestWorkspaceSettingConfigKeyQuotesDynamicSegments(t *testing.T) {
+	require.Equal(t,
+		`modules."my.module".settings."some.key"`,
+		workspaceSettingConfigKey("my.module", "some.key"),
+	)
+}
+
 func TestWorkspaceMigrationRootTargetPathsRejectsDuplicates(t *testing.T) {
 	root := filepath.Join(string(filepath.Separator), "repo")
 	ws := &core.Workspace{}
@@ -402,14 +504,59 @@ func TestWorkspaceMigrationRootTargetPathsRejectsDuplicates(t *testing.T) {
 			{ProjectRoot: root},
 		},
 	})
-	require.ErrorContains(t, err, `migration target ".dagger/config.toml" is planned more than once`)
+	require.ErrorContains(t, err, `migration target "dagger.toml" is planned more than once`)
+
+	_, err = workspaceMigrationRootTargetPaths(ws, workspaceMigrationPlanBundle{
+		WorkspacePlans: []*workspace.MigrationPlan{
+			{
+				ProjectRoot:              root,
+				MigratedModuleConfigData: []byte("{}"),
+				MigratedModuleConfigPath: workspace.ModuleConfigFileName,
+			},
+		},
+		ModuleConfigConversions: []workspaceMigrationModuleConfigConversion{
+			{ProjectRoot: root},
+		},
+	})
+	require.ErrorContains(t, err, `migration target "dagger-module.toml" is planned more than once`)
 }
 
 func TestWorkspaceMigrationHiddenPath(t *testing.T) {
-	require.True(t, workspaceMigrationHiddenPath(filepath.Join(".git", "hooks", workspace.ModuleConfigFileName)))
-	require.True(t, workspaceMigrationHiddenPath(filepath.Join("app", ".dagger", "modules", workspace.ModuleConfigFileName)))
-	require.True(t, workspaceMigrationHiddenPath(filepath.Join("app", ".hidden", workspace.ModuleConfigFileName)))
-	require.False(t, workspaceMigrationHiddenPath(filepath.Join("app", "modules", workspace.ModuleConfigFileName)))
+	require.True(t, workspaceMigrationHiddenPath(filepath.Join(".git", "hooks", workspace.LegacyModuleConfigFileName)))
+	require.True(t, workspaceMigrationHiddenPath(filepath.Join("app", ".dagger", "modules", workspace.LegacyModuleConfigFileName)))
+	require.False(t, workspaceMigrationHiddenPath(filepath.Join(workspace.LockDirName, "modules", "app", workspace.LegacyModuleConfigFileName)))
+	require.True(t, workspaceMigrationHiddenPath(filepath.Join(workspace.LockDirName, "modules", "app", ".hidden", workspace.LegacyModuleConfigFileName)))
+	require.True(t, workspaceMigrationHiddenPath(filepath.Join("app", ".hidden", workspace.LegacyModuleConfigFileName)))
+	require.False(t, workspaceMigrationHiddenPath(filepath.Join("app", "modules", workspace.LegacyModuleConfigFileName)))
+}
+
+func TestWorkspaceMigrationFilterLegacyLockDataRemovesModuleResolve(t *testing.T) {
+	lock := workspace.NewLock()
+	require.NoError(t, lock.SetLookup("", "container.from", []any{"alpine:latest", "linux/amd64"}, workspace.LookupResult{
+		Value:  "sha256:deadbeef",
+		Policy: workspace.PolicyPin,
+	}))
+	require.NoError(t, lock.SetLookup("", workspaceMigrationLockModulesResolveOperation, []any{"github.com/acme/mod@main"}, workspace.LookupResult{
+		Value:  "0123456789abcdef0123456789abcdef01234567",
+		Policy: workspace.PolicyFloat,
+	}))
+
+	data, err := lock.Marshal()
+	require.NoError(t, err)
+
+	filteredData, err := workspaceMigrationFilterLegacyLockData(data)
+	require.NoError(t, err)
+	filtered, err := workspace.ParseLock(filteredData)
+	require.NoError(t, err)
+
+	container, ok, err := filtered.GetLookup("", "container.from", []any{"alpine:latest", "linux/amd64"})
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, workspace.LookupResult{Value: "sha256:deadbeef", Policy: workspace.PolicyPin}, container)
+
+	_, ok, err = filtered.GetLookup("", workspaceMigrationLockModulesResolveOperation, []any{"github.com/acme/mod@main"})
+	require.NoError(t, err)
+	require.False(t, ok)
 }
 
 func TestWorkspaceMigrationUniqueSortedPaths(t *testing.T) {
@@ -429,7 +576,7 @@ func TestWorkspaceMigrationUniqueSortedPaths(t *testing.T) {
 func TestWorkspaceMigrationHasExplicitConfigAncestor(t *testing.T) {
 	ctx := context.Background()
 	root := filepath.Join(string(filepath.Separator), "repo")
-	configPath := filepath.Join(root, "services", "api", workspace.LockDirName, workspace.ConfigFileName)
+	configPath := filepath.Join(root, "services", "api", workspace.ConfigFileName)
 	statFS := core.StatFSFunc(func(_ context.Context, path string) (string, *core.Stat, error) {
 		if filepath.Clean(path) != configPath {
 			return "", nil, os.ErrNotExist
@@ -449,7 +596,7 @@ func TestWorkspaceMigrationHasExplicitConfigAncestor(t *testing.T) {
 func testRuntimeCompatWorkspace(t *testing.T, projectRoot string, data string) *workspace.CompatWorkspace {
 	t.Helper()
 
-	compatWorkspace, err := workspace.ParseRuntimeCompatWorkspaceAt([]byte(data), filepath.Join(projectRoot, workspace.ModuleConfigFileName))
+	compatWorkspace, err := workspace.ParseRuntimeCompatWorkspaceAt([]byte(data), filepath.Join(projectRoot, workspace.LegacyModuleConfigFileName))
 	require.NoError(t, err)
 	require.NotNil(t, compatWorkspace)
 	return compatWorkspace
@@ -469,43 +616,6 @@ func TestWorkspaceFilterWithDirectoryArgs(t *testing.T) {
 	for _, arg := range args {
 		require.NotEqual(t, "directory", arg.Name)
 	}
-}
-
-func TestResolveWorkspaceRefreshModules(t *testing.T) {
-	t.Run("explicit selection keeps order and removes duplicates", func(t *testing.T) {
-		cfg := &workspace.Config{
-			Modules: map[string]workspace.ModuleEntry{
-				"alpha": {Source: "github.com/example/alpha@main"},
-				"beta":  {Source: "github.com/example/beta@main"},
-				"gamma": {Source: "github.com/example/gamma@main"},
-			},
-		}
-
-		mods, err := resolveWorkspaceRefreshModules(cfg, []string{"gamma", "alpha", "gamma"})
-		require.NoError(t, err)
-		require.Equal(t, []workspaceRefreshModule{
-			{Name: "gamma", Source: "github.com/example/gamma@main"},
-			{Name: "alpha", Source: "github.com/example/alpha@main"},
-		}, mods)
-	})
-
-	t.Run("missing modules return error", func(t *testing.T) {
-		cfg := &workspace.Config{
-			Modules: map[string]workspace.ModuleEntry{
-				"alpha": {Source: "github.com/example/alpha@main"},
-			},
-		}
-
-		_, err := resolveWorkspaceRefreshModules(cfg, []string{"alpha", "missing", "other"})
-		require.ErrorContains(t, err, "workspace module(s) not found: missing, other")
-	})
-
-	t.Run("selection is required", func(t *testing.T) {
-		cfg := &workspace.Config{Modules: map[string]workspace.ModuleEntry{}}
-
-		_, err := resolveWorkspaceRefreshModules(cfg, nil)
-		require.ErrorContains(t, err, "at least one workspace module name is required")
-	})
 }
 
 func modTreeNode(parts ...string) *core.ModTreeNode {

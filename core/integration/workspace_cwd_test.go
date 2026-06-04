@@ -114,8 +114,7 @@ func newWorkspaceCwdFixture(t *testctx.T) workspaceCwdFixture {
 
 	root := t.TempDir()
 	require.NoError(t, os.Mkdir(filepath.Join(root, ".git"), 0o755))
-	require.NoError(t, os.Mkdir(filepath.Join(root, ".dagger"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(root, ".dagger", "config.toml"), []byte("# workspace\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "dagger.toml"), []byte("# workspace\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "root.txt"), []byte("from workspace root"), 0o600))
 
 	cwd := filepath.Join(root, "subdir")

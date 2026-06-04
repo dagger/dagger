@@ -2416,7 +2416,7 @@ export type ClientModuleSourceOpts = {
   refPin?: string
 
   /**
-   * If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.
+   * If true, do not attempt to find a module config file in a parent directory of the provided path. Only relevant for local module sources.
    */
   disableFindUp?: boolean
 
@@ -3028,13 +3028,6 @@ export type WorkspaceModuleListOpts = {
    * Optional module alias to inspect.
    */
   module?: string
-}
-
-export type WorkspaceRefreshModulesOpts = {
-  /**
-   * Workspace module names to refresh.
-   */
-  moduleNames?: string[]
 }
 
 export type WorkspaceServicesOpts = {
@@ -11875,7 +11868,7 @@ export class ModuleSource extends BaseClient {
 
   /**
    * The blueprint referenced by the module source.
-   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.
    */
   blueprint = (): ModuleSource => {
     const ctx = this._ctx.select("blueprint")
@@ -11933,7 +11926,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * Whether an existing dagger.json for the module was found.
+   * Whether an existing module config file was found.
    */
   configExists = async (): Promise<boolean> => {
     if (this._configExists) {
@@ -12115,7 +12108,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).
+   * The original name of the module as read from the module config file (or set for the first time with the withName API).
    */
   moduleOriginalName = async (): Promise<string> => {
     if (this._moduleOriginalName) {
@@ -12183,7 +12176,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The path, relative to the context directory, that contains the module's dagger.json.
+   * The path, relative to the context directory, that contains the module config.
    */
   sourceRootSubpath = async (): Promise<string> => {
     if (this._sourceRootSubpath) {
@@ -12225,7 +12218,7 @@ export class ModuleSource extends BaseClient {
 
   /**
    * The toolchains referenced by the module source.
-   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.
    */
   toolchains = async (): Promise<ModuleSource[]> => {
     type toolchains = {
@@ -12267,7 +12260,7 @@ export class ModuleSource extends BaseClient {
   /**
    * Set a blueprint for the module source.
    * @param blueprint The blueprint module to set.
-   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
    */
   withBlueprint = (blueprint: ModuleSource): ModuleSource => {
     const ctx = this._ctx.select("withBlueprint", { blueprint })
@@ -12352,7 +12345,7 @@ export class ModuleSource extends BaseClient {
   /**
    * Add toolchains to the module source.
    * @param toolchains The toolchain modules to add.
-   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
    */
   withToolchains = (toolchains: ModuleSource[]): ModuleSource => {
     const ctx = this._ctx.select("withToolchains", { toolchains })
@@ -12361,7 +12354,7 @@ export class ModuleSource extends BaseClient {
 
   /**
    * Update the blueprint module to the latest version.
-   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
    */
   withUpdateBlueprint = (): ModuleSource => {
     const ctx = this._ctx.select("withUpdateBlueprint")
@@ -12380,7 +12373,7 @@ export class ModuleSource extends BaseClient {
   /**
    * Update one or more toolchains.
    * @param toolchains The toolchains to update.
-   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
    */
   withUpdateToolchains = (toolchains: string[]): ModuleSource => {
     const ctx = this._ctx.select("withUpdateToolchains", { toolchains })
@@ -12398,7 +12391,7 @@ export class ModuleSource extends BaseClient {
 
   /**
    * Remove the current blueprint from the module source.
-   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
    */
   withoutBlueprint = (): ModuleSource => {
     const ctx = this._ctx.select("withoutBlueprint")
@@ -12437,7 +12430,7 @@ export class ModuleSource extends BaseClient {
   /**
    * Remove the provided toolchains from the module source.
    * @param toolchains The toolchains to remove.
-   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
    */
   withoutToolchains = (toolchains: string[]): ModuleSource => {
     const ctx = this._ctx.select("withoutToolchains", { toolchains })
@@ -13653,7 +13646,7 @@ export class Client extends BaseClient {
    * Create a new module source instance from a source ref string
    * @param refString The string ref representation of the module source
    * @param opts.refPin The pinned version of the module source
-   * @param opts.disableFindUp If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.
+   * @param opts.disableFindUp If true, do not attempt to find a module config file in a parent directory of the provided path. Only relevant for local module sources.
    * @param opts.allowNotExists If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.
    * @param opts.requireKind If set, error out if the ref string is not of the provided requireKind.
    */
@@ -15311,7 +15304,7 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Read a configuration value from config.toml.
+   * Read a configuration value from dagger.toml.
    *
    * If key is empty, returns the full config.
    *
@@ -15333,7 +15326,7 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Write a configuration value to config.toml.
+   * Write a configuration value to dagger.toml.
    * @param key Dotted key path (e.g. modules.greeter.source).
    * @param value Value to set. Bools, integers, and comma-separated arrays are auto-detected.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
@@ -15489,7 +15482,7 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Initialize workspace config, creating .dagger/config.toml.
+   * Initialize workspace config, creating dagger.toml.
    * @param opts.here Create the workspace config directory at the workspace cwd instead of using the default write target.
    */
   init = async (opts?: WorkspaceInitOpts): Promise<string> => {
@@ -15505,7 +15498,7 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Install a module into the workspace, writing config.toml to the host.
+   * Install a module into the workspace, writing dagger.toml to the host.
    * @param ref Module reference to install.
    * @param opts.name Override name for the installed module entry.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
@@ -15536,7 +15529,7 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Create a new module owned by the workspace and auto-install it in config.toml.
+   * Create a new module owned by the workspace and auto-install it in dagger.toml.
    * @param name Name of the new module.
    * @param opts.sdk SDK to use for the new module.
    * @param opts.source Source subpath within the new module.
@@ -15581,18 +15574,6 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Refresh lock entries for selected workspace-config modules.
-   *
-   * This layers selective workspace refresh on top of the lockfile base.
-   * @param opts.moduleNames Workspace module names to refresh.
-   * @experimental
-   */
-  refreshModules = (opts?: WorkspaceRefreshModulesOpts): Changeset => {
-    const ctx = this._ctx.select("refreshModules", { ...opts })
-    return new Changeset(ctx)
-  }
-
-  /**
    * Return all services from modules loaded in the workspace.
    * @param opts.include Only include services matching the specified patterns
    */
@@ -15602,7 +15583,7 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Uninstall a module from the workspace, writing config.toml to the host.
+   * Uninstall a module from the workspace, writing dagger.toml to the host.
    * @param name Name of the installed module entry to remove.
    * @param opts.here Write to the workspace config directory at the workspace cwd.
    */

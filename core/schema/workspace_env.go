@@ -15,7 +15,7 @@ func (s *workspaceSchema) envList(
 	_ struct{},
 ) (dagql.Array[dagql.String], error) {
 	if parent.ConfigFile == "" {
-		return nil, fmt.Errorf("no config.toml found in workspace")
+		return nil, fmt.Errorf("no dagger.toml found in workspace")
 	}
 
 	cfg, err := readWorkspaceConfig(ctx, parent)

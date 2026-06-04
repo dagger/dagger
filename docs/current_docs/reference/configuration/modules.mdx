@@ -7,13 +7,13 @@ slug: /reference/configuration/modules
 ---
 
 
-Modules are configured by editing their `dagger.json` file. This file contains module metadata: the module name, SDK, source directory, file filters, and module code dependencies. Workspace commands such as `dagger mod install`, `dagger config`, and `dagger settings` update `.dagger/config.toml`; they do not update a module's `dagger.json`.
+Modules can be configured by editing their `dagger-module.toml` file. It contains module metadata: the module name, runtime, source directory, file filters, and module code dependencies. Workspace commands such as `dagger mod install`, `dagger config`, and `dagger settings` update `dagger.toml`; they do not update a module's `dagger-module.toml`.
 
-For more information, refer to the [JSON schema for the Dagger module configuration file](https://docs.dagger.io/reference/dagger.schema.json).
+For more information, refer to the [schema for the Dagger module configuration file](https://docs.dagger.io/reference/dagger-module.schema.json).
 
 ## File and directory filters
 
-The JSON schema for the Dagger module configuration file `dagger.json` supports an `include` field. It tells the Dagger Engine of additional files to include or exclude when loading the module itself. By default, only `dagger.json` and all files under the module's source directory are included.
+The Dagger module configuration file `dagger-module.toml` supports an `include` field. It tells the Dagger Engine of additional files to include or exclude when loading the module itself. By default, only `dagger-module.toml` and all files under the module's source directory are included.
 
 Notably, these filters only apply to loading the Dagger module. They do not apply to any directories passed as arguments to the Dagger module's functions ([pre- and post-call filtering](../../extending/types/directory.mdx#filters) is separately available for directory arguments).
 
@@ -79,15 +79,13 @@ If `dagger.runtime` is not set, but a `bun.lock` or `bun.lockb` file is present,
 ```shell
 bun init
 bun install # to generate the bun.lock file
-cat > dagger.json <<'EOF'
-{
-  "name": "example",
-  "engineVersion": "latest",
-  "sdk": {
-    "source": "typescript"
-  },
-  "source": "."
-}
+cat > dagger-module.toml <<'EOF'
+name = "example"
+engineVersion = "latest"
+source = "."
+
+[runtime]
+source = "typescript"
 EOF
 ```
 
@@ -105,15 +103,13 @@ If a `deno.json` file is present, Dagger will [automatically detect](#automatic-
 
 ```shell
 deno init
-cat > dagger.json <<'EOF'
-{
-  "name": "example",
-  "engineVersion": "latest",
-  "sdk": {
-    "source": "typescript"
-  },
-  "source": "."
-}
+cat > dagger-module.toml <<'EOF'
+name = "example"
+engineVersion = "latest"
+source = "."
+
+[runtime]
+source = "typescript"
 EOF
 ```
 
@@ -125,7 +121,7 @@ The module's `source` field must reference the same directory as the `deno.json`
 
 #### Automatic detection
 
-When a runtime is not explicitly defined within the `package.json` file, Dagger automatically identifies the appropriate runtime by examining the project's files inside the project's `dagger` directory.
+When a runtime is not explicitly defined within the `package.json` file, Dagger automatically identifies the appropriate runtime by examining the files in the module source directory.
 
 - If Dagger finds any of the following lock files : `package-lock.json`, `yarn.lock`, or `pnpm-lock.yaml`, it automatically selects `node` as the runtime.
 - In the absence of the lock files mentioned above, if a `bun.lock` or `bun.lockb` file is present, Dagger will choose `bun` as the runtime. Alternatively, if a `deno.json`, or `deno.lock`, file is present, Dagger will choose `deno` as the runtime.
@@ -186,7 +182,7 @@ packages:
 
 #### Automatic detection
 
-When a package manager is not explicitly defined within the `package.json` file, Dagger automatically identifies the appropriate package manager by examining the project's lock files inside the project's `.dagger` directory.
+When a package manager is not explicitly defined within the `package.json` file, Dagger automatically identifies the appropriate package manager by examining the module source directory's lock files.
 
 - If Dagger finds any of the following lock files : `package-lock.json`, `yarn.lock`, or `pnpm-lock.yaml`, it automatically selects the corresponding package manager with a predefined default version: `npm@10.7.0`, `yarn@1.22.22` or `pnpm@8.15.4`.
 - If none of the above mentioned lock files are present, but a `bun.lock` or `bun.lockb` file is present, Dagger will choose `bun` as the runtime and package manager with a predefined default version: `bun@1.0.11`.

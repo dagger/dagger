@@ -6026,7 +6026,7 @@
 			"t": "M",
 			"n": "Dagger\\ModuleSource::configExists",
 			"p": "Dagger/ModuleSource.html#method_configExists",
-			"d": "<p>Whether an existing dagger.json for the module was found.</p>"
+			"d": "<p>Whether an existing module config file was found.</p>"
 		},
 		{
 			"t": "M",
@@ -6116,7 +6116,7 @@
 			"t": "M",
 			"n": "Dagger\\ModuleSource::moduleOriginalName",
 			"p": "Dagger/ModuleSource.html#method_moduleOriginalName",
-			"d": "<p>The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).</p>"
+			"d": "<p>The original name of the module as read from the module config file (or set for the first time with the withName API).</p>"
 		},
 		{
 			"t": "M",
@@ -6146,7 +6146,7 @@
 			"t": "M",
 			"n": "Dagger\\ModuleSource::sourceRootSubpath",
 			"p": "Dagger/ModuleSource.html#method_sourceRootSubpath",
-			"d": "<p>The path, relative to the context directory, that contains the module's dagger.json.</p>"
+			"d": "<p>The path, relative to the context directory, that contains the module config.</p>"
 		},
 		{
 			"t": "M",
@@ -6944,13 +6944,13 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::configRead",
 			"p": "Dagger/Workspace.html#method_configRead",
-			"d": "<p>Read a configuration value from config.toml.</p>"
+			"d": "<p>Read a configuration value from dagger.toml.</p>"
 		},
 		{
 			"t": "M",
 			"n": "Dagger\\Workspace::configWrite",
 			"p": "Dagger/Workspace.html#method_configWrite",
-			"d": "<p>Write a configuration value to config.toml.</p>"
+			"d": "<p>Write a configuration value to dagger.toml.</p>"
 		},
 		{
 			"t": "M",
@@ -7016,13 +7016,13 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::init",
 			"p": "Dagger/Workspace.html#method_init",
-			"d": "<p>Initialize workspace config, creating .dagger/config.toml.</p>"
+			"d": "<p>Initialize workspace config, creating dagger.toml.</p>"
 		},
 		{
 			"t": "M",
 			"n": "Dagger\\Workspace::install",
 			"p": "Dagger/Workspace.html#method_install",
-			"d": "<p>Install a module into the workspace, writing config.toml to the host.</p>"
+			"d": "<p>Install a module into the workspace, writing dagger.toml to the host.</p>"
 		},
 		{
 			"t": "M",
@@ -7034,19 +7034,13 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::moduleInit",
 			"p": "Dagger/Workspace.html#method_moduleInit",
-			"d": "<p>Create a new module owned by the workspace and auto-install it in config.toml.</p>"
+			"d": "<p>Create a new module owned by the workspace and auto-install it in dagger.toml.</p>"
 		},
 		{
 			"t": "M",
 			"n": "Dagger\\Workspace::moduleList",
 			"p": "Dagger/Workspace.html#method_moduleList",
 			"d": "<p>List modules defined in the workspace configuration.</p>"
-		},
-		{
-			"t": "M",
-			"n": "Dagger\\Workspace::refreshModules",
-			"p": "Dagger/Workspace.html#method_refreshModules",
-			"d": "<p>Refresh lock entries for selected workspace-config modules.</p>"
 		},
 		{
 			"t": "M",
@@ -7058,7 +7052,7 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::uninstall",
 			"p": "Dagger/Workspace.html#method_uninstall",
-			"d": "<p>Uninstall a module from the workspace, writing config.toml to the host.</p>"
+			"d": "<p>Uninstall a module from the workspace, writing dagger.toml to the host.</p>"
 		},
 		{
 			"t": "M",

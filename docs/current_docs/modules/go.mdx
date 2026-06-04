@@ -53,7 +53,7 @@ dagger generate go:generate-all
 
 ## Settings
 
-List the current settings and their values with `dagger settings go`, then set one with `dagger settings go <key> <value>`. Settings are stored in `.dagger/config.toml` under `[modules.go.settings]`.
+List the current settings and their values with `dagger settings go`, then set one with `dagger settings go <key> <value>`. Settings are stored in `dagger.toml` under `[modules.go.settings]`.
 
 - **`version`** (default `1.26`): the Go toolchain version used to build the test and generate containers (`golang:<version>-alpine`). Set this so every module is tested and generated against the same Go version. Lint uses a pinned `golangci-lint` image and is unaffected.
 - **`includeExtraFiles`** (default empty): extra workspace-root path patterns mounted alongside each module's Go source. Go source, `go.mod`/`go.sum`/`go.work`, and `testdata/` directories are already included automatically; use this for inputs those patterns miss, such as embedded non-Go assets, generator inputs, or fixtures kept outside `testdata/`.
@@ -71,7 +71,7 @@ dagger settings go version 1.25
 touch ./legacy-service/.dagger-skip-go-lint
 ```
 
-List-valued settings such as `includeExtraFiles` are edited directly in `.dagger/config.toml`:
+List-valued settings such as `includeExtraFiles` are edited directly in `dagger.toml`:
 
 ```toml
 [modules.go.settings]

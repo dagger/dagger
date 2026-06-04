@@ -1,5 +1,0 @@
-[modules.good]
-source = "modules/good"
-
-[modules.bad]
-source = "modules/bad"

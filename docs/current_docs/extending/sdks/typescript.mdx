@@ -80,7 +80,7 @@ A freshly created Node module looks like this:
 
 ```
 my-module/
-├── dagger.json          # module config
+├── dagger-module.toml          # module config
 ├── package.json         # npm/yarn/pnpm package definition
 ├── tsconfig.json        # TypeScript config with the @dagger.io/dagger path alias
 ├── sdk/                 # generated TypeScript bindings (the typed client)
@@ -88,17 +88,15 @@ my-module/
     └── index.ts         # your module code
 ```
 
-`dagger.json` declares the SDK source:
+`dagger-module.toml` declares the SDK source:
 
-```json title="dagger.json"
-{
-  "name": "my-module",
-  "engineVersion": "v1.0.0-beta.2",
-  "sdk": {
-    "source": "typescript"
-  },
-  "source": "."
-}
+```toml title="dagger-module.toml"
+name = "my-module"
+engineVersion = "v1.0.0-beta.2"
+source = "."
+
+[runtime]
+source = "typescript"
 ```
 
 `tsconfig.json` wires the `@dagger.io/dagger` import to the local generated SDK
@@ -529,7 +527,7 @@ async ci(source: Directory): Promise<void> {
 
 ## Module dependencies
 
-Dependencies are declared in `dagger.json` and managed with the SDK module's
+Dependencies are declared in `dagger-module.toml` and managed with the SDK module's
 `mod deps` functions, which return changesets you review and apply.
 
 ```shell
@@ -555,19 +553,20 @@ dagger -m github.com/dagger/typescript-sdk call mod deps remove --help
 
 A module reference is `[proto://]host/repo[/subpath][@version]`, e.g.
 `github.com/shykes/daggerverse/hello@v0.3.0`. Local paths (`./path/to/module`)
-are also supported. After adding a dependency, `dagger.json` gains a
+are also supported. After adding a dependency, `dagger-module.toml` gains a
 `dependencies` entry:
 
-```json title="dagger.json"
-{
-  "name": "my-module",
-  "engineVersion": "v1.0.0-beta.2",
-  "sdk": { "source": "typescript" },
-  "source": ".",
-  "dependencies": [
-    { "name": "go", "source": "github.com/dagger/dagger/modules/go" }
-  ]
-}
+```toml title="dagger-module.toml"
+name = "my-module"
+engineVersion = "v1.0.0-beta.2"
+source = "."
+
+[runtime]
+source = "typescript"
+
+[[dependencies]]
+name = "go"
+source = "github.com/dagger/dagger/modules/go"
 ```
 
 Once a dependency is added and bindings are regenerated, call it through `dag`.
@@ -624,7 +623,7 @@ the changeset, and commit the result alongside the change that required it.
 
 ## Engine version
 
-`dagger.json`'s `engineVersion` pins the engine your module targets. Manage it
+`dagger-module.toml`'s `engineVersion` pins the engine your module targets. Manage it
 with `mod engine`:
 
 ```shell
@@ -913,7 +912,7 @@ version (a tag, branch, or commit):
 dagger mod install github.com/you/my-module@v1.0.0
 ```
 
-This adds the dependency to the consumer's `dagger.json`. Tag releases (e.g.
+This adds the dependency to the consumer's `dagger-module.toml`. Tag releases (e.g.
 `v1.0.0`) so consumers can pin a stable version. Keep generated `sdk/` files
 committed so consumers don't have to regenerate before using your module.
 
@@ -927,7 +926,7 @@ Recommended release checklist:
 ## Troubleshooting
 
 **`init` fails: target already contains a Dagger module.** Pass a different
-`--path`, or remove the existing `dagger.json` if you intended to recreate it.
+`--path`, or remove the existing `dagger-module.toml` if you intended to recreate it.
 
 **Decorators not recognized / runtime errors about metadata.** Ensure
 `experimentalDecorators` is `true` in `tsconfig.json` and that your `@object()`
@@ -946,6 +945,6 @@ before `dag.<dep>()` resolves.
 directory, or run `mod generate` (or `dagger generate`) as a build step before
 calling the module.
 
-**Engine version mismatch warnings.** Align `dagger.json`'s `engineVersion`
+**Engine version mismatch warnings.** Align `dagger-module.toml`'s `engineVersion`
 with your engine using `mod engine require`/`require-current`/`require-latest`,
 then regenerate bindings.

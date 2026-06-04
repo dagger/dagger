@@ -95,8 +95,10 @@ func fileContents(path, contents string) dagger.WithContainerFunc {
 }
 
 func configFile(dirPath string, cfg *modules.ModuleConfig) dagger.WithContainerFunc {
-	cfgPath := filepath.Join(dirPath, "dagger.json")
-	cfgBytes, err := json.Marshal(cfg)
+	cfgPath := filepath.Join(dirPath, modules.Filename)
+	cfgBytes, err := modules.MarshalModuleConfigForFilename(&modules.ModuleConfigWithUserFields{
+		ModuleConfig: *cfg,
+	}, modules.Filename)
 	if err != nil {
 		panic(err)
 	}
@@ -131,12 +133,12 @@ func withModuleFixture(t testing.TB, c *dagger.Client, dst, fixture string) dagg
 func withModuleEntrypointFixture(t testing.TB, c *dagger.Client, dst, name, fixture string) dagger.WithContainerFunc {
 	t.Helper()
 	moduleDir := fixtureJoin(dst, ".dagger/modules/"+name)
-	configPath := fixtureJoin(dst, ".dagger/config.toml")
+	configPath := fixtureJoin(dst, "dagger.toml")
 	return func(ctr *dagger.Container) *dagger.Container {
 		return ctr.
 			With(withModuleFixture(t, c, moduleDir, fixture)).
 			WithNewFile(configPath, fmt.Sprintf(`[modules.%s]
-source = "modules/%s"
+source = ".dagger/modules/%s"
 entrypoint = true
 `, name, name))
 	}

@@ -110,7 +110,7 @@ func (ModuleLoadingSuite) TestModuleSourceResolution(ctx context.Context, t *tes
 
 		copyTestdataFixture(ctx, t, filepath.Join(workdir, ".dagger", "modules", "test"), "modules", "go", "unicode-path")
 		writeWorkspaceConfigFile(t, workdir, `[modules.test]
-source = "modules/test"
+source = ".dagger/modules/test"
 entrypoint = true
 `)
 
@@ -350,8 +350,8 @@ func (ModuleLoadingSuite) TestModuleLoadingPrecedence(ctx context.Context, t *te
 	t.Run("configured workspace ignores cwd dagger.json", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := workspaceBase(t, c).
-			WithNewFile(".dagger/config.toml", `[modules.ambient]
-source = "modules/ambient"
+			WithNewFile("dagger.toml", `[modules.ambient]
+source = ".dagger/modules/ambient"
 entrypoint = true
 `).
 			With(withModuleFixture(t, c, ".dagger/modules/ambient", "dang/ambient-build")).

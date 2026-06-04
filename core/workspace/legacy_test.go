@@ -82,19 +82,19 @@ func TestParseCompatWorkspacePins(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, compatWorkspace)
 	require.Len(t, compatWorkspace.Modules, 2)
-	require.Equal(t, "../toolchains/go", compatWorkspace.Modules[0].Entry.Source)
+	require.Equal(t, "./toolchains/go", compatWorkspace.Modules[0].Entry.Source)
 	require.Equal(t, map[string]any{"version": "1.24.1"}, compatWorkspace.Modules[0].Entry.Settings)
-	require.Equal(t, "../blueprint", compatWorkspace.Modules[1].Entry.Source)
+	require.Equal(t, "./blueprint", compatWorkspace.Modules[1].Entry.Source)
 	require.True(t, compatWorkspace.Modules[1].Entry.Entrypoint)
 
 	cfg := compatWorkspace.WorkspaceConfig()
 	require.Equal(t, ModuleEntry{
-		Source:            "../toolchains/go",
+		Source:            "./toolchains/go",
 		Settings:          map[string]any{"version": "1.24.1"},
 		LegacyDefaultPath: true,
 	}, cfg.Modules["go"])
 	require.Equal(t, ModuleEntry{
-		Source:            "../blueprint",
+		Source:            "./blueprint",
 		Entrypoint:        true,
 		LegacyDefaultPath: true,
 	}, cfg.Modules["blueprint"])
@@ -114,7 +114,7 @@ func TestParseCompatWorkspacePins(t *testing.T) {
 func TestParseCompatWorkspace(t *testing.T) {
 	t.Parallel()
 
-	configPath := filepath.Join("repo", ModuleConfigFileName)
+	configPath := filepath.Join("repo", LegacyModuleConfigFileName)
 	compat, err := ParseCompatWorkspaceAt([]byte(`{
 		"name": "app",
 		"sdk": {"source": "dang"},
@@ -131,11 +131,11 @@ func TestParseCompatWorkspace(t *testing.T) {
 	require.NotNil(t, compat.MainModule)
 	require.Equal(t, "app", compat.MainModule.Name)
 	require.Equal(t, ModuleEntry{
-		Source:     "modules/app",
+		Source:     ".dagger/modules/app",
 		Entrypoint: true,
 	}, compat.MainModule.Entry)
 	require.Len(t, compat.Modules, 1)
-	require.Equal(t, "../toolchains/go", compat.Modules[0].Entry.Source)
+	require.Equal(t, "./toolchains/go", compat.Modules[0].Entry.Source)
 
 	noCompat, err := ParseCompatWorkspace([]byte(`{
 		"name": "app",
@@ -151,17 +151,23 @@ func TestParseRuntimeCompatWorkspace(t *testing.T) {
 	compat, err := ParseRuntimeCompatWorkspaceAt([]byte(`{
 		"name": "app",
 		"sdk": {"source": "dang"}
-	}`), filepath.Join("repo", ModuleConfigFileName))
+	}`), filepath.Join("repo", LegacyModuleConfigFileName))
 	require.NoError(t, err)
 	require.NotNil(t, compat)
 	require.Equal(t, "repo", compat.ProjectRoot)
 	require.NotNil(t, compat.MainModule)
 	require.Equal(t, "app", compat.MainModule.Name)
 	require.Equal(t, ModuleEntry{
-		Source:     "modules/app",
+		Source:     ".dagger/modules/app",
 		Entrypoint: true,
 	}, compat.MainModule.Entry)
 	require.Empty(t, compat.Modules)
+
+	_, err = ParseRuntimeCompatWorkspaceAt([]byte(`{
+		"name": "app",
+		"runtime": {"source": "go"}
+	}`), filepath.Join("repo", LegacyModuleConfigFileName))
+	require.ErrorContains(t, err, "uses sdk instead of runtime")
 }
 
 func TestWorkspaceConfigMigratesPortMappings(t *testing.T) {
@@ -290,4 +296,29 @@ func TestMustMigrateToWorkspaceConfig(t *testing.T) {
 			require.Equal(t, tc.want, mustMigrateToWorkspaceConfig(cfg))
 		})
 	}
+}
+
+func TestParseMigrationCompatWorkspaceAllowsFutureEngineVersion(t *testing.T) {
+	t.Parallel()
+
+	compat, err := ParseMigrationCompatWorkspaceAt([]byte(`{
+		"name": "futureapp",
+		"engineVersion": "v999.0.0",
+		"sdk": {"source": "go"},
+		"source": ".dagger",
+		"toolchains": [{"name": "defaults", "source": "./toolchain"}]
+	}`), filepath.Join("repo", LegacyModuleConfigFileName))
+	require.NoError(t, err)
+	require.NotNil(t, compat)
+	require.Equal(t, "futureapp", compat.Config.Name)
+	require.Equal(t, "v999.0.0", compat.Config.EngineVersion)
+	require.True(t, compat.MustMigrateToWorkspaceConfig())
+
+	_, err = ParseRuntimeCompatWorkspaceAt([]byte(`{
+		"name": "futureapp",
+		"engineVersion": "v999.0.0",
+		"sdk": {"source": "go"},
+		"source": ".dagger"
+	}`), filepath.Join("repo", LegacyModuleConfigFileName))
+	require.Error(t, err)
 }

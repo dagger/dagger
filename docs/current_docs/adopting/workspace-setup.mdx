@@ -27,7 +27,7 @@ dagger mod install github.com/dagger/eslint
 dagger check
 ```
 
-`dagger mod install` creates a workspace configuration (`.dagger/config.toml`) if needed and adds the selected module. `dagger check` runs checks from installed modules. Repeat until you're happy with your coverage — you don't have to install everything at once.
+`dagger mod install` creates a workspace configuration (`dagger.toml`) if needed and adds the selected module. `dagger check` runs checks from installed modules. Repeat until you're happy with your coverage - you don't have to install everything at once.
 
 You can also search for a specific module:
 
@@ -45,7 +45,7 @@ dagger mod install github.com/dagger/vitest
 dagger mod install github.com/dagger/prettier
 ```
 
-The first install creates `.dagger/config.toml` at the workspace root. To create the config in the current directory instead — for a workspace nested inside a larger repository — initialize it explicitly with `--here`:
+The first install creates `dagger.toml` at the workspace root. To create the config in the current directory instead - for a workspace nested inside a larger repository - initialize it explicitly with `--here`:
 
 ```shell
 dagger ws init --here
@@ -65,7 +65,7 @@ Set one with `module`, `key`, and `value`:
 dagger ws settings eslint packageManager yarn
 ```
 
-Settings are stored in `.dagger/config.toml` alongside each module, so they're shared with everyone who uses the workspace.
+Settings are stored in `dagger.toml` alongside each module, so they're shared with everyone who uses the workspace.
 
 ## Migrate an existing project
 
@@ -75,7 +75,7 @@ If your project already uses a legacy `dagger.json`, convert it to the workspace
 dagger ws migrate
 ```
 
-This writes `.dagger/config.toml` from your existing configuration. See [Upgrade to Workspaces](/reference/upgrade-to-workspaces) for details.
+This writes `dagger.toml` from your existing configuration. See [Upgrade to Workspaces](/reference/upgrade-to-workspaces) for details.
 
 ## What's next
 

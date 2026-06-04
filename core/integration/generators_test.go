@@ -238,8 +238,8 @@ func (GeneratorsSuite) TestWorkspaceGenerateSkip(ctx context.Context, t *testctx
 	modGen, err := generatorsTestEnv(t, c)
 	require.NoError(t, err)
 
-	ctr := modGen.WithNewFile(".dagger/config.toml", `[modules.hello-with-generators]
-source = "../hello-with-generators"
+	ctr := modGen.WithNewFile("dagger.toml", `[modules.hello-with-generators]
+source = "hello-with-generators"
 generate.skip = ["generate-other-files", "other-generators:*"]
 `)
 
@@ -257,12 +257,12 @@ func (GeneratorsSuite) TestWorkspaceGeneratorsVisibleFromModule(ctx context.Cont
 
 	out, err := modGen.
 		WithWorkdir("hello-with-generators").
-		WithNewFile(".dagger/config.toml", `[modules.hello-with-generators]
-source = ".."
+		WithNewFile("dagger.toml", `[modules.hello-with-generators]
+source = "."
 entrypoint = true
 
 [modules.toolchain-generators]
-source = "../toolchain"
+source = "toolchain"
 `).
 		With(daggerCall("workspace-generators-empty")).
 		Stdout(ctx)

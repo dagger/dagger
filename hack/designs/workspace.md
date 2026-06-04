@@ -51,7 +51,7 @@ The main way to configure a Dagger workspace is to add modules to it, possibly w
 
 ### Workspace Configuration
 
-The workspace config file is human-editable and lives at `.dagger/config.toml`:
+The workspace config file is human-editable and lives at `dagger.toml`:
 
 ```toml
 # Paths to ignore during workspace operations (extends .gitignore)
@@ -73,7 +73,7 @@ config.lintStrict = true
 
 Each module entry is a table with a required `source` and optional keys. The table key (e.g., `go`) is the module's local name in this workspace — it determines the CLI namespace (`dagger call go build`).
 
-Paths are relative to the `.dagger/` directory.
+Paths are relative to the directory containing `dagger.toml`.
 
 #### Adding Modules
 
@@ -85,9 +85,9 @@ dagger install github.com/dagger/go-toolchain
 dagger install github.com/dagger/go-toolchain --name=go
 ```
 
-This updates `.dagger/config.toml`. If no workspace exists yet:
+This updates `dagger.toml`. If no workspace exists yet:
 
-- If in a git repository, creates `.dagger/config.toml` at the repo root
+- If in a git repository, creates `dagger.toml` at the repo root
 - Otherwise, creates in the current directory
 
 Once installed, module functions are available:
@@ -111,7 +111,7 @@ config.tags = ["integration", "unit"]
 
 Config keys map directly to constructor argument names. Supported types: strings, booleans, numbers, arrays.
 
-This replaces the legacy `.env` mechanism for constructor arg defaults. The engine provides the same evaluation behavior (variable expansion with `${VAR}`, `env://` references for secrets) regardless of whether values come from `.env` or `config.toml`.
+This replaces the legacy `.env` mechanism for constructor arg defaults. The engine provides the same evaluation behavior (variable expansion with `${VAR}`, `env://` references for secrets) regardless of whether values come from `.env` or `dagger.toml`.
 
 #### Workspace Ignore
 
@@ -127,7 +127,7 @@ The engine already respects `.gitignore` by default. The `ignore` key covers pat
 
 A workspace depends on modules. This is project configuration: "use this module in my project." The module gains access to your workspace and extends your CLI.
 
-Workspace → module dependencies are configured in `.dagger/config.toml` and installed with `dagger install`. This is distinct from module → module dependencies, which are code-level and configured in `dagger.json` (see [Module Dependency Model](#module-dependency-model)).
+Workspace → module dependencies are configured in `dagger.toml` and installed with `dagger install`. This is distinct from module → module dependencies, which are code-level and configured in `dagger.json` (see [Module Dependency Model](#module-dependency-model)).
 
 A module added to a workspace is *not* the same as a module dependency. They live in different config files, are installed with different commands, and have different effects.
 
@@ -139,7 +139,7 @@ Module configuration and workspace settings can be overridden per environment (e
 dagger check --env=ci
 ```
 
-Multiple environments would be defined in `config.toml`, each with their own `config.*` values for registered modules. Environment selection would be explicit via `--env`.
+Multiple environments would be defined in `dagger.toml`, each with their own `config.*` values for registered modules. Environment selection would be explicit via `--env`.
 
 **Status: not yet implemented.** This section is a placeholder to ensure the design is not forgotten. The config format and module loading pipeline are designed to accommodate this feature when it is built.
 
@@ -147,12 +147,12 @@ Multiple environments would be defined in `config.toml`, each with their own `co
 
 Dagger's lockfile system is a general-purpose mechanism for pinning symbolic lookups (container image refs, git branches, module sources) to exact resolved values. It is designed and implemented separately — see the `lockfile` branch for the full primitive specification.
 
-In a workspace, the lockfile is the **source of truth for dependency pins**. Unlike `dagger.json` (which carries its own version pins inline), `config.toml` does not embed resolved versions — those live in `.dagger/lock`.
+In a workspace, the lockfile is the **source of truth for dependency pins**. Unlike `dagger.json` (which carries its own version pins inline), `dagger.toml` does not embed resolved versions — those live in `dagger.lock`.
 
 Key workspace-specific behaviors:
 
 - **Enabled by default**: Workspaces use lockfiles by default (`--lock=pinned`). This means workspace module resolution, container base images, and git refs are all pinned on first run and reused on subsequent runs.
-- **Lock file location**: `.dagger/lock`, derived from the workspace root.
+- **Lock file location**: `dagger.lock`, derived from the workspace root.
 - **Update flow**: `dagger lock update` refreshes entries in the lockfile. Running with `--lock=live` refreshes entries as they are encountered during execution.
 
 `dagger.json` already carries inline version pins for module dependencies. How these interact with workspace-level lockfile pins is an open design question. Today, both mechanisms coexist independently.
@@ -163,9 +163,9 @@ Key workspace-specific behaviors:
 
 When the CLI connects to the engine, the engine detects the workspace before any queries are served:
 
-1. **Find workspace**: Walk up from the client's working directory looking for a `.dagger/` directory. The directory containing `.dagger/` is the **workspace root**.
+1. **Find workspace**: Walk up from the client's working directory looking for `dagger.toml`. The directory containing `dagger.toml` is the **workspace root**.
 
-2. **Parse config**: Read `.dagger/config.toml` if it exists. If `.dagger/` exists but has no `config.toml`, the workspace is valid but empty.
+2. **Parse config**: Read `dagger.toml` if it exists. If `.dagger/` exists but has no `dagger.toml`, the workspace is valid but empty.
 
 3. **Legacy fallback**: If no `.dagger/` is found, check for a `dagger.json` with legacy triggers. If eligible, a compatibility workspace is inferred (see [Migration](#migration)).
 
@@ -201,7 +201,7 @@ When the engine receives a remote workspace ref:
 
 1. **Parse the git ref**: Extract the repo URL, version (tag/branch/commit), and optional subdirectory.
 2. **Clone the repo**: Use the engine's existing git pipeline to fetch the repo at the specified version.
-3. **Detect workspace**: Look for `.dagger/config.toml` within the cloned tree (starting from the subdirectory if specified).
+3. **Detect workspace**: Look for `dagger.toml` within the cloned tree (starting from the subdirectory if specified).
 4. **Load modules**: Local sources (e.g. `source = "modules/ci"`) are resolved as paths within the cloned repo. Remote sources (e.g. `source = "github.com/other/module@v1.0"`) are loaded as-is.
 
 **Limitations:**
@@ -236,7 +236,7 @@ dagger call -m github.com/foo/bar build
 
 When `-m` is used:
 
-- Workspace modules from `config.toml` are skipped
+- Workspace modules from `dagger.toml` are skipped
 - The specified module is loaded with its functions promoted to the Query root
 - Workspace detection still runs (the engine still knows the workspace root)
 
@@ -267,7 +267,7 @@ A workspace can designate one module as the **entrypoint**. The entrypoint modul
 dagger call build        # instead of 'dagger call ci build'
 ```
 
-Set `entrypoint = true` on a module in `config.toml`:
+Set `entrypoint = true` on a module in `dagger.toml`:
 
 ```toml
 [modules.ci]
@@ -299,12 +299,12 @@ Core fields and existing constructors always win conflicts. If an entrypoint met
 
 #### Runtime Compatibility: CompatWorkspace
 
-When the engine encounters a legacy `dagger.json` with no `.dagger/config.toml`, it does not fail immediately. Instead, it infers a **compat workspace** (`CompatWorkspace`) — an in-memory workspace-shaped projection of the legacy configuration.
+When the engine encounters a legacy `dagger.json` with no `dagger.toml`, it does not fail immediately. Instead, it infers a **compat workspace** (`CompatWorkspace`) — an in-memory workspace-shaped projection of the legacy configuration.
 
 The engine detects ambient workspace context in this order:
 
 ```text
-find-up .dagger/config.toml   → normal workspace
+find-up dagger.toml   → normal workspace
 else find-up eligible legacy dagger.json   → CompatWorkspace
 else   → no workspace
 ```
@@ -398,8 +398,8 @@ Steps:
 
    Special case: when `source = ".dagger"`, the old source directory is also the new workspace root. In this case migration must not leave the legacy `.dagger/` tree intact, and it also cannot delete `.dagger/` wholesale because the migrated module now lives under `.dagger/modules/<name>/`. Instead it prunes `.dagger/` down to the workspace-owned outputs created by migration:
 
-   - `.dagger/config.toml`
-   - `.dagger/lock` if written
+   - `dagger.toml`
+   - `dagger.lock` if written
    - `.dagger/migration-report.md` if written
    - `.dagger/modules/<name>/`
 
@@ -411,13 +411,13 @@ Steps:
    - Rewrite `dependencies[].source` paths relative to new location
    - Rewrite `include` paths relative to new location
 
-3. **Register in `.dagger/config.toml`** with `entrypoint = true` to preserve existing `dagger call <function>` commands.
+3. **Register in `dagger.toml`** with `entrypoint = true` to preserve existing `dagger call <function>` commands.
 
 **Toolchains** (triggered by `toolchains` field): Each toolchain becomes a workspace module entry. Source directories are left in place — only the configuration moves.
 
 For each toolchain:
 
-1. Add to `[modules]` in `config.toml`, with path relative to `.dagger/`.
+1. Add to `[modules]` in `dagger.toml`, with path relative to `.dagger/`.
 
 2. Migrate customizations where possible:
 
@@ -429,7 +429,7 @@ For each toolchain:
 
 3. Remove `toolchains` from the migrated `dagger.json`.
 
-**User defaults**: `.env`-based constructor arg defaults are migrated to `config.*` entries in `config.toml`. The engine evaluates `${VAR}` expansion and `env://` references the same way in both formats. Non-constructor function arg defaults cannot be expressed in workspace config and produce warnings.
+**User defaults**: `.env`-based constructor arg defaults are migrated to `config.*` entries in `dagger.toml`. The engine evaluates `${VAR}` expansion and `env://` references the same way in both formats. Non-constructor function arg defaults cannot be expressed in workspace config and produce warnings.
 
 #### Real-World Examples
 
@@ -445,7 +445,7 @@ Before:
  ]}
 ```
 
-After `dagger migrate` — `.dagger/config.toml`:
+After `dagger migrate` — `dagger.toml`:
 
 ```toml
 [modules.api]
@@ -471,7 +471,7 @@ Before:
  "dependencies": [...]}
 ```
 
-After `dagger migrate` — `.dagger/config.toml`:
+After `dagger migrate` — `dagger.toml`:
 
 ```toml
 [modules.dagger-dev]
@@ -538,7 +538,7 @@ dagger module init --sdk=go ci
 This:
 
 1. Creates `.dagger/modules/ci/` with module source files
-2. Auto-registers in `.dagger/config.toml`:
+2. Auto-registers in `dagger.toml`:
 
    ```toml
    [modules.ci]
@@ -552,7 +552,7 @@ This:
 ```text
 repo/
 ├── .dagger/
-│   ├── config.toml
+│   ├── dagger.toml
 │   └── modules/
 │       └── ci/
 │           ├── dagger.json
@@ -599,7 +599,7 @@ To share it, push to a git-accessible location. Others can then install it:
 dagger install github.com/you/my-toolchain
 ```
 
-To promote an existing project-specific module to a reusable one, move it from `.dagger/modules/foo/` to a git-accessible location and update the `source` path in `config.toml` accordingly.
+To promote an existing project-specific module to a reusable one, move it from `.dagger/modules/foo/` to a git-accessible location and update the `source` path in `dagger.toml` accordingly.
 
 ### Workspace API
 
@@ -678,8 +678,8 @@ The workspace split clarifies what `dagger.json` is: purely a module definition 
 
 - **`source` is deprecated**: Modules are self-contained packages. `dagger.json` lives alongside the module source, so `source` is always `.` and no longer needs to be specified.
 - **`sdk` is mandatory**: Every module must declare its SDK. The implicit detection from project context is removed.
-- **`toolchains` is removed**: Toolchain configuration moves to workspace `config.toml` as module entries.
-- **`blueprint` is removed**: The entrypoint concept moves to workspace `config.toml` as `entrypoint = true`.
+- **`toolchains` is removed**: Toolchain configuration moves to workspace `dagger.toml` as module entries.
+- **`blueprint` is removed**: The entrypoint concept moves to workspace `dagger.toml` as `entrypoint = true`.
 - **Dependencies stay**: Module → module dependencies (`dependencies` field) remain in `dagger.json`. This is code dependency, not project configuration.
 - **Pins stay**: Inline version pins in `dagger.json` remain. Workspace-level pinning uses the lockfile instead (see [Workspace Lockfile](#workspace-lockfile)).
 
@@ -705,7 +705,7 @@ This is distinct from workspace → module dependencies, which are project confi
 
 | Command | Purpose |
 |---------|---------|
-| `dagger workspace init` | Initialize a workspace (creates `.dagger/config.toml`) |
+| `dagger workspace init` | Initialize a workspace (creates `dagger.toml`) |
 | `dagger workspace info` | Show workspace info |
 | `dagger workspace config [key] [value]` | Read/write workspace config |
 | `dagger module init --sdk=<sdk> <name>` | Create a new module |
@@ -736,7 +736,7 @@ This is distinct from workspace → module dependencies, which are project confi
 - Workspace grants/access-control policy is not fully implemented.
 - Workspace `ignore` config is not fully wired through all loading paths.
 - `.env` deprecation/migration work remains.
-- Core lockfile coverage is incomplete outside current hooks (`container.from`, `modules.resolve`, `git.*`).
+- Core lockfile coverage is incomplete outside current hooks (`container.from`, `git.*`).
 - Remote workspace lockfile read/write is not yet enabled.
 - Environments feature is not yet implemented.
 - `dagger.json` pin overlap with workspace lockfiles is unresolved.

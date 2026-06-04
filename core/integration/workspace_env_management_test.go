@@ -57,7 +57,7 @@ func hostDaggerEnvExec(ctx context.Context, t *testctx.T, workdir string, args .
 func readWorkspaceEnvConfigFile(t *testctx.T, workdir string) string {
 	t.Helper()
 
-	data, err := os.ReadFile(filepath.Join(workdir, workspacecfg.LockDirName, workspacecfg.ConfigFileName))
+	data, err := os.ReadFile(filepath.Join(workdir, workspacecfg.ConfigFileName))
 	require.NoError(t, err)
 	return string(data)
 }
@@ -355,7 +355,7 @@ region = "eu-central-1"
 func (WorkspaceSuite) TestWorkspaceEnvConfigRuntimeConsistency(ctx context.Context, t *testctx.T) {
 	t.Run("effective config reads match the defaults used by runtime commands", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
-source = "../modules/aws"
+source = "modules/aws"
 entrypoint = true
 
 [modules.aws.settings]
@@ -381,7 +381,7 @@ region = "us-east-1"
 
 	t.Run("env-scoped writes affect only that envs runtime behavior", func(ctx context.Context, t *testctx.T) {
 		workdir := newWorkspaceSettingsWorkdir(ctx, t, `[modules.aws]
-source = "../modules/aws"
+source = "modules/aws"
 entrypoint = true
 
 [modules.aws.settings]

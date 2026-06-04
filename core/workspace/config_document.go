@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"unicode"
 
 	"github.com/creachadair/tomledit"
 	neontoml "github.com/neongreen/mono/lib/toml"
@@ -38,6 +37,13 @@ func UpdateConfigBytesWithHints(
 	}
 
 	if len(existingData) == 0 {
+		out := SerializeConfig(cfg)
+		if len(hints) == 0 {
+			return out, nil
+		}
+		return insertWorkspaceSettingHintComments(out, cfg, hints), nil
+	}
+	if configRequiresQuotedPathSegments(cfg) {
 		out := SerializeConfig(cfg)
 		if len(hints) == 0 {
 			return out, nil
@@ -147,6 +153,42 @@ func configDocumentMap(cfg *Config) map[string]any {
 	}
 
 	return values
+}
+
+func configRequiresQuotedPathSegments(cfg *Config) bool {
+	if cfg == nil {
+		return false
+	}
+	for moduleName, module := range cfg.Modules {
+		if !isBareConfigPathSegment(moduleName) || configMapRequiresQuotedPathSegments(module.Settings) {
+			return true
+		}
+	}
+	for envName, env := range cfg.Env {
+		if !isBareConfigPathSegment(envName) {
+			return true
+		}
+		for moduleName, module := range env.Modules {
+			if !isBareConfigPathSegment(moduleName) || configMapRequiresQuotedPathSegments(module.Settings) {
+				return true
+			}
+		}
+	}
+	for host := range cfg.Ports {
+		if !isBareConfigPathSegment(host) {
+			return true
+		}
+	}
+	return false
+}
+
+func configMapRequiresQuotedPathSegments(values map[string]any) bool {
+	for key := range values {
+		if !isBareConfigPathSegment(key) {
+			return true
+		}
+	}
+	return false
 }
 
 func deleteRemovedManagedConfigPaths(doc *neontoml.Document, existingValues, desiredValues map[string]any) error {
@@ -305,7 +347,7 @@ func insertWorkspaceSettingHintComments(data []byte, cfg *Config, hints map[stri
 			if desc := hintDescriptionLine(hint.Description); desc != "" {
 				commentLines = append(commentLines, "# "+desc)
 			}
-			commentLines = append(commentLines, fmt.Sprintf("# %s%s = %s", hintPrefix, hint.Name, hint.ExampleValue))
+			commentLines = append(commentLines, fmt.Sprintf("# %s%s = %s", hintPrefix, formatConfigPathSegment(hint.Name), hint.ExampleValue))
 		}
 		if len(commentLines) == 0 {
 			continue
@@ -332,12 +374,13 @@ func hintDescriptionLine(description string) string {
 }
 
 func findModuleHintInsertionPoint(lines []string, moduleName string) (insertAfter int, hintPrefix string) {
-	settingsSection := "[modules." + moduleName + ".settings]"
+	formattedModuleName := formatConfigPathSegment(moduleName)
+	settingsSection := "[modules." + formattedModuleName + ".settings]"
 	if idx := findSectionInsertionPoint(lines, settingsSection); idx != -1 {
 		return idx, ""
 	}
 
-	moduleSection := "[modules." + moduleName + "]"
+	moduleSection := "[modules." + formattedModuleName + "]"
 	if idx := findSectionInsertionPoint(lines, moduleSection); idx != -1 {
 		return idx, "settings."
 	}
@@ -370,21 +413,61 @@ func findSectionInsertionPoint(lines []string, sectionHeader string) int {
 	return lastLine
 }
 
-func formatConfigPathSegment(segment string) string {
+// FormatConfigPathSegment formats one TOML dotted-key path segment.
+func FormatConfigPathSegment(segment string) string {
 	if isBareConfigPathSegment(segment) {
 		return segment
 	}
-	return `"` + strings.ReplaceAll(segment, `"`, `\"`) + `"`
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range segment {
+		switch r {
+		case '\b':
+			b.WriteString(`\b`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\f':
+			b.WriteString(`\f`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '"':
+			b.WriteString(`\"`)
+		case '\\':
+			b.WriteString(`\\`)
+		default:
+			if r < 0x20 || r == 0x7f {
+				fmt.Fprintf(&b, `\u%04X`, r)
+			} else {
+				b.WriteRune(r)
+			}
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
+func formatConfigPathSegment(segment string) string {
+	return FormatConfigPathSegment(segment)
 }
 
 func isBareConfigPathSegment(segment string) bool {
 	if segment == "" {
 		return false
 	}
-	for _, r := range segment {
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '-' {
+	for i := 0; i < len(segment); i++ {
+		if !isBareConfigPathChar(segment[i]) {
 			return false
 		}
 	}
 	return true
+}
+
+func isBareConfigPathChar(c byte) bool {
+	return 'A' <= c && c <= 'Z' ||
+		'a' <= c && c <= 'z' ||
+		'0' <= c && c <= '9' ||
+		c == '_' ||
+		c == '-'
 }

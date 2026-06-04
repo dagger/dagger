@@ -305,6 +305,13 @@ func TestHelpAliasesRespectHiddenAliases(t *testing.T) {
 	require.NotContains(t, execHelp, "ALIASES")
 }
 
+func TestWorkspaceSettingConfigKeyQuotesDynamicSegments(t *testing.T) {
+	require.Equal(t,
+		`modules."my.module".settings."some.key"`,
+		workspaceSettingConfigKey("my.module", "some.key"),
+	)
+}
+
 func renderHelp(t *testing.T, cmd *cobra.Command) string {
 	t.Helper()
 
@@ -602,8 +609,8 @@ func TestSelectedRemoteWorkspaceAddressInfersLocalGitWorkspace(t *testing.T) {
 	runGit(t, repo, "checkout", "-b", "feature/work")
 
 	workspaceDir := filepath.Join(repo, "services", "api")
-	require.NoError(t, os.MkdirAll(filepath.Join(workspaceDir, ".dagger"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(workspaceDir, ".dagger", "config.toml"), []byte("# workspace\n"), 0o600))
+	require.NoError(t, os.MkdirAll(workspaceDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workspaceDir, "dagger.toml"), []byte("# workspace\n"), 0o600))
 	require.NoError(t, os.MkdirAll(filepath.Join(workspaceDir, "subdir"), 0o755))
 
 	workspaceRef = ""

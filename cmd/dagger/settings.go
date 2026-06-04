@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	workspacepkg "github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/juju/ansiterm/tabwriter"
 	"github.com/spf13/cobra"
@@ -143,7 +144,7 @@ func (s *workspaceSettingsState) lookupSetting(name string) (workspaceSetting, e
 }
 
 func workspaceSettingConfigKey(moduleName, settingName string) string {
-	return fmt.Sprintf("modules.%s.settings.%s", moduleName, settingName)
+	return workspacepkg.JoinConfigPath("modules", moduleName, "settings", settingName)
 }
 
 func writeWorkspaceSettingsTable(out io.Writer, settings []workspaceSetting) error {

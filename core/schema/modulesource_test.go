@@ -8,6 +8,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
 )
 
@@ -125,4 +126,62 @@ func TestLegacyWorkspaceFieldHandling(t *testing.T) {
 		remote.NestedLegacyWorkspaceLoadError(),
 		"workspace module source \"https://github.com/acme/repo-b@main\" points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields \"blueprint\"\n\nuse a migrated ref that points at one of its real modules. If you control that repo, migrate it first",
 	)
+}
+
+func TestLoadCurrentModuleSourceConfigPreservesGitDependencyPin(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	dag, err := dagql.NewServer(ctx, &core.Query{})
+	require.NoError(t, err)
+	dag.InstallObject(dagql.NewClass(dag, dagql.ClassOpts[*core.ModuleSource]{Typed: &core.ModuleSource{}}))
+
+	dep := &core.ModuleSource{
+		Kind:              core.ModuleSourceKindGit,
+		ModuleName:        "dep",
+		SourceRootSubpath: "sdk",
+		Git: &core.GitModuleSource{
+			CloneRef: "https://github.com/acme/dep",
+			Version:  "v1.2.3",
+			Commit:   "1234567890abcdef",
+		},
+	}
+	parent := &core.ModuleSource{
+		Kind:               core.ModuleSourceKindLocal,
+		ConfigFilename:     modules.Filename,
+		ModuleOriginalName: "parent",
+		EngineVersion:      engine.Version,
+		SourceRootSubpath:  ".",
+		Local: &core.LocalModuleSource{
+			ContextDirectoryPath: "/work/parent",
+		},
+		Dependencies: dagql.ObjectResultArray[*core.ModuleSource]{
+			moduleSourceObjectResult(t, dag, "dep", dep),
+		},
+	}
+
+	cfg, err := (&moduleSourceSchema{}).loadModuleSourceConfig(parent)
+	require.NoError(t, err)
+	require.Len(t, cfg.Dependencies, 1)
+	require.Equal(t, "1234567890abcdef", cfg.Dependencies[0].Pin)
+
+	out, err := modules.MarshalModuleConfigForFilename(cfg, modules.Filename)
+	require.NoError(t, err)
+	require.Contains(t, string(out), `name = "parent"`)
+	require.Contains(t, string(out), `engineVersion = "`+engine.Version+`"`)
+	require.Contains(t, string(out), `name = "dep"`)
+	require.Contains(t, string(out), `source = "https://github.com/acme/dep/sdk@v1.2.3"`)
+	require.Contains(t, string(out), `pin = "1234567890abcdef"`)
+}
+
+func moduleSourceObjectResult(t *testing.T, dag *dagql.Server, op string, self *core.ModuleSource) dagql.ObjectResult[*core.ModuleSource] {
+	t.Helper()
+
+	res, err := dagql.NewObjectResultForCall(self, dag, &dagql.ResultCall{
+		Kind:        dagql.ResultCallKindSynthetic,
+		SyntheticOp: "module-source-" + op,
+		Type:        dagql.NewResultCallType(self.Type()),
+	})
+	require.NoError(t, err)
+	return res
 }

@@ -11817,7 +11817,7 @@ func (r *ModuleSource) AsString(ctx context.Context) (string, error) {
 
 // The blueprint referenced by the module source.
 //
-// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.
 func (r *ModuleSource) Blueprint() *ModuleSource {
 	q := r.query.Select("blueprint")
 
@@ -11885,7 +11885,7 @@ func (r *ModuleSource) ConfigClients(ctx context.Context) ([]ModuleConfigClient,
 	return convert(response), nil
 }
 
-// Whether an existing dagger.json for the module was found.
+// Whether an existing module config file was found.
 func (r *ModuleSource) ConfigExists(ctx context.Context) (bool, error) {
 	if r.configExists != nil {
 		return *r.configExists, nil
@@ -12112,7 +12112,7 @@ func (r *ModuleSource) ModuleName(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
-// The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).
+// The original name of the module as read from the module config file (or set for the first time with the withName API).
 func (r *ModuleSource) ModuleOriginalName(ctx context.Context) (string, error) {
 	if r.moduleOriginalName != nil {
 		return *r.moduleOriginalName, nil
@@ -12173,7 +12173,7 @@ func (r *ModuleSource) SDK() *SDKConfig {
 	}
 }
 
-// The path, relative to the context directory, that contains the module's dagger.json.
+// The path, relative to the context directory, that contains the module config.
 func (r *ModuleSource) SourceRootSubpath(ctx context.Context) (string, error) {
 	if r.sourceRootSubpath != nil {
 		return *r.sourceRootSubpath, nil
@@ -12214,7 +12214,7 @@ func (r *ModuleSource) Sync(ctx context.Context) (*ModuleSource, error) {
 
 // The toolchains referenced by the module source.
 //
-// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in .dagger/config.toml instead.
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.
 func (r *ModuleSource) Toolchains(ctx context.Context) ([]ModuleSource, error) {
 	q := r.query.Select("toolchains")
 
@@ -12271,7 +12271,7 @@ func (r *ModuleSource) Version(ctx context.Context) (string, error) {
 
 // Set a blueprint for the module source.
 //
-// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithBlueprint(blueprint *ModuleSource) *ModuleSource {
 	assertNotNil("blueprint", blueprint)
 	q := r.query.Select("withBlueprint")
@@ -12365,7 +12365,7 @@ func (r *ModuleSource) WithSourceSubpath(path string) *ModuleSource {
 
 // Add toolchains to the module source.
 //
-// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithToolchains(toolchains []*ModuleSource) *ModuleSource {
 	q := r.query.Select("withToolchains")
 	q = q.Arg("toolchains", toolchains)
@@ -12377,7 +12377,7 @@ func (r *ModuleSource) WithToolchains(toolchains []*ModuleSource) *ModuleSource 
 
 // Update the blueprint module to the latest version.
 //
-// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithUpdateBlueprint() *ModuleSource {
 	q := r.query.Select("withUpdateBlueprint")
 
@@ -12398,7 +12398,7 @@ func (r *ModuleSource) WithUpdateDependencies(dependencies []string) *ModuleSour
 
 // Update one or more toolchains.
 //
-// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithUpdateToolchains(toolchains []string) *ModuleSource {
 	q := r.query.Select("withUpdateToolchains")
 	q = q.Arg("toolchains", toolchains)
@@ -12420,7 +12420,7 @@ func (r *ModuleSource) WithUpdatedClients(clients []string) *ModuleSource {
 
 // Remove the current blueprint from the module source.
 //
-// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithoutBlueprint() *ModuleSource {
 	q := r.query.Select("withoutBlueprint")
 
@@ -12461,7 +12461,7 @@ func (r *ModuleSource) WithoutExperimentalFeatures(features []ModuleSourceExperi
 
 // Remove the provided toolchains from the module source.
 //
-// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `.dagger/config.toml` instead.
+// Deprecated: Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
 func (r *ModuleSource) WithoutToolchains(toolchains []string) *ModuleSource {
 	q := r.query.Select("withoutToolchains")
 	q = q.Arg("toolchains", toolchains)
@@ -14059,7 +14059,7 @@ func (r *Query) Module() *Module {
 type ModuleSourceOpts struct {
 	// The pinned version of the module source
 	RefPin string
-	// If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.
+	// If true, do not attempt to find a module config file in a parent directory of the provided path. Only relevant for local module sources.
 	DisableFindUp bool
 	// If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.
 	AllowNotExists bool
@@ -16240,7 +16240,7 @@ type WorkspaceConfigReadOpts struct {
 	Key string
 }
 
-// Read a configuration value from config.toml.
+// Read a configuration value from dagger.toml.
 //
 // If key is empty, returns the full config.
 //
@@ -16271,7 +16271,7 @@ type WorkspaceConfigWriteOpts struct {
 	Here bool
 }
 
-// Write a configuration value to config.toml.
+// Write a configuration value to dagger.toml.
 func (r *Workspace) ConfigWrite(ctx context.Context, key string, value string, opts ...WorkspaceConfigWriteOpts) (string, error) {
 	if r.configWrite != nil {
 		return *r.configWrite, nil
@@ -16525,7 +16525,7 @@ type WorkspaceInitOpts struct {
 	Here bool
 }
 
-// Initialize workspace config, creating .dagger/config.toml.
+// Initialize workspace config, creating dagger.toml.
 func (r *Workspace) Init(ctx context.Context, opts ...WorkspaceInitOpts) (string, error) {
 	if r.init != nil {
 		return *r.init, nil
@@ -16552,7 +16552,7 @@ type WorkspaceInstallOpts struct {
 	Here bool
 }
 
-// Install a module into the workspace, writing config.toml to the host.
+// Install a module into the workspace, writing dagger.toml to the host.
 func (r *Workspace) Install(ctx context.Context, ref string, opts ...WorkspaceInstallOpts) (string, error) {
 	if r.install != nil {
 		return *r.install, nil
@@ -16612,7 +16612,7 @@ type WorkspaceModuleInitOpts struct {
 	Here bool
 }
 
-// Create a new module owned by the workspace and auto-install it in config.toml.
+// Create a new module owned by the workspace and auto-install it in dagger.toml.
 func (r *Workspace) ModuleInit(ctx context.Context, name string, opts ...WorkspaceModuleInitOpts) (string, error) {
 	if r.moduleInit != nil {
 		return *r.moduleInit, nil
@@ -16693,31 +16693,6 @@ func (r *Workspace) ModuleList(ctx context.Context, opts ...WorkspaceModuleListO
 	return convert(response), nil
 }
 
-// WorkspaceRefreshModulesOpts contains options for Workspace.RefreshModules
-type WorkspaceRefreshModulesOpts struct {
-	// Workspace module names to refresh.
-	ModuleNames []string
-}
-
-// Refresh lock entries for selected workspace-config modules.
-//
-// This layers selective workspace refresh on top of the lockfile base.
-//
-// Experimental: Experimental selective workspace lock refresh API.
-func (r *Workspace) RefreshModules(opts ...WorkspaceRefreshModulesOpts) *Changeset {
-	q := r.query.Select("refreshModules")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `moduleNames` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ModuleNames) {
-			q = q.Arg("moduleNames", opts[i].ModuleNames)
-		}
-	}
-
-	return &Changeset{
-		query: q,
-	}
-}
-
 // WorkspaceServicesOpts contains options for Workspace.Services
 type WorkspaceServicesOpts struct {
 	// Only include services matching the specified patterns
@@ -16745,7 +16720,7 @@ type WorkspaceUninstallOpts struct {
 	Here bool
 }
 
-// Uninstall a module from the workspace, writing config.toml to the host.
+// Uninstall a module from the workspace, writing dagger.toml to the host.
 func (r *Workspace) Uninstall(ctx context.Context, name string, opts ...WorkspaceUninstallOpts) (string, error) {
 	if r.uninstall != nil {
 		return *r.uninstall, nil

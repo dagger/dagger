@@ -1510,7 +1510,7 @@ Get or set workspace configuration
 
 ### Synopsis
 
-Get or set workspace configuration values in .dagger/config.toml.
+Get or set workspace configuration values in dagger.toml.
 
 With no arguments, prints the full configuration.
 With one argument, prints the value at the given key.
@@ -1519,7 +1519,7 @@ With two arguments, sets the value at the given key.
 With --env, reads show the effective env-applied view while writes target that
 environment's overlay. Explicit env.* keys always address raw overlay storage.
 
-Local module source values are stored relative to .dagger/config.toml.
+Local module source values are stored relative to dagger.toml.
 
 ```
 dagger workspace config [key] [value] [flags]
@@ -1625,7 +1625,7 @@ Create workspace config
 
 ### Synopsis
 
-Create .dagger/config.toml for the current workspace.
+Create dagger.toml for the current workspace.
 
 ```
 dagger workspace init [flags]
@@ -1719,7 +1719,7 @@ Migrate a legacy dagger.json project to the workspace format
 
 ### Synopsis
 
-Converts a legacy dagger.json to the .dagger/config.toml workspace format.
+Converts a legacy dagger.json to the dagger.toml workspace format.
 
 ```
 dagger workspace migrate [flags]
@@ -1895,7 +1895,7 @@ Uninstall a module
 
 ### Synopsis
 
-Uninstall a module from the current workspace, removing it from .dagger/config.toml.
+Uninstall a module from the current workspace, removing it from dagger.toml.
 
 ```
 dagger workspace uninstall [options] <module> [flags]
@@ -1945,19 +1945,16 @@ Refresh workspace-managed state
 
 Refresh workspace-managed state.
 
-With no module names, refresh entries already recorded in .dagger/lock.
-
-With module names, refresh only those modules from .dagger/config.toml.
-
+Refreshes entries already recorded in dagger.lock.
 
 ```
-dagger workspace update [module...] [flags]
+dagger workspace update [flags]
 ```
 
 ### Examples
 
 ```
-"dagger workspace update" or "dagger workspace update wolfi"
+"dagger workspace update"
 ```
 
 ### Options inherited from parent commands

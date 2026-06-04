@@ -10,17 +10,15 @@ import (
 	serverresolver "github.com/dagger/dagger/engine/server/resolver"
 	"github.com/dagger/dagger/util/gitutil"
 	"github.com/distribution/reference"
-	"golang.org/x/mod/semver"
 )
 
 const (
-	lockCoreNamespace           = ""
-	lockContainerFromOperation  = "container.from"
-	lockModulesResolveOperation = "modules.resolve"
-	lockGitHeadOperation        = "git.head"
-	lockGitRefOperation         = "git.ref"
-	lockGitBranchOperation      = "git.branch"
-	lockGitTagOperation         = "git.tag"
+	lockCoreNamespace          = ""
+	lockContainerFromOperation = "container.from"
+	lockGitHeadOperation       = "git.head"
+	lockGitRefOperation        = "git.ref"
+	lockGitBranchOperation     = "git.branch"
+	lockGitTagOperation        = "git.tag"
 )
 
 // UpdateWorkspaceLock refreshes the existing entries in a workspace lockfile in place.
@@ -47,8 +45,6 @@ func updateWorkspaceLockEntry(ctx context.Context, query *Query, entry workspace
 	switch {
 	case entry.Namespace == lockCoreNamespace && entry.Operation == lockContainerFromOperation:
 		return updateContainerFromLockEntry(ctx, query, entry)
-	case entry.Namespace == lockCoreNamespace && entry.Operation == lockModulesResolveOperation:
-		return updateModuleResolveLockEntry(ctx, query, entry)
 	case entry.Namespace == lockCoreNamespace && entry.Operation == lockGitHeadOperation:
 		return updateGitHeadLockEntry(ctx, entry)
 	case entry.Namespace == lockCoreNamespace && entry.Operation == lockGitRefOperation:
@@ -84,27 +80,6 @@ func updateContainerFromLockEntry(ctx context.Context, query *Query, entry works
 
 	return workspace.LookupResult{
 		Value:  digest,
-		Policy: entry.Result.Policy,
-	}, nil
-}
-
-func updateModuleResolveLockEntry(ctx context.Context, query *Query, entry workspace.LookupEntry) (workspace.LookupResult, error) {
-	if len(entry.Inputs) != 1 {
-		return workspace.LookupResult{}, fmt.Errorf("invalid %s inputs %v", lockModulesResolveOperation, entry.Inputs)
-	}
-
-	source, ok := entry.Inputs[0].(string)
-	if !ok || source == "" {
-		return workspace.LookupResult{}, fmt.Errorf("invalid %s source %v", lockModulesResolveOperation, entry.Inputs[0])
-	}
-
-	commit, err := resolveModuleSourceCommit(ctx, query, source)
-	if err != nil {
-		return workspace.LookupResult{}, err
-	}
-
-	return workspace.LookupResult{
-		Value:  commit,
 		Policy: entry.Result.Policy,
 	}, nil
 }
@@ -188,23 +163,6 @@ func updateGitTagLockEntry(ctx context.Context, entry workspace.LookupEntry) (wo
 	return workspace.LookupResult{Value: commit, Policy: entry.Result.Policy}, nil
 }
 
-func resolveModuleSourceCommit(ctx context.Context, query *Query, source string) (string, error) {
-	bk, err := query.Engine(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get engine client: %w", err)
-	}
-
-	parsedRef, err := ParseRefString(ctx, NewCallerStatFS(bk), source, "")
-	if err != nil {
-		return "", fmt.Errorf("parse module source %q: %w", source, err)
-	}
-	if parsedRef.Kind != ModuleSourceKindGit {
-		return "", fmt.Errorf("module source %q is not a git source", source)
-	}
-
-	return resolveParsedGitRefCommit(ctx, parsedRef.Git, "")
-}
-
 func parseGitLookupInputs(operation string, inputs []any) (string, string, error) {
 	if len(inputs) != 2 {
 		return "", "", fmt.Errorf("invalid %s inputs %v", operation, inputs)
@@ -242,19 +200,6 @@ func resolveGitRefCommit(ctx context.Context, remoteURL, field, name string) (st
 	return ref.SHA, nil
 }
 
-func resolveParsedGitRefCommit(ctx context.Context, parsed *ParsedGitRefString, pinCommitRef string) (string, error) {
-	remote, err := loadRemoteGitMetadata(ctx, parsed.CloneRef)
-	if err != nil {
-		return "", err
-	}
-
-	ref, err := resolveParsedGitRef(remote, parsed, pinCommitRef)
-	if err != nil {
-		return "", err
-	}
-	return ref.SHA, nil
-}
-
 func loadRemoteGitMetadata(ctx context.Context, remoteURL string) (*gitutil.Remote, error) {
 	candidates, err := gitutil.ParseCloneURL(remoteURL)
 	if err != nil {
@@ -275,30 +220,4 @@ func loadRemoteGitMetadata(ctx context.Context, remoteURL string) (*gitutil.Remo
 		return remote, nil
 	}
 	return nil, fmt.Errorf("load git remote %q: %w", remoteURL, lastErr)
-}
-
-func resolveParsedGitRef(remote *gitutil.Remote, parsed *ParsedGitRefString, pinCommitRef string) (*gitutil.Ref, error) {
-	if gitutil.IsCommitSHA(pinCommitRef) {
-		return &gitutil.Ref{SHA: pinCommitRef}, nil
-	}
-
-	target := "HEAD"
-	switch {
-	case parsed.HasVersion && semver.IsValid(parsed.ModVersion):
-		matched, err := matchVersion(remote.Tags().ShortNames(), parsed.ModVersion, parsed.RepoRootSubdir)
-		if err != nil {
-			return nil, fmt.Errorf("matching version to tags: %w", err)
-		}
-		target = matched
-	case parsed.HasVersion:
-		target = parsed.ModVersion
-	case pinCommitRef != "":
-		target = pinCommitRef
-	}
-
-	ref, err := remote.Lookup(target)
-	if err != nil {
-		return nil, fmt.Errorf("resolve git ref %q: %w", target, err)
-	}
-	return ref, nil
 }

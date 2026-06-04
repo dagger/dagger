@@ -47,7 +47,7 @@ The module discovers charts by finding every `Chart.yaml` in the workspace and t
 
 ## Settings
 
-List the current settings and their values with `dagger settings helm`, then set one with `dagger settings helm <key> <value>`. Settings are stored in `.dagger/config.toml` under `[modules.helm.settings]`.
+List the current settings and their values with `dagger settings helm`, then set one with `dagger settings helm <key> <value>`. Settings are stored in `dagger.toml` under `[modules.helm.settings]`.
 
 - **`version`** (default `3.18.4`): the Helm version used for `lint` and `template`. Pin it so local runs and CI use the same Helm release.
 - **`valuesGlob`** (default `ci/*-values.yaml`): a glob, relative to each chart root, that selects the values files to check. Every matching file becomes a separate scenario in both `lint` and `assert-template`. The default follows Helm chart-testing's CI convention, so files like `ci/prod-values.yaml` are picked up automatically.

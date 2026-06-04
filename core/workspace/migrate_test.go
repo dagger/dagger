@@ -1,16 +1,16 @@
 package workspace
 
 import (
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/dagger/dagger/core/modules"
 	"github.com/stretchr/testify/require"
 )
 
-func TestPlanMigrationWritesLockForLegacyPins(t *testing.T) {
+func TestPlanMigrationPreservesLegacyWorkspacePinsInSources(t *testing.T) {
 	t.Parallel()
 
 	plan := testMigrationPlan(t, "repo", `{
@@ -18,55 +18,49 @@ func TestPlanMigrationWritesLockForLegacyPins(t *testing.T) {
   "toolchains": [
     {"name": "toolchain", "source": "github.com/acme/toolchain@main", "pin": "1111111"}
   ],
-  "blueprint": {"name": "blueprint", "source": "github.com/acme/blueprint@main", "pin": "2222222"}
-}`)
+	  "blueprint": {"name": "blueprint", "source": "github.com/acme/blueprint@main", "pin": "2222222"}
+	}`)
 
-	lock, err := ParseLock(plan.LockData)
-	require.NoError(t, err)
-
-	result, ok, err := lock.GetModuleResolve("github.com/acme/toolchain@main")
-	require.NoError(t, err)
-	require.True(t, ok)
-	require.Equal(t, "1111111", result.Value)
-	require.Equal(t, PolicyPin, result.Policy)
-
-	result, ok, err = lock.GetModuleResolve("github.com/acme/blueprint@main")
-	require.NoError(t, err)
-	require.True(t, ok)
-	require.Equal(t, "2222222", result.Value)
-	require.Equal(t, PolicyPin, result.Policy)
+	configData := string(plan.WorkspaceConfigData)
+	require.Contains(t, configData, `source = "github.com/acme/toolchain@1111111"`)
+	require.Contains(t, configData, `source = "github.com/acme/blueprint@2222222"`)
 }
 
-func TestPlanMigrationSkipsLockWithoutPins(t *testing.T) {
+func TestPlanMigrationPreservesDependencyPinsInModuleConfig(t *testing.T) {
+	t.Parallel()
+
+	plan := testMigrationPlan(t, "repo", `{
+  "name": "myapp",
+  "sdk": {"source": "go"},
+  "source": "src",
+  "dependencies": [
+    {"name": "dep", "source": "github.com/acme/dep@main", "pin": "sha256:abc"}
+  ]
+}`)
+
+	cfg, err := modules.ParseModuleConfigForFilename(plan.MigratedModuleConfigData, ModuleConfigFileName)
+	require.NoError(t, err)
+	require.Equal(t, "myapp", cfg.Name)
+	require.Equal(t, "go", cfg.SDK.Source)
+	require.Equal(t, "../../../src", cfg.Source)
+	require.Len(t, cfg.Dependencies, 1)
+	require.Equal(t, "dep", cfg.Dependencies[0].Name)
+	require.Equal(t, "github.com/acme/dep@main", cfg.Dependencies[0].Source)
+	require.Equal(t, "sha256:abc", cfg.Dependencies[0].Pin)
+	require.NotContains(t, string(plan.MigratedModuleConfigData), "sdk")
+}
+
+func TestPlanMigrationKeepsUnpinnedWorkspaceSourcesSymbolic(t *testing.T) {
 	t.Parallel()
 
 	plan := testMigrationPlan(t, "repo", `{
   "name": "myapp",
   "toolchains": [
     {"name": "toolchain", "source": "github.com/acme/toolchain@main"}
-  ]
-}`)
+	  ]
+	}`)
 
-	require.Empty(t, plan.LockData)
-}
-
-func TestPlanMigrationReturnsLookupSources(t *testing.T) {
-	t.Parallel()
-
-	plan := testMigrationPlan(t, "repo", `{
-  "name": "myapp",
-  "toolchains": [
-    {"name": "toolchain-a", "source": "github.com/acme/toolchain@main"},
-    {"name": "toolchain-b", "source": "github.com/acme/toolchain@main"},
-    {"name": "local-toolchain", "source": "./toolchains/local"}
-  ],
-  "blueprint": {"name": "blueprint", "source": "github.com/acme/blueprint@v1.0.0"}
-}`)
-
-	require.Equal(t, []string{
-		"github.com/acme/blueprint@v1.0.0",
-		"github.com/acme/toolchain@main",
-	}, plan.LookupSources)
+	require.Contains(t, string(plan.WorkspaceConfigData), `source = "github.com/acme/toolchain@main"`)
 }
 
 func TestPlanMigrationWritesMigrationReportForGaps(t *testing.T) {
@@ -136,10 +130,8 @@ func TestPlanMigrationRebasesMainModuleSource(t *testing.T) {
   ]
 }`, tc.source))
 
-			var cfg struct {
-				Source string `json:"source"`
-			}
-			require.NoError(t, json.Unmarshal(plan.MigratedModuleConfigData, &cfg))
+			cfg, err := modules.ParseModuleConfigForFilename(plan.MigratedModuleConfigData, ModuleConfigFileName)
+			require.NoError(t, err)
 			require.Equal(t, tc.want, cfg.Source)
 		})
 	}
@@ -182,10 +174,10 @@ func TestPlanMigrationWritesMainModuleFirst(t *testing.T) {
 	require.Less(t, mainIdx, toolchainIdx)
 }
 
-func TestPlanMigrationFailsOnConflictingLegacyPins(t *testing.T) {
+func TestPlanMigrationAllowsDifferentPinnedWorkspaceRefs(t *testing.T) {
 	t.Parallel()
 
-	compat := testCompatWorkspace(t, "repo", `{
+	plan := testMigrationPlan(t, "repo", `{
   "name": "myapp",
   "toolchains": [
     {"name": "toolchain-a", "source": "github.com/acme/toolchain@main", "pin": "1111111"},
@@ -193,8 +185,9 @@ func TestPlanMigrationFailsOnConflictingLegacyPins(t *testing.T) {
   ]
 }`)
 
-	_, err := PlanMigration(compat)
-	require.ErrorContains(t, err, "conflicting pins for source")
+	configData := string(plan.WorkspaceConfigData)
+	require.Contains(t, configData, `source = "github.com/acme/toolchain@1111111"`)
+	require.Contains(t, configData, `source = "github.com/acme/toolchain@2222222"`)
 }
 
 func TestPlanMigrationRejectsConfigWithoutWorkspaceConfigMigration(t *testing.T) {
@@ -206,7 +199,7 @@ func TestPlanMigrationRejectsConfigWithoutWorkspaceConfigMigration(t *testing.T)
 	}`))
 	require.NoError(t, err)
 
-	_, err = PlanMigration(buildCompatWorkspace(cfg, filepath.Join("repo", ModuleConfigFileName)))
+	_, err = PlanMigration(buildCompatWorkspace(cfg, filepath.Join("repo", LegacyModuleConfigFileName)))
 	require.ErrorContains(t, err, "dagger.json does not require workspace config migration")
 }
 
@@ -221,7 +214,7 @@ func testMigrationPlan(t *testing.T, projectRoot, cfg string) *MigrationPlan {
 func testCompatWorkspace(t *testing.T, projectRoot, cfg string) *CompatWorkspace {
 	t.Helper()
 
-	configPath := filepath.Join(projectRoot, ModuleConfigFileName)
+	configPath := filepath.Join(projectRoot, LegacyModuleConfigFileName)
 	compat, err := ParseCompatWorkspaceAt([]byte(cfg), configPath)
 	require.NoError(t, err)
 	require.NotNil(t, compat)

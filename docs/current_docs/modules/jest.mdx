@@ -42,7 +42,7 @@ dagger check jest:test # run the Jest suite
 
 ## Settings
 
-List the current settings and their values with `dagger settings jest`, then set one with `dagger settings jest <key> <value>`. Settings are stored in `.dagger/config.toml` under `[modules.jest.settings]`.
+List the current settings and their values with `dagger settings jest`, then set one with `dagger settings jest <key> <value>`. Settings are stored in `dagger.toml` under `[modules.jest.settings]`.
 
 - **`packageManager`** (default `npm`): the package manager used to install dependencies before testing. Set it to `yarn` or `pnpm` to match the project.
 - **`baseImageAddress`** (default `node:25-alpine`): the Node base image tests run in. Pin it to the project's Node version, for example `node:22-alpine`.

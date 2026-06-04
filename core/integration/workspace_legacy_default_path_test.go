@@ -40,8 +40,8 @@ func (WorkspaceLegacyDefaultPathSuite) TestToolchainDefaultPathResolvesFromWorks
 			name: "native workspace config",
 			setup: func(t testing.TB, c *dagger.Client) *dagger.Container {
 				return legacyDefaultPathFixture(t, c, workspaceMarker, toolMarker).
-					WithNewFile(".dagger/config.toml", `[modules.reader]
-source = "../tool"
+					WithNewFile("dagger.toml", `[modules.reader]
+source = "tool"
 legacy-default-path = true
 `)
 			},

@@ -99,8 +99,8 @@ func workspaceSelectionSimpleWorkspace(dir, name, typeName, result string) dagge
 	return func(ctr *dagger.Container) *dagger.Container {
 		moduleDir := dir + "/.dagger/modules/" + name
 		return ctr.
-			WithNewFile(dir+"/.dagger/config.toml", `[modules.`+name+`]
-source = "modules/`+name+`"
+			WithNewFile(dir+"/dagger.toml", `[modules.`+name+`]
+source = ".dagger/modules/`+name+`"
 entrypoint = true
 `).
 			WithNewFile(moduleDir+"/dagger.json", `{"name":"`+name+`","sdk":{"source":"dang"}}`).
@@ -111,8 +111,8 @@ entrypoint = true
 func workspaceSelectionSimpleWorkspaceDir(c *dagger.Client, name, typeName, result string) *dagger.Directory {
 	moduleDir := ".dagger/modules/" + name
 	return c.Directory().
-		WithNewFile(".dagger/config.toml", `[modules.`+name+`]
-source = "modules/`+name+`"
+		WithNewFile("dagger.toml", `[modules.`+name+`]
+source = ".dagger/modules/`+name+`"
 entrypoint = true
 `).
 		WithNewFile(moduleDir+"/dagger.json", `{"name":"`+name+`","sdk":{"source":"dang"}}`).
@@ -123,8 +123,8 @@ func workspaceSelectionEnvWorkspace(dir, base, ci string) dagger.WithContainerFu
 	return func(ctr *dagger.Container) *dagger.Container {
 		moduleDir := dir + "/.dagger/modules/greeter"
 		return ctr.
-			WithNewFile(dir+"/.dagger/config.toml", `[modules.greeter]
-source = "modules/greeter"
+			WithNewFile(dir+"/dagger.toml", `[modules.greeter]
+source = ".dagger/modules/greeter"
 entrypoint = true
 
 [modules.greeter.settings]
@@ -148,7 +148,7 @@ type Greeter {
 }
 
 const workspaceSelectionFilesConfig = `[modules.files]
-source = "modules/files"
+source = ".dagger/modules/files"
 entrypoint = true
 `
 
@@ -265,7 +265,7 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceSelection(ctx context.Contex
 
 		out, err = ctr.With(workspaceSelectionDaggerQuery(`{currentWorkspace{cwd configFile}}`, "-W", "../selected")).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"currentWorkspace":{"cwd":"selected","configFile":"selected/.dagger/config.toml"}}`, out)
+		require.JSONEq(t, `{"currentWorkspace":{"cwd":"selected","configFile":"selected/dagger.toml"}}`, out)
 	})
 
 	t.Run("remote -W selects a git workspace without relying on host cwd", func(ctx context.Context, t *testctx.T) {
@@ -282,7 +282,7 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceSelection(ctx context.Contex
 
 		out, err = ctr.With(workspaceSelectionDaggerQuery(`{currentWorkspace{address cwd configFile}}`, "-W", remoteRef)).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"currentWorkspace":{"address":"`+remoteRef+`","cwd":".","configFile":".dagger/config.toml"}}`, out)
+		require.JSONEq(t, `{"currentWorkspace":{"address":"`+remoteRef+`","cwd":".","configFile":"dagger.toml"}}`, out)
 	})
 
 	t.Run("relative -W is resolved after --workdir changes cwd", func(ctx context.Context, t *testctx.T) {
@@ -298,7 +298,7 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceSelection(ctx context.Contex
 
 		out, err = ctr.With(workspaceSelectionDaggerQuery(`{currentWorkspace{cwd configFile}}`, "--workdir", "/work/shell", "-W", "./ws")).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"currentWorkspace":{"cwd":"shell/ws","configFile":"shell/ws/.dagger/config.toml"}}`, out)
+		require.JSONEq(t, `{"currentWorkspace":{"cwd":"shell/ws","configFile":"shell/ws/dagger.toml"}}`, out)
 	})
 
 	t.Run("declared workspace wins over ambient workspace and cwd dagger.json", func(ctx context.Context, t *testctx.T) {
@@ -316,7 +316,7 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceSelection(ctx context.Contex
 
 		out, err = ctr.With(workspaceSelectionDaggerQuery(`{currentWorkspace{cwd configFile}}`, "-W", "../../selected")).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"currentWorkspace":{"cwd":"selected","configFile":"selected/.dagger/config.toml"}}`, out)
+		require.JSONEq(t, `{"currentWorkspace":{"cwd":"selected","configFile":"selected/dagger.toml"}}`, out)
 	})
 }
 
@@ -339,9 +339,9 @@ func (WorkspaceSelectionSuite) TestWorkspaceSelectionCommandPolicy(ctx context.C
 			WithWorkdir("/work/caller").
 			With(workspaceSelectionDaggerExec("-W", "../selected", "workspace", "init", "--here"))
 
-		_, err := ctr.WithExec([]string{"test", "-f", "/work/selected/.dagger/config.toml"}).Sync(ctx)
+		_, err := ctr.WithExec([]string{"test", "-f", "/work/selected/dagger.toml"}).Sync(ctx)
 		require.NoError(t, err)
-		_, err = ctr.WithExec([]string{"test", "!", "-e", "/work/caller/.dagger/config.toml"}).Sync(ctx)
+		_, err = ctr.WithExec([]string{"test", "!", "-e", "/work/caller/dagger.toml"}).Sync(ctx)
 		require.NoError(t, err)
 	})
 
@@ -372,7 +372,7 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceMetadataQueries(ctx context.
 
 		out, err := ctr.With(workspaceSelectionDaggerQuery(`{currentWorkspace{address cwd configFile}}`, "-W", "../selected")).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"currentWorkspace":{"address":"file:///work/selected","cwd":"selected","configFile":"selected/.dagger/config.toml"}}`, out)
+		require.JSONEq(t, `{"currentWorkspace":{"address":"file:///work/selected","cwd":"selected","configFile":"selected/dagger.toml"}}`, out)
 	})
 
 	t.Run("current workspace query reports the selected remote workspace", func(ctx context.Context, t *testctx.T) {
@@ -385,7 +385,7 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceMetadataQueries(ctx context.
 			With(workspaceSelectionDaggerQuery(`{currentWorkspace{address cwd configFile}}`, "-W", remoteRef)).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"currentWorkspace":{"address":"`+remoteRef+`","cwd":".","configFile":".dagger/config.toml"}}`, out)
+		require.JSONEq(t, `{"currentWorkspace":{"address":"`+remoteRef+`","cwd":".","configFile":"dagger.toml"}}`, out)
 	})
 }
 
@@ -426,7 +426,7 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, 
 		moduleDir := ".dagger/modules/files"
 		return workspaceSelectionRemoteRef(ctx, t, c, c.Directory().
 			WithNewFile("marker.txt", "remote marker").
-			WithNewFile(".dagger/config.toml", workspaceSelectionFilesConfig).
+			WithNewFile("dagger.toml", workspaceSelectionFilesConfig).
 			WithNewFile(moduleDir+"/dagger.json", `{"name":"files","sdk":{"source":"go"}}`).
 			WithNewFile(moduleDir+"/main.go", workspaceSelectionFilesModuleSource))
 	}
@@ -461,7 +461,7 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, 
 		require.NoError(t, os.WriteFile(filepath.Join(selectedDir, "marker.txt"), []byte("selected marker"), 0o644))
 		copyTestdataFixture(ctx, t, moduleDir, "modules", "go", "workspace-selection-files-standalone")
 
-		_, err := os.Stat(filepath.Join(root, ".dagger", "config.toml"))
+		_, err := os.Stat(filepath.Join(root, "dagger.toml"))
 		require.ErrorIs(t, err, os.ErrNotExist)
 		return workdir, []string{"-W", "../selected", "-m", "../module"}
 	}
@@ -744,7 +744,7 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceFileIO(ctx context.Context, 
 	t.Run("no workspace keeps host writes on the CLI cwd", func(ctx context.Context, t *testctx.T) {
 		workdir, selection := newNoWorkspaceFixture(ctx, t)
 
-		// Keep the CLI cwd free of both .dagger/config.toml and dagger.json.
+		// Keep the CLI cwd free of both dagger.toml and dagger.json.
 		// The sibling module is selected explicitly so this stays about host
 		// I/O without creating ambient workspace context from compat fallback.
 		assertNoWorkspaceReads(ctx, t, workdir, selection)
@@ -797,7 +797,7 @@ func (WorkspaceSelectionSuite) TestSelectedWorkspaceEnvOverlay(ctx context.Conte
 
 		out, err := ctr.With(workspaceSelectionDaggerCallFail("-W", "../bare", "--env", "ci", "identify")).CombinedOutput(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, `workspace env "ci" requires .dagger/config.toml`)
+		require.Contains(t, out, `workspace env "ci" requires dagger.toml`)
 	})
 }
 
@@ -818,8 +818,8 @@ func (WorkspaceSelectionSuite) TestDeclaredWorkspaceBindingPropagation(ctx conte
 			WithWorkdir("/work/selected").
 			With(workspaceSelectionDaggerExec("workspace", "init", "--here")).
 			With(withModuleFixture(t, c, "/work/selected/.dagger/modules/nester", "go/workspace-selection-nester")).
-			WithNewFile("/work/selected/.dagger/config.toml", `[modules.nester]
-source = "modules/nester"
+			WithNewFile("/work/selected/dagger.toml", `[modules.nester]
+source = ".dagger/modules/nester"
 entrypoint = true
 
 [modules.nester.settings]
@@ -832,7 +832,7 @@ greeting = "selected-ci"
 
 		out, err := ctr.With(workspaceSelectionDaggerCall("-W", "../selected", "nested-workspace", "--cli", testCLIBinPath)).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"currentWorkspace":{"cwd":"selected","configFile":"selected/.dagger/config.toml"}}`, out)
+		require.JSONEq(t, `{"currentWorkspace":{"cwd":"selected","configFile":"selected/dagger.toml"}}`, out)
 	})
 
 	t.Run("nested clients inherit the declared workspace env overlay", func(ctx context.Context, t *testctx.T) {
@@ -845,8 +845,8 @@ greeting = "selected-ci"
 			WithWorkdir("/work/selected").
 			With(workspaceSelectionDaggerExec("workspace", "init", "--here")).
 			With(withModuleFixture(t, c, "/work/selected/.dagger/modules/nester", "go/workspace-selection-nester")).
-			WithNewFile("/work/selected/.dagger/config.toml", `[modules.nester]
-source = "modules/nester"
+			WithNewFile("/work/selected/dagger.toml", `[modules.nester]
+source = ".dagger/modules/nester"
 entrypoint = true
 
 [modules.nester.settings]

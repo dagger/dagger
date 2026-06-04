@@ -5,19 +5,19 @@ Status: implementation handoff
 ## Summary
 
 The workspace model is changing so the workspace is bound to a filesystem
-boundary, not to `.dagger/config.toml`.
+boundary, not to `dagger.toml`.
 
 A Dagger client loads a workspace from a **workspace location**. Dagger derives:
 
 - **workspace root**: the filesystem boundary, usually the git root
 - **workspace cwd**: the selected location relative to the workspace root
-- **workspace config directory**: the selected `.dagger/` directory for this session
+- **workspace config location**: the directory containing the selected `dagger.toml`
 
-`.dagger/config.toml` no longer marks the workspace root. It is configuration
+`dagger.toml` no longer marks the workspace root. It is configuration
 for a workspace location.
 
 Workspace config is **not layered**. One Dagger session uses one selected
-workspace config directory.
+workspace config location.
 
 ## Goals
 
@@ -44,7 +44,7 @@ workspace config directory.
 - No config layering or cascading.
 - No in-session aggregation of sibling workspace config directories.
 - No automatic CLI discovery of all configs under a repo for one `dagger check`.
-- No special interpretation of `.dagger/config.toml` as a workspace boundary.
+- No special interpretation of `dagger.toml` as a workspace boundary.
 
 ## Terminology
 
@@ -53,8 +53,8 @@ workspace config directory.
 | Workspace root | Filesystem boundary used for sandbox `/`, usually the git root. |
 | Workspace location | The selected start location for loading a workspace. Comes from process cwd, `--workdir`, or `-W/--workspace`. |
 | Workspace cwd | Workspace location relative to the workspace root. Sandbox `.` resolves here. |
-| Workspace config directory | The physical `.dagger/` directory selected for this session. Contains `config.toml` and `lock`. |
-| Selected workspace config | The single `.dagger/config.toml` selected for this session. |
+| Workspace config location | The directory containing the selected `dagger.toml`. |
+| Selected workspace config | The single `dagger.toml` selected for this session. |
 
 Avoid these terms in user-facing text:
 
@@ -80,7 +80,7 @@ For remote workspaces:
 2. The workspace root is the remote repo root.
 3. The workspace cwd is the selected subpath inside that repo.
 
-`.dagger/config.toml` is ignored for workspace root discovery.
+`dagger.toml` is ignored for workspace root discovery.
 
 ## Config Selection
 
@@ -90,20 +90,20 @@ Read selection:
 
 1. Start at workspace cwd.
 2. Walk upward toward workspace root.
-3. Select the first `.dagger/config.toml` found.
+3. Select the first `dagger.toml` found.
 4. Stop. Parent configs are not merged.
 
 Examples:
 
 ```text
-repo/.dagger/config.toml
-repo/apps/web/.dagger/config.toml
+repo/dagger.toml
+repo/apps/web/dagger.toml
 ```
 
 From `repo/apps/web`, the selected config is:
 
 ```text
-repo/apps/web/.dagger/config.toml
+repo/apps/web/dagger.toml
 ```
 
 The root config is ignored for that session.
@@ -111,7 +111,7 @@ The root config is ignored for that session.
 From `repo`, the selected config is:
 
 ```text
-repo/.dagger/config.toml
+repo/dagger.toml
 ```
 
 If no config is found upward from workspace cwd, the workspace has no selected
@@ -124,18 +124,18 @@ All commands that write workspace config use the same target selection rule.
 
 Default write target:
 
-1. If a workspace config directory is selected by read selection, write there.
-2. If none is selected, create and write to `.dagger/` at workspace root.
+1. If a workspace config file is selected by read selection, write there.
+2. If none is selected, create and write `dagger.toml` at the workspace root.
 
 `--here` override:
 
 ```text
 --here
-Create or update the workspace config directory at the selected workspace cwd.
+Create or update `dagger.toml` at the selected workspace cwd.
 ```
 
 `--here` is idempotent. It always targets the workspace cwd, even if a parent
-workspace config directory already exists.
+workspace config file already exists.
 
 Examples:
 
@@ -144,7 +144,7 @@ repo/
   apps/web/
 ```
 
-From `repo/apps/web`, with no existing `.dagger/config.toml`:
+From `repo/apps/web`, with no existing `dagger.toml`:
 
 ```bash
 dagger install github.com/acme/toolchain
@@ -153,7 +153,7 @@ dagger install github.com/acme/toolchain
 writes:
 
 ```text
-repo/.dagger/config.toml
+repo/dagger.toml
 ```
 
 From the same location:
@@ -165,10 +165,10 @@ dagger install --here github.com/acme/toolchain
 writes:
 
 ```text
-repo/apps/web/.dagger/config.toml
+repo/apps/web/dagger.toml
 ```
 
-From `repo/apps/web`, if `repo/.dagger/config.toml` already exists:
+From `repo/apps/web`, if `repo/dagger.toml` already exists:
 
 ```bash
 dagger install github.com/acme/toolchain
@@ -177,7 +177,7 @@ dagger install github.com/acme/toolchain
 writes:
 
 ```text
-repo/.dagger/config.toml
+repo/dagger.toml
 ```
 
 But:
@@ -189,27 +189,26 @@ dagger install --here github.com/acme/toolchain
 writes:
 
 ```text
-repo/apps/web/.dagger/config.toml
+repo/apps/web/dagger.toml
 ```
 
 Output for config-writing commands must print the path written. When a config
-directory is created, output must say where it was created.
+file is created, output must say where it was created.
 
 ## Lockfile Selection
 
-`.dagger/lock` follows exactly the same selected workspace config directory as
-`.dagger/config.toml`.
+`dagger.lock` is written beside the selected `dagger.toml`.
 
 Reads:
 
 ```text
-read selected .dagger/lock
+read selected dagger.lock
 ```
 
 Writes:
 
 ```text
-write selected .dagger/lock
+write selected dagger.lock
 ```
 
 There is no lockfile merge and no root-only lockfile.
@@ -217,13 +216,13 @@ There is no lockfile merge and no root-only lockfile.
 This preserves subdirectory ownership. If a team owns:
 
 ```text
-repo/apps/web/.dagger/config.toml
+repo/apps/web/dagger.toml
 ```
 
 it also owns:
 
 ```text
-repo/apps/web/.dagger/lock
+repo/apps/web/dagger.lock
 ```
 
 ## Path Resolution
@@ -233,8 +232,8 @@ it is written.
 
 ### Config Paths
 
-Paths written in `.dagger/config.toml` resolve relative to the directory
-containing that config file, namely the selected `.dagger/` directory.
+Paths written in `dagger.toml` resolve relative to the directory
+containing that config file.
 
 Example:
 
@@ -246,13 +245,13 @@ source = "../toolchains/go"
 In:
 
 ```text
-repo/apps/web/.dagger/config.toml
+repo/apps/web/dagger.toml
 ```
 
 the source resolves from:
 
 ```text
-repo/apps/web/.dagger/
+repo/apps/web/
 ```
 
 ### CLI Argument Paths
@@ -325,7 +324,7 @@ Help text:
 Select the workspace location to load from (local path or git ref)
 ```
 
-This does not select a `.dagger/` directory. It selects the location from which
+This does not select a config file directly. It selects the location from which
 Dagger derives workspace root, workspace cwd, and selected workspace config.
 
 ### `--workdir`
@@ -384,7 +383,7 @@ Expected output:
 
 - `workspace root`: host path or remote address for the workspace root
 - `workspace cwd`: path relative to workspace root, `.` for root
-- `workspace config-file`: selected `.dagger/config.toml`, or a clear "none"
+- `workspace config-file`: selected `dagger.toml`, or a clear "none"
   result if no config is selected
 
 `dagger workspace info` may remain as a summary, but the precise commands should
@@ -405,7 +404,7 @@ type Workspace {
   """Current location within the workspace root. "." means the root."""
   cwd: String!
 
-  """Selected workspace config directory, relative to the workspace root."""
+  """Directory containing the selected workspace config, relative to the workspace root."""
   configDirectory: String
 
   """Selected workspace config file, relative to the workspace root."""
@@ -450,7 +449,6 @@ change:
 - `checks`
 - `generators`
 - `services`
-- `refreshModules`
 - `update`
 - `migrate`
 
@@ -474,8 +472,8 @@ The CLI and engine do not aggregate multiple workspace configs in one session.
 
 For external CI:
 
-- a CI job can enumerate `.dagger/config.toml` files
-- it can run one Dagger session per config directory
+- a CI job can enumerate `dagger.toml` files
+- it can run one Dagger session per config file
 - those sessions can run in parallel
 
 For Dagger Cloud Checks:
@@ -496,7 +494,7 @@ Update workspace detection so it returns only:
 - workspace root
 - workspace cwd
 
-It must not use `.dagger/config.toml` to decide the root.
+It must not use `dagger.toml` to decide the root.
 
 Affected area:
 
@@ -509,7 +507,7 @@ Introduce one helper for selecting workspace config targets.
 
 It should support:
 
-- read selection: nearest `.dagger/config.toml` upward from workspace cwd
+- read selection: nearest `dagger.toml` upward from workspace cwd
 - write selection: selected config, root fallback, `--here` override
 - local host paths for writes
 - remote/rootfs reads for remote workspaces
@@ -518,12 +516,12 @@ All config-writing commands must use this helper.
 
 ### 3. Move Lock Handling To The Selected Config Directory
 
-Update lock path helpers so they use the selected workspace config directory,
-not unconditional workspace root.
+Update `dagger.lock` path helpers so they write beside the selected workspace config,
+not unconditionally at the workspace root.
 
 Affected areas:
 
-- engine workspace lock state
+- engine workspace dagger.lock state
 - schema lockfile helpers
 - workspace update/refresh commands
 
@@ -543,7 +541,7 @@ Module loading must use the selected workspace config only.
 
 When resolving local module sources from config:
 
-- resolve relative to the selected `.dagger/` directory
+- resolve relative to the directory containing the selected `dagger.toml`
 - do not merge parent configs
 
 Legacy `dagger.json` compatibility should continue to apply only when no
@@ -558,7 +556,7 @@ Update command output to state:
 
 - config file written
 - lockfile written when relevant
-- config directory created when relevant
+- config file created when relevant
 
 Hide/deprecate top-level `dagger init` as described above.
 
@@ -583,7 +581,7 @@ With:
 
 ### Workspace Discovery
 
-- A nested `.dagger/config.toml` does not change workspace root.
+- A nested `dagger.toml` does not change workspace root.
 - In a git repo, workspace root is the git root.
 - Workspace cwd is relative to the selected workspace location.
 - Without git, workspace root is the selected location.
@@ -598,17 +596,17 @@ With:
 
 ### Config Writes
 
-- From a subdir with no config anywhere, write creates root `.dagger/config.toml`.
+- From a subdir with no config anywhere, write creates root `dagger.toml`.
 - From a subdir with root config, write updates root config.
 - From a subdir with subdir config, write updates subdir config.
-- `--here` creates or updates cwd `.dagger/config.toml` even when parent config exists.
+- `--here` creates or updates cwd `dagger.toml` even when parent config exists.
 - All config-writing commands share the same behavior.
 
 ### Lock Writes
 
 - Lock writes land beside the selected config.
-- `--here` moves lock writes to cwd `.dagger/lock`.
-- No root lock is created for a subdir-owned config unless root is the selected target.
+- `--here` moves dagger.lock writes to cwd `dagger.lock`.
+- No root dagger.lock is created for a subdir-owned config unless root is the selected target.
 
 ### Path Resolution
 
@@ -616,7 +614,7 @@ With:
 - Workspace API `directory(".")` resolves to workspace cwd.
 - Workspace API relative paths resolve from workspace cwd.
 - Workspace API paths cannot escape workspace root.
-- Config local sources resolve relative to selected `.dagger/`.
+- Config local sources resolve relative to the directory containing the selected `dagger.toml`.
 - CLI relative path args resolve from selected workspace location.
 - CLI absolute path args remain host absolute paths.
 
@@ -624,7 +622,7 @@ With:
 
 - `-W` help says "workspace location".
 - Config-writing output prints the exact config file path.
-- First config creation output prints the created config directory.
+- First config creation output prints the created config file.
 - `dagger workspace root`, `cwd`, and `config-file` return script-friendly output.
 - Top-level `dagger init` is hidden and prints the deprecation notice.
 
