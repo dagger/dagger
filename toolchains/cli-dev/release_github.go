@@ -1,29 +1,323 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"strings"
+
+	"github.com/dagger/dagger/util/parallel"
 
 	"dagger/cli-dev/internal/dagger"
 )
 
-func (cli *CliDev) githubHelper(
+type githubClient struct {
+	baseURL string
+	token   string
+	client  *http.Client
+}
+
+type githubError struct {
+	Method string
+	URL    string
+	Status int
+	Body   string
+}
+
+func (err *githubError) Error() string {
+	return fmt.Sprintf("%s %s failed: %d %s", err.Method, err.URL, err.Status, err.Body)
+}
+
+type githubRelease struct {
+	ID        int64  `json:"id"`
+	Draft     *bool  `json:"draft"`
+	UploadURL string `json:"upload_url"`
+}
+
+type githubRepo struct {
+	DefaultBranch string `json:"default_branch"`
+}
+
+type githubRef struct {
+	Object struct {
+		SHA string `json:"sha"`
+	} `json:"object"`
+}
+
+type githubContent struct {
+	SHA string `json:"sha"`
+}
+
+func newGithubClient(
+	ctx context.Context,
 	githubToken *dagger.Secret,
 	githubHost string,
 	githubCaCert *dagger.File,
-	packages []string,
-) *dagger.Container {
-	ctr := dag.
-		Alpine(dagger.AlpineOpts{
-			Branch:   "3.22",
-			Packages: packages,
-		}).
-		Container().
-		With(withGithubCaCert(githubCaCert)).
-		With(optSecretVariable("GITHUB_TOKEN", githubToken)).
-		WithEnvVariable("GITHUB_API_URL", githubAPIURL(githubHost))
-	return ctr
+) (*githubClient, error) {
+	token := ""
+	if githubToken != nil {
+		var err error
+		token, err = githubToken.Plaintext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("read GitHub token: %w", err)
+		}
+	}
+
+	httpClient := http.DefaultClient
+	if githubCaCert != nil {
+		pem, err := githubCaCert.Contents(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("read GitHub CA certificate: %w", err)
+		}
+		roots, err := x509.SystemCertPool()
+		if err != nil {
+			roots = x509.NewCertPool()
+		}
+		if roots == nil {
+			roots = x509.NewCertPool()
+		}
+		if !roots.AppendCertsFromPEM([]byte(pem)) {
+			return nil, fmt.Errorf("GitHub CA certificate was not valid PEM")
+		}
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.TLSClientConfig = &tls.Config{RootCAs: roots}
+		httpClient = &http.Client{Transport: transport}
+	}
+
+	return &githubClient{
+		baseURL: strings.TrimRight(githubAPIURL(githubHost), "/"),
+		token:   token,
+		client:  httpClient,
+	}, nil
+}
+
+func (gh *githubClient) requestJSON(ctx context.Context, method string, path string, payload any, out any) (int, error) {
+	var body io.Reader
+	if payload != nil {
+		data, err := json.Marshal(payload)
+		if err != nil {
+			return 0, err
+		}
+		body = bytes.NewReader(data)
+	}
+
+	requestURL := gh.baseURL + path
+	req, err := http.NewRequestWithContext(ctx, method, requestURL, body)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if gh.token != "" {
+		req.Header.Set("Authorization", "Bearer "+gh.token)
+	}
+
+	resp, err := gh.client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return resp.StatusCode, err
+	}
+	if resp.StatusCode >= 400 {
+		return resp.StatusCode, &githubError{
+			Method: method,
+			URL:    requestURL,
+			Status: resp.StatusCode,
+			Body:   string(respBody),
+		}
+	}
+	if out != nil && len(bytes.TrimSpace(respBody)) > 0 {
+		if err := json.Unmarshal(respBody, out); err != nil {
+			return resp.StatusCode, err
+		}
+	}
+	return resp.StatusCode, nil
+}
+
+func (gh *githubClient) releaseByTag(ctx context.Context, owner string, repo string, tag string) (*githubRelease, int, error) {
+	var release githubRelease
+	status, err := gh.requestJSON(ctx, http.MethodGet, githubPath("repos", owner, repo, "releases", "tags", tag), nil, &release)
+	if err != nil {
+		return nil, status, err
+	}
+	return &release, status, nil
+}
+
+func (gh *githubClient) upsertRelease(
+	ctx context.Context,
+	owner string,
+	repo string,
+	tag string,
+	commit string,
+	notes string,
+) (*githubRelease, error) {
+	existing, status, err := gh.releaseByTag(ctx, owner, repo, tag)
+	if err != nil && status != http.StatusNotFound {
+		return nil, err
+	}
+
+	payload := map[string]any{
+		"tag_name":         tag,
+		"name":             tag,
+		"target_commitish": commit,
+		"body":             notes,
+		"draft":            true,
+		"prerelease":       false,
+	}
+	if status == http.StatusNotFound {
+		var release githubRelease
+		if _, err := gh.requestJSON(ctx, http.MethodPost, githubPath("repos", owner, repo, "releases"), payload, &release); err != nil {
+			return nil, err
+		}
+		return &release, nil
+	}
+
+	if existing.Draft != nil {
+		payload["draft"] = *existing.Draft
+	}
+	var release githubRelease
+	if _, err := gh.requestJSON(ctx, http.MethodPatch, githubPath("repos", owner, repo, "releases", fmt.Sprint(existing.ID)), payload, &release); err != nil {
+		return nil, err
+	}
+	if release.UploadURL == "" {
+		release.UploadURL = existing.UploadURL
+	}
+	return &release, nil
+}
+
+func (gh *githubClient) publishRelease(ctx context.Context, owner string, repo string, releaseID int64) error {
+	_, err := gh.requestJSON(ctx, http.MethodPatch, githubPath("repos", owner, repo, "releases", fmt.Sprint(releaseID)), map[string]any{
+		"draft": false,
+	}, nil)
+	return err
+}
+
+func (gh *githubClient) ensureBranch(ctx context.Context, owner string, repo string, branch string) error {
+	if _, err := gh.requestJSON(ctx, http.MethodGet, githubPath("repos", owner, repo, "branches", branch), nil, nil); err == nil {
+		return nil
+	} else if !githubStatus(err, http.StatusNotFound) {
+		return err
+	}
+
+	base, err := gh.defaultBranch(ctx, owner, repo)
+	if err != nil {
+		return err
+	}
+
+	var ref githubRef
+	if _, err := gh.requestJSON(ctx, http.MethodGet, githubPath("repos", owner, repo, "git", "ref", "heads", base), nil, &ref); err != nil {
+		return err
+	}
+	_, err = gh.requestJSON(ctx, http.MethodPost, githubPath("repos", owner, repo, "git", "refs"), map[string]string{
+		"ref": "refs/heads/" + branch,
+		"sha": ref.Object.SHA,
+	}, nil)
+	return err
+}
+
+func (gh *githubClient) defaultBranch(ctx context.Context, owner string, repo string) (string, error) {
+	var response githubRepo
+	if _, err := gh.requestJSON(ctx, http.MethodGet, githubPath("repos", owner, repo), nil, &response); err != nil {
+		return "", err
+	}
+	if response.DefaultBranch != "" {
+		return response.DefaultBranch, nil
+	}
+	if repo == "winget-pkgs" {
+		return "master", nil
+	}
+	return "main", nil
+}
+
+func (gh *githubClient) writeContent(
+	ctx context.Context,
+	owner string,
+	repo string,
+	path string,
+	content string,
+	branch string,
+	message string,
+) error {
+	contentPath := githubPath("repos", owner, repo, "contents") + "/" + url.PathEscape(path) + "?ref=" + url.QueryEscape(branch)
+	var existing githubContent
+	status, err := gh.requestJSON(ctx, http.MethodGet, contentPath, nil, &existing)
+	if err != nil && status != http.StatusNotFound {
+		return err
+	}
+
+	payload := map[string]any{
+		"message": message,
+		"content": base64.StdEncoding.EncodeToString([]byte(content)),
+		"branch":  branch,
+		"committer": map[string]string{
+			"name":  "dagger-bot",
+			"email": "noreply@dagger.io",
+		},
+	}
+	if status != http.StatusNotFound && existing.SHA != "" {
+		payload["sha"] = existing.SHA
+	}
+
+	putPath := githubPath("repos", owner, repo, "contents") + "/" + url.PathEscape(path)
+	_, err = gh.requestJSON(ctx, http.MethodPut, putPath, payload, nil)
+	return err
+}
+
+func (gh *githubClient) mergeUpstream(ctx context.Context, owner string, repo string, branch string) error {
+	_, err := gh.requestJSON(ctx, http.MethodPost, githubPath("repos", owner, repo, "merge-upstream"), map[string]string{
+		"branch": branch,
+	}, nil)
+	return err
+}
+
+func (gh *githubClient) createPullRequest(
+	ctx context.Context,
+	owner string,
+	repo string,
+	title string,
+	base string,
+	head string,
+	body string,
+) error {
+	_, err := gh.requestJSON(ctx, http.MethodPost, githubPath("repos", owner, repo, "pulls"), map[string]string{
+		"title": title,
+		"base":  base,
+		"head":  head,
+		"body":  body,
+	}, nil)
+	return err
+}
+
+func githubStatus(err error, status int) bool {
+	var githubErr *githubError
+	if !errors.As(err, &githubErr) {
+		return false
+	}
+	return githubErr.Status == status
+}
+
+func githubPath(parts ...string) string {
+	var path strings.Builder
+	for _, part := range parts {
+		path.WriteByte('/')
+		path.WriteString(url.PathEscape(part))
+	}
+	return path.String()
 }
 
 func (cli *CliDev) publishRootGitHubRelease(
@@ -37,22 +331,78 @@ func (cli *CliDev) publishRootGitHubRelease(
 	githubHost string,
 	githubCaCert *dagger.File,
 ) error {
-	assets, err := json.Marshal(append(cliReleaseArchiveNames(tag), "checksums.txt"))
+	gh, err := newGithubClient(ctx, githubToken, githubHost, githubCaCert)
 	if err != nil {
 		return err
 	}
 
-	ctr := cli.githubHelper(githubToken, githubHost, githubCaCert, []string{"ca-certificates", "python3"}).
-		WithMountedDirectory("/dist", dist).
-		WithNewFile("/release-body.md", notes).
-		WithNewFile("/publish-root-release.py", publishRootReleaseScript).
-		WithEnvVariable("GITHUB_ORG_NAME", githubOrgName).
-		WithEnvVariable("RELEASE_TAG", tag).
-		WithEnvVariable("RELEASE_COMMIT", commit).
-		WithEnvVariable("RELEASE_ASSETS", string(assets)).
-		WithExec([]string{"python3", "/publish-root-release.py"})
+	release, err := gh.upsertRelease(ctx, githubOrgName, "dagger", tag, commit, notes)
+	if err != nil {
+		return err
+	}
+	if release.ID == 0 {
+		return fmt.Errorf("GitHub release ID is empty")
+	}
+	uploadURL := strings.SplitN(release.UploadURL, "{", 2)[0]
+	if uploadURL == "" {
+		return fmt.Errorf("GitHub release upload URL is empty")
+	}
 
-	_, err = ctr.Sync(ctx)
+	jobs := parallel.New()
+	for _, asset := range append(cliReleaseArchiveNames(tag), "checksums.txt") {
+		asset := asset
+		jobs = jobs.WithJob("upload "+asset, func(ctx context.Context) error {
+			return cli.uploadGitHubReleaseAsset(ctx, dist, asset, uploadURL, githubToken, githubCaCert)
+		})
+	}
+	if err := jobs.Run(ctx); err != nil {
+		return err
+	}
+
+	return gh.publishRelease(ctx, githubOrgName, "dagger", release.ID)
+}
+
+func (cli *CliDev) uploadGitHubReleaseAsset(
+	ctx context.Context,
+	dist *dagger.Directory,
+	asset string,
+	uploadURL string,
+	githubToken *dagger.Secret,
+	githubCaCert *dagger.File,
+) error {
+	uploadURL += "?name=" + url.QueryEscape(asset)
+	ctr := dag.
+		Alpine(dagger.AlpineOpts{
+			Branch:   "3.22",
+			Packages: []string{"ca-certificates", "curl"},
+		}).
+		Container().
+		With(withGithubCaCert(githubCaCert)).
+		WithMountedDirectory("/dist", dist).
+		With(optSecretVariable("GITHUB_TOKEN", githubToken)).
+		WithEnvVariable("ASSET", asset).
+		WithEnvVariable("UPLOAD_URL", uploadURL).
+		WithExec([]string{"sh", "-ec", `set -eu
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+	curl -fsS -X POST \
+		-H "Accept: application/vnd.github+json" \
+		-H "X-GitHub-Api-Version: 2022-11-28" \
+		-H "Authorization: Bearer $GITHUB_TOKEN" \
+		-H "Content-Type: application/octet-stream" \
+		--data-binary "@/dist/$ASSET" \
+		-o /dev/null \
+		"$UPLOAD_URL"
+else
+	curl -fsS -X POST \
+		-H "Accept: application/vnd.github+json" \
+		-H "X-GitHub-Api-Version: 2022-11-28" \
+		-H "Content-Type: application/octet-stream" \
+		--data-binary "@/dist/$ASSET" \
+		-o /dev/null \
+		"$UPLOAD_URL"
+fi`})
+
+	_, err := ctr.Sync(ctx)
 	return err
 }
 
@@ -66,416 +416,48 @@ func (cli *CliDev) publishPackageManagers(
 	githubCaCert *dagger.File,
 	artefactsFQDN string,
 ) error {
-	ctr := cli.githubHelper(githubToken, githubHost, githubCaCert, []string{"ca-certificates", "coreutils", "curl", "python3", "xz"}).
-		WithDirectory("/nix", dag.Directory()).
-		WithNewFile("/etc/nix/nix.conf", `build-users-group =`).
-		WithExec([]string{"sh", "-ec", "curl -fsSL https://nixos.org/nix/install | sh -s -- --no-daemon"})
-	path, err := ctr.EnvVariable(ctx, "PATH")
+	checksums, err := cli.releaseChecksumMap(ctx, dist)
+	if err != nil {
+		return err
+	}
+	nixArchives, err := cli.releaseNixArchives(ctx, dist, tag, checksums)
 	if err != nil {
 		return err
 	}
 
-	ctr = ctr.
-		WithEnvVariable("PATH", path+":/nix/var/nix/profiles/default/bin").
-		WithExec([]string{"nix-hash", "--version"}).
-		WithMountedDirectory("/dist", dist).
-		WithNewFile("/publish-package-managers.py", publishPackageManagersScript).
-		WithEnvVariable("GITHUB_ORG_NAME", githubOrgName).
-		WithEnvVariable("RELEASE_TAG", tag).
-		WithEnvVariable("RELEASE_VERSION", strings.TrimPrefix(tag, "v")).
-		WithEnvVariable("ARTEFACTS_FQDN", artefactsFQDN).
-		WithExec([]string{"python3", "/publish-package-managers.py"})
+	version := strings.TrimPrefix(tag, "v")
+	baseURL := "https://" + artefactsFQDN + "/dagger/releases/" + version
+	gh, err := newGithubClient(ctx, githubToken, githubHost, githubCaCert)
+	if err != nil {
+		return err
+	}
 
-	_, err = ctr.Sync(ctx)
-	return err
+	homebrew, err := homebrewFormula(tag, version, baseURL, checksums)
+	if err != nil {
+		return err
+	}
+	if err := gh.writeContent(ctx, githubOrgName, "homebrew-tap", "dagger.rb", homebrew, "main", "Brew formula update for dagger version "+tag); err != nil {
+		return err
+	}
+	if err := gh.writeContent(ctx, githubOrgName, "nix", "pkgs/dagger/default.nix", nixPackage(version, baseURL, nixArchives), "main", "dagger:  -> "+tag); err != nil {
+		return err
+	}
+
+	wingetBranch := "dagger-" + version
+	if err := gh.ensureBranch(ctx, githubOrgName, "winget-pkgs", wingetBranch); err != nil {
+		return err
+	}
+	if err := gh.mergeUpstream(ctx, githubOrgName, "winget-pkgs", "master"); err != nil {
+		return err
+	}
+	manifests, err := wingetManifests(tag, version, baseURL, checksums)
+	if err != nil {
+		return err
+	}
+	for _, manifest := range manifests {
+		if err := gh.writeContent(ctx, githubOrgName, "winget-pkgs", manifest.Path, manifest.Content, wingetBranch, "New version: Dagger.Cli "+version+": add "+manifest.MessageSuffix); err != nil {
+			return err
+		}
+	}
+	return gh.createPullRequest(ctx, "microsoft", "winget-pkgs", "New version: Dagger.Cli "+version, "master", githubOrgName+":winget-pkgs:"+wingetBranch, "Automated with Dagger release tooling.")
 }
-
-const publishRootReleaseScript = `import json
-import os
-import urllib.error
-import urllib.parse
-import urllib.request
-
-api_base = os.environ["GITHUB_API_URL"].rstrip("/")
-org = os.environ["GITHUB_ORG_NAME"]
-tag = os.environ["RELEASE_TAG"]
-commit = os.environ["RELEASE_COMMIT"]
-assets = json.loads(os.environ["RELEASE_ASSETS"])
-token = os.environ.get("GITHUB_TOKEN", "")
-
-with open("/release-body.md", encoding="utf-8") as f:
-    release_body = f.read()
-
-def request(method, url, payload=None, content_type="application/json"):
-    data = None
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
-    if token:
-        headers["Authorization"] = "Bearer " + token
-    if payload is not None:
-        if isinstance(payload, bytes):
-            data = payload
-        else:
-            data = json.dumps(payload).encode("utf-8")
-        headers["Content-Type"] = content_type
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    try:
-        with urllib.request.urlopen(req) as resp:
-            body = resp.read()
-            return resp.status, json.loads(body.decode("utf-8") or "{}") if body else {}
-    except urllib.error.HTTPError as err:
-        body = err.read().decode("utf-8", errors="replace")
-        if err.code == 404:
-            return err.code, {}
-        raise RuntimeError(f"{method} {url} failed: {err.code} {body}") from err
-
-status, release = request("GET", f"{api_base}/repos/{org}/dagger/releases/tags/{urllib.parse.quote(tag, safe='')}")
-payload = {
-    "tag_name": tag,
-    "name": tag,
-    "target_commitish": commit,
-    "body": release_body,
-    "draft": True,
-    "prerelease": False,
-}
-if status == 404:
-    _, release = request("POST", f"{api_base}/repos/{org}/dagger/releases", payload)
-else:
-    release_id = release["id"]
-    payload["draft"] = release.get("draft", True)
-    _, release = request("PATCH", f"{api_base}/repos/{org}/dagger/releases/{release_id}", payload)
-
-release_id = release["id"]
-upload_url = release["upload_url"].split("{", 1)[0]
-for asset in assets:
-    with open(os.path.join("/dist", asset), "rb") as f:
-        data = f.read()
-    url = upload_url + "?name=" + urllib.parse.quote(asset)
-    request("POST", url, data, "application/octet-stream")
-
-request("PATCH", f"{api_base}/repos/{org}/dagger/releases/{release_id}", {"draft": False})
-`
-
-const publishPackageManagersScript = `import base64
-import datetime
-import json
-import os
-import subprocess
-import urllib.error
-import urllib.parse
-import urllib.request
-
-api_base = os.environ["GITHUB_API_URL"].rstrip("/")
-org = os.environ["GITHUB_ORG_NAME"]
-tag = os.environ["RELEASE_TAG"]
-version = os.environ["RELEASE_VERSION"]
-artefacts_fqdn = os.environ["ARTEFACTS_FQDN"]
-token = os.environ.get("GITHUB_TOKEN", "")
-base_url = f"https://{artefacts_fqdn}/dagger/releases/{version}"
-generated = "This file was generated by Dagger release tooling. DO NOT EDIT."
-
-def request(method, path, payload=None):
-    url = api_base + path
-    data = None
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
-    if token:
-        headers["Authorization"] = "Bearer " + token
-    if payload is not None:
-        data = json.dumps(payload).encode("utf-8")
-        headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    try:
-        with urllib.request.urlopen(req) as resp:
-            body = resp.read()
-            return resp.status, json.loads(body.decode("utf-8") or "{}") if body else {}
-    except urllib.error.HTTPError as err:
-        body = err.read().decode("utf-8", errors="replace")
-        if err.code == 404:
-            return err.code, {}
-        raise RuntimeError(f"{method} {url} failed: {err.code} {body}") from err
-
-def q(value):
-    return urllib.parse.quote(value, safe="")
-
-def read_checksums():
-    checksums = {}
-    with open("/dist/checksums.txt", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            checksum, name = line.split(None, 1)
-            checksums[name] = checksum
-    return checksums
-
-checksums = read_checksums()
-
-def archive(suffix):
-    name = f"dagger_{tag}_{suffix}"
-    if name not in checksums:
-        raise RuntimeError(f"missing checksum for {name}")
-    return name
-
-def nix_hash(name):
-    return subprocess.check_output([
-        "nix-hash", "--type", "sha256", "--flat", "--base32", os.path.join("/dist", name),
-    ], text=True).strip()
-
-def default_branch(owner, repo):
-    _, data = request("GET", f"/repos/{q(owner)}/{q(repo)}")
-    return data.get("default_branch") or ("master" if repo == "winget-pkgs" else "main")
-
-def ensure_branch(owner, repo, branch):
-    status, _ = request("GET", f"/repos/{q(owner)}/{q(repo)}/branches/{q(branch)}")
-    if status != 404:
-        return
-    base = default_branch(owner, repo)
-    _, ref = request("GET", f"/repos/{q(owner)}/{q(repo)}/git/ref/heads/{q(base)}")
-    sha = ref["object"]["sha"]
-    request("POST", f"/repos/{q(owner)}/{q(repo)}/git/refs", {
-        "ref": "refs/heads/" + branch,
-        "sha": sha,
-    })
-
-def write_content(owner, repo, path, content, branch, message):
-    status, existing = request("GET", f"/repos/{q(owner)}/{q(repo)}/contents/{q(path)}?ref={q(branch)}")
-    payload = {
-        "message": message,
-        "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
-        "branch": branch,
-        "committer": {
-            "name": "dagger-bot",
-            "email": "noreply@dagger.io",
-        },
-    }
-    if status != 404 and existing.get("sha"):
-        payload["sha"] = existing["sha"]
-    request("PUT", f"/repos/{q(owner)}/{q(repo)}/contents/{q(path)}", payload)
-
-def homebrew_formula():
-    archives = {
-        "darwin_amd64": archive("darwin_amd64.tar.gz"),
-        "darwin_arm64": archive("darwin_arm64.tar.gz"),
-        "linux_amd64": archive("linux_amd64.tar.gz"),
-        "linux_arm64": archive("linux_arm64.tar.gz"),
-    }
-    return f'''# typed: false
-# frozen_string_literal: true
-
-# {generated}
-class Dagger < Formula
-  desc "Dagger is an integrated platform to orchestrate the delivery of applications"
-  homepage "https://dagger.io"
-  version "{version}"
-
-  on_macos do
-    if Hardware::CPU.intel?
-      url "{base_url}/{archives["darwin_amd64"]}"
-      sha256 "{checksums[archives["darwin_amd64"]]}"
-
-      def install
-        bin.install "dagger"
-      end
-    end
-
-    if Hardware::CPU.arm?
-      url "{base_url}/{archives["darwin_arm64"]}"
-      sha256 "{checksums[archives["darwin_arm64"]]}"
-
-      def install
-        bin.install "dagger"
-      end
-    end
-  end
-
-  on_linux do
-    if Hardware::CPU.intel? and Hardware::CPU.is_64_bit?
-      url "{base_url}/{archives["linux_amd64"]}"
-      sha256 "{checksums[archives["linux_amd64"]]}"
-
-      def install
-        bin.install "dagger"
-      end
-    end
-
-    if Hardware::CPU.arm? and Hardware::CPU.is_64_bit?
-      url "{base_url}/{archives["linux_arm64"]}"
-      sha256 "{checksums[archives["linux_arm64"]]}"
-
-      def install
-        bin.install "dagger"
-      end
-    end
-  end
-
-  test do
-    system "#{{bin}}/dagger version"
-  end
-end
-'''
-
-def nix_package():
-    archives = {
-        "x86_64-linux": archive("linux_amd64.tar.gz"),
-        "armv7l-linux": archive("linux_armv7.tar.gz"),
-        "aarch64-linux": archive("linux_arm64.tar.gz"),
-        "x86_64-darwin": archive("darwin_amd64.tar.gz"),
-        "aarch64-darwin": archive("darwin_arm64.tar.gz"),
-    }
-    sha_lines = "\n".join(f'    {platform} = "{nix_hash(name)}";' for platform, name in archives.items())
-    url_lines = "\n".join(f'    {platform} = "{base_url}/{name}";' for platform, name in archives.items())
-    platform_lines = "\n".join(f'      "{platform}"' for platform in archives)
-    return f'''# {generated}
-# vim: set ft=nix ts=2 sw=2 sts=2 et sta
-{{
-system ? builtins.currentSystem
-, lib
-, fetchurl
-, installShellFiles
-, stdenvNoCC
-}}:
-let
-  shaMap = {{
-{sha_lines}
-  }};
-
-  urlMap = {{
-{url_lines}
-  }};
-in
-stdenvNoCC.mkDerivation {{
-  pname = "dagger";
-  version = "{version}";
-  src = fetchurl {{
-    url = urlMap.${{system}};
-    sha256 = shaMap.${{system}};
-  }};
-
-  sourceRoot = ".";
-
-  nativeBuildInputs = [ installShellFiles ];
-
-  installPhase = ''
-    install -Dm755 dagger $out/bin/dagger
-  '';
-
-  postInstall = ''
-    installShellCompletion --cmd dagger \\
-      --bash <($out/bin/dagger completion bash) \\
-      --fish <($out/bin/dagger completion fish) \\
-      --zsh <($out/bin/dagger completion zsh)
-  '';
-
-  system = system;
-
-  meta = {{
-    description = "Dagger is an integrated platform to orchestrate the delivery of applications";
-    homepage = "https://dagger.io";
-    license = lib.licenses.asl20;
-
-    sourceProvenance = [ lib.sourceTypes.binaryNativeCode ];
-
-    platforms = [
-{platform_lines}
-    ];
-  }};
-}}
-'''
-
-def winget_manifests():
-    win_amd64 = archive("windows_amd64.zip")
-    win_arm64 = archive("windows_arm64.zip")
-    release_date = datetime.datetime.utcnow().strftime("%Y-%m-%d")
-    root = f"manifests/d/Dagger/Cli/{version}"
-    version_manifest = f'''# {generated}
-# yaml-language-server: $schema=https://aka.ms/winget-manifest.version.1.10.0.schema.json
-PackageIdentifier: Dagger.Cli
-PackageVersion: {version}
-DefaultLocale: en-US
-ManifestType: version
-ManifestVersion: 1.10.0
-'''
-    installer_manifest = f'''# {generated}
-# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.10.0.schema.json
-PackageIdentifier: Dagger.Cli
-PackageVersion: {version}
-InstallerLocale: en-US
-InstallerType: zip
-ReleaseDate: "{release_date}"
-Installers:
-  - Architecture: arm64
-    NestedInstallerType: portable
-    NestedInstallerFiles:
-      - RelativeFilePath: dagger.exe
-        PortableCommandAlias: dagger
-    InstallerUrl: {base_url}/{win_arm64}
-    InstallerSha256: {checksums[win_arm64]}
-    UpgradeBehavior: uninstallPrevious
-  - Architecture: x64
-    NestedInstallerType: portable
-    NestedInstallerFiles:
-      - RelativeFilePath: dagger.exe
-        PortableCommandAlias: dagger
-    InstallerUrl: {base_url}/{win_amd64}
-    InstallerSha256: {checksums[win_amd64]}
-    UpgradeBehavior: uninstallPrevious
-ManifestType: installer
-ManifestVersion: 1.10.0
-'''
-    locale_manifest = f'''# {generated}
-# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.10.0.schema.json
-PackageIdentifier: Dagger.Cli
-PackageVersion: {version}
-PackageLocale: en-US
-Publisher: Dagger
-PublisherUrl: https://dagger.io
-PublisherSupportUrl: https://github.com/dagger/dagger/issues/new/choose
-PackageName: dagger
-PackageUrl: https://dagger.io
-License: asl20
-ShortDescription: Dagger is an integrated platform to orchestrate the delivery of applications
-Tags:
-  - dagger
-  - cli
-  - cicd
-  - workflows
-  - sandbox
-  - containers
-  - devops
-  - llm
-ManifestType: defaultLocale
-ManifestVersion: 1.10.0
-'''
-    return {
-        f"{root}/Dagger.Cli.yaml": version_manifest,
-        f"{root}/Dagger.Cli.installer.yaml": installer_manifest,
-        f"{root}/Dagger.Cli.locale.en-US.yaml": locale_manifest,
-    }
-
-write_content(org, "homebrew-tap", "dagger.rb", homebrew_formula(), "main", f"Brew formula update for dagger version {tag}")
-write_content(org, "nix", "pkgs/dagger/default.nix", nix_package(), "main", f"dagger:  -> {tag}")
-
-winget_branch = f"dagger-{version}"
-ensure_branch(org, "winget-pkgs", winget_branch)
-request("POST", f"/repos/{q(org)}/winget-pkgs/merge-upstream", {"branch": "master"})
-for path, content in winget_manifests().items():
-    if path.endswith(".installer.yaml"):
-        suffix = "installer"
-    elif path.endswith(".locale.en-US.yaml"):
-        suffix = "locale"
-    else:
-        suffix = "version"
-    write_content(org, "winget-pkgs", path, content, winget_branch, f"New version: Dagger.Cli {version}: add {suffix}")
-
-request("POST", "/repos/microsoft/winget-pkgs/pulls", {
-    "title": f"New version: Dagger.Cli {version}",
-    "base": "master",
-    "head": f"{org}:winget-pkgs:{winget_branch}",
-    "body": "Automated with Dagger release tooling.",
-})
-`
