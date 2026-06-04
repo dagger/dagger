@@ -200,11 +200,11 @@ type GhCloneOpts struct {
 	//
 	// GitHub repository (e.g. "owner/repo").
 	//
-	Repo string // gh (../../../../../../toolchains/release/gh/main.go:91:2)
+	Repo string // gh (../../../../../../toolchains/release/gh/main.go:137:2)
 }
 
 // Clone a GitHub repository.
-func (r *Gh) Clone(opts ...GhCloneOpts) *Gh { // gh (../../../../../../toolchains/release/gh/main.go:87:1)
+func (r *Gh) Clone(opts ...GhCloneOpts) *Gh { // gh (../../../../../../toolchains/release/gh/main.go:133:1)
 	q := r.query.Select("clone")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `repo` optional argument
@@ -223,15 +223,15 @@ type GhExecOpts struct {
 	//
 	// GitHub token.
 	//
-	Token *Secret // gh (../../../../../../toolchains/release/gh/main.go:130:2)
+	Token *Secret // gh (../../../../../../toolchains/release/gh/main.go:176:2)
 	//
 	// GitHub repository (e.g. "owner/repo").
 	//
-	Repo string // gh (../../../../../../toolchains/release/gh/main.go:135:2)
+	Repo string // gh (../../../../../../toolchains/release/gh/main.go:181:2)
 }
 
 // Run a GitHub CLI command (accepts a list of arguments without "gh").
-func (r *Gh) Exec(args []string, opts ...GhExecOpts) *Container { // gh (../../../../../../toolchains/release/gh/main.go:123:1)
+func (r *Gh) Exec(args []string, opts ...GhExecOpts) *Container { // gh (../../../../../../toolchains/release/gh/main.go:169:1)
 	q := r.query.Select("exec")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `token` optional argument
@@ -331,15 +331,15 @@ type GhRunOpts struct {
 	//
 	// GitHub token.
 	//
-	Token *Secret // gh (../../../../../../toolchains/release/gh/main.go:112:2)
+	Token *Secret // gh (../../../../../../toolchains/release/gh/main.go:158:2)
 	//
 	// GitHub repository (e.g. "owner/repo").
 	//
-	Repo string // gh (../../../../../../toolchains/release/gh/main.go:117:2)
+	Repo string // gh (../../../../../../toolchains/release/gh/main.go:163:2)
 }
 
 // Run a GitHub CLI command (accepts a single command string without "gh").
-func (r *Gh) Run(cmd string, opts ...GhRunOpts) *Container { // gh (../../../../../../toolchains/release/gh/main.go:105:1)
+func (r *Gh) Run(cmd string, opts ...GhRunOpts) *Container { // gh (../../../../../../toolchains/release/gh/main.go:151:1)
 	q := r.query.Select("run")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `token` optional argument
@@ -359,7 +359,7 @@ func (r *Gh) Run(cmd string, opts ...GhRunOpts) *Container { // gh (../../../../
 }
 
 // Git repository source (with .git directory).
-func (r *Gh) Source() *Directory { // gh (../../../../../../toolchains/release/gh/main.go:24:2)
+func (r *Gh) Source() *Directory { // gh (../../../../../../toolchains/release/gh/main.go:34:2)
 	q := r.query.Select("source")
 
 	return &Directory{
@@ -372,15 +372,15 @@ type GhTerminalOpts struct {
 	//
 	// GitHub token.
 	//
-	Token *Secret // gh (../../../../../../toolchains/release/gh/main.go:161:2)
+	Token *Secret // gh (../../../../../../toolchains/release/gh/main.go:207:2)
 	//
 	// GitHub repository (e.g. "owner/repo").
 	//
-	Repo string // gh (../../../../../../toolchains/release/gh/main.go:166:2)
+	Repo string // gh (../../../../../../toolchains/release/gh/main.go:212:2)
 }
 
 // Open an interactive terminal.
-func (r *Gh) Terminal(opts ...GhTerminalOpts) *Container { // gh (../../../../../../toolchains/release/gh/main.go:157:1)
+func (r *Gh) Terminal(opts ...GhTerminalOpts) *Container { // gh (../../../../../../toolchains/release/gh/main.go:203:1)
 	q := r.query.Select("terminal")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `token` optional argument
@@ -398,8 +398,19 @@ func (r *Gh) Terminal(opts ...GhTerminalOpts) *Container { // gh (../../../../..
 	}
 }
 
+// Set an additional CA certificate for the GitHub host.
+func (r *Gh) WithCacert(caCert *File) *Gh { // gh (../../../../../../toolchains/release/gh/main.go:109:1)
+	assertNotNil("caCert", caCert)
+	q := r.query.Select("withCacert")
+	q = q.Arg("caCert", caCert)
+
+	return &Gh{
+		query: q,
+	}
+}
+
 // Run a git command (accepts a list of arguments without "git").
-func (r *Gh) WithGitExec(args []string) *Gh { // gh (../../../../../../toolchains/release/gh/main.go:143:1)
+func (r *Gh) WithGitExec(args []string) *Gh { // gh (../../../../../../toolchains/release/gh/main.go:189:1)
 	q := r.query.Select("withGitExec")
 	q = q.Arg("args", args)
 
@@ -408,8 +419,18 @@ func (r *Gh) WithGitExec(args []string) *Gh { // gh (../../../../../../toolchain
 	}
 }
 
+// Set a GitHub host as context.
+func (r *Gh) WithHost(host string) *Gh { // gh (../../../../../../toolchains/release/gh/main.go:97:1)
+	q := r.query.Select("withHost")
+	q = q.Arg("host", host)
+
+	return &Gh{
+		query: q,
+	}
+}
+
 // Set a GitHub repository as context.
-func (r *Gh) WithRepo(repo string) *Gh { // gh (../../../../../../toolchains/release/gh/main.go:63:1)
+func (r *Gh) WithRepo(repo string) *Gh { // gh (../../../../../../toolchains/release/gh/main.go:85:1)
 	q := r.query.Select("withRepo")
 	q = q.Arg("repo", repo)
 
@@ -419,7 +440,7 @@ func (r *Gh) WithRepo(repo string) *Gh { // gh (../../../../../../toolchains/rel
 }
 
 // Load a Git repository source (with .git directory).
-func (r *Gh) WithSource(source *Directory) *Gh { // gh (../../../../../../toolchains/release/gh/main.go:75:1)
+func (r *Gh) WithSource(source *Directory) *Gh { // gh (../../../../../../toolchains/release/gh/main.go:121:1)
 	assertNotNil("source", source)
 	q := r.query.Select("withSource")
 	q = q.Arg("source", source)
@@ -430,7 +451,7 @@ func (r *Gh) WithSource(source *Directory) *Gh { // gh (../../../../../../toolch
 }
 
 // Set a GitHub token.
-func (r *Gh) WithToken(token *Secret) *Gh { // gh (../../../../../../toolchains/release/gh/main.go:51:1)
+func (r *Gh) WithToken(token *Secret) *Gh { // gh (../../../../../../toolchains/release/gh/main.go:73:1)
 	assertNotNil("token", token)
 	q := r.query.Select("withToken")
 	q = q.Arg("token", token)
@@ -1158,19 +1179,27 @@ type GhOpts struct {
 	//
 	// GitHub token.
 	//
-	Token *Secret // gh (../../../../../../toolchains/release/gh/main.go:31:2)
+	Token *Secret // gh (../../../../../../toolchains/release/gh/main.go:41:2)
 	//
 	// GitHub repository (e.g. "owner/repo").
 	//
-	Repo string // gh (../../../../../../toolchains/release/gh/main.go:36:2)
+	Repo string // gh (../../../../../../toolchains/release/gh/main.go:46:2)
+	//
+	// GitHub host.
+	//
+	Host string // gh (../../../../../../toolchains/release/gh/main.go:51:2)
+	//
+	// Additional CA certificate for the GitHub host.
+	//
+	CaCert *File // gh (../../../../../../toolchains/release/gh/main.go:56:2)
 	//
 	// Git repository source (with .git directory).
 	//
-	Source *Directory // gh (../../../../../../toolchains/release/gh/main.go:41:2)
+	Source *Directory // gh (../../../../../../toolchains/release/gh/main.go:61:2)
 }
 
 // GitHub CLI
-func (r *Query) Gh(opts ...GhOpts) *Gh { // gh (../../../../../../toolchains/release/gh/main.go:27:1)
+func (r *Query) Gh(opts ...GhOpts) *Gh { // gh (../../../../../../toolchains/release/gh/main.go:37:1)
 	q := r.query.Select("gh")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `token` optional argument
@@ -1180,6 +1209,14 @@ func (r *Query) Gh(opts ...GhOpts) *Gh { // gh (../../../../../../toolchains/rel
 		// `repo` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Repo) {
 			q = q.Arg("repo", opts[i].Repo)
+		}
+		// `host` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Host) {
+			q = q.Arg("host", opts[i].Host)
+		}
+		// `caCert` optional argument
+		if !querybuilder.IsZeroValue(opts[i].CaCert) {
+			q = q.Arg("caCert", opts[i].CaCert)
 		}
 		// `source` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Source) {

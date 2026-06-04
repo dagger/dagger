@@ -34,7 +34,7 @@ func (cli *CliDev) Publish(
 
 	dryRun bool, // +optional
 ) (*dagger.Directory, error) {
-	dist, err := cli.releaseDist(ctx, tag, commit)
+	dist, err := cli.releaseDist(tag, commit)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +182,7 @@ func (cli *CliDev) ReleaseDryRun(ctx context.Context) error {
 		WithJob(
 			"dry-run package release artifacts",
 			func(ctx context.Context) error {
-				dist, err := cli.releaseDist(ctx, cli.Version, "dry-run")
+				dist, err := cli.releaseDist(cli.Version, "dry-run")
 				if err != nil {
 					return err
 				}

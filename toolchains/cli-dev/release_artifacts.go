@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -76,7 +75,7 @@ func (cli *CliDev) releaseBinaries() *dagger.Directory {
 	return dir
 }
 
-func (cli *CliDev) releaseDist(ctx context.Context, tag, commit string) (*dagger.Directory, error) {
+func (cli *CliDev) releaseDist(tag, commit string) (*dagger.Directory, error) {
 	if commit == "" {
 		return nil, fmt.Errorf("commit must be set")
 	}
