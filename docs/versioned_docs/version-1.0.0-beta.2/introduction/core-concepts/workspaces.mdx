@@ -1,0 +1,67 @@
+---
+title: "Workspaces"
+slug: /core-concepts/workspaces
+description: "Your Git repository as a Dagger workspace"
+---
+
+# Workspaces
+
+A workspace is your Git repository. Dagger stores its configuration in a `.dagger/` directory, created automatically when you first install a module.
+
+## Configuration
+
+The `.dagger/config.toml` file declares which modules are installed and their configuration.
+
+```toml
+# .dagger/config.toml
+
+[modules.eslint]
+source = "github.com/dagger/eslint"
+
+[modules.vitest]
+source = "github.com/dagger/vitest"
+
+[modules.prettier]
+source = "github.com/dagger/prettier"
+```
+
+The `.dagger/` directory also contains:
+- **`lock`** — Pins module versions for reproducible builds
+- **`modules/`** — Local modules you develop as part of your project
+
+## Installing Modules
+
+Add modules to your workspace with `dagger install`:
+
+```shell
+dagger install github.com/dagger/eslint
+dagger install github.com/dagger/vitest --name tests
+```
+
+Each module becomes available under its name:
+
+```shell
+dagger call eslint lint
+dagger call tests test
+```
+
+## Configuring Modules
+
+Modules can be configured in your workspace config. Configuration values are passed as constructor arguments to the module:
+
+```toml
+[modules.go]
+source = "github.com/dagger/go"
+
+[modules.go.config]
+goVersion = "1.22"
+```
+
+## Version Control
+
+The `.dagger/` directory should be committed to version control so your team shares the same configuration.
+
+## Next Steps
+
+- **[Modules](/1.0.0-beta.2/core-concepts/modules)** — Learn about modules
+- **[Quickstart](/1.0.0-beta.2/quickstart)** — Set up a workspace in 5 minutes

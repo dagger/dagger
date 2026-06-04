@@ -1,0 +1,147 @@
+{
+  "current": [
+    "index",
+    "getting-started/installation",
+    {
+      "type": "category",
+      "label": "Adopting Dagger",
+      "collapsible": true,
+      "collapsed": false,
+      "items": [
+        "getting-started/quickstart",
+        "adopting/workspace-setup",
+        "adopting/secrets",
+        "adopting/observability",
+        {
+          "type": "category",
+          "label": "Triggers",
+          "link": {
+            "type": "doc",
+            "id": "adopting/triggers/index"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            "adopting/triggers/github-actions",
+            "adopting/triggers/gitlab",
+            "adopting/triggers/circleci",
+            "adopting/triggers/jenkins",
+            "adopting/triggers/azure-pipelines",
+            "adopting/triggers/aws-codebuild",
+            "adopting/triggers/argo-workflows",
+            "adopting/triggers/tekton",
+            "adopting/triggers/teamcity"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "Scaling",
+          "link": {
+            "type": "doc",
+            "id": "adopting/scaling/index"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            "adopting/scaling/kubernetes",
+            "adopting/scaling/openshift"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Using Dagger",
+      "collapsible": true,
+      "collapsed": false,
+      "items": [
+        "using-dagger/checking",
+        "using-dagger/generating",
+        "using-dagger/services"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Core Concepts",
+      "link": {
+        "type": "doc",
+        "id": "introduction/core-concepts/index"
+      },
+      "collapsible": true,
+      "collapsed": true,
+      "items": [
+        "introduction/core-concepts/workspaces",
+        "introduction/core-concepts/modules",
+        "introduction/core-concepts/functions",
+        "introduction/core-concepts/checks",
+        "introduction/core-concepts/caching"
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Developing Modules",
+      "link": {
+        "type": "doc",
+        "id": "extending/index"
+      },
+      "collapsible": true,
+      "collapsed": true,
+      "items": [
+        "extending/editions/dang",
+        "extending/editions/go/index",
+        "extending/editions/typescript/index",
+        "extending/editions/python/index",
+        "extending/testing",
+        {
+          "type": "category",
+          "label": "Types Reference",
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            "extending/types/index",
+            "extending/types/container",
+            "extending/types/directory",
+            "extending/types/file",
+            "extending/types/secret",
+            "extending/types/service",
+            "extending/types/cache-volume",
+            "extending/types/git-repository",
+            "extending/types/env",
+            "extending/types/llm"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Reference",
+      "link": {
+        "type": "doc",
+        "id": "reference/index"
+      },
+      "collapsible": true,
+      "collapsed": true,
+      "items": [
+        {
+          "type": "category",
+          "label": "CLI",
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            "reference/cli/index",
+            "reference/cli/lockfiles"
+          ]
+        },
+        "reference/configuration/modules",
+        "reference/configuration/engine",
+        "reference/configuration/cloud",
+        "reference/configuration/cache",
+        "reference/configuration/llm",
+        "reference/configuration/custom-runner",
+        "reference/configuration/custom-ca",
+        "reference/configuration/proxy",
+        "reference/upgrade-to-workspaces"
+      ]
+    }
+  ]
+}

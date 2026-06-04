@@ -1,0 +1,47 @@
+---
+title: "Workspace Setup"
+slug: /adopting/workspace-setup
+description: "Add a Dagger workspace to your project"
+---
+
+# Workspace Setup
+
+You've seen Dagger work on [hello-dagger](/1.0.0-beta.2/quickstart). Now set it up on your own project.
+
+## Get started
+
+From the root of your repository:
+
+```shell
+dagger install github.com/dagger/setup
+dagger check
+```
+
+`dagger install` creates a workspace configuration (`.dagger/config.toml`) and adds the [setup module](https://github.com/dagger/setup). `dagger check` runs it — and the setup module inspects your project, then reports what it finds as failing checks. Each failing check tells you what to do next.
+
+## The feedback loop
+
+Install what the setup module suggests, then run `dagger check` again:
+
+```shell
+dagger install github.com/dagger/eslint
+dagger check
+```
+
+The check that suggested ESLint turns green. New suggestions may appear for other tools the setup module detects. Repeat until you're happy with your coverage — you don't have to install everything at once.
+
+## Manual setup
+
+If you already know which modules you want, skip the setup module and install them directly:
+
+```shell
+dagger install github.com/dagger/eslint
+dagger install github.com/dagger/vitest
+dagger install github.com/dagger/prettier
+```
+
+## What's next
+
+- **Add to CI** — `dagger check` is a [single line](/1.0.0-beta.2/using-dagger/checking#in-ci) in any CI provider
+- **Connect Dagger Cloud** — `dagger login` gives you traces for every run and unlocks [Cloud Checks](/1.0.0-beta.2/adopting/triggers)
+- **Manage secrets** — if your checks need credentials, see [Secrets](/1.0.0-beta.2/adopting/secrets)
