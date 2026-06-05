@@ -17,15 +17,16 @@ type TypedefModule struct {
 }
 
 type TypedefObject struct {
-	Name        string                      `json:"name"`
-	Kind        string                      `json:"kind"` // "class" | "object"
-	IsExported  bool                        `json:"isExported"`
-	Description string                      `json:"description"`
-	Deprecated  string                      `json:"deprecated,omitempty"`
-	Location    *TypedefLocation            `json:"location,omitempty"`
-	Constructor *TypedefConstructor         `json:"constructor,omitempty"`
-	Methods     map[string]*TypedefFunction `json:"methods"`
-	Properties  map[string]*TypedefProperty `json:"properties"`
+	Name            string                      `json:"name"`
+	Kind            string                      `json:"kind"` // "class" | "object"
+	IsExported      bool                        `json:"isExported"`
+	IsDefaultExport bool                        `json:"isDefaultExport"`
+	Description     string                      `json:"description"`
+	Deprecated      string                      `json:"deprecated,omitempty"`
+	Location        *TypedefLocation            `json:"location,omitempty"`
+	Constructor     *TypedefConstructor         `json:"constructor,omitempty"`
+	Methods         map[string]*TypedefFunction `json:"methods"`
+	Properties      map[string]*TypedefProperty `json:"properties"`
 }
 
 type TypedefConstructor struct {

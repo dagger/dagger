@@ -1699,3 +1699,104 @@ class Test {
 		"Encountered an unknown error",
 	)
 }
+
+func (TypescriptSuite) TestGenerateEntrypointTypedefOnlyDoesNotConnect(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().From(golangImage).
+		With(goCache(c)).
+		WithExec([]string{"apk", "add", "git"}).
+		WithMountedDirectory("/src", c.Host().Directory("../..")).
+		WithWorkdir("/src").
+		WithExec([]string{"go", "build", "-o", "/work/codegen", "./cmd/codegen"}).
+		WithWorkdir("/work").
+		WithNewFile("/work/typedef.json", `{
+  "name": "Test",
+  "objects": {
+  "Test": {
+      "name": "Test",
+      "kind": "class",
+      "isExported": true,
+      "description": "",
+      "location": {"filepath": "/work/src/index.ts", "line": 1, "column": 14},
+      "methods": {},
+      "properties": {}
+    }
+  },
+  "enums": {},
+  "interfaces": {}
+}`).
+		WithExec([]string{"mkdir", "-p", "/work/out"}).
+		WithoutEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN").
+		WithoutEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST").
+		WithExec([]string{
+			"/work/codegen",
+			"--lang", "typescript",
+			"--output", "/work/out",
+			"generate-entrypoint",
+			"--typedef-json-path", "/work/typedef.json",
+			"--output-file", "__dagger.entrypoint.ts",
+			"--module-root", "/work",
+			"--sdk-import", "@dagger.io/dagger",
+			"--source-dir", "src",
+		})
+
+	entrypoint, err := ctr.File("/work/out/__dagger.entrypoint.ts").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, entrypoint, "async function dispatch()")
+}
+
+func (TypescriptSuite) TestGeneratedEntrypointDefaultExport(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=test", "--sdk=typescript")).
+		With(sdkSource("typescript", `
+import { func, object } from "@dagger.io/dagger"
+
+@object()
+export default class Test {
+  @func()
+  hello(): string {
+    return "hello"
+  }
+}
+`))
+
+	out, err := modGen.With(daggerQuery(`{hello}`)).Stdout(ctx)
+
+	require.NoError(t, err)
+	require.JSONEq(t, `{"hello":"hello"}`, out)
+}
+
+func (TypescriptSuite) TestNullableArgumentOmissionPassesNull(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=test", "--sdk=typescript")).
+		With(sdkSource("typescript", `
+import { func, object } from "@dagger.io/dagger"
+
+@object()
+export class Test {
+  @func()
+  nullableValue(x: string | null): string {
+    if (x === null) {
+      return "null"
+    }
+    if (x === undefined) {
+      return "undefined"
+    }
+    return x
+  }
+}
+`))
+
+	out, err := modGen.With(daggerQuery(`{nullableValue}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"nullableValue":"null"}`, out)
+}

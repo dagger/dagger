@@ -36,11 +36,15 @@ export function serializeModule(module: DaggerModule): unknown {
 function serializeObject(obj: DaggerObjectBase) {
   const isExported = (obj as DaggerObjectBase & { isExported?: boolean })
     .isExported
+  const isDefaultExport = (
+    obj as DaggerObjectBase & { isDefaultExport?: boolean }
+  ).isDefaultExport
   const ctor = obj._constructor
   return {
     name: obj.name,
     kind: obj.kind(),
     isExported: isExported !== false,
+    isDefaultExport: isDefaultExport === true,
     description: obj.description,
     deprecated: obj.deprecated,
     location: obj.getLocation(),

@@ -292,9 +292,17 @@ func (c *entrypointFuncCtx) argCoercionLine(arg *TypedefArgument) string {
 	if hasDefault(arg) && isPrimitive(arg.Type) {
 		return fmt.Sprintf("const %s = %s", v, c.coerceExpr(access, arg.Type))
 	}
+	// An omitted arg has no key in inputArgs, so `access` is undefined. For a
+	// nullable arg with no default, normalize that (and an explicit null) to
+	// null, matching the runtime loader contract — user code typed `T | null`
+	// must receive null, not undefined.
+	fallback := access
+	if arg.IsNullable && !hasDefault(arg) {
+		fallback = "null"
+	}
 	return fmt.Sprintf(
 		"const %s = %s === undefined || %s === null ? %s : %s",
-		v, access, access, access, c.coerceExpr(access, arg.Type),
+		v, access, access, fallback, c.coerceExpr(access, arg.Type),
 	)
 }
 
@@ -341,9 +349,12 @@ func (c *entrypointFuncCtx) plannedImports() []importLine {
 			groups[path] = g
 			order = append(order, path)
 		}
-		if obj.IsExported {
+		switch {
+		case obj.IsDefaultExport:
+			g.Default = obj.Name
+		case obj.IsExported:
 			g.Names = append(g.Names, obj.Name)
-		} else {
+		default:
 			g.SideEffect = true
 		}
 	}
@@ -358,6 +369,7 @@ func (c *entrypointFuncCtx) plannedImports() []importLine {
 type importLine struct {
 	From       string
 	Names      []string
+	Default    string // default import binding (e.g. `export default class Foo`)
 	Namespace  string
 	SideEffect bool
 }
