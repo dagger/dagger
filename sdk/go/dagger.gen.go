@@ -328,6 +328,12 @@ type StatID string
 // A unique identifier for an object.
 type SyncerID string
 
+// An arbitrary TOML-encoded value.
+type TOML string
+
+// A unique identifier for an object.
+type TOMLValueID string
+
 // A unique identifier for an object.
 type TerminalID string
 
@@ -869,6 +875,15 @@ func (r *Binding) AsString(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Retrieve the binding value, as type TOMLValue
+func (r *Binding) AsTOMLValue() *TOMLValue {
+	q := r.query.Select("asTOMLValue")
+
+	return &TOMLValue{
+		query: q,
+	}
 }
 
 // Retrieve the binding value, as type Up
@@ -6861,6 +6876,30 @@ func (r *Env) WithStringOutput(name string, description string) *Env {
 	}
 }
 
+// Create or update a binding of type TOMLValue in the environment
+func (r *Env) WithTOMLValueInput(name string, value *TOMLValue, description string) *Env {
+	assertNotNil("value", value)
+	q := r.query.Select("withTOMLValueInput")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
+// Declare a desired TOMLValue output to be assigned in the environment
+func (r *Env) WithTOMLValueOutput(name string, description string) *Env {
+	q := r.query.Select("withTOMLValueOutput")
+	q = q.Arg("name", name)
+	q = q.Arg("description", description)
+
+	return &Env{
+		query: q,
+	}
+}
+
 // Create or update a binding of type UpGroup in the environment
 func (r *Env) WithUpGroupInput(name string, value *UpGroup, description string) *Env {
 	assertNotNil("value", value)
@@ -7765,6 +7804,15 @@ func (r *File) AsJSON() *JSONValue {
 	q := r.query.Select("asJSON")
 
 	return &JSONValue{
+		query: q,
+	}
+}
+
+// Parse the file contents as TOML.
+func (r *File) AsTOML() *TOMLValue {
+	q := r.query.Select("asTOML")
+
+	return &TOMLValue{
 		query: q,
 	}
 }
@@ -14025,6 +14073,16 @@ func (r *Query) LoadSyncerFromID(id SyncerID) Syncer {
 	}
 }
 
+// Load a TOMLValue from its ID.
+func (r *Query) LoadTOMLValueFromID(id TOMLValueID) *TOMLValue {
+	q := r.query.Select("loadTOMLValueFromID")
+	q = q.Arg("id", id)
+
+	return &TOMLValue{
+		query: q,
+	}
+}
+
 // Load a Terminal from its ID.
 func (r *Query) LoadTerminalFromID(id TerminalID) *Terminal {
 	q := r.query.Select("loadTerminalFromID")
@@ -14230,6 +14288,15 @@ func (r *Query) SourceMap(filename string, line int, column int) *SourceMap {
 	q = q.Arg("column", column)
 
 	return &SourceMap{
+		query: q,
+	}
+}
+
+// Initialize a TOML value
+func (r *Query) TOML() *TOMLValue {
+	q := r.query.Select("toml")
+
+	return &TOMLValue{
 		query: q,
 	}
 }
@@ -15448,6 +15515,235 @@ func (r *Stat) Size(ctx context.Context) (int, error) {
 // AsNode returns this Stat as a Node.
 // This is a local type conversion — no GraphQL call.
 func (r *Stat) AsNode() Node {
+	return &NodeClient{
+		query: r.query,
+	}
+}
+
+type TOMLValue struct {
+	query *querybuilder.Selection
+
+	asBoolean *bool
+	asInteger *int
+	asString  *string
+	contents  *TOML
+	id        *ID
+}
+type WithTOMLValueFunc func(r *TOMLValue) *TOMLValue
+
+// With calls the provided function with current TOMLValue.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *TOMLValue) With(f WithTOMLValueFunc) *TOMLValue {
+	return f(r)
+}
+
+func (r *TOMLValue) WithGraphQLQuery(q *querybuilder.Selection) *TOMLValue {
+	return &TOMLValue{
+		query: q,
+	}
+}
+
+// Decode an array from TOML
+func (r *TOMLValue) AsArray(ctx context.Context) ([]TOMLValue, error) {
+	q := r.query.Select("asArray")
+
+	q = q.Select("id")
+
+	type asArray struct {
+		Id ID
+	}
+
+	convert := func(fields []asArray) []TOMLValue {
+		out := []TOMLValue{}
+
+		for i := range fields {
+			val := TOMLValue{id: &fields[i].Id}
+			val.query = selectNode(q.Root(), fields[i].Id, "TOMLValue")
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []asArray
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Decode a boolean from TOML
+func (r *TOMLValue) AsBoolean(ctx context.Context) (bool, error) {
+	if r.asBoolean != nil {
+		return *r.asBoolean, nil
+	}
+	q := r.query.Select("asBoolean")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Decode an integer from TOML
+func (r *TOMLValue) AsInteger(ctx context.Context) (int, error) {
+	if r.asInteger != nil {
+		return *r.asInteger, nil
+	}
+	q := r.query.Select("asInteger")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Decode a string from TOML
+func (r *TOMLValue) AsString(ctx context.Context) (string, error) {
+	if r.asString != nil {
+		return *r.asString, nil
+	}
+	q := r.query.Select("asString")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Return the value encoded as TOML
+func (r *TOMLValue) Contents(ctx context.Context) (TOML, error) {
+	if r.contents != nil {
+		return *r.contents, nil
+	}
+	q := r.query.Select("contents")
+
+	var response TOML
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Lookup the field at the given path, and return its value.
+func (r *TOMLValue) Field(path []string) *TOMLValue {
+	q := r.query.Select("field")
+	q = q.Arg("path", path)
+
+	return &TOMLValue{
+		query: q,
+	}
+}
+
+// List fields of the encoded table
+func (r *TOMLValue) Fields(ctx context.Context) ([]string, error) {
+	q := r.query.Select("fields")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this TOMLValue.
+func (r *TOMLValue) ID(ctx context.Context) (ID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *TOMLValue) XXX_GraphQLType() string {
+	return "TOMLValue"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *TOMLValue) XXX_GraphQLIDType() string {
+	return "ID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *TOMLValue) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *TOMLValue) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// Encode a boolean to TOML
+func (r *TOMLValue) NewBoolean(value bool) *TOMLValue {
+	q := r.query.Select("newBoolean")
+	q = q.Arg("value", value)
+
+	return &TOMLValue{
+		query: q,
+	}
+}
+
+// Encode an integer to TOML
+func (r *TOMLValue) NewInteger(value int) *TOMLValue {
+	q := r.query.Select("newInteger")
+	q = q.Arg("value", value)
+
+	return &TOMLValue{
+		query: q,
+	}
+}
+
+// Encode a string to TOML
+func (r *TOMLValue) NewString(value string) *TOMLValue {
+	q := r.query.Select("newString")
+	q = q.Arg("value", value)
+
+	return &TOMLValue{
+		query: q,
+	}
+}
+
+// Return a new TOML value, decoded from the given content
+func (r *TOMLValue) WithContents(contents TOML) *TOMLValue {
+	q := r.query.Select("withContents")
+	q = q.Arg("contents", contents)
+
+	return &TOMLValue{
+		query: q,
+	}
+}
+
+// Set a new field at the given path, preserving the existing formatting
+func (r *TOMLValue) WithField(path []string, value *TOMLValue) *TOMLValue {
+	assertNotNil("value", value)
+	q := r.query.Select("withField")
+	q = q.Arg("path", path)
+	q = q.Arg("value", value)
+
+	return &TOMLValue{
+		query: q,
+	}
+}
+
+// AsNode returns this TOMLValue as a Node.
+// This is a local type conversion — no GraphQL call.
+func (r *TOMLValue) AsNode() Node {
 	return &NodeClient{
 		query: r.query,
 	}

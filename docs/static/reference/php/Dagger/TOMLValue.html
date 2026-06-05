@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="robots" content="index, follow, all" />
-    <title>Dagger\File | API</title>
+    <title>Dagger\TOMLValue | API</title>
 
             <link rel="stylesheet" type="text/css" href="../css/bootstrap.min.css">
         <link rel="stylesheet" type="text/css" href="../css/bootstrap-theme.min.css">
@@ -19,7 +19,7 @@
 
     </head>
 
-    <body id="class" data-name="class:Dagger_File" data-root-path="../" data-search-index-url="../doctum-search.json">
+    <body id="class" data-name="class:Dagger_TOMLValue" data-root-path="../" data-search-index-url="../doctum-search.json">
             <div id="content">
         <div id="left-column">
                 <div id="control-panel">
@@ -75,26 +75,24 @@
                         <div class="namespace-breadcrumbs">
             <ol class="breadcrumb">
                 <li><span class="label label-default">class</span></li>
-                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>File</li>
+                        <li><a href="../Dagger.html">Dagger</a></li><li class="backslash">\</li><li>TOMLValue</li>
             </ol>
         </div>
                 <div id="page-content">
     <div class="page-header">
-        <h1>File    
+        <h1>TOMLValue    
             </h1>
     </div>
 
     
     <p>        class
-    <strong>File</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Exportable.html"><abbr title="Dagger\Exportable">Exportable</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>, <a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a>
+    <strong>TOMLValue</strong>        extends <a href="../Dagger/Client/AbstractObject.html"><abbr title="Dagger\Client\AbstractObject">AbstractObject</abbr></a>        implements        <a href="../Dagger/Client/IdAble.html"><abbr title="Dagger\Client\IdAble">IdAble</abbr></a>, <a href="../Dagger/Node.html"><abbr title="Dagger\Node">Node</abbr></a>
 </p>
 
         
     
         
 
-            <div class="description">
-            <p><p>A file.</p></p>                    </div>
             
         
     
@@ -143,22 +141,52 @@
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
+                    array
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_asEnvFile">asEnvFile</a>(bool|null $expand = null)
+                    <a href="#method_asArray">asArray</a>()
         
-                                            <p><p>Parse as an env file</p></p>                </div>
+                                            <p><p>Decode an array from TOML</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a>
+                    bool
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_asJSON">asJSON</a>()
+                    <a href="#method_asBoolean">asBoolean</a>()
         
-                                            <p><p>Parse the file contents as JSON.</p></p>                </div>
+                                            <p><p>Decode a boolean from TOML</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    int
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_asInteger">asInteger</a>()
+        
+                                            <p><p>Decode an integer from TOML</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    string
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_asString">asString</a>()
+        
+                                            <p><p>Decode a string from TOML</p></p>                </div>
+                <div class="col-md-2"></div>
+            </div>
+                    <div class="row">
+                <div class="col-md-2 type">
+                    <a href="../Dagger/TOML.html"><abbr title="Dagger\TOML">TOML</abbr></a>
+                </div>
+                <div class="col-md-8">
+                    <a href="#method_contents">contents</a>()
+        
+                                            <p><p>Return the value encoded as TOML</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -166,49 +194,19 @@
                     <a href="../Dagger/TOMLValue.html"><abbr title="Dagger\TOMLValue">TOMLValue</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_asTOML">asTOML</a>()
+                    <a href="#method_field">field</a>(array $path)
         
-                                            <p><p>Parse the file contents as TOML.</p></p>                </div>
+                                            <p><p>Lookup the field at the given path, and return its value.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
+                    array
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_chown">chown</a>(string $owner)
+                    <a href="#method_fields">fields</a>()
         
-                                            <p><p>Change the owner of the file recursively.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_contents">contents</a>(int|null $offsetLines = null, int|null $limitLines = null)
-        
-                                            <p><p>Retrieves the contents of the file.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_digest">digest</a>(bool|null $excludeMetadata = false)
-        
-                                            <p><p>Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    string
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_export">export</a>(string $path, bool|null $allowParentDirPath = false)
-        
-                                            <p><p>Writes the file to a file path on the host.</p></p>                </div>
+                                            <p><p>List fields of the encoded table</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
@@ -218,87 +216,57 @@
                 <div class="col-md-8">
                     <a href="#method_id">id</a>()
         
-                                            <p><p>A unique identifier for this File.</p></p>                </div>
+                                            <p><p>A unique identifier for this TOMLValue.</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    string
+                    <a href="../Dagger/TOMLValue.html"><abbr title="Dagger\TOMLValue">TOMLValue</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_name">name</a>()
+                    <a href="#method_newBoolean">newBoolean</a>(bool $value)
         
-                                            <p><p>Retrieves the name of the file.</p></p>                </div>
+                                            <p><p>Encode a boolean to TOML</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    array
+                    <a href="../Dagger/TOMLValue.html"><abbr title="Dagger\TOMLValue">TOMLValue</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_search">search</a>(string $pattern, bool|null $literal = false, bool|null $multiline = false, bool|null $dotall = false, bool|null $insensitive = false, bool|null $skipIgnored = false, bool|null $skipHidden = false, bool|null $filesOnly = false, int|null $limit = null, array|null $paths = [], array|null $globs = [])
+                    <a href="#method_newInteger">newInteger</a>(int $value)
         
-                                            <p><p>Searches for content matching the given regular expression or literal string.</p></p>                </div>
+                                            <p><p>Encode an integer to TOML</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    int
+                    <a href="../Dagger/TOMLValue.html"><abbr title="Dagger\TOMLValue">TOMLValue</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_size">size</a>()
+                    <a href="#method_newString">newString</a>(string $value)
         
-                                            <p><p>Retrieves the size of the file, in bytes.</p></p>                </div>
+                                            <p><p>Encode a string to TOML</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Stat.html"><abbr title="Dagger\Stat">Stat</abbr></a>
+                    <a href="../Dagger/TOMLValue.html"><abbr title="Dagger\TOMLValue">TOMLValue</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_stat">stat</a>()
+                    <a href="#method_withContents">withContents</a>(<a href="../Dagger/TOML.html"><abbr title="Dagger\TOML">TOML</abbr></a> $contents)
         
-                                            <p><p>Return file status</p></p>                </div>
+                                            <p><p>Return a new TOML value, decoded from the given content</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
                     <div class="row">
                 <div class="col-md-2 type">
-                    <a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a>
+                    <a href="../Dagger/TOMLValue.html"><abbr title="Dagger\TOMLValue">TOMLValue</abbr></a>
                 </div>
                 <div class="col-md-8">
-                    <a href="#method_sync">sync</a>()
+                    <a href="#method_withField">withField</a>(array $path, <a href="../Dagger/TOMLValue.html"><abbr title="Dagger\TOMLValue">TOMLValue</abbr></a> $value)
         
-                                            <p><p>Force evaluation in the engine.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_withName">withName</a>(string $name)
-        
-                                            <p><p>Retrieves this file with its name set to the given name.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_withReplaced">withReplaced</a>(string $search, string $replacement, bool|null $all = false, int|null $firstFrom = null)
-        
-                                            <p><p>Retrieves the file with content replaced with the given text.</p></p>                </div>
-                <div class="col-md-2"></div>
-            </div>
-                    <div class="row">
-                <div class="col-md-2 type">
-                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
-                </div>
-                <div class="col-md-8">
-                    <a href="#method_withTimestamps">withTimestamps</a>(int $timestamp)
-        
-                                            <p><p>Retrieves this file with its created/modified timestamps set to the given time.</p></p>                </div>
+                                            <p><p>Set a new field at the given path, preserving the existing formatting</p></p>                </div>
                 <div class="col-md-2"></div>
             </div>
             </div>
@@ -397,358 +365,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_asEnvFile">
-        <div class="location">at line 19</div>
-        <code>                    <a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a>
-    <strong>asEnvFile</strong>(bool|null $expand = null)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Parse as an env file</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>bool|null</td>
-                <td>$expand</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/EnvFile.html"><abbr title="Dagger\EnvFile">EnvFile</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_asJSON">
-        <div class="location">at line 31</div>
-        <code>                    <a href="../Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a>
-    <strong>asJSON</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Parse the file contents as JSON.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/JsonValue.html"><abbr title="Dagger\JsonValue">JsonValue</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_asTOML">
-        <div class="location">at line 40</div>
-        <code>                    <a href="../Dagger/TOMLValue.html"><abbr title="Dagger\TOMLValue">TOMLValue</abbr></a>
-    <strong>asTOML</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Parse the file contents as TOML.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/TOMLValue.html"><abbr title="Dagger\TOMLValue">TOMLValue</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_chown">
-        <div class="location">at line 49</div>
-        <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
-    <strong>chown</strong>(string $owner)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Change the owner of the file recursively.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$owner</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_contents">
-        <div class="location">at line 59</div>
-        <code>                    string
-    <strong>contents</strong>(int|null $offsetLines = null, int|null $limitLines = null)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Retrieves the contents of the file.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>int|null</td>
-                <td>$offsetLines</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>int|null</td>
-                <td>$limitLines</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_digest">
-        <div class="location">at line 74</div>
-        <code>                    string
-    <strong>digest</strong>(bool|null $excludeMetadata = false)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>bool|null</td>
-                <td>$excludeMetadata</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_export">
-        <div class="location">at line 86</div>
-        <code>                    string
-    <strong>export</strong>(string $path, bool|null $allowParentDirPath = false)
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Writes the file to a file path on the host.</p></p>                        
-        </div>
-        <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$path</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$allowParentDirPath</td>
-                <td></td>
-            </tr>
-            </table>
-
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_id">
-        <div class="location">at line 99</div>
-        <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
-    <strong>id</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>A unique identifier for this File.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td><a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a></td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_name">
-        <div class="location">at line 108</div>
-        <code>                    string
-    <strong>name</strong>()
-        </code>
-    </h3>
-    <div class="details">    
-    
-            
-
-        <div class="method-description">
-                            <p><p>Retrieves the name of the file.</p></p>                        
-        </div>
-        <div class="tags">
-            
-                            <h4>Return Value</h4>
-
-                    <table class="table table-condensed">
-        <tr>
-            <td>string</td>
-            <td></td>
-        </tr>
-    </table>
-
-            
-            
-            
-                    </div>
-    </div>
-
-            </div>
-                    <div class="method-item">
-                    <h3 id="method_search">
-        <div class="location">at line 119</div>
+                    <h3 id="method_asArray">
+        <div class="location">at line 16</div>
         <code>                    array
-    <strong>search</strong>(string $pattern, bool|null $literal = false, bool|null $multiline = false, bool|null $dotall = false, bool|null $insensitive = false, bool|null $skipIgnored = false, bool|null $skipHidden = false, bool|null $filesOnly = false, int|null $limit = null, array|null $paths = [], array|null $globs = [])
+    <strong>asArray</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -756,69 +376,9 @@
             
 
         <div class="method-description">
-                            <p><p>Searches for content matching the given regular expression or literal string.</p></p>                <p><p>Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.</p></p>        
+                            <p><p>Decode an array from TOML</p></p>                        
         </div>
         <div class="tags">
-                            <h4>Parameters</h4>
-
-                    <table class="table table-condensed">
-                    <tr>
-                <td>string</td>
-                <td>$pattern</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$literal</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$multiline</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$dotall</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$insensitive</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$skipIgnored</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$skipHidden</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$filesOnly</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>int|null</td>
-                <td>$limit</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>array|null</td>
-                <td>$paths</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>array|null</td>
-                <td>$globs</td>
-                <td></td>
-            </tr>
-            </table>
-
             
                             <h4>Return Value</h4>
 
@@ -837,10 +397,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_size">
-        <div class="location">at line 170</div>
-        <code>                    int
-    <strong>size</strong>()
+                    <h3 id="method_asBoolean">
+        <div class="location">at line 25</div>
+        <code>                    bool
+    <strong>asBoolean</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -848,7 +408,39 @@
             
 
         <div class="method-description">
-                            <p><p>Retrieves the size of the file, in bytes.</p></p>                        
+                            <p><p>Decode a boolean from TOML</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>bool</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_asInteger">
+        <div class="location">at line 34</div>
+        <code>                    int
+    <strong>asInteger</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Decode an integer from TOML</p></p>                        
         </div>
         <div class="tags">
             
@@ -869,10 +461,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_stat">
-        <div class="location">at line 179</div>
-        <code>                    <a href="../Dagger/Stat.html"><abbr title="Dagger\Stat">Stat</abbr></a>
-    <strong>stat</strong>()
+                    <h3 id="method_asString">
+        <div class="location">at line 43</div>
+        <code>                    string
+    <strong>asString</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -880,7 +472,7 @@
             
 
         <div class="method-description">
-                            <p><p>Return file status</p></p>                        
+                            <p><p>Decode a string from TOML</p></p>                        
         </div>
         <div class="tags">
             
@@ -888,7 +480,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Stat.html"><abbr title="Dagger\Stat">Stat</abbr></a></td>
+            <td>string</td>
             <td></td>
         </tr>
     </table>
@@ -901,10 +493,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_sync">
-        <div class="location">at line 188</div>
-        <code>                    <a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a>
-    <strong>sync</strong>()
+                    <h3 id="method_contents">
+        <div class="location">at line 52</div>
+        <code>                    <a href="../Dagger/TOML.html"><abbr title="Dagger\TOML">TOML</abbr></a>
+    <strong>contents</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -912,7 +504,7 @@
             
 
         <div class="method-description">
-                            <p><p>Force evaluation in the engine.</p></p>                        
+                            <p><p>Return the value encoded as TOML</p></p>                        
         </div>
         <div class="tags">
             
@@ -920,7 +512,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/Syncer.html"><abbr title="Dagger\Syncer">Syncer</abbr></a></td>
+            <td><a href="../Dagger/TOML.html"><abbr title="Dagger\TOML">TOML</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -933,10 +525,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_withName">
-        <div class="location">at line 198</div>
-        <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
-    <strong>withName</strong>(string $name)
+                    <h3 id="method_field">
+        <div class="location">at line 61</div>
+        <code>                    <a href="../Dagger/TOMLValue.html"><abbr title="Dagger\TOMLValue">TOMLValue</abbr></a>
+    <strong>field</strong>(array $path)
         </code>
     </h3>
     <div class="details">    
@@ -944,15 +536,15 @@
             
 
         <div class="method-description">
-                            <p><p>Retrieves this file with its name set to the given name.</p></p>                        
+                            <p><p>Lookup the field at the given path, and return its value.</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
 
                     <table class="table table-condensed">
                     <tr>
-                <td>string</td>
-                <td>$name</td>
+                <td>array</td>
+                <td>$path</td>
                 <td></td>
             </tr>
             </table>
@@ -962,7 +554,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></td>
+            <td><a href="../Dagger/TOMLValue.html"><abbr title="Dagger\TOMLValue">TOMLValue</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -975,10 +567,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_withReplaced">
-        <div class="location">at line 216</div>
-        <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
-    <strong>withReplaced</strong>(string $search, string $replacement, bool|null $all = false, int|null $firstFrom = null)
+                    <h3 id="method_fields">
+        <div class="location">at line 71</div>
+        <code>                    array
+    <strong>fields</strong>()
         </code>
     </h3>
     <div class="details">    
@@ -986,33 +578,79 @@
             
 
         <div class="method-description">
-                            <p><p>Retrieves the file with content replaced with the given text.</p></p>                <p><p>If 'all' is true, all occurrences of the pattern will be replaced.</p>
-<p>If 'firstAfter' is specified, only the first match starting at the specified line will be replaced.</p>
-<p>If neither are specified, and there are multiple matches for the pattern, this will error.</p>
-<p>If there are no matches for the pattern, this will error.</p></p>        
+                            <p><p>List fields of the encoded table</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td>array</td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_id">
+        <div class="location">at line 80</div>
+        <code>                    <a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a>
+    <strong>id</strong>()
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>A unique identifier for this TOMLValue.</p></p>                        
+        </div>
+        <div class="tags">
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/Id.html"><abbr title="Dagger\Id">Id</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_newBoolean">
+        <div class="location">at line 89</div>
+        <code>                    <a href="../Dagger/TOMLValue.html"><abbr title="Dagger\TOMLValue">TOMLValue</abbr></a>
+    <strong>newBoolean</strong>(bool $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Encode a boolean to TOML</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
 
                     <table class="table table-condensed">
                     <tr>
-                <td>string</td>
-                <td>$search</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>string</td>
-                <td>$replacement</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>bool|null</td>
-                <td>$all</td>
-                <td></td>
-            </tr>
-                    <tr>
-                <td>int|null</td>
-                <td>$firstFrom</td>
+                <td>bool</td>
+                <td>$value</td>
                 <td></td>
             </tr>
             </table>
@@ -1022,7 +660,7 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></td>
+            <td><a href="../Dagger/TOMLValue.html"><abbr title="Dagger\TOMLValue">TOMLValue</abbr></a></td>
             <td></td>
         </tr>
     </table>
@@ -1035,10 +673,10 @@
 
             </div>
                     <div class="method-item">
-                    <h3 id="method_withTimestamps">
-        <div class="location">at line 237</div>
-        <code>                    <a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a>
-    <strong>withTimestamps</strong>(int $timestamp)
+                    <h3 id="method_newInteger">
+        <div class="location">at line 99</div>
+        <code>                    <a href="../Dagger/TOMLValue.html"><abbr title="Dagger\TOMLValue">TOMLValue</abbr></a>
+    <strong>newInteger</strong>(int $value)
         </code>
     </h3>
     <div class="details">    
@@ -1046,7 +684,7 @@
             
 
         <div class="method-description">
-                            <p><p>Retrieves this file with its created/modified timestamps set to the given time.</p></p>                        
+                            <p><p>Encode an integer to TOML</p></p>                        
         </div>
         <div class="tags">
                             <h4>Parameters</h4>
@@ -1054,7 +692,7 @@
                     <table class="table table-condensed">
                     <tr>
                 <td>int</td>
-                <td>$timestamp</td>
+                <td>$value</td>
                 <td></td>
             </tr>
             </table>
@@ -1064,7 +702,138 @@
 
                     <table class="table table-condensed">
         <tr>
-            <td><a href="../Dagger/File.html"><abbr title="Dagger\File">File</abbr></a></td>
+            <td><a href="../Dagger/TOMLValue.html"><abbr title="Dagger\TOMLValue">TOMLValue</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_newString">
+        <div class="location">at line 109</div>
+        <code>                    <a href="../Dagger/TOMLValue.html"><abbr title="Dagger\TOMLValue">TOMLValue</abbr></a>
+    <strong>newString</strong>(string $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Encode a string to TOML</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>string</td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/TOMLValue.html"><abbr title="Dagger\TOMLValue">TOMLValue</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withContents">
+        <div class="location">at line 119</div>
+        <code>                    <a href="../Dagger/TOMLValue.html"><abbr title="Dagger\TOMLValue">TOMLValue</abbr></a>
+    <strong>withContents</strong>(<a href="../Dagger/TOML.html"><abbr title="Dagger\TOML">TOML</abbr></a> $contents)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Return a new TOML value, decoded from the given content</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td><a href="../Dagger/TOML.html"><abbr title="Dagger\TOML">TOML</abbr></a></td>
+                <td>$contents</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/TOMLValue.html"><abbr title="Dagger\TOMLValue">TOMLValue</abbr></a></td>
+            <td></td>
+        </tr>
+    </table>
+
+            
+            
+            
+                    </div>
+    </div>
+
+            </div>
+                    <div class="method-item">
+                    <h3 id="method_withField">
+        <div class="location">at line 129</div>
+        <code>                    <a href="../Dagger/TOMLValue.html"><abbr title="Dagger\TOMLValue">TOMLValue</abbr></a>
+    <strong>withField</strong>(array $path, <a href="../Dagger/TOMLValue.html"><abbr title="Dagger\TOMLValue">TOMLValue</abbr></a> $value)
+        </code>
+    </h3>
+    <div class="details">    
+    
+            
+
+        <div class="method-description">
+                            <p><p>Set a new field at the given path, preserving the existing formatting</p></p>                        
+        </div>
+        <div class="tags">
+                            <h4>Parameters</h4>
+
+                    <table class="table table-condensed">
+                    <tr>
+                <td>array</td>
+                <td>$path</td>
+                <td></td>
+            </tr>
+                    <tr>
+                <td><a href="../Dagger/TOMLValue.html"><abbr title="Dagger\TOMLValue">TOMLValue</abbr></a></td>
+                <td>$value</td>
+                <td></td>
+            </tr>
+            </table>
+
+            
+                            <h4>Return Value</h4>
+
+                    <table class="table table-condensed">
+        <tr>
+            <td><a href="../Dagger/TOMLValue.html"><abbr title="Dagger\TOMLValue">TOMLValue</abbr></a></td>
             <td></td>
         </tr>
     </table>

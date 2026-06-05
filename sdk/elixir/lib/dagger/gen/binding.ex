@@ -405,6 +405,20 @@ defmodule Dagger.Binding do
   end
 
   @doc """
+  Retrieve the binding value, as type TOMLValue
+  """
+  @spec as_toml_value(t()) :: Dagger.TOMLValue.t()
+  def as_toml_value(%__MODULE__{} = binding) do
+    query_builder =
+      binding.query_builder |> QB.select("asTOMLValue")
+
+    %Dagger.TOMLValue{
+      query_builder: query_builder,
+      client: binding.client
+    }
+  end
+
+  @doc """
   Retrieve the binding value, as type Up
   """
   @spec as_up(t()) :: Dagger.Up.t()

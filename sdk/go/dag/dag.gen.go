@@ -578,6 +578,12 @@ func LoadSyncerFromID(id dagger.SyncerID) dagger.Syncer {
 	return client.LoadSyncerFromID(id)
 }
 
+// Load a TOMLValue from its ID.
+func LoadTOMLValueFromID(id dagger.TOMLValueID) *dagger.TOMLValue {
+	client := initClient()
+	return client.LoadTOMLValueFromID(id)
+}
+
 // Load a Terminal from its ID.
 func LoadTerminalFromID(id dagger.TerminalID) *dagger.Terminal {
 	client := initClient()
@@ -674,6 +680,12 @@ func SetSecret(name string, plaintext string) *dagger.Secret {
 func SourceMap(filename string, line int, column int) *dagger.SourceMap {
 	client := initClient()
 	return client.SourceMap(filename, line, column)
+}
+
+// Initialize a TOML value
+func TOML() *dagger.TOMLValue {
+	client := initClient()
+	return client.TOML()
 }
 
 // Create a new TypeDef.
