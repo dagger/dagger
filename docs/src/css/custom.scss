@@ -35,8 +35,12 @@ $dagger-dark-mode-background-color: rgb(13, 12, 27);
   --ifm-font-family-base: "General Sans Medium",
     "General Sans Medium Placeholder", system-ui, -apple-system, Segoe UI,
     Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif, BlinkMacSystemFont;
-  --ifm-font-size-base: 18px;
+  --ifm-font-size-base: 16.2px; // 90% of the previous 18px
   --ifm-font-weight-base: 400;
+  // Inline <code> shipped with Infima's cramped 0.1rem padding, so the border
+  // practically touched the text. Give it room to breathe site-wide.
+  --ifm-code-padding-horizontal: 0.45rem;
+  --ifm-code-padding-vertical: 0.2rem;
   --ifm-background-color: #{$oat-color};
   --ifm-color-primary-light: #21798d;
   --ifm-color-primary: #21798d;
