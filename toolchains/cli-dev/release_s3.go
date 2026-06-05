@@ -75,14 +75,31 @@ func (cli *CliDev) publishReleaseArtifactsToS3(
 }
 
 const s3UploadScript = `set -eu
-while IFS='	' read -r dir file; do
-	[ -n "$dir" ] || continue
-	aws_args=""
-	if [ -n "${AWS_ENDPOINT_URL:-}" ]; then
-		aws_args="--endpoint-url $AWS_ENDPOINT_URL"
-	fi
-	# shellcheck disable=SC2086
-	aws $aws_args s3 cp "/dist/$file" "s3://$AWS_BUCKET/$dir/$file" \
-		--content-disposition "attachment;filename=$file"
-done < /upload-manifest
-`
+	while IFS='	' read -r dir file; do
+		[ -n "$dir" ] || continue
+		aws_args=""
+		if [ -n "${AWS_ENDPOINT_URL:-}" ]; then
+			aws_args="--endpoint-url $AWS_ENDPOINT_URL"
+		fi
+		case "$file" in
+			*.tar.gz)
+				content_type="application/x-gzip"
+				;;
+			*.zip)
+				content_type="application/zip"
+				;;
+			checksums.txt)
+				content_type="text/plain; charset=utf-8"
+				;;
+			*)
+				echo "unknown release artifact type: $file" >&2
+				exit 1
+				;;
+		esac
+		# shellcheck disable=SC2086
+		aws $aws_args s3 cp "/dist/$file" "s3://$AWS_BUCKET/$dir/$file" \
+			--content-disposition "attachment;filename=$file" \
+			--content-type "$content_type" \
+			--no-guess-mime-type
+	done < /upload-manifest
+	`

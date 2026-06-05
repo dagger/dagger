@@ -164,7 +164,7 @@ func (gh *githubClient) upsertRelease(
 	owner string,
 	repo string,
 	tag string,
-	commit string,
+	targetCommitish string,
 	notes string,
 ) (*githubRelease, error) {
 	existing, status, err := gh.releaseByTag(ctx, owner, repo, tag)
@@ -175,7 +175,7 @@ func (gh *githubClient) upsertRelease(
 	payload := map[string]any{
 		"tag_name":         tag,
 		"name":             tag,
-		"target_commitish": commit,
+		"target_commitish": targetCommitish,
 		"body":             notes,
 		"draft":            true,
 		"prerelease":       false,
@@ -322,7 +322,7 @@ func (cli *CliDev) publishRootGitHubRelease(
 		return err
 	}
 
-	release, err := gh.upsertRelease(ctx, githubOrgName, "dagger", tag, commit, notes)
+	release, err := gh.upsertRelease(ctx, githubOrgName, "dagger", tag, "main", notes)
 	if err != nil {
 		return err
 	}
@@ -475,22 +475,27 @@ func (cli *CliDev) publishPackageManagers(
 }
 
 func wingetPullRequestBody() string {
-	return `Checklist for Pull Requests
-- [x] Have you signed the [Contributor License Agreement](https://cla.opensource.microsoft.com/microsoft/winget-pkgs)?
-- [x] Is there a linked Issue?  If so, fill in the Issue number below.
-   <!-- Example: Resolves #328283 -->
+	return `<!-- PR Title Format: "New package: Publisher.Name version X.Y.Z" or "Update: Publisher.Name to X.Y.Z" -->
+
+## 📖 Description
+<!-- Describe what this PR changes. For manifest submissions, include the package name and version. -->
+
+## ✅ Checklist
+<!-- Place an "x" between the brackets to check an item. e.g: [x] -->
+
+- [x] Signed the [Contributor License Agreement](https://cla.opensource.microsoft.com)
+- [x] Linked to an issue (if applicable)
+  <!-- Example: Resolves #328283 -->
   - Resolves #[Issue Number]
 
-Manifests
-- [x] Have you checked that there aren't other open [pull requests](https://github.com/microsoft/winget-pkgs/pulls) for the same manifest update/change?
+## 📦 Manifest Checklist
+
+- [x] Checked that there aren't other open [pull requests](https://github.com/microsoft/winget-pkgs/pulls) for the same manifest update/change
 - [x] This PR only modifies one (1) manifest
-- [x] Have you [validated](https://github.com/microsoft/winget-pkgs/blob/master/doc/Authoring.md#validation) your manifest locally with ` + "`winget validate --manifest <path>`" + `?
-- [x] Have you tested your manifest locally with ` + "`winget install --manifest <path>`" + `?
-- [x] Does your manifest conform to the [1.12 schema](https://github.com/microsoft/winget-pkgs/tree/master/doc/manifest/schema/1.12.0)?
+- [x] Validated manifest locally with ` + "`winget validate --manifest <path>`" + ` ([validation guide](https://github.com/microsoft/winget-pkgs/blob/master/doc/ValidationFailureGuide.md))
+- [x] Tested manifest locally with ` + "`winget install --manifest <path>`" + `
+- [x] Manifest conforms to the [1.12 schema](https://github.com/microsoft/winget-pkgs/tree/master/doc/manifest/schema/1.12.0)
 
-Note: ` + "`<path>`" + ` is the directory's name containing the manifest you're submitting.
-
----
-
+> **Note:** ` + "`<path>`" + ` is the directory containing the manifest you're submitting.
 ###### Automated with Dagger release tooling.`
 }
