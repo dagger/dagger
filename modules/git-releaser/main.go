@@ -77,17 +77,9 @@ func (gitrel *GitReleaser) Release(
 	base := dag.
 		Alpine(dagger.AlpineOpts{
 			Branch:   gitrel.AlpineVersion,
-			Packages: []string{"git", "go", "python3"},
+			Packages: []string{"git", "git-filter-repo", "go", "python3"},
 		}).
 		Container()
-
-	// git-filter-repo is a better alternative to git-filter-branch
-	gitFilterRepoVersion := "v2.47.0"
-	base = base.WithFile(
-		"/usr/local/bin/git-filter-repo",
-		dag.HTTP(fmt.Sprintf("https://raw.githubusercontent.com/newren/git-filter-repo/%s/git-filter-repo", gitFilterRepoVersion)),
-		dagger.ContainerWithFileOpts{Permissions: 0755},
-	)
 
 	if !dryRun && githubToken != nil {
 		githubTokenRaw, err := githubToken.Plaintext(ctx)
