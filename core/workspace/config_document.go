@@ -8,6 +8,8 @@ import (
 
 	"github.com/creachadair/tomledit"
 	neontoml "github.com/neongreen/mono/lib/toml"
+
+	"github.com/dagger/dagger/core/tomlpath"
 )
 
 // ConstructorArgHint captures a constructor-backed setting hint for a module.
@@ -415,37 +417,7 @@ func findSectionInsertionPoint(lines []string, sectionHeader string) int {
 
 // FormatConfigPathSegment formats one TOML dotted-key path segment.
 func FormatConfigPathSegment(segment string) string {
-	if isBareConfigPathSegment(segment) {
-		return segment
-	}
-	var b strings.Builder
-	b.WriteByte('"')
-	for _, r := range segment {
-		switch r {
-		case '\b':
-			b.WriteString(`\b`)
-		case '\t':
-			b.WriteString(`\t`)
-		case '\n':
-			b.WriteString(`\n`)
-		case '\f':
-			b.WriteString(`\f`)
-		case '\r':
-			b.WriteString(`\r`)
-		case '"':
-			b.WriteString(`\"`)
-		case '\\':
-			b.WriteString(`\\`)
-		default:
-			if r < 0x20 || r == 0x7f {
-				fmt.Fprintf(&b, `\u%04X`, r)
-			} else {
-				b.WriteRune(r)
-			}
-		}
-	}
-	b.WriteByte('"')
-	return b.String()
+	return tomlpath.FormatSegment(segment)
 }
 
 func formatConfigPathSegment(segment string) string {
@@ -453,21 +425,5 @@ func formatConfigPathSegment(segment string) string {
 }
 
 func isBareConfigPathSegment(segment string) bool {
-	if segment == "" {
-		return false
-	}
-	for i := 0; i < len(segment); i++ {
-		if !isBareConfigPathChar(segment[i]) {
-			return false
-		}
-	}
-	return true
-}
-
-func isBareConfigPathChar(c byte) bool {
-	return 'A' <= c && c <= 'Z' ||
-		'a' <= c && c <= 'z' ||
-		'0' <= c && c <= '9' ||
-		c == '_' ||
-		c == '-'
+	return tomlpath.IsBareSegment(segment)
 }

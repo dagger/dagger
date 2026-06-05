@@ -1,0 +1,6 @@
+kind: Added
+body: Added File.asTOML and a TOML value type for reading and editing TOML content (preserving existing formatting), mirroring File.asJSON
+time: 2026-06-05T11:44:08.203361551+02:00
+custom:
+    Author: eunomie
+    PR: ""
