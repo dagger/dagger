@@ -42,6 +42,7 @@ for (const name of coreTypes) {
 title: "${name}"
 description: "${name} API reference, generated from the Dagger GraphQL schema."
 sidebar_position: ${position++}
+hide_table_of_contents: true
 ---
 
 ${banner}

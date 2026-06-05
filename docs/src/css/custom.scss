@@ -1002,3 +1002,12 @@ html[data-theme="dark"] {
 .menu__link {
   font-size: 0.875rem !important; // 14px
 }
+
+/* ── API reference pages ──────────────────────────────────────────
+   The generated API reference (docs/src/components/api) is dense with
+   signatures and argument tables, so give it the full reading width instead
+   of the default centered column. Scoped via :has() to the API pages only, so
+   the rest of the docs are unaffected. */
+.main-wrapper:has(.api-reference) .container {
+  max-width: none;
+}

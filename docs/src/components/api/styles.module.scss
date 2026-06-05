@@ -5,6 +5,16 @@
 .apiType {
   --api-border: var(--ifm-color-emphasis-200);
   --api-muted: var(--ifm-color-emphasis-600);
+  // A warm tint that sits on the docs' cream background instead of the cold
+  // Infima grays. Translucent black darkens the cream into a warm beige; dark
+  // mode uses a translucent white instead (see below).
+  --api-tint: rgba(0, 0, 0, 0.04);
+  --api-tint-hover: rgba(0, 0, 0, 0.07);
+}
+
+:global(html[data-theme="dark"]) .apiType {
+  --api-tint: rgba(255, 255, 255, 0.05);
+  --api-tint-hover: rgba(255, 255, 255, 0.09);
 }
 
 .typeDesc {
@@ -17,49 +27,55 @@
   margin-bottom: 2rem;
 
   code {
-    background: var(--ifm-color-emphasis-100);
+    background: var(--api-tint);
+    border: none;
   }
 }
 
 /* ── quick-scan index ───────────────────────────────────────────── */
+// A plain two-column glossary: field names hug the right edge of their column,
+// sitting flush against their descriptions. No borders, zebra, or chrome — and
+// as a <dl> it dodges the site-wide `.markdown table` styling entirely.
 .index {
-  display: table;
-  width: 100%;
-  margin: 0 0 2.5rem;
-  border: 1px solid var(--api-border);
-  border-radius: var(--ifm-global-radius);
-  border-collapse: separate;
-  border-spacing: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 1.25rem;
+  row-gap: 0.4rem;
+  align-items: baseline;
+  margin: 0 0 2.25rem;
   font-size: 0.9rem;
-
-  td {
-    border: none;
-    border-top: 1px solid var(--api-border);
-    padding: 0.4rem 0.85rem;
-  }
-  tr:first-child td {
-    border-top: none;
-  }
-  tr:nth-child(even) {
-    background: var(--ifm-color-emphasis-100);
-  }
+  line-height: 1.5;
 }
 
 .indexName {
+  grid-column: 1;
+  margin: 0;
+  text-align: right;
   white-space: nowrap;
-  width: 1%;
 
   a {
     text-decoration: none;
   }
+  // A clean code-link chip: monospace in the link color, no border, with a
+  // soft tint on hover. The same treatment as .typeLink below.
   code {
+    border: none;
     background: transparent;
-    padding-left: 0;
+    padding: 0.05rem 0.35rem;
+    border-radius: var(--ifm-code-border-radius);
+    color: var(--ifm-color-primary);
+    font-weight: 600;
+    transition: background-color 0.15s ease;
+  }
+  a:hover code {
+    background: var(--api-tint-hover);
   }
 }
 
 .indexDesc {
-  color: var(--api-muted);
+  grid-column: 2;
+  margin: 0;
+  color: var(--ifm-color-emphasis-800);
 }
 
 /* ── field cards ────────────────────────────────────────────────── */
@@ -72,7 +88,7 @@
 .card {
   border: 1px solid var(--api-border);
   border-radius: var(--ifm-global-radius);
-  padding: 1.1rem 1.3rem 0.4rem;
+  overflow: hidden; // let the heading band honor the rounded corners
   scroll-margin-top: var(--ifm-navbar-height);
 
   // light up the card whose anchor you just followed
@@ -82,24 +98,37 @@
   }
 }
 
+// Full-width heading band: a warm tinted strip with an accent rule on the left,
+// so each field reads as a titled section and the cards separate cleanly.
 .cardHeading {
-  margin: 0 0 0.5rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.7rem 1.2rem;
+  background: var(--api-tint);
+  border-bottom: 1px solid var(--api-border);
+  border-left: 3px solid var(--ifm-color-primary);
   font-size: 1rem;
   font-weight: 600;
   line-height: 1.6;
 
-  // the signature itself carries the styling; keep the heading chrome quiet
   &:hover .hash-link::before {
     opacity: 1;
   }
 }
 
+.cardBody {
+  padding: 1rem 1.2rem 0.4rem;
+}
+
 /* ── signature ──────────────────────────────────────────────────── */
+// On the heading band the signature is the heading itself, so it carries no
+// code-chip background of its own.
 .signature {
-  background: var(--ifm-code-background);
+  background: transparent;
   border: none;
-  padding: 0.15rem 0.45rem;
-  border-radius: var(--ifm-code-border-radius);
+  padding: 0;
   font-size: 0.95rem;
   white-space: normal;
 }
@@ -123,21 +152,41 @@
 
 .typeLink {
   font-weight: 600;
+  color: var(--ifm-color-primary);
   text-decoration: none;
-  border-bottom: 1px dashed currentColor;
+  text-underline-offset: 0.15em;
+
+  &:hover {
+    text-decoration: underline;
+  }
 }
 
 .typeName {
   color: var(--ifm-color-info-dark, #1e88a8);
 }
 
-// wrapped, one-per-line argument list for long signatures
-.argsBlock {
+// wrapped, one-per-line argument list for long signatures:
+//
+//   withNewFile(
+//     path: String!,
+//     contents: String!,
+//     permissions: Int = 420,
+//   ): Directory!
+//
+// inline-block gives the <code> its own block context so the argument lines
+// break cleanly beneath the opening paren instead of running on.
+.signatureMultiline {
   display: inline-block;
+}
+.argsBlock {
+  display: block;
 }
 .argLine {
   display: block;
-  padding-left: 1.5rem;
+  padding-left: 2ch;
+}
+.retLine {
+  display: block;
 }
 
 /* ── badges ─────────────────────────────────────────────────────── */
@@ -214,6 +263,7 @@
   }
   code {
     background: transparent;
+    border: none;
     padding: 0;
   }
 }
