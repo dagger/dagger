@@ -27,61 +27,66 @@ export default function FieldCard({
         />
       </h3>
 
-      {(field.experimental || field.deprecated) && (
-        <div className={styles.badges}>
-          {field.experimental && (
-            <Badge variant="experimental">Experimental</Badge>
-          )}
-          {field.deprecated && <Badge variant="deprecated">Deprecated</Badge>}
-        </div>
-      )}
+      <div className={styles.cardBody}>
+        {(field.experimental || field.deprecated) && (
+          <div className={styles.badges}>
+            {field.experimental && (
+              <Badge variant="experimental">Experimental</Badge>
+            )}
+            {field.deprecated && <Badge variant="deprecated">Deprecated</Badge>}
+          </div>
+        )}
 
-      <Markdown className={styles.cardDesc}>{field.description}</Markdown>
+        <Markdown className={styles.cardDesc}>{field.description}</Markdown>
 
-      {field.deprecated?.reason && (
-        <p className={styles.deprecatedNote}>
-          <strong>Deprecated:</strong>{" "}
-          <MarkdownInline>{field.deprecated.reason}</MarkdownInline>
-        </p>
-      )}
-      {field.experimental?.reason && (
-        <p className={styles.experimentalNote}>
-          <strong>Experimental:</strong>{" "}
-          <MarkdownInline>{field.experimental.reason}</MarkdownInline>
-        </p>
-      )}
+        {field.deprecated?.reason && (
+          <p className={styles.deprecatedNote}>
+            <strong>Deprecated:</strong>{" "}
+            <MarkdownInline>{field.deprecated.reason}</MarkdownInline>
+          </p>
+        )}
+        {field.experimental?.reason && (
+          <p className={styles.experimentalNote}>
+            <strong>Experimental:</strong>{" "}
+            <MarkdownInline>{field.experimental.reason}</MarkdownInline>
+          </p>
+        )}
 
-      {field.args.length > 0 && (
-        <table className={styles.args}>
-          <thead>
-            <tr>
-              <th>Argument</th>
-              <th>Type</th>
-              <th>Description</th>
-            </tr>
-          </thead>
-          <tbody>
-            {field.args.map((arg) => (
-              <tr key={arg.name}>
-                <td>
-                  <code className={styles.argName}>{arg.name}</code>
-                </td>
-                <td>
-                  <code>
-                    <TypeRefView type={arg.type} />
-                    {arg.defaultValue !== undefined && (
-                      <span className={styles.literal}> = {arg.defaultValue}</span>
-                    )}
-                  </code>
-                </td>
-                <td>
-                  <MarkdownInline>{arg.description}</MarkdownInline>
-                </td>
+        {field.args.length > 0 && (
+          <table className={styles.args}>
+            <thead>
+              <tr>
+                <th>Argument</th>
+                <th>Type</th>
+                <th>Description</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+            </thead>
+            <tbody>
+              {field.args.map((arg) => (
+                <tr key={arg.name}>
+                  <td>
+                    <code className={styles.argName}>{arg.name}</code>
+                  </td>
+                  <td>
+                    <code>
+                      <TypeRefView type={arg.type} />
+                      {arg.defaultValue !== undefined && (
+                        <span className={styles.literal}>
+                          {" "}
+                          = {arg.defaultValue}
+                        </span>
+                      )}
+                    </code>
+                  </td>
+                  <td>
+                    <MarkdownInline>{arg.description}</MarkdownInline>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }

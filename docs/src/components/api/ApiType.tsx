@@ -36,7 +36,7 @@ function ImplementsLine({ names }: { names: string[] }): JSX.Element | null {
 export default function ApiType({ name }: { name: string }): JSX.Element {
   const type = useApiType(name);
   return (
-    <div className={styles.apiType}>
+    <div className={`api-reference ${styles.apiType}`}>
       <Markdown className={styles.typeDesc}>{type.description}</Markdown>
       <ImplementsLine names={type.implements} />
 
