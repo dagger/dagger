@@ -79,6 +79,18 @@ func (m *JavaSdk) Codegen(
 	if err := m.setModuleConfig(ctx, modSource); err != nil {
 		return nil, err
 	}
+
+	// New-style modules own their codegen in dagger/java-sdk: the engine must
+	// not regenerate or re-vendor anything here, so `dagger develop` is a no-op
+	// on them. Return the existing sources unchanged.
+	if newStyle, err := m.newStyleModule(ctx, modSource); err != nil {
+		return nil, err
+	} else if newStyle {
+		return dag.GeneratedCode(
+			dag.Directory().WithDirectory("/", modSource.ContextDirectory()),
+		), nil
+	}
+
 	mvnCtr, err := m.codegenBase(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, err
