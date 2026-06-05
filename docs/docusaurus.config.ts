@@ -4,6 +4,7 @@ import { themes as prismThemes } from "prism-react-renderer";
 import remarkCodeImport from "remark-code-import";
 import remarkTemplate from "./plugins/remark-template";
 import llmsTxtPlugin from "./plugins/llms-txt-plugin";
+import daggerApiReference from "./plugins/dagger-api-reference";
 import path from "path";
 
 import { daggerVersion } from "./current_docs/partials/version";
@@ -140,6 +141,9 @@ const config: Config = {
     "docusaurus-plugin-image-zoom",
     // Thanks to @jharrell and Prisma team. Apache-2.0 content
     [llmsTxtPlugin, { docsPath }],
+    // Parses docs-graphql/schema.graphqls into the model the API reference
+    // pages (current_docs/reference/api) render from.
+    daggerApiReference,
     [
       "posthog-docusaurus",
       {

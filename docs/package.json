@@ -14,6 +14,7 @@
     "write-translations": "docusaurus write-translations",
     "write-heading-ids": "docusaurus write-heading-ids",
     "graphql-docs": "spectaql ./docs-graphql/config.yml -t ./static/api/reference",
+    "generate:api": "node plugins/dagger-api-reference/generate-stubs.js",
     "lint": "markdownlint -c ../.markdownlint.yaml ./docs",
     "lint:fix": "markdownlint -c ../.markdownlint.yaml --fix ."
   },
@@ -32,6 +33,7 @@
     "docusaurus-plugin-image-zoom": "^3.0.1",
     "docusaurus-plugin-sass": "^0.2.6",
     "docusaurus-plugin-typedoc": "^1.4.2",
+    "graphql": "^16",
     "posthog-docusaurus": "^2.0.5",
     "posthog-js": "^1.364.7",
     "prism-react-renderer": "^2.4.1",
