@@ -42,10 +42,6 @@ type githubRelease struct {
 	UploadURL string `json:"upload_url"`
 }
 
-type githubRepo struct {
-	DefaultBranch string `json:"default_branch"`
-}
-
 type githubRef struct {
 	Object struct {
 		SHA string `json:"sha"`
@@ -223,29 +219,6 @@ func (gh *githubClient) deleteReleaseAsset(ctx context.Context, owner string, re
 	return err
 }
 
-func (gh *githubClient) ensureBranch(ctx context.Context, owner string, repo string, branch string) error {
-	if _, err := gh.requestJSON(ctx, http.MethodGet, githubPath("repos", owner, repo, "branches", branch), nil, nil); err == nil {
-		return nil
-	} else if !githubStatus(err, http.StatusNotFound) {
-		return err
-	}
-
-	base, err := gh.defaultBranch(ctx, owner, repo)
-	if err != nil {
-		return err
-	}
-
-	var ref githubRef
-	if _, err := gh.requestJSON(ctx, http.MethodGet, githubPath("repos", owner, repo, "git", "ref", "heads", base), nil, &ref); err != nil {
-		return err
-	}
-	_, err = gh.requestJSON(ctx, http.MethodPost, githubPath("repos", owner, repo, "git", "refs"), map[string]string{
-		"ref": "refs/heads/" + branch,
-		"sha": ref.Object.SHA,
-	}, nil)
-	return err
-}
-
 func (gh *githubClient) ensureBranchFrom(ctx context.Context, owner string, repo string, branch string, baseOwner string, baseRepo string, baseBranch string) error {
 	if _, err := gh.requestJSON(ctx, http.MethodGet, githubPath("repos", owner, repo, "branches", branch), nil, nil); err == nil {
 		return nil
@@ -262,20 +235,6 @@ func (gh *githubClient) ensureBranchFrom(ctx context.Context, owner string, repo
 		"sha": ref.Object.SHA,
 	}, nil)
 	return err
-}
-
-func (gh *githubClient) defaultBranch(ctx context.Context, owner string, repo string) (string, error) {
-	var response githubRepo
-	if _, err := gh.requestJSON(ctx, http.MethodGet, githubPath("repos", owner, repo), nil, &response); err != nil {
-		return "", err
-	}
-	if response.DefaultBranch != "" {
-		return response.DefaultBranch, nil
-	}
-	if repo == "winget-pkgs" {
-		return "master", nil
-	}
-	return "main", nil
 }
 
 func (gh *githubClient) writeContent(
@@ -309,13 +268,6 @@ func (gh *githubClient) writeContent(
 
 	putPath := githubPath("repos", owner, repo, "contents") + "/" + url.PathEscape(path)
 	_, err = gh.requestJSON(ctx, http.MethodPut, putPath, payload, nil)
-	return err
-}
-
-func (gh *githubClient) mergeUpstream(ctx context.Context, owner string, repo string, branch string) error {
-	_, err := gh.requestJSON(ctx, http.MethodPost, githubPath("repos", owner, repo, "merge-upstream"), map[string]string{
-		"branch": branch,
-	}, nil)
 	return err
 }
 
