@@ -1558,6 +1558,36 @@
 		},
 		{
 			"t": "C",
+			"n": "Dagger\\TOML",
+			"p": "Dagger/TOML.html",
+			"d": "<p>An arbitrary TOML-encoded value.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\TOMLValue",
+			"p": "Dagger/TOMLValue.html",
+			"d": null,
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
+			"n": "Dagger\\TOMLValueId",
+			"p": "Dagger/TOMLValueId.html",
+			"d": "<p>A unique identifier for an object.</p>",
+			"f": {
+				"n": "Dagger",
+				"p": "Dagger.html"
+			}
+		},
+		{
+			"t": "C",
 			"n": "Dagger\\Terminal",
 			"p": "Dagger/Terminal.html",
 			"d": "<p>An interactive terminal that clients can connect to.</p>",
@@ -2055,6 +2085,12 @@
 			"n": "Dagger\\Binding::asString",
 			"p": "Dagger/Binding.html#method_asString",
 			"d": "<p>Returns the binding's string value</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Binding::asTOMLValue",
+			"p": "Dagger/Binding.html#method_asTOMLValue",
+			"d": "<p>Retrieve the binding value, as type TOMLValue</p>"
 		},
 		{
 			"t": "M",
@@ -2886,6 +2922,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Client::loadTOMLValueFromID",
+			"p": "Dagger/Client.html#method_loadTOMLValueFromID",
+			"d": "<p>Load a TOMLValue from its ID.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Client::loadTerminalFromID",
 			"p": "Dagger/Client.html#method_loadTerminalFromID",
 			"d": "<p>Load a Terminal from its ID.</p>"
@@ -2991,6 +3033,12 @@
 			"n": "Dagger\\Client::sourceMap",
 			"p": "Dagger/Client.html#method_sourceMap",
 			"d": "<p>Creates source map metadata.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Client::toml",
+			"p": "Dagger/Client.html#method_toml",
+			"d": "<p>Initialize a TOML value</p>"
 		},
 		{
 			"t": "M",
@@ -4584,6 +4632,18 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Env::withTOMLValueInput",
+			"p": "Dagger/Env.html#method_withTOMLValueInput",
+			"d": "<p>Create or update a binding of type TOMLValue in the environment</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\Env::withTOMLValueOutput",
+			"p": "Dagger/Env.html#method_withTOMLValueOutput",
+			"d": "<p>Declare a desired TOMLValue output to be assigned in the environment</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Env::withUpGroupInput",
 			"p": "Dagger/Env.html#method_withUpGroupInput",
 			"d": "<p>Create or update a binding of type UpGroup in the environment</p>"
@@ -4875,6 +4935,12 @@
 			"n": "Dagger\\File::asJSON",
 			"p": "Dagger/File.html#method_asJSON",
 			"d": "<p>Parse the file contents as JSON.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\File::asTOML",
+			"p": "Dagger/File.html#method_asTOML",
+			"d": "<p>Parse the file contents as TOML.</p>"
 		},
 		{
 			"t": "M",
@@ -6741,6 +6807,84 @@
 			"n": "Dagger\\SyncerClient::sync",
 			"p": "Dagger/SyncerClient.html#method_sync",
 			"d": null
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TOMLValue::asArray",
+			"p": "Dagger/TOMLValue.html#method_asArray",
+			"d": "<p>Decode an array from TOML</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TOMLValue::asBoolean",
+			"p": "Dagger/TOMLValue.html#method_asBoolean",
+			"d": "<p>Decode a boolean from TOML</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TOMLValue::asInteger",
+			"p": "Dagger/TOMLValue.html#method_asInteger",
+			"d": "<p>Decode an integer from TOML</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TOMLValue::asString",
+			"p": "Dagger/TOMLValue.html#method_asString",
+			"d": "<p>Decode a string from TOML</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TOMLValue::contents",
+			"p": "Dagger/TOMLValue.html#method_contents",
+			"d": "<p>Return the value encoded as TOML</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TOMLValue::field",
+			"p": "Dagger/TOMLValue.html#method_field",
+			"d": "<p>Lookup the field at the given path, and return its value.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TOMLValue::fields",
+			"p": "Dagger/TOMLValue.html#method_fields",
+			"d": "<p>List fields of the encoded table</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TOMLValue::id",
+			"p": "Dagger/TOMLValue.html#method_id",
+			"d": "<p>A unique identifier for this TOMLValue.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TOMLValue::newBoolean",
+			"p": "Dagger/TOMLValue.html#method_newBoolean",
+			"d": "<p>Encode a boolean to TOML</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TOMLValue::newInteger",
+			"p": "Dagger/TOMLValue.html#method_newInteger",
+			"d": "<p>Encode an integer to TOML</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TOMLValue::newString",
+			"p": "Dagger/TOMLValue.html#method_newString",
+			"d": "<p>Encode a string to TOML</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TOMLValue::withContents",
+			"p": "Dagger/TOMLValue.html#method_withContents",
+			"d": "<p>Return a new TOML value, decoded from the given content</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\TOMLValue::withField",
+			"p": "Dagger/TOMLValue.html#method_withField",
+			"d": "<p>Set a new field at the given path, preserving the existing formatting</p>"
 		},
 		{
 			"t": "M",

@@ -983,6 +983,16 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
+     * Load a TOMLValue from its ID.
+     */
+    public function loadTOMLValueFromID(TOMLValueId $id): TOMLValue
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadTOMLValueFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\TOMLValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a Terminal from its ID.
      */
     public function loadTerminalFromID(TerminalId $id): Terminal
@@ -1178,6 +1188,15 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
         $innerQueryBuilder->setArgument('line', $line);
         $innerQueryBuilder->setArgument('column', $column);
         return new \Dagger\SourceMap($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Initialize a TOML value
+     */
+    public function toml(): TOMLValue
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('toml');
+        return new \Dagger\TOMLValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

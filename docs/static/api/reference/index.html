@@ -59,6 +59,7 @@
               <li><a href="#query-secret">secret</a></li>
               <li><a href="#query-setSecret">setSecret</a></li>
               <li><a href="#query-sourceMap">sourceMap</a></li>
+              <li><a href="#query-toml">toml</a></li>
               <li><a href="#query-typeDef">typeDef</a></li>
               <li><a href="#query-version">version</a></li>
             </ul>
@@ -150,6 +151,8 @@
               <li><a href="#definition-Stat">Stat</a></li>
               <li><a href="#definition-String">String</a></li>
               <li><a href="#definition-Syncer">Syncer</a></li>
+              <li><a href="#definition-TOML">TOML</a></li>
+              <li><a href="#definition-TOMLValue">TOMLValue</a></li>
               <li><a href="#definition-Terminal">Terminal</a></li>
               <li><a href="#definition-TypeDef">TypeDef</a></li>
               <li><a href="#definition-TypeDefKind">TypeDefKind</a></li>
@@ -1832,6 +1835,39 @@
               </div>
             </div>
           </section>
+          <section id="query-toml" class="operation operation-query" data-traverse-target="query-toml">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>toml</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Initialize a TOML value</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-TOMLValue"><code>TOMLValue!</code></a>
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-typeDef" class="operation operation-query" data-traverse-target="query-typeDef">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -2133,6 +2169,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asString" href="#Binding-asString"><code>asString</code></a> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span> </td>
                         <td> Returns the binding's string value </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Binding-asTOMLValue" href="#Binding-asTOMLValue"><code>asTOMLValue</code></a> - <span class="property-type"><a href="#definition-TOMLValue"><code>TOMLValue!</code></a></span> </td>
+                        <td> Retrieve the binding value, as type TOMLValue </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Binding-asUp" href="#Binding-asUp"><code>asUp</code></a> - <span class="property-type"><a href="#definition-Up"><code>Up!</code></a></span> </td>
@@ -7235,6 +7275,52 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withTOMLValueInput" href="#Env-withTOMLValueInput"><code>withTOMLValueInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Create or update a binding of type TOMLValue in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span></h6>
+                                <p>The TOMLValue value to assign to the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The purpose of the input</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Env-withTOMLValueOutput" href="#Env-withTOMLValueOutput"><code>withTOMLValueOutput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
+                        <td> Declare a desired TOMLValue output to be assigned in the environment </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the binding</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>A description of the desired value of the binding</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Env-withUpGroupInput" href="#Env-withUpGroupInput"><code>withUpGroupInput</code></a> - <span class="property-type"><a href="#definition-Env"><code>Env!</code></a></span> </td>
                         <td> Create or update a binding of type UpGroup in the environment </td>
                       </tr>
@@ -8136,6 +8222,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="File-asJSON" href="#File-asJSON"><code>asJSON</code></a> - <span class="property-type"><a href="#definition-JSONValue"><code>JSONValue!</code></a></span> </td>
                         <td> Parse the file contents as JSON. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="File-asTOML" href="#File-asTOML"><code>asTOML</code></a> - <span class="property-type"><a href="#definition-TOMLValue"><code>TOMLValue!</code></a></span> </td>
+                        <td> Parse the file contents as TOML. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="File-chown" href="#File-chown"><code>chown</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
@@ -11725,6 +11815,11 @@
                       </tr>
                       <tr>
                         <td>
+                          <p><a href="#definition-TOMLValue"><code>TOMLValue</code></a></p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
                           <p><a href="#definition-Terminal"><code>Terminal</code></a></p>
                         </td>
                       </tr>
@@ -12677,6 +12772,177 @@
                       <tr>
                         <td>
                           <p><a href="#definition-Terminal"><code>Terminal</code></a></p>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-TOML" class="definition definition-scalar" data-traverse-target="definition-TOML">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">TOML</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>An arbitrary TOML-encoded value.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-TOMLValue" class="definition definition-object" data-traverse-target="definition-TOMLValue">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">TOMLValue</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="TOMLValue-asArray" href="#TOMLValue-asArray"><code>asArray</code></a> - <span class="property-type"><a href="#definition-TOMLValue"><code>[TOMLValue!]!</code></a></span> </td>
+                        <td> Decode an array from TOML </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="TOMLValue-asBoolean" href="#TOMLValue-asBoolean"><code>asBoolean</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> Decode a boolean from TOML </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="TOMLValue-asInteger" href="#TOMLValue-asInteger"><code>asInteger</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> Decode an integer from TOML </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="TOMLValue-asString" href="#TOMLValue-asString"><code>asString</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Decode a string from TOML </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="TOMLValue-contents" href="#TOMLValue-contents"><code>contents</code></a> - <span class="property-type"><a href="#definition-TOML"><code>TOML!</code></a></span> </td>
+                        <td> Return the value encoded as TOML </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="TOMLValue-field" href="#TOMLValue-field"><code>field</code></a> - <span class="property-type"><a href="#definition-TOMLValue"><code>TOMLValue!</code></a></span> </td>
+                        <td> Lookup the field at the given path, and return its value. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span></h6>
+                                <p>Path of the field to lookup, encoded as an array of field names</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="TOMLValue-fields" href="#TOMLValue-fields"><code>fields</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
+                        <td> List fields of the encoded table </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="TOMLValue-id" href="#TOMLValue-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span> </td>
+                        <td> A unique identifier for this TOMLValue. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="TOMLValue-newBoolean" href="#TOMLValue-newBoolean"><code>newBoolean</code></a> - <span class="property-type"><a href="#definition-TOMLValue"><code>TOMLValue!</code></a></span> </td>
+                        <td> Encode a boolean to TOML </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span></h6>
+                                <p>New boolean value</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="TOMLValue-newInteger" href="#TOMLValue-newInteger"><code>newInteger</code></a> - <span class="property-type"><a href="#definition-TOMLValue"><code>TOMLValue!</code></a></span> </td>
+                        <td> Encode an integer to TOML </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span></h6>
+                                <p>New integer value</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="TOMLValue-newString" href="#TOMLValue-newString"><code>newString</code></a> - <span class="property-type"><a href="#definition-TOMLValue"><code>TOMLValue!</code></a></span> </td>
+                        <td> Encode a string to TOML </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>New string value</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="TOMLValue-withContents" href="#TOMLValue-withContents"><code>withContents</code></a> - <span class="property-type"><a href="#definition-TOMLValue"><code>TOMLValue!</code></a></span> </td>
+                        <td> Return a new TOML value, decoded from the given content </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>contents</code></span> - <span class="property-type"><a href="#definition-TOML"><code>TOML!</code></a></span></h6>
+                                <p>New TOML-encoded contents</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="TOMLValue-withField" href="#TOMLValue-withField"><code>withField</code></a> - <span class="property-type"><a href="#definition-TOMLValue"><code>TOMLValue!</code></a></span> </td>
+                        <td> Set a new field at the given path, preserving the existing formatting </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span></h6>
+                                <p>Path of the field to set, encoded as an array of field names</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-ID"><code>ID!</code></a></span></h6>
+                                <p>The new value of the field</p>
+                              </div>
+                            </div>
+                          </div>
                         </td>
                       </tr>
                     </tbody>
