@@ -1483,8 +1483,8 @@ func (env *publishCheckEnv) assertNpmVersion(ctx context.Context) error {
 	const listing = childProcess.execFileSync("tar", ["-tzf", filename], {encoding: "utf8"}).trim().split("\n");
 	for (const file of [
 	  "package/package.json",
-	  "package/dist/index.js",
-	  "package/dist/index.d.ts",
+	  "package/dist/src/index.js",
+	  "package/dist/src/index.d.ts",
 	]) {
 		  need(listing.includes(file), "packed npm package missing " + file);
 		}
@@ -1492,6 +1492,8 @@ func (env *publishCheckEnv) assertNpmVersion(ctx context.Context) error {
 		const packageJSON = JSON.parse(fs.readFileSync("/tmp/package/package.json", "utf8"));
 		need(packageJSON.name === "@dagger.io/dagger", "packed package.json name mismatch: " + packageJSON.name);
 		need(packageJSON.version === version, "packed package.json version mismatch: " + packageJSON.version);
+		need(packageJSON.main === "dist/src/index.js", "packed package.json main mismatch: " + packageJSON.main);
+		need(packageJSON.types === "./dist/src/index.d.ts", "packed package.json types mismatch: " + packageJSON.types);
 JS
 	`}).
 		Sync(ctx)
