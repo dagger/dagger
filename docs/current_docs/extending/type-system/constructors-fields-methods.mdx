@@ -12,7 +12,7 @@ Object APIs have three different surfaces:
 - Fields expose readable state or computed values.
 - Methods perform typed workflow steps.
 
-Good module APIs keep those surfaces predictable.
+Good module APIs keep those surfaces predictable, so a caller can guess how an object behaves before reading its documentation.
 
 ## Constructors
 
@@ -25,16 +25,26 @@ Constructor inputs should describe the context the object cannot make sense with
 - Environment name.
 - Feature toggles.
 
-Constructor state should be visible and explainable. If changing it changes later results, the caller should understand why.
+Constructor state should be visible and explainable. If changing it changes later results, the caller should understand why. Avoid pulling context the caller did not provide — reading host environment variables or a global config file in a constructor makes the object's behavior depend on invisible state.
 
 ## Fields
 
 Fields should expose meaningful information, not private implementation details. A field should be useful to callers, generated clients, traces, or other modules.
 
-Avoid fields that force callers to understand intermediate files, temporary containers, or SDK-generated structures.
+Avoid fields that force callers to understand intermediate files, temporary containers, or SDK-generated structures. If a field only makes sense to someone reading the module's source, it should be private.
 
 ## Methods
 
-Methods should represent actions or transformations that belong to the object concept. They should return the next useful value, not just logs.
+Methods should represent actions or transformations that belong to the object concept. They should return the next useful value — a [core type](./core-types.mdx) or another object the caller can keep using — not just logs. A method named for what it produces (`binary`, `publish`, `withVersion`) reads better than one named for how it works internally.
 
-TODO: Coordinate this chapter with [Objects, State, and Persistence](/extending) so type design and object persistence reinforce each other without duplicating content.
+## Object state and persistence
+
+A Dagger object is defined by its state — the values set on its constructor and fields. That state is part of the object's identity, and it has two consequences worth designing around.
+
+**State drives caching.** The engine derives an object's identity from its inputs. Two objects built from the same `Directory`, the same version, and the same platform are the same object, and methods called on them can reuse cached results. Two objects built from inputs that *look* the same but differ in something the engine cannot see — a host path, an ambient environment variable, the current time — are not reliably cacheable. Keeping constructor state explicit and content-addressed is what makes an object's methods reproducible. See [Cache](../how-dagger-works/cache.mdx).
+
+**State should be the minimum that defines the concept.** Put a value in constructor or field state when it is genuinely part of what the object *is* and several methods depend on it. Compute everything else on demand in methods. Over-stuffed state — caching intermediate containers, scratch directories, or values only one method uses — bloats the object's identity, weakens caching, and leaks implementation into the API. Under-specified state — relying on context the object reads at call time rather than holding explicitly — makes behavior unpredictable across machines and runs.
+
+A useful test: if two callers construct the object the same way, they should get an object that behaves identically everywhere. If that is not true, some state is hidden where it should be explicit.
+
+This chapter is about *where state lives in the API*; the [User-Defined Object Types](./user-defined-object-types.mdx) chapter covers *which concepts deserve an object* in the first place.

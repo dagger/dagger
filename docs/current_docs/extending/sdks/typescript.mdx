@@ -24,30 +24,28 @@ where relevant:
 :::important
 Module development tooling lives in the SDK module, not the `dagger` CLI:
 **the TypeScript SDK is itself a Dagger module** —
-`github.com/dagger/typescript-sdk` — and you create and maintain TypeScript
-modules by calling its functions.
+`github.com/dagger/typescript-sdk`. You install it into your workspace once,
+then create and maintain TypeScript modules by calling its functions by name.
 :::
 
 ## Create a module
 
 :::note
-Run `init` from inside a Git repository — that's where the new module is created.
+Run these commands from inside a Git repository — that's where the new module is created.
 :::
 
-Use the SDK module's `init` function to scaffold a new TypeScript module. `init`
-does not write to disk directly — it returns a [changeset](/using-dagger/changesets)
-describing the files to create, exactly like `dagger call prettier write`. You
-review the changeset, then apply it.
+Install the TypeScript SDK into your workspace, then scaffold a new module with
+its `init` function:
 
 ```shell
-# Inspect the changeset as a unified diff, without applying it
-dagger -m github.com/dagger/typescript-sdk call init --name=my-module as-patch
-
-# Review and apply (pass -y to apply without prompting)
-dagger -m github.com/dagger/typescript-sdk call init --name=my-module
+dagger mod install github.com/dagger/typescript-sdk
+dagger call typescript-sdk init --name=my-module
 ```
 
-`init` arguments (from `dagger call init --help`):
+`init` returns a [changeset](/using-dagger/changesets) describing the files to
+create — which Dagger shows you to review before anything is written to disk.
+
+`init` arguments (from `dagger call typescript-sdk init --help`):
 
 | Argument | Required | Description |
 |---|---|---|
@@ -66,21 +64,13 @@ By default the module is created under the nearest `.dagger` directory:
 Pass `--path` to choose a different location. The target path must not already
 contain a Dagger module.
 
-:::tip Applying changesets
-Any function that returns a `Changeset` (`init`, `mod generate`, `mod deps add`)
-supports the same operations: `as-patch` to view a Git-style diff, `is-empty`
-to test for changes, and then you review the changeset and apply it (pass `-y`
-to apply without prompting). Dagger writes the files into the current host
-workspace.
-:::
-
 ### File layout
 
-A freshly created Node module looks like this:
+Once created and generated, a Node module looks like this:
 
 ```
 my-module/
-├── dagger-module.toml          # module config
+├── dagger-module.toml   # module config
 ├── package.json         # npm/yarn/pnpm package definition
 ├── tsconfig.json        # TypeScript config with the @dagger.io/dagger path alias
 ├── sdk/                 # generated TypeScript bindings (the typed client)
@@ -88,12 +78,15 @@ my-module/
     └── index.ts         # your module code
 ```
 
+:::note
+`init` writes only your source (`dagger-module.toml`, `package.json`, `tsconfig.json`, `src/`). The generated `sdk/` client is produced by the first [binding regeneration](#regenerate-bindings) — committed by default — not by `init` itself.
+:::
+
 `dagger-module.toml` declares the SDK source:
 
 ```toml title="dagger-module.toml"
 name = "my-module"
-engineVersion = "v1.0.0-beta.2"
-source = "."
+engineVersion = "v1.0.0-beta.3"
 
 [runtime]
 source = "typescript"
@@ -433,6 +426,42 @@ class MyModule {
 Dagger prefixes custom type names in the schema (e.g. `MyModuleBuildResult`) to
 avoid collisions when multiple modules are loaded together.
 
+### Interfaces
+
+Interfaces let your module accept arbitrary objects from other modules without
+depending on their concrete types. Declare a plain TypeScript `interface` whose
+members are the functions you need — written as fields with function types that
+return `Promise`s (every call is remote). Any object that provides matching
+functions can be passed in:
+
+```typescript
+import { dag, object, func } from "@dagger.io/dagger"
+
+export interface Duck {
+  quack: () => Promise<string>
+}
+
+@object()
+export class MyModule {
+  // Accept any object that satisfies the Duck interface.
+  @func()
+  async quackIt(duck: Duck): Promise<string> {
+    return await duck.quack()
+  }
+
+  // A function can also return an interface value.
+  @func()
+  getDuck(): Duck {
+    return dag.mallard()
+  }
+}
+```
+
+Methods that take arguments are typed the same way —
+`withName: (name: string) => Promise<Duck>`. Any object whose functions match
+the interface, including objects returned by other modules, can be passed where
+the interface is expected.
+
 ## Core Dagger types
 
 The generated client exposes the full Dagger API. The patterns below are the
@@ -532,20 +561,16 @@ Dependencies are declared in `dagger-module.toml` and managed with the SDK modul
 
 ```shell
 # List current dependencies
-dagger -m github.com/dagger/typescript-sdk call mod deps list
+dagger call typescript-sdk mod deps list
 
-# Add a dependency (preview, then apply)
-dagger -m github.com/dagger/typescript-sdk \
-  call mod deps add --source=github.com/dagger/dagger/modules/go as-patch
-
-dagger -m github.com/dagger/typescript-sdk \
-  call mod deps add --source=github.com/dagger/dagger/modules/go
+# Add a dependency
+dagger call typescript-sdk mod deps add --source=github.com/dagger/dagger/modules/go
 
 # Update one dependency, or all remote dependencies
-dagger -m github.com/dagger/typescript-sdk call mod deps update --help
+dagger call typescript-sdk mod deps update --help
 
 # Remove a dependency by name or source
-dagger -m github.com/dagger/typescript-sdk call mod deps remove --help
+dagger call typescript-sdk mod deps remove --help
 ```
 
 `mod deps add` arguments: `--source` (required, the module reference) and
@@ -558,7 +583,7 @@ are also supported. After adding a dependency, `dagger-module.toml` gains a
 
 ```toml title="dagger-module.toml"
 name = "my-module"
-engineVersion = "v1.0.0-beta.2"
+engineVersion = "v1.0.0-beta.3"
 source = "."
 
 [runtime]
@@ -592,11 +617,7 @@ you add or update a dependency, or bump the engine version. Use the SDK module's
 `mod generate`, which returns a changeset:
 
 ```shell
-# Preview regenerated bindings
-dagger -m github.com/dagger/typescript-sdk call mod generate as-patch
-
-# Apply
-dagger -m github.com/dagger/typescript-sdk call mod generate
+dagger call typescript-sdk mod generate
 ```
 
 If the generate skip marker is present in the module (or an ancestor), the
@@ -628,14 +649,14 @@ with `mod engine`:
 
 ```shell
 # Show the required version (without leading "v")
-dagger -m github.com/dagger/typescript-sdk call mod engine required
+dagger call typescript-sdk mod engine required
 
 # Pin to a specific version
-dagger -m github.com/dagger/typescript-sdk call mod engine require --help
+dagger call typescript-sdk mod engine require --help
 
 # Pin to the current engine, or the latest stable release
-dagger -m github.com/dagger/typescript-sdk call mod engine require-current
-dagger -m github.com/dagger/typescript-sdk call mod engine require-latest
+dagger call typescript-sdk mod engine require-current
+dagger call typescript-sdk mod engine require-latest
 ```
 
 After changing the engine version, regenerate bindings (`mod generate`) so the
@@ -857,7 +878,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dagger/dagger-for-github@v6
         with:
-          version: "v1.0.0-beta.2"
+          version: "v1.0.0-beta.3"
           verb: check
 ```
 
