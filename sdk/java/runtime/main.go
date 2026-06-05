@@ -413,6 +413,52 @@ func (m *JavaSdk) setModuleConfig(ctx context.Context, modSource *dagger.ModuleS
 	return nil
 }
 
+// daggerConfig is the subset of dagger.json this runtime needs to read.
+type daggerConfig struct {
+	Codegen *struct {
+		AutomaticGitignore *bool `json:"automaticGitignore,omitempty"`
+	} `json:"codegen,omitempty"`
+}
+
+// newStyleFromConfig reports whether a dagger.json marks a "new-style" module:
+// codegen.automaticGitignore explicitly false. Opting out of the generated
+// .gitignore means the module commits its generated files, so the runtime
+// trusts them and skips codegen, building straight from the committed sources.
+// Anything else (missing, true, or unparseable) is treated as a legacy module
+// so existing modules keep their current behaviour.
+//
+// This mirrors the Go SDK's useRuntimeCodegen signal. Unlike Go, we do not add
+// an engine-version gate: a new-style Java module vendors the SDK library and
+// the generated entrypoint together as committed source, so it is fully
+// self-contained and always compiles — there is no engine-version-specific
+// dispatch that could go stale across versions.
+func newStyleFromConfig(content []byte) bool {
+	var cfg daggerConfig
+	if err := json.Unmarshal(content, &cfg); err != nil {
+		return false
+	}
+	return cfg.Codegen != nil &&
+		cfg.Codegen.AutomaticGitignore != nil &&
+		!*cfg.Codegen.AutomaticGitignore
+}
+
+// newStyleModule reads the module's dagger.json from the module source and
+// reports whether it is a new-style module (see newStyleFromConfig).
+func (m *JavaSdk) newStyleModule(ctx context.Context, modSource *dagger.ModuleSource) (bool, error) {
+	root, err := modSource.SourceRootSubpath(ctx)
+	if err != nil {
+		return false, err
+	}
+	content, err := modSource.
+		ContextDirectory().
+		File(filepath.Join(root, "dagger.json")).
+		Contents(ctx)
+	if err != nil {
+		return false, nil //nolint:nilerr // a missing/unreadable dagger.json falls back to the legacy codegen path
+	}
+	return newStyleFromConfig([]byte(content)), nil
+}
+
 func (m *JavaSdk) getDaggerVersionForModule(ctx context.Context, introspectionJSON *dagger.File) (string, error) {
 	content, err := introspectionJSON.Contents(ctx)
 	if err != nil {
