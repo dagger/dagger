@@ -89,6 +89,12 @@ const config: Config = {
               banner: "none",
               badge: false,
             },
+            "1.0.0-beta.3": {
+              label: "1.0.0-beta.3",
+              path: "1.0.0-beta.3",
+              banner: "none",
+              badge: false,
+            },
             current: {
               label: "Next",
               path: "next",

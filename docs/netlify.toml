@@ -18,6 +18,21 @@
   status = 302
   force = true
 
+[[redirects]]
+  from = "/1.0-beta"
+  to = "/1.0.0-beta.3"
+  status = 301
+
+[[redirects]]
+  from = "/1.0-beta/"
+  to = "/1.0.0-beta.3/"
+  status = 301
+
+[[redirects]]
+  from = "/1.0-beta/*"
+  to = "/1.0.0-beta.3/:splat"
+  status = 301
+
 ## start: specific redirects for 0.18 docs ##
 
 [[redirects]]
