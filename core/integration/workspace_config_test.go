@@ -312,7 +312,7 @@ func (WorkspaceSuite) TestCurrentWorkspaceConfigBoundary(ctx context.Context, t 
 	require.NoError(t, err)
 	require.JSONEq(t, fmt.Sprintf(`{
 		"currentWorkspace": {
-			"cwd": "app/sub",
+			"cwd": "/app/sub",
 			"configFile": %q
 		}
 	}`, filepath.Join("app", workspace.ConfigFileName)), string(out))
@@ -344,7 +344,7 @@ func (WorkspaceSuite) TestWorkspaceInitCommand(ctx context.Context, t *testctx.T
 		require.NoError(t, err)
 		require.JSONEq(t, fmt.Sprintf(`{
 			"currentWorkspace": {
-				"cwd": "app/sub",
+				"cwd": "/app/sub",
 				"configFile": %q
 			}
 		}`, workspace.ConfigFileName), string(out))
@@ -375,7 +375,7 @@ func (WorkspaceSuite) TestWorkspaceInitCommand(ctx context.Context, t *testctx.T
 		require.NoError(t, err)
 		require.JSONEq(t, fmt.Sprintf(`{
 			"currentWorkspace": {
-				"cwd": "app/sub",
+				"cwd": "/app/sub",
 				"configFile": %q
 			}
 		}`, filepath.Join("app", "sub", workspace.ConfigFileName)), string(out))

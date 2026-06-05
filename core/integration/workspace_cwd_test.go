@@ -29,17 +29,17 @@ func (WorkspaceSuite) TestCurrentWorkspaceRootAndCwd(ctx context.Context, t *tes
 		{
 			name:        "detection starts at workspace root",
 			clientOpts:  []dagger.ClientOpt{dagger.WithWorkdir(fixture.root)},
-			wantCwdPath: ".",
+			wantCwdPath: "/",
 		},
 		{
 			name:        "detection starts below workspace root",
 			clientOpts:  []dagger.ClientOpt{dagger.WithWorkdir(fixture.cwd)},
-			wantCwdPath: "subdir",
+			wantCwdPath: "/subdir",
 		},
 		{
 			name:        "explicit local workspace starts below workspace root",
 			clientOpts:  []dagger.ClientOpt{dagger.WithWorkspace(fixture.cwd)},
-			wantCwdPath: "subdir",
+			wantCwdPath: "/subdir",
 		},
 	} {
 		tc := tc
@@ -68,7 +68,7 @@ func (WorkspaceSuite) TestCurrentWorkspaceRootAndCwd(ctx context.Context, t *tes
 			t.Run("workspace cwd", func(ctx context.Context, t *testctx.T) {
 				cwdFilePath := "cwd.txt"
 				wantCwdContents := "from workspace cwd"
-				if tc.wantCwdPath == "." {
+				if tc.wantCwdPath == "/" {
 					cwdFilePath = "root.txt"
 					wantCwdContents = "from workspace root"
 				}
@@ -92,7 +92,7 @@ func (WorkspaceSuite) TestCurrentWorkspaceRootAndCwd(ctx context.Context, t *tes
 
 				require.Equal(t, tc.wantCwdPath, res.CurrentWorkspace.Cwd)
 				require.Equal(t, wantCwdContents, res.CurrentWorkspace.CwdFile.Contents)
-				if tc.wantCwdPath == "." {
+				if tc.wantCwdPath == "/" {
 					require.Contains(t, res.CurrentWorkspace.CwdDirectory.Entries, "root.txt")
 					require.Contains(t, res.CurrentWorkspace.CwdDirectory.Entries, "subdir/")
 				} else {
