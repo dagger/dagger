@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"testing"
@@ -8,6 +9,7 @@ import (
 
 	cloudapi "github.com/dagger/dagger/internal/cloud"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
 
@@ -184,6 +186,59 @@ func TestCloudCheckReplayFrontendFollowsProgressMode(t *testing.T) {
 
 	progress = "report"
 	require.Contains(t, fmt.Sprintf("%T", newCloudCheckReplayFrontend(io.Discard)), "frontendPretty")
+}
+
+func TestRenderCloudCheckReports(t *testing.T) {
+	var out bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&out)
+
+	totalLines := 2
+	renderCloudCheckReports(cmd, []cloudapi.CheckReport{{
+		CheckID:   "check-1",
+		CheckName: "go:test",
+		Status:    "FAILURE",
+		Summary:   "go:test failed",
+		TraceURL:  "https://dagger.cloud/dagger/traces/trace",
+		Failure: &cloudapi.CheckFailureReport{
+			Roots: []cloudapi.CheckFailureRoot{{
+				SpanID:  "span-1",
+				Name:    "go test ./...",
+				Message: "exit code 1",
+				Logs: &cloudapi.CheckLogExcerpt{
+					Lines:          []string{"--- FAIL: TestFoo", "FAIL"},
+					Truncated:      true,
+					TotalLineCount: &totalLines,
+				},
+			}},
+		},
+		Tests: &cloudapi.CheckTestReport{
+			Total:   2,
+			Passed:  1,
+			Failed:  1,
+			Skipped: 0,
+			Failures: []cloudapi.CheckTestCase{{
+				Name:    "TestFoo",
+				Suite:   "pkg/foo",
+				Status:  "failure",
+				SpanID:  "test-span",
+				TraceID: "trace",
+				Message: "expected true",
+			}},
+		},
+		Notices: []string{"partial logs"},
+	}})
+
+	got := out.String()
+	require.Contains(t, got, "go:test: failure")
+	require.Contains(t, got, "go:test failed")
+	require.Contains(t, got, "Failure root: go test ./...")
+	require.Contains(t, got, "--- FAIL: TestFoo")
+	require.Contains(t, got, "... logs truncated ...")
+	require.Contains(t, got, "Tests: 2 total, 1 failed, 0 skipped")
+	require.Contains(t, got, "FAIL pkg/foo/TestFoo")
+	require.Contains(t, got, "Notice: partial logs")
+	require.Contains(t, got, "Trace: https://dagger.cloud/dagger/traces/trace")
 }
 
 func TestCloudCheckWorkspaceAddress(t *testing.T) {
