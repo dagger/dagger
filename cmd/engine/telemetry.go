@@ -39,6 +39,7 @@ func init() {
 func InitTelemetry(ctx context.Context) context.Context {
 	otelResource, err := resource.New(ctx,
 		resource.WithHost(),
+		resource.WithFromEnv(),
 		resource.WithAttributes(
 			semconv.ServiceNameKey.String("dagger-engine"),
 			semconv.ServiceVersionKey.String(engine.Version),
