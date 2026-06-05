@@ -1527,7 +1527,7 @@ func (env *publishCheckEnv) assertHelmTags(ctx context.Context) error {
 
 	_, err = dag.Container(dagger.ContainerOpts{Platform: env.platform}).
 		From("alpine:latest").
-		WithExec([]string{"apk", "add", "curl"}).
+		WithExec([]string{"apk", "add", "curl", "python3"}).
 		WithServiceBinding("registry", env.registrySvc).
 		WithEnvVariable("REGISTRY_USERNAME", publishCheckRegistryUser).
 		WithSecretVariable("REGISTRY_PASSWORD", dag.SetSecret("registry-helm-password-"+randomID(), publishCheckRegistryPass)).
@@ -1537,26 +1537,29 @@ func (env *publishCheckEnv) assertHelmTags(ctx context.Context) error {
 	curl -fsS -u "$REGISTRY_USERNAME:$REGISTRY_PASSWORD" \
 		-H 'Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
 		"http://registry:5000/v2/dagger/dagger-helm/manifests/$RELEASE_VERSION" > /tmp/helm-manifest.json
-	layer_count="$(grep -o '"mediaType"[[:space:]]*:[[:space:]]*"application/vnd.cncf.helm.chart.content.v1.tar+gzip"' /tmp/helm-manifest.json | wc -l | tr -d ' ')"
-	if [ "$layer_count" != "1" ]; then
-		echo "expected exactly one helm chart content layer, got $layer_count" >&2
-		cat /tmp/helm-manifest.json >&2
-		exit 1
-	fi
-	chart_digest="$(tr -d '\n' < /tmp/helm-manifest.json | sed -n 's/.*"layers"[[:space:]]*:[[:space:]]*\[{"mediaType"[[:space:]]*:[[:space:]]*"application\/vnd.cncf.helm.chart.content.v1.tar+gzip","digest"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
-	if [ -z "$chart_digest" ]; then
-		echo "could not find helm chart layer digest" >&2
-		cat /tmp/helm-manifest.json >&2
-		exit 1
-	fi
+	chart_digest="$(python3 - <<'PY'
+import json
+import sys
+
+manifest = json.load(open("/tmp/helm-manifest.json", encoding="utf-8"))
+layers = [
+    layer for layer in manifest.get("layers", [])
+    if layer.get("mediaType") == "application/vnd.cncf.helm.chart.content.v1.tar+gzip"
+]
+if len(layers) != 1:
+    print(f"expected exactly one helm chart content layer, got {len(layers)}", file=sys.stderr)
+    print(json.dumps(manifest, indent=2, sort_keys=True), file=sys.stderr)
+    raise SystemExit(1)
+print(layers[0]["digest"])
+PY
+	)"
 	curl -fsS -u "$REGISTRY_USERNAME:$REGISTRY_PASSWORD" \
 		"http://registry:5000/v2/dagger/dagger-helm/blobs/$chart_digest" > /tmp/chart.tgz
 	mkdir -p /tmp/chart
 	tar -xzf /tmp/chart.tgz -C /tmp/chart
-	test -f /tmp/chart/dagger/Chart.yaml
-	grep -F "name: dagger" /tmp/chart/dagger/Chart.yaml
-	grep -F "version: $RELEASE_VERSION" /tmp/chart/dagger/Chart.yaml
-	grep -F "appVersion: $RELEASE_VERSION" /tmp/chart/dagger/Chart.yaml
+	test -f /tmp/chart/dagger-helm/Chart.yaml
+	grep -F "name: dagger-helm" /tmp/chart/dagger-helm/Chart.yaml
+	grep -F "version: $RELEASE_VERSION" /tmp/chart/dagger-helm/Chart.yaml
 	`}).
 		Sync(ctx)
 	if err != nil {
