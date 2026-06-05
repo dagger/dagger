@@ -25,6 +25,19 @@ A [Dagger.io](https://dagger.io) SDK written in Java.
 > [!WARNING]
 > Support of Dagger modules is in progress and might be incomplete.
 
+<!-- -->
+
+> [!NOTE]
+> Two module styles are supported and coexist:
+>
+> - **Legacy** modules (created by `dagger module init --sdk=java`) run code
+>   generation at module load time, as described below.
+> - **New-style** modules (created by [`dagger/java-sdk`](https://github.com/dagger/java-sdk)
+>   via `dagger call java-sdk init`) vendor the SDK as committed source and set
+>   `codegen.automaticGitignore=false` in `dagger.json`. For those, this
+>   runtime skips code generation entirely and only builds & packages the
+>   committed sources.
+
 ### Create a new module
 
 ```console
