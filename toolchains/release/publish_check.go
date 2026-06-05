@@ -679,7 +679,7 @@ func (env *publishCheckEnv) assertS3ArchiveSet(ctx context.Context, dir string, 
 	}
 
 	_, err := env.awsCLI().
-		WithExec([]string{"apk", "add", "coreutils", "python3", "unzip"}).
+		WithExec([]string{"apk", "add", "coreutils", "file", "python3", "unzip"}).
 		WithEnvVariable("AWS_BUCKET", env.awsBucket).
 		WithEnvVariable("S3_DIR", dir).
 		WithEnvVariable("INSPECT_ARCHIVES", inspect).
@@ -827,6 +827,35 @@ for file in expected:
     else:
         fail(f"unknown archive format: {file}")
 PY
+	while IFS= read -r file; do
+		[ -n "$file" ] || continue
+		bin="/tmp/release-bin"
+		case "$file" in
+			*.tar.gz) tar -xOf "$file" dagger > "$bin" ;;
+			*.zip) unzip -p "$file" dagger.exe > "$bin" ;;
+			*) echo "unknown archive format: $file" >&2; exit 1 ;;
+		esac
+		if [ ! -s "$bin" ]; then
+			echo "release archive binary should be non-empty: $file" >&2
+			exit 1
+		fi
+		file "$bin" > /tmp/release-bin-file
+		case "$file" in
+			*_darwin_amd64.tar.gz) pattern='Mach-O 64-bit.*x86_64' ;;
+			*_darwin_arm64.tar.gz) pattern='Mach-O 64-bit.*arm64' ;;
+			*_linux_amd64.tar.gz) pattern='ELF 64-bit.*x86-64' ;;
+			*_linux_arm64.tar.gz) pattern='ELF 64-bit.*ARM aarch64' ;;
+			*_linux_armv7.tar.gz) pattern='ELF 32-bit.*ARM' ;;
+			*_windows_amd64.zip) pattern='PE32\+ executable.*x86-64' ;;
+			*_windows_arm64.zip) pattern='PE32\+ executable.*(Aarch64|ARM64|aarch64|arm64)' ;;
+			*) echo "missing binary architecture assertion for $file" >&2; exit 1 ;;
+		esac
+		if ! grep -E "$pattern" /tmp/release-bin-file >/dev/null; then
+			echo "unexpected binary architecture for $file; expected pattern $pattern" >&2
+			cat /tmp/release-bin-file >&2
+			exit 1
+		fi
+	done < /tmp/expected-artifacts
 fi
 `}).
 		Stdout(ctx)
@@ -1366,12 +1395,14 @@ func (env *publishCheckEnv) assertRegistryTags(ctx context.Context) error {
 			return err
 		}
 	}
-	_, err = dag.Container(dagger.ContainerOpts{Platform: env.platform}).
+	craneCtr := dag.Container(dagger.ContainerOpts{Platform: env.platform}).
 		From("gcr.io/go-containerregistry/crane:debug").
 		WithServiceBinding("registry", env.registrySvc).
 		WithEnvVariable("REGISTRY_USERNAME", publishCheckRegistryUser).
 		WithSecretVariable("REGISTRY_PASSWORD", dag.SetSecret("registry-manifest-password-"+randomID(), publishCheckRegistryPass)).
-		WithEnvVariable("RELEASE_TAG", env.releaseTag).
+		WithEnvVariable("RELEASE_TAG", env.releaseTag)
+
+	_, err = craneCtr.
 		WithExec([]string{"sh", "-ec", `
 set -eu
 	crane auth login registry:5000 --insecure --username "$REGISTRY_USERNAME" --password "$REGISTRY_PASSWORD"
@@ -1419,6 +1450,45 @@ check_platform_counts() {
 		Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("check engine registry manifests: %w", err)
+	}
+
+	engineBinaries := craneCtr.
+		WithExec([]string{"sh", "-ec", `
+set -eu
+	crane auth login registry:5000 --insecure --username "$REGISTRY_USERNAME" --password "$REGISTRY_PASSWORD"
+	mkdir -p /tmp/engine-binaries
+	crane export --insecure --platform linux/amd64 "registry:5000/dagger/engine:$RELEASE_TAG" - | tar -xOf - usr/local/bin/dagger-engine > /tmp/engine-binaries/default-linux-amd64
+	crane export --insecure --platform linux/arm64 "registry:5000/dagger/engine:$RELEASE_TAG" - | tar -xOf - usr/local/bin/dagger-engine > /tmp/engine-binaries/default-linux-arm64
+	crane export --insecure --platform linux/amd64 "registry:5000/dagger/engine:$RELEASE_TAG-gpu" - | tar -xOf - usr/local/bin/dagger-engine > /tmp/engine-binaries/gpu-linux-amd64
+	`}).
+		Directory("/tmp/engine-binaries")
+	_, err = dag.Container().
+		From("alpine:latest").
+		WithExec([]string{"apk", "add", "file"}).
+		WithDirectory("/engine-binaries", engineBinaries).
+		WithExec([]string{"sh", "-ec", `
+set -eu
+check_engine_binary() {
+	file="$1"
+	pattern="$2"
+	if [ ! -s "/engine-binaries/$file" ]; then
+		echo "engine image binary should be non-empty: $file" >&2
+		exit 1
+	fi
+	file "/engine-binaries/$file" > /tmp/engine-file
+	if ! grep -E "$pattern" /tmp/engine-file >/dev/null; then
+		echo "unexpected engine binary architecture for $file; expected pattern $pattern" >&2
+		cat /tmp/engine-file >&2
+		exit 1
+	fi
+}
+check_engine_binary default-linux-amd64 'ELF 64-bit.*x86-64'
+check_engine_binary default-linux-arm64 'ELF 64-bit.*ARM aarch64'
+check_engine_binary gpu-linux-amd64 'ELF 64-bit.*x86-64'
+	`}).
+		Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("check engine image binary architectures: %w", err)
 	}
 	return nil
 }
