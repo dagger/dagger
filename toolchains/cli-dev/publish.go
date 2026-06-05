@@ -52,7 +52,7 @@ func (cli *CliDev) Publish(
 		if err != nil {
 			return nil, err
 		}
-		if err := cli.publishRootGitHubRelease(ctx, dist, tag, commit, notes, githubOrgName, githubToken, githubHost, githubCaCert); err != nil {
+		if err := cli.publishRootGitHubRelease(ctx, dist, tag, notes, githubOrgName, githubToken, githubHost, githubCaCert); err != nil {
 			return nil, err
 		}
 		if err := cli.publishPackageManagers(ctx, dist, tag, githubOrgName, githubToken, githubHost, githubCaCert, artefactsFQDN); err != nil {

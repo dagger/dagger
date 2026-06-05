@@ -310,7 +310,6 @@ func (cli *CliDev) publishRootGitHubRelease(
 	ctx context.Context,
 	dist *dagger.Directory,
 	tag string,
-	commit string,
 	notes string,
 	githubOrgName string,
 	githubToken *dagger.Secret,

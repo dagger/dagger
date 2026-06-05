@@ -1780,18 +1780,18 @@ log: { type: stdout, format: pretty, level: http }
 `
 
 const releaseMockServerScript = `import base64
-	import http.server
-	import hashlib
-	import io
-	import json
-	import os
-	import re
-	import ssl
-	import struct
-	import tarfile
-	import threading
-	import time
-	import urllib.parse
+import http.server
+import hashlib
+import io
+import json
+import os
+import re
+import ssl
+import struct
+import tarfile
+import threading
+import time
+import urllib.parse
 
 records_path = "/records/events.jsonl"
 os.makedirs(os.path.dirname(records_path), exist_ok=True)
@@ -1843,9 +1843,9 @@ def safe_filename(value):
 def auth_header(handler):
     return handler.headers.get("authorization", "")
 
-	def multipart_field(body, name):
-	    marker = ('name="' + name + '"').encode("utf-8")
-	    idx = body.find(marker)
+def multipart_field(body, name):
+    marker = ('name="' + name + '"').encode("utf-8")
+    idx = body.find(marker)
     if idx < 0:
         return ""
     start = body.find(b"\r\n\r\n", idx)
@@ -1854,37 +1854,37 @@ def auth_header(handler):
     start += 4
     end = body.find(b"\r\n--", start)
     if end < 0:
-	        end = len(body)
-	    return body[start:end].decode("utf-8", "replace").strip()
+        end = len(body)
+    return body[start:end].decode("utf-8", "replace").strip()
 
-	def multipart_filename(body, name):
-	    marker = ('name="' + name + '"').encode("utf-8")
-	    idx = body.find(marker)
-	    if idx < 0:
-	        return ""
-	    header_end = body.find(b"\r\n\r\n", idx)
-	    if header_end < 0:
-	        return ""
-	    header = body[idx:header_end].decode("utf-8", "replace")
-	    match = re.search(r'filename="([^"]+)"', header)
-	    return match.group(1) if match else ""
+def multipart_filename(body, name):
+    marker = ('name="' + name + '"').encode("utf-8")
+    idx = body.find(marker)
+    if idx < 0:
+        return ""
+    header_end = body.find(b"\r\n\r\n", idx)
+    if header_end < 0:
+        return ""
+    header = body[idx:header_end].decode("utf-8", "replace")
+    match = re.search(r'filename="([^"]+)"', header)
+    return match.group(1) if match else ""
 
-	def hex_package_version(body):
-	    candidates = [body]
-	    try:
-	        with tarfile.open(fileobj=io.BytesIO(body), mode="r:*") as archive:
-	            for member in archive.getmembers():
-	                extracted = archive.extractfile(member)
-	                if extracted is not None:
-	                    candidates.append(extracted.read())
-	    except tarfile.TarError:
-	        pass
-	    for candidate in candidates:
-	        text = candidate.decode("utf-8", "ignore")
-	        match = re.search(r'(?:version|vsn)[^0-9A-Za-z]+([0-9]+\.[0-9]+\.[0-9][0-9A-Za-z.+-]*)', text)
-	        if match:
-	            return match.group(1)
-	    return ""
+def hex_package_version(body):
+    candidates = [body]
+    try:
+        with tarfile.open(fileobj=io.BytesIO(body), mode="r:*") as archive:
+            for member in archive.getmembers():
+                extracted = archive.extractfile(member)
+                if extracted is not None:
+                    candidates.append(extracted.read())
+    except tarfile.TarError:
+        pass
+    for candidate in candidates:
+        text = candidate.decode("utf-8", "ignore")
+        match = re.search(r'(?:version|vsn)[^0-9A-Za-z]+([0-9]+\.[0-9]+\.[0-9][0-9A-Za-z.+-]*)', text)
+        if match:
+            return match.group(1)
+    return ""
 
 def github_content_target(path):
     parsed = urllib.parse.urlparse(path)
@@ -2079,11 +2079,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "rate": {"limit": 5000, "remaining": 4999, "reset": int(time.time()) + 3600},
             })
             return
-	        if self.path.startswith("/api/v3/repos/") and "/releases/tags/" in self.path:
-	            tag = urllib.parse.unquote(self.path.split("/releases/tags/", 1)[1].split("?", 1)[0])
-	            record("github_release_lookup", self, b"", {"tag_name": tag})
-	            self.send_json(404, {"message": "Not Found"})
-	            return
+        if self.path.startswith("/api/v3/repos/") and "/releases/tags/" in self.path:
+            tag = urllib.parse.unquote(self.path.split("/releases/tags/", 1)[1].split("?", 1)[0])
+            record("github_release_lookup", self, b"", {"tag_name": tag})
+            self.send_json(404, {"message": "Not Found"})
+            return
         if self.path == "/api/v3/repos/dagger/dagger/releases/" + str(existing_root_release_id) + "/assets":
             record("github_release_asset_list", self, b"")
             with state_lock:
@@ -2146,17 +2146,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             record("netlify_restore", self, body, {"auth_header": auth_header(self)})
             self.send_json(200, {"id": "deploy-1"})
             return
-	        if self.path.startswith("/pypi/"):
-	            record("pypi_publish", self, body, {
-	                "auth_header": auth_header(self),
-	                "content_type": self.headers.get("content-type", ""),
-	                "package_name": multipart_field(body, "name"),
-	                "package_version": multipart_field(body, "version"),
-	                "filetype": multipart_field(body, "filetype"),
-	                "filename": multipart_filename(body, "content"),
-	            })
-	            self.send_bytes(200, b"OK", "text/plain")
-	            return
+        if self.path.startswith("/pypi/"):
+            record("pypi_publish", self, body, {
+                "auth_header": auth_header(self),
+                "content_type": self.headers.get("content-type", ""),
+                "package_name": multipart_field(body, "name"),
+                "package_version": multipart_field(body, "version"),
+                "filetype": multipart_field(body, "filetype"),
+                "filename": multipart_filename(body, "content"),
+            })
+            self.send_bytes(200, b"OK", "text/plain")
+            return
         if self.path.startswith("/hex/api/packages/dagger/releases/") and self.path.endswith("/docs"):
             version = self.path.split("/releases/", 1)[-1].split("/docs", 1)[0]
             record("hex_docs_publish", self, body, {
@@ -2165,13 +2165,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             })
             self.send_etf(201, {}, {"location": "http://mock:8080/hexdocs/dagger/" + version})
             return
-	        if self.path.startswith("/hex/api/packages/dagger/releases"):
-	            version = hex_package_version(body)
-	            record("hex_publish", self, body, {
-	                "auth_header": auth_header(self),
-	                "package_version": version,
-	                "body_sha256": hashlib.sha256(body).hexdigest(),
-	            })
+        if self.path.startswith("/hex/api/packages/dagger/releases"):
+            version = hex_package_version(body)
+            record("hex_publish", self, body, {
+                "auth_header": auth_header(self),
+                "package_version": version,
+                "body_sha256": hashlib.sha256(body).hexdigest(),
+            })
             self.send_etf(201, {
                 "html_url": "http://mock:8080/hex/packages/dagger/" + version,
                 "url": "http://mock:8080/hex/api/packages/dagger/releases/" + version,
