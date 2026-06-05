@@ -54,6 +54,7 @@ func (s *querySchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	srv.InstallScalar(core.JSON{})
+	srv.InstallScalar(core.TOML(""))
 	srv.InstallScalar(core.Void{})
 
 	dagql.Fields[*core.RemoteGitMirror]{}.Install(srv)

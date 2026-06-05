@@ -194,6 +194,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, _ ...core.Inst
 		&cloudSchema{},
 		&llmSchema{},
 		&jsonvalueSchema{},
+		&tomlvalueSchema{},
 		&envfileSchema{},
 		&addressSchema{},
 		&checksSchema{},
