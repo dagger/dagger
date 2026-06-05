@@ -61,7 +61,7 @@ func (r *Release) PublishWithMockEndpoints(
 	// service and invokes release through a nested engine using that git ref.
 	// +defaultPath="/"
 	source *dagger.Directory,
-) error {
+) (rerr error) {
 	env, err := newPublishCheckEnv(ctx, source.WithoutDirectory(".git"))
 	if err != nil {
 		return err
@@ -75,6 +75,12 @@ func (r *Release) PublishWithMockEndpoints(
 	if err != nil {
 		return err
 	}
+	defer func() {
+		_, err := engine.Stop(ctx, dagger.ServiceStopOpts{Kill: true})
+		if rerr == nil && err != nil {
+			rerr = fmt.Errorf("stop nested release engine: %w", err)
+		}
+	}()
 	env.awsCloudfrontDistribution, err = env.createAWSFixtures(ctx)
 	if err != nil {
 		return err
