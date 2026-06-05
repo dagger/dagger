@@ -56,19 +56,17 @@
   a {
     text-decoration: none;
   }
-  // A clean code-link chip: monospace in the link color, no border, with a
-  // soft tint on hover. The same treatment as .typeLink below.
+  a:hover {
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
+  }
+  // Monospace in the link color; no border or background — hover just underlines.
   code {
     border: none;
     background: transparent;
-    padding: 0.05rem 0.35rem;
-    border-radius: var(--ifm-code-border-radius);
+    padding: 0;
     color: var(--ifm-color-primary);
     font-weight: 600;
-    transition: background-color 0.15s ease;
-  }
-  a:hover code {
-    background: var(--api-tint-hover);
   }
 }
 
