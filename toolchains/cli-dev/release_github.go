@@ -56,6 +56,11 @@ type githubContent struct {
 	SHA string `json:"sha"`
 }
 
+type githubReleaseAsset struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
 func newGithubClient(
 	ctx context.Context,
 	githubToken *dagger.Secret,
@@ -207,6 +212,17 @@ func (gh *githubClient) publishRelease(ctx context.Context, owner string, repo s
 	return err
 }
 
+func (gh *githubClient) releaseAssets(ctx context.Context, owner string, repo string, releaseID int64) ([]githubReleaseAsset, error) {
+	var assets []githubReleaseAsset
+	_, err := gh.requestJSON(ctx, http.MethodGet, githubPath("repos", owner, repo, "releases", fmt.Sprint(releaseID), "assets"), nil, &assets)
+	return assets, err
+}
+
+func (gh *githubClient) deleteReleaseAsset(ctx context.Context, owner string, repo string, assetID int64) error {
+	_, err := gh.requestJSON(ctx, http.MethodDelete, githubPath("repos", owner, repo, "releases", "assets", fmt.Sprint(assetID)), nil, nil)
+	return err
+}
+
 func (gh *githubClient) ensureBranch(ctx context.Context, owner string, repo string, branch string) error {
 	if _, err := gh.requestJSON(ctx, http.MethodGet, githubPath("repos", owner, repo, "branches", branch), nil, nil); err == nil {
 		return nil
@@ -224,6 +240,24 @@ func (gh *githubClient) ensureBranch(ctx context.Context, owner string, repo str
 		return err
 	}
 	_, err = gh.requestJSON(ctx, http.MethodPost, githubPath("repos", owner, repo, "git", "refs"), map[string]string{
+		"ref": "refs/heads/" + branch,
+		"sha": ref.Object.SHA,
+	}, nil)
+	return err
+}
+
+func (gh *githubClient) ensureBranchFrom(ctx context.Context, owner string, repo string, branch string, baseOwner string, baseRepo string, baseBranch string) error {
+	if _, err := gh.requestJSON(ctx, http.MethodGet, githubPath("repos", owner, repo, "branches", branch), nil, nil); err == nil {
+		return nil
+	} else if !githubStatus(err, http.StatusNotFound) {
+		return err
+	}
+
+	var ref githubRef
+	if _, err := gh.requestJSON(ctx, http.MethodGet, githubPath("repos", baseOwner, baseRepo, "git", "ref", "heads", baseBranch), nil, &ref); err != nil {
+		return err
+	}
+	_, err := gh.requestJSON(ctx, http.MethodPost, githubPath("repos", owner, repo, "git", "refs"), map[string]string{
 		"ref": "refs/heads/" + branch,
 		"sha": ref.Object.SHA,
 	}, nil)
@@ -348,8 +382,31 @@ func (cli *CliDev) publishRootGitHubRelease(
 		return fmt.Errorf("GitHub release upload URL is empty")
 	}
 
+	assetNames := append(cliReleaseArchiveNames(tag), "checksums.txt")
+	assets, err := gh.releaseAssets(ctx, githubOrgName, "dagger", release.ID)
+	if err != nil {
+		return err
+	}
+	replaceAssets := map[string]struct{}{}
+	for _, asset := range assetNames {
+		replaceAssets[asset] = struct{}{}
+	}
+	deleteJobs := parallel.New()
+	for _, asset := range assets {
+		asset := asset
+		if _, ok := replaceAssets[asset.Name]; !ok {
+			continue
+		}
+		deleteJobs = deleteJobs.WithJob("delete existing "+asset.Name, func(ctx context.Context) error {
+			return gh.deleteReleaseAsset(ctx, githubOrgName, "dagger", asset.ID)
+		})
+	}
+	if err := deleteJobs.Run(ctx); err != nil {
+		return err
+	}
+
 	jobs := parallel.New()
-	for _, asset := range append(cliReleaseArchiveNames(tag), "checksums.txt") {
+	for _, asset := range assetNames {
 		asset := asset
 		jobs = jobs.WithJob("upload "+asset, func(ctx context.Context) error {
 			return cli.uploadGitHubReleaseAsset(ctx, dist, asset, uploadURL, githubToken, githubCaCert)
@@ -447,10 +504,7 @@ func (cli *CliDev) publishPackageManagers(
 	})
 	jobs = jobs.WithJob("publish winget", func(ctx context.Context) error {
 		wingetBranch := "dagger-" + version
-		if err := gh.ensureBranch(ctx, githubOrgName, "winget-pkgs", wingetBranch); err != nil {
-			return err
-		}
-		if err := gh.mergeUpstream(ctx, githubOrgName, "winget-pkgs", "master"); err != nil {
+		if err := gh.ensureBranchFrom(ctx, githubOrgName, "winget-pkgs", wingetBranch, "microsoft", "winget-pkgs", "master"); err != nil {
 			return err
 		}
 		manifests, err := wingetManifests(tag, version, baseURL, checksums)
@@ -462,8 +516,29 @@ func (cli *CliDev) publishPackageManagers(
 				return err
 			}
 		}
-		return gh.createPullRequest(ctx, "microsoft", "winget-pkgs", "New version: Dagger.Cli "+version, "master", githubOrgName+":winget-pkgs:"+wingetBranch, "Automated with Dagger release tooling.")
+		return gh.createPullRequest(ctx, "microsoft", "winget-pkgs", "New version: Dagger.Cli "+version, "master", githubOrgName+":"+wingetBranch, wingetPullRequestBody())
 	})
 
 	return jobs.Run(ctx)
+}
+
+func wingetPullRequestBody() string {
+	return `Checklist for Pull Requests
+- [x] Have you signed the [Contributor License Agreement](https://cla.opensource.microsoft.com/microsoft/winget-pkgs)?
+- [x] Is there a linked Issue?  If so, fill in the Issue number below.
+   <!-- Example: Resolves #328283 -->
+  - Resolves #[Issue Number]
+
+Manifests
+- [x] Have you checked that there aren't other open [pull requests](https://github.com/microsoft/winget-pkgs/pulls) for the same manifest update/change?
+- [x] This PR only modifies one (1) manifest
+- [x] Have you [validated](https://github.com/microsoft/winget-pkgs/blob/master/doc/Authoring.md#validation) your manifest locally with ` + "`winget validate --manifest <path>`" + `?
+- [x] Have you tested your manifest locally with ` + "`winget install --manifest <path>`" + `?
+- [x] Does your manifest conform to the [1.12 schema](https://github.com/microsoft/winget-pkgs/tree/master/doc/manifest/schema/1.12.0)?
+
+Note: ` + "`<path>`" + ` is the directory's name containing the manifest you're submitting.
+
+---
+
+###### Automated with Dagger release tooling.`
 }

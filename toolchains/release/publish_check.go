@@ -132,10 +132,19 @@ git ls-remote --tags "$REPO_URL" "$RELEASE_TAG"
 	if err := env.assertStableCLIReleaseArtifacts(ctx); err != nil {
 		return err
 	}
+	if err := env.assertCLIPublishMetadata(ctx); err != nil {
+		return err
+	}
 	if err := env.assertCLIGitHubRelease(ctx); err != nil {
 		return err
 	}
 	if err := env.assertCLIPackageManagers(ctx); err != nil {
+		return err
+	}
+	if err := env.assertComponentGitHubReleases(ctx); err != nil {
+		return err
+	}
+	if err := env.assertPackageRegistryRequests(ctx); err != nil {
 		return err
 	}
 	if err := env.assertMockEvents(ctx); err != nil {
@@ -414,6 +423,8 @@ func (env *publishCheckEnv) gitStdout(ctx context.Context, script string) (strin
 		WithEnvVariable("REPO_URL", env.repoURL).
 		WithEnvVariable("RELEASE_TAG", env.releaseTag).
 		WithEnvVariable("RELEASE_COMMIT", env.commit).
+		WithEnvVariable("GO_SDK_DEST_REMOTE", env.goSDKDestRemote).
+		WithEnvVariable("PHP_SDK_DEST_REMOTE", env.phpSDKDestRemote).
 		WithEnvVariable("GIT_CACHE_BUSTER", randomID()).
 		WithExec([]string{"sh", "-ec", script}).
 		Stdout(ctx)
@@ -557,6 +568,104 @@ func (env *publishCheckEnv) assertStableCLIReleaseArtifacts(ctx context.Context)
 	return env.assertS3ArchiveSet(ctx, "dagger/releases/"+env.releaseVersion, publishCheckArchiveNames(env.releaseTag), true)
 }
 
+func (env *publishCheckEnv) assertCLIPublishMetadata(ctx context.Context) error {
+	_, err := env.awsCLI().
+		WithExec([]string{"apk", "add", "python3"}).
+		WithEnvVariable("AWS_BUCKET", env.awsBucket).
+		WithEnvVariable("AWS_CLOUDFRONT_DISTRIBUTION", env.awsCloudfrontDistribution).
+		WithEnvVariable("RELEASE_TAG", env.releaseTag).
+		WithEnvVariable("RELEASE_VERSION", env.releaseVersion).
+		WithEnvVariable("RELEASE_COMMIT", env.commit).
+		WithExec([]string{"sh", "-ec", `
+set -eu
+aws --endpoint-url "$AWS_ENDPOINT_URL" s3api list-objects-v2 --bucket "$AWS_BUCKET" > /tmp/s3-objects.json
+for key in dagger/latest_version dagger/versions/latest dagger/versions/${RELEASE_VERSION%.*} dagger/install.sh dagger/install.ps1; do
+	aws --endpoint-url "$AWS_ENDPOINT_URL" s3 cp "s3://$AWS_BUCKET/$key" "/tmp/$(basename "$key")" >/dev/null
+done
+aws --endpoint-url "$AWS_ENDPOINT_URL" cloudfront list-invalidations --distribution-id "$AWS_CLOUDFRONT_DISTRIBUTION" > /tmp/cloudfront-invalidations.json
+python3 - <<'PY' > /tmp/cloudfront-invalidation-ids
+import json
+data = json.load(open("/tmp/cloudfront-invalidations.json", encoding="utf-8"))
+items = data.get("InvalidationList", {}).get("Items") or []
+for item in items:
+    if item.get("Id"):
+        print(item["Id"])
+PY
+: > /tmp/cloudfront-invalidation-details.jsonl
+while IFS= read -r invalidation_id; do
+	[ -n "$invalidation_id" ] || continue
+	aws --endpoint-url "$AWS_ENDPOINT_URL" cloudfront get-invalidation \
+		--distribution-id "$AWS_CLOUDFRONT_DISTRIBUTION" \
+		--id "$invalidation_id" >> /tmp/cloudfront-invalidation-details.jsonl
+	printf '\n' >> /tmp/cloudfront-invalidation-details.jsonl
+done < /tmp/cloudfront-invalidation-ids
+python3 - <<'PY'
+import json
+import os
+import sys
+
+def fail(msg):
+    print(msg, file=sys.stderr)
+    raise SystemExit(1)
+
+tag = os.environ["RELEASE_TAG"]
+version = os.environ["RELEASE_VERSION"]
+commit = os.environ["RELEASE_COMMIT"]
+suffixes = [
+    "darwin_amd64.tar.gz",
+    "darwin_arm64.tar.gz",
+    "linux_amd64.tar.gz",
+    "linux_arm64.tar.gz",
+    "linux_armv7.tar.gz",
+    "windows_amd64.zip",
+    "windows_arm64.zip",
+]
+
+expected = set()
+for label, prefix in (
+    (commit, "dagger/main/" + commit),
+    ("head", "dagger/main/head"),
+    (tag, "dagger/releases/" + version),
+):
+    for suffix in suffixes:
+        expected.add(prefix + "/dagger_" + label + "_" + suffix)
+    expected.add(prefix + "/checksums.txt")
+expected.update({
+    "dagger/install.sh",
+    "dagger/install.ps1",
+    "dagger/latest_version",
+    "dagger/versions/latest",
+    "dagger/versions/" + ".".join(version.split(".")[:2]),
+})
+
+objects = json.load(open("/tmp/s3-objects.json", encoding="utf-8"))
+actual = {item["Key"] for item in objects.get("Contents", [])}
+if actual != expected:
+    fail("S3 object set mismatch\nexpected: %r\nactual:   %r" % (sorted(expected), sorted(actual)))
+
+for pointer in ("latest_version", "latest", ".".join(version.split(".")[:2])):
+    path = "/tmp/" + pointer
+    got = open(path, encoding="utf-8").read()
+    if got != version:
+        fail(f"{pointer} should contain {version!r}, got {got!r}")
+
+for script in ("install.sh", "install.ps1"):
+    contents = open("/tmp/" + script, encoding="utf-8").read()
+    if "dagger" not in contents.lower():
+        fail(f"{script} did not look like a Dagger install script")
+
+details = open("/tmp/cloudfront-invalidation-details.jsonl", encoding="utf-8").read()
+if "/dagger/install.sh" not in details or "/dagger/install.ps1" not in details:
+    fail("CloudFront invalidation should include install script paths: " + details)
+PY
+`}).
+		Stdout(ctx)
+	if err != nil {
+		return fmt.Errorf("check CLI publish metadata: %w", err)
+	}
+	return nil
+}
+
 func (env *publishCheckEnv) assertS3ArchiveSet(ctx context.Context, dir string, archives []string, inspectArchives bool) error {
 	inspect := "0"
 	if inspectArchives {
@@ -564,7 +673,7 @@ func (env *publishCheckEnv) assertS3ArchiveSet(ctx context.Context, dir string, 
 	}
 
 	_, err := env.awsCLI().
-		WithExec([]string{"apk", "add", "coreutils", "unzip"}).
+		WithExec([]string{"apk", "add", "coreutils", "python3", "unzip"}).
 		WithEnvVariable("AWS_BUCKET", env.awsBucket).
 		WithEnvVariable("S3_DIR", dir).
 		WithEnvVariable("INSPECT_ARCHIVES", inspect).
@@ -619,13 +728,21 @@ if [ "$INSPECT_ARCHIVES" = "1" ]; then
 		case "$file" in
 			*.tar.gz)
 				tar -tzf "$file" > /tmp/archive-list
-				grep -Fx LICENSE /tmp/archive-list >/dev/null
-				grep -Fx dagger /tmp/archive-list >/dev/null
+				printf 'LICENSE\ndagger\n' > /tmp/expected-archive-list
+				if ! cmp -s /tmp/expected-archive-list /tmp/archive-list; then
+					echo "unexpected tar archive entries for $file" >&2
+					cat /tmp/archive-list >&2
+					exit 1
+				fi
 				;;
 			*.zip)
 				unzip -Z1 "$file" > /tmp/archive-list
-				grep -Fx LICENSE /tmp/archive-list >/dev/null
-				grep -Fx dagger.exe /tmp/archive-list >/dev/null
+				printf 'LICENSE\ndagger.exe\n' > /tmp/expected-archive-list
+				if ! cmp -s /tmp/expected-archive-list /tmp/archive-list; then
+					echo "unexpected zip archive entries for $file" >&2
+					cat /tmp/archive-list >&2
+					exit 1
+				fi
 				;;
 			*)
 				echo "unknown archive format: $file" >&2
@@ -633,6 +750,52 @@ if [ "$INSPECT_ARCHIVES" = "1" ]; then
 				;;
 		esac
 	done < /tmp/expected-artifacts
+	python3 - <<'PY'
+import os
+import stat
+import sys
+import tarfile
+import zipfile
+
+def fail(msg):
+    print(msg, file=sys.stderr)
+    raise SystemExit(1)
+
+expected = [line.strip() for line in open("/tmp/expected-artifacts", encoding="utf-8") if line.strip()]
+for file in expected:
+    if file.endswith(".tar.gz"):
+        with tarfile.open(file, "r:gz") as archive:
+            entries = archive.getmembers()
+        names = [entry.name for entry in entries]
+        if names != ["LICENSE", "dagger"]:
+            fail(f"unexpected tar entries for {file}: {names!r}")
+        by_name = {entry.name: entry for entry in entries}
+        for name, expected_mode in (("LICENSE", 0o644), ("dagger", 0o755)):
+            entry = by_name[name]
+            if entry.uid != 0 or entry.gid != 0:
+                fail(f"{file}:{name} should be owned by uid/gid 0, got {entry.uid}/{entry.gid}")
+            if entry.mtime != 0:
+                fail(f"{file}:{name} should have deterministic mtime 0, got {entry.mtime}")
+            mode = stat.S_IMODE(entry.mode)
+            if mode != expected_mode:
+                fail(f"{file}:{name} mode mismatch: expected {oct(expected_mode)}, got {oct(mode)}")
+    elif file.endswith(".zip"):
+        with zipfile.ZipFile(file) as archive:
+            entries = archive.infolist()
+        names = [entry.filename for entry in entries]
+        if names != ["LICENSE", "dagger.exe"]:
+            fail(f"unexpected zip entries for {file}: {names!r}")
+        by_name = {entry.filename: entry for entry in entries}
+        for name, expected_mode in (("LICENSE", 0o644), ("dagger.exe", 0o755)):
+            entry = by_name[name]
+            if entry.date_time != (1980, 1, 1, 0, 0, 0):
+                fail(f"{file}:{name} should have deterministic zip timestamp, got {entry.date_time!r}")
+            mode = (entry.external_attr >> 16) & 0o777
+            if mode and mode != expected_mode:
+                fail(f"{file}:{name} mode mismatch: expected {oct(expected_mode)}, got {oct(mode)}")
+    else:
+        fail(f"unknown archive format: {file}")
+PY
 fi
 `}).
 		Stdout(ctx)
@@ -644,16 +807,27 @@ fi
 
 func (env *publishCheckEnv) assertCLIGitHubRelease(ctx context.Context) error {
 	assets := append(publishCheckArchiveNames(env.releaseTag), "checksums.txt")
-	_, err := dag.Container().
-		From("python:3.12-alpine").
+	_, err := env.awsCLI().
+		WithExec([]string{"apk", "add", "python3"}).
 		WithMountedCache("/records", env.mockRecords).
+		WithEnvVariable("AWS_BUCKET", env.awsBucket).
 		WithEnvVariable("RELEASE_TAG", env.releaseTag).
+		WithEnvVariable("RELEASE_VERSION", env.releaseVersion).
 		WithEnvVariable("RELEASE_COMMIT", env.commit).
 		WithNewFile("/tmp/expected-assets", strings.Join(assets, "\n")+"\n").
-		WithExec([]string{"python", "-c", `
+		WithExec([]string{"sh", "-ec", `
+set -eu
+mkdir -p /tmp/s3-assets
+while IFS= read -r asset; do
+	[ -n "$asset" ] || continue
+	aws --endpoint-url "$AWS_ENDPOINT_URL" s3 cp "s3://$AWS_BUCKET/dagger/releases/$RELEASE_VERSION/$asset" "/tmp/s3-assets/$asset" >/dev/null
+done < /tmp/expected-assets
+python3 - <<'PY'
 import json
 import os
+import hashlib
 import sys
+import urllib.parse
 
 def fail(msg):
     print(msg, file=sys.stderr)
@@ -668,35 +842,138 @@ with open("/records/events.jsonl", encoding="utf-8") as f:
 tag = os.environ["RELEASE_TAG"]
 commit = os.environ["RELEASE_COMMIT"]
 
-releases = [e for e in events if e.get("kind") == "github_release_create" and e.get("tag_name") == tag]
-if len(releases) != 1:
-    fail(f"expected exactly one root release create for {tag}, got {len(releases)}")
-release = releases[0]
+lookups = [e for e in events if e.get("kind") == "github_release_lookup" and e.get("tag_name") == tag]
+if len(lookups) != 1:
+    fail(f"expected exactly one root release lookup for {tag}, got {len(lookups)}")
+
+creates = [e for e in events if e.get("kind") == "github_release_create" and e.get("tag_name") == tag]
+if creates:
+    fail(f"root release should exercise existing-release update path, got create events: {creates}")
+
+updates = [e for e in events if e.get("kind") == "github_release_update" and e.get("tag_name") == tag]
+if len(updates) != 1:
+    fail(f"expected exactly one root release update for {tag}, got {len(updates)}")
+release = updates[0]
 if release.get("target_commitish") not in ("", commit):
     fail(f"release target mismatch: expected {commit}, got {release.get('target_commitish')}")
 if release.get("name") != tag:
     fail(f"release name mismatch: expected {tag}, got {release.get('name')}")
 if release.get("draft") is not True:
-    fail(f"release should be created as draft before asset uploads: {release.get('draft')}")
+    fail(f"existing draft release should stay draft before asset uploads: {release.get('draft')}")
 if release.get("prerelease") not in (None, False):
     fail(f"stable release should not be marked prerelease: {release.get('prerelease')}")
 if "Fix a regression in the 1Password secret provider where secrets with spaces could not be resolved" not in release.get("release_body", ""):
     fail("root release body did not include expected changelog entry")
 
 expected_assets = sorted(line.strip() for line in open("/tmp/expected-assets", encoding="utf-8") if line.strip())
+
+asset_lists = [e for e in events if e.get("kind") == "github_release_asset_list"]
+if len(asset_lists) != 1:
+    fail(f"expected one existing release asset list before upload, got {len(asset_lists)}")
+
+deleted_assets = sorted(e.get("asset_name", "") for e in events if e.get("kind") == "github_release_asset_delete")
+if deleted_assets != expected_assets:
+    fail("existing release asset deletes mismatch\nexpected: %r\nactual:   %r" % (expected_assets, deleted_assets))
+
 actual_assets = sorted(e.get("asset_name", "") for e in events if e.get("kind") == "github_release_asset_upload")
 if actual_assets != expected_assets:
     fail("release assets mismatch\nexpected: %r\nactual:   %r" % (expected_assets, actual_assets))
+
+uploads = [e for e in events if e.get("kind") == "github_release_asset_upload"]
+for asset in expected_assets:
+    s3_path = os.path.join("/tmp/s3-assets", asset)
+    record_path = os.path.join("/records/github-assets", urllib.parse.quote(asset, safe=""))
+    with open(s3_path, "rb") as f:
+        s3_bytes = f.read()
+    try:
+        with open(record_path, "rb") as f:
+            uploaded_bytes = f.read()
+    except FileNotFoundError:
+        fail(f"missing recorded GitHub release asset bytes for {asset}")
+    if uploaded_bytes != s3_bytes:
+        fail(f"GitHub release asset bytes differ from S3 artifact for {asset}")
+    expected_sha = hashlib.sha256(s3_bytes).hexdigest()
+    upload = next((e for e in uploads if e.get("asset_name") == asset), None)
+    if upload is None or upload.get("body_sha256") != expected_sha:
+        fail(f"recorded GitHub upload hash mismatch for {asset}")
 
 publishes = [e for e in events if e.get("kind") == "github_release_publish"]
 if len(publishes) != 1:
     fail(f"expected exactly one root release publish after asset upload, got {len(publishes)}")
 if publishes[0].get("draft") is not False:
     fail(f"release publish should undraft the release: {publishes[0].get('draft')}")
+if uploads and publishes[0].get("time", 0) <= max(e.get("time", 0) for e in uploads):
+    fail("root release was published before all assets were uploaded")
+PY
 `}).
 		Stdout(ctx)
 	if err != nil {
 		return fmt.Errorf("check CLI GitHub release: %w", err)
+	}
+	return nil
+}
+
+func (env *publishCheckEnv) assertComponentGitHubReleases(ctx context.Context) error {
+	_, err := dag.Container().
+		From("python:3.12-alpine").
+		WithMountedCache("/records", env.mockRecords).
+		WithEnvVariable("RELEASE_TAG", env.releaseTag).
+		WithEnvVariable("RELEASE_COMMIT", env.commit).
+		WithNewFile("/tmp/expected-component-tags", strings.Join([]string{
+			"sdk/go/" + env.releaseTag,
+			"sdk/python/" + env.releaseTag,
+			"sdk/typescript/" + env.releaseTag,
+			"sdk/elixir/" + env.releaseTag,
+			"sdk/rust/" + env.releaseTag,
+			"sdk/php/" + env.releaseTag,
+			"helm/chart/" + env.releaseTag,
+		}, "\n")+"\n").
+		WithExec([]string{"python", "-c", `
+import json
+import os
+import sys
+
+def fail(msg):
+    print(msg, file=sys.stderr)
+    raise SystemExit(1)
+
+events = [json.loads(line) for line in open("/records/events.jsonl", encoding="utf-8") if line.strip()]
+expected = [line.strip() for line in open("/tmp/expected-component-tags", encoding="utf-8") if line.strip()]
+commit = os.environ["RELEASE_COMMIT"]
+
+creates = [e for e in events if e.get("kind") == "github_release_create"]
+by_tag = {}
+for event in creates:
+    by_tag.setdefault(event.get("tag_name"), []).append(event)
+
+for tag in expected:
+    matches = by_tag.get(tag, [])
+    if len(matches) != 1:
+        fail(f"expected exactly one component GitHub release create for {tag}, got {len(matches)}")
+    release = matches[0]
+    if release.get("target_commitish") != commit:
+        fail(f"component release {tag} target mismatch: expected {commit}, got {release.get('target_commitish')}")
+    if release.get("name") != tag:
+        fail(f"component release {tag} name mismatch: {release.get('name')}")
+    if release.get("draft") not in (None, False):
+        fail(f"component release {tag} should not be draft: {release.get('draft')}")
+    if release.get("prerelease") not in (None, False):
+        fail(f"component release {tag} should not be prerelease: {release.get('prerelease')}")
+    if release.get("make_latest") != "false":
+        fail(f"component release {tag} should pass latest=false, got {release.get('make_latest')!r}")
+    body = release.get("release_body", "")
+    if tag not in body:
+        fail(f"component release {tag} body should mention its release tag")
+    if "What to do next" not in body:
+        fail(f"component release {tag} body should include standard follow-up section")
+
+unexpected_components = sorted(tag for tag in by_tag if tag and tag.startswith(("sdk/", "helm/")) and tag not in expected)
+if unexpected_components:
+    fail(f"unexpected component GitHub release tags: {unexpected_components}")
+`}).
+		Stdout(ctx)
+	if err != nil {
+		return fmt.Errorf("check component GitHub releases: %w", err)
 	}
 	return nil
 }
@@ -813,6 +1090,7 @@ for needle in (
     "PublisherUrl: https://dagger.io",
     "PublisherSupportUrl: https://github.com/dagger/dagger/issues/new/choose",
     "PackageName: dagger",
+    "Moniker: dagger",
     "License: asl20",
     "ShortDescription: Dagger is an integrated platform to orchestrate the delivery of applications",
     "ManifestType: defaultLocale",
@@ -841,26 +1119,31 @@ content_by_path = {
     if e.get("kind") == "github_content_write"
 }
 expected_write_details = {
-    ("dagger", "homebrew-tap", "dagger.rb"): {
-        "branch": "main",
-        "message": f"Brew formula update for dagger version {tag}",
-    },
-    ("dagger", "nix", "pkgs/dagger/default.nix"): {
-        "branch": "main",
-        "message": f"dagger:  -> {tag}",
-    },
-    ("dagger", "winget-pkgs", f"manifests/d/Dagger/Cli/{version}/Dagger.Cli.yaml"): {
-        "branch": f"dagger-{version}",
-        "message": f"New version: Dagger.Cli {version}: add version",
-    },
-    ("dagger", "winget-pkgs", f"manifests/d/Dagger/Cli/{version}/Dagger.Cli.installer.yaml"): {
-        "branch": f"dagger-{version}",
-        "message": f"New version: Dagger.Cli {version}: add installer",
-    },
-    ("dagger", "winget-pkgs", f"manifests/d/Dagger/Cli/{version}/Dagger.Cli.locale.en-US.yaml"): {
-        "branch": f"dagger-{version}",
-        "message": f"New version: Dagger.Cli {version}: add locale",
-    },
+	("dagger", "homebrew-tap", "dagger.rb"): {
+		"branch": "main",
+		"message": f"Brew formula update for dagger version {tag}",
+		"sha": "9999999999999999999999999999999999999999",
+	},
+	("dagger", "nix", "pkgs/dagger/default.nix"): {
+		"branch": "main",
+		"message": f"dagger:  -> {tag}",
+		"sha": "9999999999999999999999999999999999999999",
+	},
+	("dagger", "winget-pkgs", f"manifests/d/Dagger/Cli/{version}/Dagger.Cli.yaml"): {
+		"branch": f"dagger-{version}",
+		"message": f"New version: Dagger.Cli {version}: add version",
+		"sha": "",
+	},
+	("dagger", "winget-pkgs", f"manifests/d/Dagger/Cli/{version}/Dagger.Cli.installer.yaml"): {
+		"branch": f"dagger-{version}",
+		"message": f"New version: Dagger.Cli {version}: add installer",
+		"sha": "",
+	},
+	("dagger", "winget-pkgs", f"manifests/d/Dagger/Cli/{version}/Dagger.Cli.locale.en-US.yaml"): {
+		"branch": f"dagger-{version}",
+		"message": f"New version: Dagger.Cli {version}: add locale",
+		"sha": "",
+	},
 }
 for key, expected in expected_write_details.items():
     event = content_by_path.get(key)
@@ -876,22 +1159,99 @@ winget_refs = [
 ]
 need(len(winget_refs) == 1, f"expected one winget branch create, got {len(winget_refs)}")
 need(winget_refs[0].get("ref") == f"refs/heads/dagger-{version}", f"unexpected winget branch ref: {winget_refs[0].get('ref')}")
-winget_syncs = [
+need(winget_refs[0].get("sha") == "4444444444444444444444444444444444444444", f"winget branch should be created from upstream master, got {winget_refs[0].get('sha')}")
+winget_upstream_ref_lookups = [
     e for e in events
-    if e.get("kind") == "github_merge_upstream" and e.get("path") == "/api/v3/repos/dagger/winget-pkgs/merge-upstream"
+    if e.get("kind") == "github_ref_lookup" and e.get("path") == "/api/v3/repos/microsoft/winget-pkgs/git/ref/heads/master"
 ]
-need(len(winget_syncs) == 1, f"expected one winget fork sync, got {len(winget_syncs)}")
+need(len(winget_upstream_ref_lookups) == 1, f"expected one winget upstream master ref lookup, got {len(winget_upstream_ref_lookups)}")
+winget_syncs = [e for e in events if e.get("kind") == "github_merge_upstream"]
+need(len(winget_syncs) == 0, f"winget should create release branch from upstream master directly, got sync events: {winget_syncs}")
 winget_prs = [e for e in events if e.get("kind") == "github_pull_request_create" and e.get("path") == "/api/v3/repos/microsoft/winget-pkgs/pulls"]
 need(len(winget_prs) == 1, f"expected one winget pull request, got {len(winget_prs)}")
 need(winget_prs[0].get("title") == f"New version: Dagger.Cli {version}", f"unexpected winget PR title: {winget_prs[0].get('title')}")
-need(winget_prs[0].get("head") == f"dagger:winget-pkgs:dagger-{version}", f"unexpected winget PR head: {winget_prs[0].get('head')}")
+need(winget_prs[0].get("head") == f"dagger:dagger-{version}", f"unexpected winget PR head: {winget_prs[0].get('head')}")
 need(winget_prs[0].get("base") == "master", f"unexpected winget PR base: {winget_prs[0].get('base')}")
-need("Dagger release tooling" in winget_prs[0].get("body", ""), "winget PR body should include Dagger release tooling footer")
+winget_body = winget_prs[0].get("body", "")
+need("Checklist for Pull Requests" in winget_body, "winget PR body should include checklist")
+need("Have you signed the [Contributor License Agreement]" in winget_body, "winget PR body should include CLA checklist")
+need("This PR only modifies one (1) manifest" in winget_body, "winget PR body should include manifest checklist")
+need("winget validate --manifest <path>" in winget_body, "winget PR body should include validation checklist")
+need("Dagger release tooling" in winget_body, "winget PR body should include Dagger release tooling footer")
 PY
-`}).
+	`}).
 		Stdout(ctx)
 	if err != nil {
 		return fmt.Errorf("check CLI package manager outputs: %w", err)
+	}
+	return nil
+}
+
+func (env *publishCheckEnv) assertPackageRegistryRequests(ctx context.Context) error {
+	_, err := dag.Container().
+		From("python:3.12-alpine").
+		WithMountedCache("/records", env.mockRecords).
+		WithEnvVariable("RELEASE_VERSION", env.releaseVersion).
+		WithExec([]string{"python", "-c", `
+import base64
+import json
+import os
+import sys
+
+def fail(msg):
+    print(msg, file=sys.stderr)
+    raise SystemExit(1)
+
+def need(condition, msg):
+    if not condition:
+        fail(msg)
+
+def auth_payload(header):
+    if header.startswith("Basic "):
+        return base64.b64decode(header.removeprefix("Basic ")).decode("utf-8", "replace")
+    return header
+
+events = [json.loads(line) for line in open("/records/events.jsonl", encoding="utf-8") if line.strip()]
+version = os.environ["RELEASE_VERSION"]
+
+netlify_lists = [e for e in events if e.get("kind") == "netlify_list_deploys"]
+need(len(netlify_lists) == 1, f"expected one Netlify deploy list request, got {len(netlify_lists)}")
+need("branch=main" in netlify_lists[0].get("path", ""), f"Netlify deploy list should filter branch=main: {netlify_lists[0].get('path')}")
+need(netlify_lists[0].get("auth_header") == "Bearer fake-netlify-token", f"unexpected Netlify list auth header: {netlify_lists[0].get('auth_header')!r}")
+netlify_restores = [e for e in events if e.get("kind") == "netlify_restore"]
+need(len(netlify_restores) == 1, f"expected one Netlify restore request, got {len(netlify_restores)}")
+need(netlify_restores[0].get("path", "").endswith("/deploys/deploy-1/restore"), f"Netlify restore should use listed deploy: {netlify_restores[0].get('path')}")
+need(netlify_restores[0].get("auth_header") == "Bearer fake-netlify-token", f"unexpected Netlify restore auth header: {netlify_restores[0].get('auth_header')!r}")
+
+pypi = [e for e in events if e.get("kind") == "pypi_publish"]
+need(pypi, "expected at least one PyPI upload")
+pypi_filetypes = {e.get("filetype") for e in pypi}
+need({"sdist", "bdist_wheel"}.issubset(pypi_filetypes), f"PyPI should upload sdist and wheel, got {pypi_filetypes}")
+for event in pypi:
+    need(event.get("package_name") in {"dagger-io", "dagger_io"}, f"unexpected PyPI package name: {event.get('package_name')!r}")
+    need(event.get("package_version") == version, f"PyPI upload version mismatch: {event.get('package_version')!r}")
+    need("fake-pypi-token" in auth_payload(event.get("auth_header", "")), f"PyPI upload missing fake token auth: {event.get('auth_header')!r}")
+
+hex_publish = [e for e in events if e.get("kind") == "hex_publish"]
+need(len(hex_publish) == 1, f"expected one Hex package publish, got {len(hex_publish)}")
+need(hex_publish[0].get("package_version") == version, f"Hex publish version mismatch: {hex_publish[0].get('package_version')!r}")
+need("fake-hex-api-key" in hex_publish[0].get("auth_header", ""), f"Hex publish missing API key auth: {hex_publish[0].get('auth_header')!r}")
+hex_docs = [e for e in events if e.get("kind") == "hex_docs_publish"]
+need(len(hex_docs) == 1, f"expected one Hex docs publish, got {len(hex_docs)}")
+need(hex_docs[0].get("package_version") == version, f"Hex docs version mismatch: {hex_docs[0].get('package_version')!r}")
+need("fake-hex-api-key" in hex_docs[0].get("auth_header", ""), f"Hex docs publish missing API key auth: {hex_docs[0].get('auth_header')!r}")
+
+cargo = [e for e in events if e.get("kind") == "cargo_publish"]
+need(len(cargo) == 1, f"expected one Cargo publish, got {len(cargo)}")
+need(cargo[0].get("crate_name") == "dagger-sdk", f"Cargo crate name mismatch: {cargo[0].get('crate_name')!r}")
+need(cargo[0].get("crate_version") == version, f"Cargo crate version mismatch: {cargo[0].get('crate_version')!r}")
+need(cargo[0].get("deps_count", 0) > 0, "Cargo publish metadata should include dependencies")
+need("fake-cargo-token" in cargo[0].get("auth_header", ""), f"Cargo publish missing registry token auth: {cargo[0].get('auth_header')!r}")
+need(any(e.get("kind") == "cargo_config" for e in events), "Cargo should fetch registry config")
+`}).
+		Stdout(ctx)
+	if err != nil {
+		return fmt.Errorf("check package registry requests: %w", err)
 	}
 	return nil
 }
@@ -921,10 +1281,61 @@ func (env *publishCheckEnv) assertRegistryTags(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("list registry tags: %w", err)
 	}
-	for _, tag := range []string{env.releaseTag, env.commit, "latest"} {
+	for _, tag := range []string{
+		"main",
+		env.commit,
+		env.releaseTag,
+		"latest",
+		"main-gpu",
+		env.commit + "-gpu",
+		env.releaseTag + "-gpu",
+		"latest-gpu",
+	} {
 		if err := requireContains(tags, tag, "registry should contain engine tag"); err != nil {
 			return err
 		}
+	}
+	_, err = dag.Container(dagger.ContainerOpts{Platform: env.platform}).
+		From("gcr.io/go-containerregistry/crane:debug").
+		WithServiceBinding("registry", env.registrySvc).
+		WithEnvVariable("REGISTRY_USERNAME", publishCheckRegistryUser).
+		WithSecretVariable("REGISTRY_PASSWORD", dag.SetSecret("registry-manifest-password-"+randomID(), publishCheckRegistryPass)).
+		WithEnvVariable("RELEASE_TAG", env.releaseTag).
+		WithExec([]string{"sh", "-ec", `
+set -eu
+crane auth login registry:5000 --insecure --username "$REGISTRY_USERNAME" --password "$REGISTRY_PASSWORD"
+for tag in main "$RELEASE_TAG"; do
+	crane manifest --insecure "registry:5000/dagger/engine:$tag" > "/tmp/default-$tag.json"
+	crane config --insecure "registry:5000/dagger/engine:$tag-gpu" > "/tmp/gpu-$tag.json"
+done
+check_platform_counts() {
+	file="$1"
+	expected_amd64="$2"
+	expected_arm64="$3"
+	expected_linux="$4"
+	amd64="$(grep -o '"architecture"[[:space:]]*:[[:space:]]*"amd64"' "$file" | wc -l | tr -d ' ')"
+	arm64="$(grep -o '"architecture"[[:space:]]*:[[:space:]]*"arm64"' "$file" | wc -l | tr -d ' ')"
+	linux="$(grep -o '"os"[[:space:]]*:[[:space:]]*"linux"' "$file" | wc -l | tr -d ' ')"
+	if [ "$amd64" != "$expected_amd64" ] || [ "$arm64" != "$expected_arm64" ] || [ "$linux" != "$expected_linux" ]; then
+		echo "unexpected platform counts in $file: amd64=$amd64 arm64=$arm64 linux=$linux" >&2
+		cat "$file" >&2
+		exit 1
+	fi
+}
+for tag in main "$RELEASE_TAG"; do
+	check_platform_counts "/tmp/default-$tag.json" 1 1 2
+	architecture="$(grep -o '"architecture"[[:space:]]*:[[:space:]]*"[^"]*"' "/tmp/gpu-$tag.json" | head -1 | sed 's/.*"architecture"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
+	os="$(grep -o '"os"[[:space:]]*:[[:space:]]*"[^"]*"' "/tmp/gpu-$tag.json" | head -1 | sed 's/.*"os"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
+	if [ "$architecture" != "amd64" ] || [ "$os" != "linux" ]; then
+		echo "unexpected GPU platform in /tmp/gpu-$tag.json: architecture=$architecture os=$os" >&2
+		cat "/tmp/gpu-$tag.json" >&2
+		exit 1
+	fi
+done
+`}).
+		Sync(ctx)
+	if err != nil {
+		return fmt.Errorf("check engine registry manifests: %w", err)
 	}
 	return nil
 }
@@ -1002,7 +1413,35 @@ func (env *publishCheckEnv) assertSDKTags(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return requireContains(phpSDKTags, env.releaseTag, "PHP SDK git remote should contain release tag")
+	if err := requireContains(phpSDKTags, env.releaseTag, "PHP SDK git remote should contain release tag"); err != nil {
+		return err
+	}
+
+	if _, err := env.gitStdout(ctx, `
+set -eu
+git clone "$GO_SDK_DEST_REMOTE" go-sdk
+git -C go-sdk checkout "$RELEASE_TAG"
+test -f go-sdk/go.mod
+test -f go-sdk/client.go
+test -f go-sdk/engineconn/version.gen.go
+test ! -d go-sdk/sdk
+grep -F 'const CLIVersion = "`+env.releaseVersion+`"' go-sdk/engineconn/version.gen.go
+if grep -F 'replace github.com/dagger/dagger' go-sdk/go.mod; then
+	echo "Go SDK mirror should not retain local monorepo replace" >&2
+	exit 1
+fi
+
+git clone "$PHP_SDK_DEST_REMOTE" php-sdk
+git -C php-sdk checkout "$RELEASE_TAG"
+test -f php-sdk/composer.json
+test -d php-sdk/generated
+test -f php-sdk/src/Connection/version.php
+test ! -d php-sdk/sdk
+grep -F "return '`+env.releaseVersion+`';" php-sdk/src/Connection/version.php
+`); err != nil {
+		return fmt.Errorf("check SDK mirror contents: %w", err)
+	}
+	return nil
 }
 
 func gitSmartHTTPServiceDir(hostname string, dir *dagger.Directory) (*dagger.Service, string) {
@@ -1201,11 +1640,32 @@ records_path = "/records/events.jsonl"
 os.makedirs(os.path.dirname(records_path), exist_ok=True)
 github_content_records_dir = "/records/github-content"
 github_release_records_dir = "/records/github-releases"
+github_asset_records_dir = "/records/github-assets"
 os.makedirs(github_content_records_dir, exist_ok=True)
 os.makedirs(github_release_records_dir, exist_ok=True)
+os.makedirs(github_asset_records_dir, exist_ok=True)
 published_crates = {}
 github_refs = {}
+deleted_github_assets = set()
 state_lock = threading.Lock()
+existing_content_sha = "9999999999999999999999999999999999999999"
+
+publish_check_tag = "` + publishCheckReleaseTag + `"
+publish_check_assets = [
+    "dagger_" + publish_check_tag + "_darwin_amd64.tar.gz",
+    "dagger_" + publish_check_tag + "_darwin_arm64.tar.gz",
+    "dagger_" + publish_check_tag + "_linux_amd64.tar.gz",
+    "dagger_" + publish_check_tag + "_linux_arm64.tar.gz",
+    "dagger_" + publish_check_tag + "_linux_armv7.tar.gz",
+    "dagger_" + publish_check_tag + "_windows_amd64.zip",
+    "dagger_" + publish_check_tag + "_windows_arm64.zip",
+    "checksums.txt",
+]
+existing_root_release_id = 42
+existing_root_release_assets = [
+    {"id": 9000 + i, "name": name}
+    for i, name in enumerate(publish_check_assets)
+]
 
 def record(kind, handler, body, extra=None):
     event = {
@@ -1222,6 +1682,23 @@ def record(kind, handler, body, extra=None):
 
 def safe_filename(value):
     return urllib.parse.quote(value, safe="")
+
+def auth_header(handler):
+    return handler.headers.get("authorization", "")
+
+def multipart_field(body, name):
+    marker = ('name="' + name + '"').encode("utf-8")
+    idx = body.find(marker)
+    if idx < 0:
+        return ""
+    start = body.find(b"\r\n\r\n", idx)
+    if start < 0:
+        return ""
+    start += 4
+    end = body.find(b"\r\n--", start)
+    if end < 0:
+        end = len(body)
+    return body[start:end].decode("utf-8", "replace").strip()
 
 def github_content_target(path):
     parsed = urllib.parse.urlparse(path)
@@ -1244,6 +1721,10 @@ def github_default_branch(repo):
     return "master" if repo == "winget-pkgs" else "main"
 
 def github_ref_sha(owner, repo, branch):
+    if (owner, repo, branch) == ("microsoft", "winget-pkgs", "master"):
+        return "4444444444444444444444444444444444444444"
+    if (owner, repo, branch) == ("dagger", "winget-pkgs", "master"):
+        return "5555555555555555555555555555555555555555"
     if branch == github_default_branch(repo):
         return "1111111111111111111111111111111111111111"
     with state_lock:
@@ -1258,6 +1739,10 @@ def write_github_content_record(owner, repo, content_path, content):
 def write_github_release_record(tag, payload):
     with open(os.path.join(github_release_records_dir, safe_filename(tag) + ".json"), "w", encoding="utf-8") as f:
         json.dump(payload, f, sort_keys=True)
+
+def write_github_asset_record(asset_name, body):
+    with open(os.path.join(github_asset_records_dir, safe_filename(asset_name)), "wb") as f:
+        f.write(body)
 
 def cargo_index_path(crate_name):
     if len(crate_name) == 1:
@@ -1305,7 +1790,13 @@ def record_cargo_publish(handler, body):
             "meta": meta,
             "checksum": checksum,
         }
-    record("cargo_publish", handler, body, {"crate_name": crate_name, "crate_version": crate_version})
+    record("cargo_publish", handler, body, {
+        "crate_name": crate_name,
+        "crate_version": crate_version,
+        "deps_count": len(meta.get("deps") or []),
+        "auth_header": auth_header(handler),
+        "checksum": checksum,
+    })
     handler.send_json(200, {"warnings": {"invalid_categories": [], "invalid_badges": [], "other": []}})
 
 def etf(value):
@@ -1367,7 +1858,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.startswith("/netlify/api/v1/sites/docs.dagger.io/deploys"):
-            record("netlify_list_deploys", self, b"")
+            record("netlify_list_deploys", self, b"", {"auth_header": auth_header(self)})
             self.send_json(200, [{"id": "deploy-1"}])
             return
         if self.path == "/hex/api/users/me":
@@ -1403,8 +1894,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
             })
             return
         if self.path.startswith("/api/v3/repos/") and "/releases/tags/" in self.path:
-            record("github_release_lookup", self, b"")
+            tag = urllib.parse.unquote(self.path.split("/releases/tags/", 1)[1].split("?", 1)[0])
+            record("github_release_lookup", self, b"", {"tag_name": tag})
+            if self.path.startswith("/api/v3/repos/dagger/dagger/") and tag == publish_check_tag:
+                self.send_json(200, {
+                    "id": existing_root_release_id,
+                    "tag_name": tag,
+                    "name": tag,
+                    "draft": True,
+                    "upload_url": "https://github.test/api/uploads/repos/dagger/dagger/releases/" + str(existing_root_release_id) + "/assets{?name,label}",
+                })
+                return
             self.send_json(404, {"message": "Not Found"})
+            return
+        if self.path == "/api/v3/repos/dagger/dagger/releases/" + str(existing_root_release_id) + "/assets":
+            record("github_release_asset_list", self, b"")
+            with state_lock:
+                assets = [asset for asset in existing_root_release_assets if asset["id"] not in deleted_github_assets]
+            self.send_json(200, assets)
+            return
+        if self.path.startswith("/api/v3/repos/dagger/dagger/releases/") and self.path.endswith("/assets"):
+            record("github_release_asset_list", self, b"")
+            self.send_json(200, [])
             return
         if self.path in ("/api/v3", "/api/v3/"):
             record("github_api_root", self, b"")
@@ -1412,6 +1923,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         if self.path.startswith("/api/v3/repos/") and "/contents/" in self.path:
             record("github_content_lookup", self, b"")
+            owner, repo, content_path = github_content_target(self.path)
+            if (owner, repo, content_path) in {
+                ("dagger", "homebrew-tap", "dagger.rb"),
+                ("dagger", "nix", "pkgs/dagger/default.nix"),
+            }:
+                self.send_json(200, {"sha": existing_content_sha})
+                return
             self.send_json(404, {"message": "Not Found"})
             return
         if self.path.startswith("/api/v3/repos/") and "/branches/" in self.path:
@@ -1448,20 +1966,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         body = self.read_body()
         if self.path.startswith("/netlify/api/v1/sites/docs.dagger.io/deploys/") and self.path.endswith("/restore"):
-            record("netlify_restore", self, body)
+            record("netlify_restore", self, body, {"auth_header": auth_header(self)})
             self.send_json(200, {"id": "deploy-1"})
             return
         if self.path.startswith("/pypi/"):
-            record("pypi_publish", self, body)
+            record("pypi_publish", self, body, {
+                "auth_header": auth_header(self),
+                "content_type": self.headers.get("content-type", ""),
+                "package_name": multipart_field(body, "name"),
+                "package_version": multipart_field(body, "version"),
+                "filetype": multipart_field(body, "filetype"),
+            })
             self.send_bytes(200, b"OK", "text/plain")
             return
         if self.path.startswith("/hex/api/packages/dagger/releases/") and self.path.endswith("/docs"):
-            record("hex_docs_publish", self, body)
-            self.send_etf(201, {}, {"location": "http://mock:8080/hexdocs/dagger/" + self.path.split("/releases/", 1)[-1].split("/docs", 1)[0]})
+            version = self.path.split("/releases/", 1)[-1].split("/docs", 1)[0]
+            record("hex_docs_publish", self, body, {
+                "auth_header": auth_header(self),
+                "package_version": version,
+            })
+            self.send_etf(201, {}, {"location": "http://mock:8080/hexdocs/dagger/" + version})
             return
         if self.path.startswith("/hex/api/packages/dagger/releases"):
-            record("hex_publish", self, body)
             version = "` + publishCheckReleaseTag + `".lstrip("v")
+            record("hex_publish", self, body, {
+                "auth_header": auth_header(self),
+                "package_version": version,
+            })
             self.send_etf(201, {
                 "html_url": "http://mock:8080/hex/packages/dagger/" + version,
                 "url": "http://mock:8080/hex/api/packages/dagger/releases/" + version,
@@ -1481,6 +2012,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "name": payload.get("name", ""),
                 "draft": payload.get("draft"),
                 "prerelease": payload.get("prerelease"),
+                "make_latest": payload.get("make_latest"),
                 "release_body": payload.get("body", ""),
             })
             self.send_json(201, {
@@ -1494,7 +2026,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path.startswith("/api/uploads/repos/dagger/dagger/releases/") and "/assets" in self.path:
             parsed = urllib.parse.urlparse(self.path)
             asset_name = urllib.parse.parse_qs(parsed.query).get("name", [""])[0]
-            record("github_release_asset_upload", self, body, {"asset_name": asset_name})
+            write_github_asset_record(asset_name, body)
+            record("github_release_asset_upload", self, body, {
+                "asset_name": asset_name,
+                "body_sha256": hashlib.sha256(body).hexdigest(),
+            })
             self.send_json(201, {"id": int(time.time() * 1000), "name": asset_name})
             return
         if self.path.startswith("/api/v3/repos/") and self.path.endswith("/merge-upstream"):
@@ -1544,6 +2080,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "content_path": content_path,
                 "message": payload.get("message", ""),
                 "branch": payload.get("branch", ""),
+                "sha": payload.get("sha", ""),
                 "committer_name": payload.get("committer", {}).get("name", ""),
                 "committer_email": payload.get("committer", {}).get("email", ""),
                 "decoded_len": len(content),
@@ -1560,13 +2097,47 @@ class Handler(http.server.BaseHTTPRequestHandler):
         body = self.read_body()
         if self.path.startswith("/api/v3/repos/dagger/dagger/releases/"):
             payload = json.loads(body.decode("utf-8") or "{}")
+            if "tag_name" in payload:
+                tag = payload.get("tag_name", "")
+                write_github_release_record(tag, payload)
+                record("github_release_update", self, body, {
+                    "tag_name": tag,
+                    "target_commitish": payload.get("target_commitish", ""),
+                    "name": payload.get("name", ""),
+                    "draft": payload.get("draft"),
+                    "prerelease": payload.get("prerelease"),
+                    "release_body": payload.get("body", ""),
+                })
+                self.send_json(200, {
+                    "id": existing_root_release_id,
+                    "tag_name": tag,
+                    "html_url": "https://github.test/dagger/dagger/releases/tag/" + tag,
+                    "upload_url": "https://github.test/api/uploads/repos/dagger/dagger/releases/" + str(existing_root_release_id) + "/assets{?name,label}",
+                })
+                return
             record("github_release_publish", self, body, {
                 "draft": payload.get("draft"),
                 "prerelease": payload.get("prerelease"),
             })
-            self.send_json(200, {"id": 1, "tag_name": "mock", "html_url": "https://github.test/dagger/dagger/releases/tag/mock"})
+            self.send_json(200, {"id": existing_root_release_id, "tag_name": "mock", "html_url": "https://github.test/dagger/dagger/releases/tag/mock"})
             return
         record("patch", self, body)
+        self.send_json(200, {})
+
+    def do_DELETE(self):
+        body = self.read_body()
+        if self.path.startswith("/api/v3/repos/dagger/dagger/releases/assets/"):
+            asset_id = int(self.path.rsplit("/", 1)[-1])
+            with state_lock:
+                deleted_github_assets.add(asset_id)
+            asset_name = next((asset["name"] for asset in existing_root_release_assets if asset["id"] == asset_id), "")
+            record("github_release_asset_delete", self, body, {
+                "asset_id": asset_id,
+                "asset_name": asset_name,
+            })
+            self.send_bytes(204, b"")
+            return
+        record("delete", self, body)
         self.send_json(200, {})
 
 def serve_http():

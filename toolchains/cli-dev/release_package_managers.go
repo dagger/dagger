@@ -364,6 +364,7 @@ PackageName: dagger
 PackageUrl: https://dagger.io
 License: asl20
 ShortDescription: Dagger is an integrated platform to orchestrate the delivery of applications
+Moniker: dagger
 Tags:
   - dagger
   - cli
