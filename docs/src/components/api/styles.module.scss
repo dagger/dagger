@@ -1,0 +1,219 @@
+// Reference styling for the schema-generated API pages. Everything is built on
+// Infima variables so light/dark themes Just Work and the reference feels
+// native to the rest of the Dagger docs.
+
+.apiType {
+  --api-border: var(--ifm-color-emphasis-200);
+  --api-muted: var(--ifm-color-emphasis-600);
+}
+
+.typeDesc {
+  font-size: 1.05rem;
+}
+
+.implements {
+  color: var(--api-muted);
+  font-size: 0.9rem;
+  margin-bottom: 2rem;
+
+  code {
+    background: var(--ifm-color-emphasis-100);
+  }
+}
+
+/* ── quick-scan index ───────────────────────────────────────────── */
+.index {
+  display: table;
+  width: 100%;
+  margin: 0 0 2.5rem;
+  border: 1px solid var(--api-border);
+  border-radius: var(--ifm-global-radius);
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.9rem;
+
+  td {
+    border: none;
+    border-top: 1px solid var(--api-border);
+    padding: 0.4rem 0.85rem;
+  }
+  tr:first-child td {
+    border-top: none;
+  }
+  tr:nth-child(even) {
+    background: var(--ifm-color-emphasis-100);
+  }
+}
+
+.indexName {
+  white-space: nowrap;
+  width: 1%;
+
+  a {
+    text-decoration: none;
+  }
+  code {
+    background: transparent;
+    padding-left: 0;
+  }
+}
+
+.indexDesc {
+  color: var(--api-muted);
+}
+
+/* ── field cards ────────────────────────────────────────────────── */
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.card {
+  border: 1px solid var(--api-border);
+  border-radius: var(--ifm-global-radius);
+  padding: 1.1rem 1.3rem 0.4rem;
+  scroll-margin-top: var(--ifm-navbar-height);
+
+  // light up the card whose anchor you just followed
+  &:target {
+    border-color: var(--ifm-color-primary);
+    box-shadow: 0 0 0 1px var(--ifm-color-primary);
+  }
+}
+
+.cardHeading {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.6;
+
+  // the signature itself carries the styling; keep the heading chrome quiet
+  &:hover .hash-link::before {
+    opacity: 1;
+  }
+}
+
+/* ── signature ──────────────────────────────────────────────────── */
+.signature {
+  background: var(--ifm-code-background);
+  border: none;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--ifm-code-border-radius);
+  font-size: 0.95rem;
+  white-space: normal;
+}
+
+.fieldName {
+  color: var(--ifm-color-primary);
+  font-weight: 700;
+}
+
+.argName {
+  color: var(--ifm-color-emphasis-800);
+}
+
+.punct {
+  color: var(--api-muted);
+}
+
+.literal {
+  color: var(--ifm-color-success-dark, #2a9d3f);
+}
+
+.typeLink {
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px dashed currentColor;
+}
+
+.typeName {
+  color: var(--ifm-color-info-dark, #1e88a8);
+}
+
+// wrapped, one-per-line argument list for long signatures
+.argsBlock {
+  display: inline-block;
+}
+.argLine {
+  display: block;
+  padding-left: 1.5rem;
+}
+
+/* ── badges ─────────────────────────────────────────────────────── */
+.badges {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0.1rem 0 0.6rem;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.1rem 0.45rem;
+  border-radius: 0.6rem;
+}
+
+.badge-experimental {
+  color: var(--ifm-color-warning-darkest, #7a4f01);
+  background: var(--ifm-color-warning-contrast-background, #fff8e6);
+  border: 1px solid var(--ifm-color-warning, #e6a700);
+}
+
+.badge-deprecated {
+  color: var(--ifm-color-danger-darkest, #7a1a1a);
+  background: var(--ifm-color-danger-contrast-background, #fff0f0);
+  border: 1px solid var(--ifm-color-danger, #e13238);
+}
+
+.cardDesc {
+  color: var(--ifm-font-color-base);
+
+  p:last-child {
+    margin-bottom: 0.8rem;
+  }
+}
+
+.deprecatedNote,
+.experimentalNote {
+  font-size: 0.88rem;
+  margin-bottom: 0.8rem;
+}
+.deprecatedNote {
+  color: var(--ifm-color-danger-dark, #b02a2f);
+}
+.experimentalNote {
+  color: var(--ifm-color-warning-darkest, #7a4f01);
+}
+
+/* ── argument table ─────────────────────────────────────────────── */
+.args {
+  display: table;
+  width: 100%;
+  margin: 0 0 1.1rem;
+  font-size: 0.88rem;
+
+  th {
+    text-align: left;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--api-muted);
+    border: none;
+    border-bottom: 1px solid var(--api-border);
+    padding: 0.3rem 0.6rem;
+  }
+  td {
+    border: none;
+    border-bottom: 1px solid var(--ifm-color-emphasis-100);
+    padding: 0.4rem 0.6rem;
+    vertical-align: top;
+  }
+  code {
+    background: transparent;
+    padding: 0;
+  }
+}

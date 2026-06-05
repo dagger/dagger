@@ -82,19 +82,19 @@ func (d DocsDev) References(
 			Version: version,
 		}),
 	)
-	// 2. Generate the API reference docs
+	// 2. Generate the API reference stubs.
+	//
+	// The reference pages under docs/current_docs/reference/api are rendered
+	// from docs-graphql/schema.graphqls at site-build time by the
+	// dagger-api-reference Docusaurus plugin (see docs/plugins and
+	// docs/src/components/api). All this step regenerates is the thin per-type
+	// MDX stubs, so they stay in sync with the published core-type list.
 	withAPIReference := dag.Container().
 		From("node:22").
 		WithMountedDirectory("/src", withGqlSchema).
-		WithMountedDirectory("/mnt/spectaql", spectaql()).
 		WithWorkdir("/src/docs").
-		WithExec([]string{"yarn", "add", "file:/mnt/spectaql"}).
-		// -t specifies the target directory where spectaql will write the generated output
-		WithExec([]string{"yarn", "run", "spectaql", "./docs-graphql/config.yml", "-t", "./static/api/reference/"}).
-		Directory("/src").
-		WithoutDirectory("docs/node_modules").
-		WithFile("docs/yarn.lock", src.File("docs/yarn.lock")).
-		WithFile("docs/package.json", src.File("docs/package.json"))
+		WithExec([]string{"node", "plugins/dagger-api-reference/generate-stubs.js"}).
+		Directory("/src")
 	// 3. Generate CLI reference
 	withCliReference := src.WithFile("docs/current_docs/reference/cli/index.mdx", dag.DaggerCli().Reference(
 		dagger.DaggerCliReferenceOpts{
