@@ -267,3 +267,108 @@
     padding: 0;
   }
 }
+
+/* ── Dagger-directive notes (defaultPath / cache / ...) ─────────── */
+.note {
+  font-size: 0.85rem;
+  color: var(--api-muted);
+  margin-bottom: 0.6rem;
+  padding-left: 0.7rem;
+  border-left: 2px solid var(--api-border);
+}
+
+/* ── kind hints on non-core type tokens ─────────────────────────── */
+.typeName[data-kind="enum"],
+.typeName[data-kind="scalar"] {
+  border-bottom: 1px dotted currentColor;
+  cursor: help;
+}
+
+/* ── enum value reveal ──────────────────────────────────────────── */
+.enum {
+  margin-top: 0.3rem;
+  font-size: 0.82rem;
+
+  summary {
+    cursor: pointer;
+    color: var(--ifm-color-primary);
+    width: fit-content;
+  }
+}
+
+.enumList {
+  margin: 0.4rem 0 0.2rem;
+  padding-left: 1rem;
+  list-style: none;
+
+  li {
+    margin: 0.15rem 0;
+  }
+  code {
+    background: var(--api-tint);
+    border: none;
+  }
+}
+
+.enumDesc {
+  color: var(--api-muted);
+}
+
+/* ── deprecated fields ──────────────────────────────────────────── */
+.cardDeprecated {
+  .cardHeading {
+    border-left-color: var(--ifm-color-danger, #e13238);
+  }
+  .fieldName {
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+    opacity: 0.75;
+  }
+}
+
+/* ── references (returned by / accepted by) ─────────────────────── */
+.references {
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--api-border);
+
+  h2 {
+    font-size: 1.3rem;
+  }
+}
+
+.refHeading {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--api-muted);
+  margin: 1.2rem 0 0.6rem;
+}
+
+.refList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.5rem;
+}
+
+.ref {
+  text-decoration: none;
+
+  code {
+    background: var(--api-tint);
+    border: none;
+    font-size: 0.82rem;
+    transition: background-color 0.15s ease;
+  }
+  &:hover code {
+    background: var(--api-tint-hover);
+  }
+}
+
+.refField {
+  color: var(--ifm-color-primary);
+}
+
+.refArg {
+  color: var(--api-muted);
+}

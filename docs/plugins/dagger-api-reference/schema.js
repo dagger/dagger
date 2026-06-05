@@ -11,19 +11,51 @@ const fs = require("fs");
 const {
   buildSchema,
   GraphQLObjectType,
+  GraphQLInterfaceType,
+  GraphQLEnumType,
+  GraphQLScalarType,
   GraphQLNonNull,
   GraphQLList,
 } = require("graphql");
 
+// namedTypeOf unwraps NonNull/List wrappers to the underlying named type.
+function namedTypeOf(type) {
+  let t = type;
+  while (t instanceof GraphQLNonNull || t instanceof GraphQLList) {
+    t = t.ofType;
+  }
+  return t;
+}
+
+// classify maps a named type to the kind the UI cares about: a published core
+// type (gets a link), or an enum / scalar / interface / plain object (each
+// rendered with its own affordance — enums reveal their values, etc.).
+function classify(schema, name, coreTypes) {
+  if (coreTypes.has(name)) return "core";
+  const t = schema.getType(name);
+  if (t instanceof GraphQLEnumType) return "enum";
+  if (t instanceof GraphQLScalarType) return "scalar";
+  if (t instanceof GraphQLInterfaceType) return "interface";
+  return "object";
+}
+
 // renderTypeRef turns a graphql-js type into a structured, link-aware token
 // tree: { kind: 'named'|'list'|'nonNull', ... }. The component walks it to
-// render `[Directory!]!` with each named type cross-linked.
-function renderTypeRef(type, coreTypes, expectedType) {
+// render `[Directory!]!` with each named type cross-linked. Named tokens also
+// carry the resolved type's `named` kind so the UI can hint enums/scalars and
+// reveal enum values.
+function renderTypeRef(schema, type, coreTypes, expectedType, seenEnums) {
   if (type instanceof GraphQLNonNull) {
-    return { kind: "nonNull", of: renderTypeRef(type.ofType, coreTypes, expectedType) };
+    return {
+      kind: "nonNull",
+      of: renderTypeRef(schema, type.ofType, coreTypes, expectedType, seenEnums),
+    };
   }
   if (type instanceof GraphQLList) {
-    return { kind: "list", of: renderTypeRef(type.ofType, coreTypes, expectedType) };
+    return {
+      kind: "list",
+      of: renderTypeRef(schema, type.ofType, coreTypes, expectedType, seenEnums),
+    };
   }
   // A bare `ID` carrying @expectedType(name: "Directory") really means a
   // Directory — surface the real type, the way a reader thinks about it,
@@ -32,7 +64,9 @@ function renderTypeRef(type, coreTypes, expectedType) {
   if (name === "ID" && expectedType) {
     name = expectedType;
   }
-  return { kind: "named", name, isCore: coreTypes.has(name) };
+  const named = classify(schema, name, coreTypes);
+  if (named === "enum" && seenEnums) seenEnums.add(name);
+  return { kind: "named", name, named, isCore: named === "core" };
 }
 
 function directiveArgs(node) {
@@ -56,11 +90,17 @@ function expectedTypeOf(astNode) {
   return d ? d.name : null;
 }
 
-function buildArg(arg, coreTypes) {
+function buildArg(schema, arg, coreTypes, seenEnums) {
   return {
     name: arg.name,
     description: arg.description || "",
-    type: renderTypeRef(arg.type, coreTypes, expectedTypeOf(arg.astNode)),
+    type: renderTypeRef(
+      schema,
+      arg.type,
+      coreTypes,
+      expectedTypeOf(arg.astNode),
+      seenEnums
+    ),
     defaultValue:
       arg.astNode && arg.astNode.defaultValue
         ? printValueNode(arg.astNode.defaultValue)
@@ -97,20 +137,93 @@ function printValueNode(node) {
   }
 }
 
-function buildField(field, coreTypes) {
+function buildField(schema, field, coreTypes, seenEnums) {
   const experimental = findDirective(field.astNode, "experimental");
+  const defaultPath = findDirective(field.astNode, "defaultPath");
+  const defaultAddress = findDirective(field.astNode, "defaultAddress");
+  const cache = findDirective(field.astNode, "cache");
+
+  // Dagger-specific behaviors worth a one-line note: contextual defaults and
+  // explicit cache control. These read straight off the directive arguments.
+  const notes = [];
+  if (defaultPath) {
+    notes.push(`Defaults to a contextual path: \`${defaultPath.path}\``);
+  }
+  if (defaultAddress) {
+    notes.push(`Defaults to a container address: \`${defaultAddress.address}\``);
+  }
+  if (cache) {
+    const ttl = cache.ttl ? `, ttl \`${cache.ttl}\`` : "";
+    notes.push(`Cached with the \`${cache.policy || "Default"}\` policy${ttl}.`);
+  }
+
   return {
     name: field.name,
     description: field.description || "",
-    args: field.args.map((a) => buildArg(a, coreTypes)),
-    type: renderTypeRef(field.type, coreTypes, expectedTypeOf(field.astNode)),
+    args: field.args.map((a) => buildArg(schema, a, coreTypes, seenEnums)),
+    type: renderTypeRef(
+      schema,
+      field.type,
+      coreTypes,
+      expectedTypeOf(field.astNode),
+      seenEnums
+    ),
     deprecated: field.deprecationReason
       ? { reason: field.deprecationReason }
       : null,
-    experimental: experimental
-      ? { reason: experimental.reason || "" }
-      : null,
+    experimental: experimental ? { reason: experimental.reason || "" } : null,
+    notes,
   };
+}
+
+/**
+ * parseSchema reads the SDL at `schemaPath` and returns the model for the
+ * given list of core type names. Cross-links are resolved against that same
+ * list, so only types we actually publish become links.
+ */
+// reverseRefs scans every object type in the schema and records, for each core
+// type, the fields that return it and the fields that accept it as an argument.
+// This is what powers the "Returned by" / "Accepted by" sections — the kind of
+// cross-reference a reader can't easily reconstruct themselves. @expectedType
+// is honored so an `ID` argument counts toward its real type.
+function reverseRefs(schema, coreTypes) {
+  const returnedBy = {};
+  const argOf = {};
+  for (const name of coreTypes) {
+    returnedBy[name] = [];
+    argOf[name] = [];
+  }
+
+  for (const t of Object.values(schema.getTypeMap())) {
+    if (!(t instanceof GraphQLObjectType)) continue;
+    if (t.name.startsWith("__")) continue;
+    for (const field of Object.values(t.getFields())) {
+      const ret = namedTypeOf(field.type).name;
+      if (returnedBy[ret]) {
+        returnedBy[ret].push({ type: t.name, field: field.name });
+      }
+      for (const arg of field.args) {
+        const expected = expectedTypeOf(arg.astNode);
+        let argName = namedTypeOf(arg.type).name;
+        if (argName === "ID" && expected) argName = expected;
+        if (argOf[argName]) {
+          argOf[argName].push({
+            type: t.name,
+            field: field.name,
+            arg: arg.name,
+          });
+        }
+      }
+    }
+  }
+
+  const byTypeField = (a, b) =>
+    a.type.localeCompare(b.type) || a.field.localeCompare(b.field);
+  for (const name of coreTypes) {
+    returnedBy[name].sort(byTypeField);
+    argOf[name].sort(byTypeField);
+  }
+  return { returnedBy, argOf };
 }
 
 /**
@@ -122,6 +235,9 @@ function parseSchema(schemaPath, coreTypeNames) {
   const sdl = fs.readFileSync(schemaPath, "utf8");
   const schema = buildSchema(sdl, { assumeValidSDL: true });
   const coreTypes = new Set(coreTypeNames);
+  const seenEnums = new Set();
+
+  const { returnedBy, argOf } = reverseRefs(schema, coreTypes);
 
   const types = {};
   for (const name of coreTypeNames) {
@@ -130,16 +246,36 @@ function parseSchema(schemaPath, coreTypeNames) {
       throw new Error(`core type ${name} is not an object type in the schema`);
     }
     const fields = Object.values(t.getFields())
-      .map((f) => buildField(f, coreTypes))
+      .map((f) => buildField(schema, f, coreTypes, seenEnums))
       .sort((a, b) => a.name.localeCompare(b.name));
     types[name] = {
       name,
       description: t.description || "",
       implements: t.getInterfaces().map((i) => i.name),
       fields,
+      returnedBy: returnedBy[name],
+      argOf: argOf[name],
     };
   }
-  return { types, coreTypes: coreTypeNames };
+
+  // Only the enums actually referenced by published fields are included, each
+  // with its values and their descriptions, so the UI can reveal them inline.
+  const enums = {};
+  for (const name of seenEnums) {
+    const e = schema.getType(name);
+    if (!(e instanceof GraphQLEnumType)) continue;
+    enums[name] = {
+      name,
+      description: e.description || "",
+      values: e.getValues().map((v) => ({
+        name: v.name,
+        description: v.description || "",
+        deprecated: v.deprecationReason || null,
+      })),
+    };
+  }
+
+  return { types, enums, coreTypes: coreTypeNames };
 }
 
 module.exports = { parseSchema, renderTypeRef };

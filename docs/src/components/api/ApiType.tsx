@@ -3,6 +3,7 @@ import { useApiType } from "./data";
 import Markdown from "./Markdown";
 import FieldIndex from "./FieldIndex";
 import FieldCard from "./FieldCard";
+import References from "./References";
 import styles from "./styles.module.scss";
 
 // Past this many fields we show a quick-scan index before the cards, mirroring
@@ -49,6 +50,8 @@ export default function ApiType({ name }: { name: string }): JSX.Element {
           <FieldCard key={f.name} field={f} />
         ))}
       </div>
+
+      <References returnedBy={type.returnedBy} argOf={type.argOf} />
     </div>
   );
 }

@@ -1,8 +1,10 @@
 import React from "react";
 import type { ApiField } from "./data";
+import { baseNamed } from "./data";
 import Signature from "./Signature";
 import TypeRefView from "./TypeRef";
 import Badge from "./Badge";
+import EnumValues from "./EnumValues";
 import Markdown, { MarkdownInline } from "./Markdown";
 import styles from "./styles.module.scss";
 
@@ -16,7 +18,9 @@ export default function FieldCard({
   field: ApiField;
 }): JSX.Element {
   return (
-    <div className={styles.card}>
+    <div
+      className={`${styles.card} ${field.deprecated ? styles.cardDeprecated : ""}`}
+    >
       <h3 id={field.name} className={styles.cardHeading}>
         <Signature field={field} />
         <a
@@ -38,6 +42,12 @@ export default function FieldCard({
         )}
 
         <Markdown className={styles.cardDesc}>{field.description}</Markdown>
+
+        {field.notes.map((note, i) => (
+          <p key={i} className={styles.note}>
+            <MarkdownInline>{note}</MarkdownInline>
+          </p>
+        ))}
 
         {field.deprecated?.reason && (
           <p className={styles.deprecatedNote}>
@@ -77,6 +87,9 @@ export default function FieldCard({
                         </span>
                       )}
                     </code>
+                    {baseNamed(arg.type).named === "enum" && (
+                      <EnumValues name={baseNamed(arg.type).name} />
+                    )}
                   </td>
                   <td>
                     <MarkdownInline>{arg.description}</MarkdownInline>
