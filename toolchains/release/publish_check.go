@@ -296,17 +296,6 @@ func (env *publishCheckEnv) releaseEngine(ctx context.Context) (*dagger.Service,
 
 	engineCtr := dev.Container().
 		WithNewFile("/etc/dagger/engine.json", `{
-  "gc": {
-    "enabled": true,
-    "policies": [
-      {
-        "all": true,
-        "reservedSpace": "0",
-        "minFreeSpace": "1000000000000000",
-        "maxUsedSpace": "1000000000000000"
-      }
-    ]
-  },
   "registries": {
     "`+publishCheckRegistryAddress+`": {
       "http": true
