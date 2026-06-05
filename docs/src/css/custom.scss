@@ -644,7 +644,9 @@ html[data-theme="dark"] .footer-x-link {
 
 // adjust style for Dagger Shell tab title
 .language-shell > div:nth-child(1) {
-  background-color: white;
+  // No background here: this selector matches the content wrapper around the
+  // <pre>, so a solid color leaks out behind the code block's rounded corners
+  // (a white fringe in dark mode). Let the pre's own background show through.
   color: #{$plum-color};
   font-style: italic;
 }
@@ -659,6 +661,13 @@ html[data-theme="dark"] pre {
   background: #{$obsidian-color} !important;
   border: 1px solid rgba(25, 25, 34, 0.3); // Obsidian color with transparency
   color: #f8f8f2; // Light color for code text in dark mode
+}
+
+// The code block container is painted by Docusaurus with the lighter Prism
+// background and rounds its own corners, so without this it peeks out behind
+// the pre's rounded corners as a fringe. Match it to the pre.
+html[data-theme="dark"] .theme-code-block {
+  background: #{$obsidian-color} !important;
 }
 
 // Remove top and bottom padding from header-searchbar
