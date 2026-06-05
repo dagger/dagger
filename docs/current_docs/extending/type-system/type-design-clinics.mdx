@@ -6,11 +6,9 @@ description: "Practice improving weak module APIs into typed Dagger APIs."
 
 # Type Design Clinics
 
-This chapter should teach type design through prose-only API reviews. It should not use SDK syntax.
+This chapter teaches type design through worked API reviews. Each clinic starts with a weak API surface, explains why callers will struggle, and redesigns it with stronger Dagger types. The signatures are language-agnostic sketches — see the [SDK guides](../sdks/index.mdx) for the syntax.
 
-## Clinic Format
-
-Each clinic should follow the same pattern:
+Each clinic follows the same pattern:
 
 1. Start with a weak API surface.
 2. Explain why callers will struggle.
@@ -18,17 +16,132 @@ Each clinic should follow the same pattern:
 4. Redesign the API using stronger Dagger types.
 5. Explain what improved for discovery, caching, composition, errors, and tests.
 
-## Clinics to Write
+## Clinic 1: string paths → `Directory` and `File`
 
-TODO: Add clinics for:
+**Before**
 
-- Replacing string paths with `Directory` and `File`.
-- Replacing token strings with `Secret`.
-- Replacing localhost strings with `Service`.
-- Replacing JSON output with a user-defined object.
-- Replacing a mode string with an enum.
-- Replacing silent file writes with `Changeset`.
+```
+build(sourcePath: string, outputPath: string) -> string   # returns a path
+```
 
-## Review Checklist
+**Why callers struggle.** The caller has to know an absolute or relative host path, and so does the engine — which means the result depends on where the command runs. The engine cannot cache on content, because it only sees a path string; two runs with identical source but a moved working directory look different, and a changed file under the same path looks the same. The return is another path the caller must trust exists.
 
-TODO: End this chapter with a type-design checklist maintainers can use during module API review.
+**Redesign**
+
+```
+build(source: Directory) -> File
+```
+
+**What improved.** The engine caches on the *contents* of `source`, so identical input reuses the build regardless of where it runs. The host boundary is explicit: `source` is clearly an input crossing into the workflow. The returned `File` can be exported, mounted into a container, or passed to another function without anyone touching the filesystem by hand. Tests can construct a `Directory` from fixtures instead of staging files on disk.
+
+## Clinic 2: token strings → `Secret`
+
+**Before**
+
+```
+publish(image: Container, registry: string, username: string, password: string) -> string
+```
+
+**Why callers struggle.** `password` is plaintext. It appears in the call, in shell history, in traces, and possibly in the generated client's logs. Anyone reading a trace to debug a failed publish sees the credential.
+
+**Redesign**
+
+```
+publish(image: Container, registry: string, username: string, password: Secret) -> string   # returns the published ref
+```
+
+**What improved.** The `Secret` is never rendered — traces and logs show that a secret was used, not its value. Secrecy is preserved by construction, so no amount of careless logging downstream can leak it. The caller passes the credential from a secret source (an environment variable, a file, a secrets manager) without it ever becoming a visible string. The function's contract now states honestly that it needs a credential, and the type system keeps that credential safe.
+
+## Clinic 3: localhost strings → `Service`
+
+**Before**
+
+```
+test(source: Directory, databaseUrl: string) -> string
+```
+
+**Why callers struggle.** `databaseUrl` is usually something like `postgres://localhost:5432`, which only means anything on a machine where that database happens to be running. The dependency is invisible to the graph: nothing starts the database, nothing knows the test needs it, and nothing tears it down. The test passes on the author's laptop and fails everywhere else.
+
+**Redesign**
+
+```
+test(source: Directory, database: Service) -> string   # or a richer report object
+```
+
+**What improved.** The database becomes part of the graph. The engine knows the test depends on a live service, starts it with the right ports, binds it to the test environment, and manages its lifecycle. The same call works locally, in CI, and in Cloud, because the dependency travels with the workflow instead of being assumed. The caller composes the service from another function or module rather than hard-coding a host and port.
+
+## Clinic 4: JSON output → a user-defined object
+
+**Before**
+
+```
+scan(image: Container) -> string   # a JSON blob of findings
+```
+
+**Why callers struggle.** Every caller has to parse the JSON, and every caller has to know its shape. There is no help text for the fields, generated clients cannot offer completion, and a change to the JSON structure silently breaks consumers. To act on a single finding, the caller deserializes the whole blob.
+
+**Redesign**
+
+```
+scan(image: Container) -> ScanReport
+
+ScanReport.findings    -> [Finding]
+ScanReport.critical    -> [Finding]
+ScanReport.passed      -> boolean
+Finding.severity       -> Severity   # enum
+```
+
+**What improved.** The result is discoverable: callers and generated clients see `findings`, `critical`, and `passed` as typed fields. Composition is direct — a check can branch on `passed` without parsing anything, and `severity` is an [enum](./enums-and-validation.mdx) the caller can match exhaustively. The contract is stable and documented, so consumers do not break on a formatting change. See [User-Defined Object Types](./user-defined-object-types.mdx).
+
+## Clinic 5: mode string → an enum
+
+**Before**
+
+```
+render(source: Directory, format: string) -> File
+```
+
+**Why callers struggle.** `format` accepts anything. `"jsonn"` and `"YAML"` and `"txt"` all type-check and fail — or worse, silently fall through to a default — only after the work begins. The caller has to read the source or the docs to learn which values are valid, and generated clients cannot help.
+
+**Redesign**
+
+```
+render(source: Directory, format: Format = Json) -> File
+
+Format = Json | Yaml | Text
+```
+
+**What improved.** The valid choices appear in help and generated clients, so the caller never has to guess. An invalid value fails at the call site, before any rendering happens, with an error that lists the accepted values. The default makes the common call short. See [Enums and Validation](./enums-and-validation.mdx) for when a value should be an enum versus a validated string.
+
+## Clinic 6: silent file writes → `Changeset`
+
+**Before**
+
+```
+format(source: Directory) -> string   # writes formatted files to disk, returns "done"
+```
+
+**Why callers struggle.** The function mutates the caller's files as a side effect, and the only evidence is `"done"`. There is no way to review what changed before it lands, no way to compose the change into a larger workflow, and no way to apply it selectively. In CI, the write either has no effect or corrupts the checkout, depending on timing.
+
+**Redesign**
+
+```
+format(source: Directory) -> Changeset
+```
+
+**What improved.** The change becomes a reviewable, composable value. The caller can inspect the diff, apply it, open a pull request, or hand it to another function — the module proposes the edit instead of performing it. The effect is explicit in the signature: a function that returns a `Changeset` clearly edits source, while one that returns a `File` clearly produces an artifact. See [Changesets](/using-dagger/changesets).
+
+## Maintainer review checklist
+
+Use this checklist when reviewing a module's public API — in code review, before publishing, or during a periodic API audit:
+
+- **Strings that should be types.** Is any string actually a path (`Directory`/`File`), a credential (`Secret`), an endpoint (`Service`), a closed choice (enum), or structured data (an object)?
+- **Hidden inputs.** Does any function depend on host environment state, ambient config, or assumed paths that do not appear in its signature?
+- **Required vs. optional.** Is every required argument necessary, and does every optional one have clear, documented behavior when omitted?
+- **Defaults.** Do defaults encode common intent, stay narrowly scoped, appear in help, and come from [settings](/reference/configuration/workspace) when team-wide?
+- **Cache safety.** Can the engine derive a stable identity from the inputs, or does something invisible to it leak into the result?
+- **Secret safety.** Are all credentials `Secret`, and is nothing sensitive at risk of reaching logs, traces, or errors?
+- **Explicit effects.** Are writes, publishes, and network calls visible in the types and names rather than hidden as side effects?
+- **Rich returns.** Does each function return the richest useful value, or does it dead-end in a string the caller must parse?
+- **Names.** Do objects, functions, and arguments read like the caller's intent rather than the implementation?
+- **Errors.** Does invalid input fail early, name the value that failed, and state what to try next?
