@@ -1336,6 +1336,21 @@ func (file *File) AsJSON(ctx context.Context, self dagql.ObjectResult[*File]) (J
 	return json, nil
 }
 
+// AsTOML returns the file contents as TOML when possible, otherwise returns an error
+func (file *File) AsTOML(ctx context.Context, self dagql.ObjectResult[*File]) (TOML, error) {
+	contents, err := file.Contents(ctx, self, nil, nil)
+	if err != nil {
+		return "", err
+	}
+
+	toml := TOML(contents)
+	if err := toml.Validate(); err != nil {
+		return "", err
+	}
+
+	return toml, nil
+}
+
 // AsEnvFile converts a File to an EnvFile by parsing its contents
 func (file *File) AsEnvFile(ctx context.Context, self dagql.ObjectResult[*File], expand bool) (*EnvFile, error) {
 	contents, err := file.Contents(ctx, self, nil, nil)
