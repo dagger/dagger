@@ -975,11 +975,53 @@ html[data-theme="dark"] {
   font-size: 0.875rem !important; // 14px
 }
 
-/* ── API reference pages ──────────────────────────────────────────
-   The generated API reference (docs/src/components/api) is dense with
-   signatures and argument tables, so give it the full reading width instead
-   of the default centered column. Scoped via :has() to the API pages only, so
-   the rest of the docs are unaffected. */
-.main-wrapper:has(.api-reference) .container {
-  max-width: none;
+/* ── content "sheet" ──────────────────────────────────────────────
+   The doc content sits on a white sheet that rises from the cream page
+   background like a rounded sheet of paper. The article column is the sheet;
+   the left nav and (when present) the right table of contents stay on the
+   cream background to either side. */
+:root {
+  --doc-sheet-bg: #ffffff;
+  --doc-sheet-radius: 18px;
+}
+html[data-theme="dark"] {
+  // a touch lighter than the inkberry page background, so it still reads as a
+  // raised surface in dark mode
+  --doc-sheet-bg: #211f3d;
+}
+
+main[class*="docMainContainer"] {
+  // cream gap between the left nav and the sheet, mirroring the gutter the
+  // table of contents leaves on the right
+  padding-left: 1.5rem;
+
+  .row > .col:has(.theme-doc-markdown) {
+    background: var(--doc-sheet-bg);
+    min-height: calc(100vh - var(--ifm-navbar-height));
+    // even 2rem inset on all sides
+    padding: 2rem;
+    border-radius: var(--doc-sheet-radius);
+  }
+
+  // Keep the right-hand table of contents on the cream background, so the
+  // sheet's rounded top-right corner reads against it.
+  .col--3 {
+    background: transparent;
+  }
+}
+
+/* Core reference pages have no table of contents, so the sheet fills all the
+   way to the right edge: drop the right gutter and square off the right
+   corners so it sits flush with the viewport. */
+.main-wrapper:has(.api-reference) {
+  main[class*="docMainContainer"] {
+    .container {
+      max-width: none;
+      padding-right: 0;
+    }
+    .row > .col:has(.theme-doc-markdown) {
+      border-top-right-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+  }
 }
