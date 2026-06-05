@@ -1520,15 +1520,17 @@ func (env *publishCheckEnv) assertHelmTags(ctx context.Context) error {
 	}
 
 	_, err = dag.Container(dagger.ContainerOpts{Platform: env.platform}).
-		From("gcr.io/go-containerregistry/crane:debug").
+		From("alpine:latest").
+		WithExec([]string{"apk", "add", "curl"}).
 		WithServiceBinding("registry", env.registrySvc).
 		WithEnvVariable("REGISTRY_USERNAME", publishCheckRegistryUser).
 		WithSecretVariable("REGISTRY_PASSWORD", dag.SetSecret("registry-helm-password-"+randomID(), publishCheckRegistryPass)).
 		WithEnvVariable("RELEASE_VERSION", env.releaseVersion).
 		WithExec([]string{"sh", "-ec", `
 	set -eu
-	crane auth login registry:5000 --insecure --username "$REGISTRY_USERNAME" --password "$REGISTRY_PASSWORD"
-	crane manifest --insecure "registry:5000/dagger/dagger-helm:$RELEASE_VERSION" > /tmp/helm-manifest.json
+	curl -fsS -u "$REGISTRY_USERNAME:$REGISTRY_PASSWORD" \
+		-H 'Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
+		"http://registry:5000/v2/dagger/dagger-helm/manifests/$RELEASE_VERSION" > /tmp/helm-manifest.json
 	layer_count="$(grep -o '"mediaType"[[:space:]]*:[[:space:]]*"application/vnd.cncf.helm.chart.content.v1.tar+gzip"' /tmp/helm-manifest.json | wc -l | tr -d ' ')"
 	if [ "$layer_count" != "1" ]; then
 		echo "expected exactly one helm chart content layer, got $layer_count" >&2
@@ -1541,7 +1543,8 @@ func (env *publishCheckEnv) assertHelmTags(ctx context.Context) error {
 		cat /tmp/helm-manifest.json >&2
 		exit 1
 	fi
-	crane blob --insecure "registry:5000/dagger/dagger-helm:$RELEASE_VERSION" "$chart_digest" > /tmp/chart.tgz
+	curl -fsS -u "$REGISTRY_USERNAME:$REGISTRY_PASSWORD" \
+		"http://registry:5000/v2/dagger/dagger-helm/blobs/$chart_digest" > /tmp/chart.tgz
 	mkdir -p /tmp/chart
 	tar -xzf /tmp/chart.tgz -C /tmp/chart
 	test -f /tmp/chart/dagger/Chart.yaml
