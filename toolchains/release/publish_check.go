@@ -679,7 +679,7 @@ func (env *publishCheckEnv) assertS3ArchiveSet(ctx context.Context, dir string, 
 	}
 
 	_, err := env.awsCLI().
-		WithExec([]string{"apk", "add", "coreutils", "file", "python3", "unzip"}).
+		WithExec([]string{"apk", "add", "coreutils", "python3", "unzip"}).
 		WithEnvVariable("AWS_BUCKET", env.awsBucket).
 		WithEnvVariable("S3_DIR", dir).
 		WithEnvVariable("INSPECT_ARCHIVES", inspect).
@@ -784,6 +784,7 @@ cat /tmp/checksums.out
 	python3 - <<'PY'
 import os
 import stat
+import struct
 import sys
 import tarfile
 import zipfile
@@ -792,15 +793,64 @@ def fail(msg):
     print(msg, file=sys.stderr)
     raise SystemExit(1)
 
+def check_macho(file, data, expected_cputype):
+    if len(data) < 8 or data[:4] != b"\xcf\xfa\xed\xfe":
+        fail(f"{file} should be a 64-bit little-endian Mach-O binary")
+    cputype = struct.unpack("<I", data[4:8])[0]
+    if cputype != expected_cputype:
+        fail(f"{file} Mach-O cputype mismatch: expected {expected_cputype:#x}, got {cputype:#x}")
+
+def check_elf(file, data, expected_machine, expected_class):
+    if len(data) < 20 or data[:4] != b"\x7fELF":
+        fail(f"{file} should be an ELF binary")
+    if data[4] != expected_class:
+        fail(f"{file} ELF class mismatch: expected {expected_class}, got {data[4]}")
+    if data[5] != 1:
+        fail(f"{file} should be little-endian ELF, got data encoding {data[5]}")
+    machine = struct.unpack("<H", data[18:20])[0]
+    if machine != expected_machine:
+        fail(f"{file} ELF machine mismatch: expected {expected_machine}, got {machine}")
+
+def check_pe(file, data, expected_machine):
+    if len(data) < 0x40 or data[:2] != b"MZ":
+        fail(f"{file} should be a PE binary")
+    pe_offset = struct.unpack("<I", data[0x3c:0x40])[0]
+    if len(data) < pe_offset + 6 or data[pe_offset:pe_offset+4] != b"PE\0\0":
+        fail(f"{file} should contain a PE header")
+    machine = struct.unpack("<H", data[pe_offset+4:pe_offset+6])[0]
+    if machine != expected_machine:
+        fail(f"{file} PE machine mismatch: expected {expected_machine:#x}, got {machine:#x}")
+
+def check_binary_arch(file, data):
+    if not data:
+        fail(f"{file} binary should be non-empty")
+    if "_darwin_amd64." in file:
+        check_macho(file, data, 0x01000007)
+    elif "_darwin_arm64." in file:
+        check_macho(file, data, 0x0100000c)
+    elif "_linux_amd64." in file:
+        check_elf(file, data, 62, 2)
+    elif "_linux_arm64." in file:
+        check_elf(file, data, 183, 2)
+    elif "_linux_armv7." in file:
+        check_elf(file, data, 40, 1)
+    elif "_windows_amd64." in file:
+        check_pe(file, data, 0x8664)
+    elif "_windows_arm64." in file:
+        check_pe(file, data, 0xaa64)
+    else:
+        fail(f"missing binary architecture assertion for {file}")
+
 expected = [line.strip() for line in open("/tmp/expected-artifacts", encoding="utf-8") if line.strip()]
 for file in expected:
     if file.endswith(".tar.gz"):
         with tarfile.open(file, "r:gz") as archive:
             entries = archive.getmembers()
+            by_name = {entry.name: entry for entry in entries}
+            binary = archive.extractfile(by_name["dagger"]).read(4096) if "dagger" in by_name else b""
         names = [entry.name for entry in entries]
         if names != ["LICENSE", "dagger"]:
             fail(f"unexpected tar entries for {file}: {names!r}")
-        by_name = {entry.name: entry for entry in entries}
         for name, expected_mode in (("LICENSE", 0o644), ("dagger", 0o755)):
             entry = by_name[name]
             if entry.uid != 0 or entry.gid != 0:
@@ -810,9 +860,11 @@ for file in expected:
             mode = stat.S_IMODE(entry.mode)
             if mode != expected_mode:
                 fail(f"{file}:{name} mode mismatch: expected {oct(expected_mode)}, got {oct(mode)}")
+        check_binary_arch(file, binary)
     elif file.endswith(".zip"):
         with zipfile.ZipFile(file) as archive:
             entries = archive.infolist()
+            binary = archive.read("dagger.exe")[:4096] if "dagger.exe" in archive.namelist() else b""
         names = [entry.filename for entry in entries]
         if names != ["LICENSE", "dagger.exe"]:
             fail(f"unexpected zip entries for {file}: {names!r}")
@@ -824,38 +876,10 @@ for file in expected:
             mode = (entry.external_attr >> 16) & 0o777
             if mode and mode != expected_mode:
                 fail(f"{file}:{name} mode mismatch: expected {oct(expected_mode)}, got {oct(mode)}")
+        check_binary_arch(file, binary)
     else:
         fail(f"unknown archive format: {file}")
 PY
-	while IFS= read -r file; do
-		[ -n "$file" ] || continue
-		bin="/tmp/release-bin"
-		case "$file" in
-			*.tar.gz) tar -xOf "$file" dagger > "$bin" ;;
-			*.zip) unzip -p "$file" dagger.exe > "$bin" ;;
-			*) echo "unknown archive format: $file" >&2; exit 1 ;;
-		esac
-		if [ ! -s "$bin" ]; then
-			echo "release archive binary should be non-empty: $file" >&2
-			exit 1
-		fi
-		file "$bin" > /tmp/release-bin-file
-		case "$file" in
-			*_darwin_amd64.tar.gz) pattern='Mach-O 64-bit.*x86_64' ;;
-			*_darwin_arm64.tar.gz) pattern='Mach-O 64-bit.*arm64' ;;
-			*_linux_amd64.tar.gz) pattern='ELF 64-bit.*x86-64' ;;
-			*_linux_arm64.tar.gz) pattern='ELF 64-bit.*ARM aarch64' ;;
-			*_linux_armv7.tar.gz) pattern='ELF 32-bit.*ARM' ;;
-			*_windows_amd64.zip) pattern='PE32\+ executable.*x86-64' ;;
-			*_windows_arm64.zip) pattern='PE32\+ executable.*(Aarch64|ARM64|aarch64|arm64)' ;;
-			*) echo "missing binary architecture assertion for $file" >&2; exit 1 ;;
-		esac
-		if ! grep -E "$pattern" /tmp/release-bin-file >/dev/null; then
-			echo "unexpected binary architecture for $file; expected pattern $pattern" >&2
-			cat /tmp/release-bin-file >&2
-			exit 1
-		fi
-	done < /tmp/expected-artifacts
 fi
 `}).
 		Stdout(ctx)
@@ -1463,29 +1487,36 @@ set -eu
 	`}).
 		Directory("/tmp/engine-binaries")
 	_, err = dag.Container().
-		From("alpine:latest").
-		WithExec([]string{"apk", "add", "file"}).
+		From("python:3.12-alpine").
 		WithDirectory("/engine-binaries", engineBinaries).
-		WithExec([]string{"sh", "-ec", `
-set -eu
-check_engine_binary() {
-	file="$1"
-	pattern="$2"
-	if [ ! -s "/engine-binaries/$file" ]; then
-		echo "engine image binary should be non-empty: $file" >&2
-		exit 1
-	fi
-	file "/engine-binaries/$file" > /tmp/engine-file
-	if ! grep -E "$pattern" /tmp/engine-file >/dev/null; then
-		echo "unexpected engine binary architecture for $file; expected pattern $pattern" >&2
-		cat /tmp/engine-file >&2
-		exit 1
-	fi
-}
-check_engine_binary default-linux-amd64 'ELF 64-bit.*x86-64'
-check_engine_binary default-linux-arm64 'ELF 64-bit.*ARM aarch64'
-check_engine_binary gpu-linux-amd64 'ELF 64-bit.*x86-64'
-	`}).
+		WithExec([]string{"python", "-c", `
+import os
+import struct
+import sys
+
+def fail(msg):
+    print(msg, file=sys.stderr)
+    raise SystemExit(1)
+
+def check_elf(file, expected_machine):
+    path = "/engine-binaries/" + file
+    data = open(path, "rb").read(64)
+    if not data:
+        fail(f"{file} should be non-empty")
+    if len(data) < 20 or data[:4] != b"\x7fELF":
+        fail(f"{file} should be an ELF binary")
+    if data[4] != 2:
+        fail(f"{file} should be a 64-bit ELF binary, got class {data[4]}")
+    if data[5] != 1:
+        fail(f"{file} should be little-endian ELF, got data encoding {data[5]}")
+    machine = struct.unpack("<H", data[18:20])[0]
+    if machine != expected_machine:
+        fail(f"{file} ELF machine mismatch: expected {expected_machine}, got {machine}")
+
+check_elf("default-linux-amd64", 62)
+check_elf("default-linux-arm64", 183)
+check_elf("gpu-linux-amd64", 62)
+`}).
 		Sync(ctx)
 	if err != nil {
 		return fmt.Errorf("check engine image binary architectures: %w", err)
