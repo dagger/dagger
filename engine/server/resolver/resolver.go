@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/containerd/containerd/v2/core/content"
 	"github.com/containerd/containerd/v2/core/images"
@@ -179,10 +178,19 @@ func (r *Resolver) ResolveImageConfig(
 			return nil, err
 		}
 
-		platformMatcher := platforms.Default()
-		if opts.Platform != nil {
-			platformMatcher = platforms.Only(platforms.Normalize(*opts.Platform))
+		platformMatcher := imageConfigPlatformMatcher(opts.Platform)
+		if opts.ResolveMode == ResolveModeDefault {
+			metadata, err := r.ensureImageConfigMetadata(ctx, resolvedRef, rootDesc, fetcher, platformMatcher)
+			if err != nil {
+				return nil, err
+			}
+			return &resolveImageConfigResult{
+				ref:    resolvedRef,
+				digest: rootDesc.Digest,
+				config: metadata.configBytes,
+			}, nil
 		}
+
 		provider := contentutil.FromFetcher(fetcher)
 		configDesc, err := images.Config(ctx, provider, rootDesc, platformMatcher)
 		if err != nil {
@@ -247,13 +255,25 @@ func (r *Resolver) Pull(ctx context.Context, ref string, opts PullOpts) (_ *Pull
 	if err != nil {
 		return nil, err
 	}
-	provider := contentutil.FromFetcher(fetcher)
-	manifestDesc, manifest, err := resolveManifestDescriptor(ctx, provider, rootDesc, platformMatcher)
-	if err != nil {
-		return nil, err
+	var manifestDesc ocispecs.Descriptor
+	var manifest ocispecs.Manifest
+	if opts.ResolveMode == ResolveModeDefault {
+		metadata, err := r.ensureImageConfigMetadata(ctx, resolvedRef, rootDesc, fetcher, platformMatcher)
+		if err != nil {
+			return nil, err
+		}
+		manifestDesc = metadata.manifestDesc
+		manifest = metadata.manifest
+	} else {
+		provider := contentutil.FromFetcher(fetcher)
+		var err error
+		manifestDesc, manifest, err = resolveManifestDescriptor(ctx, provider, rootDesc, platformMatcher)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	leaseCtx, release, err := bkcache.WithLease(ctx, r.leaseManager, leases.WithExpiration(5*time.Minute), bkcache.MakeTemporary)
+	leaseCtx, release, err := bkcache.WithLease(ctx, r.leaseManager, leases.WithExpiration(imageMetadataLeaseTTL), bkcache.MakeTemporary)
 	if err != nil {
 		return nil, err
 	}
@@ -354,35 +374,7 @@ func (r *Resolver) tryLocalCanonicalConfig(
 	ref string,
 	opts ResolveImageConfigOpts,
 ) (string, digest.Digest, []byte, bool, error) {
-	parsed, err := reference.ParseNormalizedNamed(ref)
-	if err != nil {
-		return "", "", nil, false, nil
-	}
-	canonical, ok := parsed.(reference.Canonical)
-	if !ok {
-		return "", "", nil, false, nil
-	}
-	rootDesc, found, err := r.localCanonicalRootDescriptor(ctx, canonical.Digest())
-	if err != nil || !found {
-		return "", "", nil, found, err
-	}
-	platformMatcher := platforms.Default()
-	if opts.Platform != nil {
-		platformMatcher = platforms.Only(platforms.Normalize(*opts.Platform))
-	}
-	closure, found, release, err := r.tryLocalCanonicalClosure(ctx, canonical.String(), rootDesc, platformMatcher, nil)
-	if err != nil || !found {
-		return "", "", nil, found, err
-	}
-	defer release(context.WithoutCancel(ctx))
-	configBytes, err := content.ReadBlob(ctx, r.contentStore, closure.ConfigDesc)
-	if err != nil {
-		if cerrdefs.IsNotFound(err) {
-			return "", "", nil, false, nil
-		}
-		return "", "", nil, false, err
-	}
-	return canonical.String(), rootDesc.Digest, configBytes, true, nil
+	return r.tryLocalCanonicalConfigMetadata(ctx, ref, opts)
 }
 
 func (r *Resolver) tryLocalCanonicalClosure(
@@ -488,7 +480,7 @@ func (r *Resolver) tryLocalCanonicalClosure(
 		return nil, false, nil, nil
 	}
 
-	leaseCtx, release, err := bkcache.WithLease(ctx, r.leaseManager, leases.WithExpiration(5*time.Minute), bkcache.MakeTemporary)
+	leaseCtx, release, err := bkcache.WithLease(ctx, r.leaseManager, leases.WithExpiration(imageMetadataLeaseTTL), bkcache.MakeTemporary)
 	if err != nil {
 		return nil, false, nil, err
 	}
@@ -529,31 +521,11 @@ func (r *Resolver) localClosureHasMatchingSource(ctx context.Context, refspec ct
 }
 
 func (r *Resolver) attachLocalizedClosureToLease(ctx context.Context, closure *localizedImageClosure) error {
-	leaseID, ok := leases.FromContext(ctx)
-	if !ok {
-		return errors.New("attach localized closure: missing lease")
-	}
-	seen := map[digest.Digest]struct{}{}
 	descs := make([]ocispecs.Descriptor, 0, 2+len(closure.Layers)+len(closure.Nonlayers))
 	descs = append(descs, closure.ManifestDesc, closure.ConfigDesc)
 	descs = append(descs, closure.Layers...)
 	descs = append(descs, closure.Nonlayers...)
-	for _, desc := range descs {
-		if desc.Digest == "" {
-			continue
-		}
-		if _, ok := seen[desc.Digest]; ok {
-			continue
-		}
-		seen[desc.Digest] = struct{}{}
-		if err := r.leaseManager.AddResource(ctx, leases.Lease{ID: leaseID}, leases.Resource{
-			ID:   desc.Digest.String(),
-			Type: "content",
-		}); err != nil && !cerrdefs.IsAlreadyExists(err) {
-			return err
-		}
-	}
-	return nil
+	return r.attachContentToLease(ctx, descs)
 }
 
 func (r *Resolver) localCanonicalRootDescriptor(ctx context.Context, dgst digest.Digest) (ocispecs.Descriptor, bool, error) {
@@ -911,27 +883,7 @@ func resolveManifestDescriptor(
 		if err := json.Unmarshal(p, &idx); err != nil {
 			return ocispecs.Descriptor{}, ocispecs.Manifest{}, err
 		}
-		candidates := make([]ocispecs.Descriptor, 0, len(idx.Manifests))
-		for _, child := range idx.Manifests {
-			if child.Platform == nil || matcher.Match(*child.Platform) {
-				candidates = append(candidates, child)
-			}
-		}
-		slices.SortStableFunc(candidates, func(a, b ocispecs.Descriptor) int {
-			if a.Platform == nil {
-				return 1
-			}
-			if b.Platform == nil {
-				return -1
-			}
-			if matcher.Less(*a.Platform, *b.Platform) {
-				return -1
-			}
-			if matcher.Less(*b.Platform, *a.Platform) {
-				return 1
-			}
-			return 0
-		})
+		candidates := matchingPlatformManifests(idx.Manifests, matcher)
 		if len(candidates) == 0 {
 			return ocispecs.Descriptor{}, ocispecs.Manifest{}, fmt.Errorf("no manifest matches requested platform for %s", desc.Digest)
 		}
