@@ -302,13 +302,25 @@ func (m *JavaSdk) ModuleRuntime(
 		return nil, err
 	}
 
-	// Get a container with the user module sources and the SDK packages built and installed
-	mvnCtr, err := m.codegenBase(ctx, modSource, introspectionJSON)
+	newStyle, err := m.newStyleModule(ctx, modSource)
 	if err != nil {
 		return nil, err
 	}
-	// Build the executable jar
-	jar, err := m.buildJar(ctx, mvnCtr)
+
+	var jar *dagger.File
+	if newStyle {
+		// New-style module: the vendored SDK and the generated entrypoint are
+		// already committed, so there is no codegen to run; just build the jar.
+		jar, err = m.buildModuleOnly(ctx, modSource)
+	} else {
+		// Legacy module: build the SDK dependencies, run codegen, then build the jar.
+		var mvnCtr *dagger.Container
+		mvnCtr, err = m.codegenBase(ctx, modSource, introspectionJSON)
+		if err != nil {
+			return nil, err
+		}
+		jar, err = m.buildJar(ctx, mvnCtr)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -323,6 +335,24 @@ func (m *JavaSdk) ModuleRuntime(
 		WithEntrypoint([]string{"java", "-jar", filepath.Join(ModDirPath, "module.jar")})
 
 	return javaCtr, nil
+}
+
+// buildModuleOnly builds the jar for a new-style module without any codegen or
+// SDK vendoring: the module already carries its vendored SDK sources and the
+// generated entrypoint as committed source, so a plain `mvn package` (the pom's
+// dagger.proc defaults to "none") is enough. It needs neither m.SDKSourceDir
+// nor the introspection schema.
+func (m *JavaSdk) buildModuleOnly(ctx context.Context, modSource *dagger.ModuleSource) (*dagger.File, error) {
+	ctr, err := m.mvnContainer(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ctr = ctr.
+		WithMountedCache("/root/.m2", dag.CacheVolume("sdk-java-maven-m2"), dagger.ContainerWithMountedCacheOpts{Sharing: dagger.CacheSharingModeLocked}).
+		WithDirectory(ModSourceDirPath, modSource.ContextDirectory()).
+		WithWorkdir(m.moduleConfig.modulePath()).
+		WithExec(m.mavenCommand("mvn", "clean", "package", "-DskipTests"))
+	return m.finalJar(ctx, ctr)
 }
 
 // buildJar builds and returns the generated jar from the user module
