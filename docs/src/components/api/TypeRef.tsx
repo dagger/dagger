@@ -32,6 +32,16 @@ export default function TypeRefView({ type }: { type: TypeRef }): JSX.Element {
           </Link>
         );
       }
-      return <span className={styles.typeName}>{type.name}</span>;
+      // Non-core names carry a subtle kind hint (enum / scalar) so readers know
+      // what they're looking at without leaving the page.
+      return (
+        <span
+          className={styles.typeName}
+          data-kind={type.named}
+          title={type.named === "object" ? type.name : `${type.name} (${type.named})`}
+        >
+          {type.name}
+        </span>
+      );
   }
 }
