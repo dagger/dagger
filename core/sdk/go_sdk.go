@@ -359,14 +359,17 @@ func (sdk *goSDK) Runtime(
 
 // useRuntimeCodegen reports whether the SDK should run codegen during
 // runtime operations (dagger call, dagger functions). True unless the
-// module has explicitly set codegen.legacyCodegenAtRuntime=false in
-// dagger.json. Unset / nil defaults to true to preserve legacy behavior.
+// module has explicitly set codegen.automaticGitignore=false in
+// dagger.json: opting out of the generated .gitignore means the module
+// commits its generated files, so the runtime trusts them as-is instead
+// of regenerating. Unset / nil (or true) defaults to runtime codegen to
+// preserve legacy behavior.
 func useRuntimeCodegen(src dagql.ObjectResult[*core.ModuleSource]) bool {
 	cfg := src.Self().CodegenConfig
-	if cfg == nil || cfg.LegacyCodegenAtRuntime == nil {
+	if cfg == nil || cfg.AutomaticGitignore == nil {
 		return true
 	}
-	return *cfg.LegacyCodegenAtRuntime
+	return *cfg.AutomaticGitignore
 }
 
 // requireGeneratedFiles verifies the module's committed generated files
@@ -406,16 +409,16 @@ func requireGeneratedFiles(
 		}
 		if selfCalls {
 			return fmt.Errorf(
-				"module %q enables self-calls and sets codegen.legacyCodegenAtRuntime=false, "+
+				"module %q enables self-calls and sets codegen.automaticGitignore=false, "+
 					"but generated file %q is missing. A self-calls module cannot bootstrap its "+
 					"generated files in this mode: the generator must build the module to discover "+
 					"its own types, which it can't do without those files. Set "+
-					"codegen.legacyCodegenAtRuntime=true (or remove it), run `dagger generate`, "+
-					"commit the generated files, then set codegen.legacyCodegenAtRuntime=false again",
+					"codegen.automaticGitignore=true (or remove it), run `dagger generate`, "+
+					"commit the generated files, then set codegen.automaticGitignore=false again",
 				modName, rel)
 		}
 		return fmt.Errorf(
-			"module %q has codegen.legacyCodegenAtRuntime=false but generated file %q is missing; "+
+			"module %q has codegen.automaticGitignore=false but generated file %q is missing; "+
 				"run `dagger generate` to (re)generate the committed files",
 			modName, rel)
 	}
@@ -423,7 +426,7 @@ func requireGeneratedFiles(
 }
 
 // baseWithoutCodegen prepares the runtime container when the module
-// has opted out of runtime codegen (codegen.legacyCodegenAtRuntime=false).
+// has opted out of runtime codegen (codegen.automaticGitignore=false).
 // It mounts the module context directory as-is (no withoutFile, no
 // schema JSON, no codegen exec), verifies the expected generated files
 // are present, and applies the same gitconfig + SSH selectors as the
