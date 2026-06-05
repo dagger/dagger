@@ -89,7 +89,7 @@ type Myapp {
 
 		out, err := ctr.With(daggerReportCall("workspace-path")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, ".", strings.TrimSpace(out))
+		require.Equal(t, "/", strings.TrimSpace(out))
 
 		out, err = ctr.With(daggerReportCall("workspace-address")).Stdout(ctx)
 		require.NoError(t, err)
@@ -110,7 +110,7 @@ type Myapp {
 
 		out, err := ctr.With(daggerReportCall("workspace-path")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "app", strings.TrimSpace(out))
+		require.Equal(t, "/app", strings.TrimSpace(out))
 
 		out, err = ctr.With(daggerReportCall("workspace-address")).Stdout(ctx)
 		require.NoError(t, err)
@@ -138,7 +138,7 @@ type Standalone {
 
 		out, err := ctr.With(daggerReportCall("workspace-path")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, ".", strings.TrimSpace(out))
+		require.Equal(t, "/", strings.TrimSpace(out))
 	})
 
 	t.Run("workspace config beats outer compat inference", func(ctx context.Context, t *testctx.T) {
@@ -163,7 +163,7 @@ type Outer {
 
 		out, err := ctr.With(daggerReportCall("workspace-path")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "app", strings.TrimSpace(out))
+		require.Equal(t, "/app", strings.TrimSpace(out))
 
 		out, err = ctr.With(daggerReportCall("workspace-address")).Stdout(ctx)
 		require.NoError(t, err)
@@ -182,7 +182,7 @@ func (ContextualWorkspaceSuite) TestContextualWorkspaceShape(ctx context.Context
 
 		out, err := ctr.With(daggerReportCall("workspace-path")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "app", strings.TrimSpace(out))
+		require.Equal(t, "/app", strings.TrimSpace(out))
 
 		out, err = ctr.With(daggerReportCall("workspace-address")).Stdout(ctx)
 		require.NoError(t, err)

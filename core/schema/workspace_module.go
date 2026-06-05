@@ -20,6 +20,9 @@ func (s *workspaceSchema) moduleList(
 	args workspaceModuleListArgs,
 ) (dagql.ObjectResultArray[*core.WorkspaceModule], error) {
 	ws := parent.Self()
+	if isSyntheticWorkspace(ws) {
+		return dagql.ObjectResultArray[*core.WorkspaceModule]{}, nil
+	}
 	if ws.ConfigFile == "" {
 		return nil, nil
 	}
@@ -107,6 +110,9 @@ func (s *workspaceSchema) moduleSettings(
 	ws, ok := receiver.(dagql.ObjectResult[*core.Workspace])
 	if !ok {
 		return nil, fmt.Errorf("workspace module %q has unexpected receiver %T", parent.Self().Name, receiver)
+	}
+	if err := unsupportedSyntheticWorkspaceFeature(ws.Self(), "module settings"); err != nil {
+		return nil, err
 	}
 
 	cfg, err := readWorkspaceConfig(ctx, ws.Self())

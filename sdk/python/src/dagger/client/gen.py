@@ -4392,6 +4392,25 @@ class Directory(Type):
         _ctx = self._select("asModuleSource", _args)
         return ModuleSource(_ctx)
 
+    def as_workspace(self, *, cwd: str | None = "/") -> "Workspace":
+        """Creates a synthetic workspace from this directory.
+
+        .. caution::
+            Experimental: Synthetic workspaces currently support filesystem
+            APIs only.
+
+        Parameters
+        ----------
+        cwd:
+            Current working directory inside the workspace root. Defaults to
+            the workspace root.
+        """
+        _args = [
+            Arg("cwd", cwd, "/"),
+        ]
+        _ctx = self._select("asWorkspace", _args)
+        return Workspace(_ctx)
+
     def changes(self, from_: Self) -> Changeset:
         """Return the difference between this directory and another directory,
         typically an older snapshot.
@@ -9850,6 +9869,25 @@ class GitRef(Type):
 @typecheck
 class GitRepository(Type):
     """A git repository."""
+
+    def as_workspace(self, *, cwd: str | None = "/") -> "Workspace":
+        """Creates a synthetic workspace from this git repository.
+
+        .. caution::
+            Experimental: Synthetic workspaces currently support filesystem
+            APIs only.
+
+        Parameters
+        ----------
+        cwd:
+            Current working directory inside the workspace root. Defaults to
+            the workspace root.
+        """
+        _args = [
+            Arg("cwd", cwd, "/"),
+        ]
+        _ctx = self._select("asWorkspace", _args)
+        return Workspace(_ctx)
 
     def branch(self, name: str) -> GitRef:
         """Returns details of a branch.
@@ -15900,10 +15938,12 @@ class UpGroup(Type):
 
 @typecheck
 class Workspace(Type):
-    """A Dagger workspace detected from the current working directory."""
+    """A Dagger workspace detected from the current working directory or
+    constructed from a Directory."""
 
     async def address(self) -> str:
-        """Canonical Dagger address of the workspace location.
+        """Canonical Dagger address of the workspace location, or an opaque
+        identity for synthetic workspaces.
 
         Returns
         -------
@@ -16071,8 +16111,11 @@ class Workspace(Type):
         return await _ctx.execute(str)
 
     async def cwd(self) -> str:
-        """Current location within the workspace root. Relative paths in
-        workspace APIs resolve from here.
+        """Current location within the workspace root.
+
+        The workspace root is returned as "/".
+
+        Relative paths in workspace APIs resolve from here.
 
         Returns
         -------

@@ -155,7 +155,7 @@ func (WorkspaceSuite) TestWorkspaceGit(ctx context.Context, t *testctx.T) {
 		With(daggerQuery(`{currentWorkspace{cwd git{uncommitted{isEmpty}}}}`)).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.JSONEq(t, `{"currentWorkspace":{"cwd":"toolchains/gitinfo","git":{"uncommitted":{"isEmpty":false}}}}`, out)
+	require.JSONEq(t, `{"currentWorkspace":{"cwd":"/toolchains/gitinfo","git":{"uncommitted":{"isEmpty":false}}}}`, out)
 }
 
 // TestWorkspaceGitWorktreeUnsupported documents the first-pass worktree

@@ -1802,6 +1802,14 @@ type Directory implements Exportable & Node & Syncer {
     sourceRootPath: String = "."
   ): ModuleSource!
 
+  """Creates a synthetic workspace from this directory."""
+  asWorkspace(
+    """
+    Current working directory inside the workspace root. Defaults to the workspace root.
+    """
+    cwd: String = "/"
+  ): Workspace! @experimental(reason: "Synthetic workspaces currently support filesystem APIs only.")
+
   """
   Return the difference between this directory and another directory, typically an older snapshot.
 
@@ -3901,6 +3909,14 @@ type GitRef implements Node {
 
 """A git repository."""
 type GitRepository implements Node {
+  """Creates a synthetic workspace from this git repository."""
+  asWorkspace(
+    """
+    Current working directory inside the workspace root. Defaults to the workspace root.
+    """
+    cwd: String = "/"
+  ): Workspace! @experimental(reason: "Synthetic workspaces currently support filesystem APIs only.")
+
   """Returns details of a branch."""
   branch(
     """Branch's name (e.g., "main")."""
@@ -5766,9 +5782,13 @@ A Null Void is used as a placeholder for resolvers that do not return anything.
 """
 scalar Void
 
-"""A Dagger workspace detected from the current working directory."""
+"""
+A Dagger workspace detected from the current working directory or constructed from a Directory.
+"""
 type Workspace implements Node {
-  """Canonical Dagger address of the workspace location."""
+  """
+  Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.
+  """
   address: String!
 
   """Return all checks from modules loaded in the workspace."""
@@ -5824,7 +5844,11 @@ type Workspace implements Node {
   ): String!
 
   """
-  Current location within the workspace root. Relative paths in workspace APIs resolve from here.
+  Current location within the workspace root.
+
+  The workspace root is returned as "/".
+
+  Relative paths in workspace APIs resolve from here.
   """
   cwd: String!
 

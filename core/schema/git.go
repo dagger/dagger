@@ -121,6 +121,12 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 			Doc(`(Internal-only) Cleans the git repository by removing untracked files and resetting modifications.`),
 		dagql.NodeFunc("uncommitted", s.uncommitted).
 			Doc("Returns the changeset of uncommitted changes in the git repository."),
+		dagql.NodeFunc("asWorkspace", s.asWorkspace).
+			Doc("Creates a synthetic workspace from this git repository.").
+			Args(
+				dagql.Arg("cwd").Doc("Current working directory inside the workspace root. Defaults to the workspace root."),
+			).
+			Experimental("Synthetic workspaces currently support filesystem APIs only."),
 
 		dagql.Func("withAuthToken", s.withAuthToken).
 			Doc(`Token to authenticate the remote with.`).
@@ -1180,6 +1186,39 @@ func (s *gitSchema) uncommitted(ctx context.Context, parent dagql.ObjectResult[*
 		return inst, fmt.Errorf("failed to select cleaned digest: %w", err)
 	}
 	return inst, nil
+}
+
+func (s *gitSchema) asWorkspace(ctx context.Context, parent dagql.ObjectResult[*core.GitRepository], args workspaceArgs) (dagql.ObjectResult[*core.Workspace], error) {
+	repo := parent.Self()
+
+	root, err := repo.Backend.Dirty(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	if root.Self() == nil {
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		ref, err := repo.Remote.Lookup("HEAD")
+		if err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		refBackend, err := repo.Backend.Get(ctx, ref)
+		if err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		dir, err := refBackend.Tree(ctx, srv, false, 1, false)
+		if err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+		root, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+		if err != nil {
+			return dagql.ObjectResult[*core.Workspace]{}, err
+		}
+	}
+
+	return syntheticWorkspaceFromRootfs(ctx, root, args.Cwd, "git+directory://")
 }
 
 type withAuthTokenArgs struct {

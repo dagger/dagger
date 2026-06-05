@@ -231,6 +231,11 @@ func TestWorkspaceAPIPath(t *testing.T) {
 	})
 }
 
+func TestWorkspaceRootfsRequiresDirectory(t *testing.T) {
+	_, err := workspaceRootfs(&core.Workspace{})
+	require.ErrorContains(t, err, "workspace has no root filesystem")
+}
+
 func TestWorkspaceMigrationWarningsKeepsGapWarningsAggregated(t *testing.T) {
 	plan := &workspace.MigrationPlan{
 		Warnings: []string{

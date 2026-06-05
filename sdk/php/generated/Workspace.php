@@ -9,12 +9,12 @@ declare(strict_types=1);
 namespace Dagger;
 
 /**
- * A Dagger workspace detected from the current working directory.
+ * A Dagger workspace detected from the current working directory or constructed from a Directory.
  */
 class Workspace extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
-     * Canonical Dagger address of the workspace location.
+     * Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.
      */
     public function address(): string
     {
@@ -91,7 +91,11 @@ class Workspace extends Client\AbstractObject implements Client\IdAble, Node
     }
 
     /**
-     * Current location within the workspace root. Relative paths in workspace APIs resolve from here.
+     * Current location within the workspace root.
+     *
+     * The workspace root is returned as "/".
+     *
+     * Relative paths in workspace APIs resolve from here.
      */
     public function cwd(): string
     {
