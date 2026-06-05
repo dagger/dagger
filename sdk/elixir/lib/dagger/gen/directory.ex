@@ -62,6 +62,26 @@ defmodule Dagger.Directory do
   end
 
   @doc """
+  Creates a synthetic workspace from this directory.
+
+  > #### Experimental {: .warning}
+  >
+  > "Synthetic workspaces currently support filesystem APIs only."
+  """
+  @spec as_workspace(t(), [{:cwd, String.t() | nil}]) :: Dagger.Workspace.t()
+  def as_workspace(%__MODULE__{} = directory, optional_args \\ []) do
+    query_builder =
+      directory.query_builder
+      |> QB.select("asWorkspace")
+      |> QB.maybe_put_arg("cwd", optional_args[:cwd])
+
+    %Dagger.Workspace{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
+  @doc """
   Return the difference between this directory and another directory, typically an older snapshot.
 
   The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.

@@ -4671,6 +4671,23 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Directory-asWorkspace" href="#Directory-asWorkspace"><code>asWorkspace</code></a> - <span class="property-type"><a href="#definition-Workspace"><code>Workspace!</code></a></span> </td>
+                        <td> Creates a synthetic workspace from this directory. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>cwd</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Current working directory inside the workspace root. Defaults to the workspace root.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Directory-changes" href="#Directory-changes"><code>changes</code></a> - <span class="property-type"><a href="#definition-Changeset"><code>Changeset!</code></a></span> </td>
                         <td>
                           <p>Return the difference between this directory and another directory, typically an older snapshot.</p>
@@ -9115,6 +9132,23 @@
                     </thead>
                     <tbody>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="GitRepository-asWorkspace" href="#GitRepository-asWorkspace"><code>asWorkspace</code></a> - <span class="property-type"><a href="#definition-Workspace"><code>Workspace!</code></a></span> </td>
+                        <td> Creates a synthetic workspace from this git repository. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>cwd</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>Current working directory inside the workspace root. Defaults to the workspace root.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="GitRepository-branch" href="#GitRepository-branch"><code>branch</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>
                         <td> Returns details of a branch. </td>
                       </tr>
@@ -13286,7 +13320,7 @@
               <div class="doc-copy">
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
-                  <p>A Dagger workspace detected from the current working directory.</p>
+                  <p>A Dagger workspace detected from the current working directory or constructed from a Directory.</p>
                 </div>
                 <div class="definition-properties doc-copy-section">
                   <h5>Fields</h5>
@@ -13300,7 +13334,7 @@
                     <tbody>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Workspace-address" href="#Workspace-address"><code>address</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> Canonical Dagger address of the workspace location. </td>
+                        <td> Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Workspace-checks" href="#Workspace-checks"><code>checks</code></a> - <span class="property-type"><a href="#definition-CheckGroup"><code>CheckGroup!</code></a></span> </td>
@@ -13384,7 +13418,11 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Workspace-cwd" href="#Workspace-cwd"><code>cwd</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> Current location within the workspace root. Relative paths in workspace APIs resolve from here. </td>
+                        <td>
+                          <p>Current location within the workspace root.</p>
+                          <p>The workspace root is returned as &quot;/&quot;.</p>
+                          <p>Relative paths in workspace APIs resolve from here.</p>
+                        </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Workspace-directory" href="#Workspace-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>

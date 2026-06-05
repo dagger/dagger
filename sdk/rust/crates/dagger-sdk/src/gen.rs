@@ -4566,6 +4566,12 @@ pub struct DirectoryAsModuleSourceOpts<'a> {
     pub source_root_path: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryAsWorkspaceOpts<'a> {
+    /// Current working directory inside the workspace root. Defaults to the workspace root.
+    #[builder(setter(into, strip_option), default)]
+    pub cwd: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryDockerBuildOpts<'a> {
     /// Build arguments to use in the build.
     #[builder(setter(into, strip_option), default)]
@@ -4815,6 +4821,35 @@ impl Directory {
             query = query.arg("sourceRootPath", source_root_path);
         }
         ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Creates a synthetic workspace from this directory.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn as_workspace(&self) -> Workspace {
+        let query = self.selection.select("asWorkspace");
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Creates a synthetic workspace from this directory.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn as_workspace_opts<'a>(&self, opts: DirectoryAsWorkspaceOpts<'a>) -> Workspace {
+        let mut query = self.selection.select("asWorkspace");
+        if let Some(cwd) = opts.cwd {
+            query = query.arg("cwd", cwd);
+        }
+        Workspace {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -10200,6 +10235,12 @@ pub struct GitRepository {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct GitRepositoryAsWorkspaceOpts<'a> {
+    /// Current working directory inside the workspace root. Defaults to the workspace root.
+    #[builder(setter(into, strip_option), default)]
+    pub cwd: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct GitRepositoryBranchesOpts<'a> {
     /// Glob patterns (e.g., "refs/tags/v*").
     #[builder(setter(into, strip_option), default)]
@@ -10235,6 +10276,35 @@ impl Loadable for GitRepository {
     }
 }
 impl GitRepository {
+    /// Creates a synthetic workspace from this git repository.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn as_workspace(&self) -> Workspace {
+        let query = self.selection.select("asWorkspace");
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Creates a synthetic workspace from this git repository.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn as_workspace_opts<'a>(&self, opts: GitRepositoryAsWorkspaceOpts<'a>) -> Workspace {
+        let mut query = self.selection.select("asWorkspace");
+        if let Some(cwd) = opts.cwd {
+            query = query.arg("cwd", cwd);
+        }
+        Workspace {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Returns details of a branch.
     ///
     /// # Arguments
@@ -16688,7 +16758,7 @@ impl Loadable for Workspace {
     }
 }
 impl Workspace {
-    /// Canonical Dagger address of the workspace location.
+    /// Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.
     pub async fn address(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("address");
         query.execute(self.graphql_client.clone()).await
@@ -16806,7 +16876,9 @@ impl Workspace {
         }
         query.execute(self.graphql_client.clone()).await
     }
-    /// Current location within the workspace root. Relative paths in workspace APIs resolve from here.
+    /// Current location within the workspace root.
+    /// The workspace root is returned as "/".
+    /// Relative paths in workspace APIs resolve from here.
     pub async fn cwd(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("cwd");
         query.execute(self.graphql_client.clone()).await

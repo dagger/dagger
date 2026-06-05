@@ -14,6 +14,18 @@ namespace Dagger;
 class GitRepository extends Client\AbstractObject implements Client\IdAble, Node
 {
     /**
+     * Creates a synthetic workspace from this git repository.
+     */
+    public function asWorkspace(?string $cwd = '/'): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asWorkspace');
+        if (null !== $cwd) {
+        $innerQueryBuilder->setArgument('cwd', $cwd);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Returns details of a branch.
      */
     public function branch(string $name): GitRef

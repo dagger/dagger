@@ -4230,6 +4230,31 @@ func (r *Directory) AsModuleSource(opts ...DirectoryAsModuleSourceOpts) *ModuleS
 	}
 }
 
+// DirectoryAsWorkspaceOpts contains options for Directory.AsWorkspace
+type DirectoryAsWorkspaceOpts struct {
+	// Current working directory inside the workspace root. Defaults to the workspace root.
+	//
+	// Default: "/"
+	Cwd string
+}
+
+// Creates a synthetic workspace from this directory.
+//
+// Experimental: Synthetic workspaces currently support filesystem APIs only.
+func (r *Directory) AsWorkspace(opts ...DirectoryAsWorkspaceOpts) *Workspace {
+	q := r.query.Select("asWorkspace")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `cwd` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Cwd) {
+			q = q.Arg("cwd", opts[i].Cwd)
+		}
+	}
+
+	return &Workspace{
+		query: q,
+	}
+}
+
 // Return the difference between this directory and another directory, typically an older snapshot.
 //
 // The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
@@ -9415,6 +9440,31 @@ type GitRepository struct {
 
 func (r *GitRepository) WithGraphQLQuery(q *querybuilder.Selection) *GitRepository {
 	return &GitRepository{
+		query: q,
+	}
+}
+
+// GitRepositoryAsWorkspaceOpts contains options for GitRepository.AsWorkspace
+type GitRepositoryAsWorkspaceOpts struct {
+	// Current working directory inside the workspace root. Defaults to the workspace root.
+	//
+	// Default: "/"
+	Cwd string
+}
+
+// Creates a synthetic workspace from this git repository.
+//
+// Experimental: Synthetic workspaces currently support filesystem APIs only.
+func (r *GitRepository) AsWorkspace(opts ...GitRepositoryAsWorkspaceOpts) *Workspace {
+	q := r.query.Select("asWorkspace")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `cwd` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Cwd) {
+			q = q.Arg("cwd", opts[i].Cwd)
+		}
+	}
+
+	return &Workspace{
 		query: q,
 	}
 }
@@ -16136,7 +16186,7 @@ func (r *UpGroup) AsNode() Node {
 	}
 }
 
-// A Dagger workspace detected from the current working directory.
+// A Dagger workspace detected from the current working directory or constructed from a Directory.
 type Workspace struct {
 	query *querybuilder.Selection
 
@@ -16162,7 +16212,7 @@ func (r *Workspace) WithGraphQLQuery(q *querybuilder.Selection) *Workspace {
 	}
 }
 
-// Canonical Dagger address of the workspace location.
+// Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.
 func (r *Workspace) Address(ctx context.Context) (string, error) {
 	if r.address != nil {
 		return *r.address, nil
@@ -16292,7 +16342,11 @@ func (r *Workspace) ConfigWrite(ctx context.Context, key string, value string, o
 	return response, q.Execute(ctx)
 }
 
-// Current location within the workspace root. Relative paths in workspace APIs resolve from here.
+// Current location within the workspace root.
+//
+// The workspace root is returned as "/".
+//
+// Relative paths in workspace APIs resolve from here.
 func (r *Workspace) Cwd(ctx context.Context) (string, error) {
 	if r.cwd != nil {
 		return *r.cwd, nil

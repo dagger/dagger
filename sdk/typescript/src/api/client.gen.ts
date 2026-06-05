@@ -1044,6 +1044,13 @@ export type DirectoryAsModuleSourceOpts = {
   sourceRootPath?: string
 }
 
+export type DirectoryAsWorkspaceOpts = {
+  /**
+   * Current working directory inside the workspace root. Defaults to the workspace root.
+   */
+  cwd?: string
+}
+
 export type DirectoryDockerBuildOpts = {
   /**
    * Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
@@ -1800,6 +1807,13 @@ export type GitRefTreeOpts = {
  * A unique identifier for an object.
  */
 export type GitRefID = string & { __GitRefID: never }
+
+export type GitRepositoryAsWorkspaceOpts = {
+  /**
+   * Current working directory inside the workspace root. Defaults to the workspace root.
+   */
+  cwd?: string
+}
 
 export type GitRepositoryBranchesOpts = {
   /**
@@ -5851,6 +5865,16 @@ export class Directory extends BaseClient {
   asModuleSource = (opts?: DirectoryAsModuleSourceOpts): ModuleSource => {
     const ctx = this._ctx.select("asModuleSource", { ...opts })
     return new ModuleSource(ctx)
+  }
+
+  /**
+   * Creates a synthetic workspace from this directory.
+   * @param opts.cwd Current working directory inside the workspace root. Defaults to the workspace root.
+   * @experimental
+   */
+  asWorkspace = (opts?: DirectoryAsWorkspaceOpts): Workspace => {
+    const ctx = this._ctx.select("asWorkspace", { ...opts })
+    return new Workspace(ctx)
   }
 
   /**
@@ -10042,6 +10066,16 @@ export class GitRepository extends BaseClient {
     const response: Awaited<ID> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Creates a synthetic workspace from this git repository.
+   * @param opts.cwd Current working directory inside the workspace root. Defaults to the workspace root.
+   * @experimental
+   */
+  asWorkspace = (opts?: GitRepositoryAsWorkspaceOpts): Workspace => {
+    const ctx = this._ctx.select("asWorkspace", { ...opts })
+    return new Workspace(ctx)
   }
 
   /**
@@ -15176,7 +15210,7 @@ export class UpGroup extends BaseClient {
 }
 
 /**
- * A Dagger workspace detected from the current working directory.
+ * A Dagger workspace detected from the current working directory or constructed from a Directory.
  */
 export class Workspace extends BaseClient {
   private readonly _id?: ID = undefined
@@ -15248,7 +15282,7 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Canonical Dagger address of the workspace location.
+   * Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.
    */
   address = async (): Promise<string> => {
     if (this._address) {
@@ -15348,7 +15382,11 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Current location within the workspace root. Relative paths in workspace APIs resolve from here.
+   * Current location within the workspace root.
+   *
+   * The workspace root is returned as "/".
+   *
+   * Relative paths in workspace APIs resolve from here.
    */
   cwd = async (): Promise<string> => {
     if (this._cwd) {

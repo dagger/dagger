@@ -1640,7 +1640,7 @@
 			"t": "C",
 			"n": "Dagger\\Workspace",
 			"p": "Dagger/Workspace.html",
-			"d": "<p>A Dagger workspace detected from the current working directory.</p>",
+			"d": "<p>A Dagger workspace detected from the current working directory or constructed from a Directory.</p>",
 			"f": {
 				"n": "Dagger",
 				"p": "Dagger.html"
@@ -3732,6 +3732,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\Directory::asWorkspace",
+			"p": "Dagger/Directory.html#method_asWorkspace",
+			"d": "<p>Creates a synthetic workspace from this directory.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\Directory::changes",
 			"p": "Dagger/Directory.html#method_changes",
 			"d": "<p>Return the difference between this directory and another directory, typically an older snapshot.</p>"
@@ -5301,6 +5307,12 @@
 			"n": "Dagger\\GitRef::tree",
 			"p": "Dagger/GitRef.html#method_tree",
 			"d": "<p>The filesystem tree at this ref.</p>"
+		},
+		{
+			"t": "M",
+			"n": "Dagger\\GitRepository::asWorkspace",
+			"p": "Dagger/GitRepository.html#method_asWorkspace",
+			"d": "<p>Creates a synthetic workspace from this git repository.</p>"
 		},
 		{
 			"t": "M",
@@ -6920,7 +6932,7 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::address",
 			"p": "Dagger/Workspace.html#method_address",
-			"d": "<p>Canonical Dagger address of the workspace location.</p>"
+			"d": "<p>Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.</p>"
 		},
 		{
 			"t": "M",
@@ -6956,7 +6968,7 @@
 			"t": "M",
 			"n": "Dagger\\Workspace::cwd",
 			"p": "Dagger/Workspace.html#method_cwd",
-			"d": "<p>Current location within the workspace root. Relative paths in workspace APIs resolve from here.</p>"
+			"d": "<p>Current location within the workspace root.</p>"
 		},
 		{
 			"t": "M",
