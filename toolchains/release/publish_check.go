@@ -1472,7 +1472,7 @@ func (env *publishCheckEnv) assertNpmVersion(ctx context.Context) error {
 	const view = JSON.parse(fs.readFileSync("/tmp/npm-view.json", "utf8"));
 		need(view.name === "@dagger.io/dagger", "unexpected npm package name: " + view.name);
 		need(view.version === version, "unexpected npm package version: " + view.version);
-		need(typeof view.dist?.tarball === "string" && view.dist.tarball.includes("@dagger.io/dagger/-/dagger-io-dagger-"), "unexpected npm tarball URL: " + view.dist?.tarball);
+		need(typeof view.dist?.tarball === "string" && view.dist.tarball.endsWith("@dagger.io/dagger/-/dagger-" + version + ".tgz"), "unexpected npm tarball URL: " + view.dist?.tarball);
 		need(typeof view.dist?.integrity === "string" && view.dist.integrity.startsWith("sha512-"), "unexpected npm integrity: " + view.dist?.integrity);
 
 	const pack = JSON.parse(fs.readFileSync("/tmp/npm-pack.json", "utf8"))[0];
