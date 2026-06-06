@@ -10,11 +10,15 @@
   // mode uses a translucent white instead (see below).
   --api-tint: rgba(0, 0, 0, 0.04);
   --api-tint-hover: rgba(0, 0, 0, 0.07);
+  --api-popover-bg: var(--ifm-background-surface-color);
+  --api-popover-shadow: 0 0.35rem 1rem rgba(26, 24, 51, 0.14);
 }
 
 :global(html[data-theme="dark"]) .apiType {
   --api-tint: rgba(255, 255, 255, 0.05);
   --api-tint-hover: rgba(255, 255, 255, 0.09);
+  --api-popover-bg: rgb(42, 39, 82);
+  --api-popover-shadow: 0 0.35rem 1rem rgba(13, 12, 27, 0.28);
 }
 
 .typeDesc {
@@ -86,7 +90,8 @@
 .card {
   border: 1px solid var(--api-border);
   border-radius: var(--ifm-global-radius);
-  overflow: hidden; // let the heading band honor the rounded corners
+  position: relative;
+  overflow: visible; // allow inline enum popovers to escape the card body
   scroll-margin-top: var(--ifm-navbar-height);
 
   // light up the card whose anchor you just followed
@@ -107,8 +112,10 @@
   background: var(--api-tint);
   border-bottom: 1px solid var(--api-border);
   border-left: 3px solid var(--ifm-color-primary);
+  border-top-left-radius: calc(var(--ifm-global-radius) - 1px);
+  border-top-right-radius: calc(var(--ifm-global-radius) - 1px);
   font-size: 1rem;
-  font-weight: 600;
+  font-weight: normal;
   line-height: 1.6;
 
   &:hover .hash-link::before {
@@ -236,33 +243,64 @@
   color: var(--ifm-color-warning-darkest, #7a4f01);
 }
 
-/* ── argument table ─────────────────────────────────────────────── */
+/* ── arguments ──────────────────────────────────────────────────── */
 .args {
-  display: table;
-  width: 100%;
-  margin: 0 0 1.1rem;
+  display: flex;
+  flex-direction: column;
+  margin: 0.85rem 0 1rem;
+  padding: 0.65rem 0.75rem;
+  background: var(--api-tint);
+  border-radius: var(--ifm-global-radius);
   font-size: 0.88rem;
+  line-height: 1.45;
+}
 
-  th {
-    text-align: left;
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--api-muted);
-    border: none;
-    border-bottom: 1px solid var(--api-border);
-    padding: 0.3rem 0.6rem;
+.argList {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+}
+
+.arg {
+  margin: 0;
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--api-border);
+
+  &:first-child {
+    padding-top: 0;
+    border-top: none;
   }
-  td {
-    border: none;
-    border-bottom: 1px solid var(--ifm-color-emphasis-100);
-    padding: 0.4rem 0.6rem;
-    vertical-align: top;
+
+  &:last-child {
+    padding-bottom: 0;
   }
+}
+
+.argSignature {
+  margin: 0;
+
   code {
     background: transparent;
     border: none;
     padding: 0;
+  }
+}
+
+.argDesc {
+  margin: 0.2rem 0 0;
+  color: var(--ifm-color-emphasis-800);
+
+  p {
+    margin: 0.2rem 0 0;
+  }
+
+  p:first-child {
+    margin-top: 0;
+  }
+
+  p:last-child {
+    margin-bottom: 0;
   }
 }
 
@@ -284,20 +322,42 @@
 
 /* ── enum value reveal ──────────────────────────────────────────── */
 .enum {
-  margin-top: 0.3rem;
+  display: inline-block;
+  position: relative;
+  margin-left: 0.35rem;
   font-size: 0.82rem;
+  vertical-align: baseline;
+
+  &[open] {
+    z-index: 20;
+  }
 
   summary {
+    display: list-item;
     cursor: pointer;
     color: var(--ifm-color-primary);
-    width: fit-content;
+    list-style-position: inside;
+    white-space: nowrap;
   }
 }
 
 .enumList {
-  margin: 0.4rem 0 0.2rem;
-  padding-left: 1rem;
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  width: max-content;
+  min-width: 10rem;
+  max-width: min(32rem, calc(100vw - 3rem));
+  max-height: min(18rem, 60vh);
+  overflow: auto;
+  margin: 0;
+  padding: 0.45rem 0.6rem;
+  background: var(--api-popover-bg);
+  border: 1px solid var(--api-border);
+  border-radius: var(--ifm-global-radius);
+  box-shadow: var(--api-popover-shadow);
   list-style: none;
+  user-select: text;
 
   li {
     margin: 0.15rem 0;
