@@ -21,7 +21,7 @@ Local execution (laptop or CI runner) is enough for individual developers and sm
 
 ## Cloud Engines
 
-[Cloud Engines](https://dagger.cloud) (tech preview) is managed scaled-out execution. Dagger runs your workflows on an elastic engine pool with [shared cache](/1.0-beta/extending/how-dagger-works/cache) across your organization — nothing to configure:
+[Cloud Engines](https://dagger.cloud) (tech preview) is managed scaled-out execution. Dagger runs your workflows on an elastic engine pool with [shared cache](../../extending/how-dagger-works/cache.mdx) across your organization — nothing to configure:
 
 ```shell
 dagger check --cloud
@@ -42,7 +42,7 @@ export _EXPERIMENTAL_DAGGER_RUNNER_HOST=kube-pod://dagger-engine?namespace=dagge
 dagger check
 ```
 
-Self-hosted engines give you full control over provisioning, scheduling, and cache placement — with the operational cost that implies. See [Custom runners](/1.0-beta/reference/configuration/custom-runner) for the connection interface.
+Self-hosted engines give you full control over provisioning, scheduling, and cache placement — with the operational cost that implies. See [Custom runners](../../reference/configuration/custom-runner.mdx) for the connection interface.
 
 Platform-specific deployment guides:
 

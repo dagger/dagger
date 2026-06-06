@@ -8,7 +8,7 @@ description: "Develop Dagger modules in Python: create, write objects and functi
 
 The Python SDK lets you write Dagger modules in Python. You declare objects with `@object_type` and expose functions with `@function`; the SDK turns your type hints into a Dagger API schema, and generates a typed client (`dagger.dag`) for calling the Dagger API and any module dependencies.
 
-This page is the standalone reference for developing modules with Python. For platform concepts that apply to every SDK, start with the [Module Developer Guide](/1.0-beta/extending), and see the [Type System](/1.0-beta/extending/type-system), and [Checks](/1.0-beta/extending/how-dagger-works/checks).
+This page is the standalone reference for developing modules with Python. For platform concepts that apply to every SDK, start with the [Module Developer Guide](../index.mdx), and see the [Type System](../type-system/index.mdx), and [Checks](../how-dagger-works/checks.mdx).
 
 ## The Python SDK is a module
 
@@ -26,7 +26,7 @@ The functions you use most often:
 
 | Function | What it does |
 |---|---|
-| `init` | Create a new Python SDK module. Returns a [changeset](/1.0-beta/using-dagger/changesets) of files to write. |
+| `init` | Create a new Python SDK module. Returns a [changeset](../../using-dagger/changesets.mdx) of files to write. |
 | `mod` | Resolve the module at or above a workspace path; entry point for `deps`, `generate`, `engine`, `config`, `path`. |
 | `mod deps` | Manage Dagger dependencies in `dagger.json` (`add`, `remove`, `update`, `list`). |
 | `mod generate` | Regenerate the module's SDK bindings. Returns a changeset. |
@@ -44,7 +44,7 @@ The examples below are run from a project working directory (the directory that 
 Run `init` from inside a Git repository — that's where the new module is created.
 :::
 
-`init` creates a new Python SDK module and returns a **changeset** — a diff of files to write — rather than writing directly to disk. This is the same review-then-apply flow as any Dagger generator (see [Changesets](/1.0-beta/using-dagger/changesets)).
+`init` creates a new Python SDK module and returns a **changeset** — a diff of files to write — rather than writing directly to disk. This is the same review-then-apply flow as any Dagger generator (see [Changesets](../../using-dagger/changesets.mdx)).
 
 ```shell
 # Preview the files that would be created
@@ -269,7 +269,7 @@ class MyModule:
         )
 ```
 
-Custom type names are namespaced in the schema by the module's main object (e.g. `MyModuleAccount`) to avoid conflicts when multiple modules are loaded together. See [User-defined object types](/1.0-beta/extending/type-system/user-defined-object-types).
+Custom type names are namespaced in the schema by the module's main object (e.g. `MyModuleAccount`) to avoid conflicts when multiple modules are loaded together. See [User-defined object types](../type-system/user-defined-object-types.mdx).
 
 ## Arguments and return values
 
@@ -291,7 +291,7 @@ Function parameters become typed arguments. Return type hints become the functio
 | your `@enum_type` | enum | custom enum |
 | `None` / `-> None` | `Void` | |
 
-See [Arguments and return values](/1.0-beta/extending/type-system/arguments-and-return-values) and [Scalars, lists, nullability, defaults](/1.0-beta/extending/type-system/scalars-lists-nullability-defaults).
+See [Arguments and return values](../type-system/arguments-and-return-values.mdx) and [Scalars, lists, nullability, defaults](../type-system/scalars-lists-nullability-defaults.mdx).
 
 ### Documentation
 
@@ -403,11 +403,11 @@ class MyModule:
         )
 ```
 
-Invalid values are rejected with an error listing the allowed choices. See [Enums and validation](/1.0-beta/extending/type-system/enums-and-validation).
+Invalid values are rejected with an error listing the allowed choices. See [Enums and validation](../type-system/enums-and-validation.mdx).
 
 ## Core Dagger types
 
-The generated client `dag` exposes the full Dagger API. The most common core types are `Container`, `Directory`, `File`, `Secret`, `Service`, and `CacheVolume`. They are immutable and lazy: each `with_*` method returns a new value, and nothing executes until you `await` a leaf operation. See [Core types](/1.0-beta/extending/type-system/core-types).
+The generated client `dag` exposes the full Dagger API. The most common core types are `Container`, `Directory`, `File`, `Secret`, `Service`, and `CacheVolume`. They are immutable and lazy: each `with_*` method returns a new value, and nothing executes until you `await` a leaf operation. See [Core types](../type-system/core-types.mdx).
 
 ### Workspace inputs
 
@@ -582,7 +582,7 @@ class MyModule:
         return await dag.hello().hello()
 ```
 
-See [Designing for composability](/1.0-beta/extending/type-system/designing-for-composability).
+See [Designing for composability](../type-system/designing-for-composability.mdx).
 
 ## Regenerate bindings
 
@@ -747,11 +747,11 @@ class MyModule:
 
 `dagger up` starts every `@up` service and exposes its ports. (A plain `@function` returning `dagger.Service` can still be bound into other containers with `with_service_binding` — see [Services](#services) — but only `@up` functions are started by `dagger up`.)
 
-See [Checks](/1.0-beta/extending/how-dagger-works/checks) and [Changesets](/1.0-beta/using-dagger/changesets).
+See [Checks](../how-dagger-works/checks.mdx) and [Changesets](../../using-dagger/changesets.mdx).
 
 ### Directives
 
-The annotations used above — `Name`, `Deprecated`, `Doc` — are the Python expression of Dagger's [directives](/1.0-beta/extending/how-dagger-works) and are applied via `typing.Annotated` (except `Doc`, which can be a plain annotation). The `@check`, `@generate`, and `@up` decorators mark function behavior.
+The annotations used above — `Name`, `Deprecated`, `Doc` — are the Python expression of Dagger's [directives](../how-dagger-works/index.mdx) and are applied via `typing.Annotated` (except `Doc`, which can be a plain annotation). The `@check`, `@generate`, and `@up` decorators mark function behavior.
 
 ### Ignoring inputs
 
@@ -847,7 +847,7 @@ jobs:
           verb: check
 ```
 
-Because all checks run in containers, local runs and CI runs are identical. See [Testing](/1.0-beta/extending/testing).
+Because all checks run in containers, local runs and CI runs are identical. See [Testing](../testing.mdx).
 
 ## IDE and package-manager setup
 
@@ -967,7 +967,7 @@ dagger -m github.com/you/your-module@v0.1.0 call <function> ...
 
 ## Next steps
 
-- [Module Developer Guide](/1.0-beta/extending)
-- [Type System](/1.0-beta/extending/type-system)
-- [Checks](/1.0-beta/extending/how-dagger-works/checks)
-- [Changesets](/1.0-beta/using-dagger/changesets)
+- [Module Developer Guide](../index.mdx)
+- [Type System](../type-system/index.mdx)
+- [Checks](../how-dagger-works/checks.mdx)
+- [Changesets](../../using-dagger/changesets.mdx)

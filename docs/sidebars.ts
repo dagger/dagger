@@ -237,7 +237,7 @@ module.exports = {
             {
               type: "link",
               label: "GraphQL API Reference",
-              href: "https://docs.dagger.io/api/reference",
+              href: "pathname:///api/reference",
             },
             {
               type: "link",

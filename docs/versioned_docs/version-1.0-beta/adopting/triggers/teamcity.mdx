@@ -9,7 +9,7 @@ description: "Learn how to use Dagger with TeamCity."
 TeamCity provides a Dagger Recipe that runs `dagger check` in any build configuration, so the same checks you run locally run on every build — while keeping all of your existing TeamCity infrastructure. The recipe is taken from the [JetBrains Marketplace](https://plugins.jetbrains.com/teamcity_recipe).
 
 :::tip
-For checks with no build configuration at all, enable [Cloud Checks](/1.0-beta/adopting/triggers) with `dagger ws autocheck on`. The recipe below is the hybrid-mode alternative for when you want to drive Dagger from your existing TeamCity setup.
+For checks with no build configuration at all, enable [Cloud Checks](./index.mdx) with `dagger ws autocheck on`. The recipe below is the hybrid-mode alternative for when you want to drive Dagger from your existing TeamCity setup.
 :::
 
 ## How it works
@@ -29,7 +29,7 @@ Running the examples shown below requires:
 
 1. A running TeamCity server.
 1. At least one TeamCity agent with Docker installed.
-1. A repository for storing build configurations as code, with a Dagger workspace (`.dagger/config.toml`) — see [Workspace Setup](/1.0-beta/adopting/workspace-setup).
+1. A repository for storing build configurations as code, with a Dagger workspace (`.dagger/config.toml`) — see [Workspace Setup](../workspace-setup.mdx).
 
 ## Example
 

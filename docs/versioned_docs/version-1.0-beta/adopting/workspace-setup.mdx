@@ -6,7 +6,7 @@ description: "Add a Dagger workspace to your project"
 
 # Workspace Setup
 
-You've seen Dagger work on [hello-dagger](/1.0-beta/quickstart). Now set it up on your own project.
+You've seen Dagger work on [hello-dagger](../getting-started/quickstart.mdx). Now set it up on your own project.
 
 ## Get started
 
@@ -75,10 +75,10 @@ If your project already uses a legacy `dagger.json`, convert it to the workspace
 dagger ws migrate
 ```
 
-This writes `.dagger/config.toml` from your existing configuration. See [Upgrade to Workspaces](/1.0-beta/reference/upgrade-to-workspaces) for details.
+This writes `.dagger/config.toml` from your existing configuration. See [Upgrade to Workspaces](../reference/upgrade-to-workspaces.mdx) for details.
 
 ## What's next
 
-- **Add to CI** — `dagger ws autocheck on` enables [Cloud Checks](/1.0-beta/adopting/triggers) for a GitHub repository, or `dagger check` can run in any existing CI provider
-- **Vary config per environment** — use [Environments](/1.0-beta/using-dagger/environments) when staging and production need different settings
-- **Manage secrets** — if your checks need credentials, see [Secrets](/1.0-beta/adopting/secrets)
+- **Add to CI** — `dagger ws autocheck on` enables [Cloud Checks](./triggers/index.mdx) for a GitHub repository, or `dagger check` can run in any existing CI provider
+- **Vary config per environment** — use [Environments](../using-dagger/environments.mdx) when staging and production need different settings
+- **Manage secrets** — if your checks need credentials, see [Secrets](./secrets.mdx)

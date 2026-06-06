@@ -8,14 +8,14 @@ description: "Develop Dagger modules with Dang, Dagger's native DSL — no codeg
 
 Dang is Dagger's native DSL. It maps directly to the Dagger API: **what you write is what runs.** There is no codegen, no generated client files to commit, no build step, and no language-runtime overhead. A Dang module is, in the common case, a single `main.dang` file plus a `dagger.json`.
 
-Use Dang when your module is primarily *orchestrating* the Dagger API — containers, files, directories, services, secrets, and other modules. If you need to reach for external libraries (a Go parser, a Python ML library, a Node.js bundler API), use the [Go](/1.0-beta/extending/sdks/go), [Python](/1.0-beta/extending/sdks/python), or [TypeScript](/1.0-beta/extending/sdks/typescript) SDK instead, which give you a full host language alongside the Dagger client.
+Use Dang when your module is primarily *orchestrating* the Dagger API — containers, files, directories, services, secrets, and other modules. If you need to reach for external libraries (a Go parser, a Python ML library, a Node.js bundler API), use the [Go](./go.mdx), [Python](./python.mdx), or [TypeScript](./typescript.mdx) SDK instead, which give you a full host language alongside the Dagger client.
 
 Before diving in, it helps to understand the platform concepts every SDK shares:
 
-- [Module Developer Guide](/1.0-beta/extending) — what a module is and how it fits into a workspace.
-- [Type System](/1.0-beta/extending/type-system) — the types your functions accept and return.
-- [Checks](/1.0-beta/extending/how-dagger-works/checks) — how Dagger discovers and runs validation.
-- [Changesets](/1.0-beta/using-dagger/changesets) — how Dagger represents file diffs (used by `init` and generators).
+- [Module Developer Guide](../index.mdx) — what a module is and how it fits into a workspace.
+- [Type System](../type-system/index.mdx) — the types your functions accept and return.
+- [Checks](../how-dagger-works/checks.mdx) — how Dagger discovers and runs validation.
+- [Changesets](../../using-dagger/changesets.mdx) — how Dagger represents file diffs (used by `init` and generators).
 
 ## A note on tooling: Dang is delivered as a Dagger module
 
@@ -29,7 +29,7 @@ The functions you will use most often:
 
 | Function | Purpose |
 |---|---|
-| `init` | Create a new Dang SDK module. Returns a [changeset](/1.0-beta/using-dagger/changesets) of files to write. |
+| `init` | Create a new Dang SDK module. Returns a [changeset](../../using-dagger/changesets.mdx) of files to write. |
 | `mod` | Resolve the Dang module at or above a workspace path; entry point for `deps`, `generate`, `engine`, `path`. |
 | `mod deps` | Add, remove, list, and update module dependencies. |
 | `mod generate` | (Re)generate module metadata. For Dang this is effectively a no-op — there are no client bindings to regenerate. |
@@ -174,7 +174,7 @@ container
   .withExec(["npm", "install"])
 ```
 
-Every method returns a new immutable value — nothing mutates in place. Dagger caches each step by its inputs, so re-running skips unchanged work automatically (the same model as Docker layer caching, applied to the entire API). See [How Dagger works](/1.0-beta/extending/how-dagger-works/checks) and the [type system](/1.0-beta/extending/type-system) for the underlying model.
+Every method returns a new immutable value — nothing mutates in place. Dagger caches each step by its inputs, so re-running skips unchanged work automatically (the same model as Docker layer caching, applied to the entire API). See [How Dagger works](../how-dagger-works/checks.mdx) and the [type system](../type-system/index.mdx) for the underlying model.
 
 ## Define objects and functions
 
@@ -711,7 +711,7 @@ Dang has three first-class function types, each marked with a directive and run 
 
 ### Checks
 
-A check validates something without requiring arguments. Mark it with `@check` and `dagger check` will discover and run it. A check passes if it completes without error and fails if any `withExec` returns a non-zero exit code. See [Checks](/1.0-beta/extending/how-dagger-works/checks).
+A check validates something without requiring arguments. Mark it with `@check` and `dagger check` will discover and run it. A check passes if it completes without error and fails if any `withExec` returns a non-zero exit code. See [Checks](../how-dagger-works/checks.mdx).
 
 ```dang
 type MyCi {
@@ -751,7 +751,7 @@ pub lint: Container @check {
 
 ### Generators
 
-A generator produces a [changeset](/1.0-beta/using-dagger/changesets) — a diff between the current source and freshly generated output. Mark it with `@generate`. `.changes(source)` computes the diff against the original source; `dagger generate` runs all generators and presents the unified changeset for review:
+A generator produces a [changeset](../../using-dagger/changesets.mdx) — a diff between the current source and freshly generated output. Mark it with `@generate`. `.changes(source)` computes the diff against the original source; `dagger generate` runs all generators and presents the unified changeset for review:
 
 ```dang
 pub generateProto: Changeset @generate {
@@ -859,12 +859,12 @@ They can then call its functions (`dagger call ...`) and run its checks (`dagger
 - **"The target path must not already contain a Dagger module"** — choose a different `--path`, or remove the existing module first.
 - **Parser/type errors** — Dang surfaces these directly from the module source. Check non-null markers (`!`), that the last expression in a function body matches the declared return type, and that custom-type/enum names referenced actually exist.
 - **A `Void` function must end in `null`** — `Void` functions typically `.sync` a container (or service) to force evaluation, then return `null` as the final expression.
-- **Changeset not written** — most maintenance functions (`init`, `mod deps *`, `mod engine require*`, `mod generate`, `generate-all`) return a [changeset](/1.0-beta/using-dagger/changesets) and do nothing to disk until you apply it. Add `-y` / `--auto-apply`, or inspect it first with `added-paths` / `modified-paths` / `as-patch`.
+- **Changeset not written** — most maintenance functions (`init`, `mod deps *`, `mod engine require*`, `mod generate`, `generate-all`) return a [changeset](../../using-dagger/changesets.mdx) and do nothing to disk until you apply it. Add `-y` / `--auto-apply`, or inspect it first with `added-paths` / `modified-paths` / `as-patch`.
 - **Stale generation expectations** — Dang has no client codegen, so there are no generated bindings to "regenerate." If a tutorial tells you to commit generated SDK files, that step does not apply to Dang.
 
 ## Next steps
 
-- [Module Developer Guide](/1.0-beta/extending)
-- [Type System](/1.0-beta/extending/type-system)
-- [Checks](/1.0-beta/extending/how-dagger-works/checks)
-- [Changesets](/1.0-beta/using-dagger/changesets)
+- [Module Developer Guide](../index.mdx)
+- [Type System](../type-system/index.mdx)
+- [Checks](../how-dagger-works/checks.mdx)
+- [Changesets](../../using-dagger/changesets.mdx)

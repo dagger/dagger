@@ -10,7 +10,7 @@ In this quickstart, you'll fork an example project, add automated checks, and op
 
 ## Requirements
 
-- [Dagger CLI installed](/1.0-beta/getting-started/installation)
+- [Dagger CLI installed](./installation.mdx)
 - [Git](https://git-scm.com/downloads) and a container runtime ([Docker](https://docs.docker.com/engine/install/), Podman, or similar)
 - A [GitHub](https://github.com) account
 - Optional: [GitHub CLI](https://cli.github.com/) for the copy-paste fork and pull request commands
@@ -72,7 +72,7 @@ Let Prettier rewrite the files for you:
 dagger call prettier write
 ```
 
-This returns a [changeset](/1.0-beta/using-dagger/changesets) — the reformatted files — and applies it to your working tree. Run the checks again:
+This returns a [changeset](../using-dagger/changesets.mdx) — the reformatted files — and applies it to your working tree. Run the checks again:
 
 ```shell
 dagger check
@@ -130,4 +130,4 @@ dagger ws activity
 
 ## Next steps
 
-Now do it on your own project — see [Workspace Setup](/1.0-beta/adopting/workspace-setup).
+Now do it on your own project — see [Workspace Setup](../adopting/workspace-setup.mdx).
