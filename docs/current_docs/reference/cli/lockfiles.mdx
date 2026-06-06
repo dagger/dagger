@@ -13,7 +13,7 @@ There are two separate concepts:
 
 ## Lock modes
 
-Lock mode is set for a run, typically with `--lock`.
+Lock mode is set for a run, typically with `--lock`. If omitted, it defaults to `disabled`.
 
 ```bash
 dagger --lock=pinned call ...
@@ -27,6 +27,8 @@ Available modes:
 | `live` | Resolve everything live and record the result. |
 | `pinned` | Reuse pinned entries, resolve everything else live, and record the result. |
 | `frozen` | Resolve only from the lockfile and fail on misses. |
+
+Three aliases are also accepted: `update` (= `live`), `auto` (= `pinned`), and `strict` (= `frozen`).
 
 The easiest way to think about lock modes is:
 

@@ -13,9 +13,7 @@ const docsPath = "./current_docs";
 const baseUrl = process.env.DOCUSAURUS_BASE_URL ?? "/";
 const latestVersion = "0.21.4";
 const versions = require("./versions.json") as string[];
-const versionLabels: Record<string, string> = {
-  "1.0-beta": "1.0 beta",
-};
+const versionLabels: Record<string, string> = {};
 const versionSelectOptions = [
   ...versions.map((version) => ({
     label: versionLabels[version] ?? version,
@@ -88,12 +86,6 @@ const config: Config = {
             "0.21.4": {
               label: "0.21.4",
               path: "/",
-              banner: "none",
-              badge: false,
-            },
-            "1.0-beta": {
-              label: "1.0 beta",
-              path: "1.0-beta",
               banner: "none",
               badge: false,
             },
