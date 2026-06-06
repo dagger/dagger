@@ -687,7 +687,7 @@ html[data-theme="light"] pre {
 
 html[data-theme="dark"] pre {
   background: #{$obsidian-color} !important;
-  border: 1px solid rgba(25, 25, 34, 0.3); // Obsidian color with transparency
+  border: 1px solid rgba($obsidian-color, 0.3); // Obsidian color with transparency
   color: #f8f8f2; // Light color for code text in dark mode
 }
 
