@@ -63,22 +63,14 @@ export default function FieldCard({
         )}
 
         {field.args.length > 0 && (
-          <table className={styles.args}>
-            <thead>
-              <tr>
-                <th>Argument</th>
-                <th>Type</th>
-                <th>Description</th>
-              </tr>
-            </thead>
-            <tbody>
+          <section className={styles.args} aria-label="Arguments">
+            <dl className={styles.argList}>
               {field.args.map((arg) => (
-                <tr key={arg.name}>
-                  <td>
-                    <code className={styles.argName}>{arg.name}</code>
-                  </td>
-                  <td>
+                <div className={styles.arg} key={arg.name}>
+                  <dt className={styles.argSignature}>
                     <code>
+                      <span className={styles.argName}>{arg.name}</span>
+                      <span className={styles.punct}>: </span>
                       <TypeRefView type={arg.type} />
                       {arg.defaultValue !== undefined && (
                         <span className={styles.literal}>
@@ -90,14 +82,16 @@ export default function FieldCard({
                     {baseNamed(arg.type).named === "enum" && (
                       <EnumValues name={baseNamed(arg.type).name} />
                     )}
-                  </td>
-                  <td>
-                    <MarkdownInline>{arg.description}</MarkdownInline>
-                  </td>
-                </tr>
+                  </dt>
+                  {arg.description && (
+                    <dd className={styles.argDesc}>
+                      <Markdown>{arg.description}</Markdown>
+                    </dd>
+                  )}
+                </div>
               ))}
-            </tbody>
-          </table>
+            </dl>
+          </section>
         )}
       </div>
     </div>

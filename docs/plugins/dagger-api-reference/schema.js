@@ -199,7 +199,8 @@ function reverseRefs(schema, coreTypes) {
     if (t.name.startsWith("__")) continue;
     for (const field of Object.values(t.getFields())) {
       const ret = namedTypeOf(field.type).name;
-      if (returnedBy[ret]) {
+      // Builder-style fields like Foo.withBar: Foo! are already visible on Foo.
+      if (returnedBy[ret] && ret !== t.name) {
         returnedBy[ret].push({ type: t.name, field: field.name });
       }
       for (const arg of field.args) {
@@ -299,14 +300,22 @@ function parseSchema(schemaPath, featured) {
   for (const name of seenEnums) {
     const e = schema.getType(name);
     if (!(e instanceof GraphQLEnumType)) continue;
-    enums[name] = {
-      name,
-      description: e.description || "",
-      values: e.getValues().map((v) => ({
+    const values = e.getValues().map((v) => {
+      const enumValue = findDirective(v.astNode, "enumValue");
+      return {
         name: v.name,
         description: v.description || "",
         deprecated: v.deprecationReason || null,
-      })),
+        enumValue: enumValue ? enumValue.value : null,
+      };
+    });
+    const visibleValues = values.some((v) => v.enumValue)
+      ? values.filter((v) => v.enumValue)
+      : values;
+    enums[name] = {
+      name,
+      description: e.description || "",
+      values: visibleValues,
     };
   }
 

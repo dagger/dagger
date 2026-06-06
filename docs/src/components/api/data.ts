@@ -44,6 +44,7 @@ export interface EnumValue {
   name: string;
   description: string;
   deprecated: string | null;
+  enumValue: string | null;
 }
 
 export interface EnumType {
