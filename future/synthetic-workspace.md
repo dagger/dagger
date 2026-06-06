@@ -32,7 +32,7 @@ boundary:
 - Absolute paths resolve from the workspace boundary.
 - Filesystem reads use the supplied source content.
 - Git reads use the supplied git source when the backend is a `GitRepository`.
-- Local host state is used only by host-backed workspaces.
+- Local host state is used only by the local workspace backend.
 
 ## Backend Model
 
@@ -40,10 +40,19 @@ boundary:
 derived from the workspace address, a URL scheme, or whether a root filesystem
 field happens to be populated.
 
+`currentWorkspace` is not itself a backend kind. It is a session binding that
+can point at a local or remote workspace, and it may carry session state such as
+the selected config, lock binding, and loaded module graph.
+
 Required backend kinds:
 
-- Host backend: selected by `currentWorkspace`; has a host path and owning
-  client ID; supports host filesystem reads and local mutations.
+- Local workspace backend: selected when the session workspace resolves to a
+  local path; has a host path and owning client ID; supports host filesystem
+  reads and local mutations.
+- Remote workspace backend: selected when the session workspace resolves to a
+  remote git workspace such as `dagger -W github.com/acme/project`; has a git
+  source and source-backed filesystem view; supports read-only workspace
+  operations and module loading for the current session, but has no host path.
 - Directory backend: selected by `Directory.asWorkspace`; has a `Directory`
   source and no host path; supports source-backed filesystem reads.
 - Git backend: selected by `GitRepository.asWorkspace`; has a `GitRepository`
@@ -59,8 +68,14 @@ plain directory-backed workspace by losing the `GitRepository` backend.
 
 ## Construction
 
+Current workspaces are constructed by session workspace selection. A local
+selection uses the local workspace backend. A remote `-W` selection parses the
+remote ref, resolves the selected tree, detects config inside that tree, and
+loads modules for the session from that source.
+
 `Directory.asWorkspace(cwd:)` creates a workspace whose boundary is the supplied
-directory root. It does not inspect the host and does not create a git backend.
+directory root. It does not inspect the host, does not create a git backend, and
+does not attach a current-workspace module graph.
 
 `GitRepository.asWorkspace(cwd:)` creates a workspace whose backend is the
 supplied repository. It must preserve the repository identity and state:
@@ -92,7 +107,7 @@ For `file`, `directory`, and `findUp`:
 - Absolute paths resolve from the workspace boundary.
 - Paths must be normalized and must not escape the workspace boundary.
 - Implementations may validate existence lazily, but failures must refer to the
-  supplied source backend, not the caller host.
+  workspace backend, not the caller host.
 
 `findUp(name:)` searches for one path element while walking parent directories.
 `name` must be a basename. Empty names, dot segments, slashes, and traversal are
@@ -102,7 +117,8 @@ invalid.
 
 `workspace.file(path:)` and `workspace.directory(path:)` read from the backend:
 
-- Host backend reads from the owning client host path.
+- Local workspace backend reads from the owning client host path.
+- Remote workspace backend reads from the selected remote source tree.
 - Directory backend reads from the supplied `Directory`.
 - Git backend reads from the `GitRepository` filesystem view.
 
@@ -125,7 +141,10 @@ come from the selected remote state.
 - Directory backend: attempt to interpret the directory content as a git
   repository only if the content itself contains supported git metadata.
   Otherwise return "not in a git repository".
-- Host backend: inspect the selected host workspace as a local git repository.
+- Local workspace backend: inspect the selected host workspace as a local git
+  repository.
+- Remote workspace backend: report git state from the selected remote git source
+  instead of requiring a `.git` directory in the materialized tree.
 
 For git-backed workspaces:
 
@@ -142,9 +161,14 @@ implementation detail for git-backed workspaces.
 ## Config And Module State
 
 Config selection walks from `cwd` up to the workspace boundary using backend
-content. It never traverses outside the source object. Read-only workspace
+content. It never traverses outside the backend boundary. Read-only workspace
 configuration APIs then read from the selected backend config. They must not
 require host state.
+
+Remote current workspaces are already full current workspaces: they select config
+and gather/load modules from the remote source for the session. They should not
+be grouped with bare `Directory.asWorkspace` values, which have source content
+but no current-workspace module graph.
 
 Examples:
 
@@ -169,7 +193,7 @@ path must be explicit and must use the workspace backend as its source of truth.
 
 Synthetic workspaces are read-only in this feature.
 
-Local mutations are host-backend only:
+Local mutations are local-workspace-backend only:
 
 - `init`
 - `install`
@@ -181,9 +205,10 @@ Local mutations are host-backend only:
 - `update`
 - `migrate`
 
-These methods must reject source-backed workspaces with consistent local-only
-errors. They must not write to the caller host, temporary materializations, or a
-git checkout created as an implementation detail.
+These methods must reject remote current workspaces and source-backed synthetic
+workspaces with consistent local-only errors. They must not write to the caller
+host, temporary materializations, or a git checkout created as an implementation
+detail.
 
 A future source mutation API should return a new `Directory`, `Changeset`, or
 git-specific value instead of pretending that a source-backed `Workspace` is a
@@ -197,8 +222,10 @@ backend identity:
 - Directory backend identity follows the `Directory` content identity.
 - Git backend identity follows the `GitRepository` state used by filesystem and
   git operations, including local dirty state when present.
-- Host backend identity remains tied to the selected host workspace and owning
-  client where host reads are involved.
+- Local workspace backend identity remains tied to the selected host workspace
+  and owning client where host reads are involved.
+- Remote workspace backend identity follows the selected remote git source,
+  version, and workspace subpath.
 
 Passing a synthetic workspace as a module argument must invalidate dependent
 results when the source backend content or git state changes. It must not depend
@@ -220,6 +247,9 @@ Required coverage:
   `GitRepository`, independent of `.git` materialization.
 - Source-backed config reads read backend config content.
 - Source-backed module/check/service listings do not borrow host-loaded state.
+- Remote current workspaces selected with `-W` keep current-workspace behavior:
+  config and modules come from the selected remote source, and local mutations
+  reject.
 - Local-only mutations reject source-backed workspaces.
 - Backend classification is explicit and survives persistence.
 - `findUp(name:)` rejects non-basename names.
