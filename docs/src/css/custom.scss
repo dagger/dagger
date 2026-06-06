@@ -62,6 +62,13 @@ $dagger-dark-mode-background-color: rgb(13, 12, 27);
 
 html[data-theme="dark"] {
   --ifm-background-color: #{$inkberry-color};
+  // The note/secondary admonition (and secondary badges) ship with a flat gray
+  // contrast background in dark mode. Tint it to the dark palette — inkberry
+  // lightened, same hue/saturation — so callouts mesh instead of reading gray.
+  --ifm-color-secondary-contrast-background: #{color.adjust(
+      $inkberry-color,
+      $lightness: 13%
+    )};
   --ifm-color-primary-light: #57c7e3;
   --ifm-color-primary: #57c7e3;
   --ifm-heading-color: white;
