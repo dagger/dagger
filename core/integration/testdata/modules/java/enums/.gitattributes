@@ -1,1 +1,2 @@
-/target/generated-sources/** linguist-generated
+/sdk/src/** linguist-generated
+/src/generated/** linguist-generated

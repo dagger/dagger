@@ -1,0 +1,7 @@
+kind: Changed
+body: |
+  Java SDK: `dagger develop` now vendors the SDK as real, buildable source under `sdk/`, so a module builds with a single `mvn package` and standard Maven tooling works, removing the per-module version dance and the broken `target/` exports. Existing modules are migrated to the new layout automatically the next time they are loaded.
+time: 2026-05-28T17:49:46.983832+02:00
+custom:
+    Author: eunomie
+    PR: "13252"
