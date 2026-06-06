@@ -72,6 +72,29 @@ func newDestination(m Mount) (*destination, error) {
 }
 
 func (d *destination) mkdir(destPath string, opts CopyOptions) error {
+	destPath = cleanContainerPath(destPath)
+	if opts.ReplaceExisting {
+		destInfo, exists, err := d.statView(destPath)
+		if err != nil {
+			return err
+		}
+		if exists && !destInfo.IsDir() {
+			realPath, err := d.realPath(destPath)
+			if err != nil {
+				return err
+			}
+			if err := os.RemoveAll(realPath); err != nil {
+				return err
+			}
+			if d.overlay {
+				if err := os.Mkdir(realPath, mkdirMode(nil, opts)); err != nil && !os.IsExist(err) {
+					return err
+				}
+				return d.applyMetadataPath(realPath, nil, opts)
+			}
+		}
+	}
+
 	rel, created, err := d.ensureDir(destPath, nil, opts, false)
 	if err != nil {
 		return err
@@ -147,13 +170,39 @@ func (d *destination) ensureDir(destPath string, src *sourceEntry, opts CopyOpti
 	if opts.Mode != nil {
 		mode = *opts.Mode
 	}
-	if err := os.Mkdir(realPath, mode); err != nil && !os.IsExist(err) {
-		return "", false, err
+	if err := os.Mkdir(realPath, mode); err != nil {
+		if os.IsExist(err) && opts.ReplaceExisting {
+			info, statErr := os.Lstat(realPath)
+			if statErr != nil {
+				return "", false, statErr
+			}
+			if !info.IsDir() {
+				if err := os.RemoveAll(realPath); err != nil {
+					return "", false, err
+				}
+				if err := os.Mkdir(realPath, mode); err != nil && !os.IsExist(err) {
+					return "", false, err
+				}
+			}
+		} else if !os.IsExist(err) {
+			return "", false, err
+		}
 	}
 	if err := d.applyMetadataPath(realPath, src, opts); err != nil {
 		return "", false, err
 	}
 	return rel, true, nil
+}
+
+func mkdirMode(src *sourceEntry, opts CopyOptions) os.FileMode {
+	mode := os.FileMode(0o755)
+	if src != nil {
+		mode = src.Info.Mode().Perm()
+	}
+	if opts.Mode != nil {
+		mode = *opts.Mode
+	}
+	return mode
 }
 
 func (d *destination) materializeExistingDir(rel, viewPath string) (string, bool, error) {

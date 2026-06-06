@@ -254,3 +254,67 @@ func TestCopyDirectoryFollowsOverlayDestSymlinkDir(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "lib", link)
 }
+
+func TestMkdirReplaceExistingOverlayLowerFile(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	viewRoot := filepath.Join(root, "view")
+	upperRoot := filepath.Join(root, "upper")
+	require.NoError(t, os.Mkdir(viewRoot, 0o755))
+	require.NoError(t, os.Mkdir(upperRoot, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(viewRoot, "node"), []byte("old"), 0o644))
+
+	copier, err := NewCopier(Mount{
+		Root: viewRoot,
+		Mount: &mount.Mount{
+			Type:    "overlay",
+			Options: []string{"upperdir=" + upperRoot},
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, copier.Close())
+	})
+
+	err = copier.Mkdir(context.Background(), "/node", CopyOptions{
+		ReplaceExisting: true,
+	})
+	require.NoError(t, err)
+
+	info, err := os.Stat(filepath.Join(upperRoot, "node"))
+	require.NoError(t, err)
+	require.True(t, info.IsDir())
+}
+
+func TestMkdirReplaceExistingHiddenUpperPath(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	viewRoot := filepath.Join(root, "view")
+	upperRoot := filepath.Join(root, "upper")
+	require.NoError(t, os.Mkdir(viewRoot, 0o755))
+	require.NoError(t, os.Mkdir(upperRoot, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(upperRoot, "node"), []byte("hidden"), 0o644))
+
+	copier, err := NewCopier(Mount{
+		Root: viewRoot,
+		Mount: &mount.Mount{
+			Type:    "overlay",
+			Options: []string{"upperdir=" + upperRoot},
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, copier.Close())
+	})
+
+	err = copier.Mkdir(context.Background(), "/node", CopyOptions{
+		ReplaceExisting: true,
+	})
+	require.NoError(t, err)
+
+	info, err := os.Stat(filepath.Join(upperRoot, "node"))
+	require.NoError(t, err)
+	require.True(t, info.IsDir())
+}
