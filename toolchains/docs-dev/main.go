@@ -89,10 +89,12 @@ func (d DocsDev) References(
 	// dagger-api-reference Docusaurus plugin (see docs/plugins and
 	// docs/src/components/api). All this step regenerates is the thin per-type
 	// MDX stubs, so they stay in sync with the published core-type list.
-	withAPIReference := dag.Container().
-		From("node:22").
-		WithMountedDirectory("/src", withGqlSchema).
-		WithWorkdir("/src/docs").
+	opts := dagger.DocusaurusOpts{
+		Dir:  "./docs",
+		Yarn: true,
+	}
+	withAPIReference := dag.Docusaurus(withGqlSchema, opts).
+		Base().
 		WithExec([]string{"node", "plugins/dagger-api-reference/generate-stubs.js"}).
 		Directory("/src")
 	// 3. Generate CLI reference
@@ -229,17 +231,4 @@ func (d DocsDev) Publish(
 	}
 
 	return nil
-}
-
-func spectaql() *dagger.Directory {
-	// HACK: return a custom build of spectaql that has reproducible example
-	// snippets (can be removed if anvilco/spectaql#976 is merged and released)
-	return dag.Container().
-		From("node:18").
-		// https://github.com/jedevc/spectaql/commit/174cde65e8457cea4f594a71686a1cfcd6042fd0
-		WithMountedDirectory("/src", dag.Git("https://github.com/jedevc/spectaql").Commit("174cde65e8457cea4f594a71686a1cfcd6042fd0").Tree()).
-		WithWorkdir("/src").
-		WithExec([]string{"yarn", "install"}).
-		WithExec([]string{"yarn", "run", "build"}).
-		Directory("./")
 }
