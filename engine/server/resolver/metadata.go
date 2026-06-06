@@ -58,11 +58,8 @@ func (r *Resolver) tryLocalCanonicalConfigMetadata(
 		return "", "", nil, found, err
 	}
 
-	manifestDesc, manifest, err := resolveManifestDescriptor(ctx, r.contentStore, rootDesc, imageConfigPlatformMatcher(opts.Platform))
-	if err != nil {
-		if cerrdefs.IsNotFound(err) {
-			return "", "", nil, false, nil
-		}
+	manifestDesc, manifest, found, err := tryResolveLocalManifestDescriptor(ctx, r.contentStore, rootDesc, imageConfigPlatformMatcher(opts.Platform))
+	if err != nil || !found {
 		return "", "", nil, false, err
 	}
 
