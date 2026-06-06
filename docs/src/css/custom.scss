@@ -14,7 +14,10 @@ $aqua-color: rgb(64, 185, 188);
 $cloud-color: rgb(208, 224, 249);
 $plum-color: rgb(62, 59, 107);
 $inkberry-color: rgb(26, 24, 51);
-$obsidian-color: #13112b;
+// The recessed dark surface (code blocks, search button, flowcharts): the page
+// background, one step darker. Derived so it shares inkberry's hue and
+// saturation and differs only in lightness, keeping the dark palette coherent.
+$obsidian-color: color.adjust($inkberry-color, $lightness: -3%);
 
 @import url("https://fonts.cdnfonts.com/css/general-sans");
 
