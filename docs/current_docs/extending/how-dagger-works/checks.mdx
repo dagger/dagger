@@ -1,0 +1,67 @@
+---
+title: "Checks"
+slug: /extending/how-dagger-works/checks
+description: "Learn how modules validate a workspace."
+toc_max_heading_level: 2
+---
+
+# Checks
+
+A check is a function that validates a workspace.
+
+Checks have no required arguments. That is what lets Dagger run them as a standing project signal: locally, in CI, and in Cloud.
+
+## What Checks Answer
+
+A good check answers a question a developer cares about:
+
+- Is this source tree formatted?
+- Do tests pass?
+- Does generated code match the source?
+- Does policy pass?
+- Is this release ready?
+
+The check should fail with a clear next step.
+
+## Checks Are Not Module Tests
+
+Checks validate the caller's project.
+
+SDK tests validate the module implementation.
+
+Both matter. Keep them separate:
+
+- Put check design in this guide.
+- Put test harnesses, fixtures, and assertions in SDK docs.
+
+## Good Checks
+
+A good check is:
+
+- **Meaningful.** It validates something a caller cares about, not an implementation detail.
+- **Stable.** Same inputs, same result.
+- **Fast.** Precise inputs, good cache behavior.
+- **Focused.** One failure should point to one problem.
+- **Named well.** The name should say what it protects.
+- **Portable.** It should run without hidden local state.
+
+Checks should reuse public functions when that makes the contract clearer.
+
+## Defaults
+
+A check cannot require arguments. Use defaults instead:
+
+- workspace settings for team policy
+- default paths for common source locations
+- optional arguments for manual runs
+- object state for grouped inputs
+
+If it cannot run without required arguments, it is a normal function.
+
+## Cloud
+
+Cloud autocheck runs workspace checks for pull requests once the workspace is connected.
+
+A module does not need special CI code. It needs checks that are clear, portable, and deterministic.
+
+Next: [Cache](./cache.mdx).

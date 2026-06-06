@@ -1,6 +1,0 @@
-{
-  "name": "my-module",
-  "sdk": "typescript",
-  "source": "dagger",
-  "engineVersion": "v0.11.5"
-}

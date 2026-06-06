@@ -150,3 +150,18 @@ This will install the development release of the Dagger CLI in the `<your home f
 Running this CLI against the stable Dagger Engine will, by default, stop and remove the stable version and install a development version of the Dagger Engine instead. You may prefer to install it in an isolated environment so as to avoid conflicts.
 :::
 
+#### Run a specific experimental release
+
+Instead of installing a development build, you can have your existing CLI run an experimental release from a Dagger git ref — a release tag, branch, or commit — without replacing your installation. Set the `DAGGER_X_RELEASE` environment variable, or pass the `--x-release` flag; the CLI builds and caches that release on first use, then runs as that version:
+
+```shell
+# Applies to every command in the shell session
+export DAGGER_X_RELEASE=v1.0.0-beta.2
+dagger check
+
+# Or per command
+dagger --x-release=v1.0.0-beta.2 check
+```
+
+Unset the variable or drop the flag to return to your installed version. The commands throughout this documentation omit this prefix but assume the matching release is active.
+
