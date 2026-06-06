@@ -441,7 +441,9 @@ func (s *workspaceSchema) fileAt(
 	parentDir := filepath.Dir(resolvedPath)
 	basename := filepath.Base(resolvedPath)
 
-	dir, err := s.resolveRootfs(ctx, ws, parentDir, core.CopyFilter{}, false)
+	dir, err := s.resolveRootfs(ctx, ws, parentDir, core.CopyFilter{
+		Include: []string{basename},
+	}, false)
 	if err != nil {
 		return inst, fmt.Errorf("workspace file %q: %w", args.Path, err)
 	}
