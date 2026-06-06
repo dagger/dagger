@@ -52,7 +52,7 @@ EOF
 			cmd.SetContext(idtui.WithPrintTraceLink(cmd.Context(), true))
 		}
 
-		return optionalModCmdWrapper(Query, "")(cmd, args)
+		return optionalModCmdWrapper(Query, "", !eagerRuntime)(cmd, args)
 	},
 	Annotations: map[string]string{
 		printTraceLinkKey: "true",

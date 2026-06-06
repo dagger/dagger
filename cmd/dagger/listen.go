@@ -25,7 +25,7 @@ var (
 var listenCmd = &cobra.Command{
 	Use:     "listen [options]",
 	Aliases: []string{"l"},
-	RunE:    optionalModCmdWrapper(Listen, os.Getenv("DAGGER_SESSION_TOKEN")),
+	RunE:    optionalModCmdWrapper(Listen, os.Getenv("DAGGER_SESSION_TOKEN"), !eagerRuntime),
 	Hidden:  true,
 	Short:   "Starts the engine server",
 }

@@ -206,17 +206,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 						// Return the same ExecError exit code.
 						var ex *dagger.ExecError
 						if errors.As(err, &ex) {
-							tty := !silent && (hasTTY && progress == "auto" || progress == "tty")
-							// Only the pretty frontend prints the stderr of
-							// the exec error in the final render
-							if !tty && ex.Stdout != "" {
-								c.PrintErrln("Stdout:")
-								c.PrintErrln(ex.Stdout)
-							}
-							if !tty && ex.Stderr != "" {
-								c.PrintErrln("Stderr:")
-								c.PrintErrln(ex.Stderr)
-							}
+							printExecErrorOutput(c.PrintErrln, ex, true)
 							return idtui.ExitError{
 								OriginalCode: ex.ExitCode,
 								Original:     err,

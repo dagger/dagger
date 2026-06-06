@@ -126,7 +126,8 @@ type Params struct {
 	Function string
 	ExecCmd  []string
 
-	EagerRuntime bool
+	// LazyRuntime skips eager module runtime loading during module initialization.
+	LazyRuntime bool
 
 	LoadWorkspaceModules bool
 
@@ -1434,7 +1435,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		InteractiveCommand:        c.InteractiveCommand,
 		SSHAuthSocketPath:         sshAuthSock,
 		AllowedLLMModules:         c.AllowedLLMModules,
-		EagerRuntime:              c.EagerRuntime,
+		EagerRuntime:              !c.LazyRuntime,
 		CloudAuth:                 c.CloudAuth,
 		EnableCloudScaleOut:       c.EnableCloudScaleOut,
 		CloudScaleOutEngineID:     remoteEngineID,

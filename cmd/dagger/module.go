@@ -138,17 +138,17 @@ func moduleAddFlags(cmd *cobra.Command, flags *pflag.FlagSet, optional bool) {
 		defaultAllowLLM = strings.Split(allowLLMEnv, ",")
 	}
 	flags.StringSliceVar(&allowedLLMModules, "allow-llm", defaultAllowLLM, "List of URLs of remote modules allowed to access LLM APIs, or 'all' to bypass restrictions for the entire session")
-
-	// Add the eager module loading flag to disable lazy load on runtime.
-	flags.BoolVar(&eagerRuntime, "eager-runtime", false, "load module runtime eagerly")
 }
 
 func init() {
 	moduleAddFlags(callModCmd.Command(), callModCmd.Command().PersistentFlags(), true)
 
 	moduleAddFlags(funcListCmd, funcListCmd.PersistentFlags(), false)
+	funcListCmd.Flags().BoolVar(&eagerRuntime, "eager-runtime", false, "load module runtime eagerly")
 	moduleAddFlags(listenCmd, listenCmd.PersistentFlags(), true)
+	listenCmd.Flags().BoolVar(&eagerRuntime, "eager-runtime", false, "load module runtime eagerly")
 	moduleAddFlags(queryCmd, queryCmd.PersistentFlags(), true)
+	queryCmd.Flags().BoolVar(&eagerRuntime, "eager-runtime", false, "load module runtime eagerly")
 
 	moduleAddFlags(mcpCmd, mcpCmd.PersistentFlags(), true)
 
@@ -174,6 +174,7 @@ func init() {
 
 	moduleDepInstallCmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
 	moduleDepInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
+	moduleDepInstallCmd.Flags().BoolVar(&eagerRuntime, "eager-runtime", false, "load module runtime eagerly")
 	moduleAddFlags(moduleDepInstallCmd, moduleDepInstallCmd.Flags(), false)
 
 	moduleUnInstallCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
@@ -411,7 +412,7 @@ var moduleDepInstallCmd = &cobra.Command{
 		ctx := cmd.Context()
 		return withEngine(ctx, client.Params{
 			SkipWorkspaceModules: true,
-			EagerRuntime:         eagerRuntime,
+			LazyRuntime:          !eagerRuntime,
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			dag := engineClient.Dagger()
 
@@ -1261,12 +1262,14 @@ func localModuleErrorf(format string, err error) error {
 func optionalModCmdWrapper(
 	fn func(context.Context, *client.Client, *dagger.Module, *cobra.Command, []string) error,
 	presetSecretToken string,
+	lazyRuntime bool,
 ) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, cmdArgs []string) error {
 		_, explicitModRefSet := getExplicitModuleSourceRef()
 
 		return withEngine(cmd.Context(), client.Params{
 			SecretToken:          presetSecretToken,
+			LazyRuntime:          lazyRuntime,
 			LoadWorkspaceModules: !moduleNoURL && !explicitModRefSet,
 		}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			if moduleNoURL {

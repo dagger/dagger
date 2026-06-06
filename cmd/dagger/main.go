@@ -38,6 +38,7 @@ import (
 	"golang.org/x/term"
 	"mvdan.cc/sh/v3/interp"
 
+	"dagger.io/dagger"
 	"dagger.io/dagger/engineconn"
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -686,6 +687,7 @@ func main() {
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		var exit idtui.ExitError
+		var ex *dagger.ExecError
 		switch {
 		case errors.As(err, &exit):
 			exitWithCode(exit.Code())
@@ -693,6 +695,12 @@ func main() {
 			exitWithCode(0)
 		case errors.Is(err, context.Canceled) || errors.Is(err, idtui.ErrInterrupted):
 			exitWithCode(2)
+		case errors.As(err, &ex):
+			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
+			printExecErrorOutput(func(a ...any) {
+				fmt.Fprintln(stderr, a...)
+			}, ex, false)
+			exitWithCode(ex.ExitCode)
 		default:
 			fmt.Fprintln(stderr, rootCmd.ErrPrefix(), err)
 			var es interp.ExitStatus
@@ -703,6 +711,23 @@ func main() {
 		}
 	}
 	stop()
+}
+
+func printExecErrorOutput(printErrln func(...any), ex *dagger.ExecError, prettyAlreadyRendered bool) {
+	tty := !silent && (hasTTY && progress == "auto" || progress == "tty")
+	if tty && prettyAlreadyRendered {
+		// Function execution has already given the pretty frontend a chance to
+		// render the exec output; avoid printing it twice in interactive mode.
+		return
+	}
+	if ex.Stdout != "" {
+		printErrln("Stdout:")
+		printErrln(ex.Stdout)
+	}
+	if ex.Stderr != "" {
+		printErrln("Stderr:")
+		printErrln(ex.Stderr)
+	}
 }
 
 func NormalizeWorkdir(workdir string) (string, error) {
