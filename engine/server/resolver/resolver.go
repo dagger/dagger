@@ -389,11 +389,8 @@ func (r *Resolver) tryLocalCanonicalClosure(
 		return nil, found, nil, err
 	}
 
-	manifestDesc, manifest, err := resolveManifestDescriptor(ctx, r.contentStore, rootDesc, matcher)
-	if err != nil {
-		if cerrdefs.IsNotFound(err) {
-			return nil, false, nil, nil
-		}
+	manifestDesc, manifest, found, err := tryResolveLocalManifestDescriptor(ctx, r.contentStore, rootDesc, matcher)
+	if err != nil || !found {
 		return nil, false, nil, err
 	}
 
@@ -842,6 +839,114 @@ func cloneRegistryHosts(src []docker.RegistryHost) []docker.RegistryHost {
 		}
 	}
 	return dst
+}
+
+type localManifestResolutionStatus int
+
+const (
+	localManifestResolutionFound localManifestResolutionStatus = iota
+	localManifestResolutionIncomplete
+	localManifestResolutionNoPlatformMatch
+)
+
+func tryResolveLocalManifestDescriptor(
+	ctx context.Context,
+	provider content.Provider,
+	desc ocispecs.Descriptor,
+	matcher platforms.MatchComparer,
+) (ocispecs.Descriptor, ocispecs.Manifest, bool, error) {
+	manifestDesc, manifest, status, err := resolveLocalManifestDescriptor(ctx, provider, desc, matcher)
+	if err != nil {
+		return ocispecs.Descriptor{}, ocispecs.Manifest{}, false, err
+	}
+	switch status {
+	case localManifestResolutionFound:
+		return manifestDesc, manifest, true, nil
+	case localManifestResolutionIncomplete:
+		return ocispecs.Descriptor{}, ocispecs.Manifest{}, false, nil
+	case localManifestResolutionNoPlatformMatch:
+		return ocispecs.Descriptor{}, ocispecs.Manifest{}, false, fmt.Errorf("no manifest matches requested platform for %s", desc.Digest)
+	default:
+		return ocispecs.Descriptor{}, ocispecs.Manifest{}, false, fmt.Errorf("unknown local manifest resolution status %d", status)
+	}
+}
+
+func resolveLocalManifestDescriptor(
+	ctx context.Context,
+	provider content.Provider,
+	desc ocispecs.Descriptor,
+	matcher platforms.MatchComparer,
+) (ocispecs.Descriptor, ocispecs.Manifest, localManifestResolutionStatus, error) {
+	switch {
+	case images.IsManifestType(desc.MediaType):
+		p, err := content.ReadBlob(ctx, provider, desc)
+		if err != nil {
+			if cerrdefs.IsNotFound(err) {
+				return ocispecs.Descriptor{}, ocispecs.Manifest{}, localManifestResolutionIncomplete, nil
+			}
+			return ocispecs.Descriptor{}, ocispecs.Manifest{}, 0, err
+		}
+		var manifest ocispecs.Manifest
+		if err := json.Unmarshal(p, &manifest); err != nil {
+			return ocispecs.Descriptor{}, ocispecs.Manifest{}, 0, err
+		}
+		if desc.Platform != nil && !matcher.Match(*desc.Platform) {
+			return ocispecs.Descriptor{}, ocispecs.Manifest{}, localManifestResolutionNoPlatformMatch, nil
+		}
+		if desc.Platform == nil {
+			imagePlatform, err := images.ConfigPlatform(ctx, provider, manifest.Config)
+			if err != nil {
+				if cerrdefs.IsNotFound(err) {
+					return ocispecs.Descriptor{}, ocispecs.Manifest{}, localManifestResolutionIncomplete, nil
+				}
+				return ocispecs.Descriptor{}, ocispecs.Manifest{}, 0, err
+			}
+			if !matcher.Match(imagePlatform) {
+				return ocispecs.Descriptor{}, ocispecs.Manifest{}, localManifestResolutionNoPlatformMatch, nil
+			}
+		}
+		return desc, manifest, localManifestResolutionFound, nil
+
+	case images.IsIndexType(desc.MediaType):
+		p, err := content.ReadBlob(ctx, provider, desc)
+		if err != nil {
+			if cerrdefs.IsNotFound(err) {
+				return ocispecs.Descriptor{}, ocispecs.Manifest{}, localManifestResolutionIncomplete, nil
+			}
+			return ocispecs.Descriptor{}, ocispecs.Manifest{}, 0, err
+		}
+		var idx ocispecs.Index
+		if err := json.Unmarshal(p, &idx); err != nil {
+			return ocispecs.Descriptor{}, ocispecs.Manifest{}, 0, err
+		}
+		candidates := matchingPlatformManifests(idx.Manifests, matcher)
+		if len(candidates) == 0 {
+			return ocispecs.Descriptor{}, ocispecs.Manifest{}, localManifestResolutionNoPlatformMatch, nil
+		}
+		incomplete := false
+		for _, candidate := range candidates {
+			manifestDesc, manifest, status, err := resolveLocalManifestDescriptor(ctx, provider, candidate, matcher)
+			if err != nil {
+				return ocispecs.Descriptor{}, ocispecs.Manifest{}, 0, err
+			}
+			switch status {
+			case localManifestResolutionFound:
+				return manifestDesc, manifest, localManifestResolutionFound, nil
+			case localManifestResolutionIncomplete:
+				incomplete = true
+			case localManifestResolutionNoPlatformMatch:
+			default:
+				return ocispecs.Descriptor{}, ocispecs.Manifest{}, 0, fmt.Errorf("unknown local manifest resolution status %d", status)
+			}
+		}
+		if incomplete {
+			return ocispecs.Descriptor{}, ocispecs.Manifest{}, localManifestResolutionIncomplete, nil
+		}
+		return ocispecs.Descriptor{}, ocispecs.Manifest{}, localManifestResolutionNoPlatformMatch, nil
+
+	default:
+		return ocispecs.Descriptor{}, ocispecs.Manifest{}, 0, fmt.Errorf("unsupported descriptor media type %s", desc.MediaType)
+	}
 }
 
 func resolveManifestDescriptor(
