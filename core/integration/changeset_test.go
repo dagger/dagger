@@ -1305,6 +1305,29 @@ func (ChangesetSuite) testChangeApplying(t *testctx.T, apply func(*dagger.Direct
 		require.Empty(t, nodeEntries)
 	})
 
+	t.Run("file replaced by directory hides older lower directory contents", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		seed := c.Container().
+			WithDirectory("/node", c.Directory().WithNewFile("hidden.txt", "hidden")).
+			WithoutDirectory("/node").
+			WithNewFile("/node", "file")
+
+		seedRef, err := seed.Publish(ctx, registryRef("with-changes-file-to-dir-opaque-seed"))
+		require.NoError(t, err)
+
+		baseDir := c.Container().From(seedRef).Rootfs()
+		beforeDir := c.Directory()
+		afterDir := c.Directory().WithNewFile("node/new.txt", "new")
+		changes := afterDir.Changes(beforeDir)
+
+		resultDir := baseDir.WithChanges(changes)
+
+		nodeEntries, err := resultDir.Directory("node").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"new.txt"}, nodeEntries)
+	})
+
 	t.Run("directory replaced by file", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 

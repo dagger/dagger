@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/containerd/containerd/v2/core/mount"
+	"github.com/containerd/continuity/sysx"
 	"github.com/stretchr/testify/require"
 )
 
@@ -269,7 +270,7 @@ func TestMkdirReplaceExistingOverlayLowerFile(t *testing.T) {
 		Root: viewRoot,
 		Mount: &mount.Mount{
 			Type:    "overlay",
-			Options: []string{"upperdir=" + upperRoot},
+			Options: []string{"upperdir=" + upperRoot, "userxattr"},
 		},
 	})
 	require.NoError(t, err)
@@ -285,6 +286,7 @@ func TestMkdirReplaceExistingOverlayLowerFile(t *testing.T) {
 	info, err := os.Stat(filepath.Join(upperRoot, "node"))
 	require.NoError(t, err)
 	require.True(t, info.IsDir())
+	requireOpaqueDir(t, filepath.Join(upperRoot, "node"))
 }
 
 func TestMkdirReplaceExistingHiddenUpperPath(t *testing.T) {
@@ -301,7 +303,7 @@ func TestMkdirReplaceExistingHiddenUpperPath(t *testing.T) {
 		Root: viewRoot,
 		Mount: &mount.Mount{
 			Type:    "overlay",
-			Options: []string{"upperdir=" + upperRoot},
+			Options: []string{"upperdir=" + upperRoot, "userxattr"},
 		},
 	})
 	require.NoError(t, err)
@@ -317,4 +319,85 @@ func TestMkdirReplaceExistingHiddenUpperPath(t *testing.T) {
 	info, err := os.Stat(filepath.Join(upperRoot, "node"))
 	require.NoError(t, err)
 	require.True(t, info.IsDir())
+	requireOpaqueDir(t, filepath.Join(upperRoot, "node"))
+}
+
+func TestRemoveForReplaceDirectoryOverOverlayLowerFileMarksOpaque(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	viewRoot := filepath.Join(root, "view")
+	upperRoot := filepath.Join(root, "upper")
+	require.NoError(t, os.MkdirAll(filepath.Join(srcRoot, "node"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(srcRoot, "node", "new.txt"), []byte("new"), 0o644))
+	require.NoError(t, os.Mkdir(viewRoot, 0o755))
+	require.NoError(t, os.Mkdir(upperRoot, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(viewRoot, "node"), []byte("old"), 0o644))
+
+	dst, err := newDestination(Mount{
+		Root: viewRoot,
+		Mount: &mount.Mount{
+			Type:    "overlay",
+			Options: []string{"upperdir=" + upperRoot, "userxattr"},
+		},
+	})
+	require.NoError(t, err)
+
+	srcInfo, err := os.Stat(filepath.Join(srcRoot, "node"))
+	require.NoError(t, err)
+
+	err = dst.removeForReplace("/node", srcInfo, CopyOptions{
+		ReplaceExisting: true,
+	})
+	require.NoError(t, err)
+
+	info, err := os.Stat(filepath.Join(upperRoot, "node"))
+	require.NoError(t, err)
+	require.True(t, info.IsDir())
+	requireOpaqueDir(t, filepath.Join(upperRoot, "node"))
+}
+
+func TestCopyDirectoryReplaceExistingOverlayLowerFileMarksOpaque(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	srcRoot := filepath.Join(root, "src")
+	viewRoot := filepath.Join(root, "view")
+	upperRoot := filepath.Join(root, "upper")
+	require.NoError(t, os.MkdirAll(filepath.Join(srcRoot, "node"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(srcRoot, "node", "new.txt"), []byte("new"), 0o644))
+	require.NoError(t, os.Mkdir(viewRoot, 0o755))
+	require.NoError(t, os.Mkdir(upperRoot, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(viewRoot, "node"), []byte("old"), 0o644))
+
+	copier, err := NewCopier(Mount{
+		Root: viewRoot,
+		Mount: &mount.Mount{
+			Type:    "overlay",
+			Options: []string{"upperdir=" + upperRoot, "userxattr"},
+		},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, copier.Close())
+	})
+
+	err = copier.Copy(context.Background(), Mount{Root: srcRoot}, "/node", "/node", CopyOptions{
+		ReplaceExisting: true,
+	})
+	require.NoError(t, err)
+
+	got, err := os.ReadFile(filepath.Join(upperRoot, "node", "new.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "new", string(got))
+	requireOpaqueDir(t, filepath.Join(upperRoot, "node"))
+}
+
+func requireOpaqueDir(t *testing.T, path string) {
+	t.Helper()
+
+	val, err := sysx.LGetxattr(path, "user.overlay.opaque")
+	require.NoError(t, err)
+	require.Equal(t, []byte{'y'}, val)
 }

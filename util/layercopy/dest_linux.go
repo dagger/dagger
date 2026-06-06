@@ -90,6 +90,9 @@ func (d *destination) mkdir(destPath string, opts CopyOptions) error {
 				if err := os.Mkdir(realPath, mkdirMode(nil, opts)); err != nil && !os.IsExist(err) {
 					return err
 				}
+				if err := d.markOpaque(realPath); err != nil {
+					return err
+				}
 				return d.applyMetadataPath(realPath, nil, opts)
 			}
 		}
@@ -128,6 +131,27 @@ func (d *destination) ensureDir(destPath string, src *sourceEntry, opts CopyOpti
 	if viewPath, err := rootPath(d.viewRoot, destPath, true); err == nil {
 		if info, statErr := os.Stat(viewPath); statErr == nil {
 			if !info.IsDir() {
+				if d.overlay {
+					rel, err := filepath.Rel(d.viewRoot, viewPath)
+					if err != nil {
+						return "", false, err
+					}
+					rel = cleanRel(rel)
+					realPath := filepath.Join(d.writeRoot, rel)
+					if upperInfo, err := os.Lstat(realPath); err == nil && upperInfo.IsDir() {
+						if err := d.markOpaque(realPath); err != nil {
+							return "", false, err
+						}
+						if overwriteMetadata {
+							if err := d.applyMetadataPath(realPath, src, opts); err != nil {
+								return "", false, err
+							}
+						}
+						return rel, false, nil
+					} else if err != nil && !os.IsNotExist(err) {
+						return "", false, err
+					}
+				}
 				return "", false, fmt.Errorf("cannot copy directory to non-directory %q", destPath)
 			}
 			rel, err := filepath.Rel(d.viewRoot, viewPath)
@@ -182,6 +206,11 @@ func (d *destination) ensureDir(destPath string, src *sourceEntry, opts CopyOpti
 				}
 				if err := os.Mkdir(realPath, mode); err != nil && !os.IsExist(err) {
 					return "", false, err
+				}
+				if d.overlay {
+					if err := d.markOpaque(realPath); err != nil {
+						return "", false, err
+					}
 				}
 			}
 		} else if !os.IsExist(err) {
@@ -279,6 +308,9 @@ func (d *destination) removeForReplace(destPath string, srcInfo os.FileInfo, opt
 	}
 	if d.overlay && srcInfo.IsDir() && !destInfo.IsDir() {
 		if err := os.Mkdir(realPath, srcInfo.Mode().Perm()); err != nil && !os.IsExist(err) {
+			return err
+		}
+		if err := d.markOpaque(realPath); err != nil {
 			return err
 		}
 	}
@@ -415,6 +447,17 @@ func copyXattrs(dstPath, srcPath string, _ bool, xattrErrorHandler XAttrErrorHan
 		}
 	}
 	return nil
+}
+
+func (d *destination) markOpaque(path string) error {
+	return sysx.LSetxattr(path, opaqueXattr(d.userxattr), []byte{'y'}, 0)
+}
+
+func opaqueXattr(userxattr bool) string {
+	if userxattr {
+		return "user.overlay.opaque"
+	}
+	return "trusted.overlay.opaque"
 }
 
 func overlayLayers(m *mount.Mount) ([]string, error) {
