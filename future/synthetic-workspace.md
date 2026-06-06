@@ -1,113 +1,135 @@
 # Synthetic Workspaces
 
-author: codex
-created: 2026-06-05
 status: draft spec
+created: 2026-06-05
 
 ## Summary
 
-A synthetic workspace is a `Workspace` whose source of truth is an explicit
-Dagger object instead of the caller's host filesystem.
+A workspace is a project-shaped view over a private source backend. The backend
+may be the caller's local filesystem, a resolved git ref, a Dagger `Directory`,
+or another workspace plus changes.
 
-The core contract is simple: a workspace backed by a `Directory` uses that
-directory, and a workspace backed by a `GitRepository` uses that git repository.
-No method may silently substitute the current host workspace, infer behavior
-from address strings, or depend on incidental filesystem artifacts when the
-backend already models the state.
+The backend source is an implementation detail. It must not be exposed in the
+API schema as a field, enum, interface, or union. Callers interact with a
+`Workspace` through workspace operations, not by switching on its backend.
 
-## Caller Contract
+The design goal is simple: every workspace operation reads from the workspace's
+own source of truth. It must never silently fall back to the caller's current
+host workspace, infer behavior from address strings, or depend on incidental
+materialization details such as whether a temporary directory contains `.git`.
 
-Callers use synthetic workspaces when they want to pass project source as a
-`Workspace` value without first checking it out on the host.
+## Public Contract
+
+The public API should describe behavior, not storage.
+
+Initial constructors:
 
 ```graphql
-directory.asWorkspace(cwd: "/app")
-git(url: "https://github.com/acme/project").asWorkspace(cwd: "/app")
+Directory.asWorkspace(cwd: String): Workspace!
+GitRef.asWorkspace(cwd: String): Workspace!
 ```
 
-The returned workspace behaves as if the supplied source object is the workspace
-boundary:
+`GitRepository` is the object used to resolve refs. A convenience constructor on
+`GitRepository` can exist later only if its semantics are explicit, such as
+"resolve `head` now, then create a `GitRef` workspace".
 
-- Relative paths resolve from `cwd`.
-- Absolute paths resolve from the workspace boundary.
-- Filesystem reads use the supplied source content.
-- Git reads use the supplied git source when the backend is a `GitRepository`.
-- Local host state is used only by the local workspace backend.
+Future functional update APIs return new workspaces:
 
-## Backend Model
+```graphql
+extend type Workspace {
+  withNewFile(path: String!, contents: String): Workspace!
+  withNewDirectory(path: String!, source: Directory!): Workspace!
+  withChanges(changes: Changeset!): Workspace!
+  changes(other: Workspace!): Changeset!
+}
+```
 
-`Workspace` must have an explicit backend kind. Backend behavior must not be
-derived from the workspace address, a URL scheme, or whether a root filesystem
-field happens to be populated.
+These APIs do not mutate the backing source. They produce a new workspace value
+whose effective contents are the previous workspace plus the requested changes.
 
-`currentWorkspace` is not itself a backend kind. It is a session binding that
-can point at a local or remote workspace, and it may carry session state such as
-the selected config, lock binding, and loaded module graph.
+## Private Internal Model
 
-Required backend kinds:
+The implementation should have one backend dimension with composable variants:
 
-- Local workspace backend: selected when the session workspace resolves to a
-  local path; has a host path and owning client ID; supports host filesystem
-  reads and local mutations.
-- Remote workspace backend: selected when the session workspace resolves to a
-  remote git workspace such as `dagger -W github.com/acme/project`; has a git
-  source and source-backed filesystem view; supports read-only workspace
-  operations and module loading for the current session, but has no host path.
-- Directory backend: selected by `Directory.asWorkspace`; has a `Directory`
-  source and no host path; supports source-backed filesystem reads.
-- Git backend: selected by `GitRepository.asWorkspace`; has a `GitRepository`
-  source and no host path; supports source-backed filesystem reads and git
-  state.
+```text
+Workspace {
+  source: workspaceSource // private; not in the API schema
+  cwd: workspace path
+  selectedConfig: optional
+  moduleGraph: optional
+}
 
-The address is an identity/display value. It can participate in cache keys, but
-it is not the type system for workspace behavior.
+workspaceSource =
+  clientLocal(hostPath, clientID)
+  gitRef(ref)
+  directory(dir)
+  overlay(base workspaceSource, changes Changeset)
+```
 
-Persisted workspaces must persist the backend kind and the backend object
-reference. Rehydrating a workspace must not turn a git-backed workspace into a
-plain directory-backed workspace by losing the `GitRepository` backend.
+This is an internal model, not an API shape.
+
+`currentWorkspace` is not a separate backend kind. It is a way to construct a
+workspace and attach session state:
+
+- A local current workspace uses `clientLocal` plus selected config and loaded
+  modules for the session.
+- A remote current workspace uses `gitRef` plus selected config and loaded
+  modules for the session.
+- `Directory.asWorkspace` uses `directory`.
+- `GitRef.asWorkspace` uses `gitRef`.
+- Functional write methods use `overlay`.
+
+The address of a workspace may be useful for display or identity, but it is not
+the type system for behavior.
+
+## Source Semantics
+
+`clientLocal` represents a live path owned by a connected client. It can read
+from the client filesystem and can support local side-effecting mutations when
+the workspace is the current local workspace.
+
+`gitRef` represents a resolved git ref. Its filesystem view is the tree at that
+ref. Its git state is clean by definition: dirty is false and uncommitted changes
+are empty.
+
+`directory` represents a Dagger `Directory`. It is a filesystem source. It does
+not imply git repository access just because the directory was produced from git
+somewhere earlier.
+
+`overlay` represents changes applied to another source. It does not mutate the
+base. Its effective filesystem view is `base` plus `changes`.
 
 ## Construction
 
-Current workspaces are constructed by session workspace selection. A local
-selection uses the local workspace backend. A remote `-W` selection parses the
-remote ref, resolves the selected tree, detects config inside that tree, and
-loads modules for the session from that source.
+Local workspace selection constructs `clientLocal(hostPath, clientID)`.
 
-`Directory.asWorkspace(cwd:)` creates a workspace whose boundary is the supplied
-directory root. It does not inspect the host, does not create a git backend, and
-does not attach a current-workspace module graph.
+Remote workspace selection, such as `dagger -W github.com/acme/project@main`,
+should construct a `gitRef` source. The selected ref, workspace subpath, config,
+and loaded modules are current-session state attached to the workspace. The
+implementation may expose a `Directory` view of the ref for filesystem reads,
+but must not flatten the workspace into a plain directory and lose the git ref as
+the source of truth.
 
-`GitRepository.asWorkspace(cwd:)` creates a workspace whose backend is the
-supplied repository. It must preserve the repository identity and state:
+`Directory.asWorkspace` constructs a workspace from the supplied `Directory`.
+It does not inspect the host, borrow the current workspace, or attach the
+current workspace's module graph.
 
-- A local repository exposes the current worktree content, including
-  uncommitted and untracked files represented by `GitRepository`.
-- A remote repository exposes the selected remote state and is clean unless the
-  backend itself represents changes.
-- `workspace.git()` reports git state from the same `GitRepository` backend.
-
-Constructing a git-backed workspace should be cheap. It should record the
-backend and selected cwd; filesystem and git operations can fetch or materialize
-the data they need. Creating the workspace must not eagerly download more of a
-repository than is needed to establish the selected git state.
-
-If a future constructor targets `GitRef`, its meaning should be explicit: the
-workspace is backed by that ref. If construction stays on `GitRepository`, its
-remote meaning is the repository's `HEAD`.
+`GitRef.asWorkspace` constructs a workspace from the supplied ref. It preserves
+the ref as the source of truth for filesystem and git operations. Constructing
+the workspace should be cheap; filesystem reads can fetch or materialize the
+tree lazily as needed.
 
 ## Paths
 
-`cwd` is a workspace path. It is exposed as an absolute workspace path: `/` at
-the boundary, `/app` for a nested cwd. Internally, implementations may store it
-however they want, but all public path behavior uses workspace paths.
+`cwd` is a workspace path. `/` is the source boundary; `/app` is a nested working
+directory. Relative paths resolve from `cwd`. Absolute paths resolve from the
+workspace boundary.
 
 For `file`, `directory`, and `findUp`:
 
-- Relative paths resolve from `cwd`.
-- Absolute paths resolve from the workspace boundary.
-- Paths must be normalized and must not escape the workspace boundary.
-- Implementations may validate existence lazily, but failures must refer to the
-  workspace backend, not the caller host.
+- Paths must be normalized.
+- Paths must not escape the workspace boundary.
+- Failures must refer to the workspace source, not the caller host.
 
 `findUp(name:)` searches for one path element while walking parent directories.
 `name` must be a basename. Empty names, dot segments, slashes, and traversal are
@@ -115,85 +137,68 @@ invalid.
 
 ## Filesystem Reads
 
-`workspace.file(path:)` and `workspace.directory(path:)` read from the backend:
+`workspace.file(path:)` and `workspace.directory(path:)` read from the effective
+source:
 
-- Local workspace backend reads from the owning client host path.
-- Remote workspace backend reads from the selected remote source tree.
-- Directory backend reads from the supplied `Directory`.
-- Git backend reads from the `GitRepository` filesystem view.
+- `clientLocal` reads from the owning client's host path.
+- `gitRef` reads from the selected git tree.
+- `directory` reads from the supplied `Directory`.
+- `overlay` reads from the base source with the overlay changes applied.
 
-`include`, `exclude`, and `gitignore` filtering apply to the backend content.
-The gitignore root is the workspace boundary. Nested ignore files are interpreted
-from the backend source. A source-backed workspace must not reject
+`include`, `exclude`, and `gitignore` filtering apply to the effective source
+content. The gitignore root is the workspace boundary. Nested ignore files are
+interpreted from the source being read. A non-local workspace must not reject
 `gitignore: true` merely because there is no host path.
-
-For a local git backend, filesystem reads include the dirty worktree state
-represented by the `GitRepository`. For a remote git backend, filesystem reads
-come from the selected remote state.
 
 ## Git State
 
-`workspace.git()` is a view of the workspace backend's git state:
+`workspace.git()` reports git state for the workspace source when the source has
+portable git semantics:
 
-- Git backend: return git state from the `GitRepository` backend. Do not require
-  a materialized `.git` directory. Do not depend on `keepGitDir` or
-  `discardGitDir` tree options.
-- Directory backend: attempt to interpret the directory content as a git
-  repository only if the content itself contains supported git metadata.
-  Otherwise return "not in a git repository".
-- Local workspace backend: inspect the selected host workspace as a local git
-  repository.
-- Remote workspace backend: report git state from the selected remote git source
-  instead of requiring a `.git` directory in the materialized tree.
+- `gitRef`: report the selected ref and commit; dirty is false.
+- `overlay(gitRef, changes)`: report the same selected ref and commit; dirty is
+  true when the overlay contains git-visible changes; uncommitted state is the
+  overlay changes.
+- `clientLocal`: inspect the selected local workspace as a local git checkout
+  when it is one.
+- `overlay(clientLocal, changes)`: preserve the base local git identity and add
+  the overlay changes to the reported uncommitted state.
+- `directory`: filesystem-only by default. It is not a repository handle.
 
-For git-backed workspaces:
+`workspace.git()` must not require a materialized `.git` directory for `gitRef`
+sources. The presence or absence of `.git` in a materialized filesystem is an
+implementation detail.
 
-- `workspace.git().head.commit` matches the source repository's `head.commit`.
-- Local dirty state is preserved in `workspace.git().uncommitted`.
-- Remote repositories report no uncommitted changes unless the backend models
-  changes.
-- Worktree support is determined by `GitRepository`, not by an extra
-  `Workspace.git` check for a `.git` directory.
+Repository-wide operations, such as listing all branches, belong on
+`GitRepository` or another explicit repository handle. They should not be added
+to `Workspace.git()` unless their behavior is well-defined for every workspace
+source.
 
-The presence or absence of `.git` in a materialized filesystem is an
-implementation detail for git-backed workspaces.
+## Config And Modules
 
-## Config And Module State
+Config selection walks from `cwd` up to the workspace boundary using source
+content. It never traverses outside the source boundary.
 
-Config selection walks from `cwd` up to the workspace boundary using backend
-content. It never traverses outside the backend boundary. Read-only workspace
-configuration APIs then read from the selected backend config. They must not
-require host state.
+Current workspaces can carry selected config and a loaded module graph because
+session workspace selection performs that loading. This is true for both local
+current workspaces and remote current workspaces.
 
-Remote current workspaces are already full current workspaces: they select config
-and gather/load modules from the remote source for the session. They should not
-be grouped with bare `Directory.asWorkspace` values, which have source content
-but no current-workspace module graph.
+Synthetic workspaces created from `Directory.asWorkspace` or `GitRef.asWorkspace`
+do not implicitly borrow the caller's loaded modules. Source-backed config reads
+use the workspace source, but APIs that require a loaded module graph must return
+empty results or a clear "no loaded module graph" error until module loading from
+that workspace is explicitly supported.
 
-Examples:
-
-- `configRead` reads the backend's config file, or the empty config if no config
-  exists.
-- `envList` lists environments from the backend config, or returns an empty list
-  if no config exists.
-- `moduleList` lists modules from the backend config, resolving module source
-  paths relative to the config file's directory.
-
-Generated checks, generators, services, and module settings require a loaded
-module graph, not just source files. `asWorkspace` must not implicitly borrow
-the caller's loaded modules. Without an explicit module graph for the synthetic
-workspace, check/generator/service listing APIs return empty results
-consistently across backend kinds. Module settings are unavailable until there
-is a module graph for the synthetic workspace.
-
-If synthetic workspaces later support loading modules from source, that loading
-path must be explicit and must use the workspace backend as its source of truth.
+If synthetic workspaces later support module loading, that loading path must use
+the workspace source as its source of truth and attach the resulting module graph
+to the returned workspace value.
 
 ## Mutations
 
-Synthetic workspaces are read-only in this feature.
+There are two mutation families.
 
-Local mutations are local-workspace-backend only:
+Local side-effecting mutations are only valid for a current local
+`clientLocal` workspace:
 
 - `init`
 - `install`
@@ -205,53 +210,54 @@ Local mutations are local-workspace-backend only:
 - `update`
 - `migrate`
 
-These methods must reject remote current workspaces and source-backed synthetic
-workspaces with consistent local-only errors. They must not write to the caller
-host, temporary materializations, or a git checkout created as an implementation
-detail.
+These methods must reject remote current workspaces and value workspaces with
+consistent local-only errors. They must not write to the caller host, temporary
+materializations, or implementation-detail checkouts.
 
-A future source mutation API should return a new `Directory`, `Changeset`, or
-git-specific value instead of pretending that a source-backed `Workspace` is a
-writable host workspace.
+Functional update methods are valid for all workspaces. They return
+`overlay(base, changes)` and have no side effects.
 
 ## Cache And Identity
 
-Workspace IDs and cache keys must include the backend kind and the relevant
-backend identity:
+Workspace cache keys and persisted IDs must include the private source identity:
 
-- Directory backend identity follows the `Directory` content identity.
-- Git backend identity follows the `GitRepository` state used by filesystem and
-  git operations, including local dirty state when present.
-- Local workspace backend identity remains tied to the selected host workspace
-  and owning client where host reads are involved.
-- Remote workspace backend identity follows the selected remote git source,
-  version, and workspace subpath.
+- `clientLocal`: selected host path and owning client where host reads are
+  involved.
+- `gitRef`: repository identity, selected ref or commit, and workspace subpath.
+- `directory`: directory content identity.
+- `overlay`: base source identity plus changes identity.
 
-Passing a synthetic workspace as a module argument must invalidate dependent
-results when the source backend content or git state changes. It must not depend
-on unrelated files from the caller's current workspace.
+Persisted workspaces must preserve the private source kind and source reference.
+Rehydrating a `gitRef` workspace must not turn it into a plain `directory`
+workspace by dropping git provenance.
+
+Passing a workspace as an argument must invalidate dependent results when the
+effective source changes. It must not depend on unrelated files from the
+caller's current workspace.
 
 ## Test Contract
 
-The test suite should be readable as the feature contract.
+The test suite should read like the feature contract.
 
 Required coverage:
 
-- `Directory.asWorkspace` uses the supplied directory for relative paths,
+- Backend source is not exposed in the API schema.
+- `Directory.asWorkspace` reads from the supplied directory for relative paths,
   absolute paths, `findUp`, and `gitignore` filtering.
-- `GitRepository.asWorkspace` covers both local and remote repositories.
-- Local git-backed workspaces expose dirty worktree content and dirty git state.
-- Remote git-backed workspaces expose fetched source content and clean git
-  state.
-- `workspace.git()` on a git-backed workspace matches the source
-  `GitRepository`, independent of `.git` materialization.
-- Source-backed config reads read backend config content.
+- `GitRef.asWorkspace` reads from the selected ref and reports clean git state.
+- Remote current workspaces selected with `-W` use git ref source behavior while
+  preserving current-workspace config and module loading.
+- `workspace.git()` on a `gitRef` workspace matches the selected ref without
+  depending on `.git` materialization.
+- Functional writes return modified workspace values and do not mutate the base
+  source.
+- `overlay(gitRef, changes)` preserves the base commit/ref and reports the
+  overlay as uncommitted state.
+- Source-backed config reads use backend content.
 - Source-backed module/check/service listings do not borrow host-loaded state.
-- Remote current workspaces selected with `-W` keep current-workspace behavior:
-  config and modules come from the selected remote source, and local mutations
-  reject.
-- Local-only mutations reject source-backed workspaces.
-- Backend classification is explicit and survives persistence.
+- Local-only side-effecting mutations reject remote current workspaces and value
+  workspaces.
+- Source identity survives persistence and rehydration.
 - `findUp(name:)` rejects non-basename names.
 
 Tests should assert caller-visible behavior, not incidental implementation
