@@ -226,21 +226,56 @@ function reverseRefs(schema, coreTypes) {
   return { returnedBy, argOf };
 }
 
+// resolveTypeList returns the full, ordered set of core types to publish: the
+// `featured` names first (in the given order, used for prominence), then every
+// other core object type in the schema, alphabetically. Core types are the
+// object types implementing the Node interface — i.e. the addressable API
+// objects. Because the tail comes straight from the schema, a newly added type
+// can never be silently omitted; it just lands at the end of the list.
+function resolveTypeList(schema, featured) {
+  const all = Object.values(schema.getTypeMap())
+    .filter(
+      (t) =>
+        t instanceof GraphQLObjectType &&
+        !t.name.startsWith("__") &&
+        t.getInterfaces().some((i) => i.name === "Node")
+    )
+    .map((t) => t.name);
+  const allSet = new Set(all);
+
+  const featuredPresent = featured.filter((n) => allSet.has(n));
+  const featuredSet = new Set(featuredPresent);
+  const rest = all
+    .filter((n) => !featuredSet.has(n))
+    .sort((a, b) => a.localeCompare(b));
+  return [...featuredPresent, ...rest];
+}
+
+// orderedTypeNames is the file-based entry point used by the stub generator:
+// build the schema and return the resolved, ordered type list.
+function orderedTypeNames(schemaPath, featured) {
+  const schema = buildSchema(fs.readFileSync(schemaPath, "utf8"), {
+    assumeValidSDL: true,
+  });
+  return resolveTypeList(schema, featured);
+}
+
 /**
  * parseSchema reads the SDL at `schemaPath` and returns the model for the
- * given list of core type names. Cross-links are resolved against that same
- * list, so only types we actually publish become links.
+ * resolved core type list (the `featured` names first, then every other core
+ * type in the schema). Cross-links are resolved against that full list.
  */
-function parseSchema(schemaPath, coreTypeNames) {
+function parseSchema(schemaPath, featured) {
   const sdl = fs.readFileSync(schemaPath, "utf8");
   const schema = buildSchema(sdl, { assumeValidSDL: true });
-  const coreTypes = new Set(coreTypeNames);
+  const typeNames = resolveTypeList(schema, featured);
+  const coreTypes = new Set(typeNames);
   const seenEnums = new Set();
 
   const { returnedBy, argOf } = reverseRefs(schema, coreTypes);
 
   const types = {};
-  for (const name of coreTypeNames) {
+  for (const name of typeNames) {
     const t = schema.getType(name);
     if (!(t instanceof GraphQLObjectType)) {
       throw new Error(`core type ${name} is not an object type in the schema`);
@@ -275,7 +310,7 @@ function parseSchema(schemaPath, coreTypeNames) {
     };
   }
 
-  return { types, enums, coreTypes: coreTypeNames };
+  return { types, enums, coreTypes: typeNames };
 }
 
-module.exports = { parseSchema, renderTypeRef };
+module.exports = { parseSchema, renderTypeRef, resolveTypeList, orderedTypeNames };
