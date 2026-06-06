@@ -323,7 +323,7 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerCl
 		return fmt.Errorf("remote workspace %q: parsing git ref: %w", remoteRef, err)
 	}
 
-	tree, err := srv.cloneGitTree(ctx, client.dag, parsedRef.cloneRef, parsedRef.version)
+	tree, gitRef, err := srv.cloneGitTree(ctx, client.dag, parsedRef.cloneRef, parsedRef.version)
 	if err != nil {
 		return fmt.Errorf("remote workspace %q: %w", remoteRef, err)
 	}
@@ -345,6 +345,7 @@ func (srv *Server) loadWorkspaceFromRemote(ctx context.Context, client *daggerCl
 		},
 		false, // isLocal
 		tree,  // pre-built rootfs for remote
+		core.NewWorkspaceSourceGitRef(gitRef.Result),
 	)
 }
 
@@ -362,7 +363,7 @@ func (srv *Server) detectAndLoadWorkspace(
 	workspaceAddress func(ws *workspace.Workspace) string,
 	isLocal bool,
 ) error {
-	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client, statFS, readFile, cwd, resolveLocalRef, workspaceAddress, isLocal, dagql.ObjectResult[*core.Directory]{})
+	return srv.detectAndLoadWorkspaceWithRootfs(ctx, client, statFS, readFile, cwd, resolveLocalRef, workspaceAddress, isLocal, dagql.ObjectResult[*core.Directory]{}, nil)
 }
 
 // pendingModule represents a module to be loaded from workspace discovery,
@@ -610,6 +611,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	workspaceAddress func(ws *workspace.Workspace) string,
 	isLocal bool,
 	prebuiltRootfs dagql.ObjectResult[*core.Directory],
+	prebuiltSource core.WorkspaceSource,
 ) error {
 	clientMD := client.clientMetadata
 	loadModules := client.pendingWorkspaceLoad &&
@@ -696,7 +698,7 @@ func (srv *Server) detectAndLoadWorkspaceWithRootfs(
 	if workspaceAddress != nil {
 		address = workspaceAddress(ws)
 	}
-	coreWS, err := srv.buildCoreWorkspace(ctx, client, ws, isLocal, prebuiltRootfs, address)
+	coreWS, err := srv.buildCoreWorkspace(ctx, client, ws, isLocal, prebuiltRootfs, prebuiltSource, address)
 	if err != nil {
 		return fmt.Errorf("building workspace: %w", err)
 	}
@@ -799,6 +801,7 @@ func (srv *Server) buildCoreWorkspace(
 	detected *workspace.Workspace,
 	isLocal bool,
 	prebuiltRootfs dagql.ObjectResult[*core.Directory],
+	prebuiltSource core.WorkspaceSource,
 	address string,
 ) (*core.Workspace, error) {
 	// Capture the current client ID for routing host filesystem operations.
@@ -821,9 +824,15 @@ func (srv *Server) buildCoreWorkspace(
 		// Local: store host path only. Directories are resolved lazily
 		// via per-call host.directory() in resolveRootfs.
 		coreWS.SetHostPath(detected.Root)
+		coreWS.SetSource(core.NewWorkspaceSourceClientLocal(detected.Root, clientMetadata.ClientID))
 	} else {
 		// Remote: store the cloned git tree.
 		coreWS.SetRootfs(prebuiltRootfs)
+		if prebuiltSource != nil {
+			coreWS.SetSource(prebuiltSource)
+		} else {
+			coreWS.SetSource(core.NewWorkspaceSourceDirectory(prebuiltRootfs))
+		}
 	}
 
 	return coreWS, nil
@@ -841,8 +850,8 @@ func remoteWorkspaceAddress(cloneRef, workspaceCwd, version string) string {
 	return core.GitRefString(cloneRef, workspaceCwd, version)
 }
 
-// cloneGitTree clones a git repository and returns its directory tree.
-func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, cloneRef, version string) (dagql.ObjectResult[*core.Directory], error) {
+// cloneGitTree clones a git repository and returns its selected ref and tree.
+func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, cloneRef, version string) (dagql.ObjectResult[*core.Directory], dagql.ObjectResult[*core.GitRef], error) {
 	// Build the ref selector — use "head" if no version specified.
 	refSelector := dagql.Selector{Field: "head"}
 	if version != "" {
@@ -852,8 +861,8 @@ func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, cloneRef
 		}
 	}
 
-	var tree dagql.ObjectResult[*core.Directory]
-	err := dag.Select(ctx, dag.Root(), &tree,
+	var gitRef dagql.ObjectResult[*core.GitRef]
+	err := dag.Select(ctx, dag.Root(), &gitRef,
 		dagql.Selector{
 			Field: "git",
 			Args: []dagql.NamedInput{
@@ -861,12 +870,19 @@ func (srv *Server) cloneGitTree(ctx context.Context, dag *dagql.Server, cloneRef
 			},
 		},
 		refSelector,
+	)
+	if err != nil {
+		return dagql.ObjectResult[*core.Directory]{}, gitRef, fmt.Errorf("resolving repo ref: %w", err)
+	}
+
+	var tree dagql.ObjectResult[*core.Directory]
+	err = dag.Select(ctx, gitRef, &tree,
 		dagql.Selector{Field: "tree"},
 	)
 	if err != nil {
-		return tree, fmt.Errorf("cloning repo: %w", err)
+		return tree, gitRef, fmt.Errorf("cloning repo: %w", err)
 	}
-	return tree, nil
+	return tree, gitRef, nil
 }
 
 // ensureModulesLoaded loads all pending modules (from workspace discovery,

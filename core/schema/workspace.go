@@ -89,6 +89,29 @@ func (s *workspaceSchema) Install(srv *dagql.Server) {
 			View(AfterVersion("v1.0.0-0")).
 			WithInput(dagql.PerClientInput).
 			Doc("Git state for this workspace. Errors if the workspace is not in a git repository."),
+		dagql.NodeFunc("withNewFile", s.withNewFile).
+			Doc("Return this workspace with a new or replaced file, without mutating the source.").
+			Args(
+				dagql.Arg("path").Doc("Path of the new file. Relative paths resolve from the workspace cwd."),
+				dagql.Arg("contents").Doc("Contents of the new file."),
+				dagql.Arg("permissions").Doc("Permissions of the new file."),
+			),
+		dagql.NodeFunc("withNewDirectory", s.withNewDirectory).
+			Doc("Return this workspace with a directory added, without mutating the source.").
+			Args(
+				dagql.Arg("path").Doc("Path of the added directory. Relative paths resolve from the workspace cwd."),
+				dagql.Arg("source").Doc("Directory to add."),
+			),
+		dagql.NodeFunc("withChanges", s.withChanges).
+			Doc("Return this workspace with a changeset applied, without mutating the source.").
+			Args(
+				dagql.Arg("changes").Doc("Changes to apply."),
+			),
+		dagql.NodeFunc("changes", s.changes).
+			Doc("Return the changes from another workspace to this workspace.").
+			Args(
+				dagql.Arg("other").Doc("Workspace to compare from."),
+			),
 		dagql.Func("init", s.workspaceInit).
 			View(AfterVersion("v1.0.0-0")).
 			DoNotCache("Mutates workspace on host").
@@ -256,6 +279,15 @@ func syntheticWorkspaceFromRootfs(
 	cwdArg string,
 	addressScheme string,
 ) (dagql.ObjectResult[*core.Workspace], error) {
+	return syntheticWorkspaceFromDirectory(ctx, root, cwdArg, addressScheme)
+}
+
+func syntheticWorkspaceFromDirectory(
+	ctx context.Context,
+	root dagql.ObjectResult[*core.Directory],
+	cwdArg string,
+	addressScheme string,
+) (dagql.ObjectResult[*core.Workspace], error) {
 	srv, err := core.CurrentDagqlServer(ctx)
 	if err != nil {
 		return dagql.ObjectResult[*core.Workspace]{}, err
@@ -275,6 +307,40 @@ func syntheticWorkspaceFromRootfs(
 		Address: addressScheme + rootDigest.String(),
 	}
 	ws.SetRootfs(root)
+	ws.SetSource(core.NewWorkspaceSourceDirectory(root))
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
+}
+
+func syntheticWorkspaceFromGitRef(
+	ctx context.Context,
+	ref dagql.Result[*core.GitRef],
+	cwdArg string,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+
+	cwd, err := resolveWorkspacePath(cwdArg, ".")
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+
+	root, err := ref.Self().Tree(ctx, srv, true, 1, false)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	rootResult, err := dagql.NewObjectResultForCurrentCall(ctx, srv, root)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+
+	ws := &core.Workspace{
+		Cwd:     cwd,
+		Address: "git-ref://" + ref.Self().Ref.SHA,
+	}
+	ws.SetRootfs(rootResult)
+	ws.SetSource(core.NewWorkspaceSourceGitRef(ref))
 	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
 }
 
@@ -410,9 +476,6 @@ func (s *workspaceSchema) resolveRootfs(
 		return inst, nil
 	}
 
-	if gitignore && isSyntheticWorkspace(ws) {
-		return inst, fmt.Errorf("workspace directory %q: gitignore filtering is only supported for local workspaces", resolvedPath)
-	}
 	ctxDir, err := workspaceRootfs(ws)
 	if err != nil {
 		return inst, fmt.Errorf("workspace directory %q: %w", resolvedPath, err)
@@ -429,12 +492,12 @@ func (s *workspaceSchema) resolveRootfs(
 		}
 	}
 
-	if len(filter.Include) > 0 || len(filter.Exclude) > 0 {
+	if len(filter.Include) > 0 || len(filter.Exclude) > 0 || gitignore {
 		ctxDirID, err := ctxDir.ID()
 		if err != nil {
 			return inst, fmt.Errorf("workspace directory %q: get filtered source id: %w", resolvedPath, err)
 		}
-		withDirArgs := workspaceFilterWithDirectoryArgs(ctxDirID, filter)
+		withDirArgs := workspaceFilterWithDirectoryArgs(ctxDirID, filter, gitignore)
 		err = srv.Select(ctx, srv.Root(), &ctxDir,
 			dagql.Selector{Field: "directory"},
 			dagql.Selector{Field: "withDirectory", Args: withDirArgs},
@@ -451,29 +514,25 @@ func workspaceRootfs(ws *core.Workspace) (dagql.ObjectResult[*core.Directory], e
 	if ws == nil {
 		return dagql.ObjectResult[*core.Directory]{}, fmt.Errorf("workspace is nil")
 	}
-	rootfs := ws.Rootfs()
-	if rootfs.Self() == nil {
+	rootfs, ok := ws.SourceDirectory()
+	if !ok || rootfs.Self() == nil {
 		return rootfs, fmt.Errorf("workspace has no root filesystem")
 	}
 	return rootfs, nil
 }
 
 func isSyntheticWorkspace(ws *core.Workspace) bool {
-	return ws != nil &&
-		ws.ClientID == "" &&
-		ws.HostPath() == "" &&
-		ws.Rootfs().Self() != nil &&
-		strings.HasPrefix(ws.Address, "directory://")
+	return ws != nil && ws.IsValueWorkspace()
 }
 
 func unsupportedSyntheticWorkspaceFeature(ws *core.Workspace, feature string) error {
 	if isSyntheticWorkspace(ws) {
-		return fmt.Errorf("workspace feature %q is not supported for synthetic/rootfs-backed workspaces", feature)
+		return fmt.Errorf("workspace feature %q is not supported for value workspaces", feature)
 	}
 	return nil
 }
 
-func workspaceFilterWithDirectoryArgs(dirID *call.ID, filter core.CopyFilter) []dagql.NamedInput {
+func workspaceFilterWithDirectoryArgs(dirID *call.ID, filter core.CopyFilter, gitignore bool) []dagql.NamedInput {
 	withDirArgs := []dagql.NamedInput{
 		{Name: "path", Value: dagql.NewString("/")},
 		{Name: "source", Value: dagql.NewID[*core.Directory](dirID)},
@@ -491,6 +550,9 @@ func workspaceFilterWithDirectoryArgs(dirID *call.ID, filter core.CopyFilter) []
 			excludes[i] = dagql.String(p)
 		}
 		withDirArgs = append(withDirArgs, dagql.NamedInput{Name: "exclude", Value: excludes})
+	}
+	if gitignore {
+		withDirArgs = append(withDirArgs, dagql.NamedInput{Name: "gitignore", Value: dagql.NewBoolean(true)})
 	}
 	return withDirArgs
 }
@@ -569,6 +631,170 @@ func (s *workspaceSchema) fileAt(
 	return inst, nil
 }
 
+func (s *workspaceSchema) withNewFile(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args WithNewFileArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	resolvedPath, err := resolveWorkspacePath(args.Path, parent.Self().Cwd)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+
+	root, err := workspaceRootfs(parent.Self())
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+
+	var updated dagql.ObjectResult[*core.Directory]
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	if err := srv.Select(ctx, root, &updated, dagql.Selector{
+		Field: "withNewFile",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(resolvedPath)},
+			{Name: "contents", Value: dagql.NewString(args.Contents)},
+			{Name: "permissions", Value: dagql.NewInt(args.Permissions)},
+		},
+	}); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	return overlayWorkspace(ctx, parent, updated)
+}
+
+type workspaceWithNewDirectoryArgs struct {
+	Path   string
+	Source core.DirectoryID
+}
+
+func (s *workspaceSchema) withNewDirectory(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args workspaceWithNewDirectoryArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	resolvedPath, err := resolveWorkspacePath(args.Path, parent.Self().Cwd)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+
+	root, err := workspaceRootfs(parent.Self())
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+
+	var updated dagql.ObjectResult[*core.Directory]
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	sourceID, err := args.Source.ID()
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	if err := srv.Select(ctx, root, &updated, dagql.Selector{
+		Field: "withDirectory",
+		Args: []dagql.NamedInput{
+			{Name: "path", Value: dagql.NewString(resolvedPath)},
+			{Name: "source", Value: dagql.NewID[*core.Directory](sourceID)},
+		},
+	}); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	return overlayWorkspace(ctx, parent, updated)
+}
+
+func (s *workspaceSchema) withChanges(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args withChangesArgs,
+) (dagql.ObjectResult[*core.Workspace], error) {
+	root, err := workspaceRootfs(parent.Self())
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+
+	changesID, err := args.Changes.ID()
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+
+	var updated dagql.ObjectResult[*core.Directory]
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	if err := srv.Select(ctx, root, &updated, dagql.Selector{
+		Field: "withChanges",
+		Args: []dagql.NamedInput{
+			{Name: "changes", Value: dagql.NewID[*core.Changeset](changesID)},
+		},
+	}); err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	return overlayWorkspace(ctx, parent, updated)
+}
+
+func (s *workspaceSchema) changes(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	args struct {
+		Other dagql.ID[*core.Workspace]
+	},
+) (dagql.ObjectResult[*core.Changeset], error) {
+	var inst dagql.ObjectResult[*core.Changeset]
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+	other, err := args.Other.Load(ctx, srv)
+	if err != nil {
+		return inst, err
+	}
+	before, err := workspaceRootfs(other.Self())
+	if err != nil {
+		return inst, err
+	}
+	after, err := workspaceRootfs(parent.Self())
+	if err != nil {
+		return inst, err
+	}
+	changes, err := core.NewChangeset(ctx, before, after)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, changes)
+}
+
+func overlayWorkspace(
+	ctx context.Context,
+	parent dagql.ObjectResult[*core.Workspace],
+	root dagql.ObjectResult[*core.Directory],
+) (dagql.ObjectResult[*core.Workspace], error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	before, err := workspaceRootfs(parent.Self())
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	changes, err := core.NewChangeset(ctx, before, root)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+	changesResult, err := dagql.NewObjectResultForCurrentCall(ctx, srv, changes)
+	if err != nil {
+		return dagql.ObjectResult[*core.Workspace]{}, err
+	}
+
+	ws := parent.Self().Clone()
+	ws.SetRootfs(root)
+	ws.SetSource(core.NewWorkspaceSourceOverlay(parent.Self().Source(), root, changesResult))
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, ws)
+}
+
 func (s *workspaceSchema) update(
 	ctx context.Context,
 	parent dagql.ObjectResult[*core.Workspace],
@@ -618,8 +844,10 @@ func (s *workspaceSchema) git(
 	_ struct{},
 ) (dagql.ObjectResult[*core.WorkspaceGit], error) {
 	var inst dagql.ObjectResult[*core.WorkspaceGit]
-	if err := s.ensureWorkspaceGitDirectory(ctx, parent.Self()); err != nil {
-		return inst, err
+	if _, ok := parent.Self().SourceGitRef(); !ok {
+		if err := s.ensureWorkspaceGitDirectory(ctx, parent.Self()); err != nil {
+			return inst, err
+		}
 	}
 
 	srv, err := core.CurrentDagqlServer(ctx)
@@ -632,6 +860,9 @@ func (s *workspaceSchema) git(
 }
 
 func (s *workspaceSchema) ensureWorkspaceGitDirectory(ctx context.Context, ws *core.Workspace) error {
+	if _, ok := ws.SourceGitRef(); ok {
+		return nil
+	}
 	var (
 		statFS   core.StatFS
 		statPath = ".git"
@@ -686,6 +917,9 @@ func (s *workspaceSchema) workspaceGitRepository(
 	var inst dagql.ObjectResult[*core.GitRepository]
 
 	ws := parent.Self().Workspace.Self()
+	if ref, ok := ws.SourceGitRef(); ok {
+		return ref.Self().Repo, nil
+	}
 	if err := s.ensureWorkspaceGitDirectory(ctx, ws); err != nil {
 		return inst, err
 	}
@@ -716,6 +950,9 @@ func (s *workspaceSchema) workspaceGitHead(
 	_ struct{},
 ) (dagql.Result[*core.GitRef], error) {
 	var inst dagql.Result[*core.GitRef]
+	if ref, ok := parent.Self().Workspace.Self().SourceGitRef(); ok {
+		return ref, nil
+	}
 	repo, err := s.selectWorkspaceGitRepository(ctx, parent)
 	if err != nil {
 		return inst, err
@@ -736,6 +973,21 @@ func (s *workspaceSchema) workspaceGitUncommitted(
 	_ struct{},
 ) (dagql.ObjectResult[*core.Changeset], error) {
 	var inst dagql.ObjectResult[*core.Changeset]
+	ws := parent.Self().Workspace.Self()
+	if changes, ok := ws.OverlayChanges(); ok {
+		return changes, nil
+	}
+	if _, ok := ws.SourceGitRef(); ok {
+		empty, err := core.NewEmptyChangeset(ctx)
+		if err != nil {
+			return inst, err
+		}
+		srv, err := core.CurrentDagqlServer(ctx)
+		if err != nil {
+			return inst, err
+		}
+		return dagql.NewObjectResultForCurrentCall(ctx, srv, empty)
+	}
 	repo, err := s.selectWorkspaceGitRepository(ctx, parent)
 	if err != nil {
 		return inst, err
@@ -812,6 +1064,9 @@ func (s *workspaceSchema) findUp(
 ) (dagql.Nullable[dagql.String], error) {
 	none := dagql.Null[dagql.String]()
 	ws := parent.Self()
+	if !isWorkspaceBasename(args.Name) {
+		return none, fmt.Errorf("workspace findUp name must be a basename")
+	}
 
 	resolvedFrom, err := resolveWorkspacePath(args.From, ws.Cwd)
 	if err != nil {
@@ -881,6 +1136,16 @@ func (s *workspaceSchema) findUp(
 	}
 
 	return none, nil
+}
+
+func isWorkspaceBasename(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+	if name != path.Base(name) {
+		return false
+	}
+	return !strings.Contains(name, "\\")
 }
 
 func (s *workspaceSchema) checks(
