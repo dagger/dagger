@@ -128,92 +128,102 @@ func (d *destination) ensureDir(destPath string, src *sourceEntry, opts CopyOpti
 		return "", false, nil
 	}
 
-	if viewPath, err := rootPath(d.viewRoot, destPath, true); err == nil {
-		if info, statErr := os.Stat(viewPath); statErr == nil {
-			if !info.IsDir() {
-				if d.overlay {
-					rel, err := filepath.Rel(d.viewRoot, viewPath)
-					if err != nil {
-						return "", false, err
-					}
-					rel = cleanRel(rel)
-					realPath := filepath.Join(d.writeRoot, rel)
-					if upperInfo, err := os.Lstat(realPath); err == nil && upperInfo.IsDir() {
-						if err := d.markOpaque(realPath); err != nil {
-							return "", false, err
-						}
-						if overwriteMetadata {
-							if err := d.applyMetadataPath(realPath, src, opts); err != nil {
-								return "", false, err
-							}
-						}
-						return rel, false, nil
-					} else if err != nil && !os.IsNotExist(err) {
-						return "", false, err
-					}
-				}
-				return "", false, fmt.Errorf("cannot copy directory to non-directory %q", destPath)
-			}
-			rel, err := filepath.Rel(d.viewRoot, viewPath)
-			if err != nil {
-				return "", false, err
-			}
-			rel = cleanRel(rel)
-			// Recurse on the parent of the *resolved* path (rel), not destPath:
-			// to handle symlins on dest paths
-			if parent := filepath.Dir(cleanContainerPath(rel)); parent != "/" && parent != "." {
-				if _, _, err := d.ensureDir(parent, nil, CopyOptions{}, false); err != nil {
-					return "", false, err
-				}
-			}
-			realPath, materialized, err := d.materializeExistingDir(rel, viewPath)
-			if err != nil {
-				return "", false, err
-			}
-			if overwriteMetadata || materialized {
-				if err := d.applyMetadataPath(realPath, src, opts); err != nil {
-					return "", false, err
-				}
-			}
-			return rel, false, nil
-		} else if !os.IsNotExist(statErr) && !isNotDir(statErr) {
-			return "", false, statErr
-		}
+	if rel, exists, err := d.ensureExistingDir(destPath, src, opts, overwriteMetadata); err != nil || exists {
+		return rel, false, err
 	}
 
+	return d.createDir(destPath, src, opts)
+}
+
+func (d *destination) ensureExistingDir(destPath string, src *sourceEntry, opts CopyOptions, overwriteMetadata bool) (string, bool, error) {
+	viewPath, err := rootPath(d.viewRoot, destPath, true)
+	if err != nil {
+		if os.IsNotExist(err) || isNotDir(err) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+
+	info, err := os.Stat(viewPath)
+	if err != nil {
+		if os.IsNotExist(err) || isNotDir(err) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	if !info.IsDir() {
+		return d.ensureOverlayReplacementDir(destPath, viewPath, src, opts, overwriteMetadata)
+	}
+
+	rel, err := filepath.Rel(d.viewRoot, viewPath)
+	if err != nil {
+		return "", false, err
+	}
+	rel = cleanRel(rel)
+	// Recurse on the parent of the resolved path, not destPath, to handle
+	// symlinks on dest paths.
+	if parent := filepath.Dir(cleanContainerPath(rel)); parent != "/" && parent != "." {
+		if _, _, err := d.ensureDir(parent, nil, CopyOptions{}, false); err != nil {
+			return "", false, err
+		}
+	}
+	realPath, materialized, err := d.materializeExistingDir(rel, viewPath)
+	if err != nil {
+		return "", false, err
+	}
+	if overwriteMetadata || materialized {
+		if err := d.applyMetadataPath(realPath, src, opts); err != nil {
+			return "", false, err
+		}
+	}
+	return rel, true, nil
+}
+
+func (d *destination) ensureOverlayReplacementDir(destPath, viewPath string, src *sourceEntry, opts CopyOptions, overwriteMetadata bool) (string, bool, error) {
+	if !d.overlay {
+		return "", false, fmt.Errorf("cannot copy directory to non-directory %q", destPath)
+	}
+
+	rel, err := filepath.Rel(d.viewRoot, viewPath)
+	if err != nil {
+		return "", false, err
+	}
+	rel = cleanRel(rel)
+	realPath := filepath.Join(d.writeRoot, rel)
+	upperInfo, err := os.Lstat(realPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, fmt.Errorf("cannot copy directory to non-directory %q", destPath)
+		}
+		return "", false, err
+	}
+	if !upperInfo.IsDir() {
+		return "", false, fmt.Errorf("cannot copy directory to non-directory %q", destPath)
+	}
+	if err := d.markOpaque(realPath); err != nil {
+		return "", false, err
+	}
+	if overwriteMetadata {
+		if err := d.applyMetadataPath(realPath, src, opts); err != nil {
+			return "", false, err
+		}
+	}
+	return rel, true, nil
+}
+
+func (d *destination) createDir(destPath string, src *sourceEntry, opts CopyOptions) (string, bool, error) {
 	parentRel, _, err := d.ensureDir(filepath.Dir(destPath), nil, CopyOptions{}, false)
 	if err != nil {
 		return "", false, err
 	}
 	rel := filepath.Join(parentRel, filepath.Base(destPath))
 	realPath := filepath.Join(d.writeRoot, rel)
-	mode := os.FileMode(0o755)
-	if src != nil {
-		mode = src.Info.Mode().Perm()
-	}
-	if opts.Mode != nil {
-		mode = *opts.Mode
-	}
+	mode := mkdirMode(src, opts)
 	if err := os.Mkdir(realPath, mode); err != nil {
-		if os.IsExist(err) && opts.ReplaceExisting {
-			info, statErr := os.Lstat(realPath)
-			if statErr != nil {
-				return "", false, statErr
-			}
-			if !info.IsDir() {
-				if err := os.RemoveAll(realPath); err != nil {
-					return "", false, err
-				}
-				if err := os.Mkdir(realPath, mode); err != nil && !os.IsExist(err) {
-					return "", false, err
-				}
-				if d.overlay {
-					if err := d.markOpaque(realPath); err != nil {
-						return "", false, err
-					}
-				}
-			}
-		} else if !os.IsExist(err) {
+		if !os.IsExist(err) {
+			return "", false, err
+		}
+		if err := d.replaceCreateDir(realPath, mode, opts); err != nil {
 			return "", false, err
 		}
 	}
@@ -221,6 +231,29 @@ func (d *destination) ensureDir(destPath string, src *sourceEntry, opts CopyOpti
 		return "", false, err
 	}
 	return rel, true, nil
+}
+
+func (d *destination) replaceCreateDir(realPath string, mode os.FileMode, opts CopyOptions) error {
+	if !opts.ReplaceExisting {
+		return nil
+	}
+	info, err := os.Lstat(realPath)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return nil
+	}
+	if err := os.RemoveAll(realPath); err != nil {
+		return err
+	}
+	if err := os.Mkdir(realPath, mode); err != nil && !os.IsExist(err) {
+		return err
+	}
+	if d.overlay {
+		return d.markOpaque(realPath)
+	}
+	return nil
 }
 
 func mkdirMode(src *sourceEntry, opts CopyOptions) os.FileMode {
