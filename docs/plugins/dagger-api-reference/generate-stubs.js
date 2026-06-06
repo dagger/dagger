@@ -3,7 +3,8 @@
 // Regenerates the thin per-type MDX stubs under current_docs/reference/api.
 // Each stub just renders <ApiType name="..." />; all content comes from
 // docs-graphql/schema.graphqls at build time via the dagger-api-reference
-// plugin. Run this when the published core-type list (coreTypes.js) changes:
+// plugin. The set of stubs is derived from the schema (every core type, with
+// the featured ones first), so it stays complete as the schema grows:
 //
 //   node plugins/dagger-api-reference/generate-stubs.js
 //
@@ -11,7 +12,14 @@
 
 const fs = require("fs");
 const path = require("path");
-const coreTypes = require("./coreTypes.js");
+const featured = require("./coreTypes.js");
+const { orderedTypeNames } = require("./schema.js");
+
+const schemaPath = path.resolve(
+  __dirname,
+  "../../docs-graphql/schema.graphqls"
+);
+const coreTypes = orderedTypeNames(schemaPath, featured);
 
 // Keep in sync with typeSlug in src/components/api/data.ts.
 function typeSlug(name) {
