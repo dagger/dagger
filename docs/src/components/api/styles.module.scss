@@ -22,6 +22,9 @@
   --api-tint-hover: rgba(255, 255, 255, 0.09);
   --api-popover-bg: rgb(42, 39, 82);
   --api-popover-shadow: 0 0.35rem 1rem rgba(13, 12, 27, 0.28);
+  --api-return-scalar: var(--ifm-color-primary-dark);
+  --api-return-other: var(--ifm-color-primary-lighter);
+  --api-return-same: var(--ifm-color-primary-lightest);
 }
 
 .typeDesc {
