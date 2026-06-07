@@ -1143,14 +1143,14 @@ html[data-theme="dark"] {
     &:hover {
       background-color: rgba(208, 224, 249, 0.1) !important;
       color: var(--ifm-menu-color-active);
-      border-left: 3px solid rgba(190, 29, 67, 0.5); // Light version of crimson color
+      border-left: 3px solid var(--color-yellow-700);
       padding-left: 0.5rem;
     }
 
     &.table-of-contents__link--active {
       background-color: rgba(208, 224, 249, 0.15) !important;
       color: var(--ifm-menu-color-active);
-      border-left: 3px solid #{$crimson-color} !important; // Matching navbar border color
+      border-left: 3px solid var(--color-yellow-400) !important;
       padding-left: 0.5rem;
     }
   }
