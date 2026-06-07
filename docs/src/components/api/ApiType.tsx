@@ -55,12 +55,12 @@ export default function ApiType({
       <ImplementsLine names={type.implements} />
 
       {type.fields.length > INDEX_THRESHOLD && (
-        <FieldIndex fields={type.fields} />
+        <FieldIndex fields={type.fields} ownerType={type.name} />
       )}
 
       <div className={styles.fields}>
         {type.fields.map((f) => (
-          <FieldCard key={f.name} field={f} />
+          <FieldCard key={f.name} field={f} ownerType={type.name} />
         ))}
       </div>
 

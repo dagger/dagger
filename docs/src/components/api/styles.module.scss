@@ -12,6 +12,9 @@
   --api-tint-hover: rgba(0, 0, 0, 0.07);
   --api-popover-bg: var(--ifm-background-surface-color);
   --api-popover-shadow: 0 0.35rem 1rem rgba(26, 24, 51, 0.14);
+  --api-return-scalar: rgb(190, 29, 67);
+  --api-return-object: rgb(62, 59, 107);
+  --api-return-same: rgb(209, 95, 19);
 }
 
 :global(html[data-theme="dark"]) .apiType {
@@ -19,6 +22,9 @@
   --api-tint-hover: rgba(255, 255, 255, 0.09);
   --api-popover-bg: rgb(42, 39, 82);
   --api-popover-shadow: 0 0.35rem 1rem rgba(13, 12, 27, 0.28);
+  --api-return-scalar: rgb(252, 219, 9);
+  --api-return-object: rgb(64, 185, 188);
+  --api-return-same: rgb(239, 123, 26);
 }
 
 .typeDesc {
@@ -84,6 +90,18 @@
     padding: 0;
     color: var(--ifm-color-primary);
     font-weight: 600;
+  }
+
+  &[data-return="scalar"] code {
+    color: var(--api-return-scalar);
+  }
+
+  &[data-return="object"] code {
+    color: var(--api-return-object);
+  }
+
+  &[data-return="same"] code {
+    color: var(--api-return-same);
   }
 }
 
@@ -154,6 +172,33 @@
 .fieldName {
   color: var(--ifm-color-primary);
   font-weight: 700;
+}
+
+.card[data-return="scalar"] {
+  .cardHeading {
+    border-left-color: var(--api-return-scalar);
+  }
+  .fieldName {
+    color: var(--api-return-scalar);
+  }
+}
+
+.card[data-return="object"] {
+  .cardHeading {
+    border-left-color: var(--api-return-object);
+  }
+  .fieldName {
+    color: var(--api-return-object);
+  }
+}
+
+.card[data-return="same"] {
+  .cardHeading {
+    border-left-color: var(--api-return-same);
+  }
+  .fieldName {
+    color: var(--api-return-same);
+  }
 }
 
 .argName {

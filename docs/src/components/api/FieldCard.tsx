@@ -1,5 +1,5 @@
 import React from "react";
-import type { ApiField } from "./data";
+import { returnKind, type ApiField } from "./data";
 import Signature from "./Signature";
 import TypeRefView from "./TypeRef";
 import Badge from "./Badge";
@@ -12,12 +12,15 @@ import styles from "./styles.module.scss";
 // a hover copy-link (the .hash-link affordance Docusaurus styles site-wide).
 export default function FieldCard({
   field,
+  ownerType,
 }: {
   field: ApiField;
+  ownerType: string;
 }): JSX.Element {
   return (
     <div
       className={`${styles.card} ${field.deprecated ? styles.cardDeprecated : ""}`}
+      data-return={returnKind(field.type, ownerType)}
     >
       <h3 id={field.name} className={styles.cardHeading}>
         <Signature field={field} />

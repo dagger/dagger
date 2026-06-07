@@ -14,6 +14,8 @@ export type TypeRef =
   | { kind: "list"; of: TypeRef }
   | { kind: "nonNull"; of: TypeRef };
 
+export type ReturnKind = "scalar" | "object" | "same";
+
 export interface ApiArg {
   name: string;
   description: string;
@@ -112,4 +114,27 @@ export function typeSlug(name: string): string {
 
 export function typeHref(name: string): string {
   return `/extending/types/${typeSlug(name)}`;
+}
+
+function namedType(type: TypeRef): Extract<TypeRef, { kind: "named" }> {
+  switch (type.kind) {
+    case "nonNull":
+    case "list":
+      return namedType(type.of);
+    case "named":
+      return type;
+  }
+}
+
+export function returnKind(type: TypeRef, ownerType: string): ReturnKind {
+  const named = namedType(type);
+  if (named.name === ownerType) return "same";
+  if (
+    named.named === "core" ||
+    named.named === "object" ||
+    named.named === "interface"
+  ) {
+    return "object";
+  }
+  return "scalar";
 }
