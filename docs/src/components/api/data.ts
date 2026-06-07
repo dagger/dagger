@@ -111,5 +111,5 @@ export function typeSlug(name: string): string {
 }
 
 export function typeHref(name: string): string {
-  return `/reference/api/${typeSlug(name)}`;
+  return `/extending/types/${typeSlug(name)}`;
 }

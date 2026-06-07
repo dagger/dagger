@@ -39,11 +39,19 @@ function ImplementsLine({ names }: { names: string[] }): JSX.Element | null {
  * and an anchored card per field. Drop `<ApiType name="Container" />` into an
  * MDX page and the content comes straight from docs-graphql/schema.graphqls.
  */
-export default function ApiType({ name }: { name: string }): JSX.Element {
+export default function ApiType({
+  name,
+  showDescription = true,
+}: {
+  name: string;
+  showDescription?: boolean;
+}): JSX.Element {
   const type = useApiType(name);
   return (
     <div className={`api-reference ${styles.apiType}`}>
-      <Markdown className={styles.typeDesc}>{type.description}</Markdown>
+      {showDescription && (
+        <Markdown className={styles.typeDesc}>{type.description}</Markdown>
+      )}
       <ImplementsLine names={type.implements} />
 
       {type.fields.length > INDEX_THRESHOLD && (
