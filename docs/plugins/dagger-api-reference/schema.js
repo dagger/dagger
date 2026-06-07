@@ -181,8 +181,20 @@ function buildField(schema, field, coreTypes, seenEnums) {
  * given list of core type names. Cross-links are resolved against that same
  * list, so only types we actually publish become links.
  */
-// reverseRefs scans every object type in the schema and records, for each core
-// type, the fields that return it and the fields that accept it as an argument.
+function isPublishedType(t) {
+  if (t instanceof GraphQLInterfaceType && !t.name.startsWith("__")) {
+    return true;
+  }
+  return (
+    t instanceof GraphQLObjectType &&
+    !t.name.startsWith("__") &&
+    t.getInterfaces().some((i) => i.name === "Node")
+  );
+}
+
+// reverseRefs scans every object/interface type in the schema and records, for
+// each published API type, the fields that return it and the fields that accept
+// it as an argument.
 // This is what powers the "Returned by" / "Accepted by" sections — the kind of
 // cross-reference a reader can't easily reconstruct themselves. @expectedType
 // is honored so an `ID` argument counts toward its real type.
@@ -195,7 +207,9 @@ function reverseRefs(schema, coreTypes) {
   }
 
   for (const t of Object.values(schema.getTypeMap())) {
-    if (!(t instanceof GraphQLObjectType)) continue;
+    if (!(t instanceof GraphQLObjectType || t instanceof GraphQLInterfaceType)) {
+      continue;
+    }
     if (t.name.startsWith("__")) continue;
     for (const field of Object.values(t.getFields())) {
       const ret = namedTypeOf(field.type).name;
@@ -227,20 +241,14 @@ function reverseRefs(schema, coreTypes) {
   return { returnedBy, argOf };
 }
 
-// resolveTypeList returns the full, ordered set of core types to publish: the
+// resolveTypeList returns the full, ordered set of API types to publish: the
 // `featured` names first (in the given order, used for prominence), then every
-// other core object type in the schema, alphabetically. Core types are the
-// object types implementing the Node interface — i.e. the addressable API
-// objects. Because the tail comes straight from the schema, a newly added type
-// can never be silently omitted; it just lands at the end of the list.
+// other Node object type and interface in the schema, alphabetically. Because
+// the tail comes straight from the schema, a newly added type can never be
+// silently omitted; it just lands at the end of the list.
 function resolveTypeList(schema, featured) {
   const all = Object.values(schema.getTypeMap())
-    .filter(
-      (t) =>
-        t instanceof GraphQLObjectType &&
-        !t.name.startsWith("__") &&
-        t.getInterfaces().some((i) => i.name === "Node")
-    )
+    .filter(isPublishedType)
     .map((t) => t.name);
   const allSet = new Set(all);
 
@@ -263,8 +271,9 @@ function orderedTypeNames(schemaPath, featured) {
 
 /**
  * parseSchema reads the SDL at `schemaPath` and returns the model for the
- * resolved core type list (the `featured` names first, then every other core
- * type in the schema). Cross-links are resolved against that full list.
+ * resolved API type list (the `featured` names first, then every other
+ * publishable type in the schema). Cross-links are resolved against that full
+ * list.
  */
 function parseSchema(schemaPath, featured) {
   const sdl = fs.readFileSync(schemaPath, "utf8");
@@ -278,8 +287,8 @@ function parseSchema(schemaPath, featured) {
   const types = {};
   for (const name of typeNames) {
     const t = schema.getType(name);
-    if (!(t instanceof GraphQLObjectType)) {
-      throw new Error(`core type ${name} is not an object type in the schema`);
+    if (!(t instanceof GraphQLObjectType || t instanceof GraphQLInterfaceType)) {
+      throw new Error(`API type ${name} is not an object or interface type`);
     }
     const fields = Object.values(t.getFields())
       .map((f) => buildField(schema, f, coreTypes, seenEnums))

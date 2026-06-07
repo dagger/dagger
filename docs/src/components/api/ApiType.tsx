@@ -1,5 +1,6 @@
 import React from "react";
-import { useApiType } from "./data";
+import Link from "@docusaurus/Link";
+import { useApiModel, useApiType, typeHref } from "./data";
 import Markdown from "./Markdown";
 import FieldIndex from "./FieldIndex";
 import FieldCard from "./FieldCard";
@@ -10,10 +11,8 @@ import styles from "./styles.module.scss";
 // Dang's stdlib indexThreshold. Short types read fine as bare cards.
 const INDEX_THRESHOLD = 8;
 
-// Core interfaces worth linking from the "implements" line. Node/Exportable/
-// Syncer are the recurring ones; we link any we can resolve and show the rest
-// as plain text.
 function ImplementsLine({ names }: { names: string[] }): JSX.Element | null {
+  const published = new Set(useApiModel().coreTypes);
   if (names.length === 0) return null;
   return (
     <p className={styles.implements}>
@@ -21,7 +20,13 @@ function ImplementsLine({ names }: { names: string[] }): JSX.Element | null {
       {names.map((n, i) => (
         <React.Fragment key={n}>
           {i > 0 && ", "}
-          <code>{n}</code>
+          {published.has(n) ? (
+            <Link to={typeHref(n)}>
+              <code>{n}</code>
+            </Link>
+          ) : (
+            <code>{n}</code>
+          )}
         </React.Fragment>
       ))}
     </p>
