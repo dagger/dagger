@@ -141,8 +141,8 @@ const config: Config = {
     "docusaurus-plugin-image-zoom",
     // Thanks to @jharrell and Prisma team. Apache-2.0 content
     [llmsTxtPlugin, { docsPath }],
-    // Parses docs-graphql/schema.graphqls into the model the API reference
-    // pages (current_docs/reference/api) render from.
+    // Parses docs-graphql/schema.graphqls into the model rendered by the
+    // API reference components on the type reference pages.
     daggerApiReference,
     [
       "posthog-docusaurus",
