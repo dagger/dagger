@@ -1,5 +1,5 @@
 import React from "react";
-import type { ApiField } from "./data";
+import { returnKind, type ApiField } from "./data";
 import { MarkdownInline } from "./Markdown";
 import styles from "./styles.module.scss";
 
@@ -9,14 +9,19 @@ import styles from "./styles.module.scss";
 // site's global `.markdown table` styling and reads as plain prose.
 export default function FieldIndex({
   fields,
+  ownerType,
 }: {
   fields: ApiField[];
+  ownerType: string;
 }): JSX.Element {
   return (
     <dl className={styles.index}>
       {fields.map((f) => (
         <React.Fragment key={f.name}>
-          <dt className={styles.indexName}>
+          <dt
+            className={styles.indexName}
+            data-return={returnKind(f.type, ownerType)}
+          >
             <a href={`#${f.name}`}>
               <code>{f.name}</code>
             </a>
