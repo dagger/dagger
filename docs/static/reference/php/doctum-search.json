@@ -4676,6 +4676,12 @@
 		},
 		{
 			"t": "M",
+			"n": "Dagger\\File::extract",
+			"p": "Dagger/File.html#method_extract",
+			"d": "<p>Extracts an archive file into a directory.</p>"
+		},
+		{
+			"t": "M",
 			"n": "Dagger\\File::id",
 			"p": "Dagger/File.html#method_id",
 			"d": "<p>A unique identifier for this File.</p>"

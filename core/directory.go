@@ -211,6 +211,7 @@ const (
 	persistedDirectoryLazyKindWithout                       = "directory.without"
 	persistedDirectoryLazyKindWithSymlink                   = "directory.withSymlink"
 	persistedDirectoryLazyKindChown                         = "directory.chown"
+	persistedDirectoryLazyKindFileExtract                   = "file.extract"
 )
 
 type persistedDirectoryPayload struct {
@@ -607,6 +608,9 @@ func encodePersistedDirectoryLazy(ctx context.Context, cache dagql.PersistedObje
 	case *DirectoryChownLazy:
 		payload, err := lazy.EncodePersisted(ctx, cache)
 		return persistedDirectoryLazyKindChown, payload, err
+	case *DirectoryFileExtractLazy:
+		payload, err := lazy.EncodePersisted(ctx, cache)
+		return persistedDirectoryLazyKindFileExtract, payload, err
 	default:
 		return "", nil, fmt.Errorf("encode persisted directory lazy: unsupported lazy type %T", lazy)
 	}
@@ -829,6 +833,16 @@ func decodePersistedDirectoryLazy(ctx context.Context, dag *dagql.Server, lazyKi
 			return nil, err
 		}
 		return &DirectoryChownLazy{LazyState: NewLazyState(), Parent: parent, ChownPath: persisted.ChownPath, Owner: persisted.Owner}, nil
+	case persistedDirectoryLazyKindFileExtract:
+		var persisted persistedDirectoryFileExtractLazy
+		if err := json.Unmarshal(payload, &persisted); err != nil {
+			return nil, fmt.Errorf("decode persisted file extract lazy: %w", err)
+		}
+		parent, err := loadPersistedObjectResultByResultID[*File](ctx, dag, persisted.ParentResultID, "file extract parent")
+		if err != nil {
+			return nil, err
+		}
+		return &DirectoryFileExtractLazy{LazyState: NewLazyState(), Parent: parent, StripComponents: persisted.StripComponents}, nil
 	default:
 		return nil, fmt.Errorf("decode persisted directory lazy payload: unsupported lazy kind %q", lazyKind)
 	}

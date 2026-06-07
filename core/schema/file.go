@@ -64,6 +64,15 @@ func (s *fileSchema) Install(srv *dagql.Server) {
 				`Uses Rust regex syntax; escape literal ., [, ], {, }, | with backslashes.`,
 			).
 			Args((core.SearchOpts{}).Args()...),
+		dagql.NodeFunc("extract", s.extract).
+			IsPersistable().
+			Doc(`Extracts an archive file into a directory.`).
+			Args(
+				dagql.Arg("stripComponents").Doc(
+					`Number of leading path components to strip from each archive entry.`,
+					`Entries with fewer components than this are skipped.`,
+				),
+			),
 		dagql.NodeFunc("withReplaced", s.withReplaced).
 			IsPersistable().
 			Doc(
@@ -245,6 +254,33 @@ type fileReplaceArgs struct {
 	Replacement string
 	All         bool `default:"false"`
 	FirstFrom   *int
+}
+
+type fileExtractArgs struct {
+	StripComponents int `default:"0"`
+}
+
+func (s *fileSchema) extract(ctx context.Context, parent dagql.ObjectResult[*core.File], args fileExtractArgs) (inst dagql.ObjectResult[*core.Directory], err error) {
+	if args.StripComponents < 0 {
+		return inst, fmt.Errorf("stripComponents must be greater than or equal to 0")
+	}
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, err
+	}
+
+	dir := &core.Directory{
+		Platform: parent.Self().Platform,
+		Services: slices.Clone(parent.Self().Services),
+		Lazy: &core.DirectoryFileExtractLazy{
+			LazyState:       core.NewLazyState(),
+			Parent:          parent,
+			StripComponents: args.StripComponents,
+		},
+		Dir:      new(core.LazyAccessor[string, *core.Directory]),
+		Snapshot: new(core.LazyAccessor[bkcache.ImmutableRef, *core.Directory]),
+	}
+	return dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
 }
 
 func (s *fileSchema) withReplaced(ctx context.Context, parent dagql.ObjectResult[*core.File], args fileReplaceArgs) (inst dagql.ObjectResult[*core.File], _ error) {

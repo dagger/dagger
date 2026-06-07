@@ -85,6 +85,18 @@ class File extends Client\AbstractObject implements Client\IdAble, Exportable, N
     }
 
     /**
+     * Extracts an archive file into a directory.
+     */
+    public function extract(?int $stripComponents = 0): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('extract');
+        if (null !== $stripComponents) {
+        $innerQueryBuilder->setArgument('stripComponents', $stripComponents);
+        }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * A unique identifier for this File.
      */
     public function id(): Id
