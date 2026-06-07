@@ -136,19 +136,25 @@ export default function TypeInfo({
           aria-label={`${name} ${label}`}
         >
           {enumType && (
-            <span className={styles.typeValueList}>
-              {enumType.values.map((value) => (
-                <span className={styles.typeValue} key={value.name}>
-                  <span className={styles.popoverCode}>{value.name}</span>
-                  {value.description && (
-                    <span className={styles.typePopoverDesc}>
-                      {" - "}
-                      <MarkdownInline>{value.description}</MarkdownInline>
-                    </span>
-                  )}
+            <>
+              {enumType.description && (
+                <span className={styles.typePopoverIntro}>
+                  <MarkdownInline>{enumType.description}</MarkdownInline>
                 </span>
-              ))}
-            </span>
+              )}
+              <span className={styles.typeValueList}>
+                {enumType.values.map((value) => (
+                  <span className={styles.typeValue} key={value.name}>
+                    <span className={styles.popoverCode}>{value.name}</span>
+                    {value.description && (
+                      <span className={styles.typePopoverDesc}>
+                        <MarkdownInline>{value.description}</MarkdownInline>
+                      </span>
+                    )}
+                  </span>
+                ))}
+              </span>
+            </>
           )}
           {scalar?.description && (
             <span className={styles.typePopoverDesc}>

@@ -351,7 +351,7 @@
   appearance: none;
   border: 0;
   border-radius: 999px;
-  padding: 0 0.35rem;
+  padding: 0 0.45rem 0 0.35rem;
   background: var(--api-tint);
   color: var(--ifm-color-primary);
   cursor: pointer;
@@ -360,9 +360,14 @@
   white-space: nowrap;
 
   &::before {
-    content: ">";
+    content: "";
     display: inline-block;
-    margin-right: 0.18rem;
+    width: 0.38rem;
+    height: 0.38rem;
+    margin-right: 0.28rem;
+    border: solid currentColor;
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(-45deg);
     transition: transform 120ms ease;
   }
 
@@ -378,15 +383,16 @@
 }
 
 .typeInfo[data-open="true"] .typeInfoButton::before {
-  transform: rotate(90deg);
+  transform: rotate(45deg);
 }
 
 .typePopover {
   position: absolute;
   top: calc(100% + 0.25rem);
   left: 0;
-  min-width: 10rem;
-  max-width: min(32rem, calc(100vw - 3rem));
+  width: max-content;
+  min-width: 18rem;
+  max-width: min(46rem, calc(100vw - 3rem));
   max-height: min(18rem, 60vh);
   overflow: auto;
   margin: 0;
@@ -413,8 +419,14 @@
 
 .typeValue,
 .inputField,
+.typePopoverIntro,
 .typePopoverDesc {
   display: block;
+}
+
+.typePopoverIntro {
+  margin-bottom: 0.45rem;
+  color: var(--api-muted);
 }
 
 .typePopoverDesc {
@@ -433,6 +445,20 @@
 
 .inputField {
   padding-top: 0.35rem;
+  border-top: 1px solid var(--api-border);
+
+  &:first-child {
+    padding-top: 0;
+    border-top: none;
+  }
+
+  .typePopoverDesc {
+    margin-top: 0.1rem;
+  }
+}
+
+.typeValue {
+  padding-top: 0.4rem;
   border-top: 1px solid var(--api-border);
 
   &:first-child {
