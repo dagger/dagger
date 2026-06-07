@@ -12,9 +12,9 @@
   --api-tint-hover: rgba(0, 0, 0, 0.07);
   --api-popover-bg: var(--ifm-background-surface-color);
   --api-popover-shadow: 0 0.35rem 1rem rgba(26, 24, 51, 0.14);
-  --api-return-scalar: rgb(100, 96, 166);
-  --api-return-other: rgb(78, 73, 139);
-  --api-return-same: rgb(62, 59, 107);
+  --api-return-scalar: var(--ifm-color-primary);
+  --api-return-other: var(--ifm-color-primary-dark);
+  --api-return-same: var(--ifm-color-primary-darker);
 }
 
 :global(html[data-theme="dark"]) .apiType {
@@ -22,9 +22,6 @@
   --api-tint-hover: rgba(255, 255, 255, 0.09);
   --api-popover-bg: rgb(42, 39, 82);
   --api-popover-shadow: 0 0.35rem 1rem rgba(13, 12, 27, 0.28);
-  --api-return-scalar: rgb(215, 218, 255);
-  --api-return-other: rgb(184, 190, 246);
-  --api-return-same: rgb(151, 160, 229);
 }
 
 .typeDesc {
