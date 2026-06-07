@@ -1028,15 +1028,3 @@ main[class*="docMainContainer"] {
     background: transparent;
   }
 }
-
-/* API reference sections benefit from more horizontal space, so let pages that
-   contain them use the full available content width while keeping the normal
-   sheet shape. */
-.main-wrapper:has(.api-reference) {
-  main[class*="docMainContainer"] {
-    .container {
-      max-width: none;
-      padding-right: 0;
-    }
-  }
-}
