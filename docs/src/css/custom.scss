@@ -44,6 +44,187 @@ $dagger-dark-mode-background-color: rgb(13, 12, 27);
   // practically touched the text. Give it room to breathe site-wide.
   --ifm-code-padding-horizontal: 0.45rem;
   --ifm-code-padding-vertical: 0.2rem;
+
+  // Shared Dagger product palette.
+  // Source: https://gist.githubusercontent.com/vito/00c2372d1e4c31401e768ba5d2826295/raw/18ebf1c7d6ebf22947b49a4f06fe1651995ac534/gistfile1.txt
+  --font-sans: "Open Sans", sans-serif;
+  --font-mono: "Hack", monospace;
+  --font-heading: "Montserrat", sans-serif;
+
+  --header-height: 75px;
+
+  --scrollbar-track: var(--color-gray-100);
+  --scrollbar-thumb: var(--color-gray-200);
+  --scrollbar-thumb-hover: var(--color-gray-300);
+  --scrollbar-thumb-active: var(--color-gray-400);
+
+  --scrollbar-track-dark: var(--color-gray-800);
+  --scrollbar-thumb-dark: var(--color-gray-700);
+  --scrollbar-thumb-hover-dark: var(--color-gray-600);
+  --scrollbar-thumb-active-dark: var(--color-gray-500);
+
+  --drop-shadow-md: none;
+  --drop-shadow-dark: none;
+  --inset-shadow-md: none;
+  --inset-shadow-dark: none;
+
+  --shadow-login: 0rem 2rem 2.5rem -0.75rem rgb(13, 12, 27);
+
+  --color-blackHole: #0d0c1b;
+  --color-white: #ffffff;
+
+  --color-transparent: transparent;
+
+  --color-primary: var(--color-blue-500);
+  --color-primaryDark: var(--color-blue-200);
+  --color-primaryVariant: var(--color-blue-600);
+
+  --color-secondary: var(--color-cyan-400);
+  --color-secondaryVariant: var(--color-cyan-600);
+
+  --color-background: var(--color-white);
+  --color-backgroundDark: var(--color-blackHole);
+  --color-backgroundSecondary: var(--color-gray-50);
+  --color-backgroundSecondaryDark: var(--color-gray-800);
+
+  --color-error: var(--color-red-500);
+  --color-errorDark: var(--color-red-200);
+
+  --color-whiteAlpha-50: rgba(255, 255, 255, 0.04);
+  --color-whiteAlpha-100: rgba(255, 255, 255, 0.08);
+  --color-whiteAlpha-200: rgba(255, 255, 255, 0.1);
+  --color-whiteAlpha-300: rgba(255, 255, 255, 0.12);
+  --color-whiteAlpha-400: rgba(255, 255, 255, 0.16);
+  --color-whiteAlpha-500: rgba(255, 255, 255, 0.24);
+  --color-whiteAlpha-600: rgba(255, 255, 255, 0.32);
+  --color-whiteAlpha-700: rgba(255, 255, 255, 0.4);
+  --color-whiteAlpha-800: rgba(255, 255, 255, 0.64);
+  --color-whiteAlpha-900: rgba(255, 255, 255, 0.88);
+
+  --color-blackAlpha-50: rgba(13, 12, 27, 0.04);
+  --color-blackAlpha-100: rgba(13, 12, 27, 0.08);
+  --color-blackAlpha-200: rgba(13, 12, 27, 0.1);
+  --color-blackAlpha-300: rgba(13, 12, 27, 0.12);
+  --color-blackAlpha-400: rgba(13, 12, 27, 0.16);
+  --color-blackAlpha-500: rgba(13, 12, 27, 0.24);
+  --color-blackAlpha-600: rgba(13, 12, 27, 0.32);
+  --color-blackAlpha-700: rgba(13, 12, 27, 0.4);
+  --color-blackAlpha-800: rgba(13, 12, 27, 0.64);
+  --color-blackAlpha-900: rgba(13, 12, 27, 0.88);
+
+  --color-gray-50: #f4f4ff;
+  --color-gray-100: #d2d2e3;
+  --color-gray-200: #b5b4cb;
+  --color-gray-300: #9796b5;
+  --color-gray-400: #7a79a0;
+  --color-gray-500: #605e85;
+  --color-gray-600: #4b4968;
+  --color-gray-700: #333248;
+  --color-gray-800: #201f2f;
+  --color-gray-900: #131226;
+
+  --color-red-50: #ffe5eb;
+  --color-red-100: #fbbac4;
+  --color-red-200: #f28e9e;
+  --color-red-300: #eb6177;
+  --color-red-400: #e73853;
+  --color-red-500: #ca1b37;
+  --color-red-600: #9e132b;
+  --color-red-700: #710b1b;
+  --color-red-800: #460410;
+  --color-red-900: #1e0004;
+
+  --color-orange-50: #ffefdd;
+  --color-orange-100: #fdd5b2;
+  --color-orange-200: #f9ba86;
+  --color-orange-300: #f49f57;
+  --color-orange-400: #f08328;
+  --color-orange-500: #d76a0f;
+  --color-orange-600: #a8520a;
+  --color-orange-700: #783a05;
+  --color-orange-800: #4a2200;
+  --color-orange-900: #1e0900;
+
+  --color-yellow-50: #fff4db;
+  --color-yellow-100: #ffe4ae;
+  --color-yellow-200: #fed67e;
+  --color-yellow-300: #fdcc4d;
+  --color-yellow-400: #fcc51d;
+  --color-yellow-500: #c17c0a;
+  --color-yellow-600: #aa6706;
+  --color-yellow-700: #7e4600;
+  --color-yellow-800: #4c2500;
+  --color-yellow-900: #1c0900;
+
+  --color-green-50: #e1fced;
+  --color-green-100: #bfefd2;
+  --color-green-200: #99e3b6;
+  --color-green-300: #72d799;
+  --color-green-400: #4dcc7d;
+  --color-green-500: #209f50;
+  --color-green-600: #228748;
+  --color-green-700: #196336;
+  --color-green-800: #093c1f;
+  --color-green-900: #001605;
+
+  --color-teal-50: #ddfdfd;
+  --color-teal-100: #baf1f2;
+  --color-teal-200: #94e5e7;
+  --color-teal-300: #6dd9db;
+  --color-teal-400: #47ced1;
+  --color-teal-500: #139a9d;
+  --color-teal-600: #148385;
+  --color-teal-700: #0d6667;
+  --color-teal-800: #003d3e;
+  --color-teal-900: #001717;
+
+  --color-blue-50: #e2eeff;
+  --color-blue-100: #b1c8ff;
+  --color-blue-200: #7f9eff;
+  --color-blue-300: #4d72ff;
+  --color-blue-400: #3874ff;
+  --color-blue-500: #064fe5;
+  --color-blue-600: #004ab3;
+  --color-blue-700: #003d81;
+  --color-blue-800: #002a50;
+  --color-blue-900: #001120;
+
+  --color-cyan-50: #ddfbff;
+  --color-cyan-100: #b7eaf7;
+  --color-cyan-200: #90dbee;
+  --color-cyan-300: #66cce6;
+  --color-cyan-400: #3fbddd;
+  --color-cyan-500: #1a96b6;
+  --color-cyan-600: #197f99;
+  --color-cyan-700: #0b5b6e;
+  --color-cyan-800: #003844;
+  --color-cyan-900: #00141b;
+
+  --color-purple-50: #faf5ff;
+  --color-purple-100: #e9d8fd;
+  --color-purple-200: #d6bcfa;
+  --color-purple-300: #b794f4;
+  --color-purple-400: #9f7aea;
+  --color-purple-500: #805ad5;
+  --color-purple-600: #6b46c1;
+  --color-purple-700: #553c9a;
+  --color-purple-800: #44337a;
+  --color-purple-900: #322659;
+
+  --color-pink-50: #fff5f7;
+  --color-pink-100: #fed7e2;
+  --color-pink-200: #fbb6ce;
+  --color-pink-300: #f687b3;
+  --color-pink-400: #ed64a6;
+  --color-pink-500: #d53f8c;
+  --color-pink-600: #b83280;
+  --color-pink-700: #97266d;
+  --color-pink-800: #702459;
+  --color-pink-900: #521b41;
+
+  --color-raisinBlack-700: #26243e;
+  --color-raisinBlack-800: #1a192b;
+
   --ifm-background-color: #{$oat-color};
   --ifm-heading-color: #{$dagger-dark-mode-background-color};
   --ifm-hover-overlay: #e1f5fb;

@@ -3,28 +3,48 @@
 // native to the rest of the Dagger docs.
 
 .apiType {
-  --api-border: var(--ifm-color-emphasis-200);
-  --api-muted: var(--ifm-color-emphasis-600);
+  --api-border: var(--color-blackAlpha-200);
+  --api-muted: var(--color-gray-600);
+  --api-accent: var(--color-primary);
+  --api-literal: var(--color-blue-700);
+  --api-type-name: var(--color-blue-600);
   // A warm tint that sits on the docs' cream background instead of the cold
   // Infima grays. Translucent black darkens the cream into a warm beige; dark
   // mode uses a translucent white instead (see below).
-  --api-tint: rgba(0, 0, 0, 0.04);
-  --api-tint-hover: rgba(0, 0, 0, 0.07);
-  --api-popover-bg: var(--ifm-background-surface-color);
-  --api-popover-shadow: 0 0.35rem 1rem rgba(26, 24, 51, 0.14);
-  --api-return-scalar: var(--ifm-color-primary);
-  --api-return-other: var(--ifm-color-primary-dark);
-  --api-return-same: var(--ifm-color-primary-darker);
+  --api-tint: var(--color-blackAlpha-50);
+  --api-tint-hover: var(--color-blackAlpha-100);
+  --api-popover-bg: var(--color-white);
+  --api-popover-shadow: 0 0.35rem 1rem var(--color-blackAlpha-200);
+  --api-return-scalar: var(--color-blue-500);
+  --api-return-other: var(--color-blue-600);
+  --api-return-same: var(--color-blue-700);
+  --api-warning-text: var(--color-yellow-800);
+  --api-warning-bg: var(--color-yellow-50);
+  --api-warning-border: var(--color-yellow-300);
+  --api-danger-text: var(--color-red-700);
+  --api-danger-bg: var(--color-red-50);
+  --api-danger-border: var(--color-red-300);
 }
 
 :global(html[data-theme="dark"]) .apiType {
-  --api-tint: rgba(255, 255, 255, 0.05);
-  --api-tint-hover: rgba(255, 255, 255, 0.09);
-  --api-popover-bg: rgb(42, 39, 82);
-  --api-popover-shadow: 0 0.35rem 1rem rgba(13, 12, 27, 0.28);
-  --api-return-scalar: var(--ifm-color-primary-dark);
-  --api-return-other: var(--ifm-color-primary-lighter);
-  --api-return-same: var(--ifm-color-primary-lightest);
+  --api-border: var(--color-whiteAlpha-200);
+  --api-muted: var(--color-gray-300);
+  --api-accent: var(--color-primaryDark);
+  --api-literal: var(--color-blue-100);
+  --api-type-name: var(--color-blue-200);
+  --api-tint: var(--color-whiteAlpha-100);
+  --api-tint-hover: var(--color-whiteAlpha-200);
+  --api-popover-bg: var(--color-raisinBlack-700);
+  --api-popover-shadow: 0 0.35rem 1rem var(--color-blackAlpha-500);
+  --api-return-scalar: var(--color-blue-400);
+  --api-return-other: var(--color-blue-300);
+  --api-return-same: var(--color-blue-200);
+  --api-warning-text: var(--color-yellow-200);
+  --api-warning-bg: var(--color-yellow-900);
+  --api-warning-border: var(--color-yellow-700);
+  --api-danger-text: var(--color-red-200);
+  --api-danger-bg: var(--color-red-900);
+  --api-danger-border: var(--color-red-700);
 }
 
 .typeDesc {
@@ -51,7 +71,7 @@
   }
 
   a code {
-    color: var(--ifm-color-primary);
+    color: var(--api-accent);
   }
 }
 
@@ -88,7 +108,7 @@
     border: none;
     background: transparent;
     padding: 0;
-    color: var(--ifm-color-primary);
+    color: var(--api-accent);
     font-weight: 600;
   }
 
@@ -132,8 +152,8 @@
 
   // light up the card whose anchor you just followed
   &:target {
-    border-color: var(--ifm-color-primary);
-    box-shadow: 0 0 0 1px var(--ifm-color-primary);
+    border-color: var(--api-accent);
+    box-shadow: 0 0 0 1px var(--api-accent);
   }
 }
 
@@ -147,7 +167,7 @@
   padding: 0.7rem 1.2rem;
   background: var(--api-tint);
   border-bottom: 1px solid var(--api-border);
-  border-left: 3px solid var(--ifm-color-primary);
+  border-left: 3px solid var(--api-accent);
   border-top-left-radius: calc(var(--ifm-global-radius) - 1px);
   border-top-right-radius: calc(var(--ifm-global-radius) - 1px);
   font-size: 1rem;
@@ -175,7 +195,7 @@
 }
 
 .fieldName {
-  color: var(--ifm-color-primary);
+  color: var(--api-accent);
   font-weight: 700;
 }
 
@@ -215,12 +235,12 @@
 }
 
 .literal {
-  color: var(--ifm-color-success-dark, #2a9d3f);
+  color: var(--api-literal);
 }
 
 .typeLink {
   font-weight: 600;
-  color: var(--ifm-color-primary);
+  color: var(--api-accent);
   text-decoration: none;
   text-underline-offset: 0.15em;
 
@@ -230,7 +250,7 @@
 }
 
 .typeName {
-  color: var(--ifm-color-info-dark, #1e88a8);
+  color: var(--api-type-name);
 }
 
 // wrapped, one-per-line argument list for long signatures:
@@ -275,15 +295,15 @@
 }
 
 .badge-experimental {
-  color: var(--ifm-color-warning-darkest, #7a4f01);
-  background: var(--ifm-color-warning-contrast-background, #fff8e6);
-  border: 1px solid var(--ifm-color-warning, #e6a700);
+  color: var(--api-warning-text);
+  background: var(--api-warning-bg);
+  border: 1px solid var(--api-warning-border);
 }
 
 .badge-deprecated {
-  color: var(--ifm-color-danger-darkest, #7a1a1a);
-  background: var(--ifm-color-danger-contrast-background, #fff0f0);
-  border: 1px solid var(--ifm-color-danger, #e13238);
+  color: var(--api-danger-text);
+  background: var(--api-danger-bg);
+  border: 1px solid var(--api-danger-border);
 }
 
 .cardDesc {
@@ -300,10 +320,10 @@
   margin-bottom: 0.8rem;
 }
 .deprecatedNote {
-  color: var(--ifm-color-danger-dark, #b02a2f);
+  color: var(--api-danger-text);
 }
 .experimentalNote {
-  color: var(--ifm-color-warning-darkest, #7a4f01);
+  color: var(--api-warning-text);
 }
 
 /* ── arguments ──────────────────────────────────────────────────── */
@@ -403,7 +423,7 @@
   border-radius: 999px;
   padding: 0 0.45rem 0 0.35rem;
   background: var(--api-tint);
-  color: var(--ifm-color-primary);
+  color: var(--api-accent);
   cursor: pointer;
   font: inherit;
   line-height: 1.35;
@@ -427,7 +447,7 @@
   }
 
   &:focus-visible {
-    outline: 2px solid var(--ifm-color-primary);
+    outline: 2px solid var(--api-accent);
     outline-offset: 2px;
   }
 }
@@ -524,7 +544,7 @@
 /* ── deprecated fields ──────────────────────────────────────────── */
 .cardDeprecated {
   .cardHeading {
-    border-left-color: var(--ifm-color-danger, #e13238);
+    border-left-color: var(--api-danger-border);
   }
   .fieldName {
     text-decoration: line-through;
@@ -573,7 +593,7 @@
 }
 
 .refField {
-  color: var(--ifm-color-primary);
+  color: var(--api-accent);
 }
 
 .refArg {
