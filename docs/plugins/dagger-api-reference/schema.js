@@ -12,11 +12,14 @@ const {
   buildSchema,
   GraphQLObjectType,
   GraphQLInterfaceType,
+  GraphQLInputObjectType,
   GraphQLEnumType,
   GraphQLScalarType,
   GraphQLNonNull,
   GraphQLList,
 } = require("graphql");
+
+const BUILTIN_SCALARS = new Set(["String", "Int", "Float", "Boolean", "ID"]);
 
 // namedTypeOf unwraps NonNull/List wrappers to the underlying named type.
 function namedTypeOf(type) {
@@ -28,13 +31,14 @@ function namedTypeOf(type) {
 }
 
 // classify maps a named type to the kind the UI cares about: a published core
-// type (gets a link), or an enum / scalar / interface / plain object (each
+// type (gets a link), or an enum / scalar / input / interface / plain object (each
 // rendered with its own affordance — enums reveal their values, etc.).
 function classify(schema, name, coreTypes) {
   if (coreTypes.has(name)) return "core";
   const t = schema.getType(name);
   if (t instanceof GraphQLEnumType) return "enum";
   if (t instanceof GraphQLScalarType) return "scalar";
+  if (t instanceof GraphQLInputObjectType) return "input";
   if (t instanceof GraphQLInterfaceType) return "interface";
   return "object";
 }
@@ -42,19 +46,19 @@ function classify(schema, name, coreTypes) {
 // renderTypeRef turns a graphql-js type into a structured, link-aware token
 // tree: { kind: 'named'|'list'|'nonNull', ... }. The component walks it to
 // render `[Directory!]!` with each named type cross-linked. Named tokens also
-// carry the resolved type's `named` kind so the UI can hint enums/scalars and
-// reveal enum values.
-function renderTypeRef(schema, type, coreTypes, expectedType, seenEnums) {
+// carry the resolved type's `named` kind so the UI can reveal enum values,
+// scalar descriptions, and input object schemas inline.
+function renderTypeRef(schema, type, coreTypes, expectedType, seen) {
   if (type instanceof GraphQLNonNull) {
     return {
       kind: "nonNull",
-      of: renderTypeRef(schema, type.ofType, coreTypes, expectedType, seenEnums),
+      of: renderTypeRef(schema, type.ofType, coreTypes, expectedType, seen),
     };
   }
   if (type instanceof GraphQLList) {
     return {
       kind: "list",
-      of: renderTypeRef(schema, type.ofType, coreTypes, expectedType, seenEnums),
+      of: renderTypeRef(schema, type.ofType, coreTypes, expectedType, seen),
     };
   }
   // A bare `ID` carrying @expectedType(name: "Directory") really means a
@@ -65,7 +69,13 @@ function renderTypeRef(schema, type, coreTypes, expectedType, seenEnums) {
     name = expectedType;
   }
   const named = classify(schema, name, coreTypes);
-  if (named === "enum" && seenEnums) seenEnums.add(name);
+  if (seen) {
+    if (named === "enum") seen.enums.add(name);
+    if (named === "input") seen.inputs.add(name);
+    if (named === "scalar" && !BUILTIN_SCALARS.has(name)) {
+      seen.scalars.add(name);
+    }
+  }
   return { kind: "named", name, named, isCore: named === "core" };
 }
 
@@ -90,7 +100,7 @@ function expectedTypeOf(astNode) {
   return d ? d.name : null;
 }
 
-function buildArg(schema, arg, coreTypes, seenEnums) {
+function buildArg(schema, arg, coreTypes, seen) {
   return {
     name: arg.name,
     description: arg.description || "",
@@ -99,7 +109,7 @@ function buildArg(schema, arg, coreTypes, seenEnums) {
       arg.type,
       coreTypes,
       expectedTypeOf(arg.astNode),
-      seenEnums
+      seen
     ),
     defaultValue:
       arg.astNode && arg.astNode.defaultValue
@@ -137,7 +147,7 @@ function printValueNode(node) {
   }
 }
 
-function buildField(schema, field, coreTypes, seenEnums) {
+function buildField(schema, field, coreTypes, seen) {
   const experimental = findDirective(field.astNode, "experimental");
   const defaultPath = findDirective(field.astNode, "defaultPath");
   const defaultAddress = findDirective(field.astNode, "defaultAddress");
@@ -160,19 +170,41 @@ function buildField(schema, field, coreTypes, seenEnums) {
   return {
     name: field.name,
     description: field.description || "",
-    args: field.args.map((a) => buildArg(schema, a, coreTypes, seenEnums)),
+    args: field.args.map((a) => buildArg(schema, a, coreTypes, seen)),
     type: renderTypeRef(
       schema,
       field.type,
       coreTypes,
       expectedTypeOf(field.astNode),
-      seenEnums
+      seen
     ),
     deprecated: field.deprecationReason
       ? { reason: field.deprecationReason }
       : null,
     experimental: experimental ? { reason: experimental.reason || "" } : null,
     notes,
+  };
+}
+
+function buildInput(schema, input, coreTypes, seen) {
+  return {
+    name: input.name,
+    description: input.description || "",
+    fields: Object.values(input.getFields()).map((field) => ({
+      name: field.name,
+      description: field.description || "",
+      type: renderTypeRef(
+        schema,
+        field.type,
+        coreTypes,
+        expectedTypeOf(field.astNode),
+        seen
+      ),
+      defaultValue:
+        field.astNode && field.astNode.defaultValue
+          ? printValueNode(field.astNode.defaultValue)
+          : undefined,
+    })),
   };
 }
 
@@ -280,7 +312,11 @@ function parseSchema(schemaPath, featured) {
   const schema = buildSchema(sdl, { assumeValidSDL: true });
   const typeNames = resolveTypeList(schema, featured);
   const coreTypes = new Set(typeNames);
-  const seenEnums = new Set();
+  const seen = {
+    enums: new Set(),
+    scalars: new Set(),
+    inputs: new Set(),
+  };
 
   const { returnedBy, argOf } = reverseRefs(schema, coreTypes);
 
@@ -291,7 +327,7 @@ function parseSchema(schemaPath, featured) {
       throw new Error(`API type ${name} is not an object or interface type`);
     }
     const fields = Object.values(t.getFields())
-      .map((f) => buildField(schema, f, coreTypes, seenEnums))
+      .map((f) => buildField(schema, f, coreTypes, seen))
       .sort((a, b) => a.name.localeCompare(b.name));
     types[name] = {
       name,
@@ -303,10 +339,28 @@ function parseSchema(schemaPath, featured) {
     };
   }
 
+  // Input objects referenced by published fields are documented inline where
+  // their type names appear. Building an input can discover nested enums or
+  // input objects, so walk the queue until it stops growing.
+  const inputs = {};
+  const inputQueue = Array.from(seen.inputs);
+  for (let i = 0; i < inputQueue.length; i++) {
+    const name = inputQueue[i];
+    if (inputs[name]) continue;
+    const input = schema.getType(name);
+    if (!(input instanceof GraphQLInputObjectType)) continue;
+    inputs[name] = buildInput(schema, input, coreTypes, seen);
+    for (const discovered of seen.inputs) {
+      if (!inputs[discovered] && !inputQueue.includes(discovered)) {
+        inputQueue.push(discovered);
+      }
+    }
+  }
+
   // Only the enums actually referenced by published fields are included, each
   // with its values and their descriptions, so the UI can reveal them inline.
   const enums = {};
-  for (const name of seenEnums) {
+  for (const name of seen.enums) {
     const e = schema.getType(name);
     if (!(e instanceof GraphQLEnumType)) continue;
     const values = e.getValues().map((v) => {
@@ -328,7 +382,19 @@ function parseSchema(schemaPath, featured) {
     };
   }
 
-  return { types, enums, coreTypes: typeNames };
+  // Only custom scalars referenced by published fields are included. Built-in
+  // GraphQL scalars (String/Int/etc.) are familiar enough to stay bare.
+  const scalars = {};
+  for (const name of seen.scalars) {
+    const scalar = schema.getType(name);
+    if (!(scalar instanceof GraphQLScalarType)) continue;
+    scalars[name] = {
+      name,
+      description: scalar.description || "",
+    };
+  }
+
+  return { types, enums, scalars, inputs, coreTypes: typeNames };
 }
 
 module.exports = { parseSchema, renderTypeRef, resolveTypeList, orderedTypeNames };
