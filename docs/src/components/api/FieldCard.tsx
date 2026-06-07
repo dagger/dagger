@@ -1,10 +1,8 @@
 import React from "react";
 import type { ApiField } from "./data";
-import { baseNamed } from "./data";
 import Signature from "./Signature";
 import TypeRefView from "./TypeRef";
 import Badge from "./Badge";
-import EnumValues from "./EnumValues";
 import Markdown, { MarkdownInline } from "./Markdown";
 import styles from "./styles.module.scss";
 
@@ -79,9 +77,6 @@ export default function FieldCard({
                         </span>
                       )}
                     </code>
-                    {baseNamed(arg.type).named === "enum" && (
-                      <EnumValues name={baseNamed(arg.type).name} />
-                    )}
                   </dt>
                   {arg.description && (
                     <dd className={styles.argDesc}>

@@ -104,7 +104,7 @@
   border: 1px solid var(--api-border);
   border-radius: var(--ifm-global-radius);
   position: relative;
-  overflow: visible; // allow inline enum popovers to escape the card body
+  overflow: visible; // allow inline type popovers to escape the card body
   scroll-margin-top: var(--ifm-navbar-height);
 
   // light up the card whose anchor you just followed
@@ -326,63 +326,123 @@
   border-left: 2px solid var(--api-border);
 }
 
-/* ── kind hints on non-core type tokens ─────────────────────────── */
-.typeName[data-kind="enum"],
-.typeName[data-kind="scalar"] {
-  border-bottom: 1px dotted currentColor;
-  cursor: help;
-}
-
-/* ── enum value reveal ──────────────────────────────────────────── */
-.enum {
+/* ── inline docs for non-core type tokens ───────────────────────── */
+.typeToken {
   display: inline-block;
   position: relative;
-  margin-left: 0.35rem;
-  font-size: 0.82rem;
+  vertical-align: baseline;
+}
+
+.typeInfo {
+  display: inline-block;
+  position: relative;
+  margin-left: 0.3rem;
+  font-family: var(--ifm-font-family-base);
+  font-size: 0.78rem;
+  font-weight: normal;
   vertical-align: baseline;
 
-  &[open] {
+  &[data-open="true"] {
     z-index: 20;
-  }
-
-  summary {
-    display: list-item;
-    cursor: pointer;
-    color: var(--ifm-color-primary);
-    list-style-position: inside;
-    white-space: nowrap;
   }
 }
 
-.enumList {
+.typeInfoButton {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 0.35rem;
+  background: var(--api-tint);
+  color: var(--ifm-color-primary);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1.35;
+  white-space: nowrap;
+
+  &::before {
+    content: ">";
+    display: inline-block;
+    margin-right: 0.18rem;
+    transition: transform 120ms ease;
+  }
+
+  &:hover,
+  &:focus-visible {
+    background: var(--api-tint-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--ifm-color-primary);
+    outline-offset: 2px;
+  }
+}
+
+.typeInfo[data-open="true"] .typeInfoButton::before {
+  transform: rotate(90deg);
+}
+
+.typePopover {
   position: absolute;
   top: calc(100% + 0.25rem);
   left: 0;
-  width: max-content;
   min-width: 10rem;
   max-width: min(32rem, calc(100vw - 3rem));
   max-height: min(18rem, 60vh);
   overflow: auto;
   margin: 0;
-  padding: 0.45rem 0.6rem;
+  padding: 0.5rem 0.65rem;
   background: var(--api-popover-bg);
   border: 1px solid var(--api-border);
   border-radius: var(--ifm-global-radius);
   box-shadow: var(--api-popover-shadow);
-  list-style: none;
+  color: var(--ifm-font-color-base);
+  font-family: var(--ifm-font-family-base);
+  font-size: 0.83rem;
+  font-weight: normal;
+  line-height: 1.45;
   user-select: text;
-
-  li {
-    margin: 0.15rem 0;
-  }
-  code {
-    background: var(--api-tint);
-    border: none;
-  }
+  white-space: normal;
 }
 
-.enumDesc {
+.typeValueList,
+.inputSchema {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.typeValue,
+.inputField,
+.typePopoverDesc {
+  display: block;
+}
+
+.typePopoverDesc {
   color: var(--api-muted);
+}
+
+.popoverCode {
+  display: inline;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ifm-font-color-base);
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.95em;
+}
+
+.inputField {
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--api-border);
+
+  &:first-child {
+    padding-top: 0;
+    border-top: none;
+  }
+
+  .typePopoverDesc {
+    margin-top: 0.1rem;
+  }
 }
 
 /* ── deprecated fields ──────────────────────────────────────────── */

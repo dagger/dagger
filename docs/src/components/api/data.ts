@@ -1,7 +1,13 @@
 import { usePluginData } from "@docusaurus/useGlobalData";
 
 // Mirrors the model produced by plugins/dagger-api-reference/schema.js.
-export type NamedKind = "core" | "enum" | "scalar" | "interface" | "object";
+export type NamedKind =
+  | "core"
+  | "enum"
+  | "scalar"
+  | "input"
+  | "interface"
+  | "object";
 
 export type TypeRef =
   | { kind: "named"; name: string; named: NamedKind; isCore: boolean }
@@ -53,25 +59,34 @@ export interface EnumType {
   values: EnumValue[];
 }
 
+export interface ScalarType {
+  name: string;
+  description: string;
+}
+
+export interface InputField {
+  name: string;
+  description: string;
+  type: TypeRef;
+  defaultValue?: string;
+}
+
+export interface InputType {
+  name: string;
+  description: string;
+  fields: InputField[];
+}
+
 export interface ApiModel {
   types: Record<string, ApiType>;
   enums: Record<string, EnumType>;
+  scalars: Record<string, ScalarType>;
+  inputs: Record<string, InputType>;
   coreTypes: string[];
-}
-
-// baseNamed unwraps a type to its underlying named token.
-export function baseNamed(type: TypeRef): Extract<TypeRef, { kind: "named" }> {
-  let t = type;
-  while (t.kind !== "named") t = t.of;
-  return t;
 }
 
 export function useApiModel(): ApiModel {
   return usePluginData("dagger-api-reference") as ApiModel;
-}
-
-export function useEnums(): Record<string, EnumType> {
-  return useApiModel().enums;
 }
 
 export function useApiType(name: string): ApiType {
