@@ -30,9 +30,22 @@
   font-size: 0.9rem;
   margin-bottom: 2rem;
 
+  a {
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+      text-underline-offset: 0.15em;
+    }
+  }
+
   code {
     background: var(--api-tint);
     border: none;
+  }
+
+  a code {
+    color: var(--ifm-color-primary);
   }
 }
 
