@@ -1057,18 +1057,14 @@ main[class*="docMainContainer"] {
   }
 }
 
-/* Core reference pages have no table of contents, so the sheet fills all the
-   way to the right edge: drop the right gutter and square off the right
-   corners so it sits flush with the viewport. */
+/* API reference sections benefit from more horizontal space, so let pages that
+   contain them use the full available content width while keeping the normal
+   sheet shape. */
 .main-wrapper:has(.api-reference) {
   main[class*="docMainContainer"] {
     .container {
       max-width: none;
       padding-right: 0;
-    }
-    .row > .col:has(.theme-doc-markdown) {
-      border-top-right-radius: 0;
-      border-bottom-right-radius: 0;
     }
   }
 }
