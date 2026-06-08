@@ -10,7 +10,7 @@ import Directory from '@daggerTypes/_directory.mdx';
 
 ## Reading workspace files
 
-Inside a module, you don't take the user's project directory as a function argument. Instead, your module's constructor receives a [`Workspace`](/extending#developer-workflow) that Dagger auto-populates from the current workspace, and you read directories and files from it lazily with `Workspace.directory(path)` and `Workspace.file(path)` — nothing is uploaded until a function actually uses it. See your [SDK guide](/extending/sdks) for the exact syntax.
+Inside a module, you don't take the user's project directory as a function argument. Instead, your module's constructor receives a [`Workspace`](../index.mdx#developer-workflow) that Dagger auto-populates from the current workspace, and you read directories and files from it lazily with `Workspace.directory(path)` and `Workspace.file(path)` — nothing is uploaded until a function actually uses it. See your [SDK guide](../sdks/index.mdx) for the exact syntax.
 
 ## Filters
 

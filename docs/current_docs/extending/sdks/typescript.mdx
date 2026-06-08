@@ -16,10 +16,10 @@ This page assumes you already understand the Dagger module model. If you don't,
 read these first — this page stays light on platform concepts and links back
 where relevant:
 
-- [Module Developer Guide](/extending) — what a module is and how it runs
-- [Type System](/extending/type-system) — how language types map to the Dagger API
-- [Checks](/extending/how-dagger-works/checks) — how `dagger check` discovers and runs checks
-- [Changesets](/using-dagger/changesets) — how generated files are reviewed and applied
+- [Module Developer Guide](../index.mdx) — what a module is and how it runs
+- [Type System](../type-system/index.mdx) — how language types map to the Dagger API
+- [Checks](../how-dagger-works/checks.mdx) — how `dagger check` discovers and runs checks
+- [Changesets](../../using-dagger/changesets.mdx) — how generated files are reviewed and applied
 
 :::important
 Module development tooling lives in the SDK module, not the `dagger` CLI:
@@ -42,7 +42,7 @@ dagger mod install github.com/dagger/typescript-sdk
 dagger call typescript-sdk init --name=my-module
 ```
 
-`init` returns a [changeset](/using-dagger/changesets) describing the files to
+`init` returns a [changeset](../../using-dagger/changesets.mdx) describing the files to
 create — which Dagger shows you to review before anything is written to disk.
 
 `init` arguments (from `dagger call typescript-sdk init --help`):
@@ -283,7 +283,7 @@ minimize cache invalidation.
 ## Arguments and return values
 
 Function parameters become Dagger function arguments. TypeScript types map onto
-the Dagger type system (see [Type System](/extending/type-system)):
+the Dagger type system (see [Type System](../type-system/index.mdx)):
 
 | TypeScript | Dagger API | Notes |
 |---|---|---|
@@ -673,7 +673,7 @@ with an additional decorator.
 
 A check is a function that validates something and passes or fails by exit code.
 Mark it with `@check()`. `dagger check` discovers and runs every check in the
-module. See [Checks](/extending/how-dagger-works/checks).
+module. See [Checks](../how-dagger-works/checks.mdx).
 
 ```typescript
 import { dag, Directory, Workspace, object, func, check } from "@dagger.io/dagger"
@@ -729,7 +729,7 @@ returns a non-zero exit code (which surfaces as a thrown error when you `sync`).
 
 ### Generators
 
-A generator produces a [changeset](/using-dagger/changesets) — a diff between the
+A generator produces a [changeset](../../using-dagger/changesets.mdx) — a diff between the
 current source and generated output. Mark it with `@generate()` and return a
 `Changeset`. `dagger generate` runs every generator and presents the combined
 changeset for review.
@@ -776,7 +776,7 @@ project-specific output (API clients, config, scaffolding) and are run by
 
 A service is a long-running container — a database, web server, or other
 dependency. Mark a `@func()` with `@up()` and return a `Service`. `dagger up`
-starts every service in the module. See [Services](/using-dagger/services).
+starts every service in the module. See [Services](../../using-dagger/services.mdx).
 
 ```typescript
 import { Service, dag, object, func, up } from "@dagger.io/dagger"

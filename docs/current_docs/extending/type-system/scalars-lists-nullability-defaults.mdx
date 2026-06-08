@@ -32,7 +32,7 @@ A list argument should make four things clear, in its name, its help text, or it
 - Whether order matters.
 - Whether duplicates are accepted.
 - What happens when the list is empty — does the function do nothing, fail, or fall back to a default set?
-- Whether a default list comes from [workspace settings](/reference/configuration/workspace).
+- Whether a default list comes from [workspace settings](../../reference/configuration/workspace.mdx).
 
 An empty list and an omitted list can mean different things. Decide which is which, and document it, rather than letting the behavior emerge by accident.
 
@@ -97,6 +97,6 @@ What improved, input by input:
 - **`environment` → an enum.** The closed set of choices shows up in help and generated clients, and an invalid value fails before any expensive work starts. See [Enums and Validation](./enums-and-validation.mdx).
 - **`replicas` → `int`.** A count is a number; no parsing, no "is `"two"` valid?" ambiguity.
 - **`tag` and `replicas` defaults.** The common call collapses to roughly `deploy --source ./app --token env:TOKEN`; defaults encode common intent rather than hidden magic.
-- **`registry` from settings.** A team-wide value moves to a [workspace setting](/reference/configuration/workspace) so it is not repeated on every call or hard-coded in the module.
+- **`registry` from settings.** A team-wide value moves to a [workspace setting](../../reference/configuration/workspace.mdx) so it is not repeated on every call or hard-coded in the module.
 
 The first version is also a composition dead-end: callers feed strings in and, typically, get a status string back. The second returns real types the caller can keep using — the subject of [Designing for Composability](./designing-for-composability.mdx).

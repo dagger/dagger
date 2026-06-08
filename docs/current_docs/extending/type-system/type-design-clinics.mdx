@@ -129,7 +129,7 @@ format(source: Directory) -> string   # writes formatted files to disk, returns 
 format(source: Directory) -> Changeset
 ```
 
-**What improved.** The change becomes a reviewable, composable value. The caller can inspect the diff, apply it, open a pull request, or hand it to another function — the module proposes the edit instead of performing it. The effect is explicit in the signature: a function that returns a `Changeset` clearly edits source, while one that returns a `File` clearly produces an artifact. See [Changesets](/using-dagger/changesets).
+**What improved.** The change becomes a reviewable, composable value. The caller can inspect the diff, apply it, open a pull request, or hand it to another function — the module proposes the edit instead of performing it. The effect is explicit in the signature: a function that returns a `Changeset` clearly edits source, while one that returns a `File` clearly produces an artifact. See [Changesets](../../using-dagger/changesets.mdx).
 
 ## Maintainer review checklist
 
@@ -138,7 +138,7 @@ Use this checklist when reviewing a module's public API — in code review, befo
 - **Strings that should be types.** Is any string actually a path (`Directory`/`File`), a credential (`Secret`), an endpoint (`Service`), a closed choice (enum), or structured data (an object)?
 - **Hidden inputs.** Does any function depend on host environment state, ambient config, or assumed paths that do not appear in its signature?
 - **Required vs. optional.** Is every required argument necessary, and does every optional one have clear, documented behavior when omitted?
-- **Defaults.** Do defaults encode common intent, stay narrowly scoped, appear in help, and come from [settings](/reference/configuration/workspace) when team-wide?
+- **Defaults.** Do defaults encode common intent, stay narrowly scoped, appear in help, and come from [settings](../../reference/configuration/workspace.mdx) when team-wide?
 - **Cache safety.** Can the engine derive a stable identity from the inputs, or does something invisible to it leak into the result?
 - **Secret safety.** Are all credentials `Secret`, and is nothing sensitive at risk of reaching logs, traces, or errors?
 - **Explicit effects.** Are writes, publishes, and network calls visible in the types and names rather than hidden as side effects?
