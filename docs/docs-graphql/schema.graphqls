@@ -3735,6 +3735,15 @@ type GeneratorGroup implements Node {
 
 """A git ref (tag, branch, or commit)."""
 type GitRef implements Node {
+  """The bare git repository at this ref."""
+  bare(
+    """The depth of the bare repository to fetch."""
+    depth: Int = 1
+
+    """Set to true to populate tag refs in the bare repository."""
+    includeTags: Boolean = false
+  ): Directory!
+
   """The resolved commit id at this ref."""
   commit: String!
 
