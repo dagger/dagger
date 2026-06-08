@@ -974,13 +974,18 @@ html[data-theme="dark"] .DocSearch.DocSearch-Button {
   }
 
   .docs-sidebar-search {
+    display: flex;
     margin-top: 0.75rem;
+    min-width: 0;
+    width: 100%;
 
     .DocSearch.DocSearch-Button {
-      width: 100% !important;
+      flex-grow: 1 !important;
+      max-width: 100% !important;
       min-width: 0 !important;
       justify-content: space-between !important;
       padding: 0 0.75rem !important;
+      width: auto !important;
     }
 
     .DocSearch-Button-Container {
