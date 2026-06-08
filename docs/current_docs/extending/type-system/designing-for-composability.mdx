@@ -6,9 +6,9 @@ description: "Return values that other functions, modules, clients, and agents c
 
 # Designing for Composability
 
-The type system is what lets Dagger workflows keep going. A well-typed result can be passed to another function, another module, a generated client, a check, a generator, or an agent.
+The type system is what lets Dagger workflows keep going. A well-typed result can be passed to another function, another module, a generated client, a check, a generator, or an agent. Composability is not a separate feature to add — it is what good type choices produce.
 
-## Composable Return Values
+## Composable return values
 
 Return values should help the caller continue the workflow:
 
@@ -16,14 +16,28 @@ Return values should help the caller continue the workflow:
 - Return `Directory` or `File` when the caller needs artifacts.
 - Return `Service` when another step needs a live endpoint.
 - Return `Changeset` when the module proposes source edits.
-- Return a user-defined object when the caller needs a domain concept with more methods.
+- Return a [user-defined object](./user-defined-object-types.mdx) when the caller needs a domain concept with more methods.
 
-## Avoid Dead Ends
+The test is simple: after a function returns, can the caller take a meaningful next step without leaving the type system? If the answer is "only after parsing a string," the function returned too little.
 
-Strings and logs can be useful final outputs, but they are often dead ends. If a caller has to parse text to continue, the module probably returned too little structure.
+## Avoid dead ends
 
-## Composition Across Modules
+Strings and logs can be useful final outputs, but they are often dead ends. If a caller has to parse text to continue, the module probably returned too little structure. The classic dead end is a function that does real work and then returns `"ok"` or a printed log — the engine built a `Container`, knew its digest, had a `Changeset` in hand, and threw all of it away at the boundary.
 
-Design return types so other modules can consume them without knowing implementation details. This is where type design and interface design meet.
+When a string truly is the end of the workflow — a final report, a digest to display — returning it is fine. The problem is returning a string the caller then has to turn *back* into structure.
 
-TODO: Cross-link this chapter with [Interfaces and Composition](../index.mdx) after the interface guide is expanded.
+## Interfaces and composition across modules
+
+Composability within a module comes from returning rich types. Composability *across* modules comes from interfaces.
+
+An interface lets a module accept any object that provides a required set of functions, without depending on that object's concrete type or which module defined it. A `ci` module can accept "anything that can be tested and published" rather than a specific `GoApp` or `NodeApp` type. The caller supplies a concrete object from another module; the receiving module only relies on the functions the interface names.
+
+This is where type design and composition meet, and it rewards the discipline from the earlier chapters:
+
+- **Name for the concept, not the implementation.** An interface describes a capability (`Testable`, `Publishable`), so the objects that satisfy it must be named and shaped around caller-facing concepts — see [User-Defined Object Types](./user-defined-object-types.mdx).
+- **Return rich types from interface methods.** An interface is only as composable as the values its methods return. A method that returns a `Container` keeps the graph going across the module boundary; one that returns a status string stops it.
+- **Keep the surface small.** An interface should require the fewest functions that capture the capability. The smaller the contract, the more objects can satisfy it.
+
+Design return types so other modules can consume them without knowing implementation details. A module that returns well-named objects with rich-typed methods can be composed into workflows its author never anticipated.
+
+For the syntax that declares and implements interfaces in each language, see the SDK guides — for example, [Interfaces in the Go SDK](../sdks/go.mdx#interfaces) and [the Dang SDK](../sdks/dang.mdx#interfaces).

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/workspace"
@@ -14,10 +13,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const (
-	lockCoreNamespace           = ""
-	lockModulesResolveOperation = "modules.resolve"
-)
+const lockCoreNamespace = ""
 
 type workspaceLookupLock struct {
 	ctx   context.Context
@@ -60,6 +56,37 @@ func currentLookupLockMode(ctx context.Context) (workspace.LockMode, error) {
 		return "", fmt.Errorf("client metadata: %w", err)
 	}
 	return workspace.ResolveLockMode(clientMetadata.LockMode)
+}
+
+// lookupLockForMode is the policy boundary between ordinary lookups and
+// workspace lockfiles. Default/live/pinned lookups use a writable local
+// workspace lock binding when one exists; without one they resolve live and
+// skip lock writes. Frozen mode is different: it is an explicit request to
+// enforce a lockfile, so absence of a writable workspace lock is an error.
+func lookupLockForMode(
+	ctx context.Context,
+	query *core.Query,
+	operation string,
+) (workspace.LockMode, *workspaceLookupLock, error) {
+	lockMode, err := currentLookupLockMode(ctx)
+	if err != nil {
+		return "", nil, fmt.Errorf("%s lock mode: %w", operation, err)
+	}
+	if lockMode == workspace.LockModeDisabled {
+		return lockMode, nil, nil
+	}
+
+	lookupLock, err := loadWorkspaceLookupLock(ctx, query)
+	if err != nil {
+		return "", nil, fmt.Errorf("%s lockfile: %w", operation, err)
+	}
+	if lookupLock == nil {
+		if lockMode == workspace.LockModeFrozen {
+			return "", nil, fmt.Errorf("%s lockfile: no writable workspace lockfile is available", operation)
+		}
+		return workspace.LockModeDisabled, nil, nil
+	}
+	return lockMode, lookupLock, nil
 }
 
 type lookupLockResolution struct {
@@ -125,13 +152,10 @@ func resolveLookupFromLock(
 }
 
 func lockHostPath(ws *core.Workspace) (string, error) {
-	if ws == nil {
-		return "", fmt.Errorf("workspace is required")
+	if ws.LockFile == "" {
+		return "", fmt.Errorf("workspace lockfile is not selected")
 	}
-	if ws.HostPath() == "" {
-		return "", fmt.Errorf("workspace has no host path")
-	}
-	return filepath.Join(ws.HostPath(), ws.Path, workspace.LockDirName, workspace.LockFileName), nil
+	return workspaceHostPath(ws, ws.LockFile)
 }
 
 func readWorkspaceLock(ctx context.Context, bk interface {
@@ -152,9 +176,23 @@ func readWorkspaceLockState(ctx context.Context, bk interface {
 	data, err := bk.ReadCallerHostFile(ctx, lockPath)
 	if err != nil {
 		if isWorkspaceLockNotFound(err) {
-			return workspace.NewLock(), false, nil
+			legacyPath, err := legacyLockHostPath(ws)
+			if err != nil {
+				return nil, false, err
+			}
+			if legacyPath == "" || legacyPath == lockPath {
+				return workspace.NewLock(), false, nil
+			}
+			data, err = bk.ReadCallerHostFile(ctx, legacyPath)
+			if err != nil {
+				if isWorkspaceLockNotFound(err) {
+					return workspace.NewLock(), false, nil
+				}
+				return nil, false, fmt.Errorf("reading legacy lock: %w", err)
+			}
+		} else {
+			return nil, false, fmt.Errorf("reading lock: %w", err)
 		}
-		return nil, false, fmt.Errorf("reading lock: %w", err)
 	}
 
 	lock, err := workspace.ParseLock(data)
@@ -166,4 +204,11 @@ func readWorkspaceLockState(ctx context.Context, bk interface {
 
 func isWorkspaceLockNotFound(err error) bool {
 	return errors.Is(err, os.ErrNotExist) || status.Code(err) == codes.NotFound
+}
+
+func legacyLockHostPath(ws *core.Workspace) (string, error) {
+	if ws == nil || ws.LockFile == "" {
+		return "", nil
+	}
+	return workspaceHostPath(ws, workspace.LegacyLockFilePathForCanonical(ws.LockFile))
 }

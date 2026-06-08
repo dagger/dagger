@@ -99,7 +99,7 @@ func initializeModule(
 	return def, nil
 }
 
-var ErrConfigNotFound = errors.New("dagger.json not found")
+var ErrConfigNotFound = errors.New("module config file not found")
 
 //nolint:unparam
 func initializeClientGeneratorModule(
@@ -411,6 +411,38 @@ func (m *moduleDef) Long() string {
 		return s + "\n\n" + m.Description
 	}
 	return s
+}
+
+// siblingModuleEntrypoints returns Query root constructors from workspace
+// modules other than the current default module. Conflicting CLI names are
+// skipped so the focused module keeps precedence.
+func (m *moduleDef) siblingModuleEntrypoints() []*modFunction {
+	rootType := m.GetTypeDef("Query")
+	if rootType == nil || rootType.AsObject == nil {
+		return nil
+	}
+
+	existing := make(map[string]bool)
+	if m.MainObject != nil && m.MainObject.AsObject != nil {
+		for _, fn := range m.MainObject.AsObject.GetFunctions() {
+			existing[fn.CmdName()] = true
+		}
+	}
+
+	var siblings []*modFunction
+	for _, fn := range rootType.AsObject.Functions {
+		if fn.SourceModuleName == "" {
+			continue
+		}
+		if fn.SourceModuleName == m.Name {
+			continue
+		}
+		if existing[fn.CmdName()] {
+			continue
+		}
+		siblings = append(siblings, fn)
+	}
+	return siblings
 }
 
 func (m *moduleDef) AsFunctionProviders() []functionProvider {

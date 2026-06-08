@@ -1056,6 +1056,10 @@ func (fe *frontendPretty) doQuit() {
 // FinalRender is called after the program has finished running and prints the
 // final output after the TUI has exited.
 func (fe *frontendPretty) FinalRender(w io.Writer) error {
+	if exitCode, ok := renderQuietError(w, fe.err); ok {
+		return ExitError{OriginalCode: exitCode, Original: fe.err}
+	}
+
 	// Hint for future rendering that this is the final, non-interactive render
 	// (so don't show key hints etc.). syncSpanTreeState copies this into each
 	// SpanTreeView and marks any changed tree dirty.
@@ -1075,7 +1079,7 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 
 	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
-	if fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil || fe.db.HasTests() {
+	if fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil || fe.db.HasTests() || fe.db.HasChecks() {
 		for _, line := range fe.tui.RenderLines() {
 			fmt.Fprintln(w, line)
 		}

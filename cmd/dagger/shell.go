@@ -62,6 +62,9 @@ var shellCmd = &cobra.Command{
 		})
 	},
 	Hidden: true,
+	Annotations: map[string]string{
+		showFinalProgressKey: "true",
+	},
 }
 
 type shellCallHandler struct {
@@ -132,14 +135,15 @@ type shellCallHandler struct {
 
 func newShellCallHandler(dag *dagger.Client, fe idtui.Frontend) *shellCallHandler {
 	ref, _ := getExplicitModuleSourceRef()
-	if ref == "" {
+	coreMode := isCoreModuleRef(ref)
+	if ref == "" || coreMode {
 		ref = moduleURLDefault
 	}
 	return &shellCallHandler{
 		dag:       dag,
 		llmModel:  llmModel,
 		mode:      modeShell,
-		noModule:  moduleNoURL,
+		noModule:  moduleNoURL || coreMode,
 		moduleURL: ref,
 		frontend:  fe,
 	}

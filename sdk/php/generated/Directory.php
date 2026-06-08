@@ -47,6 +47,18 @@ class Directory extends Client\AbstractObject implements Client\IdAble, Exportab
     }
 
     /**
+     * Creates a synthetic workspace from this directory.
+     */
+    public function asWorkspace(?string $cwd = '/'): Workspace
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asWorkspace');
+        if (null !== $cwd) {
+        $innerQueryBuilder->setArgument('cwd', $cwd);
+        }
+        return new \Dagger\Workspace($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Return the difference between this directory and another directory, typically an older snapshot.
      *
      * The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.

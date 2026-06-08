@@ -7,7 +7,7 @@ description: "Learn about the Container type in Dagger and how to use it for con
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
-import ContainerType from "../../partials/types/_container.mdx";
+import ContainerType from "@daggerTypes/_container.mdx";
 
 <ContainerType />
 
@@ -60,3 +60,30 @@ The default address can be any valid container image reference, such as:
 - `alpine:3.19` - Docker Hub image with specific version
 - `ghcr.io/owner/image:tag` - GitHub Container Registry image
 - `gcr.io/project/image:tag` - Google Container Registry image
+
+## Volatile variables
+
+`withVolatileVariable` sets a non-secret environment variable for future
+`withExec` calls without invalidating exec cache when only the variable's value
+changes.
+
+Typical examples include CI and reporting metadata such as commit SHAs, branch
+or ref names, and CI run IDs.
+
+:::warning
+`withVolatileVariable` is an expert-only escape hatch. Use it only when you are
+certain that changing the variable alone must not invalidate cached `withExec`
+results. If that assumption is wrong, Dagger may reuse stale or incorrect
+cached results.
+:::
+
+Unlike `withEnvVariable`, volatile variables:
+
+- are visible only to future `withExec` calls
+- are not persisted into the container image config
+- are not returned by `envVariable` or `envVariables`
+- are not available to `expand: true`
+
+Use `withEnvVariable` for normal container configuration, `withSecretVariable`
+for sensitive values, and `withVolatileVariable` only for exec-time metadata
+that should not decide cache reuse.

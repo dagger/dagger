@@ -6,62 +6,75 @@ description: "Run Go tests, lint, and generators across a workspace."
 
 # Go
 
+The Go module gives a Go workspace one shared way to test, lint, and run
+`go generate`. It scans the workspace for `go.mod` files, treats each one as a Go
+module, and exposes workspace-level functions that run across all of them — a
+good fit for monorepos, service repos, and libraries with generated code,
+especially when several modules should share one Go version and the same CI
+checks.
+
 Official module: [dagger/go](https://github.com/dagger/go)
 
-Install with `dagger mod install github.com/dagger/go`.
-
-## What It Is
-
-The Go module is for Go workspaces that want one shared way to test, lint, and run `go generate`.
-
-It scans the workspace for `go.mod` files, treats each one as a Go module, and gives you workspace-level functions that run across all of them. That makes it a good fit for monorepos, service repos, and libraries with generated code.
-
-## Use It For
-
-- Test every Go module with the same command.
-- Run `golangci-lint` across the workspace.
-- Run `go generate` before a build or PR.
-- Skip tests, lint, or generation in selected modules with marker files.
-
-## Main Workflows
-
-- `test-all`: run Go tests in every discovered Go module.
-- `lint-all`: run `golangci-lint` in every discovered Go module.
-- `generate-all`: run `go generate` in every discovered Go module.
-
-## How to Use It
-
-Install the module, then run its checks:
+## Add it to your workspace
 
 ```bash
 dagger mod install github.com/dagger/go
-
-dagger check               # run every check in the workspace
-dagger check go:test-all   # run Go tests across every module
-dagger check go:lint-all   # run golangci-lint across every module
 ```
 
-`test-all` and `lint-all` discover every `go.mod` in the workspace, treat each as a Go module, and run against all of them. Tests run through an OpenTelemetry-aware runner, so individual Go tests appear as spans in the Dagger TUI and Dagger Cloud. Lint runs a pinned `golangci-lint` and picks up each module's `.golangci.*` config.
+## Run the checks
 
-Run the generator when generated Go files are part of normal development, such as mocks, embedded assets, protobuf output, or code produced by `go generate`:
+```bash
+dagger check              # run every check in the workspace
+dagger check go:test-all  # run Go tests across every module
+dagger check go:lint-all  # run golangci-lint across every module
+```
+
+`test-all` and `lint-all` discover every `go.mod` in the workspace, treat each as
+a Go module, and run against all of them. Tests run through an
+OpenTelemetry-aware runner, so individual Go tests appear as spans in the Dagger
+TUI and Dagger Cloud. Lint runs a pinned `golangci-lint` and picks up each
+module's `.golangci.*` config.
+
+## Generate code
+
+Run the generator when generated Go files are part of normal development — mocks,
+embedded assets, protobuf output, or anything produced by `go generate`:
 
 ```bash
 dagger generate go:generate-all
 ```
 
-`generate-all` runs only in modules that contain a `//go:generate` directive, and returns the result as a changeset to review before applying.
+`generate-all` runs only in modules that contain a `//go:generate` directive, and
+returns the result as a changeset to review before applying.
 
-## Settings
+## Configure it
 
-List the current settings and their values with `dagger settings go`, then set one with `dagger settings go <key> <value>`. Settings are stored in `.dagger/config.toml` under `[modules.go.settings]`.
+List the current settings with `dagger settings go`, then change one with
+`dagger settings go <key> <value>`. They live in `dagger.toml` under
+`[modules.go.settings]`:
 
-- **`version`** (default `1.26`): the Go toolchain version used to build the test and generate containers (`golang:<version>-alpine`). Set this so every module is tested and generated against the same Go version. Lint uses a pinned `golangci-lint` image and is unaffected.
-- **`includeExtraFiles`** (default empty): extra workspace-root path patterns mounted alongside each module's Go source. Go source, `go.mod`/`go.sum`/`go.work`, and `testdata/` directories are already included automatically; use this for inputs those patterns miss, such as embedded non-Go assets, generator inputs, or fixtures kept outside `testdata/`.
-- **`skipTestFilename`** (default `.dagger-skip-go-test`): the name of the marker file that excludes a module from `test-all`. To skip a module's tests, create an empty file with this name at the module root. The marker also applies to any nested modules, and placing it at the workspace root skips tests everywhere.
-- **`skipLintFilename`** (default `.dagger-skip-go-lint`): the marker filename that excludes a module from `lint-all`, with the same placement rules.
-- **`skipGenerateFilename`** (default `.dagger-skip-go-generate`): the marker filename that excludes a module from `generate-all`, with the same placement rules.
+- **`version`** (default `1.26`): the Go toolchain version used to build the test
+  and generate containers (`golang:<version>-alpine`). Set this so every module
+  is tested and generated against the same Go version. Lint uses a pinned
+  `golangci-lint` image and is unaffected.
+- **`includeExtraFiles`** (default empty): extra workspace-root path patterns
+  mounted alongside each module's Go source. Go source, `go.mod`/`go.sum`/`go.work`,
+  and `testdata/` directories are already included automatically; use this for
+  inputs those patterns miss, such as embedded non-Go assets, generator inputs,
+  or fixtures kept outside `testdata/`.
+- **`skipTestFilename`** (default `.dagger-skip-go-test`): the name of the marker
+  file that excludes a module from `test-all`. To skip a module's tests, create
+  an empty file with this name at the module root. The marker also applies to any
+  nested modules, and placing it at the workspace root skips tests everywhere.
+- **`skipLintFilename`** (default `.dagger-skip-go-lint`): the marker filename
+  that excludes a module from `lint-all`, with the same placement rules.
+- **`skipGenerateFilename`** (default `.dagger-skip-go-generate`): the marker
+  filename that excludes a module from `generate-all`, with the same placement
+  rules.
 
-The skip markers work by file presence: the setting only renames the marker file the module looks for, which is rarely needed. To exclude a module from a workflow, add the marker file; to include it again, delete the file.
+The skip markers work by file presence: the setting only renames the marker file
+the module looks for, which is rarely needed. To exclude a module from a
+workflow, add the marker file; to include it again, delete the file.
 
 ```bash
 # Pin the Go version for the whole workspace
@@ -71,7 +84,8 @@ dagger settings go version 1.25
 touch ./legacy-service/.dagger-skip-go-lint
 ```
 
-List-valued settings such as `includeExtraFiles` are edited directly in `.dagger/config.toml`:
+List-valued settings such as `includeExtraFiles` are edited directly in
+`dagger.toml`:
 
 ```toml
 [modules.go.settings]
@@ -79,12 +93,9 @@ version = "1.25"
 includeExtraFiles = ["Makefile", "tools/**"]
 ```
 
-## Workspace Fit
+## Working with other modules
 
-Use this module when the repo contains one or more Go modules. It is especially useful when several Go modules should share the same Go version and the same CI checks.
-
-To exclude a single module from a workflow, add its skip marker file instead of splitting the repo into separate check systems.
-
-## Source
-
-Source repo: [github.com/dagger/go](https://github.com/dagger/go)
+Reach for this module whenever the repo contains one or more Go modules,
+especially when they should share the same Go version and CI checks. To exclude a
+single module from a workflow, add its skip marker file rather than splitting the
+repo into separate check systems.

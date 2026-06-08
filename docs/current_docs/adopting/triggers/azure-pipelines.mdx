@@ -9,7 +9,7 @@ description: "Learn how to use Dagger with Azure Pipelines."
 Azure Pipelines can run `dagger check` in any pipeline, so the same checks you run locally run on every push — without rewriting your pipeline.
 
 :::tip
-For checks with no pipeline YAML at all, enable [Cloud Checks](./index.mdx) with `dagger ws autocheck on`. The Azure Pipeline below is the hybrid-mode alternative for when you want to drive Dagger from your existing Azure Pipelines setup.
+For checks with no pipeline YAML at all, enable [Cloud Checks](/adopting/triggers) with `dagger ws autocheck on`. The Azure Pipeline below is the hybrid-mode alternative for when you want to drive Dagger from your existing Azure Pipelines setup.
 :::
 
 ## How it works
@@ -28,7 +28,7 @@ When running a CI pipeline with Dagger using Azure Pipelines, the general workfl
 
 - An Azure DevOps organization and project
 - An Azure Pipelines agent to run jobs connected to the project
-- A repository with a Dagger workspace (`.dagger/config.toml`) — see [Workspace Setup](../workspace-setup.mdx).
+- A repository with a Dagger workspace (`dagger.toml`) — see [Workspace Setup](/adopting/workspace-setup).
 
 ## Example
 

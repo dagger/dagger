@@ -1,5 +1,8 @@
 package core
 
+// These tests cover engine registry mirrors used for container image pulls.
+// They verify mirrors served over HTTP and mirrors protected by a custom CA.
+
 import (
 	"context"
 	"strings"

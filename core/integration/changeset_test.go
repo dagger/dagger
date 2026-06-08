@@ -1,5 +1,9 @@
 package core
 
+// These tests cover Changeset values produced by comparing directories. They
+// verify added, removed, and modified paths, patch/export output, merging, and
+// use from generated module bindings.
+
 import (
 	"context"
 	"fmt"
@@ -781,43 +785,7 @@ func (ChangesetSuite) TestChangeset(ctx context.Context, t *testctx.T) {
 func (s ChangesetSuite) TestExport(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", `package main
-
-import (
-	"dagger/test/internal/dagger"
-)
-
-func New() *Test {
-	return &Test{
-		Dir: dag.Directory().
-			WithNewFile("foo.txt", "foo\nbar\nbaz").
-			WithNewFile("bar.txt", "hey").
-			WithNewDirectory("emptydir"),
-	}
-}
-
-type Test struct {
-	Dir *dagger.Directory
-}
-
-func (t *Test) Update() *dagger.Changeset {
-	return t.Dir.
-		WithNewFile("foo.txt", "foo\nbaz").
-		WithoutFile("bar.txt").
-		WithNewFile("baz.txt", "im new here").
-		WithoutDirectory("emptydir").
-		Changes(t.Dir)
-}
-
-func (t *Test) NoChanges() *dagger.Changeset {
-	return t.Dir.Changes(t.Dir)
-}
-`,
-		).
+	modGen := moduleEntrypointFixture(t, c, "test", "go/changeset-export").
 		With(daggerCall("dir", "-o", "./outdir"))
 
 	t.Run("export", func(ctx context.Context, t *testctx.T) {

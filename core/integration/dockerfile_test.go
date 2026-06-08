@@ -1,5 +1,7 @@
 package core
 
+// These tests cover building containers from Dockerfiles through the Dagger API.
+
 import (
 	"context"
 	"errors"

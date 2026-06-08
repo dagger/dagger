@@ -1,5 +1,13 @@
 package core
 
+// These tests cover the GitRepository API for public or otherwise
+// auth-independent repositories. They verify cloning, refs, commits, trees, and
+// fetched file contents.
+//
+// See also:
+// - gitcredential_test.go: credential forwarding for Git sources.
+// - ref_test.go: module reference resolution for Git-shaped paths.
+
 import (
 	"context"
 	"encoding/base64"
@@ -247,7 +255,7 @@ func requireSampleGitRepo(ctx context.Context, t *testctx.T, c *dagger.Client, r
 	// latest tag
 	latestTag := repo.LatestVersion()
 	requireSampleGitRootDir(ctx, t, c, latestTag.Tree())
-	requireGitRefIsTag(ctx, t, c, `^refs/tags/v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$`, "", latestTag)
+	requireGitRefIsTag(ctx, t, c, `^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`, "", latestTag)
 	// sample tag
 	requireSampleGitTag(ctx, t, c, repo.Tag("v0.9.5"))
 	// sample annotated tag

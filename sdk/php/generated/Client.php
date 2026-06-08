@@ -1033,6 +1033,56 @@ class Client extends Client\AbstractClient implements Client\IdAble, Node
     }
 
     /**
+     * Load a WorkspaceGit from its ID.
+     */
+    public function loadWorkspaceGitFromID(WorkspaceGitId $id): WorkspaceGit
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadWorkspaceGitFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\WorkspaceGit($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a WorkspaceMigration from its ID.
+     */
+    public function loadWorkspaceMigrationFromID(WorkspaceMigrationId $id): WorkspaceMigration
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadWorkspaceMigrationFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\WorkspaceMigration($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a WorkspaceMigrationStep from its ID.
+     */
+    public function loadWorkspaceMigrationStepFromID(WorkspaceMigrationStepId $id): WorkspaceMigrationStep
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadWorkspaceMigrationStepFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\WorkspaceMigrationStep($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a WorkspaceModule from its ID.
+     */
+    public function loadWorkspaceModuleFromID(WorkspaceModuleId $id): WorkspaceModule
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadWorkspaceModuleFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\WorkspaceModule($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a WorkspaceModuleSetting from its ID.
+     */
+    public function loadWorkspaceModuleSettingFromID(WorkspaceModuleSettingId $id): WorkspaceModuleSetting
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadWorkspaceModuleSettingFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\WorkspaceModuleSetting($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Create a new module.
      */
     public function module(): Module

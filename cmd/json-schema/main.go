@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dagger/dagger/core/modules"
+	"github.com/dagger/dagger/core/workspace"
 	"github.com/dagger/dagger/engine/config"
 )
 
@@ -53,7 +54,17 @@ var targets = []target{
 	{
 		id:    "dagger.json",
 		path:  "./core/modules",
-		value: &modules.ModuleConfigWithUserFields{},
+		value: &modules.LegacyModuleConfigWithUserFields{},
+	},
+	{
+		id:    "dagger-module.toml",
+		path:  "./core/modules",
+		value: &modules.CurrentModuleConfigWithUserFields{},
+	},
+	{
+		id:    "dagger.toml",
+		path:  "./core/workspace",
+		value: &workspace.Config{},
 	},
 	{
 		id:    "engine.json",

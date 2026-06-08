@@ -140,12 +140,16 @@ func (l *Loader) namedSDK(
 		return l.loadBuiltinSDK(ctx, root, sdk, digest.Digest(os.Getenv(distconsts.PythonSDKManifestDigestEnvName)))
 	case sdkTypescript:
 		return l.loadBuiltinSDK(ctx, root, sdk, digest.Digest(os.Getenv(distconsts.TypescriptSDKManifestDigestEnvName)))
-	case sdkJava:
-		return l.SDKForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/java" + sdkSuffix, Config: sdk.Config, Experimental: sdk.Experimental}, nil)
-	case sdkPHP:
-		return l.SDKForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/php" + sdkSuffix, Config: sdk.Config, Experimental: sdk.Experimental}, nil)
-	case sdkElixir:
-		return l.SDKForModule(ctx, root, &core.SDKConfig{Source: "github.com/dagger/dagger/sdk/elixir" + sdkSuffix, Config: sdk.Config, Experimental: sdk.Experimental}, nil)
+	case sdkJava, sdkPHP, sdkElixir:
+		sdkMod, ok := workspaceModuleForBuiltinSDK(sdkNamedParsed, sdkSuffix)
+		if !ok {
+			return nil, errUnknownBuiltinSDK
+		}
+		return l.SDKForModule(ctx, root, &core.SDKConfig{
+			Source:       sdkMod.Source,
+			Config:       sdk.Config,
+			Experimental: sdk.Experimental,
+		}, nil)
 	}
 
 	return nil, errUnknownBuiltinSDK

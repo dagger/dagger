@@ -27,9 +27,8 @@ func init() {
 }
 
 var upCmd = &cobra.Command{
-	Hidden: true,
-	Use:    "up [options] [pattern...]",
-	Short:  "Start services defined by the module and expose them on the host",
+	Use:   "up [options] [pattern...]",
+	Short: "Start services defined by the module and expose them on the host",
 	Long: `Start services defined by the module and expose them on the host
 
 Examples:
@@ -38,6 +37,9 @@ Examples:
   dagger up web                   # Start only the 'web' service
 `,
 	Args: cobra.ArbitraryArgs,
+	Annotations: map[string]string{
+		showFinalProgressKey: "true",
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return withEngine(
 			cmd.Context(),

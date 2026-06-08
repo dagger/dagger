@@ -194,6 +194,9 @@ func callDangFunction(ctx context.Context, env dang.ValueScope, fnCall *core.Fun
 
 	parentConstructor := parentModBase.(*dang.ConstructorFunction)
 	parentModType := parentConstructor.ObjectType
+	// Use the class file's captured env so rehydrated method calls keep the
+	// imports that were in scope when the type was declared.
+	parentClosure := parentConstructor.Closure
 
 	var fnType *hm.FunctionType
 	if fnCall.Name == "" {
@@ -231,7 +234,7 @@ func callDangFunction(ctx context.Context, env dang.ValueScope, fnCall *core.Fun
 		if err := dec.Decode(&val); err != nil {
 			return nil, fmt.Errorf("unmarshal arg %s: %w", arg.Key, err)
 		}
-		dangVal, err := anyToDang(ctx, env, val, argType)
+		dangVal, err := anyToDang(ctx, parentClosure, val, argType)
 		if err != nil {
 			return nil, fmt.Errorf("convert arg %s: %w", arg.Key, err)
 		}
@@ -257,14 +260,14 @@ func callDangFunction(ctx context.Context, env dang.ValueScope, fnCall *core.Fun
 		if !isMono {
 			return nil, fmt.Errorf("non-monotype field %s", name)
 		}
-		dangVal, err := anyToDang(ctx, env, value, fieldType)
+		dangVal, err := anyToDang(ctx, parentClosure, value, fieldType)
 		if err != nil {
 			return nil, fmt.Errorf("convert field %s: %w", name, err)
 		}
 		parentModEnv.Bind(name, dangVal, dang.PrivateVisibility)
 	}
 
-	bodyEnv := dang.CreateOverlayValueScope(parentModEnv, env)
+	bodyEnv := dang.CreateOverlayValueScope(parentModEnv, parentClosure)
 	bodyEnv.EnterSelf(parentModEnv)
 	_, err = dang.EvaluateFormsWithPhases(ctx, parentConstructor.ObjectBodyForms, bodyEnv)
 	if err != nil {
@@ -278,7 +281,7 @@ func callDangFunction(ctx context.Context, env dang.ValueScope, fnCall *core.Fun
 		},
 		Args: args,
 	}
-	return call.Eval(ctx, env)
+	return call.Eval(ctx, bodyEnv)
 }
 
 type dangLocalTypes struct {

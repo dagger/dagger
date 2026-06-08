@@ -6,33 +6,97 @@ description: "Understand the platform types every module author should design wi
 
 # Core Dagger Types
 
-Core Dagger types are the vocabulary of module APIs. They represent values the engine understands deeply: content, execution, services, secrets, generated changes, environment, and model interaction.
+Core Dagger types are the vocabulary of module APIs. They represent values the engine understands deeply: content, execution, services, secrets, generated changes, environment, and model interaction. Designing with them — rather than with strings that merely describe them — is the single highest-leverage decision in a module's API.
 
 Use these types to make boundaries explicit and composition natural.
 
-## Types Every Module Author Should Know
+## Why core types beat strings
 
-- `Container`: a filesystem, environment, execution, and publish pipeline.
-- `Directory`: a content-addressed tree.
-- `File`: a content-addressed file.
-- `Secret`: sensitive data passed without exposing plaintext.
-- `Service`: a long-running endpoint for other work to use.
-- `Changeset`: a proposed diff against a directory or workspace.
-- `Env`: a set of values and resources that can pass through workflows.
-- `LLM`: model interaction when enabled for a module.
+A string can name a directory, a credential, or a service endpoint, but the engine sees only text. A core type carries meaning the platform can act on:
 
-## Type Design Principles
+- **Content addressing.** A `Directory` or `File` is identified by its contents, so the engine caches on what the data *is*, not on a path that might point at different bytes between runs.
+- **Secrecy by construction.** A `Secret` is never rendered in traces, logs, or generated clients. A credential passed as a string has already leaked.
+- **Explicit boundaries.** A `Service` makes startup, ports, and dependencies part of the graph; a `localhost:5432` string makes them an assumption that only holds on one machine.
+- **Composability.** A returned core type can be run, published, mounted, or inspected by the next call. A returned string usually has to be parsed first.
+
+## Types every module author should know
+
+Each type below links to its [reference page](/extending/types) for the full field listing. The guidance here is about *design*: when to accept it, when to return it, and the mistake to avoid.
+
+### `Container`
+
+A filesystem, environment, execution, and publish pipeline in one value. See [`Container`](/extending/types/container).
+
+- **Accept** when a function operates on an already-built image — to test it, scan it, or add a layer.
+- **Return** when the caller may still run, publish, export, or inspect the result. This is usually richer than returning a digest or a "build succeeded" string.
+- **Avoid** returning a container only to immediately throw it away by exporting inside the function; let the caller decide what happens next.
+
+### `Directory`
+
+A content-addressed tree. See [`Directory`](/extending/types/directory).
+
+- **Accept** for source code, build context, or any input the function reads from the host or another module.
+- **Return** for build outputs, generated trees, or filtered subsets of an input.
+- **Avoid** taking a host path string instead. A `Directory` lets the engine track content and cache accurately, and makes the host boundary explicit.
+
+### `File`
+
+A content-addressed file. See [`File`](/extending/types/file).
+
+- **Accept** for a single artifact: a config file, a binary, a certificate.
+- **Return** when the meaningful output is one file — a compiled binary, a report, a lockfile.
+- **Avoid** returning file *contents* as a string when the caller actually wants the file; a `File` can be exported, mounted, or passed onward.
+
+### `Secret`
+
+Sensitive data passed without exposing plaintext. See [`Secret`](/extending/types/secret).
+
+- **Accept** for every credential: tokens, passwords, keys, registry logins.
+- **Return** rarely — a module usually consumes secrets rather than producing them.
+- **Avoid** accepting credentials as strings or reading them from "magic" environment variables. Once a credential is a string, it is in traces and shell history.
+
+### `Service`
+
+A long-running endpoint for other work to use. See [`Service`](/extending/types/service).
+
+- **Accept** when a function needs a live dependency — a database, a registry, an API to test against.
+- **Return** when the module's job is to stand up an endpoint other steps will bind to.
+- **Avoid** `host:port` strings. A `Service` makes startup order, ports, and lifecycle part of the graph.
+
+### `Changeset`
+
+A proposed diff against a directory or workspace. See [Changesets](/using-dagger/changesets).
+
+- **Accept** rarely; most modules produce changesets rather than consume them.
+- **Return** whenever a function edits source — codegen, formatting, dependency bumps. The change becomes reviewable and composable instead of a silent write.
+- **Avoid** mutating the caller's files directly. A `Changeset` keeps the module's effects explicit and auditable.
+
+### `Env`
+
+A set of typed inputs and outputs that can pass through a workflow, including to an LLM. See [`Env`](/extending/types/env).
+
+- **Accept** when a function bundles several typed resources to hand to a model or a downstream step.
+- **Return** when a function assembles that context for a caller to extend.
+- **Avoid** flattening structured context into a single string blob.
+
+### `LLM`
+
+Model interaction when enabled for a module. See [`LLM`](/extending/types/llm).
+
+- **Accept** when a function delegates a step to a model.
+- **Return** when the module exposes a configured model interaction for the caller to drive.
+- **Avoid** hard-coding prompts and model choices the caller cannot see or override.
+
+## Type design principles
 
 | Prefer | Because |
 | --- | --- |
-| `Directory` or `File` over string paths. | Dagger can track content, cache accurately, and make host boundaries explicit. |
-| `Secret` over string credentials. | Callers and traces can preserve secrecy by construction. |
+| `Directory` or `File` over string paths. | The engine can track content, cache accurately, and make host boundaries explicit. |
+| `Secret` over string credentials. | Callers and traces preserve secrecy by construction. |
 | `Service` over localhost strings. | Startup, ports, and dependencies become part of the graph. |
 | `Changeset` over silent writes. | Generated changes become reviewable and composable. |
 | Structured objects over JSON strings. | Callers can discover fields and compose results without parsing. |
 
-## Reference Boundary
+## Reference boundary
 
-This chapter should teach how module authors think with core types. It should not duplicate every field from the [Types Reference](../types/index.mdx).
-
-TODO: Link each core type to its reference page and add author-focused guidance for when to accept it, when to return it, and common mistakes.
+This chapter teaches how module authors should think with core types. It does not list every field — that is the job of the [Types Reference](/extending/types). When deciding *whether* to accept or return a type, stay here; when deciding *which field* to call, go there.

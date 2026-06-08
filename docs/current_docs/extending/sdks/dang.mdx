@@ -6,71 +6,66 @@ description: "Develop Dagger modules with Dang, Dagger's native DSL — no codeg
 
 # Dang SDK
 
-Dang is Dagger's native DSL. It maps directly to the Dagger API: **what you write is what runs.** There is no codegen, no generated client files to commit, no build step, and no language-runtime overhead. A Dang module is, in the common case, a single `main.dang` file plus a `dagger.json`.
+Dang is Dagger's native DSL. It maps directly to the Dagger API: **what you write is what runs.** There is no codegen, no generated client files to commit, no build step, and no language-runtime overhead. A Dang module is, in the common case, a single `main.dang` file plus a `dagger-module.toml`.
 
-Use Dang when your module is primarily *orchestrating* the Dagger API — containers, files, directories, services, secrets, and other modules. If you need to reach for external libraries (a Go parser, a Python ML library, a Node.js bundler API), use the [Go](./go.mdx), [Python](./python.mdx), or [TypeScript](./typescript.mdx) SDK instead, which give you a full host language alongside the Dagger client.
+Use Dang when your module is primarily *orchestrating* the Dagger API — containers, files, directories, services, secrets, and other modules. If you need to reach for external libraries (a Go parser, a Python ML library, a Node.js bundler API), use the [Go](/extending/sdks/go), [Python](/extending/sdks/python), or [TypeScript](/extending/sdks/typescript) SDK instead, which give you a full host language alongside the Dagger client.
 
 Before diving in, it helps to understand the platform concepts every SDK shares:
 
-- [Module Developer Guide](../index.mdx) — what a module is and how it fits into a workspace.
-- [Type System](../type-system/index.mdx) — the types your functions accept and return.
-- [Checks](../how-dagger-works/checks.mdx) — how Dagger discovers and runs validation.
-- [Changesets](../../using-dagger/changesets.mdx) — how Dagger represents file diffs (used by `init` and generators).
+- [Module Developer Guide](/extending) — what a module is and how it fits into a workspace.
+- [Type System](/extending/type-system) — the types your functions accept and return.
+- [Checks](/extending/how-dagger-works/checks) — how Dagger discovers and runs validation.
+- [Changesets](/using-dagger/changesets) — how Dagger represents file diffs (used by `init` and generators).
 
 ## A note on tooling: Dang is delivered as a Dagger module
 
-There is no `dagger init` or `dagger develop` subcommand in the CLI. Module development tooling for Dang lives in a Dagger module of its own: **`github.com/dagger/dang-sdk`**. You scaffold and maintain Dang modules by *calling functions on that module*:
+Module development tooling for Dang lives in a Dagger module of its own — **`github.com/dagger/dang-sdk`**, not the `dagger` CLI. You install it into your workspace once, then scaffold and maintain Dang modules by *calling functions on that module by name*:
 
 ```shell
-dagger -m github.com/dagger/dang-sdk call <function> [args]
+# Install the Dang SDK into your workspace (once)
+dagger mod install github.com/dagger/dang-sdk
+
+# Then call its functions
+dagger call dang-sdk <function> [args]
 ```
 
 The functions you will use most often:
 
 | Function | Purpose |
 |---|---|
-| `init` | Create a new Dang SDK module. Returns a [changeset](../../using-dagger/changesets.mdx) of files to write. |
+| `init` | Create a new Dang SDK module. Returns a [changeset](/using-dagger/changesets) of files to write. |
 | `mod` | Resolve the Dang module at or above a workspace path; entry point for `deps`, `generate`, `engine`, `path`. |
 | `mod deps` | Add, remove, list, and update module dependencies. |
 | `mod generate` | (Re)generate module metadata. For Dang this is effectively a no-op — there are no client bindings to regenerate. |
 | `mod engine` | Read or set the required Dagger engine version. |
 | `generate-all` | Generate every discovered Dang SDK module in the workspace. |
-| `modules` | List every Dagger module in the workspace whose `sdk.source` is `"dang"`. |
+| `modules` | List every Dagger module in the workspace whose `runtime.source` is `"dang"`. |
 | `templates` | List the init templates this version of `dang-sdk` ships. |
 
 ## Create a module
 
 :::note
-Run `init` from inside a Git repository — that's where the new module is created.
+Run these commands from inside a Git repository — that's where the new module is created.
 :::
 
-`init` creates a new Dang module and returns a **changeset** — the same review-then-apply flow used by tools like `dagger call prettier write`. By default the module is created under the nearest `.dagger` directory visible from your current workspace path:
+Install the Dang SDK into your workspace, then create a new module with its `init` function. By default the module is created under the nearest `.dagger` directory visible from your current workspace path:
 
 ```
 <nearest .dagger>/modules/<name>
 ```
 
-Preview the changeset first by listing the paths it would add:
-
 ```shell
-dagger -m github.com/dagger/dang-sdk call init --name my-ci added-paths
-# .dagger/modules/my-ci/dagger.json
-# .dagger/modules/my-ci/main.dang
-# .dagger/modules/
-# .dagger/modules/my-ci/
+dagger mod install github.com/dagger/dang-sdk
+dagger call dang-sdk init --name my-ci
 ```
 
-Review and apply the changeset to write the files into your workspace (pass `-y` / `--auto-apply` to skip the prompt):
-
-```shell
-dagger -m github.com/dagger/dang-sdk call init --name my-ci
-```
+`init` returns a [changeset](/using-dagger/changesets) — which Dagger shows you to review before the files are written into your workspace.
 
 `init` arguments:
 
 - `--name` (required) — the module name.
 - `--path` — choose a different module location. The target path must not already contain a Dagger module.
-- `--template` — materialize files from `templates/<template>`. The empty default uses the minimal built-in template. Run `dagger -m github.com/dagger/dang-sdk call templates` to see what is available.
+- `--template` — materialize files from `templates/<template>`. The empty default uses the minimal built-in template. Run `dagger call dang-sdk templates` to see what is available.
 - `--ignore-generated` — configure generation to add generated SDK paths to `.gitignore` instead of checking them in. (For Dang there are no generated client files, so this has little practical effect — see [Generate / module metadata](#generate--module-metadata).)
 
 ### Generated layout
@@ -79,26 +74,24 @@ dagger -m github.com/dagger/dang-sdk call init --name my-ci
 .dagger/
   modules/
     my-ci/
-      dagger.json
+      dagger-module.toml
       main.dang
 ```
 
-The generated `dagger.json`:
+The generated `dagger-module.toml`:
 
-```json title=".dagger/modules/my-ci/dagger.json"
-{
-  "name": "my-ci",
-  "engineVersion": "latest",
-  "sdk": {
-    "source": "dang"
-  },
-  "codegen": {
-    "automaticGitignore": false
-  }
-}
+```toml title=".dagger/modules/my-ci/dagger-module.toml"
+name = "my-ci"
+engineVersion = "v1.0.0-beta.3"
+
+[runtime]
+source = "dang"
+
+[codegen]
+automaticGitignore = false
 ```
 
-`sdk.source` set to `"dang"` is what tells Dagger to run this module with the Dang runtime. `engineVersion` declares the engine version the module requires (see [Engine version](#engine-version)).
+`runtime.source` set to `"dang"` is what tells Dagger to run this module with the Dang runtime. `engineVersion` declares the engine version the module requires (see [Engine version](#engine-version)).
 
 The generated `main.dang` entry point:
 
@@ -106,7 +99,7 @@ The generated `main.dang` entry point:
 """
 Starter Dang module generated by dang-sdk.
 """
-type My_ci {
+type MyCi {
   """
   Return a greeting from this Dang module.
   """
@@ -174,7 +167,7 @@ container
   .withExec(["npm", "install"])
 ```
 
-Every method returns a new immutable value — nothing mutates in place. Dagger caches each step by its inputs, so re-running skips unchanged work automatically (the same model as Docker layer caching, applied to the entire API). See [How Dagger works](../how-dagger-works/checks.mdx) and the [type system](../type-system/index.mdx) for the underlying model.
+Every method returns a new immutable value — nothing mutates in place. Dagger caches each step by its inputs, so re-running skips unchanged work automatically (the same model as Docker layer caching, applied to the entire API). See [How Dagger works](/extending/how-dagger-works/checks) and the [type system](/extending/type-system) for the underlying model.
 
 ## Define objects and functions
 
@@ -296,24 +289,45 @@ dagger call scan --ref=alpine:latest --severity=FOO
 
 ### Interfaces
 
-Interfaces let your module accept arbitrary types from other modules without being coupled to them:
+Interfaces let your module accept arbitrary types from other modules without being coupled to them. Declare an `interface` at the **top level** of the file (not nested inside a `type`), listing the `pub` members you need — member signatures only, with no body:
 
 ```dang
-type Deployer {
-  """
-  Any object that can produce a container image.
-  """
-  interface Buildable {
-    build: Container!
-  }
+"""
+Any object that can produce a container image.
+"""
+interface Buildable {
+  pub build: Container!
+}
 
+type Deployer {
   pub deploy(app: Buildable!, registry: String!): String! {
     app.build.publish(registry + "/app:latest")
   }
 }
 ```
 
-Any module with a `build` function returning `Container!` satisfies `Buildable` — no explicit "implements" declaration is needed on the other module. Dagger detects compatible types automatically.
+A concrete type declares that it satisfies an interface with `implements`:
+
+```dang
+type WebApp implements Buildable {
+  pub source: Directory!
+
+  new(ws: Workspace!) {
+    self.source = ws.directory("/")
+    self
+  }
+
+  pub build: Container! {
+    container
+      .from("node:20")
+      .withDirectory("/app", source)
+      .withWorkdir("/app")
+      .withExec(["npm", "run", "build"])
+  }
+}
+```
+
+Across module boundaries Dagger also matches **structurally**: any object from another module whose functions match `Buildable` can be passed where the interface is expected, even without an explicit `implements` declaration.
 
 ## Arguments and return values
 
@@ -378,7 +392,7 @@ type MyCi {
 # CLI override
 dagger call --node-version=18 build
 
-# Or in .dagger/config.toml
+# Or in dagger.toml
 # [modules.my-ci.settings]
 # nodeVersion = "18"
 # registry = "docker.io"
@@ -503,38 +517,42 @@ A Dang module can depend on other Dagger modules (written in any SDK). Manage de
 Add a dependency:
 
 ```shell
-dagger -m github.com/dagger/dang-sdk call mod deps add \
+dagger call dang-sdk mod deps add \
   --source github.com/shykes/daggerverse/hello@v0.3.0 \
   --name hello
 ```
 
-`mod deps add` returns a changeset that updates `dagger.json`. Arguments are `--source` (required) and an optional `--name`.
+`mod deps add` returns a changeset that updates `dagger-module.toml`. Arguments are `--source` (required) and an optional `--name`.
 
 List, update, and remove:
 
 ```shell
 # List dependencies
-dagger -m github.com/dagger/dang-sdk call mod deps list
+dagger call dang-sdk mod deps list
 
 # Update one dependency by name (or all remote deps if omitted) — returns a changeset
-dagger -m github.com/dagger/dang-sdk call mod deps update --name hello
+dagger call dang-sdk mod deps update --name hello
 
 # Remove one by name — returns a changeset
-dagger -m github.com/dagger/dang-sdk call mod deps remove --name hello
+dagger call dang-sdk mod deps remove --name hello
 ```
 
-The result is reflected in `dagger.json`:
+The result is reflected in `dagger-module.toml`:
 
-```json title="dagger.json"
-{
-  "name": "my-ci",
-  "engineVersion": "latest",
-  "sdk": { "source": "dang" },
-  "dependencies": [
-    { "name": "hello", "source": "github.com/shykes/daggerverse/hello@v0.3.0" },
-    { "name": "local", "source": "./path/to/module" }
-  ]
-}
+```toml title="dagger-module.toml"
+name = "my-ci"
+engineVersion = "v1.0.0-beta.3"
+
+[runtime]
+source = "dang"
+
+[[dependencies]]
+name = "hello"
+source = "github.com/shykes/daggerverse/hello@v0.3.0"
+
+[[dependencies]]
+name = "local"
+source = "./path/to/module"
 ```
 
 A dependency reference follows `[proto://]host/repo[/subpath][@version]`:
@@ -580,42 +598,42 @@ The `mod generate` operation still exists for consistency and for module discove
 
 ```shell
 # Regenerate a single module (no client bindings for Dang; changeset is typically empty)
-dagger -m github.com/dagger/dang-sdk call mod generate
+dagger call dang-sdk mod generate
 
 # Regenerate every Dang module discovered in the workspace
-dagger -m github.com/dagger/dang-sdk call generate-all
+dagger call dang-sdk generate-all
 
-# List every module in the workspace whose sdk.source is "dang"
-dagger -m github.com/dagger/dang-sdk call modules
+# List every module in the workspace whose runtime.source is "dang"
+dagger call dang-sdk modules
 ```
 
 You can suppress generation for a module (or subtree) by placing the configured skip-marker file at or above the module root. The marker filename is reported by:
 
 ```shell
-dagger -m github.com/dagger/dang-sdk call skip-generate-filename
+dagger call dang-sdk skip-generate-filename
 ```
 
 Because there is nothing to commit from generation, the `--ignore-generated` flag on `init` has no meaningful effect for Dang — there are no generated SDK paths to add to `.gitignore`.
 
 ## Engine version
 
-Each module declares the Dagger engine version it requires via `engineVersion` in `dagger.json`. Manage it with `mod engine`:
+Each module declares the Dagger engine version it requires via `engineVersion` in `dagger-module.toml`. Manage it with `mod engine`:
 
 ```shell
 # Read the required version (without the leading "v")
-dagger -m github.com/dagger/dang-sdk call mod engine required
+dagger call dang-sdk mod engine required
 
 # Pin to a specific version — returns a changeset
-dagger -m github.com/dagger/dang-sdk call mod engine require --version v1.0.0-beta.2
+dagger call dang-sdk mod engine require --version v1.0.0-beta.3
 
 # Pin to the current engine
-dagger -m github.com/dagger/dang-sdk call mod engine require-current
+dagger call dang-sdk mod engine require-current
 
-# Track the latest stable release
-dagger -m github.com/dagger/dang-sdk call mod engine require-latest
+# Pin to the latest stable release
+dagger call dang-sdk mod engine require-latest
 ```
 
-Pinning a concrete version makes a module reproducible across machines and CI; `latest` keeps it floating.
+`engineVersion` must be a concrete version (e.g. `v1.0.0-beta.3`). `require-latest` resolves the latest stable release to its concrete version and pins that, keeping the module reproducible across machines and CI.
 
 ## Workspace inputs
 
@@ -711,7 +729,7 @@ Dang has three first-class function types, each marked with a directive and run 
 
 ### Checks
 
-A check validates something without requiring arguments. Mark it with `@check` and `dagger check` will discover and run it. A check passes if it completes without error and fails if any `withExec` returns a non-zero exit code. See [Checks](../how-dagger-works/checks.mdx).
+A check validates something without requiring arguments. Mark it with `@check` and `dagger check` will discover and run it. A check passes if it completes without error and fails if any `withExec` returns a non-zero exit code. See [Checks](/extending/how-dagger-works/checks).
 
 ```dang
 type MyCi {
@@ -751,7 +769,7 @@ pub lint: Container @check {
 
 ### Generators
 
-A generator produces a [changeset](../../using-dagger/changesets.mdx) — a diff between the current source and freshly generated output. Mark it with `@generate`. `.changes(source)` computes the diff against the original source; `dagger generate` runs all generators and presents the unified changeset for review:
+A generator produces a [changeset](/using-dagger/changesets) — a diff between the current source and freshly generated output. Mark it with `@generate`. `.changes(source)` computes the diff against the original source; `dagger generate` runs all generators and presents the unified changeset for review:
 
 ```dang
 pub generateProto: Changeset @generate {
@@ -836,11 +854,11 @@ jobs:
 
 ## Packaging and release
 
-A Dang module is just source — `main.dang` and `dagger.json` (and any extra `.dang` files). There is nothing to build or generate before publishing.
+A Dang module is just source — `main.dang` and `dagger-module.toml` (and any extra `.dang` files). There is nothing to build or generate before publishing.
 
 To release:
 
-1. Commit `dagger.json`, `main.dang`, and any other source files.
+1. Commit `dagger-module.toml`, `main.dang`, and any other source files.
 2. Pin a concrete engine version with `mod engine require` for reproducibility.
 3. Tag the repository (`git tag v0.1.0 && git push --tags`).
 
@@ -859,12 +877,12 @@ They can then call its functions (`dagger call ...`) and run its checks (`dagger
 - **"The target path must not already contain a Dagger module"** — choose a different `--path`, or remove the existing module first.
 - **Parser/type errors** — Dang surfaces these directly from the module source. Check non-null markers (`!`), that the last expression in a function body matches the declared return type, and that custom-type/enum names referenced actually exist.
 - **A `Void` function must end in `null`** — `Void` functions typically `.sync` a container (or service) to force evaluation, then return `null` as the final expression.
-- **Changeset not written** — most maintenance functions (`init`, `mod deps *`, `mod engine require*`, `mod generate`, `generate-all`) return a [changeset](../../using-dagger/changesets.mdx) and do nothing to disk until you apply it. Add `-y` / `--auto-apply`, or inspect it first with `added-paths` / `modified-paths` / `as-patch`.
+- **Changeset not written** — most maintenance functions (`init`, `mod deps *`, `mod engine require*`, `mod generate`, `generate-all`) return a [changeset](/using-dagger/changesets) and do nothing to disk until you review and apply it.
 - **Stale generation expectations** — Dang has no client codegen, so there are no generated bindings to "regenerate." If a tutorial tells you to commit generated SDK files, that step does not apply to Dang.
 
 ## Next steps
 
-- [Module Developer Guide](../index.mdx)
-- [Type System](../type-system/index.mdx)
-- [Checks](../how-dagger-works/checks.mdx)
-- [Changesets](../../using-dagger/changesets.mdx)
+- [Module Developer Guide](/extending)
+- [Type System](/extending/type-system)
+- [Checks](/extending/how-dagger-works/checks)
+- [Changesets](/using-dagger/changesets)

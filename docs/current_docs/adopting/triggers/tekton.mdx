@@ -9,7 +9,7 @@ description: "Learn how to integrate Dagger with Tekton for CI/CD pipelines."
 Dagger runs `dagger check` as a Tekton Task, so the same checks you run locally run on every PipelineRun — while keeping all of your existing Tekton infrastructure.
 
 :::tip
-For checks with no pipeline YAML at all, enable [Cloud Checks](./index.mdx) with `dagger ws autocheck on`. The Tekton Task below is the hybrid-mode alternative for when you want to drive Dagger from your existing Tekton setup.
+For checks with no pipeline YAML at all, enable [Cloud Checks](/adopting/triggers) with `dagger ws autocheck on`. The Tekton Task below is the hybrid-mode alternative for when you want to drive Dagger from your existing Tekton setup.
 :::
 
 ## How it works
@@ -22,7 +22,7 @@ To trigger a pipeline run, you can use the Tekton CLI (`tkn`), or you can config
 
 - A running Kubernetes cluster [configured for use with Dagger](../scaling/kubernetes.mdx) and with a pre-configured `kubectl` profile
 - Tekton and the Tekton CLI [installed](https://tekton.dev/docs/getting-started/) in the cluster
-- A repository with a Dagger workspace (`.dagger/config.toml`) — see [Workspace Setup](../workspace-setup.mdx)
+- A repository with a Dagger workspace (`dagger.toml`) — see [Workspace Setup](/adopting/workspace-setup)
 
 ## Example
 

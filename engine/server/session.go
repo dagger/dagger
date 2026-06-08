@@ -209,6 +209,8 @@ type daggerClient struct {
 	modulesMu           sync.Mutex
 	modulesLoaded       bool
 	modulesErr          error
+	singleQueryMu       sync.Mutex
+	singleQueryServed   bool
 
 	// NOTE: do not use this field directly as it may not be open
 	// after the client has shutdown; use TelemetryDB() instead
@@ -923,10 +925,22 @@ func (srv *Server) getOrInitClient(
 				return nil, nil, fmt.Errorf("client %q already exists with different host service proxy client %q", clientID, client.hostServiceProxyClientID)
 			}
 		}
+		if opts.SingleQuery {
+			client.clientMetadata.SingleQuery = true
+		}
+		if opts.SuppressCompatWorkspaceWarning {
+			client.clientMetadata.SuppressCompatWorkspaceWarning = true
+		}
 		if client.clientMetadata.Workspace == nil && !client.workspaceLoaded {
 			if workspaceRef, ok := workspaceRefFromClientMetadata(opts.ClientMetadata); ok {
 				ref := workspaceRef
 				client.clientMetadata.Workspace = &ref
+			}
+		}
+		if client.clientMetadata.WorkspaceEnv == nil && !client.workspaceLoaded {
+			if workspaceEnv, ok := workspaceEnvFromClientMetadata(opts.ClientMetadata); ok {
+				env := workspaceEnv
+				client.clientMetadata.WorkspaceEnv = &env
 			}
 		}
 		// ExtraModules may arrive on a later request (e.g. /init) after the
@@ -1069,14 +1083,19 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 
 	var extraModules []engine.ExtraModule
 	var loadWorkspaceModules bool
+	var singleQuery bool
 	var eagerRuntime bool
+	var suppressCompatWorkspaceWarning bool
 	var workspaceRef *string
+	var workspaceEnv *string
 	if md, _ := engine.ClientMetadataFromHTTPHeaders(h); md != nil {
 		clientMetadata.ClientVersion = md.ClientVersion
 		clientMetadata.AllowedLLMModules = slices.Clone(md.AllowedLLMModules)
 		extraModules = md.ExtraModules
 		loadWorkspaceModules = md.LoadWorkspaceModules
+		singleQuery = md.SingleQuery
 		eagerRuntime = md.EagerRuntime
+		suppressCompatWorkspaceWarning = md.SuppressCompatWorkspaceWarning
 		if declaredWorkspace, ok := workspaceRefFromClientMetadata(md); ok {
 			ref := declaredWorkspace
 			workspaceRef = &ref
@@ -1084,12 +1103,19 @@ func nestedClientMetadataForRequest(h http.Header, nestedClientMetadata *engine.
 		if md.LockMode != "" {
 			clientMetadata.LockMode = md.LockMode
 		}
+		if declaredEnv, ok := workspaceEnvFromClientMetadata(md); ok {
+			env := declaredEnv
+			workspaceEnv = &env
+		}
 	}
 
 	clientMetadata.ExtraModules = extraModules
 	clientMetadata.LoadWorkspaceModules = loadWorkspaceModules
+	clientMetadata.SingleQuery = singleQuery
 	clientMetadata.EagerRuntime = eagerRuntime
+	clientMetadata.SuppressCompatWorkspaceWarning = suppressCompatWorkspaceWarning
 	clientMetadata.Workspace = workspaceRef
+	clientMetadata.WorkspaceEnv = workspaceEnv
 	return &clientMetadata
 }
 
@@ -1344,12 +1370,24 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 		}
 	}
 
+	if err := client.claimSingleQueryRequest(); err != nil {
+		return gqlErr(err, http.StatusBadRequest)
+	}
+
+	peekRootFieldsOK, peekRootFields, err := peekSingleQueryRootFields(r, client.clientMetadata)
+	if err != nil {
+		return gqlErr(fmt.Errorf("peeking single-query root fields: %w", err), http.StatusBadRequest)
+	}
+
 	// Load workspace modules and extra modules (e.g. from -m flag). These are
 	// deferred from initializeDaggerClient because they need the client's
 	// session attachables, which only become available after the session
 	// attachables handshake completes (after init locks are released).
 	if err := srv.ensureWorkspaceLoaded(ctx, client); err != nil {
 		return gqlErr(fmt.Errorf("loading workspace: %w", err), http.StatusInternalServerError)
+	}
+	if peekRootFieldsOK {
+		client.narrowPendingWorkspaceModulesForSingleQuery(peekRootFields)
 	}
 	if err := srv.ensureModulesLoaded(ctx, client); err != nil {
 		return gqlErr(fmt.Errorf("loading modules: %w", err), http.StatusInternalServerError)
@@ -1372,6 +1410,27 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 
 	gqlSrv.ServeHTTP(w, r)
 	return nil
+}
+
+func (client *daggerClient) claimSingleQueryRequest() error {
+	if client.clientMetadata == nil || !client.clientMetadata.SingleQuery {
+		return nil
+	}
+
+	client.singleQueryMu.Lock()
+	defer client.singleQueryMu.Unlock()
+	if client.singleQueryServed {
+		return errors.New("client declared single_query but sent multiple GraphQL requests")
+	}
+	client.singleQueryServed = true
+	return nil
+}
+
+func peekSingleQueryRootFields(r *http.Request, clientMD *engine.ClientMetadata) (bool, []string, error) {
+	if clientMD == nil || !clientMD.SingleQuery || !clientMD.LoadWorkspaceModules || clientMD.SkipWorkspaceModules {
+		return false, nil, nil
+	}
+	return dagql.PeekRootFields(r)
 }
 
 func (srv *Server) serveInit(w http.ResponseWriter, _ *http.Request, client *daggerClient) (rerr error) {
@@ -1451,8 +1510,8 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 }
 
 // Stitch in the given module to the list being served to the current client.
-// When includeDependencies is true, dependency modules and toolchains are
-// also served with their constructors on the Query root.
+// When includeDependencies is true, dependency modules are also served with
+// their constructors on the Query root.
 // When entrypoint is true, the module's main-object methods are promoted
 // onto the Query root.
 func (srv *Server) ServeModule(ctx context.Context, mod dagql.ObjectResult[*core.Module], includeDependencies bool, entrypoint bool) error {
@@ -1618,7 +1677,7 @@ func (srv *Server) SetCurrentWorkspaceLookup(
 
 func (srv *Server) currentWorkspaceLockBinding(client *daggerClient) (*core.Workspace, workspaceLockKey, string, bool, error) {
 	ws := client.workspace
-	if ws == nil || ws.HostPath() == "" {
+	if ws == nil || ws.HostPath() == "" || ws.LockFile == "" {
 		return nil, workspaceLockKey{}, "", false, nil
 	}
 	lockPath, err := workspaceLockPath(ws)
@@ -1697,7 +1756,10 @@ func workspaceLockPath(ws *core.Workspace) (string, error) {
 	if ws.HostPath() == "" {
 		return "", fmt.Errorf("workspace has no host path")
 	}
-	return filepath.Join(ws.HostPath(), ws.Path, workspace.LockDirName, workspace.LockFileName), nil
+	if ws.LockFile == "" {
+		return "", fmt.Errorf("workspace lockfile is not selected")
+	}
+	return filepath.Join(ws.HostPath(), ws.LockFile), nil
 }
 
 func readWorkspaceLockState(ctx context.Context, bk interface {
@@ -1711,9 +1773,20 @@ func readWorkspaceLockState(ctx context.Context, bk interface {
 	data, err := bk.ReadCallerHostFile(ctx, lockPath)
 	if err != nil {
 		if isWorkspaceLockNotFound(err) {
-			return workspace.NewLock(), nil
+			legacyPath := legacyWorkspaceLockPath(ws)
+			if legacyPath == "" || legacyPath == lockPath {
+				return workspace.NewLock(), nil
+			}
+			data, err = bk.ReadCallerHostFile(ctx, legacyPath)
+			if err != nil {
+				if isWorkspaceLockNotFound(err) {
+					return workspace.NewLock(), nil
+				}
+				return nil, fmt.Errorf("reading legacy lock: %w", err)
+			}
+		} else {
+			return nil, fmt.Errorf("reading lock: %w", err)
 		}
-		return nil, fmt.Errorf("reading lock: %w", err)
 	}
 
 	lock, err := workspace.ParseLock(data)
@@ -1721,6 +1794,13 @@ func readWorkspaceLockState(ctx context.Context, bk interface {
 		return nil, fmt.Errorf("parsing lock: %w", err)
 	}
 	return lock, nil
+}
+
+func legacyWorkspaceLockPath(ws *core.Workspace) string {
+	if ws == nil || ws.HostPath() == "" || ws.LockFile == "" {
+		return ""
+	}
+	return filepath.Join(ws.HostPath(), workspace.LegacyLockFilePathForCanonical(ws.LockFile))
 }
 
 func isWorkspaceLockNotFound(err error) bool {

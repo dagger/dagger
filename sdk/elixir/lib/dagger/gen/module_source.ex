@@ -40,6 +40,9 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
+  @deprecated """
+  Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.
+  """
   @doc """
   The blueprint referenced by the module source.
   """
@@ -100,7 +103,7 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
-  Whether an existing dagger.json for the module was found.
+  Whether an existing module config file was found.
   """
   @spec config_exists(t()) :: {:ok, boolean()} | {:error, term()}
   def config_exists(%__MODULE__{} = module_source) do
@@ -299,7 +302,7 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
-  The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).
+  The original name of the module as read from the module config file (or set for the first time with the withName API).
   """
   @spec module_original_name(t()) :: {:ok, String.t()} | {:error, term()}
   def module_original_name(%__MODULE__{} = module_source) do
@@ -357,7 +360,7 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc """
-  The path, relative to the context directory, that contains the module's dagger.json.
+  The path, relative to the context directory, that contains the module config.
   """
   @spec source_root_subpath(t()) :: {:ok, String.t()} | {:error, term()}
   def source_root_subpath(%__MODULE__{} = module_source) do
@@ -399,6 +402,9 @@ defmodule Dagger.ModuleSource do
     end
   end
 
+  @deprecated """
+  Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.
+  """
   @doc """
   The toolchains referenced by the module source.
   """
@@ -447,6 +453,9 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
+  @deprecated """
+  Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
+  """
   @doc """
   Set a blueprint for the module source.
   """
@@ -585,6 +594,9 @@ defmodule Dagger.ModuleSource do
     }
   end
 
+  @deprecated """
+  Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
+  """
   @doc """
   Add toolchains to the module source.
   """
@@ -601,6 +613,9 @@ defmodule Dagger.ModuleSource do
     }
   end
 
+  @deprecated """
+  Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
+  """
   @doc """
   Update the blueprint module to the latest version.
   """
@@ -631,6 +646,9 @@ defmodule Dagger.ModuleSource do
     }
   end
 
+  @deprecated """
+  Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
+  """
   @doc """
   Update one or more toolchains.
   """
@@ -663,6 +681,9 @@ defmodule Dagger.ModuleSource do
     }
   end
 
+  @deprecated """
+  Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
+  """
   @doc """
   Remove the current blueprint from the module source.
   """
@@ -724,6 +745,9 @@ defmodule Dagger.ModuleSource do
     }
   end
 
+  @deprecated """
+  Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
+  """
   @doc """
   Remove the provided toolchains from the module source.
   """

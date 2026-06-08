@@ -1,12 +1,18 @@
 package core
 
+// These tests cover `dagger call ... up` and `dagger shell ... up` for module
+// functions that return containers or services. They verify endpoint discovery,
+// port mapping, and serving module results for local development.
+//
+// See also:
+// - module_terminal_test.go: terminal attachment during module calls.
+
 import (
 	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"regexp"
 	"testing"
 	"time"
@@ -43,70 +49,70 @@ func (ModuleSuite) TestDaggerUp(ctx context.Context, t *testctx.T) {
 			name:         "container native",
 			endpointFn:   daggerUpAndGetEndpoint,
 			trafficPort:  "23100",
-			daggerArgs:   []string{"call", "ctr", "up"},
+			daggerArgs:   []string{"-m", ".", "call", "ctr", "up"},
 			cachedModDir: modDirForAsContainerTests,
 		},
 		{
 			name:         "container random",
 			endpointFn:   daggerUpAndGetEndpointFromLogs,
 			trafficPort:  "",
-			daggerArgs:   []string{"call", "ctr", "up", "--random"},
+			daggerArgs:   []string{"-m", ".", "call", "ctr", "up", "--random"},
 			cachedModDir: modDirForAsContainerTests,
 		},
 		{
 			name:         "container port map",
 			endpointFn:   daggerUpAndGetEndpoint,
 			trafficPort:  "23101",
-			daggerArgs:   []string{"call", "ctr", "up", "--ports", fmt.Sprintf("23101:%s", defaultTrafficPortForContainerTests)},
+			daggerArgs:   []string{"-m", ".", "call", "ctr", "up", "--ports", fmt.Sprintf("23101:%s", defaultTrafficPortForContainerTests)},
 			cachedModDir: modDirForAsContainerTests,
 		},
 		{
 			name:         "container port map with same front+back",
 			endpointFn:   daggerUpAndGetEndpoint,
 			trafficPort:  "23102",
-			daggerArgs:   []string{"call", "--port", "23102", "ctr", "up", "--ports", "23102:23102"},
+			daggerArgs:   []string{"-m", ".", "call", "--port", "23102", "ctr", "up", "--ports", "23102:23102"},
 			cachedModDir: modDirForAsContainerTests,
 		},
 		{
 			name:         "container port map with explicit args",
 			endpointFn:   daggerUpAndGetEndpoint,
 			trafficPort:  "23103",
-			daggerArgs:   []string{"call", "ctr", "without-exposed-port", "--port", defaultTrafficPortForContainerTests, "with-exposed-port", "--port", "23103", "up", "--args", "python,-m,http.server,23103", "--ports", "23103:23103"},
+			daggerArgs:   []string{"-m", ".", "call", "ctr", "without-exposed-port", "--port", defaultTrafficPortForContainerTests, "with-exposed-port", "--port", "23103", "up", "--args", "python,-m,http.server,23103", "--ports", "23103:23103"},
 			cachedModDir: modDirForAsContainerTests,
 		},
 		{
 			name:         "shell container port map",
 			endpointFn:   daggerUpAndGetEndpoint,
 			trafficPort:  "23104",
-			daggerArgs:   []string{"shell", "-c", fmt.Sprintf("ctr | up --ports 23104:%s", defaultTrafficPortForContainerTests)},
+			daggerArgs:   []string{"-m", ".", "shell", "-c", fmt.Sprintf("ctr | up --ports 23104:%s", defaultTrafficPortForContainerTests)},
 			cachedModDir: modDirForAsContainerTests,
 		},
 		{
 			name:         "service native",
 			endpointFn:   daggerUpAndGetEndpoint,
 			trafficPort:  "23200",
-			daggerArgs:   []string{"call", "ctr", "as-service", "up"},
+			daggerArgs:   []string{"-m", ".", "call", "ctr", "as-service", "up"},
 			cachedModDir: modDirForAsServiceTests,
 		},
 		{
 			name:         "service random",
 			endpointFn:   daggerUpAndGetEndpointFromLogs,
 			trafficPort:  "",
-			daggerArgs:   []string{"call", "ctr", "as-service", "up", "--random"},
+			daggerArgs:   []string{"-m", ".", "call", "ctr", "as-service", "up", "--random"},
 			cachedModDir: modDirForAsServiceTests,
 		},
 		{
 			name:         "service port map",
 			endpointFn:   daggerUpAndGetEndpoint,
 			trafficPort:  "23201",
-			daggerArgs:   []string{"call", "ctr", "as-service", "up", "--ports", fmt.Sprintf("23201:%s", defaultTrafficPortForServiceTests)},
+			daggerArgs:   []string{"-m", ".", "call", "ctr", "as-service", "up", "--ports", fmt.Sprintf("23201:%s", defaultTrafficPortForServiceTests)},
 			cachedModDir: modDirForAsServiceTests,
 		},
 		{
 			name:         "service port map with same front+back",
 			endpointFn:   daggerUpAndGetEndpoint,
 			trafficPort:  "23202",
-			daggerArgs:   []string{"call", "--port", "23202", "ctr", "as-service", "up", "--ports", "23202:23202"},
+			daggerArgs:   []string{"-m", ".", "call", "--port", "23202", "ctr", "as-service", "up", "--ports", "23202:23202"},
 			cachedModDir: modDirForAsServiceTests,
 		},
 	}
@@ -147,7 +153,7 @@ func (ModuleSuite) TestDaggerUp(ctx context.Context, t *testctx.T) {
 // In theory we can use daggerUpAndGetEndpointFromLogs to get port,
 // but we want to test this with a pre-configured traffic port.
 func daggerUpAndGetEndpoint(ctx context.Context, t *testctx.T, modDir string, daggerArgs []string, trafficPort string) string {
-	cmd := hostDaggerCommand(ctx, t, modDir, daggerArgs...)
+	cmd := hostDaggerCommandRaw(ctx, t, modDir, daggerArgs...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -163,7 +169,7 @@ var tunnelPortRegex = regexp.MustCompile(`tunnel started port=(\d+)`)
 // Starts container and return the random port used for the tunnel
 func daggerUpAndGetEndpointFromLogs(ctx context.Context, t *testctx.T, modDir string, daggerArgs []string, trafficPort string) string {
 	var logs safeBuffer
-	cmd := hostDaggerCommand(ctx, t, modDir, daggerArgs...)
+	cmd := hostDaggerCommandRaw(ctx, t, modDir, daggerArgs...)
 	cmd.Env = append(cmd.Env, "NO_COLOR=true", "DAGGER_PROGRESS=logs")
 	cmd.Stdin = nil
 	cmd.Stdout = &logs
@@ -174,7 +180,6 @@ func daggerUpAndGetEndpointFromLogs(ctx context.Context, t *testctx.T, modDir st
 
 	var port string
 	require.Eventually(t, func() bool {
-		tunnelPortRegex.MatchString(logs.String())
 		matches := tunnelPortRegex.FindStringSubmatch(logs.String())
 		if len(matches) == 0 {
 			return false
@@ -189,44 +194,11 @@ func daggerUpAndGetEndpointFromLogs(ctx context.Context, t *testctx.T, modDir st
 
 // create a dagger module for DaggerUp test
 func daggerUpInitModFn(ctx context.Context, t *testctx.T, defaultPort string) string {
-	mainGoTmpl := `package main
-	import (
-		"strconv"
-		"dagger/test/internal/dagger"
-	)
-
-	func New(
-		// +optional
-		// +default=%s
-		port int,
-	) *Test {
-		return &Test{
-			Ctr: dag.Container().
-				From("python").
-				WithMountedDirectory(
-					"/srv/www",
-					dag.Directory().WithNewFile("index.html", "hey there"),
-				).
-				WithWorkdir("/srv/www").
-				WithExposedPort(port).
-				WithDefaultArgs([]string{"python", "-m", "http.server", strconv.Itoa(port)}),
-		}
-	}
-
-	type Test struct {
-		Ctr *dagger.Container
-	}
-	`
-
 	modDir := t.TempDir()
-	err := os.WriteFile(filepath.Join(modDir, "main.go"), fmt.Appendf(nil, mainGoTmpl, defaultPort), 0o644)
-	require.NoError(t, err)
-
-	_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
-	require.NoError(t, err)
+	copyTestdataFixture(ctx, t, modDir, "modules", "go", "module-up-"+defaultPort)
 
 	// cache the module load itself so there's less to wait for below
-	_, err = hostDaggerExec(ctx, t, modDir, "functions")
+	_, err := hostDaggerExecRaw(ctx, t, modDir, "-m", ".", "functions")
 	require.NoError(t, err)
 
 	return modDir

@@ -6,43 +6,28 @@ description: "Check shell scripts with ShellCheck."
 
 # ShellCheck
 
+The ShellCheck module finds shell scripts in your workspace and checks them with ShellCheck, catching quoting, portability, and safety issues in CI and Dagger Cloud. Reach for it when scripts are part of the project and should be treated like code, not as untested glue — deployment scripts, local dev scripts, or CI helpers all benefit.
+
 Official module: [dagger/shellcheck](https://github.com/dagger/shellcheck)
 
-Install with `dagger mod install github.com/dagger/shellcheck`.
-
-## What It Is
-
-The ShellCheck module finds shell scripts and checks them with ShellCheck.
-
-Use it when scripts are part of the project and should be treated like code, not as untested glue.
-
-## Use It For
-
-- Check shell scripts in CI and Dagger Cloud.
-- Catch quoting, portability, and safety issues.
-- Exclude known files when a workspace needs a narrow check.
-
-## Main Workflows
-
-- `check`: run ShellCheck on discovered shell scripts.
-- `scripts`: see which `.sh` files the module finds.
-
-## How to Use It
-
-Install the module, then run its check:
+## Add it to your workspace
 
 ```bash
 dagger mod install github.com/dagger/shellcheck
+```
 
+## Run the check
+
+```bash
 dagger check                  # run every check in the workspace
 dagger check shellcheck:check # run ShellCheck on discovered shell scripts
 ```
 
 `check` finds every `.sh` file in the workspace and runs ShellCheck on each one, so a script must use the `.sh` extension to be discovered. Use `scripts` to see exactly which files the module found.
 
-## Settings
+## Configure it
 
-List the current settings and their values with `dagger settings shellcheck`. The `exclude` setting is list-valued, so set it in `.dagger/config.toml` under `[modules.shellcheck.settings]`.
+List the current settings and their values with `dagger settings shellcheck`. The `exclude` setting is list-valued, so set it in `dagger.toml` under `[modules.shellcheck.settings]`:
 
 - **`exclude`** (default: none): a list of script paths to skip. Use it for vendored or generated scripts the repo does not own.
 
@@ -53,10 +38,6 @@ exclude = ["vendor/", "third_party/"]
 
 Keep the exclude list narrow so new scripts are checked automatically.
 
-## Workspace Fit
+## Working with other modules
 
 This module is small and high value. It is a good default check for repos that contain deployment scripts, local dev scripts, or CI helper scripts.
-
-## Source
-
-Source repo: [github.com/dagger/shellcheck](https://github.com/dagger/shellcheck)

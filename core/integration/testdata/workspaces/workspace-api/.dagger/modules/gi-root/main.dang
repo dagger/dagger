@@ -1,0 +1,12 @@
+type GiRoot {
+  pub source: Directory!
+
+  new(source: Workspace!) {
+    self.source = source.directory(".", gitignore: true)
+    self
+  }
+
+  pub ls: [String!] {
+    source.entries
+  }
+}

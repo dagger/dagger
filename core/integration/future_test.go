@@ -1,5 +1,9 @@
 package core
 
+// This file is reserved for tests gated by a future Dagger version. Those tests
+// run clients and engines with `_EXPERIMENTAL_DAGGER_VERSION` set so upcoming
+// behavior can be covered before the release becomes current.
+
 import (
 	"context"
 	_ "embed"

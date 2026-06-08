@@ -57,6 +57,7 @@ require (
 	github.com/containernetworking/cni v1.3.0
 	github.com/containernetworking/plugins v1.9.0
 	github.com/coreos/go-systemd/v22 v22.7.0
+	github.com/creachadair/tomledit v0.0.29
 	github.com/creack/pty v1.1.24
 	github.com/dagger/otel-go v1.43.1-0.20260515012101-af7cd0684887
 	github.com/dagger/querybuilder v0.0.0-20260402040506-574a5e81cb59
@@ -104,7 +105,6 @@ require (
 	github.com/mackerelio/go-osstat v0.2.7
 	github.com/mark3labs/mcp-go v0.47.0
 	github.com/mattn/go-isatty v0.0.20
-	github.com/mitchellh/go-spdx v0.1.0
 	github.com/mitchellh/hashstructure/v2 v2.0.2
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/moby/docker-image-spec v1.3.1
@@ -121,6 +121,7 @@ require (
 	github.com/morikuni/aec v1.1.0
 	github.com/muesli/reflow v0.3.0
 	github.com/muesli/termenv v0.16.0
+	github.com/neongreen/mono/lib/toml v0.0.0-20251026210731-4c1679aeef5c
 	github.com/openai/openai-go v1.12.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
@@ -318,6 +319,7 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/opencontainers/cgroups v0.0.6 // indirect
+	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/petermattis/goid v0.0.0-20240813172612-4fcff4a6cae7 // indirect
 	github.com/pjbgf/sha1cd v0.3.2 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect

@@ -9,7 +9,7 @@ description: "Learn how to run your Dagger checks in GitHub Actions."
 Dagger provides a GitHub Action that runs `dagger check` in any GitHub Actions workflow, so the same checks you run locally run on every push — without rewriting your pipeline.
 
 :::tip
-For checks with no workflow YAML at all, enable [Cloud Checks](./index.mdx) with `dagger ws autocheck on`. The GitHub Action below is the hybrid-mode alternative for when you want to drive Dagger from your existing GitHub Actions setup.
+For checks with no workflow YAML at all, enable [Cloud Checks](/adopting/triggers) with `dagger ws autocheck on`. The GitHub Action below is the hybrid-mode alternative for when you want to drive Dagger from your existing GitHub Actions setup.
 :::
 
 ## How it works
@@ -22,7 +22,7 @@ For checks with no workflow YAML at all, enable [Cloud Checks](./index.mdx) with
 
 ## Prerequisites
 
-- A GitHub repository with a Dagger workspace (`.dagger/config.toml`) — see [Workspace Setup](../workspace-setup.mdx).
+- A GitHub repository with a Dagger workspace (`dagger.toml`) — see [Workspace Setup](/adopting/workspace-setup).
 
 ## Example
 
@@ -49,7 +49,7 @@ The `check` input takes the same patterns as the CLI, so you can scope it — fo
 
 ## Dagger Cloud
 
-To send traces to [Dagger Cloud](../observability.mdx) and offload execution to a managed Dagger Engine, add your Cloud token:
+To send traces to [Dagger Cloud](/adopting/observability) and offload execution to a managed Dagger Engine, add your Cloud token:
 
 1. In Dagger Cloud, open the settings page (cogwheel icon) → **Tokens** and copy a token (URL pattern: `https://dagger.cloud/{Your Org Name}/settings?tab=Tokens`).
 2. In your GitHub repository, go to **Settings > Secrets and variables > Actions**, click **New repository secret**, name it `DAGGER_CLOUD_TOKEN`, and paste the token.

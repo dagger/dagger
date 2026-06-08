@@ -10,7 +10,7 @@ In this quickstart, you'll fork an example project, add automated checks, and op
 
 ## Requirements
 
-- [Dagger CLI installed](./installation.mdx)
+- [Dagger CLI installed](/getting-started/installation)
 - [Git](https://git-scm.com/downloads) and a container runtime ([Docker](https://docs.docker.com/engine/install/), Podman, or similar)
 - A [GitHub](https://github.com) account
 - Optional: [GitHub CLI](https://cli.github.com/) for the copy-paste fork and pull request commands
@@ -54,7 +54,7 @@ dagger mod install github.com/dagger/vitest
 dagger mod install github.com/dagger/prettier
 ```
 
-This creates a `.dagger/config.toml` configuration file and adds three modules — a linter, a test runner, and a code formatter.
+This creates a `dagger.toml` configuration file and adds three modules: a linter, a test runner, and a code formatter.
 
 ## Run checks
 
@@ -72,7 +72,7 @@ Let Prettier rewrite the files for you:
 dagger call prettier write
 ```
 
-This returns a [changeset](../using-dagger/changesets.mdx) — the reformatted files — and applies it to your working tree. Run the checks again:
+This returns a [changeset](/using-dagger/changesets) — the reformatted files — and applies it to your working tree. Run the checks again:
 
 ```shell
 dagger check
@@ -130,4 +130,4 @@ dagger ws activity
 
 ## Next steps
 
-Now do it on your own project — see [Workspace Setup](../adopting/workspace-setup.mdx).
+Now do it on your own project — see [Workspace Setup](/adopting/workspace-setup).

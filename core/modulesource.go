@@ -31,6 +31,22 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
+type quietCLIError struct {
+	message string
+}
+
+func (e quietCLIError) Error() string {
+	return e.message
+}
+
+func (e quietCLIError) Extensions() map[string]any {
+	return map[string]any{
+		"_quiet":    true,
+		"_message":  e.message,
+		"_exitCode": 1,
+	}
+}
+
 type ModuleSourceKind string
 
 var ModuleSourceKindEnum = dagql.NewEnum[ModuleSourceKind]()
@@ -138,47 +154,52 @@ func (sdk *SDKConfig) ExperimentalFeatureEnabled(feature ModuleSourceExperimenta
 }
 
 type ModuleSource struct {
-	ConfigExists                  bool   `field:"true" name:"configExists" doc:"Whether an existing dagger.json for the module was found."`
+	ConfigExists                  bool `field:"true" name:"configExists" doc:"Whether an existing module config file was found."`
+	ConfigFilename                string
 	ModuleName                    string `field:"true" name:"moduleName" doc:"The name of the module, including any setting via the withName API."`
-	ModuleOriginalName            string `field:"true" name:"moduleOriginalName" doc:"The original name of the module as read from the module's dagger.json (or set for the first time with the withName API)."`
+	ModuleOriginalName            string `field:"true" name:"moduleOriginalName" doc:"The original name of the module as read from the module config file (or set for the first time with the withName API)."`
 	EngineVersion                 string `field:"true" name:"engineVersion" doc:"The engine version of the module."`
 	CodegenConfig                 *modules.ModuleCodegenConfig
 	ModuleConfigUserFields        modules.ModuleConfigUserFields
 	DisableDefaultFunctionCaching bool
 
-	// The SDK configuration of the module as read from the module's dagger.json or set by withSDK
+	// The SDK configuration of the module as read from the module config or set by withSDK
 	SDK *SDKConfig `field:"true" name:"sdk" doc:"The SDK configuration of the module."`
 	// The implementation of the SDK with codegen and related operations. Reloaded when SDK changes.
 	SDKImpl SDK
 
-	// IncludePaths are the includes as read from the module's dagger.json
+	// IncludePaths are the includes as read from the module config.
 	IncludePaths []string
 	// RebasedIncludePaths are the include paths with the source root subpath prepended
 	RebasedIncludePaths []string
 
-	// ConfigDependencies are the dependencies as read from the module's dagger.json
+	// ConfigDependencies are the dependencies as read from the module config
 	// NOTE: this is currently not updated by withDependencies and related APIs, only Dependencies will be updated
 	ConfigDependencies []*modules.ModuleConfigDependency
 
 	// Dependencies are the loaded sources for the module's dependencies
 	Dependencies dagql.ObjectResultArray[*ModuleSource] `field:"true" name:"dependencies" doc:"The dependencies of the module source."`
 
-	// Blueprint (from `dagger init --blueprint`)
+	// Blueprint (from legacy dagger.json)
 	ConfigBlueprint *modules.ModuleConfigDependency
-	Blueprint       dagql.ObjectResult[*ModuleSource] `field:"true" name:"blueprint" doc:"The blueprint referenced by the module source."`
+	Blueprint       dagql.ObjectResult[*ModuleSource] `field:"true" name:"blueprint" doc:"The blueprint referenced by the module source." deprecated:"Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead."`
 
-	// Toolchains (from `dagger toolchain install`)
+	// Toolchains (from legacy dagger.json)
 	ConfigToolchains []*modules.ModuleConfigDependency
-	Toolchains       dagql.ObjectResultArray[*ModuleSource] `field:"true" name:"toolchains" doc:"The toolchains referenced by the module source."`
+	Toolchains       dagql.ObjectResultArray[*ModuleSource] `field:"true" name:"toolchains" doc:"The toolchains referenced by the module source." deprecated:"Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead."`
 
 	UserDefaults *EnvFile `field:"true" name:"userDefaults" doc:"User-defined defaults read from local .env files"`
 	// Clients are the clients generated for the module.
 	ConfigClients []*modules.ModuleConfigClient `field:"true" name:"configClients" doc:"The clients generated for the module."`
 
-	// SourceRootSubpath is the relative path from the context dir to the dir containing the module's dagger.json
-	SourceRootSubpath string `field:"true" name:"sourceRootSubpath" doc:"The path, relative to the context directory, that contains the module's dagger.json."`
+	// SourceRootSubpath is the relative path from the context dir to the dir containing the module config.
+	SourceRootSubpath string `field:"true" name:"sourceRootSubpath" doc:"The path, relative to the context directory, that contains the module config."`
 	// SourceSubpath is the relative path from the context dir to the dir containing the module's source code
 	SourceSubpath string
+
+	// OriginalRefString is the exact ref string used to instantiate this module
+	// source. Internal only, used for user-facing follow-up commands.
+	OriginalRefString string
 
 	OriginalSubpath string
 
@@ -394,6 +415,7 @@ type persistedModuleSourceSDKCapabilities struct {
 
 type persistedModuleSourcePayload struct {
 	ConfigExists                    bool                                  `json:"configExists,omitempty"`
+	ConfigFilename                  string                                `json:"configFilename,omitempty"`
 	ModuleName                      string                                `json:"moduleName,omitempty"`
 	ModuleOriginalName              string                                `json:"moduleOriginalName,omitempty"`
 	EngineVersion                   string                                `json:"engineVersion,omitempty"`
@@ -596,6 +618,7 @@ func (src *ModuleSource) EncodePersistedObject(ctx context.Context, cache dagql.
 	}
 	payload := persistedModuleSourcePayload{
 		ConfigExists:                  src.ConfigExists,
+		ConfigFilename:                src.ConfigFilename,
 		ModuleName:                    src.ModuleName,
 		ModuleOriginalName:            src.ModuleOriginalName,
 		EngineVersion:                 src.EngineVersion,
@@ -732,6 +755,7 @@ func (*ModuleSource) DecodePersistedObject(ctx context.Context, dag *dagql.Serve
 	}
 	src := &ModuleSource{
 		ConfigExists:                  persisted.ConfigExists,
+		ConfigFilename:                persisted.ConfigFilename,
 		ModuleName:                    persisted.ModuleName,
 		ModuleOriginalName:            persisted.ModuleOriginalName,
 		EngineVersion:                 persisted.EngineVersion,
@@ -813,18 +837,6 @@ func (src *ModuleSource) AsString() string {
 	}
 }
 
-func GitRefString(cloneRef, sourceRootSubpath, version string) string {
-	refPath := cloneRef
-	subPath := filepath.Join("/", sourceRootSubpath)
-	if subPath != "/" {
-		refPath += subPath
-	}
-	if version != "" {
-		refPath += "@" + version
-	}
-	return refPath
-}
-
 func (src *ModuleSource) Pin() string {
 	switch src.Kind {
 	case ModuleSourceKindLocal:
@@ -853,6 +865,72 @@ func (src *ModuleSource) SetRelatedModules(typ ModuleRelationType, modules []dag
 	} else {
 		src.Toolchains = modules
 	}
+}
+
+// LegacyWorkspaceFieldNames returns the legacy workspace-only dagger.json fields
+// currently stored on this module source.
+func (src *ModuleSource) LegacyWorkspaceFieldNames() []string {
+	var fields []string
+	if src != nil && src.ConfigBlueprint != nil {
+		fields = append(fields, "blueprint")
+	}
+	if src != nil && len(src.ConfigToolchains) > 0 {
+		fields = append(fields, "toolchains")
+	}
+	return fields
+}
+
+// UsesLegacyWorkspaceFields reports whether this module source still carries
+// legacy workspace-only dagger.json fields.
+func (src *ModuleSource) UsesLegacyWorkspaceFields() bool {
+	return len(src.LegacyWorkspaceFieldNames()) > 0
+}
+
+// StripLegacyWorkspaceFields clones the module source and removes any legacy
+// workspace-only dagger.json fields from the clone.
+func (src *ModuleSource) StripLegacyWorkspaceFields() *ModuleSource {
+	if src == nil {
+		return nil
+	}
+	stripped := src.Clone()
+	stripped.ConfigBlueprint = nil
+	stripped.Blueprint = dagql.ObjectResult[*ModuleSource]{}
+	stripped.ConfigToolchains = nil
+	stripped.Toolchains = nil
+	return stripped
+}
+
+// DirectLegacyWorkspaceLoadError returns the direct-load error for a module
+// source that still carries legacy workspace-only dagger.json fields.
+func (src *ModuleSource) DirectLegacyWorkspaceLoadError() error {
+	ref := src.OriginalRefString
+	if ref == "" {
+		ref = src.AsString()
+	}
+	return quietCLIError{
+		message: fmt.Sprintf("This module's dagger.json uses toolchains or blueprints, which have moved to workspaces.\n\nTry: dagger -W %s\n\nTo learn more: https://docs.dagger.io/reference/upgrade-to-workspaces", ref),
+	}
+}
+
+// NestedLegacyWorkspaceLoadError returns the workspace-load error for a module
+// source that still points at a legacy workspace rather than a plain module.
+func (src *ModuleSource) NestedLegacyWorkspaceLoadError() error {
+	fields := strings.Join(src.LegacyWorkspaceFieldNames(), ", ")
+	ref := src.AsString()
+	if src.Kind == ModuleSourceKindLocal {
+		return fmt.Errorf(
+			"workspace module source %q points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields %q\n\nrun `dagger migrate` in %q, then update this source to point at one of the migrated modules under %q",
+			ref,
+			fields,
+			ref,
+			filepath.Join(ref, ".dagger", "modules"),
+		)
+	}
+	return fmt.Errorf(
+		"workspace module source %q points at a legacy workspace, not a plain module: its dagger.json uses legacy workspace fields %q\n\nuse a migrated ref that points at one of its real modules. If you control that repo, migrate it first",
+		ref,
+		fields,
+	)
 }
 
 func (src *ModuleSource) innerEnvFile(ctx context.Context) (*EnvFile, string, error) {
@@ -1281,8 +1359,8 @@ func (src *ModuleSource) loadContextFromSource(
 		}
 		localSourceCtx := engine.ContextWithClientMetadata(ctx, localSourceClientMetadata)
 
-		// Retrieve the absolute path to the context directory (.git or dagger.json)
-		// and the module root directory (dagger.json)
+		// Retrieve the absolute path to the context directory (.git or module config)
+		// and the module root directory (module config)
 		ctxPath := src.Local.ContextDirectoryPath
 		modPath := filepath.Join(ctxPath, src.SourceRootSubpath)
 
@@ -1330,7 +1408,7 @@ func (src *ModuleSource) loadContextFromSource(
 			path = filepath.Join("/", src.SourceRootSubpath, path)
 		}
 
-		// Use the Git context directory without dagger.json includes applied.
+		// Use the Git context directory without module config includes applied.
 		ctxDir := src.Git.UnfilteredContextDir
 
 		if path != "/" {
@@ -1453,8 +1531,8 @@ func (src *ModuleSource) LoadContextFile(
 		}
 		localSourceCtx := engine.ContextWithClientMetadata(ctx, localSourceClientMetadata)
 
-		// Retrieve the absolute path to the context directory (.git or dagger.json)
-		// and the module root directory (dagger.json)
+		// Retrieve the absolute path to the context directory (.git or module config)
+		// and the module root directory (module config)
 		ctxPath := src.Local.ContextDirectoryPath
 		modPath := filepath.Join(ctxPath, src.SourceRootSubpath)
 
@@ -1502,7 +1580,7 @@ func (src *ModuleSource) LoadContextFile(
 			path = filepath.Join("/", src.SourceRootSubpath, path)
 		}
 
-		// Use the Git context directory without dagger.json includes applied.
+		// Use the Git context directory without module config includes applied.
 		ctxDir := src.Git.UnfilteredContextDir
 		if err := dag.Select(ctx, ctxDir, &inst,
 			dagql.Selector{
@@ -1649,38 +1727,31 @@ func (src GitModuleSource) Clone() *GitModuleSource {
 	return &src
 }
 
-type SchemeType int
-
-const (
-	NoScheme SchemeType = iota
-	SchemeHTTP
-	SchemeHTTPS
-	SchemeSSH
-	SchemeSCPLike
-)
-
-func (s SchemeType) Prefix() string {
-	switch s {
-	case SchemeHTTP:
-		return "http://"
-	case SchemeHTTPS:
-		return "https://"
-	case SchemeSSH:
-		return "ssh://"
-	default:
-		return ""
-	}
-}
-
-func (s SchemeType) IsSSH() bool {
-	return s == SchemeSSH
-}
-
 type DirModuleSource struct {
 	// the original dir that AsModuleSource was called on
 	OriginalContextDir dagql.ObjectResult[*Directory]
 	// the original source root subpath provided to AsModuleSource
 	OriginalSourceRootSubpath string
+}
+
+type moduleDependencyResolutionKey struct{}
+
+// WithModuleDependencyResolution marks ctx as resolving a module's declared
+// dependency or SDK source. This is trusted resolution performed on the user's
+// behalf (the refs come from a module's dagger.json), so the git resolver is
+// permitted to fall back to the session's originating client credentials when
+// the immediate caller is a nested client that doesn't hold them (e.g. a codegen
+// exec during `dagger generate`). It does NOT loosen credential handling for
+// arbitrary git access from module runtime code.
+func WithModuleDependencyResolution(ctx context.Context) context.Context {
+	return context.WithValue(ctx, moduleDependencyResolutionKey{}, true)
+}
+
+// IsModuleDependencyResolution reports whether ctx is resolving a module's
+// declared dependency or SDK source. See WithModuleDependencyResolution.
+func IsModuleDependencyResolution(ctx context.Context) bool {
+	allowed, _ := ctx.Value(moduleDependencyResolutionKey{}).(bool)
+	return allowed
 }
 
 // ResolveDepToSource given a parent module source, load a dependency of it
@@ -1823,6 +1894,16 @@ func ResolveDepToSource(
 
 	case ModuleSourceKindGit:
 		// parent=*, dep=git
+		// Mark this as trusted module dependency/SDK resolution. A module's git
+		// dependencies and git-based SDK are declared in its (trusted) dagger.json
+		// and resolved on the user's behalf, but codegen can run under a nested
+		// client (e.g. a git-less codegen exec during `dagger generate`) that does
+		// not itself hold the user's git credentials. This marker lets the git
+		// resolver fall back to the originating client's credentials (see
+		// core/schema/git.go); without it the resolver only authenticates for the
+		// main client and private dependency resolution fails.
+		ctx = WithModuleDependencyResolution(ctx)
+
 		selectors := []dagql.Selector{{
 			Field: "moduleSource",
 			Args: []dagql.NamedInput{

@@ -6,34 +6,46 @@ description: "Design function signatures that are explicit, discoverable, and co
 
 # Function Arguments and Return Values
 
-A function signature is the caller's contract. It says what the caller must provide, what the module promises back, and how the result can be used next.
+A function signature is the caller's contract. It says what the caller must provide, what the module promises back, and how the result can be used next. The earlier chapters covered the pieces — [core types](./core-types.mdx), [scalars and defaults](./scalars-lists-nullability-defaults.mdx), [enums](./enums-and-validation.mdx). This chapter is about putting them together into a signature worth calling.
 
 ## Arguments
 
-Every argument should answer one question for the caller.
+Every argument should answer one question for the caller. If a single argument decides several unrelated things, split it.
 
 Prefer:
 
 - Specific Dagger types over strings.
 - Defaults for project conventions.
-- Settings for workspace-level defaults.
-- Secrets for credentials.
-- Directories and files for content.
+- [Settings](/reference/configuration/workspace) for workspace-level defaults shared across a team.
+- `Secret` for credentials.
+- `Directory` and `File` for content.
 - Enums when only a known set of values is valid.
 
 Avoid:
 
 - Options bags that hide many concepts in one string.
-- Magic environment variables.
+- Magic environment variables the signature does not mention.
 - Host path assumptions.
 - Arguments whose meaning changes by context.
 
-## Return Values
+## Return values
 
-Return the richest useful value. A function that builds an image may return a `Container`; a function that generates code may return a `Changeset`; a function that computes metadata may return a structured object.
+Return the richest useful value. A function that builds an image returns a `Container`; a function that generates code returns a `Changeset`; a function that computes metadata returns a structured object.
 
-Avoid flattening everything into a string just because it is easy to print.
+Avoid flattening everything into a string just because it is easy to print. A string is the end of the line; a typed value lets the caller — or another module, client, check, or agent — keep going. If the caller has to parse the return value to do anything with it, the function returned too little structure.
 
-## Writing Assignment
+## Side effects belong in the signature
 
-TODO: Add an API review checklist for arguments and return values: requiredness, defaults, type precision, cache scope, secret handling, side effects, and composability.
+A function's effects on the outside world should be visible in its types, not buried in its implementation. A function that edits files returns a `Changeset` rather than writing silently. A function that needs a live dependency takes a `Service`. A function that publishes or exports says so in its name and returns evidence of what it did. A caller should be able to predict a function's effects from its signature alone.
+
+## API review checklist
+
+Before publishing a function, review its arguments and return value against these questions:
+
+- **Requiredness.** Is every required argument truly necessary? Is every optional one optional for a clear reason?
+- **Defaults.** Does each default encode common intent, stay narrowly scoped, and appear in help text? Do team-wide values come from settings instead of being hard-coded?
+- **Type precision.** Is each argument the most precise type available — `Directory` not path, `Secret` not string, enum not open string, `int` not stringified number?
+- **Cache scope.** Do the inputs let the engine cache accurately? Does anything depend on host or environment state the engine cannot see?
+- **Secret handling.** Are all credentials `Secret`? Is anything sensitive at risk of landing in logs, traces, or error messages?
+- **Side effects.** Are external effects — writes, publishes, network calls — explicit in the types and the name, not hidden?
+- **Composability.** Does the return value let the caller continue the workflow, or does it dead-end in a string the caller must parse?

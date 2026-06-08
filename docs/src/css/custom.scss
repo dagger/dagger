@@ -168,7 +168,7 @@ aside[class*="docSidebarContainer"] {
       100vh - var(--ifm-navbar-height)
     ) !important; /* Account for navbar height */
     min-height: calc(100vh - var(--ifm-navbar-height)) !important;
-    // position: sticky !important;
+    position: sticky !important;
     top: var(--ifm-navbar-height) !important; /* Start below navbar */
     // overflow: auto !important; /* Prevent container from scrolling */
   }

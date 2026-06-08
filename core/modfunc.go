@@ -235,14 +235,13 @@ func (fn *ModuleFunction) mergeUserDefaultsTypeDefs(ctx context.Context) error {
 		if !ok {
 			continue
 		}
-		uiFnName := fn.mod.Self().Name()
-		if fn.metadata.Name != "" {
-			uiFnName += "." + fn.metadata.Name
-		}
-		console(ctx, "user default: %s(%s=%s)", uiFnName, argName, argDefault.DisplayInput())
 		currentArgRes, ok := updatedMetadata.LookupArg(argName)
 		if !ok {
-			return fmt.Errorf("find function arg %q on %s", argName, uiFnName)
+			fnName := fn.mod.Self().Name()
+			if fn.metadata.Name != "" {
+				fnName += "." + fn.metadata.Name
+			}
+			return fmt.Errorf("find function arg %q on %s", argName, fnName)
 		}
 		updatedArgRes := currentArgRes
 		argTypeDef := currentArgRes.Self().TypeDef.Self()
@@ -289,14 +288,6 @@ func (fn *ModuleFunction) mergeUserDefaultsTypeDefs(ctx context.Context) error {
 	}
 	fn.metadata = updatedMetadata
 	return nil
-}
-
-// Print text directly on the user's console
-func console(ctx context.Context, msg string, args ...any) {
-	if !strings.HasSuffix(msg, "\n") {
-		msg += "\n"
-	}
-	fmt.Fprintf(telemetry.GlobalWriter(ctx, ""), msg, args...)
 }
 
 // A user-defined default value that is a primitive type (not an object)
@@ -1046,12 +1037,6 @@ func (fn *ModuleFunction) loadContextualArg(
 		return nil, fmt.Errorf("argument %q is not a contextual argument", arg.OriginalName)
 	}
 
-	// Legacy compat: resolve +defaultPath from workspace root for migrated
-	// blueprints/toolchains instead of the module's own source directory.
-	if fn.mod.Self().LegacyDefaultPath {
-		return fn.loadLegacyDefaultPathArg(ctx, dag, arg)
-	}
-
 	switch arg.TypeDef.Self().AsObject.Value.Self().Name {
 	case "Directory":
 		dir, err := fn.mod.Self().ContextSource.Value.Self().LoadContextDir(ctx, dag, arg.DefaultPath, CopyFilter{
@@ -1179,81 +1164,10 @@ func (fn *ModuleFunction) loadContextualGitArg(
 	}
 }
 
-// loadLegacyDefaultPathArg resolves a +defaultPath argument from the workspace
-// root instead of the module's own source directory. Used for legacy
-// blueprints/toolchains that relied on ContextSource injection.
-func (fn *ModuleFunction) loadLegacyDefaultPathArg(
-	ctx context.Context,
-	dag *dagql.Server,
-	arg *FunctionArg,
-) (dagql.IDType, error) {
-	switch arg.TypeDef.Self().AsObject.Value.Self().Name {
-	case "Directory":
-		var dir dagql.ObjectResult[*Directory]
-		err := dag.Select(ctx, dag.Root(), &dir,
-			dagql.Selector{
-				Field: "currentWorkspace",
-				Args: []dagql.NamedInput{
-					{Name: "skipMigrationCheck", Value: dagql.Boolean(true)},
-				},
-			},
-			dagql.Selector{
-				Field: "directory",
-				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(arg.DefaultPath)},
-					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Ignore...))},
-				},
-			},
-		)
-		if err != nil {
-			return nil, fmt.Errorf("load legacy default directory %q: %w", arg.DefaultPath, err)
-		}
-		dirID, err := dir.ID()
-		if err != nil {
-			return nil, fmt.Errorf("get legacy default directory ID %q: %w", arg.DefaultPath, err)
-		}
-		return dagql.NewID[*Directory](dirID), nil
-
-	case "File":
-		var f dagql.ObjectResult[*File]
-		err := dag.Select(ctx, dag.Root(), &f,
-			dagql.Selector{
-				Field: "currentWorkspace",
-				Args: []dagql.NamedInput{
-					{Name: "skipMigrationCheck", Value: dagql.Boolean(true)},
-				},
-			},
-			dagql.Selector{
-				Field: "file",
-				Args: []dagql.NamedInput{
-					{Name: "path", Value: dagql.String(arg.DefaultPath)},
-				},
-			},
-		)
-		if err != nil {
-			return nil, fmt.Errorf("load legacy default file %q: %w", arg.DefaultPath, err)
-		}
-		fileID, err := f.ID()
-		if err != nil {
-			return nil, fmt.Errorf("get legacy default file ID %q: %w", arg.DefaultPath, err)
-		}
-		return dagql.NewID[*File](fileID), nil
-
-	case "GitRepository", "GitRef":
-		// For git, the legacy path can use the same logic as the regular
-		// contextual path — git doesn't resolve relative to the module
-		// source directory.
-		return fn.loadContextualGitArg(ctx, dag, arg)
-
-	default:
-		return nil, fmt.Errorf("legacy-default-path does not support type %q; port to workspace API",
-			arg.TypeDef.Self().AsObject.Value.Self().Name)
-	}
-}
-
 // loadWorkspaceArg loads a workspace argument by resolving it through the
 // currentWorkspace query. The workspace is automatically injected into
-// module functions that declare a Workspace parameter.
+// module functions that declare a Workspace parameter when the ambient context
+// has a current workspace.
 func (fn *ModuleFunction) loadWorkspaceArg(
 	ctx context.Context,
 	dag *dagql.Server,

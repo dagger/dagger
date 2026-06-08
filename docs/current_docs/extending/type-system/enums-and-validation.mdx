@@ -6,11 +6,11 @@ description: "Represent closed choices and validate open-ended values."
 
 # Enums and Validation
 
-Use enums when callers must choose from a known set of values. Use validation and clear errors when values are open-ended but constrained.
+Use enums when callers must choose from a known set of values. Use validation and clear errors when values are open-ended but constrained. Both move failure to the earliest possible moment — the call site — instead of letting a bad value travel deep into expensive work.
 
 ## Enums
 
-Enums are useful for:
+Enums are useful for closed sets of choices:
 
 - Environments.
 - Output formats.
@@ -19,20 +19,47 @@ Enums are useful for:
 - Package managers.
 - Runtime choices.
 
-Enums teach valid choices through help output and generated clients. They also let invalid values fail before expensive work starts.
+Enums teach valid choices through help output and generated clients, and let invalid values fail before any work starts. A `format` enum of `json | yaml | text` tells the caller the whole story; a `format` string tells them nothing and accepts `"jsonn"`.
+
+## Enum, string, or validated string?
+
+Not every constrained value should be an enum. Use this distinction:
+
+**Should be an enum** — the set of valid values is closed, known at design time, and changes only when the module changes:
+
+- A log level: `debug | info | warn | error`.
+- An output format: `json | yaml | text`.
+- A target environment the module actually supports: `dev | staging | prod`.
+
+Making these enums documents the choices, fails typos instantly, and lets generated clients offer completion.
+
+**Should stay a string** — the value is genuinely open-ended, and any constraint is incidental rather than fixed:
+
+- An image tag or version label.
+- A branch or commit name.
+- A free-form description or commit message.
+- A user-chosen resource name.
+
+Forcing these into an enum would mean editing the module every time a caller picks a new tag — the set was never closed to begin with.
+
+**Should be a validated string** — the value is open-ended but must satisfy a rule the type system cannot express:
+
+- A semantic version that must parse as `MAJOR.MINOR.PATCH`.
+- A name that must match a DNS or registry naming rule.
+- A port range, a CIDR block, a duration.
+
+Here the set of valid values is effectively infinite, so an enum cannot capture it, but an arbitrary string is too loose. Validate at the boundary and reject bad input with a precise error.
 
 ## Validation
 
-Validation should be early, specific, and written in caller language.
+Validation should be early, specific, and written in the caller's language.
 
 Good validation:
 
-- Names the invalid input.
-- States the accepted shape.
-- Does not start expensive work first.
-- Avoids leaking secrets.
-- Preserves useful lower-level context.
+- Names the invalid input and the value that failed.
+- States the accepted shape ("expected `MAJOR.MINOR.PATCH`, got `1.2`").
+- Runs before any expensive work starts, so a typo does not cost a build.
+- Avoids leaking secrets into the error message.
+- Preserves useful lower-level context instead of swallowing it.
 
-## Writing Assignment
-
-TODO: Add examples of values that should be enums, values that should stay strings, and values that need custom validation.
+A good error tells the caller *what* failed, *whose* problem it is — an input, a credential, the network, or the module — and *what to try next*. That turns a dead end into a fix.

@@ -2,9 +2,22 @@ package layercopy
 
 import (
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/containerd/containerd/v2/core/mount"
 )
+
+// cleanRel normalizes a path into a slash-relative form: it cleans the path
+// and strips a leading separator so it can be used as a map key shared between
+// the matcher, source, and destination implementations.
+func cleanRel(p string) string {
+	p = filepath.Clean(p)
+	if p == "." || p == string(filepath.Separator) {
+		return ""
+	}
+	return strings.TrimPrefix(p, string(filepath.Separator))
+}
 
 type Mount struct {
 	Root  string

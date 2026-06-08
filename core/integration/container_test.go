@@ -1,5 +1,12 @@
 package core
 
+// These tests cover the GraphQL Container object: image selection, execs,
+// filesystems, environment, mounts, exports, and other container operations.
+//
+// See also:
+// - services_test.go: service lifecycle around containers.
+// - platform_test.go: platform-aware container execution.
+
 import (
 	"bytes"
 	"context"
@@ -5858,23 +5865,10 @@ func (ContainerSuite) TestSaveInNested(ctx context.Context, t *testctx.T) {
 		WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-image://registry.dagger.io/engine:dev")
 
-	out, err := dockerc.WithWorkdir("/src/test").
-		WithExec([]string{"dagger", "init", "--sdk=go"}).
-		WithNewFile("main.go", `package main
-
-import "context"
-
-type Test struct{}
-
-func (m *Test) Try(ctx context.Context) error {
-	return dag.Container().
-		From("alpine").
-		WithExec([]string{"touch", "/foo"}).
-		ExportImage(ctx, "foobar:latest")
-}
-
-		`).
-		WithExec([]string{"dagger", "call", "try"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeFailure}).
+	out, err := dockerc.
+		With(withModuleFixture(t, c, "/src/test", "go/container-save-nested")).
+		WithWorkdir("/src/test").
+		WithExec([]string{"dagger", "call", "-m", ".", "try"}, dagger.ContainerWithExecOpts{Expect: dagger.ReturnTypeFailure}).
 		Stderr(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "client has no supported api for loading image")

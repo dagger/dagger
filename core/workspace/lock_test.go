@@ -1,11 +1,19 @@
 package workspace
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestCanonicalLockFilePath(t *testing.T) {
+	require.Equal(t, "dagger.lock", CanonicalLockFilePath(filepath.Join(".dagger", "lock")))
+	require.Equal(t, filepath.Join("app", "dagger.lock"), CanonicalLockFilePath(filepath.Join("app", ".dagger", "lock")))
+	require.Equal(t, filepath.Join("app", "dagger.lock"), CanonicalLockFilePath(filepath.Join("app", "dagger.lock")))
+	require.Equal(t, filepath.Join("app", "lock"), CanonicalLockFilePath(filepath.Join("app", "lock")))
+}
 
 func TestLookupSetGetDelete(t *testing.T) {
 	lock := NewLock()
@@ -26,22 +34,6 @@ func TestLookupSetGetDelete(t *testing.T) {
 	_, ok, err = lock.GetLookup("", "container.from", inputs)
 	require.NoError(t, err)
 	require.False(t, ok)
-}
-
-func TestModuleResolveSetGet(t *testing.T) {
-	lock := NewLock()
-	source := "github.com/dagger/dagger@main"
-
-	require.NoError(t, lock.SetModuleResolve(source, LookupResult{
-		Value:  "0123456789abcdef0123456789abcdef01234567",
-		Policy: PolicyFloat,
-	}))
-
-	result, ok, err := lock.GetModuleResolve(source)
-	require.NoError(t, err)
-	require.True(t, ok)
-	require.Equal(t, "0123456789abcdef0123456789abcdef01234567", result.Value)
-	require.Equal(t, PolicyFloat, result.Policy)
 }
 
 func TestLookupSetValidation(t *testing.T) {

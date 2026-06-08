@@ -1049,6 +1049,13 @@ export type DirectoryAsModuleSourceOpts = {
   sourceRootPath?: string
 }
 
+export type DirectoryAsWorkspaceOpts = {
+  /**
+   * Current working directory inside the workspace root. Defaults to the workspace root.
+   */
+  cwd?: string
+}
+
 export type DirectoryDockerBuildOpts = {
   /**
    * Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
@@ -1806,6 +1813,13 @@ export type GitRefTreeOpts = {
  */
 export type GitRefID = string & { __GitRefID: never }
 
+export type GitRepositoryAsWorkspaceOpts = {
+  /**
+   * Current working directory inside the workspace root. Defaults to the workspace root.
+   */
+  cwd?: string
+}
+
 export type GitRepositoryBranchesOpts = {
   /**
    * Glob patterns (e.g., "refs/tags/v*").
@@ -2421,7 +2435,7 @@ export type ClientModuleSourceOpts = {
   refPin?: string
 
   /**
-   * If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.
+   * If true, do not attempt to find a module config file in a parent directory of the provided path. Only relevant for local module sources.
    */
   disableFindUp?: boolean
 
@@ -2919,6 +2933,20 @@ export type WorkspaceChecksOpts = {
   onlyGenerate?: boolean
 }
 
+export type WorkspaceConfigReadOpts = {
+  /**
+   * Dotted key path (e.g. modules.greeter.source). Empty for full config.
+   */
+  key?: string
+}
+
+export type WorkspaceConfigWriteOpts = {
+  /**
+   * Write to the workspace config directory at the workspace cwd.
+   */
+  here?: boolean
+}
+
 export type WorkspaceDirectoryOpts = {
   /**
    * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
@@ -2936,9 +2964,23 @@ export type WorkspaceDirectoryOpts = {
   gitignore?: boolean
 }
 
+export type WorkspaceEnvCreateOpts = {
+  /**
+   * Write to the workspace config directory at the workspace cwd.
+   */
+  here?: boolean
+}
+
+export type WorkspaceEnvRemoveOpts = {
+  /**
+   * Write to the workspace config directory at the workspace cwd.
+   */
+  here?: boolean
+}
+
 export type WorkspaceFindUpOpts = {
   /**
-   * Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.
+   * Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root.
    */
   from?: string
 }
@@ -2950,6 +2992,63 @@ export type WorkspaceGeneratorsOpts = {
   include?: string[]
 }
 
+export type WorkspaceInitOpts = {
+  /**
+   * Create the workspace config directory at the workspace cwd instead of using the default write target.
+   */
+  here?: boolean
+}
+
+export type WorkspaceInstallOpts = {
+  /**
+   * Override name for the installed module entry.
+   */
+  name?: string
+
+  /**
+   * Write to the workspace config directory at the workspace cwd.
+   */
+  here?: boolean
+}
+
+export type WorkspaceMigrateOpts = {
+  force?: boolean
+}
+
+export type WorkspaceModuleInitOpts = {
+  /**
+   * SDK to use for the new module.
+   */
+  sdk?: string
+
+  /**
+   * Source subpath within the new module.
+   */
+  source?: string
+
+  /**
+   * Additional include patterns for the module.
+   */
+  include?: string[]
+
+  /**
+   * Enable the self-calls experimental feature for the new module.
+   */
+  selfCalls?: boolean
+
+  /**
+   * Write to the workspace config directory at the workspace cwd.
+   */
+  here?: boolean
+}
+
+export type WorkspaceModuleListOpts = {
+  /**
+   * Optional module alias to inspect.
+   */
+  module?: string
+}
+
 export type WorkspaceServicesOpts = {
   /**
    * Only include services matching the specified patterns
@@ -2957,10 +3056,46 @@ export type WorkspaceServicesOpts = {
   include?: string[]
 }
 
+export type WorkspaceUninstallOpts = {
+  /**
+   * Write to the workspace config directory at the workspace cwd.
+   */
+  here?: boolean
+}
+
+/**
+ * A unique identifier for an object.
+ */
+export type WorkspaceGitID = string & { __WorkspaceGitID: never }
+
 /**
  * A unique identifier for an object.
  */
 export type WorkspaceID = string & { __WorkspaceID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type WorkspaceMigrationID = string & { __WorkspaceMigrationID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type WorkspaceMigrationStepID = string & {
+  __WorkspaceMigrationStepID: never
+}
+
+/**
+ * A unique identifier for an object.
+ */
+export type WorkspaceModuleID = string & { __WorkspaceModuleID: never }
+
+/**
+ * A unique identifier for an object.
+ */
+export type WorkspaceModuleSettingID = string & {
+  __WorkspaceModuleSettingID: never
+}
 
 export type __DirectiveArgsOpts = {
   includeDeprecated?: boolean
@@ -3392,6 +3527,46 @@ export class Binding extends BaseClient {
   asWorkspace = (): Workspace => {
     const ctx = this._ctx.select("asWorkspace")
     return new Workspace(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type WorkspaceGit
+   */
+  asWorkspaceGit = (): WorkspaceGit => {
+    const ctx = this._ctx.select("asWorkspaceGit")
+    return new WorkspaceGit(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type WorkspaceMigration
+   */
+  asWorkspaceMigration = (): WorkspaceMigration => {
+    const ctx = this._ctx.select("asWorkspaceMigration")
+    return new WorkspaceMigration(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type WorkspaceMigrationStep
+   */
+  asWorkspaceMigrationStep = (): WorkspaceMigrationStep => {
+    const ctx = this._ctx.select("asWorkspaceMigrationStep")
+    return new WorkspaceMigrationStep(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type WorkspaceModule
+   */
+  asWorkspaceModule = (): WorkspaceModule => {
+    const ctx = this._ctx.select("asWorkspaceModule")
+    return new WorkspaceModule(ctx)
+  }
+
+  /**
+   * Retrieve the binding value, as type WorkspaceModuleSetting
+   */
+  asWorkspaceModuleSetting = (): WorkspaceModuleSetting => {
+    const ctx = this._ctx.select("asWorkspaceModuleSetting")
+    return new WorkspaceModuleSetting(ctx)
   }
 
   /**
@@ -5720,6 +5895,16 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Creates a synthetic workspace from this directory.
+   * @param opts.cwd Current working directory inside the workspace root. Defaults to the workspace root.
+   * @experimental
+   */
+  asWorkspace = (opts?: DirectoryAsWorkspaceOpts): Workspace => {
+    const ctx = this._ctx.select("asWorkspace", { ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Return the difference between this directory and another directory, typically an older snapshot.
    *
    * The difference is encoded as a changeset, which also tracks removed files, and can be applied to other directories.
@@ -7855,6 +8040,38 @@ export class Env extends BaseClient {
   }
 
   /**
+   * Create or update a binding of type WorkspaceGit in the environment
+   * @param name The name of the binding
+   * @param value The WorkspaceGit value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withWorkspaceGitInput = (
+    name: string,
+    value: WorkspaceGit,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceGitInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired WorkspaceGit output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withWorkspaceGitOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withWorkspaceGitOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
    * Create or update a binding of type Workspace in the environment
    * @param name The name of the binding
    * @param value The Workspace value to assign to the binding
@@ -7868,6 +8085,140 @@ export class Env extends BaseClient {
     const ctx = this._ctx.select("withWorkspaceInput", {
       name,
       value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type WorkspaceMigration in the environment
+   * @param name The name of the binding
+   * @param value The WorkspaceMigration value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withWorkspaceMigrationInput = (
+    name: string,
+    value: WorkspaceMigration,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceMigrationInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired WorkspaceMigration output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withWorkspaceMigrationOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withWorkspaceMigrationOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type WorkspaceMigrationStep in the environment
+   * @param name The name of the binding
+   * @param value The WorkspaceMigrationStep value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withWorkspaceMigrationStepInput = (
+    name: string,
+    value: WorkspaceMigrationStep,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceMigrationStepInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired WorkspaceMigrationStep output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withWorkspaceMigrationStepOutput = (
+    name: string,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceMigrationStepOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type WorkspaceModule in the environment
+   * @param name The name of the binding
+   * @param value The WorkspaceModule value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withWorkspaceModuleInput = (
+    name: string,
+    value: WorkspaceModule,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceModuleInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired WorkspaceModule output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withWorkspaceModuleOutput = (name: string, description: string): Env => {
+    const ctx = this._ctx.select("withWorkspaceModuleOutput", {
+      name,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Create or update a binding of type WorkspaceModuleSetting in the environment
+   * @param name The name of the binding
+   * @param value The WorkspaceModuleSetting value to assign to the binding
+   * @param description The purpose of the input
+   */
+  withWorkspaceModuleSettingInput = (
+    name: string,
+    value: WorkspaceModuleSetting,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceModuleSettingInput", {
+      name,
+      value,
+      description,
+    })
+    return new Env(ctx)
+  }
+
+  /**
+   * Declare a desired WorkspaceModuleSetting output to be assigned in the environment
+   * @param name The name of the binding
+   * @param description A description of the desired value of the binding
+   */
+  withWorkspaceModuleSettingOutput = (
+    name: string,
+    description: string,
+  ): Env => {
+    const ctx = this._ctx.select("withWorkspaceModuleSettingOutput", {
+      name,
       description,
     })
     return new Env(ctx)
@@ -9745,6 +10096,16 @@ export class GitRepository extends BaseClient {
   }
 
   /**
+   * Creates a synthetic workspace from this git repository.
+   * @param opts.cwd Current working directory inside the workspace root. Defaults to the workspace root.
+   * @experimental
+   */
+  asWorkspace = (opts?: GitRepositoryAsWorkspaceOpts): Workspace => {
+    const ctx = this._ctx.select("asWorkspace", { ...opts })
+    return new Workspace(ctx)
+  }
+
+  /**
    * Returns details of a branch.
    * @param name Branch's name (e.g., "main").
    */
@@ -11568,6 +11929,7 @@ export class ModuleSource extends BaseClient {
 
   /**
    * The blueprint referenced by the module source.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.
    */
   blueprint = (): ModuleSource => {
     const ctx = this._ctx.select("blueprint")
@@ -11625,7 +11987,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * Whether an existing dagger.json for the module was found.
+   * Whether an existing module config file was found.
    */
   configExists = async (): Promise<boolean> => {
     if (this._configExists) {
@@ -11807,7 +12169,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The original name of the module as read from the module's dagger.json (or set for the first time with the withName API).
+   * The original name of the module as read from the module config file (or set for the first time with the withName API).
    */
   moduleOriginalName = async (): Promise<string> => {
     if (this._moduleOriginalName) {
@@ -11875,7 +12237,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The path, relative to the context directory, that contains the module's dagger.json.
+   * The path, relative to the context directory, that contains the module config.
    */
   sourceRootSubpath = async (): Promise<string> => {
     if (this._sourceRootSubpath) {
@@ -11917,6 +12279,7 @@ export class ModuleSource extends BaseClient {
 
   /**
    * The toolchains referenced by the module source.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in dagger.toml instead.
    */
   toolchains = async (): Promise<ModuleSource[]> => {
     type toolchains = {
@@ -11958,6 +12321,7 @@ export class ModuleSource extends BaseClient {
   /**
    * Set a blueprint for the module source.
    * @param blueprint The blueprint module to set.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
    */
   withBlueprint = (blueprint: ModuleSource): ModuleSource => {
     const ctx = this._ctx.select("withBlueprint", { blueprint })
@@ -12042,6 +12406,7 @@ export class ModuleSource extends BaseClient {
   /**
    * Add toolchains to the module source.
    * @param toolchains The toolchain modules to add.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
    */
   withToolchains = (toolchains: ModuleSource[]): ModuleSource => {
     const ctx = this._ctx.select("withToolchains", { toolchains })
@@ -12050,6 +12415,7 @@ export class ModuleSource extends BaseClient {
 
   /**
    * Update the blueprint module to the latest version.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
    */
   withUpdateBlueprint = (): ModuleSource => {
     const ctx = this._ctx.select("withUpdateBlueprint")
@@ -12068,6 +12434,7 @@ export class ModuleSource extends BaseClient {
   /**
    * Update one or more toolchains.
    * @param toolchains The toolchains to update.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
    */
   withUpdateToolchains = (toolchains: string[]): ModuleSource => {
     const ctx = this._ctx.select("withUpdateToolchains", { toolchains })
@@ -12085,6 +12452,7 @@ export class ModuleSource extends BaseClient {
 
   /**
    * Remove the current blueprint from the module source.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
    */
   withoutBlueprint = (): ModuleSource => {
     const ctx = this._ctx.select("withoutBlueprint")
@@ -12123,6 +12491,7 @@ export class ModuleSource extends BaseClient {
   /**
    * Remove the provided toolchains from the module source.
    * @param toolchains The toolchains to remove.
+   * @deprecated Legacy dagger.json field. Generic module loading no longer honors it; use workspace modules in `dagger.toml` instead.
    */
   withoutToolchains = (toolchains: string[]): ModuleSource => {
     const ctx = this._ctx.select("withoutToolchains", { toolchains })
@@ -13281,6 +13650,52 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a WorkspaceGit from its ID.
+   */
+  loadWorkspaceGitFromID = (id: WorkspaceGitID): WorkspaceGit => {
+    const ctx = this._ctx.select("loadWorkspaceGitFromID", { id })
+    return new WorkspaceGit(ctx)
+  }
+
+  /**
+   * Load a WorkspaceMigration from its ID.
+   */
+  loadWorkspaceMigrationFromID = (
+    id: WorkspaceMigrationID,
+  ): WorkspaceMigration => {
+    const ctx = this._ctx.select("loadWorkspaceMigrationFromID", { id })
+    return new WorkspaceMigration(ctx)
+  }
+
+  /**
+   * Load a WorkspaceMigrationStep from its ID.
+   */
+  loadWorkspaceMigrationStepFromID = (
+    id: WorkspaceMigrationStepID,
+  ): WorkspaceMigrationStep => {
+    const ctx = this._ctx.select("loadWorkspaceMigrationStepFromID", { id })
+    return new WorkspaceMigrationStep(ctx)
+  }
+
+  /**
+   * Load a WorkspaceModule from its ID.
+   */
+  loadWorkspaceModuleFromID = (id: WorkspaceModuleID): WorkspaceModule => {
+    const ctx = this._ctx.select("loadWorkspaceModuleFromID", { id })
+    return new WorkspaceModule(ctx)
+  }
+
+  /**
+   * Load a WorkspaceModuleSetting from its ID.
+   */
+  loadWorkspaceModuleSettingFromID = (
+    id: WorkspaceModuleSettingID,
+  ): WorkspaceModuleSetting => {
+    const ctx = this._ctx.select("loadWorkspaceModuleSettingFromID", { id })
+    return new WorkspaceModuleSetting(ctx)
+  }
+
+  /**
    * Create a new module.
    */
   module_ = (): Module_ => {
@@ -13292,7 +13707,7 @@ export class Client extends BaseClient {
    * Create a new module source instance from a source ref string
    * @param refString The string ref representation of the module source
    * @param opts.refPin The pinned version of the module source
-   * @param opts.disableFindUp If true, do not attempt to find dagger.json in a parent directory of the provided path. Only relevant for local module sources.
+   * @param opts.disableFindUp If true, do not attempt to find a module config file in a parent directory of the provided path. Only relevant for local module sources.
    * @param opts.allowNotExists If true, do not error out if the provided ref string is a local path and does not exist yet. Useful when initializing new modules in directories that don't exist yet.
    * @param opts.requireKind If set, error out if the ref string is not of the provided requireKind.
    */
@@ -14822,17 +15237,23 @@ export class UpGroup extends BaseClient {
 }
 
 /**
- * A Dagger workspace detected from the current working directory.
+ * A Dagger workspace detected from the current working directory or constructed from a Directory.
  */
 export class Workspace extends BaseClient {
   private readonly _id?: ID = undefined
   private readonly _address?: string = undefined
   private readonly _clientId?: string = undefined
-  private readonly _configPath?: string = undefined
+  private readonly _configFile?: string = undefined
+  private readonly _configRead?: string = undefined
+  private readonly _configWrite?: string = undefined
+  private readonly _cwd?: string = undefined
+  private readonly _envCreate?: string = undefined
+  private readonly _envRemove?: string = undefined
   private readonly _findUp?: string = undefined
-  private readonly _hasConfig?: boolean = undefined
-  private readonly _initialized?: boolean = undefined
-  private readonly _path?: string = undefined
+  private readonly _init?: string = undefined
+  private readonly _install?: string = undefined
+  private readonly _moduleInit?: string = undefined
+  private readonly _uninstall?: string = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -14842,22 +15263,34 @@ export class Workspace extends BaseClient {
     _id?: ID,
     _address?: string,
     _clientId?: string,
-    _configPath?: string,
+    _configFile?: string,
+    _configRead?: string,
+    _configWrite?: string,
+    _cwd?: string,
+    _envCreate?: string,
+    _envRemove?: string,
     _findUp?: string,
-    _hasConfig?: boolean,
-    _initialized?: boolean,
-    _path?: string,
+    _init?: string,
+    _install?: string,
+    _moduleInit?: string,
+    _uninstall?: string,
   ) {
     super(ctx)
 
     this._id = _id
     this._address = _address
     this._clientId = _clientId
-    this._configPath = _configPath
+    this._configFile = _configFile
+    this._configRead = _configRead
+    this._configWrite = _configWrite
+    this._cwd = _cwd
+    this._envCreate = _envCreate
+    this._envRemove = _envRemove
     this._findUp = _findUp
-    this._hasConfig = _hasConfig
-    this._initialized = _initialized
-    this._path = _path
+    this._init = _init
+    this._install = _install
+    this._moduleInit = _moduleInit
+    this._uninstall = _uninstall
   }
 
   /**
@@ -14876,7 +15309,7 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Canonical Dagger address of the workspace directory.
+   * Canonical Dagger address of the workspace location, or an opaque identity for synthetic workspaces.
    */
   address = async (): Promise<string> => {
     if (this._address) {
@@ -14917,14 +15350,77 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Path to config.toml relative to the workspace boundary (empty if not initialized).
+   * Selected native workspace config file relative to the workspace root, if any.
    */
-  configPath = async (): Promise<string> => {
-    if (this._configPath) {
-      return this._configPath
+  configFile = async (): Promise<string> => {
+    if (this._configFile) {
+      return this._configFile
     }
 
-    const ctx = this._ctx.select("configPath")
+    const ctx = this._ctx.select("configFile")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Read a configuration value from dagger.toml.
+   *
+   * If key is empty, returns the full config.
+   *
+   * If key points to a scalar, returns the value.
+   *
+   * If key points to a table, returns flattened dotted-key output.
+   * @param opts.key Dotted key path (e.g. modules.greeter.source). Empty for full config.
+   */
+  configRead = async (opts?: WorkspaceConfigReadOpts): Promise<string> => {
+    if (this._configRead) {
+      return this._configRead
+    }
+
+    const ctx = this._ctx.select("configRead", { ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Write a configuration value to dagger.toml.
+   * @param key Dotted key path (e.g. modules.greeter.source).
+   * @param value Value to set. Bools, integers, and comma-separated arrays are auto-detected.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  configWrite = async (
+    key: string,
+    value: string,
+    opts?: WorkspaceConfigWriteOpts,
+  ): Promise<string> => {
+    if (this._configWrite) {
+      return this._configWrite
+    }
+
+    const ctx = this._ctx.select("configWrite", { key, value, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Current location within the workspace root.
+   *
+   * The workspace root is returned as "/".
+   *
+   * Relative paths in workspace APIs resolve from here.
+   */
+  cwd = async (): Promise<string> => {
+    if (this._cwd) {
+      return this._cwd
+    }
+
+    const ctx = this._ctx.select("cwd")
 
     const response: Awaited<string> = await ctx.execute()
 
@@ -14934,8 +15430,8 @@ export class Workspace extends BaseClient {
   /**
    * Returns a Directory from the workspace.
    *
-   * Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
-   * @param path Location of the directory to retrieve. Relative paths (e.g., "src") resolve from the workspace directory; absolute paths (e.g., "/src") resolve from the workspace boundary.
+   * Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
+   * @param path Location of the directory to retrieve. Relative paths (e.g., "src") resolve from the workspace cwd; absolute paths (e.g., "/src") resolve from the workspace root.
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    * @param opts.gitignore Apply .gitignore filter rules inside the directory.
@@ -14946,10 +15442,61 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Create a named workspace environment if it does not already exist.
+   * @param name Environment name.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  envCreate = async (
+    name: string,
+    opts?: WorkspaceEnvCreateOpts,
+  ): Promise<string> => {
+    if (this._envCreate) {
+      return this._envCreate
+    }
+
+    const ctx = this._ctx.select("envCreate", { name, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * List named environments defined in the workspace configuration.
+   */
+  envList = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("envList")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Remove a named workspace environment.
+   * @param name Environment name.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  envRemove = async (
+    name: string,
+    opts?: WorkspaceEnvRemoveOpts,
+  ): Promise<string> => {
+    if (this._envRemove) {
+      return this._envRemove
+    }
+
+    const ctx = this._ctx.select("envRemove", { name, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Returns a File from the workspace.
    *
-   * Relative paths resolve from the workspace directory. Absolute paths resolve from the workspace boundary.
-   * @param path Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from the workspace directory; absolute paths (e.g., "/go.mod") resolve from the workspace boundary.
+   * Relative paths resolve from the workspace cwd. Absolute paths resolve from the workspace root.
+   * @param path Location of the file to retrieve. Relative paths (e.g., "go.mod") resolve from the workspace cwd; absolute paths (e.g., "/go.mod") resolve from the workspace root.
    */
   file = (path: string): File => {
     const ctx = this._ctx.select("file", { path })
@@ -14961,11 +15508,11 @@ export class Workspace extends BaseClient {
    *
    * Returns the absolute workspace path if found, or null if not found.
    *
-   * Relative start paths resolve from the workspace directory.
+   * Relative start paths resolve from the workspace cwd.
    *
-   * The search stops at the workspace boundary and will not traverse above it.
+   * The search stops at the workspace root and will not traverse above it.
    * @param name The name of the file or directory to search for.
-   * @param opts.from Path to start the search from. Relative paths resolve from the workspace directory; absolute paths resolve from the workspace boundary.
+   * @param opts.from Path to start the search from. Relative paths resolve from the workspace cwd; absolute paths resolve from the workspace root.
    */
   findUp = async (
     name: string,
@@ -14992,48 +15539,103 @@ export class Workspace extends BaseClient {
   }
 
   /**
-   * Whether a config.toml file exists in the workspace.
+   * Git state for this workspace. Errors if the workspace is not in a git repository.
    */
-  hasConfig = async (): Promise<boolean> => {
-    if (this._hasConfig) {
-      return this._hasConfig
-    }
-
-    const ctx = this._ctx.select("hasConfig")
-
-    const response: Awaited<boolean> = await ctx.execute()
-
-    return response
+  git = (): WorkspaceGit => {
+    const ctx = this._ctx.select("git")
+    return new WorkspaceGit(ctx)
   }
 
   /**
-   * Whether .dagger/config.toml exists.
+   * Initialize workspace config, creating dagger.toml.
+   * @param opts.here Create the workspace config directory at the workspace cwd instead of using the default write target.
    */
-  initialized = async (): Promise<boolean> => {
-    if (this._initialized) {
-      return this._initialized
+  init = async (opts?: WorkspaceInitOpts): Promise<string> => {
+    if (this._init) {
+      return this._init
     }
 
-    const ctx = this._ctx.select("initialized")
-
-    const response: Awaited<boolean> = await ctx.execute()
-
-    return response
-  }
-
-  /**
-   * Workspace directory path relative to the workspace boundary.
-   */
-  path = async (): Promise<string> => {
-    if (this._path) {
-      return this._path
-    }
-
-    const ctx = this._ctx.select("path")
+    const ctx = this._ctx.select("init", { ...opts })
 
     const response: Awaited<string> = await ctx.execute()
 
     return response
+  }
+
+  /**
+   * Install a module into the workspace, writing dagger.toml to the host.
+   * @param ref Module reference to install.
+   * @param opts.name Override name for the installed module entry.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  install = async (
+    ref: string,
+    opts?: WorkspaceInstallOpts,
+  ): Promise<string> => {
+    if (this._install) {
+      return this._install
+    }
+
+    const ctx = this._ctx.select("install", { ref, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Plan the explicit migration needed for the current workspace.
+   *
+   * The returned plan has an empty changeset and no steps when no migration is needed.
+   */
+  migrate = (opts?: WorkspaceMigrateOpts): WorkspaceMigration => {
+    const ctx = this._ctx.select("migrate", { ...opts })
+    return new WorkspaceMigration(ctx)
+  }
+
+  /**
+   * Create a new module owned by the workspace and auto-install it in dagger.toml.
+   * @param name Name of the new module.
+   * @param opts.sdk SDK to use for the new module.
+   * @param opts.source Source subpath within the new module.
+   * @param opts.include Additional include patterns for the module.
+   * @param opts.selfCalls Enable the self-calls experimental feature for the new module.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  moduleInit = async (
+    name: string,
+    opts?: WorkspaceModuleInitOpts,
+  ): Promise<string> => {
+    if (this._moduleInit) {
+      return this._moduleInit
+    }
+
+    const ctx = this._ctx.select("moduleInit", { name, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * List modules defined in the workspace configuration.
+   * @param opts.module Optional module alias to inspect.
+   */
+  moduleList = async (
+    opts?: WorkspaceModuleListOpts,
+  ): Promise<WorkspaceModule[]> => {
+    type moduleList = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("moduleList", { ...opts }).select("id")
+
+    const response: Awaited<moduleList[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new WorkspaceModule(ctx.copy().selectNode(r.id, "WorkspaceModule")),
+    )
   }
 
   /**
@@ -15046,6 +15648,26 @@ export class Workspace extends BaseClient {
   }
 
   /**
+   * Uninstall a module from the workspace, writing dagger.toml to the host.
+   * @param name Name of the installed module entry to remove.
+   * @param opts.here Write to the workspace config directory at the workspace cwd.
+   */
+  uninstall = async (
+    name: string,
+    opts?: WorkspaceUninstallOpts,
+  ): Promise<string> => {
+    if (this._uninstall) {
+      return this._uninstall
+    }
+
+    const ctx = this._ctx.select("uninstall", { name, ...opts })
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
    * Refresh workspace-managed state and return the resulting changeset.
    *
    * Currently this refreshes existing lockfile entries only.
@@ -15054,6 +15676,392 @@ export class Workspace extends BaseClient {
   update = (): Changeset => {
     const ctx = this._ctx.select("update")
     return new Changeset(ctx)
+  }
+}
+
+/**
+ * Local git state for a workspace.
+ */
+export class WorkspaceGit extends BaseClient {
+  private readonly _id?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this WorkspaceGit.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The checked-out HEAD of this workspace.
+   */
+  head = (): GitRef => {
+    const ctx = this._ctx.select("head")
+    return new GitRef(ctx)
+  }
+
+  /**
+   * Uncommitted changes in this workspace, using the same rules as GitRepository.uncommitted.
+   */
+  uncommitted = (): Changeset => {
+    const ctx = this._ctx.select("uncommitted")
+    return new Changeset(ctx)
+  }
+}
+
+/**
+ * A planned workspace migration.
+ */
+export class WorkspaceMigration extends BaseClient {
+  private readonly _id?: ID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID) {
+    super(ctx)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this WorkspaceMigration.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Filesystem changes for the full migration plan.
+   */
+  changes = (): Changeset => {
+    const ctx = this._ctx.select("changes")
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Logical migration steps, each identified by a stable code.
+   */
+  steps = async (): Promise<WorkspaceMigrationStep[]> => {
+    type steps = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("steps").select("id")
+
+    const response: Awaited<steps[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new WorkspaceMigrationStep(
+          ctx.copy().selectNode(r.id, "WorkspaceMigrationStep"),
+        ),
+    )
+  }
+}
+
+/**
+ * A single logical part of a workspace migration.
+ */
+export class WorkspaceMigrationStep extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _code?: string = undefined
+  private readonly _description?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(ctx?: Context, _id?: ID, _code?: string, _description?: string) {
+    super(ctx)
+
+    this._id = _id
+    this._code = _code
+    this._description = _description
+  }
+
+  /**
+   * A unique identifier for this WorkspaceMigrationStep.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Filesystem changes for this step.
+   */
+  changes = (): Changeset => {
+    const ctx = this._ctx.select("changes")
+    return new Changeset(ctx)
+  }
+
+  /**
+   * Stable code identifying this logical migration step.
+   */
+  code = async (): Promise<string> => {
+    if (this._code) {
+      return this._code
+    }
+
+    const ctx = this._ctx.select("code")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Generic summary of this step's purpose and impact.
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const ctx = this._ctx.select("description")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Non-fatal warnings raised while planning this step.
+   */
+  warnings = async (): Promise<string[]> => {
+    const ctx = this._ctx.select("warnings")
+
+    const response: Awaited<string[]> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * A module entry in the workspace configuration.
+ */
+export class WorkspaceModule extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _entrypoint?: boolean = undefined
+  private readonly _name?: string = undefined
+  private readonly _source?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _entrypoint?: boolean,
+    _name?: string,
+    _source?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._entrypoint = _entrypoint
+    this._name = _name
+    this._source = _source
+  }
+
+  /**
+   * A unique identifier for this WorkspaceModule.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * Whether the module is the workspace entrypoint (functions aliased to Query root).
+   */
+  entrypoint = async (): Promise<boolean> => {
+    if (this._entrypoint) {
+      return this._entrypoint
+    }
+
+    const ctx = this._ctx.select("entrypoint")
+
+    const response: Awaited<boolean> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The module name.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const ctx = this._ctx.select("name")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * List constructor-backed settings for this module.
+   */
+  settings = async (): Promise<WorkspaceModuleSetting[]> => {
+    type settings = {
+      id: ID
+    }
+
+    const ctx = this._ctx.select("settings").select("id")
+
+    const response: Awaited<settings[]> = await ctx.execute()
+
+    return response.map(
+      (r) =>
+        new WorkspaceModuleSetting(
+          ctx.copy().selectNode(r.id, "WorkspaceModuleSetting"),
+        ),
+    )
+  }
+
+  /**
+   * The module source path.
+   */
+  source = async (): Promise<string> => {
+    if (this._source) {
+      return this._source
+    }
+
+    const ctx = this._ctx.select("source")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+}
+
+/**
+ * A constructor-backed module setting.
+ */
+export class WorkspaceModuleSetting extends BaseClient {
+  private readonly _id?: ID = undefined
+  private readonly _description?: string = undefined
+  private readonly _key?: string = undefined
+  private readonly _value?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    ctx?: Context,
+    _id?: ID,
+    _description?: string,
+    _key?: string,
+    _value?: string,
+  ) {
+    super(ctx)
+
+    this._id = _id
+    this._description = _description
+    this._key = _key
+    this._value = _value
+  }
+
+  /**
+   * A unique identifier for this WorkspaceModuleSetting.
+   */
+  id = async (): Promise<ID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const ctx = this._ctx.select("id")
+
+    const response: Awaited<ID> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The constructor argument description.
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const ctx = this._ctx.select("description")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The setting key.
+   */
+  key = async (): Promise<string> => {
+    if (this._key) {
+      return this._key
+    }
+
+    const ctx = this._ctx.select("key")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
+  }
+
+  /**
+   * The configured value after applying the selected workspace environment, or empty when unset.
+   */
+  value = async (): Promise<string> => {
+    if (this._value) {
+      return this._value
+    }
+
+    const ctx = this._ctx.select("value")
+
+    const response: Awaited<string> = await ctx.execute()
+
+    return response
   }
 }
 

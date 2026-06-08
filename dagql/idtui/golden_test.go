@@ -65,16 +65,30 @@ func TestTelemetry(t *testing.T) {
 func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 	// setup a git repo so function call tests can pick up the right metadata
 
-	// remove the repo if it exists now too, since the Cleanup doesn't always run, e.g. after a ctrl-C
-	exec.Command("rm", "-rf", ".git").Run()
+	// Remove test-owned workspace files if they exist now too, since Cleanup
+	// doesn't always run, e.g. after a ctrl-C.
+	exec.Command("rm", "-rf", ".git", ".dagger").Run()
 
 	cmd := exec.Command("sh", "-c", "git init && git remote add origin git@github.com:dagger/dagger")
 	if co, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("failed to initialize viztest git repo: %v: (%s)", err, co)
 	}
 
+	// These goldens cover progress rendering, not legacy workspace compat.
+	// Register viztest in a native workspace so local module calls and check
+	// discovery exercise this fixture without falling back to the repository-level
+	// dagger.json and printing migration warnings.
+	if err := os.WriteFile("dagger.toml", []byte(`# Dagger workspace configuration
+
+[modules.viztest]
+source = "./viztest"
+entrypoint = true
+`), 0o644); err != nil {
+		t.Fatalf("failed to initialize viztest workspace config: %v", err)
+	}
+
 	t.Cleanup(func() {
-		exec.Command("rm", "-rf", ".git").Run()
+		exec.Command("rm", "-rf", ".git", ".dagger", "dagger.toml").Run()
 	})
 
 	listDir := t.TempDir()

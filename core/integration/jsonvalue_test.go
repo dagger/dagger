@@ -1,5 +1,8 @@
 package core
 
+// These tests cover JSON values crossing the module API boundary. They verify
+// scalar, object, and array values passed between callers and module functions.
+
 import (
 	"context"
 	"testing"

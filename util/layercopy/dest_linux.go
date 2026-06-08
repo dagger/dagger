@@ -413,11 +413,3 @@ func cleanContainerPath(p string) string {
 	}
 	return p
 }
-
-func cleanRel(p string) string {
-	p = filepath.Clean(p)
-	if p == "." || p == string(filepath.Separator) {
-		return ""
-	}
-	return strings.TrimPrefix(p, string(filepath.Separator))
-}
