@@ -226,6 +226,31 @@ func (DangSuite) TestScalars(_ context.Context, t *testctx.T) {
 	})
 }
 
+func (DangSuite) TestInterfaces(_ context.Context, t *testctx.T) {
+	t.Run("define, implement, and consume within a module", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := dangModule(t, c, "test-interface").
+			With(daggerCall("local")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hey, local", strings.TrimSpace(out))
+	})
+
+	t.Run("implement an interface defined by a dependency", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// A type that `implements` a dependency's interface must not be
+		// required to provide the synthesized `id: ID!` field that Dagger
+		// adds to every interface definition.
+		out, err := dangModule(t, c, "test-interface").
+			With(daggerCall("run")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi, world", strings.TrimSpace(out))
+	})
+}
+
 func dangModule(t *testctx.T, c *dagger.Client, moduleName string) *dagger.Container {
 	t.Helper()
 	modSrc, err := filepath.Abs(filepath.Join("./testdata/modules/dang", moduleName))

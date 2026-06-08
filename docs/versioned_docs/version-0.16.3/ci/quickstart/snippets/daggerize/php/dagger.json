@@ -1,0 +1,6 @@
+{
+  "name": "hello-dagger",
+  "engineVersion": "v0.15.3",
+  "sdk": "php",
+  "source": "."
+}
