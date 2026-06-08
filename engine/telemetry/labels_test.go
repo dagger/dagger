@@ -147,6 +147,38 @@ func TestLoadGitRefEnvLabels(t *testing.T) {
 	}
 }
 
+func TestLoadGitRefEnvLabelsDoesNotUseSecondParentForCheckedOutPRHead(t *testing.T) {
+	repo := setupRepo(t)
+
+	run(t, "git", "-C", repo, "checkout", "-b", "side")
+	run(t, "git", "-C", repo, "commit", "--allow-empty", "-m", "side commit")
+
+	run(t, "git", "-C", repo, "checkout", "main")
+	run(t, "git", "-C", repo, "checkout", "-b", "pr")
+	run(t, "git", "-C", repo, "commit", "--allow-empty", "-m", "pr commit")
+	run(t, "git", "-C", repo, "merge", "--no-ff", "-m", "merge side into pr", "side")
+
+	prHead := run(t, "git", "-C", repo, "rev-parse", "HEAD")
+	run(t, "git", "-C", repo, "update-ref", "refs/pull/1/head", prHead)
+
+	run(t, "git", "-C", repo, "checkout", "main")
+	run(t, "git", "-C", repo, "merge", "--no-ff", "-m", "synthetic pr merge", "pr")
+
+	syntheticMerge := run(t, "git", "-C", repo, "rev-parse", "HEAD")
+	run(t, "git", "-C", repo, "update-ref", "refs/pull/1/merge", syntheticMerge)
+
+	worktree := cloneRepo(t, repo)
+	run(t, "git", "-C", worktree, "checkout", prHead)
+
+	t.Setenv("GITHUB_REF", "refs/pull/1/merge")
+	t.Setenv("GITHUB_SHA", syntheticMerge)
+
+	labels := telemetry.NewLabels(nil, nil, nil).WithGitLabels(worktree)
+
+	require.Equal(t, prHead, labels.AsMap()["dagger.io/git.ref"])
+	require.Equal(t, "merge side into pr", labels.AsMap()["dagger.io/git.title"])
+}
+
 type mapEnv map[string]string
 
 func (m mapEnv) Getenv(key string) string {
