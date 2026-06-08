@@ -1388,6 +1388,8 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	}
 	if peekRootFieldsOK {
 		client.narrowPendingWorkspaceModulesForSingleQuery(peekRootFields)
+	} else if include, ok := peekWorkspaceSelectorInclude(r, client.clientMetadata); ok {
+		client.narrowPendingWorkspaceModulesForSelectorInclude(include)
 	}
 	if err := srv.ensureModulesLoaded(ctx, client); err != nil {
 		return gqlErr(fmt.Errorf("loading modules: %w", err), http.StatusInternalServerError)
@@ -1431,6 +1433,23 @@ func peekSingleQueryRootFields(r *http.Request, clientMD *engine.ClientMetadata)
 		return false, nil, nil
 	}
 	return dagql.PeekRootFields(r)
+}
+
+// peekWorkspaceSelectorInclude narrows module loading for the workspace commands
+// that enumerate module-provided items -- `dagger generate`, `dagger check`, and
+// `dagger up`. Each roots its query at currentWorkspace (so the single-query peek
+// treats it as needing the full workspace schema) and keeps the session open
+// rather than declaring SingleQuery. When such a client requests specific items
+// via an include argument, only those items' modules need to load.
+func peekWorkspaceSelectorInclude(r *http.Request, clientMD *engine.ClientMetadata) ([]string, bool) {
+	if clientMD == nil || !clientMD.LoadWorkspaceModules || clientMD.SkipWorkspaceModules {
+		return nil, false
+	}
+	ok, include, err := dagql.PeekWorkspaceSelectorInclude(r)
+	if err != nil || !ok {
+		return nil, false
+	}
+	return include, true
 }
 
 func (srv *Server) serveInit(w http.ResponseWriter, _ *http.Request, client *daggerClient) (rerr error) {

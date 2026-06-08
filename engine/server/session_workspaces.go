@@ -922,6 +922,79 @@ func (client *daggerClient) narrowPendingWorkspaceModulesForSingleQuery(rootFiel
 	client.pendingModules = filterPendingWorkspaceModulesForRootFields(client.pendingModules, rootFields)
 }
 
+// narrowPendingWorkspaceModulesForSelectorInclude narrows the pending workspace
+// modules to those named by `dagger generate`/`check`/`up` include patterns
+// (e.g. `dagger generate go-sdk` keeps only the "go-sdk" module). Unlike the
+// single-query peek, these queries root at currentWorkspace and so would
+// otherwise require the full workspace schema; this lets them load only the
+// requested items' modules, so an unrelated broken/stale module cannot block
+// the operation. A module's own dependencies still load transitively.
+func (client *daggerClient) narrowPendingWorkspaceModulesForSelectorInclude(include []string) {
+	client.modulesMu.Lock()
+	defer client.modulesMu.Unlock()
+
+	if client.modulesLoaded || len(client.pendingModules) == 0 {
+		return
+	}
+	client.pendingModules = filterPendingWorkspaceModulesBySelectorInclude(client.pendingModules, include)
+}
+
+// filterPendingWorkspaceModulesBySelectorInclude keeps the modules named by
+// `dagger generate`/`check`/`up` include patterns. A pattern resolves to a
+// module name in one of two ways:
+//
+//   - "module:item" — the segment before ':' is the module name.
+//   - "module" (bare) — the whole token, but only when it matches a known
+//     workspace module name. A bare token that is not a module name is assumed
+//     to be an item served by the entrypoint module (its functions are proxied
+//     onto the Query root), which we can't pin to a single module, so narrowing
+//     is skipped and all modules are kept.
+//
+// If no module ends up matching, narrowing is also skipped so the usual
+// "no such generator/check/service" error is reported instead of an empty
+// result.
+func filterPendingWorkspaceModulesBySelectorInclude(mods []pendingModule, include []string) []pendingModule {
+	if len(mods) == 0 || len(include) == 0 {
+		return mods
+	}
+
+	known := make(map[string]struct{}, len(mods))
+	for _, mod := range mods {
+		if mod.Name != "" {
+			known[mod.Name] = struct{}{}
+		}
+	}
+
+	wanted := make(map[string]struct{}, len(include))
+	for _, pattern := range include {
+		if modName, _, hasItem := strings.Cut(pattern, ":"); hasItem {
+			if modName == "" {
+				return mods
+			}
+			wanted[modName] = struct{}{}
+			continue
+		}
+		// Bare token: only safe to narrow if it names a workspace module;
+		// otherwise it likely targets an entrypoint item, which needs the
+		// entrypoint loaded, so keep everything.
+		if _, ok := known[pattern]; !ok {
+			return mods
+		}
+		wanted[pattern] = struct{}{}
+	}
+
+	filtered := make([]pendingModule, 0, len(mods))
+	for _, mod := range mods {
+		if _, ok := wanted[mod.Name]; ok {
+			filtered = append(filtered, mod)
+		}
+	}
+	if len(filtered) == 0 {
+		return mods
+	}
+	return filtered
+}
+
 func filterPendingWorkspaceModulesForRootFields(mods []pendingModule, rootFields []string) []pendingModule {
 	if len(mods) == 0 || rootFieldsRequireFullWorkspaceSchema(rootFields) {
 		return mods

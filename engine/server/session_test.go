@@ -1140,6 +1140,68 @@ func TestGatherModuleLoadRequests(t *testing.T) {
 	require.True(t, loads[2].mod.Entrypoint)
 }
 
+func TestFilterPendingWorkspaceModulesBySelectorInclude(t *testing.T) {
+	t.Parallel()
+
+	mods := []pendingModule{
+		{Kind: moduleLoadKindAmbient, Name: "go-sdk"},
+		{Kind: moduleLoadKindAmbient, Name: "rust-sdk"},
+		{Kind: moduleLoadKindAmbient, Name: "php-sdk"},
+	}
+
+	t.Run("module:generator keeps only that module", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, []string{"go-sdk:generate"})
+		require.Equal(t, []pendingModule{mods[0]}, filtered)
+	})
+
+	t.Run("module:item works for checks and services too", func(t *testing.T) {
+		t.Parallel()
+
+		// The module-name resolution is identical across generate/check/up: the
+		// segment before ':' is the module name regardless of the item kind.
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, []string{"rust-sdk:lint", "php-sdk:web"})
+		require.Equal(t, []pendingModule{mods[1], mods[2]}, filtered)
+	})
+
+	t.Run("bare module name keeps only that module", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, []string{"go-sdk"})
+		require.Equal(t, []pendingModule{mods[0]}, filtered)
+	})
+
+	t.Run("multiple patterns keep each named module", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, []string{"go-sdk", "php-sdk:api"})
+		require.Equal(t, []pendingModule{mods[0], mods[2]}, filtered)
+	})
+
+	t.Run("bare token not matching a module loads all", func(t *testing.T) {
+		t.Parallel()
+
+		// e.g. an item served by the entrypoint module.
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, []string{"generate"})
+		require.Equal(t, mods, filtered)
+	})
+
+	t.Run("no matching module loads all", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, []string{"typo-sdk:generate"})
+		require.Equal(t, mods, filtered)
+	})
+
+	t.Run("empty include loads all", func(t *testing.T) {
+		t.Parallel()
+
+		filtered := filterPendingWorkspaceModulesBySelectorInclude(mods, nil)
+		require.Equal(t, mods, filtered)
+	})
+}
+
 func TestModuleLoadParallelism(t *testing.T) {
 	t.Parallel()
 
