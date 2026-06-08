@@ -150,6 +150,7 @@ func init() {
 		queryCmd,
 		runCmd,
 		traceCmd,
+		setupCmd,
 		lockCmd,
 		configCmd,
 		checksCmd,
