@@ -267,6 +267,34 @@ div[class*="docSidebarMenu"],
   margin-right: 3px;
 }
 
+.navbar-version-select-mobile {
+  display: none !important;
+}
+
+@media (max-width: 996px) {
+  .navbar-version-select-mobile {
+    display: flex !important;
+    align-items: center !important;
+    margin-right: 56px !important;
+  }
+
+  .navbar-version-dropdown {
+    display: none !important;
+  }
+
+  .docs-version-select {
+    max-width: 88px;
+    height: 36px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--ifm-navbar-link-color);
+    font: inherit;
+    font-size: 0.8175rem;
+    padding: 0 0.35rem;
+  }
+}
+
 /* Hide specific navbar navigation links on mobile - keep hamburger, logo, search, theme toggle */
 @include mobile {
   .navbar__item.navbar__link {

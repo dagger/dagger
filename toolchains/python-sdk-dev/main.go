@@ -76,7 +76,8 @@ func (t PythonSdkDev) LintDocsSnippets(
 	// +ignore=[
 	//  "*",
 	//  "!docs/current_docs/**/*.py",
-	//  "!**/.ruff.toml"
+	//  "!docs/current_docs/**/.ruff.toml",
+	//  "!.ruff.toml"
 	// ]
 	workspace *dagger.Directory,
 ) *dagger.Container {

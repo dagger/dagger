@@ -1,0 +1,60 @@
+### Export a container image to the host
+
+The following Dagger Function returns a just-in-time container. This can be exported to the host as an OCI tarball.
+
+<Tabs groupId="language" queryString="sdk">
+<TabItem value="go" label="Go">
+```go file=../../../cookbook/snippets/export-container/go/main.go
+```
+</TabItem>
+<TabItem value="python" label="Python">
+```python file=../../../cookbook/snippets/export-container/python/main.py
+```
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+```typescript file=../../../cookbook/snippets/export-container/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+#### Examples
+
+Load the container image returned by the Dagger Function into Docker:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'base | export-image myimage'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+base | export-image myimage
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call base export-image --name myimage
+```
+</TabItem>
+</Tabs>
+
+Load the container image returned by the Dagger Function as a tarball to the host fileysystem:
+
+<Tabs groupId="shell">
+<TabItem value="System shell">
+```shell
+dagger -c 'base | export /home/admin/mycontainer.tgz'
+```
+</TabItem>
+<TabItem value="Dagger Shell">
+```shell title="First type 'dagger' for interactive mode."
+base | export /home/admin/mycontainer.tgz
+```
+</TabItem>
+<TabItem value="Dagger CLI">
+```shell
+dagger call base export --path=/home/admin/mycontainer.tgz
+```
+</TabItem>
+</Tabs>

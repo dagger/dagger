@@ -9,6 +9,21 @@ import path from "path";
 import { daggerVersion } from "./current_docs/partials/version";
 
 const url = "https://docs.dagger.io";
+const docsPath = "./current_docs";
+const baseUrl = process.env.DOCUSAURUS_BASE_URL ?? "/";
+const latestVersion = "0.21.4";
+const versions = require("./versions.json") as string[];
+const versionLabels: Record<string, string> = {};
+const versionSelectOptions = [
+  ...versions.map((version) => ({
+    label: versionLabels[version] ?? version,
+    path: version === latestVersion ? baseUrl : `${baseUrl}${version}/`,
+  })),
+  { label: "Next", path: `${baseUrl}next/` },
+];
+const versionSelectHtml = `<select class="docs-version-select" aria-label="Docs version" onchange="window.location.href=this.value">
+  ${versionSelectOptions.map(({ label, path }) => `<option value="${path}">${label}</option>`).join("")}
+</select>`;
 
 const config: Config = {
   title: "Dagger",
@@ -20,7 +35,19 @@ const config: Config = {
   url: url,
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
-  baseUrl: "/",
+  baseUrl,
+
+  future: {
+    experimental_faster: {
+      swcJsLoader: true,
+      swcJsMinimizer: true,
+      swcHtmlMinimizer: false,
+      lightningCssMinimizer: true,
+      mdxCrossCompilerCache: true,
+      rspackBundler: true,
+      rspackPersistentCache: true,
+    },
+  },
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
@@ -42,7 +69,7 @@ const config: Config = {
   },
   scripts: [
     {
-      src: "/js/commonroom.js",
+      src: `${baseUrl}js/commonroom.js`,
       async: true,
     },
   ],
@@ -52,8 +79,23 @@ const config: Config = {
       {
         docs: {
           breadcrumbs: false,
-          path: "./current_docs",
+          path: docsPath,
           routeBasePath: "/",
+          lastVersion: latestVersion,
+          versions: {
+            "0.21.4": {
+              label: "0.21.4",
+              path: "/",
+              banner: "none",
+              badge: false,
+            },
+            current: {
+              label: "Next",
+              path: "next",
+              banner: "unreleased",
+              badge: false,
+            },
+          },
           sidebarPath: "./sidebars.ts",
           sidebarCollapsible: true,
           editUrl: "https://github.com/dagger/dagger/edit/main/docs",
@@ -83,39 +125,6 @@ const config: Config = {
           return {
             resolve: {
               alias: {
-                "@cookbookBuild": path.resolve(
-                  __dirname,
-                  "current_docs/partials/cookbook/builds"
-                ),
-                "@cookbookFilesystem": path.resolve(
-                  __dirname,
-                  "current_docs/partials/cookbook/filesystems"
-                ),
-                "@cookbookContainer": path.resolve(
-                  __dirname,
-                  "current_docs/partials/cookbook/containers"
-                ),
-                "@cookbookSecret": path.resolve(
-                  __dirname,
-                  "current_docs/partials/cookbook/secrets"
-                ),
-                "@cookbookService": path.resolve(
-                  __dirname,
-                  "current_docs/partials/cookbook/services"
-                ),
-                "@cookbookAgent": path.resolve(
-                  __dirname,
-                  "current_docs/partials/cookbook/agents"
-                ),
-                "@cookbookError": path.resolve(
-                  __dirname,
-                  "current_docs/partials/cookbook/errors"
-                ),
-                "@partials": path.resolve(__dirname, "current_docs/partials"),
-                "@daggerTypes": path.resolve(
-                  __dirname,
-                  "current_docs/partials/types"
-                ),
                 "@components": path.resolve(__dirname, "src/components"),
               },
             },
@@ -126,7 +135,7 @@ const config: Config = {
     "docusaurus-plugin-sass",
     "docusaurus-plugin-image-zoom",
     // Thanks to @jharrell and Prisma team. Apache-2.0 content
-    llmsTxtPlugin,
+    [llmsTxtPlugin, { docsPath }],
     [
       "posthog-docusaurus",
       {
@@ -219,6 +228,17 @@ const config: Config = {
         srcDark: "img/dagger-logo-white.png",
       },
       items: [
+        {
+          type: "html",
+          position: "right",
+          className: "navbar-version-select-mobile",
+          value: versionSelectHtml,
+        },
+        {
+          type: "docsVersionDropdown",
+          position: "right",
+          className: "navbar-version-dropdown",
+        },
         // TODO(jasonmccallister): Add these items back in the nav or possible swizzle into a sidebar or toc?
         // {
         //   position: "right",

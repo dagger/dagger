@@ -1,0 +1,79 @@
+---
+title: "Functions"
+slug: /extending/how-dagger-works/functions
+description: "Learn what callers run and modules expose."
+---
+
+# Functions
+
+A function is something a caller can run.
+
+It is the main way a module shows its value. Functions accept typed inputs and return typed outputs. They can be called from the CLI, from another module, from a generated client, or by a check.
+
+A function is not a shell step with a name. It is part of an API.
+
+## Start With the User Goal
+
+Good functions sound like what the user wants:
+
+- Build this target.
+- Test this source tree.
+- Generate a changeset.
+- Return a container ready to publish.
+- Publish an artifact.
+- Start a service.
+
+Do not expose every internal step. Expose the action the user cares about.
+
+## Inputs
+
+Inputs should be visible and typed.
+
+Use:
+
+- `Directory` or `File` for source and artifacts
+- `Secret` for credentials
+- `Service` for network dependencies
+- enums for fixed choices
+- settings for workspace defaults
+
+Avoid:
+
+- hidden host files
+- magic environment variables
+- strings that smuggle many options
+- required arguments that could be defaults
+
+## Outputs
+
+Return the richest useful value.
+
+- Return a `Container` if the caller may keep building or publish it.
+- Return a `Directory` or `File` for artifacts.
+- Return a `Changeset` for proposed edits.
+- Return an object when the workflow has state.
+- Return a scalar for a final answer.
+
+Do not flatten everything into logs or strings. Typed outputs are how modules compose.
+
+## Objects
+
+Not every function belongs at the top level.
+
+Use an object when a concept has state:
+
+- a project
+- a release
+- a deployment
+- a toolchain
+- an environment
+
+Objects make multi-step workflows feel natural without hiding data.
+
+## Running Work
+
+Calling a function often describes work. The engine runs the work when a result is needed.
+
+This is why return types matter. A function that returns a `Container` lets the caller keep building. A function that reads a string forces work to finish.
+
+Next: [Checks](./checks.mdx).

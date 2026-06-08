@@ -8,8 +8,10 @@ The documentation website (source code, assets and content) live in the `/docs` 
 
 Within this directory, the content is separated into:
 
-- `/current_docs`: the current docs shown on docs.dagger.io
-- `/versioned_docs`: the next version(s) of the docs, if available
+- `/current_docs`: the next docs shown at `/next`
+- `/versioned_docs`: Docusaurus snapshots for release lines
+- `/versioned_sidebars`: sidebars for versioned docs snapshots
+- `/versions.json`: Docusaurus version order
 - `/archived_docs`: the site template for the docs archive. Related instructions are in [ARCHIVING.md](./ARCHIVING.md)
 
 ## What happens to a new doc page after the PR gets merged?
@@ -58,6 +60,15 @@ You will need to have `yarn` and Node.js v18 installed.
 From the `/docs` directory, run the following command: `yarn install && yarn start`
 
 This will install all dependencies, start the docs web server locally and open [localhost:3000](http://localhost:3000/) in your browser.
+
+## What is the versioned docs workflow?
+
+- Normal docs PRs update `/current_docs`, which publishes at `/next`.
+- The latest release line is published at `/`; older release lines use `/<version>/`.
+- Before cutting a release docs version, regenerate generated references first.
+- From `/docs`, run `yarn docs:version <version>` to snapshot `/current_docs` into `/versioned_docs/version-<version>`.
+- Review `/`, `/next/`, and older `/<version>/` routes before publishing.
+- After release, keep normal docs edits in `/current_docs`. Patch `/versioned_docs/version-<version>` only for fixes that must apply to that maintained release line.
 
 ### With a Dagger module
 
