@@ -66,7 +66,21 @@
     {
       "name": "golang",
       "source": "github.com/dagger/go@main",
-      "pin": "c26c15f26b6bd52b024e750ad116748b2933d242"
+      "pin": "26d40e969f90d1aa2284e6d6b9636fec0e3c4e4c",
+      "customizations": [
+        {
+          "argument": "skipLint",
+          "default": "[\"core/integration/llmtest\",\"core/integration/testdata\",\"dagql/idtui/viztest\",\"docs\",\"modules/evals/testdata\",\"modules/evaluator/examples\",\"toolchains/docs-dev/docusaurus\",\"toolchains/elixir-sdk-dev/is-semver\",\"toolchains/python-sdk-dev/dockerd\",\"toolchains/release/apko\",\"toolchains/release/gh\",\"toolchains/release/registry-config\",\"toolchains/release/testdata\",\"toolchains/typescript-sdk-dev/is-semver\"]"
+        },
+        {
+          "argument": "skipTest",
+          "default": "[\"docs\",\"sdk/go\",\"toolchains/release/testdata\"]"
+        },
+        {
+          "argument": "skipGenerate",
+          "default": "[\".\"]"
+        }
+      ]
     },
     {
       "name": "helm",
