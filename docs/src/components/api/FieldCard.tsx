@@ -1,4 +1,5 @@
 import React from "react";
+import useBrokenLinks from "@docusaurus/useBrokenLinks";
 import { returnKind, type ApiField } from "./data";
 import Signature from "./Signature";
 import TypeRefView from "./TypeRef";
@@ -14,6 +15,9 @@ export default function FieldCard({
 }: {
   field: ApiField;
 }): JSX.Element {
+  const brokenLinks = useBrokenLinks();
+  brokenLinks.collectAnchor(field.name);
+
   return (
     <div
       className={`${styles.card} ${field.deprecated ? styles.cardDeprecated : ""}`}
