@@ -1,0 +1,29 @@
+type Good {
+  pub workdir: Directory! @defaultPath(path: ".")
+
+  """
+  Regenerate by writing a marker file. Used to prove the module loaded.
+  """
+  pub generate: Changeset! @generate {
+    workdir.withNewFile("generated.txt", "hello from good").changes(workdir)
+  }
+
+  """
+  A trivial check. Used to prove the module loaded for `dagger check`.
+  """
+  pub verify: Void @check {
+    workdir.sync
+    null
+  }
+
+  """
+  A trivial service. Used to prove the module loaded for `dagger up`.
+  """
+  @up
+  pub web: Service! {
+    container
+      .from("nginx:alpine")
+      .withExposedPort(80)
+      .asService
+  }
+}
