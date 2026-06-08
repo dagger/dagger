@@ -147,7 +147,35 @@ func TestLoadGitRefEnvLabels(t *testing.T) {
 	}
 }
 
-func TestLoadGitRefEnvLabelsDoesNotUseSecondParentForCheckedOutPRHead(t *testing.T) {
+func TestLoadGitRefEnvLabelsResolvesPRHeadFromCheckedOutSyntheticMergeWithoutFetch(t *testing.T) {
+	repo := setupRepo(t)
+
+	run(t, "git", "-C", repo, "checkout", "-b", "pr")
+	run(t, "git", "-C", repo, "commit", "--allow-empty", "-m", "pr commit")
+
+	prHead := run(t, "git", "-C", repo, "rev-parse", "HEAD")
+	run(t, "git", "-C", repo, "update-ref", "refs/pull/1/head", prHead)
+
+	run(t, "git", "-C", repo, "checkout", "main")
+	run(t, "git", "-C", repo, "merge", "--no-ff", "-m", "synthetic pr merge", "pr")
+
+	syntheticMerge := run(t, "git", "-C", repo, "rev-parse", "HEAD")
+	run(t, "git", "-C", repo, "update-ref", "refs/pull/1/merge", syntheticMerge)
+
+	// If the synthetic merge commit and its parents are already present, this
+	// should not need to fetch refs/pull/1/head from origin.
+	run(t, "git", "-C", repo, "remote", "remove", "origin")
+
+	t.Setenv("GITHUB_REF", "refs/pull/1/merge")
+	t.Setenv("GITHUB_SHA", syntheticMerge)
+
+	labels := telemetry.NewLabels(nil, nil, nil).WithGitLabels(repo)
+
+	require.Equal(t, prHead, labels.AsMap()["dagger.io/git.ref"])
+	require.Equal(t, "pr commit", labels.AsMap()["dagger.io/git.title"])
+}
+
+func TestLoadGitRefEnvLabelsKeepsCheckedOutPRHeadMergeCommitWhenGitHubRefIsMerge(t *testing.T) {
 	repo := setupRepo(t)
 
 	run(t, "git", "-C", repo, "checkout", "-b", "side")
