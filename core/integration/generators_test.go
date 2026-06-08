@@ -232,6 +232,45 @@ func (GeneratorsSuite) TestGeneratorsInstalledInWorkspace(ctx context.Context, t
 	}
 }
 
+// TestWorkspaceGenerateNarrowsToRequestedModule locks in that
+// `dagger generate <module>` only loads the named generator's module. An
+// unrelated broken/stale workspace module must not be loaded just to enumerate
+// generators, so it cannot block regenerating a healthy module -- including the
+// case where running generate is itself the fix for the broken module.
+//
+// See also TestSingleQueryWorkspaceModuleLoadingSkipsUnreferencedBrokenModules
+// in workspace_test.go, which covers the same narrowing for raw single queries.
+func (GeneratorsSuite) TestWorkspaceGenerateNarrowsToRequestedModule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := workspaceFixture(t, c, "generators-broken")
+
+	t.Run("listing only the healthy module skips the broken one", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExec("generate", "-l", "good")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out, "intentionally invalid")
+	})
+
+	t.Run("generating only the healthy module succeeds", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExec("generate", "good", "-y", "--progress=plain")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, out, "no changes to apply")
+		require.NotContains(t, out, "intentionally invalid")
+	})
+
+	t.Run("generating across all modules still loads the broken module", func(ctx context.Context, t *testctx.T) {
+		out, err := base.
+			With(daggerExecFail("generate", "-l")).
+			CombinedOutput(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "bad")
+	})
+}
+
 func (GeneratorsSuite) TestWorkspaceGenerateSkip(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
