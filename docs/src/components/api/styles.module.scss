@@ -79,7 +79,7 @@
 // as a <dl> it dodges the site-wide `.markdown table` styling entirely.
 .index {
   display: grid;
-  grid-template-columns: 20% 1fr;
+  grid-template-columns: minmax(20%, max-content) minmax(0, 1fr);
   column-gap: 1.25rem;
   row-gap: 0.4rem;
   align-items: baseline;
