@@ -144,32 +144,20 @@
 }
 
 .card {
-  border: 1px solid var(--api-border);
-  border-radius: var(--ifm-global-radius);
   position: relative;
   overflow: visible; // allow inline type popovers to escape the card body
   scroll-margin-top: var(--ifm-navbar-height);
-
-  // light up the card whose anchor you just followed
-  &:target {
-    border-color: var(--api-accent);
-    box-shadow: 0 0 0 1px var(--api-accent);
-  }
 }
 
-// Full-width heading band: a warm tinted strip with an accent rule on the left,
-// so each field reads as a titled section and the cards separate cleanly.
 .cardHeading {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
   margin: 0;
-  padding: 0.7rem 1.2rem;
-  background: var(--api-tint);
-  border-bottom: 1px solid var(--api-border);
-  border-left: 3px solid var(--api-accent);
-  border-top-left-radius: calc(var(--ifm-global-radius) - 1px);
-  border-top-right-radius: calc(var(--ifm-global-radius) - 1px);
+  padding: 0.3rem 0.8rem;
+  background: transparent;
+  border: none;
+  border-radius: 0;
   font-size: 1rem;
   font-weight: normal;
   line-height: 1.6;
@@ -200,27 +188,18 @@
 }
 
 .card[data-return="scalar"] {
-  .cardHeading {
-    border-left-color: var(--api-return-scalar);
-  }
   .fieldName {
     color: var(--api-return-scalar);
   }
 }
 
 .card[data-return="other"] {
-  .cardHeading {
-    border-left-color: var(--api-return-other);
-  }
   .fieldName {
     color: var(--api-return-other);
   }
 }
 
 .card[data-return="same"] {
-  .cardHeading {
-    border-left-color: var(--api-return-same);
-  }
   .fieldName {
     color: var(--api-return-same);
   }
