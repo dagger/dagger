@@ -6,7 +6,6 @@ import styles from "./styles.module.scss";
 const RETURN_KIND_ORDER: Record<ReturnKind, number> = {
   scalar: 0,
   other: 1,
-  same: 2,
 };
 
 // FieldIndex is the quick-scan glossary shown before the cards on a long type —
@@ -15,16 +14,14 @@ const RETURN_KIND_ORDER: Record<ReturnKind, number> = {
 // site's global `.markdown table` styling and reads as plain prose.
 export default function FieldIndex({
   fields,
-  ownerType,
 }: {
   fields: ApiField[];
-  ownerType: string;
 }): JSX.Element {
   const indexedFields = fields
     .map((field, index) => ({
       field,
       index,
-      kind: returnKind(field.type, ownerType),
+      kind: returnKind(field.type),
     }))
     .sort(
       (a, b) =>

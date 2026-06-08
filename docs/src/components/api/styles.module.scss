@@ -17,7 +17,6 @@
   --api-popover-shadow: 0 0.35rem 1rem var(--color-blackAlpha-200);
   --api-return-scalar: var(--color-blue-500);
   --api-return-other: var(--color-blue-600);
-  --api-return-same: var(--color-blue-700);
   --api-warning-text: var(--color-yellow-800);
   --api-warning-bg: var(--color-yellow-50);
   --api-warning-border: var(--color-yellow-300);
@@ -36,9 +35,8 @@
   --api-tint-hover: var(--color-whiteAlpha-200);
   --api-popover-bg: var(--color-raisinBlack-700);
   --api-popover-shadow: 0 0.35rem 1rem var(--color-blackAlpha-500);
-  --api-return-scalar: var(--color-blue-400);
-  --api-return-other: var(--color-blue-300);
-  --api-return-same: var(--color-blue-200);
+  --api-return-scalar: var(--color-purple-200);
+  --api-return-other: var(--color-purple-100);
   --api-warning-text: var(--color-yellow-200);
   --api-warning-bg: var(--color-yellow-900);
   --api-warning-border: var(--color-yellow-700);
@@ -118,10 +116,6 @@
 
   &[data-return="other"] code {
     color: var(--api-return-other);
-  }
-
-  &[data-return="same"] code {
-    color: var(--api-return-same);
   }
 }
 
@@ -203,15 +197,6 @@
   }
   .fieldName {
     color: var(--api-return-other);
-  }
-}
-
-.card[data-return="same"] {
-  .cardHeading {
-    border-left-color: var(--api-return-same);
-  }
-  .fieldName {
-    color: var(--api-return-same);
   }
 }
 
