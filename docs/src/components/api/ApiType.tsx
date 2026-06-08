@@ -41,16 +41,14 @@ function ImplementsLine({ names }: { names: string[] }): JSX.Element | null {
  */
 export default function ApiType({
   name,
-  showDescription = true,
 }: {
   name: string;
-  showDescription?: boolean;
 }): JSX.Element {
   const type = useApiType(name);
   const fields = orderedApiFields(type.fields);
   return (
     <div className={`api-reference ${styles.apiType}`}>
-      {showDescription && (
+      {type.description && (
         <Markdown className={styles.typeDesc}>{type.description}</Markdown>
       )}
       <ImplementsLine names={type.implements} />

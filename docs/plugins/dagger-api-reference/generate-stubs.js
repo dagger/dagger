@@ -83,12 +83,13 @@ title: "${name}"
 description: "${name} API reference, generated from the Dagger GraphQL schema."
 sidebar_position: ${index + 2}
 slug: /extending/types/${slug}
-hide_table_of_contents: true
 ---
 
 ${banner}
 
 import ApiType from "@site/src/components/api/ApiType";
+
+## API reference
 
 <ApiType name="${name}" />
 `
