@@ -11,6 +11,42 @@ import { daggerVersion } from "./current_docs/partials/version";
 
 const url = "https://docs.dagger.io";
 
+function daggerWebFontsPlugin() {
+  return {
+    name: "dagger-webfonts",
+    injectHtmlTags() {
+      return {
+        headTags: [
+          {
+            tagName: "script",
+            attributes: {
+              src: "https://ajax.googleapis.com/ajax/libs/webfont/1.6.26/webfont.js",
+            },
+          },
+          {
+            tagName: "script",
+            attributes: {},
+            innerHTML: `
+              WebFont.load({
+                custom: {
+                  families: ["Hack", "Material Symbols Rounded"],
+                  urls: [
+                    "https://cdn.jsdelivr.net/npm/hack-font@3.3.0/build/web/hack.min.css",
+                    "https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:FILL@1"
+                  ]
+                },
+                google: {
+                  families: ["Open Sans:400,600,700", "Montserrat:400,600,700,800"]
+                }
+              });
+            `,
+          },
+        ],
+      };
+    },
+  };
+}
+
 const config: Config = {
   title: "Dagger",
   tagline:
@@ -76,6 +112,7 @@ const config: Config = {
     ],
   ],
   plugins: [
+    daggerWebFontsPlugin,
     // Custom webpack configuration for path aliases
     function (context, options) {
       return {
