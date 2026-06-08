@@ -42,6 +42,110 @@ func PeekRootFields(r *http.Request) (bool, []string, error) {
 	return true, fields, nil
 }
 
+// workspaceIncludeSelectorFields are the currentWorkspace fields that enumerate
+// module-provided items filtered by an `include` list of `module:item` patterns.
+// They back `dagger generate`, `dagger check`, and `dagger up` respectively.
+// Each normally needs the full workspace schema (every module loaded), but an
+// `include` argument names exactly which modules are required, so module loading
+// can be narrowed to them.
+var workspaceIncludeSelectorFields = map[string]struct{}{
+	"generators": {},
+	"checks":     {},
+	"services":   {},
+}
+
+// PeekWorkspaceSelectorInclude reports whether a GraphQL-over-HTTP request is a
+// workspace item-selection query of the shape
+//
+//	{ currentWorkspace { <generators|checks|services>(include: [...]) ... } }
+//
+// and, if so, returns the literal include patterns while preserving the request
+// body for the real server. Workspace-rooted queries normally require the full
+// workspace schema (every module loaded); recognizing this shape lets the engine
+// narrow module loading to the items actually requested, e.g.
+// `dagger generate <module>`, `dagger check <module>`, or `dagger up <module>`.
+// It is deliberately conservative: anything other than a single currentWorkspace
+// root field selecting only one of those fields with a literal include list
+// returns false, so loading falls back to all modules.
+func PeekWorkspaceSelectorInclude(r *http.Request) (bool, []string, error) {
+	query, operationName, ok, err := peekGraphQLRequestBody(r)
+	if err != nil || !ok {
+		return false, nil, err
+	}
+
+	doc, err := parser.ParseQuery(&ast.Source{Input: query})
+	if err != nil {
+		return false, nil, err
+	}
+
+	op, ok := peekOperation(doc, operationName)
+	if !ok || op.Operation != ast.Query {
+		return false, nil, nil
+	}
+
+	root := singleConcreteField(op.SelectionSet)
+	if root == nil || root.Name != "currentWorkspace" {
+		return false, nil, nil
+	}
+
+	selector := singleConcreteField(root.SelectionSet)
+	if selector == nil {
+		return false, nil, nil
+	}
+	if _, ok := workspaceIncludeSelectorFields[selector.Name]; !ok {
+		return false, nil, nil
+	}
+
+	include, ok := stringListArgument(selector.Arguments, "include")
+	if !ok {
+		return false, nil, nil
+	}
+	return true, include, nil
+}
+
+// singleConcreteField returns the sole non-introspection field in a selection
+// set, or nil if there is not exactly one such field or the set contains
+// fragments. Fragments are treated as "don't narrow" so callers stay on the
+// safe (load-everything) path rather than reasoning about fragment expansion.
+func singleConcreteField(set ast.SelectionSet) *ast.Field {
+	var found *ast.Field
+	for _, selection := range set {
+		field, ok := selection.(*ast.Field)
+		if !ok {
+			return nil
+		}
+		if field.Name == "__typename" {
+			continue
+		}
+		if found != nil {
+			return nil
+		}
+		found = field
+	}
+	return found
+}
+
+// stringListArgument returns the values of a named argument when it is a literal
+// list of strings. Missing, non-list, variable, or non-string arguments return
+// false so callers do not narrow on something they can't resolve statically.
+func stringListArgument(args ast.ArgumentList, name string) ([]string, bool) {
+	arg := args.ForName(name)
+	if arg == nil || arg.Value == nil || arg.Value.Kind != ast.ListValue {
+		return nil, false
+	}
+	values := make([]string, 0, len(arg.Value.Children))
+	for _, child := range arg.Value.Children {
+		if child.Value == nil || child.Value.Kind != ast.StringValue {
+			return nil, false
+		}
+		values = append(values, child.Value.Raw)
+	}
+	if len(values) == 0 {
+		return nil, false
+	}
+	return values, true
+}
+
 func peekGraphQLRequestBody(r *http.Request) (string, string, bool, error) {
 	switch r.Method {
 	case http.MethodGet:
