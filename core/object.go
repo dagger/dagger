@@ -382,16 +382,12 @@ func (t *ModuleObjectType) TypeDef(ctx context.Context) (dagql.ObjectResult[*Typ
 			return dagql.ObjectResult[*TypeDef]{}, err
 		}
 	}
-	return SelectTypeDef(ctx, dagql.Selector{
-		Field: "withObject",
-		Args: []dagql.NamedInput{
-			{Name: "name", Value: dagql.String(t.typeDef.Name)},
-			{Name: "description", Value: dagql.String(t.typeDef.Description)},
-			{Name: "sourceMap", Value: sourceMap},
-			{Name: "deprecated", Value: OptString(t.typeDef.Deprecated)},
-			{Name: "sourceModuleName", Value: OptSourceModuleName(t.typeDef.SourceModuleName)},
-		},
-	})
+	return SelectReferenceTypeDef(ctx, "withObject", "name", t.typeDef.Name,
+		dagql.NamedInput{Name: "description", Value: dagql.String(t.typeDef.Description)},
+		dagql.NamedInput{Name: "sourceMap", Value: sourceMap},
+		dagql.NamedInput{Name: "deprecated", Value: OptString(t.typeDef.Deprecated)},
+		dagql.NamedInput{Name: "sourceModuleName", Value: OptSourceModuleName(t.typeDef.SourceModuleName)},
+	)
 }
 
 type Callable interface {
