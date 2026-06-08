@@ -196,21 +196,31 @@ func (labels Labels) WithGitLabels(workdir string) Labels {
 	// Checks if the commit is a merge commit in the context of pull request
 	// For now, only GitHub needs to be handled, as GitLab doesn't create this
 	// weird /merge ref in a merge-request
-	if ref, ok := os.LookupEnv("GITHUB_REF"); ok {
-		if strings.HasPrefix(ref, "refs/pull/") {
-			if headCommit, err := prHeadFromMerge(commit); commit.Hash.String() != head.Hash().String() && err == nil {
-				commit = headCommit
-			} else {
-				// fall back to fetching the head ref, e.g. for a shallow
-				// checkout where the merge commit's parent isn't available
-				ref = strings.Replace(ref, "/merge", "/head", 1)
-				refCommit, err := fetchRef(repo, workdir, "origin", ref)
-				if err != nil {
-					slog.Warn("failed to fetch branch", "err", err)
-				} else {
-					commit = refCommit
-				}
+	ref := labels.eg.Getenv("GITHUB_REF")
+	if strings.HasPrefix(ref, "refs/pull/") {
+		githubSHA := labels.eg.Getenv("GITHUB_SHA")
+		isSyntheticMergeCheckout := strings.HasSuffix(ref, "/merge") && githubSHA == head.Hash().String()
+
+		var refCommit *object.Commit
+		var err error
+
+		switch {
+		case isSyntheticMergeCheckout:
+			// GitHub checked out refs/pull/N/merge. Parent 2 is refs/pull/N/head.
+			refCommit, err = prHeadFromMerge(commit)
+			if err != nil {
+				refCommit, err = fetchPRHead(repo, workdir, ref)
 			}
+		default:
+			// This handles shallow checkouts, refs/pull/N/head, and workflows that
+			// checked out the PR head while GITHUB_REF still points at refs/pull/N/merge.
+			refCommit, err = fetchPRHead(repo, workdir, ref)
+		}
+
+		if err != nil {
+			slog.Warn("failed to fetch branch", "err", err)
+		} else {
+			commit = refCommit
 		}
 	}
 
@@ -564,6 +574,11 @@ func prHeadFromMerge(merge *object.Commit) (*object.Commit, error) {
 		return nil, fmt.Errorf("commit %s is not a merge commit", merge.Hash)
 	}
 	return merge.Parent(1)
+}
+
+func fetchPRHead(repo *git.Repository, workdir string, ref string) (*object.Commit, error) {
+	ref = strings.Replace(ref, "/merge", "/head", 1)
+	return fetchRef(repo, workdir, "origin", ref)
 }
 
 func fetchRef(repo *git.Repository, workdir string, remote string, target string) (*object.Commit, error) {
