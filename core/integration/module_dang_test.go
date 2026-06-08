@@ -2,11 +2,13 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/buildkit/identity"
 	"github.com/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -237,6 +239,88 @@ func (DangSuite) TestInterfaces(_ context.Context, t *testctx.T) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hi, world", strings.TrimSpace(out))
+	})
+
+	t.Run("consume structural interface value across dependencies", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		base := goGitBase(t, c).
+			WithEnvVariable("CACHE_BUST", identity.NewID()).
+			WithWorkdir("/work").
+			With(withModInitAt("moduleA", "dang", `
+type ModuleA {
+  pub use(container: Dagger.Container!, overlay: Overlay!): String! {
+    overlay.apply(container).file("/marker").contents
+  }
+}
+
+interface Overlay {
+  pub apply(container: Dagger.Container!): Dagger.Container!
+}
+`)).
+			With(withModInitAt("moduleB", "dang", `
+type ModuleB {
+  pub fileOverlay(path: String!, contents: String!): FileOverlay! {
+    FileOverlay(path, contents)
+  }
+}
+
+type FileOverlay {
+  pub path: String!
+  pub contents: String!
+
+  pub apply(container: Dagger.Container!): Dagger.Container! {
+    container.withNewFile(path, contents)
+  }
+}
+`)).
+			With(withModInit("dang", `
+type Test {
+  pub run: String! {
+    moduleA.use(
+      Dagger.container.from("alpine:3.20"),
+      moduleB.fileOverlay("/marker", "ok"),
+    )
+  }
+}
+`)).
+			With(daggerExec("install", "./moduleA")).
+			With(daggerExec("install", "./moduleB"))
+
+		schemaOut, err := base.
+			With(daggerQuery(`{
+  __schema {
+    types {
+      name
+      kind
+    }
+  }
+}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		var schema struct {
+			Schema struct {
+				Types []struct {
+					Name string `json:"name"`
+					Kind string `json:"kind"`
+				} `json:"types"`
+			} `json:"__schema"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(schemaOut), &schema))
+		types := map[string]string{}
+		for _, typ := range schema.Schema.Types {
+			types[typ.Name] = typ.Kind
+		}
+		require.Equal(t, "INTERFACE", types["ModuleAOverlay"])
+		require.NotContains(t, types, "ModuleAoverlay")
+		require.Equal(t, "OBJECT", types["ModuleBFileOverlay"])
+		require.NotContains(t, types, "ModuleBfileOverlay")
+
+		out, err := base.
+			With(daggerCall("run")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "ok", strings.TrimSpace(out))
 	})
 }
 

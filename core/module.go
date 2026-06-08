@@ -116,7 +116,7 @@ func (mod *Module) MainObject() (*ObjectTypeDef, bool) {
 
 // ObjectByOriginalName finds an object by comparing against its OriginalName
 // (as registered by the SDK), rather than the potentially-namespaced Name.
-// This is needed because namespaceObject rewrites obj.Name to match the
+// This is needed because NamespaceObject rewrites obj.Name to match the
 // module's final name, but obj.OriginalName always reflects the SDK name.
 func (mod *Module) ObjectByOriginalName(name string) (*ObjectTypeDef, bool) {
 	for _, objDef := range mod.ObjectDefs {
@@ -1483,7 +1483,7 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 			return typeDef, fmt.Errorf("namespace object type lookup: %w", err)
 		}
 		if !ok {
-			targetName := namespaceObject(obj.Self().OriginalName, mod.Name(), mod.OriginalName)
+			targetName := NamespaceObject(obj.Self().OriginalName, mod.Name(), mod.OriginalName)
 			if obj.Self().Name != targetName {
 				if err := dag.Select(ctx, updatedObj, &updatedObj, dagql.Selector{
 					Field: "__withName",
@@ -1594,7 +1594,7 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 			return typeDef, fmt.Errorf("namespace interface type lookup: %w", err)
 		}
 		if !ok {
-			targetName := namespaceObject(iface.Self().OriginalName, mod.Name(), mod.OriginalName)
+			targetName := NamespaceObject(iface.Self().OriginalName, mod.Name(), mod.OriginalName)
 			if iface.Self().Name != targetName {
 				if err := dag.Select(ctx, updatedIface, &updatedIface, dagql.Selector{
 					Field: "__withName",
@@ -1672,7 +1672,7 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef
 			return typeDef, nil
 		}
 		if !ok {
-			targetName := namespaceObject(enum.Self().OriginalName, mod.Name(), mod.OriginalName)
+			targetName := NamespaceObject(enum.Self().OriginalName, mod.Name(), mod.OriginalName)
 			if enum.Self().Name != targetName {
 				if err := dag.Select(ctx, updatedEnum, &updatedEnum, dagql.Selector{
 					Field: "__withName",

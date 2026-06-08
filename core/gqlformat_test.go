@@ -28,6 +28,12 @@ func TestNamespaceObjects(t *testing.T) {
 			result:    "FooBarBaz",
 		},
 		{
+			testCase:  "namespace preserves adjacent capital boundary",
+			namespace: "moduleA",
+			obj:       "Overlay",
+			result:    "ModuleAOverlay",
+		},
+		{
 			testCase:  "don't namespace when equal",
 			namespace: "foo",
 			obj:       "Foo",
@@ -48,7 +54,7 @@ func TestNamespaceObjects(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.testCase, func(t *testing.T) {
-			result := namespaceObject(tc.obj, tc.namespace, tc.namespace)
+			result := NamespaceObject(tc.obj, tc.namespace, tc.namespace)
 			require.Equal(t, tc.result, result)
 		})
 	}

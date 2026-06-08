@@ -382,7 +382,7 @@ func (t *ModuleObjectType) TypeDef(ctx context.Context) (dagql.ObjectResult[*Typ
 			return dagql.ObjectResult[*TypeDef]{}, err
 		}
 	}
-	return SelectTypeDef(ctx, dagql.Selector{
+	return selectTypeDefWithExactName(ctx, t.typeDef.Name, dagql.Selector{
 		Field: "withObject",
 		Args: []dagql.NamedInput{
 			{Name: "name", Value: dagql.String(t.typeDef.Name)},

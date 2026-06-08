@@ -17,6 +17,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	telemetry "github.com/dagger/otel-go"
+	"github.com/iancoleman/strcase"
 	"github.com/vito/dang/pkg/dang"
 	"github.com/vito/dang/pkg/hm"
 	"github.com/vito/dang/pkg/introspection"
@@ -53,7 +54,7 @@ func (r *DangRuntime) eval(
 			return json.Marshal(dagMod)
 		}
 
-		result, err := callDangFunction(ctx, env, fnCall)
+		result, err := callDangFunction(ctx, env, fnCall, r.modSource.Self().ModuleName, r.modSource.Self().ModuleOriginalName)
 		if err != nil {
 			return nil, err
 		}
@@ -171,11 +172,12 @@ func runDangDirForModuleTypes(ctx context.Context, dirPath string) (dang.ValueSc
 	return env, nil
 }
 
-func callDangFunction(ctx context.Context, env dang.ValueScope, fnCall *core.FunctionCall) (dang.Value, error) {
+func callDangFunction(ctx context.Context, env dang.ValueScope, fnCall *core.FunctionCall, modName, modOriginalName string) (dang.Value, error) {
 	inputArgs := make(map[string][]byte, len(fnCall.InputArgs))
 	for _, arg := range fnCall.InputArgs {
 		inputArgs[arg.Name] = []byte(arg.Value)
 	}
+	localTypes := collectDangLocalTypes(env)
 
 	parentModBase, found, err := env.Lookup(ctx, fnCall.ParentName)
 	if err != nil {
@@ -231,7 +233,7 @@ func callDangFunction(ctx context.Context, env dang.ValueScope, fnCall *core.Fun
 		if err := dec.Decode(&val); err != nil {
 			return nil, fmt.Errorf("unmarshal arg %s: %w", arg.Key, err)
 		}
-		dangVal, err := anyToDang(ctx, env, val, argType)
+		dangVal, err := anyToDang(ctx, env, val, argType, localTypes, modName, modOriginalName)
 		if err != nil {
 			return nil, fmt.Errorf("convert arg %s: %w", arg.Key, err)
 		}
@@ -257,7 +259,7 @@ func callDangFunction(ctx context.Context, env dang.ValueScope, fnCall *core.Fun
 		if !isMono {
 			return nil, fmt.Errorf("non-monotype field %s", name)
 		}
-		dangVal, err := anyToDang(ctx, env, value, fieldType)
+		dangVal, err := anyToDang(ctx, env, value, fieldType, localTypes, modName, modOriginalName)
 		if err != nil {
 			return nil, fmt.Errorf("convert field %s: %w", name, err)
 		}
@@ -282,7 +284,8 @@ func callDangFunction(ctx context.Context, env dang.ValueScope, fnCall *core.Fun
 }
 
 type dangLocalTypes struct {
-	modules map[*dang.Type]struct{}
+	modules map[*dang.Type]string
+	names   map[string]string
 }
 
 func dangEvalModule(env dang.ValueScope) (dang.TypeScope, bool) {
@@ -294,7 +297,10 @@ func dangEvalModule(env dang.ValueScope) (dang.TypeScope, bool) {
 }
 
 func collectDangLocalTypes(env dang.ValueScope) dangLocalTypes {
-	local := dangLocalTypes{modules: map[*dang.Type]struct{}{}}
+	local := dangLocalTypes{
+		modules: map[*dang.Type]string{},
+		names:   map[string]string{},
+	}
 	mod, ok := dangEvalModule(env)
 	if !ok {
 		return local
@@ -305,7 +311,8 @@ func collectDangLocalTypes(env dang.ValueScope) dangLocalTypes {
 			continue
 		}
 		if localMod, ok := namedType.(*dang.Type); ok {
-			local.modules[localMod] = struct{}{}
+			local.modules[localMod] = name
+			local.names[localMod.Named] = name
 		}
 	}
 	return local
@@ -322,7 +329,20 @@ func isDangLocalValueBinding(env dang.ValueScope, name string) bool {
 
 func (local dangLocalTypes) contains(mod *dang.Type) bool {
 	_, ok := local.modules[mod]
+	if ok {
+		return true
+	}
+	_, ok = local.names[mod.Named]
 	return ok
+}
+
+func (local dangLocalTypes) localName(mod *dang.Type) (string, bool) {
+	name, ok := local.modules[mod]
+	if ok {
+		return name, true
+	}
+	name, ok = local.names[mod.Named]
+	return name, ok
 }
 
 func dangLocalTypeName(name string) string {
@@ -1011,13 +1031,13 @@ func createInterfaceTypeDef(ctx context.Context, srv *dagql.Server, name string,
 	return res, nil
 }
 
-func anyToDang(ctx context.Context, env dang.ValueScope, val any, fieldType hm.Type) (dang.Value, error) {
+func anyToDang(ctx context.Context, env dang.ValueScope, val any, fieldType hm.Type, localTypes dangLocalTypes, modName, modOriginalName string) (dang.Value, error) {
 	if nonNull, ok := fieldType.(hm.NonNullType); ok {
-		return anyToDang(ctx, env, val, nonNull.Type)
+		return anyToDang(ctx, env, val, nonNull.Type, localTypes, modName, modOriginalName)
 	}
 	switch v := val.(type) {
 	case string:
-		return stringToDang(ctx, env, v, fieldType)
+		return stringToDang(ctx, env, v, fieldType, localTypes, modName, modOriginalName)
 	case int:
 		return dang.IntValue{Val: v}, nil
 	case json.Number:
@@ -1029,9 +1049,9 @@ func anyToDang(ctx context.Context, env dang.ValueScope, val any, fieldType hm.T
 	case bool:
 		return dang.BoolValue{Val: v}, nil
 	case []any:
-		return listToDang(ctx, env, v, fieldType)
+		return listToDang(ctx, env, v, fieldType, localTypes, modName, modOriginalName)
 	case map[string]any:
-		return mapToDang(ctx, env, v, fieldType)
+		return mapToDang(ctx, env, v, fieldType, localTypes, modName, modOriginalName)
 	case nil:
 		return dang.NullValue{}, nil
 	default:
@@ -1039,7 +1059,7 @@ func anyToDang(ctx context.Context, env dang.ValueScope, val any, fieldType hm.T
 	}
 }
 
-func stringToDang(ctx context.Context, env dang.ValueScope, val string, fieldType hm.Type) (dang.Value, error) {
+func stringToDang(ctx context.Context, env dang.ValueScope, val string, fieldType hm.Type, localTypes dangLocalTypes, modName, modOriginalName string) (dang.Value, error) {
 	modType, isMod := fieldType.(*dang.Type)
 	if !isMod {
 		return dang.StringValue{Val: val}, nil
@@ -1054,7 +1074,7 @@ func stringToDang(ctx context.Context, env dang.ValueScope, val string, fieldTyp
 	case dang.ScalarKind:
 		return dang.ScalarValue{Val: val, ScalarType: modType}, nil
 	default:
-		return objectIDToDang(ctx, env, val, modType)
+		return objectIDToDang(ctx, env, val, modType, localTypes, modName, modOriginalName)
 	}
 }
 
@@ -1082,7 +1102,7 @@ func enumStringToDang(ctx context.Context, env dang.ValueScope, val string, modT
 	return member, nil
 }
 
-func objectIDToDang(ctx context.Context, env dang.ValueScope, id string, modType *dang.Type) (dang.Value, error) {
+func objectIDToDang(ctx context.Context, env dang.ValueScope, id string, modType *dang.Type, localTypes dangLocalTypes, modName, modOriginalName string) (dang.Value, error) {
 	nodeVal, found, err := env.Lookup(ctx, "node")
 	if err != nil {
 		return nil, err
@@ -1095,31 +1115,188 @@ func objectIDToDang(ctx context.Context, env dang.ValueScope, id string, modType
 		return nil, fmt.Errorf("node field is %T, not dang.GraphQLFunction", nodeVal)
 	}
 
+	graphQLTypeName := modType.Named
+	if localName, ok := localTypes.localName(modType); ok {
+		graphQLTypeName = core.NamespaceObject(localName, modName, modOriginalName)
+		if err := ensureDangLocalGraphQLType(nodeFn.Schema, graphQLTypeName, modType, localTypes, modName, modOriginalName); err != nil {
+			return nil, err
+		}
+	} else if dangSchemaType(nodeFn.Schema, graphQLTypeName) == nil {
+		concreteTypeName, err := concreteGraphQLTypeNameForID(ctx, nodeFn, id)
+		if err != nil {
+			return nil, fmt.Errorf("resolve concrete GraphQL type for %s ID: %w", modType.Named, err)
+		}
+		if dangSchemaType(nodeFn.Schema, concreteTypeName) != nil {
+			graphQLTypeName = concreteTypeName
+		}
+	}
+
 	field := *nodeFn.Field
 	field.TypeRef = &introspection.TypeRef{
 		Kind: introspection.TypeKindNonNull,
 		OfType: &introspection.TypeRef{
 			Kind: introspection.TypeKindObject,
-			Name: modType.Named,
+			Name: graphQLTypeName,
 		},
 	}
-	if schemaType := nodeFn.Schema.Types.Get(modType.Named); schemaType != nil {
+	if schemaType := dangSchemaType(nodeFn.Schema, graphQLTypeName); schemaType != nil {
 		field.TypeRef.OfType.Kind = schemaType.Kind
 	}
 
 	return dang.GraphQLValue{
 		Name:       "node",
-		TypeName:   modType.Named,
+		TypeName:   graphQLTypeName,
 		Field:      &field,
 		ValType:    hm.NonNullType{Type: modType},
 		Client:     nodeFn.Client,
 		Schema:     nodeFn.Schema,
 		TypeScope:  nodeFn.TypeScope,
-		QueryChain: querybuilder.Query().Select("node").Arg("id", id).InlineFragment(modType.Named),
+		QueryChain: querybuilder.Query().Select("node").Arg("id", id).InlineFragment(graphQLTypeName),
 	}, nil
 }
 
-func listToDang(ctx context.Context, env dang.ValueScope, vals []any, fieldType hm.Type) (dang.Value, error) {
+func concreteGraphQLTypeNameForID(ctx context.Context, nodeFn dang.GraphQLFunction, id string) (string, error) {
+	var typeName string
+	err := querybuilder.Query().
+		Select("node").
+		Arg("id", id).
+		Select("__typename").
+		Bind(&typeName).
+		Client(nodeFn.Client).
+		Execute(ctx)
+	if err != nil {
+		return "", err
+	}
+	return typeName, nil
+}
+
+func ensureDangLocalGraphQLType(schema *introspection.Schema, graphQLTypeName string, modType *dang.Type, localTypes dangLocalTypes, modName, modOriginalName string) error {
+	if schema == nil || graphQLTypeName == "" || dangSchemaType(schema, graphQLTypeName) != nil {
+		return nil
+	}
+
+	schemaType := &introspection.Type{
+		Name: graphQLTypeName,
+		Kind: introspection.TypeKindObject,
+	}
+	switch modType.Kind {
+	case dang.InterfaceKind:
+		schemaType.Kind = introspection.TypeKindInterface
+	case dang.EnumKind:
+		schemaType.Kind = introspection.TypeKindEnum
+	case dang.InputKind:
+		schemaType.Kind = introspection.TypeKindInputObject
+	case dang.ScalarKind:
+		schemaType.Kind = introspection.TypeKindScalar
+	}
+
+	for bindingName, scheme := range modType.Bindings(dang.PublicVisibility) {
+		bindingType, mono := scheme.Type()
+		if !mono {
+			continue
+		}
+		fieldName := strcase.ToLowerCamel(bindingName)
+		if fn, ok := bindingType.(*hm.FunctionType); ok {
+			fieldDescription, _ := modType.GetDocString(bindingName)
+			retRef, err := dangGraphQLTypeRef(fn.Ret(false), schema, localTypes, modName, modOriginalName)
+			if err != nil {
+				return fmt.Errorf("synthetic GraphQL type %s field %s return type: %w", graphQLTypeName, bindingName, err)
+			}
+			args := fn.Arg().(*dang.RecordType)
+			inputs := make(introspection.InputValues, 0, len(args.Fields))
+			for _, arg := range args.Fields {
+				argType, mono := arg.Value.Type()
+				if !mono {
+					continue
+				}
+				argRef, err := dangGraphQLTypeRef(argType, schema, localTypes, modName, modOriginalName)
+				if err != nil {
+					return fmt.Errorf("synthetic GraphQL type %s field %s arg %s type: %w", graphQLTypeName, bindingName, arg.Key, err)
+				}
+				inputs = append(inputs, introspection.InputValue{
+					Name:        strcase.ToLowerCamel(arg.Key),
+					Description: args.DocStrings[arg.Key],
+					TypeRef:     argRef,
+				})
+			}
+			schemaType.Fields = append(schemaType.Fields, &introspection.Field{
+				Name:        fieldName,
+				Description: fieldDescription,
+				TypeRef:     retRef,
+				Args:        inputs,
+			})
+			continue
+		}
+		fieldDescription, _ := modType.GetDocString(bindingName)
+		fieldRef, err := dangGraphQLTypeRef(bindingType, schema, localTypes, modName, modOriginalName)
+		if err != nil {
+			return fmt.Errorf("synthetic GraphQL type %s field %s type: %w", graphQLTypeName, bindingName, err)
+		}
+		schemaType.Fields = append(schemaType.Fields, &introspection.Field{
+			Name:        fieldName,
+			Description: fieldDescription,
+			TypeRef:     fieldRef,
+		})
+	}
+
+	schema.Types = append(schema.Types, schemaType)
+	return nil
+}
+
+func dangGraphQLTypeRef(dangType hm.Type, schema *introspection.Schema, localTypes dangLocalTypes, modName, modOriginalName string) (*introspection.TypeRef, error) {
+	if nonNull, ok := dangType.(hm.NonNullType); ok {
+		inner, err := dangGraphQLTypeRef(nonNull.Type, schema, localTypes, modName, modOriginalName)
+		if err != nil {
+			return nil, err
+		}
+		return &introspection.TypeRef{Kind: introspection.TypeKindNonNull, OfType: inner}, nil
+	}
+	if list, ok := dangType.(dang.ListType); ok {
+		inner, err := dangGraphQLTypeRef(list.Type, schema, localTypes, modName, modOriginalName)
+		if err != nil {
+			return nil, err
+		}
+		return &introspection.TypeRef{Kind: introspection.TypeKindList, OfType: inner}, nil
+	}
+	modType, ok := dangType.(*dang.Type)
+	if !ok {
+		return nil, fmt.Errorf("unsupported Dang type %T", dangType)
+	}
+
+	name := modType.Named
+	if localName, ok := localTypes.localName(modType); ok {
+		name = core.NamespaceObject(localName, modName, modOriginalName)
+	}
+
+	kind := introspection.TypeKindObject
+	switch modType.Kind {
+	case dang.EnumKind:
+		kind = introspection.TypeKindEnum
+	case dang.InterfaceKind:
+		kind = introspection.TypeKindInterface
+	case dang.InputKind:
+		kind = introspection.TypeKindInputObject
+	case dang.ScalarKind:
+		kind = introspection.TypeKindScalar
+	}
+	switch modType.Named {
+	case "String", "Int", "Float", "Boolean", "ID", "Void":
+		kind = introspection.TypeKindScalar
+	}
+	return &introspection.TypeRef{
+		Kind: kind,
+		Name: name,
+	}, nil
+}
+
+func dangSchemaType(schema *introspection.Schema, name string) *introspection.Type {
+	if schema == nil || name == "" {
+		return nil
+	}
+	return schema.Types.Get(name)
+}
+
+func listToDang(ctx context.Context, env dang.ValueScope, vals []any, fieldType hm.Type, localTypes dangLocalTypes, modName, modOriginalName string) (dang.Value, error) {
 	listT, isList := fieldType.(dang.ListType)
 	if !isList {
 		return nil, fmt.Errorf("expected list type, got %T", fieldType)
@@ -1127,7 +1304,7 @@ func listToDang(ctx context.Context, env dang.ValueScope, vals []any, fieldType 
 
 	listVal := dang.ListValue{ElemType: listT}
 	for _, item := range vals {
-		itemVal, err := anyToDang(ctx, env, item, listT.Type)
+		itemVal, err := anyToDang(ctx, env, item, listT.Type, localTypes, modName, modOriginalName)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert list item: %w", err)
 		}
@@ -1136,7 +1313,7 @@ func listToDang(ctx context.Context, env dang.ValueScope, vals []any, fieldType 
 	return listVal, nil
 }
 
-func mapToDang(ctx context.Context, env dang.ValueScope, vals map[string]any, fieldType hm.Type) (dang.Value, error) {
+func mapToDang(ctx context.Context, env dang.ValueScope, vals map[string]any, fieldType hm.Type, localTypes dangLocalTypes, modName, modOriginalName string) (dang.Value, error) {
 	mod, isMod := fieldType.(dang.TypeScope)
 	if !isMod {
 		return nil, fmt.Errorf("expected module type, got %T", fieldType)
@@ -1152,7 +1329,7 @@ func mapToDang(ctx context.Context, env dang.ValueScope, vals map[string]any, fi
 		if !isMono {
 			return nil, fmt.Errorf("expected monomorphic type, got %T", t)
 		}
-		dangVal, err := anyToDang(ctx, env, val, t)
+		dangVal, err := anyToDang(ctx, env, val, t, localTypes, modName, modOriginalName)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert map item %q: %w", name, err)
 		}

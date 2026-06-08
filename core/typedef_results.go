@@ -24,6 +24,111 @@ func SelectTypeDefWithServer(ctx context.Context, dag *dagql.Server, sels ...dag
 	return inst, nil
 }
 
+func selectTypeDefWithExactName(ctx context.Context, exactName string, sels ...dagql.Selector) (dagql.ObjectResult[*TypeDef], error) {
+	inst, err := SelectTypeDef(ctx, sels...)
+	if err != nil {
+		return inst, err
+	}
+	return typeDefWithExactName(ctx, inst, exactName)
+}
+
+func typeDefWithExactName(ctx context.Context, inst dagql.ObjectResult[*TypeDef], exactName string) (dagql.ObjectResult[*TypeDef], error) {
+	if exactName == "" || inst.Self() == nil {
+		return inst, nil
+	}
+
+	// TypeDef constructors normalize names, but live module type names are already
+	// canonical GraphQL names and may not survive another normalization pass.
+	switch inst.Self().Kind {
+	case TypeDefKindObject:
+		obj := inst.Self().AsObject.Value
+		if obj.Self() == nil || obj.Self().Name == exactName {
+			return inst, nil
+		}
+		dag, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return inst, err
+		}
+		var updatedObj dagql.ObjectResult[*ObjectTypeDef]
+		if err := dag.Select(ctx, obj, &updatedObj, dagql.Selector{
+			Field: "__withName",
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(exactName)}},
+		}); err != nil {
+			return inst, err
+		}
+		updatedObjID, err := ResultIDInput(updatedObj)
+		if err != nil {
+			return inst, err
+		}
+		var updated dagql.ObjectResult[*TypeDef]
+		if err := dag.Select(ctx, inst, &updated, dagql.Selector{
+			Field: "__withObjectTypeDef",
+			Args:  []dagql.NamedInput{{Name: "objectTypeDef", Value: updatedObjID}},
+		}); err != nil {
+			return inst, err
+		}
+		return updated, nil
+	case TypeDefKindInterface:
+		iface := inst.Self().AsInterface.Value
+		if iface.Self() == nil || iface.Self().Name == exactName {
+			return inst, nil
+		}
+		dag, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return inst, err
+		}
+		var updatedIface dagql.ObjectResult[*InterfaceTypeDef]
+		if err := dag.Select(ctx, iface, &updatedIface, dagql.Selector{
+			Field: "__withName",
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(exactName)}},
+		}); err != nil {
+			return inst, err
+		}
+		updatedIfaceID, err := ResultIDInput(updatedIface)
+		if err != nil {
+			return inst, err
+		}
+		var updated dagql.ObjectResult[*TypeDef]
+		if err := dag.Select(ctx, inst, &updated, dagql.Selector{
+			Field: "__withInterfaceTypeDef",
+			Args:  []dagql.NamedInput{{Name: "interfaceTypeDef", Value: updatedIfaceID}},
+		}); err != nil {
+			return inst, err
+		}
+		return updated, nil
+	case TypeDefKindEnum:
+		enum := inst.Self().AsEnum.Value
+		if enum.Self() == nil || enum.Self().Name == exactName {
+			return inst, nil
+		}
+		dag, err := CurrentDagqlServer(ctx)
+		if err != nil {
+			return inst, err
+		}
+		var updatedEnum dagql.ObjectResult[*EnumTypeDef]
+		if err := dag.Select(ctx, enum, &updatedEnum, dagql.Selector{
+			Field: "__withName",
+			Args:  []dagql.NamedInput{{Name: "name", Value: dagql.String(exactName)}},
+		}); err != nil {
+			return inst, err
+		}
+		updatedEnumID, err := ResultIDInput(updatedEnum)
+		if err != nil {
+			return inst, err
+		}
+		var updated dagql.ObjectResult[*TypeDef]
+		if err := dag.Select(ctx, inst, &updated, dagql.Selector{
+			Field: "__withEnumTypeDef",
+			Args:  []dagql.NamedInput{{Name: "enumTypeDef", Value: updatedEnumID}},
+		}); err != nil {
+			return inst, err
+		}
+		return updated, nil
+	default:
+		return inst, nil
+	}
+}
+
 func SelectFunctionWithServer(ctx context.Context, dag *dagql.Server, name string, returnType dagql.ObjectResult[*TypeDef]) (dagql.ObjectResult[*Function], error) {
 	returnTypeID, err := ResultIDInput(returnType)
 	if err != nil {

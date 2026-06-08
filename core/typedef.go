@@ -1315,7 +1315,7 @@ func (obj *ObjectTypeDef) WithSourceMap(sourceMap dagql.ObjectResult[*SourceMap]
 
 func (obj *ObjectTypeDef) WithName(name string) *ObjectTypeDef {
 	obj = obj.Clone()
-	obj.Name = strcase.ToCamel(name)
+	obj.Name = name
 	return obj
 }
 
@@ -1677,7 +1677,7 @@ func (iface *InterfaceTypeDef) WithSourceMap(sourceMap dagql.ObjectResult[*Sourc
 
 func (iface *InterfaceTypeDef) WithName(name string) *InterfaceTypeDef {
 	iface = iface.Clone()
-	iface.Name = strcase.ToCamel(name)
+	iface.Name = name
 	return iface
 }
 
@@ -2062,7 +2062,7 @@ func (enum EnumTypeDef) Clone() *EnumTypeDef {
 
 func (enum *EnumTypeDef) WithName(name string) *EnumTypeDef {
 	enum = enum.Clone()
-	enum.Name = strcase.ToCamel(name)
+	enum.Name = name
 	return enum
 }
 

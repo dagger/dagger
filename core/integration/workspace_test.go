@@ -1175,7 +1175,7 @@ func (p *Playground) SayHello() string {
 // ObjectsB.
 //
 // The child names are important: because ObjectsA already starts with
-// "Objects" (the module name), namespaceObject is a no-op for it — it
+// "Objects" (the module name), NamespaceObject is a no-op for it — it
 // produces Name == gqlObjectName(OriginalName). A prior heuristic in
 // mergeModuleQueryFields used that equality to identify main objects, which
 // falsely matched ObjectsA and overwrote the real main object Objects.
@@ -1239,7 +1239,7 @@ type ObjectsB {
 // workspace config "name" field still has its constructor correctly
 // synthesized on Query. The SDK type keeps its original name (e.g.
 // "HelloWorld") but the module is installed under the alias (e.g. "greeter").
-// The namespaceObject function rewrites the main object's Name to match the
+// The NamespaceObject function rewrites the main object's Name to match the
 // alias, so this has always worked, but this test makes the coverage explicit.
 func (WorkspaceSuite) TestRenamedToolchainModule(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)

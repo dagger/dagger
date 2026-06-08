@@ -26,7 +26,8 @@ func gqlObjectName(name string) string {
 	return strcase.ToCamel(name)
 }
 
-func namespaceObject(
+// NamespaceObject returns the GraphQL schema name for a module object, interface, or enum.
+func NamespaceObject(
 	objOriginalName string,
 	modFinalName string,
 	modOriginalName string,
