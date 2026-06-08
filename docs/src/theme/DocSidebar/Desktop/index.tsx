@@ -1,5 +1,6 @@
 import React from "react";
 import clsx from "clsx";
+import { useLocation } from "@docusaurus/router";
 import { useThemeConfig } from "@docusaurus/theme-common";
 import Logo from "@theme/Logo";
 import SearchBar from "@theme/SearchBar";
@@ -9,15 +10,66 @@ import type { Props } from "@theme/DocSidebar/Desktop";
 
 import styles from "./styles.module.css";
 
+function scrollActiveSidebarItemIntoView(sidebar: HTMLElement) {
+  const activeLink =
+    sidebar.querySelector<HTMLElement>(
+      '.menu__link--active[aria-current="page"]'
+    ) ?? sidebar.querySelector<HTMLElement>(".menu__link--active");
+  const scroller =
+    activeLink?.closest<HTMLElement>(".menu") ??
+    sidebar.querySelector<HTMLElement>(".menu");
+
+  if (!activeLink || !scroller) {
+    return;
+  }
+
+  const activeRect = activeLink.getBoundingClientRect();
+  const scrollerRect = scroller.getBoundingClientRect();
+  const isVisible =
+    activeRect.top >= scrollerRect.top &&
+    activeRect.bottom <= scrollerRect.bottom;
+
+  if (isVisible) {
+    return;
+  }
+
+  const activeCenter = activeRect.top + activeRect.height / 2;
+  const scrollerCenter = scrollerRect.top + scrollerRect.height / 2;
+
+  scroller.scrollTo({
+    top: scroller.scrollTop + activeCenter - scrollerCenter,
+    behavior: "auto",
+  });
+}
+
 function DocSidebarDesktop({ path, sidebar, onCollapse, isHidden }: Props) {
   const {
     docs: {
       sidebar: { hideable },
     },
   } = useThemeConfig();
+  const location = useLocation();
+  const sidebarRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (isHidden || !sidebarRef.current) {
+      return undefined;
+    }
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      if (sidebarRef.current) {
+        scrollActiveSidebarItemIntoView(sidebarRef.current);
+      }
+    });
+
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [isHidden, location.hash, location.pathname, location.search, path]);
 
   return (
-    <div className={clsx(styles.sidebar, isHidden && styles.sidebarHidden)}>
+    <div
+      ref={sidebarRef}
+      className={clsx(styles.sidebar, isHidden && styles.sidebarHidden)}
+    >
       <div className={styles.sidebarHeader}>
         <Logo tabIndex={-1} className={styles.sidebarLogo} />
         <div className="docs-sidebar-search">
