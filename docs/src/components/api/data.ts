@@ -14,7 +14,7 @@ export type TypeRef =
   | { kind: "list"; of: TypeRef }
   | { kind: "nonNull"; of: TypeRef };
 
-export type ReturnKind = "scalar" | "other" | "same";
+export type ReturnKind = "scalar" | "other";
 
 export interface ApiArg {
   name: string;
@@ -126,9 +126,8 @@ function namedType(type: TypeRef): Extract<TypeRef, { kind: "named" }> {
   }
 }
 
-export function returnKind(type: TypeRef, ownerType: string): ReturnKind {
+export function returnKind(type: TypeRef): ReturnKind {
   const named = namedType(type);
-  if (named.name === ownerType) return "same";
   if (
     named.named === "core" ||
     named.named === "object" ||

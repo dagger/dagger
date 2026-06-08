@@ -12,15 +12,13 @@ import styles from "./styles.module.scss";
 // a hover copy-link (the .hash-link affordance Docusaurus styles site-wide).
 export default function FieldCard({
   field,
-  ownerType,
 }: {
   field: ApiField;
-  ownerType: string;
 }): JSX.Element {
   return (
     <div
       className={`${styles.card} ${field.deprecated ? styles.cardDeprecated : ""}`}
-      data-return={returnKind(field.type, ownerType)}
+      data-return={returnKind(field.type)}
     >
       <h3 id={field.name} className={styles.cardHeading}>
         <Signature field={field} />
