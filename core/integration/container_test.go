@@ -3002,6 +3002,77 @@ func (ContainerSuite) TestPublishWithDirectoryPreservesLayers(ctx context.Contex
 	require.Len(t, manifest.Layers, expectedLayers, "published image should preserve one layer per WithDirectory call")
 }
 
+func (ContainerSuite) TestPublishWithChangesPreservesBaseLayers(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	const seedLayers = 3
+	seed := c.Container()
+	for i := 1; i <= seedLayers; i++ {
+		name := fmt.Sprintf("seed-%02d", i)
+		dir := c.Directory().WithNewFile(name+".txt", name)
+		seed = seed.WithDirectory("/seed/"+name, dir)
+	}
+	seed = seed.WithDirectory("/repo", c.Directory().WithNewFile("changed.txt", "old\n"))
+
+	seedRef, err := seed.Publish(ctx, registryRef("container-publish-with-changes-seed"))
+	require.NoError(t, err)
+
+	pulledSeed := c.Container().From(seedRef)
+	seedRootfs := pulledSeed.Rootfs()
+	changedRootfs := seedRootfs.
+		WithNewFile("/repo/changed.txt", "new\n").
+		WithNewFile("/repo/added.txt", "added\n")
+	rootfsChanges := changedRootfs.Changes(seedRootfs)
+
+	withChangesRef, err := pulledSeed.
+		WithRootfs(seedRootfs.WithChanges(rootfsChanges)).
+		Publish(ctx, registryRef("container-publish-with-changes-layers"))
+	require.NoError(t, err)
+
+	changedContents, err := c.Container().From(withChangesRef).File("/repo/changed.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "new\n", changedContents)
+
+	addedContents, err := c.Container().From(withChangesRef).File("/repo/added.txt").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "added\n", addedContents)
+
+	layerDigests := func(ref string) []string {
+		parsedRef, err := name.ParseReference(ref, name.Insecure)
+		require.NoError(t, err)
+
+		imgDesc, err := remote.Get(parsedRef, remote.WithTransport(http.DefaultTransport))
+		require.NoError(t, err)
+		img, err := imgDesc.Image()
+		require.NoError(t, err)
+		manifest, err := img.Manifest()
+		require.NoError(t, err)
+
+		digests := make([]string, 0, len(manifest.Layers))
+		for _, layer := range manifest.Layers {
+			digests = append(digests, layer.Digest.String())
+		}
+		return digests
+	}
+
+	seedLayerDigests := layerDigests(seedRef)
+	withChangesLayerDigests := layerDigests(withChangesRef)
+
+	require.Greater(t, len(seedLayerDigests), 1, "seed image should have multiple layers for this regression test")
+	require.Greater(
+		t,
+		len(withChangesLayerDigests),
+		len(seedLayerDigests),
+		"published image should preserve the seed layers and add a layer for the applied changes",
+	)
+	require.Equal(
+		t,
+		seedLayerDigests,
+		withChangesLayerDigests[:len(seedLayerDigests)],
+		"published image should keep the seed layer digests as the prefix",
+	)
+}
+
 func (ContainerSuite) TestPublishScratchRootFSHasNoLayers(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
