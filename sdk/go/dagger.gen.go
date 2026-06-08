@@ -9134,6 +9134,35 @@ func (r *GitRef) WithGraphQLQuery(q *querybuilder.Selection) *GitRef {
 	}
 }
 
+// GitRefBareOpts contains options for GitRef.Bare
+type GitRefBareOpts struct {
+	// The depth of the bare repository to fetch.
+	//
+	// Default: 1
+	Depth int
+	// Set to true to populate tag refs in the bare repository.
+	IncludeTags bool
+}
+
+// The bare git repository at this ref.
+func (r *GitRef) Bare(opts ...GitRefBareOpts) *Directory {
+	q := r.query.Select("bare")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `depth` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Depth) {
+			q = q.Arg("depth", opts[i].Depth)
+		}
+		// `includeTags` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IncludeTags) {
+			q = q.Arg("includeTags", opts[i].IncludeTags)
+		}
+	}
+
+	return &Directory{
+		query: q,
+	}
+}
+
 // The resolved commit id at this ref.
 func (r *GitRef) Commit(ctx context.Context) (string, error) {
 	if r.commit != nil {

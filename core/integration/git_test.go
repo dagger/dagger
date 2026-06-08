@@ -297,6 +297,89 @@ func (GitSuite) TestGitRefs(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func gitBareStdout(ctx context.Context, t *testctx.T, c *dagger.Client, bare *dagger.Directory, args ...string) string {
+	t.Helper()
+	out, err := c.Container().From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithMountedDirectory("/repo.git", bare).
+		WithExec(append([]string{"git", "--git-dir=/repo.git"}, args...)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	return strings.TrimSpace(out)
+}
+
+func requireBareGitRepo(ctx context.Context, t *testctx.T, c *dagger.Client, bare *dagger.Directory) {
+	t.Helper()
+	entries, err := bare.Entries(ctx)
+	require.NoError(t, err)
+	require.Contains(t, entries, "HEAD")
+	require.Contains(t, entries, "config")
+	require.Contains(t, entries, "objects/")
+	require.Contains(t, entries, "refs/")
+	require.NotContains(t, entries, ".git/")
+	require.NotContains(t, entries, "README.md")
+	require.Equal(t, "true", gitBareStdout(ctx, t, c, bare, "rev-parse", "--is-bare-repository"))
+}
+
+func (GitSuite) TestGitBare(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	localRepo := c.Container().
+		From(alpineImage).
+		WithExec([]string{"apk", "add", "git"}).
+		WithWorkdir("/repo").
+		WithExec([]string{"sh", "-c", `
+set -e -u
+git init
+git branch -m main
+git config user.email root@localhost
+git config user.name "Test User"
+printf one > README.md
+git add README.md
+git commit -m one
+printf '\ntwo' >> README.md
+git commit -am two
+printf '\nthree' >> README.md
+git commit -am three
+git tag v1.0.0
+`}).
+		Directory("/repo")
+
+	t.Run("local branch", func(ctx context.Context, t *testctx.T) {
+		bare := localRepo.AsGit().Branch("main").Bare(dagger.GitRefBareOpts{
+			Depth:       2,
+			IncludeTags: true,
+		})
+		requireBareGitRepo(ctx, t, c, bare)
+		require.Equal(t, "refs/heads/main", gitBareStdout(ctx, t, c, bare, "symbolic-ref", "HEAD"))
+		require.Equal(t, "v1.0.0", gitBareStdout(ctx, t, c, bare, "tag", "--list"))
+
+		log := gitBareStdout(ctx, t, c, bare, "log", "--oneline", "HEAD")
+		require.Len(t, strings.Split(log, "\n"), 2)
+	})
+
+	t.Run("local commit", func(ctx context.Context, t *testctx.T) {
+		commit, err := localRepo.AsGit().Branch("main").Commit(ctx)
+		require.NoError(t, err)
+
+		bare := localRepo.AsGit().Commit(commit).Bare()
+		requireBareGitRepo(ctx, t, c, bare)
+		require.Equal(t, commit, gitBareStdout(ctx, t, c, bare, "rev-parse", "HEAD"))
+		require.Empty(t, gitBareStdout(ctx, t, c, bare, "tag", "--list"))
+	})
+
+	t.Run("remote branch", func(ctx context.Context, t *testctx.T) {
+		gitDaemon, repoURL := gitServiceWithBranch(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello, world!"), "main")
+		bare := c.Git(repoURL, dagger.GitOpts{
+			ExperimentalServiceHost: gitDaemon,
+		}).Branch("main").Bare()
+
+		requireBareGitRepo(ctx, t, c, bare)
+		require.Equal(t, "refs/heads/main", gitBareStdout(ctx, t, c, bare, "symbolic-ref", "HEAD"))
+		require.Equal(t, repoURL, gitBareStdout(ctx, t, c, bare, "remote", "get-url", "origin"))
+	})
+}
+
 func (GitSuite) TestGitURL(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

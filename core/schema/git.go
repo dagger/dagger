@@ -139,6 +139,16 @@ func (s *gitSchema) Install(srv *dagql.Server) {
 	}.Install(srv)
 
 	dagql.Fields[*core.GitRef]{
+		dagql.NodeFunc("bare", s.bare).
+			IsPersistable().
+			View(AllVersion).
+			Doc(`The bare git repository at this ref.`).
+			Args(
+				dagql.Arg("depth").
+					Doc(`The depth of the bare repository to fetch.`),
+				dagql.Arg("includeTags").
+					Doc(`Set to true to populate tag refs in the bare repository.`),
+			),
 		dagql.NodeFunc("tree", s.tree).
 			IsPersistable().
 			View(AllVersion).
@@ -779,6 +789,30 @@ func calcGitContentDigest(gitRef *core.GitRef, args treeArgs) (digest.Digest, er
 	return hashutil.HashStrings(dgstInputs...), nil
 }
 
+func calcGitBareContentDigest(gitRef *core.GitRef, args bareArgs) (digest.Digest, error) {
+	if gitRef.Ref == nil {
+		return "", fmt.Errorf("cannot content-address remote bare git repo: missing ref")
+	}
+	if gitRef.Ref.SHA == "" {
+		return "", fmt.Errorf("cannot content-address remote bare git repo: ref %q has no resolved SHA", gitRef.Ref.Name)
+	}
+
+	repo := gitRef.Repo.Self()
+	remoteRepo, ok := repo.Backend.(*core.RemoteGitRepository)
+	if !ok {
+		return "", fmt.Errorf("cannot content-address non-remote bare git repo")
+	}
+
+	return hashutil.HashStrings(
+		"bare",
+		remoteRepo.URL.Remote(),
+		gitRef.Ref.SHA,
+		strconv.Itoa(args.Depth),
+		strconv.FormatBool(args.IncludeTags),
+		gitRef.Ref.Name,
+	), nil
+}
+
 func IsRemotePublic(ctx context.Context, remote *gitutil.GitURL) (bool, error) {
 	// check if repo is public
 	repo := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
@@ -1213,6 +1247,40 @@ type treeArgs struct {
 
 	SSHKnownHosts dagql.Optional[dagql.String]  `name:"sshKnownHosts"`
 	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
+}
+
+type bareArgs struct {
+	Depth       int  `default:"1"`
+	IncludeTags bool `default:"false"`
+}
+
+func (s *gitSchema) bare(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args bareArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {
+	srv, err := core.CurrentDagqlServer(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get current dagql server: %w", err)
+	}
+
+	dir, err := parent.Self().Bare(ctx, args.Depth, args.IncludeTags)
+	if err != nil {
+		return inst, err
+	}
+	inst, err = dagql.NewObjectResultForCurrentCall(ctx, srv, dir)
+	if err != nil {
+		return inst, err
+	}
+
+	if _, ok := parent.Self().Repo.Self().Backend.(*core.RemoteGitRepository); ok {
+		dgst, err := calcGitBareContentDigest(parent.Self(), args)
+		if err != nil {
+			return inst, err
+		}
+		inst, err = inst.WithContentDigest(ctx, dgst)
+		if err != nil {
+			return inst, err
+		}
+	}
+
+	return inst, nil
 }
 
 func (s *gitSchema) tree(ctx context.Context, parent dagql.ObjectResult[*core.GitRef], args treeArgs) (inst dagql.ObjectResult[*core.Directory], _ error) {

@@ -240,6 +240,25 @@ func (ref *LocalGitRef) mount(ctx context.Context, depth int, includeTags bool, 
 	return ref.repo.mount(ctx, depth, includeTags, []GitRefBackend{ref}, fn)
 }
 
+func (ref *LocalGitRef) Bare(ctx context.Context, depth int, includeTags bool) (_ *Directory, rerr error) {
+	var bare *Directory
+	err := ref.mount(ctx, depth, includeTags, func(git *gitutil.GitCLI) error {
+		var err error
+		bare, err = newBareGitDirectory(
+			ctx,
+			fmt.Sprintf("local git bare repo (%s %s)", ref.Name, ref.SHA),
+			func(bareDir string, _ *mount.Mount) error {
+				return doGitBare(ctx, git, bareDir, "", ref.Ref, depth, includeTags)
+			},
+		)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return bare, nil
+}
+
 func (ref *LocalGitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (_ *Directory, rerr error) {
 	query, err := CurrentQuery(ctx)
 	if err != nil {

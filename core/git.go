@@ -51,6 +51,7 @@ type GitRef struct {
 
 type GitRefBackend interface {
 	Tree(ctx context.Context, srv *dagql.Server, discard bool, depth int, includeTags bool) (checkout *Directory, err error)
+	Bare(ctx context.Context, depth int, includeTags bool) (repo *Directory, err error)
 
 	mount(ctx context.Context, depth int, includeTags bool, fn func(*gitutil.GitCLI) error) error
 }
@@ -406,6 +407,10 @@ func (*GitRef) DecodePersistedObject(ctx context.Context, dag *dagql.Server, _ u
 
 func (ref *GitRef) Tree(ctx context.Context, srv *dagql.Server, discardGitDir bool, depth int, includeTags bool) (*Directory, error) {
 	return ref.Backend.Tree(ctx, srv, ref.Repo.Self().DiscardGitDir || discardGitDir, depth, includeTags)
+}
+
+func (ref *GitRef) Bare(ctx context.Context, depth int, includeTags bool) (*Directory, error) {
+	return ref.Backend.Bare(ctx, depth, includeTags)
 }
 
 // doGitCheckout performs a git checkout using the given git helper.
